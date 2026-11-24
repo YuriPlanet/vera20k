@@ -73,6 +73,7 @@ pub(super) fn disguise_inputs(
             state.rules(),
             sim.session().binary_frame(),
             observer,
+            false,
         );
         let voxel =
             instances::drawn_type_uses_voxel(entity, &chosen, sim.interner(), state.rules());

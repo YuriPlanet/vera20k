@@ -426,6 +426,11 @@ pub(crate) enum ObjectExtrasRun {
         /// Phobos digital display custom-SHP glyphs: catalog index and the
         /// uploaded instance index, in emission order.
         digital_shapes: Vec<(u32, u32)>,
+        /// Phobos `TechnoExt::DrawSelectBox` after-body box: `[SelectBoxTypes]`
+        /// catalog index and the uploaded instance index.
+        select_box: Option<(u32, u32)>,
+        /// Phobos `TechnoExt::DrawSelectBox` ground shape, same encoding.
+        select_box_ground: Option<(u32, u32)>,
         talk_bubble: Option<u32>,
     },
 }
@@ -732,6 +737,16 @@ pub(crate) fn lower_object_instances(plan: PlannedObjects) -> [ObjectLayerPass; 
                         (catalog, index)
                     })
                     .collect();
+                let select_box = strip.select_box.map(|(catalog, instance)| {
+                    let index = lowered.extras_instances.len() as u32;
+                    lowered.extras_instances.push(instance);
+                    (catalog, index)
+                });
+                let select_box_ground = strip.select_box_ground.map(|(catalog, instance)| {
+                    let index = lowered.extras_instances.len() as u32;
+                    lowered.extras_instances.push(instance);
+                    (catalog, index)
+                });
                 let talk_bubble = strip.talk_bubble.map(|instance| {
                     let index = lowered.extras_instances.len() as u32;
                     lowered.extras_instances.push(instance);
@@ -754,6 +769,8 @@ pub(crate) fn lower_object_instances(plan: PlannedObjects) -> [ObjectLayerPass; 
                     group_text: rectangles_end..text_end,
                     digital_text,
                     digital_shapes,
+                    select_box,
+                    select_box_ground,
                     talk_bubble,
                 }
             });
@@ -794,6 +811,8 @@ pub(crate) fn lower_object_instances(plan: PlannedObjects) -> [ObjectLayerPass; 
                         group_text: fills.start..fills.start,
                         digital_text: Vec::new(),
                         digital_shapes: Vec::new(),
+                        select_box: None,
+                        select_box_ground: None,
                         talk_bubble: None,
                     });
                 }
@@ -838,6 +857,16 @@ pub(crate) fn lower_object_instances(plan: PlannedObjects) -> [ObjectLayerPass; 
                     });
                 }
             }
+            let select_box = match &strip {
+                Some(ObjectExtrasRun::Status { select_box, .. }) => *select_box,
+                _ => None,
+            };
+            let select_box_ground = match &strip {
+                Some(ObjectExtrasRun::Status {
+                    select_box_ground, ..
+                }) => *select_box_ground,
+                _ => None,
+            };
             if let Some(ObjectExtrasRun::Status {
                 bomb_clock,
                 wrench,
@@ -862,6 +891,9 @@ pub(crate) fn lower_object_instances(plan: PlannedObjects) -> [ObjectLayerPass; 
                 let power_off = power_off.filter(|_| split_prefix.is_none());
                 let marker = power_off.is_some();
                 let rank = rank.filter(|_| split_prefix.is_none());
+                let select_box = select_box.filter(|_| split_prefix.is_none());
+                let select_box_ground = select_box_ground.filter(|_| split_prefix.is_none());
+                let has_select_box = select_box.is_some() || select_box_ground.is_some();
                 if bomb_clock.is_some()
                     || wrench.is_some()
                     || marker
@@ -875,6 +907,7 @@ pub(crate) fn lower_object_instances(plan: PlannedObjects) -> [ObjectLayerPass; 
                     || !group_text.is_empty()
                     || !digital_text.is_empty()
                     || !digital_shapes.is_empty()
+                    || has_select_box
                     || talk_bubble.is_some()
                 {
                     if is_building {
@@ -900,6 +933,8 @@ pub(crate) fn lower_object_instances(plan: PlannedObjects) -> [ObjectLayerPass; 
                         group_text,
                         digital_text,
                         digital_shapes,
+                        select_box,
+                        select_box_ground,
                         talk_bubble,
                     });
                 }

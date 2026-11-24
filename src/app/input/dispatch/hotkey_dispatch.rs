@@ -425,8 +425,7 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         ),
         HotkeyCommand::PageUser => crate::app::input::page_user::execute(state),
         HotkeyCommand::PlaceBeacon => crate::app::input::beacon::execute_command(state),
-        #[cfg(feature = "phobos")]
-        HotkeyCommand::FireTacticalSw(index) => {
+            HotkeyCommand::FireTacticalSw(index) => {
             if state
                 .rules()
                 .is_some_and(|rules| rules.sw_sidebar.keys_enabled)
@@ -437,8 +436,7 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
                 press_super_weapon(state, &type_id, false, false);
             }
         }
-        #[cfg(feature = "phobos")]
-        HotkeyCommand::ToggleSwSidebar => {
+            HotkeyCommand::ToggleSwSidebar => {
             if state
                 .rules()
                 .is_some_and(|rules| rules.sw_sidebar.toggle_key_enabled)

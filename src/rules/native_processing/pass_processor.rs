@@ -129,11 +129,9 @@ pub(super) struct RulesPassProcessor {
     pub(super) rules_ion_blast_anim: String,
     pub(super) rules_ion_beam_anim: String,
     pub(super) rules_ion_cannon_warhead: String,
-    #[cfg(feature = "phobos")]
     pub(super) rules_timer_blink_color_scheme: i32,
     /// Phobos `[AudioVisual] MissingCameo=`, retained with the other Rules
     /// scalars for the pass.
-    #[cfg(feature = "phobos")]
     pub(super) rules_missing_cameo: String,
     pub(super) rules_mind_control_attack_line_frames: i32,
     pub(super) rules_drain_money_frame_delay: i32,
@@ -225,9 +223,7 @@ impl RulesPassProcessor {
             rules_ion_blast_anim: registry_state.rules_ion_blast_anim,
             rules_ion_beam_anim: registry_state.rules_ion_beam_anim,
             rules_ion_cannon_warhead: registry_state.rules_ion_cannon_warhead,
-            #[cfg(feature = "phobos")]
             rules_timer_blink_color_scheme: registry_state.rules_timer_blink_color_scheme,
-            #[cfg(feature = "phobos")]
             rules_missing_cameo: registry_state.rules_missing_cameo,
             rules_mind_control_attack_line_frames: registry_state
                 .rules_mind_control_attack_line_frames,
@@ -345,12 +341,14 @@ impl RulesPassProcessor {
         // Phobos `AttachEffectTypeClass::LoadFromINI`'s `Read<true>` type
         // factories run before this pass's type bodies, so a WeaponType or
         // WarheadType only an AttachEffect key names is read in this pass.
-        #[cfg(feature = "phobos")]
         self.allocate_attach_effect_references(pass);
+        // Phobos `SWTypeExt::LoadFromINI`'s `Detonate.Weapon`/
+        // `Detonate.Warhead` `Read<true>` factories construct their types on
+        // the same pass (`Ext/SWType/Body.cpp:274-275`).
+        self.allocate_sw_detonate_references(pass);
         // Phobos `RulesExt::LoadBeforeTypeData` runs
         // `InsigniaTypeClass::LoadFromINIList` before this pass's type bodies,
         // so a same-pass `InsigniaType=` resolves against it.
-        #[cfg(feature = "phobos")]
         self.allocate_insignia_types(pass);
         self.process_type_data(pass, fixed_art, fixed_eva, primary_rules, fixed_sounds);
         // RulesExt LoadAfterTypeData: installed679CAF ->1002C9B0 ->1002AAF0
@@ -486,13 +484,9 @@ impl RulesPassProcessor {
         // keeps their order.
         self.missile_spawn.apply_pass(pass);
         self.allocate_radiation_references(pass);
-        #[cfg(feature = "phobos")]
         self.allocate_radiation_types(pass);
-        #[cfg(feature = "phobos")]
         self.allocate_shield_types(pass);
-        #[cfg(feature = "phobos")]
         self.allocate_digital_display_types(pass);
-        #[cfg(feature = "phobos")]
         self.allocate_attach_effect_types(pass);
         // Elevation and Wall contain no Type factories.
         self.allocate_audio_visual_references(pass, fixed_sounds);
@@ -811,7 +805,6 @@ impl RulesPassProcessor {
     /// `ValueableVector<TechnoTypeClass*>` resolves each token across every
     /// techno family (`TechnoTypeClass::Find`), skipping unknown ones; a
     /// reached list replaces and an absent key retains.
-    #[cfg(feature = "phobos")]
     pub(super) fn resolve_existing_techno_list_from(
         &self,
         section: &IniSection,
@@ -1039,7 +1032,7 @@ impl RulesPassProcessor {
         &mut self,
         pass: &IniFile,
         fixed_art: &IniFile,
-        _fixed_eva: &EvaRegistry,
+        fixed_eva: &EvaRegistry,
         primary_rules: bool,
         fixed_sounds: &SoundRegistry,
     ) {
@@ -1067,7 +1060,7 @@ impl RulesPassProcessor {
                     i32::try_from(array_index)
                         .expect("SIDE_LIMIT keeps the Side registry within u8"),
                     pass,
-                    _fixed_eva,
+                    fixed_eva,
                     &side_types,
                     |name| self.loading_color_index(name),
                 );
@@ -1110,7 +1103,6 @@ impl RulesPassProcessor {
         }
         // Phobos RulesData_LoadBeforeTypeData (0x679A15), before this pass's
         // type bodies.
-        #[cfg(feature = "phobos")]
         if let Some(section) = pass.section("AudioVisual") {
             let _phobos = crate::rules::ares_switch::not_ares_reads();
             // `PhobosFixedString<32>`: an empty read keeps the earlier pass's
@@ -1133,12 +1125,36 @@ impl RulesPassProcessor {
             );
         }
         self.process_house_family(pass, primary_rules);
-        self.process_super_weapon_family(pass, _fixed_eva, fixed_sounds);
+        self.process_super_weapon_family(pass, fixed_eva, fixed_sounds);
         self.process_anim_family(fixed_art, fixed_sounds);
-        self.process_techno_family(RulesTypeFamily::Building, pass, fixed_art, fixed_sounds);
-        self.process_techno_family(RulesTypeFamily::Aircraft, pass, fixed_art, fixed_sounds);
-        self.process_techno_family(RulesTypeFamily::Vehicle, pass, fixed_art, fixed_sounds);
-        self.process_techno_family(RulesTypeFamily::Infantry, pass, fixed_art, fixed_sounds);
+        self.process_techno_family(
+            RulesTypeFamily::Building,
+            pass,
+            fixed_art,
+            fixed_sounds,
+            fixed_eva,
+        );
+        self.process_techno_family(
+            RulesTypeFamily::Aircraft,
+            pass,
+            fixed_art,
+            fixed_sounds,
+            fixed_eva,
+        );
+        self.process_techno_family(
+            RulesTypeFamily::Vehicle,
+            pass,
+            fixed_art,
+            fixed_sounds,
+            fixed_eva,
+        );
+        self.process_techno_family(
+            RulesTypeFamily::Infantry,
+            pass,
+            fixed_art,
+            fixed_sounds,
+            fixed_eva,
+        );
         self.process_weapon_family(pass);
         self.process_bullet_family(pass, fixed_art, fixed_sounds);
         self.process_warhead_family(pass);
@@ -1284,9 +1300,7 @@ impl RulesPassProcessor {
                     rules_ion_blast_anim: self.rules_ion_blast_anim,
                     rules_ion_beam_anim: self.rules_ion_beam_anim,
                     rules_ion_cannon_warhead: self.rules_ion_cannon_warhead,
-                    #[cfg(feature = "phobos")]
                     rules_timer_blink_color_scheme: self.rules_timer_blink_color_scheme,
-                    #[cfg(feature = "phobos")]
                     rules_missing_cameo: self.rules_missing_cameo,
                     rules_mind_control_attack_line_frames: self
                         .rules_mind_control_attack_line_frames,

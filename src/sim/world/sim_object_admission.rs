@@ -104,8 +104,6 @@ impl Simulation {
         let Some(projectile) = projectiles.get(bullet) else {
             return;
         };
-        #[cfg(not(feature = "phobos"))]
-        let _ = houses;
         let source_id = projectile.source_id();
         let firers_palette = projectile
             .payload()
@@ -117,8 +115,7 @@ impl Simulation {
             .flatten()
             .map(|owner| owner.owner());
         projectiles.set_firer_house(bullet, house);
-        #[cfg(feature = "phobos")]
-        {
+            {
             // `BulletExt::InitializeState` retains the Owner's House for
             // every bullet, not only a `FirersPalette=` one. A re-Construct
             // with no live owner keeps the saved value (native only writes

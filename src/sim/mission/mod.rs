@@ -12,9 +12,9 @@
 pub(crate) mod authority;
 pub(crate) mod capture;
 pub(crate) mod concrete_effects;
+pub mod control;
 pub(crate) mod eaten;
 pub(crate) mod enter;
-pub mod control;
 pub(crate) mod leaf;
 pub(crate) mod mega_mission;
 pub(crate) mod readiness;

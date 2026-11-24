@@ -1,6 +1,6 @@
 # Optional Phobos FlyNoWobbles
 
-Build with `--features phobos` to decide whether technos on `Locomotor=Fly`
+Phobos is in every build; turn it on from a game's data to decide whether technos on `Locomotor=Fly`
 wobble, independently of `IsDropship`.
 
 ```ini

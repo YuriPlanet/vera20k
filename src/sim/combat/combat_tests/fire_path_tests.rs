@@ -66,7 +66,7 @@ fn sonic_active_wave_gate_precedes_target_resolution_and_all_shot_work() {
     assert_eq!(entities.get(1).unwrap().current_weapon_number(), 1);
 }
 
-fn guardian_gi_rules() -> RuleSet {
+pub(super) fn guardian_gi_rules() -> RuleSet {
     let ini: IniFile = IniFile::from_str(
         "\
 [InfantryTypes]\n0=GGI\n1=E2\n2=ROCK\n\n\

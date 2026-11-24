@@ -90,6 +90,8 @@ struct Replay<'a> {
     released: bool,
     /// The row's Ammo: the oracle's FireAt stub spends none.
     ammo: i32,
+    /// Phobos `Strafe_TargetCell` when a test stores one.
+    cell: Option<(u16, u16)>,
 }
 
 impl StrikeHost for Replay<'_> {
@@ -117,6 +119,9 @@ impl StrikeHost for Replay<'_> {
     fn scatter(&mut self) {
         self.events.push("scatter");
     }
+    fn scatter_at_cell(&mut self, _cell: (u16, u16)) {
+        self.events.push("scatter");
+    }
     fn assign_target_destination(&mut self) {
         self.events.push("assign_dest");
     }
@@ -129,6 +134,24 @@ impl StrikeHost for Replay<'_> {
     }
     fn ammo(&mut self) -> i32 {
         self.ammo
+    }
+    fn strafe_counter(&mut self) -> i32 {
+        0
+    }
+    fn set_strafe_counter(&mut self, _value: i32) {}
+    fn strafe_cell(&mut self) -> Option<(u16, u16)> {
+        self.cell
+    }
+    fn set_strafe_cell(&mut self, _cell: Option<(u16, u16)>) {}
+    fn store_target_cell(&mut self) {}
+    fn cell_fire_error(&mut self, _cell: (u16, u16)) -> FireError {
+        self.code
+    }
+    fn fire_at_cell(&mut self, _cell: (u16, u16)) {
+        self.events.push("fire_at");
+    }
+    fn assign_cell_destination(&mut self, _cell: (u16, u16)) {
+        self.events.push("assign_dest");
     }
 }
 
@@ -202,6 +225,9 @@ fn original_attack_state_rows() {
                 weapon0_rof: get("rof")[0].as_i64().unwrap() as i32,
                 weapon0_range: get("range")[0].as_i64().unwrap() as i32,
                 speed: get("speed").as_i64().unwrap() as i32,
+                strafing: StrafeKeys::STOCK,
+                // The oracle rows are vanilla behaviour: the key's default.
+                firing_force_scatter: true,
             };
             let mut host = Replay {
                 code,
@@ -213,6 +239,7 @@ fn original_attack_state_rows() {
                 events: Vec::new(),
                 released: false,
                 ammo,
+                cell: None,
             };
             let visit = strike_visit(&facts, &mut host);
             let name = &input["name"];
@@ -252,6 +279,80 @@ fn original_attack_state_rows() {
     // Every executed state 4..9 combination (5472), the extras (21), the
     // epilogue (19) and state-9 (40) rows; code -1 alone is not representable.
     assert_eq!((replayed, skipped), (5552, 456));
+}
+
+/// Phobos `FiringForceScatter` (`Ext/Aircraft/Hooks.cpp:257`, `:348`, `:354`,
+/// hooks `0x41879D`/`0x41882C`/`0x4186DD`): a strafe visit still fires at the
+/// stored cell but stops scattering it, and a non-strafe strafe-state shot
+/// stops scattering the target's cell, when the switch is off; the key
+/// defaults on, which is the stock Scatter.
+#[test]
+fn firing_force_scatter_gates_the_attack_missions_scatter() {
+    let facts = |firing_force_scatter: bool| StrikeFacts {
+        state: 6,
+        target: true,
+        ammo: -1,
+        strafe: true,
+        fighter: false,
+        curley_shuffle: false,
+        weapon0_rof: 40,
+        weapon0_range: 1920,
+        speed: 40,
+        strafing: StrafeKeys::STOCK,
+        firing_force_scatter,
+    };
+    let rules = rules(MissionType::Attack, 1.0);
+    for (firing_force_scatter, expected) in [
+        (true, vec!["fire_at", "scatter", "assign_dest"]),
+        (false, vec!["fire_at", "assign_dest"]),
+    ] {
+        let mut host = Replay {
+            code: FireError::Ok,
+            is_close: false,
+            burst: 1,
+            rules: &rules,
+            mission: MissionType::Attack,
+            rng: SimRng::new(1),
+            events: Vec::new(),
+            released: false,
+            ammo: -1,
+            cell: Some((12, 13)),
+        };
+        let visit = strike_visit(&facts(firing_force_scatter), &mut host);
+        assert_eq!(host.events, expected, "cell arm, {firing_force_scatter}");
+        assert_eq!(visit.state, 7, "cell arm, {firing_force_scatter}");
+        assert_eq!(visit.delay, 40, "cell arm, {firing_force_scatter}");
+    }
+}
+
+/// `AircraftTypeExt::FiringForceScatter` (`Ext/AircraftType/Body.cpp:36`)
+/// reads the AircraftType section only; its nullable value wins over
+/// `[General] AircraftFiringForceScatter` (`Ext/Rules/Body.cpp:473`), whose
+/// constructor default is `yes`.
+#[test]
+fn firing_force_scatter_reads_the_aircraft_section_then_the_general_fallback() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[General]\nAircraftFiringForceScatter=no\n\
+         [AircraftTypes]\n0=ORCA\n1=SHAD\n\
+         [ORCA]\nSpeed=14\nFiringForceScatter=yes\n\
+         [SHAD]\nSpeed=14\n",
+    ))
+    .unwrap();
+    assert_eq!(
+        rules.object("ORCA").unwrap().phobos_firing_force_scatter(),
+        Some(true)
+    );
+    assert!(rules.aircraft_firing_force_scatter_for(rules.object("ORCA")));
+    assert_eq!(
+        rules.object("SHAD").unwrap().phobos_firing_force_scatter(),
+        None
+    );
+    assert!(!rules.aircraft_firing_force_scatter_for(rules.object("SHAD")));
+    let stock = RuleSet::from_ini(&IniFile::from_str(
+        "[AircraftTypes]\n0=SHAD\n[SHAD]\nSpeed=14\n",
+    ))
+    .unwrap();
+    assert!(stock.aircraft_firing_force_scatter_for(stock.object("SHAD")));
 }
 
 /// The state-10 host: the production edge picker over the oracle's map, the
@@ -598,6 +699,62 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
         (21, 41),
         "Fly heads for the pad"
     );
+}
+
+/// Phobos `Strafing=` (`Ext/WeaponType/Body.cpp:107`): the explicit classifier
+/// wins over the projectile inference in
+/// `AircraftClass_IFlyControl_IsStrafe` (`Ext/Aircraft/Hooks.cpp:102`), and an
+/// unset key infers `ROT<=1 && !Inviso && no Trajectory=`.
+#[test]
+fn the_strafing_classifier_overrides_the_projectile_inference() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::ruleset::RuleSet;
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(
+            "[AircraftTypes]\n\
+             0=YESBIG\n1=NOFAST\n2=INFERRED\n3=TRAJECTORIED\n\
+             [YESBIG]\nPrimary=SLOWBOMB\n\
+             [NOFAST]\nPrimary=FASTBOLT\n\
+             [INFERRED]\nPrimary=SLOWBOLT\n\
+             [TRAJECTORIED]\nPrimary=DRIFTBOLT\n\
+             [WeaponTypes]\n\
+             0=SLOWBOMB\n1=FASTBOLT\n2=SLOWBOLT\n3=DRIFTBOLT\n\
+             [SLOWBOMB]\nProjectile=BIGSHELL\nStrafing=yes\n\
+             [FASTBOLT]\nProjectile=LASER\nStrafing=no\n\
+             [SLOWBOLT]\nProjectile=BULLET\n\
+             [DRIFTBOLT]\nProjectile=DRIFTER\n\
+             [Projectiles]\n0=BIGSHELL\n1=LASER\n2=BULLET\n3=DRIFTER\n\
+             [BIGSHELL]\nROT=8\n\
+             [LASER]\nROT=0\n\
+             [BULLET]\nROT=1\n\
+             [DRIFTER]\nROT=1\nTrajectory=Straight\n",
+        ),
+        &IniFile::empty(),
+    )
+    .unwrap();
+    // A ROT 8 shell does not strafe by inference; the key says it does.
+    assert!(crate::sim::combat::combat_weapon::aircraft_strafes(
+        &rules,
+        rules.object("YESBIG").unwrap(),
+        0
+    ));
+    // A ROT 0 bolt would infers as strafing; the key says it does not.
+    assert!(!crate::sim::combat::combat_weapon::aircraft_strafes(
+        &rules,
+        rules.object("NOFAST").unwrap(),
+        0
+    ));
+    assert!(crate::sim::combat::combat_weapon::aircraft_strafes(
+        &rules,
+        rules.object("INFERRED").unwrap(),
+        0
+    ));
+    // `Trajectory=` excludes the projectile from the inference (`:102`).
+    assert!(!crate::sim::combat::combat_weapon::aircraft_strafes(
+        &rules,
+        rules.object("TRAJECTORIED").unwrap(),
+        0
+    ));
 }
 
 /// The retail inputs the loop reads, through the production reader:

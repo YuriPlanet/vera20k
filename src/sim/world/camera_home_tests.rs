@@ -4,15 +4,32 @@ use crate::sim::house_state::HouseState;
 use crate::sim::intern::InternedId;
 
 fn fixture() -> (Simulation, RuleSet, OverlayTypeRegistry, [InternedId; 2]) {
+    fixture_with_ignore(false)
+}
+
+/// The same fixture with `IgnoreForBaseCenter` on `BASEUNIT`, the starting
+/// techno type the opening view averages.
+fn fixture_with_ignore(
+    ignore: bool,
+) -> (Simulation, RuleSet, OverlayTypeRegistry, [InternedId; 2]) {
     let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
-        "[Countries]\n0=LocalCountry\n1=OtherCountry\n[LocalCountry]\n[OtherCountry]\n\
-         [General]\nBaseUnit=BASEUNIT\n\
-         [VehicleTypes]\n0=BASEUNIT\n1=OTHERUNIT\n\
-         [BASEUNIT]\nStrength=300\nSpeed=5\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
-         [OTHERUNIT]\nStrength=300\nSpeed=5\nSpeedType=Track\nMovementZone=Normal\nDeploysInto=YARD\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
-         [BuildingTypes]\n0=YARD\n1=OTHER\n\
-         [YARD]\nStrength=500\nCost=1000\nFoundation=1x1\nConstructionYard=yes\nFactory=BuildingType\n\
-         [OTHER]\nStrength=500\nCost=1000\nFoundation=1x1\nUndeploysInto=BASEUNIT\n",
+        &format!(
+            "[Countries]\n0=LocalCountry\n1=OtherCountry\n[LocalCountry]\n[OtherCountry]\n\
+             [General]\nBaseUnit=BASEUNIT\n\
+             [VehicleTypes]\n0=BASEUNIT\n1=OTHERUNIT\n\
+             [BASEUNIT]\nStrength=300\nSpeed=5\nSpeedType=Track\nMovementZone=Normal\n\
+             Locomotor={{4A582741-9839-11d1-B709-00A024DDAFD1}}\n{}\
+             [OTHERUNIT]\nStrength=300\nSpeed=5\nSpeedType=Track\nMovementZone=Normal\n\
+             DeploysInto=YARD\nLocomotor={{4A582741-9839-11d1-B709-00A024DDAFD1}}\n\
+             [BuildingTypes]\n0=YARD\n1=OTHER\n\
+             [YARD]\nStrength=500\nCost=1000\nFoundation=1x1\nConstructionYard=yes\nFactory=BuildingType\n\
+             [OTHER]\nStrength=500\nCost=1000\nFoundation=1x1\nUndeploysInto=BASEUNIT\n",
+            if ignore {
+                "IgnoreForBaseCenter=yes\n"
+            } else {
+                ""
+            }
+        ),
     );
     let houses = std::array::from_fn(|i| {
         let name = sim.interner.intern(if i == 0 { "Local" } else { "Other" });
@@ -307,7 +324,7 @@ fn opening_view_averages_player_technos_else_takes_the_base() {
     let ([ux, uy], [bx, by]) = (location(&sim, unit), location(&sim, building));
     let (x, y) = ((ux + bx) / 2, (uy + by) / 2);
     assert_eq!(
-        sim.opening_view_on_player_technos(None),
+        sim.opening_view_on_player_technos(&rules, None),
         Some(([x, y, 0], ((x / 256) as u16, (y / 256) as u16)))
     );
     // The non-campaign post-map pass publishes it for the loader.
@@ -342,9 +359,39 @@ fn opening_view_averages_player_technos_else_takes_the_base() {
         .set_base_center((18, 19));
     let [x, y, _] = sim.house_base_coordinate(houses[0], None);
     assert_eq!(
-        sim.opening_view_on_player_technos(None),
+        sim.opening_view_on_player_technos(&rules, None),
         Some(([x, y, 0], (18, 19)))
     );
     clear_base(&mut sim, houses[0]);
-    assert_eq!(sim.opening_view_on_player_technos(None), None);
+    assert_eq!(sim.opening_view_on_player_technos(&rules, None), None);
+}
+
+/// Phobos `DisplayClass_ComputeStartPosition_IllegalCoords`
+/// (`Ext/House/Hooks.cpp:111-120`, `0x4AC534`, inside
+/// `DisplayClass::CenterCameraOnPlayerTechnos @ 0x004AC4F0`): a starting
+/// techno whose type has `IgnoreForBaseCenter=yes` is skipped like an illegal
+/// coordinate, out of both the sum and the count, so the opening view stays
+/// the House's base coordinate. The same setup with the key absent keeps the
+/// scanned centre.
+#[test]
+fn an_ignored_starting_techno_leaves_the_start_position_scan() {
+    for (ignore, expected) in [(true, (18, 19)), (false, (16, 17))] {
+        let (mut sim, rules, _, houses) = fixture_with_ignore(ignore);
+        assert_eq!(
+            rules
+                .object("BASEUNIT")
+                .unwrap()
+                .phobos_ignore_for_base_center,
+            ignore
+        );
+        spawn(&mut sim, &rules, "BASEUNIT", "Local", 16, 17);
+        sim.houses
+            .get_mut(&houses[0])
+            .unwrap()
+            .set_base_center((18, 19));
+        let view = sim
+            .opening_view_on_player_technos(&rules, None)
+            .expect("the current House has a base coordinate");
+        assert_eq!(view.1, expected, "IgnoreForBaseCenter={ignore}");
+    }
 }

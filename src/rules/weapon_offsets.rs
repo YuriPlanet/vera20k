@@ -10,6 +10,106 @@
 
 use super::{flh::Flh, ini_parser::IniSection, object_type::WEAPON_SLOT_COUNT};
 
+/// Phobos `Nullable<CoordStruct>::Read` on one ART key: the `INI_EX` string
+/// reader (2048) then a complete `%d,%d,%d` scan. Absent, blank, `<default>`
+/// and rejected text all leave the nullable unset.
+fn nullable_flh(art: &IniSection, key: &str) -> Option<[i32; 3]> {
+    art.read_int_fields_complete::<3>(key, 2048)
+}
+
+/// Phobos `TechnoTypeExt::ParseBurstFLHs` (`src/Ext/TechnoType/Body.cpp`):
+/// `pPrefixTag` + `PrimaryFire`/`SecondaryFire` when the type is not a
+/// multi-weapon turret, else `pPrefixTag + WeaponN` with the live WeaponCount,
+/// each with its `Elite` variant. The run stops at the first index whose two
+/// keys are both absent; a missing elite coordinate copies the normal one, and
+/// a normal key that is absent while the elite key is present reads as zero
+/// (the null `Nullable::Get`). Rows are append-only, as the native owner never
+/// clears them between reads.
+fn read_burst_rows(
+    art: &IniSection,
+    turret_count: i32,
+    weapon_count: i32,
+    prefix: &str,
+    rows: &mut BurstFlhRows,
+) {
+    let multi_weapon = turret_count > 0 && weapon_count > 0;
+    let slots = if multi_weapon {
+        usize::try_from(weapon_count).unwrap_or(0)
+    } else {
+        2
+    };
+    rows.resize_slots(slots);
+    for slot in 0..slots {
+        let base_key = if multi_weapon {
+            format!("{prefix}Weapon{}FLH", slot + 1)
+        } else if slot == 0 {
+            format!("{prefix}PrimaryFireFLH")
+        } else {
+            format!("{prefix}SecondaryFireFLH")
+        };
+        let elite_key = format!("Elite{base_key}");
+        let mut burst = 0usize;
+        loop {
+            let base = art.read_int_fields_complete::<3>(&format!("{base_key}.Burst{burst}"), 2048);
+            let elite =
+                art.read_int_fields_complete::<3>(&format!("{elite_key}.Burst{burst}"), 2048);
+            if base.is_none() && elite.is_none() {
+                break;
+            }
+            let base = base.unwrap_or([0; 3]);
+            rows.normal[slot].push(base);
+            rows.elite[slot].push(elite.unwrap_or(base));
+            burst += 1;
+        }
+    }
+}
+
+/// One `ParseBurstFLHs` key set: the normal and elite rows of one firing
+/// offset family.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct BurstFlhRows {
+    normal: Vec<Vec<[i32; 3]>>,
+    elite: Vec<Vec<[i32; 3]>>,
+}
+
+impl BurstFlhRows {
+    fn is_empty(&self) -> bool {
+        self.normal.is_empty()
+    }
+
+    fn resize_slots(&mut self, slots: usize) {
+        self.normal.resize(slots, Vec::new());
+        self.elite.resize(slots, Vec::new());
+    }
+
+    /// The rows, for the rules identity fold.
+    pub(crate) fn normal(&self) -> &[Vec<[i32; 3]>] {
+        &self.normal
+    }
+
+    pub(crate) fn elite(&self) -> &[Vec<[i32; 3]>] {
+        &self.elite
+    }
+
+    /// Phobos `GetBurstFLH`'s indexed read; `None` past the authored run.
+    fn offset(&self, slot: usize, elite: bool, burst_index: u8) -> Option<Flh> {
+        let rows = if elite { &self.elite } else { &self.normal };
+        rows.get(slot)?
+            .get(usize::from(burst_index))
+            .copied()
+            .map(Flh::from)
+    }
+}
+
+/// Phobos `InfantryClass` state that selects a burst row set: deployed wins
+/// over prone, and neither is consulted for a non-infantry TechnoType.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InfantryFlhState {
+    Ordinary,
+    Deployed,
+    Crouched,
+}
+
 /// TechnoCtor7116E6..71173A zeros both arrays, including these signed fields.
 /// The pointer is retained by WeaponSlots; this record owns the ART geometry.
 #[derive(
@@ -26,7 +126,11 @@ pub(crate) struct WeaponOffsets {
     // TechnoType710AF0, clears7116E6..71173A: both WeaponStruct arrays.
     base: [WeaponSlotGeometry; WEAPON_SLOT_COUNT],
     elite: [WeaponSlotGeometry; WEAPON_SLOT_COUNT],
-    alternate: [[i32; 3]; 5],
+    /// GetFLH6F3AF5's `AlternateFLH0..4`, plus Phobos's sixth
+    /// `AlternateFLH5` entry (`Ext/TechnoType/Body.cpp:1368-1384`): ports 0..4
+    /// default to `Weapon[0].FLH`, and the sixth is appended only when
+    /// authored, otherwise the stock negative-index read stays at zero.
+    alternate: [[i32; 3]; 6],
     // Ares extension slots past the original eighteen; only a read the Ares
     // way fills them.
     extra_base: Vec<WeaponSlotGeometry>,
@@ -36,6 +140,20 @@ pub(crate) struct WeaponOffsets {
     crawling: [[i32; 3]; 4],
     #[serde(default)]
     elite_crawling: [[i32; 3]; 4],
+    #[serde(default)]
+    alternate_flh_on_turret: Option<bool>,
+    #[serde(default)]
+    alternate_flh_apply_vehicle: Option<bool>,
+    #[serde(default)]
+    burst: BurstFlhRows,
+    #[serde(default)]
+    deployed_burst: BurstFlhRows,
+    #[serde(default)]
+    prone_burst: BurstFlhRows,
+    #[serde(default)]
+    deployed_simple: [Option<[i32; 3]>; 2],
+    #[serde(default)]
+    prone_simple: [Option<[i32; 3]>; 2],
 }
 
 impl WeaponOffsets {
@@ -107,9 +225,114 @@ impl WeaponOffsets {
         }
         //715F9E..716005 always reads all five ports after either arm, with
         // the current base Weapon[0] coordinate as each default.
-        for (port, offset) in self.alternate.iter_mut().enumerate() {
+        for (port, offset) in self.alternate[..5].iter_mut().enumerate() {
             *offset = art.read_coord3(&format!("AlternateFLH{port}"), self.base[0].flh);
         }
+        // Phobos's loop appends a sixth entry only when `AlternateFLH5` is
+        // present and valid; an absent or rejected key leaves no entry, which
+        // the negative-index read answers as the zero FLH
+        // (`Ext/TechnoType/Body.cpp:1368-1384`).
+        if let Some(fifth) = nullable_flh(art, "AlternateFLH5") {
+            self.alternate[5] = fifth;
+        }
+        read_burst_rows(art, turret_count, weapon_count, "", &mut self.burst);
+        // Phobos `TechnoTypeExt::LoadFromINIFile`
+        // (`Ext/TechnoType/Body.cpp:1365-1366`): two ART `Nullable<bool>`
+        // reads; absent or invalid keeps the retained value.
+        {
+            self.alternate_flh_on_turret = art
+                .read_phobos_nullable_bool("AlternateFLH.OnTurret", self.alternate_flh_on_turret);
+            self.alternate_flh_apply_vehicle = art.read_phobos_nullable_bool(
+                "AlternateFLH.ApplyVehicle",
+                self.alternate_flh_apply_vehicle,
+            );
+        }
+    }
+
+    /// ART `AlternateFLH.OnTurret=`; `None` asks the `[General]` fallback.
+    pub(crate) fn alternate_flh_on_turret(&self) -> Option<bool> {
+        self.alternate_flh_on_turret
+    }
+
+    /// ART `AlternateFLH.ApplyVehicle=`; `None` asks the `[General]` fallback.
+    pub(crate) fn alternate_flh_apply_vehicle(&self) -> Option<bool> {
+        self.alternate_flh_apply_vehicle
+    }
+
+    /// Phobos `InfantryTypeExt::LoadFromINIFile`'s ART reads, reached only for
+    /// an InfantryType: the two state key sets and their burst rows.
+    pub(crate) fn read_infantry_state_pass(
+        &mut self,
+        art: &IniSection,
+        turret_count: i32,
+        weapon_count: i32,
+    ) {
+        read_burst_rows(
+            art,
+            turret_count,
+            weapon_count,
+            "Deployed",
+            &mut self.deployed_burst,
+        );
+        read_burst_rows(
+            art,
+            turret_count,
+            weapon_count,
+            "Prone",
+            &mut self.prone_burst,
+        );
+        // `Ext/InfantryType/Body.cpp:34-37` reads these four keys directly;
+        // `InfantryExt::GetSimpleFLH` (`Ext/Infantry/Body.cpp:8-41`) selects
+        // one by weapon index and state. Each key stays literal at its reader
+        // call so the v3 scanner attributes the read.
+        self.prone_simple[0] = art.read_int_fields_complete::<3>("PronePrimaryFireFLH", 2048);
+        self.prone_simple[1] = art.read_int_fields_complete::<3>("ProneSecondaryFireFLH", 2048);
+        self.deployed_simple[0] = art.read_int_fields_complete::<3>("DeployedPrimaryFireFLH", 2048);
+        self.deployed_simple[1] =
+            art.read_int_fields_complete::<3>("DeployedSecondaryFireFLH", 2048);
+    }
+
+    /// Phobos `InfantryExt::GetSimpleFLH`: the deployed or prone override of
+    /// the primary/secondary firing offset. Deployed wins; any other slot or
+    /// state has no override.
+    pub(crate) fn state_flh(&self, index: i32, deployed: bool, crawling: bool) -> Option<Flh> {
+        let slot = match index {
+            0 | 1 => index as usize,
+            _ => return None,
+        };
+        let rows = if deployed {
+            &self.deployed_simple
+        } else if crawling {
+            &self.prone_simple
+        } else {
+            return None;
+        };
+        rows[slot].map(Flh::from)
+    }
+
+    /// Phobos `GetBurstFLH`: the elite rows and the infantry state pick the
+    /// row set, an empty state set falls back to the type's own rows, and the
+    /// frozen `CurrentBurstIndex` selects within it. `None` past the authored
+    /// run, where `GetFLH` keeps the slot's FLH.
+    pub(crate) fn burst(
+        &self,
+        index: i32,
+        elite: bool,
+        state: InfantryFlhState,
+        burst_index: u8,
+    ) -> Option<Flh> {
+        let slot = usize::try_from(index).ok()?;
+        let set: &BurstFlhRows = match state {
+            InfantryFlhState::Deployed if !self.deployed_burst.is_empty() => &self.deployed_burst,
+            InfantryFlhState::Crouched if !self.prone_burst.is_empty() => &self.prone_burst,
+            _ => &self.burst,
+        };
+        set.offset(slot, elite, burst_index)
+    }
+
+    /// Every authored row set, for the rules identity fold.
+    pub(crate) fn burst_row_sets(&self) -> [&BurstFlhRows; 3] {
+        [&self.burst, &self.deployed_burst, &self.prone_burst]
     }
 
     fn read_numbered(

@@ -231,19 +231,19 @@ pub(super) fn hash_entity_owed(
         entity.seldom.building_entry.hash(hasher);
     }
     let latches = entity.house_tracking_latches();
-    #[cfg(feature = "phobos")]
-    {
+    // Phobos runtime state folds once, in this entity owner. Constructor-default
+    // values add no bytes, preserving the retail hash stream.
+    if entity.seldom.phobos_placement != Default::default() {
         b"phobos-techno-placement-v1".hash(hasher);
         entity.seldom.phobos_placement.hash(hasher);
-        if let Some(shield) = &entity.seldom.shield {
-            b"phobos-shield-v1".hash(hasher);
-            shield.hash(hasher);
-        }
-        entity
-            .seldom
-            .wh_anim_remaining_creation_interval
-            .hash_state(hasher);
     }
+    if let Some(shield) = &entity.seldom.shield {
+        b"phobos-shield-v1".hash(hasher);
+        shield.hash(hasher);
+    }
+    entity
+        .seldom.wh_anim_remaining_creation_interval
+        .hash_state(hasher);
     if entity.tracking_facts().naval_combatant() {
         // Retained across reload: later Remove_Tracking must use the same
         // Naval/Passengers admission as construction, even while in limbo.
@@ -463,7 +463,6 @@ pub(super) fn hash_entity_owed(
         entity.seldom.ares.ares_self_heal_combat.hash(hasher);
     }
     entity.hash_attach_effects(hasher);
-    #[cfg(feature = "phobos")]
     entity.hash_phobos_attach_effects(hasher);
     // Infantry gameplay reads its class-owned Doing/Stage fields.
     // A restored presentation component is not a second state owner.
@@ -847,14 +846,6 @@ pub(super) fn hash_entity_owed(
         // stream unchanged until a receiver actually stores 1.
         if infantry.cell_entry_blocked() {
             0x36DC_u32.hash(hasher);
-        }
-        // Firestorm 2.0 Infantry+0x370, the web timer's end frame: tagged
-        // once a Webby warhead has set it, so streams without webs stay
-        // unchanged.
-        let web_end = entity.web_end();
-        if web_end != 0 {
-            0x5745_4253_u32.hash(hasher);
-            web_end.hash(hasher);
         }
     } else {
         0u8.hash(hasher);

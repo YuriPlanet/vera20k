@@ -66,7 +66,6 @@ impl Fixture {
 /// `Parser<BYTE,3>` rejects (two channels, or one above 255), like an unknown
 /// techno, leaves `[AudioVisual]`'s value. `AirstrikeLineZAdjust` is read from
 /// `[AudioVisual]` too.
-#[cfg(feature = "phobos")]
 #[test]
 fn airstrike_line_color_resolves_from_the_owner_type_then_the_global() {
     use crate::rules::ini_parser::IniFile;
@@ -752,14 +751,12 @@ fn designation_coordinates_follow_the_existing_sortie_target_through_departure_a
     );
     // Phobos `DEFINE_JUMP(LJMP, 0x6D481D, 0x6D482D)` lets the flare reach a
     // foot target; the vanilla Tactical beam only draws to a building.
-    #[cfg(not(feature = "phobos"))]
     assert!(
         f.sim
             .airstrike_designation_coordinates(f.boris, &f.rules)
             .is_none(),
         "nonbuilding manager target has no Tactical beam"
     );
-    #[cfg(feature = "phobos")]
     assert_eq!(
         f.sim
             .airstrike_designation_coordinates(f.boris, &f.rules)

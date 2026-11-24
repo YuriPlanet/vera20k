@@ -5,7 +5,6 @@ use super::*;
 
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn gsi_04_07_damage_prior_projectile_fatal_death_weapon_is_inline() {
     fn run(victim_hp: i32, explodes: bool) -> (CombatTickResult, OverlayGrid, EntityStore, u64) {
@@ -910,7 +909,6 @@ fn gsi_04_11_death_weapon_anim_precedes_outer_detonation_anim() {
 /// draws no cluster successor (`0x0070D782` calls DetonateAtCoord directly).
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn an_inviso_death_weapon_scatters_its_anim_inside_the_receiver() {
     let mut rules = RuleSet::from_ini(&IniFile::from_str(

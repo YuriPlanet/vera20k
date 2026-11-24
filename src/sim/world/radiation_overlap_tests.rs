@@ -108,7 +108,6 @@ fn create_overlap(rules: &RuleSet, count: usize, dog_cell: (u16, u16)) -> (Simul
 /// once, then converts/scales it for one direct receiver call. The native
 /// two-site boundary here emits 11 damage; scaling the two sites separately
 /// loses a point. Both fields come from real deployed DESO Guard/Bullet AI.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn overlapping_stock_fields_apply_one_combined_damage_packet() {
     let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
@@ -139,7 +138,6 @@ fn overlapping_stock_fields_apply_one_combined_damage_packet() {
 /// RadSiteClass::Load @ 0x0065B3F7..0x0065B40F retains the saved field
 /// and source but restarts both decay clocks with duration zero. The first
 /// ordinary resumed frame must therefore apply a level and light step.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn saved_deso_fields_decay_on_the_first_resumed_frame() {
     let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
@@ -214,7 +212,6 @@ fn saved_deso_fields_decay_on_the_first_resumed_frame() {
 }
 
 #[test]
-#[cfg(not(feature = "phobos"))]
 fn stock_dog_survives_first_pulse_from_three_real_deso_fields() {
     let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;

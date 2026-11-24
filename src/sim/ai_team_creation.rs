@@ -36,6 +36,7 @@
 //! that TeamTypeClass::Can_Recruit admits (the membership owner). The later
 //! TeamClass recruitment, script execution and cleanup keep their existing owners.
 
+use crate::rules::ini_value::PhobosDynamicTeamDelayType;
 use crate::sim::world::FrameEffects;
 use std::hash::{Hash, Hasher};
 
@@ -55,7 +56,7 @@ use crate::sim::superweapon::{super_nearly_ready, super_types_with_type};
 use crate::sim::team_script_vm::{
     TeamAiTriggerDefinition, TeamAiTriggerOwner, TeamMemberTypeIdentity, TeamTypeDefinition,
 };
-use crate::sim::timer::CdTimer;
+use crate::sim::timer::{CdTimer, PAUSED_START_FRAME};
 use crate::sim::world::Simulation;
 use crate::util::native_x87::MaskedX87Chop53;
 
@@ -73,6 +74,10 @@ pub struct HouseTeamCreation {
     /// `HouseClass+0x565C`, the percent chance a pass picks an AI trigger:
     /// constructor 100 (`0x004F5BDD`), followed by the map's exact-key read.
     ratio: i32,
+    /// Phobos `HouseExt::TeamDelay`: fixed delay written by TAction 610, or
+    /// `-1` to fall back to the difficulty / dynamic delay path
+    /// (`Ext/House/Body.h:76,114`, save `Ext/House/Body.cpp:711`).
+    team_delay: i32,
 }
 
 impl Default for HouseTeamCreation {
@@ -80,6 +85,7 @@ impl Default for HouseTeamCreation {
         Self {
             timer: CdTimer::started(0, 1),
             ratio: 100,
+            team_delay: -1,
         }
     }
 }
@@ -102,6 +108,35 @@ impl HouseTeamCreation {
         self.timer.start(frame, delay);
     }
 
+    /// `HouseExt::TeamDelay` override read by
+    /// `HouseClass_Update_ResetTeamDelay` (`Ext/House/Hooks.cpp:606-613`).
+    pub(crate) const fn team_delay(&self) -> i32 {
+        self.team_delay
+    }
+
+    /// `TActionExt::SetTeamDelay` (`Ext/TAction/Body.cpp:759-778`, action
+    /// 610): store the signed `Param3`, then cap the current timer at
+    /// `Param3`, or at the difficulty's `[General] TeamDelays` row when the
+    /// value is negative. A paused timer with a non-zero remainder writes the
+    /// shorter remainder back; a running timer restarts from `frame`.
+    pub(crate) fn set_team_delay_action(&mut self, frame: i32, value: i32, stock_delay: i32) {
+        self.team_delay = value;
+        let timer = if value < 0 { stock_delay } else { value };
+        let time = self.timer.remaining(frame).min(timer);
+        if self.timer.start_frame() == PAUSED_START_FRAME && self.timer.duration() != 0 && time > 0
+        {
+            self.timer = CdTimer::from_raw(PAUSED_START_FRAME, time);
+        } else if self.timer.start_frame() != PAUSED_START_FRAME {
+            self.timer.start(frame, time);
+        }
+    }
+
+    /// Test seam for the paused-timer branch of `SetTeamDelay`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_team_timer_for_test(&mut self, timer: CdTimer) {
+        self.timer = timer;
+    }
+
     /// Fold the timer and the ratio, each tagged and only off its
     /// constructor value, so a house that never ran team creation hashes as
     /// earlier schemas.
@@ -115,6 +150,10 @@ impl HouseTeamCreation {
             b"house-ai-trigger-ratio-v1".hash(hasher);
             self.ratio.hash(hasher);
         }
+        if self.team_delay != constructed.team_delay {
+            b"house-team-delay-override-v1".hash(hasher);
+            self.team_delay.hash(hasher);
+        }
     }
 
     pub const fn timer(&self) -> CdTimer {
@@ -124,6 +163,84 @@ impl HouseTeamCreation {
     pub const fn ratio(&self) -> i32 {
         self.ratio
     }
+}
+
+/// `HouseClass_Update_ResetTeamDelay @ 0x004F8ACC`: the delay Phobos' dynamic
+/// `[General] TeamDelays.DynamicType=` selects for `owner`, or `None` when the
+/// stock `[General] TeamDelays=` path keeps ownership.
+///
+/// Native starts from `ScenarioClass::NumberStartingPoints`, requires at least
+/// two and a non-campaign session, and for every type except `StartingPoint`
+/// recounts the House array: `Alive*` skips `Defeated`, every type skips
+/// observers and neutral houses, `Allies*` keeps `pThis != pHouse` allies and
+/// `Enemies*` keeps non-allies. A count outside `1..=8` or a non-positive
+/// X/Y/Z row returns to the stock path. The house's difficulty selects X, Y or
+/// Z from `TeamDelays.Count<count>` (`Ext/Rules/Body.cpp:606-613`).
+fn dynamic_team_delay(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Option<i32> {
+    let house = sim.houses.get(&owner)?;
+    // `Ext/House/Hooks.cpp:606-613`: a fixed `TeamDelay` answers before the
+    // dynamic type and before the campaign / start-count gates.
+    if house.team_creation().team_delay() >= 0 {
+        return Some(house.team_creation().team_delay());
+    }
+    if sim.session.uses_campaign_world() {
+        return None;
+    }
+    let kind = rules.phobos_globals.team_delays_dynamic_type;
+    if kind == PhobosDynamicTeamDelayType::None {
+        return None;
+    }
+    let starting_points = sim.session.multiplayer_start_count();
+    if starting_points < 2 {
+        return None;
+    }
+
+    let count = if kind == PhobosDynamicTeamDelayType::StartingPoint {
+        starting_points
+    } else {
+        let check_alive = matches!(
+            kind,
+            PhobosDynamicTeamDelayType::AliveCount
+                | PhobosDynamicTeamDelayType::AliveAllies
+                | PhobosDynamicTeamDelayType::AliveEnemies
+        );
+        let check_allies = matches!(
+            kind,
+            PhobosDynamicTeamDelayType::Allies | PhobosDynamicTeamDelayType::AliveAllies
+        );
+        let check_enemies = matches!(
+            kind,
+            PhobosDynamicTeamDelayType::Enemies | PhobosDynamicTeamDelayType::AliveEnemies
+        );
+        let mut count = 0i32;
+        for (&id, candidate) in sim.houses.iter() {
+            if check_alive && candidate.is_defeated() {
+                continue;
+            }
+            // VERA has no separate `IsNeutral` flag; `MultiplayPassive=` is the
+            // house-level marker it shares with Neutral and Special.
+            if sim.session.is_observer_house(id) || candidate.multiplay_passive() {
+                continue;
+            }
+            let allied = sim.house_alliances.is_allied(&sim.interner, owner, id);
+            if check_allies && (id == owner || !allied) {
+                continue;
+            }
+            if check_enemies && allied {
+                continue;
+            }
+            count += 1;
+        }
+        count
+    };
+    if !(1..=8).contains(&count) {
+        return None;
+    }
+
+    let delay = house.difficulty_value(
+        &rules.phobos_globals.team_delays_count[usize::try_from(count - 1).ok()?],
+    );
+    (delay > 0).then_some(delay)
 }
 
 /// The team block of `HouseClass::Update` for house `owner` (see the module
@@ -150,18 +267,24 @@ pub(crate) fn update_team_creation(
     for team_type in team_types {
         sim.create_team(team_type, Some(owner), rules);
     }
-    if let Some(house) = sim.houses.get_mut(&owner) {
+    let fallback = {
+        let Some(house) = sim.houses.get(&owner) else {
+            return;
+        };
         let delay = house.difficulty_value(&rules.general.team_delays);
         // A commander's `TeamDelayPercent=` re-paces every round after the
         // first. Reading it here instead of caching it on the house keeps the
         // personality in rules, where every client already agrees on it, and
         // leaves `HouseTeamCreation` unchanged (no save-schema bump).
-        let delay = house
+        house
             .personality()
             .and_then(|index| rules.personalities().get(index))
             .map_or(delay, |definition| {
                 crate::rules::personality::scale_team_delay(delay, definition.team_delay_percent)
-            });
+            })
+    };
+    let delay = dynamic_team_delay(sim, rules, owner).unwrap_or(fallback);
+    if let Some(house) = sim.houses.get_mut(&owner) {
         house.team_creation_mut().restart(frame, delay);
     }
 }

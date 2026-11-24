@@ -18,6 +18,11 @@ pub(crate) struct TurretSelection {
     current_weapon_number: i32,
     current_turret_index: i32,
     charge_turret_delay: i32,
+    /// Phobos `TechnoExt::ChargeTurretTimer` (`Ext/Techno/Body.h:42`): the
+    /// `ChargeTurret.Delays` charge timer, started at the FireAt rearm and
+    /// cleared once expired (`Ext/Techno/Hooks.cpp:241-244`).
+    #[serde(default)]
+    phobos_charge_turret_timer: Option<crate::sim::combat::rof::RearmTimer>,
 }
 
 impl TurretSelection {
@@ -27,6 +32,7 @@ impl TurretSelection {
             current_weapon_number: 0,
             current_turret_index: -1,
             charge_turret_delay: 0,
+            phobos_charge_turret_timer: None,
         }
     }
 }
@@ -81,6 +87,54 @@ impl GameEntity {
         self.seldom.rearm_timer.start(frame, duration);
     }
 
+    /// Phobos `SetChargeTurretDelay` (`Ext/Techno/Hooks.Firing.cpp:936-976`,
+    /// hooked at both FireAt rearm sites `0x6FE4A4`/`0x6FF29E`): the
+    /// just-fired burst shot's `ChargeTurret.Delays` item overrides the saved
+    /// `+2F8` denominator and starts the ext `ChargeTurretTimer`; the real
+    /// rearm timer keeps the native duration. `Burst > 1` indexes the shot
+    /// (`CurrentBurstIndex - 1`), clamped to the last item; an item `<= 0`
+    /// keeps the native value and starts nothing.
+    pub(crate) fn phobos_set_charge_turret_delay(
+        &mut self,
+        frame: i32,
+        burst_index: i32,
+        delays: &[i32],
+    ) {
+        if delays.is_empty() {
+            return;
+        }
+        let index = burst_index.clamp(0, delays.len() as i32 - 1) as usize;
+        let delay = delays[index];
+        if delay <= 0 {
+            return;
+        }
+        self.seldom.turret_selection.charge_turret_delay = delay;
+        let mut timer = crate::sim::combat::rof::RearmTimer::new(frame);
+        timer.start(frame, delay);
+        self.seldom.turret_selection.phobos_charge_turret_timer = Some(timer);
+    }
+
+    /// Phobos `AttachEffectClass::AI`'s charge-turret reader
+    /// (`New/Entity/AttachEffectClass.cpp:209-210`): while the
+    /// `ChargeTurretTimer` has never started and the last GetROF answered the
+    /// ordinary full-rearm arm, an `ROFMultiplier` also scales the saved `+2F8`
+    /// denominator, with the same C++ `static_cast<int>(value * multiplier)`
+    /// truncation the rearm timer beside it takes.
+    pub(crate) fn phobos_scale_charge_turret_delay(&mut self, multiplier: f64) {
+        if self
+            .seldom
+            .turret_selection
+            .phobos_charge_turret_timer
+            .is_some()
+            || !self.seldom.weapon_burst.last_rearm_was_full_delay()
+        {
+            return;
+        }
+        self.seldom.turret_selection.charge_turret_delay = crate::sim::attach_effect::scale_i32(
+            self.seldom.turret_selection.charge_turret_delay,
+            multiplier,
+        );
+    }
     /// Whether [`Self::update_charge_turret`] runs for `object`'s type: a
     /// charge turret with turrets, not a Gattling. Others keep their index.
     pub(crate) fn charges_turret(object: &ObjectType) -> bool {
@@ -95,11 +149,27 @@ impl GameEntity {
             return;
         }
         let rearm_remaining = self.seldom.rearm_timer.remaining(frame);
+        // Phobos `ChargeTurretTimer` (`Ext/Techno/Body.h:42`; read at
+        // `Ext/Techno/Hooks.cpp:241-244`): the `ChargeTurret.Delays` timer
+        // answers the turret progress while it runs, stops once expired and
+        // hands back to the rearm timer; without it the rearm timer answers.
+        let time_left = match self.seldom.turret_selection.phobos_charge_turret_timer {
+            Some(timer) => {
+                let remaining = timer.remaining(frame);
+                if remaining <= 0 {
+                    self.seldom.turret_selection.phobos_charge_turret_timer = None;
+                    rearm_remaining
+                } else {
+                    remaining
+                }
+            }
+            None => rearm_remaining,
+        };
         let selection = &self.seldom.turret_selection;
         let index = if selection.charge_turret_delay <= 0 {
             0
         } else {
-            (object.turret_count.wrapping_mul(rearm_remaining) / selection.charge_turret_delay)
+            (object.turret_count.wrapping_mul(time_left) / selection.charge_turret_delay)
                 .clamp(0, object.turret_count - 1)
         };
         // An unchanged index writes nothing.
@@ -114,6 +184,12 @@ impl GameEntity {
     pub(crate) fn set_gunner_selection_for_test(&mut self, weapon: i32, turret: i32) {
         self.seldom.turret_selection.current_weapon_number = weapon;
         self.seldom.turret_selection.current_turret_index = turret;
+    }
+
+    /// The saved `+0x2F8` charge denominator, for production-path tests.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn charge_turret_delay_for_test(&self) -> i32 {
+        self.seldom.turret_selection.charge_turret_delay
     }
 }
 

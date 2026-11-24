@@ -233,6 +233,9 @@ pub struct RetailRulesSources {
     /// The player's Kratos setting (`AssetManager::kratos_setting`), which
     /// every game this owner loads carries into `RuleSet::kratos`.
     kratos_setting: crate::util::kratos_launch::KratosSetting,
+    /// The selected mod declares `[Extensions] Phobos=yes`, so its games play
+    /// Phobos whatever keys their rules hold.
+    requires_phobos: bool,
 }
 
 impl RetailRulesSources {
@@ -271,6 +274,7 @@ impl RetailRulesSources {
             ships_ares,
             ares_keys_off: assets.ares_setting() == crate::util::ares_launch::AresSetting::Off,
             kratos_setting: assets.kratos_setting(),
+            requires_phobos: assets.requires_phobos(),
         })
     }
 
@@ -308,6 +312,7 @@ impl RetailRulesSources {
             self.ships_ares,
             self.ares_keys_off,
             self.kratos_setting,
+            self.requires_phobos,
         )
         .map_err(|error| format!("Native rules cold startup failed: {error}"))?;
         Ok(owner)
@@ -1216,7 +1221,7 @@ mod tests {
         );
         assert_eq!(
             rules.object("DEST").expect("retail DEST").weight,
-            SimFixed::lit("3")
+            SimFixed::lit("3.0")
         );
         assert_eq!(
             rules.general.direct_rocking_coefficient,

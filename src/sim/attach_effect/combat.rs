@@ -11,7 +11,6 @@ use super::{
     affects_house, can_attach_effect, paired, scale_i32,
 };
 
-#[cfg(feature = "phobos")]
 impl Simulation {
     /// Phobos `TechnoExt::CalculateArmorMultipliers` at the receiver hook
     /// (`0x00701966`, `hitAnim = true`): the cached unrestricted product, then
@@ -196,6 +195,7 @@ impl Simulation {
             event.distance_leptons,
             self.session.no_damage(),
             rules.combat_damage.max_damage,
+            warhead.apply_modifiers_on_negative_damage(rules),
         );
         if total < target.health.current() {
             return false;
@@ -240,7 +240,6 @@ impl Simulation {
     }
 }
 
-#[cfg(feature = "phobos")]
 impl Simulation {
     /// `WeaponTypeExt::HasRequiredAttachedEffects` (`src/Ext/WeaponType/Body.cpp:11`):
     /// a weapon carrying no AE list always allows the shot. Otherwise the
@@ -728,11 +727,14 @@ impl Simulation {
     /// Phobos `TechnoExt::ApplyRevengeWeapon` (`src/Ext/Techno/WeaponHelpers.cpp:254`):
     /// once a victim dies from a sourced hit, every active effect carrying
     /// `RevengeWeapon` fires that weapon at the attacker, under the effect's
-    /// house gate and invoker ownership.
+    /// house gate and invoker ownership. The killing warhead's
+    /// `SuppressRevengeWeapons=` stops every shot, or, with `.Types`, the
+    /// listed revenge weapons (`WeaponHelpers.cpp:281-282`).
     pub(crate) fn apply_attach_effect_revenge_weapons(
         &mut self,
         victim_id: u64,
         attacker_id: u64,
+        suppression: &crate::rules::phobos_revenge_weapon::SuppressRevengeWeaponsRules,
         rules: &crate::rules::ruleset::RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: &mut crate::sim::world::FrameEffects<'_>,
@@ -748,7 +750,10 @@ impl Simulation {
         let table = rules.attach_effect_types().types();
         let mut shots = Vec::new();
         for (instance, effect) in victim.phobos_attach_effects().active_effects(table) {
-            if effect.revenge_weapon.is_none() {
+            let Some(revenge_weapon) = effect.revenge_weapon.as_deref() else {
+                continue;
+            };
+            if suppression.suppresses(Some(revenge_weapon)) {
                 continue;
             }
             let Some(shot) = instance.revenge_weapon_shot(effect, victim_id, victim_owner) else {

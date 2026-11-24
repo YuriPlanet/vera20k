@@ -616,6 +616,10 @@ pub(crate) fn reinforcement_world(
         if let Some(letters) = definition["transport_waypoint_letters"].as_str() {
             definitions.push_str(&format!("TransportWaypoint={letters}\n"));
         }
+        // Phobos `ParaDropAircraft=` (Ext/TeamType/Body.cpp:15).
+        if let Some(name) = definition["para_drop_aircraft"].as_str() {
+            definitions.push_str(&format!("ParaDropAircraft={name}\n"));
+        }
         definitions.push_str(&format!("[{script}]\n"));
         if let Some(steps) = definition["script_steps"].as_array() {
             for (index, step) in steps.iter().enumerate() {
@@ -1254,6 +1258,61 @@ fn ares_droppod_reinforcement_carrier_is_the_countrys_paradrop_plane() {
         .find(|row| row["case_kind"] == "droppod_transport")
         .unwrap();
     let mut sim = reinforcement_world(&rules, &terrain_rules, &row["input"]);
+    let team_type = sim.interner.get("TT").unwrap();
+    assert!(
+        sim.spawn_team_reinforcements(
+            team_type,
+            -1,
+            &rules,
+            Some(&overlay),
+            &mut FrameEffects::default(),
+        )
+        .0
+    );
+    let planes: Vec<_> = sim
+        .entities()
+        .values()
+        .filter(|entity| entity.category() == EntityCategory::Aircraft)
+        .map(|entity| sim.interner.resolve(entity.type_ref()).to_owned())
+        .collect();
+    assert_eq!(planes, ["CARGOPLANE"]);
+}
+
+/// Phobos hook 0x65DBD0 (`Ext/TeamType/Hooks.cpp:9`): a TeamType's
+/// `ParaDropAircraft=` replaces the carrier `CreateInstance` builds, ahead of
+/// the house's country/side plane.
+#[test]
+fn phobos_para_drop_aircraft_replaces_the_reinforcement_carrier() {
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/team_paradrop_transport.json",
+    ))
+    .unwrap();
+    let Some((ini, art)) = retail_rules_and_art() else {
+        return;
+    };
+    let mut rules = RuleSet::from_ini(&ini).expect("retail rules");
+    rules.install_art_data(crate::rules::retail_ini_fixture::art_registry(&art));
+    let overlay = OverlayTypeRegistry::from_ini(&ini, Some(&art));
+    let terrain_rules = TerrainRules::from_ini(&ini);
+    let row = corpus
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["case_kind"] == "droppod_transport")
+        .unwrap();
+    let mut input = row["input"].clone();
+    if let Some(definitions) = input["definitions"].as_array().cloned() {
+        input["definitions"] = definitions
+            .into_iter()
+            .map(|mut definition| {
+                definition["para_drop_aircraft"] = "CARGOPLANE".into();
+                definition
+            })
+            .collect();
+    } else {
+        input["para_drop_aircraft"] = "CARGOPLANE".into();
+    }
+    let mut sim = reinforcement_world(&rules, &terrain_rules, &input);
     let team_type = sim.interner.get("TT").unwrap();
     assert!(
         sim.spawn_team_reinforcements(

@@ -128,7 +128,6 @@ impl crate::sim::world::Simulation {
     /// (`LifecycleOutput::ObjectSelected`). RESIDUAL: native flashes a logic
     /// Select inside the frame, before its Selected tag event; here the owner
     /// is read after the frame. Presentation only.
-    #[cfg(feature = "phobos")]
     pub fn flash_selected_for_current_player(
         &mut self,
         stable_ids: &[u64],

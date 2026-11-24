@@ -108,18 +108,62 @@ pub(super) fn emit_projectile_shrapnel(
             .ok()
             .zip(u16::try_from(center_ry).ok()),
     };
+    // Phobos `BulletClass_Shrapnel_Forced @ 0x46A3D6`
+    // (`Ext/Bullet/Hooks.cpp:252-282`) replaces the stock admission: an empty
+    // cell is admitted only when `Shrapnel.AffectsGround`, which falls back to
+    // the `[CombatDamage]` global. That global is a `Valueable<bool>` defaulting
+    // to `no` (`Ext/Rules/Body.h:464-465`), so an unset key keeps the stock
+    // refusal.
+    let affects_ground = {
+        {
+            parent_projectile
+                .shrapnel_affects_ground
+                .unwrap_or(rules.phobos_globals.shrapnel_affects_ground)
+        }
+    };
+    let affects_buildings = {
+        {
+            parent_projectile
+                .shrapnel_affects_buildings
+                .unwrap_or(rules.phobos_globals.shrapnel_affects_buildings)
+        }
+    };
+    // `Hooks.cpp:262-279`: a building head is admitted only under
+    // `Shrapnel.AffectsBuildings` and becomes the emission's
+    // `InitialTargetBuilding`, which the ring never targets again.
+    let mut initial_target_building = None;
     let admitted = match ground_head(world, bullet_cell) {
-        Some(crate::sim::occupancy::CellObjectMember::Entity(id)) => world
-            .substrate
-            .entities
-            .get(id)
-            .is_some_and(|object| object.category() != EntityCategory::Structure),
+        Some(crate::sim::occupancy::CellObjectMember::Entity(id)) => {
+            match world.substrate.entities.get(id) {
+                Some(object) if object.category() == EntityCategory::Structure => {
+                    initial_target_building = affects_buildings.then_some(id);
+                    affects_buildings
+                }
+                Some(_) => true,
+                None => false,
+            }
+        }
         Some(crate::sim::occupancy::CellObjectMember::Terrain(_)) => true,
-        None => false,
+        None => affects_ground,
     };
     if !admitted {
         return;
     }
+    let ignore_hit_buildings = {
+        {
+            parent_projectile
+                .shrapnel_ignore_hit_buildings
+                .unwrap_or(rules.phobos_globals.shrapnel_ignore_hit_buildings)
+        }
+    };
+    // `Hooks.cpp:260,348-349`: one emission's previously hit buildings.
+    let mut targets_to_ignore: Vec<u64> = Vec::new();
+    // `Hooks.cpp:309`: replaces the stock alliance test with the shrapnel
+    // weapon's own targeting admission.
+    let use_weapon_targeting = parent_projectile
+        .shrapnel_use_weapon_targeting
+        .unwrap_or(rules.phobos_globals.shrapnel_use_weapon_targeting);
+    let child_warhead = rules.warhead(child_warhead_name);
 
     let construct = |world: &mut Simulation,
                      target: ProjectileTarget,
@@ -230,7 +274,6 @@ pub(super) fn emit_projectile_shrapnel(
                 explodes_airburst: Some(child_projectile.airburst_arm()),
                 inaccurate: child_projectile.inaccurate,
                 floater: child_projectile.floater,
-                #[cfg(feature = "phobos")]
                 gravity: child_projectile.gravity(),
                 elasticity_bits: child_projectile.elasticity.to_bits(),
                 arcing: child_projectile.arcing,
@@ -257,6 +300,7 @@ pub(super) fn emit_projectile_shrapnel(
                 0,
                 child_weapon,
                 Some(location),
+                true,
             );
         }
         if child_weapon.is_electric_bolt {
@@ -275,6 +319,7 @@ pub(super) fn emit_projectile_shrapnel(
                 child_weapon,
                 location,
                 None,
+                false,
             );
         }
     };
@@ -307,12 +352,45 @@ pub(super) fn emit_projectile_shrapnel(
                 let Some(target) = world.substrate.entities.get(id) else {
                     continue;
                 };
-                if source_owner.is_some_and(|owner| {
-                    world
-                        .house_alliances
-                        .is_allied(&world.interner, owner, target.owner())
-                }) {
+                let is_building = target.category() == EntityCategory::Structure;
+                if is_building {
+                    // `Hooks.cpp:297-305`: never the emission's own building
+                    // head, and not a building another child already hit when
+                    // `Shrapnel.IgnoreHitBuildings` is on.
+                    if Some(id) == initial_target_building {
+                        continue;
+                    }
+                    if ignore_hit_buildings && targets_to_ignore.contains(&id) {
+                        continue;
+                    }
+                }
+                let admitted = if use_weapon_targeting {
+                    source_owner.is_some_and(|owner| {
+                        child_warhead.is_some_and(|warhead| {
+                            super::phobos_airburst::weapon_picking_allows(
+                                world,
+                                rules,
+                                detonation.source_id,
+                                owner,
+                                child_weapon,
+                                warhead,
+                                id,
+                            )
+                        })
+                    })
+                } else {
+                    !source_owner.is_some_and(|owner| {
+                        world
+                            .house_alliances
+                            .is_allied(&world.interner, owner, target.owner())
+                    })
+                };
+                if !admitted {
                     continue;
+                }
+                // `Hooks.cpp:348-349`: record after every other test passed.
+                if is_building && ignore_hit_buildings {
+                    targets_to_ignore.push(id);
                 }
                 ProjectileTarget::Entity(id)
             }

@@ -575,9 +575,7 @@ impl Simulation {
         };
         let notify_house = match entity.category() {
             EntityCategory::Unit if object.harvester => false,
-            EntityCategory::Structure
-                if !object.insignificant && !object.is_1x1_with_undeploy() =>
-            {
+            EntityCategory::Structure if !object.insignificant && !object.is_vehicle() => {
                 // HouseNotify owns the deployed-miner subtype.
                 true
             }
@@ -699,12 +697,30 @@ impl Simulation {
                 [victim.x, victim.y, victim.z],
                 [owner.x, owner.y, owner.z],
             );
-            if distance
-                > rules
-                    .combat_damage
-                    .open_topped_warp_distance
-                    .wrapping_mul(256)
-            {
+            // Phobos `TemporalClass_AI_Opentopped_WarpDistance @ 0x71A82C`
+            // (`Ext/Techno/Hooks.Transport.cpp:185-197`): a passenger with a
+            // Transporter gets the carrier type's `Nullable<int>
+            // OpenTopped.WarpDistance` in cells (`EDX`), else the YR
+            // `[CombatDamage] OpenToppedWarpDistance` global. Keep the
+            // signed `i32.wrapping_mul(256)` overflow semantics.
+            let warp_distance = {
+                {
+                    self.substrate
+                        .entities
+                        .get(head)
+                        .and_then(|passenger| {
+                            crate::sim::attach_effect::open_topped_transport_type(
+                                passenger,
+                                &self.substrate.entities,
+                                rules,
+                                &self.interner,
+                            )
+                        })
+                        .map(|kind| kind.phobos_open_topped().warp_distance(rules))
+                        .unwrap_or(rules.combat_damage.open_topped_warp_distance)
+                }
+            };
+            if distance > warp_distance.wrapping_mul(256) {
                 Self::temporal_let_go(
                     &mut self.substrate,
                     &mut self.houses,
@@ -728,12 +744,19 @@ impl Simulation {
         let chain = link
             .next
             .map_or(0, |next| self.temporal_chain_damage(next, 1, rules));
-        let damage = self.temporal_owner_damage(head, rules);
+        let damage = self.temporal_warp_per_step(head, rules);
         let remaining = link.warp_remaining.wrapping_sub(damage.wrapping_add(chain));
         if let Some(stored) = self.substrate.temporal_link_mut(head) {
             stored.warp_remaining = remaining;
         }
         if remaining > 0 {
+            // Phobos `TemporalClass_AI @ 0x71A88D` -> `TechnoExt::UpdateTemporal`
+            // -> `UpdateRearmInTemporal` (`Ext/Techno/Body.Update.cpp:863,
+            // 882-895`): the held target's timers freeze while the warp runs.
+            // The <= 0 path erases the target, whose timers then cease.
+            if let Some(target) = link.target {
+                self.update_rearm_in_temporal(target, rules);
+            }
             return;
         }
         self.temporal_erase(head, link.target, rules, registry, effects);
@@ -741,14 +764,14 @@ impl Simulation {
 
     /// `SumChainDamage @ 0x0071AB10`: this attacker's damage plus the chain
     /// below it, recursing while the depth is at most [`CHAIN_DEPTH_LIMIT`].
-    fn temporal_chain_damage(&self, attacker: u64, depth: i32, rules: &RuleSet) -> i32 {
+    fn temporal_chain_damage(&mut self, attacker: u64, depth: i32, rules: &RuleSet) -> i32 {
         let rest = match Self::temporal_link(&self.substrate, attacker).and_then(|link| link.next) {
             Some(next) if depth <= CHAIN_DEPTH_LIMIT => {
                 self.temporal_chain_damage(next, depth.wrapping_add(1), rules)
             }
             _ => 0,
         };
-        self.temporal_owner_damage(attacker, rules)
+        self.temporal_warp_per_step(attacker, rules)
             .wrapping_add(rest)
     }
 
@@ -791,6 +814,137 @@ impl Simulation {
         .map_or(0, |weapon| weapon.damage)
     }
 
+    /// Phobos `WarpPerStep::TemporalClassFake::_GetWarpPerStep`
+    /// (`Ext/Techno/Hooks.cpp:2338-2392`, LJMP `0x71AB10` replaces
+    /// `GetWarpPerStep`/`SumChainDamage`): each chain member's per-step warp
+    /// starts at its weapon's raw `Damage=`, which the member's warhead
+    /// `Temporal.ApplyMultiplier` / `.ApplyVersus` (type keys over the
+    /// `[CombatDamage]` globals, both default `false`) may extend —
+    /// `Multiplier` rescales by the attacker's firepower multiplier and
+    /// divides by the target's armor multiplier; `Versus` multiplies the
+    /// deployed (`Damage.Deployed=`) or crawling (`ProneDamage=`) factor and
+    /// folds the packet through the Verses kernel with distance `0`. The
+    /// final `(int)` truncates. With both keys off this is the vanilla bare
+    /// damage.
+    fn temporal_warp_per_step(&mut self, attacker: u64, rules: &RuleSet) -> i32 {
+        let mut warp = self.temporal_owner_damage(attacker, rules);
+        {
+            let Some(entity) = self.substrate.entities.get(attacker) else {
+                return warp;
+            };
+            let warhead_name = (|| {
+                let object = self.object_type(entity.type_ref(), rules)?;
+                let facts = crate::sim::combat::combat_weapon::attacker_facts(entity, object);
+                let index = crate::sim::combat::combat_weapon::what_weapon_should_i_use(
+                    rules,
+                    object,
+                    &facts,
+                    None,
+                    |index| {
+                        crate::sim::combat::combat_weapon::get_weapon(
+                            entity,
+                            object,
+                            index,
+                            &self.substrate.entities,
+                            rules,
+                            &self.interner,
+                        )
+                    },
+                );
+                crate::sim::combat::combat_weapon::get_weapon(
+                    entity,
+                    object,
+                    index,
+                    &self.substrate.entities,
+                    rules,
+                    &self.interner,
+                )
+                .and_then(|weapon| weapon.warhead.clone())
+            })();
+            // Phobos wraps every extension in `if (const auto pWarhead = ...)`:
+            // a weapon with no resolved warhead takes the raw damage whatever
+            // the globals say.
+            let Some(warhead_name) = warhead_name else {
+                return warp;
+            };
+            let Some(warhead) = rules.warhead(&warhead_name) else {
+                return warp;
+            };
+            let apply_multiplier = warhead
+                .phobos_temporal_apply_multiplier
+                .unwrap_or(rules.phobos_globals.temporal_apply_multiplier);
+            let apply_versus = warhead
+                .phobos_temporal_apply_versus
+                .unwrap_or(rules.phobos_globals.temporal_apply_versus);
+            if !apply_multiplier && !apply_versus {
+                return warp;
+            }
+            if apply_multiplier && let Some(entity) = self.substrate.entities.get(attacker) {
+                warp = (f64::from(warp)
+                    * crate::sim::combat::crit::current_firepower_multiplier(self, rules, entity))
+                    as i32;
+            }
+            // `pTarget && warpPerStep > 0`: the armor division, the
+            // deployed/prone factor, the Verses kernel and the final truncating
+            // product all need a live target and a positive (already
+            // firepower-scaled) step.
+            let target =
+                Self::temporal_link(&self.substrate, attacker).and_then(|link| link.target);
+            if let Some(target) = target
+                && warp > 0
+            {
+                let mut multiplier = 1.0_f64;
+                if apply_multiplier {
+                    let warhead_id = self.interner.intern(&warhead_name);
+                    multiplier /= self.attach_effect_armor_multiplier(
+                        target,
+                        Some(warhead_id),
+                        self.substrate
+                            .entities
+                            .get(attacker)
+                            .map(|attacker| attacker.owner()),
+                        rules,
+                    );
+                }
+                if apply_versus {
+                    if let Some(target_entity) = self.substrate.entities.get(target)
+                        && target_entity.category()
+                            == crate::map::entities::EntityCategory::Infantry
+                    {
+                        // `Damage.Deployed=` is the Ares warhead key; a
+                        // phobos-only build carries no Ares combat rules and
+                        // takes 1.0 (recorded residual).
+                        let deployed = warhead
+                            .ares_combat()
+                            .map(|combat| combat.deployed_damage().bits())
+                            .map(f64::from_bits);
+                        if target_entity.is_deployed() {
+                            multiplier *= f64::from(deployed.unwrap_or(1.0));
+                        } else if crate::sim::infantry::is_prone_for_damage(target_entity) {
+                            multiplier *= warhead.prone_damage_f64;
+                        }
+                    }
+                    if let Some(target_entity) = self.substrate.entities.get(target)
+                        && let Some(target_object) = self.entity_object_type(target_entity, rules)
+                    {
+                        warp = crate::sim::combat::damage::kernel::apply_warhead_damage(
+                            warp,
+                            warhead.cell_spread_f64,
+                            warhead.percent_at_max_f64,
+                            warhead.interaction(target_object.armor_id()).multiplier(),
+                            0,
+                            self.session.no_damage(),
+                            rules.combat_damage.max_damage,
+                            warhead.apply_modifiers_on_negative_damage(rules),
+                        );
+                    }
+                }
+                warp = (f64::from(warp) * multiplier) as i32;
+            }
+        }
+        warp
+    }
+
     /// `TechnoClass+0x82` InOpenTransport: inside an `OpenTopped=` transport.
     fn in_open_transport(&self, attacker: u64) -> bool {
         self.substrate
@@ -828,15 +982,46 @@ impl Simulation {
         } else {
             None
         };
-        let warp_away = match warp_combat {
-            Some(combat) => combat.temporal_warp_away(&rules.general.warp_away.name),
-            None => Some(rules.general.warp_away.name.as_str()),
+        let warp_away: Option<String> = match warp_combat {
+            Some(combat) => combat
+                .temporal_warp_away(&rules.general.warp_away.name)
+                .map(str::to_owned),
+            None => Some(rules.general.warp_away.name.clone()),
+        };
+        // Phobos TechnoType `WarpAway=` (hook `0x71A8BD`,
+        // `Ext/Techno/Hooks.cpp:1476-1490`): a non-empty list replaces the
+        // native single anim with
+        // `AnimExt::CreateRandomAnim(list, location, nullptr, pTarget->Owner)`,
+        // so the erase anim carries the target's house.
+        let phobos_warp_away = if rules.phobos() {
+            self.substrate
+                .entities
+                .get(target)
+                .and_then(|entity| {
+                    self.entity_object_type(entity, rules)
+                        .map(|object| (entity.owner(), object.phobos_warp_away.clone()))
+                })
+                .filter(|(_, list)| !list.is_empty())
+                .and_then(|(owner, list)| {
+                    let name = self.resolve_random_anim_name(rules, &list)?.to_owned();
+                    let location = self.substrate.entities.get(target).map(location_coord)?;
+                    let type_name = self.interner.intern(&name);
+                    self.spawn_owned_anim(rules, type_name, location, owner, None, None);
+                    Some(())
+                })
+        } else {
+            None
+        };
+        let warp_away = if phobos_warp_away.is_some() {
+            None
+        } else {
+            warp_away
         };
         if let Some(entity) = self.substrate.entities.get(target)
             && let Some(warp_away) = warp_away
         {
             let location = location_coord(entity);
-            self.spawn_once_anim(warp_away, location, None, rules);
+            self.spawn_once_anim(&warp_away, location, None, rules);
         }
         // 0x0071A917..0x0071A978: a Trainable attacker gains
         // `VeterancyStruct::Add(ownerCost, targetCost)` here, and again in
@@ -1524,16 +1709,17 @@ impl Simulation {
         true
     }
 
-    /// A Foot's `ChronoSparkle1=` every 24th frame while BeingWarpedOut or
-    /// WarpingIn (`+0x270 || +0x271`): 0x78 leptons east and south of a Unit's
-    /// or an infantryman's Location, at an Aircraft's own Location (its
-    /// constructor row copies the Location unshifted, `0x00414C38..0x00414C60`).
+    /// A Foot's `ChronoSparkle1=` every `ChronoSparkleDisplayDelay` frames
+    /// (stock 24) while BeingWarpedOut or WarpingIn (`+0x270 || +0x271`): 0x78
+    /// leptons east and south of a Unit's or an infantryman's Location, at an
+    /// Aircraft's own Location (its constructor row copies the Location
+    /// unshifted, `0x00414C38..0x00414C60`).
     fn warp_foot_sparkle(&mut self, id: u64, rules: &RuleSet) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
         if !(entity.is_warped_out() || entity.is_warping_in())
-            || !sparkle_frame(self.session.binary_frame(), 0)
+            || !sparkle_frame(self.session.binary_frame(), 0, sparkle_delay(rules))
         {
             return;
         }
@@ -1551,11 +1737,14 @@ impl Simulation {
         self.spawn_once_anim(&rules.general.chrono_sparkle1.name, coord, None, rules);
     }
 
-    /// A frozen building's sparkle (`0x004403D4..0x0044055D`): a type with
-    /// `MaxNumberOccupants=` sparkles at each port `i` on frames where
-    /// `(frame + i) % 24 == 0`, at its `vtable+0xAC` coordinate plus
-    /// `IsometricPixelToWorld(MuzzleFlash<i>)` with ZAdjust -200; any other
-    /// building sparkles at its Location every 24th frame.
+    /// A frozen building's sparkle (`0x004403D4..0x0044055D`) under Phobos
+    /// `ChronoSparkleBuildingDisplayPositions`: with `OccupantSlots` (the
+    /// stock behaviour) each port `i` of a type with `MaxNumberOccupants=`
+    /// sparkles when `(frame + i) % delay == 0`, at its foundation centre plus
+    /// `IsometricPixelToWorld(MuzzleFlash<i>)` with ZAdjust -200; with
+    /// `Occupants` it instead walks the present occupants; with `Building`
+    /// (or when no port sparkles) the building itself sparkles every delay
+    /// frames at its `GetCenterCoords`.
     fn temporal_building_sparkle(&mut self, id: u64, rules: &RuleSet) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -1564,22 +1753,57 @@ impl Simulation {
             return;
         };
         let frame = self.session.binary_frame();
-        let location = location_coord(entity);
         let name = &rules.general.chrono_sparkle1.name;
-        let ports = object.max_number_occupants;
-        if ports == 0 {
-            if sparkle_frame(frame, 0) {
-                self.spawn_once_anim(name, location, None, rules);
+        let delay = sparkle_delay(rules);
+        let (on_building, on_slots, on_occupants) = {
+            let positions = rules
+                .phobos_globals
+                .chrono_sparkle_building_display_positions;
+            (
+                positions
+                    .contains(crate::rules::phobos_globals::ChronoSparkleDisplayPosition::BUILDING),
+                positions.contains(
+                    crate::rules::phobos_globals::ChronoSparkleDisplayPosition::OCCUPANT_SLOTS,
+                ),
+                positions.contains(
+                    crate::rules::phobos_globals::ChronoSparkleDisplayPosition::OCCUPANTS,
+                ),
+            )
+        };
+        let occupant_count = if on_slots {
+            i32::try_from(object.max_number_occupants).unwrap_or(i32::MAX)
+        } else if on_occupants {
+            i32::try_from(entity.passenger_role.occupants().count()).unwrap_or(i32::MAX)
+        } else {
+            0
+        };
+        let show_occupy = occupant_count > 0 && (on_occupants || on_slots);
+        // The building sparkle sits at `GetCenterCoords` (`0x004404CF`).
+        let center = crate::sim::movement::ground_pose::object_get_coords(
+            entity,
+            self.resolved_terrain.as_ref(),
+        );
+        if show_occupy {
+            for port in 0..occupant_count {
+                if !sparkle_frame(frame, port as u32, delay) {
+                    continue;
+                }
+                if let Some(coord) = self.occupant_port_coord(id, port as usize, rules) {
+                    self.spawn_once_anim(name, coord, Some(PORT_ANIM_Z_ADJUST), rules);
+                }
             }
-            return;
         }
-        for port in 0..ports {
-            if !sparkle_frame(frame, port) {
-                continue;
-            }
-            if let Some(coord) = self.occupant_port_coord(id, port as usize, rules) {
-                self.spawn_once_anim(name, coord, Some(PORT_ANIM_Z_ADJUST), rules);
-            }
+        if (!show_occupy || on_building) && sparkle_frame(frame, 0, delay) {
+            self.spawn_once_anim(
+                name,
+                AnimWorldCoord {
+                    x: center.x,
+                    y: center.y,
+                    z: center.z,
+                },
+                None,
+                rules,
+            );
         }
     }
 
@@ -1700,8 +1924,15 @@ fn take_idle_trace() -> Vec<u64> {
 }
 
 /// `(frame + phase) % 24 == 0` under the native signed IDIV.
-fn sparkle_frame(frame: u32, phase: u32) -> bool {
-    (frame as i32).wrapping_add(phase as i32) % SPARKLE_PERIOD_FRAMES == 0
+fn sparkle_delay(rules: &RuleSet) -> i32 {
+    let delay = rules.phobos_globals.chrono_sparkle_display_delay;
+    // Native divides by this; a configured 0 would fault, so keep a positive
+    // divisor (retail leaves it at the constructor's 24).
+    delay.max(1)
+}
+
+fn sparkle_frame(frame: u32, phase: u32, delay: i32) -> bool {
+    (frame as i32).wrapping_add(phase as i32) % delay == 0
 }
 
 /// `ObjectClass+0x9C` Location, the coordinate WarpAway and the sparkle use.

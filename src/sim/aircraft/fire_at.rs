@@ -10,7 +10,10 @@
 //!   (`+0xAC`, `+0x2DC`; [`AircraftBulletCourse`]): ROT 0 flies level along
 //!   SecondaryFacing (`+0x3A0`) at the Locomotor's Apparent_Speed, ROT 1 at
 //!   the target at weapon 0's `Speed=` (`GetWeapon(0)`, whatever slot
-//!   fired), any other ROT keeps FireAt's velocity. In retail rules the
+//!   fired), any other ROT keeps FireAt's velocity. Phobos
+//!   `AircraftClass_FireAt_Vertical` (`0x415F25`) skips both ROT arms for a
+//!   parachuted bullet or a `Vertical=` one whose `Vertical.AircraftFix` is
+//!   on, keeping FireAt's velocity. In retail rules the
 //!   Black Eagle's, Harrier's and Boris MiG's missiles are ROT 100; the
 //!   Hornet's bomb (`NormalBomb`) and the Osprey's depth charge
 //!   (`DepthCharge`) are ROT 1, where FireAt alone would launch them at
@@ -77,11 +80,25 @@ pub(crate) struct AircraftShot {
     rot: i32,
     /// `+0xE8`.
     velocity: ProjectileVelocity,
+    /// Phobos `AircraftClass_FireAt_Vertical` (`0x415F25`,
+    /// `Misc/Hooks.BugFixes.cpp:2423`): `HasParachute || (Vertical &&
+    /// Vertical.AircraftFix.Get(global))` skips the ROT course block
+    /// (`0x415F25..0x41631F`) and keeps FireAt's velocity.
+    keeps_velocity: bool,
 }
 
 impl AircraftShot {
     pub(crate) fn new(rot: i32, velocity: ProjectileVelocity) -> Self {
-        Self { rot, velocity }
+        Self {
+            rot,
+            velocity,
+            keeps_velocity: false,
+        }
+    }
+
+    pub(crate) fn keeping_velocity(mut self, keeps_velocity: bool) -> Self {
+        self.keeps_velocity = keeps_velocity;
+        self
     }
 }
 
@@ -89,6 +106,14 @@ impl AircraftShot {
 pub(crate) trait FireAtHost {
     /// `+0x118`: the aircraft carries a first passenger.
     fn carries_passenger(&mut self) -> bool;
+    /// Phobos `AircraftClass_Fire_KickOutPassengers` (`0x415EEE`,
+    /// `Ext/Aircraft/Hooks.cpp:455-474`): with a passenger aboard, the drop
+    /// arm runs only when the firing weapon's `KickOutPassengers`, else
+    /// `[General] AircraftWeapon.KickOutPassengers=`, is yes. A null weapon
+    /// keeps the stock drop (`SkipKickOutPassengers = 0x415F08` then fires).
+    fn kick_out_passengers(&mut self) -> bool {
+        true
+    }
     /// `AircraftClass::Drop_Payload @ 0x00415C60`.
     fn drop_payload(&mut self);
     /// `TechnoClass::FireAt @ 0x006FDD50` with Fire_At's target and weapon.
@@ -123,22 +148,26 @@ pub(crate) trait FireAtHost {
 
 /// `AircraftClass::Fire_At @ 0x00415EE0`: see the module doc.
 pub(crate) fn fire_at(host: &mut impl FireAtHost) {
-    if host.carries_passenger() {
+    if host.carries_passenger() && host.kick_out_passengers() {
         host.drop_payload();
         return;
     }
     if let Some(shot) = host.techno_fire_at() {
-        let course = match shot.rot {
-            0 => Some(AircraftBulletCourse::Level {
-                apparent_speed: host.apparent_speed(),
-                facing: host.facing(),
-            }),
-            1 => Some(AircraftBulletCourse::AtTarget {
-                from: host.coords(),
-                to: host.target_coords(),
-                speed: host.weapon0_speed(),
-            }),
-            _ => None,
+        let course = if shot.keeps_velocity {
+            None
+        } else {
+            match shot.rot {
+                0 => Some(AircraftBulletCourse::Level {
+                    apparent_speed: host.apparent_speed(),
+                    facing: host.facing(),
+                }),
+                1 => Some(AircraftBulletCourse::AtTarget {
+                    from: host.coords(),
+                    to: host.target_coords(),
+                    speed: host.weapon0_speed(),
+                }),
+                _ => None,
+            }
         };
         if let Some(course) = course {
             host.set_velocity(aircraft_bullet_velocity(shot.velocity, course));

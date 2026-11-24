@@ -362,7 +362,7 @@ fn assert_weapon_reader_projection(rules: &RuleSet, expected: &Value, family: &s
         );
         assert_eq!(
             std::array::from_fn::<_, 3, _>(|mode| {
-                threat_range_leptons(object, mode as i32, ranges)
+                threat_range_leptons(object, mode as i32, ranges, false)
             }),
             xyz(&control["threat_range_leptons"]),
             "{}: original707E60 modes0/1/2",
@@ -994,7 +994,7 @@ fn assert_recorded_scores(fixture: &SuppliedFootFixture, rules: &RuleSet, row: &
                 coefficients,
                 ThreatReference::Coords(xyz(&score["anchor_xyz"])),
                 None,
-                0,
+                None,
             )
             .unwrap();
             // Actual `_ftol` receipt at6F8710, before VHPScan and Evaluate's
@@ -1702,15 +1702,13 @@ fn run_recorded_handler(
             // The Rescue body is the shared owner
             // (`sim::mission::rescue`), which the Foot dispatcher and the
             // aircraft dispatcher both run.
-            super::MissionHandlerEvaluation::cadence(
-                crate::sim::mission::rescue::mission_rescue(
-                    &mut fixture.sim,
-                    rules,
-                    ctx.overlay_registry,
-                    fixture.actor,
-                    &mut ctx.effects,
-                ),
-            )
+            super::MissionHandlerEvaluation::cadence(crate::sim::mission::rescue::mission_rescue(
+                &mut fixture.sim,
+                rules,
+                ctx.overlay_registry,
+                fixture.actor,
+                &mut ctx.effects,
+            ))
         } else {
             assert_eq!(
                 row["input"]["mission"], 11,

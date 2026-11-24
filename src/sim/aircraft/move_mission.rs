@@ -35,6 +35,16 @@
 //! states; `world::aircraft_move`'s tests replay every row through
 //! [`move_visit`] and the world queries it gives the production host.
 //!
+//! Phobos `AircraftClass_Mission_Move_SmoothMoving`
+//! (`Ext/Aircraft/Hooks.cpp:495-530`, sites `0x4168C7` in state 2 and
+//! `0x416A0A` in state 4) replaces those two own-cell arrival tests with a
+//! distance test for an AirportBound aircraft outside a team: farther than
+//! `max(SlowdownDistance / 2, turningRadius)` from the NavCom coordinate keeps
+//! it moving, and closer the hook tries the next planning token node
+//! (`TechnoClass::TryNextPlanningTokenNode @ 0x006385C0`) and enters idle mode
+//! unless the type's master switch resolves off or the queued mission is Area
+//! Guard, without writing Mission+0xBC ([`SmoothArrival`]).
+//!
 //! Omitted for fresh YR startup/orders: state 2's legacy waypoint-path arm
 //! (`0x004167CE..0x00416885`: with `+0x520` set, within 256 leptons of the
 //! NavCom it steps to the path's next waypoint through `0x004DC8C0`). `+0x520`
@@ -45,6 +55,23 @@
 //! has no decoded call/jump or file-backed pointer reference, so fresh paths
 //! stay empty. YR planning uses separate nodes (`world::planning`). This
 //! static invariant does not exclude externally supplied legacy saved paths.
+
+/// What the Phobos SmoothMoving hook (`Ext/Aircraft/Hooks.cpp:495-530`, sites
+/// `0x4168C7` and `0x416A0A`) answers in place of the stock own-cell arrival
+/// test.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SmoothArrival {
+    /// The stock own-cell test stands: the type does not resolve the key, or
+    /// the aircraft is in a team, airstrike, loaner or not AirportBound
+    /// (`:503-509`).
+    Stock,
+    /// `distance > max(SlowdownDistance / 2, turningRadius)`: keep moving
+    /// (`ContinueMoving1` `0x416908`, `ContinueMoving2` `0x416A47`).
+    Continue,
+    /// Close enough: the hook already ran its planning-node and idle-mode
+    /// tail and returns `EnterIdleAndReturn` (`0x416AC0`), writing no state.
+    Arrived,
+}
 
 /// What a Mission_Move visit asks and does, each where the original does it.
 pub(crate) trait MoveHost {
@@ -63,6 +90,12 @@ pub(crate) trait MoveHost {
     fn nav_cell_is_own(&mut self) -> bool;
     /// `Is_Cell_Free_For_Landing(NavCom cell, 1)`.
     fn nav_cell_free(&mut self) -> bool;
+    /// Phobos `AircraftClass_Mission_Move_SmoothMoving`
+    /// (`Ext/Aircraft/Hooks.cpp:495-530`): the distance arrival test that
+    /// replaces [`Self::nav_cell_is_own`] where the type resolves
+    /// `ExtendedAircraftMissions.SmoothMoving`, including that hook's
+    /// planning-node and idle-mode tail for the arrived arm.
+    fn smooth_arrival(&mut self) -> SmoothArrival;
     /// The Rate epilogue on the mission current now.
     fn epilogue(&mut self) -> i32;
 }
@@ -89,7 +122,21 @@ pub(crate) fn move_visit(state: u8, host: &mut impl MoveHost) -> (u8, i32) {
             return (2, 1);
         }
         2 | 4 => {
-            let state = if !host.is_moving() || host.nav_com() && host.nav_cell_is_own() {
+            // `0x004168A7..0x004168AE` (state 2) and `0x004169EA..0x004169EF`
+            // (state 4): a stopped locomotor is arrival before any NavCom read.
+            let arrival = if !host.is_moving() {
+                true
+            } else if !host.nav_com() {
+                false
+            } else {
+                match host.smooth_arrival() {
+                    SmoothArrival::Stock => host.nav_cell_is_own(),
+                    SmoothArrival::Continue => false,
+                    // `EnterIdleAndReturn` (`0x00416AC0`): the state stays.
+                    SmoothArrival::Arrived => return (state, 1),
+                }
+            };
+            let state = if arrival {
                 3
             } else if host.nav_com() && !host.nav_cell_free() {
                 0

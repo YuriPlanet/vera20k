@@ -43,7 +43,9 @@ fn lifetime_bolt() -> (ElectricBoltBirth, SurfaceLineViewport, ElectricBoltPalet
         phase: int(&source["phase"]),
         alternate_color: source["alternate"].as_bool().unwrap(),
         colors: [None; 3],
+        arcs: 8,
         owner: None,
+        decay: 0x10000,
     };
     let mut camera = point(&row["input"]["camera"]);
     camera[1] += 15;
@@ -180,7 +182,9 @@ fn native_tactical_visits_own_lifetime_reverse_order_and_clear() {
                 phase: int(&birth["phase"]),
                 alternate_color: birth["alternate"].as_bool().unwrap(),
                 colors: [None; 3],
+                arcs: 8,
                 owner: None,
+                decay: 0x10000,
             });
             // These explicit native manager fixtures include retained zero
             // and last-decay values, independent of the normal constructor.
@@ -323,7 +327,9 @@ fn accepted_bolt_composites_preserve_the_next_actual_bullet_identity() {
             phase: int(&birth["phase"]),
             alternate_color: birth["alternate"].as_bool().unwrap(),
             colors: [None; 3],
+            arcs: 8,
             owner: None,
+            decay: 0x10000,
         });
         for visit in row["visits"]
             .as_array()
@@ -403,6 +409,7 @@ fn a_unit_owns_one_bolt_whose_source_follows_it() {
     let owner = ElectricBoltOwner {
         unit: 7,
         weapon_index: 0,
+        unit_slot: true,
     };
     let birth = |x| ElectricBoltBirth {
         frame: 0,
@@ -412,17 +419,23 @@ fn a_unit_owns_one_bolt_whose_source_follows_it() {
         phase: 0,
         alternate_color: false,
         colors: [None; 3],
+        arcs: 8,
         owner: Some(owner),
+        decay: 0x10000,
     };
     let mut bolts = ElectricBolts::default();
     bolts.create(birth(10));
     bolts.create(birth(20));
     let owners: Vec<_> = bolts.live.iter().map(|bolt| bolt.birth.owner).collect();
+    // The stock `+0x6DC` slot admits one bolt; Phobos's InitEBolt hook skips
+    // the slot test and links every bolt into `TechnoExt::ElectricBolts`.
     assert_eq!(owners, [Some(owner), None]);
+    assert_eq!(owners, [Some(owner), Some(owner)]);
 
     bolts.follow_owners(|_| Some(ProjectileCoord::new(99, 1, 2)));
     let sources: Vec<_> = bolts.live.iter().map(|bolt| bolt.birth.from.x).collect();
     assert_eq!(sources, [99, 20], "only the owned bolt follows");
+    assert_eq!(sources, [99, 99], "every linked bolt follows");
     bolts.follow_owners(|_| Some(ProjectileCoord::new(0, 0, 0)));
     assert_eq!(bolts.live[0].birth.from, ProjectileCoord::new(99, 1, 2));
     bolts.follow_owners(|_| None);
@@ -438,5 +451,83 @@ fn a_unit_owns_one_bolt_whose_source_follows_it() {
         bolts.live[0].birth.owner,
         Some(owner),
         "the slot is free again"
+    );
+}
+
+/// `EBoltExt::CreateEBolt`'s Lifetime reaches the registry through
+/// `ElectricBoltBirth::decay`; the stock 17 is not hard-coded in the app.
+#[test]
+fn the_registry_seeds_decay_from_the_birth() {
+    let birth = ElectricBoltBirth {
+        frame: 0,
+        from: ProjectileCoord::new(0, 0, 0),
+        to: ProjectileCoord::new(0, 0, 0),
+        z_adjust: 0,
+        phase: 0,
+        alternate_color: false,
+        colors: [None; 3],
+        arcs: 8,
+        owner: None,
+        decay: 4,
+    };
+    let mut bolts = ElectricBolts::default();
+    bolts.create(birth);
+    assert_eq!(bolts.live[0].decay, 4);
+}
+
+/// Phobos `EBoltZAdjust.ClampInitialDepthForBuilding`
+/// (`Ext/Rules/Body.cpp:279`, `Valueable<bool>`, constructor default **true**
+/// at `Body.h:720`) and the weapon's `Nullable<bool>`
+/// (`Ext/WeaponType/Body.cpp:132`, constructor unset `Body.h:157`),
+/// consumed at `Ext/EBolt/Hooks.cpp:196-200` (0x6FD4E4).
+#[test]
+fn the_ebolt_building_clamp_reads_audio_visual_and_a_weapon_overrides_it() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::phobos_beam_z_adjust::resolved_clamp;
+    use crate::rules::ruleset::RuleSet;
+
+    let read = |text: &str| RuleSet::from_ini(&IniFile::from_str(text)).expect("rules read");
+
+    // An absent key keeps the constructor default, which is on.
+    let defaulted = read("[AudioVisual]\nEBoltZAdjust=-3\n");
+    assert_eq!(defaulted.phobos_beam_z_adjust.ebolt, -3);
+    assert!(
+        defaulted
+            .phobos_beam_z_adjust
+            .ebolt_clamp_initial_depth_for_building
+    );
+    // The key lives in [AudioVisual], not [General].
+    assert!(
+        read("[General]\nEBoltZAdjust.ClampInitialDepthForBuilding=no\n")
+            .phobos_beam_z_adjust
+            .ebolt_clamp_initial_depth_for_building,
+        "the clamp is read from [AudioVisual]"
+    );
+    assert!(
+        !read("[AudioVisual]\nEBoltZAdjust.ClampInitialDepthForBuilding=no\n")
+            .phobos_beam_z_adjust
+            .ebolt_clamp_initial_depth_for_building
+    );
+
+    // The weapon's own value wins over the global; unset inherits it
+    // (`Nullable<bool>::Get(global)`, `Ext/EBolt/Hooks.cpp:196-200`).
+    assert!(!resolved_clamp(Some(false), true));
+    assert!(resolved_clamp(Some(true), false));
+    assert!(resolved_clamp(None, true));
+
+    // Retail leaves both keys unset: the weapon inherits, the global keeps the
+    // constructor default, so the clamp stays on.
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let weapon = retail.rules.weapon("105mm").expect("105mm");
+    assert_eq!(weapon.phobos_ebolt_clamp_initial_depth_for_building, None);
+    assert!(
+        retail
+            .rules
+            .phobos_beam_z_adjust
+            .ebolt_clamp_initial_depth_for_building,
+        "retail leaves the clamp at its constructor default"
     );
 }

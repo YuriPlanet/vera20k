@@ -487,6 +487,8 @@ fn attack_control_rules(corpus: &serde_json::Value, input: &serde_json::Value) -
 }
 
 // Ares replaces VoiceAttack's choice (TechnoClass_SelectFiringVoice
+// 1004B1D0, hook 0x7090A8): `ares_firing_voice_tiers_fall_through`. Phobos
+// replaces it again at 0x7090A0, so this stock corpus only runs without it.
 // 1004B1D0, hook 0x7090A8): `ares_firing_voice_tiers_fall_through`.
 #[test]
 fn attack_voice_matches_native_target_slots_rng_and_queue_admission() {
@@ -960,4 +962,203 @@ fn ares_firing_voice_tiers_fall_through() {
         Some("Special")
     );
     assert_eq!(sim.main_rng.native_state_hex(), main);
+}
+
+/// Phobos `TechnoClass_ClickedMission_VoiceSpecialAttack` (`0x6FFD4C`,
+/// `Ext/Techno/Hooks.cpp:2507-2528`): an Eaten click whose clicked building
+/// type is `Grinding=` speaks the foot type's `VoiceEnterGrinder` catalog
+/// reference and skips the `VoiceSpecialAttack` selector (no Main draw);
+/// unset, a non-grinding target or an absent target keep the stock list.
+#[test]
+fn phobos_voice_enter_grinder_replaces_the_special_attack_voice() {
+    use crate::map::entities::EntityCategory;
+    use crate::sim::combat::TargetKind;
+    use crate::sim::game_entity::GameEntity;
+
+    let ini = IniFile::from_str(
+        "[InfantryTypes]\n0=ENGINEER\n[ENGINEER]\nStrength=100\n\
+         VoiceSpecialAttack=Attack\nVoiceEnterGrinder=Special\n\
+         [BuildingTypes]\n0=GRIND\n1=HOSP\n\
+         [GRIND]\nStrength=100\nGrinding=yes\n\
+         [HOSP]\nStrength=100\n",
+    );
+    let mut rules = RuleSet::from_ini(&ini).unwrap();
+    let sounds = SoundRegistry::from_ini(&IniFile::from_str("[SoundList]\n0=Attack\n1=Special\n"));
+    rules.bind_type_sound_references(&ini, &sounds);
+    let (mut sim, rules, foot) = scene_for_rules(
+        rules,
+        &serde_json::json!({}),
+        "ENGINEER",
+        EntityCategory::Infantry,
+    );
+    let other = sim.interner.intern("Other");
+    for (id, name, rx) in [(2, "GRIND", 5), (3, "HOSP", 6)] {
+        let type_ref = sim.interner.intern(name);
+        let mut building = GameEntity::test_default_of_category(
+            id,
+            name,
+            "Other",
+            rx,
+            5,
+            EntityCategory::Structure,
+        );
+        building.set_owner_for_test(other);
+        building.set_type_ref_for_test(type_ref);
+        sim.substrate.entities.insert(building);
+    }
+
+    let (_, draws) = trace_draws(|| {
+        sim.order_voice_request(
+            &rules,
+            foot,
+            "VoiceSpecialAttack",
+            Some(TargetKind::Entity(2)),
+            true,
+        )
+    });
+    assert!(draws.is_empty(), "the override skips the selector draw");
+    assert_eq!(
+        sim.order_voice_request(
+            &rules,
+            foot,
+            "VoiceSpecialAttack",
+            Some(TargetKind::Entity(2)),
+            true,
+        ),
+        Some("Special")
+    );
+    assert_eq!(
+        sim.order_voice_request(
+            &rules,
+            foot,
+            "VoiceSpecialAttack",
+            Some(TargetKind::Entity(3)),
+            true,
+        ),
+        Some("Attack"),
+        "a non-grinding target keeps the list"
+    );
+    assert_eq!(
+        sim.order_voice_request(&rules, foot, "VoiceSpecialAttack", None, true),
+        Some("Attack"),
+        "no target keeps the list"
+    );
+}
+
+/// Phobos `TechnoClass_VoiceAttack`
+/// (`Ext/TechnoType/Hooks.MultiWeapon.cpp:82-142`, hook `0x7090A0`): the
+/// selected multi-weapon slot uses its per-slot `VoiceWeapon%dAttack`; without
+/// one, `IsSecondary(slot)` chooses the `VoiceSecondaryWeaponAttack` slot
+/// voice instead of the stock `index != 0` rule.
+#[test]
+fn phobos_multi_weapon_voice_uses_the_slot_and_is_secondary() {
+    use crate::sim::combat::TargetKind;
+
+    let ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[Countries]\n0=Americans\n1=Russians\n\
+         [InfantryTypes]\n\
+         [VehicleTypes]\n0=MULTI\n1=SECOND\n\
+         [AircraftTypes]\n0=PLANE\n\
+         [MULTI]\nStrength=300\nCost=300\nSpeed=6\nArmor=none\n\
+         WeaponCount=3\nWeapon1=Gun\nWeapon2=Gun\nWeapon3=AA\n\
+         MultiWeapon=yes\nMultiWeapon.SelectCount=3\nVoiceWeapon3Attack=Slot3\n\
+         [SECOND]\nStrength=300\nCost=300\nSpeed=6\nArmor=none\n\
+         WeaponCount=3\nWeapon1=Gun\nWeapon2=Gun\nWeapon3=AA\n\
+         MultiWeapon=yes\nMultiWeapon.SelectCount=3\nMultiWeapon.IsSecondary=2\n\
+         VoicePrimaryWeaponAttack=Primary\nVoiceSecondaryWeaponAttack=Secondary\n\
+         [PLANE]\nStrength=200\nArmor=light\nSpeed=10\nSight=8\n\
+         [Gun]\nDamage=10\nROF=50\nRange=6\nProjectile=GroundShot\nWarhead=WH\n\
+         [AA]\nDamage=10\nROF=50\nRange=8\nProjectile=AirShot\nWarhead=WH\n\
+         [GroundShot]\nAA=no\nAG=yes\n[AirShot]\nAA=yes\nAG=no\n\
+         [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    );
+    let sounds = SoundRegistry::from_ini(&IniFile::from_str(
+        "[SoundList]\n0=Slot3\n1=Primary\n2=Secondary\n",
+    ));
+    let mut rules = RuleSet::from_ini(&ini).unwrap();
+    rules.bind_type_sound_references(&ini, &sounds);
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 23);
+    let multi = sim
+        .spawn_object("MULTI", "Americans", 8, 10, 0, &rules)
+        .unwrap();
+    let secondary = sim
+        .spawn_object("SECOND", "Americans", 6, 10, 0, &rules)
+        .unwrap();
+    let plane = sim
+        .spawn_object("PLANE", "Russians", 12, 10, 0, &rules)
+        .unwrap();
+    sim.substrate
+        .entities
+        .get_mut(plane)
+        .unwrap()
+        .position
+        .set_exact_z_leptons_for_test(Some(1024));
+    assert_eq!(
+        sim.attack_voice_request(&rules, multi, Some(TargetKind::Entity(plane)), true),
+        Some("Slot3"),
+        "slot 2 answers VoiceWeapon3Attack"
+    );
+    assert_eq!(
+        sim.attack_voice_request(&rules, secondary, Some(TargetKind::Entity(plane)), true),
+        Some("Secondary"),
+        "IsSecondary(slot 2) chooses VoiceSecondaryWeaponAttack"
+    );
+}
+
+/// Phobos `TechnoClass_ResponseMove_Pickup` (`Ext/Techno/Hooks.cpp:1370-1397`,
+/// hook `0x00708FC0`): `VoicePickup` (`Ext/AircraftType/Body.cpp:23`) replaces
+/// the VoiceMove choice for a `Carryall=` aircraft with a used radio link whose
+/// Destination is a Foot, and the registered scalar queues with no Main draw.
+#[test]
+fn carryall_voice_pickup_replaces_move_only_for_a_linked_foot_destination() {
+    use crate::map::entities::EntityCategory;
+    use crate::sim::combat::TargetKind;
+
+    let ini = IniFile::from_str(
+        "[AircraftTypes]\n0=CARG\n[CARG]\nStrength=200\nCarryall=yes\nVoiceMove=Move\n\
+         VoicePickup=Pickup\n[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\n\
+         VoicePickup=Pickup\n",
+    );
+    let mut rules = RuleSet::from_ini(&ini).unwrap();
+    let sounds = SoundRegistry::from_ini(&IniFile::from_str("[SoundList]\n0=Move\n1=Pickup\n"));
+    rules.bind_type_sound_references(&ini, &sounds);
+    // An AircraftType-only reader: a Vehicle section keeps the field unset.
+    assert_eq!(rules.object("MTNK").unwrap().phobos_voice_pickup(), None);
+    assert_eq!(
+        rules.object("CARG").unwrap().phobos_voice_pickup(),
+        Some("Pickup")
+    );
+
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 23);
+    let plane = sim
+        .spawn_object("CARG", "Americans", 8, 10, 0, &rules)
+        .unwrap();
+    let vehicle = sim
+        .spawn_object("MTNK", "Americans", 10, 10, 0, &rules)
+        .unwrap();
+    let pickup = Some(TargetKind::Entity(vehicle));
+
+    // No used radio link (RadioClass::HasAnyLink @ 0x0065AE30): VoiceMove.
+    assert_eq!(
+        sim.order_voice_request(&rules, plane, "VoiceMove", pickup, true),
+        Some("Move")
+    );
+    sim.entities_mut_for_test()
+        .get_mut(plane)
+        .unwrap()
+        .mark_live_contact_with(vehicle);
+    let (sound, draws) =
+        trace_draws(|| sim.order_voice_request(&rules, plane, "VoiceMove", pickup, true));
+    assert_eq!(sound, Some("Pickup"));
+    assert!(draws.is_empty(), "a registered scalar spends no Main draw");
+    // A cell Destination is not a FootClass, so the list stands.
+    assert_eq!(
+        sim.order_voice_request(&rules, plane, "VoiceMove", None, true),
+        Some("Move")
+    );
+    // A disabled voice request still rejects before either arm.
+    assert_eq!(
+        sim.order_voice_request(&rules, plane, "VoiceMove", pickup, false),
+        None
+    );
 }

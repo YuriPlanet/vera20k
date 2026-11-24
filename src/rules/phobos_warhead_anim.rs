@@ -53,6 +53,10 @@ pub struct PhobosWarheadAnimRules {
     /// `PlayAnimUnderground=`, `Valueable<bool>`, default true. A `no` value
     /// suppresses the animation when the impact Z is below the cell floor.
     pub play_anim_underground: bool,
+    /// `AffectsUnderground=`, `Valueable<bool>`, default false
+    /// (`Ext/WarheadType/Body.cpp:425`, `Body.h:555-557`): the impact also
+    /// damages technos on the Underground layer (`0x4899DA`).
+    pub affects_underground: bool,
     /// `AnimZAdjust=`, `Nullable<int>`; `None` inherits
     /// `[AudioVisual] WarheadAnimZAdjust`.
     pub anim_z_adjust: Option<i32>,
@@ -76,6 +80,7 @@ impl Default for PhobosWarheadAnimRules {
             conventional_ignore_units: None,
             play_anim_above_surface: false,
             play_anim_underground: true,
+            affects_underground: false,
             anim_z_adjust: None,
         }
     }
@@ -127,6 +132,8 @@ impl PhobosWarheadAnimRules {
             section.read_ares_bool("PlayAnimAboveSurface", value.play_anim_above_surface);
         value.play_anim_underground =
             section.read_ares_bool("PlayAnimUnderground", value.play_anim_underground);
+        value.affects_underground =
+            section.read_ares_bool("AffectsUnderground", value.affects_underground);
         value.anim_z_adjust = section.read_phobos_nullable_int("AnimZAdjust", value.anim_z_adjust);
         value
     }

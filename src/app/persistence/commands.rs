@@ -185,8 +185,15 @@ fn prepare_save<'a>(
     let active_tab = saved_active_tab(presentation.active_sidebar_tab);
     let sidebar_order = presentation
         .sidebar_projection
-        .model.saved_order()
+        .model
+        .saved_order()
         .map(|order| order.with_active_tab(active_tab));
+    // Phobos keeps `SWSidebar_Enable` in the scenario extension, so it rides
+    // the local presentation envelope rather than the simulation hash.
+    let sidebar_order = sidebar_order.map(|mut order| {
+        order.set_sw_sidebar_expanded(state.match_state.match_presentation.sidebar_projection.model.sw_sidebar_expanded());
+        order
+    });
     let tactical_view = crate::app::input::camera::saved_tactical_view(state);
     let rules_owner = rules_owner.ok_or(SaveCommandError::MissingResources("process rules"))?;
     let processed =
@@ -219,12 +226,12 @@ fn prepare_save<'a>(
             .as_ref()
             .map(crate::render::radar::anim::RadarAnimState::saved_housing),
     );
-    local_view.set_credits_counter(
-        state
-            .match_state
-            .local_player_owner()
-            .and_then(|owner| presentation.sidebar_projection.model.saved_credits_counter(owner)),
-    );
+    local_view.set_credits_counter(state.match_state.local_player_owner().and_then(|owner| {
+        presentation
+            .sidebar_projection
+            .model
+            .saved_credits_counter(owner)
+    }));
     local_view.set_radar_events(presentation.minimap.as_ref().map_or_else(
         Default::default,
         crate::render::radar::minimap::MinimapRenderer::saved_radar_events,

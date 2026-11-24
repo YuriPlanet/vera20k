@@ -329,6 +329,7 @@ impl Simulation {
             | Command::SetGameSpeed { .. }
             | Command::OpenOptions
             | Command::SetLatencyFudge { .. }
+            | Command::TogglePlayerAutoRepair { .. }
             | Command::Cheer => CommandSubject::Primary(PrimaryHouse),
             Command::SellBuilding { entity_id }
             | Command::ToggleRepair { entity_id }

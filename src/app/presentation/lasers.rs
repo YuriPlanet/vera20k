@@ -53,6 +53,7 @@ impl Lasers {
     ) {
         let color = match birth.color {
             LaserColor::House(owner) => LaserDrawColor::House(house_rgb(owner)),
+            LaserColor::HouseStyle(rgb) => LaserDrawColor::House(rgb),
             LaserColor::Explicit { inner, outer, .. } => LaserDrawColor::Explicit {
                 inner,
                 outer: (outer != [0; 3]).then_some(outer),
@@ -112,11 +113,23 @@ impl Lasers {
 
     /// 550150 visits backwards. At most one increment/restart per visit,
     /// including a skipped frame counter; it never catches up elapsed frames.
-    pub(crate) fn update(&mut self, frame: i32) {
+    /// Phobos `LaserDrawClass_Update550173` refreshes the tracked endpoints
+    /// here whenever the world is available.
+    pub(crate) fn update(
+        &mut self,
+        frame: i32,
+        world: Option<(
+            &crate::sim::world::Simulation,
+            &crate::rules::ruleset::RuleSet,
+        )>,
+    ) {
         for laser in self.live.iter_mut().rev() {
             if laser.timer.expired(frame) {
                 laser.age = laser.age.wrapping_add(1);
                 laser.timer.start(frame, 1);
+            }
+            if let Some((sim, rules)) = world {
+                laser.birth.update_tracking(sim, rules);
             }
         }
         self.live.retain(|laser| laser.age < laser.birth.duration);
@@ -150,7 +163,10 @@ impl Lasers {
                 z_adjust: laser.birth.z_adjust,
                 width: laser.birth.width,
                 supported: laser.birth.supported,
-                house_color: matches!(laser.birth.color, LaserColor::House(_)),
+                house_color: matches!(
+                    laser.birth.color,
+                    LaserColor::House(_) | LaserColor::HouseStyle(_)
+                ),
                 rgb: laser.color.inner(),
                 outer,
                 spread,

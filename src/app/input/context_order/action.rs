@@ -601,6 +601,8 @@ fn base_action(
                         && object_target_is_legal(sim, rules, actor_id, *target_id)))
         }
         TargetKind::Cell(..) => human,
+        // A projectile is never an admissible object order target here.
+        TargetKind::Bullet(_) => false,
     };
     // TechnoClass::What_Action_OnObject's tail (`0x0070056C..0x007005E6`):
     // Select over an object the player may select that is not selected,
@@ -906,13 +908,15 @@ pub(super) fn armed_action_with(
             sim.interner(),
         )
         .is_some(),
-        TargetKind::Entity(_) => crate::sim::combat::combat_weapon::is_armed(
-            actor,
-            object,
-            sim.entities(),
-            rules,
-            sim.interner(),
-        ),
+        TargetKind::Entity(_) | TargetKind::Bullet(_) => {
+            crate::sim::combat::combat_weapon::is_armed(
+                actor,
+                object,
+                sim.entities(),
+                rules,
+                sim.interner(),
+            )
+        }
     };
     armed.then(|| {
         attack_action_with(
@@ -995,7 +999,7 @@ pub(crate) fn resolved_unit_in_range(
     };
     let techno = match *target {
         TargetKind::Entity(id) => sim.entities().get(id),
-        TargetKind::Cell(..) => None,
+        TargetKind::Cell(..) | TargetKind::Bullet(_) => None,
     };
     let target = match techno {
         Some(entity) => crate::sim::combat::MaplessTarget::Techno(entity),

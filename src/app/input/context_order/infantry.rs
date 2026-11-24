@@ -110,22 +110,13 @@ pub(super) fn infantry_attack_action_with(
     // `CanC4` for a building and to targetable for every other kind, while
     // `InvisibleInGame` still refuses a building.
     if weapon.mig_attack_cursor {
-        #[cfg(feature = "phobos")]
-        let air_strike = target.is_some_and(|target| {
+            let air_strike = target.is_some_and(|target| {
             sim.interner()
                 .object_type(target.type_ref(), rules)
                 .is_some_and(|object| {
                     let building = target.category() == EntityCategory::Structure;
                     object.allows_airstrike(building) && !(building && object.invisible_in_game)
                 })
-        });
-        #[cfg(not(feature = "phobos"))]
-        let air_strike = target.is_some_and(|target| {
-            target.category() == EntityCategory::Structure
-                && sim
-                    .interner()
-                    .object_type(target.type_ref(), rules)
-                    .is_some_and(|building| building.can_c4 && !building.invisible_in_game)
         });
         return Some(if air_strike {
             InfantryAttackAction::AirStrike

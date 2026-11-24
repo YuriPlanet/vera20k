@@ -96,6 +96,13 @@ fn physical_rules() -> RuleSet {
 /// except the declared absent record. Read those supplied inputs through the
 /// same production ART/type/sound readers used by the physical controls.
 fn supplied_rules(input: &Value) -> RuleSet {
+    supplied_rules_with_land_sequences(input, "", "")
+}
+
+/// [`supplied_rules`] with the two Phobos `OnlyUseLandSequences=` layers
+/// appended: `general` lines go to `[General]`, `art` lines to the type's art
+/// section (`Ext/InfantryType/Body.cpp:32`, `Ext/Rules/Body.cpp:622`).
+fn supplied_rules_with_land_sequences(input: &Value, general: &str, art: &str) -> RuleSet {
     let records: String = crate::rules::infantry_sequence::NATIVE_SEQUENCE_NAMES
         .iter()
         .enumerate()
@@ -116,10 +123,10 @@ fn supplied_rules(input: &Value) -> RuleSet {
     let root = IniFile::from_str(&format!(
         "[InfantryTypes]\n0=WATER\n[WATER]\nStrength=100\nMovementZone={zone}\n\
          Locomotor={{4A582744-9839-11d1-B709-00A024DDAFD1}}\n\
-         EnterWaterSound=WaterEnter\nLeaveWaterSound=WaterLeave\n"
+         EnterWaterSound=WaterEnter\nLeaveWaterSound=WaterLeave\n[General]\n{general}"
     ));
     let art = IniFile::from_str(&format!(
-        "[WATER]\nSequence=WaterFixture\nCrawls={}\n[WaterFixture]\n{records}",
+        "[WATER]\nSequence=WaterFixture\nCrawls={}\n{art}[WaterFixture]\n{records}",
         if input["extended"].as_bool().unwrap_or(false) && input["crawls"].as_bool().unwrap_or(true)
         {
             "yes"
@@ -575,4 +582,118 @@ fn physical_wet_death_advances_in_logic_and_uninitializes_without_animation() {
             "{name}: UnInit removes Logic membership"
         );
     }
+}
+
+/// Phobos `InfantryClass_DoAction_Water` (`Ext/Techno/Hooks.Misc.cpp:883-901`,
+/// hook 0x51D7E0): `OnlyUseLandSequences=` skips the water remap, so a Walk
+/// request keeps its land record instead of becoming Swim. The type's art key
+/// wins over `[General] OnlyUseLandSequences=` when both are set, and the
+/// unset art key keeps the global.
+#[test]
+fn only_use_land_sequences_skips_the_water_remap() {
+    let input = json!({"zone": 3, "land": 2, "request": 3});
+    let mut doing = |general: &str, art: &str| {
+        let rules = supplied_rules_with_land_sequences(&input, general, art);
+        let (mut sim, id) = fixture(&json!({"input": input.clone()}), &rules, "WATER");
+        assert!(
+            sim.infantry_do_action(
+                id,
+                DO_WALK,
+                false,
+                &rules,
+                &mut crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap(),
+            "Walk has a record"
+        );
+        let doing = sim
+            .substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .mission_leaf
+            .as_infantry()
+            .unwrap()
+            .doing();
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .mission_leaf
+                .as_infantry()
+                .unwrap()
+                .water_state(),
+            0,
+            "the water-state store still runs on the SkipWaterSequences path"
+        );
+        doing
+    };
+    assert_eq!(doing("", ""), DO_SWIM, "stock water remap");
+    assert_eq!(
+        doing("OnlyUseLandSequences=yes\n", ""),
+        DO_WALK,
+        "[General] OnlyUseLandSequences= keeps the land action"
+    );
+    assert_eq!(
+        doing("", "OnlyUseLandSequences=yes\n"),
+        DO_WALK,
+        "the art key keeps the land action"
+    );
+    assert_eq!(
+        doing("OnlyUseLandSequences=yes\n", "OnlyUseLandSequences=no\n"),
+        DO_SWIM,
+        "the type's explicit no wins over the global yes"
+    );
+}
+
+/// Phobos `SecondaryFireSequenceLandOnly` (`Ext/Techno/Hooks.Misc.cpp:895`,
+/// hook 0x51D7E0): stock remaps an in-water SecondaryFire (4) or
+/// SecondaryProne (8) request to WetAttack (0x16); the resolved key no keeps
+/// the land record. The default global is yes, so stock is unchanged.
+#[test]
+fn secondary_fire_sequence_land_only_keeps_the_land_record() {
+    let input = json!({"zone": 3, "land": 2, "request": 4});
+    let mut doing = |general: &str, art: &str| {
+        let rules = supplied_rules_with_land_sequences(&input, general, art);
+        let (mut sim, id) = fixture(&json!({"input": input.clone()}), &rules, "WATER");
+        assert!(
+            sim.infantry_do_action(
+                id,
+                4,
+                false,
+                &rules,
+                &mut crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap(),
+            "SecondaryFire has a record"
+        );
+        sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .mission_leaf
+            .as_infantry()
+            .unwrap()
+            .doing()
+    };
+    assert_eq!(doing("", ""), 22, "the default global yes keeps stock");
+    assert_eq!(
+        doing("SecondaryFireSequenceLandOnly=no\n", ""),
+        4,
+        "[General] no keeps the land SecondaryFire record"
+    );
+    assert_eq!(
+        doing("", "SecondaryFireSequenceLandOnly=no\n"),
+        4,
+        "the art key no keeps the land record"
+    );
+    assert_eq!(
+        doing(
+            "SecondaryFireSequenceLandOnly=no\n",
+            "SecondaryFireSequenceLandOnly=yes\n"
+        ),
+        22,
+        "the type's yes wins over the global no"
+    );
 }

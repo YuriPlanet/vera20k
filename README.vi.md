@@ -95,8 +95,7 @@ trong `VERA.INI`. Các tùy chọn riêng của VERA nằm trong mục `[VERA]`.
 
 Thiết lập phòng chờ, mod và bản đồ có thể thay đổi luật chơi của từng trận. Mod và bản đồ có thể
 dùng tệp INI để bật các tính năng của [Ares](docs/ares.md) và [Phobos](docs/phobos.md) mà VERA20K
-hỗ trợ. Mod cũng có thể bật Ares bằng cách kèm theo tệp `ares.mix`. Một số tính năng của Phobos
-vẫn cần phiên bản VERA20K được biên dịch với `--features phobos`.
+hỗ trợ. Mod cũng có thể bật Ares bằng cách kèm theo tệp `ares.mix`. Phobos có trong mọi bản dựng và được bật từ tệp INI của mod hoặc bản đồ.
 
 Để tự làm mod, hãy bắt đầu với [hướng dẫn làm mod](docs/modding.md).
 

@@ -22,7 +22,7 @@ use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::house_state::HouseState;
 use crate::sim::intern::InternedId;
 use crate::sim::superweapon::cell_receiver_tests::test_terrain_cell;
-use crate::sim::world::{SimSoundEvent, Simulation};
+use crate::sim::world::{ObjectAiCtx, SimSoundEvent, Simulation};
 
 pub const SOURCE: (u16, u16) = (21, 21);
 const TARGET: (u16, u16) = (40, 40);
@@ -1536,4 +1536,234 @@ fn retail_chrono_warp_destinations_match_native_rows() {
         assert_eq!(warp.destination(), coord(&row["destination"]), "{row}");
     }
     assert_eq!(rows.len(), 8);
+}
+
+/// A minimal teleporting type with the four Phobos warp lists and one
+/// AnimType registry; `[General] WarpOut` is the stock fallback.
+fn chrono_warp_anim_rules(
+    warp_out: &str,
+    warp_in: &str,
+    chrono_out: &str,
+    chrono_in: &str,
+) -> RuleSet {
+    use crate::rules::art_data::ArtRegistry;
+    use crate::rules::ini_parser::IniFile;
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+        "[General]\nWarpOut=WARPOUT\nWarpIn=WARPOUT\n\n\
+         [Animations]\n0=WARPOUT\n1=CHRONOOUT\n2=CHRONOIN\n3=TYPEOUT\n4=TYPEIN\n\n\
+         [VehicleTypes]\n0=CMON\n\
+         [CMON]\nStrength=100\nSpeed=4\nSensorsSight=1\n\
+         WarpOut={warp_out}\nWarpIn={warp_in}\n\
+         Chronoshift.WarpOut={chrono_out}\nChronoshift.WarpIn={chrono_in}\n"
+    )))
+    .unwrap();
+    let mut art = ArtRegistry::from_ini(&IniFile::from_str(
+        "[WARPOUT]\nFlat=yes\nTranslucent=yes\nRate=120\n\
+         [CHRONOOUT]\nFlat=yes\nTranslucent=yes\nRate=120\n\
+         [CHRONOIN]\nFlat=yes\nTranslucent=yes\nRate=120\n\
+         [TYPEOUT]\nFlat=yes\nTranslucent=yes\nRate=120\n\
+         [TYPEIN]\nFlat=yes\nTranslucent=yes\nRate=120\n",
+    ));
+    for name in ["WARPOUT", "CHRONOOUT", "CHRONOIN", "TYPEOUT", "TYPEIN"] {
+        art.bind_anim_frame_count_for_test(name, 13);
+    }
+    rules.replace_art_registry_for_test(art);
+    rules
+}
+
+/// Arm a Chronosphere warp on `id` and run the production state machine
+/// through its departure (`0x719827`, state 2) and arrival (`0x719B1E`,
+/// state 5) visits. Returns the warp-anim names in spawn order.
+fn run_chrono_warp_endpoints(
+    warp_out: &str,
+    warp_in: &str,
+    chrono_out: &str,
+    chrono_in: &str,
+) -> Vec<String> {
+    use crate::sim::movement::locomotor::LocomotorState;
+    use crate::sim::movement::teleport_movement::ChronoWarp;
+    let rules = chrono_warp_anim_rules(warp_out, warp_in, chrono_out, chrono_in);
+    let (rules, mut sim, americans) = world_with(rules, 32, &[]);
+    let id = spawn(&mut sim, &rules, "CMON", "Americans", (10, 10));
+    {
+        let entity = sim.substrate.entities.get_mut(id).unwrap();
+        let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Teleport);
+        locomotor
+            .teleport_runtime_mut()
+            .unwrap()
+            .arm_chrono(ChronoWarp::new(DriveCoord::cell(12, 10, 0), 0));
+        entity.locomotor = Some(locomotor);
+    }
+    let mut names = Vec::new();
+    let owner = americans;
+    let set_state = |sim: &mut Simulation, state: u8| {
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .warp_teleport_mut()
+            .unwrap()
+            .chrono_mut()
+            .unwrap()
+            .set_state(state);
+    };
+    // State 2 (`0x719827`): the departure animation.
+    set_state(&mut sim, 2);
+    sim.process_chrono_warp(id, &rules, &mut ObjectAiCtx::default())
+        .unwrap();
+    // State 4 places the owner; the next visit is state 5 (`0x719B1E`).
+    set_state(&mut sim, 4);
+    sim.process_chrono_warp(id, &rules, &mut ObjectAiCtx::default())
+        .unwrap();
+    sim.process_chrono_warp(id, &rules, &mut ObjectAiCtx::default())
+        .unwrap();
+    for (id, anim) in sim.anims() {
+        let name = sim.interner.resolve(anim.type_id()).to_owned();
+        if matches!(
+            name.as_str(),
+            "WARPOUT" | "CHRONOOUT" | "CHRONOIN" | "TYPEOUT" | "TYPEIN"
+        ) {
+            let expected_owner = (name != "WARPOUT").then_some(owner);
+            assert_eq!(
+                sim.anim(*id).and_then(|anim| anim.owner_house()),
+                expected_owner,
+                "list picks carry the object house; the general fallback keeps today's null owner"
+            );
+            names.push(name);
+        }
+    }
+    names
+}
+
+/// Phobos Chronoshift warp lists
+/// (`Ext/TechnoType/Hooks.Teleport.cpp:100-140`): the Chronosphere endpoints
+/// prefer `Chronoshift.WarpOut`/`Chronoshift.WarpIn` and fall back to the
+/// type's lists. VERA keeps its existing `[General] WarpOut` last fallback
+/// (native's Chronoshift warp-in fallback is `[General] WarpIn`, line 133).
+#[test]
+fn chronoshift_warp_lists_replace_the_general_animation_at_both_ends() {
+    assert_eq!(
+        run_chrono_warp_endpoints("TYPEOUT", "TYPEIN", "CHRONOOUT", "CHRONOIN"),
+        vec!["CHRONOOUT".to_owned(), "CHRONOIN".to_owned()],
+        "the Chronoshift lists win over the type lists"
+    );
+    assert_eq!(
+        run_chrono_warp_endpoints("TYPEOUT", "TYPEIN", "", ""),
+        vec!["TYPEOUT".to_owned(), "TYPEIN".to_owned()],
+        "an unset Chronoshift pair falls back to the type lists"
+    );
+    assert_eq!(
+        run_chrono_warp_endpoints("", "", "", ""),
+        vec!["WARPOUT".to_owned(), "WARPOUT".to_owned()],
+        "with every list empty the stock general animation still plays"
+    );
+    assert_eq!(
+        run_chrono_warp_endpoints("TYPEOUT", "TYPEIN", "BOGUS", "BOGUS"),
+        vec!["TYPEOUT".to_owned(), "TYPEIN".to_owned()],
+        "a Chronoshift list resolving to nothing falls through to the type list"
+    );
+}
+
+/// Phobos `ChronoSphereDelay=` (`Ext/TechnoType/Body.h:132`,
+/// `Ext/Rules/Body.h:40,580`): hook `0x719BD9`
+/// (`Ext/TechnoType/Hooks.Teleport.cpp:165-188`) keeps a chrono-sphered
+/// arrival warped out for `max(delay, LastWarpInDelay)` extra ticks, which
+/// `FootExt::UpdateWarpInDelay` (`Ext/Foot/Body.cpp:149-164`) counts down.
+/// Returns whether the arrival is still warped out and how many state-7
+/// visits the warp survived.
+fn run_chrono_warp_in_delay(type_delay: Option<i32>, general_delay: i32) -> (bool, i32) {
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::movement::locomotor::LocomotorState;
+    use crate::sim::movement::teleport_movement::ChronoWarp;
+    let typed = type_delay
+        .map(|delay| format!("ChronoSphereDelay={delay}\n"))
+        .unwrap_or_default();
+    let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+        "[General]\nWarpOut=WARPOUT\nWarpIn=WARPOUT\n\
+         ChronoSphereDelay={general_delay}\n\n\
+         [Animations]\n0=WARPOUT\n\n\
+         [VehicleTypes]\n0=CMON\n\
+         [CMON]\nStrength=100\nSpeed=4\nSensorsSight=1\n{typed}"
+    )))
+    .unwrap();
+    let (rules, mut sim, _americans) = world_with(rules, 32, &[]);
+    let id = spawn(&mut sim, &rules, "CMON", "Americans", (10, 10));
+    {
+        let entity = sim.substrate.entities.get_mut(id).unwrap();
+        let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Teleport);
+        locomotor
+            .teleport_runtime_mut()
+            .unwrap()
+            .arm_chrono(ChronoWarp::new(DriveCoord::cell(12, 10, 0), 0));
+        entity.locomotor = Some(locomotor);
+    }
+    let set_state = |sim: &mut Simulation, state: u8| {
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .warp_teleport_mut()
+            .unwrap()
+            .chrono_mut()
+            .unwrap()
+            .set_state(state);
+    };
+    // State 4 places the owner; the next visit is the arrival, state 5
+    // (`0x719B1E`), where the Phobos hook sits.
+    set_state(&mut sim, 4);
+    sim.process_chrono_warp(id, &rules, &mut ObjectAiCtx::default())
+        .unwrap();
+    sim.process_chrono_warp(id, &rules, &mut ObjectAiCtx::default())
+        .unwrap();
+    let warped_out = sim
+        .substrate
+        .entities
+        .get(id)
+        .is_some_and(|entity| entity.is_warped_out());
+    set_state(&mut sim, 7);
+    let mut visits = 0;
+    while visits < 16
+        && sim
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| entity.chrono_warp().is_some())
+    {
+        sim.process_chrono_warp(id, &rules, &mut ObjectAiCtx::default())
+            .unwrap();
+        visits += 1;
+    }
+    assert!(
+        !sim.substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| entity.is_warped_out()),
+        "the warp ends unwarped"
+    );
+    (warped_out, visits)
+}
+
+#[test]
+fn chrono_sphere_delay_keeps_the_arrival_warped_out_for_its_ticks() {
+    assert_eq!(
+        run_chrono_warp_in_delay(None, 3),
+        (true, 4),
+        "the general delay counts down one tick per visit before End_Piggyback"
+    );
+    assert_eq!(
+        run_chrono_warp_in_delay(None, 0),
+        (false, 1),
+        "unset and zero delays leave the stock one-visit state 7"
+    );
+    assert_eq!(
+        run_chrono_warp_in_delay(Some(2), 5),
+        (true, 3),
+        "the type's delay wins over the general one"
+    );
 }

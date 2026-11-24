@@ -31,6 +31,9 @@ pub(crate) use units::*;
 mod shp;
 pub(crate) use shp::*;
 
+mod damaged_image;
+pub(crate) use damaged_image::*;
+
 mod overlays;
 pub(crate) use overlays::*;
 

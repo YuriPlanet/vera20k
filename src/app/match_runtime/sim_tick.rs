@@ -100,7 +100,10 @@ pub(crate) fn prepare_replay_recording(state: &mut AppState) {
         let launch = campaign
             .map(|campaign| ReplayLaunchInput::MapHouses(&campaign.authored))
             .or_else(|| {
-                state.match_state.session.network_setup()
+                state
+                    .match_state
+                    .session
+                    .network_setup()
                     .or_else(|| state.match_state.startup.offline_launch())
                     .map(ReplayLaunchInput::Slots)
             });
@@ -215,7 +218,11 @@ fn replay_flush_time() -> u64 {
 pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64) {
     if !matches!(state.frontend.screen, GameScreen::InGame)
         || state.match_state.scenario_exit.is_some()
-        || state.match_state.match_presentation.narrative_sync.pending()
+        || state
+            .match_state
+            .match_presentation
+            .narrative_sync
+            .pending()
     {
         return;
     }
@@ -1238,7 +1245,11 @@ fn advance_in_game_runtime_mode(
     // entire barrier frame, including a retained network transaction, finishes.
     // Transport and UI continue in the outer service loop.
     if state.match_state.multiplayer_paused()
-        || state.match_state.match_presentation.narrative_sync.pending()
+        || state
+            .match_state
+            .match_presentation
+            .narrative_sync
+            .pending()
     {
         return false;
     }
@@ -1537,7 +1548,8 @@ fn after_frame(state: &mut AppState, frame_committed: bool) {
             .match_state
             .match_presentation
             .sidebar_projection
-            .model.cameo_recheck_pending();
+            .model
+            .cameo_recheck_pending();
         // Native Strip AI6A8CF3 requests redraw throughout the authored
         // flash window, even with no input. Reuse the one projection owner
         // only in these windows; ordinary idle ticks do not enumerate cameos.
@@ -1550,7 +1562,8 @@ fn after_frame(state: &mut AppState, frame_committed: bool) {
                     .match_state
                     .match_presentation
                     .sidebar_projection
-                    .model.cameo_redraw_requested(runtime.simulation.session().binary_frame() as i32)
+                    .model
+                    .cameo_redraw_requested(runtime.simulation.session().binary_frame() as i32)
             });
         // StripDraw6A9540 asks each entry's availability and reads its
         // Factory while drawing, so the drawn state follows the simulation
@@ -1562,7 +1575,6 @@ fn after_frame(state: &mut AppState, frame_committed: bool) {
         } else {
             crate::app::presentation::sidebar_render::refresh_sidebar_cameo_draw_state(state);
         }
-        #[cfg(feature = "phobos")]
         crate::app::presentation::sw_sidebar::refresh_draw_state(state);
     }
 }
@@ -1687,6 +1699,10 @@ fn after_simulation_pass(
     );
     crate::app::presentation::building_anim::update_power_bar_anim(state, wall_ms, sidebar_visits);
     crate::app::presentation::sidebar_render::advance_sidebar_credits(state, sidebar_visits);
+    // Phobos draws its sidebar indicators from that same credits tick, so the
+    // net power text follows the per-frame power bar rather than a cameo
+    // transition.
+    crate::app::presentation::sidebar_render::refresh_sidebar_indicators(state);
     crate::app::presentation::sidebar_gadgets::update_sidebar_gadget_state(state, sidebar_visits);
     // Every unlocked pass republishes the complete sidebar projection,
     // including the retained House power pair the tooltip driver reads.
@@ -2145,7 +2161,8 @@ fn advance_one_simulation_frame(
         .match_state
         .match_presentation
         .sidebar_projection
-        .model.production_factory_visits(&rt.simulation);
+        .model
+        .production_factory_visits(&rt.simulation);
     let mut finish = FrameFinish {
         native_frame,
         local_owner_for_fog,
@@ -2226,30 +2243,36 @@ fn advance_one_simulation_frame(
         let active_tab = crate::app::persistence::commands::saved_active_tab(
             state.match_state.match_presentation.active_sidebar_tab,
         );
+        let sw_sidebar_expanded = state.match_state.match_presentation.sidebar_projection.model.sw_sidebar_expanded();
         let mut prepared = initial_save;
         let persistence = &mut state.persistence;
-        let mut campaign_save = |sim: &crate::sim::world::Simulation,
-                                 sidebar: &mut crate::app::sidebar_projection::SidebarModel,
-                                 elapsed_clock: &mut super::frame_pacer::ScenarioElapsedClock| {
-            if let Some(Ok(prepared)) = prepared.as_mut() {
-                // Strip6A8F42 clears requests before MainTick55DBCD.
-                // Preparation preceded the input prefix; snapshot the
-                // same sidebar owner again at the actual save boundary.
-                if let Some(owner) = sim.session().current_house() {
-                    sidebar.reconcile_factory_links(sim, owner);
+        let mut campaign_save =
+            |sim: &crate::sim::world::Simulation,
+             sidebar: &mut crate::app::sidebar_projection::SidebarModel,
+             elapsed_clock: &mut super::frame_pacer::ScenarioElapsedClock| {
+                if let Some(Ok(prepared)) = prepared.as_mut() {
+                    // Strip6A8F42 clears requests before MainTick55DBCD.
+                    // Preparation preceded the input prefix; snapshot the
+                    // same sidebar owner again at the actual save boundary.
+                    if let Some(owner) = sim.session().current_house() {
+                        sidebar.reconcile_factory_links(sim, owner);
+                    }
+                    let order = sidebar
+                        .saved_order()
+                        .map(|order| order.with_active_tab(active_tab))
+                        .map(|mut order| {
+                            order.set_sw_sidebar_expanded(sw_sidebar_expanded);
+                            order
+                        });
+                    prepared.refresh_sidebar_order(order);
                 }
-                let order = sidebar
-                    .saved_order()
-                    .map(|order| order.with_active_tab(active_tab));
-                prepared.refresh_sidebar_order(order);
-            }
-            crate::app::persistence::commands::initial_campaign_save(
-                prepared.take(),
-                sim,
-                persistence,
-                elapsed_clock,
-            );
-        };
+                crate::app::persistence::commands::initial_campaign_save(
+                    prepared.take(),
+                    sim,
+                    persistence,
+                    elapsed_clock,
+                );
+            };
         let playback = match (
             state.audio.sfx_player.as_mut(),
             state.process_assets.manager(),
@@ -2287,11 +2310,12 @@ fn advance_one_simulation_frame(
             };
         // Only Ares bounty or ProduceCashDisplay sums emit text, so this runs in every game.
         let flying_credits = &state.match_state.match_presentation.flying_credits;
-        let mut queue_bounty = |sim: &crate::sim::world::Simulation,
-                            rules: &crate::rules::ruleset::RuleSet,
-                            text: crate::sim::bounty::BountyText| {
-            flying_credits.borrow_mut().admit(sim, rules, text);
-        };
+        let mut queue_bounty =
+            |sim: &crate::sim::world::Simulation,
+             rules: &crate::rules::ruleset::RuleSet,
+             text: crate::sim::bounty::BountyText| {
+                flying_credits.borrow_mut().admit(sim, rules, text);
+            };
         let mut boundary = super::frame_effects::FrameClientBoundary::new(
             playback,
             finish.local_owner_name.as_deref(),
@@ -2313,7 +2337,11 @@ fn advance_one_simulation_frame(
             other_local_pause,
         )
         .with_sidebar(
-            &mut state.match_state.match_presentation.sidebar_projection.model,
+            &mut state
+                .match_state
+                .match_presentation
+                .sidebar_projection
+                .model,
             Some(&mut campaign_save),
         )
         .with_outcome_wait(&mut state.match_state.scenario_outcome)
@@ -2565,13 +2593,40 @@ fn finish_simulation_frame(
     // Read before the world is borrowed for writing below.
     #[cfg(feature = "telemetry-dashboard")]
     let telemetry_budget_ms = super::network_match::game_frame_ms(state);
+    // Phobos `[Phobos] HideShakeEffects=` (`Ext/Bullet/Hooks.DetonateLogics.cpp:33`):
+    // the detonation writes never move the view. The sim still samples the
+    // shake range, so the offsets are dropped at the presentation owner
+    // instead. Phobos `[Warhead] ShakeIsLocal=` asks this client's view
+    // (`:36-39`). The camera and the tactical rectangle cannot move during a
+    // simulation frame, so read them before borrowing `sim_runtime` mutably.
+    let (view_camera, view_size) = {
+        let (width, height) = crate::app::input::camera::tactical_viewport_size(state);
+        (
+            [
+                state.match_state.input.camera_x,
+                state.match_state.input.camera_y,
+            ],
+            [width as f32, height as f32],
+        )
+    };
+    let hide_shake_effects = state.match_state.match_presentation.hide_shake_effects;
     {
         if let Some((rt, _)) = state.match_state.sim_runtime.tick_parts() {
             state
                 .match_state
                 .match_presentation
                 .screen_shake
-                .apply_updates(&output.screen_shake_updates);
+                .apply_updates_with_hide(
+                    &output.screen_shake_updates,
+                    hide_shake_effects,
+                    |update| {
+                        crate::app::presentation::screen_shake::update_is_on_screen(
+                            update,
+                            view_camera,
+                            view_size,
+                        )
+                    },
+                );
             hud_messages = frame_hud_messages(
                 &output,
                 &rt.simulation,
@@ -2731,6 +2786,10 @@ fn finish_simulation_frame(
             frame_overlay_removals = overlay_removals;
             frame_committed = tick_result.frame_committed;
             if tick_result.frame_committed {
+                let hide_light_flash_effects = state
+                    .match_state
+                    .match_presentation
+                    .hide_light_flash_effects;
                 drained_combat_lights =
                     crate::app::presentation::combat_lights::materialize_combat_lights(
                         combat_lights,
@@ -2742,6 +2801,7 @@ fn finish_simulation_frame(
                             .in_game_options
                             .detail_level,
                         &mut state.match_state.match_presentation.detail.borrow_mut(),
+                        hide_light_flash_effects,
                     );
             }
             // Parity capture, if requested. The sim has already finalized all
@@ -2896,7 +2956,8 @@ fn finish_simulation_frame(
                 .match_state
                 .match_presentation
                 .sidebar_projection
-                .model.apply_lifecycle_output(&output, local_house, ares)
+                .model
+                .apply_lifecycle_output(&output, local_house, ares)
             {
                 state
                     .match_state
@@ -2919,6 +2980,9 @@ fn finish_simulation_frame(
                 }
                 LifecycleOutput::LatencyFudgeChanged { value, .. } => {
                     state.match_state.session.set_latency_fudge(value);
+                }
+                LifecycleOutput::ObjectTypeChanged { .. } => {
+                    state.match_state.match_presentation.atlas_refresh_owed = true;
                 }
                 LifecycleOutput::PlanningNodeDeleted {
                     owner,
@@ -3002,7 +3066,11 @@ fn finish_simulation_frame(
                         .record_logic_visit();
                 }
                 LifecycleOutput::LaserUpdate { frame } => {
-                    state.match_state.match_presentation.lasers.update(frame);
+                    let runtime = state.match_state.sim_runtime.runtime();
+                    state.match_state.match_presentation.lasers.update(
+                        frame,
+                        runtime.map(|runtime| (&runtime.simulation, &runtime.resources.rules)),
+                    );
                 }
                 LifecycleOutput::LaserCreated(birth) => {
                     let runtime = state.match_state.sim_runtime.runtime();
@@ -3064,7 +3132,8 @@ fn finish_simulation_frame(
             .match_state
             .match_presentation
             .sidebar_projection
-            .model.asked_types(&[]);
+            .model
+            .asked_types(&[]);
         state.match_state.sim_runtime.ask_sidebar_types(&asked);
         // Main_Tick runs PlanMgr_Process_Frame after the frame's events
         // (0x0055DEA4); its input tail follows their lifecycle outputs.
@@ -3218,14 +3287,19 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
                 pause_simulation,
             } => {
                 if !(*pause_simulation
-                    && super::narrative_sync::queue(state, super::narrative_sync::Clip::Radar(*index)))
+                    && super::narrative_sync::queue(
+                        state,
+                        super::narrative_sync::Clip::Radar(*index),
+                    ))
                 {
                     crate::app::radar_movie::enqueue(state, *index, *pause_simulation);
                 }
             }
             TriggerEffect::FullscreenMovie { index } => {
-                if super::narrative_sync::queue(state, super::narrative_sync::Clip::Fullscreen(*index))
-                {
+                if super::narrative_sync::queue(
+                    state,
+                    super::narrative_sync::Clip::Fullscreen(*index),
+                ) {
                     continue;
                 }
                 let name = state
@@ -3301,7 +3375,8 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
                         .match_state
                         .match_presentation
                         .sidebar_projection
-                        .model.flash_cameo(
+                        .model
+                        .flash_cameo(
                             *category,
                             *type_index,
                             *duration,
@@ -3310,6 +3385,9 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
                             &runtime.resources.rules,
                         );
                 }
+            }
+            TriggerEffect::VariableValuePrinted { text } => {
+                crate::app::input::messages::post_variable_value_message(state, &text);
             }
         }
     }
@@ -3772,7 +3850,9 @@ mod tests {
                 _ => None,
             })
             .collect();
-        let last = runtime.resume_outcome_wait(&mut FrameEffects::empty()).unwrap();
+        let last = runtime
+            .resume_outcome_wait(&mut FrameEffects::empty())
+            .unwrap();
         assert!(
             messages(&last, &runtime)
                 .into_iter()
@@ -4215,7 +4295,12 @@ mod modal_pump_tests {
         );
         let mut first = scene
             .runtime
-            .advance_frame(&[], SIM_TICK_MS, TickLane::Ordinary, &mut FrameEffects::empty())
+            .advance_frame(
+                &[],
+                SIM_TICK_MS,
+                TickLane::Ordinary,
+                &mut FrameEffects::empty(),
+            )
             .unwrap();
         record_replay_frame(diagnostics.replay_log.as_mut(), &mut first);
         let mut host = SimHost::default();

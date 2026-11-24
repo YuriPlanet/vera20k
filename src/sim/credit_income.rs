@@ -177,6 +177,18 @@ pub(crate) fn available_money(houses: &Houses, owner: InternedId) -> i32 {
         .map_or(0, |house| house.economy().available_money())
 }
 
+/// `HouseClass::TransactMoney`: `GiveMoney` (`Add_Credits @ 0x004F9950`) for a
+/// positive amount, `TakeMoney` (`Spend_Money @ 0x004F9790`) of its negation
+/// otherwise. The negation wraps exactly as the native two's-complement does;
+/// a caller moving a negative amount admits it first.
+pub(crate) fn transact_money(houses: &mut Houses, owner: InternedId, amount: i32) {
+    if amount < 0 {
+        spend_money(houses, owner, amount.wrapping_neg());
+    } else if amount > 0 {
+        add_credits(houses, owner, amount);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Oil derrick ProduceCash
 // ---------------------------------------------------------------------------
@@ -739,7 +751,17 @@ pub(crate) fn clear_drain_links_on_expiry(sim: &mut Simulation, expired_id: u64,
 ///    set and the target's house allied with this object's
 ///    (`HouseClass::Is_Ally_ByObject @ 0x004F9A90`, asked by the target's
 ///    house at `0x006FA1CF`), stop the drain inline.
-pub(crate) fn drain_common_step(sim: &mut Simulation, stable_id: u64, rules: &RuleSet) {
+///
+/// Phobos replaces block 1 with `TechnoClass_AI_DrainMoney @ 0x6FA167`
+/// (`Ext/Techno/Hooks.cpp:172-223`), which repeats the same transfer and then
+/// emits the flying credit labels from `DrainMoneyDisplay.*`; that hook is the
+/// source of [`emit_drain_money_text`].
+pub(crate) fn drain_common_step(
+    sim: &mut Simulation,
+    stable_id: u64,
+    rules: &RuleSet,
+    effects: crate::sim::world::FrameEffects<'_>,
+) {
     let Some(entity) = sim.substrate.entities.get(stable_id) else {
         return;
     };
@@ -770,8 +792,20 @@ pub(crate) fn drain_common_step(sim: &mut Simulation, stable_id: u64, rules: &Ru
             if available < amount {
                 amount = available;
             }
+            // `Ext/Techno/Hooks.cpp:185-188`: a negative amount is a payment
+            // from the drainer, bounded by its own available money (a source
+            // already in debt caps the payment at `-available`).
+            if amount < 0 {
+                let source_available = available_money(&sim.houses, drainer_owner);
+                amount = amount.max(source_available.wrapping_neg());
+            }
             spend_money(&mut sim.houses, owner, amount);
             add_credits(&mut sim.houses, drainer_owner, amount);
+            // `Ext/Techno/Hooks.cpp:193-194`: a zero clamped amount returns
+            // before the transfers and the labels.
+            if amount != 0 {
+                emit_drain_money_text(sim, rules, stable_id, drainer_id, amount, effects);
+            }
         }
     }
 
@@ -786,6 +820,124 @@ pub(crate) fn drain_common_step(sim: &mut Simulation, stable_id: u64, rules: &Ru
             .is_allied(&sim.interner, target_owner, owner)
     {
         stop_drain(sim, stable_id, rules);
+    }
+}
+
+/// Phobos `TechnoClass_AI_DrainMoney`'s two display blocks
+/// (`Ext/Techno/Hooks.cpp:199-219`), reached after the wallet transfer on a
+/// drain frame with a non-zero amount:
+///
+/// 1. `DrainMoneyDisplay=` on the drainer's type (or the `[AudioVisual]`
+///    global) and the drainer clearly visible to the local player: `+amount`
+///    at `pSource->Location`, the drainer's House as `pOwner`, filtered by
+///    `DrainMoneyDisplay.Houses`, offset `DrainMoneyDisplay.Offset`.
+/// 2. `DrainMoneyDisplay.OnTarget=` (or the global): `-amount` at the
+///    drained object's `GetRenderCoords` (`0x0041BE00`). With
+///    `UseDisplayIncome=no` the label keeps the drainer's House as `pOwner`,
+///    the drain Houses filter and the drain offset; with it `yes` and a
+///    building target, `pOwner` becomes the building's House and the filter
+///    and offset come from the building type's `DisplayIncome.Houses` /
+///    `.Offset` (their `[AudioVisual]` fallbacks included).
+///
+/// The local-player checks (visibility and the House filter) run in the
+/// client's `FlyingCredits` owner, exactly as the DisplaySoylent label does.
+fn emit_drain_money_text(
+    sim: &Simulation,
+    rules: &RuleSet,
+    victim_id: u64,
+    drainer_id: u64,
+    amount: i32,
+    mut effects: crate::sim::world::FrameEffects<'_>,
+) {
+    use crate::sim::flying_text::BountyText;
+    use crate::sim::movement::ground_pose;
+    use crate::sim::projectile::ProjectileCoord;
+
+    let Some(drainer) = sim.substrate.entities.get(drainer_id) else {
+        return;
+    };
+    let Some(drainer_object) = sim.interner.object_type(drainer.type_ref(), rules) else {
+        return;
+    };
+    let settings = drainer_object.phobos_drain_money_display;
+    let globals = &rules.phobos_globals;
+
+    if settings.display.unwrap_or(globals.drain_money_display) {
+        // `pSource->Location`: the drainer's own Location, not GetCoords.
+        let location = ground_pose::object_location(drainer, sim.resolved_terrain.as_ref());
+        effects.emit_bounty_text(
+            sim,
+            rules,
+            BountyText {
+                entity_id: Some(drainer_id),
+                amount,
+                coord: ProjectileCoord::new(location.x, location.y, location.z),
+                z_offset: 0,
+                display_to: Some(
+                    settings
+                        .houses
+                        .unwrap_or(globals.drain_money_display_houses),
+                ),
+                display_owner: None,
+                pixel_offset: settings.offset,
+            },
+        );
+    }
+
+    if !settings
+        .on_target
+        .unwrap_or(globals.drain_money_display_on_target)
+    {
+        return;
+    }
+    let Some(victim) = sim.substrate.entities.get(victim_id) else {
+        return;
+    };
+    // `pThis->GetRenderCoords()`: ObjectClass::GetRenderCoords delegates to
+    // virtual GetCoords, the building's foundation centre.
+    let coords = ground_pose::object_get_coords(victim, sim.resolved_terrain.as_ref());
+    let use_display_income = settings
+        .on_target_use_display_income
+        .unwrap_or(globals.drain_money_display_on_target_use_display_income);
+    if !use_display_income {
+        // "use firer for owner check": the target label is filtered by the
+        // drainer's House while its anchor and visual test stay the target.
+        effects.emit_bounty_text(
+            sim,
+            rules,
+            BountyText {
+                entity_id: Some(victim_id),
+                amount: amount.wrapping_neg(),
+                coord: ProjectileCoord::new(coords.x, coords.y, coords.z),
+                z_offset: 0,
+                display_to: Some(
+                    settings
+                        .houses
+                        .unwrap_or(globals.drain_money_display_houses),
+                ),
+                display_owner: Some(drainer.owner()),
+                pixel_offset: settings.offset,
+            },
+        );
+    } else if victim.category() == EntityCategory::Structure
+        && let Some(victim_object) = sim.interner.object_type(victim.type_ref(), rules)
+    {
+        let income = victim_object.phobos_display_income;
+        // "use target for owner check": the building's own House filters the
+        // label; its type's DisplayIncome.Houses/Offset replace the drain keys.
+        effects.emit_bounty_text(
+            sim,
+            rules,
+            BountyText {
+                entity_id: Some(victim_id),
+                amount: amount.wrapping_neg(),
+                coord: ProjectileCoord::new(coords.x, coords.y, coords.z),
+                z_offset: 0,
+                display_to: Some(income.houses.unwrap_or(globals.display_income_houses)),
+                display_owner: None,
+                pixel_offset: income.offset,
+            },
+        );
     }
 }
 
@@ -852,6 +1004,20 @@ mod tests {
         drain_delay: i32,
         drain_amount: i32,
     ) -> RuleSet {
+        rules_with_drain_display(foundation, drain_delay, drain_amount, "", "", "")
+    }
+
+    /// The same fixture with extra keys merged into `[DISK]`, `[NAREFN]` and a
+    /// `[AudioVisual]` block. Each snippet is appended to its existing section
+    /// (a repeated section header would keep only the first definition).
+    fn rules_with_drain_display(
+        foundation: &str,
+        drain_delay: i32,
+        drain_amount: i32,
+        disk_extra: &str,
+        refinery_extra: &str,
+        audio_visual_extra: &str,
+    ) -> RuleSet {
         // Retail `[DISKRAY]` art (ARTMD.INI), five frames bound.
         let art_text = format!(
             "[CAOILD]\nFoundation=2x2\n[CAOILDP]\nFoundation=2x2\n[GAPOWR]\nFoundation=2x2\n\
@@ -861,7 +1027,8 @@ mod tests {
         let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(&format!(
             "[General]\n\
              [CombatDamage]\nDrainMoneyFrameDelay={drain_delay}\nDrainMoneyAmount={drain_amount}\n\
-             DrainAnimationType=DISKRAY\n\n\
+             DrainAnimationType=DISKRAY\n\
+             [AudioVisual]\n{audio_visual_extra}\n\n\
              [InfantryTypes]\n[AircraftTypes]\n\
              [VehicleTypes]\n0=DISK\n\
              [BuildingTypes]\n0=CAOILD\n1=CAOILDP\n2=GAPOWR\n3=NAREFN\n\n\
@@ -872,9 +1039,9 @@ mod tests {
              ProduceCashStartup=1000\nProduceCashAmount=20\nProduceCashDelay=100\n\n\
              [GAPOWR]\nStrength=750\nArmor=wood\nPower=100\nDrainable=yes\n\n\
              [NAREFN]\nStrength=1000\nArmor=wood\n\
-             ResourceDestination=yes\nDrainable=yes\n\n\
+             ResourceDestination=yes\nDrainable=yes\n{refinery_extra}\n\n\
              [DISK]\nLocomotor={{4A582741-9839-11d1-B709-00A024DDAFD1}}\nStrength=500\nArmor=heavy\nSpeed=6\n\
-             Sight=9\nPrimary=DiskLaser\nSecondary=DiskDrain\n\n\
+             Sight=9\nPrimary=DiskLaser\nSecondary=DiskDrain\n{disk_extra}\n\n\
              [DiskLaser]\nDamage=90\nROF=80\nRange=7\nProjectile=Invisible\nWarhead=DiskWH\n\n\
              [DiskDrain]\nDamage=1\nBurst=1\nROF=50\nRange=1.5\nProjectile=Invisible\nWarhead=AntiB\n\
              DrainWeapon=yes\nOmniFire=yes\n\n\
@@ -1312,7 +1479,12 @@ mod tests {
                 asker.to_ascii_uppercase(),
                 [other.to_ascii_uppercase()].into(),
             )]);
-            drain_common_step(&mut sim, disk, &rules);
+            drain_common_step(
+                &mut sim,
+                disk,
+                &rules,
+                crate::sim::world::FrameEffects::empty(),
+            );
             sim.substrate.entities.get(disk).unwrap().drain.target == Some(plant)
         };
         assert!(linked("YuriCountry", "Americans"));
@@ -1829,5 +2001,228 @@ mod tests {
         let before = credits(&sim, owner);
         produce_cash_step(&mut sim, host, &rules);
         assert_eq!(credits(&sim, owner) - before, 5);
+    }
+
+    /// Phobos `TechnoClass_AI_DrainMoney @ 0x6FA167`
+    /// (`Ext/Techno/Hooks.cpp:199-219`): the drain frame's transfer emits the
+    /// drainer label from its own type keys and the target label with
+    /// `UseDisplayIncome=no`, which keeps the drainer's House as the filter
+    /// owner while anchoring at the drained building's GetCoords.
+    #[test]
+    fn drain_money_labels_use_the_drain_keys_and_the_firer_owner_on_target() {
+        use crate::rules::phobos_shields::AffectedHouse;
+        use crate::sim::flying_text::BountyText;
+        use crate::sim::projectile::ProjectileCoord;
+        use crate::sim::world::{FrameEffects, TickLane};
+
+        let rules = rules_with_drain_display(
+            "2x2",
+            17,
+            13,
+            "DrainMoneyDisplay=yes\nDrainMoneyDisplay.Houses=enemies\n\
+             DrainMoneyDisplay.Offset=6,-4\nDrainMoneyDisplay.OnTarget=yes\n\
+             DrainMoneyDisplay.OnTarget.UseDisplayIncome=no\n",
+            // Present but unused with UseDisplayIncome=no.
+            "DisplayIncome.Houses=allies\nDisplayIncome.Offset=-3,2\n",
+            "",
+        );
+        let mut sim = Simulation::with_seed(0x006F_A167);
+        let yuri = house(&mut sim, "YuriCountry", false, 500);
+        let americans = house(&mut sim, "Americans", true, 75);
+        base(&mut sim, &rules, "YuriCountry", 40, 40);
+        let refinery = sim
+            .spawn_object("NAREFN", "Americans", 20, 20, 0, &rules)
+            .expect("refinery spawns");
+        let disk = sim
+            .spawn_object("DISK", "YuriCountry", 21, 21, 0, &rules)
+            .expect("disc spawns");
+        assert!(install_drain_link(
+            &mut sim.substrate,
+            &sim.houses,
+            &mut sim.power_states,
+            disk,
+            refinery,
+            crate::rules::ares_switch::ares_way(),
+        ));
+
+        // The common AI reads the pre-increment frame; 17 is a drain frame.
+        sim.session.set_binary_frame_for_test(17);
+        let events = std::cell::RefCell::new(Vec::new());
+        let mut observe = |_: &Simulation, _: &RuleSet, text: BountyText| {
+            events.borrow_mut().push(text);
+        };
+        let grid = crate::sim::pathfinding::PathGrid::new(64, 64);
+        sim.install_fixture_path_grid(Some(&grid));
+        sim.advance_app_frame(
+            &[],
+            &rules,
+            67,
+            TickLane::Ordinary,
+            &mut FrameEffects::empty().with_bounty_text(&mut observe),
+        )
+        .expect("drain frame completes");
+
+        assert_eq!((credits(&sim, americans), credits(&sim, yuri)), (62, 513));
+        let events = events.borrow();
+        assert_eq!(events.len(), 2, "one label per drain block");
+        let source = events[0];
+        assert_eq!(source.entity_id, Some(disk));
+        assert_eq!(source.amount, 13);
+        assert_eq!(
+            source.coord,
+            ProjectileCoord::new(21 * 256 + 128, 21 * 256 + 128, 0),
+            "the drainer label uses pSource->Location"
+        );
+        assert_eq!(source.display_to, Some(AffectedHouse::ENEMIES));
+        assert_eq!(source.display_owner, None);
+        assert_eq!(source.pixel_offset, [6, -4]);
+
+        let target = events[1];
+        assert_eq!(target.entity_id, Some(refinery));
+        assert_eq!(target.amount, -13);
+        assert_eq!(
+            target.coord,
+            ProjectileCoord::new(20 * 256 + 128 + 128, 20 * 256 + 128 + 128, 0),
+            "the target label uses GetCoords, a building's foundation centre"
+        );
+        assert_eq!(
+            target.display_to,
+            Some(AffectedHouse::ENEMIES),
+            "UseDisplayIncome=no keeps the drain Houses filter"
+        );
+        assert_eq!(
+            target.display_owner,
+            Some(yuri),
+            "the house filter asks the drainer's House, not the building's"
+        );
+        assert_eq!(
+            target.pixel_offset,
+            [6, -4],
+            "UseDisplayIncome=no keeps the drain offset"
+        );
+    }
+
+    /// The same hook with `UseDisplayIncome=yes` on a building target
+    /// (`Ext/Techno/Hooks.cpp:213-219`): the label's House filter and offset
+    /// come from the drained building's type, falling back to the
+    /// `[AudioVisual]` globals, and the anchor object's House filters it.
+    #[test]
+    fn drain_target_label_takes_the_building_display_income_house_and_offset() {
+        use crate::rules::phobos_shields::AffectedHouse;
+        use crate::sim::flying_text::BountyText;
+        use crate::sim::projectile::ProjectileCoord;
+        use crate::sim::world::{FrameEffects, TickLane};
+
+        let rules = rules_with_drain_display(
+            "2x2",
+            17,
+            13,
+            "DrainMoneyDisplay.Offset=6,-4\n\
+             DrainMoneyDisplay.OnTarget.UseDisplayIncome=yes\n",
+            "DisplayIncome.Houses=owner\nDisplayIncome.Offset=-3,2\n",
+            "DrainMoneyDisplay=yes\nDrainMoneyDisplay.Houses=enemies\n\
+             DrainMoneyDisplay.OnTarget=yes\n",
+        );
+        let mut sim = Simulation::with_seed(0x006F_A219);
+        let _yuri = house(&mut sim, "YuriCountry", false, 500);
+        let americans = house(&mut sim, "Americans", true, 75);
+        base(&mut sim, &rules, "YuriCountry", 40, 40);
+        let refinery = sim
+            .spawn_object("NAREFN", "Americans", 20, 20, 0, &rules)
+            .expect("refinery spawns");
+        let disk = sim
+            .spawn_object("DISK", "YuriCountry", 21, 21, 0, &rules)
+            .expect("disc spawns");
+        assert!(install_drain_link(
+            &mut sim.substrate,
+            &sim.houses,
+            &mut sim.power_states,
+            disk,
+            refinery,
+            crate::rules::ares_switch::ares_way(),
+        ));
+        sim.session.set_binary_frame_for_test(17);
+        let events = std::cell::RefCell::new(Vec::new());
+        let mut observe = |_: &Simulation, _: &RuleSet, text: BountyText| {
+            events.borrow_mut().push(text);
+        };
+        let grid = crate::sim::pathfinding::PathGrid::new(64, 64);
+        sim.install_fixture_path_grid(Some(&grid));
+        sim.advance_app_frame(
+            &[],
+            &rules,
+            67,
+            TickLane::Ordinary,
+            &mut FrameEffects::empty().with_bounty_text(&mut observe),
+        )
+        .expect("drain frame completes");
+
+        let events = events.borrow();
+        assert_eq!(events.len(), 2);
+        let source = events[0];
+        assert_eq!(source.entity_id, Some(disk));
+        assert_eq!(
+            (source.display_to, source.pixel_offset),
+            (Some(AffectedHouse::ENEMIES), [6, -4]),
+            "the drainer label falls back to the global Houses and its own offset"
+        );
+        let target = events[1];
+        assert_eq!(target.entity_id, Some(refinery));
+        assert_eq!(target.amount, -13);
+        assert_eq!(
+            target.coord,
+            ProjectileCoord::new(20 * 256 + 256, 20 * 256 + 256, 0)
+        );
+        assert_eq!(
+            (target.display_to, target.display_owner, target.pixel_offset),
+            (Some(AffectedHouse::OWNER), None, [-3, 2]),
+            "the building's DisplayIncome.Houses/Offset replace the drain keys"
+        );
+        assert_ne!(credits(&sim, americans), 75);
+    }
+
+    /// `Ext/Techno/Hooks.cpp:185-188`: a negative `DrainMoneyAmount` makes the
+    /// drainer pay the drained building, bounded by the drainer's available
+    /// money so the transfer can take it to zero but not below.
+    #[test]
+    fn negative_drain_amount_is_bounded_by_the_drainers_balance() {
+        use crate::sim::world::{FrameEffects, TickLane};
+
+        let rules = rules_with_drain_display("2x2", 17, -20, "", "", "");
+        let mut sim = Simulation::with_seed(0x006F_A220);
+        let yuri = house(&mut sim, "YuriCountry", false, 10);
+        let americans = house(&mut sim, "Americans", true, 75);
+        base(&mut sim, &rules, "YuriCountry", 40, 40);
+        let refinery = sim
+            .spawn_object("NAREFN", "Americans", 20, 20, 0, &rules)
+            .expect("refinery spawns");
+        let disk = sim
+            .spawn_object("DISK", "YuriCountry", 21, 21, 0, &rules)
+            .expect("disc spawns");
+        assert!(install_drain_link(
+            &mut sim.substrate,
+            &sim.houses,
+            &mut sim.power_states,
+            disk,
+            refinery,
+            crate::rules::ares_switch::ares_way(),
+        ));
+        sim.session.set_binary_frame_for_test(17);
+        let grid = crate::sim::pathfinding::PathGrid::new(64, 64);
+        sim.install_fixture_path_grid(Some(&grid));
+        sim.advance_app_frame(
+            &[],
+            &rules,
+            67,
+            TickLane::Ordinary,
+            &mut FrameEffects::empty(),
+        )
+        .expect("drain frame completes");
+
+        assert_eq!(
+            (credits(&sim, americans), credits(&sim, yuri)),
+            (85, 0),
+            "max(-20, -10) transfers 10 from the drainer to the building"
+        );
     }
 }

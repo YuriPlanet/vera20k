@@ -2368,6 +2368,111 @@ fn gsi_04_07_command_places_authoritative_owned_wall_without_entity() {
     );
 }
 
+/// AI wall fill with `AINodeWallsOnly`: the first cell of each direction must
+/// be a base node of the wall type until the call has placed a wall.
+fn ai_wall_fill_scene(
+    key: bool,
+    node_cells: &[(u16, u16)],
+) -> (
+    Simulation,
+    RuleSet,
+    OverlayTypeRegistry,
+    crate::sim::intern::InternedId,
+) {
+    let (mut rules, registry) = gsi_04_07_wall_placement_contract();
+    rules.phobos_globals.ai_node_walls_only = key;
+    let mut sim = placement_sim();
+    sim.overlay_grid = Some(OverlayGrid::new(64, 64));
+    sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |_| {}));
+    spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
+    let owner = sim.interner.get("Americans").expect("owner");
+    let house = sim.houses.get_mut(&owner).expect("house");
+    house.set_is_human_for_test(false);
+    house.set_player_control_for_test(false);
+    let wall_type_index = rules.object("GAWALL").expect("wall").base_plan_type_index;
+    assert!(wall_type_index >= 0, "fixture must index GAWALL");
+    if !node_cells.is_empty() {
+        let nodes = node_cells
+            .iter()
+            .map(|&(rx, ry)| crate::sim::base_plan::BasePlanNode {
+                type_or_control: wall_type_index,
+                packed_cell: crate::sim::base_plan::pack_base_plan_cell(
+                    i32::from(rx),
+                    i32::from(ry),
+                ),
+                filled: false,
+                retry_count: 0,
+            })
+            .collect();
+        sim.houses
+            .get_mut(&owner)
+            .expect("house")
+            .base_plan_mut()
+            .set_nodes_for_test(nodes);
+    }
+    let overlay_id = registry.id_for_name("GAWALL").expect("wall overlay");
+    for (rx, ry) in [(18, 13), (23, 18), (18, 23), (13, 18)] {
+        sim.overlay_grid
+            .as_mut()
+            .expect("overlay grid")
+            .place_owned_wall(rx, ry, overlay_id, 0x20, owner);
+    }
+    (sim, rules, registry, owner)
+}
+
+#[test]
+fn ai_node_walls_only_gates_each_first_cell_until_one_wall_lands() {
+    let all_fillers = [
+        (18, 17),
+        (18, 16),
+        (18, 15),
+        (18, 14),
+        (19, 18),
+        (20, 18),
+        (21, 18),
+        (22, 18),
+        (18, 19),
+        (18, 20),
+        (18, 21),
+        (18, 22),
+        (17, 18),
+        (16, 18),
+        (15, 18),
+        (14, 18),
+    ];
+    for (key, nodes, expected) in [
+        (false, &[][..], all_fillers.len()),
+        (
+            true,
+            &[(18, 17), (19, 18), (18, 19), (17, 18)][..],
+            all_fillers.len(),
+        ),
+        (true, &[][..], 0),
+    ] {
+        let (mut sim, rules, registry, owner) = ai_wall_fill_scene(key, nodes);
+        let wall = rules.object("GAWALL").expect("wall rules");
+        crate::sim::production::autofill_walls(
+            &mut sim,
+            &rules,
+            &registry,
+            wall,
+            (18, 18),
+            owner,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
+        let overlay_id = registry.id_for_name("GAWALL").expect("wall overlay");
+        let grid = sim.overlay_grid.as_ref().expect("overlay grid");
+        assert_eq!(
+            all_fillers
+                .iter()
+                .filter(|&&(rx, ry)| grid.cell(rx, ry).overlay_id == Some(overlay_id))
+                .count(),
+            expected,
+            "key {key}, nodes {nodes:?}"
+        );
+    }
+}
+
 #[test]
 fn gsi_04_07_regular_wall_autofill_is_cardinal_ordered_bounded_and_consumes_once() {
     let (rules, registry) = gsi_04_07_wall_placement_contract();
@@ -3040,6 +3145,74 @@ fn base_normal_false_structures_do_not_extend_build_area() {
     assert!(!placed);
     let placed = place_building(&mut sim, &rules, "Americans", "GAPOWR", (52, 50), None);
     assert!(placed, "the yard's own area admits the same building");
+}
+
+/// Two same-house providers around the previewed cell `(12,10)`: a GAPOWR the
+/// rows vary and a yard far away that only supplies the house's producer.
+/// `provider_in_construction` writes the GAPOWR's live mission.
+fn buildup_provider_sim(rules: &RuleSet, provider_in_construction: bool) -> Simulation {
+    let mut sim = placement_sim();
+    spawn_structure(&mut sim, rules, 1, "Americans", "GAPOWR", 10, 10);
+    spawn_structure(&mut sim, rules, 2, "Americans", "GACNST", 50, 50);
+    for provider in [1, 2] {
+        sim.remove_entity_occupancy(provider);
+        stamp_type_foundation(&mut sim, rules, provider);
+        assert!(sim.mark_entity_put(provider, crate::sim::world::UninitContext::new(rules)));
+    }
+    ready_building(&mut sim, rules, "Americans", "GAPOWR");
+    if provider_in_construction {
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .expect("the spawned provider")
+            .mission
+            .set_current_for_test(
+                crate::sim::mission::MissionId::from_known(MissionType::Construction),
+                0,
+            );
+    }
+    sim
+}
+
+/// Phobos `NoBuildAreaOnBuildup=` (`Ext/BuildingType/Body.cpp:233`, hook
+/// `0x4A8FD7` in `Ext/BuildingType/Hooks.cpp:245`): a provider still in its
+/// construction mission extends no build area, and the flag is what matters —
+/// the mission alone does not skip an unkeyed provider.
+#[test]
+fn no_build_area_on_buildup_provider_is_ignored_only_while_building() {
+    let rules = super::tests::placement_radius_rules_with("NoBuildAreaOnBuildup=yes\n");
+
+    let mut building_sim = buildup_provider_sim(&rules, true);
+    let preview = preview_at(&building_sim, &rules, "Americans", "GAPOWR", (12, 10), None);
+    assert_eq!(preview.reason, Some(BuildingPlacementError::OutOfBuildArea));
+    let placed = place_building(
+        &mut building_sim,
+        &rules,
+        "Americans",
+        "GAPOWR",
+        (12, 10),
+        None,
+    );
+    assert!(!placed);
+
+    // The same keyed provider, idle, extends the area. A fresh Simulation
+    // keeps the row above's mission write from leaking into this one.
+    let mut idle_sim = buildup_provider_sim(&rules, false);
+    let placed = place_building(&mut idle_sim, &rules, "Americans", "GAPOWR", (12, 10), None);
+    assert!(placed, "an idle provider still extends the area");
+
+    // Without the key a provider in Construction still extends the area.
+    let stock = placement_radius_rules();
+    let mut unkeyed_sim = buildup_provider_sim(&stock, true);
+    let placed = place_building(
+        &mut unkeyed_sim,
+        &stock,
+        "Americans",
+        "GAPOWR",
+        (12, 10),
+        None,
+    );
+    assert!(placed, "the mission alone does not skip a provider");
 }
 
 /// BuildOffAlly lends an allied structure's build area only while the game

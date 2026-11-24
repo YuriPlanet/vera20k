@@ -888,6 +888,7 @@ fn queue_context_order(
                 (target_rx, target_ry),
                 modifier,
                 force_move_key,
+                state.match_state.input.planning.active(),
             );
             queued.extend(
                 orders
@@ -910,6 +911,7 @@ fn queue_context_order(
                 (target_rx, target_ry),
                 modifier,
                 force_move_key,
+                state.match_state.input.planning.active(),
             ) {
                 BuildingClick::Select => {
                     *selects = true;

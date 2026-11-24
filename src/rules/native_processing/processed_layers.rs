@@ -9,24 +9,19 @@ use super::{
 use crate::rules::aircraft_trailer::AircraftTrailer;
 use crate::rules::ares_armor::ArmorCatalog;
 use crate::rules::ares_prerequisites::GenericPrerequisites;
-#[cfg(feature = "phobos")]
 use crate::rules::attach_effect::AttachEffectTypeCatalog;
 use crate::rules::compatibility::RulesCompatibility;
-#[cfg(feature = "phobos")]
 use crate::rules::digital_display::DigitalDisplayTypeCatalog;
 use crate::rules::error::RulesError;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ini_parser::IniSection;
 use crate::rules::ini_parser::is_native_none_type_name;
-#[cfg(feature = "phobos")]
 use crate::rules::insignia_type::InsigniaTypeCatalog;
 use crate::rules::object_image::ImageTheater;
 use crate::rules::object_image::ObjectImageKind;
 use crate::rules::object_image::ObjectImageState;
 use crate::rules::object_type::ObjectCategory;
-#[cfg(feature = "phobos")]
 use crate::rules::phobos_radiation::RadiationTypeCatalog;
-#[cfg(feature = "phobos")]
 use crate::rules::phobos_shields::ShieldTypeCatalog;
 use std::collections::HashSet;
 
@@ -101,7 +96,6 @@ impl ProcessedRulesLayers {
 
     /// Phobos `[RadiationTypes]` catalog with the same retained process
     /// lifetime as Types.
-    #[cfg(feature = "phobos")]
     pub(crate) fn radiation_types(&self) -> Option<&RadiationTypeCatalog> {
         self.native_type_construction_trace
             .registry_state
@@ -111,7 +105,6 @@ impl ProcessedRulesLayers {
 
     /// Phobos `[InsigniaTypes]` catalog with the same retained process
     /// lifetime as Types.
-    #[cfg(feature = "phobos")]
     pub(crate) fn insignia_types(&self) -> Option<&InsigniaTypeCatalog> {
         self.native_type_construction_trace
             .registry_state
@@ -121,7 +114,6 @@ impl ProcessedRulesLayers {
 
     /// Phobos `[ShieldTypes]` catalog with the same retained process lifetime
     /// as Types.
-    #[cfg(feature = "phobos")]
     pub(crate) fn shield_types(&self) -> Option<&ShieldTypeCatalog> {
         self.native_type_construction_trace
             .registry_state
@@ -131,7 +123,6 @@ impl ProcessedRulesLayers {
 
     /// Phobos `[DigitalDisplayTypes]` catalog with the same retained process
     /// lifetime as Types.
-    #[cfg(feature = "phobos")]
     pub(crate) fn digital_display_types(&self) -> Option<&DigitalDisplayTypeCatalog> {
         self.native_type_construction_trace
             .registry_state
@@ -141,7 +132,6 @@ impl ProcessedRulesLayers {
 
     /// Phobos `[AttachEffectTypes]` catalog with the same retained process
     /// lifetime as Types.
-    #[cfg(feature = "phobos")]
     pub(crate) fn attach_effect_types(&self) -> Option<&AttachEffectTypeCatalog> {
         self.native_type_construction_trace
             .registry_state
@@ -594,9 +584,7 @@ impl ProcessedRulesLayers {
         registry.validate_prerequisites()?;
         registry.validate_radiation_types()?;
         registry.validate_shield_types()?;
-        #[cfg(feature = "phobos")]
         registry.validate_digital_display_types()?;
-        #[cfg(feature = "phobos")]
         registry.validate_attach_effect_types()?;
         let families = &registry.families;
         let projectile_count = families

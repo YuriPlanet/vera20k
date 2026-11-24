@@ -12,7 +12,6 @@
 //! (Detach_All and Stun), `pointer_expiry` and `uninit` (UnInit and pending
 //! delete).
 
-#[cfg(test)]
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_rect::CellRect;
@@ -883,6 +882,12 @@ pub enum LifecycleOutput {
     ClearRedraw {
         stable_id: u64,
     },
+    /// Same-object Type changes (Ares ConvertTechno10043740) keep their
+    /// Display membership. Presentation must re-resolve that object model
+    /// without pretending another object spawned or entered Display.
+    ObjectTypeChanged {
+        stable_id: u64,
+    },
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -1058,6 +1063,77 @@ pub enum LifecycleTestEvent {
     },
 }
 
+impl Simulation {
+    /// Phobos `TerrainClass_TakeDamage_RefreshDamageFrame` (`0x71B98B`,
+    /// `Ext/TerrainType/Hooks.cpp:268-283`): the "dirty hack" latch that forces
+    /// the next draw through the crumbling arm. Unlike `terrain_start_crumble`
+    /// (`0x71BB2C`) it neither restarts the Stage nor plays `CrumblingSound`;
+    /// `TerrainClass_AI_Crumbling` (`0x71C812`) clears it while Health is above
+    /// zero, so it lasts exactly one AI visit.
+    pub(crate) fn terrain_latch_damaged_frame(&mut self, stable_id: u64) {
+        self.terrain_objects.set_crumbling(stable_id, true);
+        self.register_logic_object(stable_id);
+    }
+
+    /// Phobos `LogicClass::Remove` for the damaged-redraw crumble latch.
+    pub(crate) fn terrain_remove_from_logic(&mut self, stable_id: u64) {
+        self.unregister_logic_object(stable_id);
+    }
+
+    /// Phobos `TerrainClass_TakeDamage_NowDead_Add` (`0x71BB2C`,
+    /// `Ext/TerrainType/Hooks.cpp:276-305`): a `HasCrumblingFrames=` tree
+    /// stays alive for its crumble sequence. IsCrumbling and Stage rate 2
+    /// (`Start_To_Crumble @ 0x0071C8E0`), Logic membership, then
+    /// `CrumblingSound` at the tree's coordinate.
+    pub(crate) fn terrain_start_crumble(&mut self, stable_id: u64, rules: &RuleSet) {
+        let Some((type_ref, coords)) = self
+            .terrain_objects
+            .get(stable_id)
+            .map(|terrain| (terrain.type_ref(), terrain.world_coord()))
+        else {
+            return;
+        };
+        let name = self.interner.resolve(type_ref).to_string();
+        let Some(terrain_type) = rules.terrain_object_type_case_insensitive(&name) else {
+            return;
+        };
+        self.terrain_objects.set_crumbling(stable_id, true);
+        let frames = rules.terrain_display_frame_count(&name).unwrap_or(0);
+        self.terrain_objects.start_crumble_animation(
+            stable_id,
+            frames,
+            self.session.binary_frame(),
+        );
+        self.register_logic_object(stable_id);
+        if let Some(sound) = &terrain_type.crumbling_sound {
+            self.sound_events.emit(SimSoundEvent::voc_at_world_coord(
+                rules.sound_name(sound),
+                crate::sim::anim_class::AnimWorldCoord {
+                    x: coords.x,
+                    y: coords.y,
+                    z: coords.z,
+                },
+            ));
+        }
+    }
+
+    /// The crumble sequence's end (`TerrainTypeExt::Remove`,
+    /// `Ext/TerrainType/Body.cpp:23-33`): UnInit the tree. The AI plays the
+    /// destroy effects before calling this.
+    pub(crate) fn terrain_crumble_finish(
+        &mut self,
+        stable_id: u64,
+        rules: &RuleSet,
+        _overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        let mut effects = effects;
+        let context = UninitContext::new(rules).with_effects(&mut effects);
+        let retired = self.retire_non_entity_object(stable_id, context);
+        debug_assert!(retired);
+    }
+}
+
 impl crate::sim::world::ObjectSubstrate {
     /// ObjectLimbo5F4D74 removes the individual particle's retained AIR
     /// entry through DisplayRemove4A9770, independently of its system.
@@ -1088,3 +1164,7 @@ mod watcher_tests;
 #[cfg(all(test, tests_sim_world_c_o))]
 #[path = "ares_prerequisite_lifecycle_tests.rs"]
 mod ares_prerequisite_lifecycle_tests;
+
+#[cfg(all(test, tests_sim_world_c_o))]
+#[path = "building_ai_repairable_tests.rs"]
+mod building_ai_repairable_tests;

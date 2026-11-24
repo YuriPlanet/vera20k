@@ -924,3 +924,161 @@ fn retail_fireat_charges_low_power_coil_and_pruning_disables_it_again() {
         Some(false)
     );
 }
+
+/// Phobos `Overpower.KeepOnline`/`.ChargeWeapon` and the warhead
+/// `ElectricAssaultLevel` (`Ext/BuildingType/Body.cpp:242-243`,
+/// `Ext/WarheadType/Body.cpp:398`) through the production sample and power
+/// gate: the summed level replaces the stock charger count.
+fn overpower_scene(keep: i32, charge: i32, level: i32) -> (Simulation, RuleSet, u64) {
+    overpower_scene_ini(keep, charge, level, true)
+}
+
+fn overpower_scene_ini(
+    keep: i32,
+    charge: i32,
+    level: i32,
+    assault: bool,
+) -> (Simulation, RuleSet, u64) {
+    use crate::rules::ini_parser::IniFile;
+    let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+        "[InfantryTypes]\n0=SHK\n\
+         [BuildingTypes]\n0=COIL\n\
+         [COIL]\nStrength=1000\nArmor=heavy\nOverpowerable=yes\n\
+         Overpower.KeepOnline={keep}\nOverpower.ChargeWeapon={charge}\n\
+         [SHK]\nStrength=100\nArmor=none\nSpeed=4\nPrimary=Zap\nSecondary=Zap\n\
+         [WeaponTypes]\n0=Zap\n\
+         [Zap]\nDamage=0\nROF=100\nRange=5\nWarhead=EZap\n\
+         [Warheads]\n0=EZap\n\
+         [EZap]\nElectricAssault={assault}\nElectricAssaultLevel={level}\n\
+         Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+         [General]\n"
+    ));
+    let art = IniFile::from_str("[COIL]\nFoundation=1x1\n[SHK]\n");
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("overpower rules");
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x0E0F);
+    sim.resolve_type_handles(&rules);
+    let coil = sim
+        .spawn_object_at_height("COIL", "Americans", 10, 10, 0, 0, &rules)
+        .expect("coil spawns");
+    let charger = sim
+        .spawn_object_at_height("SHK", "Americans", 11, 10, 0, 0, &rules)
+        .expect("charger spawns");
+    sim.substrate
+        .entities
+        .get_mut(charger)
+        .unwrap()
+        .attack_target
+        .set_for_test(Some(TargetKind::Entity(coil)));
+    sim.substrate
+        .electric_assault_detonation(charger, Some(coil), rules.ares());
+    (sim, rules, coil)
+}
+
+fn overpowered(sim: &mut Simulation, rules: &RuleSet, coil: u64, online: bool) -> bool {
+    sim.substrate
+        .entities
+        .get_mut(coil)
+        .unwrap()
+        .set_building_online_for_test(online);
+    Simulation::update_tesla_charge(
+        &sim.interner,
+        &mut sim.substrate,
+        &sim.power_states,
+        coil,
+        rules,
+    );
+    sim.substrate
+        .entities
+        .get(coil)
+        .unwrap()
+        .building
+        .tesla_charge
+        .is_overpowered()
+}
+
+#[test]
+fn overpower_sum_levels_and_the_type_thresholds_drive_the_latch() {
+    let (mut sim, rules, coil) = overpower_scene(2, 1, 3);
+    assert_eq!(rules.object("COIL").unwrap().overpower_keep_online, 2);
+    assert_eq!(rules.object("COIL").unwrap().overpower_charge_weapon, 1);
+    assert!(
+        overpowered(&mut sim, &rules, coil, false),
+        "one level-3 charger reaches KeepOnline 2 + ChargeWeapon 1 while offline"
+    );
+
+    let (mut sim, rules, coil) = overpower_scene(5, 1, 3);
+    assert!(
+        !overpowered(&mut sim, &rules, coil, false),
+        "3 levels stay below KeepOnline 5 + ChargeWeapon 1"
+    );
+
+    let (mut sim, rules, coil) = overpower_scene(2, -1, 3);
+    assert!(
+        !overpowered(&mut sim, &rules, coil, true),
+        "a negative ChargeWeapon disables the latch"
+    );
+
+    let (mut sim, rules, coil) = overpower_scene(5, 1, 3);
+    assert!(
+        overpowered(&mut sim, &rules, coil, true),
+        "at full house power the level only needs to reach ChargeWeapon"
+    );
+}
+
+#[test]
+fn the_power_gate_uses_the_summed_level_against_keep_online() {
+    let (mut sim, rules, coil) = overpower_scene(2, 1, 3);
+    sim.substrate
+        .entities
+        .get_mut(coil)
+        .unwrap()
+        .set_building_online_for_test(false);
+    assert_eq!(
+        sim.building_operational_state(coil, &rules),
+        Some(true),
+        "3 levels keep a KeepOnline 2 building operational"
+    );
+
+    let (mut sim, rules, coil) = overpower_scene(5, 1, 3);
+    sim.substrate
+        .entities
+        .get_mut(coil)
+        .unwrap()
+        .set_building_online_for_test(false);
+    assert_eq!(
+        sim.building_operational_state(coil, &rules),
+        Some(false),
+        "3 levels stay below KeepOnline 5"
+    );
+}
+
+#[test]
+fn the_power_gate_sums_any_warhead_and_rejects_negative_keep_online() {
+    // The 0x4555E4/0x45563B gate takes any slot-1 warhead's level
+    // (`Ext/Building/Hooks.cpp:970-981`); only the AI sample checks
+    // `ElectricAssault`.
+    let (mut sim, rules, coil) = overpower_scene_ini(2, 1, 2, false);
+    sim.substrate
+        .entities
+        .get_mut(coil)
+        .unwrap()
+        .set_building_online_for_test(false);
+    assert_eq!(
+        sim.building_operational_state(coil, &rules),
+        Some(true),
+        "a level-2 warhead without ElectricAssault still counts in the gate"
+    );
+
+    let (mut sim, rules, coil) = overpower_scene(-1, 1, 3);
+    sim.substrate
+        .entities
+        .get_mut(coil)
+        .unwrap()
+        .set_building_online_for_test(false);
+    assert_eq!(
+        sim.building_operational_state(coil, &rules),
+        Some(false),
+        "a negative KeepOnline is low power"
+    );
+}

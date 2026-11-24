@@ -37,7 +37,6 @@ pub mod spark_spawn;
 pub mod spark_world;
 pub mod spawn;
 pub mod system_ai;
-pub mod web;
 pub mod wind;
 
 #[cfg(all(test, tests_sim_p_s))]
@@ -50,9 +49,9 @@ mod gas_native_tests;
 mod native_fixture;
 #[cfg(all(test, tests_sim_p_s))]
 mod native_identity_tests;
-// Ares simulates this Railgun system itself (hooks 0x62DF05, 0x62FD60).
 #[cfg(all(test, tests_sim_p_s))]
 mod railgun_native_tests;
+// Ares simulates this Railgun system itself (hooks 0x62DF05, 0x62FD60).
 #[cfg(all(test, tests_sim_p_s))]
 mod virus_tests;
 
@@ -320,11 +319,7 @@ impl Particle {
     pub fn draw_frame(&self, kind: &ParticleType) -> i32 {
         let state = i32::from(self.animation_state as i8);
         match kind.behaves_like {
-            // Firestorm 2.0 `ParticleClass::Get_Image_Data` 0x005A4D80 (its
-            // table at 0x005A4E60) gives a Web particle its state too.
-            ParticleBehavesLike::Gas | ParticleBehavesLike::Smoke | ParticleBehavesLike::Web => {
-                state
-            }
+            ParticleBehavesLike::Gas | ParticleBehavesLike::Smoke => state,
             ParticleBehavesLike::Fire => {
                 let project = |point: IVec3| {
                     let (x, y) = crate::util::lepton::project_absolute_lepton_xy(point.x, point.y);
@@ -380,7 +375,7 @@ impl Particle {
     ) -> Self {
         let pt = rules.particle_type(type_id);
         let particle = Self::new_with_ground(type_id, coords, target, pt, sim, |sim, x, y| {
-            spark_world::constructor_ground_height(sim.resolved_terrain.as_ref(), x, y)
+            spark_world::constructor_ground_height(sim, x, y)
         })
         .expect("particle construction requires supported ground facts");
         Simulation::reveal_particle(&mut sim.substrate, particle.stable_id);
@@ -1401,3 +1396,7 @@ mod tests {
         assert_eq!(restored.particles[0].velocity().bits(), 0x4000_0000);
     }
 }
+
+#[cfg(all(test, tests_sim_p_s))]
+#[path = "alpha_shape_tests.rs"]
+mod alpha_shape_tests;

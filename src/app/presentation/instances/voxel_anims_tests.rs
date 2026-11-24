@@ -80,6 +80,7 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
         rules,
         None,
         &mut crate::sim::world::FrameEffects::default(),
+        true,
     );
     let ids = sim.voxel_anims().ids();
     // [HARV] MaxDebris=6, DebrisTypes=TIRE: this seed's budget is positive.

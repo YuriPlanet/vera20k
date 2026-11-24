@@ -54,13 +54,16 @@ pub(crate) fn apply_warhead_damage(
     distance_leptons: i32,
     scenario_no_damage: bool,
     max_damage: i32,
+    negative_modifiers: bool,
 ) -> i32 {
     // 489189..1A9: zero / ScenarioFlags20h / caller-owned null warhead.
     if damage == 0 || scenario_no_damage {
         return 0;
     }
     // 4891AB..1C5: signed distance<8; negative damage bypasses even MaxDamage.
-    if damage < 0 {
+    // Phobos 0x4891AF (`Ext/WarheadType/Hooks.cpp:334`) jumps to the modifier
+    // path instead when the key resolved true, skipping the distance test.
+    if damage < 0 && !negative_modifiers {
         return if distance_leptons < 8 { damage } else { 0 };
     }
 
@@ -96,8 +99,16 @@ pub(crate) fn apply_warhead_damage(
         damage
     };
     // 489227..249: signed floor0, binary64 verse multiply, ftol low EAX.
+    // Phobos 0x48922D (`Ext/WarheadType/Hooks.cpp:352`) skips the floor only
+    // for the negative packet its first hook armed, so the negative falloff
+    // is scaled and can stay negative.
+    let floored = if damage < 0 && negative_modifiers {
+        falloff
+    } else {
+        falloff.max(0)
+    };
     let scaled = X87::ftol_i32_low_masked(X87::mul(
-        X87::load_i32(falloff.max(0)),
+        X87::load_i32(floored),
         X87::load_f64(armor_multiplier),
     ));
 

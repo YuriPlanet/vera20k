@@ -120,13 +120,10 @@ pub(crate) fn current_in_game_shell_layout(state: &AppState) -> Option<InGameShe
     let (width, height) = in_game_shell_size(state);
     // The Phobos switch is absent from builds without the capability, so those
     // keep the native top-left placement.
-    #[cfg(feature = "phobos")]
     let center_background = state
         .match_state
         .match_presentation
         .center_pause_menu_background;
-    #[cfg(not(feature = "phobos"))]
-    let center_background = false;
     Some(InGameShellGeometry {
         width,
         height,

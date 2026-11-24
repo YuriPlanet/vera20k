@@ -198,8 +198,9 @@ impl Simulation {
             frame_profile: Default::default(),
             object_placement_scope_depth: 0,
             buildup_bypass: false,
-            #[cfg(feature = "phobos")]
             reflected_warhead: None,
+            phobos_falling_down: Vec::new(),
+            auto_death_objects: Vec::new(),
             ares_made_up_rules: None,
             scenario_rng: SimRng::new(seed),
             main_rng: SimRng::new(seed),
@@ -236,8 +237,8 @@ impl Simulation {
             combat_light_requests: FrameChannel::default(),
             screen_shake_updates: FrameChannel::default(),
             projectiles: crate::sim::projectile::ProjectileStore::new(),
-            #[cfg(feature = "phobos")]
             warhead_anim_runtime: Default::default(),
+            phobos_all_map_detonation_active: None,
             waves: crate::sim::wave::WaveStore::new(),
             active_wave_links: BTreeMap::new(),
             object_custom_sounds: BTreeMap::new(),
@@ -250,6 +251,7 @@ impl Simulation {
             zone_grid: None,
             path_grid: None,
             structure_navigation_cells: BTreeSet::new(),
+            destroyable_obstacle_cells: BTreeSet::new(),
             resolved_terrain: None,
             shared_cell_dummy: SharedCellDummy::fresh(),
             native_local_cell_cursor: None,
@@ -285,6 +287,8 @@ impl Simulation {
             ares_tunnels: Default::default(),
             ion_blasts: Vec::new(),
             alpha_shapes: Default::default(),
+            particle_light_flash: false,
+            firing_anim_update_count: 0,
             terrain_speed_config: terrain_speed::TerrainSpeedConfig::default(),
             input_delay_ticks: u64::from(crate::util::config::default_input_delay_ticks()),
             quit_requested: false,
@@ -300,7 +304,9 @@ impl Simulation {
             frame_continuation: None,
             planning: planning::PlanningState::default(),
             replaying_recorded_commands: false,
+            super_weapon_chain_depth: Default::default(),
             trigger_runtime: TriggerRuntime::default(),
+            transport_reloaders: Default::default(),
         };
         debug_assert_eq!(out.scenario_rng.state(), out.main_rng.state());
         // Authoritative map bounds are session state, known at construction —
@@ -318,7 +324,7 @@ impl Simulation {
     // sub-cell rotation and paradrop sub-cell; destruction smudge, survivor and
     // debris and the smudge type pick; the overlay/wall damage roll; ore growth
     // and spread (queue, direction, variant, TIBTRE); the building damage-fire
-    // type and start frame; a Smoke system's children's AI.
+    // type and start frame.
     pub(crate) fn bridge_rng(&mut self) -> &mut SimRng {
         &mut self.scenario_rng
     } // bridge collapse/debris/explosion

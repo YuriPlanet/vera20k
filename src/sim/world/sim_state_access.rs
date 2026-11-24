@@ -641,6 +641,7 @@ impl Simulation {
             &self.interner,
             &mut self.substrate,
             &self.houses,
+            &self.house_alliances,
             &self.resolved_terrain,
             &mut self.bombs,
             &mut self.sound_events,

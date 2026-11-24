@@ -95,8 +95,7 @@ sparar dina inställningar i `VERA.INI`, med VERA:s egna alternativ i avsnittet 
 
 Lobbyinställningar, moddar och kartor kan ändra reglerna för en match. Via sina INI-filer kan
 moddar och kartor aktivera de funktioner i [Ares](docs/ares.md) och [Phobos](docs/phobos.md)
-som VERA20K stöder. En modd kan också aktivera Ares genom att inkludera `ares.mix`. Vissa
-Phobos-funktioner kräver fortfarande en version som byggts med `--features phobos`.
+som VERA20K stöder. En modd kan också aktivera Ares genom att inkludera `ares.mix`. Phobos ingår i varje bygge och aktiveras via en mods eller kartas INI.
 
 Vill du skapa en egen modd kan du börja med [moddningsguiden](docs/modding.md).
 

@@ -93,8 +93,8 @@ pub struct RadSite {
     light: RadiationLight,
     /// Phobos `RadSiteExt::Type`: the bound `[RadiationTypes]` entry's
     /// canonical name, resolved from the detonating weapon's `RadType=`.
-    /// `None` in builds without the capability, where every parameter is the
-    /// global `[Radiation]` value.
+    /// `None` while the game's Phobos switch is off, where every parameter is
+    /// the global `[Radiation]` value.
     rad_type: Option<String>,
     /// Phobos `RadHasOwner`: the house the detonating round belonged to,
     /// kept only when the bound type asks for it. The site's damage then
@@ -141,13 +141,11 @@ impl RadSite {
     }
 
     /// The kept firing house, for the site's damage call.
-    #[cfg(feature = "phobos")]
     pub(crate) const fn firing_house(&self) -> Option<InternedId> {
         self.firing_house
     }
 
     /// The kept invoker object, for the site's damage call.
-    #[cfg(feature = "phobos")]
     pub(crate) const fn invoker(&self) -> Option<u64> {
         self.invoker
     }
@@ -170,6 +168,7 @@ impl RadSite {
         theater: &str,
         effective: &EffectiveRadiation,
         ares: bool,
+        phobos: bool,
     ) -> bool {
         let light = &mut self.light;
         light.timer = CdTimer::started(frame as i32, effective.light_delay);
@@ -191,12 +190,12 @@ impl RadSite {
         // replaces the whole activation with `RadSiteExt::CreateLight`, which
         // tints from the bound type's `RadColor` alone (all three channels,
         // clamped at 2000) with no theater test anywhere in `Ext/RadSite`.
-        // The compiled capability decides which owner runs. Ares removes the
+        // The game's Phobos switch decides which owner runs. Ares removes the
         // snow test outright: RadSiteClass_Radiate_UnhardcodeSnow (hook
         // `0x65B5FB` -> `0x10056DB0`) always resumes at `0x65B604`, past
         // the substitution, so an amber `RadColor=200,100,0` stays amber
         // on snow maps.
-        let channels = if !crate::rules::PHOBOS_ENABLED
+        let channels = if !phobos
             && !ares
             && crate::rules::object_image::ImageTheater::from_name(theater)
                 == crate::rules::object_image::ImageTheater::Snow
@@ -289,18 +288,12 @@ fn fade_rad_tint(base: [i32; 3], remaining: i32, duration: i32) -> [i32; 3] {
 /// constructor's `FindOrAllocate(GameStrings::Radiation)`. `None` means no
 /// catalog exists (every build without the Phobos capability).
 fn bound_radiation_type(rules: &RuleSet, requested: Option<&str>) -> Option<String> {
-    #[cfg(feature = "phobos")]
     {
         rules
             .radiation
             .radiation_types
             .bound_entry(requested)
             .map(|entry| entry.name().to_owned())
-    }
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = (rules, requested);
-        None
     }
 }
 
@@ -319,17 +312,14 @@ pub(crate) fn clamp_level(level: f64, level_max: i32) -> i32 {
 // CellClass::RadLevel_Increase/Decrease @ 0x00487CE0/0x00487D00 mutate
 // one retained F0 total, including each operation's binary64 store. Phobos
 // replaces these with CellExt::RadLevels contributions attributed by site.
-#[cfg(not(feature = "phobos"))]
-type CellRadiation = f64;
-#[cfg(feature = "phobos")]
 type CellRadiation = BTreeMap<(u16, u16), f64>;
 type RadCells = BTreeMap<(u16, u16), CellRadiation>;
 
 /// The per-cell radiation field + site registry. Persisted and state-hashed.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RadiationState {
-    /// Sparse retained CellClass F0 totals. With Phobos, each cell instead
-    /// retains its CellExt::RadLevels contributions for damage attribution.
+    /// Sparse retained CellClass F0 totals, attributed per contributing site
+    /// so Phobos damage can read CellExt::RadLevels and stock reads their sum.
     /// Exactly positive-zero entries are omitted; negative results clamp to 0.
     cells: RadCells,
     /// One site per center cell. For canonical real Cells, membership is the
@@ -478,20 +468,12 @@ impl RadiationState {
         let Some(level) = self.cells.get(&cell) else {
             return 0.0;
         };
-        #[cfg(not(feature = "phobos"))]
-        {
-            *level
-        }
-        #[cfg(feature = "phobos")]
-        {
-            level.values().sum()
-        }
+        { level.values().sum() }
     }
 
     /// Per-site levels of one cell, in site-center order: the input the
     /// damage path groups by radiation type, as native `CellExt::RadLevels`
     /// is.
-    #[cfg(feature = "phobos")]
     pub(crate) fn cell_site_levels(
         &self,
         cell: (u16, u16),
@@ -550,9 +532,6 @@ impl RadiationState {
     /// state hashing and the render glow layer.
     pub fn iter_cells(&self) -> impl Iterator<Item = ((u16, u16), f64)> {
         self.cells.iter().map(|(cell, level)| {
-            #[cfg(not(feature = "phobos"))]
-            let level = *level;
-            #[cfg(feature = "phobos")]
             let level = level.values().sum();
             (*cell, level)
         })
@@ -634,11 +613,12 @@ impl RadiationState {
         theater: &str,
         effective: &EffectiveRadiation,
         ares: bool,
+        phobos: bool,
     ) -> bool {
         if let Some(site) = self.sites.get_mut(&center) {
             site.level_steps = site.duration / effective.level_delay;
             site.level_timer = CdTimer::started(frame as i32, effective.level_delay);
-            site.activate_light(frame, theater, effective, ares)
+            site.activate_light(frame, theater, effective, ares, phobos)
         } else {
             false
         }
@@ -680,6 +660,7 @@ impl RadiationState {
         lights: &mut LightingSources,
     ) {
         let center = (det.rx, det.ry);
+        let phobos = rules.phobos();
         // A merge keeps the existing site's bound type; a fresh site binds
         // the detonating weapon's `RadType=`, resolved to the catalog
         // entry's canonical name (absent and unknown names bind the default
@@ -688,7 +669,11 @@ impl RadiationState {
             .sites
             .get(&center)
             .and_then(|site| site.rad_type.clone())
-            .or_else(|| bound_radiation_type(rules, det.rad_type.as_deref()));
+            .or_else(|| {
+                phobos
+                    .then(|| bound_radiation_type(rules, det.rad_type.as_deref()))
+                    .flatten()
+            });
         let effective = effective_radiation(rules, bound.as_deref());
         let merged = self.sites.get(&center).map(|site| {
             // Merge65B534..65B541 multiplies before dividing, without the
@@ -704,7 +689,7 @@ impl RadiationState {
                 // Retail SetRadLevel65B4F0 stores the supplied level without
                 // a cap; Cell487CB0 caps damage only. Phobos' replacement
                 // RadSiteExt::CreateInstance also caps the initial site level.
-                let level = if crate::rules::PHOBOS_ENABLED {
+                let level = if phobos {
                     det.rad_level.min(effective.level_max)
                 } else {
                     det.rad_level
@@ -714,7 +699,6 @@ impl RadiationState {
                 // one of its parameters, so record the resolved values once
                 // per creation. Stock play binds the default type and the
                 // line then matches the `[Radiation]` globals.
-                #[cfg(feature = "phobos")]
                 log::info!(
                     "radiation site ({}, {}) type={:?} level={} duration={} color={:?} \
                      level_factor={} light_factor={} tint_factor={}",
@@ -744,12 +728,12 @@ impl RadiationState {
                         // Phobos `CreateInstance` copies the owner and the
                         // invoker only when the bound type's flags ask for
                         // them; a merge keeps the existing site's copies.
-                        firing_house: if effective.has_owner {
+                        firing_house: if phobos && effective.has_owner {
                             det.firing_house
                         } else {
                             None
                         },
-                        invoker: if effective.has_invoker {
+                        invoker: if phobos && effective.has_invoker {
                             det.invoker
                         } else {
                             None
@@ -770,7 +754,8 @@ impl RadiationState {
                 site.remaining = duration;
             }
         }
-        let light_changed = self.activate_site(center, frame, theater, &effective, rules.ares());
+        let light_changed =
+            self.activate_site(center, frame, theater, &effective, rules.ares(), phobos);
         self.spread_site(center, terrain);
         // RadSite activation65B7CA/65B7E8 publishes source changes in this
         // interval, even if another change later returns to the same inputs.
@@ -862,23 +847,14 @@ impl RadiationState {
     }
 }
 
-/// The level `site` holds in `cell` (with Phobos its own contribution, else
-/// the cell's total). Free of [`RadiationState`] so a walk over one of its
-/// sites can write the cells beside it.
+/// The level `site` holds in `cell`. Free of [`RadiationState`] so a walk over
+/// one of its sites can write the cells beside it.
 fn stored_cell_level(cells: &RadCells, cell: (u16, u16), site: (u16, u16)) -> f64 {
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = site;
-        cells.get(&cell).copied().unwrap_or(0.0)
-    }
-    #[cfg(feature = "phobos")]
-    {
-        cells
-            .get(&cell)
-            .and_then(|sites| sites.get(&site))
-            .copied()
-            .unwrap_or(0.0)
-    }
+    cells
+        .get(&cell)
+        .and_then(|sites| sites.get(&site))
+        .copied()
+        .unwrap_or(0.0)
 }
 
 fn store_cell_level(
@@ -887,26 +863,14 @@ fn store_cell_level(
     site: (u16, u16),
     value: NativeF64Bits,
 ) {
-    #[cfg(not(feature = "phobos"))]
-    {
-        let _ = site;
-        if value == NativeF64Bits::POSITIVE_ZERO {
+    let entry = cells.entry(cell).or_default();
+    if value == NativeF64Bits::POSITIVE_ZERO {
+        entry.remove(&site);
+        if entry.is_empty() {
             cells.remove(&cell);
-        } else {
-            cells.insert(cell, f64::from_bits(value.bits()));
         }
-    }
-    #[cfg(feature = "phobos")]
-    {
-        let entry = cells.entry(cell).or_default();
-        if value == NativeF64Bits::POSITIVE_ZERO {
-            entry.remove(&site);
-            if entry.is_empty() {
-                cells.remove(&cell);
-            }
-        } else {
-            entry.insert(site, f64::from_bits(value.bits()));
-        }
+    } else {
+        entry.insert(site, f64::from_bits(value.bits()));
     }
 }
 

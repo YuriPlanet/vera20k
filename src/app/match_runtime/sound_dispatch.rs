@@ -25,6 +25,10 @@ mod sound_boundary_tests;
 #[path = "building_death_sound_tests.rs"]
 mod building_death_sound_tests;
 
+#[cfg(all(test, tests_app_match))]
+#[path = "phobos_sw_messages_tests.rs"]
+mod phobos_sw_messages_tests;
+
 /// Adapt the Simulation-owned normal Select voice request to the existing
 /// audio event queue. Its Main RNG admission and draw belong to Simulation;
 /// device playback and pending voice replacement remain in audio.
@@ -44,14 +48,21 @@ pub(crate) fn selection_voice_event(
 /// QueueMegaMission6FFD42's default command acknowledgement. Simulation
 /// owns the ordered-list Main draw and QueueVoice708D90 admission; the
 /// existing unit voice queue owns pending replacement and eventual playback.
+/// `target` is the clicked Eaten building for the Phobos grinder override.
 pub(crate) fn default_order_voice_event(
     sim: &mut Simulation,
     rules: &RuleSet,
     entity_id: u64,
+    target: Option<crate::sim::combat::TargetKind>,
     voices_enabled: bool,
 ) -> Option<GameSoundEvent> {
-    let sound_id =
-        sim.order_voice_request(rules, entity_id, "VoiceSpecialAttack", None, voices_enabled)?;
+    let sound_id = sim.order_voice_request(
+        rules,
+        entity_id,
+        "VoiceSpecialAttack",
+        target,
+        voices_enabled,
+    )?;
     Some(GameSoundEvent::UnitMoveOrder {
         speaker_id: entity_id,
         sound_id: rules.sound_name(sound_id),
@@ -255,6 +266,10 @@ pub(super) fn dispatch_sim_sound_events(
                 world,
             } => GameSoundEvent::EntityCrushed {
                 sound_id: rules.sound_name(sim.interner().resolve(crush_sound_id)),
+                source: Some(anim_world_sound_source(world)),
+            },
+            SimSoundEvent::LeaveTransport { sound_id, world } => GameSoundEvent::LeaveTransport {
+                sound_id: rules.sound_name(sim.interner().resolve(sound_id)),
                 source: Some(anim_world_sound_source(world)),
             },
             SimSoundEvent::EntityDeployed {
@@ -534,6 +549,78 @@ pub(super) fn dispatch_sim_sound_events(
                 };
                 retained_cue
             }
+            SimSoundEvent::SuperWeaponActivatedMessage { owner, sw_type } => {
+                // Phobos `SWTypeExt::ApplyActivatedMessage`/`ApplyActivatedEva`
+                // (`Ext/SWType/FireSuperWeapon.cpp:491-526`): every client
+                // prints/plays the column matching the launcher's relation to
+                // its own current player, in the *launching* House's colour
+                // (`:507`). No local-owner gate; a client with no local player
+                // has no column to pick.
+                let Some(local) = local_owner_name else {
+                    continue;
+                };
+                let Some(sw) = rules.super_weapon(sim.interner().resolve(sw_type)) else {
+                    continue;
+                };
+                let Some(messages) = rules.phobos_super_weapon_messages(&sw.id) else {
+                    continue;
+                };
+                let audience = eva_producers::activated_audience(
+                    sim.house_is_human_player(owner),
+                    sim.interner().resolve(owner),
+                    Some(local),
+                    sim.house_alliances().as_map(),
+                );
+                if !messages.activated_message(audience).is_empty()
+                    && let Some(hud) = hud_text.as_deref_mut()
+                {
+                    hud.push(
+                        crate::app::input::messages::HudMessage::PhobosSuperWeaponMessage {
+                            sw_type,
+                            audience,
+                            firer: owner,
+                        },
+                    );
+                }
+                match messages.activated_eva(audience) {
+                    Some(cue) => GameSoundEvent::Eva {
+                        event: cue.to_string(),
+                        type_override: None,
+                    },
+                    None => continue,
+                }
+            }
+            SimSoundEvent::SuperWeaponLinkedAcquired { owner, sw_type } => {
+                // Phobos `SWTypeExt::ApplyLinkedSW`'s tail (`:482-488`): the
+                // granting House must BE the client's current player
+                // (`IsCurrentPlayer`, stricter than `IsControlledByCurrentPlayer`),
+                // and the line prints in the current player's colour (`:487`).
+                if !owner_is_local(sim.interner(), owner, local_owner_name) {
+                    continue;
+                }
+                let Some(sw) = rules.super_weapon(sim.interner().resolve(sw_type)) else {
+                    continue;
+                };
+                let Some(messages) = rules.phobos_super_weapon_messages(&sw.id) else {
+                    continue;
+                };
+                if !messages.linked_acquired_message().is_empty()
+                    && let Some(hud) = hud_text.as_deref_mut()
+                {
+                    hud.push(
+                        crate::app::input::messages::HudMessage::PhobosSuperWeaponLinkedAcquired(
+                            sw_type,
+                        ),
+                    );
+                }
+                match messages.linked_acquired_eva() {
+                    Some(cue) => GameSoundEvent::Eva {
+                        event: cue.to_string(),
+                        type_override: None,
+                    },
+                    None => continue,
+                }
+            }
             SimSoundEvent::RadarEvent { radar } => {
                 // A type-13 event from `SuperClass::Launch` case 1
                 // (`0x006CCF2F`), case 4 (`0x006CC4BE`, `0x006CC4D2`: the
@@ -589,6 +676,14 @@ pub(super) fn dispatch_sim_sound_events(
                 // `HouseClass::Place_Production 0x004FB631`: the type-6 radar
                 // accept gates the line; `0x004FB644` plays it with type -1.
                 if !admit_radar(radar) {
+                    continue;
+                }
+                // Phobos `Ext/House/Hooks.UnitFromFactory.cpp:7-13`: with
+                // `[AudioVisual] IsVoiceCreatedGlobal=yes` the hook replaces
+                // the `VoxClass::Play(EVA_UnitReady)` call outright, so the
+                // line is dropped even when the produced type names no
+                // `VoiceCreated=`. The radar accept above still ran.
+                if rules.phobos_globals.is_voice_created_global {
                     continue;
                 }
                 collect_eva_object(&mut hud_text, "VERA:EvaUnitReady", type_id);
@@ -779,6 +874,44 @@ pub(super) fn dispatch_sim_sound_events(
                     eva_event,
                 }
             }
+            SimSoundEvent::CombatAlert {
+                owner,
+                radar,
+                voice,
+            } => {
+                // Phobos `Ext/Techno/Hooks.ReceiveDamage.cpp:90` gates on
+                // `HouseClass::IsControlledByCurrentPlayer`; a native peer
+                // raises the ping only for its own player's House. The sim
+                // publishes any human-controlled House, so the client keeps
+                // the local-owner test here.
+                if !owner_is_local(sim.interner(), owner, local_owner_name) {
+                    continue;
+                }
+                // `:122` `CreateRadarEvent(RadarEventType::Combat, cell)`
+                // precedes the voice and never gates it.
+                let _ = admit_radar(radar);
+                match voice {
+                    // `:128,130` `VocClass::PlayGlobal(index, 0x2000, 1.0f)`:
+                    // centred, full volume, no owner handle.
+                    crate::sim::world::CombatAlertVoice::Feedback { sound_id }
+                    | crate::sim::world::CombatAlertVoice::Attack { sound_id } => {
+                        output.push(GameSoundEvent::VocAt {
+                            sound_id: rules.sound_name(&sound_id),
+                            source: None,
+                        });
+                    }
+                    // `:135` `VoxClass::PlayIndex(index)`: the `evamd.ini`
+                    // event name resolved by the EVA owner.
+                    crate::sim::world::CombatAlertVoice::Eva { event } => {
+                        output.push(GameSoundEvent::Eva {
+                            event,
+                            type_override: None,
+                        });
+                    }
+                    crate::sim::world::CombatAlertVoice::None => {}
+                }
+                continue;
+            }
             SimSoundEvent::UnderAttack {
                 owner,
                 miner,
@@ -959,6 +1092,19 @@ pub(super) fn dispatch_sim_sound_events(
                     type_override: None,
                 }
             }
+            SimSoundEvent::HouseEvaNamed { owner, event } => {
+                // Phobos `FootClass_Sell` hook 0x4D9F7B
+                // (`Ext/Building/Hooks.Selling.cpp:18-21`): the type's
+                // `EVA.Sold` took the stock line's place, under the same
+                // local-owner test.
+                if !owner_is_local(sim.interner(), owner, local_owner_name) {
+                    continue;
+                }
+                GameSoundEvent::Eva {
+                    event,
+                    type_override: None,
+                }
+            }
             SimSoundEvent::StructureSold { owner, type_id } => {
                 // `BuildingClass::Mission_Selling 0x00449CC1 MOV AL,[EBP+0x41A]`
                 // (`0x0044AB22` on the upgrade path): only the local
@@ -966,9 +1112,18 @@ pub(super) fn dispatch_sim_sound_events(
                 if !owner_is_local(sim.interner(), owner, local_owner_name) {
                     continue;
                 }
+                // Phobos `BuildingClass_Mi_Selling_EVASold_UndeploysInto` hook
+                // 0x449CC1 (`Ext/Building/Hooks.Selling.cpp:73-79`): the
+                // type's `EVA.Sold` replaces `EVA_StructureSold`; an explicit
+                // none (native -1) silences it.
+                let event = match phobos_eva_sold(rules, sim, type_id) {
+                    Some(Some(cue)) => cue,
+                    Some(None) => continue,
+                    None => eva_producers::EVA_STRUCTURE_SOLD.to_string(),
+                };
                 collect_eva_object(&mut hud_text, "VERA:EvaStructureSold", type_id);
                 GameSoundEvent::Eva {
-                    event: eva_producers::EVA_STRUCTURE_SOLD.to_string(),
+                    event,
                     type_override: None,
                 }
             }
@@ -1433,6 +1588,20 @@ fn owner_is_local(
 ) -> bool {
     let owner_str = interner.resolve(owner);
     local_owner_name.is_some_and(|local| local.eq_ignore_ascii_case(owner_str))
+}
+
+/// Phobos `TechnoTypeExt::EVA.Sold` for one resolved type: `None` keeps the
+/// stock sale line, `Some(None)` is native's explicit none (silence), and
+/// `Some(Some(name))` is the replacement cue.
+fn phobos_eva_sold(
+    rules: &RuleSet,
+    sim: &Simulation,
+    type_id: crate::sim::intern::InternedId,
+) -> Option<Option<String>> {
+    rules
+        .object(sim.interner().resolve(type_id))
+        .and_then(|object| object.phobos_eva_sold())
+        .map(|cue| cue.map(str::to_owned))
 }
 
 /// The outcome line: `HouseClass::Flag_To_Win 0x004FCBA9` plays

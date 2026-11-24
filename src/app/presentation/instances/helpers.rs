@@ -13,6 +13,7 @@ use crate::map::terrain;
 use crate::render::batch::DepthAxis;
 use crate::render::native_z;
 use crate::sim::components::Position;
+use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
 use crate::sim::vision::FogState;
 
@@ -65,7 +66,6 @@ fn disguise_owner_visible(
     rules: Option<&crate::rules::ruleset::RuleSet>,
     owner_is_allied: bool,
 ) -> bool {
-    #[cfg(feature = "phobos")]
     if let Some(rules) = rules {
         use crate::rules::phobos_shields::AffectedHouse;
         let flags = rules.phobos_draw_globals().disguise_blinking_visibility;
@@ -1830,6 +1830,31 @@ mod tests {
     }
 }
 
+/// Phobos `UnitClass_Draw_It_KeepUnitVisible` (hook `0x73CF46`,
+/// `Ext/Unit/Hooks.SimpleDeployer.cpp:378-397`): a Unit hides its body during
+/// either deploy transition unless `DeployingAnim.KeepUnitVisible` keeps it,
+/// or it is deploying with no deploy animation attached at all.
+pub(crate) fn deploy_hides_unit_body(
+    entity: &GameEntity,
+    interner: &crate::sim::intern::StringInterner,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+) -> bool {
+    if entity.category() != EntityCategory::Unit || !entity.unit_deploying() {
+        return false;
+    }
+    {
+        let object = rules.and_then(|rules| rules.object(interner.resolve(entity.type_ref())));
+        if object.is_some_and(|object| object.phobos_deploying_anim_keep_unit_visible) {
+            return false;
+        }
+        if entity.unit_deploy_begin_active() && entity.deploy_anim().is_none() {
+            return false;
+        }
+    }
+    true
+}
+
+#[cfg(all(test, tests_app_presentation_instances))]
 #[cfg(all(test, tests_app_presentation_instances))]
 #[path = "building_warp_draw_tests.rs"]
 mod building_warp_draw_tests;

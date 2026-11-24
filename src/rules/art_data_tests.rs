@@ -200,6 +200,31 @@ fn muzzle_flash_reads_past_a_missing_index() {
     assert_eq!(ports[..3], [(1, 2), (0, 0), (5, 6)]);
 }
 
+/// Phobos `TechnoTypeExt::TurretOffset` is a `Valueable<PartialVector3D<int>>`
+/// read through the partial three-integer scan (`Ext/TechnoType/Body.cpp:1322`,
+/// `Ext/TechnoType/Body.h:56`). Retail ART writes the stock scalar form, so
+/// `-20` must land in X while Y/Z stay zero; an explicit triple fills all
+/// three terms used by `ApplyTurretOffset`.
+#[test]
+fn turret_offset_reads_the_partial_three_integer_form() {
+    let ini = IniFile::from_str(
+        "[MTNK]\nTurretOffset=256,128,-24\n\
+         [SCUD]\nTurretOffset=-200\n\
+         [NONE]\nFixtureOnly=1\n",
+    );
+    let reg = ArtRegistry::from_ini(&ini);
+    assert_eq!(
+        reg.get("MTNK").expect("MTNK art").turret_offset,
+        [256, 128, -24]
+    );
+    assert_eq!(
+        reg.get("SCUD").expect("SCUD art").turret_offset,
+        [-200, 0, 0],
+        "the stock bare scalar is the X term"
+    );
+    assert_eq!(reg.get("NONE").expect("NONE art").turret_offset, [0, 0, 0]);
+}
+
 #[test]
 fn gsi_04_05_hidden_absent_occupy_height_inherits_resolved_height() {
     let ini: IniFile = IniFile::from_str(
@@ -1571,6 +1596,91 @@ fn can_be_hidden_reads_the_type_id_section() {
     assert!(reg.can_be_hidden("MISSING"));
 }
 
+/// Phobos `SplashAnims=` (`Ext/AnimType/Body.cpp:102`) is a
+/// `NullableVector<AnimTypeClass*>`: absent or `<default>` keeps the stock
+/// list; `SplashAnims.PickRandom=` (`:103`) is a bool, default false.
+#[test]
+fn splash_anims_reads_the_type_list_and_pick_random() {
+    let ini = IniFile::from_str(
+        "[A]\nSplashAnims=SPLASH1,SPLASH2\nSplashAnims.PickRandom=yes\n\
+         [B]\nSplashAnims=<default>\n[C]\nStart=1\n",
+    );
+    let reg = ArtRegistry::from_ini(&ini);
+    let a = reg.anim_runtime_config("A").unwrap();
+    assert_eq!(
+        a.splash_anims.as_deref(),
+        Some(&["SPLASH1".to_string(), "SPLASH2".to_string()][..])
+    );
+    assert!(a.splash_anims_pick_random);
+    let b = reg.anim_runtime_config("B").unwrap();
+    assert_eq!(b.splash_anims, None, "<default> restores the stock list");
+    assert!(!b.splash_anims_pick_random);
+    let c = reg.anim_runtime_config("C").unwrap();
+    assert_eq!(c.splash_anims, None);
+    assert!(!c.splash_anims_pick_random);
+}
+
+/// Phobos `ExplodeOnWater=` (`Ext/AnimType/Body.cpp:99`, `Body.h:54`,
+/// constructed false `Body.h:106`) is an ART `ReadBool`, so an absent key and a
+/// section with other keys both stay false.
+#[test]
+fn explode_on_water_is_an_art_bool_defaulting_false() {
+    let ini = IniFile::from_str("[A]\nExplodeOnWater=yes\n[B]\nExplodeOnWater=no\n[C]\nStart=1\n");
+    let reg = ArtRegistry::from_ini(&ini);
+    assert!(reg.anim_runtime_config("A").unwrap().explode_on_water);
+    assert!(!reg.anim_runtime_config("B").unwrap().explode_on_water);
+    assert!(!reg.anim_runtime_config("C").unwrap().explode_on_water);
+}
+
+/// Phobos `ExtraShadow=` (`Ext/AnimType/Body.h:62`, constructed **true**
+/// `Body.h:114`, read `Body.cpp:107`) is an ART `ReadBool` that defaults true,
+/// so an omitted key keeps the stock ground shadow.
+#[test]
+fn extra_shadow_is_an_art_bool_defaulting_true() {
+    let ini = IniFile::from_str("[A]\nExtraShadow=yes\n[B]\nExtraShadow=no\n[C]\nStart=1\n");
+    let reg = ArtRegistry::from_ini(&ini);
+    assert!(reg.anim_runtime_config("A").unwrap().extra_shadow);
+    assert!(!reg.anim_runtime_config("B").unwrap().extra_shadow);
+    assert!(reg.anim_runtime_config("C").unwrap().extra_shadow);
+}
+
+/// Phobos `DetachedReport=` (`Ext/AnimType/Body.h:63`, constructed `{}`
+/// `Body.h:115`, read `Body.cpp:108`) is an ART sound name read with the same
+/// reader as `Report=`, unset by default.
+#[test]
+fn detached_report_reads_its_art_sound_name() {
+    let ini = IniFile::from_str("[A]\nDetachedReport=TestCue\n[B]\nStart=1\n");
+    let reg = ArtRegistry::from_ini(&ini);
+    assert_eq!(
+        reg.anim_runtime_config("A")
+            .unwrap()
+            .detached_report
+            .as_deref(),
+        Some("TESTCUE")
+    );
+    assert!(
+        reg.anim_runtime_config("B")
+            .unwrap()
+            .detached_report
+            .is_none()
+    );
+}
+
+/// Phobos `Refinery.UseNormalActiveAnim=` (`Ext/BuildingType/Body.cpp:309`,
+/// `Body.h:227`) is an ART ReadBool from the ImageFile's section, default
+/// false.
+#[test]
+fn refinery_use_normal_active_anim_reads_its_art_section() {
+    let ini = IniFile::from_str(
+        "[GAREFN]\nRefinery.UseNormalActiveAnim=yes\n\
+         [PLAIN]\nRefinery.UseNormalActiveAnim=no\n[OTHER]\nCameo=X\n",
+    );
+    let reg = ArtRegistry::from_ini(&ini);
+    assert!(reg.get("GAREFN").unwrap().refinery_use_normal_active_anim);
+    assert!(!reg.get("PLAIN").unwrap().refinery_use_normal_active_anim);
+    assert!(!reg.get("OTHER").unwrap().refinery_use_normal_active_anim);
+}
+
 /// ReadINI reads `Palette=` with ReadString (capacity 0x20) from the ART
 /// section its ImageFile names (`0x0071582B`, `ESI = this+0x1F8`); an ART
 /// `Image=` is not followed, and an empty value names nothing.
@@ -1753,6 +1863,24 @@ fn ares_art_palettes_keep_the_named_file() {
     assert_eq!(art.resolve_declared_cameo_palette("E1", "E1"), None);
 }
 
+/// Phobos `ZShapePointMove.OnBuildup=` (`Ext/BuildingType/Body.cpp:375`,
+/// ART): a `Valueable<bool>` whose constructor default is false, so an ART
+/// section with only `ZShapePointMove=` still skips the move while the
+/// building plays its build-up.
+#[test]
+fn phobos_zshape_point_move_on_buildup_reads_the_art_key() {
+    let registry = ArtRegistry::from_ini(&IniFile::from_str(
+        "[PLAIN]\nZShapePointMove=30,15\n[KEPT]\nZShapePointMove=30,15\nZShapePointMove.OnBuildup=yes\n",
+    ));
+    let plain = registry.get("PLAIN").expect("PLAIN");
+    assert_eq!(plain.z_shape_point_move, (30, 15));
+    assert!(!plain.z_shape_point_move_on_buildup);
+    assert_eq!(plain.z_shape_point_move_while_buildup(), (0, 0));
+
+    let kept = registry.get("KEPT").expect("KEPT");
+    assert!(kept.z_shape_point_move_on_buildup);
+    assert_eq!(kept.z_shape_point_move_while_buildup(), (30, 15));
+}
 #[test]
 fn presentation_only_follows_a_long_next_chain_through_the_rules_processor() {
     // Twenty thousand anims, each `Next=` the one after; the last marks the

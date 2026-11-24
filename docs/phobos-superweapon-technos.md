@@ -25,6 +25,16 @@ capture, UnInit and save/load.
 
 ## Native identity
 
+No gamemd instruction reads these three keys: they are Phobos-side gates. The availability
+predicate they extend is Ares' `SWTypeExt::IsAvailable` (`100329E0`), which Phobos replaces
+wholesale (`Misc/Hooks.Ares.cpp:354..355`, patching `AresBase + 0x32BE0`), so the call site that
+asks it stays Ares-side and there is no separate gamemd address to cite for the keys themselves.
+
+The presence counters behind `CountOwnedPresentAndLimboed` do have gamemd hooks:
+`TechnoClass_Unlimbo_RemoveTracking 0x006F6D85`, `TechnoClass_Limbo_AddTracking 0x006F6BC9`,
+`TechnoClass_Captured_UpdateTracking 0x007015C9`, and `ScenarioClass_ReadINI_StartTracking
+0x00687B18` for the map-load seed.
+
 `SWTypeExt::IsAvailable` (`src/Ext/SWType/SWHelpers.cpp`) is the whole chain, in this order:
 
 ```
@@ -38,6 +48,12 @@ the Ares gates stay in place and the Phobos ones wrap them. The techno vectors a
 (`TechnoTypeClass::Find`), unknown names are skipped, a reached list replaces the retained one and an
 absent key retains it. The listed building gates — retail `AuxBuilding=` and Ares
 `SW.AuxBuildings`/`SW.NegBuildings` — stay with their existing owners.
+
+## Residuals
+
+None in the gate itself: it is a pure predicate over the projected lists. The projection covers
+registered superweapon types whose effect body VERA has not ported yet, so those types pass or fail
+the gate without their effect existing.
 
 ## Where VERA20K owns it
 

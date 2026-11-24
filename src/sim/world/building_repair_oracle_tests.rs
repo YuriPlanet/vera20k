@@ -1036,6 +1036,97 @@ fn ares_broke_human_repair_stays_on_without_repair_stop() {
     }
 }
 
+/// Phobos `ExtendedPlayerRepair` (`Ext/House/Hooks.cpp:803-825`): a human
+/// house's flag alone starts every building's repair, and clearing it stops
+/// the buildings the next visit reaches.
+#[test]
+fn extended_player_repair_toggles_the_human_house_buildings() {
+    let corpus = corpus();
+    let input = &corpus["update"][0]["input"];
+    let (mut sim, mut rules, _smoke) = update_scene(&corpus, input);
+    rules.phobos_globals.extended_player_repair = true;
+    let owner = sim.interner.get("AI").unwrap();
+    sim.houses.get_mut(&owner).unwrap().make_campaign_player();
+    assert!(sim.apply_command(
+        "AI",
+        &crate::sim::command::Command::TogglePlayerAutoRepair { enabled: true },
+        Some(&rules),
+    ));
+    assert!(
+        sim.houses.get(&owner).unwrap().player_auto_repair(),
+        "the event sets the issuing house's flag"
+    );
+    {
+        let building = sim.substrate.entities.get_mut(1).unwrap();
+        building.building.repairing.set_for_test(false);
+        building.health.set(100);
+        building.estimated_health.reset(100);
+    }
+    production::update_repair_and_power(
+        &mut sim,
+        &rules,
+        1,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    assert!(
+        sim.substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .building
+            .repairing
+            .is_on(),
+        "the enabled house flag starts the repair"
+    );
+    assert!(sim.apply_command(
+        "AI",
+        &crate::sim::command::Command::TogglePlayerAutoRepair { enabled: false },
+        Some(&rules),
+    ));
+    production::update_repair_and_power(
+        &mut sim,
+        &rules,
+        1,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    assert!(
+        !sim.substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .building
+            .repairing
+            .is_on(),
+        "the cleared house flag stops the repair"
+    );
+}
+
+/// The VERA wire record carries the requested switch state and decodes back
+/// to the semantic command for the issuing House, so the flag stays
+/// synchronized for replay and network peers.
+#[test]
+fn player_auto_repair_record_round_trips_the_requested_state() {
+    let corpus = corpus();
+    let input = &corpus["update"][0]["input"];
+    let (sim, _rules, _smoke) = update_scene(&corpus, input);
+    let owner = sim.interner.get("AI").unwrap();
+    for enabled in [true, false] {
+        let record = sim
+            .encode_player_auto_repair_record(owner, enabled)
+            .expect("repair toggle record");
+        let envelope = sim
+            .decode_native_command_record(&record, 0)
+            .expect("repair toggle decodes");
+        assert_eq!(
+            envelope.payload,
+            crate::sim::command::Command::TogglePlayerAutoRepair { enabled }
+        );
+        assert_eq!(envelope.owner, owner);
+    }
+}
+
 /// VERA Auto Repair asks which of a house's buildings want the Repair order
 /// ([`production::buildings_wanting_repair`]).
 #[test]

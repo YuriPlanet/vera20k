@@ -91,6 +91,9 @@ pub struct AnimMiddleMarks {
     pub force_big_craters: bool,
     pub width: i32,
     pub height: i32,
+    /// Phobos `Crater.DestroyTiberium=` (`Ext/Anim/Hooks.cpp:707`,
+    /// `0x4250E1`): false skips the crater's ore reduction.
+    pub destroy_tiberium: bool,
 }
 
 /// Where Middle's marks land.
@@ -118,7 +121,9 @@ pub(crate) fn anim_middle_marks(
         return Ok(());
     }
     if marks.crater {
-        sink.reduce_tiberium(CRATER_ORE_REDUCTION, rng)?;
+        if marks.destroy_tiberium {
+            sink.reduce_tiberium(CRATER_ORE_REDUCTION, rng)?;
+        }
         if marks.force_big_craters {
             sink.place(SmudgeKind::Crater, 300, 300, true, rng);
         } else {
@@ -469,6 +474,53 @@ mod tests {
         );
     }
 
+    /// Phobos `Crater.DestroyTiberium=` (`Ext/Anim/Hooks.cpp:707`, hook
+    /// `0x4250E1`): false skips the crater's ore reduction but still places
+    /// the crater.
+    #[test]
+    fn crater_destroy_tiberium_false_skips_the_ore_reduction() {
+        struct Recorder(Vec<&'static str>);
+        impl MiddleMarkSink for Recorder {
+            fn reduce_tiberium(
+                &mut self,
+                _amount: u16,
+                _rng: &mut SimRng,
+            ) -> Result<(), TiberiumImageError> {
+                self.0.push("reduce");
+                Ok(())
+            }
+
+            fn place(
+                &mut self,
+                kind: SmudgeKind,
+                _width: i32,
+                _height: i32,
+                _force: bool,
+                _rng: &mut SimRng,
+            ) {
+                self.0.push(match kind {
+                    SmudgeKind::Burn => "burn",
+                    SmudgeKind::Crater => "crater",
+                });
+            }
+        }
+        for (destroy_tiberium, expected) in
+            [(false, vec!["crater"]), (true, vec!["reduce", "crater"])]
+        {
+            let marks = AnimMiddleMarks {
+                scorch: false,
+                crater: true,
+                force_big_craters: false,
+                width: 30,
+                height: 30,
+                destroy_tiberium,
+            };
+            let mut sink = Recorder(Vec::new());
+            anim_middle_marks(&marks, &mut sink, &mut SimRng::new(1)).unwrap();
+            assert_eq!(sink.0, expected, "destroy_tiberium={destroy_tiberium}");
+        }
+    }
+
     /// The executed coin (`0x00425096..0x004250AB`) at its boundary draws:
     /// under chop, draw `0x3FFFFFFF` scorches.
     #[test]
@@ -599,6 +651,7 @@ mod oracle_tests {
                     force_big_craters: int("force_big") != 0,
                     width,
                     height,
+                    destroy_tiberium: true,
                 };
                 anim_middle_marks(&marks, &mut sink, &mut rng).unwrap();
             }
@@ -680,6 +733,7 @@ mod dispatch_tests {
             force_big_craters,
             width: 30,
             height: 30,
+            destroy_tiberium: true,
         }
     }
 

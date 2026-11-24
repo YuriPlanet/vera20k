@@ -34,10 +34,6 @@ pub enum ParticleBehavesLike {
     Railgun = 4,
     /// Constructor and unrecognized/empty ReadINI result.
     Unknown = -1,
-    /// Firestorm 2.0's sixth name (`0x00707D20`): the webs a Webby warhead
-    /// leaves (docs/ts-webs.md). gamemd's table stops at Railgun. Declared
-    /// last so the saved variant order of the others stays as it was.
-    Web = 5,
 }
 
 impl ParticleBehavesLike {
@@ -49,10 +45,9 @@ impl ParticleBehavesLike {
             Self::Fire,
             Self::Spark,
             Self::Railgun,
-            Self::Web,
         ]
         .into_iter()
-        .zip(["Gas", "Smoke", "Fire", "Spark", "Railgun", "Web"])
+        .zip(["Gas", "Smoke", "Fire", "Spark", "Railgun"])
         .find_map(|(behavior, name)| s.eq_ignore_ascii_case(name).then_some(behavior))
     }
 }
@@ -68,6 +63,13 @@ pub struct ParticleType {
     pub name: String,
     /// Per-particle behavior dispatch — selects the AI branch each tick.
     pub behaves_like: ParticleBehavesLike,
+    /// Phobos `Gas.MaxDriftSpeed=` (`Ext/ParticleType/Body.cpp:22`,
+    /// `Valueable<int>` constructed 2 at `Body.h:26,29`): the ± bound the Gas
+    /// AI clamps Velocity.X/Y to on each pass
+    /// (`ParticleClass_Gas_AI_DriftSpeed`, hook `0x62BE30`,
+    /// `Ext/ParticleType/Hooks.cpp:4-30`, replacing the stock ±2 clamp at
+    /// `0x62BE30..0x62BE5F`).
+    pub phobos_gas_max_drift_speed: i32,
 
     // ── Object-base (from ObjectTypeClass) ───────────────────────────
     /// ObjectType+0x1F8 Image buffer. `ObjectTypeClass::Constructor @
@@ -231,6 +233,7 @@ impl ParticleType {
             alpha_image: section.read_object_alpha_image(""),
             start_frame: section.read_int("StartFrame", 0),
 
+            phobos_gas_max_drift_speed: section.read_ares_int("Gas.MaxDriftSpeed", 2),
             // ParticleType644BE0/644F50 retain full signed words; the
             // instance constructor62B890 alone narrows RemainingEC to16bits.
             max_dc: section.read_int("MaxDC", 0),
@@ -452,6 +455,22 @@ mod tests {
         assert_eq!(pt.next_particle_offset, IVec3::new(0, 0, 150));
         // FinalDamageState absent → mirrors EndStateAI.
         assert_eq!(pt.final_damage_state, 11);
+    }
+
+    /// Phobos `Gas.MaxDriftSpeed=` is a `Valueable<int>` read with
+    /// `Parser<int>::TryParse` (`$` decimal / `h` hex accepted, rejected text
+    /// keeps the constructor's 2), not gamemd's lenient ReadInt.
+    #[test]
+    fn gas_max_drift_speed_reads_with_the_phobos_int_parser() {
+        let read = |text: &str| {
+            let ini = IniFile::from_str(&format!("[GasCloud1]\nGas.MaxDriftSpeed={text}\n"));
+            ParticleType::from_ini_section("GasCloud1", ini.section("GasCloud1").unwrap())
+                .phobos_gas_max_drift_speed
+        };
+        assert_eq!(read("5"), 5);
+        assert_eq!(read("$10"), 10, "$ introduces a decimal scan");
+        assert_eq!(read("10h"), 16, "a trailing h selects hex");
+        assert_eq!(read("abc"), 2, "rejected text keeps the constructor's 2");
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # Optional Phobos placement preview
 
-Build with `--features phobos` to draw a building's artwork on the placement
+Phobos is in every build; turn it on from a game's data to draw a building's artwork on the placement
 grid. The feature follows Phobos `BuildingTypeExt` placement fields and their
 two hooks: `TacticalClass_DrawPlacement_PlacementPreview @ 0x6D528A`
 (`src/Ext/BuildingType/Hooks.cpp`) and

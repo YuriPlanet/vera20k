@@ -276,3 +276,164 @@ fn a_cargo_rider_is_not_bound_to_its_carrier_as_transporter() {
         "a rider's Transporter is the target whatever +0x82 says"
     );
 }
+
+/// Phobos `TechnoClass_CanFire` (`0x6FC339`,
+/// `Ext/Techno/Hooks.Firing.cpp:340-369`) removes the stock T16 AI-only
+/// iron-curtain refusal and reads the weapon override, else the human/AI
+/// globals; the defaults preserve the stock split.
+#[test]
+fn an_iron_curtained_target_reads_the_weapon_and_owner_globals() {
+    use crate::sim::combat::fire_error::FireError;
+    use crate::sim::superweapon::invulnerability::{InvulnKind, InvulnerabilityState};
+    use crate::sim::timer::CdTimer;
+    let error = |weapon_key: &str,
+                 global: Option<bool>,
+                 ai_global: Option<bool>,
+                 human: bool,
+                 slot: i32| {
+        let mut combat = String::from("[CombatDamage]\n");
+        if let Some(value) = global {
+            combat.push_str(&format!(
+                "CanTarget.IronCurtained={}\n",
+                if value { "yes" } else { "no" }
+            ));
+        }
+        if let Some(value) = ai_global {
+            combat.push_str(&format!(
+                "CanTargetAI.IronCurtained={}\n",
+                if value { "yes" } else { "no" }
+            ));
+        }
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=TANK\n1=DECOY\n[InfantryTypes]\n[BuildingTypes]\n[AircraftTypes]\n\
+             [TANK]\nStrength=300\nArmor=heavy\nPrimary=Gun\n\
+             [DECOY]\nStrength=300\nArmor=heavy\n\
+             [Gun]\nDamage=50\nROF=30\nRange=6\nWarhead=AP\nOmniFire=yes\n{weapon_key}\
+             [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n{combat}"
+        )))
+        .expect("curtain fire fixture rules");
+        let mut sim = crate::sim::world::Simulation::new();
+        spawn(
+            &mut sim.substrate.entities,
+            1,
+            "TANK",
+            EntityCategory::Unit,
+            "Americans",
+            (5, 5),
+        );
+        spawn(
+            &mut sim.substrate.entities,
+            2,
+            "DECOY",
+            EntityCategory::Unit,
+            "Soviet",
+            (7, 5),
+        );
+        sim.interner = test_interner();
+        let americans = sim.interner_mut_for_test().intern("Americans");
+        sim.register_house(crate::sim::house_state::HouseState::new(
+            americans, 0, None, human, 0, 10,
+        ));
+        sim.substrate.entities.get_mut(2).unwrap().invulnerability = Some(
+            InvulnerabilityState::new(CdTimer::started(0, 100), InvulnKind::IronCurtain),
+        );
+        crate::sim::combat::fire_error_world::FireSubject {
+            world: &sim,
+            rules: &rules,
+            fog: None,
+            firer: sim.substrate.entities.get(1).unwrap(),
+            obj: rules.object("TANK").unwrap(),
+            target: Some(crate::sim::combat::TargetKind::Entity(2)),
+            weapon_index: slot,
+        }
+        .fire_error(true)
+    };
+    // The stock split: AI refused, human allowed.
+    assert_eq!(error("", None, None, false, 0), FireError::Illegal);
+    assert_ne!(error("", None, None, true, 0), FireError::Illegal);
+    // The AI global admits the shot.
+    assert_ne!(error("", None, Some(true), false, 0), FireError::Illegal);
+    // The human global refuses it.
+    assert_eq!(error("", Some(false), None, true, 0), FireError::Illegal);
+    // The weapon override beats either global.
+    assert_ne!(
+        error("CanTarget.IronCurtained=yes\n", Some(false), None, true, 0),
+        FireError::Illegal
+    );
+    assert_eq!(
+        error("CanTarget.IronCurtained=no\n", None, Some(true), false, 0),
+        FireError::Illegal
+    );
+    // T21 resolves the selected slot before the curtain arm, so an empty
+    // slot answers Cant rather than Illegal.
+    assert_eq!(error("", None, None, false, 1), FireError::Cant);
+}
+
+/// Phobos `TechnoClass_CanFire`'s berzerk arm
+/// (`Ext/Techno/Hooks.Firing.cpp:370-371`): `[CombatDamage] BerzerkTargeting=`
+/// (default `all`) limits the houses a berzerk firer may target; a
+/// non-berzerk firer is unaffected.
+#[test]
+fn berzerk_firers_respect_berzerk_targeting() {
+    use crate::sim::combat::fire_error::FireError;
+    let error = |combat: &str, berserk: bool| {
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=TANK\n[InfantryTypes]\n[BuildingTypes]\n[AircraftTypes]\n\
+             [TANK]\nStrength=300\nArmor=heavy\nPrimary=Gun\n\
+             [Gun]\nDamage=50\nROF=30\nRange=6\nWarhead=AP\nOmniFire=yes\n\
+             [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+             [CombatDamage]\n{combat}"
+        )))
+        .expect("berzerk fire fixture rules");
+        let mut sim = crate::sim::world::Simulation::new();
+        spawn(
+            &mut sim.substrate.entities,
+            1,
+            "TANK",
+            EntityCategory::Unit,
+            "Soviet",
+            (5, 5),
+        );
+        spawn(
+            &mut sim.substrate.entities,
+            2,
+            "TANK",
+            EntityCategory::Unit,
+            "Soviet",
+            (7, 5),
+        );
+        sim.interner = test_interner();
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .berserk
+            .set_active_for_test(berserk);
+        crate::sim::combat::fire_error_world::FireSubject {
+            world: &sim,
+            rules: &rules,
+            fog: None,
+            firer: sim.substrate.entities.get(1).unwrap(),
+            obj: rules.object("TANK").unwrap(),
+            target: Some(crate::sim::combat::TargetKind::Entity(2)),
+            weapon_index: 0,
+        }
+        .fire_error(true)
+    };
+    assert_ne!(error("", false), FireError::Illegal, "not berzerk");
+    assert_ne!(
+        error("BerzerkTargeting=enemies\n", false),
+        FireError::Illegal,
+        "not berzerk, restricted global"
+    );
+    assert_ne!(
+        error("", true),
+        FireError::Illegal,
+        "the default `all` admits the firer's own house"
+    );
+    assert_eq!(
+        error("BerzerkTargeting=enemies\n", true),
+        FireError::Illegal,
+        "`enemies` refuses the firer's own house"
+    );
+}

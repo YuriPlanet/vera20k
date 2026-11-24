@@ -1,6 +1,7 @@
 //! Building storage-derived animation callers; original6C9650/445FE4/450CCB.
 use super::{RuleSet, Simulation, requested_damage_state};
 use crate::sim::ares_tiberium_storage::TiberiumStore;
+use crate::sim::storage_class::StorageAmounts;
 use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF32Bits, NativeF64Bits};
 
 /// Four retained Techno StorageClass float slots and Building's last refinery
@@ -8,7 +9,7 @@ use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF32Bits, NativeF64Bi
 /// this owner. Ordinary construction6C95E0/43B9AF starts with all zeros.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct BuildingStorage {
-    amounts: [NativeF32Bits; 4],
+    amounts: StorageAmounts,
     refinery_tier: i32,
 }
 
@@ -16,7 +17,7 @@ impl BuildingStorage {
     /// A fixture's value.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_amounts_for_test(&mut self, amounts: [NativeF32Bits; 4]) {
-        self.amounts = amounts;
+        self.amounts.set_amounts_for_test(amounts);
     }
 
     /// A fixture's value.
@@ -28,7 +29,7 @@ impl BuildingStorage {
 impl Default for BuildingStorage {
     fn default() -> Self {
         Self {
-            amounts: [NativeF32Bits::POSITIVE_ZERO; 4],
+            amounts: StorageAmounts::EMPTY,
             refinery_tier: 0,
         }
     }
@@ -37,19 +38,19 @@ impl super::BuildingArt {
     /// The store leaves the building for its House at Added_To_Game
     /// (`sim::ares_tiberium_storage`, while the money takes its Ares form).
     pub(crate) fn take_storage_amounts(&mut self) -> [NativeF32Bits; 4] {
-        std::mem::replace(&mut self.storage.amounts, [NativeF32Bits::POSITIVE_ZERO; 4])
+        std::mem::replace(&mut self.storage.amounts, StorageAmounts::EMPTY).amounts()
     }
 
     /// The store comes back from its House at Removed_From_Game.
     pub(crate) fn restore_storage_amounts(&mut self, amounts: [NativeF32Bits; 4]) {
-        self.storage.amounts = amounts;
+        self.storage.amounts = StorageAmounts::from_amounts(amounts);
     }
 }
 impl BuildingStorage {
     /// `StorageClass::GetTotalAmount @ 0x006C9650` of these four slots, through
     /// its one port ([`TiberiumStore::total_amount`]).
     fn total(self) -> i32 {
-        TiberiumStore::from_amounts(self.amounts).total_amount()
+        TiberiumStore::from_amounts(self.amounts.amounts()).total_amount()
     }
     /// gamemd's IDIV (445FE4, 450DAA, 450E12) traps on `Storage=0` under a
     /// stored total (and on MIN/-1); VERA carries on with the empty tier.
@@ -64,7 +65,7 @@ impl BuildingStorage {
         if capacity <= 0 {
             return 0;
         }
-        let numerator = self.total().wrapping_shl(2);
+        let numerator = self.amounts.total().wrapping_shl(2);
         X87::ftol_i32_low_masked(X87::add(
             X87::div(X87::load_i32(numerator), X87::load_i32(capacity)),
             X87::load_f64(NativeF64Bits::HALF),
@@ -89,7 +90,7 @@ impl Simulation {
         let storage = self.entities().get(id)?.building_art.storage;
         if let Some(store) = self.ares_ledger_store(id) {
             return Some(BuildingStorage {
-                amounts: store.amounts(),
+                amounts: StorageAmounts::from_amounts(store.amounts()),
                 ..storage
             });
         }
@@ -149,6 +150,8 @@ impl Simulation {
             return;
         };
         let (capacity, refinery) = (object.storage, object.refinery);
+        // 0x00450DAA jumps past the storage-tier arm for a keyed refinery.
+        let refinery = refinery && !self.refinery_uses_normal_active_anim(id, rules);
         // The type's ART resolved from its own ID, which names it as the
         // entity's type reference does.
         if object.silo_damage(rules) {
@@ -261,7 +264,9 @@ mod tests {
         entity.health.set_for_test(100);
         entity.lifecycle.set_in_limbo_for_test(false);
         entity.building_art.storage = BuildingStorage {
-            amounts: [NativeF32Bits::from_bits(50.0f32.to_bits()); 4],
+            amounts: crate::sim::storage_class::StorageAmounts::from_amounts(
+                [NativeF32Bits::from_bits(50.0f32.to_bits()); 4],
+            ),
             refinery_tier: 0,
         };
         sim.substrate.entities.insert(entity);
@@ -314,11 +319,11 @@ mod tests {
             entity.lifecycle.set_in_limbo_for_test(false);
             entity.building_art.damage_state_active = current <= 50;
             entity.building_art.storage = BuildingStorage {
-                amounts: std::array::from_fn(|i| {
+                amounts: StorageAmounts::from_amounts(std::array::from_fn(|i| {
                     NativeF32Bits::from_bits(
                         u32::from_str_radix(input["amount_bits"][i].as_str().unwrap(), 16).unwrap(),
                     )
-                }),
+                })),
                 refinery_tier: tier,
             };
             sim.substrate.entities.insert(entity);
@@ -409,5 +414,111 @@ mod tests {
             );
         }
         assert_eq!(faults, 120);
+    }
+
+    fn phobos_refinery_rules(use_normal: bool) -> RuleSet {
+        let ini = IniFile::from_str(
+            "[BuildingTypes]\n0=B\n[B]\nStrength=100\nStorage=1000\nRefinery=true\n\
+             [Animations]\n0=N\n1=D\n2=I\n",
+        );
+        let art = IniFile::from_str(&format!(
+            "[B]\nRefinery.UseNormalActiveAnim={}\nSiloDamage=yes\n\
+             ActiveAnim=N\nActiveAnimDamaged=D\nActiveAnimTwo=N\nActiveAnimTwoDamaged=D\n\
+             ActiveAnimThree=N\nActiveAnimThreeDamaged=D\nActiveAnimFour=N\nActiveAnimFourDamaged=D\n\
+             SpecialAnim=N\nSpecialAnimDamaged=D\nIdleAnim=I\n\
+             [N]\nRate=300\nLoopCount=-1\n[D]\nRate=300\nLoopCount=-1\n[I]\nRate=300\nLoopCount=-1\n",
+            if use_normal { "yes" } else { "no" }
+        ));
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+        let mut registry = ArtRegistry::from_ini(&art);
+        for name in ["N", "D", "I"] {
+            registry.bind_anim_frame_count_for_test(name, 100);
+        }
+        rules.install_art_data(registry);
+        rules
+    }
+
+    fn phobos_refinery_entity(sim: &mut Simulation, capacity_amount: f32) -> u64 {
+        let id = sim.substrate.allocate_stable_id();
+        let mut entity = GameEntity::test_default_of_category(
+            id,
+            "B",
+            "A",
+            2,
+            2,
+            crate::map::entities::EntityCategory::Structure,
+        );
+        entity.set_type_ref_for_test(sim.interner.intern("B"));
+        entity.set_owner_for_test(sim.interner.intern("A"));
+        entity.health.set_for_test(100);
+        entity.lifecycle.set_in_limbo_for_test(false);
+        entity.building_art.storage.set_amounts_for_test([
+            NativeF32Bits::from_bits(capacity_amount.to_bits()),
+            NativeF32Bits::from_bits(0.0f32.to_bits()),
+            NativeF32Bits::from_bits(0.0f32.to_bits()),
+            NativeF32Bits::from_bits(0.0f32.to_bits()),
+        ]);
+        sim.substrate.entities.insert(entity);
+        id
+    }
+
+    /// Phobos `Refinery.UseNormalActiveAnim=` (`Ext/Building/Hooks.Refinery.cpp:63`):
+    /// a set key sends `0x00445FE4` to the normal opening path, so the storage
+    /// tier stays unwritten and slots 3..6/18 allocate normally.
+    #[test]
+    fn phobos_refinery_use_normal_active_anim_skips_the_place_storage_arm() {
+        for use_normal in [false, true] {
+            let rules = phobos_refinery_rules(use_normal);
+            let mut sim = Simulation::new();
+            let id = phobos_refinery_entity(&mut sim, 1000.0);
+            sim.grand_opening(
+                id,
+                false,
+                true,
+                &rules,
+                None,
+                &mut crate::sim::world::FrameEffects::default(),
+            );
+            let art = &sim.entities().get(id).unwrap().building_art;
+            if use_normal {
+                assert_eq!(art.storage.refinery_tier, 0);
+                for slot in [18, 3, 4, 5, 6] {
+                    assert!(art.anim_slots[slot].is_some(), "slot {slot}");
+                }
+            } else {
+                assert_eq!(art.storage.refinery_tier, 4);
+                assert!(art.anim_slots[6].is_some());
+                for slot in [18, 3, 4, 5] {
+                    assert!(art.anim_slots[slot].is_none(), "slot {slot}");
+                }
+            }
+        }
+    }
+
+    /// Phobos `Refinery.UseNormalActiveAnim=` (`Ext/Building/Hooks.Refinery.cpp:70`):
+    /// a set key makes `0x00450DAA` jump past the tier comparison, so storage
+    /// changes allocate no anim.
+    #[test]
+    fn phobos_refinery_use_normal_active_anim_skips_the_update_tier_arm() {
+        for use_normal in [false, true] {
+            let rules = phobos_refinery_rules(use_normal);
+            let mut sim = Simulation::new();
+            let id = phobos_refinery_entity(&mut sim, 1000.0);
+            sim.update_building_storage_anims(id, &rules);
+            let art = &sim.entities().get(id).unwrap().building_art;
+            // 0x450D50..0x450D91 runs before both arms: the key does not
+            // disable SiloDamage.
+            assert!(art.anim_slots[10].is_some(), "silo slot");
+            if use_normal {
+                assert_eq!(art.storage.refinery_tier, 0);
+                for slot in [18, 3, 4, 5, 6] {
+                    assert!(art.anim_slots[slot].is_none(), "slot {slot}");
+                }
+            } else {
+                assert_eq!(art.storage.refinery_tier, 4);
+                assert!(art.anim_slots[6].is_some());
+                assert!(art.anim_slots[18].is_none());
+            }
+        }
     }
 }

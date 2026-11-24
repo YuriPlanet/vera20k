@@ -5,7 +5,7 @@
 //! until the shared pool's flush ([`crate::render::voxel_image_cache`])
 //! frees it.
 
-use super::{UnitAtlas, UnitSpriteEntry, UnitSpriteKey};
+use super::{PoseTilt, ShadowStencil, UnitAtlas, UnitSpriteEntry, UnitSpriteKey};
 
 /// The exact visible body's indexed source and placement in Unit's 256-square
 /// composite. Frame-local sources belong to VxlPoseFrameCache.
@@ -13,6 +13,11 @@ pub(crate) struct UnitShadowPart {
     pub entry: UnitSpriteEntry,
     pub point: [i32; 2],
     pub posed: bool,
+    /// The body's Phobos `JumpjetTilt` pose the shadow inherits, when present;
+    /// `None` keeps the stock stable facing/slope stencil. Mirrored per part
+    /// from the shared shadow pose so the frame-local shadow key distinguishes
+    /// tilted stencils.
+    pub tilt: Option<PoseTilt>,
 }
 
 impl UnitAtlas {

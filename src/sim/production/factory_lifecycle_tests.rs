@@ -327,7 +327,8 @@ pub(super) fn manager_rules() -> RuleSet {
 
 fn manager_ini() -> IniFile {
     IniFile::from_str(
-        "[Countries]\n0=Americans\n1=Russians\n[InfantryTypes]\n0=E1\n1=SLAV\n\
+        "[Countries]\n0=Americans\n1=Russians\n[General]\nAIFireSale=no\n\
+         [InfantryTypes]\n0=E1\n1=SLAV\n\
          [VehicleTypes]\n0=MTNK\n1=SMIN\n\
          [AircraftTypes]\n0=HORN\n1=ORCA\n\
          [BuildingTypes]\n0=GAPILE\n1=GAWEAP\n2=GACNST\n3=YAREFN\n4=GATECH\n5=GAAIRC\n6=GAPOWR\n\
@@ -1011,7 +1012,6 @@ fn offline_backup_recovery_distinguishes_saved_system_and_user_holds() {
 /// stage-1 crew, and that recheck's strip pass abandons the head because
 /// Find_Factory skips a selling factory (`0x5F797A`/`0x5F7983`).
 #[test]
-#[cfg(not(feature = "phobos"))]
 fn selling_last_retail_barracks_keeps_paid_head_before_map_exit() {
     use crate::sim::command::{Command, CommandEnvelope};
     use crate::sim::mission::MissionType;
@@ -2011,7 +2011,7 @@ fn prerequisite_loss_events_preserve_player_copies_cleanup_and_snapshot_replay_b
     // abandons construct the next queued heads and their slaves.
     assert_eq!(
         live.simulation.houses[&owner].tech_recheck_pending(),
-        crate::rules::PHOBOS_ENABLED
+        live.resources.rules.phobos()
     );
     let head = held_id(&live.simulation, owner, ProductionCategory::Vehicle);
     assert_eq!(
@@ -2903,7 +2903,6 @@ fn building_queue_switch_keeps_a_suspended_held_building() {
 /// right-click on a queued structure remove that queued copy, so the building
 /// under construction stays and nothing refunds (a queued copy is unpaid until
 /// it starts). Without the rewrite this call abandons the held product instead.
-#[cfg(feature = "phobos")]
 #[test]
 fn cancel_one_queued_structure_keeps_the_building_under_construction() {
     use crate::sim::production::ProductionCancellation;

@@ -114,9 +114,29 @@ def bounce_matrices():
             for axis, angle in rotations]
 
 
+def native_voxel_default_matrix():
+    # Init_Game 52BDEE reads this exact float from 7E1E68, then calls 754C00.
+    # The same block leaves the stack's 3x4 matrix that Phobos exposes as
+    # Matrix3D::VoxelDefaultMatrix: run to just after both builders.
+    from unicorn import Uc, UC_ARCH_X86, UC_MODE_32
+    from unicorn.x86_const import UC_X86_REG_ESP, UC_X86_REG_FPCW
+    uc = Uc(UC_ARCH_X86, UC_MODE_32)
+    load_image(uc)
+    uc.mem_map(STACK_BASE, STACK_SIZE)
+    sp = STACK_BASE + STACK_SIZE - 0x1000
+    uc.reg_write(UC_X86_REG_ESP, sp)
+    uc.reg_write(UC_X86_REG_FPCW, NATIVE_FPCW)
+    uc.mem_write(sp, bytes(4))
+    uc.mem_write(sp + 4, struct.pack("<I", 0x3F490E56))
+    run_checked(uc, 0x754C00, 0x754CA4,
+                required_addresses=[0x5AE860, 0x5AF080, 0x5AFB80])
+    return bytes(uc.mem_read(sp - 0x48 + 0x18, 48))
+
+
 def generate():
     # Init_Game 52BDEE reads this exact float from 7E1E68, then calls 754C00.
     light = dump_call(0x754C00, 0x887470, 12, stack_args=[0x3F490E56])
+    voxel_default_matrix = native_voxel_default_matrix()
     camera = native_camera()
     cases = []
     for step in range(32):
@@ -129,6 +149,8 @@ def generate():
                       "pages": native_diffuse_pages(matrix, light, mode).hex()}
                      for matrix in bounce_matrices() for mode in (2, 4)]
     return {"source": "unicorn/gamemd.exe", "light_bits": list(struct.unpack("<3I", light)),
+            "voxel_default_matrix_bits": list(struct.unpack("<12I", voxel_default_matrix)),
+            "voxel_default_source_bits": [0xBF3504E6, 0xBF3504E6, 0x0],
             "camera_bits": list(struct.unpack("<12I", camera)), "cases": cases,
             "diffuse_cases": diffuse_cases}
 

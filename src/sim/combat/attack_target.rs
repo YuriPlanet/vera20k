@@ -14,6 +14,11 @@ pub enum TargetKind {
     Entity(u64),
     /// Ground-targeted attack (force-fire on a cell). Cell coord in map space.
     Cell(u16, u16),
+    /// Phobos `Interceptor`'s `BulletClass::Target` naming another bullet
+    /// (`Ext/Techno/Body.Update.cpp:104-137`): the projectile id in the
+    /// authoritative projectile store. Appended so existing wire values keep
+    /// their tags.
+    Bullet(u64),
 }
 
 impl From<crate::sim::components::NavTargetRef> for TargetKind {
@@ -33,6 +38,9 @@ impl From<TargetKind> for crate::sim::components::NavTargetRef {
         match target {
             TargetKind::Entity(id) => Self::Object { id },
             TargetKind::Cell(rx, ry) => Self::cell(rx, ry),
+            // A bullet is never a nav destination; the id names no entity,
+            // so a destination built from one ends at its lookup.
+            TargetKind::Bullet(id) => Self::Object { id },
         }
     }
 }
@@ -43,6 +51,9 @@ impl TargetKind {
         match self {
             Self::Entity(id) => Some(id),
             Self::Cell(..) => None,
+            // A projectile id belongs to the projectile store, not the
+            // Object/Techno stores these callers resolve against.
+            Self::Bullet(..) => None,
         }
     }
 
@@ -72,6 +83,10 @@ impl TargetKind {
                     _ => ProjectileTarget::Cell { rx, ry },
                 }
             }
+            // The interceptor bullet names its prey in
+            // `Projectile::interceptor_target` (native's Bullet Target
+            // pointer); the ordinary target coordinate stays None.
+            Self::Bullet(..) => ProjectileTarget::None,
         }
     }
 
@@ -184,7 +199,7 @@ impl TarCom {
 /// that distinction.
 ///
 /// [`object_center_xy`]: crate::sim::movement::ground_pose::object_center_xy
-pub(super) fn target_coords(entity: &GameEntity) -> (u16, u16, SimFixed, SimFixed) {
+pub(crate) fn target_coords(entity: &GameEntity) -> (u16, u16, SimFixed, SimFixed) {
     target_xy_coords(crate::sim::movement::ground_pose::object_center_xy(entity))
 }
 
@@ -203,7 +218,7 @@ fn target_xy_coords([x, y]: [i32; 2]) -> (u16, u16, SimFixed, SimFixed) {
 /// shape `target_coords` returns for entities (rx, ry, sub_x, sub_y) so
 /// callers can branch on `TargetKind` and feed the result into the same
 /// projectile-spawn pipeline.
-pub(super) fn cell_center_coords(rx: u16, ry: u16) -> (u16, u16, SimFixed, SimFixed) {
+pub(crate) fn cell_center_coords(rx: u16, ry: u16) -> (u16, u16, SimFixed, SimFixed) {
     (rx, ry, SimFixed::from_num(128), SimFixed::from_num(128))
 }
 
@@ -232,6 +247,10 @@ pub(crate) fn target_present(
                     .is_some_and(|target| target.object_alive() && target.health() != 0)
             }
         }
+        // The Bullet pointer stays valid until it leaves the bullet store;
+        // an intercepted bullet still stored answers true until its AI
+        // retires it.
+        Some(TargetKind::Bullet(id)) => world.projectiles.get(id).is_some(),
     }
 }
 
@@ -263,6 +282,11 @@ pub(crate) fn resolve_target_coords(
         TargetKind::Cell(..) => target
             .tarcom_cell(world.resolved_terrain.as_ref())
             .map(|(rx, ry)| cell_center_coords(rx, ry)),
+        TargetKind::Bullet(id) => {
+            // `BulletClass::GetCoords` inherits Object5F65A0's Location.
+            let position = world.projectiles.get(id)?.position();
+            Some(target_xy_coords([position.x, position.y]))
+        }
     }
 }
 
@@ -309,6 +333,7 @@ pub fn object_distance_to(
                 (i32::from(width), i32::from(height))
             }),
         TargetKind::Cell(..) => None,
+        TargetKind::Bullet(..) => None,
     };
     Some(crate::util::native_x87::object_planar_distance(
         from, to, foundation,
@@ -392,7 +417,7 @@ pub fn install_cell_attack_target_for_test(
     true
 }
 
-pub(super) fn attack_world_z_leptons(
+pub(crate) fn attack_world_z_leptons(
     target: TargetKind,
     world: &crate::sim::world::Simulation,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
@@ -410,6 +435,11 @@ pub(super) fn attack_world_z_leptons(
                     .get(&entity_id)
                     .map(|target| target.world_coord().z)
             })
+            .unwrap_or(0),
+        TargetKind::Bullet(id) => world
+            .projectiles
+            .get(id)
+            .map(|projectile| projectile.position().z)
             .unwrap_or(0),
         // FireAt6FE1FF and Get_Led_Target_Coords70BCB0 read Cell+58;
         // Bullet::Fire468707 freezes that same unled aim. The flight/impact

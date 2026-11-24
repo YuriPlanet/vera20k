@@ -267,7 +267,6 @@ impl ProcessedRulesLayers {
 
     /// Phobos `[AudioVisual] TimerBlinkColorScheme=`, the runtime ColorScheme
     /// index the ordered passes resolved.
-    #[cfg(feature = "phobos")]
     pub(crate) fn timer_blink_color_scheme(&self) -> i32 {
         self.native_type_construction_trace
             .registry_state()
@@ -276,7 +275,6 @@ impl ProcessedRulesLayers {
 
     /// Phobos `[AudioVisual] MissingCameo=`, retained with the Rules scalars
     /// rather than read from the compatibility projection.
-    #[cfg(feature = "phobos")]
     pub(crate) fn missing_cameo(&self) -> &str {
         &self
             .native_type_construction_trace

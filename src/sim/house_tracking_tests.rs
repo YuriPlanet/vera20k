@@ -260,6 +260,7 @@ fn nominal_active_counts_match_executed_native_histories() {
     let factors = HouseCostFactors {
         country: [NativeF32Bits::ONE; 5],
         factory_plant: [NativeF32Bits::ONE; 5],
+        restricted_plant: NativeF32Bits::ONE,
     };
     let mut compared = 0;
     for row in corpus["count_histories"].as_array().unwrap() {

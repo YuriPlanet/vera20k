@@ -709,6 +709,7 @@ fn a_building_over_another_selected_building_does_nothing() {
             (10, 14),
             OrderModifier::Normal,
             false,
+            false,
         ),
         BuildingClick::Nothing
     );

@@ -357,6 +357,21 @@ impl Simulation {
                 let underwater = self
                     .object_type(entity.type_ref(), rules)
                     .is_some_and(|object| object.underwater);
+                // Phobos `TechnoExt::TypeExtData->MakesWake` over each
+                // locomotor's `*MakesWake` global
+                // (`Ext/Techno/Hooks.Misc.cpp:360-374`, `:376-384`,
+                // `:425-441`). Keep the shared anchor helper's stock API and
+                // admit this data gate before its cadence/movement queries.
+                let makes_wake = !rules.phobos()
+                    || resolves_makes_wake(
+                        self.object_type(entity.type_ref(), rules)
+                            .and_then(|object| object.phobos_makes_wake),
+                        entity.locomotor.as_ref().map(|loco| loco.active_kind()),
+                        rules,
+                    );
+                if !makes_wake {
+                    return None;
+                }
                 wake_anchor_for(entity, rules_context, underwater, terrain, binary_frame)
             })
             .collect();
@@ -466,4 +481,29 @@ impl Simulation {
         self.sound_events
             .emit(SimSoundEvent::UnitVoiceMoved { from, to });
     }
+}
+
+/// Phobos `TechnoExt::TypeExtData->MakesWake` over each locomotor's
+/// `[AudioVisual] *MakesWake=` global (`Ext/Techno/Hooks.Misc.cpp:360-374`,
+/// `:376-384`, `:425-441`). The caller bypasses this resolver when Phobos is off.
+fn resolves_makes_wake(
+    typed: Option<bool>,
+    kind: Option<crate::rules::locomotor_type::LocomotorKind>,
+    rules: &RuleSet,
+) -> bool {
+    typed.unwrap_or_else(|| match kind {
+        Some(crate::rules::locomotor_type::LocomotorKind::Walk) => {
+            rules.phobos_globals.walk_locomotor_makes_wake
+        }
+        Some(crate::rules::locomotor_type::LocomotorKind::Drive) => {
+            rules.phobos_globals.drive_locomotor_makes_wake
+        }
+        Some(crate::rules::locomotor_type::LocomotorKind::Hover) => {
+            rules.phobos_globals.hover_locomotor_makes_wake
+        }
+        Some(crate::rules::locomotor_type::LocomotorKind::Ship) => {
+            rules.phobos_globals.ship_locomotor_makes_wake
+        }
+        _ => true,
+    })
 }

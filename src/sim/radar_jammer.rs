@@ -78,9 +78,32 @@ impl Simulation {
             return;
         }
         let frame = self.session.binary_frame() as i32;
+        // Phobos `RadarJamDelay.Get(RulesExt::Global()->RadarJamDelay)`
+        // (`RadarJammerClass.cpp:10`), plus the House filter and the two type
+        // lists its scan applies (`:17-27`). All of them come from the
+        // jammer's own type, read before the mutable borrow below.
+        let phobos = rules.phobos();
+        let (scan_interval, jam_houses, jam_affect, jam_ignore) = if phobos {
+            let extras = self
+                .entity_object_type(entity, rules)
+                .map(|object| object.phobos_techno_extras.clone())
+                .unwrap_or_default();
+            (
+                extras
+                    .radar_jam_delay
+                    .unwrap_or(rules.phobos_globals.radar_jam_delay),
+                extras
+                    .radar_jam_houses
+                    .unwrap_or(rules.phobos_globals.radar_jam_houses),
+                extras.radar_jam_affect,
+                extras.radar_jam_ignore,
+            )
+        } else {
+            (SCAN_INTERVAL, Default::default(), Vec::new(), Vec::new())
+        };
         let entity = self.substrate.entities.get_mut(id).expect("same jammer");
         let jammer = entity.seldom.ares.radar_jam.jammer.get_or_insert_default();
-        if frame.wrapping_sub(jammer.last_scan) < SCAN_INTERVAL {
+        if frame.wrapping_sub(jammer.last_scan) < scan_interval {
             return;
         }
         jammer.last_scan = frame;
@@ -93,23 +116,40 @@ impl Simulation {
         // radius * 256.0; with integral leptons that is this exact squared
         // comparison, and a negative radius reaches no building.
         let reach = i128::from(radius) * 256;
+        // Phobos `RadarJammerClass::Update` (`RadarJammerClass.cpp:15-35`)
+        // walks every House `CanTargetHouse(RadarJamHouses, owner, house)`
+        // admits, then every Radar/SpySat building of that House, and jams it
+        // when it is in range and admitted by the type lists, else unjams it.
+        // A House the filter refuses is `continue`d, so its buildings keep
+        // whatever registration they already had, as natively.
         let buildings: Vec<u64> = self
             .substrate
             .entities
             .iter_sorted()
             .filter(|&(_, target)| {
                 target.category() == EntityCategory::Structure
-                    // IsEligible: the jammer's house is not allied with the
-                    // building's, which provides Radar or SpySat.
-                    && !crate::sim::combat::combat_weapon::is_ally_by_object(
-                        Some(&self.house_alliances),
-                        &self.interner,
-                        owner,
-                        target.owner(),
-                    )
                     && self
                         .entity_object_type(target, rules)
                         .is_some_and(|object| object.radar || object.spy_sat)
+                    // Phobos replaces the stock non-allied filter with
+                    // `RadarJammer.AffectedHouse`; Ares alone keeps its own.
+                    && if phobos {
+                        crate::sim::combat::can_target_house(
+                            jam_houses,
+                            owner,
+                            target.owner(),
+                            &self.houses,
+                            &self.house_alliances,
+                            &self.interner,
+                        )
+                    } else {
+                        !crate::sim::combat::combat_weapon::is_ally_by_object(
+                            Some(&self.house_alliances),
+                            &self.interner,
+                            owner,
+                            target.owner(),
+                        )
+                    }
             })
             .map(|(building, _)| building)
             .collect();
@@ -122,7 +162,21 @@ impl Simulation {
             let [dx, dy, dz] = [at.x - location.x, at.y - location.y, at.z - location.z]
                 .map(|delta| i128::from(delta));
             let in_range = reach >= 0 && dx * dx + dy * dy + dz * dz <= reach * reach;
-            if in_range {
+            // Phobos adds the two type lists (`RadarJammerClass.cpp:26-27`):
+            // an ignored type is never jammed, and a nonempty `Affect=` admits
+            // only the types it names.
+            let admitted = {
+                let type_id = self
+                    .substrate
+                    .entities
+                    .get(building)
+                    .map(|target| self.interner.resolve(target.type_ref()).to_owned())
+                    .unwrap_or_default();
+                let listed =
+                    |names: &[String]| names.iter().any(|name| name.eq_ignore_ascii_case(&type_id));
+                !phobos || (!listed(&jam_ignore) && (jam_affect.is_empty() || listed(&jam_affect)))
+            };
+            if in_range && admitted {
                 self.jam(id, building);
             } else {
                 self.unjam(id, building);

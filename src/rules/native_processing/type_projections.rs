@@ -2,6 +2,7 @@
 //! Techno, Building, Infantry, Weapon, Warhead, SuperWeapon and Anim registries.
 
 use super::ProcessedRulesLayers;
+use super::processed_type::TechnoTypeProjection;
 use super::{
     AnimTypeReferences, AresExplicitFactory, AresFactoryOwners, ProcessedType, RulesTypeFamily,
     TechnoTypeReferences, UrbanTypeKind, VoxelAnimTypeReferences, WeaponSlots, WeaponState,
@@ -21,7 +22,6 @@ use crate::rules::projectile_type::ProjectileArtState;
 use crate::rules::rules_type_references::RulesTypeReferences;
 use crate::rules::superweapon_type::AresSuperWeaponMetadata;
 use crate::rules::superweapon_type::AresSuperWeaponPresentation;
-#[cfg(feature = "phobos")]
 use crate::rules::superweapon_type::PhobosSuperWeaponAvailability;
 use crate::rules::superweapon_type::SuperWeaponBuildingRequirements;
 use crate::rules::superweapon_type::UnitDeliveryRules;
@@ -537,7 +537,6 @@ impl ProcessedRulesLayers {
     }
 
     /// Phobos insignia state after every reached TechnoType ReadINI pass.
-    #[cfg(feature = "phobos")]
     pub(crate) fn techno_insignia_states(
         &self,
     ) -> impl Iterator<
@@ -699,7 +698,7 @@ impl ProcessedRulesLayers {
         Item = (
             ObjectCategory,
             &str,
-            &TechnoTypeReferences,
+            TechnoTypeProjection<'_>,
             &ObjectImageState,
             Option<&str>,
         ),
@@ -716,7 +715,11 @@ impl ProcessedRulesLayers {
                     (
                         category,
                         member.native_stored_id.as_str(),
-                        &member.techno_references,
+                        TechnoTypeProjection {
+                            references: &member.techno_references,
+                            phobos_object: &member.phobos_object,
+                            infantry_art: &member.infantry_art,
+                        },
                         &member.object_image,
                         member.object_crush_sound.as_deref(),
                     )
@@ -805,6 +808,73 @@ impl ProcessedRulesLayers {
             })
     }
 
+    /// Phobos `ShadowIndices=` after every reached fixed-ART pass.
+    pub(crate) fn phobos_shadow_index_states(
+        &self,
+    ) -> impl Iterator<Item = (ObjectCategory, &str, &[i32], &[i32])> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .iter()
+            .filter_map(|(family, members)| {
+                family.object_category().map(|category| (category, members))
+            })
+            .flat_map(|(category, members)| {
+                members.iter().map(move |member| {
+                    (
+                        category,
+                        member.native_stored_id.as_str(),
+                        member.phobos_shadow_indices.as_slice(),
+                        member.phobos_shadow_indices_frames.as_slice(),
+                    )
+                })
+            })
+    }
+
+    /// Phobos `ShadowIndex.Frame=` after every reached fixed-ART pass.
+    pub(crate) fn phobos_shadow_index_frame_states(
+        &self,
+    ) -> impl Iterator<Item = (ObjectCategory, &str, i32)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .iter()
+            .filter_map(|(family, members)| {
+                family.object_category().map(|category| (category, members))
+            })
+            .flat_map(|(category, members)| {
+                members.iter().map(move |member| {
+                    (
+                        category,
+                        member.native_stored_id.as_str(),
+                        member.phobos_shadow_index_frame,
+                    )
+                })
+            })
+    }
+
+    /// Phobos `TurretShadow=` after every reached fixed-ART pass.
+    pub(crate) fn phobos_turret_shadow_states(
+        &self,
+    ) -> impl Iterator<Item = (ObjectCategory, &str, Option<bool>)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .iter()
+            .filter_map(|(family, members)| {
+                family.object_category().map(|category| (category, members))
+            })
+            .flat_map(|(category, members)| {
+                members.iter().map(move |member| {
+                    (
+                        category,
+                        member.native_stored_id.as_str(),
+                        member.phobos_turret_shadow,
+                    )
+                })
+            })
+    }
+
     /// Each SuperWeaponType's `WeaponType=` (+9C) and `AuxBuilding=` (+C8)
     /// after every reached pass.
     pub(crate) fn super_weapon_reference_states(
@@ -850,12 +920,64 @@ impl ProcessedRulesLayers {
         })
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_super_weapon_availability_states(
         &self,
     ) -> impl Iterator<Item = (&str, PhobosSuperWeaponAvailability)> {
         self.member_states(RulesTypeFamily::SuperWeapon, |member| {
             member.super_weapon_phobos_availability.clone()
+        })
+    }
+
+    /// Phobos `SW.Next*`/`SW.Link*`, one entry per registered definition.
+    pub(crate) fn phobos_super_weapon_chaining_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &str,
+            crate::rules::phobos_sw_chaining::PhobosSuperWeaponChaining,
+        ),
+    > {
+        self.member_states(RulesTypeFamily::SuperWeapon, |member| {
+            member.super_weapon_phobos_chaining.clone()
+        })
+    }
+
+    /// Phobos `Detonate.*`, one entry per registered definition.
+    pub(crate) fn phobos_super_weapon_detonate_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &str,
+            crate::rules::phobos_sw_detonate::PhobosSuperWeaponDetonate,
+        ),
+    > {
+        self.member_states(RulesTypeFamily::SuperWeapon, |member| {
+            member.super_weapon_phobos_detonate.clone()
+        })
+    }
+
+    /// Phobos `LimboDelivery.*`/`LimboKill.*`, one entry per registered
+    /// definition.
+    pub(crate) fn phobos_super_weapon_limbo_states(
+        &self,
+    ) -> impl Iterator<Item = (&str, crate::rules::phobos_limbo::PhobosSuperWeaponLimbo)> {
+        self.member_states(RulesTypeFamily::SuperWeapon, |member| {
+            member.super_weapon_phobos_limbo.clone()
+        })
+    }
+
+    /// Phobos `Message.Activated.*`/`EVA.Activated.*` and the linked pair, one
+    /// entry per registered definition.
+    pub(crate) fn phobos_super_weapon_messages_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &str,
+            crate::rules::phobos_sw_messages::PhobosSuperWeaponMessages,
+        ),
+    > {
+        self.member_states(RulesTypeFamily::SuperWeapon, |member| {
+            member.super_weapon_phobos_messages.clone()
         })
     }
 
@@ -866,11 +988,18 @@ impl ProcessedRulesLayers {
     }
 
     /// Phobos `UnitTypeExt`'s `OreGathering.*` vectors, one per VehicleType.
-    #[cfg(feature = "phobos")]
     pub(crate) fn ore_gathering_states(
         &self,
     ) -> impl Iterator<Item = (&str, &crate::rules::object_type::PhobosOreGathering)> {
         self.member_states(RulesTypeFamily::Vehicle, |member| &member.ore_gathering)
+    }
+
+    /// Phobos `UnitTypeExt`'s resolved `DeployingAnims=`, one list per
+    /// VehicleType.
+    pub(crate) fn deploying_anim_states(&self) -> impl Iterator<Item = (&str, &[String])> {
+        self.member_states(RulesTypeFamily::Vehicle, |member| {
+            member.phobos_deploying_anims.as_slice()
+        })
     }
 
     /// Ares GenericWarhead references, resolved by the same ordered type
@@ -1073,7 +1202,6 @@ impl ProcessedRulesLayers {
             &[String],
             &[NativeF64Bits; 11],
             Option<&AresWarheadVerses>,
-            Option<crate::rules::warhead_type::WarheadWeb>,
         ),
     > {
         self.native_type_construction_trace
@@ -1092,7 +1220,6 @@ impl ProcessedRulesLayers {
                     member.warhead_anim.debris_types.as_slice(),
                     &member.warhead_verses,
                     member.ares_verses.as_ref(),
-                    member.warhead_anim.web,
                 )
             })
     }

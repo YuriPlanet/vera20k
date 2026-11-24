@@ -57,6 +57,23 @@ pub struct TerrainObjectType {
     is_logic: bool,
     /// `SpawnsTiberium=yes` — periodically spawns ore in adjacent cells.
     pub spawns_tiberium: bool,
+    /// Phobos `IsPassable=` (`Ext/TerrainType/Body.h:33`, a `Nullable<bool>`):
+    /// the type's own override; unset keeps the selected `[General]` fallback.
+    is_passable: Option<bool>,
+    /// Phobos `CanBeBuiltOn=` (`Ext/TerrainType/Body.h:34`, a `Nullable<bool>`):
+    /// a building may be placed over this terrain, which is then removed
+    /// (`Ext/TerrainType/Hooks.Passable.cpp:104-190`).
+    can_be_built_on_key: Option<bool>,
+    /// Resolved Phobos `IsPassable` (`Ext/TerrainType/Hooks.Passable.cpp:10-18`):
+    /// the type key else `Tibtree.IsPassable`/`Terrain.IsPassable` selected by
+    /// `SpawnsTiberium=`. False without the phobos feature.
+    #[serde(default)]
+    passable: bool,
+    /// Resolved Phobos `CanBeBuiltOn`: the type key else
+    /// `Tibtree.CanBeBuiltOn`/`Terrain.CanBeBuiltOn` by `SpawnsTiberium=`.
+    /// False without the phobos feature.
+    #[serde(default)]
+    can_be_built_on: bool,
     /// `IsAnimated=yes` — required gate for SpawnsTiberium logic.
     pub is_animated: bool,
     /// Signed logic frames per animation step; native ReadInt stores without clamps.
@@ -110,9 +127,19 @@ pub struct TerrainObjectType {
     /// Phobos `TerrainTypeExt`'s five `SpawnsTiberium.*` fields. Absent without
     /// the Phobos capability, which is also how a retail build behaves: the
     /// stock spawner keeps its own-cell-neighbour spread and Riparius fallback.
-    #[cfg(feature = "phobos")]
     #[serde(default = "PhobosSpawnsTiberium::ctor")]
     pub spawns_tiberium_ext: PhobosSpawnsTiberium,
+    /// Phobos `DestroyAnim=` (`ValueableVector<AnimTypeClass*>`;
+    /// `Ext/TerrainType/Body.cpp:72`): the registered anims
+    /// `PlayDestroyEffects` picks one of at the death coordinate
+    /// (`AnimExt::CreateRandomAnim`, `Ext/Anim/Body.cpp:407-412`).
+    #[serde(default)]
+    pub destroy_anim: Vec<String>,
+    /// Phobos `HasCrumblingFrames=` (`Valueable<bool>`, false; `:81`): a
+    /// lethal hit keeps the tree for its crumble sequence
+    /// (`Ext/TerrainType/Hooks.cpp:80-131`, `:251-305`).
+    #[serde(default)]
+    pub has_crumbling_frames: bool,
     /// TerrainType+2B8 is null after71DAF1, independently of index+298.
     /// ReadINI71DF96 and saved Load71E22D bind that index's static list.
     #[serde(default = "legacy_bound_terrain_field")]
@@ -120,6 +147,32 @@ pub struct TerrainObjectType {
     /// A reached resource request, not proof that a physical SHP exists.
     #[serde(default = "legacy_bound_terrain_field")]
     shape_requested: bool,
+    /// Phobos `AnimationLength=` (`Ext/TerrainType/Body.cpp:83`,
+    /// `Nullable<int>`, constructor `Ext/TerrainType/Body.h:57`): frames per
+    /// animation stage. Unset derives `Frames / (2 * (HasDamagedFrames + 1))`
+    /// (`Ext/TerrainType/Hooks.cpp:26`).
+    #[serde(default)]
+    pub animation_length: Option<i32>,
+    /// Phobos `HasDamagedFrames=` (`:80`, `Valueable<bool>`, constructor
+    /// `Body.h:54`): the SHP holds a damaged half after the healthy frames
+    /// (`Ext/TerrainType/Hooks.cpp:106-113`).
+    #[serde(default)]
+    pub has_damaged_frames: bool,
+    /// Phobos `MinimapColor=` (`:75`, `Nullable<ColorStruct>`, constructor
+    /// `Body.h:51`): replaces the SHP-header minimap color when set
+    /// (`Ext/TerrainType/Hooks.cpp:334-337`).
+    #[serde(default)]
+    pub(crate) minimap_color: Option<[u8; 3]>,
+    /// Phobos `CrumblingSound=` (`:82`, `ValueableIdx<VocClass>`, constructor
+    /// `Body.h:56`): the sound a terrain object plays when it crumbles
+    /// (`Ext/TerrainType/Hooks.cpp:251`, `:299`).
+    #[serde(default)]
+    pub(crate) crumbling_sound: Option<String>,
+    /// Phobos `DestroySound=` (`:73`, `ValueableIdx<VocClass>`, constructor
+    /// `Body.h:50`): the sound a destroyed terrain object plays
+    /// (`Ext/TerrainType/Body.cpp:19`).
+    #[serde(default)]
+    pub(crate) destroy_sound: Option<String>,
 }
 
 fn legacy_bound_terrain_field() -> bool {
@@ -150,6 +203,10 @@ impl TerrainObjectType {
             crate::rules::object_image::ImageTheater::Uninitialized,
             tree_strength,
         );
+        // Production calls the Phobos half after the stock ReadINI pass
+        // (`native_processing`'s TerrainType reader); the test helper keeps
+        // the same order so type-reader tests see the Phobos keys.
+        read_state.read_phobos_pass(section, |_| None);
         Self::from_retained(name, section, &read_state, &image)
     }
 
@@ -176,6 +233,10 @@ impl TerrainObjectType {
             ambient_sound: None,
             is_logic: read_state.is_logic,
             spawns_tiberium: section.read_bool("SpawnsTiberium", false),
+            is_passable: section.read_phobos_nullable_bool("IsPassable", None),
+            can_be_built_on_key: section.read_phobos_nullable_bool("CanBeBuiltOn", None),
+            passable: false,
+            can_be_built_on: false,
             is_animated: section.read_bool("IsAnimated", false),
             animation_rate: section.read_int("AnimationRate", 0),
             animation_probability,
@@ -204,8 +265,14 @@ impl TerrainObjectType {
                 .to_string(),
             occupy_list_bound: read_state.has_occupy_list(),
             shape_requested: image.theater() || !image.shp_loads().is_empty(),
-            #[cfg(feature = "phobos")]
             spawns_tiberium_ext: PhobosSpawnsTiberium::ctor(),
+            destroy_anim: Vec::new(),
+            destroy_sound: None,
+            has_damaged_frames: false,
+            has_crumbling_frames: false,
+            crumbling_sound: None,
+            animation_length: None,
+            minimap_color: None,
         };
         read_state.project_into(&mut terrain, image);
         terrain
@@ -268,11 +335,40 @@ impl TerrainObjectType {
     }
 
     pub fn raw_occupation_bits(&self, snow_theater: bool) -> i32 {
+        // Phobos 0x71C110 (`Ext/TerrainType/Hooks.Passable.cpp:7`): a
+        // passable type never sets its occupation bit.
+        if self.passable {
+            return 0;
+        }
         if snow_theater {
             self.snow_occupation_bits
         } else {
             self.temperate_occupation_bits
         }
+    }
+
+    /// Whether a resolved `IsPassable` key removed this type's occupation.
+    pub(crate) fn passable(&self) -> bool {
+        self.passable
+    }
+
+    /// Whether a resolved `CanBeBuiltOn` key lets a building replace it.
+    pub(crate) fn can_be_built_on(&self) -> bool {
+        self.can_be_built_on
+    }
+
+    /// Resolve the Phobos terrain-type overrides once the globals are known.
+    pub(crate) fn project_phobos(&mut self, globals: &crate::rules::phobos_globals::PhobosGlobals) {
+        self.passable = self.is_passable.unwrap_or(if self.spawns_tiberium {
+            globals.tibtree_is_passable
+        } else {
+            globals.terrain_is_passable
+        });
+        self.can_be_built_on = self.can_be_built_on_key.unwrap_or(if self.spawns_tiberium {
+            globals.tibtree_can_be_built_on
+        } else {
+            globals.terrain_can_be_built_on
+        });
     }
 
     pub(crate) fn is_logic(&self) -> bool {
@@ -306,7 +402,6 @@ impl TerrainObjectType {
 ///
 /// Constructor defaults are `Body.h`'s initializer list: type 0, range 1, one
 /// growth stage 3, one cell per animation 1 and no particle (-1).
-#[cfg(feature = "phobos")]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct PhobosSpawnsTiberium {
     /// `SpawnsTiberium.Type=`: the `[Tiberiums]` index the spawner germinates.
@@ -322,7 +417,6 @@ pub struct PhobosSpawnsTiberium {
     pub particle: Option<String>,
 }
 
-#[cfg(feature = "phobos")]
 impl PhobosSpawnsTiberium {
     /// `TerrainTypeExt`'s member initializers.
     pub const fn ctor() -> Self {
@@ -392,9 +486,22 @@ pub(crate) struct TerrainTypeReadState {
     legal_target: bool,
     /// Phobos reads its extension at the end of the same ReadINI pass, so the
     /// per-pass retention belongs to this state, not the merged section.
-    #[cfg(feature = "phobos")]
     #[serde(default = "PhobosSpawnsTiberium::ctor")]
     spawns_tiberium_ext: PhobosSpawnsTiberium,
+    #[serde(default)]
+    destroy_anim: Vec<String>,
+    #[serde(default)]
+    destroy_sound: Option<String>,
+    #[serde(default)]
+    has_damaged_frames: bool,
+    #[serde(default)]
+    has_crumbling_frames: bool,
+    #[serde(default)]
+    crumbling_sound: Option<String>,
+    #[serde(default)]
+    animation_length: Option<i32>,
+    #[serde(default)]
+    minimap_color: Option<[u8; 3]>,
 }
 
 impl TerrainTypeReadState {
@@ -409,8 +516,14 @@ impl TerrainTypeReadState {
             is_logic: true,
             is_veinhole: false,
             legal_target: false,
-            #[cfg(feature = "phobos")]
             spawns_tiberium_ext: PhobosSpawnsTiberium::ctor(),
+            destroy_anim: Vec::new(),
+            destroy_sound: None,
+            has_damaged_frames: false,
+            has_crumbling_frames: false,
+            crumbling_sound: None,
+            animation_length: None,
+            minimap_color: None,
         }
     }
 
@@ -486,20 +599,42 @@ impl TerrainTypeReadState {
         terrain.occupy_list_bound = self.has_occupy_list();
         terrain.shape_requested = image.theater() || !image.shp_loads().is_empty();
         terrain.radar_color_read_passes.clone_from(&self.reads);
-        #[cfg(feature = "phobos")]
-        terrain
-            .spawns_tiberium_ext
-            .clone_from(&self.spawns_tiberium_ext);
+        {
+            terrain
+                .spawns_tiberium_ext
+                .clone_from(&self.spawns_tiberium_ext);
+            terrain.destroy_anim.clone_from(&self.destroy_anim);
+            terrain.destroy_sound.clone_from(&self.destroy_sound);
+            terrain.has_damaged_frames = self.has_damaged_frames;
+            terrain.has_crumbling_frames = self.has_crumbling_frames;
+            terrain.crumbling_sound.clone_from(&self.crumbling_sound);
+            terrain.animation_length = self.animation_length;
+            terrain.minimap_color = self.minimap_color;
+        }
     }
 
     /// The `TerrainTypeExt::LoadFromINI @ 0x0071E0A6` half of this ReadINI pass.
-    #[cfg(feature = "phobos")]
     pub(crate) fn read_phobos_pass(
         &mut self,
         section: &crate::rules::ini_parser::IniSection,
         find_particle: impl FnMut(&str) -> Option<String>,
     ) {
         self.spawns_tiberium_ext.read_pass(section, find_particle);
+        // `TerrainTypeExt::LoadFromINI` (`Ext/TerrainType/Body.cpp:71-83`).
+        // `ValueableVector<T>::Read` (`Utilities/TemplateDef.h:1946-1954`)
+        // clears and re-parses only when ReadString succeeds; INI_EX's
+        // buffer is Phobos.h:26's 2048.
+        if let Some(tokens) = section.read_list("DestroyAnim", 0x800) {
+            self.destroy_anim = tokens.into_iter().map(str::to_owned).collect();
+        }
+        self.destroy_sound = section.read_name("DestroySound", 2048).map(str::to_owned);
+        self.has_damaged_frames = section.read_bool("HasDamagedFrames", self.has_damaged_frames);
+        self.has_crumbling_frames =
+            section.read_bool("HasCrumblingFrames", self.has_crumbling_frames);
+        self.crumbling_sound = section.read_name("CrumblingSound", 2048).map(str::to_owned);
+        self.animation_length =
+            section.read_phobos_nullable_int("AnimationLength", self.animation_length);
+        self.minimap_color = section.read_phobos_nullable_color("MinimapColor", self.minimap_color);
     }
 
     fn has_occupy_list(&self) -> bool {
@@ -526,6 +661,33 @@ impl TerrainTypeReadState {
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
+
+    /// Phobos `TerrainTypeExt::LoadFromINI` (`Ext/TerrainType/Body.cpp:71-83`):
+    /// the six destroy/crumble/damaged keys read from the type's section.
+    #[test]
+    fn phobos_destroy_and_crumbling_keys_read() {
+        let ini = IniFile::from_str(
+            "[TREE]\nDestroyAnim=DBRIS1\nDestroySound=TreeSnd\n\
+             HasDamagedFrames=yes\nHasCrumblingFrames=yes\n\
+             CrumblingSound=CrumbleSnd\nAnimationLength=7\nMinimapColor=10,20,30\n",
+        );
+        let section = ini.section_or_empty("TREE");
+        let mut state = TerrainTypeReadState::new();
+        state.read_phobos_pass(&section, |_| None);
+        assert_eq!(state.destroy_anim, ["DBRIS1"]);
+        assert_eq!(state.destroy_sound.as_deref(), Some("TreeSnd"));
+        assert!(state.has_damaged_frames);
+        assert!(state.has_crumbling_frames);
+        assert_eq!(state.crumbling_sound.as_deref(), Some("CrumbleSnd"));
+        assert_eq!(state.animation_length, Some(7));
+        assert_eq!(state.minimap_color, Some([10, 20, 30]));
+        // The ctor values a blank section keeps.
+        let blank = TerrainTypeReadState::new();
+        assert_eq!(blank.minimap_color, None);
+        assert_eq!(blank.animation_length, None);
+        assert!(blank.destroy_anim.is_empty() && blank.destroy_sound.is_none());
+        assert!(!blank.has_damaged_frames && !blank.has_crumbling_frames);
+    }
 
     #[test]
     fn parse_tibtre_section_defaults() {
@@ -557,12 +719,30 @@ mod tests {
         assert_eq!(t.foundation, "1x1");
     }
 
+    /// Phobos `HasCrumblingFrames` (`Ext/TerrainType/Body.cpp:81`,
+    /// `Valueable<bool>` default false): read through the production
+    /// TerrainType constructor.
+    #[test]
+    fn has_crumbling_frames_reads_the_terrain_type_bool() {
+        let ini = IniFile::from_str(
+            "[TREE01]\nHasCrumblingFrames=yes\n[TREE02]\nHasCrumblingFrames=no\n\
+             [TREE03]\nSpawnsTiberium=no\n",
+        );
+        for (name, expected) in [("TREE01", true), ("TREE02", false), ("TREE03", false)] {
+            let section = ini.section(name).expect("section");
+            assert_eq!(
+                TerrainObjectType::from_ini_section(name, section).has_crumbling_frames,
+                expected,
+                "{name}"
+            );
+        }
+    }
+
     /// Phobos' five `SpawnsTiberium.*` keys, read through the production
     /// layered process owner: `TerrainTypeExt`'s constructor defaults, the
     /// `PartialVector2D<int>` value count, and a later pass that retains every
     /// key it does not name.
     #[test]
-    #[cfg(feature = "phobos")]
     fn spawns_tiberium_extension_defaults_counts_and_retains_across_passes() {
         use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
         use crate::rules::ruleset::RuleSet;
@@ -635,7 +815,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "phobos")]
     fn spawns_tiberium_retained_process_state_changes_compatibility_hash() {
         use crate::rules::native_processing::RulesLayerStack;
         use crate::rules::ruleset::RuleSet;

@@ -89,8 +89,6 @@ use selection::{
 };
 pub(super) use sidebar::local_has_manageable_building;
 #[cfg(test)]
-pub(super) use {hotkey_dispatch::ready_tab_factory, sidebar::ready_cameo_factory};
-#[cfg(test)]
 pub(crate) use sidebar::wheel_action;
 pub(crate) use sidebar::{
     WheelAction, apply_sidebar_action, local_queue_view, push_local_eva, sidebar_scroll_command,
@@ -106,6 +104,8 @@ use unit_orders::{
     queue_deploy_undeploy_for_selected, queue_guard_for_selected, queue_scatter_for_selected,
     queue_stop_for_selected,
 };
+#[cfg(test)]
+pub(super) use {hotkey_dispatch::ready_tab_factory, sidebar::ready_cameo_factory};
 
 /// Handle mouse button press/release for selection and move commands.
 ///
@@ -868,6 +868,13 @@ fn tactical_left_up(state: &mut AppState) {
                     let preflight_order = band_preflight_order
                         .as_deref()
                         .unwrap_or(screen_order.as_slice());
+                    // Phobos `[Phobos] PrioritySelectionFiltering=`: the band
+                    // walk skips `LowSelectionPriority=` objects once the
+                    // rectangle holds a higher-priority one.
+                    let priority_selection_filtering = state
+                        .match_state
+                        .match_presentation
+                        .priority_selection_filtering;
                     queued_selection = compute_box_selection_snapshot_with_playfield(
                         crate::app::input::entity_pick::presented(state, sim),
                         preflight_order,
@@ -884,6 +891,7 @@ fn tactical_left_up(state: &mut AppState) {
                         Some(sim.houses()),
                         Some(sim.interner()),
                         sim.playfield_bounds().is_some(),
+                        priority_selection_filtering,
                     );
                 }
             }

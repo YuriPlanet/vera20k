@@ -1,0 +1,434 @@
+//! Phobos `UnitTypeExt::FireUp=` (`Ext/UnitType/Body.cpp:93`) through the
+//! production `FireVisit::UnitTarget` path: `UnitClass_UpdateFiring_FireUp`
+//! (`0x736F61`, `Ext/Unit/Hooks.Firing.cpp:7-109`) holds an SHP, non-turreted
+//! Unit on the authored body firing frame, drops the sequence of a really
+//! moving unit that does not have `OpportunityFire=`, forces the full rearm
+//! when `Burst.FireWithinSequence` projects past the sequence, never seeds a
+//! record that authors no `FiringFrames=`, and leaves `0x736E6E`'s hull turn
+//! running on a held frame. `the_full_rearm_flag_marks_only_a_full_arm` reads
+//! the `LastRearmWasFullDelay` the same shots record.
+use super::world_fire;
+use crate::rules::ini_parser::IniFile;
+use crate::rules::ruleset::RuleSet;
+use crate::sim::combat::TargetKind;
+use crate::sim::components::DriveCoord;
+use crate::sim::movement::locomotor::LocomotorState;
+use crate::sim::movement::{DriveLocomotionRuntime, SpeedRules, motion_query};
+use crate::sim::world::{FrameEffects, Simulation};
+use crate::util::fixed_math::SIM_ONE;
+
+const EAST: u16 = 0x4000;
+const NORTH: u16 = 0;
+/// `2 * 5 - 1`: a five-image ART firing sequence counts down from nine.
+const FRAMES: i32 = 9;
+
+/// An SHP, non-turreted `FIRER` unit aimed east at a rival `DUMMY` two cells
+/// east, with ART `FiringFrames=5` and ART `FireUp=fire_up` (`-1` is the key's
+/// constructor default). `firer_extra` appends `[FIRER]` keys, `weapon_extra`
+/// appends `[GUN]` keys. A test that needs a draw-free rearm pins the
+/// weapon-level `ROF.RandomDelay=0` there: `[CombatDamage]` never reaches this
+/// fixture's processed ruleset, so a global pin would fall back to `{0, 2}`.
+fn arena(firer_extra: &str, weapon_extra: &str, fire_up: i32) -> (Simulation, RuleSet, u64) {
+    arena_with_art(
+        firer_extra,
+        weapon_extra,
+        &format!("[FIRER]\nFiringFrames=5\nFireUp={fire_up}\n"),
+    )
+}
+
+/// [`arena`] with the fixed `[FIRER]` ART record written verbatim, for the
+/// keys the Unit ART reader owns: a record with no `FiringFrames=` leaves
+/// native's `frames` at its -1 sentinel.
+fn arena_with_art(firer_extra: &str, weapon_extra: &str, art: &str) -> (Simulation, RuleSet, u64) {
+    let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+        "[Warheads]\n0=HIT\n[BuildingTypes]\n0=DUMMY\n\
+         [VehicleTypes]\n0=FIRER\n\
+         [FIRER]\nStrength=1000\nArmor=heavy\nSpeed=4\nPrimary=GUN\nOmniFire=yes\n\
+         CanPassiveAquire=no\n{firer_extra}\
+         [DUMMY]\nStrength=10000\nArmor=heavy\nCanPassiveAquire=no\n\
+         [WeaponTypes]\n0=GUN\n\
+         [GUN]\nDamage=10\nROF=40\nRange=9.5\nSpeed=100\nProjectile=INVIS\nWarhead=HIT\n\
+         {weapon_extra}\
+         [INVIS]\nInviso=yes\nAG=yes\n\
+         [HIT]\nCellSpread=0\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+    ));
+    // The Unit ART reader owns `FiringFrames`, so the processed pass has to see
+    // the fixed art; `install_art_data` then projects `FireUp=` and `Voxel=`.
+    let art = IniFile::from_str(art);
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("rules read");
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    sim.session
+        .set_current_house_for_test(sim.interner.get("Americans"));
+    sim.session.set_binary_frame_for_test(100);
+    let firer = sim
+        .spawn_object("FIRER", "Americans", 10, 10, 0, &rules)
+        .expect("firer");
+    let target = sim
+        .spawn_object("DUMMY", "Russians", 12, 10, 0, &rules)
+        .expect("target");
+    for id in [firer, target] {
+        sim.entities_mut_for_test()
+            .get_mut(id)
+            .expect("placed object")
+            .lifecycle
+            .set_in_limbo_for_test(false);
+    }
+    let owner = sim.entities().get(target).map(|entity| entity.owner());
+    let victim = sim
+        .entities()
+        .get(target)
+        .map(|entity| (entity.position.rx(), entity.position.ry()))
+        .expect("target");
+    sim.fog
+        .mark_visible_for_owner(owner.expect("owner"), victim.0, victim.1);
+    let actor = sim.entities_mut_for_test().get_mut(firer).expect("firer");
+    actor.body_facing.snap(EAST, 100);
+    assert!(
+        sim.assign_target_represented(
+            firer,
+            Some(TargetKind::Entity(target)),
+            &rules,
+            &mut FrameEffects::empty()
+        )
+        .is_ok(),
+        "the firer holds the target as a mission would"
+    );
+    (sim, rules, firer)
+}
+
+/// Install a really moving Drive locomotor: a destination and a head point one
+/// cell east of the parked body, with the Foot speed fraction a Move order
+/// leaves. `Is_Really_Moving_Now` (ILocomotion+0xA8) answers through the Drive
+/// readiness inputs (`ready_producer`), so the speed term needs a positive
+/// owner speed.
+fn start_moving(sim: &mut Simulation, rules: &RuleSet, id: u64) {
+    let head = DriveCoord {
+        x: 11 * 256 + 128,
+        y: 10 * 256 + 128,
+        z: 0,
+    };
+    let mut locomotor =
+        LocomotorState::for_test_kind(crate::rules::locomotor_type::LocomotorKind::Drive);
+    assert!(
+        locomotor.install_drive_state_for_test(Some(
+            DriveLocomotionRuntime::default()
+                .with_destination_for_test(Some(head))
+                .with_head_to_for_test(Some(head))
+        )),
+        "the fixture's locomotor has a Drive slot"
+    );
+    let actor = sim.entities_mut_for_test().get_mut(id).expect("firer");
+    actor.foot_speed.set_speed_fraction(SIM_ONE);
+    actor.locomotor = Some(locomotor);
+    let entity = sim.entities().get(id).expect("firer");
+    let speed = SpeedRules::new(rules, &sim.interner, &sim.houses);
+    assert!(
+        motion_query::is_really_moving_now(entity, speed, sim.session.binary_frame()),
+        "the fixture reaches the native moving query"
+    );
+}
+
+/// One production `FireVisit::UnitTarget`, and every projectile it launched.
+fn visit(sim: &mut Simulation, rules: &RuleSet, firer: u64) -> usize {
+    let before: std::collections::BTreeSet<_> = sim.projectiles.iter().map(|(&id, _)| id).collect();
+    sim.commit_fire_visit(
+        world_fire::FireVisit::UnitTarget(firer),
+        rules,
+        None,
+        &mut FrameEffects::empty(),
+    );
+    sim.projectiles
+        .iter()
+        .filter(|(id, _)| !before.contains(id))
+        .count()
+}
+
+fn counter(sim: &Simulation, firer: u64) -> i32 {
+    sim.entities()
+        .get(firer)
+        .expect("firer")
+        .unit_firing_counter
+        .get()
+}
+
+/// Install the retained `CurrentFiringFrame` prior (`UnitClass+6C0`).
+fn set_counter(sim: &mut Simulation, firer: u64, value: i32) {
+    sim.entities_mut_for_test()
+        .get_mut(firer)
+        .expect("firer")
+        .unit_firing_counter
+        .set_for_test(value);
+}
+
+fn rearm(sim: &Simulation, firer: u64) -> i32 {
+    sim.entities()
+        .get(firer)
+        .expect("firer")
+        .seldom.rearm_timer
+        .duration()
+}
+
+/// A `-1` counter is first seeded to `2 * FiringFrames - 1` — native's
+/// `CurrentFiringFrame == -1` arm in the hook — so the first update stands on
+/// frame 0 and holds; only the counter that decodes to `FireUp` launches.
+#[test]
+fn fire_up_holds_an_shp_unit_until_the_authored_frame() {
+    let (mut sim, rules, firer) = arena("", "", 2);
+
+    assert_eq!(visit(&mut sim, &rules, firer), 0, "frame 0 holds the shot");
+    assert_eq!(
+        counter(&sim, firer),
+        FRAMES,
+        "the hook seeded the sequence at frame 0"
+    );
+
+    set_counter(&mut sim, firer, 7);
+    assert_eq!(
+        visit(&mut sim, &rules, firer),
+        0,
+        "`(9 - 7) / 2` is frame 1, not `FireUp=2`"
+    );
+    assert_eq!(counter(&sim, firer), 7, "a held frame keeps its counter");
+
+    set_counter(&mut sim, firer, 5);
+    assert_eq!(
+        visit(&mut sim, &rules, firer),
+        1,
+        "`(9 - 5) / 2` is the authored frame 2"
+    );
+}
+
+/// A really moving unit without `OpportunityFire=` drops the sequence and
+/// fires nothing; with it, the sequence stands and the authored frame launches
+/// while the hull still moves.
+#[test]
+fn moving_clears_the_fire_up_sequence_unless_opportunity_fire() {
+    let (mut sim, rules, firer) = arena("OpportunityFire=no\n", "", 2);
+    set_counter(&mut sim, firer, 5);
+    start_moving(&mut sim, &rules, firer);
+    assert_eq!(visit(&mut sim, &rules, firer), 0, "moving holds the shot");
+    assert_eq!(counter(&sim, firer), -1, "the sequence is cleared");
+
+    let (mut sim, rules, firer) = arena("OpportunityFire=yes\n", "", 2);
+    set_counter(&mut sim, firer, 5);
+    start_moving(&mut sim, &rules, firer);
+    assert_eq!(
+        visit(&mut sim, &rules, firer),
+        1,
+        "`OpportunityFire` keeps the authored frame while moving"
+    );
+}
+
+/// `Burst.Delays=4,3` at burst index 1 gives cumulative 4 and projected 8:
+/// native `GetBurstDelay(0)` is 0 by definition, and index 1 reads the first
+/// authored delay 4. A counter that decodes to `FireUp(3) + 4 = 7` accepts the
+/// shot, and `3 + 8 = 11` passes the nine-frame sequence, so the shot takes the
+/// full rearm instead of the index's delay.
+///
+/// The counter is a fixture prior below the sequence floor: a live counter
+/// stops at -1 and every frame it decodes is at most half the sequence, which
+/// keeps `fireUp + projected` inside `frames`. The arm is ported because it
+/// exists in native; it is dormant for live counters.
+#[test]
+fn burst_overrun_forces_a_full_rearm() {
+    let (mut sim, rules, firer) = arena(
+        "",
+        "Burst=2\nBurst.Delays=4,3\nBurst.FireWithinSequence=yes\nROF.RandomDelay=0\n",
+        3,
+    );
+    assert_eq!(rules.weapon("GUN").expect("gun").rof, 40, "fixture ROF");
+    assert_eq!(
+        rules
+            .weapon("GUN")
+            .expect("gun")
+            .rof_random_delay
+            .expect("the weapon pins its jitter"),
+        crate::rules::ini_value::PartialIntPair {
+            low: 0,
+            high: 0,
+            values: 1,
+        },
+        "`ROF.RandomDelay=0` on the weapon keeps `GetROF` draw-free"
+    );
+    sim.entities_mut_for_test()
+        .get_mut(firer)
+        .expect("firer")
+        .seldom.weapon_burst
+        .set_index(1);
+    set_counter(&mut sim, firer, -5);
+
+    assert_eq!(
+        visit(&mut sim, &rules, firer),
+        1,
+        "`(9 + 5) / 2` is frame 7, `FireUp(3) + cumulative(4)`"
+    );
+    // The full arm answers `GetROF` = `ROF * house ROF` + the `ROF.RandomDelay`
+    // jitter; the weapon's own `0` pin makes that exactly the ROF. The mid-burst
+    // arm would answer the authored `Burst.Delays` item (4 at index 1) instead.
+    assert_eq!(
+        rearm(&sim, firer),
+        40,
+        "the overrun takes the full ROF, not the index's `Burst.Delays` item"
+    );
+    assert!(
+        rearm_flag(&sim, firer),
+        "and the arm is the ordinary full one, not the burst gap"
+    );
+}
+
+/// The key's -1 constructor value keeps the stock unit cadence: the first
+/// update launches on frame 0 without a sequence gate.
+#[test]
+fn the_key_off_keeps_the_stock_unit_cadence() {
+    let (mut sim, rules, firer) = arena("", "", -1);
+    assert_eq!(
+        visit(&mut sim, &rules, firer),
+        1,
+        "no `FireUp=` holds nothing"
+    );
+}
+
+/// `FireUp=` on a record that authors no `FiringFrames=`: `frames` stays at
+/// native's `2 * 0 - 1 = -1` (`Ext/Unit/Hooks.Firing.cpp:33-34`), the `>= 0`
+/// seed arm at `:38` never runs, `CurrentFiringFrame` stays -1 and
+/// `(frames - (-1)) / 2` reads 0 on every update — so `FireUp=4` holds the
+/// shot for good while `FireUp=0` still launches on the first one.
+#[test]
+fn an_unset_firing_frames_holds_a_fire_up_shot() {
+    let (mut sim, rules, firer) = arena_with_art("", "", "[FIRER]\nFireUp=4\n");
+    for frame in 0..=4 {
+        sim.session.set_binary_frame_for_test(100 + frame);
+        assert_eq!(
+            visit(&mut sim, &rules, firer),
+            0,
+            "update {frame} decodes sequence frame 0, not `FireUp=4`"
+        );
+        assert_eq!(counter(&sim, firer), -1, "nothing seeds an unset record");
+    }
+
+    let (mut sim, rules, firer) = arena_with_art("", "", "[FIRER]\nFireUp=0\n");
+    assert_eq!(
+        visit(&mut sim, &rules, firer),
+        1,
+        "the same division reads frame 0, which `FireUp=0` matches"
+    );
+    assert_eq!(counter(&sim, firer), -1, "still unseeded");
+}
+
+/// `OmniFire.TurnToTarget` answers on a held frame too: native runs
+/// `UnitClass_UpdateFiring_OmniFireTurnToTarget @ 0x736E6E`
+/// (`Ext/Unit/Hooks.Jumpjet.cpp:50-96`) before
+/// `UnitClass_UpdateFiring_FireUp @ 0x736F61`, and the FireUp arm only skips
+/// the launch. The hull therefore turns toward the target while the unset
+/// record still holds the shot.
+#[test]
+fn omni_fire_turns_on_a_held_frame() {
+    let (mut sim, rules, firer) = arena_with_art(
+        "",
+        "OmniFire=yes\nOmniFire.TurnToTarget=yes\n",
+        "[FIRER]\nFireUp=4\n",
+    );
+    let actor = sim.entities_mut_for_test().get_mut(firer).expect("firer");
+    actor.body_facing.snap(NORTH, 100);
+    assert_eq!(
+        sim.entities()
+            .get(firer)
+            .expect("firer")
+            .body_facing
+            .destination(),
+        NORTH,
+        "the fixture starts facing north, two cells off the target"
+    );
+
+    assert_eq!(
+        visit(&mut sim, &rules, firer),
+        0,
+        "the unset `FiringFrames=` holds the shot"
+    );
+    // Native's chop conversion answers one word under the exact east heading
+    // for a purely east delta (`facing16_from_angle` truncates toward zero), so
+    // the destination is `EAST` or `EAST - 1`, not the next heading north.
+    let destination = sim
+        .entities()
+        .get(firer)
+        .expect("firer")
+        .body_facing
+        .destination();
+    assert!(
+        (EAST - 1..=EAST).contains(&destination),
+        "`0x736E6E` turned the hull before `0x736F61` held the shot: {destination}"
+    );
+}
+
+fn rearm_flag(sim: &Simulation, firer: u64) -> bool {
+    sim.entities()
+        .get(firer)
+        .expect("firer")
+        .seldom.weapon_burst
+        .last_rearm_was_full_delay()
+}
+
+/// One shot from a chosen burst index at a rearm-free frame: the admissions
+/// need `GetFireError` to answer OK, so the rearm timer is zeroed first.
+fn shoot(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    firer: u64,
+    index: i32,
+    force_full: bool,
+    frame: u32,
+) -> usize {
+    sim.session.set_binary_frame_for_test(frame);
+    let actor = sim.entities_mut_for_test().get_mut(firer).expect("firer");
+    actor.seldom.weapon_burst.set_index(index);
+    if force_full {
+        actor.seldom.weapon_burst.set_force_full_rearm();
+    }
+    actor.seldom.rearm_timer.start(frame as i32, 0);
+    visit(sim, rules, firer)
+}
+
+/// `TechnoExt::LastRearmWasFullDelay` through its owner: the mid-burst answer
+/// clears it (`0x6FD054`, `Ext/Techno/Hooks.Firing.cpp:1139`), and both the
+/// ordinary arm (the `0x6FD0B5` hook, `:1124`) and the forced full rearm — which
+/// clears at `0x6FD054` and then jumps into the ordinary arm at `0x6FD09E`
+/// (`:1141-1142`) — leave it set.
+#[test]
+fn the_full_rearm_flag_marks_only_a_full_arm() {
+    let (mut sim, rules, firer) = arena("", "Burst=2\n", -1);
+
+    // `Burst=2` at the stepped index 1 is below the burst: the mid-burst arm.
+    assert_eq!(
+        shoot(&mut sim, &rules, firer, 0, false, 100),
+        1,
+        "mid-burst shot"
+    );
+    assert!(!rearm_flag(&sim, firer), "a burst gap clears the flag");
+
+    // The forced full rearm skips that arm and joins the ordinary one.
+    assert_eq!(
+        shoot(&mut sim, &rules, firer, 1, true, 160),
+        1,
+        "forced shot"
+    );
+    assert!(
+        rearm_flag(&sim, firer),
+        "the forced arm ends on the full arm"
+    );
+
+    // Index 2 is not below `Burst=2`: the ordinary full arm.
+    assert_eq!(
+        shoot(&mut sim, &rules, firer, 1, false, 220),
+        1,
+        "last burst shot"
+    );
+    assert!(
+        rearm_flag(&sim, firer),
+        "the completed burst keeps the flag"
+    );
+}

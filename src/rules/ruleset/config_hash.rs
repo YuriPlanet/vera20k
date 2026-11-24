@@ -132,25 +132,6 @@ impl RuleSet {
             b"infantry-theft-flags-v1".hash(&mut hasher);
             theft_flags.hash(&mut hasher);
         }
-        // Firestorm's web keys (docs/ts-webs.md) keep their values across
-        // passes (WarheadWeb::read_pass), as the theft bytes do. Left out
-        // while no rules set them.
-        let webs = Self::by_upper_id(
-            self.warhead_entries()
-                .filter_map(|(id, warhead)| warhead.web.map(|web| (id, web))),
-        );
-        let web_immune = Self::by_upper_id(
-            self.object_list
-                .iter()
-                .filter(|object| object.is_web_immune)
-                .map(|object| (&object.id, object.category)),
-        );
-        if !webs.is_empty() || !web_immune.is_empty() || self.general.webbed_infantry.is_some() {
-            b"ts-webs-v1".hash(&mut hasher);
-            webs.hash(&mut hasher);
-            web_immune.hash(&mut hasher);
-            self.general.webbed_infantry.hash(&mut hasher);
-        }
         // OverlayRead5FE8BE / InitTheater5FE620 retain typed history that a
         // flattened Image key cannot recover; saved resource plans matter too.
         self.overlay_registry.hash_configuration(&mut hasher);
@@ -262,8 +243,7 @@ impl RuleSet {
             )
             .hash(&mut hasher);
         }
-        #[cfg(feature = "phobos")]
-        {
+            {
             b"phobos-super-availability-v1".hash(&mut hasher);
             self.phobos_super_weapon_metadata.hash(&mut hasher);
         }
@@ -301,13 +281,11 @@ impl RuleSet {
             self.side_ids.hash(&mut hasher);
             self.side_extensions.hash(&mut hasher);
         }
-        #[cfg(feature = "phobos")]
-        {
+            {
             b"phobos-sidebar-gdi-positions-v1".hash(&mut hasher);
             self.side_gdi_positions.hash(&mut hasher);
         }
-        #[cfg(feature = "phobos")]
-        {
+            {
             b"phobos-radiation-types-v1".hash(&mut hasher);
             self.radiation.radiation_types.hash(&mut hasher);
             // Bound weapon `RadType=` names, by weapon ID: the map's
@@ -533,8 +511,7 @@ impl RuleSet {
                 .map(|(name, terrain)| (name, terrain.armor_id())),
         )
         .hash(&mut hasher);
-        #[cfg(feature = "phobos")]
-        {
+            {
             // TerrainTypeExt::LoadFromINI retains these across Process calls.
             // They change spawner placement, particle births and RNG draws.
             b"phobos-retained-ore-spawners-v1".hash(&mut hasher);
@@ -1058,8 +1035,7 @@ impl RuleSet {
         }
         // Phobos airburst/splits inputs. Defaults leave the stock hash
         // unchanged; any authored value must invalidate a save.
-        #[cfg(feature = "phobos")]
-        {
+            {
             let phobos_projectiles =
                 Self::by_upper_id(self.projectile_entries().filter_map(|(id, projectile)| {
                     let value = &projectile.phobos_airburst;
@@ -1224,8 +1200,7 @@ impl RuleSet {
                 .map(|(id, warhead)| (id, &warhead.debris_types)),
         )
         .hash(&mut hasher);
-        #[cfg(feature = "phobos")]
-        {
+            {
             let jumpjet_overrides = Self::by_upper_id(
                 self.warhead_entries()
                     .filter(|(_, warhead)| !warhead.jumpjet_override.is_empty())
@@ -1318,8 +1293,7 @@ impl RuleSet {
             &self.general.empulse_warhead,
         )
             .hash(&mut hasher);
-        #[cfg(feature = "phobos")]
-        {
+            {
             if !self.mind_control.mind_control_ignore_size
                 || self.mind_control.mind_control_link_visible_to_house
                     != crate::rules::phobos_shields::AffectedHouse::ALL
@@ -1353,6 +1327,7 @@ impl RuleSet {
             }
         }
         let general = &self.general;
+        general.bomb_parachute.hash(&mut hasher);
         if crate::rules::NPATCH_ENABLED {
             general.vehicle_parachute.hash(&mut hasher);
         }
@@ -1482,8 +1457,7 @@ impl RuleSet {
             )
         }))
         .hash(&mut hasher);
-        #[cfg(feature = "phobos")]
-        {
+            {
             let warhead_anims =
                 Self::by_upper_id(self.warhead_entries().filter_map(|(name, warhead)| {
                     (warhead.phobos_anim
@@ -1499,8 +1473,7 @@ impl RuleSet {
                 self.phobos_warhead_anim.hash(&mut hasher);
             }
         }
-        #[cfg(feature = "phobos")]
-        {
+            {
             let control_anims =
                 Self::by_upper_id(self.warhead_entries().filter_map(|(name, wh)| {
                     wh.mind_control_anim
@@ -1726,7 +1699,7 @@ impl RuleSet {
                         .map(|port| object.alternate_fire_flh(port))
                         .collect::<Vec<_>>()
                 });
-                let consumed = (art.map_or(0, |art| art.turret_offset), slots, ports);
+                let consumed = (art.map_or([0, 0, 0], |art| art.turret_offset), slots, ports);
                 (object.id.to_ascii_uppercase(), consumed)
             })
             .collect::<BTreeMap<_, _>>()

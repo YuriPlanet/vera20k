@@ -792,3 +792,244 @@ fn ares_simple_deployer_converts_to_its_convert_deploy_type() {
     assert_eq!(sim.interner.resolve(entity.type_ref()), "SDEP2");
     assert_eq!(entity.mission_leaf.as_unit().unwrap().deployed(), 0);
 }
+
+/// A simple deployer scene for the Phobos deploy-ammo keys
+/// (`Ext/UnitType/Body.cpp:45-49`).
+fn phobos_deploy_scene(lines: &str) -> (Simulation, RuleSet, u64) {
+    let ini = IniFile::from_str(&format!(
+        "[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+         [VehicleTypes]\n0=DEP\n\
+         [DEP]\nStrength=300\nSpeed=6\nROT=5\nArmor=none\nAmmo=8\nInitialAmmo=8\n\
+         IsSimpleDeployer=yes\n{lines}"
+    ));
+    let rules = RuleSet::from_ini(&ini).unwrap();
+    let mut sim = Simulation::with_seed(0);
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    let id = sim
+        .spawn_object("DEP", "Russians", 10, 10, 0, &rules)
+        .unwrap();
+    (sim, rules, id)
+}
+
+/// Phobos `UnitExt::HandleOnDeployAmmoChange`
+/// (`Ext/Unit/Body.cpp:239-256`): the add applies when a deploy and again when
+/// an undeploy completes, clamped by the type's Ammo.
+#[test]
+fn phobos_add_on_deploy_rewrites_ammo_on_both_transitions() {
+    let (mut sim, rules, id) = phobos_deploy_scene("Ammo.AddOnDeploy=-3\n");
+    let ammo = |sim: &Simulation| {
+        sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .ammo()
+            .unwrap()
+            .current()
+    };
+    assert_eq!(ammo(&sim), 8);
+    sim.update_unit_simple_deploy(id, true, &rules, &mut FrameEffects::empty())
+        .unwrap();
+    assert!(sim.substrate.entities.get(id).unwrap().is_fully_deployed());
+    assert_eq!(ammo(&sim), 5, "deploy completion adds -3");
+    sim.update_unit_simple_deploy(id, false, &rules, &mut FrameEffects::empty())
+        .unwrap();
+    assert!(!sim.substrate.entities.get(id).unwrap().is_fully_deployed());
+    assert_eq!(ammo(&sim), 2, "undeploy completion adds -3 again");
+}
+
+/// Phobos `UnitExt::HasAmmoToDeploy` (`Ext/Unit/Body.cpp:218-237`): the
+/// `Ammo.DeployUnlock*` band admits only counts inside it.
+#[test]
+fn phobos_deploy_unlock_band_gates_the_player_check() {
+    let (mut sim, rules, id) =
+        phobos_deploy_scene("Ammo.DeployUnlockMinimumAmount=2\nAmmo.DeployUnlockMaximumAmount=6\n");
+    assert!(
+        !sim.phobos_unit_has_ammo_to_deploy(id, &rules),
+        "8 is above the band"
+    );
+    assert!(
+        !sim.can_deploy_slash_unload(id, &rules),
+        "the ammo gate lives in the deploy admission"
+    );
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .ammo_mut()
+        .unwrap()
+        .set_current_for_test(4);
+    assert!(sim.phobos_unit_has_ammo_to_deploy(id, &rules));
+    assert!(sim.can_deploy_slash_unload(id, &rules));
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .ammo_mut()
+        .unwrap()
+        .set_current_for_test(1);
+    assert!(!sim.phobos_unit_has_ammo_to_deploy(id, &rules));
+    assert!(!sim.can_deploy_slash_unload(id, &rules));
+}
+
+/// Phobos `UnitExt::DepletedAmmoActions` (`Ext/Unit/Body.cpp:149-195`): the
+/// unit queues Unload while its ammo is in the auto-deploy band and cancels
+/// with Guard when it leaves.
+#[test]
+fn phobos_auto_deploy_band_queues_and_cancels_unload() {
+    let (mut sim, rules, id) =
+        phobos_deploy_scene("Ammo.AutoDeployMinimumAmount=0\nAmmo.AutoDeployMaximumAmount=4\n");
+    let current = |sim: &Simulation| {
+        sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .mission
+            .current()
+            .known()
+    };
+    let has_unload = |sim: &Simulation| {
+        let mission = &sim.substrate.entities.get(id).unwrap().mission;
+        mission.current().known() == Some(MissionType::Unload)
+            || mission.queued().known() == Some(MissionType::Unload)
+    };
+    super::depleted_ammo_actions(&mut sim, id, &rules);
+    assert!(!has_unload(&sim), "8 is outside the band");
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .ammo_mut()
+        .unwrap()
+        .set_current_for_test(3);
+    super::depleted_ammo_actions(&mut sim, id, &rules);
+    assert!(has_unload(&sim), "inside the band queues/commences Unload");
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .ammo_mut()
+        .unwrap()
+        .set_current_for_test(6);
+    super::depleted_ammo_actions(&mut sim, id, &rules);
+    assert!(!has_unload(&sim), "leaving the band cancels the Unload");
+    assert_eq!(
+        current(&sim),
+        Some(MissionType::Guard),
+        "the cancel commences Guard"
+    );
+}
+
+/// Phobos `Ext/UnitType/Body.cpp:59-61` and `Hooks.SimpleDeployer.cpp:75-93`:
+/// a non-empty `DeployingAnims=` picks by primary facing,
+/// `ReverseForUndeploy=no` plays the undeploy animation forward and
+/// `UseUnitDrawer=no` leaves the animation off the cell drawer.
+#[test]
+fn phobos_deploying_anim_keys_select_facing_type_reverse_and_drawer() {
+    let rules_with = |keys: &str| {
+        let ini = IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=TANK\n[Animations]\n0=DEPL0\n1=DEPL1\n2=DEPL2\n3=DEPL3\n\
+             4=DEPL4\n5=DEPL5\n6=DEPL6\n7=DEPL7\n\
+             [TANK]\nStrength=300\nSpeed=4\nIsSimpleDeployer=yes\nDeployDir=0\n\
+             DeployingAnims=DEPL0,DEPL1,DEPL2,DEPL3,DEPL4,DEPL5,DEPL6,DEPL7\n{keys}"
+        ));
+        let art_ini = IniFile::from_str(
+            "[DEPL0]\nRate=100\n[DEPL1]\nRate=100\n[DEPL2]\nRate=100\n[DEPL3]\nRate=100\n\
+             [DEPL4]\nRate=100\n[DEPL5]\nRate=100\n[DEPL6]\nRate=100\n[DEPL7]\nRate=100\n",
+        );
+        let mut art = ArtRegistry::from_ini(&art_ini);
+        for name in [
+            "DEPL0", "DEPL1", "DEPL2", "DEPL3", "DEPL4", "DEPL5", "DEPL6", "DEPL7",
+        ] {
+            art.bind_anim_frame_count_for_test(name, 11);
+        }
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art_ini).unwrap();
+        rules.install_art_data(art);
+        rules
+    };
+    let spawn = |rules: &RuleSet| {
+        let mut sim = Simulation::with_seed(0);
+        crate::sim::arena_fixture::flat_ground(&mut sim, rules);
+        let id = sim
+            .spawn_object("TANK", "Russians", 10, 10, 0, rules)
+            .unwrap();
+        // PrimaryFacing raw 0 is eighth-turn 0: the Ares DeployDir gate
+        // (`DeployDir=0`) does not turn, and the 8-item list takes index 1.
+        sim.substrate.entities.get_mut(id).unwrap().body_facing =
+            crate::sim::movement::FacingClass::new(0, 0);
+        (sim, id)
+    };
+
+    // Explicit `no` keys: the undeploy animation plays forward, off the
+    // unit drawer.
+    let rules = rules_with("DeployingAnim.ReverseForUndeploy=no\nDeployingAnim.UseUnitDrawer=no\n");
+    let (mut sim, id) = spawn(&rules);
+    sim.update_unit_simple_deploy(id, true, &rules, &mut FrameEffects::default())
+        .unwrap();
+    let forward = sim
+        .substrate
+        .entities
+        .get(id)
+        .unwrap()
+        .deploy_anim()
+        .unwrap();
+    {
+        let anim = sim.anim(forward).unwrap();
+        assert_eq!(sim.interner.resolve(anim.type_id()), "DEPL1");
+        assert!(!anim.runtime().constructor_reverse);
+        assert!(!anim.use_cell_drawer());
+    }
+    {
+        let entity = sim.substrate.entities.get_mut(id).unwrap();
+        entity.set_unit_simple_deploy_for_test(true, false, false);
+        let _ = entity.take_deploy_anim();
+    }
+    sim.update_unit_simple_deploy(id, false, &rules, &mut FrameEffects::default())
+        .unwrap();
+    let reverse = sim
+        .substrate
+        .entities
+        .get(id)
+        .unwrap()
+        .deploy_anim()
+        .unwrap();
+    {
+        let anim = sim.anim(reverse).unwrap();
+        assert_eq!(sim.interner.resolve(anim.type_id()), "DEPL1");
+        assert!(
+            !anim.runtime().constructor_reverse,
+            "ReverseForUndeploy=no keeps the undeploy animation forward"
+        );
+        assert!(!anim.use_cell_drawer());
+    }
+
+    // Unset keys keep the constructor values: reverse undeploy, unit drawer.
+    let rules = rules_with("");
+    let (mut sim, id) = spawn(&rules);
+    sim.update_unit_simple_deploy(id, true, &rules, &mut FrameEffects::default())
+        .unwrap();
+    {
+        let anim_id = sim
+            .substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .deploy_anim()
+            .unwrap();
+        assert!(sim.anim(anim_id).unwrap().use_cell_drawer());
+    }
+    {
+        let entity = sim.substrate.entities.get_mut(id).unwrap();
+        entity.set_unit_simple_deploy_for_test(true, false, false);
+        let _ = entity.take_deploy_anim();
+    }
+    sim.update_unit_simple_deploy(id, false, &rules, &mut FrameEffects::default())
+        .unwrap();
+    let anim_id = sim
+        .substrate
+        .entities
+        .get(id)
+        .unwrap()
+        .deploy_anim()
+        .unwrap();
+    assert!(sim.anim(anim_id).unwrap().runtime().constructor_reverse);
+}

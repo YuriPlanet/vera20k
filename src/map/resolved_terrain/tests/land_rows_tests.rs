@@ -220,6 +220,7 @@ fn scenario_overlay_wall_flags_bind_with_the_grid() {
                 registry.flags(id).map(|flags| OverlayPassability {
                     wall: flags.wall,
                     crushable: flags.crushable,
+                    armor_is_wood: flags.armor_is_wood,
                 }),
                 "overlay {id}"
             );
@@ -230,6 +231,7 @@ fn scenario_overlay_wall_flags_bind_with_the_grid() {
             Some(OverlayPassability {
                 wall: true,
                 crushable: true,
+                armor_is_wood: false,
             })
         );
     }

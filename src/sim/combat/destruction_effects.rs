@@ -77,6 +77,18 @@ use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 
 use super::{ExplosionEffect, SmudgeSpawnRequest};
 
+/// `0x00737DE2..0x00737E16`: `FCOMP` on the type's `Weight=` double and
+/// `[General] ShipSinkingWeight` skips the sinking arm on "less" and on
+/// "unordered", so only an ordered greater-or-equal admits. The current rules
+/// owner quantizes both inputs to `SimFixed`; its total order preserves the
+/// greater-or-equal decision for those retained values.
+fn weight_at_least(
+    weight: crate::util::fixed_math::SimFixed,
+    minimum: crate::util::fixed_math::SimFixed,
+) -> bool {
+    weight >= minimum
+}
+
 /// `AnimClass` constructor `drawFlags` shared by death and SHP debris producers
 /// (`0x0073871E`, `0x00738854`, `0x00416660`, `0x00441A04`, `0x00441D01`,
 /// `0x00469E94`).
@@ -95,6 +107,17 @@ pub struct DeathAnimSpawn {
     pub draws: Option<crate::sim::anim_class::AnimConstructorDraws>,
     /// What the producer writes on the anim right after its constructor.
     pub follow_up: Option<DeathAnimFollowUp>,
+    /// `ProcessDestroyAnims`' `SetInvoker(pThis)` (`Ext/AnimType/
+    /// Body.cpp:54`): the destroyed unit and its House. Only the Unit
+    /// `DestroyAnim=` producer sets it.
+    pub invoker: Option<(u64, InternedId)>,
+    /// `ProcessDestroyAnims`' death-unit facts: the victim House the anim's
+    /// `CreateUnit.Owner` selector reads, the body DirType and the turret
+    /// facts (`Ext/AnimType/Body.cpp:52-70`).
+    pub victim_house: Option<InternedId>,
+    pub death_facing: Option<u8>,
+    pub death_has_turret: bool,
+    pub death_turret_facing: Option<u8>,
 }
 
 impl DeathAnimSpawn {
@@ -105,6 +128,11 @@ impl DeathAnimSpawn {
             delay,
             draws: None,
             follow_up: None,
+            invoker: None,
+            victim_house: None,
+            death_facing: None,
+            death_has_turret: false,
+            death_turret_facing: None,
         }
     }
 }
@@ -169,6 +197,7 @@ impl Simulation {
         rules: &RuleSet,
         name: Option<&str>,
         coord: AnimWorldCoord,
+        owner_house: Option<crate::sim::intern::InternedId>,
         anims: &mut Vec<ExplosionEffect>,
     ) -> Result<(), crate::util::native_x87::NativeX87Error> {
         let native_unique_id = self.next_native_runtime_id();
@@ -185,10 +214,11 @@ impl Simulation {
         };
         draws.native_unique_id = Some(native_unique_id);
         if let Some(name) = name {
-            self.emit_death_anim(
+            self.emit_death_anim_owned(
                 rules,
                 anims,
                 name,
+                owner_house,
                 DeathAnimSpawn {
                     draws: Some(draws),
                     ..DeathAnimSpawn::at(coord, 0)
@@ -207,6 +237,17 @@ impl Simulation {
         type_name: &str,
         spawn: DeathAnimSpawn,
     ) {
+        self.emit_death_anim_owned(rules, anims, type_name, None, spawn);
+    }
+
+    fn emit_death_anim_owned(
+        &mut self,
+        rules: &RuleSet,
+        anims: &mut Vec<ExplosionEffect>,
+        type_name: &str,
+        owner_house: Option<crate::sim::intern::InternedId>,
+        spawn: DeathAnimSpawn,
+    ) {
         let shp_name = self.interner.intern(type_name);
         let (rx, ry, sub_x, sub_y, z) = spawn.coord.to_cell_sub_z();
         let effect = ExplosionEffect {
@@ -218,7 +259,7 @@ impl Simulation {
             z,
             world_z: spawn.coord.z,
             z_adjust: crate::sim::anim_class::COMBAT_EXPLOSION_Z_ADJUST,
-            owner_house: None,
+            owner_house,
             death: Some(spawn),
         };
         if super::world_receiver::callbacks_enabled(self) {
@@ -309,6 +350,52 @@ impl Simulation {
                 }
             }
         }
+        {
+            // `AnimExt::SetAnimOwnerHouseKind` with the type's
+            // `CreateUnit.Owner` kind (`Ext/Anim/Body.cpp:108-145`); this arm
+            // belongs to `ProcessDestroyAnims`, so a generic `Explosion=`/
+            // wake/splash anim never spends its random-owner draw.
+            if spawn.invoker.is_some() {
+                let settings = rules
+                    .art()
+                    .anim_runtime_config(self.interner.resolve(type_id))
+                    .and_then(|config| config.phobos_create_unit.clone());
+                if let Some(settings) = settings {
+                    // RESIDUAL: native's `pInvoker` here is the killer House
+                    // (`ProcessDestroyAnims` takes it from `TakeDamage`), which
+                    // `unit_death_explosion` does not receive; Invoker/Killer
+                    // selectors fall back to the victim House.
+                    let random_house = (settings.owner
+                        == crate::rules::ares_warhead::HouseSelector::Random)
+                        .then(|| self.random_house())
+                        .flatten();
+                    if let Some(house) = self.house_kind(
+                        settings.owner,
+                        None,
+                        spawn.invoker.map(|(_, house)| house),
+                        None,
+                        spawn.victim_house,
+                        rules,
+                        random_house,
+                    ) {
+                        self.install_anim_owner_house(rules, type_id, anim, house);
+                    }
+                }
+            }
+            if let Some((invoker, house)) = spawn.invoker {
+                self.substrate
+                    .set_anim_invoker(anim, Some(invoker), Some(house));
+            }
+            if spawn.invoker.is_some() {
+                self.substrate.set_anim_death_facts(
+                    anim,
+                    true,
+                    spawn.death_facing,
+                    spawn.death_has_turret,
+                    spawn.death_turret_facing,
+                );
+            }
+        }
         Some(anim)
     }
 
@@ -335,21 +422,12 @@ impl Simulation {
             .map_or((HouseSelector::Invoker, -1), |config| {
                 (config.ares_make_infantry_owner, config.make_infantry)
             });
-        let order = self.houses.order();
-        let random_house = (selector == HouseSelector::Random && !order.is_empty()).then(|| {
-            let last = order.len() as i32 - 1;
-            let index = self.scenario_rng.next_range_i32_inclusive(0, last);
-            order.get(index as usize).copied()
-        });
-        let Some(house) = self.house_kind(
-            selector,
-            None,
-            invoker,
-            killer,
-            victim,
-            rules,
-            random_house.flatten(),
-        ) else {
+        let random_house = (selector == HouseSelector::Random)
+            .then(|| self.random_house())
+            .flatten();
+        let Some(house) =
+            self.house_kind(selector, None, invoker, killer, victim, rules, random_house)
+        else {
             return selector;
         };
         self.substrate.set_anim_owner_house(anim, house);
@@ -441,16 +519,24 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return false;
         };
+        let water_and_not_warping = self.resolved_terrain.as_ref().is_some_and(|terrain| {
+            terrain
+                .cell(entity.position.rx(), entity.position.ry())
+                .is_some_and(|cell| cell.land_type == LandType::Water.as_index())
+        }) && !entity.is_warping_in();
+        // Phobos `UnitClass_ReceiveDamage_Sinkable` (`0x737DE2`,
+        // `Ext/Unit/Hooks.Sinking.cpp:13-23`): the type's `Sinkable` (else the
+        // `[General]` nullable, else the stock type-property gate) decides
+        // whether the water/warp checks are reached; `no` keeps the unit out
+        // of the sinking path entirely while `yes` skips the type properties.
+        if let Some(configured) = object.phobos_sinkable.or(rules.phobos_globals.sinkable) {
+            return configured && water_and_not_warping;
+        }
         object.naval
             && !object.underwater
             && !object.organic
-            && object.weight >= rules.general.ship_sinking_weight
-            && self.resolved_terrain.as_ref().is_some_and(|terrain| {
-                terrain
-                    .cell(entity.position.rx(), entity.position.ry())
-                    .is_some_and(|cell| cell.land_type == LandType::Water.as_index())
-            })
-            && !entity.is_warping_in()
+            && weight_at_least(object.weight, rules.general.ship_sinking_weight)
+            && water_and_not_warping
     }
 
     /// `UnitClass::Death_Explosion @ 0x00738680`: one `Explosion=` anim and
@@ -470,6 +556,17 @@ impl Simulation {
         };
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return;
+        };
+        let owner_house = entity.owner();
+        let death_facing = Some(entity.body_facing_byte(self.session.binary_frame()));
+        let death_turret_facing = if object.has_turret {
+            entity.barrel_facing.as_ref().map(|facing| {
+                crate::util::direction_tables::round_facing16_to_8(
+                    facing.current(self.session.binary_frame()),
+                )
+            })
+        } else {
+            None
         };
         let location = position_world_coord(&entity.position);
         let coord = AnimWorldCoord {
@@ -509,8 +606,52 @@ impl Simulation {
             }
         }
         if !object.destroy_anims.is_empty() {
-            let anim = pick_death_anim(&mut self.scenario_rng, &object.destroy_anims);
-            self.emit_death_anim(rules, anims, anim, DeathAnimSpawn::at(coord, 0));
+            // Phobos `UnitClass_Destroy_DestroyAnim` (`0x738807`,
+            // `Ext/Anim/Hooks.AnimCreateUnit.cpp:22-29`) replaces the stock
+            // `Next() % count` pick with `AnimTypeExt::ProcessDestroyAnims`
+            // (`Ext/AnimType/Body.cpp:15-43`).
+            let anim = {
+                let list = object.destroy_anims.as_slice();
+                let random = object
+                    .phobos_destroy_anim_random
+                    .unwrap_or(rules.phobos_globals.destroy_anim_random);
+                if random {
+                    let index = if list.len() == 1 {
+                        0
+                    } else {
+                        self.scenario_rng
+                            .next_range_i32_inclusive(0, list.len() as i32 - 1)
+                            as usize
+                    };
+                    &list[index]
+                } else {
+                    let facing = death_facing.unwrap_or(0);
+                    let index = if list.len() >= 8 {
+                        let last = list.len() - 1;
+                        if list.len() % 2 == 0 {
+                            (f64::from(facing) / 256.0 * last as f64) as usize
+                        } else {
+                            last
+                        }
+                    } else {
+                        0
+                    };
+                    &list[index]
+                }
+            };
+            self.emit_death_anim(
+                rules,
+                anims,
+                anim,
+                DeathAnimSpawn {
+                    invoker: Some((unit_id, owner_house)),
+                    victim_house: Some(owner_house),
+                    death_facing,
+                    death_has_turret: object.has_turret,
+                    death_turret_facing,
+                    ..DeathAnimSpawn::at(coord, 0)
+                },
+            );
         }
     }
 

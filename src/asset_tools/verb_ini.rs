@@ -708,15 +708,20 @@ mod tests {
         );
         let report = assemble_type(&rules, "UNIT", vec![]).unwrap();
         assert_eq!(report["final_type"]["balloon_hover"], false);
-        assert_eq!(report["final_type"]["jumpjet_params"]["turn_rate"], 4);
-        assert_eq!(
-            report["final_type"]["jumpjet_params"]["speed"]["value"],
-            14.0
-        );
-        assert_eq!(
-            report["final_type"]["jumpjet_params"]["accel"]["value"],
-            2.0
-        );
+        // Phobos `TechnoTypeClass_CTOR_JumpjetControls` (`0x7115AE`) starts
+        // the block from `[JumpjetControls]`, absent here, so the
+        // `RulesClass` constructor values stand; stock keeps its literals.
+        {
+            assert_eq!(report["final_type"]["jumpjet_params"]["turn_rate"], 3);
+            assert_eq!(
+                report["final_type"]["jumpjet_params"]["speed"]["value"],
+                30.0
+            );
+            assert_eq!(
+                report["final_type"]["jumpjet_params"]["accel"]["value"],
+                0.25
+            );
+        }
     }
 
     #[test]

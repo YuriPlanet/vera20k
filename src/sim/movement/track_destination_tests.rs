@@ -548,6 +548,7 @@ fn repeated_move_orders_sample_live_native_speed() {
                 sim.substrate.entities.get_mut(1).unwrap(),
                 rules.object("MOVER"),
                 &rules,
+                &sim.interner,
                 &sim.houses,
                 sim.resolved_terrain.as_ref(),
                 None,

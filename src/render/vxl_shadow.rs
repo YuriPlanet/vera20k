@@ -22,37 +22,78 @@ pub(crate) fn supported(vxl: &VxlFile, params: &VxlRenderParams) -> bool {
 #[path = "vxl_shadow_tests.rs"]
 mod tests;
 
+/// `0x7072A1`'s `ChooseFrame` (`Ext/TechnoType/Hooks.MatrixOp.cpp:1074-1104`):
+/// a non-negative `ShadowIndex.Frame` picks the shadow section's HVA frame,
+/// modulo the file's frame count. A cleared `-1` falls through to
+/// `WalkedFramesSoFar`, which this renderer cannot key: the shadow atlas is
+/// baked by facing and slope, with no walked-frame dimension. It therefore
+/// stays at frame 0, which is also what retail reaches because the constructor
+/// value 0 never takes the `-1` arm. `ShadowIndices.Frame` carries its own
+/// per-section frames and is not part of this function.
+fn shadow_hva_frame(frame: i32, hva: &HvaFile) -> u32 {
+    u32::try_from(frame.max(0)).unwrap_or(0) % hva.frame_count.max(1)
+}
+
 /// Native clear visibility buffer and crop. ShadowIndex selects one section
-/// at HVA frame zero; ConsideredAircraft selects the original half-size viewer.
+/// at `frame` of its HVA (`ShadowIndex.Frame`); ConsideredAircraft selects
+/// the original half-size viewer.
 pub(crate) fn render(
     vxl: &VxlFile,
     hva: Option<&HvaFile>,
     params: &VxlRenderParams,
     shadow_index: i32,
+    frame: i32,
     considered_aircraft: bool,
 ) -> Option<VxlSprite> {
-    let matrix = draw_matrix(vxl, hva, params, shadow_index)?;
+    let matrix = draw_matrix(vxl, hva, params, shadow_index, frame)?;
     render_matrix(vxl, matrix, shadow_index, considered_aircraft)
 }
 
-fn draw_matrix(
-    vxl: &VxlFile,
-    hva: Option<&HvaFile>,
-    params: &VxlRenderParams,
-    shadow_index: i32,
-) -> Option<super::Mat4> {
+/// `Matrix3D::VoxelDefaultMatrix * shadowMatrix`: the draw rotation the
+/// caller hands every section (`Ext/TechnoType/Hooks.MatrixOp.cpp:783-800`
+/// builds it once and passes `&mtx` to each `DrawVoxelShadow`).
+fn draw_rotation(vxl: &VxlFile, params: &VxlRenderParams) -> Option<super::Mat4> {
     if !supported(vxl, params) {
         return None;
     }
+    let step = super::voxel_facing_step(params.facing);
+    // Phobos `UnitClass_DrawAsVXL_Shadow` (hook `0x73C47A`,
+    // `Ext/TechnoType/Hooks.MatrixOp.cpp:729-773`): the shadow matrix inherits
+    // the body's airborne `JumpjetTilt` roll/pitch, the same crash yaw/X/Y
+    // product the body arm draws through. The other tilt arms keep the stock
+    // slope/facing stencil matrix.
+    Some(match params.body_tilt {
+        Some(super::BodyTilt::JumpjetTilt(angles)) if tilt_is_active(angles) => {
+            super::voxel_crash_rotation(step, angles)
+        }
+        _ => super::voxel_draw_rotation_for_state(params.slope_type, None, step),
+    })
+}
+
+/// Phobos's shadow-matrix activity gate (`Ext/TechnoType/Hooks.MatrixOp.cpp:733`,
+/// `:768`): while both angles stay under 0.005 the native body leaves the
+/// `shadowMatrix` and the `vxlIndexKey` untouched, so such a pose draws the
+/// stock facing/slope stencil bit for bit and reuses the baked cache entry.
+pub(crate) fn tilt_is_active([sideways, forwards]: [f32; 2]) -> bool {
+    sideways.abs() >= 0.005 || forwards.abs() >= 0.005
+}
+
+/// `*pMat * hva->Matrixes[section + LayerCount * ChooseFrame()]`
+/// (`Ext/TechnoType/Hooks.MatrixOp.cpp:1074-1104`, hooked in
+/// `VoxelClass::DrawVoxelShadow @ 0x7072A1`): the shared base matrix times
+/// this section's own HVA transform. `ChooseFrame` picks the section's
+/// `ShadowIndices.Frame`, `ShadowIndex.Frame` or the walked frame.
+fn section_matrix(
+    vxl: &VxlFile,
+    hva: Option<&HvaFile>,
+    draw: super::Mat4,
+    shadow_index: i32,
+    frame: i32,
+) -> Option<super::Mat4> {
     let limb_index = usize::try_from(shadow_index).ok()?;
     vxl.limbs.get(limb_index)?;
-    let draw = super::voxel_draw_rotation_for_state(
-        params.slope_type,
-        None,
-        super::voxel_facing_step(params.facing),
-    );
     if let Some(hva) = hva {
-        let mut raw = *hva.get_transform(0, limb_index as u32)?;
+        let mut raw = *hva.get_transform(shadow_hva_frame(frame, hva), limb_index as u32)?;
         // The native HVA loader scales every section's translation by the
         // first VXL tailer's scale (5BD730), even for a different ShadowIndex.
         let scale = vxl.limbs.first()?.scale;
@@ -65,15 +106,37 @@ fn draw_matrix(
     }
 }
 
+fn draw_matrix(
+    vxl: &VxlFile,
+    hva: Option<&HvaFile>,
+    params: &VxlRenderParams,
+    shadow_index: i32,
+    frame: i32,
+) -> Option<super::Mat4> {
+    let draw = draw_rotation(vxl, params)?;
+    section_matrix(vxl, hva, draw, shadow_index, frame)
+}
+
 /// Fractional center retained by 754510 for 756860's body-surface queries.
 pub(crate) fn center(
     vxl: &VxlFile,
     hva: Option<&HvaFile>,
     params: &VxlRenderParams,
     index: i32,
+    frame: i32,
     aircraft: bool,
 ) -> Option<[f32; 2]> {
-    let matrix = draw_matrix(vxl, hva, params, index)?;
+    let matrix = draw_matrix(vxl, hva, params, index, frame)?;
+    center_of_matrix(vxl, matrix, index, aircraft)
+}
+
+/// The projected-bounds center of one section at a supplied matrix.
+fn center_of_matrix(
+    vxl: &VxlFile,
+    matrix: super::Mat4,
+    index: i32,
+    aircraft: bool,
+) -> Option<[f32; 2]> {
     let limb = vxl.limbs.get(usize::try_from(index).ok()?)?;
     let (_, lo, hi) = projected_quad(matrix, limb.bounds, aircraft)?;
     center_of_bounds(lo, hi)
@@ -122,6 +185,21 @@ pub(crate) fn prepare_matrix(
     shadow_index: i32,
     considered_aircraft: bool,
 ) -> Option<StencilRaster> {
+    prepare_matrix_at(vxl, matrix, shadow_index, considered_aircraft, None)
+}
+
+/// [`prepare_matrix`] with the projected bounds center supplied instead of
+/// derived from this section's own bounds alone. Phobos `ShadowIndices=` hands
+/// every extra section the same `matrix` and `bnd` as the primary
+/// (`Ext/TechnoType/Hooks.MatrixOp.cpp:793-800`), so their stencils share the
+/// primary's center.
+fn prepare_matrix_at(
+    vxl: &VxlFile,
+    matrix: super::Mat4,
+    shadow_index: i32,
+    considered_aircraft: bool,
+    center_override: Option<[f32; 2]>,
+) -> Option<StencilRaster> {
     let limb_index = usize::try_from(shadow_index).ok()?;
     let limb = vxl.limbs.get(limb_index)?;
     let nx = usize::from(limb.size_x);
@@ -130,7 +208,10 @@ pub(crate) fn prepare_matrix(
         return None;
     }
     let (corners, lo, hi) = projected_quad(matrix, limb.bounds, considered_aircraft)?;
-    let center = center_of_bounds(lo, hi)?;
+    let center = match center_override {
+        Some(center) => center,
+        None => center_of_bounds(lo, hi)?,
+    };
     let mut rect = [0i32; 6];
     let mut origin = [0u16; 2];
     let mut step_x = [0u16; 2];
@@ -249,6 +330,107 @@ pub(crate) fn render_matrix(
         vxl,
         &prepare_matrix(vxl, matrix, shadow_index, considered_aircraft)?,
     )
+}
+
+/// Phobos `ShadowIndices=`'s listed sections as one stencil
+/// (`Ext/TechnoType/Hooks.MatrixOp.cpp:793-800`): every section is handed the
+/// same `&mtx`, then `0x7072A1` multiplies that section's own HVA transform
+/// into it, so each listed section draws at its own `ShadowIndices.Frame`
+/// (`Body.cpp:1327-1337`). Their two-byte columns compose in one 256-square,
+/// exactly the way the loop's repeated `DrawVoxelShadow` calls accumulate on
+/// the one surface. The crop is the union the composed pixels occupy, and its
+/// placement answers the same screen offset the single-section path does.
+///
+/// The shared anchor is the primary section's frame-0 center: native's
+/// `shadowCenter = *pt + ShadowPoint` (`:726-727`) is built before
+/// `ChooseFrame`, so a nonzero `ShadowIndex.Frame` never moves it.
+pub(crate) fn render_indices(
+    vxl: &VxlFile,
+    hva: Option<&HvaFile>,
+    params: &VxlRenderParams,
+    primary_index: i32,
+    indices: &[i32],
+    frames: &[i32],
+    considered_aircraft: bool,
+) -> Option<VxlSprite> {
+    let draw = draw_rotation(vxl, params)?;
+    // Native anchors every listed section at `shadowCenter = *pt +
+    // ShadowPoint` (`Hooks.MatrixOp.cpp:726-727`). Malformed data can leave
+    // that point without a primary section; the first listed section's
+    // frame-0 center then stands in, instead of dropping the whole list.
+    let center = section_matrix(vxl, hva, draw, primary_index, 0)
+        .and_then(|matrix| center_of_matrix(vxl, matrix, primary_index, considered_aircraft))
+        .or_else(|| {
+            indices.iter().find_map(|&index| {
+                let matrix = section_matrix(vxl, hva, draw, index, 0)?;
+                center_of_matrix(vxl, matrix, index, considered_aircraft)
+            })
+        })?;
+    let mut visibility = vec![0u8; 65536];
+    let mut any = false;
+    for (slot, &index) in indices.iter().enumerate() {
+        // `-1` is the native resize placeholder; `ChooseFrame` then draws the
+        // walked frame, which this atlas cannot key and holds at 0.
+        let frame = frames.get(slot).copied().unwrap_or(-1);
+        let Some(matrix) = section_matrix(vxl, hva, draw, index, frame) else {
+            continue;
+        };
+        let Some(raster) = prepare_matrix_at(vxl, matrix, index, considered_aircraft, Some(center))
+        else {
+            continue;
+        };
+        // A section the raster cannot read is skipped like native's loop; it
+        // must not discard the sections already composed.
+        let Some(limb) = vxl.limbs.get(raster.limb) else {
+            continue;
+        };
+        let Some(columns) = stencil_columns(limb) else {
+            continue;
+        };
+        for column in columns {
+            let address = usize::from(stencil_address(&raster, column));
+            visibility[address] = 1;
+            if address + 1 < visibility.len() {
+                // The second byte is adjacent, not independently wrapped X.
+                visibility[address + 1] = 1;
+            }
+            any = true;
+        }
+    }
+    if !any {
+        return None;
+    }
+    let (mut x0, mut y0, mut x1, mut y1) = (256i32, 256i32, -1i32, -1i32);
+    for y in 0..256usize {
+        for x in 0..256usize {
+            if visibility[y * 256 + x] != 0 {
+                x0 = x0.min(x as i32);
+                y0 = y0.min(y as i32);
+                x1 = x1.max(x as i32);
+                y1 = y1.max(y as i32);
+            }
+        }
+    }
+    if x1 < x0 || y1 < y0 {
+        return None;
+    }
+    let (w, h) = ((x1 - x0 + 1) as usize, (y1 - y0 + 1) as usize);
+    let mut pixels = Vec::with_capacity(w * h);
+    for row in y0 as usize..=y1 as usize {
+        let p = row * 256 + x0 as usize;
+        pixels.extend_from_slice(&visibility[p..p + w]);
+    }
+    // The 256-square's column 128 is the placement anchor: a pixel at square
+    // `x` sits at `center + (x - 128)` on the tactical surface.
+    let anchor = [ftol(load(center[0])?)?, ftol(load(center[1])?)?];
+    Some(VxlSprite {
+        palette_indices: pixels,
+        depth: Vec::new(),
+        width: w as u32,
+        height: h as u32,
+        offset_x: (anchor[0] - 128 + x0) as f32,
+        offset_y: (anchor[1] - 128 + y0) as f32,
+    })
 }
 
 /// [`render_matrix`] as an image for the GPU raster.

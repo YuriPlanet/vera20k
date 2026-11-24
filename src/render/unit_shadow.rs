@@ -4,6 +4,7 @@
 //! tools/voxel_oracle/aircraft_shadow.py --unit (unit_shadow.json).
 
 use crate::render::foot_depth::DepthCell;
+use crate::render::unit_atlas::PoseTilt;
 use crate::util::lepton::absolute_leptons_to_screen;
 use crate::util::native_x87::adjust_for_z_standard;
 
@@ -21,15 +22,35 @@ pub(crate) struct UnitShadowContext {
     pub primary_facing: u16,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct UnitShadowPose {
     pub anchor: [f32; 2],
     pub facing: u8,
     pub slope: u8,
     pub mask: UnitShadowMask,
     pub mask_offset: [i32; 2],
+    /// `GetHeight()` (`0x0071C011`) in leptons: Phobos' `ShadowSizeCharacteristicHeight=`
+    /// scale divides it (`Ext/TechnoType/Hooks.MatrixOp.cpp:672,682`).
+    pub height_leptons: i32,
+    /// The body pose the shadow matrix inherits this frame. Phobos
+    /// `UnitClass_DrawAsVXL_Shadow` (hook `0x73C47A`,
+    /// `Ext/TechnoType/Hooks.MatrixOp.cpp:729-773`) rotates the shadow matrix
+    /// by the same `arf`/`ars` as the body; only the airborne `JumpjetTilt`
+    /// arm flows here. Other locomotor poses (`Jumpjet` crash rocking,
+    /// `FlyNormal`, `Rocket`) keep the stock shadow policy, so their shadow
+    /// stays `None`. The anchor below is the shadow's own `Shadow_Point`,
+    /// independent of this tilt.
+    pub tilt: Option<PoseTilt>,
 }
 
 impl UnitShadowPose {
+    /// Attach the body pose the shadow inherits this frame. The anchor, facing,
+    /// slope and mask below are untouched; only the stencil matrix/key reads the
+    /// tilt. `None` keeps the stock stable stencil.
+    pub(crate) fn inherit_tilt(&mut self, tilt: Option<PoseTilt>) {
+        self.tilt = tilt;
+    }
+
     /// The atlas stencil drawn. The cache key (73B619, 73C21E..73C287)
     /// carries no body HVA frame and 707280 samples frame zero; the grounded
     /// mask has its own entry.
@@ -126,6 +147,8 @@ pub(crate) fn pose(
         //73C4C8..73C4D5 adds one only on the positive-height arm. This
         //offset samples the elevated body surface; it does not move the quad.
         mask_offset: [0, point_y.wrapping_add(i32::from(height > 0))],
+        height_leptons: height,
+        tilt: None,
     })
 }
 

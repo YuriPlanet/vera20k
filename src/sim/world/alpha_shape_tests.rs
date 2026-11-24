@@ -46,6 +46,10 @@ fn a_loaded_alpha_image_glows_from_unlimbo_until_the_purge_after_expiry() {
     // GetCoords (1152,1152,0) projects to (0,135), plus VERA's 15-pixel row
     // bias, less half the 61x31 canvas.
     assert_eq!(glows(&sim, &rules), [([-30, 135], "GLOW")]);
+    assert_eq!(
+        sim.alpha_shapes().collect::<Vec<_>>(),
+        [([-30, 135], "GLOW", false)]
+    );
 
     let lamp = sim
         .substrate

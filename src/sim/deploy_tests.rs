@@ -1846,6 +1846,40 @@ fn a_transport_may_not_unload_on_or_beside_a_bridge_on_human_water_or_in_a_build
     assert!(transport_may_unload(true, Some("BUNK"), plain, |_| {}));
 }
 
+/// Phobos `AmphibiousUnload` (hook `0x70107A`,
+/// `Ext/Techno/Hooks.Transport.cpp:646-657`): the human-on-water refusal
+/// yields to the transport type's key, else `[General]`.
+#[test]
+fn amphibious_unload_admits_a_human_transport_on_water() {
+    let build = |general: &str, type_keys: &str| {
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[General]\n{general}[VehicleTypes]\n0=LCRF\n[LCRF]\nPassengers=5\n{type_keys}"
+        )))
+        .expect("transport rules");
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Americans");
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
+        let id = sim
+            .spawn_object("LCRF", "Americans", 20, 22, 0, &rules)
+            .expect("the transport builds");
+        sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |rx, ry| {
+            let mut cell = crate::map::resolved_terrain::test_tiberium_cell(rx, ry);
+            if (rx, ry) == (20, 22) {
+                cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
+            }
+            cell
+        }));
+        sim.can_deploy_slash_unload(id, &rules)
+    };
+    assert!(!build("", ""));
+    assert!(build("AmphibiousUnload=yes\n", ""));
+    assert!(build("", "AmphibiousUnload=yes\n"));
+    assert!(!build("AmphibiousUnload=yes\n", "AmphibiousUnload=no\n"));
+}
+
 /// The Unit arm's capability and DeploysInto tests, the Infantry
 /// `UndeployDelay=` and `Deployer=` tests, and the Building and Aircraft
 /// arms of CanDeploySlashUnload (`0x00700D50`).

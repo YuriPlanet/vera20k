@@ -22,6 +22,27 @@ pub(crate) struct SensorCloakReevaluation {
 }
 
 impl Simulation {
+    /// Phobos `DetachOnCloak=` (`Ext/AnimType/Body.cpp:112`, `Valueable<bool>`
+    /// constructor `true`): `Detach_All(false)` on a cloaking object detaches
+    /// every attached anim (`TechnoClass::Do_Cloak @ 0x703789` reaches vtable
+    /// `+0xDC`), and the hook `AnimClass_Detach_Cloak @ 0x425174`
+    /// (`Ext/Anim/Hooks.cpp:663-684`) suppresses that detach only for a type
+    /// whose key reads `no`.
+    pub(crate) fn detach_attached_anims_for_cloak(&mut self, owner_id: u64, rules: &RuleSet) {
+        let ids: Vec<_> = self
+            .anims()
+            .filter(|(_, anim)| anim.owner_entity() == Some(owner_id))
+            .filter(|(_, anim)| {
+                let name = self.interner.resolve(anim.type_id());
+                crate::sim::anim_class::anim_type_detach_on_cloak(rules, name)
+            })
+            .map(|(&id, _)| id)
+            .collect();
+        for id in ids {
+            self.detach_anim_from_owner(id, rules);
+        }
+    }
+
     /// InfantryLoad521A0C and the other Techno class loads call NoInit6F4300
     /// for every retained object. Invoke this at the player-file boundary;
     /// internal continuations retain their progress clocks.
@@ -130,10 +151,7 @@ fn stock_cloak_tick_facts(
     // Original active-YR producer reachability remains unproven: the
     // dormant TS EMPulse body alone does not establish an original scenario
     // caller. Ares's Bullet hook is a separate, established producer.
-    // Firestorm 2.0 `Cloaking_AI` 0x0062EFA0 (`0x0062EFC7`) and vt+0x240
-    // `0x0062F4A0` (`0x0062F523`) ask Is_Immobilized here, which also holds
-    // a webbed infantryman (`0x004D5B10`).
-    let emp_active = entity.is_immobilized(sim.session.binary_frame() as i32);
+    let emp_active = entity.is_under_emp();
     let paralyzed = entity.parasite.is_paralyzed(sim.session.binary_frame());
     // Ares ShouldNotCloak10043A40 applies the same blockers to rank cloak
     // and raw ability, and rejects parachutes and deactivated self-cloakers.
@@ -622,6 +640,7 @@ pub(super) fn cloak_field_ai_step(
     rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
 ) {
+    sim.drain_cloak_anim(id, rules);
     // An object with no cloak runtime is in state 0 and cannot pass
     // CanAutoCloak (`stock_cloak_tick_facts`), so the callback would do
     // nothing for it; skipping it keeps the field lookup out of the AI loop.
@@ -690,6 +709,9 @@ fn start_cloaking_detach(
     effects: &mut FrameEffects<'_>,
 ) {
     sim.detach_all(id, false, UninitContext::new(rules).with_effects(effects));
+    // Detach_All's anim arm, gated per anim type by Phobos `DetachOnCloak=`
+    // (`Ext/AnimType/Body.cpp:112`, hook `0x425174`).
+    sim.detach_attached_anims_for_cloak(id, rules);
     let player = sim.session.current_house();
     if sim
         .substrate

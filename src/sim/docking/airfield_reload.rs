@@ -226,6 +226,17 @@ pub(crate) fn mission_reload(
     dock: u64,
     effects: &mut FrameEffects<'_>,
 ) -> i32 {
+    // Phobos' `UnitReload=` separate repair loop (`0x44C836`) runs before the
+    // stock/Ares reload visit.
+    if rules.phobos() {
+        separate_repair_pass(
+            sim,
+            rules,
+            dock,
+            Some(rules.overlay_registry()),
+            &mut effects.reborrow(),
+        );
+    }
     let mut host = WorldReload {
         sim,
         rules,
@@ -237,6 +248,84 @@ pub(crate) fn mission_reload(
         ares_reload_visit(&mut host)
     } else {
         reload_visit(rules.general.reload_rate, &mut host)
+    }
+}
+
+/// Phobos `UnitReload=`'s separate repair loop
+/// (`0x44C836`, `Hooks.cpp:579-615`): a `UnitReload=` building with
+/// `Units.RepairRate=` set services its linked, non-airborne, damaged units
+/// itself every `int(max(rate * 900, 1))` frames, asking QUERY_MOVING and then
+/// the REPAIR_TICK body with the separate-repair latch (the stock arm's own
+/// ticks then skip their effects).
+fn separate_repair_pass(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    dock: u64,
+    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    effects: &mut FrameEffects<'_>,
+) {
+    let Some((unit_reload, rate)) = sim
+        .substrate
+        .entities
+        .get(dock)
+        .and_then(|building| sim.object_type(building.type_ref(), rules))
+        .map(|object| (object.unit_reload, object.phobos_units_repair.repair_rate))
+    else {
+        return;
+    };
+    let Some(rate) = rate.filter(|_| unit_reload) else {
+        return;
+    };
+    if rate < 0.0 {
+        return;
+    }
+    // Original `Math::max(repairRate * 900, 1)` then a C double-to-int cast.
+    let period = (rate * 900.0).max(1.0) as i32;
+    if (sim.session.binary_frame() as i32) % period != 0 {
+        return;
+    }
+    let mut host = WorldReload {
+        sim,
+        rules,
+        dock,
+        effects: effects.reborrow(),
+        detached_timers: DockReloadTimers::default(),
+    };
+    // Original re-reads `RadioLinks.Capacity` before each slot.
+    let mut slot = 0;
+    while slot < host.capacity() {
+        slot += 1;
+        let Some(contact) = host.contact(slot - 1) else {
+            continue;
+        };
+        let damaged_grounded = host
+            .sim
+            .substrate
+            .entities
+            .get(contact)
+            .is_some_and(|entity| {
+                let damaged = host
+                    .sim
+                    .object_type(entity.type_ref(), host.rules)
+                    .is_some_and(|object| entity.health.current() < object.strength);
+                let grounded = !crate::sim::movement::air_movement::is_high_flying(
+                    entity,
+                    host.sim.resolved_terrain.as_ref(),
+                    Some((host.rules, &host.sim.interner)),
+                );
+                damaged && grounded
+            });
+        if damaged_grounded && host.roger(contact, RadioMessage::NeedToMove) {
+            // The native RequestRepair send reaches the REPAIR_TICK body
+            // directly here; VERA models no sender-side message bookkeeping.
+            crate::sim::radio::receive::techno_repair_tick_separate(
+                host.sim,
+                contact,
+                Some(dock),
+                host.rules,
+                &mut host.effects,
+            );
+        }
     }
 }
 

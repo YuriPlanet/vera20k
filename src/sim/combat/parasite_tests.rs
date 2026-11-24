@@ -1445,3 +1445,392 @@ fn ares_a_cloaking_host_keeps_its_drone() {
         .detach_all(tank, false, crate::sim::world::UninitContext::new(&rules));
     assert_eq!(arena.eater_of(tank), Some(drone));
 }
+
+/// Phobos `Cloak.KickOutParasite` (`0x4D9992`,
+/// `Ext/Techno/Hooks.cpp:1415-1445`): a cloak's `Detach_All(false)` control
+/// falls back to the host type's key, else `[General]`; without either the
+/// Phobos hook keeps the parasite like Ares.
+#[test]
+fn phobos_cloak_kick_out_parasite_ejects_only_when_configured() {
+    let eject = |extra: &str| {
+        // `Cloak.KickOutParasite=no` at its default marks this as a game
+        // where Phobos installs the hook.
+        let ini = IniFile::from_str(
+            &RULES
+                .replace("[General]\n", "[General]\nCloak.KickOutParasite=no\n")
+                .replace("[MTNK]\n", &format!("[MTNK]\n{extra}")),
+        );
+        let rules = rules_with_ini(&ini);
+        let mut arena = Arena::new(&rules);
+        let drone = arena.spawn(&rules, "DRON", "Russians", (10, 10));
+        let tank = arena.spawn(&rules, "MTNK", "Americans", (11, 10));
+        arena.infect(&rules, drone, tank);
+        arena
+            .sim
+            .detach_all(tank, false, crate::sim::world::UninitContext::new(&rules));
+        arena.eater_of(tank)
+    };
+    let drone_kept = eject("");
+    assert!(drone_kept.is_some(), "the default keeps the parasite");
+    assert_eq!(
+        eject("Cloak.KickOutParasite=yes\n"),
+        None,
+        "the type key ejects"
+    );
+
+    let ini =
+        IniFile::from_str(&RULES.replace("[General]\n", "[General]\nCloak.KickOutParasite=yes\n"));
+    let rules = rules_with_ini(&ini);
+    let mut arena = Arena::new(&rules);
+    let drone = arena.spawn(&rules, "DRON", "Russians", (10, 10));
+    let tank = arena.spawn(&rules, "MTNK", "Americans", (11, 10));
+    arena.infect(&rules, drone, tank);
+    arena
+        .sim
+        .detach_all(tank, false, crate::sim::world::UninitContext::new(&rules));
+    assert_eq!(
+        arena.eater_of(tank),
+        None,
+        "the [General] key is the fallback"
+    );
+}
+
+/// Phobos `FootClass_ReceiveDamage_RemoveParasite` (`0x4D73DE`,
+/// `Ext/WarheadType/Hooks.cpp:589-606`): the key replaces the heal-only gate
+/// and the typed Allow/Disallow lists filter the attached parasite type.
+#[test]
+fn phobos_remove_parasite_gates_and_filters_the_removal() {
+    let run = |warhead_keys: &str, damage: i32| {
+        let ini = IniFile::from_str(&RULES.replace(
+            "[AP]\nVerses=25%,25%,25%,75%,100%,100%,65%,65%,35%,100%,100%\n",
+            &format!(
+                "[AP]\nVerses=25%,25%,25%,75%,100%,100%,65%,65%,35%,100%,100%\n{warhead_keys}"
+            ),
+        ));
+        let rules = rules_with_ini(&ini);
+        let mut arena = Arena::new(&rules);
+        let drone = arena.spawn(&rules, "DRON", "Russians", (10, 10));
+        let tank = arena.spawn(&rules, "MTNK", "Americans", (11, 10));
+        arena.infect(&rules, drone, tank);
+        arena.hit(&rules, tank, None, damage, "AP");
+        arena.eater_of(tank)
+    };
+    assert!(
+        run("", 10).is_some(),
+        "positive damage keeps the parasite by default"
+    );
+    assert_eq!(
+        run("RemoveParasite=yes\n", 10),
+        None,
+        "yes removes on any damage"
+    );
+    assert!(
+        run("RemoveParasite=no\n", -10).is_some(),
+        "no keeps it even on a heal"
+    );
+    assert_eq!(
+        run("RemoveParasite=yes\n", -10),
+        None,
+        "yes removes on a heal"
+    );
+    assert!(
+        run("RemoveParasite=yes\nRemoveParasite.Disallow=DRON\n", 10).is_some(),
+        "the disallow list holds the removal"
+    );
+    assert_eq!(
+        run("RemoveParasite=yes\nRemoveParasite.Allow=DRON\n", 10),
+        None,
+        "the allow list admits the removal"
+    );
+    assert!(
+        run("RemoveParasite=yes\nRemoveParasite.Allow=E1\n", 10).is_some(),
+        "a parasite outside the allow list stays"
+    );
+}
+
+/// Phobos `ParasiteClass_UpdateSquid_SinkableBySquid` (`0x629C67`,
+/// `Ext/Unit/Hooks.Sinking.cpp:21-45`): a grabbed Unit sinks only when its
+/// `Sinkable.SquidGrab` (else `[General]`) admits it; otherwise it takes its
+/// Strength as C4 damage.
+#[test]
+fn phobos_sinkable_squid_grab_switches_between_sinking_and_strength_damage() {
+    let run = |key: &str| {
+        let ini = IniFile::from_str(
+            &(RULES
+                .replace(
+                    "[DLPH]\nStrength=200\nArmor=light\nSpeed=8\nSight=4\nOrganic=yes\nNaval=yes\n",
+                    &format!(
+                        "[DLPH]\n{key}Strength=200\nArmor=light\nSpeed=8\nSight=4\n\
+                         Organic=yes\nNaval=yes\nPrimary=SquidGrab\n"
+                    ),
+                )
+                .replace(
+                    "[Warheads]\n0=ParasiteDog\n1=Parasite\n2=SA\n3=AP\n4=Super\n5=SonicWarhead\n",
+                    "[Warheads]\n0=ParasiteDog\n1=Parasite\n2=SA\n3=AP\n4=Super\n\
+                     5=SonicWarhead\n6=SquidCull\n",
+                )
+                + "[SquidGrab]\nDamage=50\nROF=60\nRange=1.83\nProjectile=JUMP\nSpeed=30\n\
+                   Warhead=SquidCull\nLimboLaunch=yes\n\
+                   [SquidCull]\nParasite=yes\nCulling=yes\n\
+                   Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"),
+        );
+        let rules = rules_with_ini(&ini);
+        let mut arena = Arena::new(&rules);
+        let owner = arena.spawn(&rules, "DLPH", "Russians", (10, 10));
+        let victim = arena.spawn(&rules, "DLPH", "Americans", (11, 10));
+        {
+            let terrain = arena.sim.resolved_terrain.as_mut().unwrap();
+            terrain.set_projectile_water_set_base(0);
+            for cell in [(10u16, 10u16), (11, 10)] {
+                terrain
+                    .cell_mut_for_test(cell.0, cell.1)
+                    .unwrap()
+                    .final_tile_index = 0;
+            }
+        }
+        arena.hit(&rules, victim, None, 190, "Super");
+        arena.infect(&rules, owner, victim);
+        for _ in 0..2000 {
+            let state = arena.sim.entities().get(victim);
+            if state.is_none_or(|entity| entity.sinking.is_active() || entity.health.current() == 0)
+            {
+                break;
+            }
+            arena.step(&rules);
+        }
+        let sinking = arena
+            .sim
+            .entities()
+            .get(victim)
+            .is_some_and(|entity| entity.sinking.is_active());
+        (sinking, arena.gone(victim))
+    };
+    let (sinking, gone) = run("");
+    assert!(sinking, "the default sinks the grabbed Unit");
+    assert!(!gone, "a sinking hull stays until its descent ends");
+    let (sinking, gone) = run("Sinkable.SquidGrab=no\n");
+    assert!(!sinking, "the key switched the cull to direct damage");
+    assert!(gone, "Strength damage killed the victim");
+}
+
+/// Phobos `Parasite.CullingTarget` (`Ext/WarheadType/Body.cpp:324`,
+/// `ParasiteClass_AI_CullingTarget @ 0x62A0AA`): a victim outside the filter
+/// skips the culling arm, so an Infantry victim takes the ordinary bite
+/// damage instead of its whole Health.
+#[test]
+fn parasite_culling_target_off_downgrades_the_infantry_bite() {
+    let ini = IniFile::from_str(&RULES.replace(
+        "[ParasiteDog]\nVerses=100%,100%,100%,0%,0%,0%,0%,0%,0%,0%,0%\nParasite=yes\n",
+        "[ParasiteDog]\nParasite.CullingTarget=none\n\
+             Verses=100%,100%,100%,0%,0%,0%,0%,0%,0%,0%,0%\nParasite=yes\n",
+    ));
+    let rules = rules_with_ini(&ini);
+    let mut arena = Arena::new(&rules);
+    // The Attack command below only runs for a human House.
+    for (name, side) in [("Americans", 0), ("Russians", 1)] {
+        let id = arena.sim.intern(name);
+        arena
+            .sim
+            .houses
+            .register(crate::sim::house_state::HouseState::new(
+                id, side, None, true, 0, 10,
+            ));
+    }
+    let dog = arena.spawn(&rules, "DOG", "Russians", (10, 10));
+    let gi = arena.spawn(&rules, "E1", "Americans", (11, 10));
+    arena.infect(&rules, dog, gi);
+    arena.until(&rules, 100, |sim| {
+        sim.substrate
+            .entities
+            .get(gi)
+            .is_some_and(|victim| victim.health.current() < 125)
+    });
+    let victim = arena.sim.substrate.entities.get(gi).unwrap();
+    assert!(
+        victim.health.current() > 0,
+        "the ordinary bite deals the weapon's damage, not the victim's Health"
+    );
+    assert_eq!(
+        arena.eater_of(gi),
+        Some(dog),
+        "the refused cull leaves the dog attached"
+    );
+}
+
+/// `Parasite.CullingTarget=units` (`0x62A0AA`): the filter replaces the stock
+/// Infantry-only test, so a Vehicle victim is culled and takes its whole
+/// Health in the first bite.
+#[test]
+fn parasite_culling_target_units_one_hit_kills_a_vehicle() {
+    let ini = IniFile::from_str(
+        &RULES.replace(
+            "[Parasite]\nVerses=100%,100%,100%,100%,100%,100%,0%,0%,0%,0%,0%\nParasite=yes\nInfDeath=1\nRocker=yes\n",
+            "[Parasite]\nParasite.CullingTarget=units\n\
+             Verses=100%,100%,100%,100%,100%,100%,0%,0%,0%,0%,0%\nParasite=yes\nInfDeath=1\nRocker=yes\n",
+        ),
+    );
+    let rules = rules_with_ini(&ini);
+    let mut arena = Arena::new(&rules);
+    let drone = arena.spawn(&rules, "DRON", "Russians", (10, 10));
+    let tank = arena.spawn(&rules, "MTNK", "Americans", (11, 10));
+    crate::sim::arena_fixture::discover(&mut arena.sim, tank);
+    let owner = arena.sim.entities().get(tank).unwrap().owner();
+    arena
+        .sim
+        .houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
+    arena.infect(&rules, drone, tank);
+    let mut bites = Vec::new();
+    let mut last = arena.health(tank).unwrap();
+    arena.until(&rules, 100, |sim| {
+        let hp = sim
+            .substrate
+            .entities
+            .get(tank)
+            .map_or(0, |t| t.health.current());
+        if hp != last {
+            bites.push(hp);
+            last = hp;
+        }
+        hp == 0
+    });
+    assert_eq!(
+        bites,
+        [0],
+        "the culling bite takes the whole 300 Health at once"
+    );
+}
+
+/// Phobos `Parasite.AllowWaterExit` (`0x62AB69`,
+/// `Ext/Techno/Hooks.cpp:955-968`): `yes` skips the water/land checks but
+/// still reaches the shared no-building tail (`0x62AC0F`); `no` refuses;
+/// `[General]` is the type key's fallback.
+#[test]
+fn parasite_allow_water_exit_skips_land_but_not_the_building_gate() {
+    use crate::rules::terrain_rules::LandType;
+    let place = |ini: &str, water: bool, yard: bool| {
+        let rules = rules_with_ini(&IniFile::from_str(ini));
+        let mut arena = Arena::new(&rules);
+        let victim = arena.spawn(&rules, "MTNK", "Americans", (5, 2));
+        let owner = arena.spawn(&rules, "DRON", "Russians", (9, 9));
+        if water {
+            arena
+                .sim
+                .resolved_terrain
+                .as_mut()
+                .unwrap()
+                .cell_mut_for_test(5, 2)
+                .unwrap()
+                .land_type = LandType::Water.as_index();
+        }
+        if yard {
+            let building = arena.spawn(&rules, "YARD", "Americans", (24, 12));
+            arena.sim.substrate.occupancy.add(
+                5,
+                2,
+                building,
+                crate::sim::movement::locomotor::MovementLayer::Ground,
+                None,
+                crate::sim::occupancy::CellListInsertion::AppendBuilding,
+            );
+        }
+        arena
+            .sim
+            .parasite_can_place_at_victim(owner, victim, &rules)
+    };
+    let type_yes = RULES.replace("[DRON]\n", "[DRON]\nParasite.AllowWaterExit=yes\n");
+    let type_no = RULES.replace("[DRON]\n", "[DRON]\nParasite.AllowWaterExit=no\n");
+    let global_yes = RULES.replace("[General]\n", "[General]\nParasite.AllowWaterExit=yes\n");
+    assert!(
+        !place(RULES, true, false),
+        "unset keeps the stock water rule"
+    );
+    assert!(!place(&type_no, true, false), "no refuses the release");
+    assert!(
+        !place(&type_no, false, false),
+        "no refuses even on clear land, where the stock rule admits"
+    );
+    assert!(place(&type_yes, true, false), "yes skips the water check");
+    assert!(place(&global_yes, true, false), "[General] is the fallback");
+    assert!(
+        !place(&type_yes, true, true),
+        "the shared tail still requires no building under the victim"
+    );
+}
+
+/// Phobos `Parasite.ParticleSystem`/`.DisableParticleSystem` (`0x62A0D3`,
+/// `Ext/Techno/Hooks.cpp:921-940`): a non-culling bite spawns the warhead's
+/// system, an unknown name falls back to `[CombatDamage] DefaultSparkSystem`,
+/// and either disable key skips the construct.
+#[test]
+fn parasite_bite_particle_system_falls_back_and_can_be_disabled() {
+    const SYSTEMS: &str = "[ParticleSystems]\n0=CUSTOMSPARK\n1=DEFAULTSPARK\n\
+        [CUSTOMSPARK]\nBehavesLike=Spark\nLifetime=200\n\
+        [DEFAULTSPARK]\nBehavesLike=Spark\nLifetime=200\n";
+    let bite_systems = |extra: &str| {
+        let mut ini = IniFile::from_str(RULES);
+        ini.merge(&IniFile::from_str(SYSTEMS));
+        ini.merge(&IniFile::from_str(extra));
+        let rules = rules_with_ini(&ini);
+        let mut arena = Arena::new(&rules);
+        let drone = arena.spawn(&rules, "DRON", "Russians", (10, 10));
+        let tank = arena.spawn(&rules, "MTNK", "Americans", (11, 10));
+        crate::sim::arena_fixture::discover(&mut arena.sim, tank);
+        let owner = arena.sim.entities().get(tank).unwrap().owner();
+        arena
+            .sim
+            .houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
+        arena.infect(&rules, drone, tank);
+        for _ in 0..150 {
+            if !arena.sim.particle_systems().is_empty() {
+                break;
+            }
+            arena.step(&rules);
+        }
+        let names: Vec<String> = arena
+            .sim
+            .particle_systems()
+            .iter()
+            .map(|(_, system)| rules.particle_system_type(system.type_id()).name.clone())
+            .collect();
+        (names, arena.health(tank).unwrap_or(0))
+    };
+    let (names, health) = bite_systems(
+        "[CombatDamage]\nDefaultSparkSystem=DEFAULTSPARK\n\
+         [Parasite]\nParasite.ParticleSystem=CUSTOMSPARK\n",
+    );
+    assert_eq!(
+        names,
+        ["CUSTOMSPARK"],
+        "the warhead system replaced the default"
+    );
+    assert!(health < 300, "a bite happened");
+    let (names, _) = bite_systems(
+        "[CombatDamage]\nDefaultSparkSystem=DEFAULTSPARK\n\
+         [Parasite]\nParasite.ParticleSystem=UNKNOWN\n",
+    );
+    assert_eq!(
+        names,
+        ["DEFAULTSPARK"],
+        "an unknown name fell back to the default"
+    );
+    let (names, health) = bite_systems(
+        "[CombatDamage]\nDefaultSparkSystem=DEFAULTSPARK\n\
+         [Parasite]\nParasite.ParticleSystem=CUSTOMSPARK\nParasite.DisableParticleSystem=yes\n",
+    );
+    assert!(names.is_empty(), "the warhead key disabled the construct");
+    assert!(health < 300, "a bite still happened");
+    let (names, _) = bite_systems(
+        "[CombatDamage]\nDefaultSparkSystem=DEFAULTSPARK\n\
+         Parasite.DisableParticleSystem=yes\n",
+    );
+    assert!(
+        names.is_empty(),
+        "the [CombatDamage] disable skipped the construct"
+    );
+}

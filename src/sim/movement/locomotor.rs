@@ -811,6 +811,17 @@ impl LocomotorState {
         &self.runtime_payload
     }
 
+
+
+    /// Fixture seam for the client's presentation tests, which arm a Tunnel
+    /// state and timer without driving a whole `process` cycle.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn tunnel_runtime_mut_for_test(
+        &mut self,
+    ) -> Option<&mut super::tunnel_movement::TunnelRuntime> {
+        self.tunnel_runtime_mut()
+    }
+
     /// Class-local state of this locomotor object, for fixtures.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn runtime_payload_mut(&mut self) -> &mut LocomotorRuntimePayload {

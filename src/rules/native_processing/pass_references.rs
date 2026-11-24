@@ -631,7 +631,6 @@ impl RulesPassProcessor {
     /// Phobos `RadTypeClass::LoadFromINIList` + each type's `LoadFromINI`,
     /// reached on every Rules pass: the pass's `[RadiationTypes]` list
     /// appends entries and every retained type re-reads its own section.
-    #[cfg(feature = "phobos")]
     pub(super) fn allocate_radiation_types(&mut self, pass: &IniFile) {
         if let Some(catalog) = self.phobos_radiation_types.as_mut() {
             catalog.apply_pass(pass);
@@ -639,7 +638,6 @@ impl RulesPassProcessor {
     }
 
     /// Phobos `ShieldTypeClass::LoadFromINIList` + each type's `LoadFromINI`.
-    #[cfg(feature = "phobos")]
     pub(super) fn allocate_shield_types(&mut self, pass: &IniFile) {
         if let Some(catalog) = self.phobos_shield_types.as_mut() {
             catalog.apply_pass(pass);
@@ -648,7 +646,6 @@ impl RulesPassProcessor {
 
     /// Phobos `InsigniaTypeClass::LoadFromINIList` + each type's
     /// `LoadFromINI`, reached on every Rules pass.
-    #[cfg(feature = "phobos")]
     pub(super) fn allocate_insignia_types(&mut self, pass: &IniFile) {
         if let Some(catalog) = self.phobos_insignia_types.as_mut() {
             catalog.apply_pass(pass);
@@ -657,7 +654,6 @@ impl RulesPassProcessor {
 
     /// Phobos `DigitalDisplayTypeClass::LoadFromINIList` + each type's
     /// `LoadFromINI`, reached on every Rules pass.
-    #[cfg(feature = "phobos")]
     pub(super) fn allocate_digital_display_types(&mut self, pass: &IniFile) {
         if let Some(catalog) = self.phobos_digital_display_types.as_mut() {
             catalog.apply_pass(pass);
@@ -667,7 +663,6 @@ impl RulesPassProcessor {
     /// The `Read<true>` type factories of `AttachEffectTypeClass::LoadFromINI`
     /// (`ExpireWeapon`, `RevengeWeapon`, `ReflectDamage.Warhead`), run ahead of
     /// the type-body pass so those types are constructed and read this pass.
-    #[cfg(feature = "phobos")]
     pub(super) fn allocate_attach_effect_references(&mut self, pass: &IniFile) {
         let Some(list) = pass.section("AttachEffectTypes") else {
             return;
@@ -696,9 +691,38 @@ impl RulesPassProcessor {
         }
     }
 
+    /// Phobos `SWTypeExt::LoadFromINI`'s `Detonate.Weapon.Read<true>` and
+    /// `Detonate.Warhead.Read<true>` (`Ext/SWType/Body.cpp:274-275`): the
+    /// named types are constructed before this pass's bodies, so a weapon or
+    /// warhead only these keys name is read in this pass.
+    pub(super) fn allocate_sw_detonate_references(&mut self, pass: &IniFile) {
+        let Some(list) = pass.section("SuperWeaponTypes") else {
+            return;
+        };
+        for key in list.physical_keys() {
+            let Some(name) = list.read_name(key, 2048) else {
+                continue;
+            };
+            let section = pass.section(name).or_else(|| {
+                pass.section_names()
+                    .into_iter()
+                    .find(|candidate| candidate.eq_ignore_ascii_case(name))
+                    .and_then(|candidate| pass.section(candidate))
+            });
+            let Some(section) = section else {
+                continue;
+            };
+            if let Some(weapon) = section.read_type_name("Detonate.Weapon", 0x100) {
+                self.find_or_allocate(RulesTypeFamily::Weapon, weapon);
+            }
+            if let Some(warhead) = section.read_type_name("Detonate.Warhead", 0x100) {
+                self.find_or_allocate(RulesTypeFamily::Warhead, warhead);
+            }
+        }
+    }
+
     /// Phobos `AttachEffectTypeClass::LoadFromINIList` + each type's
     /// `LoadFromINI`, reached on every Rules pass.
-    #[cfg(feature = "phobos")]
     pub(super) fn allocate_attach_effect_types(&mut self, pass: &IniFile) {
         let Some(mut catalog) = self.phobos_attach_effect_types.take() else {
             return;
@@ -818,15 +842,6 @@ impl RulesPassProcessor {
         for key in ["SmallFire", "LargeFire"] {
             let _ = self.resolve_scalar_from(section, key, RulesTypeFamily::Animation, 0x80);
         }
-        // Firestorm 2.0's WebbedInfantry (`docs/ts-webs.md`): ReadString into
-        // 0x80 bytes and AnimType FindOrMake (`0x005D39A0`), an empty value
-        // keeping the pointer. gamemd has no such read, so VERA reads it after
-        // every AudioVisual key gamemd reads: an INI without the key
-        // allocates nothing.
-        let webbed =
-            self.resolve_scalar_from(section, "WebbedInfantry", RulesTypeFamily::Animation, 0x80);
-        self.rules_type_references
-            .read_pointer("WebbedInfantry", webbed);
     }
 
     pub(super) fn process_special_weapons(&mut self, pass: &IniFile) {

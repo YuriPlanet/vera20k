@@ -198,7 +198,6 @@ fn gsi_04_05_building_attack_frame_prelude_obeys_object_and_type_gates() {
 
     // Phobos `BuildingClass_ReceiveDamage_DamageSelf @ 0x0044224F` skips the
     // `0x00442262` self return when the warhead admits the firer.
-    #[cfg(feature = "phobos")]
     {
         let allow_wh = interner.intern("SELFWH");
         let allow_self = EntityDamageEvent::area(5, 10, 0, 5, Some(victim_owner), allow_wh);

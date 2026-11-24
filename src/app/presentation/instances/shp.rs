@@ -318,6 +318,7 @@ pub(crate) fn shp_visitor<'a>(
                 rules,
                 sim.session().binary_frame(),
                 observer,
+                false,
             )
         } else {
             std::borrow::Cow::Borrowed(
@@ -586,16 +587,6 @@ pub(crate) fn shp_visitor<'a>(
                 art.palette,
             ))
         });
-        // Firestorm 2.0 `InfantryClass::Get_Image_Data` 0x004D9030: a man
-        // doing Struggle draws `[AudioVisual] WebbedInfantry=`'s image, at
-        // his own Struggle frame (docs/ts-webs.md). The atlas plans it for
-        // each type with a Struggle record.
-        let webbed_image = entity
-            .infantry_sprite_pose()
-            .filter(|&(doing, _)| doing == crate::rules::infantry_sequence::DO_STRUGGLE)
-            .and(rules)
-            .and_then(|rules| rules.general.webbed_infantry.as_deref())
-            .map(|name| name.to_ascii_uppercase_smolstr());
         let key: ShpSpriteKey = match &door_body {
             Some((name, half, _, palette)) => ShpSpriteKey {
                 palette_context: *palette,
@@ -606,8 +597,7 @@ pub(crate) fn shp_visitor<'a>(
             },
             None => ShpSpriteKey {
                 palette_context: crate::render::sprite_atlas::ShpPaletteContext::Legacy,
-                type_id: webbed_image
-                    .unwrap_or_else(|| make_type_id.as_deref().unwrap_or(type_str).into()),
+                type_id: make_type_id.as_deref().unwrap_or(type_str).into(),
                 facing: 0,
                 frame: shp_frame,
                 house_color: hc,
@@ -714,6 +704,7 @@ pub(crate) fn shp_visitor<'a>(
             palette_light,
             sim,
             rules,
+            entity.place.airstrike_tint_active,
             crate::app::presentation::lighting::TechnoDraw::Shape,
         );
         let colour_word = match rules {
@@ -1141,7 +1132,7 @@ pub(crate) fn shp_visitor<'a>(
                 && building_voxel_turret_visible(entity, rules_obj.artillary)
                 && let Some(unit_atlas) = input.unit_atlas
             {
-                let turret_offset = art_entry.map_or(0, |art| art.turret_offset);
+                let turret_offset = art_entry.map_or(0, |art| art.turret_offset[0]);
                 // TechnoClass::Draw's curtain arm (`0x0070678D..0x007067E2`)
                 // and BuildingClass::Draw's colour word (`0x0043DC1C..
                 // 0x0043DDF1`, DrawBody's) on the voxel cache blit.
@@ -1152,6 +1143,7 @@ pub(crate) fn shp_visitor<'a>(
                         selected_palette_light(),
                         sim,
                         rules,
+                        entity.place.airstrike_tint_active,
                         crate::app::presentation::lighting::TechnoDraw::Voxel,
                     );
                 emit_building_turret_vxl(
@@ -2254,6 +2246,7 @@ fn emit_building_anims(
             i32::from(art.frame_count.unwrap_or(0)),
             detail_level,
             draw_runtime,
+            false,
         ) else {
             continue;
         };
@@ -2331,6 +2324,7 @@ fn emit_building_anims(
                     false,
                     instance.remap().as_ref(),
                     1000,
+                    crate::app::presentation::lighting::alt_palette_default_scheme(rules),
                 ),
             )
         };
@@ -2499,6 +2493,7 @@ fn emit_unit_terrain_body(
         palette_light,
         sim,
         Some(&runtime.resources.rules),
+        entity.place.airstrike_tint_active,
         crate::app::presentation::lighting::TechnoDraw::Shape,
     );
     let depth = compute_sprite_depth_params(

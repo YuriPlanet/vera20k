@@ -68,6 +68,51 @@ impl Visit {
     }
 }
 
+/// The Phobos `WeaponTypeExt` strafing keys the strike states read, with the
+/// `[General]` fallbacks already applied (`Ext/WeaponType/Body.cpp:108-112`,
+/// `Ext/Aircraft/Hooks.cpp:37`, `:211-228`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct StrafeKeys {
+    /// `Strafing.Shots.Get(5)`.
+    pub shots: i32,
+    /// `Strafing.SimulateBurst.Get([General] Strafing.SimulateBurst)`.
+    pub simulate_burst: bool,
+    /// `Strafing.UseAmmoPerShot.Get([General] Strafing.UseAmmoPerShot)`.
+    pub use_ammo_per_shot: bool,
+    /// `Strafing.TargetCell.Get([General] Strafing.TargetCell)`.
+    pub target_cell: bool,
+    /// `Strafing.EndDelay`; unset derives the range over speed.
+    pub end_delay: Option<i32>,
+}
+
+impl StrafeKeys {
+    /// A weapon that authors none of the five keys: all globals default off
+    /// and `Get(5)` reads five shots.
+    pub(crate) const STOCK: Self = Self {
+        shots: 5,
+        simulate_burst: false,
+        use_ammo_per_shot: false,
+        target_cell: false,
+        end_delay: None,
+    };
+
+    /// The weapon's five keys with their `[General]` fallbacks applied
+    /// (`Ext/WeaponType/Body.cpp:108-112`).
+    pub(crate) fn from_weapon(
+        weapon: &crate::rules::weapon_type::WeaponType,
+        globals: &crate::rules::phobos_globals::PhobosGlobals,
+    ) -> Self {
+        let rules = weapon.phobos_strafing();
+        Self {
+            shots: rules.shots(),
+            simulate_burst: rules.simulate_burst(globals),
+            use_ammo_per_shot: rules.use_ammo_per_shot(globals),
+            target_cell: rules.target_cell(globals),
+            end_delay: rules.end_delay,
+        }
+    }
+}
+
 /// The facts a strike visit (states 4..9) reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct StrikeFacts {
@@ -91,6 +136,13 @@ pub(crate) struct StrikeFacts {
     pub weapon0_range: i32,
     /// TechnoType `+0x678`, the lepton-per-frame speed from `Speed=`.
     pub speed: i32,
+    /// `GetWeapon(CurrentAircraftWeaponIndex)`'s Phobos strafing keys; weapon
+    /// 0 stands for the slot the same way [`Self::weapon0_rof`] does.
+    pub strafing: StrafeKeys,
+    /// Phobos `AircraftTypeExt::FiringForceScatter.Get([General]
+    /// AircraftFiringForceScatter)` (`Ext/Aircraft/Hooks.cpp:257`, `:348`,
+    /// `:354`): false skips the attack mission's target-cell Scatter.
+    pub firing_force_scatter: bool,
 }
 
 /// What a strike visit asks and does, each where the original does it.
@@ -108,6 +160,10 @@ pub(crate) trait StrikeHost {
     fn fire_at(&mut self);
     /// `CellClass::Scatter_Objects(&Location, 1, 0, 0)` on the target's cell.
     fn scatter(&mut self);
+    /// The same Scatter on the strafing target cell
+    /// (`Ext/Aircraft/Hooks.cpp:257`: `pTargetCell->ScatterContent(Location,
+    /// true, false, false)`), which the stored cell keeps.
+    fn scatter_at_cell(&mut self, cell: (u16, u16));
     /// `vt+0x480 Assign_Destination(Target, 1)`.
     fn assign_target_destination(&mut self);
     /// `vt+0x45C Uncloak(0)`.
@@ -119,6 +175,71 @@ pub(crate) trait StrikeHost {
     /// again (`0x00418506`, `0x00418720`): Fire_At's passenger arm
     /// (Drop_Payload) spends one.
     fn ammo(&mut self) -> i32;
+    /// Phobos `AircraftExt::Strafe_BombsDroppedThisRound` (`Ext/Aircraft/Body.h:14`).
+    fn strafe_counter(&mut self) -> i32;
+    /// The `AircraftExt::FireWeapon` increment (`Ext/Aircraft/Body.cpp:34`).
+    fn set_strafe_counter(&mut self, value: i32);
+    /// Phobos `AircraftExt::Strafe_TargetCell` (`Ext/Aircraft/Body.h:15`).
+    fn strafe_cell(&mut self) -> Option<(u16, u16)>;
+    /// The round-end clear (`Ext/Aircraft/Hooks.cpp:220`).
+    fn set_strafe_cell(&mut self, cell: Option<(u16, u16)>);
+    /// `MapClass::GetCellAt(Target->GetCoords())` into `Strafe_TargetCell`
+    /// (`Ext/Aircraft/Hooks.cpp:234-235`, hook `0x4184CC`).
+    fn store_target_cell(&mut self);
+    /// `GetFireError(pTargetCell, weaponIndex, true)` (`Ext/Aircraft/Hooks.cpp:252`).
+    fn cell_fire_error(&mut self, cell: (u16, u16)) -> FireError;
+    /// `AircraftExt::FireWeapon(pThis, pTargetCell)` (`Ext/Aircraft/Hooks.cpp:255`,
+    /// `Ext/Aircraft/Body.cpp:12-47`): the burst loop, then the round counter
+    /// and the per-shot ammo rule.
+    fn fire_at_cell(&mut self, cell: (u16, u16));
+    /// `SetDestination(pTargetCell, 1)` (`Ext/Aircraft/Hooks.cpp:259`).
+    fn assign_cell_destination(&mut self, cell: (u16, u16));
+}
+
+/// Phobos `AircraftClass_Mission_Attack_StrafeShots` (`Ext/Aircraft/Hooks.cpp:25-50`,
+/// hook `0x417FF1`), at the Mission_Attack entry of every visit: a state
+/// outside `FireAtTarget2_Strafe..FireAtTarget5_Strafe` (VERA 6..=9) resets
+/// the round counter; with shots fired and `Strafing.Shots > 5`, state
+/// `FireAtTarget3_Strafe` (7) re-enters `FireAtTarget2_Strafe` (6) while
+/// `shots - 3 - counter > 0`.
+pub(crate) fn strafe_entry(state: u8, counter: i32, shots: i32) -> (u8, i32) {
+    if !(6..=9).contains(&state) {
+        return (state, 0);
+    }
+    if counter != 0 && shots > 5 && state == 7 {
+        let remaining = shots.wrapping_sub(3).wrapping_sub(counter);
+        if remaining > 0 {
+            return (6, counter);
+        }
+    }
+    (state, counter)
+}
+
+/// Phobos `GetDelay` (`Ext/Aircraft/Hooks.cpp:211-228`), after a shot: the
+/// weapon's `ROF=`, unless the round ends here — the last shot, the counter
+/// reaching `Strafing.Shots` (equality, `:217`), or `Strafing.UseAmmoPerShot`
+/// with Ammo 0 (`:218`) — in which case `Strafe_TargetCell` clears, the state
+/// becomes `AirAttackStatus::FlyToPosition` (VERA 3) and the delay is
+/// `Strafing.EndDelay` or `(Range + 4 * LeptonsPerCell) / Speed` (`:221`).
+fn shot_delay(
+    facts: &StrikeFacts,
+    host: &mut impl StrikeHost,
+    base: u8,
+    is_last: bool,
+) -> (u8, i32) {
+    if is_last
+        || host.strafe_counter() == facts.strafing.shots
+        || (facts.strafing.use_ammo_per_shot && host.ammo() == 0)
+    {
+        host.set_strafe_cell(None);
+        let delay = facts
+            .strafing
+            .end_delay
+            .unwrap_or_else(|| state9_delay(facts.weapon0_range, facts.speed));
+        (3, delay)
+    } else {
+        (base, facts.weapon0_rof)
+    }
 }
 
 /// `0x00418BC5`: a refused strafe shot polls next frame; at Ammo 0 the run
@@ -160,19 +281,27 @@ pub(crate) fn strike_visit(facts: &StrikeFacts, host: &mut impl StrikeHost) -> V
                 host.face_target();
             }
             match host.fire_error() {
-                // `0x004184C2`: the suffix after the burst.
+                // `0x004184C2`: the suffix after the burst, whose delay and
+                // round-end decision are Phobos's `GetDelay`
+                // (`Ext/Aircraft/Hooks.cpp:233-241`).
                 Ok => {
                     host.release();
                     if facts.strafe {
+                        if facts.strafing.target_cell {
+                            host.store_target_cell();
+                        }
+                        let (state, delay) = shot_delay(facts, host, 6, false);
                         Visit {
-                            state: 6,
-                            delay: facts.weapon0_rof,
+                            state,
+                            delay,
                             latch: Some(true),
                         }
                     } else if facts.fighter {
+                        let base = if host.ammo() > 0 { 1 } else { 10 };
+                        let (state, delay) = shot_delay(facts, host, base, false);
                         Visit {
-                            state: if host.ammo() > 0 { 1 } else { 10 },
-                            delay: facts.weapon0_rof,
+                            state,
+                            delay,
                             latch: Some(true),
                         }
                     } else {
@@ -219,7 +348,9 @@ pub(crate) fn strike_visit(facts: &StrikeFacts, host: &mut impl StrikeHost) -> V
                 // `0x004186B6`: no pending ammo, so the shot is free.
                 Ok => {
                     host.fire_at();
-                    host.scatter();
+                    if facts.firing_force_scatter {
+                        host.scatter();
+                    }
                     let state = if host.ammo() == 0 { 10 } else { shuffle };
                     Visit::to(state, host.epilogue())
                 }
@@ -257,33 +388,86 @@ pub(crate) fn strike_visit(facts: &StrikeFacts, host: &mut impl StrikeHost) -> V
         }
         // The strafe run: one bomb each, flying on through the target.
         6..=8 => {
+            // Phobos `AircraftClass_Mission_Attack_StrafeCell`
+            // (`Ext/Aircraft/Hooks.cpp:245-266`, hooks `0x41879D`/`0x4188AC`/
+            // `0x4189BB`): with a stored target cell the shot goes at that
+            // cell. GetFireError(cell, index, true) first; OK, FACING,
+            // CLOAKED and RANGE fire, anything else polls (`:262`).
+            if let Some(cell) = host.strafe_cell() {
+                match host.cell_fire_error(cell) {
+                    Ok | Facing | Cloaked | Range => {}
+                    _ => return strafe_poll(facts),
+                }
+                host.fire_at_cell(cell);
+                // `Ext/Aircraft/Hooks.cpp:257`: the fired-at cell scatters,
+                // superseding the stock Scatter the `FiringForceScatter`
+                // hooks now gate.
+                if facts.firing_force_scatter {
+                    host.scatter_at_cell(cell);
+                }
+                host.assign_cell_destination(cell);
+                let next = facts.state + 1;
+                let (state, delay) = shot_delay(facts, host, next, false);
+                return Visit::to(state, delay);
+            }
             match host.fire_error() {
                 Ok | Facing | Cloaked => {}
                 Range => host.assign_target_destination(),
                 _ => return strafe_poll(facts),
             }
             host.fire_at();
-            host.scatter();
+            if facts.firing_force_scatter {
+                host.scatter();
+            }
             host.assign_target_destination();
-            Visit::to(facts.state + 1, facts.weapon0_rof)
+            // `Ext/Aircraft/Hooks.cpp:255-266` (Delay2..4, `0x418883`/
+            // `0x418992`/`0x418AA1`): the next strafe state, then `GetDelay`.
+            let (state, delay) = shot_delay(facts, host, facts.state + 1, false);
+            Visit::to(state, delay)
         }
         // `0x00418B1F`: the last bomb; state 3 consumes the pass's ammo.
-        9 => match host.fire_error() {
-            Ok | Facing | Range | Cloaked => {
-                host.fire_at();
-                host.scatter();
-                Visit::to(3, state9_delay(facts.weapon0_range, facts.speed))
+        9 => {
+            if let Some(cell) = host.strafe_cell() {
+                match host.cell_fire_error(cell) {
+                    Ok | Facing | Cloaked | Range => {}
+                    _ => return strafe_poll(facts),
+                }
+                host.fire_at_cell(cell);
+                if facts.firing_force_scatter {
+                    host.scatter_at_cell(cell);
+                }
+                host.assign_cell_destination(cell);
+                // `MissionStatus++` reaches ReturnToBase (10), then
+                // `GetDelay(true)` (`Ext/Aircraft/Hooks.cpp:261-263`) moves to
+                // FlyToPosition (3) with the end delay.
+                let (_, delay) = shot_delay(facts, host, 3, true);
+                return Visit::to(3, delay);
             }
-            _ => strafe_poll(facts),
-        },
+            match host.fire_error() {
+                Ok | Facing | Range | Cloaked => {
+                    host.fire_at();
+                    if facts.firing_force_scatter {
+                        host.scatter();
+                    }
+                    // `GetDelay(true)` (`Ext/Aircraft/Hooks.cpp:225-228`):
+                    // FlyToPosition (3) with `Strafing.EndDelay` or the
+                    // derived range-over-speed delay.
+                    let (_, delay) = shot_delay(facts, host, 3, true);
+                    Visit::to(3, delay)
+                }
+                _ => strafe_poll(facts),
+            }
+        }
         _ => unreachable!("strike_visit runs states 4..9"),
     }
 }
 
 /// `0x00418B8A`: `(Range + 0x400) / Type+0x678`, CDQ and signed IDIV, the
-/// sum wrapping. RESIDUAL: a zero speed, or `INT_MIN / -1`, faults the
-/// original (`0x00418BB4`); no retail aircraft reaches it, and VERA returns
-/// the one-frame delay instead.
+/// sum wrapping. Phobos's derived `Strafing.EndDelay` uses the same
+/// `(Range + 4 * LeptonsPerCell) / Speed` (`Ext/Aircraft/Hooks.cpp:221`).
+/// RESIDUAL: a zero speed, or `INT_MIN / -1`, faults the original
+/// (`0x00418BB4`); no retail aircraft reaches it, and VERA returns the
+/// one-frame delay instead.
 pub(crate) fn state9_delay(range: i32, speed: i32) -> i32 {
     range.wrapping_add(0x400).checked_div(speed).unwrap_or(1)
 }

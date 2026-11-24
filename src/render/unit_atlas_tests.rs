@@ -764,6 +764,95 @@ fn indexed_turret_names_and_draw_admission_match_native_controls() {
     }
 }
 
+/// Phobos `TurretShadow=` (`Ext/TechnoType/Body.cpp:1323`): the gate falls back
+/// to `[AudioVisual] DrawTurretShadow=` (`Ext/Rules/Body.cpp:173`, default no),
+/// and when the gate is on the seeded demand carries a turret stencil under the
+/// turret's own facing steps (`Ext/TechnoType/Hooks.MatrixOp.cpp:803,870`).
+#[test]
+fn turret_shadow_gate_follows_the_art_key_and_seeds_turret_stencils() {
+    use crate::map::source::test_support::TestDirectory;
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::ruleset::RuleSet;
+    let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/voxel_oracle/shadow_fixtures.json",
+    ))
+    .unwrap();
+    let bytes = |hex: &str| -> Vec<u8> {
+        hex.as_bytes()
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+            .collect()
+    };
+    let dir = TestDirectory::new("turret-shadow-demand");
+    dir.write(
+        "TANK.VXL",
+        bytes(fixture["vxl"].as_str().unwrap()).as_slice(),
+    );
+    dir.write(
+        "TANKTUR.VXL",
+        bytes(fixture["vxl"].as_str().unwrap()).as_slice(),
+    );
+    let assets = AssetManager::from_loose_root_for_test(dir.path());
+
+    let rules_text = |draw: &str| {
+        IniFile::from_str(&format!(
+            "[AudioVisual]\n{draw}[VehicleTypes]\n0=TANK\n[TANK]\nTurret=yes\nImage=TANK\n"
+        ))
+    };
+    let shadow_keys = |draw: &str, art: &IniFile| {
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_text(draw), art).unwrap();
+        let turret: Vec<_> = needed_unit_keys(
+            &UnitAtlasDemand {
+                ground: BTreeSet::from(["TANK".to_string()]),
+                ..Default::default()
+            },
+            &assets,
+            Some(&rules),
+        )
+        .0
+        .into_iter()
+        .filter(|key| key.layer == VxlLayer::ShadowTurret)
+        .collect();
+        (rules, turret)
+    };
+
+    // `DrawTurretShadow=` alone opens the gate; the seeded keys sit on the
+    // turret facing step, which is finer than the body's.
+    let (rules, turret) = shadow_keys("DrawTurretShadow=yes\n", &IniFile::from_str("[TANK]\n"));
+    assert!(turret_shadow_enabled(
+        Some(&rules),
+        rules.object("TANK").unwrap()
+    ));
+    assert!(
+        turret
+            .iter()
+            .any(|key| key.facing % TURRET_FACING_STEP == 0 && key.facing != 0),
+        "the turret stencil covers the turret's facing buckets"
+    );
+    assert_eq!(turret[0].turret_index, 0);
+
+    // An ART `TurretShadow=no` overrides the global yes.
+    let (rules, art_off) = shadow_keys(
+        "DrawTurretShadow=yes\n",
+        &IniFile::from_str("[TANK]\nTurretShadow=no\n"),
+    );
+    assert!(!turret_shadow_enabled(
+        Some(&rules),
+        rules.object("TANK").unwrap()
+    ));
+    assert!(art_off.is_empty());
+
+    // Default `DrawTurretShadow=no` (`Ext/Rules/Body.h:737`): no stencil.
+    let (rules, default_off) = shadow_keys("", &IniFile::from_str("[TANK]\n"));
+    assert!(!turret_shadow_enabled(
+        Some(&rules),
+        rules.object("TANK").unwrap()
+    ));
+    assert!(default_off.is_empty());
+}
+
 /// Byte identity is retail evidence; distinct raster outputs and unchanged
 /// hull/shadow pixels are Rust regression checks, not native raster parity.
 #[test]
@@ -1068,7 +1157,11 @@ fn tumble_selects_one_physical_section_for_body_and_shadow() {
     );
     assert_eq!(
         paint_raster.pages,
-        crate::render::vxl_normals::diffuse_pages(4, glam::Mat3::from_mat4(matrix))
+        crate::render::vxl_normals::diffuse_pages(
+            4,
+            glam::Mat3::from_mat4(matrix),
+            crate::render::vxl_normals::VoxelLight::default(),
+        )
     );
     let Some(vxl_raster::VoxelImage::Stencil {
         raster: shadow_raster,

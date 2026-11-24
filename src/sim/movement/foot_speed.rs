@@ -21,6 +21,48 @@ pub fn owner_speed_bonus(
         })
 }
 
+/// `TechnoClass::GetMaxSpeed`'s answer for `entity`: the type's `Speed=`, or a
+/// disguised object's disguise type speed when Phobos
+/// `UseDisguiseMovementSpeed=` admits it (`Ext/Techno/Hooks.cpp:806-824`).
+/// The flag is the type's own key falling back to `[General]`, whose
+/// constructor value is `no`; a disguise the catalog does not name keeps the
+/// object's own speed (`TechnoTypeExt::GetTechnoType` answers null).
+///
+/// A fixture whose type the rules lack moves as `Speed=4` in
+/// [`adjusted_speed`], which is what the absent-object arm below reproduces.
+pub(crate) fn max_speed(
+    entity: &GameEntity,
+    object: Option<&ObjectType>,
+    rules: &RuleSet,
+    interner: &StringInterner,
+) -> i32 {
+    let Some(object) = object else {
+        return 4;
+    };
+    {
+        let enabled = rules.phobos()
+            && object
+                .phobos_techno_extras
+                .use_disguise_movement_speed
+                .unwrap_or(
+                    rules
+                        .phobos_globals
+                        .use_disguise_movement_speed
+                        .unwrap_or(false),
+                );
+        if enabled
+            && let Some(disguise) = entity.seldom.disguise.as_ref().filter(|d| d.is_disguised())
+            && let Some(speed) = disguise
+                .type_id()
+                .and_then(|id| rules.object(interner.resolve(id)))
+                .map(|object| object.speed)
+        {
+            return speed;
+        }
+    }
+    object.speed
+}
+
 /// The adjusted type speed of `FootClass::GetCurrentSpeed @ 0x004DB1A0`
 /// (stages 1 and 2), in leptons/second, read live: native keeps no order
 /// speed and re-queries the getter each Process frame. Like the getter,
@@ -33,13 +75,15 @@ pub fn owner_speed_bonus(
 pub(super) fn adjusted_speed(
     entity: &GameEntity,
     object: Option<&ObjectType>,
+    rules: &RuleSet,
+    interner: &StringInterner,
     veteran_speed: f64,
     houses: &crate::sim::houses::Houses,
 ) -> SimFixed {
     crate::sim::combat::veterancy::entity_mover_speed_leptons_per_second(
         entity,
         object,
-        object.map_or(4, |object| object.speed),
+        max_speed(entity, object, rules, interner),
         veteran_speed,
         owner_speed_bonus(houses, entity, object),
     )
@@ -117,6 +161,8 @@ impl<'a> SpeedRules<'a> {
         owner_current_speed(
             entity,
             self.interner.object_type(entity.type_ref(), self.rules),
+            self.rules,
+            self.interner,
             self.rules.general.veteran_speed,
             self.houses,
         )
@@ -129,11 +175,13 @@ impl<'a> SpeedRules<'a> {
 pub fn owner_current_speed(
     entity: &GameEntity,
     object: Option<&ObjectType>,
+    rules: &RuleSet,
+    interner: &StringInterner,
     veteran_speed: f64,
     houses: &crate::sim::houses::Houses,
 ) -> i32 {
     owner_current_speed_from_native_fraction(
-        adjusted_speed(entity, object, veteran_speed, houses),
+        adjusted_speed(entity, object, rules, interner, veteran_speed, houses),
         entity.foot_speed.native_applied_fraction(),
         entity.phobos_speed_multiplier(),
     )
@@ -148,6 +196,8 @@ impl crate::sim::world::Simulation {
         owner_current_speed(
             entity,
             self.object_type(entity.type_ref(), rules),
+            rules,
+            &self.interner,
             rules.general.veteran_speed,
             &self.houses,
         )
@@ -334,7 +384,10 @@ mod tests {
         let mut house = HouseState::new(americans, 0, None, false, 0, 10);
         house.project_country_mults(&rules, &test_interner());
         let houses = [house].into_iter().collect::<crate::sim::houses::Houses>();
-        let speed = |houses| super::owner_current_speed(&mtnk, rules.object("MTNK"), 1.0, houses);
+        let interner = crate::sim::intern::test_interner();
+        let speed = |houses| {
+            super::owner_current_speed(&mtnk, rules.object("MTNK"), &rules, &interner, 1.0, houses)
+        };
         let no_houses = crate::sim::houses::Houses::default();
         assert_eq!(speed(&no_houses), 17);
         assert_eq!(speed(&houses), 25);
@@ -342,7 +395,7 @@ mod tests {
         e1.foot_speed
             .set_speed_fraction(crate::util::fixed_math::SIM_ONE);
         assert_eq!(
-            super::owner_current_speed(&e1, rules.object("E1"), 1.0, &houses),
+            super::owner_current_speed(&e1, rules.object("E1"), &rules, &interner, 1.0, &houses),
             30
         );
     }

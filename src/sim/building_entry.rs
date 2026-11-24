@@ -142,6 +142,14 @@ impl BuildingEntryLatches {
     pub(crate) fn clear_absorber_seek(&mut self) {
         self.should_enter_absorber = false;
     }
+
+    /// Phobos `ChangeOwnerMissionFix` (`Ext/Techno/Body.Internal.cpp:234-260`)
+    /// clears `+0x68F` and `+0x690`; the `+0x691` nearest-occupiable seek
+    /// stays set.
+    pub(crate) fn clear_mission_fix_seeks(&mut self) {
+        self.should_enter_absorber = false;
+        self.should_enter_occupiable = false;
+    }
 }
 
 /// EnterBioReactor's decision (`0x004DFB87..0x004DFC81`) over its walk:
@@ -208,7 +216,11 @@ impl Simulation {
             return false;
         };
         let walk = self.walk_from_last(foot, self.house_grinders(foot.owner(), rules));
-        let Some(best) = pick_nearest_admitted(walk, |_| true) else {
+        // Phobos `FootClass_Try_Grinding_CheckIfAllowed` (`0x4DFABD`,
+        // `Hooks.Grinding.cpp:169-180`): a candidate the building cannot grind
+        // is skipped instead of becoming the destination.
+        let admits = |candidate| self.can_grind_techno(candidate, id, rules);
+        let Some(best) = pick_nearest_admitted(walk, admits) else {
             return false;
         };
         let _ = self.assign_destination_represented(
@@ -261,6 +273,7 @@ impl Simulation {
             return false;
         }
         let unit = foot.category() == crate::map::entities::EntityCategory::Unit;
+        let infantry = foot.category() == crate::map::entities::EntityCategory::Infantry;
         let coordinate = object_get_coords(foot, self.resolved_terrain.as_ref());
         let entry_world = crate::sim::anim_class::AnimWorldCoord {
             x: coordinate.x,
@@ -272,47 +285,70 @@ impl Simulation {
 
         //519790..519865: VoiceDie (local human only), then DieSound.
         //Playback may draw Main too, so flush before selecting the next list.
-        for voice in [true, false] {
-            if let Some(foot) = self.substrate.entities.get(id)
-                && let Some(object) = self.object_type(foot.type_ref(), rules)
-                && (!voice || self.house_is_human_player(foot.owner()))
-                && let Some(sound_id) = crate::sim::combat::select_death_sound(
-                    if voice {
-                        &object.voice_die
-                    } else {
-                        &object.die_sounds
-                    },
-                    &mut self.main_rng,
-                )
-            {
-                self.sound_events.emit(SimSoundEvent::voc_at_world_coord(
-                    rules.sound_name(sound_id),
-                    entry_world,
-                ));
-                context.effects().flush_sound(self, rules);
+        // Phobos `Grinding.PlayDieSound=no` skips both sounds
+        // (`Hooks.Grinding.cpp:182-193`, `:211-223`).
+        let play_die_sound = self
+            .substrate
+            .entities
+            .get(building_id)
+            .and_then(|building| self.object_type(building.type_ref(), rules))
+            .is_none_or(|object| object.phobos_grinding.play_die_sound);
+        if play_die_sound {
+            for voice in [true, false] {
+                if let Some(foot) = self.substrate.entities.get(id)
+                    && let Some(object) = self.object_type(foot.type_ref(), rules)
+                    && (!voice || self.house_is_human_player(foot.owner()))
+                    && let Some(sound_id) = crate::sim::combat::select_death_sound(
+                        if voice {
+                            &object.voice_die
+                        } else {
+                            &object.die_sounds
+                        },
+                        &mut self.main_rng,
+                    )
+                {
+                    self.sound_events.emit(SimSoundEvent::voc_at_world_coord(
+                        rules.sound_name(sound_id),
+                        entry_world,
+                    ));
+                    context.effects().flush_sound(self, rules);
+                }
             }
         }
+        // Phobos records the grinder owner's balance before the refund to
+        // feed `DoGrindingExtras` the refund actually credited
+        // (`Hooks.Grinding.cpp:196-209`, `:225-243`).
+        let refund_balance_before = self
+            .substrate
+            .entities
+            .get(building_id)
+            .map(GameEntity::owner)
+            .and_then(|owner| self.houses.get(&owner))
+            .map_or(0, |house| house.economy().credits());
         // Infantry51986A / Unit73A0A5: the actor's refund comes first.
         self.credit_grinder_refund(id, building_id, rules);
         if unit {
             //73A0BC..73A13C explicitly pops two cargo levels through Foot's
             //RemoveFirstPassenger (including RemoveGunner), child before parent.
             self.grind_cargo(id, building_id, true, rules, registry, context.effects());
-            //73A13E..73A18D credits the eater before suppression50 + ExitUnit.
-            if let Some(eater) = self
+        }
+        //73A13E..73A18D credits the eater before suppression50 + ExitUnit;
+        // Phobos adds the same arm for Infantry at `0x51986A`.
+        let refund_parasite = unit || infantry;
+        if refund_parasite
+            && let Some(eater) = self
                 .substrate
                 .entities
                 .get(id)
                 .and_then(|v| v.parasite.eater())
-            {
-                self.credit_grinder_refund(eater, building_id, rules);
-                self.parasite_force_release(
-                    eater,
-                    crate::sim::combat::parasite::FORCED_RELEASE_SUPPRESSION_FRAMES,
-                    rules,
-                    context.effects(),
-                );
-            }
+        {
+            self.credit_grinder_refund(eater, building_id, rules);
+            self.parasite_force_release(
+                eater,
+                crate::sim::combat::parasite::FORCED_RELEASE_SUPPRESSION_FRAMES,
+                rules,
+                context.effects(),
+            );
         }
         self.dispatch_object_tag_event(id, 48, Some(id), None, context.reborrow());
         let grinding = self
@@ -321,6 +357,29 @@ impl Simulation {
             .get(building_id)
             .and_then(|building| self.object_type(building.type_ref(), rules))
             .is_some_and(|object| object.grinding);
+        // Phobos `BuildingExt::DoGrindingExtras` at 0x5198B3/0x73A1C3, inside
+        // the Grinding arm after the Ares hook at 0x5198AD: feed the actual
+        // balance delta (cargo and parasite refunds included) to the grinder's
+        // weapon accumulator; a type `Grinding.Sound=` replaces the stock
+        // EnterGrinderSound below.
+        let grinding_sound_played = grinding && {
+            let balance_after = self
+                .substrate
+                .entities
+                .get(building_id)
+                .map(GameEntity::owner)
+                .and_then(|owner| self.houses.get(&owner))
+                .map_or(0, |house| house.economy().credits());
+            self.do_grinding_extras(
+                building_id,
+                id,
+                balance_after.wrapping_sub(refund_balance_before),
+                rules,
+                registry,
+                &mut context.effects().reborrow(),
+            )
+        };
+        self.dispatch_object_tag_event(id, 48, Some(id), None, context.reborrow());
         // Ares 3.0 100498D0 (hook 0x5198AD) / 1004C460 (hook 0x73A1BC), first
         // in the Grinding arm: reverse engineering and the hijacker refund.
         if rules.ares_form() && grinding {
@@ -337,7 +396,12 @@ impl Simulation {
                     rules.general.condition_yellow,
                 )
             });
-            if let Some(sound_id) = rules.general.enter_grinder_sound.as_deref()
+            // Phobos `Grinding.Sound=` replaces the stock sound for this
+            // building; the extras hook jumps past the stock call once it
+            // plays (`Hooks.Grinding.cpp:155-166`, `:239-244`).
+            let play_stock_sound = !grinding_sound_played;
+            if play_stock_sound
+                && let Some(sound_id) = rules.general.enter_grinder_sound.as_deref()
                 && let Some(foot) = self.substrate.entities.get(id)
             {
                 let coordinate = object_get_coords(foot, self.resolved_terrain.as_ref());

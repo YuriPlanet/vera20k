@@ -117,6 +117,7 @@ fn sonic_fire_event(
         report_sound_id: None,
         fire_coord,
         fire_offset_y: 0,
+        firing_anim: None,
         muzzle_anim: None,
         occupied_building: false,
         firer_category: EntityCategory::Unit,
@@ -539,7 +540,6 @@ fn sonic_cell_target_uses_persistent_dummy_gettargetcoords_on_create_and_refresh
 /// holds no target.
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn guard_infantry_acquire_return_fire_and_finish_a_duel() {
     let rules = RuleSet::from_ini(&IniFile::from_str(

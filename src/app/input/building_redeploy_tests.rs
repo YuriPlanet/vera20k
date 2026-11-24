@@ -441,7 +441,70 @@ fn click_over(
         cell,
         modifier,
         force_move_key,
+        false,
     )
+}
+
+/// Phobos `0x4AE95E` -> `0x4AE982`: in planning mode a selected building's
+/// non-Attack `CellClickedAction` is skipped, so its ground click sends no
+/// rally and no SELL16; the same click outside planning mode still does.
+#[test]
+fn planning_mode_drops_a_building_ground_click_until_attack() {
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+        "[BuildingTypes]\n0=GACNST\n[VehicleTypes]\n0=AMCV\n\
+         [GACNST]\nStrength=1000\nFactory=BuildingType\nUndeploysInto=AMCV\nOwner=Americans\n\
+         [AMCV]\nStrength=200\nSpeed=6\nSight=6\nOwner=Americans\n",
+    ))
+    .unwrap();
+    assert!(rules.object("GACNST").is_some(), "GACNST is registered");
+    let (mut sim, owner) = yard_arena(&rules);
+    let yard = sim
+        .spawn_object("GACNST", "Americans", 12, 12, 0, &rules)
+        .expect("GACNST places on the clear ground");
+    let click = |planning| {
+        building_click_orders(
+            &sim,
+            &rules,
+            &[yard],
+            owner,
+            None,
+            None,
+            (16, 12),
+            OrderModifier::Normal,
+            false,
+            planning,
+        )
+        .0
+    };
+    let ordinary = click(false);
+    assert!(
+        matches!(
+            ordinary.as_slice(),
+            [Command::SetRally { .. }, Command::SellBuilding { entity_id }]
+            if *entity_id == yard
+        ),
+        "{ordinary:?}"
+    );
+    assert!(click(true).is_empty());
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::empty();
+    assert_eq!(
+        building_selection_click(
+            &sim,
+            &rules,
+            &registry,
+            &[yard],
+            &[yard],
+            owner,
+            None,
+            None,
+            (16, 12),
+            OrderModifier::Normal,
+            false,
+            true,
+        ),
+        BuildingClick::Orders(Vec::new(), false),
+        "planning mode admits the click but sends no CellClickedAction"
+    );
 }
 
 fn rallies(click: &BuildingClick) -> Vec<u64> {

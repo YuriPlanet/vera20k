@@ -897,7 +897,6 @@ fn compare_native_smashing_tail(retired: bool, typed: bool) {
 /// authored typed tail keeps RNG, IDs and the complete Bounce state.
 // Vanilla goldens: Phobos skips the Inviso scatter (`0x469AC1` ->
 // `0x469AF0`) and scatters each animation itself, which shifts the stream.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn original_smashing_tails_match_native_for_ordinary_retired_and_typed_bullets() {
     for (retired, typed) in [(false, false), (true, false), (false, true)] {

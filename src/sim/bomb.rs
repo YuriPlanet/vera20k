@@ -159,6 +159,10 @@ pub struct Bomb {
     /// `bomb_list_update`; saved like `+0x68`, but not hashed.
     #[serde(default)]
     seen_by: u64,
+    /// Ares `WeaponTypeExt::BombExt` and the Phobos `BombExtMap` hook
+    /// (`0x469363`): the weapon whose `PlantBomb` (10055AE0) planted it,
+    /// whose `IvanBomb.*` settings every bomb hook reads. Saved like the
+    /// extension map; native's CRC omits it.
     /// Ares `WeaponTypeExt::BombExt`: the weapon whose `PlantBomb`
     /// (10055AE0) planted it, whose `IvanBomb.*` settings every bomb hook
     /// reads. Saved like the extension map; native's CRC omits it. `None`
@@ -410,6 +414,7 @@ impl Simulation {
         interner: &StringInterner,
         substrate: &mut ObjectSubstrate,
         houses: &Houses,
+        alliances: &crate::sim::house_diplomacy::HouseAlliances,
         resolved_terrain: &Option<ResolvedTerrainGrid>,
         bombs: &mut BombList,
         sound_events: &mut FrameChannel<SimSoundEvent>,
@@ -460,6 +465,7 @@ impl Simulation {
             };
             if object.bomb_sight != 0 {
                 detectors.push((
+                    entity.owner(),
                     house_bit(order, entity.owner()),
                     object_get_coords(entity, resolved_terrain.as_ref()),
                     object.bomb_sight.wrapping_shl(8),
@@ -475,12 +481,40 @@ impl Simulation {
                 continue;
             };
             let center = object_get_coords(entity, resolved_terrain.as_ref());
-            let mut seen_by = house_bit(order, bomb.planter_house);
-            for &(house, detector, range) in &detectors {
-                if seen_by & house == 0 && within_bomb_sight(detector, center, range) {
-                    seen_by |= house;
+            // Phobos `BombListClass_AI_Visibility` (hook `0x438D44`,
+            // `Ext/WeaponType/Hooks.Bomb.cpp:38-77`): a weapon's
+            // `IvanBomb.Visibility=` else the `[AudioVisual]
+            // IvanIconVisibility` (default `Owner`) gates each house's view —
+            // the planter's relation matches, or a `BombSight` detector whose
+            // owner's relation matches stands within sight. RESIDUAL: the
+            // hook's `IsObserver` spectator arm has no VERA model.
+            let seen_by = {
+                let visibility = bomb
+                    .weapon
+                    .and_then(|weapon| rules.weapon(interner.resolve(weapon)))
+                    .and_then(|weapon| weapon.phobos_ivan_bomb_visibility)
+                    .unwrap_or(rules.phobos_globals.ivan_icon_visibility);
+                let mut mask = 0u64;
+                for (index, &house) in order.iter().enumerate() {
+                    let bit = 1u64 << index;
+                    let seen = crate::sim::combat::can_target_house(
+                        visibility,
+                        bomb.planter_house,
+                        house,
+                        houses,
+                        alliances,
+                        interner,
+                    ) || detectors.iter().any(|&(owner, _, detector, range)| {
+                        crate::sim::combat::can_target_house(
+                            visibility, owner, house, houses, alliances, interner,
+                        ) && within_bomb_sight(detector, center, range)
+                    });
+                    if seen {
+                        mask |= bit;
+                    }
                 }
-            }
+                mask
+            };
             refreshed.push((carrier, seen_by));
         }
         for (carrier, seen_by) in refreshed {
@@ -834,6 +868,89 @@ impl Simulation {
         log::info!("BOMB moved from {from} to {to}");
     }
 
+    /// Phobos `WarheadTypeExt::ExtData::IvanBombDetonate`
+    /// (`Ext/WarheadType/Detonate.cpp:944-978`), `DetonateOnOneUnit`'s arm
+    /// right after `Taunt` (`:239-240`): the bomb on the hit target — and, per
+    /// the options, the bombs its passengers, its garrison and the parasite
+    /// eating it carry — has its fuse cut to the current frame. Phobos writes
+    /// `pBomb->DetonationFrame`, the bomb's `+0x38` end frame that
+    /// `BombClass::IsTimerExpired @ 0x00438A70` compares
+    /// (`0x00438A7C..0x00438A81`: expired once `Frame > end`), so the carrier's
+    /// own `TechnoClass::AI_Update` fuse check
+    /// ([`Self::bomb_fuse_step`]) sets it off on its next visit.
+    ///
+    /// `IvanBomb.Detonate.AffectTypes=` filters by the planting techno's type
+    /// (empty means every type); `SameInvokerOnly=` keeps only the bombs this
+    /// detonation's own owner planted.
+    pub(crate) fn phobos_ivan_bomb_detonate(
+        &mut self,
+        target: u64,
+        owner: Option<u64>,
+        warhead: &WarheadType,
+    ) {
+        let Some(entity) = self.substrate.entities.get(target) else {
+            return;
+        };
+        let mut carriers = vec![target];
+        if warhead.phobos_ivan_bomb_detonate_penetrates_transport
+            && let Some(cargo) = entity.passenger_role.cargo()
+        {
+            carriers.extend(cargo.passengers().iter().copied());
+        }
+        if warhead.phobos_ivan_bomb_detonate_penetrates_garrison
+            && entity.category() == EntityCategory::Structure
+        {
+            carriers.extend(entity.passenger_role.occupants().ids().iter().copied());
+        }
+        if warhead.phobos_ivan_bomb_detonate_affects_parasite
+            && let Some(parasite) = entity.parasite.eater()
+        {
+            carriers.push(parasite);
+        }
+        let frame = self.session.binary_frame() as i32;
+        let same_invoker_only = warhead.phobos_ivan_bomb_detonate_same_invoker_only;
+        let affect_types = &warhead.phobos_ivan_bomb_detonate_affect_types;
+        let mut cut = Vec::new();
+        for carrier in carriers {
+            let Some(bomb) = self
+                .substrate
+                .entities
+                .get(carrier)
+                .and_then(|entity| entity.bomb.as_ref())
+            else {
+                continue;
+            };
+            if same_invoker_only && owner.is_none_or(|owner| bomb.planter != Some(owner)) {
+                continue;
+            }
+            if !affect_types.is_empty() {
+                let planter_type = bomb
+                    .planter
+                    .and_then(|planter| self.substrate.entities.get(planter))
+                    .map(|planter| self.interner.resolve(planter.type_ref()));
+                let listed = planter_type.is_some_and(|name| {
+                    affect_types
+                        .iter()
+                        .any(|listed| listed.eq_ignore_ascii_case(name))
+                });
+                if !listed {
+                    continue;
+                }
+            }
+            cut.push(carrier);
+        }
+        for carrier in cut {
+            if let Some(bomb) = self
+                .substrate
+                .entities
+                .get_mut(carrier)
+                .and_then(|entity| entity.bomb.as_mut())
+            {
+                bomb.end_frame = frame;
+            }
+        }
+    }
+
     /// `BombClass::Defuse @ 0x004389B0`: remove the bomb and detach its cue
     /// through VocHandle405FD0 (`0x004389D6`), leaving the current clip's tail.
     pub(crate) fn bomb_defuse(
@@ -860,18 +977,11 @@ impl Simulation {
         expired: u64,
     ) {
         for &carrier in &bombs.carriers {
-            // Every object's expiry comes here, so a carrier whose bomb
-            // another object planted is only read: a hand-out would wake it
-            // and enter the store's touch logs.
             if let Some(bomb) = substrate
                 .entities
-                .get_mut_if(carrier, |entity| {
-                    entity
-                        .bomb
-                        .as_ref()
-                        .is_some_and(|bomb| bomb.planter == Some(expired))
-                })
+                .get_mut(carrier)
                 .and_then(|entity| entity.bomb.as_mut())
+                && bomb.planter == Some(expired)
             {
                 bomb.planter = None;
             }
@@ -934,7 +1044,16 @@ impl Simulation {
                 bridge_hut,
             )
         };
-        let location = object_location(entity, resolved_terrain.as_ref());
+        // Phobos `BombClass_Detonate_SetContext` (`0x43878E`,
+        // `Misc/Hooks.BugFixes.cpp:550-561`): `IvanBombAttachToCenter`
+        // replaces the detonation coordinate with the target's
+        // `GetCenterCoords()` (a building's foundation centre; a mobile's
+        // Location), which the blast, its anim and the hut's bridge all use.
+        let location = if rules.phobos_globals.ivan_bomb_attach_to_center {
+            object_get_coords(entity, resolved_terrain.as_ref())
+        } else {
+            object_location(entity, resolved_terrain.as_ref())
+        };
         Some(BombBlast {
             source: bomb.planter.unwrap_or(crate::sim::combat::RAD_NO_ATTACKER),
             location: ProjectileCoord::new(location.x, location.y, location.z),

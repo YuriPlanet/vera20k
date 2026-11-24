@@ -112,7 +112,6 @@ impl RuleSet {
     /// Registered AnimType identities selected by Phobos' gather overlay.
     /// Keep the type identity: its existing image owner resolves retained load
     /// requests, Image aliases and theater filenames.
-    #[cfg(feature = "phobos")]
     pub fn harvest_overlay_anim_types(&self) -> Vec<&str> {
         let mut anims = Vec::new();
         for object in &self.object_list {

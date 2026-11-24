@@ -142,9 +142,7 @@ impl Simulation {
             level: i32::from(cells.ground_fields(origin).0 as i8),
             // FogCell486B5A calls virtual80 (Is1x1WithUndeploy), then
             // 486B68 hides a building faded out (+6ED == 15).
-            visible: visible
-                && !object.is_1x1_with_undeploy()
-                && entity.building_cloak_stage() != 15,
+            visible: visible && !object.is_vehicle() && entity.building_cloak_stage() != 15,
             records,
         };
         self.deselect_fogged_object(viewer, id);

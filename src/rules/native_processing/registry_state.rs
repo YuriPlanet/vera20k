@@ -241,13 +241,11 @@ pub(crate) struct NativeRulesRegistryState {
     pub(super) rules_ion_cannon_warhead: String,
     /// Phobos `RulesExt::TimerBlinkColorScheme`: the runtime ColorScheme the
     /// blinking timer prints in, `[Colors]` entry `R / 2`, or -1 for `none`.
-    #[cfg(feature = "phobos")]
     pub(super) rules_timer_blink_color_scheme: i32,
     /// Phobos `RulesExt::MissingCameo`: the file a type with no cameo art and
     /// a superweapon with no icon take in place of the stock `XXICON.SHP`
     /// (`Replace_XXICON_With_New` at `0x715A4D`, `0x716D13`, `0x6CE8AA` and
     /// `0x6CEE31`); empty after `none`.
-    #[cfg(feature = "phobos")]
     #[serde(default = "crate::rules::ruleset::default_missing_cameo")]
     pub(super) rules_missing_cameo: String,
     pub(super) rules_mind_control_attack_line_frames: i32,
@@ -371,9 +369,7 @@ impl NativeRulesRegistryState {
             rules_ion_cannon_warhead: String::new(),
             // RulesExt::ExtData constructor `TimerBlinkColorScheme { 5 }`, the
             // scheme the game blinks in.
-            #[cfg(feature = "phobos")]
             rules_timer_blink_color_scheme: 5,
-            #[cfg(feature = "phobos")]
             rules_missing_cameo: crate::rules::ruleset::DEFAULT_MISSING_CAMEO.to_owned(),
             // MindControlAttackLineFrames, Rules+310: constructor 0x00665ABE.
             rules_mind_control_attack_line_frames: 15,
@@ -523,7 +519,6 @@ impl NativeRulesRegistryState {
         Ok(())
     }
 
-    #[cfg(feature = "phobos")]
     pub(super) fn validate_attach_effect_types(&self) -> Result<(), RulesError> {
         if self.phobos_attach_effect_types.is_some() != crate::rules::PHOBOS_ENABLED {
             return Err(RulesError::InvalidSavedState(
@@ -533,7 +528,6 @@ impl NativeRulesRegistryState {
         Ok(())
     }
 
-    #[cfg(feature = "phobos")]
     pub(super) fn validate_digital_display_types(&self) -> Result<(), RulesError> {
         if self.phobos_digital_display_types.is_some() != crate::rules::PHOBOS_ENABLED {
             return Err(RulesError::InvalidSavedState(
@@ -791,9 +785,7 @@ impl NativeRulesRegistryState {
             //686D35 precedes this TypeReset6876AC and its flags/phase survive.
             ares_global_controls: self.ares_global_controls,
             // Phobos allocates RulesExt only with RulesClass (0x667A1D).
-            #[cfg(feature = "phobos")]
             rules_timer_blink_color_scheme: self.rules_timer_blink_color_scheme,
-            #[cfg(feature = "phobos")]
             rules_missing_cameo: self.rules_missing_cameo,
             rules_color_add: self.rules_color_add,
             rules_color_add_selectors: self.rules_color_add_selectors,

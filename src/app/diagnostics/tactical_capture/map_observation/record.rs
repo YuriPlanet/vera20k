@@ -305,13 +305,13 @@ impl TacticalCaptureSession {
                             "house_speed_bonus_f32_bits": crate::sim::movement::owner_speed_bonus(
                                 sim.houses(), entity, Some(object)).bits(),
                             "current_speed": crate::sim::movement::owner_current_speed(
-                                entity, Some(object), rules.general.veteran_speed, sim.houses()),
+                                entity, Some(object), rules, sim.interner(), rules.general.veteran_speed, sim.houses()),
                             "veterancy": entity.veterancy.rank(),
                             "current_weapon": crate::sim::combat::combat_weapon::current_weapon(
                                 entity, object, sim.entities(), rules, sim.interner())
                                 .map(|weapon| weapon.id.as_str()),
                             "turret_offset": crate::sim::combat::fire_coord::firer_art(rules, object)
-                                .map_or(0, |art| art.turret_offset),
+                                .map_or([0, 0, 0], |art| art.turret_offset),
                             "rocking_angles_fixed_bits": entity.rocking.as_ref().map(|rocking| [
                                 rocking.angle_sideways().to_bits(), rocking.angle_forwards().to_bits()]),
                         })

@@ -83,15 +83,13 @@ mod shroud_gpu_tests;
 pub mod sidebar_cameo_atlas;
 pub mod sidebar_chrome;
 pub mod sidebar_smoothing;
-#[cfg(feature = "phobos")]
-pub mod sw_sidebar_art;
 pub mod sidebar_text;
 pub(crate) mod sinking;
 pub mod skirmish_shell_chrome;
 pub mod smudge;
 pub mod sprite_atlas;
-pub(crate) mod text_audit;
 pub(crate) mod surface_line;
+pub mod sw_sidebar_art;
 pub mod tactical_compat;
 pub mod tactical_draw_plan;
 pub(crate) mod tactical_shader;
@@ -99,15 +97,18 @@ pub(crate) mod terrain_draw;
 #[cfg(test)] // shared by test groups
 pub(crate) mod terrain_draw_gpu_tests;
 pub mod terrain_instances;
+pub(crate) mod text_audit;
 pub mod text_engine;
 pub mod tile_atlas;
+pub(crate) mod tooltip_blur;
 pub(crate) mod uniform_windows;
 pub mod unit_atlas;
 pub mod unit_pose_cache;
 pub(crate) mod unit_shadow;
 pub mod upscale_pass;
-pub mod voxel_image_cache;
 pub(crate) mod voxel_gpu;
+pub mod voxel_image_cache;
+#[cfg(all(test, tests_render_s_z))]
 #[cfg(all(test, tests_render_s_z))]
 mod voxel_parity_tests;
 pub mod vxl_normals;
@@ -120,3 +121,6 @@ pub mod xbr;
 mod sidebar_gpu_tests;
 #[cfg(all(test, tests_render_s_z))]
 mod smooth_chrome_gpu_tests;
+#[cfg(all(test, tests_render_s_z))]
+#[path = "tooltip_blur_gpu_tests.rs"]
+mod tooltip_blur_gpu_tests;

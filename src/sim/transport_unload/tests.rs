@@ -118,7 +118,10 @@ struct Fixture {
 
 impl Fixture {
     fn new(water: impl Fn(u16, u16) -> bool) -> Self {
-        let rules = rules();
+        Self::from_rules(rules(), water)
+    }
+
+    fn from_rules(rules: RuleSet, water: impl Fn(u16, u16) -> bool) -> Self {
         let mut sim = Simulation::new();
         let span = i32::from(MAP);
         sim.set_playfield_bounds_for_test(Some(crate::map::playfield::PlayfieldBounds {
@@ -759,7 +762,7 @@ fn ejection_keeps_the_passengers_target_unless_it_leaves_another_houses_open_tra
             );
         } else {
             assert!(matches!(
-                super::eject_head_passenger(&mut fx.sim, &fx.rules, transport, &mut effects),
+                super::eject_head_passenger(&mut fx.sim, &fx.rules, transport, &mut effects, true),
                 super::EjectOutcome::Placed
             ));
         }
@@ -866,6 +869,41 @@ fn hover_transport_on_water_moves_to_shore_before_unloading() {
     }
 }
 
+/// Phobos `0x73D7B7` (`Ext/Techno/Hooks.Transport.cpp:691-698`): a failed
+/// water-to-land search answers the CannotUnload arm instead of setting cell
+/// `(0,0)` as the next destination.
+#[test]
+fn amphibious_unload_with_no_land_cell_takes_the_cannot_unload_tail() {
+    let mut fx = Fixture::new(|_, _| true);
+    fx.rules = rules_with_patch("[General]\nAmphibiousUnload=yes\n");
+    let lcrf = fx.spawn("LCRF", 20, 20, 0x40);
+    fx.board(lcrf, 2);
+    assert!(fx.apply(Command::UnloadPassengers { transport_id: lcrf }));
+    for _ in 0..10 {
+        fx.tick();
+    }
+    assert_eq!(
+        fx.cargo_ids(lcrf).len(),
+        2,
+        "nobody is dropped into the water"
+    );
+    let nav = fx
+        .sim
+        .substrate
+        .entities
+        .get(lcrf)
+        .unwrap()
+        .navigation
+        .nav_com();
+    assert!(
+        !matches!(
+            nav,
+            Some(crate::sim::components::NavTargetRef::Cell { rx: 0, ry: 0 })
+        ),
+        "a failed search must not set (0,0): {nav:?}"
+    );
+}
+
 /// The water-to-land pre-move pushes no height gate (`0x0073D782`): a bank
 /// two levels above the water still answers Find_Nearby_Passable_Cell, so the
 /// landing craft is sent to it instead of waiting on the water.
@@ -903,9 +941,293 @@ fn hover_transport_on_water_is_sent_to_a_raised_bank() {
     );
 }
 
+/// A limboed vehicle placed in a transport's cargo, the prestate every unload
+/// test starts from (`AddPassenger` prepends, so it sits at the cargo head).
+fn board_vehicle(fx: &mut Fixture, transport: u64, type_id: &str) -> u64 {
+    let (rx, ry) = {
+        let transport = fx.sim.substrate.entities.get(transport).expect("transport");
+        (transport.position.rx(), transport.position.ry())
+    };
+    let pax = fx
+        .sim
+        .spawn_object_limbo_at_height(type_id, OWNER, rx + 2, ry + 2, 0, 0, &fx.rules)
+        .expect("limbo passenger");
+    let cargo = fx
+        .sim
+        .substrate
+        .entities
+        .get_mut(transport)
+        .and_then(|t| t.passenger_role_mut_for_test().cargo_mut())
+        .expect("transport cargo");
+    assert!(cargo.can_accept(1.0), "cargo accepts the vehicle");
+    cargo.board_forced_chain(&[(pax, 1.0)]);
+    fx.sim
+        .substrate
+        .entities
+        .get_mut(pax)
+        .expect("passenger")
+        .set_passenger_role_for_test(PassengerRole::inside_for_test(transport, false));
+    pax
+}
+
+/// Phobos `AmphibiousUnload` (`Ext/Techno/Hooks.Transport.cpp:375-380`,
+/// `:653`; rewrite of `0x4835D5`/`0x74004B`, consumed at `0x73D769`) plus the
+/// searches it reseeds (`0x73D7AB`, `0x740C9C`, `0x73DAD8`): with the key set
+/// the transport's own cell answers the head passenger's land row and the
+/// unload places that passenger on water; without it the stock water refusal
+/// keeps the cargo aboard.
+#[test]
+fn an_amphibious_unload_puts_the_passenger_out_on_water() {
+    // (a) Every cell is water, and only the passenger's own Hover row admits
+    // it: the stock Foot exit scan and the Wheel leave-position seed refuse
+    // that placement, so a passenger on water proves both were reseeded from
+    // the passenger's type.
+    let mut fx = Fixture::from_rules(
+        rules_with_patch(
+            "[General]\nAmphibiousUnload=yes\n\
+             [Water]\nBuildable=no\nFoot=0%\nTrack=0%\nWheel=0%\nFloat=100%\nHover=100%\n\
+             Amphibious=100%\nFloatBeach=100%\n\
+             [BGGY]\nSpeedType=Hover\n",
+        ),
+        |_, _| true,
+    );
+    // The keyed arm reads the rules land row (`GroundType::Array[land]`), not
+    // the cell's own copy, so bind the fixture grid to the rules table.
+    fx.sim
+        .resolved_terrain
+        .as_mut()
+        .expect("fixture terrain")
+        .set_land_speed_rules_for_test(&fx.rules.terrain_rules);
+    let lcrf = fx.spawn("LCRF", 20, 20, 0x20);
+    let bggy = board_vehicle(&mut fx, lcrf, "BGGY");
+    {
+        let entity = fx.sim.substrate.entities.get(lcrf).expect("transport");
+        assert!(
+            super::transport_can_unload_now(&fx.sim, &fx.rules, entity),
+            "the key admits the water cell"
+        );
+    }
+    assert!(fx.apply(Command::UnloadPassengers { transport_id: lcrf }));
+    let order = fx.run_until_revealed_with_missions(&[bggy], 300);
+    assert_eq!(order.len(), 1, "the passenger left on water: {order:?}");
+    let (rx, ry) = fx.cell(bggy);
+    assert_eq!(
+        fx.sim
+            .resolved_terrain
+            .as_ref()
+            .expect("fixture terrain")
+            .cell(rx, ry)
+            .expect("passenger cell")
+            .land_type,
+        LandType::Water.as_index(),
+        "placed on water ({rx}, {ry})"
+    );
+
+    // The same hull and terrain without the key: the predicate refuses and
+    // the cargo stays inside.
+    let mut fx = Fixture::from_rules(rules_with_patch("[BGGY]\nSpeedType=Hover\n"), |_, _| true);
+    let lcrf = fx.spawn("LCRF", 20, 20, 0x20);
+    let bggy = board_vehicle(&mut fx, lcrf, "BGGY");
+    {
+        let entity = fx.sim.substrate.entities.get(lcrf).expect("transport");
+        assert!(
+            !super::transport_can_unload_now(&fx.sim, &fx.rules, entity),
+            "the stock water refusal stays with the key off"
+        );
+    }
+    assert!(fx.apply(Command::UnloadPassengers { transport_id: lcrf }));
+    for _ in 0..20 {
+        fx.tick();
+    }
+    assert_eq!(
+        fx.cargo_ids(lcrf),
+        vec![bggy],
+        "nobody dropped in the water"
+    );
+    assert!(!fx.revealed(bggy));
+
+    // (b) The find-unload-position seed (`0x73D7AB`): the transport is on water
+    // and only the passenger's own Track row admits the shore, so the stock
+    // `Wheel`/`Normal` seed would fail its search and take the CannotUnload
+    // tail instead of setting a destination.
+    let mut fx = Fixture::from_rules(
+        rules_with_patch(
+            "[General]\nAmphibiousUnload=yes\n\
+             [Water]\nBuildable=no\nFoot=0%\nTrack=0%\nWheel=0%\nFloat=100%\nHover=0%\n\
+             Amphibious=100%\nFloatBeach=100%\n\
+             [BGGY]\nSpeedType=Track\n",
+        ),
+        |rx, _| rx < 25,
+    );
+    fx.sim
+        .resolved_terrain
+        .as_mut()
+        .expect("fixture terrain")
+        .set_land_speed_rules_for_test(&fx.rules.terrain_rules);
+    {
+        let terrain = fx.sim.resolved_terrain.as_mut().expect("fixture terrain");
+        for y in 0..MAP {
+            for x in 25..MAP {
+                let cell = terrain.cell_mut_for_test(x, y).expect("land cell");
+                let zero = Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
+                let one = Some(crate::util::native_x87::NativeF32Bits::ONE);
+                cell.speed_costs.wheel = zero;
+                cell.speed_costs.track = one;
+                cell.base_speed_costs.wheel = zero;
+                cell.base_speed_costs.track = one;
+            }
+        }
+    }
+    let lcrf = fx.spawn("LCRF", 20, 20, 0x20);
+    let bggy = board_vehicle(&mut fx, lcrf, "BGGY");
+    assert!(fx.apply(Command::UnloadPassengers { transport_id: lcrf }));
+    let mut sent = None;
+    for _ in 0..10 {
+        fx.tick();
+        sent = fx
+            .sim
+            .substrate
+            .entities
+            .get(lcrf)
+            .expect("transport")
+            .navigation
+            .nav_com();
+        if sent.is_some() {
+            break;
+        }
+    }
+    assert!(
+        matches!(sent, Some(crate::sim::components::NavTargetRef::Cell { rx, .. }) if rx >= 25),
+        "the passenger's Track row found the shore: {sent:?}"
+    );
+    assert_eq!(fx.cargo_ids(lcrf), vec![bggy]);
+}
+
+/// Phobos `AmphibiousUnload` on the two cursor-side arms: `0x70107A`
+/// ([`Simulation::can_deploy_slash_unload`],
+/// `Ext/Techno/Hooks.Transport.cpp:646-657`) and `0x7400B5`
+/// ([`Simulation::unit_self_deploy_site_refused`], `:632-644`). Both answer the
+/// water/land question `CanUnloadNow` answers for one on-water and one on-land
+/// cell; the mouse-over arm keeps native's water pass-through and its keyed
+/// low-cost land refusal, which the deploy-slash arm does not read.
+#[test]
+fn the_mouse_over_and_deploy_slash_gates_agree_with_the_predicate() {
+    // The head passenger is a Hover vehicle, so both keyed arms read its row:
+    // `[Water]` is retail's `Hover=100%`, `[Clear]` carries the `1%` boundary.
+    let case = |general: &str, water: bool, low_cost_land: bool| {
+        let land_row = if low_cost_land {
+            "[Clear]\nBuildable=yes\nFoot=100%\nTrack=100%\nWheel=100%\nHover=0.5%\n"
+        } else {
+            "[Clear]\nBuildable=yes\nFoot=100%\nTrack=100%\nWheel=100%\nHover=100%\n"
+        };
+        let patch = format!(
+            "[General]\n{general}\
+             [Water]\nBuildable=no\nFoot=0%\nTrack=0%\nWheel=0%\nFloat=100%\nHover=100%\n\
+             Amphibious=100%\nFloatBeach=100%\n\
+             [BGGY]\nSpeedType=Hover\n{land_row}"
+        );
+        let rules = rules_with_patch(&patch);
+        let mut fx = Fixture::from_rules(rules, move |_, _| water);
+        fx.sim
+            .resolved_terrain
+            .as_mut()
+            .expect("fixture terrain")
+            .set_land_speed_rules_for_test(&fx.rules.terrain_rules);
+        // The deploy-slash gate refuses water only for a human house
+        // (`0x70107A`'s `pThis->Owner->Is_Human` arm), so register one.
+        let owner = fx.sim.intern(OWNER);
+        fx.sim
+            .houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
+        let lcrf = fx.spawn("LCRF", 20, 20, 0x20);
+        board_vehicle(&mut fx, lcrf, "BGGY");
+        let predicate = {
+            let entity = fx.sim.substrate.entities.get(lcrf).expect("transport");
+            super::transport_can_unload_now(&fx.sim, &fx.rules, entity)
+        };
+        (
+            predicate,
+            fx.sim.can_deploy_slash_unload(lcrf, &fx.rules),
+            fx.sim.unit_self_deploy_site_refused(lcrf, &fx.rules, None),
+        )
+    };
+
+    // One on-water cell: the predicate and the deploy-slash gate agree in both
+    // directions; the mouse-over arm's water pass-through is native's own
+    // asymmetry (`:631`).
+    assert_eq!(case("", true, false), (false, false, false));
+    assert_eq!(
+        case("AmphibiousUnload=yes\n", true, false),
+        (true, true, false)
+    );
+    // One on-land cell: all three admit at the stock `1%` row.
+    assert_eq!(case("", false, false), (true, true, false));
+    // Below `1%` the keyed land arm (`:636`) refuses without the key and
+    // admits with it; the deploy-slash gate reads no cost row.
+    assert_eq!(case("", false, true), (true, true, true));
+    assert_eq!(
+        case("AmphibiousUnload=yes\n", false, true),
+        (true, true, false)
+    );
+}
+
 /// Original73D7B5 ->741970 ->514D90 controls: failed FNPC still passes
 /// Map(0,0), and the Unload setter's west-cell lookup may restamp that same
 /// Dummy before Foot reads its +4C. These states start stopped with no path.
+#[test]
+fn phobos_failed_shore_search_takes_the_cannot_unload_arm() {
+    use crate::sim::world::FrameEffects;
+
+    let native = crate::test_fixture::json("tools/spatial_oracle/unit_unload_shore.json");
+    let row = &native.as_array().unwrap()[0];
+    let input = &row["input"];
+    let missing_zero = input["missing_zero"].as_bool().unwrap();
+    let missing_west = input["missing_west"].as_bool().unwrap();
+    let mut fx = Fixture::new(|_, _| true);
+    let lcrf = fx.spawn("LCRF", 10, 10, 0x40);
+    fx.board(lcrf, 2);
+    let allocated: Vec<_> = (0..MAP)
+        .flat_map(|y| (0..MAP).map(move |x| (x, y)))
+        .filter(|&cell| !(missing_zero && cell == (0, 0) || missing_west && cell == (9, 10)))
+        .collect();
+    fx.sim
+        .resolved_terrain
+        .as_mut()
+        .unwrap()
+        .test_set_native_allocated_cells(&allocated);
+    let frame = fx.frame();
+    let entity = fx.sim.substrate.entities.get_mut(lcrf).unwrap();
+    entity
+        .mission
+        .set_current_for_test(MissionId::from_known(MissionType::Unload), frame);
+    entity
+        .position
+        .set_exact_z_leptons_for_test(Some(input["height"].as_i64().unwrap() as i32));
+    assert_eq!(
+        super::unit_mission_unload(&mut fx.sim, &fx.rules, lcrf, &mut FrameEffects::default()),
+        16,
+        "the CannotUnload arm returns the Unload mission epilogue"
+    );
+    let entity = fx.sim.substrate.entities.get(lcrf).unwrap();
+    assert_eq!(
+        entity.navigation.nav_com(),
+        None,
+        "no packed (0,0) destination is set"
+    );
+    assert!(
+        entity
+            .navigation
+            .path_replay()
+            .remaining_directions()
+            .is_empty()
+    );
+}
+
+// Stock: the failed search passes packed (0,0); Phobos hook `0x73D7B7`
+// (`Ext/Techno/Hooks.Transport.cpp:679-686`) replaces it with the
+// CannotUnload arm, covered below.
 #[test]
 fn hover_unload_failed_shore_search_assigns_the_retained_fallback_cell() {
     use crate::sim::components::{DriveCoord, NavTargetRef};
@@ -2389,6 +2711,7 @@ fn cargo_departure_ground_reveal_rejection_preserves_route_retry_state() {
                         &fx.rules,
                         transport,
                         &mut crate::sim::world::FrameEffects::default(),
+                        true,
                     ),
                     super::EjectOutcome::Failed
                 ));
@@ -2733,4 +3056,156 @@ fn retail_aligned_transports_wait_only_for_their_turrets() {
             MissionId::from_known(MissionType::Move)
         );
     }
+}
+
+/// Phobos `NoQueueUpToUnload` (`0x73DC1E`,
+/// `Ext/Techno/Hooks.Transport.cpp:427-466`): a transport whose type or
+/// `[General]` enables it ejects the whole cargo within one dispatch and
+/// plays `LeaveTransportSound` once; the stock path ejects one per dispatch.
+#[test]
+fn phobos_no_queue_up_to_unload_empties_the_cargo_in_one_dispatch() {
+    let run = |patch: &str| {
+        let mut fx = Fixture::new(|_, _| false);
+        if !patch.is_empty() {
+            fx.rules = rules_with_patch(patch);
+        }
+        let transport = fx.spawn("BFRT", 20, 20, 0);
+        let passengers = fx.board(transport, 2);
+        fx.sim.session.set_binary_frame_for_test(100);
+        fx.sim
+            .substrate
+            .mission_assign_exact(transport, MissionId::from_known(MissionType::Unload), 100)
+            .unwrap();
+        fx.sim
+            .substrate
+            .entities
+            .get_mut(transport)
+            .unwrap()
+            .mission
+            .set_handler_state(super::STATE_EJECT);
+        let delay = super::unit_mission_unload(
+            &mut fx.sim,
+            &fx.rules,
+            transport,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
+        let revealed = passengers.iter().filter(|&&id| fx.revealed(id)).count();
+        let sounds = fx
+            .sim
+            .sound_events
+            .iter()
+            .filter(|event| {
+                matches!(event, SimSoundEvent::VocAtCoord { sound_id, flags: 0, .. }
+                    if sound_id.name_in(&fx.rules) == "ExitTransport")
+            })
+            .count();
+        (revealed, delay, sounds)
+    };
+
+    let (revealed, delay, sounds) = run("");
+    assert_eq!(revealed, 1, "stock ejects one passenger per dispatch");
+    assert!(delay != 1, "the stock path takes the rate epilogue");
+    assert_eq!(sounds, 1, "the placed passenger plays the leave sound");
+
+    let (revealed, delay, sounds) = run("[BFRT]
+NoQueueUpToUnload=yes
+");
+    assert_eq!(revealed, 2, "the type key empties the cargo at once");
+    assert!(delay != 1, "the finished loop takes the epilogue");
+    assert_eq!(sounds, 1, "the one-frame arm plays the sound once");
+
+    let (revealed, _, sounds) = run("[General]
+NoQueueUpToUnload=yes
+");
+    assert_eq!(revealed, 2, "the global key empties the cargo at once");
+    assert_eq!(sounds, 1);
+}
+
+/// Phobos `NoQueueUpToUnload` on a building (`0x44DCB1`,
+/// `Ext/Techno/Hooks.Transport.cpp:804-817`): the type key, else the
+/// `[General]` Building nullable, else the global.
+#[test]
+fn phobos_building_no_queue_up_to_unload_resolves_type_then_building_then_general() {
+    let rules = rules_with_patch(
+        "[BuildingTypes]
+0=REACTOR
+1=REACT2
+         [REACTOR]
+Strength=500
+         [REACT2]
+Strength=500
+NoQueueUpToUnload=no
+         [General]
+NoQueueUpToUnload=yes
+NoQueueUpToUnload.Buildings=yes
+",
+    );
+    let object = |id: &str| rules.object(id).expect("building type");
+    assert!(super::building_no_queue_up_to_unload(
+        object("REACTOR"),
+        &rules
+    ));
+    assert!(
+        !super::building_no_queue_up_to_unload(object("REACT2"), &rules),
+        "the type's no wins over the Building global"
+    );
+
+    let global_only = rules_with_patch(
+        "[BuildingTypes]
+0=REACTOR
+[REACTOR]
+Strength=500
+         [General]
+NoQueueUpToUnload=yes
+NoQueueUpToUnload.Buildings=no
+",
+    );
+    assert!(
+        !super::building_no_queue_up_to_unload(
+            global_only.object("REACTOR").expect("building type"),
+            &global_only
+        ),
+        "the Building nullable turns the global off"
+    );
+}
+
+/// Phobos `DeployFireDelay` (`Ext/Building/Hooks.Unload.cpp:73-77`): a set
+/// building key replaces the Unload epilogue's `RandomRanged(0, 2) + 14` and
+/// consumes no random draw; an unset key keeps the stock epilogue's draw.
+#[test]
+fn phobos_deploy_fire_delay_replaces_the_unload_epilogue_draw() {
+    let rules = rules_with_patch(
+        "[BuildingTypes]\n0=REACTOR\n1=REACT2\n\
+         [REACTOR]\nStrength=500\nDeployFireDelay=7\n\
+         [REACT2]\nStrength=500\n",
+    );
+    let mut fx = Fixture::from_rules(rules, |_, _| false);
+    // The fixture's terrain carries no building foundation flags, so place the
+    // two probe buildings in limbo: the delay reader only needs the entity's
+    // type and the stock epilogue's RNG.
+    let reactor = fx
+        .sim
+        .spawn_object_limbo_at_height("REACTOR", OWNER, 10, 10, 0, 0, &fx.rules)
+        .expect("REACTOR constructs");
+    let react2 = fx
+        .sim
+        .spawn_object_limbo_at_height("REACT2", OWNER, 12, 10, 0, 0, &fx.rules)
+        .expect("REACT2 constructs");
+    let before = fx.sim.scenario_rng.native_state_hex();
+    assert_eq!(
+        super::building_unload_delay(&mut fx.sim, &fx.rules, reactor),
+        7,
+        "the set key returns its delay"
+    );
+    assert_eq!(
+        fx.sim.scenario_rng.native_state_hex(),
+        before,
+        "a set delay consumes no random draw"
+    );
+    let _ = super::building_unload_delay(&mut fx.sim, &fx.rules, react2);
+    assert_ne!(
+        fx.sim.scenario_rng.native_state_hex(),
+        before,
+        "the unset key keeps the stock epilogue's random draw"
+    );
 }

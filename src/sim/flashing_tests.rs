@@ -51,7 +51,6 @@ fn rules() -> RuleSet {
 
 /// [`rules`] with the Phobos selection-flash duration read from
 /// `[AudioVisual]` through the production INI reader.
-#[cfg(feature = "phobos")]
 fn selection_flash_rules(duration: i32) -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(&format!(
         "{RULES}\n[AudioVisual]\nSelectionFlashDuration={duration}\n"
@@ -338,7 +337,6 @@ fn the_order_flash_prefers_the_destination_object() {
 /// Phobos `ShowFlashOnSelecting` (client) + `[AudioVisual]
 /// SelectionFlashDuration`: `ObjectClass_Select` flashes only newly selected
 /// objects the current player controls (`0x005F46AE`/`0x005F4718`).
-#[cfg(feature = "phobos")]
 #[test]
 fn a_new_selection_flashes_only_the_current_players_objects() {
     let rules = selection_flash_rules(12);
@@ -357,7 +355,6 @@ fn a_new_selection_flashes_only_the_current_players_objects() {
 /// In a campaign, `IsControlledByCurrentPlayer` (`0x0050B6F0`) answers from
 /// the house flags, so a `PlayerControl=` ally's object flashes as the
 /// player's own; other modes compare with the current house.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_campaign_selection_flashes_a_player_controlled_allys_objects() {
     let rules = selection_flash_rules(12);
@@ -383,7 +380,6 @@ fn a_campaign_selection_flashes_a_player_controlled_allys_objects() {
 
 /// The duration is the only rules gate: the reader's 0 disables the flash and
 /// a negative value is likewise inert (the hook tests `> 0`).
-#[cfg(feature = "phobos")]
 #[test]
 fn a_zero_or_negative_selection_flash_duration_flashes_nothing() {
     for duration in [0, -1] {
@@ -396,7 +392,6 @@ fn a_zero_or_negative_selection_flash_duration_flashes_nothing() {
 }
 
 /// A building takes its own Flash owner through the same selection hook.
-#[cfg(feature = "phobos")]
 #[test]
 fn a_selected_building_flashes_through_its_own_flash_owner() {
     let rules = selection_flash_rules(5);

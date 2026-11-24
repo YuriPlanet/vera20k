@@ -9,7 +9,7 @@
 //! 0x4B3607..0x4B3A94, Walk 0x0075B8A9..0x0075B9F9) whenever that timer has
 //! run out. With batching on, either registers the Foot and takes the
 //! timer-still-running branch instead. At the start of the next frame's live
-//! object pass the registrations are searched side by side against the
+//! object pass the registrations are searched on worker threads against the
 //! world as it stands, up to a cap (below), and the Foot's request then runs
 //! its Find_Path with the answer.
 //!
@@ -230,8 +230,8 @@ pub struct PathBatchStats {
     /// Of those, the urgency-1 re-paths' expansions.
     #[serde(default)]
     pub urgency1_steps: u64,
-    /// Milliseconds the latest pass took, with what it answered beside its
-    /// searches, and the mean and slowest over the kept window.
+    /// Milliseconds the latest pass took, and the mean and slowest over the
+    /// kept window.
     pub last_ms: f64,
     pub mean_ms: f64,
     pub peak_ms: f64,
@@ -746,32 +746,16 @@ impl Simulation {
     /// last frame, at most [`SEARCHES_PER_PASS`] of them besides their code-2
     /// re-paths, which take a turn per urgency within
     /// [`REPATH_STEPS_PER_PASS`] each.
-    ///
-    /// `beside` is other work of the pass, a count of indices and the answer
-    /// for one of them in the world the searches read: the pass answers it
-    /// as one body of work with its searches
-    /// ([`crate::sim::parallel::map_in_order_then_filter_map_indices`]), so
-    /// it does not wait for the slowest search. Returns its answers in index
-    /// order, or `None` when the pass had no search to run and asked none.
-    pub(crate) fn answer_batched_path_searches<B: Send>(
-        &mut self,
-        rules: &RuleSet,
-        beside: (usize, impl Fn(&Simulation, usize) -> Option<B> + Sync),
-    ) -> Option<Vec<B>> {
+    pub(crate) fn answer_batched_path_searches(&mut self, rules: &RuleSet) {
         let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::PATHFINDING);
-        self.answer_path_searches_within(rules, REPATH_STEPS_PER_PASS, beside)
+        self.answer_path_searches_within(rules, REPATH_STEPS_PER_PASS);
     }
 
     /// [`Self::answer_batched_path_searches`] with a budget of
     /// `repath_steps` expansions, at least 1, for each re-path turn.
-    fn answer_path_searches_within<B: Send>(
-        &mut self,
-        rules: &RuleSet,
-        repath_steps: u64,
-        beside: (usize, impl Fn(&Simulation, usize) -> Option<B> + Sync),
-    ) -> Option<Vec<B>> {
+    fn answer_path_searches_within(&mut self, rules: &RuleSet, repath_steps: u64) {
         let Some(batch) = self.path_batch.as_mut() else {
-            return None;
+            return;
         };
         let started = Instant::now();
         batch.ready.clear();
@@ -783,7 +767,7 @@ impl Simulation {
         let pending = &mut batch.pending;
         if pending.is_empty() {
             batch.stats.finish(started.elapsed(), 0, 0, 0, 0, [0; 2]);
-            return None;
+            return;
         }
         // Saves and hashes see registrations in arrival order. At the pass,
         // sort stably by Foot id and keep each Foot's latest registration.
@@ -829,11 +813,11 @@ impl Simulation {
             .collect();
         turn.extend(others);
         let searched = turn.len();
-        let (turns, expanded, repaths_made, beside) = match self.path_grid_snapshot() {
+        let (turns, expanded, repaths_made) = match self.path_grid_snapshot() {
             Some(grid) if self.overlay_grid.is_some() && self.resolved_terrain.is_some() => {
-                self.search_batch(&turn, repaths, repath_steps, rules, &grid, beside)
+                self.search_batch(&turn, repaths, repath_steps, rules, &grid)
             }
-            _ => (Vec::new(), 0, [0; 2], None),
+            _ => (Vec::new(), 0, [0; 2]),
         };
         let mut turns = turns.into_iter();
         let batch = self.path_batch.as_mut().expect("batching is on");
@@ -874,7 +858,6 @@ impl Simulation {
             expanded,
             repaths_made,
         );
-        beside
     }
 
     /// What the latest path batch pass did: its own counts and durations.
@@ -929,18 +912,16 @@ impl Simulation {
 
     /// The searches for `turn`, which starts with its re-path turns in
     /// order, `repaths` registrations each, with `repath_steps` for each
-    /// turn's budget. Returns its turns, the cells every search expanded,
-    /// each re-path turn's share of them, and `beside`'s answers
-    /// ([`Self::answer_batched_path_searches`]).
-    fn search_batch<B: Send>(
+    /// turn's budget. Returns its turns, the cells every search expanded, and
+    /// each re-path turn's share of them.
+    fn search_batch(
         &mut self,
         turn: &[(u64, WaitingRequest)],
         repaths: [usize; 2],
         repath_steps: u64,
         rules: &RuleSet,
         grid: &PathGrid,
-        (beside_len, beside): (usize, impl Fn(&Simulation, usize) -> Option<B> + Sync),
-    ) -> (Vec<Turn>, u64, [u64; 2], Option<Vec<B>>) {
+    ) -> (Vec<Turn>, u64, [u64; 2]) {
         // One blocker plane for every search. With an overlay grid movers
         // reach it through their Foot+55C counters, which Mark0 leaves alone,
         // so it is the plane each Find_Path would read after its Mark0.
@@ -982,7 +963,7 @@ impl Simulation {
         // count there.
         let budgeted = repaths[0] + repaths[1];
         let made: Vec<AtomicU64> = (0..budgeted).map(|_| AtomicU64::new(0)).collect();
-        let search_one = |index: usize, &(id, request): &(u64, WaitingRequest)| {
+        let mut searched = crate::sim::parallel::map_in_order(turn, |index, &(id, request)| {
             // The re-paths before this one in its turn.
             let start = if index < repaths[0] { 0 } else { repaths[0] };
             debug_assert_eq!(
@@ -1022,15 +1003,7 @@ impl Simulation {
             let steps = search_steps() - base;
             made[index].store(steps, Ordering::Relaxed);
             Some((answer, steps, stopped.get()))
-        };
-        // Every thread starts on the searches, in their order, and goes on
-        // to `beside`'s indices once none is left.
-        let (mut searched, beside) = crate::sim::parallel::map_in_order_then_filter_map_indices(
-            turn,
-            search_one,
-            beside_len,
-            |index| beside(sim, index),
-        );
+        });
         #[cfg(any(test, feature = "test-support"))]
         assert_eq!(rng, sim.rng_state(), "batched searches draw no RNG");
         // Expansions the pass actually made, counted before the cut drops the
@@ -1067,7 +1040,7 @@ impl Simulation {
                 searched.map_or(Turn::OverBudget, |(answer, ..)| Turn::Searched(answer))
             })
             .collect();
-        (turns, expanded, repaths_made, Some(beside))
+        (turns, expanded, repaths_made)
     }
 
     /// `id`'s search as its `request`'s Find_Path would run it now, without

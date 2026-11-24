@@ -292,14 +292,10 @@ impl RulesPassProcessor {
             if bullet.read_int("ROT", 0) == 0 {
                 // Phobos `WeaponTypeClass_SetSpeed_ApplyGravity` 0x772A0A
                 // selects the type's own `Gravity` over the current Rules one.
-                #[cfg(feature = "phobos")]
                 let gravity = crate::rules::projectile_type::read_phobos_gravity(bullet).map_or(
                     crate::util::native_ballistics::BallisticGravity::Rules(self.rules_gravity),
                     crate::util::native_ballistics::BallisticGravity::Value,
                 );
-                #[cfg(not(feature = "phobos"))]
-                let gravity =
-                    crate::util::native_ballistics::BallisticGravity::Rules(self.rules_gravity);
                 let speed = crate::util::native_ballistics::ballistic_launch_speed(
                     state.range_leptons,
                     gravity,
@@ -417,10 +413,6 @@ impl RulesPassProcessor {
                 }
                 let current = &mut self.family_mut(RulesTypeFamily::Warhead)[index].warhead_anim;
                 current.em_effect = raw.read_bool("EMEffect", current.em_effect);
-                // Firestorm's web keys (`docs/ts-webs.md`), which gamemd
-                // lacks: plain bool and int reads that allocate nothing, so
-                // their place among the YR keys changes no other read.
-                current.web = crate::rules::warhead_type::WarheadWeb::read_pass(current.web, raw);
                 // The stock way reads DebrisTypes after EMEffect, allocating.
                 let debris_types = match ares_debris_types {
                     Some(types) => types,
@@ -448,7 +440,6 @@ impl RulesPassProcessor {
                     )
                     .map(|value| NativeF64Bits::from_bits(value.to_bits()));
                 }
-                #[cfg(feature = "phobos")]
                 {
                     // Phobos `Crit.Warhead` is read with `Read<true>`, so the
                     // warhead it names is allocated here even when no other
@@ -610,7 +601,6 @@ impl RulesPassProcessor {
                             theater,
                             tree_strength,
                         );
-                        #[cfg(feature = "phobos")]
                         {
                             // `TerrainTypeExt::LoadFromINI` is hooked at
                             // 0x0071E0A6, the end of this same ReadINI body, so

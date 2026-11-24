@@ -147,35 +147,12 @@ fn first_weapon_armed(interner: &StringInterner, entity: &GameEntity, rules: &Ru
         .is_some()
 }
 
-/// Whether the join-up step ([`Simulation::team_member_join_up`]) has
-/// anything to do for a member: it is live and has not joined up. A walk
-/// asks first, and keeps what it has read of the member and the team when
-/// the step would change nothing.
-pub(super) fn member_awaits_join_up(
-    entity: &GameEntity,
-    initiated: bool,
-    placement_scope_active: bool,
-) -> bool {
-    member_is_live(entity, placement_scope_active) && !initiated
-}
-
 impl TeamScriptState {
     /// The current action (`ScriptClass::Current @ 0x00691500`): -1 before
     /// the first.
     pub(crate) fn current_action(&self, vm: &super::TeamScriptVm) -> i32 {
         script_action_at(vm.scripts.get(&self.script_id), self.cursor)
             .map_or(-1, |action| action.action_id)
-    }
-
-    /// `TeamClass::Get_Stray @ 0x006F03B0` (which `Regroup`, `Coordinate_Move`
-    /// and action 11 inline): `RelaxedStray=` while the current action is 53
-    /// or 54, else `Stray=`.
-    pub(super) fn stray(&self, vm: &super::TeamScriptVm, rules: &RuleSet) -> i32 {
-        if RELAXED_STRAY_ACTIONS.contains(&self.current_action(vm)) {
-            rules.general.relaxed_stray
-        } else {
-            rules.general.stray
-        }
     }
 }
 
@@ -547,7 +524,7 @@ impl Simulation {
         // The walk reads a copy: a member's join or move can change the list.
         let members = self.team_script_vm.copy_members(team_id);
         let mut regrouped = true;
-        for (position, &member) in members.iter().enumerate() {
+        for &member in &members {
             let Some(zone) = self
                 .team_script_vm
                 .teams
@@ -562,11 +539,11 @@ impl Simulation {
             if !entity.lifecycle.object_alive() {
                 continue;
             }
-            self.team_member_join_up(team_id, position, member, rules, frame_effects);
+            self.team_member_join_up(team_id, member, rules, frame_effects);
             let Some(entity) = self.substrate.entities.get(member) else {
                 continue;
             };
-            let initiated = self.team_member_initiated(team_id, position, member);
+            let initiated = self.team_member_initiated(team_id, member);
             if !member_is_live_joined(entity, initiated, self.object_placement_scope_active()) {
                 continue;
             }
@@ -856,12 +833,9 @@ impl Simulation {
     /// (`+0x689`) joins when within stray of the centre (`Distance @
     /// 0x005F6360`); outside it, without a destination, it is sent to the
     /// centre (Move, target cleared). True when it stayed outside stray.
-    /// `position` is where the caller's walk met `member`
-    /// ([`Self::team_member_initiated`]).
     pub(super) fn team_member_join_up(
         &mut self,
         team_id: u64,
-        position: usize,
         member: u64,
         rules: &RuleSet,
         frame_effects: &mut FrameEffects<'_>,
@@ -870,15 +844,17 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(member) else {
             return false;
         };
-        let vm = &self.team_script_vm;
-        let team = vm.teams.get(&team_id);
-        let initiated = team.is_some_and(|team| team.member_initiated(position, member));
-        if !member_awaits_join_up(entity, initiated, self.object_placement_scope_active()) {
+        if !member_is_live(entity, self.object_placement_scope_active())
+            || self.team_member_initiated(team_id, member)
+        {
             return false;
         }
-        let zone = team.and_then(|team| team.zone);
-        let stray = team.map_or(rules.general.stray, |team| team.stray(vm, rules));
-        if self.team_member_distance(entity, zone) <= stray {
+        let zone = self
+            .team_script_vm
+            .teams
+            .get(&team_id)
+            .and_then(|team| team.zone);
+        if self.team_member_distance(entity, zone) <= self.team_stray(team_id, rules) {
             self.team_script_vm
                 .team_set_member_initiated(team_id, member);
             return false;
@@ -892,22 +868,28 @@ impl Simulation {
     }
 
     /// Whether `member` of team `team_id` has joined up (`+0x689`).
-    /// `position` is where the caller's walk met `member` in its copy of the
-    /// list ([`TeamScriptState::member_initiated`]).
-    pub(super) fn team_member_initiated(&self, team_id: u64, position: usize, member: u64) -> bool {
+    pub(super) fn team_member_initiated(&self, team_id: u64, member: u64) -> bool {
         self.team_script_vm
             .teams
             .get(&team_id)
-            .is_some_and(|team| team.member_initiated(position, member))
+            .and_then(|team| team.members.iter().find(|record| record.id == member))
+            .is_some_and(|record| record.initiated)
     }
 
-    /// Team `team_id`'s stray distance ([`TeamScriptState::stray`]); `Stray=`
-    /// for a missing team.
+    /// `TeamClass::Get_Stray @ 0x006F03B0` (which `Regroup`, `Coordinate_Move`
+    /// and action 11 inline): `RelaxedStray=` while the current action is 53
+    /// or 54, else `Stray=`.
     pub(crate) fn team_stray(&self, team_id: u64, rules: &RuleSet) -> i32 {
         let vm = &self.team_script_vm;
-        vm.teams
+        let action = vm
+            .teams
             .get(&team_id)
-            .map_or(rules.general.stray, |team| team.stray(vm, rules))
+            .map_or(-1, |team| team.current_action(vm));
+        if RELAXED_STRAY_ACTIONS.contains(&action) {
+            rules.general.relaxed_stray
+        } else {
+            rules.general.stray
+        }
     }
 
     /// A team target's coordinate (`vt+0x48`): a cell's centre at its floor

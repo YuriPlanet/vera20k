@@ -98,8 +98,8 @@ en `VERA.INI`, con las opciones propias de VERA en la sección `[VERA]`.
 
 Los ajustes de la sala, los mods y los mapas pueden cambiar las reglas de una partida. Los mods y
 los mapas pueden activar las funciones compatibles de [Ares](docs/ares.md) y [Phobos](docs/phobos.md)
-mediante sus archivos INI. Un mod también puede activar Ares si incluye `ares.mix`. Algunas funciones
-de Phobos aún requieren compilar el juego con `--features phobos`.
+mediante sus archivos INI. Un mod también puede activar Ares si incluye `ares.mix`. Phobos está incluido en todas las compilaciones y se activa desde el INI de un mod o
+mapa.
 
 Para crear tu propio mod, empieza por la [guía de modding](docs/modding.md).
 

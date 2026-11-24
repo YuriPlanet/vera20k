@@ -68,6 +68,28 @@ const STRAFE_HOLD_ANGLE: i32 = 0x2000;
 /// (`0x007E3568`, 5.0).
 const LANDING_DRIFT_STEP: i32 = 5;
 
+/// `Unsorted::AdjacentCoord @ 0x0089F6D8`: the eight adjacent-cell offsets in
+/// leptons, indexed by an eight-way facing (`[0]` north, `[2]` east). Phobos'
+/// rear approach reads them (`Ext/Aircraft/Hooks.cpp:629-640`).
+const ADJACENT_COORD: [[i32; 2]; 8] = [
+    [0, -256],
+    [181, -181],
+    [256, 0],
+    [181, 181],
+    [0, 256],
+    [-181, 181],
+    [-256, 0],
+    [-181, -181],
+];
+
+/// The offset destination and heading Phobos' rear approach hands the
+/// primary-facing block (`Ext/Aircraft/Hooks.cpp:574-651`).
+#[derive(Debug, Clone, Copy)]
+struct RearApproach {
+    destination: DriveCoord,
+    facing: u16,
+}
+
 /// The map-edge push back toward the map (`0x004CDB8F`) and the scatter's
 /// radius (`0x004CDC99`).
 const MAP_EDGE_PUSH: i32 = 0x80;
@@ -688,17 +710,33 @@ impl Simulation {
             owner.y.wrapping_sub(aim.y),
         );
 
-        let toward =
-            crate::util::direction_tables::facing16_between([owner.x, owner.y], [coord.x, coord.y]);
-        let primary = (!locked
-            && !(strafe
-                && crate::sim::cell_kernel::native_xy_distance(
-                    owner.x.wrapping_sub(coord.x),
-                    owner.y.wrapping_sub(coord.y),
-                ) <= STRAFE_HOLD_DISTANCE
-                && i32::from(toward.wrapping_sub(entity.body_facing.current(frame)) as i16).abs()
-                    > STRAFE_HOLD_ANGLE))
-            .then_some(toward);
+        let toward_stock = || {
+            crate::util::direction_tables::facing16_between([owner.x, owner.y], [coord.x, coord.y])
+        };
+        // Phobos `FlyLocomotionClass_FlightUpdate_SetPrimaryFacing`
+        // (`Ext/Aircraft/Hooks.cpp:574-651`, hook `0x4CF190`). It runs after
+        // the distance above (`0x004CF184`), so only the directions read the
+        // offset destination.
+        let rear_approach = object
+            .filter(|_| aircraft)
+            .and_then(|object| self.fly_rear_approach(id, coord, owner, object, rules, frame));
+        let aim_coord = rear_approach.map_or(coord, |rear| rear.destination);
+        let toward = rear_approach.map_or_else(toward_stock, |rear| rear.facing);
+        let primary = if rear_approach.is_some() {
+            // The hook's arm sets the facing without the strafe hold (`:671-673`).
+            (!locked).then_some(toward)
+        } else {
+            (!locked
+                && !(strafe
+                    && crate::sim::cell_kernel::native_xy_distance(
+                        owner.x.wrapping_sub(aim_coord.x),
+                        owner.y.wrapping_sub(aim_coord.y),
+                    ) <= STRAFE_HOLD_DISTANCE
+                    && i32::from(toward.wrapping_sub(entity.body_facing.current(frame)) as i16)
+                        .abs()
+                        > STRAFE_HOLD_ANGLE))
+                .then_some(toward)
+        };
 
         let secondary = if distance < ARRIVAL_FACING_DISTANCE && may_slow && !hunter_seeker {
             match target.filter(|_| armed && !(aircraft && strafe)) {
@@ -714,17 +752,21 @@ impl Simulation {
                 }),
                 None => {
                     let direction = if aircraft {
-                        crate::sim::aircraft::landing_base::landing_direction(
+                        // Phobos `FlyLocomotionClass_FlightUpdate_LandingDir`
+                        // (`Ext/Aircraft/Hooks.cpp:382-407`, hook `0x4CF31C`)
+                        // replaces `iFly->Landing_Direction() << 13` with the
+                        // aircraft's `GetLandingDir` raw facing.
+                        crate::sim::aircraft::landing_base::get_landing_dir(
                             entity,
                             &self.substrate.entities,
                             frame,
                             rules.general.pose_dir,
+                            Some((rules, &self.interner)),
                         )
-                        .wrapping_shl(13)
                     } else {
                         0
                     };
-                    (!locked).then_some(direction as u16)
+                    (!locked).then_some(direction)
                 }
             }
         } else {
@@ -765,7 +807,14 @@ impl Simulation {
             .and_then(|locomotor| locomotor.fly_runtime())
             .expect("Horizontal_Step owner flies");
         let cruise = state.cruise_mode();
-        let level = if cruise && distance < ARRIVAL_THREE_QUARTERS {
+        // Phobos `FlyLocomotionClass_FlightUpdate_SetFlightLevel`
+        // (`Ext/Aircraft/Hooks.cpp:653-716`, hook `0x4CF3D0`): the extended
+        // block replaces the stock one whole.
+        let early_descend =
+            self.fly_early_descend_level(id, distance, flight_level, object, rules, frame);
+        let level = if let Some(level) = early_descend {
+            level
+        } else if cruise && distance < ARRIVAL_THREE_QUARTERS {
             let destination = state.destination();
             let ground = ground_pose::ground_surface_z_at(
                 [destination.x, destination.y],
@@ -824,6 +873,195 @@ impl Simulation {
         // 0x004CF55D..0x004CF5EC: the owner test is 0x0050B6F0.
         self.deselect_over_player_shroud(id, Self::house_is_human_player);
         distance
+    }
+
+    /// Phobos `FlyLocomotionClass_FlightUpdate_SetPrimaryFacing`
+    /// (`Ext/Aircraft/Hooks.cpp:574-651`, hook `0x4CF190`, replacing
+    /// `0x004CF190..0x004CF29A`): the primary-facing block of an aircraft
+    /// whose type resolves `ExtendedAircraftMissions.RearApproach` while its
+    /// NavCom is the dock it heads to (`DockNowHeadingTo`, `+0x6CC`) or its
+    /// spawner. The destination shifts by up to `max(SlowdownDistance / 256,
+    /// turningRadius / 128)` cells along the cell opposite the landing
+    /// direction (`Unsorted::AdjacentCoord`), plus one more face toward the
+    /// current bearing when it differs by `>= 12288` raw, so the heading
+    /// curves in from the landing side. `None` keeps the stock heading.
+    fn fly_rear_approach(
+        &self,
+        id: u64,
+        coord: DriveCoord,
+        owner: DriveCoord,
+        object: &ObjectType,
+        rules: &RuleSet,
+        frame: u32,
+    ) -> Option<RearApproach> {
+        {
+            let flags = rules.extended_aircraft_missions_for(object);
+            if !flags.rear_approach || !self.aircraft_returning_to_dock(id) {
+                return None;
+            }
+            let entity = self.substrate.entities.get(id)?;
+            // `DirStruct(AircraftExt::GetLandingDir(pAircraft)).Raw` replaces
+            // the vanilla `iFly->Landing_Direction() << 13` here
+            // (`Ext/Aircraft/Hooks.cpp:596-676`, hook `0x4CF190`).
+            let landing_dir = crate::sim::aircraft::landing_base::get_landing_dir(
+                entity,
+                &self.substrate.entities,
+                frame,
+                rules.general.pose_dir,
+                Some((rules, &self.interner)),
+            );
+            let turning = crate::sim::aircraft::turning_radius(entity, object.speed);
+            let cells = (object.slowdown_distance / 256).max(turning / 128);
+            let current = crate::util::direction_tables::facing16_between(
+                [owner.x, owner.y],
+                [coord.x, coord.y],
+            );
+            let difference = current.wrapping_sub(landing_dir) as i16;
+            // `landingDir.GetFacing<8>(4)` (`DirStruct::GetValue<3>(4)`): the
+            // landing face turned to the far side of the pad.
+            let landing_face = (((landing_dir >> 12) + 1) >> 1).wrapping_add(4) & 7;
+            let adjacent = |face: u16| ADJACENT_COORD[usize::from(face & 7)];
+            let offset = if i32::from(difference).abs() >= 12288 {
+                let side = if difference > 0 {
+                    landing_face + 2
+                } else {
+                    landing_face + 6
+                };
+                let [ax, ay] = adjacent(landing_face);
+                let [bx, by] = adjacent(side);
+                [(ax + bx) * cells, (ay + by) * cells]
+            } else {
+                let step = if landing_face & 1 != 0 { 724 } else { 512 };
+                let horizontal = crate::sim::cell_kernel::native_xy_distance(
+                    coord.x.wrapping_sub(owner.x),
+                    coord.y.wrapping_sub(owner.y),
+                );
+                let scale = cells.min(horizontal / step);
+                let [ax, ay] = adjacent(landing_face);
+                [ax * scale, ay * scale]
+            };
+            let destination = DriveCoord {
+                x: coord.x.wrapping_add(offset[0]),
+                y: coord.y.wrapping_add(offset[1]),
+                z: coord.z,
+            };
+            let facing = if owner.y != destination.y || owner.x != destination.x {
+                crate::util::direction_tables::facing16_between(
+                    [owner.x, owner.y],
+                    [destination.x, destination.y],
+                )
+            } else {
+                landing_dir
+            };
+            Some(RearApproach {
+                destination,
+                facing,
+            })
+        }
+    }
+
+    /// The hooks' `Destination && (DockNowHeadingTo == Destination ||
+    /// SpawnOwner == Destination)` (`Ext/Aircraft/Hooks.cpp:614`, `:700`):
+    /// the aircraft's NavCom (`Foot+0x5A4`, `FootClass::Destination`) is the
+    /// dock it is heading to (`Aircraft+0x6CC`,
+    /// [`TechnoAmmo::dock`](crate::sim::ammo::TechnoAmmo::dock)) or the object
+    /// that spawned it (`TechnoClass+0x2D4`).
+    fn aircraft_returning_to_dock(&self, id: u64) -> bool {
+        {
+            let Some(entity) = self.substrate.entities.get(id) else {
+                return false;
+            };
+            let Some(destination) = entity.navigation.nav_com().and_then(|nav| nav.object_id())
+            else {
+                return false;
+            };
+            entity.ammo().and_then(|ammo| ammo.dock()) == Some(destination)
+                || entity.seldom.spawn_owner_id.owner() == Some(destination)
+        }
+    }
+
+    /// Phobos `FlyLocomotionClass_FlightUpdate_SetFlightLevel`
+    /// (`Ext/Aircraft/Hooks.cpp:653-716`, hook `0x4CF3D0`, replacing
+    /// `0x004CF3D0..0x004CF4D2`): the height block of a non-HunterSeeker
+    /// aircraft whose type resolves `ExtendedAircraftMissions.EarlyDescend`.
+    /// The stock `IsDropship` slow-descent gate becomes the returning-dock
+    /// one, so the aircraft descends within `SlowdownDistance` instead of
+    /// only above the pad; under `RearApproach` the current facing must also
+    /// be within 16384 raw of the landing direction. `None` keeps the stock
+    /// block.
+    fn fly_early_descend_level(
+        &self,
+        id: u64,
+        distance: i32,
+        flight_level: i32,
+        object: Option<&ObjectType>,
+        rules: &RuleSet,
+        frame: u32,
+    ) -> Option<i32> {
+        {
+            let object = object.filter(|object| !object.hunter_seeker)?;
+            let flags = rules.extended_aircraft_missions_for(object);
+            if !flags.early_descend {
+                return None;
+            }
+            let entity = self.substrate.entities.get(id)?;
+            let state = entity
+                .locomotor
+                .as_ref()
+                .and_then(|locomotor| locomotor.fly_runtime())?;
+            let destination = state.destination();
+            let ground = |destination: DriveCoord| {
+                ground_pose::ground_surface_z_at(
+                    [destination.x, destination.y],
+                    false,
+                    self.resolved_terrain.as_ref(),
+                    None,
+                )
+                .unwrap_or(0)
+            };
+            // `:675-693`: the stock fast descent, plus its bridge correction.
+            if state.cruise_mode() && distance < ARRIVAL_THREE_QUARTERS {
+                let level = destination.z.wrapping_sub(ground(destination));
+                let over_bridge = self.resolved_terrain.as_ref().is_some_and(|terrain| {
+                    let location = ground_pose::object_location(entity, Some(terrain));
+                    let cell = terrain.native_cell_identity(coord_cell(location));
+                    terrain.native_cell_flags(cell) & 0x100 != 0
+                        && level >= crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
+                });
+                return Some(if over_bridge {
+                    level.wrapping_sub(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
+                } else {
+                    level
+                });
+            }
+            let aligned = !flags.rear_approach || {
+                // `DirStruct(AircraftExt::GetLandingDir(pAircraft)).Raw`
+                // (`Ext/Aircraft/Hooks.cpp:698-705`, hook `0x4CF3D0`).
+                let landing = crate::sim::aircraft::landing_base::get_landing_dir(
+                    entity,
+                    &self.substrate.entities,
+                    frame,
+                    rules.general.pose_dir,
+                    Some((rules, &self.interner)),
+                );
+                i32::from(landing.wrapping_sub(entity.body_facing.current(frame)) as i16).abs()
+                    < 16384
+            };
+            if distance < object.slowdown_distance && self.aircraft_returning_to_dock(id) && aligned
+            {
+                let destination_height = destination
+                    .z
+                    .wrapping_sub(ground(destination))
+                    .wrapping_add(1);
+                let ratio = f64::from(distance) / f64::from(object.slowdown_distance);
+                Some(
+                    (f64::from(flight_level.wrapping_sub(destination_height)) * ratio) as i32
+                        + destination_height,
+                )
+            } else {
+                Some(flight_level)
+            }
+        }
     }
 
     /// `0x004CD510`, after the phase transitions: a Location in the playfield

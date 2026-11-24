@@ -498,35 +498,6 @@ impl MatchInputState {
         self.last_cursor_window = Some(point);
     }
 
-    /// The pointer in the pixels the current screen paints and hit-tests in:
-    /// the match frame's during a match (source pixels when zoomed), the
-    /// window's elsewhere.
-    pub(crate) fn cursor_position(&self) -> (f32, f32) {
-        (self.cursor_x, self.cursor_y)
-    }
-
-    /// The pointer in window pixels, where the status cards paint even over
-    /// a zoomed match; `zoom` is the match zoom in use.
-    pub(crate) fn window_cursor_position(&self, zoom: Option<ZoomGeometry>) -> (f32, f32) {
-        zoom.map_or((self.cursor_x, self.cursor_y), |zoom| {
-            zoom.source_to_window(self.cursor_x, self.cursor_y)
-        })
-    }
-
-    /// The building-placement section name while targeting places one.
-    pub(crate) fn armed_building_type(&self) -> Option<&str> {
-        self.targeting_mode
-            .as_ref()
-            .and_then(crate::app::types::TargetingMode::as_building_placement)
-    }
-
-    /// The super weapon section name while targeting fires one.
-    pub(crate) fn armed_super_weapon_type(&self) -> Option<&str> {
-        self.targeting_mode
-            .as_ref()
-            .and_then(crate::app::types::TargetingMode::as_super_weapon)
-    }
-
     /// The OS pointer's last position in window pixels, while one is known.
     pub(crate) fn pointer_in_window(&self) -> Option<(f32, f32)> {
         self.last_cursor_window

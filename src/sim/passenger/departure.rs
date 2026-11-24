@@ -81,6 +81,25 @@ pub fn depart_cargo_head(
         sim.remove_gunner(rules, transport_id, removed.map(|(id, _)| id));
     }
     let (passenger_id, passenger_size) = removed.ok_or(DepartureFailure::NoCargo)?;
+    // Phobos `FootClass_LeaveTransport @ 0x4DE722` (`Ext/Techno/
+    // Hooks.Transport.cpp:91-122`): the revert lives inside
+    // `FootClass::RemoveFirstPassenger @ 0x004DE710`, the wrapper the
+    // Vehicle, LandedAircraft and DeathEscape routes model — a building's
+    // cargo arms (Absorber, Hospital) pop through CargoClass alone and see
+    // no hook. The revert precedes placement, so a refused exit re-attaches
+    // the passenger already reverted, as native's re-add does.
+    if matches!(
+        route,
+        DepartureRoute::Vehicle | DepartureRoute::LandedAircraft | DepartureRoute::DeathEscape
+    ) {
+        sim.phobos_revert_passenger_on_exit(
+            transport_id,
+            passenger_id,
+            rules,
+            Some(rules.overlay_registry()),
+            effects,
+        );
+    }
     if route == DepartureRoute::Hospital
         && let Some(passenger) = sim.substrate.entities.get_mut(passenger_id)
     {

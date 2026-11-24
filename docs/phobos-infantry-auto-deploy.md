@@ -1,6 +1,6 @@
 # Optional Phobos InfantryAutoDeploy
 
-Build with `--features phobos` to let computer-controlled GI-like infantry
+Phobos is in every build; turn it on from a game's data to let computer-controlled GI-like infantry
 deploy when they engage, as they did in Red Alert 2.
 
 ```ini

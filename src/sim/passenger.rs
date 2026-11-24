@@ -526,6 +526,10 @@ impl Simulation {
         voices: bool,
         mut context: UninitContext<'_>,
     ) -> bool {
+        // Phobos `TechnoClass_EnterTransport @ 0x71067B` records the
+        // board-time house before the Cargo add (see
+        // [`Self::phobos_record_original_passenger_owner`]).
+        self.phobos_record_original_passenger_owner(carrier, head_first, context.rules());
         if !self.add_cargo_passenger_chain(carrier, head_first, context.reborrow()) {
             return false;
         }
@@ -1496,6 +1500,117 @@ pub(crate) fn board_passenger(
         sim.mark_boarded_transport_passenger(pax_id, carrier_id, open_topped, rules, effects);
         sim.open_topped_passengers_take_target(pax_id, None, rules, effects);
     }
+    // Phobos `TechnoClass_EnterTransport` (0x71067B): a qualifying
+    // passenger joins the scenario reloader list.
+    sim.register_transport_reloader(rules, pax_id);
+    true
+}
+
+/// Phobos `FootClass_Update_AfterLocomotorProcess`
+/// (`Ext/Techno/Hooks.Transport.cpp:324-360`, hook 0x4DA8A0): a Foot whose
+/// current mission is Enter (target = its first radio contact) or that holds
+/// a pending entry (`+0x500`) boards a Unit transport immediately when the
+/// transport's type sets `NoQueueUpToEnter=`, instead of walking into its
+/// cell. The target must be a `Passengers > 0` Unit; a structure is never a
+/// target of this hook (the Phobos `.Buildings` arms are `Ext/Techno/
+/// Hooks.Transport.cpp:727-851`, not ported).
+///
+/// `IsCloseEnoughToEnter` (`:220-228`) is a square test: both X and Y offsets
+/// strictly below `NoQueueUpToEnter.BoardDistance=` (the transport type's
+/// value, else `[General]`, default 384) and the Z offset strictly below
+/// `Unsorted::CellHeight` (256 leptons). `CanEnterNow` (`:230-289`, the
+/// rewrite of `UnitClass::Receive_Radio @ 0x00737430`'s CAN_LOAD) adds the
+/// OnBridge and deactivated/EMP refusals before the ordinary admission;
+/// VERA's `sim::radio::receive::unit_can_enter_radio` is that receiver.
+/// `DoEnterNow` (`:292-326`) raises the transport's Tag event 1 ("entered
+/// by") and then boards through the shared arrival owner.
+pub(crate) fn try_fast_enter(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    id: u64,
+    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    effects: &mut FrameEffects<'_>,
+) -> bool {
+    use crate::sim::mission::MissionType;
+    let Some(pax) = sim.substrate.entities.get(id) else {
+        return false;
+    };
+    let target = if pax.mission.effective()
+        == crate::sim::mission::MissionId::from_known(MissionType::Enter)
+    {
+        pax.seldom.radio_contacts.slot(0)
+    } else {
+        pax.pending_entry()
+    };
+    let Some(target) = target else {
+        return false;
+    };
+    let (Some(pax), Some(transport)) = (
+        sim.substrate.entities.get(id),
+        sim.substrate.entities.get(target),
+    ) else {
+        return false;
+    };
+    let pax_category = pax.category();
+    if !matches!(
+        pax_category,
+        EntityCategory::Infantry | EntityCategory::Unit
+    ) || transport.category() != EntityCategory::Unit
+        || !transport.is_object_alive()
+    {
+        return false;
+    }
+    let (Some(transport_type), Some(_passenger_type)) = (
+        sim.object_type(transport.type_ref(), rules),
+        sim.object_type(pax.type_ref(), rules),
+    ) else {
+        return false;
+    };
+    if transport_type.passengers <= 0
+        || !transport_type
+            .phobos_techno_extras
+            .no_queue_up_to_enter(rules.phobos_globals.no_queue_up_to_enter)
+    {
+        return false;
+    }
+    // CanEnterNow's added refusals (`Ext/Techno/Hooks.Transport.cpp:246-248`).
+    if transport.on_bridge() || pax.deactivated.is_offline() {
+        return false;
+    }
+    let board_distance = transport_type
+        .phobos_techno_extras
+        .no_queue_board_distance(rules.phobos_globals.no_queue_up_to_enter_board_distance);
+    let pax_location = crate::sim::movement::ground_pose::position_world_coord(&pax.position);
+    let transport_location =
+        crate::sim::movement::ground_pose::position_world_coord(&transport.position);
+    if (pax_location.x - transport_location.x).abs() >= board_distance
+        || (pax_location.y - transport_location.y).abs() >= board_distance
+        || (pax_location.z - transport_location.z).abs()
+            >= crate::util::lepton::LEPTONS_PER_CELL_I32
+    {
+        return false;
+    }
+    if crate::sim::radio::transmit(
+        sim,
+        id,
+        target,
+        crate::sim::radio::RadioMessage::CanEnter,
+        crate::sim::radio::RadioPayload::default(),
+        rules,
+        effects,
+    ) != crate::sim::radio::RadioResponse::Roger
+    {
+        return false;
+    }
+    // DoEnterNow: the transport's Tag hears event 1 first.
+    let context = UninitContext::new(rules).with_effects(effects);
+    sim.dispatch_object_tag_event(target, 1, Some(id), None, context);
+    let arm = if pax_category == EntityCategory::Infantry {
+        BoardingArm::InfantryTransport
+    } else {
+        BoardingArm::UnitTransport
+    };
+    board_passenger(sim, rules, id, target, arm, registry, effects);
     true
 }
 
@@ -1591,7 +1706,7 @@ pub fn add_garrison_occupant(
 
 /// Gunner caller dispatch to UnitClass +4D4 (746420). Temporal ownership
 /// moves first; its mode7 step precedes the final passenger IFVMode selector.
-fn receive_gunner(
+pub(crate) fn receive_gunner(
     interner: &StringInterner,
     session: &ScenarioSession,
     scenario_rng: &mut SimRng,
@@ -1651,6 +1766,137 @@ fn receive_gunner(
 /// Gunner caller dispatch to UnitClass +4D8 (7464E0). RemoveGunner always
 /// selects mode0 after optional temporal return/LetGo, even with no gunner.
 impl Simulation {
+    /// Phobos `FootClass_SetDestination_OpenToppedFireWhileMoving`
+    /// (`Ext/Techno/Hooks.Transport.cpp:933-1000`, hook `0x4D9510`, the
+    /// NavCom publication in `FootClass::SetDestination`): a moving
+    /// `OpenTopped` Unit that carries passengers lets each passenger drop a
+    /// locomotion or temporal link it is holding when that link cannot be kept
+    /// while the carrier moves. A link stays only when the carrier's
+    /// `OpenTopped.FireWhileMoving` and the passenger's
+    /// `OpenTransport.FireWhileMoving` both allow firing, and either the
+    /// link's own weapon (`Warhead.IsLocomotor`, or `Warhead.Temporal`) is
+    /// marked `FireWhileMoving=yes` or the two keys say so.
+    ///
+    /// VERA calls this from [`Self::begin_foot_destination`] as soon as a
+    /// non-null destination is admitted — the same call, before the NavCom
+    /// write instead of after it; only the passengers' own destinations move,
+    /// so the order against the carrier's publication does not matter.
+    pub(crate) fn phobos_open_topped_release_locks(
+        &mut self,
+        carrier: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let Some(entity) = self.substrate.entities.get(carrier) else {
+            return;
+        };
+        if entity.category() != EntityCategory::Unit {
+            return;
+        }
+        let Some(object) = self.entity_object_type(entity, rules) else {
+            return;
+        };
+        if !object.open_topped {
+            return;
+        }
+        let Some(passengers) = entity
+            .passenger_role()
+            .cargo()
+            .map(|cargo| cargo.passengers().to_vec())
+        else {
+            return;
+        };
+        if passengers.is_empty() {
+            return;
+        }
+        let carrier_allows = object.phobos_open_topped().fire_while_moving(rules);
+        let mut plans = Vec::new();
+        {
+            let world = &*self;
+            for passenger in passengers {
+                let Some(passenger_entity) = world.substrate.entities.get(passenger) else {
+                    continue;
+                };
+                let can_fire = carrier_allows
+                    && crate::sim::combat::fire_error_world::passenger_fire_while_moving(
+                        passenger_entity,
+                        rules,
+                        &world.interner,
+                    );
+                if let Some(target) = passenger_entity.lift.target() {
+                    let keep = can_fire
+                        && !world.phobos_fire_while_moving_forbids(passenger, target, true, rules);
+                    if !keep {
+                        plans.push((passenger, true));
+                    }
+                }
+                if let Some(target) = passenger_entity.temporal.warp_target() {
+                    let keep = can_fire
+                        && !world.phobos_fire_while_moving_forbids(passenger, target, false, rules);
+                    if !keep {
+                        plans.push((passenger, false));
+                    }
+                }
+            }
+        }
+        for (passenger, locomotion) in plans {
+            if locomotion {
+                self.release_locomotor(passenger, true, rules, registry, effects);
+            } else {
+                Self::temporal_let_go(
+                    &mut self.substrate,
+                    &mut self.houses,
+                    &mut self.power_states,
+                    passenger,
+                    crate::rules::ares_switch::ares_way(),
+                );
+            }
+        }
+    }
+
+    /// The weapon half of the hook above: the passenger's selected weapon
+    /// against `target` is an `IsLocomotor=` (or `Temporal=`) warhead and is
+    /// not `FireWhileMoving=yes`. A missing weapon keeps the link, as the
+    /// native `GetWeapon(...)->WeaponType` chain has nothing to read.
+    fn phobos_fire_while_moving_forbids(
+        &self,
+        passenger: u64,
+        target: u64,
+        locomotion: bool,
+        rules: &RuleSet,
+    ) -> bool {
+        let Some(entity) = self.substrate.entities.get(passenger) else {
+            return false;
+        };
+        let Some(object) = self.entity_object_type(entity, rules) else {
+            return false;
+        };
+        let facts = crate::sim::combat::combat_weapon::attacker_facts(entity, object);
+        let kind = crate::sim::combat::TargetKind::Entity(target);
+        let selected = crate::sim::combat::combat_weapon::select_weapon_against(
+            rules,
+            entity,
+            object,
+            &facts,
+            Some(&kind),
+            self,
+            &self.interner,
+            self.resolved_terrain.as_ref(),
+            Some(&self.house_alliances),
+        )
+        .and_then(|(_, selected)| selected);
+        let Some(selected) = selected else {
+            return false;
+        };
+        let link_warhead = if locomotion {
+            selected.warhead.is_locomotor
+        } else {
+            selected.warhead.temporal
+        };
+        link_warhead && !selected.weapon.fire_while_moving
+    }
+
     /// FootClass::RemovePassenger4DE670: the named Cargo4734B0 removal,
     /// optional LeaveTransportSound and empty-hold virtual RemoveGunner.
     /// The caller retains ownership of the passenger's carrier link until
@@ -1819,6 +2065,8 @@ fn rearm_transferred_gunner(
     );
     let frame = session.binary_frame() as i32;
     if let Some(actor) = substrate.entities.get_mut(receiver) {
+        // RESIDUAL: the shared snapshot ROF owner returns only the delay;
+        // this caller does not publish Phobos' LastRearmWasFullDelay arm.
         actor.seldom.rearm_timer.start(frame, rof);
     }
 }
@@ -1880,10 +2128,24 @@ impl Simulation {
         let Some(transport) = self.substrate.entities.get(transport_id) else {
             return;
         };
-        if !self
-            .object_type(transport.type_ref(), rules)
-            .is_some_and(|object| object.open_topped)
-        {
+        let transport_type = self.object_type(transport.type_ref(), rules);
+        if !transport_type.is_some_and(|object| object.open_topped) {
+            return;
+        }
+        // Phobos `TechnoClass_SetOpenTransportCargoTarget_ShareTarget @
+        // 0x710552` (`Ext/Techno/Hooks.Transport.cpp:199-215`): a NON-null
+        // `pTarget` is withheld when `OpenTopped.ShareTransportTarget` is off;
+        // a null target (the Stop / DecideUnitFate / boarding clearing callers)
+        // is never intercepted, so the stock clear semantic is preserved.
+        let suppress_target = {
+            {
+                target.is_some()
+                    && transport_type.is_some_and(|kind| {
+                        !kind.phobos_open_topped().share_transport_target(rules)
+                    })
+            }
+        };
+        if suppress_target {
             return;
         }
         let passengers: Vec<u64> = transport
@@ -2035,12 +2297,377 @@ fn tick_entry_arrival(sim: &mut Simulation, rules: &RuleSet) {
     }
 }
 
+impl Simulation {
+    /// Phobos `TechnoClass_ChangeHouse_Passenger_SyncOwner @ 0x701881`
+    /// (`Ext/Techno/Hooks.Transport.cpp:44-64`), the join point right after
+    /// the Techno owner-change tail's `UpdateReveal` (`0x0070187B`) and
+    /// before the Building/Foot tails: a transport whose type has
+    /// `Passengers.SyncOwner` re-houses every cargo member with the
+    /// transport's new owner, native `SetOwningHouse(pOwner, false)`
+    /// through VERA's one owner-change path. Each member's own ChangeHouse
+    /// runs in full, so a member that is itself a loaded transport syncs
+    /// its hold the same way.
+    pub(crate) fn phobos_sync_cargo_on_owner_change(
+        &mut self,
+        transport_id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let synced = self
+            .substrate
+            .entities
+            .get(transport_id)
+            .and_then(|transport| self.object_type(transport.type_ref(), rules))
+            .is_some_and(|object| {
+                object
+                    .phobos_passengers_sync
+                    .sync_owner(rules.phobos_globals.passengers_sync_owner)
+            });
+        if !synced {
+            return;
+        }
+        let (new_owner, passengers) = match self.substrate.entities.get(transport_id) {
+            Some(transport) => (
+                transport.owner(),
+                transport
+                    .passenger_role()
+                    .cargo()
+                    .map(|cargo| cargo.passengers().to_vec())
+                    .unwrap_or_default(),
+            ),
+            None => return,
+        };
+        for passenger in passengers {
+            self.change_owner_with_rules(passenger, new_owner, rules, registry, effects);
+        }
+    }
+
+    /// Phobos `TechnoClass_EnterTransport @ 0x71067B` (`Ext/Techno/
+    /// Hooks.Transport.cpp:66-89`), at `TechnoClass::AddPassenger`'s head
+    /// (`0x00710670`) before the Cargo add: a `Passengers.SyncOwner` +
+    /// `.RevertOnExit` transport records each entering passenger's current
+    /// house on the passenger's FootExt. Native boarding itself changes no
+    /// house; the record is what the exit and dying-cargo arms restore.
+    fn phobos_record_original_passenger_owner(
+        &mut self,
+        carrier: u64,
+        head_first: &[(u64, f64)],
+        rules: &RuleSet,
+    ) {
+        let record = self
+            .substrate
+            .entities
+            .get(carrier)
+            .and_then(|carrier| self.object_type(carrier.type_ref(), rules))
+            .is_some_and(|object| {
+                let keys = object.phobos_passengers_sync;
+                let globals = &rules.phobos_globals;
+                keys.sync_owner(globals.passengers_sync_owner)
+                    && keys.sync_owner_revert_on_exit(globals.passengers_sync_owner_revert_on_exit)
+            });
+        if !record {
+            return;
+        }
+        for &(head, _) in head_first {
+            if let Some(passenger) = self.substrate.entities.get_mut(head) {
+                let owner = passenger.owner();
+                passenger.set_phobos_original_passenger_owner(Some(owner));
+            }
+        }
+    }
+
+    /// Phobos `FootClass_LeaveTransport @ 0x4DE722` (`Ext/Techno/
+    /// Hooks.Transport.cpp:91-122`), inside `FootClass::RemoveFirstPassenger`
+    /// (`0x004DE710`) past its prologue: a passenger leaving a
+    /// `Passengers.SyncOwner` + `.RevertOnExit` transport that still holds a
+    /// recorded board-time house takes it back under the
+    /// `IsOwnerChangeFromRevertOnExit` latch, which the AutoDeath
+    /// owner-change hook reads around the revert (`Ext/House/Hooks.cpp:225`).
+    /// Native leaves the record standing (`:111-118` clears only the latch).
+    pub(crate) fn phobos_revert_passenger_on_exit(
+        &mut self,
+        transport_id: u64,
+        passenger: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let transport_syncs = self
+            .substrate
+            .entities
+            .get(transport_id)
+            .and_then(|transport| self.object_type(transport.type_ref(), rules))
+            .is_some_and(|object| {
+                let keys = object.phobos_passengers_sync;
+                let globals = &rules.phobos_globals;
+                keys.sync_owner(globals.passengers_sync_owner)
+                    && keys.sync_owner_revert_on_exit(globals.passengers_sync_owner_revert_on_exit)
+            });
+        if !transport_syncs {
+            return;
+        }
+        let Some(original) = self
+            .substrate
+            .entities
+            .get(passenger)
+            .and_then(GameEntity::phobos_original_passenger_owner)
+        else {
+            return;
+        };
+        if let Some(entity) = self.substrate.entities.get_mut(passenger) {
+            entity.set_phobos_revert_on_exit_latch(true);
+        }
+        self.change_owner_with_rules(passenger, original, rules, registry, effects);
+        if let Some(entity) = self.substrate.entities.get_mut(passenger) {
+            entity.set_phobos_revert_on_exit_latch(false);
+        }
+    }
+
+    /// Phobos `UnitClass_ReceiveDamage_Cargo_SyncOwner @ 0x737F80`
+    /// (`Ext/Techno/Hooks.Transport.cpp:125-149`), 6 bytes at the head of
+    /// `UnitClass::ReceiveDamage`'s passenger block
+    /// (`0x00737F80..0x007381B6`), before the stock open-topped clear
+    /// (`0x00737F80..0x00737F92`) and before Ares survivor handling: every
+    /// dying-transport passenger that still holds a recorded board-time
+    /// house takes it back, with no latch and no record clear.
+    pub(crate) fn phobos_revert_cargo_on_dying_transport(
+        &mut self,
+        transport_id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let transport_syncs = self
+            .substrate
+            .entities
+            .get(transport_id)
+            .and_then(|transport| self.object_type(transport.type_ref(), rules))
+            .is_some_and(|object| {
+                let keys = object.phobos_passengers_sync;
+                let globals = &rules.phobos_globals;
+                keys.sync_owner(globals.passengers_sync_owner)
+                    && keys.sync_owner_revert_on_exit(globals.passengers_sync_owner_revert_on_exit)
+            });
+        if !transport_syncs {
+            return;
+        }
+        let passengers = match self.substrate.entities.get(transport_id) {
+            Some(transport) => transport
+                .passenger_role()
+                .cargo()
+                .map(|cargo| cargo.passengers().to_vec())
+                .unwrap_or_default(),
+            None => return,
+        };
+        for passenger in passengers {
+            if let Some(original) = self
+                .substrate
+                .entities
+                .get(passenger)
+                .and_then(GameEntity::phobos_original_passenger_owner)
+            {
+                self.change_owner_with_rules(passenger, original, rules, registry, effects);
+            }
+        }
+    }
+}
+
+/// Phobos `ScenarioExt::TransportReloaders` (`Ext/Scenario/Body.h:34`): the
+/// passengers reloaded by the pre-Logic pass while inside a transport, in
+/// boarding order. One owner for the queue; serialized as its former plain
+/// list so existing saves load unchanged.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub(crate) struct TransportReloaderQueue {
+    ids: Vec<u64>,
+}
+
+impl TransportReloaderQueue {
+    fn add(&mut self, id: u64) {
+        if !self.ids.contains(&id) {
+            self.ids.push(id);
+        }
+    }
+
+    fn remove(&mut self, id: u64) {
+        if let Some(index) = self.ids.iter().position(|&listed| listed == id) {
+            self.ids.remove(index);
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+    }
+
+    fn take(&mut self) -> Vec<u64> {
+        std::mem::take(&mut self.ids)
+    }
+
+    fn replace(&mut self, ids: Vec<u64>) {
+        self.ids = ids;
+    }
+
+    /// The listed passengers in boarding order, for the reload pass's readers
+    /// and fixtures.
+    pub(crate) fn listed(&self) -> &[u64] {
+        &self.ids
+    }
+}
+
+/// Phobos `ReloadInTransport` (`Ext/Techno/Hooks.Transport.cpp:70-165`):
+/// the scenario reloader list, its pre-Logic pass and the infantry FireAt
+/// restart.
+impl Simulation {
+    /// `TechnoClass_EnterTransport` (hook `0x71067B`, `:82-89`): a boarded
+    /// Infantry or Unit with a positive `Ammo=` and the resolved key joins
+    /// `ScenarioExt::TransportReloaders`.
+    pub(crate) fn register_transport_reloader(&mut self, rules: &RuleSet, pax_id: u64) {
+        let Some(entity) = self.substrate.entities.get(pax_id) else {
+            return;
+        };
+        if !matches!(
+            entity.category(),
+            EntityCategory::Infantry | EntityCategory::Unit
+        ) {
+            return;
+        }
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+            return;
+        };
+        if object.ammo <= 0
+            || !object
+                .phobos_techno_extras
+                .reload_in_transport(rules.phobos_globals.reload_in_transport)
+        {
+            return;
+        }
+        self.transport_reloaders.add(pax_id);
+    }
+
+    /// `FootClass_LeaveTransport` (hook `0x4DE722`, `:97-105`) and
+    /// `TechnoClass::UnInit` (`Ext/Techno/Body.cpp:30`): the order-preserving
+    /// erase of `std::remove` + erase.
+    pub(crate) fn remove_transport_reloader(&mut self, pax_id: u64) {
+        self.transport_reloaders.remove(pax_id);
+    }
+
+    /// `ScenarioExt::ExtData::UpdateTransportReloaders`
+    /// (`Ext/Scenario/Body.cpp:112-119`, from `LogicClass_Update_BeforeAll`
+    /// `0x55B4E1`): every listed passenger that is alive and still inside an
+    /// in-logic transport takes one `Reload()`. Native `TechnoClass::Reload`
+    /// calls `StartReloading` itself after a round (0x6FB069), so the clock
+    /// restarts here too.
+    pub(crate) fn phobos_update_transport_reloaders(&mut self, rules: &RuleSet) {
+        if self.transport_reloaders.is_empty() {
+            return;
+        }
+        let now = self.session.binary_frame() as i32;
+        let ids = self.transport_reloaders.take();
+        let mut keep = Vec::with_capacity(ids.len());
+        for id in ids {
+            let Some((category, type_ref)) = self.substrate.entities.get(id).and_then(|entity| {
+                (entity.lifecycle.object_alive()).then_some((entity.category(), entity.type_ref()))
+            }) else {
+                continue;
+            };
+            let Some(transport_id) = self
+                .substrate
+                .entities
+                .get(id)
+                .and_then(|entity| entity.passenger_role().inside_transport_id())
+            else {
+                continue;
+            };
+            keep.push(id);
+            let transport_in_logic =
+                self.substrate
+                    .entities
+                    .get(transport_id)
+                    .is_some_and(|transport| {
+                        transport.lifecycle.object_alive() && transport.seldom.in_logic_vector.is_member()
+                    });
+            if !transport_in_logic {
+                continue;
+            }
+            let Some(object) = self.interner.object_type(type_ref, rules) else {
+                continue;
+            };
+            let reloaded = self.substrate.entities.get_mut(id).is_some_and(|entity| {
+                match category {
+                    // `UnitClass::Reload736CA0` keeps the MobileFire moving
+                    // check; its error arm (no locomotion) skips the round.
+                    EntityCategory::Unit => entity
+                        .reload_unit_ammo(object, now, crate::rules::ares_switch::ares_way())
+                        .is_ok(),
+                    _ => entity.reload_techno_ammo(
+                        object,
+                        now,
+                        crate::rules::ares_switch::ares_way(),
+                    ),
+                }
+            });
+            if reloaded {
+                crate::sim::shared_ammo::start_reloading(
+                    &mut self.substrate.entities,
+                    &self.interner,
+                    rules,
+                    id,
+                    now,
+                );
+            }
+        }
+        self.transport_reloaders.replace(keep);
+    }
+
+    /// `InfantryClass_FireAt_ReloadInTransport` (`0x51DF82`, `:151-165`):
+    /// after a shot, a transported infantryman whose resolved key is yes and
+    /// whose magazine is below `Ammo=` restarts its reload clock.
+    pub(crate) fn reload_in_transport_after_infantry_fire(
+        &mut self,
+        rules: &RuleSet,
+        id: u64,
+        now: i32,
+    ) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if !entity.passenger_role().is_inside_transport() {
+            return;
+        }
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+            return;
+        };
+        let applies = object.ammo > 0
+            && entity
+                .ammo()
+                .is_some_and(|ammo| ammo.current() < object.ammo)
+            && object
+                .phobos_techno_extras
+                .reload_in_transport(rules.phobos_globals.reload_in_transport);
+        if applies {
+            crate::sim::shared_ammo::start_reloading(
+                &mut self.substrate.entities,
+                &self.interner,
+                rules,
+                id,
+                now,
+            );
+        }
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
 #[cfg(all(test, tests_sim_p_s))]
 mod gunner_tests;
 
 #[cfg(all(test, tests_sim_p_s))]
 mod allegiance_tests;
 
+#[cfg(all(test, tests_sim_p_s))]
+mod sync_owner_tests;
+
+#[cfg(all(test, tests_sim_p_s))]
 #[cfg(all(test, tests_sim_p_s))]
 pub(crate) mod assault_tests;
 
@@ -2297,5 +2924,354 @@ ConditionYellow=50%
             }
         }
         assert!(services > 0, "retail has depots and refineries");
+    }
+
+    /// Phobos `NoQueueUpToEnter=` on the transport type, with the per-type
+    /// `NoQueueUpToEnter.BoardDistance=` / `[General]` fallbacks
+    /// (`Ext/Techno/Hooks.Transport.cpp:220-228`, `:332`).
+    fn no_queue_rules(transport_keys: &str, general_keys: &str) -> RuleSet {
+        let ini = IniFile::from_str(&format!(
+            "\
+[InfantryTypes]
+0=E1
+[VehicleTypes]
+0=BFRT
+[AircraftTypes]
+[BuildingTypes]
+
+[E1]
+Strength=125
+Armor=none
+Speed=4
+Size=1
+
+[BFRT]
+Strength=600
+Armor=heavy
+Speed=4
+Passengers=5
+SizeLimit=2
+{transport_keys}
+
+[General]
+FixtureOnly=1
+{general_keys}
+[AudioVisual]
+ConditionRed=25%
+ConditionYellow=50%
+",
+        ));
+        RuleSet::from_ini(&ini).expect("parse no-queue test rules")
+    }
+
+    /// A transport type with `NoQueueUpToEnter=yes` takes an infantryman
+    /// standing one cell away (256 leptons, below the 384 default) as soon as
+    /// its Foot update runs, without the walk into the transport's cell.
+    /// Without the key the stock queue keeps him an outside player.
+    #[test]
+    fn no_queue_up_to_enter_boards_from_the_neighbouring_cell() {
+        let stock = no_queue_rules("", "");
+        let mut sim = Simulation::new();
+        let transport = spawn_transport(&mut sim, &stock, "BFRT", "Americans", 10, 10);
+        let passenger =
+            spawn_entering_infantry(&mut sim, &stock, "E1", "Americans", transport, 11, 10);
+        sim.substrate
+            .entities
+            .get_mut(passenger)
+            .unwrap()
+            .seldom
+            .radio_contacts
+            .insert(transport);
+        assert!(
+            !try_fast_enter(
+                &mut sim,
+                &stock,
+                passenger,
+                None,
+                &mut crate::sim::world::FrameEffects::default()
+            ),
+            "an unset key keeps the queued Enter mission"
+        );
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(passenger)
+                .unwrap()
+                .passenger_role()
+                .inside_transport(),
+            None
+        );
+
+        let rules = no_queue_rules("NoQueueUpToEnter=yes", "");
+        let mut sim = Simulation::new();
+        let transport = spawn_transport(&mut sim, &rules, "BFRT", "Americans", 10, 10);
+        let passenger =
+            spawn_entering_infantry(&mut sim, &rules, "E1", "Americans", transport, 11, 10);
+        sim.substrate
+            .entities
+            .get_mut(passenger)
+            .unwrap()
+            .seldom
+            .radio_contacts
+            .insert(transport);
+        assert!(try_fast_enter(
+            &mut sim,
+            &rules,
+            passenger,
+            None,
+            &mut crate::sim::world::FrameEffects::default()
+        ));
+        let passenger = sim.substrate.entities.get(passenger).unwrap();
+        assert_eq!(
+            passenger.passenger_role().inside_transport(),
+            Some((transport, false))
+        );
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(transport)
+                .unwrap()
+                .passenger_role()
+                .cargo()
+                .unwrap()
+                .passengers(),
+            &[passenger.stable_id()]
+        );
+    }
+
+    /// The square distance test is strict in every axis
+    /// (`Ext/Techno/Hooks.Transport.cpp:226-228`): at exactly
+    /// `NoQueueUpToEnter.BoardDistance=` the passenger stays outside, and an
+    /// unset per-type distance keeps the `[General]` fallback of 384.
+    #[test]
+    fn the_board_distance_is_strict_and_keeps_the_general_fallback() {
+        let exact = no_queue_rules(
+            "NoQueueUpToEnter=yes\nNoQueueUpToEnter.BoardDistance=256",
+            "",
+        );
+        let mut sim = Simulation::new();
+        let transport = spawn_transport(&mut sim, &exact, "BFRT", "Americans", 10, 10);
+        let passenger =
+            spawn_entering_infantry(&mut sim, &exact, "E1", "Americans", transport, 11, 10);
+        sim.substrate
+            .entities
+            .get_mut(passenger)
+            .unwrap()
+            .seldom
+            .radio_contacts
+            .insert(transport);
+        assert!(
+            !try_fast_enter(
+                &mut sim,
+                &exact,
+                passenger,
+                None,
+                &mut crate::sim::world::FrameEffects::default()
+            ),
+            "a 256-lepton offset is not strictly below a 256-lepton distance"
+        );
+
+        let global = no_queue_rules("", "NoQueueUpToEnter=yes");
+        let mut sim = Simulation::new();
+        let transport = spawn_transport(&mut sim, &global, "BFRT", "Americans", 10, 10);
+        let passenger =
+            spawn_entering_infantry(&mut sim, &global, "E1", "Americans", transport, 11, 10);
+        sim.substrate
+            .entities
+            .get_mut(passenger)
+            .unwrap()
+            .seldom
+            .radio_contacts
+            .insert(transport);
+        assert!(
+            try_fast_enter(
+                &mut sim,
+                &global,
+                passenger,
+                None,
+                &mut crate::sim::world::FrameEffects::default()
+            ),
+            "the unset type keys read [General] NoQueueUpToEnter= and its 384 default"
+        );
+    }
+    /// Phobos `ReloadInTransport` (`Ext/Techno/Hooks.Transport.cpp:70-165`):
+    /// a qualifying passenger joins the Scenario list on boarding, takes one
+    /// `Reload()` (plus its own StartReloading) per pre-Logic pass, leaves the
+    /// list on the leave hook, and a transported infantryman's FireAt
+    /// restarts the clock.
+    #[test]
+    fn phobos_reload_in_transport_registers_reloads_and_unlists() {
+        use crate::sim::ammo::TechnoAmmo;
+
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[InfantryTypes]
+0=E1
+[VehicleTypes]
+0=BFRT
+             [AircraftTypes]
+[BuildingTypes]
+             [E1]
+Strength=125
+Armor=none
+Speed=4
+Size=1
+             Ammo=5
+Reload=10
+ReloadInTransport=yes
+             [BFRT]
+Strength=600
+Armor=heavy
+Speed=4
+Passengers=5
+SizeLimit=2
+             [General]
+FixtureOnly=1
+",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let transport = spawn_transport(&mut sim, &rules, "BFRT", "Americans", 10, 10);
+        let passenger =
+            spawn_entering_infantry(&mut sim, &rules, "E1", "Americans", transport, 11, 10);
+        let mut ammo = TechnoAmmo::new(5);
+        ammo.set_current_for_test(0);
+        sim.substrate
+            .entities
+            .get_mut(passenger)
+            .unwrap()
+            .install_ammo_for_test(Some(ammo));
+        assert!(super::board_passenger(
+            &mut sim,
+            &rules,
+            passenger,
+            transport,
+            super::BoardingArm::InfantryTransport,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        ));
+        assert_eq!(sim.transport_reloaders.listed(), [passenger]);
+
+        sim.session.set_binary_frame_for_test(200);
+        sim.phobos_update_transport_reloaders(&rules);
+        let entity = sim.substrate.entities.get(passenger).unwrap();
+        assert_eq!(entity.ammo().unwrap().current(), 1, "one round per pass");
+        assert!(
+            entity.ammo_reload_timer().remaining(200) > 0,
+            "TechnoClass::Reload restarts the clock (0x6FB069)"
+        );
+
+        // A running clock adds nothing on the next pass.
+        sim.phobos_update_transport_reloaders(&rules);
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(passenger)
+                .unwrap()
+                .ammo()
+                .unwrap()
+                .current(),
+            1
+        );
+        // The clock is due again ten frames later.
+        sim.session.set_binary_frame_for_test(210);
+        sim.phobos_update_transport_reloaders(&rules);
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(passenger)
+                .unwrap()
+                .ammo()
+                .unwrap()
+                .current(),
+            2
+        );
+
+        // FireAt restarts the clock for a transported infantryman.
+        sim.session.set_binary_frame_for_test(400);
+        sim.reload_in_transport_after_infantry_fire(&rules, passenger, 400);
+        assert!(
+            sim.substrate
+                .entities
+                .get(passenger)
+                .unwrap()
+                .ammo_reload_timer()
+                .remaining(400)
+                > 0,
+            "the FireAt hook starts the clock"
+        );
+
+        // The leave hook erases the entry; the pass then reloads nothing.
+        sim.remove_transport_reloader(passenger);
+        assert!(sim.transport_reloaders.is_empty());
+        sim.session.set_binary_frame_for_test(500);
+        sim.phobos_update_transport_reloaders(&rules);
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(passenger)
+                .unwrap()
+                .ammo()
+                .unwrap()
+                .current(),
+            2
+        );
+    }
+
+    /// The same registration reads `[General] ReloadInTransport` when the
+    /// type key is unset, and a type with `Ammo=-1` never joins the list.
+    #[test]
+    fn phobos_reload_in_transport_reads_the_general_and_skips_infinite_ammo() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[InfantryTypes]
+0=E1
+1=E2
+[VehicleTypes]
+0=BFRT
+             [AircraftTypes]
+[BuildingTypes]
+             [E1]
+Strength=125
+Armor=none
+Speed=4
+Size=1
+Ammo=5
+Reload=10
+             [E2]
+Strength=125
+Armor=none
+Speed=4
+Size=1
+Ammo=-1
+             ReloadInTransport=yes
+             [BFRT]
+Strength=600
+Armor=heavy
+Speed=4
+Passengers=5
+SizeLimit=2
+             [General]
+FixtureOnly=1
+ReloadInTransport=yes
+",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let transport = spawn_transport(&mut sim, &rules, "BFRT", "Americans", 10, 10);
+        let global_pax =
+            spawn_entering_infantry(&mut sim, &rules, "E1", "Americans", transport, 11, 10);
+        let infinite =
+            spawn_entering_infantry(&mut sim, &rules, "E2", "Americans", transport, 12, 10);
+        for pax in [global_pax, infinite] {
+            assert!(super::board_passenger(
+                &mut sim,
+                &rules,
+                pax,
+                transport,
+                super::BoardingArm::InfantryTransport,
+                None,
+                &mut crate::sim::world::FrameEffects::default(),
+            ));
+        }
+        assert_eq!(sim.transport_reloaders.listed(), [global_pax]);
     }
 }

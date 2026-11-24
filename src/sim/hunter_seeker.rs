@@ -471,15 +471,18 @@ impl crate::sim::world::Simulation {
         // The hunter's GetCoords; it is read before the two receivers, as no
         // Fly owner moves inside them.
         let coord = crate::sim::projectile::ProjectileCoord::new(at.x, at.y, at.z);
-        self.combat_light_requests
-            .emit(crate::sim::combat::CombatLightRequest::Impact {
-                target_id: None,
-                damage,
-                warhead_ref: self.interner.intern(&rules.bridge_warheads.c4_name),
-                coord,
-                force_create: false,
-                flags: 0,
-            });
+        let c4_warhead = self.interner.intern(&rules.bridge_warheads.c4_name);
+        if crate::sim::combat::combat_light_chance_admits(self, rules, c4_warhead) {
+            self.combat_light_requests
+                .emit(crate::sim::combat::CombatLightRequest::Impact {
+                    target_id: None,
+                    damage,
+                    warhead_ref: c4_warhead,
+                    coord,
+                    force_create: false,
+                    flags: 0,
+                });
+        }
         if let Some(warhead_type) = self.interner.warhead_type(warhead, rules) {
             // 1004DDB2..1004DDBD: DamageArea(coord, damage, hunter, warhead, 1, NULL).
             let _ = crate::sim::combat::world_receiver::apply_area_damage(

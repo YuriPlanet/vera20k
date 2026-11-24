@@ -209,6 +209,125 @@ fn recalc_keeps_marked_structure_over_partial_terrain_occupation_and_bridge_deck
     assert_eq!(before.cell(6, 6).unwrap().ground_level, 0);
 }
 
+/// Phobos `IsDestroyableObstacle` (`Ext/Building/Hooks.cpp:568-576`): a
+/// marked building's foundation answers the Destroyable cell class (2), so
+/// the Normal movement row's zone map excludes it while Destroyer admits the
+/// class; limbo restores the terrain class and rejoins the zones.
+#[test]
+fn destroyable_obstacle_mark_writes_the_destroyable_cell_class() {
+    use crate::map::resolved_terrain::zone_class;
+    use crate::rules::locomotor_type::MovementZone;
+    use crate::sim::movement::locomotor::MovementLayer;
+    use crate::sim::pathfinding::zone_map::ZONE_INVALID;
+
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(
+            "[BuildingTypes]\n0=OBSTACLE\n1=HUT\n\
+             [OBSTACLE]\nStrength=500\nIsDestroyableObstacle=yes\nOwner=Americans\n\
+             [HUT]\nStrength=500\nOwner=Americans\n",
+        ),
+        &IniFile::from_str("[OBSTACLE]\nFoundation=2x2\n[HUT]\nFoundation=2x2\n"),
+    )
+    .unwrap();
+    let mut context = super::UninitContext::new(&rules);
+    let mut sim = Simulation::with_seed(0x483d8e);
+    sim.install_resolved_terrain_for_new_map(gsi_04_10_clear_terrain(16, 16));
+    assert!(sim.rebuild_dynamic_navigation(&rules));
+    let zone_id = |sim: &Simulation, movement_zone| {
+        sim.zone_grid
+            .as_ref()
+            .unwrap()
+            .map_for(movement_zone)
+            .unwrap()
+            .zone_at(6, 6, MovementLayer::Ground)
+    };
+    let ground_zone = zone_id(&sim, MovementZone::Normal);
+
+    let mut hut = crate::sim::game_entity::GameEntity::test_default_of_category(
+        8,
+        "HUT",
+        "Americans",
+        6,
+        6,
+        EntityCategory::Structure,
+    );
+    hut.set_type_ref_for_test(sim.interner.intern("HUT"));
+    hut.seldom
+        .type_facts
+        .set_foundation_for_test(rules.object("HUT").unwrap().foundation.clone().into());
+    sim.substrate.entities.insert(hut);
+    assert!(sim.mark_entity_put(8, context.reborrow()));
+    assert_eq!(
+        sim.resolved_terrain
+            .as_ref()
+            .unwrap()
+            .cell(6, 6)
+            .unwrap()
+            .zone_type,
+        zone_class::GROUND,
+        "a building without the key leaves the vanilla class"
+    );
+    assert_eq!(zone_id(&sim, MovementZone::Normal), ground_zone);
+    assert!(sim.unmark_entity_remove(8, context.reborrow()));
+
+    let mut obstacle = crate::sim::game_entity::GameEntity::test_default_of_category(
+        9,
+        "OBSTACLE",
+        "Americans",
+        6,
+        6,
+        EntityCategory::Structure,
+    );
+    obstacle.set_type_ref_for_test(sim.interner.intern("OBSTACLE"));
+    obstacle
+        .seldom
+        .type_facts
+        .set_foundation_for_test(rules.object("OBSTACLE").unwrap().foundation.clone().into());
+    sim.substrate.entities.insert(obstacle);
+    assert!(sim.mark_entity_put(9, context.reborrow()));
+    for (x, y) in [(6, 6), (7, 6), (6, 7), (7, 7)] {
+        assert_eq!(
+            sim.resolved_terrain
+                .as_ref()
+                .unwrap()
+                .cell(x, y)
+                .unwrap()
+                .zone_type,
+            zone_class::WALL,
+            "the marked obstacle writes the Destroyable class"
+        );
+    }
+    assert_eq!(
+        zone_id(&sim, MovementZone::Normal),
+        ZONE_INVALID,
+        "the Normal row refuses the Destroyable class"
+    );
+    assert_ne!(
+        zone_id(&sim, MovementZone::Destroyer),
+        ZONE_INVALID,
+        "the Destroyer row admits the Destroyable class"
+    );
+
+    assert!(sim.unmark_entity_remove(9, context.reborrow()));
+    for (x, y) in [(6, 6), (7, 6), (6, 7), (7, 7)] {
+        assert_eq!(
+            sim.resolved_terrain
+                .as_ref()
+                .unwrap()
+                .cell(x, y)
+                .unwrap()
+                .zone_type,
+            zone_class::GROUND,
+            "limbo restores the terrain class"
+        );
+    }
+    assert_eq!(
+        zone_id(&sim, MovementZone::Normal),
+        ground_zone,
+        "limbo rejoins the ground zone"
+    );
+}
+
 fn assert_only_marked_foundation(sim: &Simulation) {
     let path = sim.path_grid_snapshot().unwrap();
     for ry in 0..3 {
@@ -506,7 +625,7 @@ fn structure_mark_publishes_presence_and_preserves_other_marked_blockers() {
         !placed.is_walkable(6, 6),
         "previous borrowed view stays immutable"
     );
-    assert!(!sim.unmark_entity_remove(10, context));
+    assert!(!sim.unmark_entity_remove(10, context.reborrow()));
     assert_eq!(*sim.path_grid_snapshot().unwrap(), *empty);
     assert_eq!(
         sim.structure_navigation_cells,

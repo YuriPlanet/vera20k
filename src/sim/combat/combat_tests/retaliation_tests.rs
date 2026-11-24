@@ -70,7 +70,7 @@ fn stock_sniper_damage_retaliation_uses_wall_context_before_sight_fallback() {
         }
         sim.overlay_grid = Some(overlays);
         assert!(
-            combat_targeting::should_retaliate(&sim, rules, victim, source),
+            combat_targeting::should_retaliate(&sim, rules, victim, source, None),
             "the non-range refusal gates must admit this source"
         );
         let actor = sim.substrate.entities.get(victim).unwrap();
@@ -463,7 +463,7 @@ fn gsi_04_07_should_retaliate_world_refusals() {
     for human in [false, true] {
         let (sim, rules) = tank(human);
         assert!(
-            should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE),
+            should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE, None),
             "baseline, human {human}"
         );
     }
@@ -478,7 +478,7 @@ fn gsi_04_07_should_retaliate_world_refusals() {
             .drain
             .set_target_for_test(Some(9));
         assert_eq!(
-            should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE),
+            should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE, None),
             human,
             "draining, human {human}"
         );
@@ -492,7 +492,7 @@ fn gsi_04_07_should_retaliate_world_refusals() {
         .unwrap()
         .seldom
         .slave = crate::sim::slave_manager::SlaveLink::for_test(Some(9), Vec::new());
-    assert!(!should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE));
+    assert!(!should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE, None));
     // `0x00708899`: the source is disguised to the victim's house as one of
     // its own (vt+0xC8).
     let (mut sim, rules) = tank(false);
@@ -505,7 +505,7 @@ fn gsi_04_07_should_retaliate_world_refusals() {
         .disguise
         .get_or_insert_with(Default::default)
         .acquire(0, None, Some(victim_owner));
-    assert!(!should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE));
+    assert!(!should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE, None));
     // `0x00708905..0x007089A5`: a human's C4 infantryman leaves a building
     // alone; a computer's does not.
     for human in [false, true] {
@@ -517,7 +517,7 @@ fn gsi_04_07_should_retaliate_world_refusals() {
             human,
         );
         assert_eq!(
-            should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE),
+            should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE, None),
             !human,
             "C4 against a building, human {human}"
         );
@@ -527,7 +527,7 @@ fn gsi_04_07_should_retaliate_world_refusals() {
         let (mut sim, rules) = tank(false);
         crate::sim::team_script_vm::join_team_for_test(&mut sim, &[GATE_VICTIM], suicide, false);
         assert_eq!(
-            should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE),
+            should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE, None),
             !suicide,
             "Suicide={suicide}"
         );
@@ -541,7 +541,7 @@ fn gsi_04_07_should_retaliate_world_refusals() {
         EntityCategory::Unit,
         false,
     );
-    assert!(!should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE));
+    assert!(!should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE, None));
 }
 
 /// A garrisoned building fights back with its occupant's weapon: GetWeapon
@@ -562,7 +562,8 @@ fn gsi_04_07_a_garrison_retaliates_with_its_occupants_weapon() {
         &sim,
         &rules,
         GATE_VICTIM,
-        GATE_SOURCE
+        GATE_SOURCE,
+        None
     ));
     let occupant_id = 3;
     let mut occupant = GameEntity::test_default(occupant_id, "E1", "Test", 20, 5);
@@ -585,7 +586,8 @@ fn gsi_04_07_a_garrison_retaliates_with_its_occupants_weapon() {
         &sim,
         &rules,
         GATE_VICTIM,
-        GATE_SOURCE
+        GATE_SOURCE,
+        None
     ));
 }
 
@@ -1262,7 +1264,7 @@ fn gsi_04_07_damage_ai_retaliation_keeps_higher_scored_current_target() {
         entities.insert(gi);
 
         let current_score = crate::sim::combat::combat_targeting::calculate_ai_threat_score(
-            &entities, 10, current_id, &rules, &interner, None, None, None, 0,
+            &entities, 10, current_id, &rules, &interner, None, None, None, None, None,
         )
         .map(|score| {
             i64::from(crate::util::native_x87::MaskedX87Chop53::ftol_i32_low_masked(score))
@@ -1277,7 +1279,8 @@ fn gsi_04_07_damage_ai_retaliation_keeps_higher_scored_current_target() {
             None,
             None,
             None,
-            0,
+            None,
+            None,
         )
         .map(|score| {
             i64::from(crate::util::native_x87::MaskedX87Chop53::ftol_i32_low_masked(score))

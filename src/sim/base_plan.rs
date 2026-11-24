@@ -251,6 +251,15 @@ impl BasePlanState {
         }
     }
 
+    /// `BaseNodeClass::Placed = true` and `Attempts = 0`
+    /// (`BuildingClass::KickOutUnit` `0x004451F8` with `AIForbidConYard`).
+    pub(crate) fn mark_placed(&mut self, index: usize) {
+        if let Some(node) = self.nodes.get_mut(index) {
+            node.filled = true;
+            node.retry_count = 0;
+        }
+    }
+
     /// Count a try-later exit against node `index` (`0x0042F380` returns the
     /// incremented signed count); a nonzero mode drops the node once the count
     /// exceeds `maximum_failures` (`0x00445249..0x004452C3`, the ordered

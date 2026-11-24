@@ -62,8 +62,6 @@ pub(crate) const DO_AIR_DEATH_FALLING: i32 = 0x23;
 pub(crate) const DO_AIR_DEATH_FINISH: i32 = 0x24;
 pub(crate) const DO_PANIC: i32 = 0x25;
 pub(crate) const DO_CARRY: i32 = 0x27;
-/// Firestorm 2.0's Struggle (its DoType 20), VERA's action record 42.
-pub(crate) const DO_STRUGGLE: i32 = crate::rules::infantry_sequence::DO_STRUGGLE;
 
 /// `InfantryClass::IsInDeathSequence @ 0x00522CB0`: Die1..5, WetDie1/2 and the
 /// three AirDeath actions. Assign_Target refuses such an infantryman as a
@@ -190,33 +188,6 @@ impl Simulation {
         rules: &RuleSet,
         effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
-        self.infantry_do_action_from(id, requested, force, false, rules, effects)
-    }
-
-    /// `InfantryClass::Do_Action` 0x0051D6F0 with the random-frame argument
-    /// 1: an accepted action starts at a random stage. Firestorm 2.0's web
-    /// (`InfantryClass::Take_Damage` `0x004D2465..0x004D2493`) asks Struggle
-    /// this way.
-    pub(crate) fn infantry_do_action_random_start(
-        &mut self,
-        id: u64,
-        requested: i32,
-        force: bool,
-        rules: &RuleSet,
-        effects: &mut FrameEffects<'_>,
-    ) -> Result<bool, String> {
-        self.infantry_do_action_from(id, requested, force, true, rules, effects)
-    }
-
-    fn infantry_do_action_from(
-        &mut self,
-        id: u64,
-        requested: i32,
-        force: bool,
-        random_start: bool,
-        rules: &RuleSet,
-        effects: &mut FrameEffects<'_>,
-    ) -> Result<bool, String> {
         let actor = self
             .substrate
             .entities
@@ -224,10 +195,10 @@ impl Simulation {
             .ok_or("retired Do_Action receiver")?;
         let facts = DoActionType::of(&self.interner, actor.type_ref(), rules)
             .ok_or("Do_Action requires the Infantry type")?;
-        self.apply_infantry_do_action(id, requested, force, random_start, &facts, rules, effects)
+        self.apply_infantry_do_action(id, requested, force, &facts, rules, effects)
     }
 
-    /// `InfantryClass::Do_Action` 0x0051D6F0.
+    /// `InfantryClass::Do_Action` 0x0051D6F0 with a random-frame argument 0.
     ///
     /// In order:
     /// - The requested action's record must have frames (`0x0051D70F`, Type
@@ -252,21 +223,19 @@ impl Simulation {
     ///   the prone byte: Down lies down, Up and Deploy stand up
     ///   (`0x0051DAA7..0x0051DAC8`).
     ///
+    /// Not represented:
+    /// - the random first stage a caller's third argument asks for
+    ///   (`0x0051DA4A..0x0051DA84`, a Scenario draw): the crash latch, the
+    ///   impact notice, the AirDeath arm and the idle fidgets pass 0, and the
+    ///   native corpora's restarted stages show it for the other callers VERA
+    ///   ports.
+    ///
     /// Every accepted action restarts the shared native stage and timer.
-    /// With `random_start` (the third argument) the stage starts at a
-    /// Scenario draw in `0..count` of the action's record (`0x0051DA4A..
-    /// 0x0051DA84`, at least one frame); otherwise at 0. Only Firestorm's
-    /// web passes it; gamemd's own callers that VERA ports pass 0.
-    /// Residual: Firestorm 2.0's Do_Action draws this from the generator at
-    /// `0x0074BE20` (`0x004D6643..0x004D6673`), not Scenario; this one port
-    /// keeps gamemd's Scenario draw.
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn apply_infantry_do_action(
         &mut self,
         id: u64,
         requested: i32,
         force: bool,
-        random_start: bool,
         facts: &DoActionType,
         rules: &RuleSet,
         effects: &mut FrameEffects<'_>,
@@ -326,6 +295,25 @@ impl Simulation {
         } else {
             requested
         };
+        // Phobos `InfantryClass_DoAction_Water` (`Ext/Techno/Hooks.Misc.cpp:883-901`,
+        // hook 0x51D7E0): a type whose art sets `OnlyUseLandSequences=` — or
+        // whose unset key keeps `[General] OnlyUseLandSequences=` — returns
+        // SkipWaterSequences (0x51D842) and leaves every requested action
+        // unmapped. The water-state store and transition sound below are
+        // still on that path.
+        let only_land_sequences = rules.phobos()
+            && rules
+                .object_by_handle(facts.handle)
+                .phobos_land_sequences
+                .only_land(rules.phobos_globals.only_use_land_sequences);
+        // Phobos `SecondaryFireSequenceLandOnly` (`Ext/Techno/Hooks.Misc.cpp:895`):
+        // the resolved yes keeps stock's SecondaryFire/Prone -> WetAttack
+        // remap; no leaves those requests on their land records.
+        let secondary_fire_land_only = !rules.phobos()
+            || rules
+                .object_by_handle(facts.handle)
+                .phobos_land_sequences
+                .secondary_fire_land_only(rules.phobos_globals.secondary_fire_sequence_land_only);
         if facts.movement_zone == MovementZone::AmphibiousDestroyer {
             //51D7B0: virtual+1B8 is Abstract41BEA0, signed physical XYZ/256
             // packed to two WORDs. Map5657A0 retains one canonical Cell,
@@ -341,7 +329,7 @@ impl Simulation {
                 dummy.land_type()
             };
             let on_land = !matches!(land, 2 | 6) || on_bridge;
-            if !on_land {
+            if !on_land && !only_land_sequences {
                 //51D7DE..51D83D: only these requested records remap. Native
                 // does not recheck the mapped record's count before admission.
                 requested = match requested {
@@ -351,7 +339,7 @@ impl Simulation {
                     10 => 19,
                     11 => 20,
                     12 => 21,
-                    4 | 8 => 22,
+                    4 | 8 if secondary_fire_land_only => 22,
                     other => other,
                 };
             }
@@ -442,21 +430,6 @@ impl Simulation {
             // DoAction51D94F..51D9CA submits PlayAt before the Doing store.
             effects.flush_sound(self, rules);
         }
-        //51DA4A..51DA84: the random first stage reads the stored action's
-        // signed count (Type+0xE3C record +4), at least 1, and draws once
-        // from Scenario+0x218 (no draw for a single frame).
-        let first_stage = if random_start {
-            let count = match record(requested) {
-                Some(record) => record.frames_per_facing,
-                None => action_kind(requested)
-                    .and_then(|kind| sequences.and_then(|set| set.get(&kind)))
-                    .map_or(0, |sequence| i32::from(sequence.frame_count)),
-            };
-            self.scenario_rng
-                .next_range_i32_inclusive(0, count.max(1) - 1)
-        } else {
-            0
-        };
         let actor = self
             .substrate
             .entities
@@ -468,7 +441,7 @@ impl Simulation {
             .map_err(|error| format!("Do_Action wrote an invalid Doing: {error:?}"))?;
         //51D9D2..51DA44: every accepted class action writes Doing and
         // restarts its stage. The sequencer and draw share this exact state.
-        actor.restart_native_stage(first_stage, self.session.binary_frame() as i32, rate);
+        actor.restart_native_stage(0, self.session.binary_frame() as i32, rate);
         // `0x0051DA96..0x0051DAA1`: an accepted action at Health exactly 0
         // re-enters Stop_Driver, whose own Do_Action finds the action it
         // just wrote. The Can_Enter_Cell it runs reads no overlay here.
@@ -630,24 +603,8 @@ impl Simulation {
         } else {
             true
         };
-        // Firestorm 2.0 `InfantryClass::Doing_AI` 0x004D8A20: at the end of
-        // its sequence (or with no action), a webbed man holds whatever he
-        // does except a death (`0x004D8B3D..0x004D8B5E`), and his Struggle
-        // keeps looping while the web runs (`0x004D8A6B..0x004D8A8C`). Only a
-        // Webby warhead starts the timer.
-        let webbed = actor.is_webbed(self.session.binary_frame() as i32);
-        let complete = complete && !(webbed && !in_death_sequence(doing));
         let uninitialized = if complete {
             match doing {
-                DO_STRUGGLE => {
-                    // `0x004D8A92`: the web is over; the man ends it lying in
-                    // the Prone sequence. The prone byte is not written.
-                    if let Err(cause) = self.infantry_do_action(id, DO_PRONE, true, rules, effects)
-                    {
-                        log::debug!("infantry {id} Struggle completion: {cause}");
-                    }
-                    false
-                }
                 DO_AIR_DEATH_START => {
                     if let Err(cause) =
                         self.infantry_do_action(id, DO_AIR_DEATH_FALLING, true, rules, effects)
@@ -727,6 +684,15 @@ impl Simulation {
         } else {
             false
         };
+        // Phobos `InfantryClass_DoingAI_DeployConvert_ResetFlags @ 0x520E75`:
+        // outside the Deploy (27) and Undeploy (31) sequences the conversion
+        // latches clear.
+        if !matches!(doing, DO_DEPLOY | 31)
+            && let Some(actor) = self.substrate.entities.get_mut(id)
+        {
+            actor.set_phobos_infantry_undeploy_converted(false);
+            actor.set_phobos_infantry_deploy_converted(false);
+        }
         //520E52: the landing tail runs even below the sequence's count.
         if self.substrate.entities.get(id).is_some_and(|actor| {
             actor

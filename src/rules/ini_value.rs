@@ -602,6 +602,33 @@ impl IniSection {
         })
     }
 
+    /// Ares/Phobos `PartialVector2D<double>` (`Utilities/TemplateDef.h:290`'s
+    /// `read<PartialVector2D<double>>` over `ReadMultipleDoubles` ->
+    /// `MultiParser<double>::Parse(value, out, 2)`): ReadString(2048), then at
+    /// most two comma-separated [`parse_phobos_double`] tokens. Each token is
+    /// space-trimmed on both sides and the scan stops at the first token that
+    /// does not convert, so a one-token read leaves the second slot at its
+    /// previous value and marks the pair single. A zero-token scan writes
+    /// neither slot and leaves the count, so the whole pair retains.
+    pub fn read_ares_partial_double_pair(
+        &self,
+        key: &str,
+        current: PartialDoublePair,
+    ) -> PartialDoublePair {
+        self.read_string_with(key, 2048, current, |previous, value| {
+            let mut fields = [previous.low, previous.high];
+            let values = scan_partial_double_fields(value, &mut fields);
+            if values == 0 {
+                return previous;
+            }
+            PartialDoublePair {
+                low: fields[0],
+                high: fields[1],
+                values,
+            }
+        })
+    }
+
     /// Ares coordinate reader100406D0 -> MultiParser1000C7E0. Each comma
     /// token uses the shared Parser<int> and a 128-byte scanf_s buffer.
     /// A partial native parse copies uninitialized trailing locals; retain
@@ -678,6 +705,20 @@ impl IniSection {
             self.read_list(key, 2048)?
                 .iter()
                 .filter_map(|token| parse_ares_int(token))
+                .collect(),
+        )
+    }
+
+    /// Phobos `ValueableVector<double>` (`detail::parse_values<double>` over
+    /// `strtok(",")`): each token through the Phobos `Parser<double>` scan
+    /// ([`parse_phobos_double`]: strtod, binary32 store, `%` at 0.01f). A
+    /// token that does not convert is skipped. An absent key keeps the
+    /// caller's list; a present one replaces it.
+    pub fn read_phobos_double_list(&self, key: &str) -> Option<Vec<f64>> {
+        Some(
+            self.read_list(key, 2048)?
+                .iter()
+                .filter_map(|token| parse_phobos_double(token))
                 .collect(),
         )
     }
@@ -824,11 +865,56 @@ impl IniSection {
         })
     }
 
+    /// Phobos `NullableVector<T*>::Read` (`Utilities/TemplateDef.h:2135..2147`):
+    /// a reached read sets the vector unless the value is `<default>`, which
+    /// restores the unset state. Empty text never reaches the template because
+    /// `ReadString` returns zero, so an absent and an empty key are both unset.
+    /// Raw tokens; the catalog filter runs at the use site.
+    pub(crate) fn read_phobos_nullable_type_list(&self, key: &str) -> Option<Vec<String>> {
+        let tokens = self.read_list(key, 2048)?;
+        if tokens.len() == 1 && tokens[0].eq_ignore_ascii_case("<default>") {
+            return None;
+        }
+        Some(tokens.into_iter().map(str::to_owned).collect())
+    }
+
+    /// Phobos `Nullable<T>::Read<false, true>` (`allowNone=true`): only
+    /// `<default>` clears the value; `none` and `<none>` are value text handed
+    /// to the parser, and absent, empty and rejected reads retain it.
+    /// Source: Phobos b90ab4bc, Utilities/TemplateDef.h:1834-1849.
+    pub(crate) fn read_phobos_nullable_allow_none_with<T>(
+        &self,
+        key: &str,
+        current: Option<T>,
+        mut parse: impl FnMut(&str) -> Option<T>,
+    ) -> Option<T> {
+        self.read_string_with(key, 2048, current, |current, raw| {
+            if raw.eq_ignore_ascii_case("<default>") {
+                None
+            } else {
+                parse(raw).or(current)
+            }
+        })
+    }
+
     /// Phobos `Valueable<Point2D>`: `INI_EX::Read2Integers` (ReadString(2048),
     /// then `Parser<int, 2>`, the [`scan_partial_int_fields`] scan) converts
     /// each token straight into the value, so a one-token read changes only X
     /// and a read that converts nothing keeps both.
     pub fn read_phobos_int_pair(&self, key: &str, current: [i32; 2]) -> [i32; 2] {
+        self.read_string_with(key, 2048, current, |current, raw| {
+            let mut fields = current;
+            scan_partial_int_fields(raw, &mut fields);
+            fields
+        })
+    }
+
+    /// Phobos `Valueable<CoordStruct>`: `INI_EX::Read3Integers` (ReadString(2048),
+    /// then `Parser<int, 3>`, the same [`scan_partial_int_fields`] scan the
+    /// pair reader uses) converts each token straight into the value, so a
+    /// shorter read changes only the leading fields and a read that converts
+    /// nothing keeps all three.
+    pub fn read_phobos_int_triple(&self, key: &str, current: [i32; 3]) -> [i32; 3] {
         self.read_string_with(key, 2048, current, |current, raw| {
             let mut fields = current;
             scan_partial_int_fields(raw, &mut fields);
@@ -874,11 +960,96 @@ impl IniSection {
         })
     }
 
+    /// Phobos `Nullable<PartialVector2D<int>>`
+    /// (`Ext/BuildingType/Body.cpp:258` `GuardRetryDelay`): the clearing
+    /// tokens of [`Self::read_phobos_nullable_with`], then
+    /// [`Self::read_ares_partial_int_pair`]'s scan. A read that converts no
+    /// token keeps the previous nullable; a one-token read leaves the second
+    /// slot and marks the pair single.
+    pub fn read_phobos_nullable_partial_int_pair(
+        &self,
+        key: &str,
+        current: Option<PartialIntPair>,
+    ) -> Option<PartialIntPair> {
+        self.read_phobos_nullable_with(key, current, |raw| {
+            let mut fields = [0, 0];
+            let values = scan_partial_int_fields(raw, &mut fields);
+            (values > 0).then_some(PartialIntPair {
+                low: fields[0],
+                high: fields[1],
+                values,
+            })
+        })
+    }
+
+    /// Phobos `ValueableIdx<T>::Read` (`Utilities/TemplateDef.h:1814-1827`):
+    /// `INI_EX::ReadString` over the shared 2048 buffer (`Phobos::readBuffer`),
+    /// then `T::FindIndex` (`Utilities/Enumerable.h:21`) — an *array index from
+    /// a type ID*, not a number. `FindIndex` failing leaves the read to
+    /// `INIClass::IsBlank`: a `none` / `<none>` value stores the
+    /// unset index -1, and any other value keeps the current one, exactly as an
+    /// absent key or an all-blank value does because `ReadString` returns 0.
+    ///
+    /// VERA keeps the authored type name and takes the index where it is used
+    /// ([`crate::rules::ruleset::RuleSet::super_weapon_index]` and the other
+    /// type-index lookups), the same split as `DefaultLandingAnim`. The one
+    /// cross-pass difference — a layer naming a type that does not exist while
+    /// an earlier layer named a real one — is settled for the AI Chronoshift
+    /// supers by
+    /// [`PhobosGlobals::resolve_ai_chrono_super_names`](crate::rules::phobos_globals::PhobosGlobals::resolve_ai_chrono_super_names),
+    /// which folds the per-pass history this reader sees only as one string.
+    pub fn read_phobos_type_name(&self, key: &str, current: &str) -> String {
+        let Some(name) = self.read_name(key, 2048) else {
+            return current.to_owned();
+        };
+        if crate::rules::ini_parser::is_native_none_type_name(name) {
+            String::new()
+        } else {
+            name.to_owned()
+        }
+    }
+
+    /// Phobos `Nullable<WarheadTypeClass*>` and the other `Nullable<T*>`
+    /// readers (`Utilities/TemplateDef.h`): the clearing tokens of
+    /// [`Self::read_phobos_nullable_with`], otherwise an authored type name.
+    /// VERA keeps the name and resolves it at the consumer, as
+    /// [`Self::read_phobos_type_name`] does.
+    pub fn read_phobos_nullable_type_name(
+        &self,
+        key: &str,
+        current: &Option<String>,
+    ) -> Option<String> {
+        self.read_string_with(key, 2048, current.clone(), |current, raw| {
+            if raw.eq_ignore_ascii_case("<default>")
+                || crate::rules::ini_parser::is_native_none_type_name(raw)
+            {
+                return None;
+            }
+            if raw.trim().is_empty() {
+                return current;
+            }
+            Some(raw.to_owned())
+        })
+    }
+
+    /// Phobos `Nullable<DirType>` (the reused `nLandingDir` reader at
+    /// `Ext/BuildingType/Body.cpp:292`): `Parser<int>` then `read<DirType>`'s
+    /// check `DirType::North..=DirType::NorthWest` (`0..=224`; a `DirType` is
+    /// an eight-step byte, not a full 0..=255 range). Failed, unparsed and
+    /// out-of-range text keeps the previous value and presence; `<default>`
+    /// and `<none>` clear it.
+    pub fn read_phobos_nullable_dir(&self, key: &str, current: Option<u8>) -> Option<u8> {
+        self.read_phobos_nullable_with(key, current, |raw| {
+            parse_ares_int(raw)
+                .and_then(|value| u8::try_from(value).ok())
+                .filter(|value| *value <= 224)
+        })
+    }
+
     /// Phobos `Valueable<ColorStruct>` (`INI_EX::Read3Bytes`, then
     /// `Parser<BYTE,3>` at `src/Utilities/TemplateDef.h`): a comma-separated
     /// `R,G,B` needs all three channels inside `0..=255`. Absent, empty and
     /// rejected text keep the current color.
-    #[cfg(feature = "phobos")]
     pub(crate) fn read_phobos_color(&self, key: &str, current: [u8; 3]) -> [u8; 3] {
         self.read_string_with(key, 2048, current, |current, raw| {
             parse_phobos_color(raw).unwrap_or(current)
@@ -887,13 +1058,54 @@ impl IniSection {
 
     /// Phobos `Nullable<ColorStruct>`: the clearing tokens of
     /// [`Self::read_phobos_nullable_with`], then [`parse_phobos_color`].
-    #[cfg(feature = "phobos")]
     pub(crate) fn read_phobos_nullable_color(
         &self,
         key: &str,
         current: Option<[u8; 3]>,
     ) -> Option<[u8; 3]> {
         self.read_phobos_nullable_with(key, current, parse_phobos_color)
+    }
+
+    /// Phobos `Nullable<Vector3D<int>>` (`Utilities/TemplateDef.h:249-254`,
+    /// `read<CoordStruct>` -> `INI_EX::Read3Integers`, `Parser<int,3>`): the
+    /// nullable clearing tokens, then the same in-place `Read3Integers` scan
+    /// [`Self::read_phobos_nullable_int_pair`] uses. Only a read that converts
+    /// all three tokens sets the value; a partial read updates a value that is
+    /// already set (the `Nullable` keeps its presence).
+    pub fn read_phobos_nullable_vector3(
+        &self,
+        key: &str,
+        current: Option<[i32; 3]>,
+    ) -> Option<[i32; 3]> {
+        self.read_string_with(key, 2048, current, |current, raw| {
+            if raw.eq_ignore_ascii_case("<default>") || is_native_none_type_name(raw) {
+                return None;
+            }
+            let mut fields = current.unwrap_or_default();
+            let values = scan_partial_int_fields(raw, &mut fields);
+            (values == 3 || current.is_some()).then_some(fields)
+        })
+    }
+
+    /// Phobos `Damageable<ColorStruct>::Read` (`Utilities/TemplateDef.h:2227-2244`):
+    /// the base key then `<base>.ConditionYellow` and `<base>.ConditionRed`,
+    /// each retaining the current value when absent.
+    pub fn read_phobos_damageable_color(
+        &self,
+        base_key: &str,
+        current: PhobosDamageableColor,
+    ) -> PhobosDamageableColor {
+        PhobosDamageableColor {
+            base: self.read_phobos_color(base_key, current.base),
+            condition_yellow: self.read_phobos_nullable_color(
+                &format!("{base_key}.ConditionYellow"),
+                current.condition_yellow,
+            ),
+            condition_red: self.read_phobos_nullable_color(
+                &format!("{base_key}.ConditionRed"),
+                current.condition_red,
+            ),
+        }
     }
 
     pub fn read_phobos_nullable_bool(&self, key: &str, current: Option<bool>) -> Option<bool> {
@@ -905,6 +1117,27 @@ impl IniSection {
     /// Unlike stock ReadDouble, a failed conversion keeps the old nullable.
     pub fn read_phobos_nullable_double(&self, key: &str, current: Option<f64>) -> Option<f64> {
         self.read_phobos_nullable_with(key, current, parse_phobos_double)
+    }
+
+    /// Phobos `Nullable<Vector3D<float>>` (`Utilities/TemplateDef.h:230-237`
+    /// via `INI_EX::Read<float, 3>`): the clearing tokens of
+    /// [`Self::read_phobos_nullable_with`], then three comma-separated
+    /// `Parser<float>` tokens. A read that does not convert all three keeps
+    /// the previous nullable.
+    pub fn read_phobos_nullable_float3(
+        &self,
+        key: &str,
+        current: Option<[f32; 3]>,
+    ) -> Option<[f32; 3]> {
+        self.read_phobos_nullable_with(key, current, |raw| {
+            let mut fields = [0.0f32; 3];
+            let mut tokens = raw.split(',');
+            for field in &mut fields {
+                let token = tokens.next()?;
+                *field = parse_phobos_double(token)? as f32;
+            }
+            Some(fields)
+        })
     }
 
     /// Phobos `Valueable<double>` (`INI_EX::ReadDouble`): ReadString(2048),
@@ -926,6 +1159,58 @@ impl IniSection {
                     cells * f64::from(crate::util::lepton::LEPTONS_PER_CELL_I32),
                 )
             })
+        })
+    }
+
+    /// Phobos `Nullable<Leptons>`: the clearing tokens of
+    /// [`Self::read_phobos_nullable_with`], then the same `read<Leptons>`
+    /// conversion (cells × 256, `F2I`). A failed read keeps the old nullable.
+    pub fn read_phobos_nullable_leptons(&self, key: &str, current: Option<i32>) -> Option<i32> {
+        self.read_phobos_nullable_with(key, current, |raw| {
+            parse_phobos_double(raw).map(|cells| {
+                crate::util::native_x87::X87Chop53::ftol_f64_low_masked(
+                    cells * f64::from(crate::util::lepton::LEPTONS_PER_CELL_I32),
+                )
+            })
+        })
+    }
+
+    /// Phobos `Nullable<EdgeType>` (`Ext/AircraftType/Body.cpp:25-26`): the
+    /// clearing tokens of [`Self::read_phobos_nullable_with`], then
+    /// `read<EdgeType>` (`Utilities/TemplateDef.h:1379..1402`), which accepts
+    /// only the three case-insensitive names; any other text keeps the
+    /// previous nullable.
+    pub fn read_phobos_nullable_edge_type(
+        &self,
+        key: &str,
+        current: Option<PhobosEdgeType>,
+    ) -> Option<PhobosEdgeType> {
+        self.read_phobos_nullable_with(key, current, parse_phobos_edge_type)
+    }
+
+    /// Phobos `Valueable<EdgeType>` (`[General] AircraftRetreatToEdge`,
+    /// `Ext/Rules/Body.cpp:194`): the same name reader; absent or rejected
+    /// text keeps `current`.
+    pub fn read_phobos_valueable_edge_type(
+        &self,
+        key: &str,
+        current: PhobosEdgeType,
+    ) -> PhobosEdgeType {
+        self.read_string_with(key, 2048, current, |current, raw| {
+            parse_phobos_edge_type(raw).unwrap_or(current)
+        })
+    }
+
+    /// Phobos `Valueable<DynamicTeamDelayType>` (`[General]
+    /// TeamDelays.DynamicType`, `Ext/Rules/Body.cpp:606`): the same name
+    /// reader; absent or rejected text keeps `current`.
+    pub fn read_phobos_valueable_dynamic_team_delay_type(
+        &self,
+        key: &str,
+        current: PhobosDynamicTeamDelayType,
+    ) -> PhobosDynamicTeamDelayType {
+        self.read_string_with(key, 2048, current, |current, raw| {
+            PhobosDynamicTeamDelayType::parse(raw).unwrap_or(current)
         })
     }
 
@@ -1173,6 +1458,18 @@ impl IniSection {
                 "" => current,
                 value => apply(current, value),
             }
+        })
+    }
+
+    /// `ReadString` presence over the merged section, for readers whose native
+    /// template distinguishes "key absent" (keep the field) from "key present
+    /// and blank" (write the blank/`-1`). [`Self::read_string_with`] cannot
+    /// express the second arm because it keeps `current` on empty text.
+    /// Answers the trimmed, `capacity - 1`-bounded text, `Some("")` included.
+    pub(crate) fn read_string_presence(&self, key: &str, capacity: usize) -> Option<String> {
+        let payload = capacity.checked_sub(1)?;
+        self.fold_rules_values(key, None, |_, raw| {
+            Some(strtrim_ascii(truncate_native_bytes(raw, payload)).to_owned())
         })
     }
 
@@ -1980,9 +2277,128 @@ impl PartialIntPair {
     }
 }
 
+/// Ares/Phobos `PartialVector2D<double>` storage: the two scanned slots plus
+/// how many the last successful read wrote. `values < 2` means the second
+/// slot is stale, so every ranged consumer must use [`Self::low`] and draw
+/// nothing.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PartialDoublePair {
+    pub low: f64,
+    pub high: f64,
+    pub values: u8,
+}
+
+impl PartialDoublePair {
+    /// A one-value spelling: Phobos' `PartialVector2D<double>{ 1.0 }`
+    /// initializer, the `InitialStrength.Cloning` default.
+    pub const fn single(value: f64) -> Self {
+        Self {
+            low: value,
+            high: 0.0,
+            values: 1,
+        }
+    }
+
+    /// `GeneralUtils::GetRangedRandomOrSingleValue`'s non-random arm: the
+    /// consumer takes `low` and draws nothing when this is true.
+    pub const fn is_single(&self) -> bool {
+        self.values < 2 || self.low >= self.high
+    }
+}
+
 /// Phobos b90ab4bc Utilities/Parser.h:248..271 `Parser<double>`: `strtod`,
 /// cast to binary32, optional binary32 percent scaling, then widen to double.
 /// `None` where `strtod` converts nothing or reports ERANGE.
+/// Phobos `EdgeType` (`Utilities/Enum.h:446-451`): an aircraft's spawn or
+/// retreat edge choice. Only the `phobos` readers produce a non-`Owner`
+/// value, but the type exists in every build so the aircraft edge arm needs
+/// no feature gate.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub enum PhobosEdgeType {
+    #[default]
+    Owner,
+    Closest,
+    Random,
+}
+
+impl PhobosEdgeType {
+    /// `EnumParser<EdgeType>`'s name table; an unknown spelling keeps the
+    /// previous value.
+    pub fn parse(raw: &str) -> Option<Self> {
+        let name = raw.trim();
+        if name.eq_ignore_ascii_case("owner") {
+            Some(Self::Owner)
+        } else if name.eq_ignore_ascii_case("closest") {
+            Some(Self::Closest)
+        } else if name.eq_ignore_ascii_case("random") {
+            Some(Self::Random)
+        } else {
+            None
+        }
+    }
+}
+
+/// Phobos `read<EdgeType>` (`Utilities/TemplateDef.h:1379..1402`): the three
+/// names, case-insensitive; anything else is a rejected read.
+fn parse_phobos_edge_type(raw: &str) -> Option<PhobosEdgeType> {
+    if raw.eq_ignore_ascii_case("owner") {
+        Some(PhobosEdgeType::Owner)
+    } else if raw.eq_ignore_ascii_case("closest") {
+        Some(PhobosEdgeType::Closest)
+    } else if raw.eq_ignore_ascii_case("random") {
+        Some(PhobosEdgeType::Random)
+    } else {
+        None
+    }
+}
+
+/// Phobos `DynamicTeamDelayType` (`Utilities/Enum.h`, the eight names in
+/// declaration order): what `[General] TeamDelays.DynamicType=` selects when
+/// `HouseClass::ResetTeamDelay @ 0x004F8ACC` recomputes a house's team delays.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub enum PhobosDynamicTeamDelayType {
+    #[default]
+    StartingPoint,
+    PlayerCount,
+    Allies,
+    Enemies,
+    AliveCount,
+    AliveAllies,
+    AliveEnemies,
+    None,
+}
+
+impl PhobosDynamicTeamDelayType {
+    /// `EnumParser<DynamicTeamDelayType>`'s name table; an unknown spelling
+    /// keeps the previous value.
+    pub fn parse(raw: &str) -> Option<Self> {
+        let name = raw.trim();
+        if name.eq_ignore_ascii_case("startingpoint") {
+            Some(Self::StartingPoint)
+        } else if name.eq_ignore_ascii_case("playercount") {
+            Some(Self::PlayerCount)
+        } else if name.eq_ignore_ascii_case("allies") {
+            Some(Self::Allies)
+        } else if name.eq_ignore_ascii_case("enemies") {
+            Some(Self::Enemies)
+        } else if name.eq_ignore_ascii_case("alivecount") {
+            Some(Self::AliveCount)
+        } else if name.eq_ignore_ascii_case("aliveallies") {
+            Some(Self::AliveAllies)
+        } else if name.eq_ignore_ascii_case("aliveenemies") {
+            Some(Self::AliveEnemies)
+        } else if name.eq_ignore_ascii_case("none") {
+            Some(Self::None)
+        } else {
+            None
+        }
+    }
+}
+
 fn parse_phobos_double(raw: &str) -> Option<f64> {
     let parsed = try_parse_leading_f64(raw, FloatScanRounding::Nearest)?;
     // strtod reports ERANGE on overflow and underflow. Reuse the decimal
@@ -2030,7 +2446,6 @@ pub(crate) fn parse_ares_int(value: &str) -> Option<i32> {
 /// Phobos `Parser<BYTE,3>::Parse`: three comma-separated channels, each
 /// converted with the `BYTE` scan that rejects values above 255. All three
 /// must convert; otherwise no color is produced.
-#[cfg(feature = "phobos")]
 fn parse_phobos_color(value: &str) -> Option<[u8; 3]> {
     let mut channels = [0i32; 3];
     (scan_int_fields(value, &mut channels) == 3
@@ -2115,6 +2530,40 @@ fn scan_partial_int_fields(value: &str, out: &mut [i32]) -> u8 {
     out.len() as u8
 }
 
+/// `MultiParser<double>::Parse` (`Utilities/Parser.h:345`): the same token
+/// walk as [`scan_partial_int_fields`], each token through the Phobos
+/// `Parser<double>` scan ([`parse_phobos_double`]).
+fn scan_partial_double_fields(value: &str, out: &mut [f64]) -> u8 {
+    let mut rest = value.as_bytes();
+    for (index, slot) in out.iter_mut().enumerate() {
+        while rest.first().is_some_and(|byte| is_crt_space(*byte)) {
+            rest = &rest[1..];
+        }
+        let token_end = rest
+            .iter()
+            .position(|byte| *byte == b',')
+            .unwrap_or(rest.len());
+        if token_end == 0 {
+            return index as u8;
+        }
+        let mut token = &rest[..token_end];
+        while token.last().is_some_and(|byte| is_crt_space(*byte)) {
+            token = &token[..token.len() - 1];
+        }
+        let parsed = std::str::from_utf8(token)
+            .ok()
+            .and_then(parse_phobos_double);
+        let Some(parsed) = parsed else {
+            return index as u8;
+        };
+        *slot = parsed;
+        rest = rest[token_end..]
+            .strip_prefix(b",")
+            .unwrap_or(&rest[token_end..]);
+    }
+    out.len() as u8
+}
+
 fn leading_float_token(s: &str) -> Option<&str> {
     let b = s.as_bytes();
     let mut end = usize::from(b.first().is_some_and(|c| matches!(c, b'-' | b'+')));
@@ -2153,6 +2602,47 @@ fn leading_float_token(s: &str) -> Option<&str> {
     Some(&s[..end])
 }
 
+/// Phobos `Damageable<ColorStruct>` (`Utilities/Template.h:408-478`): a base
+/// color plus optional yellow/red health-band overrides. `Read` fills the base
+/// then `<base>.ConditionYellow`/`.ConditionRed`; `Get` picks the red override
+/// at or below the red threshold, then yellow, else the base.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct PhobosDamageableColor {
+    pub base: [u8; 3],
+    pub condition_yellow: Option<[u8; 3]>,
+    pub condition_red: Option<[u8; 3]>,
+}
+
+impl Default for PhobosDamageableColor {
+    fn default() -> Self {
+        Self {
+            base: [0, 0, 0],
+            condition_yellow: None,
+            condition_red: None,
+        }
+    }
+}
+
+impl PhobosDamageableColor {
+    /// `Damageable<T>::Get` (`Utilities/Template.h:449-463`): a set red
+    /// override wins at or below `condition_red`, then a set yellow override at
+    /// or below `condition_yellow`, else the base color.
+    pub fn get(&self, ratio: f64, condition_yellow: f64, condition_red: f64) -> [u8; 3] {
+        if let Some(red) = self.condition_red
+            && ratio <= condition_red
+        {
+            return red;
+        }
+        if let Some(yellow) = self.condition_yellow
+            && ratio <= condition_yellow
+        {
+            return yellow;
+        }
+        self.base
+    }
+}
+
+
 #[cfg(all(test, tests_rules_a_n))]
 mod tests {
     use super::{crt_atoi, parse_leading_f32, strtok, truncate_native_bytes};
@@ -2170,6 +2660,55 @@ mod tests {
             let ai = ini.section("AI").expect("section");
             assert_eq!(ai.read_phobos_int("Key", -1), expected, "{value:?}");
         }
+    }
+
+    #[test]
+    fn phobos_nullable_vector3_reads_three_ints_and_clears_on_default() {
+        let ini = IniFile::from_str("[S]\nF=1,2,3\nP=4,5\nD=<default>\n");
+        let s = ini.section("S").expect("section");
+        assert_eq!(s.read_phobos_nullable_vector3("F", None), Some([1, 2, 3]));
+        assert_eq!(
+            s.read_phobos_nullable_vector3("P", Some([9, 9, 9])),
+            Some([4, 5, 9]),
+            "a partial scan updates the leading slots of a set value"
+        );
+        assert_eq!(
+            s.read_phobos_nullable_vector3("P", None),
+            None,
+            "a partial scan does not set an unset nullable"
+        );
+        assert_eq!(
+            s.read_phobos_nullable_vector3("D", Some([1, 1, 1])),
+            None,
+            "<default> clears the nullable"
+        );
+        assert_eq!(
+            s.read_phobos_nullable_vector3("Absent", Some([7, 7, 7])),
+            Some([7, 7, 7])
+        );
+    }
+
+    #[test]
+    fn phobos_damageable_color_reads_three_keys_and_picks_by_threshold() {
+        let ini = IniFile::from_str(
+            "[S]\nC=0,255,0\nC.ConditionYellow=255,255,0\nC.ConditionRed=255,0,0\n",
+        );
+        let s = ini.section("S").expect("section");
+        let color = s.read_phobos_damageable_color("C", super::PhobosDamageableColor::default());
+        assert_eq!(color.base, [0, 255, 0]);
+        assert_eq!(color.condition_yellow, Some([255, 255, 0]));
+        assert_eq!(color.condition_red, Some([255, 0, 0]));
+        assert_eq!(
+            color.get(1.0, 0.5, 0.25),
+            [0, 255, 0],
+            "healthy keeps the base"
+        );
+        assert_eq!(
+            color.get(0.5, 0.5, 0.25),
+            [255, 255, 0],
+            "at or below yellow"
+        );
+        assert_eq!(color.get(0.25, 0.5, 0.25), [255, 0, 0], "at or below red");
     }
 
     #[test]

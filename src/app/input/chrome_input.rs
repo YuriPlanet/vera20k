@@ -166,7 +166,6 @@ pub(crate) struct ChromePaintNodes {
 }
 
 impl ChromeNodes {
-    #[cfg(feature = "phobos")]
     fn sw_index(&self, button: NodeId) -> Option<usize> {
         self.sw_buttons.iter().position(|&node| node == button)
     }
@@ -431,7 +430,6 @@ struct SwPlaces {
 /// The column's places. The toggle takes nothing without its On or Off PCX
 /// (`ToggleSWButtonClass::Draw` draws nothing and its `Action` ignores
 /// input), and the columns are inert while collapsed.
-#[cfg(feature = "phobos")]
 fn sw_places(state: &AppState) -> SwPlaces {
     let presentation = &state.match_state.match_presentation;
     let sw = &presentation.sw_sidebar;
@@ -443,7 +441,6 @@ fn sw_places(state: &AppState) -> SwPlaces {
     sw_layout_places(&sw.layout, expanded, has_toggle)
 }
 
-#[cfg(feature = "phobos")]
 fn sw_layout_places(layout: &crate::ui::sw_sidebar::SwSidebarLayout, expanded: bool, has_toggle: bool) -> SwPlaces {
     SwPlaces {
         toggle: layout.toggle.filter(|_| has_toggle).map(cursor_rect),
@@ -455,14 +452,8 @@ fn sw_layout_places(layout: &crate::ui::sw_sidebar::SwSidebarLayout, expanded: b
     }
 }
 
-#[cfg(not(feature = "phobos"))]
-fn sw_places(_: &AppState) -> SwPlaces {
-    SwPlaces::default()
-}
-
 /// A half-open layout rect as the whole cursor pixels it holds: those at
 /// `x <= px < x + w`.
-#[cfg_attr(not(feature = "phobos"), allow(dead_code))]
 fn cursor_rect(r: sidebar::Rect) -> Rect {
     let (x, y) = (r.x.ceil() as i32, r.y.ceil() as i32);
     Rect::new(
@@ -871,7 +862,6 @@ pub(crate) fn hovered_cameo(state: &AppState) -> Option<usize> {
 
 /// The `sw_sidebar.entries` index of the superweapon button the chrome
 /// hovers.
-#[cfg(feature = "phobos")]
 pub(crate) fn hovered_sw_button(state: &AppState) -> Option<usize> {
     let (gui, nodes) = chrome(state)?;
     let hovered = gui.hovered_in(nodes.layer)?;
@@ -1035,7 +1025,6 @@ fn apply_result(state: &mut AppState, id: u16, right: bool) {
 /// release, a button launches or selects its superweapon by the same
 /// `apply_sidebar_action` path as the vanilla cameo. False when `node` is none
 /// of the column's.
-#[cfg(feature = "phobos")]
 fn apply_sw(state: &mut AppState, node: NodeId, right: bool) -> bool {
     let Some((_, nodes)) = chrome(state) else {
         return false;
@@ -1064,11 +1053,6 @@ fn apply_sw(state: &mut AppState, node: NodeId, right: bool) -> bool {
         );
     }
     true
-}
-
-#[cfg(not(feature = "phobos"))]
-fn apply_sw(_: &mut AppState, _: NodeId, _: bool) -> bool {
-    false
 }
 
 /// Publish the transient pushed looks of the buttons whose frame shows them
@@ -1331,7 +1315,6 @@ mod tests {
         assert_eq!(press.passthrough, Some(nodes.tactical));
     }
 
-    #[cfg(feature = "phobos")]
     #[test]
     fn the_257th_drawn_superweapon_owns_its_press_over_the_battlefield() {
         let settings = crate::rules::phobos_sw_sidebar::SuperWeaponSidebarUi {

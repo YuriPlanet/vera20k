@@ -127,7 +127,7 @@ pub(crate) fn type_refund(
     let m2 = if rules.ares_form() {
         factors.ares_factory_plant(slot, object.ares_production().factory_plant_multiplier())
     } else {
-        factors.factory_plant[slot]
+        factors.plant_factor(slot)
     };
     if object.soylent != 0 {
         return X87::ftol_i32_low_masked(X87::mul(
@@ -224,10 +224,27 @@ pub(crate) fn foot_on_sold(
         return false;
     };
     if sim.house_is_human_player(owner) {
-        sim.sound_events.emit(SimSoundEvent::HouseEva {
-            owner,
-            event: "EVA_UnitSold",
-        });
+        // Phobos `FootClass_Sell` hook 0x4D9F7B
+        // (`Ext/Building/Hooks.Selling.cpp:18-21`) replaces the stock
+        // `EVA_UnitSold` with the type's `EVA.Sold` when set: a named cue, or
+        // native's -1 (silence) for an explicit none.
+        let sold_eva = sim
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|entity| sim.object_type(entity.type_ref(), rules))
+            .and_then(|object| object.phobos_eva_sold())
+            .map(|cue| cue.map(str::to_owned));
+        match sold_eva {
+            Some(Some(cue)) => sim
+                .sound_events
+                .emit(SimSoundEvent::HouseEvaNamed { owner, event: cue }),
+            Some(None) => {}
+            None => sim.sound_events.emit(SimSoundEvent::HouseEva {
+                owner,
+                event: "EVA_UnitSold",
+            }),
+        }
         if rules.general.sell_sound.is_some() {
             // VocClass::PlayGlobal(SellSound) for that player: the same
             // global cue a wall sale plays.
@@ -239,6 +256,34 @@ pub(crate) fn foot_on_sold(
         return false;
     };
     crate::sim::credit_income::add_credits(&mut sim.houses, owner, refund);
+    // Phobos `FootClass`'s `DisplayIncome` label (`Hooks.Selling.cpp:26-27`):
+    // every sold Foot prints its refund at its Location when the global is on,
+    // filtered by the global Houses list.
+    if rules.phobos_globals.display_income
+        && refund != 0
+        && let Some(location) = sim.substrate.entities.get(id).map(|entity| {
+            crate::sim::movement::ground_pose::object_location(
+                entity,
+                sim.resolved_terrain.as_ref(),
+            )
+        })
+    {
+        context.effects().emit_bounty_text(
+            sim,
+            rules,
+            crate::sim::flying_text::BountyText {
+                entity_id: Some(id),
+                amount: refund,
+                coord: crate::sim::projectile::ProjectileCoord::new(
+                    location.x, location.y, location.z,
+                ),
+                z_offset: 0,
+                display_to: Some(rules.phobos_globals.display_income_houses),
+                display_owner: Some(owner),
+                pixel_offset: [0, 0],
+            },
+        );
+    }
     sim.stun(id, context.reborrow());
     sim.techno_limbo_with_context(id, context.reborrow());
     sim.uninit_with_context(id, context);
@@ -380,13 +425,15 @@ pub(crate) fn sell_after_owner_change(
             .copied()
             .flatten()
             .and_then(|kind| sim.object_type(kind, rules));
-        let (Some(upgrade), Some(house), Some(factors)) = (
-            upgrade,
+        // Native dereferences a malformed top slot. Keep it intact,
+        // without refunding it or starting the host's sale.
+        let Some(upgrade) = upgrade else {
+            return;
+        };
+        let (Some(house), Some(factors)) = (
             sim.houses.get(&owner),
-            Simulation::house_cost_factors(&sim.houses, owner),
+            Simulation::house_cost_factors_for(&sim.houses, owner, upgrade),
         ) else {
-            // Native dereferences a malformed top slot. Keep it intact,
-            // without refunding it or starting the host's sale.
             return;
         };
         // 449310..44935D: type GetRefund(owner,1), GiveMoney, then
@@ -591,14 +638,20 @@ pub(super) fn undeploys(rules: &RuleSet, object: &crate::rules::object_type::Obj
 }
 
 /// UpdateAnimation's archive-less sale (`0x00451186..0x004511DF`): an
-/// `UndeploysInto=` building with no ArchiveTarget completes its pack-up at
-/// stage `0x17` only while its effective mission is Selling (4511C7..4511DD).
+/// `UndeploysInto=` building with no ArchiveTarget completes its pack-up only
+/// while its effective mission is Selling (4511C7..4511DD). The stage it
+/// completes at is the type's `SellBuildupLength`: the stock body compares
+/// `+0xF8` with the literal 0x17 at `0x4511D6`, which Phobos'
+/// `BuildingClass_AnimationAI_SellBuildup` hook (`Ext/Building/Hooks.cpp:381-389`)
+/// replaces with `BuildingTypeExt::SellBuildupLength`.
 pub(crate) fn archive_less_sale(
     rules: &RuleSet,
     type_id: &str,
     entity: &crate::sim::game_entity::GameEntity,
-) -> bool {
-    entity.building_down() && undeploy_target(rules, type_id).is_some() && !sale_archive(entity)
+) -> Option<i32> {
+    let object = rules.object(type_id)?;
+    (entity.building_down() && undeploy_target(rules, type_id).is_some() && !sale_archive(entity))
+        .then(|| object.sell_buildup_length())
 }
 
 /// The building's ArchiveTarget (`+0x218`); the player's undeploy order
@@ -624,6 +677,11 @@ fn qualifying_undeploy(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
         return false;
     }
     if !object.construction_yard {
+        // Phobos `UndeploysInto_Sellable` (`Ext/Building/Hooks.Selling.cpp:48-54`):
+        // a repack building asks for a sell unless it holds an ArchiveTarget.
+        if object.phobos_undeploys_into_sellable {
+            return sale_archive(entity);
+        }
         return true;
     }
     sim.session
@@ -632,6 +690,7 @@ fn qualifying_undeploy(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
         && sale_archive(entity)
         && sim.construction_yard_redeploy_core_gate(
             entity,
+            rules,
             sim.owner_is_human(entity.owner()) || entity.sale_admitted_delegated_redeploy(),
         )
 }
@@ -940,16 +999,28 @@ pub(crate) fn sell_complete(
     id: u64,
     frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
-    let Some((owner, undeploys, type_id)) = sim.substrate.entities.get(id).and_then(|entity| {
-        let object = sim.object_type(entity.type_ref(), rules)?;
-        Some((entity.owner(), undeploys(rules, object), entity.type_ref()))
-    }) else {
+    let Some((owner, undeploys, type_id, archive)) =
+        sim.substrate.entities.get(id).and_then(|entity| {
+            let object = sim.object_type(entity.type_ref(), rules)?;
+            Some((
+                entity.owner(),
+                undeploys(rules, object),
+                entity.type_ref(),
+                sale_archive(entity),
+            ))
+        })
+    else {
         return false;
     };
     //449CB1 requests the House strip recheck before target/audio/conversion.
     sim.houses.request_house_tech_tree_recheck(owner);
     let _ = sim.assign_target_represented(id, None, rules, frame_effects);
-    if !undeploys {
+    // Phobos `BuildingClass_Mi_Selling_EVASold_UndeploysInto` (`0x449CC1`,
+    // `Ext/Building/Hooks.Selling.cpp:70-76`): the announcement does not follow
+    // the conversion answer; a repack building with no ArchiveTarget still
+    // announces its sale.
+    let announce_sold = !undeploys || !archive;
+    if announce_sold {
         sim.sound_events
             .emit(SimSoundEvent::StructureSold { owner, type_id });
     }
@@ -1085,4 +1156,65 @@ pub fn sell_building_now_for_test(sim: &mut Simulation, rules: &RuleSet, id: u64
         &mut crate::sim::world::FrameEffects::default(),
     );
     true
+}
+
+#[cfg(all(test, tests_sim_production))]
+mod phobos_sellable_tests {
+    use super::*;
+
+    fn rules(sellable: bool) -> RuleSet {
+        let sellable = if sellable {
+            "UndeploysInto.Sellable=yes\n"
+        } else {
+            ""
+        };
+        RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=MCV\n\
+             [BuildingTypes]\n0=FACTORY\n\
+             [FACTORY]\nStrength=1000\nUndeploysInto=MCV\n{sellable}\
+             [MCV]\nStrength=600\nSpeed=4\n"
+        )))
+        .expect("sellable repack rules")
+    }
+
+    fn scene(sellable: bool) -> (Simulation, RuleSet, u64) {
+        let rules = rules(sellable);
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x5E11);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let id = sim.substrate.allocate_stable_id();
+        let mut entity =
+            crate::sim::game_entity::GameEntity::test_default(id, "FACTORY", "Americans", 10, 10);
+        entity.set_owner_for_test(sim.interner.intern("Americans"));
+        entity.set_type_ref_for_test(sim.interner.intern("FACTORY"));
+        sim.substrate.entities.insert(entity);
+        (sim, rules, id)
+    }
+
+    /// Phobos `UndeploysInto_Sellable` (`Ext/Building/Hooks.Selling.cpp:48-54`):
+    /// a non-ConYard repack building sells when it has no ArchiveTarget and
+    /// still packs up when one is held; the default always packs up.
+    #[test]
+    fn phobos_undeploys_into_sellable_changes_only_the_archive_less_repack() {
+        let (mut sim, rules, id) = scene(true);
+        assert!(
+            !qualifying_undeploy(&sim, &rules, id),
+            "Sellable without an ArchiveTarget sells"
+        );
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .set_archive_target(Some(crate::sim::combat::TargetKind::Cell(4, 4)));
+        assert!(
+            qualifying_undeploy(&sim, &rules, id),
+            "a held ArchiveTarget still packs up"
+        );
+
+        let (sim, rules, id) = scene(false);
+        assert!(
+            qualifying_undeploy(&sim, &rules, id),
+            "the default repack always packs up"
+        );
+    }
 }

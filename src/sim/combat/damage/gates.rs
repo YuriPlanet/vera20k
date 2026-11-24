@@ -57,9 +57,12 @@ pub(crate) fn evaluate_late_gates(g: &ImmunityInputs) -> DamageGate {
         return DamageGate::Nullified { clear_damage: true };
     }
     // 9. Psychedelic/MindControl: allied -> 0; psionics-immune -> 0; building ->
-    //    0; else MindControlled (0 HP, return-code-1 marker).
+    //    0; else MindControlled (0 HP, return-code-1 marker). The allied term
+    //    is the stock SourceHouse test or, under Phobos, its own hook's
+    //    attacker-first test gated by `AllowBerzerkOnAllies` (see
+    //    `receiver_call`).
     if g.psychedelic {
-        if g.source_house_is_allied || g.psionics_immune || g.target_is_building {
+        if g.psychedelic_allied_rejection || g.psionics_immune || g.target_is_building {
             return DamageGate::Nullified {
                 clear_damage: false,
             };

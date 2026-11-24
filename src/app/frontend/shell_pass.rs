@@ -9,12 +9,17 @@ use crate::render::shell_text::ShellTextDraw;
 use crate::ui::shell::geom::RectPx;
 
 impl AppState {
+    /// [`Self::csf_label`] with the key itself standing in while no table is
+    /// loaded (a missing label resolves to the CSF's `MISSING:'key'` text).
     pub(crate) fn csf_text(&self, key: &str) -> String {
-        self.process_assets.csf_text(key)
+        self.csf_label(key, key)
     }
 
+    /// A label in the language in use ([`crate::i18n::label`]): VERA's own
+    /// (`VERA:`) come from its language files, the game's from the loaded
+    /// table, and `fallback` stands in while none is loaded.
     pub(crate) fn csf_label(&self, key: &str, fallback: &str) -> String {
-        self.process_assets.csf_label(key, fallback)
+        crate::i18n::label(self.process_assets.csf.as_ref(), key, fallback)
     }
 }
 

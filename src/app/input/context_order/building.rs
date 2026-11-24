@@ -67,7 +67,7 @@ pub(in crate::app::input) fn building_cell_orders(
         // BuildingClass::Active_Click_With_Cell @ 0x004436F0:
         // 0x0044377A skips both orders even when the yard has a rally line.
         if object.construction_yard
-            && !sim.can_redeploy_construction_yard_from_input(entity, Some(&control))
+            && !sim.can_redeploy_construction_yard_from_input(entity, rules, Some(&control))
         {
             continue;
         }
@@ -129,6 +129,7 @@ pub(super) fn building_selection_click(
     cell: (u16, u16),
     modifier: OrderModifier,
     force_move_key: bool,
+    planning: bool,
 ) -> BuildingClick {
     let context_actions_enabled = matches!(
         modifier,
@@ -174,6 +175,7 @@ pub(super) fn building_selection_click(
         cell,
         modifier,
         force_move_key,
+        planning,
     );
     // Over a Terrain object a building that does not answer Move answers 0,
     // which selects nothing (a tree is no object to select).
@@ -200,7 +202,15 @@ pub(super) fn building_click_orders(
     cell: (u16, u16),
     modifier: OrderModifier,
     force_move_key: bool,
+    planning: bool,
 ) -> (Vec<Command>, bool) {
+    // `0x4AE95E` skips a building's non-Attack `CellClickedAction` in planning
+    // mode. The hook sits in the ground-cell loop; the object loop
+    // (`0x4AE844`) and the self-click rung are unchanged, and Attack receivers
+    // were already taken out of `selected` before this owner runs.
+    if planning && hover.is_none() && terrain.is_none() {
+        return (Vec::new(), false);
+    }
     let guard_area = modifier == OrderModifier::GuardArea;
     match hover.filter(|target| target.kind != HoverTargetKind::HiddenEnemy) {
         Some(target)

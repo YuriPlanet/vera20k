@@ -724,7 +724,6 @@ fn test_parse_undeploys_into() {
 /// present one replaces it, and an `Anims=` token the AnimType array lacks
 /// drops out instead of holding a null slot.
 #[test]
-#[cfg(feature = "phobos")]
 fn ore_gathering_lists_replace_retain_and_drop_unknown_anims() {
     use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
     use crate::rules::ruleset::RuleSet;

@@ -239,6 +239,134 @@ fn meteor_landing_runs_children_without_expire_and_uses_last_water_splash() {
     );
 }
 
+/// Phobos `ExplodeOnWater=` (`Ext/AnimType/Body.cpp:99`,
+/// `Ext/Anim/Body.cpp:252`): a water landing takes the explosion arm, so the
+/// `ExpireAnim=` is created and no Wake or splash is, without spending a draw.
+#[test]
+fn explode_on_water_takes_the_explosion_arm_on_a_water_cell() {
+    let rules = formed_rules("[METSMALL]\nExpireAnim=EXPLODE\nExplodeOnWater=yes\n");
+    let config = rules.art().anim_runtime_config("METSMALL").unwrap();
+    assert!(config.explode_on_water);
+    let mut water = formed_sim(31, 0);
+    water
+        .resolved_terrain
+        .as_mut()
+        .unwrap()
+        .cell_mut_for_test(40, 40)
+        .unwrap()
+        .land_type = 2;
+    let before = water.scenario_rng.clone();
+    assert!(
+        !water
+            .anim_bounce_landing(
+                config,
+                &rules,
+                None,
+                glam::IVec3::new(10368, 10368, 0),
+                &mut FrameEffects::empty()
+            )
+            .unwrap()
+    );
+    let anims: Vec<_> = water.anims().map(|(_, a)| a).collect();
+    assert_eq!(anims.len(), 1, "no Wake and no SplashList entry");
+    assert_eq!(
+        water.interner.resolve(anims[0].type_id),
+        "EXPLODE",
+        "the ExpireAnim runs on the water cell"
+    );
+    assert_eq!(
+        water.scenario_rng.native_state_hex(),
+        before.native_state_hex()
+    );
+}
+
+/// Phobos `SplashAnims=` (`Ext/AnimType/Body.cpp:102`,
+/// `Ext/Anim/Hooks.cpp:236-241`): the AnimType's list replaces the stock
+/// `SplashList=`, a meteor still takes its last entry, and no draw is spent.
+#[test]
+fn custom_splash_anims_replace_the_stock_water_splash() {
+    let rules = formed_rules("[METSMALL]\nIsMeteor=yes\nSplashAnims=CHILD,SPLASH1\n");
+    let config = rules.art().anim_runtime_config("METSMALL").unwrap();
+    assert_eq!(
+        config.splash_anims.as_deref(),
+        Some(&["CHILD".to_string(), "SPLASH1".to_string()][..])
+    );
+    let mut water = formed_sim(31, 0);
+    water
+        .resolved_terrain
+        .as_mut()
+        .unwrap()
+        .cell_mut_for_test(40, 40)
+        .unwrap()
+        .land_type = 2;
+    let before = water.scenario_rng.clone();
+    assert!(
+        !water
+            .anim_bounce_landing(
+                config,
+                &rules,
+                None,
+                glam::IVec3::new(10368, 10368, 0),
+                &mut FrameEffects::empty()
+            )
+            .unwrap()
+    );
+    let anims: Vec<_> = water.anims().map(|(_, a)| a).collect();
+    assert_eq!(anims.len(), 1);
+    assert_eq!(
+        water.interner.resolve(anims[0].type_id),
+        "SPLASH1",
+        "the meteor default is the last custom entry"
+    );
+    assert_eq!(
+        water.scenario_rng.native_state_hex(),
+        before.native_state_hex()
+    );
+}
+
+/// Phobos `SplashAnims.PickRandom=` (`Ext/AnimType/Body.cpp:103`): one
+/// `RandomRanged(0, last)` picks the entry before the Wake is created.
+#[test]
+fn splash_pick_random_draws_one_index() {
+    let rules = formed_rules(
+        "[METSMALL]\nIsMeteor=yes\nSplashAnims=CHILD,SPLASH1\nSplashAnims.PickRandom=yes\n",
+    );
+    let config = rules.art().anim_runtime_config("METSMALL").unwrap();
+    assert!(config.splash_anims_pick_random);
+    let mut water = formed_sim(31, 0);
+    water
+        .resolved_terrain
+        .as_mut()
+        .unwrap()
+        .cell_mut_for_test(40, 40)
+        .unwrap()
+        .land_type = 2;
+    let mut expected = water.scenario_rng.clone();
+    let index = expected.next_range_u32_inclusive(0, 1) as usize;
+    assert!(
+        !water
+            .anim_bounce_landing(
+                config,
+                &rules,
+                None,
+                glam::IVec3::new(10368, 10368, 0),
+                &mut FrameEffects::empty()
+            )
+            .unwrap()
+    );
+    let anims: Vec<_> = water.anims().map(|(_, a)| a).collect();
+    assert_eq!(anims.len(), 1);
+    assert_eq!(
+        water.interner.resolve(anims[0].type_id),
+        ["CHILD", "SPLASH1"][index]
+    );
+    assert_eq!(
+        water.scenario_rng.native_state_hex(),
+        expected.native_state_hex(),
+        "exactly one draw"
+    );
+}
+
 #[test]
 fn retail_meteor_profiles_keep_missing_stock_images_explicit() {
     let Some((_, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {

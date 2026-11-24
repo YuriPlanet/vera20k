@@ -12,6 +12,12 @@ use crate::sim::runtime::{SimResources, SimRuntime};
 use crate::sim::world::{FrameEffects, Simulation, TickLane};
 
 fn rules(collision: bool) -> RuleSet {
+    rules_with(collision, "")
+}
+
+/// `vat_key` appends lines to the `[VAT]` section, e.g. the
+/// `InitialStrength.Cloning=` key the cloned-exit tests read.
+fn rules_with(collision: bool, vat_key: &str) -> RuleSet {
     let vehicles = if collision {
         "0=E1\n1=HOST\n2=SLAV\n3=HORN"
     } else {
@@ -32,7 +38,7 @@ fn rules(collision: bool) -> RuleSet {
          SpawnRegenRate=600\nSlaveRegenRate=500\n\
          [GAPILE]\nStrength=1000\nFactory=InfantryType\nOwner=Americans,Russians\n\
          [GAWEAP]\nStrength=1000\nFactory=UnitType\nOwner=Americans\n\
-         [VAT]\nStrength=1000\nCloning=yes\nOwner=Americans\n"
+         [VAT]\nStrength=1000\nCloning=yes\nOwner=Americans\n{vat_key}"
     ));
     let art = IniFile::from_str(
         "[E1]\nSequence=GI\n[SLAV]\nSequence=GI\n\
@@ -58,7 +64,13 @@ fn rules(collision: bool) -> RuleSet {
 }
 
 fn world(collision: bool, vat: bool) -> (SimRuntime, InternedId) {
-    let rules = rules(collision);
+    world_with(collision, vat, "")
+}
+
+/// `vat_key` authors lines in the `[VAT]` section, e.g. the
+/// `InitialStrength.Cloning=` key the cloned-exit tests read.
+fn world_with(collision: bool, vat: bool, vat_key: &str) -> (SimRuntime, InternedId) {
+    let rules = rules_with(collision, vat_key);
     let mut sim = Simulation::with_seed(0x4c9c_7000);
     sim.intern_rule_type_ids(&rules);
     tests::install_infantry_delivery_fixture_map(&mut sim);
@@ -808,5 +820,234 @@ fn name_only_compatibility_and_shared_creators_keep_their_native_type_families()
             .seldom
             .type_facts
             .spawned_non_missile_aircraft()
+    );
+}
+
+/// Produce one infantry through the typed pipeline and frame until its
+/// source exit places it; the same-house `Cloning=` vat adds one copy.
+/// Returns (source, copy).
+fn exit_one_infantry_with_vat(vat_key: &str) -> (SimRuntime, InternedId, u64, u64) {
+    let (mut runtime, owner) = world_with(false, true, vat_key);
+    let command = produce(&runtime, owner, ObjectCategory::Infantry, "E1", None);
+    frame(&mut runtime, owner, &[command]);
+    let source = held(&runtime.simulation, owner, ProductionCategory::Infantry).unwrap();
+    for _ in 0..2048 {
+        frame(&mut runtime, owner, &[]);
+        if !runtime
+            .simulation
+            .entities()
+            .get(source)
+            .unwrap()
+            .lifecycle
+            .in_limbo()
+        {
+            break;
+        }
+    }
+    let type_id = runtime.simulation.interner.get("E1").unwrap();
+    let mut infantry: Vec<_> = runtime
+        .simulation
+        .entities()
+        .values()
+        .filter(|entity| {
+            entity.type_ref() == type_id && entity.category() == EntityCategory::Infantry
+        })
+        .map(|entity| entity.stable_id())
+        .collect();
+    infantry.sort_unstable();
+    assert_eq!(infantry.len(), 2, "source and one vat copy");
+    infantry.retain(|&id| id != source);
+    (runtime, owner, source, infantry[0])
+}
+
+/// Phobos `BuildingClass_ExitObject_InitialClonedHealth` @ 0x443C81
+/// (`Ext/Building/Hooks.cpp:91-106`): the copy exiting the `Cloning=` vat
+/// writes Health and EstimatedHealth from the vat type's
+/// `InitialStrength.Cloning` percentage of the clone type's Strength
+/// (`Ext/BuildingType/Body.cpp:196`, default `{1.0}` at `Body.h:169`),
+/// floored by the `(int)` cast. The barracks' own product keeps the stock
+/// full-health exit, with and without the key.
+#[test]
+fn initial_cloning_percentage_scales_the_clone_health() {
+    // E1 Strength is 125; f32(0.335) widens to 0.33000001311302185..., so
+    // 125 * 0.3300000131 floors 41.25 to 41.
+    for (vat_key, copy_health) in [
+        ("", 125),
+        ("InitialStrength.Cloning=0.5\n", 62),
+        ("InitialStrength.Cloning=0.335\n", 41),
+    ] {
+        let (runtime, _owner, source, copy) = exit_one_infantry_with_vat(vat_key);
+        let strength = runtime.resources.rules.object("E1").unwrap().strength;
+        assert_eq!(
+            runtime
+                .simulation
+                .entities()
+                .get(source)
+                .unwrap()
+                .health
+                .current(),
+            strength,
+            "{vat_key} the barracks product keeps the stock full-health exit"
+        );
+        assert_eq!(
+            runtime
+                .simulation
+                .entities()
+                .get(copy)
+                .unwrap()
+                .health
+                .current(),
+            copy_health,
+            "{vat_key}"
+        );
+        assert_eq!(
+            runtime
+                .simulation
+                .entities()
+                .get(copy)
+                .unwrap()
+                .estimated_health
+                .get(),
+            copy_health,
+            "{vat_key} the estimated alias takes the same strength"
+        );
+    }
+}
+
+/// `GeneralUtils::GetRangedRandomOrSingleValue(PartialVector2D<double>)`
+/// (`src/Utilities/GeneralUtils.cpp:66-72`): a `min,max` pair with `X < Y`
+/// draws the inclusive integer percentage once on the Scenario RNG and
+/// divides it by 100, then `Math::clamp((int)(health * percentage), 1,
+/// health)` caps the result at the clone type's Strength. The reachable
+/// sets below are that native formula over each key's integer draw range.
+#[test]
+fn initial_cloning_ranges_draw_one_scenario_percentage() {
+    // The draw bounds are the native `(int)(X * 100)` / `(int)(Y * 100)`
+    // over the widened binary32 values: f32(0.9) -> 90, f32(1.5) -> 150.
+    for (vat_key, draw_low, draw_high) in [
+        ("InitialStrength.Cloning=0.2,0.8\n", 20, 80),
+        ("InitialStrength.Cloning=0.9,1.5\n", 90, 150),
+    ] {
+        let (runtime, _owner, _source, copy) = exit_one_infantry_with_vat(vat_key);
+        let strength = runtime.resources.rules.object("E1").unwrap().strength;
+        let health = runtime
+            .simulation
+            .entities()
+            .get(copy)
+            .unwrap()
+            .health
+            .current();
+        let mut reachable = std::collections::BTreeSet::new();
+        for drawn in draw_low..=draw_high {
+            let scaled = (strength as f64 * (f64::from(drawn) / 100.0)) as i32;
+            reachable.insert(scaled.clamp(1, strength));
+        }
+        assert!(
+            reachable.contains(&health),
+            "{vat_key} health {health} outside the one-draw reachable set"
+        );
+        assert_eq!(
+            runtime
+                .simulation
+                .entities()
+                .get(copy)
+                .unwrap()
+                .estimated_health
+                .get(),
+            health,
+            "{vat_key}"
+        );
+    }
+}
+
+/// The no-draw spellings — the keyless `{1.0}` default, a single value and
+/// a single-point `min,max` — leave the whole draw sequence identical, so
+/// only the clone's own health differs.
+#[test]
+fn initial_cloning_single_value_spellings_draw_nothing() {
+    let mut states = Vec::new();
+    for (vat_key, copy_health) in [
+        ("", 125),
+        ("InitialStrength.Cloning=0.5\n", 62),
+        // f32(0.2) widens to 0.20000000298023224..., so 125 * X floors
+        // 25.0000003 to 25; `X >= Y` takes `X` without a draw.
+        ("InitialStrength.Cloning=0.2,0.2\n", 25),
+    ] {
+        let (runtime, _owner, _source, copy) = exit_one_infantry_with_vat(vat_key);
+        assert_eq!(
+            runtime
+                .simulation
+                .entities()
+                .get(copy)
+                .unwrap()
+                .health
+                .current(),
+            copy_health,
+            "{vat_key}"
+        );
+        states.push(runtime.simulation.scenario_rng.logical_state());
+    }
+    for state in states.iter().skip(1) {
+        assert_eq!(state, &states[0], "a no-draw spelling draws nothing");
+    }
+}
+
+/// Phobos `Cloning.Powered` (`Ext/Building/Body.cpp:476-486`): a dead,
+/// limboed, warping-out or (default `Powered=yes`) powered-down vat exits no
+/// clone; `Powered=no` restores the vanilla unconditioned exit.
+#[test]
+fn a_powered_down_vat_exits_no_clone_unless_powered_is_no() {
+    let copies_with_offline_vat = |vat_key: &str| -> usize {
+        let (mut runtime, owner) = world_with(false, true, vat_key);
+        let vat_type = runtime.simulation.interner.get("VAT").unwrap();
+        let vat = runtime
+            .simulation
+            .entities()
+            .values()
+            .find(|entity| entity.type_ref() == vat_type)
+            .map(|entity| entity.stable_id())
+            .expect("the fixture places a VAT");
+        runtime
+            .simulation
+            .substrate
+            .entities
+            .get_mut(vat)
+            .unwrap()
+            .set_building_online_for_test(false);
+        let command = produce(&runtime, owner, ObjectCategory::Infantry, "E1", None);
+        frame(&mut runtime, owner, &[command]);
+        let source = held(&runtime.simulation, owner, ProductionCategory::Infantry).unwrap();
+        for _ in 0..2048 {
+            frame(&mut runtime, owner, &[]);
+            if !runtime
+                .simulation
+                .entities()
+                .get(source)
+                .unwrap()
+                .lifecycle
+                .in_limbo()
+            {
+                break;
+            }
+        }
+        let type_id = runtime.simulation.interner.get("E1").unwrap();
+        runtime
+            .simulation
+            .entities()
+            .values()
+            .filter(|entity| {
+                entity.type_ref() == type_id && entity.category() == EntityCategory::Infantry
+            })
+            .count()
+    };
+    assert_eq!(
+        copies_with_offline_vat(""),
+        1,
+        "the powered-down vat exits no copy"
+    );
+    assert_eq!(
+        copies_with_offline_vat("Cloning.Powered=no\n"),
+        2,
+        "Powered=no restores the vanilla copy"
     );
 }

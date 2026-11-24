@@ -102,8 +102,9 @@ impl Simulation {
             }
 
             self.run_represented_uninit_pre_hook(stable_id);
-            #[cfg(feature = "phobos")]
-            self.phobos_tracking_begin_uninit(stable_id);
+            if context.rules.phobos() {
+                self.phobos_tracking_begin_uninit(stable_id);
+            }
             // `ObjectClass::UnInit` kills a Techno's passengers with no attacker
             // (`0x005F660D`).
             self.kill_passengers(stable_id, None, context.reborrow());
@@ -133,6 +134,7 @@ impl Simulation {
             stable_id,
         );
         self.notify_pointer_expired(stable_id, context.reborrow());
+        let phobos = context.rules().phobos();
 
         match kind {
             ObjectKind::Spotlight => {
@@ -180,8 +182,7 @@ impl Simulation {
         self.substrate.pending_delete.queue_object(stable_id);
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::PendingDeleteQueued { stable_id });
-        #[cfg(feature = "phobos")]
-        if kind == ObjectKind::Entity {
+        if kind == ObjectKind::Entity && phobos {
             self.phobos_tracking_end_uninit();
         }
     }
@@ -775,7 +776,14 @@ impl Simulation {
                 }
                 entity.is_some()
             }
-            Some(ObjectKind::Anim) => self.substrate.anims.remove(stable_id).is_some(),
+            Some(ObjectKind::Anim) => {
+                let removed = self.substrate.anims.remove(stable_id);
+                if let Some(anim) = removed.as_ref() {
+                    // Phobos `AnimExt::~AnimExt` drops the firing-anim count.
+                    self.release_firing_anim_count(anim);
+                }
+                removed.is_some()
+            }
             Some(ObjectKind::ParticleSystem) => {
                 let system = self.substrate.particle_systems.finalize_remove(stable_id);
                 if let Some(system) = system.as_ref() {

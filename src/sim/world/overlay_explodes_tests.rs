@@ -265,6 +265,7 @@ fn retail_barrel_death_checks_cardinal_overlay_before_arming_its_death_fuse() {
         &rules,
         Some(rules.overlay_registry()),
         &mut FrameEffects::default(),
+        true,
     );
     assert_eq!(
         sim.overlay_grid()

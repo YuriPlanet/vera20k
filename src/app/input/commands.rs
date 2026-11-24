@@ -1049,6 +1049,10 @@ pub(crate) fn encode_ordinary_local_command(
             let record = sim.encode_repair_record(owner, entity_id)?;
             Some(CommandEnvelope::synchronized(record, execute_tick))
         }
+        Command::TogglePlayerAutoRepair { enabled } => {
+            let record = sim.encode_player_auto_repair_record(owner, enabled)?;
+            Some(CommandEnvelope::synchronized(record, execute_tick))
+        }
         payload => Some(CommandEnvelope::new(owner, execute_tick, payload)),
     }
 }

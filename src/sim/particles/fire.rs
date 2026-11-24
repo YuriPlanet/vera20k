@@ -233,6 +233,14 @@ pub(super) fn tick_system_with(
         return;
     };
     let (owner, owner_house) = (sys.owner_entity, sys.owner_house);
+    // Phobos `AdjustTargetCoordsOnRotation` (`Ext/ParticleSystemType/Body.cpp:22`,
+    // default yes): the FireAI hook (`Ext/Techno/Hooks.WeaponEffects.cpp:63-74`,
+    // `0x62FA41 ParticleSystemClass_FireAI_TargetCoords`) skips the sweep block
+    // when the system's type reads no — the coordinates and the aim-swing
+    // spawn cadence freeze while the owner rotates.
+    let adjust_target_coords = rules
+        .particle_system_type(sys.type_id)
+        .adjust_target_coords_on_rotation;
     // 0x0062F9AE..0x0062F9CF: each particle's AI (0x0062CE40) and move
     // (0x0062D5E0), last first.
     let Some(walk) = sim
@@ -287,7 +295,9 @@ pub(super) fn tick_system_with(
     let mut swept = false;
     match facts {
         Some(OwnerFacts { alive: true, sweep }) => {
-            if let Some(sweep) = sweep {
+            if let Some(sweep) = sweep
+                && adjust_target_coords
+            {
                 // 0x0062FB66..0x0062FB84, then SetLocation (vt+0x1B4).
                 sys.target_coords = sweep_target(sweep);
                 sys.coords = sweep.flh;

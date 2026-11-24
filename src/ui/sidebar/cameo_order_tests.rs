@@ -128,19 +128,20 @@ fn pending_clock_strip() -> (CameoStrips, CameoId) {
     let mut interner = StringInterner::new();
     let id = CameoId::Object(interner.intern("E2"));
     let mut strips = CameoStrips::default();
-    strips.insert(
-        &Cameo {
-            id,
-            tab: SidebarTab::Infantry,
-            available: true,
-            key: CameoKey::Techno {
-                own_side: true,
-                considered_aircraft: false,
-                naval: false,
-                tech_level: 1,
-                cost: 100,
-                name: "E2".into(),
-            },
+    strips.insert(&Cameo {
+        id,
+        tab: SidebarTab::Infantry,
+        available: true,
+        key: CameoKey::Techno {
+            own_side: true,
+            considered_aircraft: false,
+            naval: false,
+            tech_level: 1,
+            cost: 100,
+            internal_name: String::new(),
+            sort_by_internal_name: false,
+            name: "E2".into(),
+        },
         },
         false,
     );
@@ -462,6 +463,7 @@ impl Fixture {
                 factory_plant: context
                     .get("plant")
                     .map_or([NativeF32Bits::ONE; 5], factor_bits),
+                restricted_plant: NativeF32Bits::ONE,
             },
         }
     }
@@ -478,6 +480,8 @@ impl Fixture {
                         available: true,
                         key: CameoKey::SuperWeapon {
                             recharge_frames: item.recharge_frames,
+                            internal_name: String::new(),
+                            sort_by_internal_name: false,
                             name: item.ui_name.clone(),
                         },
                     }
@@ -501,6 +505,8 @@ impl Fixture {
                             cost: self
                                 .rules
                                 .cost_of(self.rules.object(&item.id).unwrap(), Some(&self.factors)),
+                            internal_name: String::new(),
+                            sort_by_internal_name: false,
                             name: item.ui_name.clone(),
                         },
                     }
@@ -749,6 +755,8 @@ fn native_tab_transitions_follow_add_cameo_and_recalculate() {
             naval: false,
             tech_level: 1,
             cost: 100,
+            internal_name: String::new(),
+            sort_by_internal_name: false,
             name: "Test Type".to_string(),
         },
     };
@@ -915,6 +923,8 @@ fn eleven_vehicle_strips() -> CameoStrips {
                 naval: false,
                 tech_level: 1,
                 cost: 100,
+                internal_name: String::new(),
+                sort_by_internal_name: false,
                 name: format!("U{i}"),
             },
         })
@@ -1017,6 +1027,8 @@ fn an_ares_strip_admits_and_flashes_entries_past_the_native_limit() {
             naval: false,
             tech_level: 1,
             cost: 100,
+            internal_name: String::new(),
+            sort_by_internal_name: false,
             name: "Test Type".to_string(),
         },
     };
@@ -1059,6 +1071,8 @@ fn costed_vehicle_cameos(count: usize) -> Vec<Cameo> {
                 naval: false,
                 tech_level: 1,
                 cost: 100 + i as i32,
+                internal_name: String::new(),
+                sort_by_internal_name: false,
                 name: format!("U{i}"),
             },
         })
@@ -1081,6 +1095,8 @@ fn an_equal_key_enters_before_the_existing_cameo_unless_ares_lower_bounds_it() {
             naval: false,
             tech_level: 1,
             cost: 100,
+            internal_name: String::new(),
+            sort_by_internal_name: false,
             name: "Twin".to_string(),
         },
     };
@@ -1101,6 +1117,38 @@ fn an_equal_key_enters_before_the_existing_cameo_unless_ares_lower_bounds_it() {
         };
         assert_eq!(order, expected);
     }
+}
+
+/// Phobos `StripClass_OperatorLessThan_SortCameoByName` (`0x6A84DB` SW,
+/// `0x6A86ED` Techno, `Misc/Hooks.UI.cpp:250-287`): with the switch on, the
+/// internal `Name` (`strcmp`) decides before the UI name (`wcscmp`); with it
+/// off the UI name alone decides.
+#[test]
+fn sort_cameo_by_name_compares_the_internal_name_first() {
+    let key = |internal: &str, shown: &str, sort: bool| CameoKey::Techno {
+        own_side: true,
+        considered_aircraft: false,
+        naval: false,
+        tech_level: 1,
+        cost: 100,
+        internal_name: internal.to_string(),
+        sort_by_internal_name: sort,
+        name: shown.to_string(),
+    };
+    // Internal order disagrees with the UI-name order.
+    let alpha = key("A_INTERNAL", "Zulu", true);
+    let zulu = key("Z_INTERNAL", "Alpha", true);
+    assert!(alpha.inserts_before(&zulu));
+    assert!(!zulu.inserts_before(&alpha));
+    // Switch off: the UI name decides again.
+    let alpha = key("A_INTERNAL", "Zulu", false);
+    let zulu = key("Z_INTERNAL", "Alpha", false);
+    assert!(!alpha.inserts_before(&zulu));
+    assert!(zulu.inserts_before(&alpha));
+    // Equal internal names fall through to the equal UI-name rule.
+    let first = key("SAME", "Twin", true);
+    let second = key("SAME", "Twin", true);
+    assert!(first.inserts_before(&second) && second.inserts_before(&first));
 }
 
 /// Twelve cameos, two visible rows, scrolled to row 2 (top = U4). Native
@@ -1136,6 +1184,8 @@ fn priced_vehicle_cameo(id: crate::sim::intern::InternedId, cost: i32) -> Cameo 
             naval: false,
             tech_level: 1,
             cost,
+            internal_name: "Test Type".to_string(),
+            sort_by_internal_name: false,
             name: "Test Type".to_string(),
         },
     }

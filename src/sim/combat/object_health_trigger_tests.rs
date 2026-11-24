@@ -135,8 +135,10 @@ fn object_threshold_and_first_damage_order_matches_original_eighteen_controls() 
                 strength.get(),
                 admitted,
                 input["kind"] == "building" && input["can_c4"] == false,
+                false,
                 0.25,
                 source,
+                false,
                 false,
             )
         });
@@ -262,8 +264,10 @@ fn object_live_reads_and_callback_returns_match_original_twenty_three_mutations(
                 strength.get(),
                 true,
                 false,
+                false,
                 0.25,
                 source,
+                false,
                 false,
             )
         });

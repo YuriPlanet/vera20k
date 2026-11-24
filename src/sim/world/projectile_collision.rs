@@ -13,7 +13,7 @@ use crate::sim::projectile::{
 
 pub(super) struct ProjectileCollisionWorld<'a> {
     pub terrain: Option<&'a ResolvedTerrainGrid>,
-    pub dummy: &'a SharedCellDummy,
+    pub dummy: SharedCellDummy,
     pub occupancy: &'a OccupancyGrid,
     pub entities: &'a EntityStore,
     pub terrain_objects:
@@ -27,9 +27,42 @@ pub(super) struct ProjectileCollisionWorld<'a> {
     pub ares_firestorm: &'a crate::sim::ares_firestorm::FirestormHouses,
 }
 
+/// One trajectory bullet's motion result.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct TrajectoryMotion {
+    pub candidate: ProjectileCoord,
+    pub velocity: ProjectileVelocity,
+    pub impact: bool,
+    pub left_map: bool,
+}
+
+impl Simulation {
+    /// The collision owner for a world-side callback, from `rules` and the
+    /// visit's overlay registry.
+    pub(super) fn projectile_collision_world<'a>(
+        &'a self,
+        rules: &'a crate::rules::ruleset::RuleSet,
+        overlay_registry: Option<&'a crate::rules::overlay_types::OverlayTypeRegistry>,
+    ) -> ProjectileCollisionWorld<'a> {
+        ProjectileCollisionWorld {
+            terrain: self.resolved_terrain.as_ref(),
+            dummy: self.effective_shared_cell_dummy(),
+            occupancy: &self.substrate.occupancy,
+            entities: &self.substrate.entities,
+            terrain_objects: self.terrain_objects.objects(),
+            interner: &self.interner,
+            alliances: &self.house_alliances,
+            overlays: self.overlay_grid.as_ref(),
+            rules,
+            map_size: self.map_size_diamond(),
+            ares_firestorm: &self.ares_firestorm,
+        }
+    }
+}
+
 impl ProjectileCollisionWorld<'_> {
     fn cell(&self, coord: ProjectileCoord) -> CellRef<'_> {
-        projectile_cell_at(self.terrain, self.dummy, coord)
+        projectile_cell_at(self.terrain, &self.dummy, coord)
     }
 
     fn packed_cell(&self, coord: ProjectileCoord) -> CellRef<'_> {
@@ -41,7 +74,7 @@ impl ProjectileCollisionWorld<'_> {
     }
 
     fn ground(&self, coord: ProjectileCoord) -> i32 {
-        projectile_ground_z(self.terrain, self.dummy, coord)
+        projectile_ground_z(self.terrain, &self.dummy, coord)
     }
 
     fn building(&self, cell: &CellRef<'_>) -> Option<u64> {
@@ -116,6 +149,73 @@ impl ProjectileCollisionWorld<'_> {
             objects,
         )?;
         Some((id, self.raw_location(self.entities.get(id)?)))
+    }
+
+    /// One Phobos-trajectory motion step: the stock ordinary geometry
+    /// (floor, bridge, obstacle), the map-bounds test and the stopped-bullet
+    /// ground impact, without the target-coordinate and techno hit tests the
+    /// trajectory hooks skip.
+    pub(super) fn phobos_trajectory_motion(
+        &self,
+        projectile: &Projectile,
+        motion: crate::sim::projectile::ProjectileCollisionMotion,
+        persistent_velocity: ProjectileVelocity,
+    ) -> TrajectoryMotion {
+        let (motion, mut impact) = self.ordinary_geometry(projectile, motion);
+        let velocity = ProjectileVelocity::from_native(motion.velocity);
+        let mut candidate = motion.candidate_coord();
+        let mut left_map = false;
+        if !self.inside_map(candidate) {
+            left_map = true;
+            candidate = projectile.position();
+        } else {
+            let height = crate::sim::movement::ground_pose::height_at_z(
+                projectile.position().z,
+                self.ground(projectile.position()),
+                projectile.on_bridge(),
+            );
+            if crate::sim::projectile::projectile_velocity_magnitude_double(motion.velocity) < 10.0
+                && height < 10
+            {
+                impact = true;
+            }
+        }
+        let _ = persistent_velocity;
+        TrajectoryMotion {
+            candidate,
+            velocity,
+            impact,
+            left_map,
+        }
+    }
+
+    /// The `0x467E53` detonation through the impact ladder.
+    pub(super) fn ladder_detonation(
+        &self,
+        projectile: &Projectile,
+        impact_flag: bool,
+        reason: crate::sim::projectile::ProjectileDetonationReason,
+    ) -> crate::sim::projectile::ProjectileDetonation {
+        let world = self.impact_ladder(projectile, projectile.position());
+        let resolved = crate::sim::projectile::resolve_impact_coord(
+            &projectile.impact_ladder_bullet(impact_flag),
+            &world,
+        );
+        crate::sim::projectile::detonation(projectile, resolved, reason)
+    }
+
+    /// The overlay wall at a coordinate.
+    pub(super) fn cell_wall(&self, coord: ProjectileCoord) -> bool {
+        let cell = self.cell(coord);
+        matches!(
+            crate::sim::cell_kernel::wall_connection_step(
+                self.overlay(&cell).0.map_or(-1, i32::from),
+                -1,
+                Some(self.rules.overlay_registry()),
+                self.rules.ares_form(),
+            ),
+            crate::sim::cell_kernel::WallConnectionStep::Return(true)
+        )
     }
 
     pub fn collide(
@@ -243,7 +343,7 @@ impl ProjectileCollisionWorld<'_> {
                         crate::sim::projectile::cell_ground_coord(self.terrain, rx, ry)
                     }
                     ProjectileTarget::DummyCell => {
-                        crate::sim::projectile::dummy_cell_ground_coord(self.dummy)
+                        crate::sim::projectile::dummy_cell_ground_coord(&self.dummy)
                     }
                     _ => unreachable!("Cell impact target"),
                 };
@@ -352,7 +452,7 @@ impl ProjectileCollisionWorld<'_> {
                         .get(id)
                         .and_then(|object| self.interner.object_type(object.type_ref(), self.rules))
                         .is_some_and(|kind| {
-                            kind.is_1x1_with_undeploy()
+                            kind.is_vehicle()
                                 && kind
                                     .undeploys_into
                                     .as_deref()
@@ -447,7 +547,7 @@ impl ProjectileCollisionWorld<'_> {
             let position = projectile.position();
             position.z.wrapping_sub(projectile_surface_z(
                 self.terrain,
-                self.dummy,
+                &self.dummy,
                 position,
                 projectile.on_bridge(),
             ))
@@ -492,8 +592,7 @@ impl ProjectileCollisionWorld<'_> {
                         velocity = persistent_velocity;
                     }
                     if crate::sim::projectile::projectile_velocity_magnitude_double(if vertical {
-                        ProjectileCollisionMotion::from_coordinate(candidate, persistent_velocity)
-                            .velocity
+                        persistent_velocity.native()
                     } else {
                         native_velocity
                     }) < 10.0
@@ -559,7 +658,7 @@ impl ProjectileCollisionWorld<'_> {
                 .is_some_and(|target| candidate.z < target.z)
             && candidate.z.wrapping_sub(projectile_surface_z(
                 self.terrain,
-                self.dummy,
+                &self.dummy,
                 candidate,
                 projectile.on_bridge(),
             )) < 0
@@ -654,6 +753,46 @@ impl ProjectileCollisionWorld<'_> {
             }),
         };
         let owner = self.entities.get(projectile.source_id());
+        // Phobos `BulletClass_ShouldExplode_Obstacles` (`0x468C86`,
+        // `Ext/Bullet/Hooks.Obstacles.cpp:130-160`) runs
+        // `BulletObstacleHelper::GetObstacle` with `isTargetingCheck = false`,
+        // where the land/water keys answer their `.Detonate=` companions and a
+        // `false` lets the bullet fly through. The `Level` floor branch of that
+        // same helper is stock behaviour VERA already answers below
+        // (`projectile.collision().level`), so it stays there.
+        let projectile_type = projectile
+            .payload()
+            .projectile_type()
+            .and_then(|id| self.rules.projectile(self.interner.resolve(id)));
+        let shot = LineOfFireShot {
+            subject_to_cliffs: projectile.collision().subject_to_cliffs,
+            subject_to_walls: projectile.collision().subject_to_walls,
+            // Phobos `BulletType SubjectToGround=` lives on the type, which the
+            // collision policy does not carry.
+            subject_to_ground: projectile_type.is_some_and(|kind| kind.phobos_subject_to_ground()),
+            phobos_level: projectile_type.is_some_and(|kind| kind.level),
+            phobos_subject_to_land: projectile_type
+                .and_then(|kind| kind.phobos_subject_to_terrain.subject_to_land),
+            phobos_subject_to_water: projectile_type
+                .and_then(|kind| kind.phobos_subject_to_terrain.subject_to_water),
+            phobos_subject_to_land_detonate: projectile_type
+                .is_none_or(|kind| kind.phobos_subject_to_terrain.subject_to_land_detonate),
+            phobos_subject_to_water_detonate: projectile_type
+                .is_none_or(|kind| kind.phobos_subject_to_terrain.subject_to_water_detonate),
+            subject_to_solid: projectile.collision().subject_to_solid,
+            parties: LineOfFireParties {
+                firing_house: owner.map(|source| source.owner()),
+                // The bullet's Owner (+0xB0) and Target (+0x10C).
+                source_object: owner.map(|source| source.stable_id()),
+                target_object: match projectile.target() {
+                    ProjectileTarget::Entity(id) => Some(id),
+                    _ => None,
+                },
+            },
+        };
+        if shot.phobos_terrain_blocks(&self.cell(candidate), false) {
+            return true;
+        }
         cell_blocks_line_of_fire(
             CellObstructionProbe {
                 source: &source,
@@ -668,6 +807,12 @@ impl ProjectileCollisionWorld<'_> {
                     subject_to_cliffs: projectile.collision().subject_to_cliffs,
                     subject_to_walls: projectile.collision().subject_to_walls,
                     subject_to_solid: projectile.collision().subject_to_solid,
+                    subject_to_ground: false,
+                    phobos_level: false,
+                    phobos_subject_to_land: None,
+                    phobos_subject_to_water: None,
+                    phobos_subject_to_land_detonate: true,
+                    phobos_subject_to_water_detonate: true,
                     parties: LineOfFireParties {
                         firing_house: owner.map(|source| source.owner()),
                         // The bullet's Owner (+0xB0) and Target (+0x10C).
@@ -731,9 +876,9 @@ impl ProjectileCollisionWorld<'_> {
                 })
             }
             ProjectileTarget::DummyCell => Some(if query == ProjectileTargetQuery::GetCoords {
-                crate::sim::projectile::dummy_cell_ground_coord(self.dummy)
+                crate::sim::projectile::dummy_cell_ground_coord(&self.dummy)
             } else {
-                crate::sim::projectile::dummy_cell_target_coord(self.dummy)
+                crate::sim::projectile::dummy_cell_target_coord(&self.dummy)
             }),
             ProjectileTarget::None => None,
         }
@@ -794,7 +939,7 @@ mod tests {
     fn world(sim: &Simulation) -> ProjectileCollisionWorld<'_> {
         ProjectileCollisionWorld {
             terrain: sim.resolved_terrain.as_ref(),
-            dummy: &sim.shared_cell_dummy,
+            dummy: sim.shared_cell_dummy.clone(),
             occupancy: &sim.substrate.occupancy,
             entities: &sim.substrate.entities,
             terrain_objects: sim.terrain_objects.objects(),

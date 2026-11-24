@@ -595,7 +595,10 @@ pub(crate) fn refuse_press_at_cursor(state: &mut AppState) -> bool {
         .match_state
         .sim_runtime
         .runtime()
-        .and_then(|rt| rt.simulation.planning_press_refusal(&selected, point))
+        .and_then(|rt| {
+            rt.simulation
+                .planning_press_refusal(&selected, point, state.rules())
+        })
     else {
         return false;
     };

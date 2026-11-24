@@ -233,11 +233,6 @@ const POINTERS: &[(&str, PublishPointer)] = &[
     // ReadAudioVisual's Dig +294 (constructor `0x00665A10`, read
     // `0x0066A587..0x0066A5B1`), the Tunnel locomotor's dig anim.
     ("Dig", |rules, id| rules.general.dig_anim = named(id)),
-    // Firestorm 2.0's WebbedInfantry +F68 (constructor `0x005C57FF`, read
-    // `0x005C8498` through `0x005D39A0`), which gamemd lacks.
-    ("WebbedInfantry", |rules, id| {
-        rules.general.webbed_infantry = named(id);
-    }),
     // WarpIn +338, WarpOut +33C, WarpAway +340, ChronoSparkle1 +344,
     // IronCurtainInvokeAnim +348, ForceShieldInvokeAnim +34C (constructor
     // `0x00665B02..0x00665B20`, read `0x0066E188..0x0066E327`).
@@ -281,6 +276,11 @@ const POINTERS: &[(&str, PublishPointer)] = &[
     ("MoveFlash", |rules, id| rules.general.move_flash = anim(id)),
     ("Parachute", |rules, id| {
         rules.general.parachute_shp = named(id).map(|id| id.to_ascii_uppercase());
+    }),
+    // BombParachute +BB8: the canopy a `Parachuted=` bullet is born under
+    // (`Ext/Bullet/Hooks.cpp:594` reads `RulesClass::Instance->BombParachute`).
+    ("BombParachute", |rules, id| {
+        rules.general.bomb_parachute = named(id).map(|id| id.to_ascii_uppercase());
     }),
     // InfantryTypes through the scalar reader `0x0067BAC0`, whose default is
     // the current field: Engineer +F70 (`0x0066FC94`), Technician +F6C

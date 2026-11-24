@@ -128,66 +128,12 @@ impl DamageConsequences {
         }
     }
 
-    /// Whether every step of [`Self::commit`] would find its input empty. The
-    /// effects are listed whole, so a new one needs a decision here; those
-    /// bound to `_` are records no delivery reads.
-    fn carries_nothing(&self) -> bool {
-        let DeathEffects {
-            despawned_ids: _,
-            immediate_uninit_ids,
-            structure_destroyed,
-            explosion_effects,
-            voxel_debris,
-            combat_light_requests,
-            bridge_state_changed,
-            #[cfg(any(test, feature = "test-support"))]
-                wall_mutations: _,
-            #[cfg(any(test, feature = "test-support"))]
-                cell_target_detaches: _,
-            #[cfg(any(test, feature = "test-support"))]
-            tiberium_reduction_requests,
-            death_sounds,
-            smudge_spawn_requests,
-            rad_detonations,
-            under_attack_events,
-            unit_lost_events,
-            #[cfg(any(test, feature = "test-support"))]
-                receiver_stage_trace: _,
-        } = &self.effects;
-        #[cfg(any(test, feature = "test-support"))]
-        if !tiberium_reduction_requests.is_empty() {
-            return false;
-        }
-        immediate_uninit_ids.is_empty()
-            && !structure_destroyed
-            && explosion_effects.is_empty()
-            && voxel_debris.is_empty()
-            && combat_light_requests.is_empty()
-            && !bridge_state_changed
-            && death_sounds.is_empty()
-            && smudge_spawn_requests.is_empty()
-            && rad_detonations.is_empty()
-            && under_attack_events.is_empty()
-            && unit_lost_events.is_empty()
-            && self.terrain_navigation_changed_cells.is_empty()
-            && match &self.delivery {
-                DamageDelivery::Immediate => true,
-                DamageDelivery::Ordinary { fire_events } => fire_events.is_empty(),
-            }
-    }
-
     pub(super) fn commit(
         self,
         world: &mut Simulation,
         rules: &RuleSet,
         frame_effects: &mut FrameEffects<'_>,
     ) -> DamageCommitReceipt {
-        // A commit that carries nothing, with no navigation receipt or smudge
-        // dirt pending, writes nothing (VERA-only, results unchanged); most
-        // fire visits fire nothing.
-        if self.carries_nothing() && !world.commit_work_pending() {
-            return DamageCommitReceipt::default();
-        }
         let Self {
             mut effects,
             terrain_navigation_changed_cells,
@@ -270,21 +216,6 @@ impl DamageConsequences {
     }
 }
 
-impl Simulation {
-    /// Whether a commit that carries nothing still has work: every commit
-    /// publishes the overlay grid's pending navigation receipts, and an
-    /// ordinary one the smudge grid's dirty cells.
-    pub(super) fn commit_work_pending(&self) -> bool {
-        self.overlay_grid
-            .as_ref()
-            .is_some_and(|grid| grid.has_synchronous_navigation_cells())
-            || self
-                .smudge_grid
-                .as_ref()
-                .is_some_and(|grid| grid.has_dirty())
-    }
-}
-
 /// One constructor authority for immediate native tails and deferred receiver
 /// packets. Bullet469C40 calls this before its next Cluster draw469057.
 pub(crate) fn admit_explosion_effect(
@@ -360,18 +291,26 @@ pub(crate) fn admit_muzzle_anim(world: &mut Simulation, rules: &RuleSet, event: 
             type_name, rx, ry, sub_x, sub_y, level,
         )
     };
-    let constructor = world.effect_anim_constructor(rules, type_name);
-    if let Err(error) = world.spawn_anim_at_world_with_constructor(
+    let constructor = Simulation::effect_anim_constructor(world, rules, type_name);
+    match world.spawn_anim_at_world_with_constructor(
         rules,
         descriptor,
         coord,
         constructor,
         &mut FrameEffects::default(),
     ) {
-        log::debug!(
-            "muzzle anim [{}] did not construct: {error}",
-            world.interner.resolve(type_name)
-        );
+        Ok(anim_id) => {
+            // `0x6FF42B` marks and counts the anim it just built.
+            if let Some(state) = event.firing_anim {
+                world.attach_firing_anim(anim_id, state);
+            }
+        }
+        Err(error) => {
+            log::debug!(
+                "muzzle anim [{}] did not construct: {error}",
+                world.interner.resolve(type_name)
+            );
+        }
     }
 }
 
@@ -474,7 +413,7 @@ mod muzzle_anim_tests {
     #[test]
     fn a_presentation_flash_rides_its_firer_outside_display_and_ends_with_it() {
         let (mut sim, rules, tank) = fixture(EntityCategory::Unit);
-        sim.present_effect_anims();
+        Simulation::present_effect_anims(&mut sim);
         sim.reveal(tank);
         let unique_before = sim.next_native_runtime_id();
         let mut event = shot(&mut sim, tank, EntityCategory::Unit);

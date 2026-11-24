@@ -1,6 +1,6 @@
 # Optional Phobos airstrike flare
 
-Build with `--features phobos` to colour an airstrike's target line, its dot
+Phobos is in every build; turn it on from a game's data to colour an airstrike's target line, its dot
 and the target's tint per TechnoType. The line also gets Phobos's depth fix.
 
 ```ini

@@ -172,13 +172,10 @@ struct Answers {
     has_airstrike_marker: bool,
     building_cloak_stage: u8,
     driver_killed: bool,
-    #[cfg(feature = "phobos")]
     is_power_plant_enhancer_active: bool,
     emp_remaining: i32,
     is_under_emp: bool,
-    #[cfg(feature = "phobos")]
     shield: Option<crate::sim::shield::ShieldState>,
-    #[cfg(feature = "phobos")]
     phobos_attach_effects: crate::sim::attach_effect::AttachEffectList,
 }
 
@@ -202,13 +199,10 @@ impl Answers {
             has_airstrike_marker: entity.has_airstrike_marker(),
             building_cloak_stage: entity.building_cloak_stage(),
             driver_killed: entity.driver_killed(),
-            #[cfg(feature = "phobos")]
             is_power_plant_enhancer_active: entity.is_power_plant_enhancer_active(),
             emp_remaining: entity.emp_remaining(),
             is_under_emp: entity.is_under_emp(),
-            #[cfg(feature = "phobos")]
             shield: entity.shield().cloned(),
-            #[cfg(feature = "phobos")]
             phobos_attach_effects: entity.phobos_attach_effects().clone(),
         }
     }
@@ -216,7 +210,7 @@ impl Answers {
 
 /// What drawing reads of an object's locomotor, without its runtime
 /// payload, which most kinds keep on the heap.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct LocomotorView {
     kind: crate::rules::locomotor_type::LocomotorKind,
     fly_phase_callbacks: Option<(bool, bool)>,
@@ -230,6 +224,8 @@ pub(crate) struct LocomotorView {
     tunnel_runtime: Option<crate::sim::movement::tunnel_movement::TunnelRuntime>,
     /// A Drive locomotor's track destination and head.
     drive_track: Option<[Option<crate::sim::components::DriveCoord>; 2]>,
+    /// A Jumpjet's retained flight for the Phobos `JumpjetTilt` draw arm.
+    jumpjet_runtime: Option<crate::sim::movement::jumpjet_movement::JumpjetRuntime>,
 }
 
 /// What a Rocket's draw reads of its `RocketLocomotionClass`.
@@ -266,7 +262,14 @@ impl LocomotorView {
                     locomotor.track_head(TrackFamily::Drive),
                 ]
             }),
+            jumpjet_runtime: locomotor.jumpjet_runtime().cloned(),
         }
+    }
+
+    pub(crate) fn jumpjet_runtime(
+        &self,
+    ) -> Option<&crate::sim::movement::jumpjet_movement::JumpjetRuntime> {
+        self.jumpjet_runtime.as_ref()
     }
 
     pub(crate) fn active_kind(&self) -> crate::rules::locomotor_type::LocomotorKind {
@@ -351,7 +354,6 @@ pub(crate) struct Place {
     /// `Simulation::ares_is_operated`.
     pub(crate) ares_operated: bool,
     /// `Simulation::airstrike_laser_target_color`.
-    #[cfg(feature = "phobos")]
     pub(crate) airstrike_laser_target_color: i32,
 }
 
@@ -360,7 +362,6 @@ pub(crate) struct Place {
 pub(crate) struct AirstrikeDesignation {
     pub(crate) coords: [crate::sim::components::DriveCoord; 2],
     /// `Simulation::airstrike_line_color`.
-    #[cfg(feature = "phobos")]
     pub(crate) color: [u8; 3],
 }
 
@@ -372,7 +373,6 @@ impl AirstrikeDesignation {
         }
         Some(Self {
             coords: at.sim.airstrike_designation_coordinates(id, at.rules())?,
-            #[cfg(feature = "phobos")]
             color: at.sim.airstrike_line_color(id, at.rules()),
         })
     }
@@ -448,6 +448,7 @@ impl Place {
                 *viewer,
                 sites,
                 at.cells.as_ref(),
+                at.rules(),
             )
         });
         // Only a selected object's line, a psychically detected one's and the
@@ -528,7 +529,6 @@ impl Place {
             // Read only by the DeactivateDim lighting, which runs when Ares plays.
             ares_operated: at.rules().ares()
                 && sim.ares_is_operated(entity.stable_id(), at.rules()),
-            #[cfg(feature = "phobos")]
             airstrike_laser_target_color: sim
                 .airstrike_laser_target_color(entity.stable_id(), at.rules()),
             contact0: entity
@@ -833,7 +833,6 @@ impl ObjectRecord {
         self.answers.driver_killed
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn is_power_plant_enhancer_active(&self) -> bool {
         self.answers.is_power_plant_enhancer_active
     }
@@ -852,12 +851,10 @@ impl ObjectRecord {
         self.pose.recoil
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn shield(&self) -> Option<&crate::sim::shield::ShieldState> {
         self.answers.shield.as_ref()
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn phobos_attach_effects(&self) -> &crate::sim::attach_effect::AttachEffectList {
         &self.answers.phobos_attach_effects
     }
@@ -1064,7 +1061,6 @@ impl Tether {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct PassengerRole {
     inside_transport: bool,
-    #[cfg(feature = "phobos")]
     cargo: Option<Cargo>,
 }
 
@@ -1072,7 +1068,6 @@ impl PassengerRole {
     fn of(role: &crate::sim::passenger::PassengerRole) -> Self {
         Self {
             inside_transport: role.is_inside_transport(),
-            #[cfg(feature = "phobos")]
             cargo: role.cargo().map(|cargo| Cargo {
                 count: cargo.count(),
                 total_size: cargo.total_size(),
@@ -1084,21 +1079,18 @@ impl PassengerRole {
         self.inside_transport
     }
 
-    #[cfg(feature = "phobos")]
     pub(crate) fn cargo(&self) -> Option<&Cargo> {
         self.cargo.as_ref()
     }
 }
 
 /// A transport's `PassengerCargo` as drawing reads it.
-#[cfg(feature = "phobos")]
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Cargo {
     count: u32,
     total_size: i32,
 }
 
-#[cfg(feature = "phobos")]
 impl Cargo {
     pub(crate) fn count(&self) -> u32 {
         self.count

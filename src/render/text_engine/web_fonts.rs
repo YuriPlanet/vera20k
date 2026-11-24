@@ -192,6 +192,8 @@ pub(crate) use browser::preload;
 
 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
 mod browser {
+    use std::future::Future;
+
     use wasm_bindgen::prelude::*;
 
     /// Start both font requests immediately so they load alongside the ice

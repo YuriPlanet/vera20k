@@ -157,7 +157,7 @@ impl ParasiteState {
         &self.suppression
     }
 
-    fn suppress(&mut self, frame: u32, duration: i32) {
+    pub(crate) fn suppress(&mut self, frame: u32, duration: i32) {
         self.suppression = CdTimer::started(frame as i32, duration);
     }
 
@@ -226,6 +226,15 @@ impl FootParasite {
     /// The frame before which parasite shots at this Foot are refused.
     pub(crate) fn launch_lock(&self) -> u32 {
         self.launch_lock
+    }
+
+    /// ParasiteClass `SuppressionTimer` (`+0x2C`) for a holder outside this
+    /// module: Phobos `PassengerDeletion` suppresses it for 50 frames before
+    /// `ExitUnit`.
+    pub(crate) fn suppress_parasite(&mut self, frame: u32, duration: i32) {
+        if let Some(class) = self.class_mut() {
+            class.suppress(frame, duration);
+        }
     }
 
     /// The ParalysisTimer.
@@ -560,23 +569,57 @@ impl Simulation {
             .class_mut()
             .unwrap()
             .damage = CdTimer::started(frame as i32, rof);
+        // Phobos `ParasiteClass_AI_CullingTarget` (`0x62A0AA`,
+        // `Ext/Techno/Hooks.cpp:912-919`): the victim's category is tested
+        // against the warhead's `AffectsTarget` filter in place of the stock
+        // Infantry-only check, so Units/Aircraft/Buildings cull when the
+        // filter admits them; a refused victim falls into the ordinary bite
+        // arm below (0x62A0D3).
+        let culling = self
+            .substrate
+            .entities
+            .get(victim)
+            .is_some_and(|victim_entity| {
+                crate::sim::combat::crit::techno_eligible(
+                    victim_entity.category(),
+                    warhead.phobos_parasite.culling_target,
+                    self.object_type(victim_entity.type_ref(), rules)
+                        .is_some_and(|object| object.is_vehicle()),
+                )
+            });
         let Some(victim_entity) = self.substrate.entities.get_mut(victim) else {
             return;
         };
         victim_entity.parasite.paralysis = CdTimer::started(frame as i32, paralyzes);
-        let infantry = victim_entity.category() == EntityCategory::Infantry;
         let location = ground_pose::position_world_coord(&victim_entity.position);
         let raw = victim_entity.body_facing_current(frame);
-        let (amount, ignore_defenses) = if infantry {
-            // 0x0062A0AF: an Infantry victim takes its own current Health,
-            // ignoring defenses: one bite kills unless ReceiveDamage refuses.
+        let (amount, ignore_defenses) = if culling {
+            // ExecuteCulling `0x62A0B7`: `0x62A0BE` pushes the ignore-defenses
+            // flag and `0x62A0C0` loads the victim's own Health (+0x6C), so one
+            // bite kills unless ReceiveDamage refuses.
             (victim_entity.health.current(), true)
         } else {
-            if let Some(system) = rules
-                .combat_damage
-                .default_spark_system
-                .as_deref()
-                .and_then(|name| rules.ps_type_id_by_name(name))
+            // Phobos `ParasiteClass_AI_ParticleSystem` (`0x62A0D3`,
+            // `Ext/Techno/Hooks.cpp:921-940`): the warhead's
+            // `Parasite.ParticleSystem` replaces the default spark system and
+            // `Parasite.DisableParticleSystem` skips the construct entirely.
+            let (particle_name, particle_disabled) = (
+                warhead.phobos_parasite.particle_system.as_deref(),
+                warhead
+                    .phobos_parasite
+                    .disable_particle_system
+                    .unwrap_or(rules.phobos_globals.parasite_disable_particle_system),
+            );
+            if !particle_disabled
+                && let Some(system) = particle_name
+                    .and_then(|name| rules.ps_type_id_by_name(name))
+                    .or_else(|| {
+                        rules
+                            .combat_damage
+                            .default_spark_system
+                            .as_deref()
+                            .and_then(|name| rules.ps_type_id_by_name(name))
+                    })
             {
                 self.spawn_particle_system(
                     system,
@@ -651,7 +694,9 @@ impl Simulation {
                     origin: [x, y, location.z],
                     body_facing: raw,
                     force: NativeF32Bits::from_bits(0x3fc0_0000),
-                    weight: object.weight,
+                    weight: crate::util::native_x87::NativeF64Bits::from_bits(
+                        object.weight.to_num::<f64>().to_bits(),
+                    ),
                     no_dampen: false,
                     has_loaded_voxel: rules.object_has_loaded_voxel(handle),
                 })
@@ -1033,10 +1078,20 @@ impl Simulation {
             victim_entity.position.ry() as i16,
         );
         let owner_entity = self.substrate.entities.get(owner);
-        let naval = owner_entity
-            .and_then(|o| self.object_type(o.type_ref(), rules))
-            .is_some_and(|o| o.naval);
-        if !naval {
+        let owner_object = owner_entity.and_then(|o| self.object_type(o.type_ref(), rules));
+        let naval = owner_object.is_some_and(|o| o.naval);
+        // Phobos `ParasiteClass_CanExistOnVictimCell_AllowWaterExit`
+        // (`0x62AB69`, `Ext/Techno/Hooks.cpp:955-968`): an explicit type or
+        // `[General]` key refuses the release (`no`); `yes` jumps to the
+        // shared `SkipChecks` tail (`0x62AC0F`), which still requires no
+        // building below; unset keeps the naval/land rule.
+        let allow_water_exit = owner_object
+            .and_then(|object| object.phobos_parasite_allow_water_exit)
+            .or(rules.phobos_globals.parasite_allow_water_exit);
+        if allow_water_exit == Some(false) {
+            return false;
+        }
+        if allow_water_exit.is_none() && !naval {
             if owner_entity.is_some_and(|o| o.category() == EntityCategory::Unit)
                 && self
                     .terrain_objects
@@ -1204,10 +1259,15 @@ impl Simulation {
         let target_id = match target {
             super::TargetKind::Entity(id) => Some(id),
             super::TargetKind::Cell(..) => None,
+            super::TargetKind::Bullet(..) => None,
         };
         let target_entity = target_id.and_then(|id| self.substrate.entities.get(id));
         let target_infantry =
             target_entity.is_some_and(|target| target.category() == EntityCategory::Infantry);
+        // Phobos `TechnoClass_Fire_SetContext @ 0x6FE562`: the pre-Limbo
+        // `InSelected`/`InLimbo` the hook at `0x6FF7FF` reads back after the
+        // Limbo below (`Ext/WarheadType/Hooks.cpp:613-620`).
+        let fired = super::phobos_unlimbo_detonate::fire_context(self, firer);
         // 0x006FF763..0x006FF79C: ReselectIfLimboed memo for a selected firer
         // of a human player's house (IsHumanPlayer 0x0050B6F0, 0x006FF786)
         // jumping an Infantry target.
@@ -1231,6 +1291,11 @@ impl Simulation {
             self.team_script_vm.remember_team_to_rejoin(firer);
         }
         self.techno_limbo_with_context(firer, UninitContext::new(rules).with_effects(effects));
+        // Phobos `TechnoClass_Fire_UnlimboDetonate @ 0x6FF7FF`
+        // (`Ext/WarheadType/Hooks.cpp:630-657`), after the Limbo: restore the
+        // bullet Owner the Limbo detached and, with `KeepSelected`, remember
+        // the pre-Limbo selection for the detonation hook.
+        super::phobos_unlimbo_detonate::fire_hook(self, firer, weapon, bullet, fired, rules);
         let parasite = rules
             .weapon_warhead(weapon)
             .is_some_and(|warhead| warhead.parasite);
@@ -1282,6 +1347,11 @@ impl Simulation {
     /// ParasiteClass_PointerGotInvalid_Cloak100482D0 (hook62A283) releases
     /// the victim only when it was removed; the victim clears its own link
     /// only then too. A victim that cloaks keeps its parasite.
+    ///
+    /// Phobos `FootClass_PointerGotInvalid_Parasite` (`0x4D9992`,
+    /// `Ext/Techno/Hooks.cpp:1415-1445`) replaces that constant with the real
+    /// control too, then a false control falls back to the host type's
+    /// `Cloak.KickOutParasite` else `[General]`.
     pub(crate) fn foot_parasite_pointer_expired(
         &mut self,
         listener: u64,
@@ -1290,7 +1360,19 @@ impl Simulation {
         rules: &RuleSet,
         effects: &mut FrameEffects<'_>,
     ) {
-        let removed = !rules.ares() || removed;
+        let removed = if removed {
+            true
+        } else {
+            self.substrate
+                .entities
+                .get(listener)
+                .and_then(|victim| self.object_type(victim.type_ref(), rules))
+                .and_then(|object| object.phobos_cloak_kick_out_parasite)
+                .unwrap_or(rules.phobos_globals.cloak_kick_out_parasite)
+        };
+        // The stock control removes; the Ares/Phobos hook forwards the real
+        // control and falls back to the type key, then the global.
+        let removed = !(rules.ares() || rules.phobos()) || removed;
         let Some(eater) = self
             .substrate
             .entities
@@ -1358,6 +1440,8 @@ impl Simulation {
         else {
             return;
         };
+        let warhead_type = rules.warhead(self.interner.resolve(warhead));
+        let sonic = warhead_type.is_some_and(|w| w.sonic);
         let sonic = self
             .interner
             .warhead_type(warhead, rules)
@@ -1389,7 +1473,32 @@ impl Simulation {
         {
             state.suppress(frame, raw_damage.wrapping_mul(2).wrapping_sub(threshold));
         }
-        if raw_damage < 0 {
+        // Phobos `FootClass_ReceiveDamage_RemoveParasite` (`0x4D73DE`,
+        // `Ext/WarheadType/Hooks.cpp:589-606`): the stock heal-only arm is
+        // gated by `RemoveParasite` (unset keeps `damage < 0`) and its typed
+        // Allow/Disallow lists filter the attached parasite type.
+        let remove = warhead_type.map_or(raw_damage < 0, |w| {
+            if !w.phobos_remove_parasite.unwrap_or(raw_damage < 0) {
+                return false;
+            }
+            let Some(parasite_id) = self
+                .substrate
+                .entities
+                .get(eater)
+                .and_then(|e| self.object_type(e.type_ref(), rules))
+                .map(|o| o.id.as_str())
+            else {
+                return false;
+            };
+            !w.phobos_remove_parasite_disallow
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case(parasite_id))
+                && (w.phobos_remove_parasite_allow.is_empty()
+                    || w.phobos_remove_parasite_allow
+                        .iter()
+                        .any(|name| name.eq_ignore_ascii_case(parasite_id)))
+        });
+        if remove {
             self.parasite_force_release(eater, FORCED_RELEASE_SUPPRESSION_FRAMES, rules, effects);
         }
     }

@@ -94,7 +94,6 @@ fn irradiate_bound(
 
 /// [`irradiate_bound`] with Phobos `RadHasOwner`/`RadHasInvoker` attribution:
 /// the detonation names a firing house and an invoker object.
-#[cfg(feature = "phobos")]
 fn irradiate_attributed(
     sim: &mut crate::sim::world::Simulation,
     rules: &RuleSet,
@@ -316,7 +315,6 @@ fn radiation_skips_only_objects_in_the_air() {
 /// same cell is also exempt.
 /// Retail has no building radiation path; Phobos adds one, so this retail
 /// guarantee only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn buildings_take_no_rad_damage() {
     let rules = radiation_rules();
@@ -349,7 +347,6 @@ fn buildings_take_no_rad_damage() {
 
 /// Phobos custom radiation: the stock scene plus a `[RadiationTypes]` entry
 /// with its own level cap, factor and warhead, bound by `RadType=`.
-#[cfg(feature = "phobos")]
 fn phobos_radiation_rules() -> RuleSet {
     let ini = crate::sim::arena_fixture::clear_ground_ini(
         "\
@@ -382,7 +379,6 @@ fn phobos_radiation_rules() -> RuleSet {
 /// A bound radiation type drives the site's level clamp, its damage factor
 /// and its own warhead; the default-type path on the same scene keeps the
 /// globals.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_custom_radiation_type_damage_uses_the_bound_types_parameters() {
     let rules = phobos_radiation_rules();
@@ -421,7 +417,6 @@ fn phobos_custom_radiation_type_damage_uses_the_bound_types_parameters() {
 
 /// A bound type's `RadColor`, `RadLightFactor` and `RadTintFactor` shape the
 /// site's published light, so two types on the same scene light differently.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_a_bound_types_color_drives_the_site_light() {
     let rules = phobos_radiation_rules();
@@ -441,7 +436,6 @@ fn phobos_a_bound_types_color_drives_the_site_light() {
 
 /// `UseGlobalRadApplicationDelay=false` moves the admission gate to each
 /// bound type's own `RadApplicationDelay`.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_per_type_application_delay_gates_damage_when_the_global_gate_is_off() {
     let mut rules = phobos_radiation_rules();
@@ -491,7 +485,6 @@ fn phobos_per_type_application_delay_gates_damage_when_the_global_gate_is_off() 
 
 /// Native keeps concurrent sites of different types at one center; this
 /// model's one-site-per-center merges and retains the existing binding.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_merge_at_one_center_keeps_the_existing_bound_type() {
     let rules = phobos_radiation_rules();
@@ -623,7 +616,6 @@ fn deployed_desolator_self_irradiates_and_refires_below_third() {
 
 /// The demo mod's own values: `RadColor=255,0,255`, `RadLightFactor=0.6`,
 /// `RadTintFactor=2.0`, duration x6 and a 400 level cap.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_demo_purple_values_reach_the_light() {
     let rules = phobos_radiation_rules();
@@ -649,7 +641,6 @@ fn phobos_demo_purple_values_reach_the_light() {
 /// replaces the retail activation with `RadSiteExt::CreateLight`, which tints
 /// from the bound type's `RadColor` with no theater test, so a purple field
 /// stays purple on a SNOW scenario.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_radiation_color_ignores_the_theater() {
     let rules = phobos_radiation_rules();
@@ -678,7 +669,6 @@ fn phobos_radiation_color_ignores_the_theater() {
 /// RadSiteClass_Radiate_UnhardcodeSnow (10056DB0, hook 0x65B5FB) jumps past
 /// this substitution; `radiation::ares_radiation_keeps_rad_color_on_snow`
 /// covers a game where Ares plays.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn retail_snow_theater_substitutes_red_and_blue() {
     let rules = radiation_rules();
@@ -701,7 +691,6 @@ fn retail_snow_theater_substitutes_red_and_blue() {
 
 /// Phobos `RadHasOwner`/`RadHasInvoker`: the site keeps the round's house and
 /// firer, and its damage call carries them.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_rad_has_owner_and_invoker_reach_the_site_and_its_damage() {
     let rules = phobos_radiation_rules();
@@ -766,7 +755,6 @@ fn phobos_rad_has_owner_and_invoker_reach_the_site_and_its_damage() {
 /// foundation's radiation on `RadApplicationDelay.Building` boundaries, and
 /// each type clamps its level at `RadLevelMax` and scales it by its own
 /// `RadLevelFactor` through its own warhead.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_buildings_take_radiation_on_the_building_delay() {
     let rules = phobos_radiation_rules();
@@ -803,7 +791,6 @@ fn phobos_buildings_take_radiation_on_the_building_delay() {
 /// The branch is opt-in: with no `RadApplicationDelay.Building` the shared
 /// gate's building delay is 0, which native treats as "skip". Immune
 /// buildings and a warhead that verses the armor at 0% stay untouched.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_building_radiation_respects_the_delay_key_immunity_and_verses() {
     let mut rules = phobos_radiation_rules();
@@ -847,7 +834,6 @@ fn phobos_building_radiation_respects_the_delay_key_immunity_and_verses() {
 /// warhead detonation at the target, so the warhead's `CellSpread` reaches
 /// neighbours the field itself never covered. The direct-receiver form stays
 /// on the target alone.
-#[cfg(feature = "phobos")]
 #[test]
 fn phobos_rad_site_warhead_detonate_splashes_around_the_target() {
     let rules = phobos_radiation_rules();

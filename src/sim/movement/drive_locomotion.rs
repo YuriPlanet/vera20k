@@ -684,7 +684,8 @@ const DRIVE_DESTINATION_BRAKE_FLOOR: NativeF64Bits =
     NativeF64Bits::from_bits(0x3fd3_3333_4000_0000);
 const SINKING_BRAKE_FLOOR: NativeF64Bits = NativeF64Bits::from_bits(0x3fb9_9999_a000_0000);
 const SINKING_BRAKE: NativeF64Bits = NativeF64Bits::from_bits(0x3f58_9374_c000_0000);
-const CRUSH_SLOWDOWN_CAP: NativeF64Bits = NativeF64Bits::from_bits(0x3fc9_9999_9999_999a);
+pub(super) const CRUSH_SLOWDOWN_CAP: NativeF64Bits =
+    NativeF64Bits::from_bits(0x3fc9_9999_9999_999a);
 
 /// Drive4B0EF0, Ship6A05C0, Hover516370 and Teleport7192C0 have identical
 /// ILocomotion+4C bodies: Set4C9220 on the owner's PrimaryFacing+388.
@@ -709,6 +710,19 @@ pub(super) struct TrackSpeedPrefix {
     pub slowdown_distance: i32,
     pub sinking: bool,
     pub crush_slowdown: bool,
+    /// Phobos `CrushSlowdownMultiplier` (`Ext/Unit/Hooks.Crushing.cpp:48`,
+    /// `0x4B1150`/`0x6A0813`): the type's nullable, else the `[General]`
+    /// value, else the stock 0.2 cap.
+    pub crush_slowdown_cap: NativeF64Bits,
+    /// Phobos `UnitTypeExt::SkipCrushSlowdown` (`Ext/UnitType/Body.cpp:74`,
+    /// then `[General]`, `Ext/Rules/Body.cpp:274`): the Drive/Ship WhileMoving
+    /// crush arm (`Ext/Unit/Hooks.Crushing.cpp:104-109`, hooks
+    /// `0x4B1146`/`0x6A0809`) jumps to origin+0x3C, so the Foot+6B5 block that
+    /// caps class+50 never runs. The flag itself is neither read nor cleared.
+    /// Phobos `SkipCrushSlowdown` (`Ext/Unit/Hooks.Crushing.cpp:104-109`,
+    /// hooks `0x4B1146`/`0x6A0809`): a set flag jumps over the whole crush
+    /// arm, so class+50 keeps the pre-arm value instead of the capped one.
+    pub skip_crush_slowdown: bool,
 }
 
 impl TrackSpeedPrefix {
@@ -798,14 +812,17 @@ pub(super) fn track_speed_prefix(
 
     // Native computes/spills any brake candidate before testing Foot+6B5,
     // even though the crush arm subsequently overwrites that local argument.
-    if input.crush_slowdown {
+    // Phobos' SkipCrushSlowdown hook replaces the whole block after the
+    // 6-byte flag test (0x4B1146/0x6A0809 -> origin+0x3C), so the cap and its
+    // class+50 store are skipped while the flag stays set.
+    if input.crush_slowdown && !input.skip_crush_slowdown {
         let selected = if track_c0_set(M::compare(
             M::load_f64(target),
-            M::load_f64(CRUSH_SLOWDOWN_CAP),
+            M::load_f64(input.crush_slowdown_cap),
         )) {
             M::load_f64(target)
         } else {
-            M::load_f64(CRUSH_SLOWDOWN_CAP)
+            M::load_f64(input.crush_slowdown_cap)
         };
         // The same register is FST to local and FSTP to class+50. Both stores
         // have identical bits, including quieting a selected signaling NaN.
@@ -971,6 +988,48 @@ mod tests {
         assert_eq!(state.track_destination(TrackFamily::Drive), destination);
     }
 
+    /// Phobos `CrushSlowdownMultiplier` (`Ext/Unit/Hooks.Crushing.cpp:48`):
+    /// the crush arm caps at the supplied multiplier instead of the stock 0.2.
+    #[test]
+    fn phobos_crush_slowdown_cap_uses_the_input_field() {
+        let mut input = prefix(true, 100, 500);
+        input.crush_slowdown = true;
+        input.crush_slowdown_cap = NativeF64Bits::from_bits(0.5f64.to_bits());
+        let target = NativeF64Bits::from_bits(0.8f64.to_bits());
+        let step = track_speed_prefix(&input, || 0, target, NativeF64Bits::POSITIVE_ZERO);
+        assert_eq!(f64::from_bits(step.target.bits()), 0.5);
+        input.crush_slowdown_cap = NativeF64Bits::from_bits(0.2f64.to_bits());
+        let target = NativeF64Bits::from_bits(0.1f64.to_bits());
+        let step = track_speed_prefix(&input, || 0, target, NativeF64Bits::POSITIVE_ZERO);
+        assert_eq!(f64::from_bits(step.target.bits()), 0.1);
+    }
+
+    /// Phobos `SkipCrushSlowdown` (`Ext/Unit/Hooks.Crushing.cpp:104-109`,
+    /// `0x4B1146`/`0x6A0809`): the whole crush arm is jumped over, so an active
+    /// crush leaves class+50 at the pre-arm target instead of capping it.
+    #[test]
+    fn phobos_skip_crush_slowdown_keeps_the_uncapped_target() {
+        // No destination braking or sinking, so only the crush arm is in play.
+        let mut input = prefix(true, 100, 0);
+        input.crush_slowdown = true;
+        input.crush_slowdown_cap = NativeF64Bits::from_bits(0.5f64.to_bits());
+        let target = NativeF64Bits::from_bits(0.8f64.to_bits());
+        input.skip_crush_slowdown = true;
+        // Settled speed: the skipped arm leaves class+50 and the setter args alone.
+        let step = track_speed_prefix(&input, || 0, target, target);
+        assert_eq!(f64::from_bits(step.target.bits()), 0.8);
+        assert_eq!(step.set_fraction, None);
+        // Without the flag the same latch caps class+50 at the multiplier; the
+        // skip flag itself does nothing while the crushes latch stays set.
+        input.skip_crush_slowdown = false;
+        let step = track_speed_prefix(&input, || 0, target, target);
+        assert_eq!(f64::from_bits(step.target.bits()), 0.5);
+        assert_eq!(
+            step.set_fraction.map(|f| f64::from_bits(f.bits())),
+            Some(0.5)
+        );
+    }
+
     fn prefix(accelerates: bool, raw_type_speed: i32, slowdown_distance: i32) -> TrackSpeedPrefix {
         TrackSpeedPrefix {
             accelerates,
@@ -982,6 +1041,8 @@ mod tests {
             slowdown_distance,
             sinking: false,
             crush_slowdown: false,
+            crush_slowdown_cap: CRUSH_SLOWDOWN_CAP,
+            skip_crush_slowdown: false,
         }
     }
 

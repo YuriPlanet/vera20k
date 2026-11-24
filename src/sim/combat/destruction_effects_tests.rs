@@ -336,7 +336,13 @@ fn a_dying_vehicle_plays_its_explosion_then_its_destroy_anim() {
             &mut FrameEffects::empty(),
         );
         let explosion = pick(&mut replay, &["EXPA", "EXPB", "EXPC"]);
-        let destroy = pick(&mut replay, &["DESTA"]);
+        // Phobos `ProcessDestroyAnims` does not draw for a one-entry list
+        // (`Ext/AnimType/Body.cpp:36-37`); the stock pick does.
+        let destroy = if true {
+            "DESTA".to_string()
+        } else {
+            pick(&mut replay, &["DESTA"])
+        };
         assert_eq!(
             anims(&sim),
             vec![
@@ -349,22 +355,126 @@ fn a_dying_vehicle_plays_its_explosion_then_its_destroy_anim() {
     }
 }
 
-/// Art `DeathFrames=` (`UnitClass::ReceiveDamage`, `0x00737DA7..0x00737DDD`)
-/// jumps past `Death_Explosion`: the vehicle dies with no anim and, not
-/// being `Crashable=`, is UnInit at once.
+/// Phobos `AnimTypeExt::ProcessDestroyAnims` records the destroyed unit as
+/// its `DestroyAnim=` anim's invoker (`Ext/AnimType/Body.cpp:54`).
 #[test]
-fn a_death_frames_vehicle_dies_without_its_explosion() {
-    let rules = rules_with_art(RULES, &format!("{ART}[PLAIN]\nDeathFrames=4\n"));
+fn a_units_destroy_anim_records_the_unit_as_its_invoker() {
+    let rules = rules();
     let mut sim = sim(1);
     let unit = spawn(&mut sim, &rules, "PLAIN", 12, 12);
-    kill(&mut sim, &rules, unit);
-    assert_eq!(anims(&sim), vec![]);
-    assert!(
-        sim.substrate
-            .entities
-            .get(unit)
-            .is_none_or(|entity| !entity.lifecycle.object_alive()),
-        "UnInit at the killing hit"
+    let owner = sim.substrate.entities.get(unit).unwrap().owner();
+    let mut recorded = Vec::new();
+    sim.unit_death_explosion(
+        &rules,
+        unit,
+        &mut recorded,
+        None,
+        &mut FrameEffects::empty(),
+    );
+    let destroy = sim
+        .substrate
+        .anims
+        .iter()
+        .find(|(_, anim)| sim.interner.resolve(anim.type_id()) == "DESTA")
+        .expect("the DestroyAnim was constructed");
+    assert_eq!(destroy.1.invoker(), Some(unit));
+    assert_eq!(destroy.1.invoker_house(), Some(owner));
+}
+
+/// `AnimExt::SetAnimOwnerHouseKind` (`Ext/Anim/Body.cpp:127-141`): the
+/// `CreateUnit.Owner` install also writes the light conversion when
+/// `CreateUnit.RemapAnim=yes` and the owner is not defeated.
+#[test]
+fn a_units_destroy_anim_takes_the_create_unit_owner_remap() {
+    let art_text = ART.replace(
+        "[DESTA]\nEnd=10",
+        "[DESTA]\nEnd=10\nCreateUnit=PLAIN\nCreateUnit.Owner=Invoker\nCreateUnit.RemapAnim=yes",
+    );
+    let art_ini = IniFile::from_str(&art_text);
+    let rules_text = format!("{RULES}\n[Animations]\n0=DESTA\n1=EXPA\n2=EXPB\n3=EXPC\n");
+    let mut rules =
+        RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(&rules_text), &art_ini)
+            .expect("remap death anim rules");
+    let mut art = crate::rules::art_data::ArtRegistry::from_ini(&art_ini);
+    for name in ["EXPA", "EXPB", "EXPC", "DESTA"] {
+        art.bind_anim_frame_count_for_test(name, 10);
+    }
+    rules.install_art_data(art);
+    let mut sim = sim(1);
+    let unit = spawn(&mut sim, &rules, "PLAIN", 12, 12);
+    let owner = sim.substrate.entities.get(unit).unwrap().owner();
+    let mut recorded = Vec::new();
+    sim.unit_death_explosion(
+        &rules,
+        unit,
+        &mut recorded,
+        None,
+        &mut FrameEffects::empty(),
+    );
+    let destroy = sim
+        .substrate
+        .anims
+        .iter()
+        .find(|(_, anim)| sim.interner.resolve(anim.type_id()) == "DESTA")
+        .expect("the DestroyAnim was constructed");
+    assert_eq!(
+        destroy.1.remap(),
+        Some(crate::sim::anim_class::AnimRemap::House(owner)),
+        "the CreateUnit owner install also remaps"
+    );
+}
+
+/// Only `ProcessDestroyAnims` (the unit DestroyAnim arm) spends the
+/// `CreateUnit.Owner=Random` draw; a generic `Explosion=` anim with the same
+/// anim-type keys must not shift the Scenario stream.
+#[test]
+fn a_generic_explosion_anim_does_not_spend_the_create_unit_owner_draw() {
+    let art_text = ART.replace(
+        "[DESTA]\nEnd=10",
+        "[DESTA]\nEnd=10\nCreateUnit=PLAIN\nCreateUnit.Owner=Random",
+    );
+    let art_ini = IniFile::from_str(&art_text);
+    let rules_text = format!("{RULES}\n[Animations]\n0=DESTA\n1=EXPA\n2=EXPB\n3=EXPC\n");
+    let mut rules =
+        RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(&rules_text), &art_ini)
+            .expect("generic explosion rules");
+    let mut art = crate::rules::art_data::ArtRegistry::from_ini(&art_ini);
+    for name in ["EXPA", "EXPB", "EXPC", "DESTA"] {
+        art.bind_anim_frame_count_for_test(name, 10);
+    }
+    rules.install_art_data(art);
+    let mut sim = sim(3);
+    // Two houses so the `RandomRanged(0, 1)` owner draw is not the
+    // lo == hi no-draw shortcut.
+    let russians = sim.interner.intern("Russians");
+    sim.houses
+        .register(HouseState::new(russians, 1, None, false, 0, 10));
+    let unit = spawn(&mut sim, &rules, "PLAIN", 12, 12);
+    let owner = sim.substrate.entities.get(unit).unwrap().owner();
+    let type_id = sim.interner.intern("DESTA");
+    let coord = AnimWorldCoord {
+        x: 12 * 256 + 128,
+        y: 12 * 256 + 128,
+        z: 0,
+    };
+    // Without `ProcessDestroyAnims`' invoker the random-owner arm is not
+    // reached: the generic producer spends no draw.
+    let before = sim.scenario_rng.state();
+    sim.admit_death_anim(&rules, type_id, DeathAnimSpawn::at(coord, 0));
+    assert_eq!(
+        sim.scenario_rng.state(),
+        before,
+        "a no-invoker death anim spends no random-owner draw"
+    );
+    // The Unit DestroyAnim producer sets the invoker and does draw.
+    let mut spawn = DeathAnimSpawn::at(coord, 0);
+    spawn.invoker = Some((unit, owner));
+    spawn.victim_house = Some(owner);
+    sim.admit_death_anim(&rules, type_id, spawn);
+    assert_ne!(
+        sim.scenario_rng.state(),
+        before,
+        "the ProcessDestroyAnims arm draws its random owner"
     );
 }
 
@@ -2182,4 +2292,304 @@ fn a_yellow_hit_slows_the_natural_particle_system() {
     };
     assert_eq!(hit(&mut sim, 10), start, "still green");
     assert_eq!(hit(&mut sim, 50).bits(), 0x3FE6_6667, "now yellow");
+}
+
+/// Phobos `Explodes.KillPassengers` (`Ext/TechnoType/Body.cpp:968`, global
+/// `Ext/Rules/Body.cpp:470`, hook `Ext/Techno/Hooks.ReceiveDamage.cpp:253-254`
+/// at `0x702603`): a destroyed `Explodes=yes` vehicle kills its passengers by
+/// default; a type or `[General]` `no` skips only that kill.
+#[test]
+fn explodes_kill_passengers_off_spares_the_rider() {
+    let outcome = |type_key: &str, general_key: &str| {
+        let text = RULES
+            .replace("1=ENGINEER\n", "1=ENGINEER\n2=BYSTANDER\n")
+            .replace(
+                "[APOC]\nStrength=100\nExplodes=yes\n",
+                &format!(
+                    "[APOC]\nStrength=100\nExplodes=yes\nDeathWeapon=BOOMW\nPassengers=1\n{type_key}"
+                ),
+            )
+            .replace("[General]\n", &format!("[General]\n{general_key}"))
+            + "\n[BYSTANDER]\nStrength=125\nSpeed=4\n\
+               Locomotor={4A582744-9839-11D1-B709-00A024DDAFD1}\n\
+               [BOOMW]\nDamage=50\nWarhead=BOOMWH\n\
+               [BOOMWH]\nCellSpread=2\nPercentAtMax=100%\n\
+               Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n";
+        let rules = rules_from(&text);
+        let mut sim = water_cell_sim(&rules, false);
+        let apoc = spawn(&mut sim, &rules, "APOC", 12, 12);
+        let rider = spawn(&mut sim, &rules, "E1", 11, 12);
+        let bystander = spawn(&mut sim, &rules, "BYSTANDER", 13, 12);
+        assert!(crate::sim::passenger::board_passenger(
+            &mut sim,
+            &rules,
+            rider,
+            apoc,
+            crate::sim::passenger::BoardingArm::InfantryTransport,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        ));
+        kill(&mut sim, &rules, apoc);
+        (
+            sim.substrate
+                .entities
+                .get(rider)
+                .is_some_and(|rider| rider.lifecycle.object_alive()),
+            sim.substrate
+                .entities
+                .get(bystander)
+                .is_some_and(|bystander| bystander.health.current() < 125),
+        )
+    };
+    let control = outcome("", "");
+    assert!(!control.0, "control: the exploding vehicle kills its rider");
+    assert!(control.1, "control: the death weapon fires");
+    let type_off = outcome("Explodes.KillPassengers=no\n", "");
+    assert!(type_off.0, "the type key skips the kill");
+    assert!(type_off.1, "the `0x702669` arm keeps the death weapon");
+    let global_off = outcome("", "Explodes.KillPassengers=no\n");
+    assert!(global_off.0, "the [General] global is the fallback");
+    assert!(global_off.1, "the death weapon still fires");
+}
+
+/// Phobos `Explodes.DuringBuildup` (`Ext/BuildingType/Body.cpp:222`, global
+/// `Ext/Rules/Body.cpp:471`, `Ext/Techno/Hooks.ReceiveDamage.cpp:247-251`):
+/// a building destroyed while its CurrentMission is Construction or Selling
+/// behaves as `Explodes=false` when the key is off, so its death weapon does
+/// not fire.
+#[test]
+fn explodes_during_buildup_off_suppresses_the_death_weapon_under_construction() {
+    use crate::rules::mission_data::MissionType;
+    use crate::sim::mission::MissionId;
+    let base = RULES
+        .replace("1=ENGINEER\n", "1=ENGINEER\n2=BYSTANDER\n")
+        .replace(
+            "[PLANT]\nStrength=100\n",
+            "[PLANT]\nStrength=100\nExplodes=yes\nDeathWeapon=BOOMW\n",
+        )
+        .replace(
+            "[APOC]\nStrength=100\nExplodes=yes\n",
+            "[APOC]\nStrength=100\nExplodes=yes\nDeathWeapon=BOOMW\n",
+        )
+        + "\n[BYSTANDER]\nStrength=125\nSpeed=4\n\
+           Locomotor={4A582744-9839-11D1-B709-00A024DDAFD1}\n\
+           [BOOMW]\nDamage=50\nWarhead=BOOMWH\n\
+           [BOOMWH]\nCellSpread=2\nPercentAtMax=100%\n\
+           Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n";
+    let fires = |kind: &str, type_key: &str, general_key: &str, mission: Option<MissionType>| {
+        let anchor = if kind == "PLANT" {
+            "[PLANT]\nStrength=100\nExplodes=yes\nDeathWeapon=BOOMW\n"
+        } else {
+            "[APOC]\nStrength=100\nExplodes=yes\nDeathWeapon=BOOMW\n"
+        };
+        let text = base
+            .replace(anchor, &format!("{anchor}{type_key}"))
+            .replace("[General]\n", &format!("[General]\n{general_key}"));
+        let rules = rules_from(&text);
+        let mut sim = sim(13);
+        let (rx, ry) = if kind == "PLANT" { (10, 10) } else { (11, 10) };
+        let dead = spawn(&mut sim, &rules, kind, rx, ry);
+        let bystander = spawn(&mut sim, &rules, "BYSTANDER", 12, 10);
+        if let Some(mission) = mission {
+            sim.substrate
+                .entities
+                .get_mut(dead)
+                .unwrap()
+                .mission
+                .set_current_for_test(MissionId::from_known(mission), 0);
+        }
+        kill(&mut sim, &rules, dead);
+        sim.substrate
+            .entities
+            .get(bystander)
+            .is_some_and(|bystander| bystander.health.current() < 125)
+    };
+    assert!(
+        fires("PLANT", "", "", Some(MissionType::Construction)),
+        "control: a building under construction still explodes"
+    );
+    assert!(
+        !fires(
+            "PLANT",
+            "Explodes.DuringBuildup=no\n",
+            "",
+            Some(MissionType::Construction)
+        ),
+        "the type key suppresses the death weapon"
+    );
+    assert!(
+        !fires(
+            "PLANT",
+            "",
+            "Explodes.DuringBuildup=no\n",
+            Some(MissionType::Selling)
+        ),
+        "the [General] fallback also covers Selling"
+    );
+    assert!(
+        fires(
+            "PLANT",
+            "Explodes.DuringBuildup=no\n",
+            "",
+            Some(MissionType::Guard)
+        ),
+        "only Construction and Selling are suppressed"
+    );
+    assert!(
+        fires(
+            "APOC",
+            "Explodes.DuringBuildup=no\n",
+            "",
+            Some(MissionType::Construction)
+        ),
+        "a vehicle does not read the building key"
+    );
+}
+
+/// Phobos `DestroyAnim.Random=` (`Ext/TechnoType/Body.cpp:875`, `Nullable`)
+/// with the `[General]` fallback (`Ext/Rules/Body.cpp:220`, default yes):
+/// `AnimTypeExt::ProcessDestroyAnims` (`Ext/AnimType/Body.cpp:15-43`) either
+/// takes `RandomRanged(0, count-1)` (no draw for one entry) or, with `no`,
+/// the facing entry — first below eight, last for odd counts, and
+/// `facing/256 * (count-1)` for even counts of at least eight.
+fn destroy_anim_pick_rules(global: &str, type_keys: &str) -> RuleSet {
+    let rules_text = RULES
+        .replace("[General]\n", &format!("[General]\n{global}"))
+        .replace(
+            "[VehicleTypes]\n0=PLAIN\n1=APOC\n2=VETBOOM\n3=AMMOBOOM\n4=EMPTYBOOM\n5=SHIP\n6=SKIFF\n7=SUB",
+            "[VehicleTypes]\n0=PLAIN\n1=APOC\n2=VETBOOM\n3=AMMOBOOM\n4=EMPTYBOOM\n5=SHIP\n6=SKIFF\n7=SUB\n\
+             8=SINGLE\n9=PAIR\n10=EVEN\n11=ODD",
+        );
+    let rules_text = format!(
+        "{rules_text}\n\
+         [SINGLE]\nStrength=100\nDestroyAnim=S0\n{type_keys}\n\
+         [PAIR]\nStrength=100\nDestroyAnim=P0,P1\n{type_keys}\n\
+         [EVEN]\nStrength=100\nDestroyAnim=E0,E1,E2,E3,E4,E5,E6,E7\n{type_keys}\n\
+         [ODD]\nStrength=100\nDestroyAnim=O0,O1,O2,O3,O4,O5,O6,O7,O8\n{type_keys}"
+    );
+    let names = [
+        "S0", "P0", "P1", "E0", "E1", "E2", "E3", "E4", "E5", "E6", "E7", "O0", "O1", "O2", "O3",
+        "O4", "O5", "O6", "O7", "O8",
+    ];
+    let mut art_text = String::from(ART);
+    for name in names {
+        art_text.push_str(&format!("[{name}]\nEnd=10\n"));
+    }
+    let art_ini = IniFile::from_str(&art_text);
+    let mut rules =
+        RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(&rules_text), &art_ini)
+            .expect("DestroyAnim.Random rules");
+    let mut art = crate::rules::art_data::ArtRegistry::from_ini(&art_ini);
+    for name in names {
+        art.bind_anim_frame_count_for_test(name, 10);
+    }
+    rules.install_art_fixture(art);
+    rules
+}
+
+#[test]
+fn phobos_destroy_anim_random_and_facing_pick_follow_process_destroy_anims() {
+    use crate::sim::movement::FacingClass;
+
+    fn die(rules: &RuleSet, kind: &str, raw_facing: u16) -> (String, bool) {
+        let mut sim = sim(0x0D5A);
+        let unit = spawn(&mut sim, rules, kind, 12, 12);
+        sim.substrate.entities.get_mut(unit).unwrap().body_facing = FacingClass::new(raw_facing, 0);
+        let before = sim.scenario_rng.state();
+        let mut recorded = Vec::new();
+        sim.unit_death_explosion(rules, unit, &mut recorded, None, &mut FrameEffects::empty());
+        (anims(&sim)[0].0.clone(), sim.scenario_rng.state() == before)
+    }
+    let at = |dir: u8| u16::from(dir) * 256;
+
+    let no_random = destroy_anim_pick_rules("DestroyAnim.Random=no\n", "");
+    assert_eq!(
+        die(&no_random, "SINGLE", at(17)),
+        ("S0".to_string(), true),
+        "a one-entry list draws nothing"
+    );
+    assert_eq!(
+        die(&no_random, "PAIR", at(200)),
+        ("P0".to_string(), true),
+        "below eight entries the first is taken"
+    );
+    assert_eq!(
+        die(&no_random, "ODD", at(0)),
+        ("O8".to_string(), true),
+        "an odd count of eight or more takes the last entry"
+    );
+    assert_eq!(
+        die(&no_random, "EVEN", at(64)),
+        ("E1".to_string(), true),
+        "an even count scales the facing into the list"
+    );
+    assert_eq!(
+        die(&no_random, "EVEN", at(255)),
+        ("E6".to_string(), true),
+        "the even-count scale never reaches the last entry"
+    );
+    // `GetDir()` truncates `Raw / 256`; the rounded direction byte would pick
+    // index 1 here and wrap 0xFF80 to 0.
+    assert_eq!(
+        die(&no_random, "EVEN", 0x2480),
+        ("E0".to_string(), true),
+        "a low-byte heading truncates before scaling"
+    );
+    assert_eq!(
+        die(&no_random, "EVEN", 0xFF80),
+        ("E6".to_string(), true),
+        "the truncating byte does not wrap below 255"
+    );
+
+    let type_override = destroy_anim_pick_rules("", "DestroyAnim.Random=no\n");
+    assert_eq!(
+        die(&type_override, "EVEN", at(64)),
+        ("E1".to_string(), true),
+        "the type key overrides the default-yes global"
+    );
+
+    let override_yes =
+        destroy_anim_pick_rules("DestroyAnim.Random=no\n", "DestroyAnim.Random=yes\n");
+    let mut override_sim = sim(0x0D5B);
+    let unit = spawn(&mut override_sim, &override_yes, "EVEN", 12, 12);
+    let mut replay = override_sim.scenario_rng.clone();
+    let mut recorded = Vec::new();
+    override_sim.unit_death_explosion(
+        &override_yes,
+        unit,
+        &mut recorded,
+        None,
+        &mut FrameEffects::empty(),
+    );
+    let index = replay.next_range_i32_inclusive(0, 7) as usize;
+    assert_eq!(anims(&override_sim)[0].0, format!("E{index}"));
+    assert_eq!(
+        override_sim.scenario_rng.state(),
+        replay.state(),
+        "the random arm draws RandomRanged(0, count-1)"
+    );
+
+    let defaults = destroy_anim_pick_rules("", "");
+    assert!(
+        crate::rules::phobos_globals::PhobosGlobals::default().destroy_anim_random,
+        "the constructor default is yes"
+    );
+    let mut default_sim = sim(0x0D5C);
+    let unit = spawn(&mut default_sim, &defaults, "PAIR", 12, 12);
+    let mut replay = default_sim.scenario_rng.clone();
+    let mut recorded = Vec::new();
+    default_sim.unit_death_explosion(
+        &defaults,
+        unit,
+        &mut recorded,
+        None,
+        &mut FrameEffects::empty(),
+    );
+    let index = replay.next_range_i32_inclusive(0, 1) as usize;
+    assert_eq!(anims(&default_sim)[0].0, format!("P{index}"));
+    assert_eq!(
+        default_sim.scenario_rng.state(),
+        replay.state(),
+        "the unset key takes the random arm"
+    );
 }

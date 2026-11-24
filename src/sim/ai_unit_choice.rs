@@ -371,12 +371,25 @@ fn candidates(
         })
         .map(|team| {
             let needed = vm
-                .needed_types(team, |id| {
-                    sim.substrate
-                        .entities
-                        .get(id)
-                        .map(crate::sim::team_script_vm::member_type_identity)
-                })
+                .needed_types(
+                    team,
+                    |id| {
+                        sim.substrate
+                            .entities
+                            .get(id)
+                            .map(crate::sim::team_script_vm::member_type_identity)
+                    },
+                    |id, entry_type| {
+                        sim.substrate.entities.get(id).is_some_and(|entity| {
+                            crate::sim::team_script_vm::membership::member_fills_entry(
+                                crate::sim::team_script_vm::member_type_identity(entity),
+                                sim.interner.object_type(entity.type_ref(), rules),
+                                entry_type,
+                                &sim.interner,
+                            )
+                        })
+                    },
+                )
                 .into_iter()
                 .filter(|member_type| member_type.category == category)
                 .filter_map(|member_type| type_index(member_type.id))
@@ -476,7 +489,10 @@ fn is_recruitable(
     entity.owner() == owner
         && entity.is_active()
         && !entity.lifecycle.in_limbo()
-        && sim.team_script_vm.team_of(entity.stable_id()).is_none()
+        && sim
+            .team_script_vm
+            .team_for_member(entity.stable_id())
+            .is_none()
         && crate::sim::mission::control::mission_recruitable(rules, entity.mission.effective())
         && entity.seldom.base_defense_response.recruitable_a()
 }

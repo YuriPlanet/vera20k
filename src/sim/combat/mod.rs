@@ -29,33 +29,43 @@ mod airburst;
 mod ares_warhead_effects;
 mod attack_target;
 pub(crate) mod base_defense_response;
+pub(crate) mod building_sell;
+mod building_sell_leave;
 pub mod burst;
 pub(crate) mod cell_spread;
+mod combat_alert;
 pub(crate) mod combat_aoe;
 pub(crate) mod combat_targeting;
 pub mod combat_weapon;
-#[cfg(feature = "phobos")]
 pub(crate) mod crit;
-#[cfg(all(test, tests_sim_combat_a_c, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod crit_tests;
 pub(crate) mod damage;
+pub(crate) mod damage_multiplier;
 pub(crate) mod destruction_effects;
 pub(crate) mod detonation_anim;
 mod effects;
 pub mod electric_bolt;
+pub(crate) mod extra_range;
+pub(crate) mod extra_threat;
 pub mod fire_coord;
 pub mod fire_error;
 pub(crate) mod fire_error_world;
 pub mod gattling;
 pub(crate) mod greatest_threat;
 pub mod in_range;
+mod interceptor;
 pub(crate) mod inviso_scatter;
 pub mod laser;
 pub mod line_of_fire;
 mod object_health;
 pub(crate) mod parasite;
-#[cfg(feature = "phobos")]
+pub(crate) mod penetrates_transport;
 mod phobos_airburst;
+mod phobos_extra_warheads;
+mod phobos_return_warhead;
+mod phobos_return_weapon;
+pub(crate) mod phobos_unlimbo_detonate;
 mod projectile_delivery;
 pub mod radiation_beam;
 pub(crate) mod railgun;
@@ -80,7 +90,7 @@ pub(crate) mod receiver_fixture;
 
 #[cfg(all(test, tests_sim_combat_a_c))]
 mod aegis_launch_tests;
-#[cfg(all(test, tests_sim_combat_a_c, feature = "phobos"))]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod airstrike_target_tests;
 #[cfg(all(test, tests_sim_combat_a_c))]
 mod ares_armor_tests;
@@ -91,11 +101,19 @@ mod ares_warhead_combat_tests;
 #[cfg(all(test, tests_sim_combat_a_c))]
 mod ares_warhead_effects_tests;
 #[cfg(all(test, tests_sim_combat_a_c))]
+mod berzerk_alliance_tests;
+#[cfg(all(test, tests_sim_combat_a_c))]
+mod berzerk_mission_tests;
+#[cfg(all(test, tests_sim_combat_a_c))]
+#[cfg(all(test, tests_sim_combat_a_c))]
 mod bridge_cluster_tests;
 #[cfg(all(test, tests_sim_combat_a_c))]
 mod bridge_launch_tests;
 #[cfg(all(test, tests_sim_combat_a_c))]
 mod bridge_live_chain_tests;
+#[cfg(all(test, tests_sim_combat_a_c))]
+mod burst_no_delay_tests;
+#[cfg(all(test, tests_sim_combat_a_c))]
 #[cfg(all(test, tests_sim_combat_a_c))]
 mod combat_cloak_damage_tests;
 #[cfg(all(test, tests_sim_combat_a_c))]
@@ -104,6 +122,10 @@ mod combat_cloak_fire_tests;
 mod combat_tests;
 #[cfg(all(test, tests_sim_combat_a_c))]
 mod combat_turret_facing_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
+#[path = "electric_bolt_bolt_keys_tests.rs"]
+mod electric_bolt_bolt_keys_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
 #[cfg(all(test, tests_sim_combat_d_z))]
 mod electric_bolt_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
@@ -114,9 +136,43 @@ mod fireat_launch_tests;
 mod garrison_oracle_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
 mod homing_shipyard_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod phobos_au_underground_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod phobos_burst_sequence_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod phobos_delayed_fire_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod phobos_detonate_all_map_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod phobos_extra_warheads_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod phobos_feedback_weapon_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod phobos_no_turret_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod phobos_omni_fire_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod phobos_open_topped_fire_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod phobos_open_transport_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod phobos_gattling_select_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod phobos_shrapnel_trigger_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod phobos_shield_weapon_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod phobos_shield_armor_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod phobos_spawns_crate_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod phobos_unlimbo_detonate_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod phobos_visual_scatter_tests;
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(all(test, tests_sim_combat_d_z, not(feature = "phobos")))]
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod ifv_fireat_tests;
 /// Ordinary launch-height, resolved impact presentation and damage-effect
 /// wiring. Bridge Cell+58 launch and +48/+58 impact comparisons use the native
@@ -124,7 +180,11 @@ mod ifv_fireat_tests;
 #[cfg(all(test, any(tests_sim_combat_d_z, tests_sim_combat_a_c)))]
 mod impact_height_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
+mod infantry_flh_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod laser_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod laser_tracking_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
 mod mirage_disguise_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
@@ -140,8 +200,6 @@ mod screen_shake_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
 mod shrapnel_chain_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
-mod ts_web_tests;
-#[cfg(all(test, tests_sim_combat_d_z))]
 mod unit_damage_response_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
 mod walk_attack_tests;
@@ -152,6 +210,8 @@ pub(crate) use attack_target::{resolve_target_coords, target_present};
 pub(crate) use combat_targeting::build_attacker_snapshot;
 pub(crate) use detonation_anim::projectile_impact_cell;
 pub(crate) use effects::DeathEffects;
+pub use effects::NO_COLOR_SPOTLIGHT_FLAGS;
+pub(crate) use effects::combat_light_chance_admits;
 pub use effects::{
     AresUnitLost, CombatLightRequest, ExplosionEffect, ScreenShakeUpdate, SmudgeSpawnRequest,
     TiberiumReductionRequest, UnderAttackEvent, UnderAttackLine, UnitLostEvent,
@@ -159,6 +219,9 @@ pub use effects::{
 pub use in_range::can_fire_at_target;
 pub use in_range::{MaplessTarget, can_fire_at_target_in_query, mapless_in_range};
 pub use object_health::{Health, health_category};
+/// Phobos' `Helpers::Alex::getCellSpreadItemsExt` walk with the `includeInAir`
+/// switch exposed, shared with `sim::mission`'s `AttackMove.Follow` search.
+pub(crate) use phobos_airburst::cell_spread_technos_with_air;
 pub(crate) use projectile_delivery::{FiredBullet, admit_fired_bullet, admit_techno_fired_bullet};
 pub(crate) use receiver_call::{
     BaseDefenseResponseCallSite, EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags,
@@ -179,11 +242,10 @@ pub use threat_range::ScanMission;
 pub(crate) use world_fire::estimated_damage_on;
 
 // Shared between combat's children, which reach them through `super::`.
-use attack_target::{attack_world_z_leptons, cell_center_coords, target_coords};
+pub(crate) use attack_target::{attack_world_z_leptons, cell_center_coords, target_coords};
 use projectile_delivery::{
     ProjectileDelivery, bullet_type, classify_projectile_delivery, projectile_arm_delay,
 };
-#[cfg(feature = "phobos")]
 use receiver_call::resolve_receive_damage_with_input;
 use receiver_call::{
     BuildingReceivePrelude, ResolvedReceiveDamage, apply_building_receive_prelude,
@@ -314,19 +376,20 @@ impl UnitFacingUpdate {
 
 /// TechnoClass vt+0x80, whether an object counts as a vehicle, by its class:
 /// a Unit that is not `NonVehicle=` (`0x00746400`, UnitType `+0xE1B`), a
-/// building that is a 1x1 `UndeploysInto=` (`0x00457620` → `0x00465D40`,
-/// [`ObjectType::is_1x1_with_undeploy`]), an aircraft its vt+0x50 calls low
-/// (`0x0041B910`), never an infantryman (`0x004263B0`). `low_flying` is that
-/// vt+0x50 in the caller's own map lookup, asked only for an aircraft.
+/// building whose [`ObjectType::is_vehicle`] answers (`0x00457620` →
+/// `0x00465D40`, Phobos' `ConsideredVehicle` override included), an aircraft
+/// its vt+0x50 calls low (`0x0041B910`), never an infantryman (`0x004263B0`).
+/// `low_flying` is that vt+0x50 in the caller's own map lookup, asked only for
+/// an aircraft.
 pub(crate) fn vehicle_like(
     class: EntityCategory,
     non_vehicle: bool,
-    is_1x1_with_undeploy: bool,
+    is_vehicle: bool,
     low_flying: impl FnOnce() -> bool,
 ) -> bool {
     match class {
         EntityCategory::Unit => !non_vehicle,
-        EntityCategory::Structure => is_1x1_with_undeploy,
+        EntityCategory::Structure => is_vehicle,
         EntityCategory::Aircraft => low_flying(),
         EntityCategory::Infantry => false,
     }
@@ -379,6 +442,9 @@ pub(crate) struct CombatEmit {
     pub(crate) damage_events: Vec<combat_aoe::AreaDamageReceiver>,
     pub(crate) remove_attack: Vec<u64>,
     pub(crate) fire_events: Vec<SimFireEvent>,
+    /// Unit Facing outputs committed immediately at each live object slot.
+    /// Component fixtures retain them here for observation.
+    pub(crate) unit_facing: Vec<UnitFacingUpdate>,
     /// (parent_id, target) — a `Spawner=yes` weapon reached its fire point.
     /// gamemd's `Fire_At` hands the target to the parent's `SpawnManager` and
     /// returns NULL, so no bullet, damage or rearm follows.
@@ -403,7 +469,6 @@ pub(crate) struct LogicProjectileCommit {
 /// zero-health, zero-strength object matches unconditionally. A positive
 /// health over a zero strength is the native `inf` and misses every finite
 /// bound.
-#[cfg(feature = "phobos")]
 pub(crate) fn health_in_threshold(health: i32, strength: i32, above: f64, below: f64) -> bool {
     if health == 0 && strength == 0 {
         return true;
@@ -416,11 +481,108 @@ pub(crate) fn health_in_threshold(health: i32, strength: i32, above: f64, below:
     }) && ratio <= below
 }
 
+/// Phobos `EnumFunctions::CanTargetVeterancy` (`EnumFunctions.cpp:18`): the
+/// target's rank must be in the mask; `All` short-circuits.
+pub(crate) fn affected_veterancy_allows(
+    flags: crate::rules::phobos_airburst::AffectedVeterancy,
+    rank: crate::sim::combat::veterancy::VeterancyRank,
+) -> bool {
+    use crate::rules::phobos_airburst::AffectedVeterancy;
+    if flags == AffectedVeterancy::ALL {
+        return true;
+    }
+    let bit = match rank {
+        crate::sim::combat::veterancy::VeterancyRank::Elite => AffectedVeterancy::ELITE,
+        crate::sim::combat::veterancy::VeterancyRank::Veteran => AffectedVeterancy::VETERAN,
+        crate::sim::combat::veterancy::VeterancyRank::Rookie => AffectedVeterancy::ROOKIE,
+    };
+    flags.contains(bit)
+}
+
+/// `WarheadTypeExt::IsHealthInThreshold` (`Ext/WarheadType/Body.cpp:59-65`):
+/// `HealthCheck` is on only for a non-default `AffectsAbovePercent=`/
+/// `AffectsBelowPercent=` pair, and an unset pair leaves every target in.
+pub(crate) fn warhead_health_in_threshold(
+    warhead: &crate::rules::warhead_type::WarheadType,
+    target: &crate::sim::game_entity::GameEntity,
+    object: &crate::rules::object_type::ObjectType,
+) -> bool {
+    !warhead.health_check()
+        || health_in_threshold(
+            target.health.current(),
+            object.strength,
+            warhead.affects_above_percent,
+            warhead.affects_below_percent,
+        )
+}
+
+/// `WarheadTypeExt::IsVeterancyInThreshold` (`Ext/WarheadType/Body.cpp:67-73`).
+pub(crate) fn warhead_veterancy_in_threshold(
+    warhead: &crate::rules::warhead_type::WarheadType,
+    target: &crate::sim::game_entity::GameEntity,
+) -> bool {
+    !warhead.veterancy_check()
+        || affected_veterancy_allows(warhead.affects_veterancy, target.veterancy.rank_kind())
+}
+
+/// `WarheadTypeExt::IsInvokerAllowed` (`Ext/WarheadType/Body.cpp:75-94`): with
+/// `AffectsInvokerOnly=`, a present invoker must be (or, reversed, must not be)
+/// the target; without one the type's `IgnoreInvokerState` or the
+/// `[CombatDamage]` fallback decides.
+pub(crate) fn warhead_invoker_allows(
+    warhead: &crate::rules::warhead_type::WarheadType,
+    target: u64,
+    invoker: Option<u64>,
+    global_ignore_invoker_state: bool,
+) -> bool {
+    if !warhead.affects_invoker_only {
+        return true;
+    }
+    match invoker {
+        Some(invoker) => {
+            let is_target = invoker == target;
+            if warhead.affects_invoker_only_reverse {
+                !is_target
+            } else {
+                is_target
+            }
+        }
+        None => !warhead
+            .affects_invoker_only_ignore_invoker_state
+            .unwrap_or(global_ignore_invoker_state),
+    }
+}
+
+/// `WarheadTypeExt::CanAffectTarget`'s first three gates
+/// (`Ext/WarheadType/Body.cpp:37-51`), in native order.
+pub(crate) fn warhead_triggers_allow(
+    warhead: &crate::rules::warhead_type::WarheadType,
+    target: &crate::sim::game_entity::GameEntity,
+    object: Option<&crate::rules::object_type::ObjectType>,
+    invoker: Option<u64>,
+    global_ignore_invoker_state: bool,
+) -> bool {
+    if warhead.health_check() {
+        let Some(object) = object else {
+            return false;
+        };
+        if !warhead_health_in_threshold(warhead, target, object) {
+            return false;
+        }
+    }
+    warhead_veterancy_in_threshold(warhead, target)
+        && warhead_invoker_allows(
+            warhead,
+            target.stable_id(),
+            invoker,
+            global_ignore_invoker_state,
+        )
+}
+
 /// `EnumFunctions::CanTargetHouse` (`EnumFunctions.cpp:5..16`): `All` always
 /// matches, the owner takes its bucket, a neutral target its Neutral flag, an
 /// ally's, otherwise the enemy's. Presentation's DigitalDisplay visibility
 /// asks it with the viewer as the target.
-#[cfg(feature = "phobos")]
 pub fn can_target_house(
     flags: crate::rules::phobos_shields::AffectedHouse,
     source: InternedId,
@@ -429,23 +591,12 @@ pub fn can_target_house(
     alliances: &HouseAlliances,
     interner: &StringInterner,
 ) -> bool {
-    use crate::rules::phobos_shields::AffectedHouse;
-    if flags == AffectedHouse::ALL {
-        return true;
-    }
-    if source == target {
-        return flags.contains(AffectedHouse::OWNER);
-    }
-    if houses
-        .get(&target)
-        .is_some_and(|house| house.multiplay_passive())
-        && flags.contains(AffectedHouse::NEUTRAL)
-    {
-        return true;
-    }
-    if alliances.is_allied(interner, source, target) {
-        flags.contains(AffectedHouse::ALLIES)
-    } else {
-        flags.contains(AffectedHouse::ENEMIES)
-    }
+    crate::rules::phobos_shields::can_target_house_ladder(
+        flags,
+        source == target,
+        houses
+            .get(&target)
+            .is_some_and(|house| house.multiplay_passive()),
+        alliances.is_allied(interner, source, target),
+    )
 }

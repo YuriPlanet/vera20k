@@ -453,10 +453,8 @@ fn advance_ordinary_mover(
             .filter(|entity| infantry::is_prone_for_damage(entity))
             .and_then(|entity| interner.object_type(entity.type_ref(), rules));
         let prone_crawls = prone_type.map(|obj| obj.crawls);
-        #[cfg(feature = "phobos")]
-        let prone_multiplier = prone_type.map(|obj| rules.prone_speed_for(obj));
-        #[cfg(not(feature = "phobos"))]
-        let prone_multiplier = None;
+        let prone_multiplier = prone_type
+            .and_then(|obj| rules.phobos().then(|| rules.prone_speed_for(obj)));
         OrdinaryMoverVisit {
             snap,
             walk_position_before_step,
@@ -547,25 +545,15 @@ fn advance_ordinary_mover(
         *walk_per_cell = Some((entity_id, head));
         return;
     }
-    // Firestorm 2.0 Walk `Internal_Process` `0x0066DC8A..0x0066DCAA` (gamemd
-    // 0x75BF85..0x75BFA6): with the head still 17 leptons or more away, an
-    // immobilized owner clears the moving byte and Foot's scold latch and
-    // returns without stepping, keeping its path. Only Firestorm's web term
-    // is ported; the EMP term stays the residual in `walk_step`.
-    if entity.is_webbed(native_frame as i32)
-        && entity.locomotor.as_ref().is_some_and(|loco| {
-            loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Walk
-        })
-    {
-        if let Some(loco) = entity.locomotor.as_mut() {
-            loco.stop_movement_animation();
-        }
-        entity.navigation.path_runtime_mut().clear_scold_latch();
-        return;
-    }
     let object = interner.object_type(entity.type_ref(), rules);
-    let adjusted_speed =
-        super::foot_speed::adjusted_speed(entity, object, rules.general.veteran_speed, houses);
+    let adjusted_speed = super::foot_speed::adjusted_speed(
+        entity,
+        object,
+        rules,
+        interner,
+        rules.general.veteran_speed,
+        houses,
+    );
     super::walk_step::advance(
         entity,
         adjusted_speed,
@@ -691,11 +679,6 @@ impl MovementPassCache {
             Touched::All => None,
             Touched::Ids(ids) => Some(ids),
         };
-        // With the retained Foot bytes only buildings are sources, so until
-        // the next call the log need not name anything else. A call under
-        // another key rebuilds, so a narrowed log is read only by a plane
-        // that retains them.
-        entities.narrow_touched(TouchReader::BlockerPlane, retained_foot);
         match blocker
             .entry
             .as_mut()
@@ -725,17 +708,14 @@ impl MovementPassCache {
                     // With the retained Foot bytes only a building is a
                     // source (`blocker_plane_source`), and a stored object's
                     // category never changes: a touched object of another
-                    // category has none. The category column says so
-                    // without loading the entity.
+                    // category without a source still has none. The category
+                    // column says so without loading the entity.
                     if retained_foot
                         && entities
                             .category_of(id)
                             .is_some_and(|category| category != EntityCategory::Structure)
+                        && !entry.sources.contains_key(&id)
                     {
-                        debug_assert!(
-                            !entry.sources.contains_key(&id),
-                            "object {id} is a blocker plane source but no building"
-                        );
                         continue;
                     }
                     let now = entities.get(id).and_then(|entity| {

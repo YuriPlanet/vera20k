@@ -102,6 +102,7 @@ impl PrismScene {
     fn launch_from(&mut self, source: u64, target: TargetKind) -> u64 {
         self.world.session.set_binary_frame_for_test(100);
         let (target_coords, target_type_ref) = match target {
+            TargetKind::Bullet(..) => unreachable!("no bullet launch target"),
             TargetKind::Entity(id) => {
                 let target = self.world.substrate.entities.get(id).unwrap();
                 (
@@ -146,6 +147,9 @@ impl PrismScene {
             target_coords,
             target_type_ref,
             is_garrison: false,
+            at_firing_frame: true,
+            // The raw FireAt paths run no class firing update.
+            pause_handled: false,
         };
         world_fire::emit_admitted_fire(
             &mut self.world,

@@ -1540,7 +1540,6 @@ fn splits_detonates_once_and_emits_only_its_cluster() {
 }
 
 #[test]
-#[cfg(feature = "phobos")]
 fn phobos_replaces_ares_airburst() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let ini = rules_ini(

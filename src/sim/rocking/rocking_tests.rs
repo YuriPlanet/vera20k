@@ -4,7 +4,7 @@
 use super::rocking_system::{RockingUpdateInputs, advance_state};
 use super::{RockerImpulse, RockingState, apply_rocker_impulse};
 use crate::util::fixed_math::SimFixed;
-use crate::util::native_x87::NativeF32Bits;
+use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 use serde_json::Value;
 
 fn word(value: &Value) -> NativeF32Bits {
@@ -115,7 +115,7 @@ fn rocker_impulses_and_monotonic_update_history_match_native() {
                 input["name"]
             );
             let request = &impulse["input"];
-            let weight = f64::from_bits(
+            let weight = NativeF64Bits::from_bits(
                 u64::from_str_radix(input["weight_bits"].as_str().unwrap(), 16).unwrap(),
             );
             let assigned = apply_rocker_impulse(
@@ -127,7 +127,7 @@ fn rocker_impulses_and_monotonic_update_history_match_native() {
                     origin: std::array::from_fn(|i| request["origin"][i].as_i64().unwrap() as i32),
                     body_facing: input["facing"].as_u64().unwrap() as u16,
                     force: NativeF32Bits::from_bits(request["force_bits"].as_u64().unwrap() as u32),
-                    weight: SimFixed::from_num(weight),
+                    weight,
                     no_dampen: request["no_dampen"].as_u64().unwrap() != 0,
                     has_loaded_voxel: true,
                 },
@@ -178,7 +178,7 @@ fn rejected_loaded_model_gate_preserves_sparse_state_and_existing_rates() {
         origin: [2432, 2178, 0],
         body_facing: 0,
         force: NativeF32Bits::from_bits(0x3fc0_0000),
-        weight: SimFixed::ONE,
+        weight: NativeF64Bits::ONE,
         no_dampen: false,
         has_loaded_voxel: false,
     };
@@ -302,7 +302,7 @@ fn overlay_recoil_retains_original_unit_rate_words() {
             0x3d80_0000,
             word(&row["input"]["velocity_bits"]).bits(),
         ]);
-        value.recoil_after_overlay_crush();
+        value.recoil_after_overlay_crush(0.02);
         assert_eq!(
             value.native_bits(),
             [
@@ -317,4 +317,36 @@ fn overlay_recoil_retains_original_unit_rate_words() {
         admitted += 1;
     }
     assert_eq!(admitted, 144);
+}
+
+/// Phobos `CrushOverlayExtraForwardTilt` (`Ext/Unit/Hooks.Crushing.cpp:18`,
+/// `UnitClass_PerCellProcess_TiltWhenCrushes @ 0x73B05B`) replaces the stock
+/// +0.02 forward tilt with the type's value; the recoil adds exactly it.
+#[test]
+fn overlay_recoil_adds_the_type_extra_forward_tilt() {
+    let mut custom = state([0, 0, 0, 0]);
+    custom.recoil_after_overlay_crush(0.05);
+    assert_eq!(custom.vel_forwards.bits(), 0.05f32.to_bits());
+    let mut stock = state([0, 0, 0, 0]);
+    stock.recoil_after_overlay_crush(0.02);
+    assert_eq!(stock.vel_forwards.bits(), 0x3ca3_d70a);
+}
+
+/// Phobos `UnitClass_OverrunSquare_TiltWhenCrushes` (`0x741941`,
+/// `Ext/Unit/Hooks.Crushing.cpp:23-38`) replaces the stock FCOMP and stores
+/// its rate even over a nonzero pre-crush forward rate.
+#[test]
+fn unit_crush_tilt_overwrites_a_nonzero_pre_crush_rate() {
+    let mut value = state([0, 0, 0, 0x3e80_0000]);
+    value.tilt_after_unit_crush(NativeF32Bits::from_bits(0xbd4c_cccd), true);
+    assert_eq!(value.vel_forwards.bits(), 0xbd4c_cccd);
+}
+
+/// The stock tail stores only on the FCOMP C3 arm, so a nonzero pre-crush
+/// rate keeps its value.
+#[test]
+fn stock_unit_crush_tilt_keeps_a_nonzero_pre_crush_rate() {
+    let mut value = state([0, 0, 0, 0x3e80_0000]);
+    value.tilt_after_unit_crush(NativeF32Bits::from_bits(0xbd4c_cccd), false);
+    assert_eq!(value.vel_forwards.bits(), 0x3e80_0000);
 }

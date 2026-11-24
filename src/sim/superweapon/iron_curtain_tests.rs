@@ -800,7 +800,6 @@ fn curtained_infantry_die_and_announce_each_loss() {
 /// Phobos `IronCurtain.EffectOnOrganics`: the retail default kills an
 /// infantryman and an Organic Foot with the curtain's kill warhead;
 /// `invulnerable` curtains both; `ignore` leaves both untouched.
-#[cfg(feature = "phobos")]
 #[test]
 fn iron_curtain_effect_on_organics_selects_kill_invulnerable_or_ignore() {
     for (effect, behaviour) in [
@@ -854,7 +853,6 @@ fn iron_curtain_effect_on_organics_selects_kill_invulnerable_or_ignore() {
 /// Phobos `TechnoTypeExt`: `IronCurtain.Effect` overrides the global per
 /// type, and `IronCurtain.KillWarhead`/`KillOrganicsWarhead` choose the
 /// killing warhead (the type's wins).
-#[cfg(feature = "phobos")]
 #[test]
 fn type_effect_and_kill_warheads_override_the_globals() {
     let extra = "[CombatDamage]\nIronCurtain.KillOrganicsWarhead=GlobalWH\n\

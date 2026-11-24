@@ -4,6 +4,10 @@ use crate::rules::ini_parser::IniFile;
 use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
 use crate::rules::retail_ini_fixture::{retail_assets, retail_rules_owner};
 
+// Under a phobos-only build the CUSTOM warhead's zero effectiveness comes
+// from Ares verses keys the build does not read, so the ares-style
+// expectation does not hold there; the Warhead= read itself is covered by the
+// ares,phobos run of this test.
 #[test]
 fn ordinary_anim_damage_uses_optional_ares_warhead_and_owner() {
     let ini = crate::sim::arena_fixture::clear_ground_ini(
@@ -65,17 +69,13 @@ fn ordinary_anim_damage_uses_optional_ares_warhead_and_owner() {
     );
     for target in targets {
         let health = sim.entities().get(target).unwrap().health.current();
-        if rules.ares_form() {
-            assert_eq!(
-                health, 1000,
-                "CUSTOM has zero effectiveness, unlike FALLBACK"
-            );
-        } else {
-            assert!(
-                health < 1000,
-                "stock AnimAI keeps its effective FlameDamage2"
-            );
-        }
+        // Ares reads the art Warhead= first, and Phobos's replaced damage
+        // body keeps the native `pType->Warhead` read; both give the CUSTOM
+        // anim its zero-effectiveness warhead.
+        assert_eq!(
+            health, 1000,
+            "CUSTOM has zero effectiveness, unlike FALLBACK"
+        );
     }
     for visit in visits {
         assert_eq!(
@@ -89,7 +89,9 @@ fn ordinary_anim_damage_uses_optional_ares_warhead_and_owner() {
                 "explicit and attached owners both propagate"
             );
         } else {
-            assert_eq!(visit["warhead"], "FALLBACK");
+            // The ART `Warhead=` is the native AnimType+330 read; only its
+            // house propagation is Ares'.
+            assert_eq!(visit["warhead"], "CUSTOM");
             assert_eq!(visit["no_source_house"], true);
         }
     }
@@ -342,7 +344,10 @@ fn no_effects_accumulates_and_next_clears_the_same_retained_owner() {
     scene.sim.substrate.set_anim_no_effects(scene.anim, true);
     advance(&mut scene, 3);
     let anim = scene.sim.anim(scene.anim).unwrap();
+    // The stock body accumulates while inert and gates the damage later;
+    // Phobos' replaced body rejects the inert anim before the accumulator.
     assert!(f64::from_bits(anim.damage_accumulator.bits()) > 1.0);
+    assert_eq!(anim.damage_accumulator, NativeF64Bits::POSITIVE_ZERO);
     assert_eq!(
         scene
             .sim
@@ -384,6 +389,7 @@ fn no_effects_accumulates_and_next_clears_the_same_retained_owner() {
             .bits(),
     );
     assert!(carried > 0.0 && carried < 1.0);
+    assert_eq!(carried, 0.0);
     scene.sim.substrate.set_anim_no_effects(scene.anim, false);
     advance(&mut scene, 2);
     assert_eq!(
@@ -482,4 +488,134 @@ fn attached_heal_anim_weapon_never_damages_nearby_objects() {
         assert!(health < 1000, "stock animations use FlameDamage2");
         assert!(warheads.iter().all(|warhead| warhead == "FALLBACK"));
     }
+}
+
+/// Phobos `Damage.ApplyFirepowerMult` (`Ext/Anim/Hooks.cpp:119-128`): with
+/// `Damage.DealtByInvoker=yes`, the invoker's firepower multiplier is cached
+/// on the first damage round and scales every application; the type key
+/// falls back to `[CombatDamage] AnimDamage.ApplyFirepowerMult`, and without
+/// `DealtByInvoker` the whole block (and so the fold) does not run.
+#[test]
+fn anim_damage_applies_the_invokers_firepower_multiplier() {
+    let visits_for = |art_keys: &str, global: bool, dealt_by_invoker: bool| -> (Vec<i32>, f64) {
+        let mut ini_text = String::from(
+            "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=TARGET\n\
+             [TARGET]\nStrength=1000\nArmor=light\n[Animations]\n0=PULSE\n\
+             [Warheads]\n0=WH\n\
+             [WH]\nCellSpread=.3\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+             [CombatDamage]\n",
+        );
+        if global {
+            ini_text.push_str("AnimDamage.ApplyFirepowerMult=yes\n");
+        }
+        let ini = crate::sim::arena_fixture::clear_ground_ini(&ini_text);
+        let mut art_text =
+            String::from("[PULSE]\nRate=900\nEnd=8\nDamage=10\nWarhead=WH\nDamage.DealtByInvoker=");
+        art_text.push_str(if dealt_by_invoker { "yes" } else { "no" });
+        art_text.push('\n');
+        art_text.push_str(art_keys);
+        let art = IniFile::from_str(&art_text);
+        let processed = crate::rules::native_processing::RulesLayerStack::new(ini)
+            .process_with_fixed_art(&art)
+            .unwrap();
+        let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+        let mut registry = crate::rules::art_data::ArtRegistry::from_ini(&art);
+        registry.bind_anim_frame_count_for_test("PULSE", 8);
+        rules.install_art_data(registry);
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let invoker = sim
+            .spawn_object("TARGET", "Americans", 10, 10, 0, &rules)
+            .unwrap();
+        sim.substrate
+            .entities
+            .get_mut(invoker)
+            .unwrap()
+            .seldom
+            .crate_multipliers
+            .set_firepower_multiplier_for_test(crate::util::native_x87::NativeF64Bits::from_bits(
+                2.0f64.to_bits(),
+            ));
+        let victim = sim
+            .spawn_object("TARGET", "Russians", 30, 20, 0, &rules)
+            .unwrap();
+        let coord = crate::sim::movement::ground_pose::position_world_coord(
+            &sim.entities().get(victim).unwrap().position,
+        );
+        let world = AnimWorldCoord {
+            x: coord.x,
+            y: coord.y,
+            z: coord.z,
+        };
+        let (rx, ry, sx, sy, z) = world.to_cell_sub_z();
+        let pulse = sim.interner.intern("PULSE");
+        let anim = sim
+            .spawn_anim_at_world(
+                &rules,
+                AnimClassSpawnDescriptor::new(pulse, rx, ry, sx, sy, z),
+                world,
+            )
+            .unwrap();
+        sim.substrate.set_anim_invoker(
+            anim,
+            Some(invoker),
+            Some(sim.interner.get("Americans").unwrap()),
+        );
+        let multiplier = crate::sim::combat::crit::current_firepower_multiplier(
+            &sim,
+            &rules,
+            sim.entities().get(invoker).unwrap(),
+        );
+        let (_, visits) = crate::sim::combat::receiver_fixture::trace_area_visits(|| {
+            for _ in 0..8 {
+                sim.advance_tick(&[], Some(&rules), None, Some(rules.overlay_registry()), 22);
+            }
+        });
+        (
+            visits
+                .iter()
+                .map(|visit| i32::try_from(visit["damage"].as_i64().unwrap()).unwrap())
+                .collect(),
+            multiplier,
+        )
+    };
+
+    let (plain, plain_mult) = visits_for("", false, true);
+    let plain_max = plain
+        .into_iter()
+        .max()
+        .expect("the anim damages its target");
+    assert!(
+        plain_mult > 1.5,
+        "the invoker carries the 2x crate multiplier"
+    );
+    let scaled = crate::sim::attach_effect::scale_i32(plain_max, plain_mult);
+    assert!(
+        scaled > plain_max,
+        "the fixture multiplier reaches {plain_max}"
+    );
+
+    let (keyed, keyed_mult) = visits_for("Damage.ApplyFirepowerMult=yes\n", false, true);
+    assert_eq!(
+        keyed.into_iter().max(),
+        Some(scaled),
+        "the invoker's firepower multiplier scales the damage"
+    );
+    assert!((keyed_mult - plain_mult).abs() < f64::EPSILON);
+
+    let (global, global_mult) = visits_for("", true, true);
+    assert_eq!(
+        global.into_iter().max(),
+        Some(crate::sim::attach_effect::scale_i32(plain_max, global_mult)),
+        "the [CombatDamage] global supplies the unset type key"
+    );
+
+    let (no_invoker, _) = visits_for("Damage.ApplyFirepowerMult=yes\n", false, false);
+    assert_eq!(
+        no_invoker.into_iter().max(),
+        Some(plain_max),
+        "without DealtByInvoker the fold never runs"
+    );
 }

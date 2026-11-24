@@ -208,6 +208,7 @@ MoviePrefix=movies_example
 
 [Extensions]
 Ares=yes
+Phobos=yes
 ```
 
 - `[Files]` names the INI roots and catalogs. Its presence starts from stock defaults;
@@ -221,6 +222,10 @@ Ares=yes
   setting on Auto, it enables that reading for this launch without changing the saved
   setting. With Off, VERA20k refuses the mod and tells the player how to enable it.
   `Ares=no`, the default, declares no requirement; it does not force Ares off.
+- `[Extensions] Phobos=yes` plays Phobos for this mod's games even when their rules carry
+  no Phobos key of their own ([Phobos](phobos.md#the-phobos-switch)). There is no player
+  setting for Phobos, so the declaration is never refused. `Phobos=no`, the default,
+  declares no requirement and leaves the game's data to decide.
 
 The [complete filename table](ini-roots.md#a-mods-files) includes sound, EVA, theater,
 theme and campaign files. Names are plain basenames, not paths or wildcards. Mode and

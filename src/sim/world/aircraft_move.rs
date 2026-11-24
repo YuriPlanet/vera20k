@@ -252,6 +252,82 @@ impl move_mission::MoveHost for WorldMove<'_> {
         self.sim.aircraft_nav_cell_free(self.id, self.rules)
     }
 
+    /// Phobos `AircraftClass_Mission_Move_SmoothMoving`
+    /// (`Ext/Aircraft/Hooks.cpp:495-530`, sites `0x4168C7` and `0x416A0A`).
+    /// The gates are the hook's: `Team || Airstrike || IsALoaner` and a
+    /// non-`AirportBound` type keep the stock own-cell test, `IsALoaner` not
+    /// being represented (it stays false, as in the UnlandDamage port). The
+    /// distance is the hook's `Point2D::DistanceFrom` between the NavCom's
+    /// `vt+0x4C` coordinate and the Location (`0x004C1B50`, the length the
+    /// Fly step already asks), against `max(SlowdownDistance / 2,
+    /// turningRadius)` (`:520-525`).
+    fn smooth_arrival(&mut self) -> move_mission::SmoothArrival {
+        use move_mission::SmoothArrival;
+        {
+            let Some(entity) = self.sim.substrate.entities.get(self.id) else {
+                return SmoothArrival::Stock;
+            };
+            if self.sim.team_script_vm.team_for_member(self.id).is_some()
+                || entity.airstrike_link().is_some()
+            {
+                return SmoothArrival::Stock;
+            }
+            let Some(object) = self.sim.entity_object_type(entity, self.rules) else {
+                return SmoothArrival::Stock;
+            };
+            if !object.airport_bound {
+                return SmoothArrival::Stock;
+            }
+            let flags = self.rules.extended_aircraft_missions_for(object);
+            if !flags.smooth_moving {
+                return SmoothArrival::Stock;
+            }
+            let Some(nav) = entity.navigation.nav_com() else {
+                return SmoothArrival::Stock;
+            };
+            let (speed, slowdown) = (object.speed, object.slowdown_distance);
+            let coord = nav_target_coordinate(
+                nav,
+                Some(self.id),
+                self.sim,
+                self.sim.resolved_terrain.as_ref(),
+                Some((self.rules, &self.sim.interner)),
+            )
+            .expect("live SmoothMoving NavCom coordinate");
+            let location = ground_pose::object_location(
+                self.sim.substrate.entities.get(self.id).unwrap(),
+                self.sim.resolved_terrain.as_ref(),
+            );
+            let distance = crate::sim::cell_kernel::native_xy_distance(
+                coord.x.wrapping_sub(location.x),
+                coord.y.wrapping_sub(location.y),
+            );
+            let entity = self.sim.substrate.entities.get(self.id).unwrap();
+            let threshold = (slowdown / 2).max(crate::sim::aircraft::turning_radius(entity, speed));
+            if distance > threshold {
+                return SmoothArrival::Continue;
+            }
+            // `if (!extendedMissions || (!TryNextPlanningTokenNode() &&
+            // QueuedMission != Area_Guard)) Enter_Idle_Mode(false, true)` (`:526`).
+            // `||` short-circuits, so the token node is asked only with the
+            // master on.
+            let next_node = flags.master && self.sim.planning_start_actor(self.id, self.rules);
+            let queued_area_guard =
+                self.sim
+                    .substrate
+                    .entities
+                    .get(self.id)
+                    .is_some_and(|entity| {
+                        entity.mission.queued()
+                            == crate::sim::mission::MissionId::from_known(MissionType::AreaGuard)
+                    });
+            if !flags.master || (!next_node && !queued_area_guard) {
+                self.enter_idle_mode();
+            }
+            SmoothArrival::Arrived
+        }
+    }
+
     fn epilogue(&mut self) -> i32 {
         Simulation::mission_rate_epilogue_for(
             &mut self.sim.scenario_rng,
@@ -330,7 +406,7 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
         move_mission::MoveHost::assign_attack_cell(self);
         // `0x00416EE4..0x00416EF5` rereads the team and the NavCom after the
         // destination setter.
-        if let Some(team) = self.sim.team_script_vm.team_of(self.id) {
+        if let Some((team, _)) = self.sim.team_script_vm.team_for_member(self.id) {
             let target = self
                 .nav()
                 .map(|nav| crate::sim::combat::TargetKind::from(nav).into());

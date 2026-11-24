@@ -1117,7 +1117,7 @@ mod tests {
             ("storm-ai.ini", "[Marker]\nValue=Storm\n"),
             (
                 "mod.ini",
-                "[Mod]\nName=Storm\n[Files]\nRules=storm-rules.ini\nArt=storm-art.ini\nAI=storm-ai.ini\nModes=storm-modes.ini\nMapCatalog=storm-maps.pkt\n[Archives]\nExpansionPrefix=storm\n[Extensions]\nAres=yes\n",
+                "[Mod]\nName=Storm\n[Files]\nRules=storm-rules.ini\nArt=storm-art.ini\nAI=storm-ai.ini\nModes=storm-modes.ini\nMapCatalog=storm-maps.pkt\n[Archives]\nExpansionPrefix=storm\n[Extensions]\nAres=yes\nPhobos=yes\n",
             ),
         ] {
             std::fs::write(dir.join(name), text).unwrap();
@@ -1132,7 +1132,8 @@ mod tests {
             crate::util::kratos_launch::KratosSetting::Auto,
         );
         assert_eq!(ares, AresSetting::On);
-        let (mut process, _, _) = crate::app::spawn_probe::load_process_sources(
+        assert!(selected.requires_phobos);
+        let (mut process, startup_rules, _) = crate::app::spawn_probe::load_process_sources(
             &config,
             Default::default(),
             MediaArchiveMode::STOCK_DIGITAL,
@@ -1148,6 +1149,10 @@ mod tests {
         assert_eq!(assets.ini_roots().map_catalog(), "storm-maps.pkt");
         assert_eq!(assets.archive_names(), &selected.archives);
         assert_eq!(assets.ares_setting(), ares);
+        assert!(assets.requires_phobos());
+        // The declaration reaches the game's Rules, which carry no Phobos key
+        // of their own.
+        assert!(startup_rules.unwrap().phobos());
         assert!(
             process
                 .native_rules()
@@ -1168,6 +1173,7 @@ mod tests {
         assert_eq!(recovered.ini_roots().rules(), "storm-rules.ini");
         assert_eq!(recovered.archive_names(), &selected.archives);
         assert_eq!(recovered.ares_setting(), AresSetting::On);
+        assert!(recovered.requires_phobos());
         drop(startup);
         std::fs::remove_dir_all(root).unwrap();
     }

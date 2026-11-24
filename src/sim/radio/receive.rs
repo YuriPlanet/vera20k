@@ -260,6 +260,36 @@ pub(crate) fn can_load(
     ) {
         return CanLoad::Answer(RadioResponse::None);
     }
+    // Phobos `BuildingClass_ReceiveMessage_Grinding` (`0x43C30A`,
+    // `Ext/Building/Hooks.Grinding.cpp:6-38`): an allied `Grinding=`
+    // building answers before the shared admission. Ground/water class must
+    // match unless the sender's zone is amphibious, a building under
+    // construction, selling, in BState 0, offline or facing a balloon-hover
+    // sender refuses, and otherwise the type gates decide.
+    if building_type.grinding {
+        use crate::rules::locomotor_type::MovementZone;
+        let amphibious = matches!(
+            unit_type.movement_zone,
+            MovementZone::Amphibious
+                | MovementZone::AmphibiousCrusher
+                | MovementZone::AmphibiousDestroyer
+        );
+        if !amphibious && building_type.naval != unit_type.naval {
+            return CanLoad::Answer(RadioResponse::Negatory);
+        }
+        if building.constructing_or_selling()
+            || building.in_construction_bstate()
+            || !building.building_online()
+            || unit_type.balloon_hover
+        {
+            return CanLoad::Answer(RadioResponse::Negatory);
+        }
+        return CanLoad::Answer(if sim.can_grind_techno(building_id, from, rules) {
+            RadioResponse::Roger
+        } else {
+            RadioResponse::Negatory
+        });
+    }
     let absorbs = building_type.absorbs_passengers();
     let ares = rules.ares_form();
     // Ares 3.0 100174E0 (hook 0x43C326) skips the contact-capacity gate for
@@ -967,6 +997,23 @@ fn unit_receive(
     }
 }
 
+/// `CellClass+0xEC` Land of the cell at `(rx, ry)`, as a transport's
+/// `GetCell` reads it.
+fn land_type_at(sim: &Simulation, rx: u16, ry: u16) -> Option<i32> {
+    sim.resolved_terrain
+        .as_ref()
+        .and_then(|terrain| terrain.cell(rx, ry))
+        .map(|cell| i32::from(cell.land_type))
+}
+
+/// Whether the transport's cell is Water (`LandType 2`, `0x0073796B`).
+fn transport_on_water(sim: &Simulation, transport: &crate::sim::game_entity::GameEntity) -> bool {
+    land_type_at(sim, transport.position.rx(), transport.position.ry())
+        == Some(i32::from(
+            crate::rules::terrain_rules::LandType::Water.as_index(),
+        ))
+}
+
 /// HOLD_STILL, Unit case 7 (`0x0073750A..0x00737587`), a Carryall's order to
 /// the Unit it will lift: the Foot arm first (Techno's `0x006F4C6F` TETHERs
 /// the sender, which TETHERs back), then the destination (vt+0x480(NULL, 1))
@@ -1059,6 +1106,8 @@ fn unit_want_ride(sim: &Simulation, unit: u64, rules: &RuleSet) -> RadioResponse
     }
     RadioResponse::Roger
 }
+
+
 
 /// DOCKING, `UnitClass::Receive_Radio` case 0x0E (`0x007377D8..0x00737A95`),
 /// a passenger's question whether it may come aboard (the Infantry setter's
@@ -1153,17 +1202,14 @@ fn unit_docking(
             retained_zone(sender)
         };
         // `0x0073796B`: Land (`CellClass+0xEC`) of the cell holding its
-        // Location (vt+0x1B8) is Water (2).
-        let on_water = || {
-            let at = crate::sim::movement::ground_pose::position_world_coord(&transport.position);
-            sim.resolved_terrain.as_ref().is_some_and(|terrain| {
-                let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-                let cell = cells.lookup(((at.x / 256) as i16, (at.y / 256) as i16));
-                cells.land_type(cell)
-                    == i32::from(crate::rules::terrain_rules::LandType::Water.as_index())
-            })
-        };
-        if transport_zone != sender_zone || on_water() {
+        // Location (vt+0x1B8) is Water (2). Phobos `AmphibiousEnter`
+        // (`Ext/Techno/Hooks.Transport.cpp:252`, hook `0x73796B`) admits
+        // boarding over water when the transport type's key, else
+        // `[General]`, is set.
+        let amphibious_enter = transport_type.amphibious_enter(rules);
+        if transport_zone != sender_zone
+            || (!amphibious_enter && transport_on_water(sim, transport))
+        {
             let _ = sim.assign_destination_represented(
                 unit,
                 Some(NavTargetRef::object(from)),
@@ -1282,6 +1328,17 @@ pub(crate) fn unit_can_enter_radio(
         )
         || transport.is_warped_out()
     {
+        return RadioResponse::None;
+    }
+    // Phobos `CanEnterNow` (`Ext/Techno/Hooks.Transport.cpp:236`): a transport
+    // on a bridge refuses boarding.
+    if transport.on_bridge() {
+        return RadioResponse::None;
+    }
+    // Phobos `AmphibiousEnter` in `CanEnterNow` (rewrite of `0x73758A`,
+    // `Ext/Techno/Hooks.Transport.cpp:231-253`): a transport on water refuses
+    // the boarding query unless the type key, else `[General]`, admits it.
+    if !transport_type.amphibious_enter(rules) && transport_on_water(sim, transport) {
         return RadioResponse::None;
     }
     // GetCell+1BC -> ground CellClass::Look_up_building_in_cell47C520.
@@ -2160,7 +2217,7 @@ fn techno_receive(
                 )
             }
         }
-        RadioMessage::RepairTick => techno_repair_tick(sim, techno, rules, effects),
+        RadioMessage::RepairTick => techno_repair_tick(sim, techno, sender, false, rules, effects),
         RadioMessage::Reload => techno_reload(&sim.interner, &mut sim.substrate, techno, rules),
         // 0x1A, 0x1B and 0x1E have no represented sender; neither has 0x1D
         // to anything but an aircraft, which answers it itself.
@@ -2210,6 +2267,8 @@ fn techno_reload(
 fn techno_repair_tick(
     sim: &mut Simulation,
     techno: u64,
+    sender: Option<u64>,
+    separate: bool,
     rules: &RuleSet,
     effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
@@ -2223,6 +2282,28 @@ fn techno_repair_tick(
     let Some(object) = sim.object_type(entity.type_ref(), rules) else {
         return RadioResponse::None;
     };
+    // Phobos `TechnoClass_ReceiveCommand_Repair` (`0x6F4D1A`,
+    // `Hooks.cpp:643-668`): the building that ordered the repair supplies
+    // the step, cost share and cost switch for every category. A `UnitReload=`
+    // building with `Units.RepairRate=` owns its repairs in the separate loop,
+    // so the stock REPAIR_TICK effects are skipped outside that loop.
+    let depot_units = sender
+        .and_then(|sender| {
+            sim.substrate
+                .entities
+                .get(sender)
+                .filter(|building| building.category() == EntityCategory::Structure)
+        })
+        .and_then(|building| sim.object_type(building.type_ref(), rules))
+        .map(|depot| (depot.unit_reload, depot.phobos_units_repair));
+    if !separate
+        && let Some((unit_reload, units)) = depot_units
+        && unit_reload
+        && units.repair_rate.is_some()
+    {
+        // SkipEffects0x6F4DE5: the separate loop applies this service.
+        return RadioResponse::Roger;
+    }
     if entity.health.is_full(object.strength) {
         return RadioResponse::Negatory;
     }
@@ -2230,7 +2311,27 @@ fn techno_repair_tick(
     // InfantryType5247A0/524790 override the shared Techno6F4CD7 getters:
     // zero cost and signed Rules+16D8 IRepairStep. Techno6F4D1C clamps the
     // virtual heal result to at least1 for every category.
-    let (cost, heal) = if entity.category() == EntityCategory::Infantry {
+    let (cost, heal) = if let Some((_, units)) = depot_units {
+        let passed = if entity.category() == EntityCategory::Infantry {
+            rules.general.infantry_repair_step
+        } else {
+            rules.general.repair_step
+        };
+        let step = units.repair_step.unwrap_or(passed);
+        let percent = units.repair_percent.unwrap_or(rules.general.repair_percent);
+        let use_cost = units
+            .use_repair_cost
+            .unwrap_or(entity.category() != EntityCategory::Infantry);
+        let cost = if use_cost {
+            let share =
+                f64::from(rules.type_cost(object)) / (f64::from(strength) / f64::from(step));
+            let cost = (share * percent) as i32;
+            cost.max(1)
+        } else {
+            0
+        };
+        (cost, step)
+    } else if entity.category() == EntityCategory::Infantry {
         (0, rules.general.infantry_repair_step)
     } else {
         (
@@ -2279,6 +2380,19 @@ fn techno_repair_tick(
     } else {
         RadioResponse::Roger
     }
+}
+
+/// [`techno_repair_tick`] under Phobos's separate-repair latch
+/// (`UnitRepairTemp::SeparateRepair`): the `UnitReload=` loop's own requests
+/// keep their effects while the stock arm's ticks skip them.
+pub(crate) fn techno_repair_tick_separate(
+    sim: &mut Simulation,
+    techno: u64,
+    sender: Option<u64>,
+    rules: &RuleSet,
+    effects: &mut FrameEffects<'_>,
+) -> RadioResponse {
+    techno_repair_tick(sim, techno, sender, true, rules, effects)
 }
 
 /// OVER_OUT, Techno case 3 (`0x006F4C50`): with both ends tethered it sends
@@ -3719,6 +3833,128 @@ mod tests {
         assert_eq!(
             super::can_load_query(&sim, 1, 2, &zero),
             RadioResponse::None
+        );
+    }
+
+    /// Phobos `AmphibiousEnter` (`Ext/Techno/Hooks.Transport.cpp:231-253`,
+    /// `:613-628`; the `CanEnterNow` rewrite of `0x73758A` and hook
+    /// `0x73796B`): a transport on water answers the boarding query, and the
+    /// click/cursor admission that asks it, only when the type key, else
+    /// `[General]`, is set.
+    #[test]
+    fn an_amphibious_enter_transport_takes_a_passenger_on_water() {
+        use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
+        use crate::rules::ini_parser::IniFile;
+        use crate::sim::passenger::{PassengerCargo, PassengerRole};
+
+        let build = |general: &str, all_water: bool| {
+            let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(&format!(
+                "[General]\n{general}\
+                 [VehicleTypes]\n0=APC\n[APC]\nStrength=200\nPassengers=5\nSizeLimit=5\n\
+                 [InfantryTypes]\n0=E1\n[E1]\nStrength=100\nSize=1\n"
+            )))
+            .unwrap();
+            let mut sim = Simulation::with_seed(32);
+            let terrain = ResolvedTerrainGrid::from_cells(
+                4,
+                4,
+                (0..4)
+                    .flat_map(move |y| {
+                        (0..4).map(move |x| {
+                            let mut cell = test_flat_cell(x, y);
+                            if all_water || (x, y) == (2, 2) {
+                                cell.land_type =
+                                    crate::rules::terrain_rules::LandType::Water.as_index();
+                            }
+                            cell
+                        })
+                    })
+                    .collect(),
+            );
+            sim.install_resolved_terrain_for_new_map(terrain);
+            let own = sim.intern("Americans");
+            let apc_type = sim.intern("APC");
+            let mut apc = GameEntity::new_at_frame_zero_for_test(
+                1,
+                2,
+                2,
+                128,
+                128,
+                own,
+                Health::new(200),
+                apc_type,
+                EntityCategory::Unit,
+                0,
+                5,
+                false,
+            );
+            apc.passenger_role = PassengerRole::transport(PassengerCargo::new(5, 0.0));
+            sim.substrate.entities.insert(apc);
+            let gi_type = sim.intern("E1");
+            sim.substrate
+                .entities
+                .insert(GameEntity::new_at_frame_zero_for_test(
+                    2,
+                    3,
+                    2,
+                    128,
+                    128,
+                    own,
+                    Health::new(100),
+                    gi_type,
+                    EntityCategory::Infantry,
+                    0,
+                    5,
+                    false,
+                ));
+            (sim, rules)
+        };
+
+        let (sim, rules) = build("", false);
+        assert_eq!(
+            super::can_load_query(&sim, 1, 2, &rules),
+            RadioResponse::None
+        );
+        // The boarding admission the click and cursor ask asks the same query.
+        assert!(!crate::sim::passenger::can_enter_transport(
+            &sim, &rules, 2, 1
+        ));
+        let (sim, rules) = build("AmphibiousEnter=yes\n", false);
+        assert_eq!(
+            super::can_load_query(&sim, 1, 2, &rules),
+            RadioResponse::Roger
+        );
+        assert!(crate::sim::passenger::can_enter_transport(
+            &sim, &rules, 2, 1
+        ));
+
+        // `0x73796B` (`UnitClass::Receive_Radio` case 0x0E, hook
+        // `Ext/Techno/Hooks.Transport.cpp:613-628`): both on the same water
+        // zone, the key decides whether the transport asks the passenger to
+        // come alongside (`Docking`) or completes the handshake (`Roger`).
+        let (mut sim, rules) = build("", true);
+        assert_eq!(
+            super::unit_docking(
+                &mut sim,
+                1,
+                2,
+                crate::sim::radio::RadioPayload::default(),
+                &rules,
+                &mut crate::sim::world::FrameEffects::default(),
+            ),
+            RadioResponse::Docking
+        );
+        let (mut sim, rules) = build("AmphibiousEnter=yes\n", true);
+        assert_eq!(
+            super::unit_docking(
+                &mut sim,
+                1,
+                2,
+                crate::sim::radio::RadioPayload::default(),
+                &rules,
+                &mut crate::sim::world::FrameEffects::default(),
+            ),
+            RadioResponse::Roger
         );
     }
 

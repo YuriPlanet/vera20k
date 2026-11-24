@@ -107,6 +107,16 @@ pub struct VoxelAnimType {
     pub expire_anim: Option<String>,
     /// `+0x2EC`. `AnimType` played every other tick while alive.
     pub trailer_anim: Option<String>,
+    /// Phobos `Trailer.SpawnDelay=` (`Ext/VoxelAnimType/Body.cpp:18`,
+    /// `Valueable<int>` constructor 2 at `Body.h:34,43`): game frames between
+    /// trailer spawns. The AI starts the timer after every spawn
+    /// (`VoxelAnimClass_AI_Trailer @ 0x74A70E`).
+    pub trailer_spawn_delay: i32,
+    /// Phobos `VoxelAnimTypeExt::LaserTrail_Types`
+    /// (`Ext/VoxelAnimType/Body.cpp:12`): the `LaserTrail.Types` list, by
+    /// `[LaserTrailTypes]` name, read from this section in the rules layer.
+    #[serde(default)]
+    pub laser_trail_types: Vec<String>,
     /// `+0x2F0` / `+0x2F4` / `+0x2F8`. Area damage applied on expiry.
     pub damage: i32,
     pub damage_radius: i32,
@@ -154,6 +164,8 @@ impl VoxelAnimType {
             bounce_anim: None,
             expire_anim: None,
             trailer_anim: None,
+            trailer_spawn_delay: 2,
+            laser_trail_types: Vec::new(),
             damage: 0,
             damage_radius: 0,
             warhead: None,
@@ -177,6 +189,14 @@ impl VoxelAnimType {
         out.is_meteor = section.read_bool("IsMeteor", out.is_meteor);
         out.voxel_index = section.read_int("VoxelIndex", out.voxel_index);
         out.duration = section.read_int("Duration", out.duration);
+        {
+            out.trailer_spawn_delay =
+                section.read_int("Trailer.SpawnDelay", out.trailer_spawn_delay);
+            out.laser_trail_types = crate::rules::phobos_laser_trail::read_laser_trail_types(
+                section,
+                std::mem::take(&mut out.laser_trail_types),
+            );
+        }
 
         out.elasticity = section.read_double_bits("Elasticity", out.elasticity);
         [out.min_angular_velocity, out.max_angular_velocity] = read_angular_velocities(
@@ -282,6 +302,17 @@ mod tests {
 
     fn section(text: &str) -> IniFile {
         IniFile::from_str(text)
+    }
+
+    /// `VoxelAnimTypeExt::LoadFromINIFile` reads `LaserTrail.Types` from the
+    /// rules section (`Ext/VoxelAnimType/Body.cpp:12`).
+    #[test]
+    fn laser_trail_types_read_from_the_rules_section() {
+        let ini = section("[PIECE]\nDuration=10\nLaserTrail.Types= A ,, B\n[EMPTY]\nDuration=10\n");
+        let piece = VoxelAnimType::from_ini_section("PIECE", ini.section("PIECE").unwrap());
+        assert_eq!(piece.laser_trail_types, ["A", "B"]);
+        let empty = VoxelAnimType::from_ini_section("EMPTY", ini.section("EMPTY").unwrap());
+        assert!(empty.laser_trail_types.is_empty());
     }
 
     #[test]

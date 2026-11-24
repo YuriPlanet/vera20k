@@ -583,6 +583,7 @@ fn local_combatants(state: &AppState) -> Result<BTreeSet<u64>> {
                     sim.entities(),
                     Some(rules),
                     Some(sim.interner()),
+                    false,
                 )
                 && sim.object_is_selectable(entity.stable_id(), rules)
         })

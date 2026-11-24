@@ -65,8 +65,8 @@ pub(crate) use general::{
     DEFAULT_SURVIVOR_DIVISORS, ambient_change_terms, default_fog_rate, default_shroud_rate,
     read_cliff_back_impassability,
 };
-#[cfg(feature = "phobos")]
 pub(crate) use general::{DEFAULT_MISSING_CAMEO, default_missing_cameo};
+pub(crate) use loading::parse_registry;
 pub use sections::{
     BridgeRules, DetailRules, DifficultyRules, ElevationModel, GarrisonRules, GeneralBuildingTypes,
     ParadropList, PrismSupportRules, ProductionRules, RadiationRules,
@@ -115,31 +115,29 @@ pub struct CountryRules {
     pub multiplay_passive: bool,
     /// `WallOwner=` allows this house type's buildings to claim nearby map walls.
     pub wall_owner: bool,
+    /// Phobos `[Country] RevealHouses=` (`Ext/HouseType/Body.cpp:30`,
+    /// `Nullable<AffectedHouse>`): which players a techno of this country's
+    /// sight reveals to; `None` inherits `[AudioVisual]`
+    /// (`Ext/Techno/Hooks.cpp:2578`).
+    pub reveal_houses: Option<crate::rules::phobos_shields::AffectedHouse>,
     /// Phobos `AttachEffect.AttachTypes` on a country.
     ///
-    /// RESIDUAL: read but not attached. Phobos `TechnoExt::InitializeAttachEffects`
-    /// (`Body.Internal.cpp:157`) attaches the owner country's list to every
-    /// created techno as an outside effect whose source is the techno itself,
-    /// and `HouseClass` owner change (`House/Hooks.cpp:353`) attaches the new
-    /// country's list under `AttachEffect.AttachOnOwnerChange`. VERA's
-    /// `AttachSource` holds only a warhead source, so a country that sets
-    /// the list gives its objects none of those effects.
-    #[cfg(feature = "phobos")]
+    /// `TechnoExt::InitializeAttachEffects` (`Body.Internal.cpp:157`)
+    /// attaches the owner country's list to every created techno through
+    /// [`crate::sim::attach_effect::attach_country_effects`], and an owner
+    /// change attaches the new country's list when
+    /// `AttachEffect.AttachOnOwnerChange` (country value, else `[General]`)
+    /// allows it (`House/Hooks.cpp:342-343`).
     pub attach_effect_attach_types: Vec<String>,
     /// `AttachEffect.DurationOverrides`, paired by index.
-    #[cfg(feature = "phobos")]
     pub attach_effect_duration_overrides: Vec<i32>,
     /// `AttachEffect.Delays`, paired by index.
-    #[cfg(feature = "phobos")]
     pub attach_effect_delays: Vec<i32>,
     /// `AttachEffect.InitialDelays`, paired by index.
-    #[cfg(feature = "phobos")]
     pub attach_effect_initial_delays: Vec<i32>,
     /// `AttachEffect.RecreationDelays`, paired by index.
-    #[cfg(feature = "phobos")]
     pub attach_effect_recreation_delays: Vec<i32>,
     /// `AttachEffect.AttachOnOwnerChange`; `None` inherits `[General]`.
-    #[cfg(feature = "phobos")]
     pub attach_effect_attach_on_owner_change: Option<bool>,
     /// HouseType+148: ReadDouble511D0B -> FSTP float511D10, default1.0.
     /// Both base and purifier deposits read these exact retained float bits.
@@ -215,16 +213,33 @@ pub struct CountryRules {
 pub struct HouseCostFactors {
     pub country: [NativeF32Bits; 5],
     pub factory_plant: [NativeF32Bits; 5],
+    /// Phobos `GetRestrictedFactoryPlantMult` (`Ext/House/Body.cpp:538-588`)
+    /// folded into the *plant* float before `Cost_Of`'s two x87 multiplies
+    /// (hook `0x711F39`, `Ext/TechnoType/Hooks.cpp:97-110`). One neutral
+    /// factor for the priced slot, so the plain House+140 product and
+    /// Ares's `1 - (1 - product) * multiplier` keep their native order.
+    pub restricted_plant: NativeF32Bits,
 }
 
 impl HouseCostFactors {
+    /// The plant float `0x00711F39` loads: `plant * restricted` in C++
+    /// `float` (SSE `mulss`, round-to-nearest), matching the Phobos hook.
+    pub(crate) fn plant_factor(&self, slot: usize) -> NativeF32Bits {
+        let factor = NativeF32Bits::from_bits(
+            (f32::from_bits(self.factory_plant[slot].bits())
+                * f32::from_bits(self.restricted_plant.bits()))
+            .to_bits(),
+        );
+        factor
+    }
+
     /// `TechnoTypeClass::Cost_Of @ 0x00711F00` past its null-House arm:
     /// `ftol(cost * plant * country)` for factor `slot`
     /// (`0x00711F35..0x00711F41`).
     pub(crate) fn adjust(&self, cost: i32, slot: usize) -> i32 {
         use crate::util::native_x87::MaskedX87Chop53 as X87;
         X87::ftol_i32_low_masked(X87::mul(
-            X87::mul(X87::load_i32(cost), X87::load_f32(self.factory_plant[slot])),
+            X87::mul(X87::load_i32(cost), X87::load_f32(self.plant_factor(slot))),
             X87::load_f32(self.country[slot]),
         ))
     }
@@ -246,7 +261,15 @@ impl HouseCostFactors {
             one,
             X87::mul(discount, X87::load_f64(multiplier)),
         ));
-        X87::store_f32_masked_chop(X87::load_f64(factor))
+        let factor = X87::store_f32_masked_chop(X87::load_f64(factor));
+        // Phobos's cost hook multiplies the stack plant float *after* Ares's
+        // GetCostMult has produced it (`0x711F39`, `Ext/TechnoType/Hooks.cpp:
+        // 97-110`); that multiply is C++ `float` (SSE round-to-nearest).
+        let factor = NativeF32Bits::from_bits(
+            (f32::from_bits(factor.bits()) * f32::from_bits(self.restricted_plant.bits()))
+                .to_bits(),
+        );
+        factor
     }
 
     /// [`Self::adjust`] through [`Self::ares_factory_plant`].
@@ -277,17 +300,12 @@ impl Default for CountryRules {
             multiplay: false,
             multiplay_passive: false,
             wall_owner: true,
-            #[cfg(feature = "phobos")]
+            reveal_houses: None,
             attach_effect_attach_types: Vec::new(),
-            #[cfg(feature = "phobos")]
             attach_effect_duration_overrides: Vec::new(),
-            #[cfg(feature = "phobos")]
             attach_effect_delays: Vec::new(),
-            #[cfg(feature = "phobos")]
             attach_effect_initial_delays: Vec::new(),
-            #[cfg(feature = "phobos")]
             attach_effect_recreation_delays: Vec::new(),
-            #[cfg(feature = "phobos")]
             attach_effect_attach_on_owner_change: None,
             income_mult: NativeF32Bits::ONE,
             armor_infantry_mult: 1.0,
@@ -326,7 +344,11 @@ impl CountryRules {
             multiplay: section.read_bool("Multiplay", Self::default().multiplay),
             multiplay_passive: section.read_bool("MultiplayPassive", false),
             wall_owner: section.read_bool("WallOwner", true),
-            #[cfg(feature = "phobos")]
+            reveal_houses: section.read_phobos_nullable_with(
+                "RevealHouses",
+                None,
+                crate::rules::phobos_shields::AffectedHouse::parse,
+            ),
             attach_effect_attach_types: section
                 .read_list("AttachEffect.AttachTypes", 0x800)
                 .map(|tokens| {
@@ -336,23 +358,18 @@ impl CountryRules {
                         .collect()
                 })
                 .unwrap_or_default(),
-            #[cfg(feature = "phobos")]
             attach_effect_duration_overrides: section
                 .read_int_list("AttachEffect.DurationOverrides")
                 .unwrap_or_default(),
-            #[cfg(feature = "phobos")]
             attach_effect_delays: section
                 .read_int_list("AttachEffect.Delays")
                 .unwrap_or_default(),
-            #[cfg(feature = "phobos")]
             attach_effect_initial_delays: section
                 .read_int_list("AttachEffect.InitialDelays")
                 .unwrap_or_default(),
-            #[cfg(feature = "phobos")]
             attach_effect_recreation_delays: section
                 .read_int_list("AttachEffect.RecreationDelays")
                 .unwrap_or_default(),
-            #[cfg(feature = "phobos")]
             attach_effect_attach_on_owner_change: section.read_phobos_nullable_bool(
                 "AttachEffect.AttachOnOwnerChange",
                 Self::default().attach_effect_attach_on_owner_change,
@@ -845,32 +862,56 @@ pub struct RuleSet {
     /// Phobos `[SOMESIDE] Sidebar.GDIPositions=`, in `[Sides]` order.
     /// The first side defaults to GDI positions; all others default to the
     /// NOD table. Unlike SideExt+88 this is read in stock games too.
-    #[cfg(feature = "phobos")]
     side_gdi_positions: Vec<bool>,
     /// Phobos `[GlobalControls]`/`[AudioVisual]` switches for the left
     /// superweapon sidebar.
-    #[cfg(feature = "phobos")]
     pub sw_sidebar: crate::rules::phobos_sw_sidebar::SuperWeaponSidebarGlobals,
     /// Phobos `[AudioVisual] SelectionFlashDuration=`: frames a newly selected
     /// Techno flashes for; 0 disables it.
-    #[cfg(feature = "phobos")]
     pub selection_flash: crate::rules::phobos_selection_flash::SelectionFlashGlobals,
     /// Phobos `[AudioVisual] FlyNoWobbles=`: the default a TechnoType's own
     /// `FlyNoWobbles` overrides. `None` keeps the retail rule, where
     /// `IsDropship` alone disables the Fly wobble.
-    #[cfg(feature = "phobos")]
     fly_no_wobbles: Option<bool>,
     /// Phobos `[AudioVisual] ShowPowerPlantEnhancerRange=`: the rules switch
     /// for the placement-time enhancer rings.
-    #[cfg(feature = "phobos")]
     pub power_plant_enhancer: crate::rules::phobos_power_plant_enhancer::PowerPlantEnhancerGlobals,
     /// Phobos `[CombatDamage]` airburst/splits defaults, consumed by the
     /// projectile emitter's nullable type keys.
-    #[cfg(feature = "phobos")]
     pub phobos_airburst: crate::rules::phobos_airburst::PhobosAirburstGlobals,
+    /// Phobos `[AudioVisual] LaserPositionUpdate.StopOnFirerConvert=`, the
+    /// default the weapon-level nullable inherits.
+    pub phobos_laser_tracking: crate::rules::phobos_laser_tracking::LaserTrackingGlobals,
+    /// Phobos `[AudioVisual] LaserZAdjust=` / `EBoltZAdjust=`
+    /// (`Ext/Rules/Body.cpp:277-278`): the beam depth defaults.
+    pub phobos_beam_z_adjust: crate::rules::phobos_beam_z_adjust::BeamZAdjustGlobals,
+    /// Phobos `[AudioVisual] JumpjetTilt=` and the four `JumpjetTilt.*`
+    /// factors, the defaults the per-type nullable fields inherit.
+    pub phobos_jumpjet_tilt: crate::rules::phobos_jumpjet_tilt::PhobosJumpjetTiltGlobal,
     /// Phobos `[SIDE] SuperWeaponSidebar.*PCX=` names, in `[Sides]` order.
-    #[cfg(feature = "phobos")]
     side_sw_sidebar_art: Vec<crate::rules::phobos_sw_sidebar::SuperWeaponSidebarSideArt>,
+    /// Phobos `[SIDE] Sidebar.PowerDelta.*`, in `[Sides]` order: the per-side
+    /// offset, colours and alignment of the power-delta sidebar indicator.
+    side_power_delta: Vec<crate::rules::phobos_sidebar_indicators::PowerDeltaSideSettings>,
+    /// Phobos `[SIDE] Sidebar.HarvesterCounter.*`, in `[Sides]` order: the
+    /// offset, count-format switches and colours of the harvester counter.
+    side_harvester_counter:
+        Vec<crate::rules::phobos_sidebar_indicators::HarvesterCounterSideSettings>,
+    /// Phobos `[SIDE] Sidebar.WeedsCounter.*`, in `[Sides]` order: the offset
+    /// and the single nullable colour of the weeds counter.
+    side_weeds_counter: Vec<crate::rules::phobos_sidebar_indicators::WeedsCounterSideSettings>,
+    /// Phobos `[SIDE] Sidebar.ProducingProgress.Offset`, in `[Sides]` order:
+    /// the per-side draw offset of the producing-progress strips.
+    side_producing_progress:
+        Vec<crate::rules::phobos_sidebar_indicators::ProducingProgressSideSettings>,
+    /// Phobos `[SIDE] ToolTip.Background.*`, in `[Sides]` order: the per-side
+    /// tooltip-backing colour, opacity and blur overrides.
+    side_tooltip_background:
+        Vec<crate::rules::phobos_tooltip_background::TooltipBackgroundSideSettings>,
+    /// Phobos `[SIDE] ToolTip.Background.BlurSize=` (`Nullable<float>`,
+    /// `Ext/Side/Body.cpp:50`, `Body.h:46,77`), in `[Sides]` order: the
+    /// tooltip blur's per-side size over the `[AudioVisual]` global.
+    side_tool_tip_blur_size: Vec<Option<crate::util::native_x87::NativeF32Bits>>,
     /// Effective side for each country after `[Sides]` membership and the
     /// per-country `Side=` override have both run.
     country_sides: Vec<Option<SideIdx>>,
@@ -1010,9 +1051,23 @@ pub struct RuleSet {
         BTreeMap<String, crate::rules::superweapon_type::AresSuperWeaponMetadata>,
     /// Phobos `SW.TechLevel`/`SW.AuxTechnos`/`SW.NegTechnos` for every
     /// registered superweapon, projected from the retained registry.
-    #[cfg(feature = "phobos")]
     phobos_super_weapon_metadata:
         BTreeMap<String, crate::rules::superweapon_type::PhobosSuperWeaponAvailability>,
+    /// Phobos `SW.Next*`/`SW.Link*` for every registered superweapon,
+    /// projected from the retained registry.
+    phobos_super_weapon_chaining:
+        BTreeMap<String, crate::rules::phobos_sw_chaining::PhobosSuperWeaponChaining>,
+    /// Phobos `Detonate.*` for every registered superweapon, projected from
+    /// the retained registry.
+    phobos_super_weapon_detonate:
+        BTreeMap<String, crate::rules::phobos_sw_detonate::PhobosSuperWeaponDetonate>,
+    /// Phobos `LimboDelivery.*`/`LimboKill.*` for every registered
+    /// superweapon.
+    phobos_super_weapon_limbo: BTreeMap<String, crate::rules::phobos_limbo::PhobosSuperWeaponLimbo>,
+    /// Phobos `Message.Activated.*`/`EVA.Activated.*` and the linked pair, for
+    /// every registered superweapon.
+    phobos_super_weapon_messages:
+        BTreeMap<String, crate::rules::phobos_sw_messages::PhobosSuperWeaponMessages>,
     /// Phobos `[GlobalControls] AllowParallelAIQueues=` and the
     /// `ForbidParallelAIQueues.*` category switches.
     parallel_ai_queues: crate::rules::phobos_parallel_ai_queues::ParallelAiQueueRules,
@@ -1060,44 +1115,46 @@ pub struct RuleSet {
     radiation_site_warhead: Option<WarheadHandle>,
     /// Phobos `[ShieldTypes]` catalog, read per Rules pass by the ordered
     /// Process owner. Empty in builds without the capability.
-    #[cfg(feature = "phobos")]
     pub(crate) shield_types: crate::rules::phobos_shields::ShieldTypeCatalog,
     /// Phobos `[InsigniaTypes]` catalog.
-    #[cfg(feature = "phobos")]
     pub(crate) insignia_types: crate::rules::insignia_type::InsigniaTypeCatalog,
     /// Phobos `[General]`/`[AudioVisual]` insignia settings.
-    #[cfg(feature = "phobos")]
     pub(crate) phobos_draw_globals: crate::rules::insignia_type::PhobosDrawGlobals,
     /// Phobos shield globals: `[CombatDamage] ShieldApplyArmorMult` and
     /// `[AudioVisual] Shield.ConditionYellow/ConditionRed`.
-    #[cfg(feature = "phobos")]
     pub(crate) shield_globals: crate::rules::phobos_shields::ShieldGlobals,
     /// Phobos crit defaults: `[CombatDamage] Crit.*` and `[General]
     /// VeteranCritChance`.
-    #[cfg(feature = "phobos")]
     pub(crate) crit_globals: crate::rules::phobos_crit::CritGlobals,
     /// Phobos Iron Curtain / Force Shield organics, tint and deploy settings.
-    #[cfg(feature = "phobos")]
     pub(crate) invulnerability_globals: crate::rules::invulnerability_rules::InvulnerabilityGlobals,
     /// Phobos `[General]` warhead animation defaults.
-    #[cfg(feature = "phobos")]
     pub(crate) phobos_warhead_anim: crate::rules::phobos_warhead_anim::PhobosWarheadAnimGlobals,
     /// Phobos `[DigitalDisplayTypes]` catalog, read per Rules pass by the
     /// ordered Process owner. Empty in builds without the capability.
-    #[cfg(feature = "phobos")]
     pub(crate) digital_display_types: crate::rules::digital_display::DigitalDisplayTypeCatalog,
     /// Phobos DigitalDisplay globals: the four `[AudioVisual]` category
     /// default lists and `DigitalDisplay.Health.FakeAtDisguise`.
-    #[cfg(feature = "phobos")]
     pub(crate) digital_display_globals: crate::rules::digital_display::DigitalDisplayGlobals,
+    /// Phobos `[SelectBoxTypes]` catalog (`New/Type/SelectBoxTypeClass.cpp`).
+    pub(crate) select_box_types: crate::rules::select_box_type::SelectBoxTypeCatalog,
+    /// Phobos `[BannerTypes]` catalog (`New/Type/BannerTypeClass.cpp`); the
+    /// trigger actions 800-802 create its runtime banners
+    /// (`New/Entity/BannerClass.cpp`).
+    pub(crate) banner_types: crate::rules::banner_type::BannerTypeCatalog,
+    /// Phobos `[AudioVisual] DefaultInfantrySelectBox=` /
+    /// `DefaultUnitSelectBox=` (`Ext/Rules/Body.cpp:333-334`).
+    pub(crate) select_box_globals: crate::rules::select_box_type::SelectBoxGlobals,
     /// Phobos `[AttachEffectTypes]` catalog, retained across Rules passes.
-    #[cfg(feature = "phobos")]
     pub(crate) attach_effect_types: crate::rules::attach_effect::AttachEffectTypeCatalog,
+    /// The rules-authored `[VariableNames]` globals (`Ext/Scenario/
+    /// Hooks.Variables.cpp:82-88`, hook `0x6876C2`, `Ext/Scenario/Body.cpp:37-69`
+    /// `ReadVariables(true, INI_Rules)`): one entry per authored slot with
+    /// `Value = atoi(state token)` else 0. Retail rulesmd.ini authors 14.
+    pub(crate) variable_names: std::collections::BTreeMap<u32, i32>,
     /// Phobos AttachEffect globals (`[General]`).
-    #[cfg(feature = "phobos")]
     pub(crate) attach_effect_globals: crate::rules::attach_effect::AttachEffectGlobals,
     /// Phobos placement preview globals (`[AudioVisual] PlacementPreview*`).
-    #[cfg(feature = "phobos")]
     pub(crate) placement_preview_globals:
         crate::rules::phobos_placement_preview::PlacementPreviewGlobals,
     /// The player-colour conversion every launcher and loading-screen consumer
@@ -1119,6 +1176,9 @@ pub struct RuleSet {
     /// IonCannonWarhead=`, `C4Warhead=`, `CrushWarhead=`). Resolution to interned IDs happens
     /// at world init.
     pub bridge_warheads: crate::rules::bridge_warheads::BridgeWarheads,
+    /// Phobos `RulesExt::LoadFromINI` `[CombatDamage]` and `[AudioVisual]`
+    /// globals, read once from the merged layer state.
+    pub phobos_globals: crate::rules::phobos_globals::PhobosGlobals,
     /// Mind-control globals: ring anim, Mastermind overload, sounds and the
     /// AI capture-decision tables.
     pub mind_control: crate::rules::mind_control_rules::MindControlRules,
@@ -1203,6 +1263,296 @@ pub struct RuleSet {
     /// gate diagnostic-log/snapshot playback against a mismatched rules set. Lives on
     /// `RuleSet` (in `rules/`) so `sim/` can read it without an app-layer dep.
     source_ini_hash: u64,
+}
+
+impl RuleSet {
+    fn art_image_swap_enabled(&self) -> bool {
+        self.phobos_globals.art_image_swap
+    }
+
+    pub fn building_type_selectable(&self) -> bool {
+        self.general.building_type_selectable
+    }
+
+    /// `TechnoTypeClass::Cost_Of` with Phobos's per-priced-type restricted
+    /// FactoryPlant factor (`0x711F39`, `Ext/TechnoType/Hooks.cpp:97-110`).
+    pub fn cost_of_with_restricted(
+        &self,
+        object: &ObjectType,
+        house: Option<&HouseCostFactors>,
+        restricted_for: impl Fn(&ObjectType) -> NativeF32Bits,
+    ) -> i32 {
+        let adjusted = |priced: &ObjectType| {
+            let cost = self.type_cost(priced);
+            let Some(house) = house else {
+                return cost;
+            };
+            let mut factors = *house;
+            factors.restricted_plant = restricted_for(priced);
+            if self.ares {
+                factors.ares_adjust(
+                    cost,
+                    priced.factor_slot(),
+                    priced.ares_production().factory_plant_multiplier(),
+                )
+            } else {
+                factors.adjust(cost, priced.factor_slot())
+            }
+        };
+        let mut cost = adjusted(object);
+        if object.category != ObjectCategory::Building {
+            return cost;
+        }
+        if !self.general.separate_aircraft
+            && let [first_id, second_id, ..] = self.general.pad_aircraft_types.as_slice()
+            && let (Some(first), Some(second)) = (self.object(first_id), self.object(second_id))
+            && first
+                .dock
+                .first()
+                .is_some_and(|dock| dock.eq_ignore_ascii_case(&object.id))
+        {
+            cost = cost.wrapping_add(adjusted(second).wrapping_add(adjusted(first)) / 2);
+        }
+        match object
+            .free_unit
+            .as_deref()
+            .and_then(|name| self.object(name))
+        {
+            Some(free) => cost.wrapping_add(adjusted(free)).max(0),
+            None => cost,
+        }
+    }
+
+    pub fn country_reveal_houses(
+        &self,
+        id: &str,
+    ) -> Option<crate::rules::phobos_shields::AffectedHouse> {
+        self.country_rules(id)
+            .and_then(|country| country.reveal_houses)
+    }
+
+    /// Phobos `UnitTypeClass_ReadINI_TurretShape`'s separate shape stem.
+    pub fn unit_turret_shp_id(&self, type_id: &str) -> Option<String> {
+        let object = self.object(type_id)?;
+        if object.category != ObjectCategory::Vehicle || !object.has_turret {
+            return None;
+        }
+        let entry = self
+            .art()
+            .resolve_metadata_entry(&object.id, &object.image)?;
+        if entry.voxel {
+            return None;
+        }
+        let base = if self.art_image_swap_enabled() {
+            self.art()
+                .resolve_effective_image_id(&object.id, &object.image)
+        } else {
+            object.image.clone()
+        };
+        Some(format!("{}TUR", base.to_ascii_uppercase()))
+    }
+
+    pub fn unit_turret_shp_file(&self, type_id: &str) -> Option<String> {
+        self.unit_turret_shp_id(type_id)
+            .map(|id| format!("{id}.SHP"))
+    }
+
+    /// Whether the retained native AnimType registry contains `name`.
+    pub fn has_anim_type(&self, name: &str) -> bool {
+        self.anim_type_names
+            .iter()
+            .any(|candidate| candidate.eq_ignore_ascii_case(name))
+    }
+
+    pub fn terrain_condition_yellow(&self) -> f64 {
+        self.phobos_globals
+            .condition_yellow_terrain
+            .map_or(self.general.condition_yellow, |bits| {
+                f64::from_bits(bits.bits())
+            })
+    }
+
+    pub fn terrain_display_frame_count(&self, name: &str) -> Option<u16> {
+        self.terrain_assets.display_frame_count(name)
+    }
+
+    pub fn super_weapon_influence_lists(
+        &self,
+        id: &str,
+    ) -> Option<(
+        &[crate::rules::superweapon_type::TechnoTypeReference],
+        &[crate::rules::superweapon_type::TechnoTypeReference],
+    )> {
+        self.super_weapon_metadata(id).map(|metadata| {
+            let influence = metadata.influence();
+            (
+                influence.designators.as_slice(),
+                influence.inhibitors.as_slice(),
+            )
+        })
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_object_spawn_distance_from_target_for_test(&mut self, type_id: &str, leptons: i32) {
+        let handle = self
+            .type_handle(type_id)
+            .expect("native fixture type exists");
+        self.object_list[handle.0 as usize].phobos_spawn_distance_from_target = Some(leptons);
+    }
+
+    pub fn aircraft_firing_force_scatter_for(&self, aircraft: Option<&ObjectType>) -> bool {
+        aircraft
+            .and_then(|aircraft| aircraft.phobos_firing_force_scatter)
+            .unwrap_or(self.phobos_globals.aircraft_firing_force_scatter)
+    }
+
+    pub fn aircraft_retreat_to_edge_for(
+        &self,
+        aircraft: Option<&ObjectType>,
+    ) -> crate::rules::ini_value::PhobosEdgeType {
+        aircraft
+            .and_then(|aircraft| aircraft.phobos_retreat_to_edge)
+            .unwrap_or(self.phobos_globals.aircraft_retreat_to_edge)
+    }
+
+    pub fn extended_aircraft_missions_for(
+        &self,
+        ty: &ObjectType,
+    ) -> crate::rules::phobos_extended_aircraft_missions::ExtendedAircraftMissionFlags {
+        ty.phobos_extended_aircraft_missions.resolve(
+            self.phobos_globals.extended_aircraft_missions,
+            self.phobos_globals.extended_aircraft_missions_unland_damage,
+        )
+    }
+
+    pub fn skip_crush_slowdown_for(&self, unit: Option<&ObjectType>) -> bool {
+        unit.and_then(|unit| unit.phobos_skip_crush_slowdown)
+            .unwrap_or(self.phobos_globals.skip_crush_slowdown)
+    }
+
+    pub fn select_box_types(&self) -> &crate::rules::select_box_type::SelectBoxTypeCatalog {
+        &self.select_box_types
+    }
+
+    pub fn select_box_globals(&self) -> &crate::rules::select_box_type::SelectBoxGlobals {
+        &self.select_box_globals
+    }
+
+    pub fn select_box_index_for(&self, object: &ObjectType) -> Option<usize> {
+        let catalog = &self.select_box_types;
+        if let Some(name) = object.phobos_techno_extras.select_box.as_deref() {
+            return catalog.index_of(name);
+        }
+        let fallback = match object.category {
+            ObjectCategory::Infantry => self.select_box_globals.default_infantry.as_deref(),
+            ObjectCategory::Building => None,
+            _ => self.select_box_globals.default_unit.as_deref(),
+        };
+        fallback.and_then(|name| catalog.index_of(name))
+    }
+
+    pub fn banner_types(&self) -> &crate::rules::banner_type::BannerTypeCatalog {
+        &self.banner_types
+    }
+
+    pub fn side_power_delta(
+        &self,
+        index: i32,
+    ) -> crate::rules::phobos_sidebar_indicators::PowerDeltaSideSettings {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.side_power_delta.get(index))
+            .copied()
+            .unwrap_or_default()
+    }
+
+    pub fn side_harvester_counter(
+        &self,
+        index: i32,
+    ) -> crate::rules::phobos_sidebar_indicators::HarvesterCounterSideSettings {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.side_harvester_counter.get(index))
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    pub fn side_weeds_counter(
+        &self,
+        index: i32,
+    ) -> crate::rules::phobos_sidebar_indicators::WeedsCounterSideSettings {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.side_weeds_counter.get(index))
+            .copied()
+            .unwrap_or_default()
+    }
+
+    pub fn side_producing_progress(
+        &self,
+        index: i32,
+    ) -> crate::rules::phobos_sidebar_indicators::ProducingProgressSideSettings {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.side_producing_progress.get(index))
+            .copied()
+            .unwrap_or_default()
+    }
+
+    pub fn side_tooltip_background(
+        &self,
+        side: i32,
+    ) -> (Option<[u8; 3]>, Option<i32>, Option<f32>) {
+        let settings = usize::try_from(side)
+            .ok()
+            .and_then(|index| self.side_tooltip_background.get(index));
+        settings.map_or((None, None, None), |settings| {
+            (
+                settings.color,
+                settings.opacity,
+                settings.blur_size.map(|bits| f32::from_bits(bits.bits())),
+            )
+        })
+    }
+
+    pub fn side_tool_tip_blur_size(&self, index: i32) -> Option<NativeF32Bits> {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.side_tool_tip_blur_size.get(index))
+            .copied()
+            .flatten()
+    }
+
+    pub(crate) fn phobos_super_weapon_chaining(
+        &self,
+        id: &str,
+    ) -> Option<&crate::rules::phobos_sw_chaining::PhobosSuperWeaponChaining> {
+        self.phobos_super_weapon_chaining
+            .get(&id.to_ascii_uppercase())
+    }
+
+    pub(crate) fn phobos_super_weapon_detonate(
+        &self,
+        id: &str,
+    ) -> Option<&crate::rules::phobos_sw_detonate::PhobosSuperWeaponDetonate> {
+        self.phobos_super_weapon_detonate
+            .get(&id.to_ascii_uppercase())
+    }
+
+    pub(crate) fn phobos_super_weapon_limbo(
+        &self,
+        id: &str,
+    ) -> Option<&crate::rules::phobos_limbo::PhobosSuperWeaponLimbo> {
+        self.phobos_super_weapon_limbo.get(&id.to_ascii_uppercase())
+    }
+
+    pub fn phobos_super_weapon_messages(
+        &self,
+        id: &str,
+    ) -> Option<&crate::rules::phobos_sw_messages::PhobosSuperWeaponMessages> {
+        self.phobos_super_weapon_messages
+            .get(&id.to_ascii_uppercase())
+    }
 }
 
 /// Source for the shared sound binder. Production uses the retained process

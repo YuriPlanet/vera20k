@@ -141,6 +141,7 @@ pub(crate) fn commit_prepared_load(
         house_roster: committed.map.house_roster().clone(),
         lighting_config: committed.map.lighting().clone(),
         lighting_events: None,
+        fresh_startup: false,
         theater_name,
         theater_ext,
     };
@@ -239,14 +240,16 @@ pub(crate) fn commit_prepared_load(
         .match_state
         .match_presentation
         .sidebar_projection
-        .model.restore_order(committed.details.sidebar_order);
+        .model
+        .restore_order(committed.details.sidebar_order);
 
     let owner = state.match_state.local_player_owner().map(str::to_owned);
     state
         .match_state
         .match_presentation
         .sidebar_projection
-        .model.restore_credits_counter(owner.as_deref(), committed.credits_counter);
+        .model
+        .restore_credits_counter(owner.as_deref(), committed.credits_counter);
     if let Some(owner) = owner {
         state
             .match_state

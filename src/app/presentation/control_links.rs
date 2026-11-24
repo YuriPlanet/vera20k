@@ -38,8 +38,6 @@ pub(crate) fn prepare(
     let mut managers: Vec<_> = last_visit.into_iter().collect();
     managers.sort_unstable_by_key(|&(_, (rank, _))| rank);
     let viewer = sim.session().current_house();
-    #[cfg(not(feature = "phobos"))]
-    let _ = viewer;
     let mut by_entity: std::collections::HashMap<u64, Vec<SurfaceStroke>> =
         std::collections::HashMap::new();
     for (controller, (_, after_entity)) in managers {
@@ -51,7 +49,6 @@ pub(crate) fn prepare(
             // Phobos `CaptureManagerClass_DrawLinkToVictim`: compare the
             // controller type's `MindControlLink.VisibleToHouse=` with the
             // local player's house (CurrentPlayer).
-            #[cfg(feature = "phobos")]
             if let Some(viewer) = viewer
                 && !crate::sim::combat::can_target_house(
                     link.visible_to,

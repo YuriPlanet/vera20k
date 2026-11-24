@@ -1,6 +1,6 @@
 # Optional Phobos projectile gravity
 
-Build with `--features phobos` to give a projectile its own ballistic gravity
+Phobos is in every build; turn it on from a game's data to give a projectile its own ballistic gravity
 in place of the global one.
 
 ```ini

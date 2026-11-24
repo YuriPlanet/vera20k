@@ -69,9 +69,7 @@ use crate::rules::gattling_type::GattlingStages;
 use crate::sim::combat::fire_error::FireError;
 
 /// `TechnoClass+0x140` stage, `+0x144` value, `+0x4B8` report latch.
-#[derive(
-    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct GattlingState {
     stage: i32,
     value: i32,
@@ -80,6 +78,35 @@ pub struct GattlingState {
     /// loop again.
     #[serde(skip)]
     report_latch: bool,
+    /// Phobos `TechnoExt::AccumulatedGattlingValue`: decay ticks accumulated
+    /// while `RateDown.Delay` holds the value back.
+    #[serde(default)]
+    rate_down_accumulated: i32,
+    /// Phobos `TechnoExt::ShouldUpdateGattlingValue`: false until the first
+    /// decay after a charge, so the delay applies to that first stretch.
+    #[serde(default)]
+    rate_down_should_update: bool,
+    /// Phobos `TechnoExt::LastTargetID`, `0xFFFFFFFF` while no target set the
+    /// reset. Only a `RateDown.Reset` reset writes it.
+    #[serde(default = "no_rate_down_target")]
+    rate_down_last_target: u32,
+}
+
+fn no_rate_down_target() -> u32 {
+    u32::MAX
+}
+
+impl Default for GattlingState {
+    fn default() -> Self {
+        Self {
+            stage: 0,
+            value: 0,
+            report_latch: false,
+            rate_down_accumulated: 0,
+            rate_down_should_update: false,
+            rate_down_last_target: u32::MAX,
+        }
+    }
 }
 
 /// What a charge did beyond the stage and value.
@@ -97,6 +124,17 @@ pub struct Increase {
 pub struct Report {
     pub weapon_index: i32,
     pub item: u32,
+}
+
+/// What a Phobos-delayed decay writes to the gattling value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RateDownWrite {
+    /// Still inside `RateDown.Delay` (or the delay is negative): leave the
+    /// value alone.
+    Skip,
+    /// Native zeroes the value when the decay amount is zero.
+    Zero,
+    Subtract(i32),
 }
 
 impl GattlingState {
@@ -145,11 +183,140 @@ impl GattlingState {
     /// stage's threshold. Unlike UpdateGattlingStage it leaves the loop and
     /// the latch alone and draws nothing.
     pub(crate) fn idle_decay(&mut self, table: &GattlingStages, elite: bool) {
-        self.decrease_value(table.rate_down());
+        self.idle_decay_with_write(table, elite, None);
+    }
+
+    /// [`Self::idle_decay`] under the Phobos `DecreaseValue` hook
+    /// (`0x70DE40`, `Hooks.Misc.cpp:652-692`): the accumulated decay ticks
+    /// wait out `RateDown.Delay` and use the cover rate at low ammo; the
+    /// stage test still runs every call.
+    pub(crate) fn idle_decay_phobos(
+        &mut self,
+        table: &GattlingStages,
+        elite: bool,
+        settings: &crate::rules::phobos_rate_down::PhobosRateDown,
+        ammo: i32,
+    ) {
+        let write = self.decrease_rate_down_write(settings, ammo, table.rate_down());
+        self.idle_decay_with_write(table, elite, Some(write));
+    }
+
+    fn idle_decay_with_write(
+        &mut self,
+        table: &GattlingStages,
+        elite: bool,
+        write: Option<RateDownWrite>,
+    ) {
+        match write {
+            None => self.decrease_value(table.rate_down()),
+            Some(write) => self.apply_rate_down_write(write),
+            Some(_) => {}
+        }
         let stage = self.stage;
         if stage > 0 && self.value < table.threshold(stage, elite) {
             self.set_stage(stage - 1);
         }
+    }
+
+    /// The `DecreaseValue` hook's write (`0x70DE40`): the hook adds one
+    /// accumulated tick per call, waits out `RateDown.Delay` while
+    /// `ShouldUpdateGattlingValue` is clear, then subtracts
+    /// `rateDown * remain` (the ticks past the delay) and clears the
+    /// accumulator.
+    fn decrease_rate_down_write(
+        &mut self,
+        settings: &crate::rules::phobos_rate_down::PhobosRateDown,
+        ammo: i32,
+        stock_rate: i32,
+    ) -> RateDownWrite {
+        if settings.delay < 0 {
+            return RateDownWrite::Skip;
+        }
+        self.rate_down_accumulated = self.rate_down_accumulated.wrapping_add(1);
+        let mut remain = self.rate_down_accumulated;
+        if !self.rate_down_should_update {
+            remain = remain.wrapping_sub(settings.delay);
+        }
+        if remain <= 0 {
+            return RateDownWrite::Skip;
+        }
+        self.rate_down_accumulated = 0;
+        self.rate_down_should_update = true;
+        let rate = settings.rate_down(stock_rate, ammo);
+        if rate == 0 {
+            return RateDownWrite::Zero;
+        }
+        RateDownWrite::Subtract(rate.wrapping_mul(remain))
+    }
+
+    /// The `UpdateGattlingStage` decay hook's write (`0x70E01E`): the same
+    /// delay over the call's `ticks`, with the type's stock rate (its own
+    /// `RateDown=`) as the default instead of the caller's value.
+    fn update_rate_down_write(
+        &mut self,
+        settings: &crate::rules::phobos_rate_down::PhobosRateDown,
+        ammo: i32,
+        ticks: i32,
+        stock_rate: i32,
+    ) -> RateDownWrite {
+        if settings.delay < 0 {
+            return RateDownWrite::Skip;
+        }
+        self.rate_down_accumulated = self.rate_down_accumulated.wrapping_add(ticks);
+        let mut remain = self.rate_down_accumulated;
+        if !self.rate_down_should_update {
+            remain = remain.wrapping_sub(settings.delay);
+        }
+        if remain <= 0 && ticks != 0 {
+            return RateDownWrite::Skip;
+        }
+        self.rate_down_accumulated = 0;
+        self.rate_down_should_update = true;
+        if ticks == 0 {
+            return RateDownWrite::Zero;
+        }
+        let rate = settings.rate_down(stock_rate, ammo);
+        if rate == 0 {
+            return RateDownWrite::Zero;
+        }
+        RateDownWrite::Subtract(rate.wrapping_mul(remain))
+    }
+
+    fn apply_rate_down_write(&mut self, write: RateDownWrite) {
+        match write {
+            RateDownWrite::Skip => {}
+            RateDownWrite::Zero => self.value = 0,
+            RateDownWrite::Subtract(step) => {
+                let value = self.value.wrapping_sub(step);
+                self.value = if value <= 0 { 0 } else { value };
+            }
+        }
+    }
+
+    /// Phobos `TechnoExt::UpdateGattlingRateDownReset` (`Body.Update.cpp:568`)
+    /// from the target setter: with `RateDown.Reset=yes`, a new, changed or
+    /// lost target zeroes the value, stage and decay accumulator. Returns
+    /// whether the stage changed so the caller can record the unmodelled
+    /// `GattlingRateDown(0)` side effect.
+    pub(crate) fn reset_rate_down(
+        &mut self,
+        settings: &crate::rules::phobos_rate_down::PhobosRateDown,
+        target_unique: Option<u32>,
+    ) -> bool {
+        if !settings.reset {
+            return false;
+        }
+        let key = target_unique.unwrap_or(u32::MAX);
+        if target_unique.is_some() && self.rate_down_last_target == key {
+            return false;
+        }
+        let old_stage = self.stage;
+        self.rate_down_last_target = key;
+        self.rate_down_accumulated = 0;
+        self.rate_down_should_update = false;
+        self.value = 0;
+        self.stage = 0;
+        old_stage != 0
     }
 
     /// `IncreaseGattlingStage(ticks) @ 0x0070DE70`.
@@ -182,6 +349,13 @@ impl GattlingState {
         mut stop: impl FnMut(&mut C),
         next_random: impl FnOnce(&mut C) -> u32,
     ) -> Increase {
+        // Phobos `TechnoClass_GattlingRateUp_GattlingRateDownReset`
+        // (`0x70DE70`, `Hooks.Misc.cpp:695-703`): every spin-up restarts the
+        // rate-down delay accumulator.
+        {
+            self.rate_down_accumulated = 0;
+            self.rate_down_should_update = false;
+        }
         let stages = table.weapon_stages();
         // The cap is tested before the add (`JGE`), against the value as
         // it was; the stage test below reads that same value.
@@ -254,6 +428,30 @@ impl GattlingState {
         released
     }
 
+    /// [`Self::update`] under the Phobos `UpdateGattlingStage` decay hook
+    /// (`0x70E01E`, `Hooks.Misc.cpp:703-745`): `Release` at `0x70E013`
+    /// precedes the hook, so the delay accumulator advances after the release
+    /// and latch clear; the stage test is the native body's.
+    pub(crate) fn update_phobos(
+        &mut self,
+        table: &GattlingStages,
+        elite: bool,
+        ticks: i32,
+        settings: &crate::rules::phobos_rate_down::PhobosRateDown,
+        ammo: i32,
+        release: impl FnOnce(),
+    ) -> bool {
+        let released = self.report_latch;
+        release();
+        self.report_latch = false;
+        let write = self.update_rate_down_write(settings, ammo, ticks, table.rate_down());
+        self.apply_rate_down_write(write);
+        if self.stage > 0 && self.value < table.threshold(self.stage, elite) {
+            self.stage -= 1;
+        }
+        released
+    }
+
     /// TechnoClass::Limbo's `+0x4A4` release and latch clear (`0x006F6C6B`,
     /// `0x006F6C76`). Returns the prior report latch; Release is unconditional.
     pub(crate) fn limbo(&mut self, release: impl FnOnce()) -> bool {
@@ -268,6 +466,7 @@ impl GattlingState {
             stage,
             value,
             report_latch,
+            ..Self::default()
         }
     }
 }
@@ -500,17 +699,32 @@ impl crate::sim::world::Simulation {
             return;
         };
         let elite = is_elite(entity);
+        let rate_down = obj.phobos_rate_down;
+        let ammo = entity.ammo().map_or(-1, |ammo| ammo.current());
         let mut state = entity.gattling;
-        state.update(&obj.gattling_stages, elite, ticks, || {
-            // Update70E013 reaches Release406060 before latch/value writes,
-            // including an already cleared handle. The sound owner validates
-            // Type0/stale handles. Source: gattling_loop.json's Unit release.
-            self.sound_events
-                .emit(crate::sim::world::SimSoundEvent::GattlingLoopRelease {
-                    owner: gattling_sound_owner(id),
-                });
-            frame_effects.flush_sound(self, rules);
-        });
+        if rules.phobos() {
+            state.update_phobos(&obj.gattling_stages, elite, ticks, &rate_down, ammo, || {
+                // Update70E013 reaches Release406060 before latch/value writes,
+                // including an already cleared handle. The sound owner validates
+                // Type0/stale handles. Source: gattling_loop.json's Unit release.
+                self.sound_events
+                    .emit(crate::sim::world::SimSoundEvent::GattlingLoopRelease {
+                        owner: gattling_sound_owner(id),
+                    });
+                frame_effects.flush_sound(self, rules);
+            });
+        } else {
+            state.update(&obj.gattling_stages, elite, ticks, || {
+                // Update70E013 reaches Release406060 before latch/value writes,
+                // including an already cleared handle. The sound owner validates
+                // Type0/stale handles. Source: gattling_loop.json's Unit release.
+                self.sound_events
+                    .emit(crate::sim::world::SimSoundEvent::GattlingLoopRelease {
+                        owner: gattling_sound_owner(id),
+                    });
+                frame_effects.flush_sound(self, rules);
+            });
+        }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.gattling = state;
         }
@@ -540,8 +754,52 @@ impl crate::sim::world::Simulation {
             entity.gattling = state;
         }
     }
+
+    /// Phobos `TechnoExt::UpdateGattlingRateDownReset`
+    /// (`Ext/Techno/Body.Update.cpp:568`) from `TechnoClass_SetTarget_After`
+    /// (`0x6FCF3E`, `Hooks.cpp:1164-1171`): a `RateDown.Reset=yes` gattling
+    /// that gains, changes or loses its target zeroes its value and stage.
+    /// RESIDUAL: the native `GattlingRateDown(0)` call for a changed stage
+    /// (`Ext/Techno/Body.Update.cpp:586`) has no modelled side effect (VERA
+    /// plays no per-stage sound here). A Cell or Terrain target has no VERA
+    /// unique id, so it reads as "lost" and resets on every set; gamemd
+    /// compares that target's own UniqueID.
+    pub(crate) fn apply_rate_down_target_reset(
+        &mut self,
+        id: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let Some(obj) = self.object_type(entity.type_ref(), rules) else {
+            return;
+        };
+        if !obj.is_gattling || !obj.phobos_rate_down.reset {
+            return;
+        }
+        let target_unique = match entity.attack_target.target() {
+            Some(crate::sim::combat::TargetKind::Entity(target)) => self
+                .substrate
+                .entities
+                .get(target)
+                .map(|target| target.native_unique_id() as u32),
+            _ => None,
+        };
+        let mut state = entity.gattling;
+        let stage_changed = state.reset_rate_down(&obj.phobos_rate_down, target_unique);
+        if let Some(entity) = self.substrate.entities.get_mut(id) {
+            entity.gattling = state;
+        }
+        // The residual above covers the native GattlingRateDown(0) call.
+        let _ = stage_changed;
+    }
 }
 
 #[cfg(all(test, tests_sim_combat_d_z))]
 #[path = "gattling_tests.rs"]
 mod tests;
+
+#[cfg(all(test, tests_sim_combat_d_z))]
+#[path = "gattling_rate_down_tests.rs"]
+mod rate_down_tests;

@@ -72,6 +72,7 @@ pub(crate) fn estimated_damage(inputs: &EstimateInputs) -> i32 {
         0,
         inputs.scenario_no_damage,
         inputs.max_damage,
+        false,
     )
 }
 

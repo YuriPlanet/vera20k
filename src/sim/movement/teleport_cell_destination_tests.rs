@@ -701,6 +701,7 @@ fn full_transport_arrival_replays_original_warp_in_refusal_tail() {
                 signed(&row["input"]["teleport_timer"][0]),
                 signed(&row["input"]["teleport_timer"][2]),
             ),
+            distance_leptons: 0,
         });
         // Fixture construction is not part of the executed native tail.
         import_rng(&mut sim, &row["rng_before"]);
@@ -774,6 +775,7 @@ fn chrono_epoch_expiry_matches_original_timer_check() {
             phase: super::TeleportPhase::ChronoDelay,
             destination: None,
             delay_timer: crate::sim::timer::CdTimer::from_raw(signed(&timer[0]), signed(&timer[2])),
+            distance_leptons: 0,
         });
         sim.process_teleport(id, &rules, &mut crate::sim::world::ObjectAiCtx::default());
         assert_eq!(

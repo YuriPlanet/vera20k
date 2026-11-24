@@ -142,13 +142,19 @@ impl Default for JumpjetParams {
 }
 
 impl JumpjetParams {
-    /// Parse the nine jumpjet parameters from a rules.ini section.
+    /// Parse the nine jumpjet parameters from a rules.ini section over the
+    /// stock `TechnoTypeClass::Constructor` literals.
+    pub fn from_ini_section(section: &IniSection) -> Self {
+        Self::from_ini_section_with(section, &Self::default())
+    }
+
+    /// Parse the nine jumpjet parameters from a rules.ini section over `ctor`,
+    /// the block `TechnoTypeClass::Constructor` stored just before the reads.
     ///
     /// gamemd-derived: `TechnoTypeClass::ReadINI` @ `0x00715020`-`0x007151DF`,
     /// one unconditional read per key over the constructor seed. Called for
     /// every section, jumpjet or not, exactly as the native run is.
-    pub fn from_ini_section(section: &IniSection) -> Self {
-        let ctor = Self::default();
+    pub fn from_ini_section_with(section: &IniSection, ctor: &Self) -> Self {
         Self {
             // `0x007150AF PUSH 0x8436D0` -> `0x007150C3 MOV [EBP+0xD70],EAX`.
             // Stock spells this `JumpJetTurnRate=`, which gamemd cannot see, so
@@ -157,7 +163,9 @@ impl JumpjetParams {
             // `0x007150D0 PUSH 0x8436C0` -> `0x007150E4 MOV [EBP+0xD74],EAX`:
             // ReadInt, so a fractional `JumpjetSpeed=16.5` reads as 16.
             // Saturating: SimFixed holds +-32767, ReadInt the full i32.
-            speed: SimFixed::saturating_from_num(section.read_int("JumpjetSpeed", CTOR_SPEED)),
+            speed: SimFixed::saturating_from_num(
+                section.read_int("JumpjetSpeed", ctor.speed.to_num::<i32>()),
+            ),
             // `0x007150F8 PUSH 0x8436B0` -> `0x0071510A FSTP [EBP+0xD78]`.
             climb: section.read_float("JumpjetClimb", ctor.climb),
             // `0x0071511E PUSH 0x8436A0` -> `0x00715130 FSTP [EBP+0xD7C]`.
@@ -173,6 +181,90 @@ impl JumpjetParams {
             deviation: section.read_int("JumpjetDeviation", ctor.deviation),
             // `0x007151AC PUSH 0x84365C` -> `0x007151BE MOV [EBP+0xD8C],AL`.
             no_wobbles: section.read_bool("JumpjetNoWobbles", ctor.no_wobbles),
+        }
+    }
+
+    /// Phobos `TechnoTypeClass_CTOR_JumpjetControls` (`Ext/Rules/Body.cpp:1325`,
+    /// hook `0x7115AE`, returns `0x711601`): the constructor stores these seeds
+    /// instead of its own literals — seven from the stock `RulesClass` jumpjet
+    /// block and the two Phobos-only `[JumpjetControls]` keys. The casts are
+    /// the hook's `static_cast<float>` of the `RulesClass` doubles.
+    pub fn from_controls(
+        controls: &JumpjetControls,
+        globals: &crate::rules::phobos_globals::PhobosGlobals,
+    ) -> Self {
+        Self {
+            turn_rate: controls.turn_rate,
+            speed: SimFixed::from_num(controls.speed),
+            climb: controls.climb as f32,
+            crash: f64::from_bits(globals.jumpjet_crash.bits()) as f32,
+            height: controls.cruise_height,
+            accel: controls.acceleration as f32,
+            wobbles: controls.wobbles_per_second as f32,
+            no_wobbles: globals.jumpjet_no_wobbles,
+            deviation: controls.wobble_deviation,
+        }
+    }
+}
+
+/// The stock `RulesClass` jumpjet block, `Rules+0x40C`..`+0x438`: read from
+/// `[JumpjetControls]` by `ReadJumpjetControls @ 0x006743D0` (the section gate
+/// `0x526810`, then the seven reads below) and seeded by the `RulesClass`
+/// constructor at `0x00665C16`-`0x00665C69`. Stock YR keeps these only for
+/// these Rules fields; Phobos' constructor hook above is what makes them the
+/// jumpjet defaults of every `TechnoType` again.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct JumpjetControls {
+    /// `[JumpjetControls] TurnRate=` (`+0x40C`, `0x006743F2`; ctor **3**,
+    /// `0x00665C16`).
+    pub turn_rate: i32,
+    /// `[JumpjetControls] Speed=` (`+0x410`, `0x00674412`; ctor **30**,
+    /// `0x00665C20`).
+    pub speed: i32,
+    /// `[JumpjetControls] Climb=` (`+0x418`, double, `0x00674444`; ctor
+    /// **5.0** — `0x40140000`, `0x00665C2A`).
+    pub climb: f64,
+    /// `[JumpjetControls] CruiseHeight=` (`+0x420`, `0x00674467`; ctor **400**,
+    /// `0x00665C3A`).
+    pub cruise_height: i32,
+    /// `[JumpjetControls] Acceleration=` (`+0x428`, double, `0x0067448B`;
+    /// ctor **0.25** — `0x3FD00000`, `0x00665C44`).
+    pub acceleration: f64,
+    /// `[JumpjetControls] WobblesPerSecond=` (`+0x430`, double, `0x006744B1`;
+    /// ctor **0.25**, `0x00665C5C`).
+    pub wobbles_per_second: f64,
+    /// `[JumpjetControls] WobbleDeviation=` (`+0x438`, `0x006744D1`; ctor
+    /// **40**, `0x00665C69`).
+    pub wobble_deviation: i32,
+}
+
+impl Default for JumpjetControls {
+    fn default() -> Self {
+        Self {
+            turn_rate: 3,
+            speed: 30,
+            climb: 5.0,
+            cruise_height: 400,
+            acceleration: 0.25,
+            wobbles_per_second: 0.25,
+            wobble_deviation: 40,
+        }
+    }
+}
+
+impl JumpjetControls {
+    /// gamemd-derived: `ReadJumpjetControls @ 0x006743D0`, one read per Rules
+    /// field in the binary's order, each over the constructor's value.
+    pub fn from_ini_section(section: &IniSection) -> Self {
+        let ctor = Self::default();
+        Self {
+            turn_rate: section.read_int("TurnRate", ctor.turn_rate),
+            speed: section.read_int("Speed", ctor.speed),
+            climb: section.read_double("Climb", ctor.climb),
+            cruise_height: section.read_int("CruiseHeight", ctor.cruise_height),
+            acceleration: section.read_double("Acceleration", ctor.acceleration),
+            wobbles_per_second: section.read_double("WobblesPerSecond", ctor.wobbles_per_second),
+            wobble_deviation: section.read_int("WobbleDeviation", ctor.wobble_deviation),
         }
     }
 }
@@ -200,7 +292,6 @@ impl JumpjetOverride {
     /// native read order. `Nullable<int>` uses `ReadInteger`, `Nullable<float>`
     /// uses `read<float>` over `Parser<double>` (binary32 result), and
     /// `Nullable<bool>` uses `ReadBool`.
-    #[cfg(feature = "phobos")]
     pub fn from_section(section: &IniSection) -> Self {
         let read_f32 = |key: &str, current: Option<f32>| {
             section
@@ -317,7 +408,6 @@ mod tests {
         assert_eq!(params.height, 750);
     }
 
-    #[cfg(feature = "phobos")]
     #[test]
     fn warhead_jumpjet_overrides_read() {
         let ini = IniFile::from_str(
@@ -346,5 +436,93 @@ mod tests {
             JumpjetOverride::from_section(ini.section("RESET").unwrap()).speed,
             None
         );
+    }
+
+    /// `ReadJumpjetControls @ 0x006743D0`: the seven `[JumpjetControls]` Rules
+    /// reads over the `RulesClass` constructor's seeds
+    /// (`0x00665C16`-`0x00665C69`).
+    #[test]
+    fn jumpjet_controls_read_the_section_over_the_constructor() {
+        let defaults = JumpjetControls::default();
+        assert_eq!(defaults.turn_rate, 3);
+        assert_eq!(defaults.speed, 30);
+        assert_eq!(defaults.climb, 5.0);
+        assert_eq!(defaults.cruise_height, 400);
+        assert_eq!(defaults.acceleration, 0.25);
+        assert_eq!(defaults.wobbles_per_second, 0.25);
+        assert_eq!(defaults.wobble_deviation, 40);
+
+        let ini = IniFile::from_str(
+            "[JumpjetControls]\nTurnRate=6\nSpeed=20\nClimb=9\nCruiseHeight=700\n\
+             Acceleration=3.5\nWobblesPerSecond=0.4\nWobbleDeviation=55\n",
+        );
+        let controls = JumpjetControls::from_ini_section(ini.section("JumpjetControls").unwrap());
+        assert_eq!(controls.turn_rate, 6);
+        assert_eq!(controls.speed, 20);
+        assert_eq!(controls.climb, 9.0);
+        assert_eq!(controls.cruise_height, 700);
+        assert_eq!(controls.acceleration, 3.5);
+        assert_eq!(controls.wobbles_per_second, f64::from(0.4f32));
+        assert_eq!(controls.wobble_deviation, 55);
+    }
+
+    /// Phobos `TechnoTypeClass_CTOR_JumpjetControls` (`0x7115AE`): every
+    /// techno type starts from the `[JumpjetControls]` block plus the two
+    /// Phobos-only keys, and its own authored key still wins.
+    #[test]
+    fn the_phobos_constructor_reseeds_from_the_section() {
+        use crate::rules::ruleset::RuleSet;
+
+        let ini = IniFile::from_str(
+            "[JumpjetControls]\nTurnRate=6\nSpeed=20\nClimb=9\nCruiseHeight=700\n\
+             Acceleration=3.5\nWobblesPerSecond=0.4\nWobbleDeviation=55\n\
+             Crash=7\nNoWobbles=yes\n\
+             [VehicleTypes]\n0=ZEP\n[ZEP]\nStrength=100\n",
+        );
+        let rules = RuleSet::from_ini(&ini).expect("jumpjet controls fixture");
+        let params = &rules.object("ZEP").expect("ZEP").jumpjet_params;
+        assert_eq!(params.turn_rate, 6);
+        assert_eq!(params.speed, SimFixed::from_num(20));
+        assert_eq!(params.climb, 9.0);
+        assert_eq!(params.crash, 7.0);
+        assert_eq!(params.height, 700);
+        assert_eq!(params.accel, 3.5);
+        assert_eq!(params.wobbles, 0.4);
+        assert!(params.no_wobbles);
+        assert_eq!(params.deviation, 55);
+
+        let ini = IniFile::from_str(
+            "[JumpjetControls]\nSpeed=20\n[VehicleTypes]\n0=ZEP\n\
+             [ZEP]\nStrength=100\nJumpjetSpeed=9\n",
+        );
+        let rules = RuleSet::from_ini(&ini).expect("authored fixture");
+        assert_eq!(
+            rules.object("ZEP").expect("ZEP").jumpjet_params.speed,
+            SimFixed::from_num(9),
+            "an authored `JumpjetSpeed=` overrides the re-seeded constructor"
+        );
+    }
+
+    /// Without Phobos the constructor keeps its own literals: the section is
+    /// read into the Rules block, but the techno types never consult it.
+    /// A build carries Phobos, and the switch cannot be read before this
+    /// projection seeds the constructor, so the reseed always runs here for
+    /// now; retail `[JumpjetControls]` equals the literals, so only synthetic
+    /// stock data can tell the two apart.
+    #[ignore = "Phobos is in every build; the constructor reseed runs before the switch is known"]
+    #[test]
+    fn the_stock_constructor_keeps_its_literals() {
+        use crate::rules::ruleset::RuleSet;
+
+        let ini = IniFile::from_str(
+            "[JumpjetControls]\nSpeed=20\nClimb=9\nCrash=7\nNoWobbles=yes\n\
+             [VehicleTypes]\n0=ZEP\n[ZEP]\nStrength=100\n",
+        );
+        let rules = RuleSet::from_ini(&ini).expect("stock fixture");
+        let params = &rules.object("ZEP").expect("ZEP").jumpjet_params;
+        assert_eq!(params.speed, SimFixed::from_num(CTOR_SPEED));
+        assert_eq!(params.climb, CTOR_CLIMB);
+        assert_eq!(params.crash, CTOR_CRASH);
+        assert!(!params.no_wobbles);
     }
 }

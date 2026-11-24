@@ -46,7 +46,7 @@ mod disk_laser_tests;
 #[cfg(test)] // shared by test groups
 pub(crate) mod entry_test_fixture;
 mod frame_channel;
-mod frame_effects;
+pub(crate) mod frame_effects;
 mod ice;
 mod idle_sleep;
 #[cfg(all(test, tests_sim_world_c_o))]
@@ -154,6 +154,7 @@ pub(crate) use world_orders::VehicleCaptureOutcome;
 pub use world_orders::{ControlProjection, InfantryHealAction};
 pub use world_orders::{EntryBaseAction, EntryClickAction};
 mod fog_objects;
+pub(crate) mod phobos_trajectory;
 mod projectile_collision;
 mod shroud_refresh;
 mod substrate;
@@ -267,6 +268,7 @@ pub(in crate::sim) mod voxel_meteor_tests;
 mod voxel_water_expiry_tests;
 
 pub(crate) use crash::CrashLatch;
+pub use display_registry::entity_is_underground;
 pub(crate) use display_registry::entity_layer;
 pub use lifecycle::LifecycleOutput;
 pub(crate) use lifecycle::object_get_coords_cell;
@@ -323,7 +325,6 @@ use crate::sim::pathfinding::zone_incremental::{
     PackedZoneCoord, ZoneRepairKind, repair_zone_cell,
 };
 use crate::sim::pathfinding::zone_map::ZoneGrid;
-#[cfg(test)]
 use crate::sim::power_system;
 use crate::sim::production::{self, ProductionState};
 use crate::sim::projectile::{
@@ -559,6 +560,7 @@ mod sim_state_access;
 pub use sim_events::AllianceEva;
 pub use sim_events::AresTechCaptureLines;
 pub use sim_events::AresUnitLostLine;
+pub use sim_events::CombatAlertVoice;
 #[cfg(any(test, feature = "test-support"))]
 pub use sim_events::FireOriginSnapshot;
 pub use sim_events::SimFireEvent;
@@ -652,9 +654,25 @@ pub struct Simulation {
     /// Phobos `WarheadTypeExt::Reflected`: the warhead whose own damage is
     /// being reflected right now, so a reflected hit never reflects again.
     /// Synchronous, never saved or hashed.
-    #[cfg(feature = "phobos")]
     #[serde(skip, default)]
     pub(crate) reflected_warhead: Option<crate::sim::intern::InternedId>,
+    /// Phobos `ScenarioExt::Global()->FallingDownTracker`
+    /// (`Ext/Techno/Hooks.cpp:1654-1702`, hooks `0x5F4160`, `0x5F5965`,
+    /// `0x5F3F86`): Technos that started a bomb fall or a paradrop, in
+    /// `AddUnique` order. A derived targeting cache: not saved or hashed.
+    /// Live membership is `is_falling_down`; the scan filters ended falls.
+    #[serde(skip, default)]
+    pub(crate) phobos_falling_down: Vec<u64>,
+    /// Phobos `ScenarioExt::AutoDeathObjects`
+    /// (`Ext/Scenario/Body.cpp:101-134`): Technos whose type sets
+    /// `AutoDeath.Behavior=` and which Ares creates into limbo, in
+    /// `RegisterAutoDeath` order. The entries are ids, not pointers: native
+    /// holds the TechnoExt, which VERA has no separate object for. Saved with
+    /// the scenario (`:181`) and hashed; the per-frame sweep
+    /// (`UpdateAutoDeathObjectsInLimbo`) is the only visit a limboed object
+    /// gets. See `sim::auto_death`.
+    #[serde(default)]
+    pub(crate) auto_death_objects: Vec<u64>,
     /// Ares CanMakeStuffUp's RulesClass writes (100677B0, hook 0x687C16),
     /// drawn once at scenario start; saved and hashed. See
     /// `sim::ares_make_stuff_up`.
@@ -806,9 +824,13 @@ pub struct Simulation {
     #[serde(default)]
     pub(crate) projectiles: crate::sim::projectile::ProjectileStore,
     /// Phobos per-warhead-type animation creation counters.
-    #[cfg(feature = "phobos")]
     #[serde(default)]
     pub(crate) warhead_anim_runtime: crate::sim::warhead_anim::WarheadAnimRuntime,
+    /// Phobos `WarheadTypeExt::WasDetonatedOnAllMapObjects`: the reentrancy
+    /// guard for the `0x4690C1` whole-map pass, held per warhead type. Set and
+    /// cleared inside one synchronous detonation; never set between frames.
+    #[serde(default)]
+    pub(crate) phobos_all_map_detonation_active: Option<InternedId>,
     /// Persistent WaveClass registrations. They have their own logic lifetime;
     /// this is not a one-frame weapon-fire presentation list.
     pub(crate) waves: crate::sim::wave::WaveStore,
@@ -886,6 +908,12 @@ pub struct Simulation {
     /// the current one, skipping cells already current.
     #[serde(skip)]
     structure_navigation_cells: BTreeSet<(u16, u16)>,
+    /// Derived cache: the base foundation cells of marked Phobos
+    /// `IsDestroyableObstacle` buildings, whose cell class is Destroyable.
+    /// Source of truth is the marked structures; a full navigation rebuild
+    /// derives it and reconciles the terrain classes against this set.
+    #[serde(skip)]
+    destroyable_obstacle_cells: BTreeSet<(u16, u16)>,
     #[serde(skip)]
     pub(crate) resolved_terrain: Option<ResolvedTerrainGrid>,
     /// Process-global MapClass fallback CellClass identity. Native owns this at
@@ -1018,6 +1046,17 @@ pub struct Simulation {
     /// Saved, never hashed.
     #[serde(default)]
     alpha_shapes: alpha_shape::AlphaShapes,
+    /// `0x48A444` sets and `0x48A47E` clears the light-flash mark a
+    /// `WH.Particle` system spawns its AlphaImage under. It is a transient
+    /// register, not saved state, and it is only read while a particle
+    /// reveal is inside that window.
+    particle_light_flash: bool,
+    /// `ScenarioExt::Global()->FiringAnimUpdateCount`
+    /// (`Ext/Anim/Body.cpp:25`, `Hooks.cpp:731`): how many anims still owe a
+    /// per-frame `UpdateAsFiringAnim`. Saved with the scenario
+    /// (`Ext/Scenario/Body.cpp:195`).
+    #[serde(default)]
+    pub(crate) firing_anim_update_count: u32,
     /// Per-cell terrain speed modifier config (slope climb/descend).
     /// Built from [General] rules at map load.
     #[serde(skip)]
@@ -1085,9 +1124,19 @@ pub struct Simulation {
     /// events. Transient admission context, not gameplay or saved state.
     #[serde(skip)]
     replaying_recorded_commands: bool,
+    /// Phobos `SW.Next`/`SW.Link` tail recursion depth. Transient: it only
+    /// stops a cyclic chain (native would recurse to stack exhaustion) and is
+    /// zero outside a launch. Not saved or hashed.
+    #[serde(skip)]
+    pub(crate) super_weapon_chain_depth: crate::sim::superweapon::ChainDepth,
     /// Serialized map trigger state, initialized and mutated by trigger_runtime.
     /// Remains installed while actions call other Simulation mechanisms.
     pub(crate) trigger_runtime: TriggerRuntime,
+    /// Phobos `ScenarioExt::TransportReloaders` (`Ext/Scenario/Body.h:34`):
+    /// passengers reloaded by the pre-Logic pass while inside a transport, in
+    /// boarding order. Saved (`Ext/Scenario/Body.cpp:182`) and hashed.
+    #[serde(default)]
+    pub(crate) transport_reloaders: crate::sim::passenger::TransportReloaderQueue,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -1457,11 +1506,214 @@ pub enum SnapshotProcessState<'a> {
     Cold(&'a MainRng),
 }
 
+impl Simulation {
+    /// Phobos `FallingDownTracker::AddUnique`
+    /// (`Ext/Techno/Hooks.cpp:1656-1686`, hooks `0x5F4160`, `0x5F5965`).
+    pub(crate) fn phobos_track_falling_down(&mut self, stable_id: u64) {
+        if !self.phobos_falling_down.contains(&stable_id) {
+            self.phobos_falling_down.push(stable_id);
+        }
+    }
+
+    /// Live entries of the falling tracker, in `AddUnique` order. Native
+    /// `ObjectClass_Update_Track` (`0x5F3F86`) removes a landed object; VERA
+    /// keeps [`GameEntity::finish_fall`] free of `Simulation` and filters the
+    /// ended falls here instead. An empty list after a save load rebuilds the
+    /// cache from the entity flags, in entity-store order.
+    pub(crate) fn phobos_falling_down_candidates(&self) -> Vec<u64> {
+        let tracked: Vec<u64> = if self.phobos_falling_down.is_empty() {
+            self.substrate
+                .entities
+                .values()
+                .filter(|entity| entity.is_falling_down())
+                .map(|entity| entity.stable_id())
+                .collect()
+        } else {
+            self.phobos_falling_down.clone()
+        };
+        tracked
+            .into_iter()
+            .filter(|id| {
+                self.substrate
+                    .entities
+                    .get(*id)
+                    .is_some_and(|entity| entity.is_falling_down())
+            })
+            .collect()
+    }
+
+    /// Commit a trajectory's direct warhead damage
+    /// (`StraightTrajectory::ProximityDirect`, `TechnoClass::ReceiveDamage`)
+    /// through the shared entity receiver transaction.
+    pub(crate) fn commit_direct_damage_events(
+        &mut self,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        events: &[crate::sim::combat::EntityDamageEvent],
+        mut frame_effects: FrameEffects<'_>,
+    ) -> bool {
+        if events.is_empty() {
+            return false;
+        }
+        let receivers = events
+            .iter()
+            .copied()
+            .map(crate::sim::combat::combat_aoe::AreaDamageReceiver::Entity)
+            .collect::<Vec<_>>();
+        self.commit_noncombat_aoe_receivers(
+            rules,
+            overlay_registry,
+            &receivers,
+            &mut frame_effects,
+        )
+        .bridge_state_changed
+    }
+
+    /// Phobos cameo tooltip power readout (`Misc/PhobosToolTip.cpp:68-101`)
+    /// for `object` as `owner` would build it.
+    pub fn cameo_power_delta(
+        &self,
+        rules: &RuleSet,
+        owner: InternedId,
+        object: &ObjectType,
+    ) -> i32 {
+        let Some(house) = self.houses.get(&owner) else {
+            return 0;
+        };
+        power_system::cameo_power_delta(
+            &self.substrate.entities,
+            house.base_projection().buildings(),
+            rules,
+            &self.interner,
+            owner,
+            object,
+        )
+    }
+
+    /// Phobos `ObjectClass_Unlimbo_Parachuted_Wrapper`
+    /// (`Ext/Bullet/Hooks.cpp:573-583`, replacing the Bullet's Unlimbo at
+    /// `0x468684`) and its canopy hook (`:585-608`, `0x5F5A62`): a
+    /// `Parachuted=` BulletType is born under its canopy at the Fire
+    /// coordinate instead of flying. The bullet's velocity is cleared
+    /// (`Hooks.Obstacles.cpp:136-142`) and its `ParabombFallRate` starts at 0;
+    /// the `BombParachute=` AnimType (else `[General] BombParachute`) is
+    /// constructed there and remapped to the firing House.
+    pub(crate) fn init_parabomb(&mut self, id: u64, rules: &RuleSet) {
+        let Some((keys, origin, source_id)) = self.projectiles.get(id).and_then(|projectile| {
+            let kind = projectile
+                .payload()
+                .projectile_type()
+                .and_then(|id| rules.projectile(self.interner.resolve(id)))?;
+            Some((
+                kind.phobos_parabomb.clone(),
+                projectile.launch_origin(),
+                projectile.source_id(),
+            ))
+        }) else {
+            return;
+        };
+        if !keys.parachuted {
+            return;
+        }
+        self.projectiles.begin_parabomb(
+            id,
+            crate::sim::projectile::ParabombState {
+                accumulated_rate: 0,
+                fall_rate_step: keys.fall_rate,
+                max_fall_rate: keys.max_fall_rate(rules.general.parachute_max_fall_rate),
+            },
+        );
+        let canopy = keys
+            .bomb_parachute
+            .or_else(|| rules.general.bomb_parachute.clone());
+        if let Some(canopy) = canopy {
+            self.spawn_parabomb_canopy(rules, &canopy, origin, source_id);
+        }
+    }
+
+    /// The `BombParachute` AnimClass construction (`Ext/Bullet/Hooks.cpp:585-608`):
+    /// `GameCreate<AnimClass>(pAnimType, coords)` at the spawn coordinate, its
+    /// owner the bullet Owner's House (or the retained `BulletExt::FirerHouse`)
+    /// and the Anim remapped to that House's colour scheme.
+    fn spawn_parabomb_canopy(
+        &mut self,
+        rules: &RuleSet,
+        canopy: &str,
+        coord: crate::sim::projectile::ProjectileCoord,
+        source_id: u64,
+    ) {
+        let type_name = self.interner.intern(canopy);
+        let world = crate::sim::anim_class::AnimWorldCoord {
+            x: coord.x,
+            y: coord.y,
+            z: coord.z,
+        };
+        let (rx, ry, sub_x, sub_y, level) = world.to_cell_sub_z();
+        let descriptor = crate::sim::components::AnimClassSpawnDescriptor {
+            delay: 0,
+            loop_count: 1,
+            draw_flags: 0x600,
+            z_adjust: 0,
+            reverse: false,
+            owner: None,
+            ..crate::sim::components::AnimClassSpawnDescriptor::new(
+                type_name, rx, ry, sub_x, sub_y, level,
+            )
+        };
+        match self.spawn_anim_at_world(rules, descriptor, world) {
+            Ok(anim_id) => {
+                let house = self
+                    .substrate
+                    .entities
+                    .get(source_id)
+                    .map(|owner| owner.owner());
+                if let Some(house) = house {
+                    self.substrate.anims.set_anim_house_remap(anim_id, house);
+                }
+            }
+            // An art type that never bound draws nothing natively either.
+            Err(error) => log::debug!("bomb parachute anim did not construct: {error}"),
+        }
+    }
+}
+
 impl ObjectSubstrate {
     /// Legacy non-lifecycle contact scrub retained only for separately classified
     /// failure paths. Reveal/Conceal/UnInit must use synchronous radio authority.
     pub(crate) fn clear_radio_contacts_for(&mut self, stable_id: u64) {
         self.entities.clear_radio_contacts_for(stable_id);
+    }
+
+    /// Phobos `AnimExt::SetInvoker` (`Ext/Anim/Body.cpp:28-45`): store the
+    /// invoker Techno and its House through the animation instance owner.
+    pub(crate) fn set_anim_invoker(
+        &mut self,
+        id: u64,
+        invoker: Option<u64>,
+        house: Option<InternedId>,
+    ) -> bool {
+        let Some(anim) = self.anims.get_mut(id) else {
+            return false;
+        };
+        anim.set_invoker(invoker, house);
+        true
+    }
+
+    /// Phobos `AnimTypeExt::ProcessDestroyAnims`' death-unit facts
+    /// (`Ext/AnimType/Body.cpp:55-70`), consumed by the anim's `CreateUnit`.
+    pub(crate) fn set_anim_death_facts(
+        &mut self,
+        id: u64,
+        from_death_unit: bool,
+        facing: Option<u8>,
+        has_turret: bool,
+        turret_facing: Option<u8>,
+    ) -> bool {
+        let Some(anim) = self.anims.get_mut(id) else {
+            return false;
+        };
+        anim.set_death_facts(from_death_unit, facing, has_turret, turret_facing);
+        true
     }
 }
 
@@ -1671,6 +1923,13 @@ mod radiation_overlap_tests;
 #[cfg(all(test, tests_sim_world_a_b))]
 mod building_occupant_storage_tests;
 
+#[cfg(all(test, tests_sim_world_p_s))]
+#[path = "phobos_no_manual_move_tests.rs"]
+mod phobos_no_manual_move_tests;
+
+#[cfg(all(test, tests_sim_world_p_s))]
+#[path = "phobos_factory_plant_tests.rs"]
+mod phobos_factory_plant_tests;
 /// The parts of the world its presentation copy takes only where they changed
 /// ([`Simulation::presentation_copy`]).
 #[derive(Default)]

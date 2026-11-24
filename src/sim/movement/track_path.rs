@@ -1919,6 +1919,8 @@ impl Simulation {
             (_, crate::sim::combat::TargetKind::Entity(target)) => {
                 nav_com == NavTargetRef::object(target)
             }
+            // A bullet target is never a nav destination.
+            (_, crate::sim::combat::TargetKind::Bullet(..)) => false,
         };
         let keeps = leads_to_target
             || super::turret::facing_toward_target(actor, &target, self).is_some_and(|direction| {

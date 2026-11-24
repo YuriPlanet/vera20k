@@ -9,6 +9,7 @@
 use crate::rules::object_type::ObjectType;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::base_plan::pack_base_plan_cell;
 use crate::sim::intern::InternedId;
 use crate::sim::world::{FrameEffects, Simulation};
 
@@ -25,6 +26,32 @@ pub(crate) fn linked_overlay_id(
         .flags(overlay_id)
         .is_some_and(|flags| flags.wall)
         .then_some(overlay_id)
+}
+
+/// `0x005887C1`/`0x005885D1` with `AINodeWallsOnly`: before the fill call has
+/// placed a wall, the direction's first cell must be one of the house's base
+/// nodes of that wall type (`MapCoords == cell`, `BuildingTypeIndex ==
+/// pType->ArrayIndex`).
+fn first_cell_is_node(
+    sim: &Simulation,
+    owner: InternedId,
+    origin: (u16, u16),
+    direction: (i32, i32),
+    wall_type_index: i32,
+) -> bool {
+    let Some(house) = sim.houses.get(&owner) else {
+        return false;
+    };
+    let (x, y) = (
+        i32::from(origin.0) + direction.0,
+        i32::from(origin.1) + direction.1,
+    );
+    let packed = pack_base_plan_cell(x, y);
+    house
+        .base_plan()
+        .nodes()
+        .iter()
+        .any(|node| node.type_or_control == wall_type_index && node.packed_cell == packed)
 }
 
 /// Scan one regular-wall direction.
@@ -45,6 +72,7 @@ fn scan_autofill_direction(
     owner: InternedId,
     overlay_id: u8,
     direction: (i32, i32),
+    require_base_node: bool,
     native_cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> Vec<(u16, u16)> {
     let limit = object_type
@@ -53,6 +81,17 @@ fn scan_autofill_direction(
         .unwrap_or(0)
         .max(0) as usize;
     if limit == 0 {
+        return Vec::new();
+    }
+    if require_base_node
+        && !first_cell_is_node(
+            sim,
+            owner,
+            origin,
+            direction,
+            object_type.base_plan_type_index,
+        )
+    {
         return Vec::new();
     }
     let (Some(grid), Some(terrain)) = (sim.overlay_grid.as_ref(), sim.resolved_terrain.as_ref())
@@ -118,6 +157,7 @@ pub(super) fn autofill_cells(
             owner,
             overlay_id,
             direction,
+            false,
             native_cells,
         ));
     }
@@ -140,6 +180,13 @@ pub(crate) fn autofill_walls(
     let Some(overlay_id) = linked_overlay_id(object_type, registry) else {
         return;
     };
+    let policy = sim.session.rule_policy();
+    let node_gate = rules.phobos_globals.ai_node_walls_only
+        && sim
+            .houses
+            .get(&owner)
+            .is_some_and(|house| !house.is_controlled_by_human(policy));
+    let mut placed_any = false;
     for direction in CARDINAL_DIRECTIONS {
         let gap = scan_autofill_direction(
             sim,
@@ -150,6 +197,7 @@ pub(crate) fn autofill_walls(
             owner,
             overlay_id,
             direction,
+            node_gate && !placed_any,
             None,
         );
         for (rx, ry) in gap {
@@ -169,19 +217,24 @@ pub(crate) fn autofill_walls(
             };
             //58890C ignores failure and keeps that alive-limbo constructor.
             //Requested Z is literal0, independent of the cell's terrain level.
-            let _ = sim.reveal_constructed_object_at_coord_with_overlay_context(
-                filler,
-                crate::sim::components::DriveCoord {
-                    x: i32::from(rx).wrapping_mul(256).wrapping_add(128),
-                    y: i32::from(ry).wrapping_mul(256).wrapping_add(128),
-                    z: 0,
-                },
-                0,
-                crate::sim::world::PlacementEvidence::EvaluateMark,
-                rules,
-                Some(registry),
-                effects,
-            );
+            if sim
+                .reveal_constructed_object_at_coord_with_overlay_context(
+                    filler,
+                    crate::sim::components::DriveCoord {
+                        x: i32::from(rx).wrapping_mul(256).wrapping_add(128),
+                        y: i32::from(ry).wrapping_mul(256).wrapping_add(128),
+                        z: 0,
+                    },
+                    0,
+                    crate::sim::world::PlacementEvidence::EvaluateMark,
+                    rules,
+                    Some(registry),
+                    effects,
+                )
+                .is_some()
+            {
+                placed_any = true;
+            }
         }
     }
 }

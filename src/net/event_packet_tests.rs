@@ -215,6 +215,45 @@ fn targeted_event_has_the_same_meaning_in_local_mirror_and_received_packet() {
 }
 
 #[test]
+fn player_auto_repair_event_has_the_same_meaning_in_local_mirror_and_received_packet() {
+    use crate::sim::command::{PlayerAutoRepairRecord, VERA_PLAYER_AUTO_REPAIR_OPCODE};
+    let header = FrameInfo {
+        house_id: 1,
+        event_frame: 42,
+        checksum: 0,
+        timing_word: 0,
+        delay: 0,
+    };
+    for enabled in [false, true] {
+        let source = PlayerAutoRepairRecord {
+            house_id: 1,
+            frame: 42,
+            enabled,
+        }
+        .encode()
+        .unwrap();
+        let packet = EventPacketCodec::default()
+            .encode_packet(&[&source], header, 42, NATIVE_EVENT_PACKET_CAPACITY)
+            .unwrap();
+        assert_eq!(packet.blocked, None);
+        assert_eq!(packet.bytes[HEADER_LEN], VERA_PLAYER_AUTO_REPAIR_OPCODE);
+        assert_eq!(packet.bytes[HEADER_LEN + 1], u8::from(enabled));
+        let local = PlayerAutoRepairRecord::decode(&packet.mirrors[0]).unwrap();
+        let mut remote = None;
+        EventPacketCodec::default()
+            .decode_packet(&packet.bytes, |record| {
+                if let Some(decoded) = PlayerAutoRepairRecord::decode(&record) {
+                    remote = Some(decoded);
+                }
+                true
+            })
+            .unwrap();
+        assert_eq!(local.enabled, enabled);
+        assert_eq!(remote, Some(local));
+    }
+}
+
+#[test]
 fn original_truncated_and_full_admission_keep_the_accepted_prefix() {
     let controls = corpus();
     for receive in controls.receives {

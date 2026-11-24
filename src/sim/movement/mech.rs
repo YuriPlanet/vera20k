@@ -169,6 +169,8 @@ impl Simulation {
         let adjusted = super::foot_speed::adjusted_speed(
             actor,
             self.interner.object_type(actor.type_ref(), rules),
+            rules,
+            &self.interner,
             rules.general.veteran_speed,
             &self.houses,
         );

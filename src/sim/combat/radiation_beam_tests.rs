@@ -311,7 +311,7 @@ fn assert_selected_inputs(rules: &RuleSet, actor: &str, type_fields: &Value, exp
         <[i32; 3]>::from(object.weapon_flh(0, false)),
         xyz(&type_fields["primary_flh"])
     );
-    assert_eq!(art.turret_offset, integer(&type_fields["turret_offset"]));
+    assert_eq!(art.turret_offset[0], integer(&type_fields["turret_offset"]));
     for (name, expected) in expected["weapons"].as_object().unwrap() {
         let weapon = rules.weapon(name).unwrap();
         assert_eq!(weapon.damage, integer(&expected["damage"]), "{name} Damage");

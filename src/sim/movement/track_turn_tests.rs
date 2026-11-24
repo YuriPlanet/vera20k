@@ -406,6 +406,62 @@ fn actual_ground_process_samples_disagreement_and_active_tracks_bypass_it() {
     }
 }
 
+/// Phobos `DriveLocomotionClass::Process_CheckUnload` (`0x4B08EF`,
+/// `Ext/Techno/Hooks.Transport.cpp:560-574`) and its Ship twin (`0x69FFB6`):
+/// an Unload mission keeps processing while a passenger remains aboard, so an
+/// emptying transport can still be driven.
+#[test]
+fn unload_mission_keeps_processing_only_while_a_passenger_remains() {
+    use crate::sim::passenger::{PassengerCargo, PassengerRole};
+    use crate::sim::world::FrameEffects;
+
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=TURN\n[TURN]\nTurret=yes\nSpeed=0\nAccelerates=no\nPassengers=5\n\
+         [InfantryTypes]\n0=E1\n[E1]\nStrength=100\n",
+    ))
+    .unwrap();
+    for kind in [LocomotorKind::Drive, LocomotorKind::Ship] {
+        let mut sim = fixture(kind);
+        let family = match kind {
+            LocomotorKind::Drive => crate::sim::movement::track_process::TrackFamily::Drive,
+            LocomotorKind::Ship => crate::sim::movement::track_process::TrackFamily::Ship,
+            _ => unreachable!(),
+        };
+        let entity = sim.substrate.entities.get_mut(1).unwrap();
+        entity.mission.apply_test_fixture(MissionTestFixture {
+            current: MissionId::from_known(MissionType::Unload),
+            suspended: MissionId::NONE,
+            queued: MissionId::NONE,
+            movement_bypass_latch: 0,
+            handler_state: 0,
+            mission_start_frame: 0,
+            ai_counter: 0,
+            dispatch_timer: MissionDispatchTimer::from_raw(0, 90),
+        });
+        assert!(entity.locomotor.as_mut().unwrap().store_track_destination(
+            family,
+            Some(DriveCoord {
+                x: 300,
+                y: 300,
+                z: 0
+            })
+        ));
+        let mut cargo = PassengerCargo::new(5, 0.0);
+        cargo.board_forced_chain(&[(2, 1.0)]);
+        entity.passenger_role = PassengerRole::transport(cargo);
+        assert!(
+            sim.track_movement_gates(1, &rules, &mut FrameEffects::default()),
+            "{kind:?}: cargo keeps the Unload process alive"
+        );
+        sim.substrate.entities.get_mut(1).unwrap().passenger_role =
+            PassengerRole::transport(PassengerCargo::new(5, 0.0));
+        assert!(
+            !sim.track_movement_gates(1, &rules, &mut FrameEffects::default()),
+            "{kind:?}: an empty transport takes the tail"
+        );
+    }
+}
+
 #[test]
 fn actual_turn_completion_reason_zero_does_not_promote_queued_mission() {
     let rules = rules();

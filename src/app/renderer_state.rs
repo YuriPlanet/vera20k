@@ -8,7 +8,6 @@
 use crate::render::batch::BatchRenderer;
 use crate::render::bit_font::BitFont;
 use crate::render::gpu::GpuContext;
-use crate::ui::game_screen::GameScreen;
 
 pub(crate) struct RendererState {
     pub(crate) gpu: GpuContext,
@@ -60,6 +59,9 @@ pub(crate) struct RendererState {
     /// Previous presented pre-cursor composition, retained for input-time
     /// screenshot parity.
     pub(crate) retail_screenshot_frame_cache: crate::render::screenshot::PresentedFrameCache,
+    /// Phobos `SurfaceExt::BlurRect`'s GPU pass, built on first use against
+    /// the composition's format; the tooltip draw owns its gate and rect.
+    pub(crate) tooltip_blur: Option<crate::render::tooltip_blur::TooltipBlurRenderer>,
     /// The finished terrain layer, kept while its inputs hold still.
     pub(crate) terrain_picture: crate::app::presentation::render::terrain_picture::TerrainPicture,
     /// gamemd's Z-buffer row seed, which lives as long as its Z buffer: one
@@ -68,49 +70,6 @@ pub(crate) struct RendererState {
 }
 
 impl RendererState {
-    /// Current projection on `screen`: frontend/result use physical window
-    /// pixels; tactical rendering and pending tactical installation use the
-    /// optional zoom pass. Loading artwork explicitly uses GPU/window
-    /// dimensions in loading::pump.
-    pub(crate) fn render_size(&self, screen: &GameScreen) -> (u32, u32) {
-        render_dimensions(
-            screen,
-            (self.gpu.config.width, self.gpu.config.height),
-            self.upscale_pass
-                .as_ref()
-                .map(|up| (up.src_width(), up.src_height())),
-        )
-    }
-
-    pub(crate) fn render_width(&self, screen: &GameScreen) -> u32 {
-        self.render_size(screen).0
-    }
-
-    pub(crate) fn render_height(&self, screen: &GameScreen) -> u32 {
-        self.render_size(screen).1
-    }
-
-    /// The zoom pass a match frame goes through: the battlefield and the
-    /// active-game shells draw into it at the source size. Loading and the
-    /// menus never zoom.
-    pub(crate) fn match_zoom_pass(
-        &self,
-        screen: &GameScreen,
-    ) -> Option<&crate::render::upscale_pass::UpscalePass> {
-        (*screen == GameScreen::InGame)
-            .then_some(self.upscale_pass.as_ref())
-            .flatten()
-    }
-
-    /// The zoom between the window and the match frame, whose cursor, layout
-    /// and drawing all use source pixels.
-    pub(crate) fn tactical_zoom(
-        &self,
-        screen: &GameScreen,
-    ) -> Option<crate::ui::main_menu_dialogs::options::ZoomGeometry> {
-        self.match_zoom_pass(screen).map(|pass| pass.geometry())
-    }
-
     /// Completed match frame with its chrome, in frame pixels. The software
     /// cursor goes over this frame's copies, so it stays cursor-free.
     pub(crate) fn game_frame_texture(&self) -> &wgpu::Texture {
@@ -142,19 +101,5 @@ impl RendererState {
             },
             source.size(),
         );
-    }
-}
-
-/// Loading uses tactical dimensions only for pending match-resource setup;
-/// its own artwork uses the window directly. Frontend layout and hit testing
-/// must never inherit the match zoom's source size.
-fn render_dimensions(
-    screen: &GameScreen,
-    window: (u32, u32),
-    tactical_source: Option<(u32, u32)>,
-) -> (u32, u32) {
-    match screen {
-        GameScreen::MainMenu | GameScreen::MissionResult { .. } => window,
-        GameScreen::Loading | GameScreen::InGame => tactical_source.unwrap_or(window),
     }
 }

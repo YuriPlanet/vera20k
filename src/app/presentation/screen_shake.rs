@@ -56,8 +56,24 @@ impl ScreenShakeState {
 
     /// Apply Logic's native-ordered detonation writes after the render's
     /// pre-Logic offset snapshot has been taken.
-    pub(crate) fn apply_updates(&mut self, updates: &[crate::sim::combat::ScreenShakeUpdate]) {
+    ///
+    /// `admit` is the client-side `ShakeIsLocal` gate
+    /// (`TacticalClass::CoordsToClient`, `Ext/Bullet/Hooks.DetonateLogics.cpp:36-39`):
+    /// a local-only update the client cannot see is dropped here, after the
+    /// simulation has already committed the (deterministic) draw.
+    pub(crate) fn apply_updates_with_hide(
+        &mut self,
+        updates: &[crate::sim::combat::ScreenShakeUpdate],
+        hide: bool,
+        admit: impl Fn(&crate::sim::combat::ScreenShakeUpdate) -> bool,
+    ) {
+        if hide {
+            return;
+        }
         for update in updates {
+            if update.local_only && !admit(update) {
+                continue;
+            }
             if let Some(x) = update.x {
                 self.offset_px[0] = x;
             }
@@ -66,6 +82,28 @@ impl ScreenShakeState {
             }
         }
     }
+}
+
+/// The client's `CoordsToClient` admission for a local-only shake write: the
+/// detonation's projected point inside the tactical rectangle, with the native
+/// padding [`super::instances::projection_admitted`] documents.
+pub(crate) fn update_is_on_screen(
+    update: &crate::sim::combat::ScreenShakeUpdate,
+    camera: [f32; 2],
+    viewport: [f32; 2],
+) -> bool {
+    let (x, y) = crate::util::lepton::absolute_leptons_to_screen(
+        update.coord.x,
+        update.coord.y,
+        update.coord.z,
+    );
+    super::instances::projection_admitted(
+        [x, y],
+        super::instances::TacticalAdmission {
+            corner: camera,
+            size: viewport,
+        },
+    )
 }
 
 /// The native branches preserve sign alternation while reducing magnitude:
@@ -92,18 +130,26 @@ mod tests {
         // The current Input(N) event is the render snapshot; Logic's later
         // detonation writes belong to the next Input/render service.
         assert_eq!(shake.service_offset_snapshot(Some(11), false), [0, 0]);
-        shake.apply_updates(&[
-            ScreenShakeUpdate {
-                x: Some(10),
-                y: Some(-4),
-            },
-            // A later same-Logic Y-only detonation wins that enabled axis;
-            // the retained owner before the next Input is therefore [10, 5].
-            ScreenShakeUpdate {
-                x: None,
-                y: Some(5),
-            },
-        ]);
+        shake.apply_updates_with_hide(
+            &[
+                ScreenShakeUpdate {
+                    x: Some(10),
+                    y: Some(-4),
+                    local_only: false,
+                    coord: crate::sim::projectile::ProjectileCoord::new(0, 0, 0),
+                },
+                // A later same-Logic Y-only detonation wins that enabled axis;
+                // the retained owner before the next Input is therefore [10, 5].
+                ScreenShakeUpdate {
+                    x: None,
+                    y: Some(5),
+                    local_only: false,
+                    coord: crate::sim::projectile::ProjectileCoord::new(0, 0, 0),
+                },
+            ],
+            false,
+            |_| true,
+        );
         // The paused native path renders the current owner first, then the
         // same-frame Input event decays it. A later Y-only write won above.
         let first_paused_snapshot = shake.service_offset_snapshot(Some(12), true);
@@ -131,15 +177,98 @@ mod tests {
     fn a_paused_odd_frame_holds_the_shake_and_an_even_one_decays_it() {
         let mut shake = ScreenShakeState::default();
         assert!(!shake.decays_at(12));
-        shake.apply_updates(&[ScreenShakeUpdate {
-            x: Some(3),
-            y: None,
-        }]);
+        shake.apply_updates_with_hide(
+            &[ScreenShakeUpdate {
+                x: Some(3),
+                y: None,
+                local_only: false,
+                coord: crate::sim::projectile::ProjectileCoord::new(0, 0, 0),
+            }],
+            false,
+            |_| true,
+        );
         assert!(!shake.decays_at(13));
         assert_eq!(shake.service_offset_snapshot(Some(13), true), [3, 0]);
         assert_eq!(shake.service_offset_snapshot(Some(13), true), [3, 0]);
         assert!(shake.decays_at(12));
         assert_eq!(shake.service_offset_snapshot(Some(12), true), [3, 0]);
         assert_eq!(shake.service_offset_snapshot(Some(12), true), [-2, 0]);
+    }
+
+    /// Phobos `[Phobos] HideShakeEffects=` (read default false,
+    /// `Phobos.INI.cpp:113`): the detonation writes land only when the switch
+    /// is off, and a standing offset still decays through the stock path.
+    #[test]
+    fn hide_shake_effects_drops_the_detonation_writes() {
+        let update = [ScreenShakeUpdate {
+            x: Some(6),
+            y: Some(-3),
+            local_only: false,
+            coord: crate::sim::projectile::ProjectileCoord::new(0, 0, 0),
+        }];
+        let mut shown = ScreenShakeState::default();
+        shown.apply_updates_with_hide(&update, false, |_| true);
+        assert_eq!(shown.service_offset_snapshot(Some(11), false), [6, -3]);
+
+        let mut hidden = ScreenShakeState::default();
+        hidden.apply_updates_with_hide(&update, true, |_| true);
+        assert_eq!(hidden.service_offset_snapshot(Some(11), false), [0, 0]);
+        assert_eq!(hidden.offset_px, [0, 0]);
+        assert!(!hidden.decays_at(12));
+    }
+
+    /// Phobos `[Warhead] ShakeIsLocal=` (`Ext/WarheadType/Body.cpp:184`,
+    /// fallback `Ext/Rules/Body.cpp:491`): the client drops a detonation its
+    /// tactical view cannot see (`Ext/Bullet/Hooks.DetonateLogics.cpp:36-39`),
+    /// and an ordinary (non-local-only) write is never gated.
+    #[test]
+    fn a_local_only_write_outside_the_view_is_dropped() {
+        let update = [ScreenShakeUpdate {
+            x: Some(4),
+            y: None,
+            local_only: true,
+            coord: crate::sim::projectile::ProjectileCoord::new(0, 0, 0),
+        }];
+        let mut offscreen = ScreenShakeState::default();
+        offscreen.apply_updates_with_hide(&update, false, |_| false);
+        assert_eq!(offscreen.offset_px, [0, 0]);
+
+        let mut onscreen = ScreenShakeState::default();
+        onscreen.apply_updates_with_hide(&update, false, |_| true);
+        assert_eq!(onscreen.offset_px, [4, 0]);
+
+        let ordinary = [ScreenShakeUpdate {
+            x: Some(4),
+            y: None,
+            local_only: false,
+            coord: crate::sim::projectile::ProjectileCoord::new(0, 0, 0),
+        }];
+        let mut always = ScreenShakeState::default();
+        always.apply_updates_with_hide(&ordinary, false, |_| false);
+        assert_eq!(always.offset_px, [4, 0]);
+    }
+
+    /// `update_is_on_screen` projects the detonation point into the same
+    /// world-pixel frame `projection_admitted` compares against the camera.
+    #[test]
+    fn on_screen_admission_uses_the_projected_point_and_the_view_padding() {
+        let inside = ScreenShakeUpdate {
+            x: Some(1),
+            y: None,
+            local_only: true,
+            coord: crate::sim::projectile::ProjectileCoord::new(2688, 2688, 0),
+        };
+        let (x, y) = crate::util::lepton::absolute_leptons_to_screen(2688, 2688, 0);
+        assert!(super::update_is_on_screen(&inside, [x, y], [800.0, 600.0]));
+        // Far outside the padded rectangle.
+        let outside = ScreenShakeUpdate {
+            coord: crate::sim::projectile::ProjectileCoord::new(2688 + 256 * 40, 2688, 0),
+            ..inside
+        };
+        assert!(!super::update_is_on_screen(
+            &outside,
+            [x, y],
+            [800.0, 600.0]
+        ));
     }
 }

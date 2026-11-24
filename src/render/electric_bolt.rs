@@ -51,6 +51,9 @@ pub(crate) struct ElectricBoltDraw {
     /// and returned by the colour 1/2/3 hooks (10056190 at 0x4C24BE, 100561B0
     /// at 0x4C25CB, 100561D0 at 0x4C26CF) in place of the palette words.
     pub colors: [Option<[u8; 3]>; 3],
+    /// Phobos `EBoltExt::Arcs`: `EBolt_DrawArcs` (`0x4C20BC`) breaks the
+    /// subdivision loop at this plot index. The fixed stack holds eight.
+    pub arcs: i32,
 }
 
 /// Pending second half of a split. Each triplet stores center, side1, side2;
@@ -127,8 +130,9 @@ impl ElectricBoltDraw {
             color(0, outer_color),
             color(1, outer_color),
         ];
+        let arc_limit = self.arcs.clamp(0, pending.len() as i32) as usize;
         loop {
-            while current.length > 64 && depth < pending.len() {
+            while current.length > 64 && depth < arc_limit {
                 // The original uses ADD/SAR, including negative odd sums and
                 // signed32 overflow, for all three midpoint coordinates.
                 let mut middle: [[i32; 3]; 3] = std::array::from_fn(|strand| {

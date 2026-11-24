@@ -49,7 +49,7 @@ fn a_carrier_in_a_team_turns_infantry_away() {
     };
     let (mut sim, ifv, gi, tank) = scene(&rules);
     let action = |sim: &Simulation, actor| {
-        sim.entry_click_action(actor, ifv, EntryBaseAction::Select, &rules)
+        sim.entry_click_action(actor, ifv, EntryBaseAction::Select, false, &rules)
     };
     assert_eq!(action(&sim, gi), Some(EntryClickAction::Enter));
     assert_eq!(action(&sim, tank), Some(EntryClickAction::NoEnter));
@@ -88,7 +88,7 @@ fn a_moving_carrier_turns_passengers_away() {
     }
     assert!(moving(&sim));
     assert_eq!(
-        sim.entry_click_action(gi, ifv, EntryBaseAction::Select, &rules),
+        sim.entry_click_action(gi, ifv, EntryBaseAction::Select, false, &rules),
         Some(EntryClickAction::NoEnter)
     );
     for _ in 0..300 {
@@ -98,7 +98,7 @@ fn a_moving_carrier_turns_passengers_away() {
         sim.advance_tick(&[], Some(&rules), None, None, 67);
     }
     assert_eq!(
-        sim.entry_click_action(gi, ifv, EntryBaseAction::Select, &rules),
+        sim.entry_click_action(gi, ifv, EntryBaseAction::Select, false, &rules),
         Some(EntryClickAction::Enter)
     );
 }
@@ -118,7 +118,7 @@ fn ares_no_manual_enter_carrier_offers_no_entry() {
     let (sim, ifv, gi, tank) = scene(&rules);
     for actor in [gi, tank] {
         assert_eq!(
-            sim.entry_click_action(actor, ifv, EntryBaseAction::Select, &rules),
+            sim.entry_click_action(actor, ifv, EntryBaseAction::Select, false, &rules),
             None
         );
     }
@@ -144,7 +144,8 @@ fn ares_a_harrier_enters_its_listed_dock_and_keeps_select_elsewhere() {
     let jet = sim
         .spawn_object("ORCA", "Americans", 10, 8, 0, &rules)
         .expect("harrier");
-    let action = |target| sim.entry_click_action(jet, target, EntryBaseAction::Select, &rules);
+    let action =
+        |target| sim.entry_click_action(jet, target, EntryBaseAction::Select, false, &rules);
     assert_eq!(action(pad), Some(EntryClickAction::Enter));
     assert_eq!(action(depot), None);
 }

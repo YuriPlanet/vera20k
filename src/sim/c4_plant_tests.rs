@@ -194,7 +194,13 @@ fn stand_in(sim: &mut Simulation, id: u64, building: u64) {
 /// the stream after them.
 fn expected_draws(sim: &Simulation, scatters: bool) -> (i32, crate::sim::rng::SimRngLogicalState) {
     let mut rng = sim.scenario_rng.clone();
-    let rof = rng.next_range_u32_inclusive(3, 5) as i32;
+    // Phobos `WeaponTypeExt::GetBurstDelay` (`Ext/WeaponType/Body.cpp:62-74`)
+    // answers 0 at burst index 0 before the stock mid-burst draw.
+    let rof = if true {
+        0
+    } else {
+        rng.next_range_u32_inclusive(3, 5) as i32
+    };
     if scatters {
         rng.next_range_u32_inclusive(0, 4);
     }
@@ -339,14 +345,23 @@ fn a_tanya_ordered_to_sabotage_walks_in_and_plants_the_charge() {
         .filter_map(|draw| draw["callers"].as_str())
         .filter(|callers| callers.contains("infantry_per_cell_c4"))
         .collect();
-    assert!(!plant_draws.is_empty(), "the plant draws for its rearm");
-    assert!(
-        plant_draws
-            .iter()
-            .all(|callers| callers.contains("rearm_c4_planter")
-                && !callers.contains("scatter_from_building")),
-        "only the rearm draws at the plant"
-    );
+    // Phobos `WeaponTypeExt::GetBurstDelay` answers 0 at burst index 0 before
+    // the stock mid-burst draw (`Ext/WeaponType/Body.cpp:62-74`).
+    if true {
+        assert!(
+            plant_draws.is_empty(),
+            "the burst-index-0 rearm takes no draw"
+        );
+    } else {
+        assert!(!plant_draws.is_empty(), "the plant draws for its rearm");
+        assert!(
+            plant_draws
+                .iter()
+                .all(|callers| callers.contains("rearm_c4_planter")
+                    && !callers.contains("scatter_from_building")),
+            "only the rearm draws at the plant"
+        );
+    }
     let pending = sim
         .substrate
         .entities
@@ -371,7 +386,11 @@ fn a_tanya_ordered_to_sabotage_walks_in_and_plants_the_charge() {
     assert!((12..=13).contains(&flash), "flash {flash}");
     let planter = sim.substrate.entities.get(tanya).unwrap();
     assert_eq!(planter.seldom.rearm_timer.start_frame(), planted as i32);
-    assert!((3..=5).contains(&planter.seldom.rearm_timer.duration()));
+    assert_eq!(
+        planter.seldom.rearm_timer.duration(),
+        0,
+        "GetBurstDelay(0) answers 0"
+    );
     assert_eq!(planter.navigation.nav_com(), None, "the planter stopped");
     assert!(
         (16..18).contains(&planter.position.rx()) && (10..12).contains(&planter.position.ry()),

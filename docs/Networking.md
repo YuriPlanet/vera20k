@@ -1257,13 +1257,15 @@ command stream above is an intentional adaptation.
   receiver refuses one without it (`net::event_packet`). VERA's own records,
   which LAN packets and online batches carry alike, are laid out in
   `sim::command`: 0x30 paid superweapon, 0x31 bunker eject (still decoded so older
-  recordings play; no input sends it), 0x32 producer cycle, and 0x33 explicit
-  target-House economic order. The 0x33 body is a native House slot byte, an
-  inner economic opcode byte, and 21 bytes of inner payload with zero padding.
-  The event header still authenticates the issuing source. The simulation
-  requires FullControl over the target. Ordinary production, placement and
-  superweapon records continue to use the source's primary House. The build
-  check refuses peers with older codecs before play.
+  recordings play; no input sends it), 0x32 producer cycle, 0x33 explicit
+  target-House economic order, and 0x34 Phobos player-wide auto-repair. The 0x34
+  body is one requested-state byte; its event header authenticates the issuing
+  House. The 0x33 body is a native House slot byte, an inner economic opcode
+  byte, and 21 bytes of inner payload with zero padding; its event header also
+  authenticates the issuing source. The simulation requires FullControl over
+  the target. Ordinary production, placement and superweapon records continue
+  to use the source's primary House. The build check refuses peers with older
+  codecs before play.
 - `649CA0` mirrors the local OutList before broadcasting it. Send failures do not
   undo that mirror; the reached native wait and recovery paths decide what
   happens next. Transport queues retain bytes, not gameplay decisions.

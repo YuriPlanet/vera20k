@@ -57,6 +57,7 @@ fn cost_of_matches_the_original_cost_virtuals() {
         let factors = HouseCostFactors {
             country: bits(&input["country"]),
             factory_plant: bits(&input["plant"]),
+            restricted_plant: crate::util::native_x87::NativeF32Bits::ONE,
         };
         let house = (input["house"] == true).then_some(&factors);
         assert_eq!(
@@ -226,7 +227,6 @@ fn ordered_country_side_source_identity_and_case_insensitive_lookup() {
 /// Phobos `ValueableIdx<ColorScheme>` in each rules pass: a name finds the
 /// shade-count-1 scheme of a `[Colors]` entry loaded so far, `none` stores
 /// -1, and an empty or unknown name keeps the earlier pass's index.
-#[cfg(feature = "phobos")]
 #[test]
 fn timer_blink_color_scheme_resolves_in_each_rules_pass() {
     use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
@@ -253,7 +253,6 @@ fn timer_blink_color_scheme_resolves_in_each_rules_pass() {
     );
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn missing_cameo_defaults_to_xxicon_and_reads_audio_visual() {
     let defaults = RuleSet::from_ini(&IniFile::from_str("[General]\n")).expect("rules read");
@@ -276,7 +275,6 @@ fn missing_cameo_defaults_to_xxicon_and_reads_audio_visual() {
     assert_eq!(none.missing_cameo(), "");
 }
 
-#[cfg(feature = "phobos")]
 #[test]
 fn sidebar_gdi_positions_default_the_first_side_and_read_side_sections() {
     let ini = IniFile::from_str(

@@ -305,6 +305,63 @@ fn mission_guard_matches_the_original() {
     }
 }
 
+/// Phobos `BuildingTypeExt::GuardRetryDelay` (`Ext/BuildingType/Body.cpp:258`)
+/// through the hooked armed Guard return (`Ext/Building/Hooks.cpp:1284-1305`,
+/// hook `0x4496FB`): a set type key answers the retry frames directly, a range
+/// drawing its own jitter and a single value drawing nothing;
+/// `[General] BuildingGuardRetryDelay` answers for a type that leaves the key
+/// unset. Both replace the stock `AARate` delay and its `Random(0, 2)` draw.
+#[test]
+fn guard_retry_delay_replaces_the_aarate_delay() {
+    let retry_rules = |type_key: &str, general_key: &str| {
+        RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "[General]\n{general_key}\
+             [Guard]\nRate=.030\nAARate=.016\n\
+             [BuildingTypes]\n0=DEF\n1=SHED\n\
+             [DEF]\nStrength=1000\nArmor=concrete\nFoundation=1x1\nPrimary=Gun\n\
+             CanPassiveAquire=no\n{type_key}\
+             [SHED]\nStrength=1000\nArmor=wood\nFoundation=1x1\n\
+             [Gun]\nDamage=10\nROF=20\nRange=6\nProjectile=Shell\nWarhead=AP\n\
+             [Shell]\nAG=yes\n\
+             [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+        )))
+        .unwrap()
+    };
+    let run = |rules: &RuleSet| {
+        let (mut sim, building, _) = fixture(rules, "DEF", (8, 5));
+        set_mission(
+            &mut sim,
+            building,
+            MissionId::from_known(MissionType::Guard),
+            0,
+        );
+        sim.scenario_rng = SimRng::new(4);
+        let before = sim.scenario_rng.logical_state();
+        let returns = mission_guard(
+            &mut sim,
+            building,
+            rules,
+            &mut crate::sim::world::ObjectAiCtx::default(),
+        );
+        (returns, sim.scenario_rng.logical_state() == before)
+    };
+
+    let (ranged, _) = run(&retry_rules("GuardRetryDelay=10,20\n", ""));
+    assert!(
+        (10..=20).contains(&ranged),
+        "a ranged type key draws its own frames: {ranged}"
+    );
+    let (single, no_draw) = run(&retry_rules("GuardRetryDelay=7\n", ""));
+    assert_eq!(single, 7, "a single type value answers directly");
+    assert!(no_draw, "the stock `Random(0, 2)` draw is skipped");
+    let (fallback, no_draw) = run(&retry_rules("", "BuildingGuardRetryDelay=5\n"));
+    assert_eq!(
+        fallback, 5,
+        "[General] answers for a type that leaves the key unset"
+    );
+    assert!(no_draw, "the fallback also skips the stock draw");
+}
+
 /// Every `attack` row: Mission_Attack's return and actions for each
 /// GetFireError code (answered from the row, as the oracle answers it), the
 /// null-target tail and the delayed-fire OK arm: FireAt becomes the combat
@@ -2002,6 +2059,190 @@ fn retail_dustbowl_ore_cell_spawn_admission_matches_native_gates() {
             .is_some(),
         "overlay-free Rough ground admits a building"
     );
+}
+
+/// Phobos `GetTurretFrame`/`0x451242` production path: the frame uses the
+/// `ObjectClass::BodyShape` permutation of the facing bucket, the low-power
+/// block follows `StuffEnabled`/`IsPowerOnline`, and a `Turret=no` host never
+/// writes its slot-9 anim (`0x451238` asks vt+0x3FC first).
+#[test]
+fn turret_anim_frame_uses_body_shape_low_power_and_requires_a_turret() {
+    use crate::sim::anim_class::AnimWorldCoord;
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+        "[BuildingTypes]\n0=DEF\n1=NT\n2=SHED\n\
+         [DEF]\nStrength=1000\nArmor=concrete\nFoundation=1x1\nTurret=yes\n\
+         TurretAnim.IdleFrames=1\nTurretAnim.LowPowerIdleFrames=1\n\
+         [NT]\nStrength=1000\nArmor=concrete\nFoundation=1x1\nTurret=no\n\
+         TurretAnim.IdleFrames=1\nTurretAnim.LowPowerIdleFrames=1\n\
+         [SHED]\nStrength=1000\nArmor=wood\nFoundation=1x1\n\
+         [Animations]\n0=TANIM\n",
+    ))
+    .unwrap();
+    let mut rules = rules;
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::empty());
+    let (mut sim, building, _) = fixture(&rules, "DEF", (10, 10));
+    let no_turret = sim
+        .spawn_object("NT", "Americans", 7, 5, 0, &rules)
+        .unwrap();
+    let spawn_anim = |sim: &mut Simulation, host: u64| {
+        let before: BTreeSet<u64> = sim.substrate.anims.iter().map(|(id, _)| *id).collect();
+        let coord = sim
+            .substrate
+            .entities
+            .get(host)
+            .map(|entity| crate::sim::movement::ground_pose::position_world_coord(&entity.position))
+            .unwrap();
+        assert!(sim.spawn_named_anim(
+            &rules,
+            "TANIM",
+            AnimWorldCoord {
+                x: coord.x,
+                y: coord.y,
+                z: coord.z,
+            },
+            0,
+            0,
+            0,
+        ));
+        *sim.substrate
+            .anims
+            .iter()
+            .map(|(id, _)| id)
+            .find(|id| !before.contains(id))
+            .unwrap()
+    };
+    let anim = spawn_anim(&mut sim, building);
+    let other = spawn_anim(&mut sim, no_turret);
+    let east = 0x4000;
+    for (host, slot_anim) in [(building, anim), (no_turret, other)] {
+        let entity = sim.entities_mut_for_test().get_mut(host).unwrap();
+        entity.building_art.anim_slots_mut_for_test()[9] = Some(slot_anim);
+        entity.body_facing.snap(east, FRAME);
+    }
+    sim.entities_mut_for_test()
+        .get_mut(building)
+        .unwrap()
+        .building_art
+        .set_stuff_enabled_for_test(false);
+    sim.substrate.set_anim_frame_and_z_adjust(other, 7, 0);
+
+    update_turret_anim_frame(&mut sim, building, &rules);
+    // bucket 8 -> BodyShape 20; low-power idle block starts at 32 * IdleFrames.
+    assert_eq!(
+        sim.anim_stage_and_frames(anim, &rules).unwrap().0,
+        32 + 20,
+        "BodyShape permutation plus the LowPowerIdle block"
+    );
+    update_turret_anim_frame(&mut sim, no_turret, &rules);
+    assert_eq!(
+        sim.anim_stage_and_frames(other, &rules).unwrap().0,
+        7,
+        "a Turret=no host never reaches GetTurretFrame"
+    );
+}
+
+/// `AnimationAI @ 0x451250..0x451296` without the Phobos hook: slot 9 still
+/// follows `BodyShape[facing]` from the `0x007F4890` table.
+#[test]
+fn the_native_slot_nine_frame_follows_the_body_shape_table() {
+    use crate::sim::anim_class::AnimWorldCoord;
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+        "[BuildingTypes]
+0=DEF
+1=SHED
+[Animations]
+0=TANIM
+         [DEF]
+Strength=1000
+Armor=concrete
+Foundation=1x1
+Turret=yes
+         [SHED]
+Strength=100
+Armor=wood
+Foundation=1x1
+",
+    ))
+    .unwrap();
+    let mut rules = rules;
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::empty());
+    let (mut sim, building, _) = fixture(&rules, "DEF", (10, 10));
+    let coord = sim
+        .substrate
+        .entities
+        .get(building)
+        .map(|entity| crate::sim::movement::ground_pose::position_world_coord(&entity.position))
+        .unwrap();
+    assert!(sim.spawn_named_anim(
+        &rules,
+        "TANIM",
+        AnimWorldCoord {
+            x: coord.x,
+            y: coord.y,
+            z: coord.z,
+        },
+        0,
+        0,
+        0,
+    ));
+    let anim = *sim.substrate.anims.iter().map(|(id, _)| id).next().unwrap();
+    let entity = sim.entities_mut_for_test().get_mut(building).unwrap();
+    entity.building_art.anim_slots_mut_for_test()[9] = Some(anim);
+    entity.body_facing.snap(0x4000, FRAME);
+    update_native_turret_anim_frame(&mut sim, building, &rules);
+    assert_eq!(
+        sim.anim_stage_and_frames(anim, &rules).unwrap().0,
+        20,
+        "facing bucket 8 takes BodyShape 20"
+    );
+}
+
+/// `Ext/Building/Hooks.cpp:868-873` (hook `0x44B630`): a building with
+/// `IsAnimDelayedFire=yes` arms the SpecialAnim delay for its first shot, but
+/// once a burst is in progress (`CurrentBurstIndex != 0`) ART
+/// `IsAnimDelayedBurst=no` (constructor true, `Body.h:202`) jumps to the
+/// JustFire arm `0x44B6C4` and fires without waiting.
+#[test]
+fn an_anim_delayed_burst_only_holds_the_first_shot() {
+    for (key, index, armed) in [
+        ("", 1, true),
+        ("IsAnimDelayedBurst=no\n", 1, false),
+        ("IsAnimDelayedBurst=no\n", 0, true),
+    ] {
+        let mut rules = rules(".016", 20);
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(
+            &IniFile::from_str(&format!(
+                "[TDEFART]\nIsAnimDelayedFire=yes\nDelayedFireDelay=28\n{key}"
+            )),
+        ));
+        let (mut sim, building, target) = fixture(&rules, "TDEF", (8, 5));
+        set_mission(&mut sim, building, mission_of("attack"), 0);
+        aim_at(&mut sim, building, target);
+        let entity = sim.substrate.entities.get_mut(building).unwrap();
+        for _ in 0..index {
+            entity.seldom.weapon_burst.advance();
+        }
+        attack_arm(
+            &mut sim,
+            building,
+            &rules,
+            TargetKind::Entity(target),
+            0,
+            FireError::Ok,
+            &mut ObjectAiCtx::default(),
+            &mut false,
+        );
+        let pending = sim
+            .substrate
+            .entities
+            .get(building)
+            .unwrap()
+            .building
+            .pending_building_fire
+            .pending()
+            .is_some();
+        assert_eq!(pending, armed, "burst index {index} with {key:?}");
+    }
 }
 
 /// Grand_Opening `0x00446662..0x004466CB` builds the rules `TurretAnim` in

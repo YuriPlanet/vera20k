@@ -97,10 +97,12 @@ class TestMapRegistryTests(unittest.TestCase):
             ) as resolve,
             mock.patch.object(run_test_map.subprocess, "call", return_value=7) as launch,
         ):
-            self.assertEqual(run_test_map.interactive(MAPS[0], ["--features", "phobos"]), 7)
+            self.assertEqual(
+                run_test_map.interactive(MAPS[0], ["--features", "dev-overlays"]), 7
+            )
             build.assert_called_once_with(
                 ["build", "-p", "vera20k", "--bin", "vera20k", "--profile", "fast",
-                 "--features", "phobos"], cwd=ROOT,
+                 "--features", "dev-overlays"], cwd=ROOT,
             )
             resolve.assert_called_once_with(ROOT, "vera20k", "fast")
             self.assertEqual(launch.call_args.args[0], [str(executable)])

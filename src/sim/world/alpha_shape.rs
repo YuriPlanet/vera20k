@@ -82,6 +82,12 @@ struct AlphaShape {
     /// Ares (`AlphaShapeClass_CTOR_Anims`).
     #[serde(default)]
     anim_listener: bool,
+    /// The `0x48A444..0x48A47E` light-flash window this shape was created in
+    /// (`LightEffectsTemp::AlphaIsLightFlash`): the renderer drops it when
+    /// `LightFlashAlphaImageDetailLevel` exceeds the detail level or
+    /// `[Phobos] HideLightFlashEffects=` is on (`0x005F5053`).
+    #[serde(default)]
+    light_flash: bool,
 }
 
 /// The shape vector, in construction order.
@@ -106,6 +112,7 @@ impl AlphaShapes {
         origin: [i32; 2],
         image: &str,
         anim_listener: bool,
+        light_flash: bool,
         ares: bool,
     ) {
         let earlier = if ares { self.take(object) } else { None };
@@ -120,6 +127,7 @@ impl AlphaShapes {
             image,
             disabled: false,
             anim_listener,
+            light_flash,
         });
     }
 
@@ -183,12 +191,13 @@ struct AlphaSource<'r> {
 }
 
 /// One glow as the A plane draws it: its origin in absolute world pixels,
-/// its AlphaImage name and frame.
+/// its AlphaImage name, frame and Phobos light-flash mark.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AlphaShapeDraw<'a> {
     pub origin: [i32; 2],
     pub image: &'a str,
     pub frame: u16,
+    pub light_flash: bool,
 }
 
 impl Simulation {
@@ -207,6 +216,26 @@ impl Simulation {
                 )
             })
             .collect()
+    }
+
+    /// The `0x48A444..0x48A47E` window a `WH.Particle` system runs in, read by
+    /// [`Self::unlimbo_particle_alpha_shape`] so each spawned particle keeps the mark.
+    pub(crate) fn set_particle_light_flash(&mut self, light_flash: bool) {
+        self.particle_light_flash = light_flash;
+    }
+
+    pub(crate) fn particle_light_flash(&self) -> bool {
+        self.particle_light_flash
+    }
+
+    /// Each shape's origin, AlphaImage name and light-flash mark, in vector
+    /// order. `DrawAll_NoMask @ 0x00421350` draws disabled shapes too, until
+    /// the purge.
+    pub fn alpha_shapes(&self) -> impl Iterator<Item = ([i32; 2], &str, bool)> + '_ {
+        self.alpha_shapes
+            .shapes
+            .iter()
+            .map(|shape| (shape.origin, shape.image.as_str(), shape.light_flash))
     }
 
     /// GetCoords and the AlphaImage name of `object`, of `kind`, for a type
@@ -342,6 +371,7 @@ impl Simulation {
             [x - width / 2, y - height / 2],
             source.image,
             rules.ares() && kind == ObjectKind::Anim,
+            kind == ObjectKind::Particle && self.particle_light_flash,
             rules.ares(),
         );
     }
@@ -407,6 +437,7 @@ impl Simulation {
             [x - (width + 1) / 2, y - (height + 1) / 2],
             source.image,
             kind == ObjectKind::Anim,
+            false,
             true,
         );
     }
@@ -496,6 +527,7 @@ impl Simulation {
                 origin: shape.origin,
                 image: &shape.image,
                 frame: 0,
+                light_flash: shape.light_flash,
             };
             if !ares {
                 return Some(draw);

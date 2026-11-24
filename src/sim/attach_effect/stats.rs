@@ -22,7 +22,6 @@ use super::{AttachEffectInstance, AttachEffectList, paired};
 /// producer; and the charge-turret half of
 /// `ROFMultiplier.ApplyOnCurrentTimer` needs the
 /// `LastRearmWasFullDelay`/charge-timer state VERA does not keep.
-#[cfg(feature = "phobos")]
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct PhobosStatMultipliers {
     pub firepower: f64,
@@ -38,7 +37,6 @@ pub(crate) struct PhobosStatMultipliers {
     pub has_crit_modifiers: bool,
 }
 
-#[cfg(feature = "phobos")]
 impl Default for PhobosStatMultipliers {
     fn default() -> Self {
         Self {
@@ -57,7 +55,6 @@ impl Default for PhobosStatMultipliers {
     }
 }
 
-#[cfg(feature = "phobos")]
 impl AttachEffectList {
     /// The active effects with their catalog entries, in attach order.
     pub(crate) fn active_effects<'a>(

@@ -614,20 +614,32 @@ pub(crate) fn finish_presentation_assets(
     }
     let sidebar_cameo_atlas = build_sidebar_cameo_atlas(gpu, batch, asset_manager, Some(rules));
     let match_layout_ini = read_match_layouts(asset_manager);
-    #[cfg(feature = "phobos")]
     let uimd_bytes = asset_manager.get_ref("UIMD.INI");
-    #[cfg(feature = "phobos")]
     let sw_sidebar_ui = uimd_bytes
         .map(crate::rules::phobos_sw_sidebar::SuperWeaponSidebarUi::from_uimd_bytes)
         .unwrap_or_default();
     // The same loaded `uimd.ini` carries the pause-menu switch; Phobos reads
     // both from `[Sidebar]` at startup.
-    #[cfg(feature = "phobos")]
     let center_pause_menu_background = uimd_bytes
         .map(crate::rules::phobos_pause_menu::PauseMenuUi::from_uimd_bytes)
         .unwrap_or_default()
         .center_background;
-    #[cfg(feature = "phobos")]
+    // The same loaded `uimd.ini` carries the indicator switches and the two
+    // `[ToolTips]` labels; Phobos resolves a label key through the string table
+    // it has already loaded by then (`GeneralUtils::LoadStringOrDefault`).
+    let sidebar_indicators = uimd_bytes
+        .map(|bytes| {
+            crate::rules::phobos_sidebar_indicators::SidebarIndicatorsUi::from_uimd_bytes(
+                bytes,
+                &sidebar_label_lookup(csf.as_ref()),
+            )
+        })
+        .unwrap_or_default();
+    // Phobos reads `[UISettings]` from the same uimd.ini at startup
+    // (`src/Phobos.INI.cpp:246-251`), for the scenario-start briefing dialog.
+    let briefing_dialog = uimd_bytes
+        .map(crate::rules::phobos_briefing_ui::BriefingDialogUi::from_uimd_bytes)
+        .unwrap_or_default();
     let sw_sidebar_art = sw_sidebar_ui
         .enabled
         .then(|| {
@@ -677,6 +689,15 @@ pub(crate) fn finish_presentation_assets(
     } else {
         None
     };
+    // Phobos `[BannerTypes]` art: every banner type's PCX/SHP decodes into
+    // one atlas with the world, the way the native lazy surface resolves on
+    // its first draw (`Utilities/Constructs.cpp`'s PhobosPCXFile).
+    let banner_art = crate::app::presentation::banners::BannerArtSet::build(
+        gpu,
+        batch,
+        asset_manager,
+        rules.banner_types(),
+    );
     // `[EndGameScreens]` may name the local player's own country a win/lose
     // card. It takes the retail `GRFXTXT` banner's slot in the tactical
     // viewport, so it is built with the world like the banner art above; the
@@ -746,14 +767,14 @@ pub(crate) fn finish_presentation_assets(
         sidebar_cameo_atlas,
         sidebar_chrome,
         match_layout_ini,
-        #[cfg(feature = "phobos")]
         sw_sidebar_ui,
-        #[cfg(feature = "phobos")]
         center_pause_menu_background,
-        #[cfg(feature = "phobos")]
+        sidebar_indicators,
+        briefing_dialog,
         sw_sidebar_art,
         outcome_banner_side_art,
         end_game_banner,
+        banner_art,
         software_cursor,
         overlay_names: overlays.overlay_names,
         overlay_radar_colors: overlays.overlay_radar_colors,
@@ -764,6 +785,21 @@ pub(crate) fn finish_presentation_assets(
     })
 }
 
+/// The string-table half of `GeneralUtils::LoadStringOrDefault`
+/// (`src/Utilities/GeneralUtils.cpp:37-43`), which the indicator label reads use
+/// rather than `LoadStringUnlessMissing`: a non-blank key is asked of the loaded
+/// table, and a key the table does not hold answers with native's visible
+/// `MISSING:'<key>'` marker (`CsfFile::text`), so a mis-authored `uimd.ini` label
+/// shows up as that text instead of silently keeping the glyph default. With no
+/// table loaded at all there is nothing to ask, and the caller's default stands,
+/// as for the other `csf.text` loaders here.
+pub(crate) fn sidebar_label_lookup(
+    table: Option<&crate::assets::csf_file::CsfFile>,
+) -> impl Fn(&str) -> Option<String> {
+    move |label| table.map(|table| table.text(label).into_owned())
+}
+
+#[cfg(all(test, tests_app))]
 #[cfg(all(test, tests_app))]
 #[path = "init_helpers_retail_placement_oracle_tests.rs"]
 mod retail_placement_oracle_tests;
@@ -799,6 +835,24 @@ fn voxel_palette_demand(
 
 #[cfg(all(test, tests_app))]
 mod tests {
+    /// `LoadStringOrDefault` asks the table for any non-blank key, and a key the
+    /// table does not hold answers with native's `MISSING:'<key>'` marker. The
+    /// indicator reads use that loader, not `LoadStringUnlessMissing`, so a
+    /// mis-authored `uimd.ini` label shows the marker instead of keeping its
+    /// glyph default.
+    #[test]
+    fn a_missing_indicator_label_resolves_to_the_native_marker() {
+        use super::sidebar_label_lookup;
+        let table = crate::assets::csf_file::test_csf(&[("UI:PHOBOS:PowerLabel", "PWR")]);
+        let lookup = sidebar_label_lookup(Some(&table));
+        assert_eq!(lookup("UI:PHOBOS:PowerLabel").as_deref(), Some("PWR"));
+        assert_eq!(
+            lookup("UI:PHOBOS:Typo").as_deref(),
+            Some("MISSING:'UI:PHOBOS:Typo'"),
+            "a key the table lacks stays visible, as native's StringTable leaves it"
+        );
+    }
+
     /// Building animations are tolerant roots, and only those the rules
     /// register as AnimTypes: art sections no rules list names (retail
     /// `[CAARAY]`) must not become required assets.

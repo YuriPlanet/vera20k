@@ -351,8 +351,9 @@ impl Simulation {
         // (`0x006F6D8F`), behind its alive gate (`0x006F6D04`: a dead Techno
         // returns success before it).
         if techno_alive_on_entry {
-            #[cfg(feature = "phobos")]
-            self.phobos_tracking_before_unlimbo(stable_id);
+            if context.rules.phobos() {
+                self.phobos_tracking_before_unlimbo(stable_id);
+            }
             self.house_added_to_game(stable_id, context.rules());
         }
         // Techno6F6DAA: the admitted successful Techno snaps
@@ -672,6 +673,7 @@ impl Simulation {
         }
         Self::mark_ai_repairable_at_unlimbo(
             &self.session,
+            context.rules(),
             &mut self.substrate,
             &self.houses,
             stable_id,
@@ -843,9 +845,14 @@ impl Simulation {
     /// `BuildingClass::Unlimbo 0x00440B4F..0x00440B7A`, after the Techno
     /// Unlimbo and its alive gate: outside a campaign, a building of a house
     /// no human controls whose house type is not `MultiplayPassive=` becomes
-    /// AI-repairable (`+0x6CB`), whatever its map line said.
+    /// AI-repairable (`+0x6CB`), whatever its map line said. In a campaign
+    /// the Phobos hook (`Ext/Building/Hooks.cpp:316-331`, hook `0x440B4F`)
+    /// reaches the same vanilla owner checks only when the house's
+    /// `RepairBaseNodes` difficulty slot (or the `[Basic]` global) resolves
+    /// yes, and never for a map-created structure.
     fn mark_ai_repairable_at_unlimbo(
         session: &ScenarioSession,
+        rules: &RuleSet,
         substrate: &mut ObjectSubstrate,
         houses: &Houses,
         stable_id: u64,
@@ -854,14 +861,33 @@ impl Simulation {
             return;
         };
         let policy = session.rule_policy();
-        if entity.category() == EntityCategory::Structure
-            && policy.uses_managed_ai_base()
-            && houses.get(&entity.owner()).is_some_and(|house| {
-                !house.is_controlled_by_human(policy) && !house.multiplay_passive()
-            })
-            && let Some(entity) = substrate.entities.get_mut(stable_id)
-        {
-            entity.seldom.ai_sell_repair.make_repairable();
+        if entity.category() != EntityCategory::Structure {
+            return;
+        }
+        let Some(house) = houses.get(&entity.owner()) else {
+            return;
+        };
+        if !policy.uses_managed_ai_base() {
+            if !rules.phobos() || entity.created_from_map_file() {
+                return;
+            }
+            // `RepairBaseNodes[GameOptionsClass::Instance.Difficulty]`:
+            // the session's player difficulty row.
+            let difficulty = session.campaign_house_difficulties().map_or(
+                crate::sim::house_state::HouseDifficulty::default(),
+                |(player, _)| player,
+            );
+            if !house.repair_base_nodes_for_difficulty(
+                difficulty,
+                rules.phobos_globals.repair_base_nodes,
+            ) {
+                return;
+            }
+        }
+        if !house.is_controlled_by_human(policy) && !house.multiplay_passive() {
+            if let Some(entity) = substrate.entities.get_mut(stable_id) {
+                entity.seldom.ai_sell_repair.make_repairable();
+            }
         }
     }
 

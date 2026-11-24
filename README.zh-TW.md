@@ -91,7 +91,7 @@ VERA20K 的開發者都是你們的朋友。我們希望把龐大的中國紅警
 
 VERA20K 預設使用《尤里的復仇》原版規則。你可以在 **Options** 選單中調整聲音、畫面和操作設定，也可以開啟 VERA 專屬功能。遊戲會將設定儲存在 `VERA.INI` 中，其中 VERA 專屬選項位於 `[VERA]` 節。
 
-大廳設定、模組和地圖都能改變對局規則。模組和地圖可以通過 INI 檔案啟用 VERA20K 支援的 [Ares](docs/ares.md) 和 [Phobos](docs/phobos.md) 功能。模組也可以通過附帶 `ares.mix` 來啟用 Ares。部分 Phobos 功能仍需在編譯時加上 `--features phobos`。
+大廳設定、模組和地圖都能改變對局規則。模組和地圖可以通過 INI 檔案啟用 VERA20K 支援的 [Ares](docs/ares.md) 和 [Phobos](docs/phobos.md) 功能。模組也可以通過附帶 `ares.mix` 來啟用 Ares。Phobos 功能由模組或地圖的 INI 資料啟用，不需要編譯開關。
 
 想製作自己的模組，可以從[模組製作指南](docs/modding.md)開始。
 

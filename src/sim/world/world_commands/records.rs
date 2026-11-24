@@ -9,8 +9,8 @@ use crate::sim::command::{
     COMMAND_RECORD_LEN, Command, CommandEnvelope, CommandRecord, CycleProducerRecord, DeployRecord,
     ExitRecord, GameSpeedRecord, MegaMissionOrder, MegaMissionRecord, MegaMissionTarget,
     ObjectAction, ObjectActionRecord, PaidSuperAction, PaidSuperRecord, PlaceRecord,
-    ProductionEvent, ProductionRecord, RepairRecord, ScatterRecord, SellWallAtCellRecord,
-    SpecialPlaceRecord, StopRecord,
+    PlayerAutoRepairRecord, ProductionEvent, ProductionRecord, RepairRecord, ScatterRecord,
+    SellWallAtCellRecord, SpecialPlaceRecord, StopRecord,
 };
 use crate::sim::control_authority::CommandCapability;
 use crate::sim::intern::InternedId;
@@ -174,6 +174,26 @@ impl Simulation {
         }
         .write_into(&mut record);
         Some(record)
+    }
+
+    /// Phobos `EventExt::RespondToTogglePlayerAutoRepair`
+    /// (`Ext/Event/Body.cpp:109-128`): the wire carries the requested state.
+    pub fn encode_player_auto_repair_record(
+        &self,
+        command_owner: InternedId,
+        enabled: bool,
+    ) -> Option<CommandRecord> {
+        let header = self.encode_header_event(
+            command_owner,
+            crate::sim::command::VERA_PLAYER_AUTO_REPAIR_OPCODE,
+        )?;
+        PlayerAutoRepairRecord {
+            house_id: header.house_id(),
+            frame: header.frame_stamp(),
+            enabled,
+        }
+        .encode()
+        .ok()
     }
 
     /// TargetEvent4C65E0 is used by SELL16 (Execute4C6F12) and
@@ -554,6 +574,7 @@ impl Simulation {
                 Some(combat::TargetKind::Entity(id)) => MegaMissionTarget::Object {
                     id: i32::try_from(id).ok()?,
                 },
+                Some(combat::TargetKind::Bullet(_)) => return None,
             })
         };
         let (source_id, order) = match *command {
@@ -985,6 +1006,11 @@ impl Simulation {
             let entity_id = u64::try_from(event.entity_id).ok()?;
             return envelope(Command::ToggleRepair { entity_id });
         }
+        if let Some(event) = PlayerAutoRepairRecord::decode(record) {
+            return envelope(Command::TogglePlayerAutoRepair {
+                enabled: event.enabled,
+            });
+        }
         if let Some(event) = ArchiveRecord::decode(record) {
             // Preserve late object lookup and NULL. These semantic views do
             // not replace the native record held by queues/replay/snapshots.
@@ -1111,7 +1137,7 @@ impl Simulation {
                             target_ry,
                         }
                     }
-                    None => return None,
+                    Some(combat::TargetKind::Bullet(_)) | None => return None,
                 },
                 MegaMissionOrder::AttackMove {
                     target: attack_target,

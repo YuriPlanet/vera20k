@@ -102,7 +102,7 @@ impl GameEntity {
     pub(crate) fn advance_building_body(
         &mut self,
         now: i32,
-        archive_less_sale: bool,
+        archive_less_sale: Option<i32>,
         has_turret: bool,
         options: &GameOptions,
     ) {

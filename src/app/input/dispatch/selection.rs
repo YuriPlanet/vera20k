@@ -292,7 +292,6 @@ pub(crate) fn reconcile_selection_order_after_sim(
     );
     // Phobos "Flashing Technos on selecting" sits in ObjectClass::Select
     // (`0x005F46AE`/`0x005F4718`), so the frame's logic Selects flash too.
-    #[cfg(feature = "phobos")]
     if state.match_state.match_presentation.show_flash_on_selecting
         && !selected.is_empty()
         && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command)
@@ -430,7 +429,6 @@ pub(super) fn apply_selection_mutation(
     // ObjectClass_Select flashes each newly selected Techno the current player
     // controls (0x005F46AE/0x005F4718); an already-selected object makes no
     // Select call and therefore no flash.
-    #[cfg(feature = "phobos")]
     if state.match_state.match_presentation.show_flash_on_selecting
         && !successful_adds.is_empty()
         && let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Command)

@@ -162,6 +162,7 @@ fn visit_lines(row: &Value, index: usize) -> (Vec<SurfaceLine>, Vec<bool>, Vec<u
                 phase: integer(&bolt["phase"]),
                 alternate_color: bolt["alternate"].as_bool().unwrap(),
                 colors: [None; 3],
+                arcs: 8,
             };
             let admitted = draw.lines(
                 viewport(&row["input"]),
@@ -478,6 +479,7 @@ fn ares_bolt_colors_replace_their_strand_palette_words() {
         phase: 0,
         alternate_color: false,
         colors: [Some([255, 0, 0]), None, Some([0, 0, 255])],
+        arcs: 8,
     };
     let input = serde_json::json!({ "camera": [0, 0], "clip": [-10000, -10000, 20000, 20000] });
     assert!(

@@ -355,15 +355,29 @@ impl Simulation {
             FrameStep::OreGrowth => self.tick_ore_growth_rungs(rules, overlay_registry, effects)?,
             FrameStep::IceSolidify => self.solidify_ice(rules, overlay_registry),
             // `BombListClass::UpdateAll` follows growth and spread (0x0055B4E1).
-            FrameStep::BombList => Self::bomb_list_update(
-                &self.interner,
-                &mut self.substrate,
-                &self.houses,
-                &self.resolved_terrain,
-                &mut self.bombs,
-                &mut self.sound_events,
-                rules,
-            ),
+            FrameStep::BombList => {
+                // Phobos `LogicClass_Update_BeforeAll` (hook 0x55B4E1) runs
+                // `ScenarioExt::UpdateAutoDeathObjectsInLimbo`
+                // (`Ext/Scenario/Body.cpp:101-110`, `:293-301`) before
+                // `UpdateTransportReloaders` and before the object pass: a
+                // limboed Ares initial-payload object is absent from
+                // `LogicVector`, so this sweep is the only `AutoDeath` visit it
+                // receives. Registering nothing leaves the whole step empty.
+                self.update_auto_death_objects_in_limbo(rules, overlay_registry, effects);
+                // Phobos `LogicClass_Update_BeforeAll` (hook 0x55B4E1):
+                // transport reloaders tick before BombList's update.
+                self.phobos_update_transport_reloaders(rules);
+                Self::bomb_list_update(
+                    &self.interner,
+                    &mut self.substrate,
+                    &self.houses,
+                    &self.house_alliances,
+                    &self.resolved_terrain,
+                    &mut self.bombs,
+                    &mut self.sound_events,
+                    rules,
+                )
+            }
             FrameStep::Kamikaze => self.kamikaze_update(rules, effects),
             FrameStep::TeamScript => self.run_team_ai_pass(rules, overlay_registry, effects),
             FrameStep::DiskLasers => {
@@ -471,39 +485,28 @@ impl Simulation {
             FrameStep::LocalAnims => {
                 // A visit can make and end local anims. The walk visits those
                 // that stood when it began, as a copy of the list would; an
-                // ended one's visit did nothing. It reads the list a stretch
-                // at a time, so most anims cost it no search of the list.
+                // ended one's visit did nothing.
                 let end = self.substrate.anims.local_id_end();
-                let mut stretch = [0; 64];
                 let mut cursor = None;
-                loop {
-                    let count = self
-                        .substrate
-                        .anims
-                        .local_ids_after(cursor, end, &mut stretch);
-                    let Some(&last) = stretch[..count].last() else {
-                        break;
-                    };
-                    cursor = Some(last);
-                    for &id in &stretch[..count] {
-                        // No expiry reaches a presentation anim, which nothing
-                        // lists: it ends with its owner's UnInit instead
-                        // (`AnimConstructorInput::Presentation`).
-                        if self.presentation_anim_orphaned(id) {
-                            self.destroy_anim(id, rules);
-                            continue;
-                        }
-                        frame.bridge_state_changed |= self
-                            .visit_anim(id, rules, overlay_registry, effects)
-                            .map_err(|error| {
-                                FrameAdvanceError::new(
-                                    self.session.tick(),
-                                    self.session.binary_frame(),
-                                    id,
-                                    error.to_string(),
-                                )
-                            })?;
+                while let Some(id) = self.substrate.anims.next_local_id(cursor, end) {
+                    cursor = Some(id);
+                    // No expiry reaches a presentation anim, which nothing
+                    // lists: it ends with its owner's UnInit instead
+                    // (`AnimConstructorInput::Presentation`).
+                    if self.presentation_anim_orphaned(id) {
+                        self.destroy_anim(id, rules);
+                        continue;
                     }
+                    frame.bridge_state_changed |= self
+                        .visit_anim(id, rules, overlay_registry, effects)
+                        .map_err(|error| {
+                            FrameAdvanceError::new(
+                                self.session.tick(),
+                                self.session.binary_frame(),
+                                id,
+                                error.to_string(),
+                            )
+                        })?;
                 }
             }
             // Follows the object loop.

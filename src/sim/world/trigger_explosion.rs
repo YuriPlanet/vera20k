@@ -50,14 +50,18 @@ impl Simulation {
         // 6E24BD..6E250B: Flash48A620, then AreaDamage489280. Rules remain
         // immutable during a VERA action; both consume the same selected WH.
         let warhead_ref = self.interner.intern(&warhead.id);
-        self.combat_light_requests.emit(CombatLightRequest::Impact {
-            target_id: None,
-            damage,
-            warhead_ref,
-            coord: coordinate,
-            force_create: false,
-            flags: 0,
-        });
+        // Phobos `CombatLightChance` gate runs inside `Flash` before its
+        // detail/fps tests (`Misc/Hooks.LightEffects.cpp:69-74`).
+        if crate::sim::combat::combat_light_chance_admits(self, rules, warhead_ref) {
+            self.combat_light_requests.emit(CombatLightRequest::Impact {
+                target_id: None,
+                damage,
+                warhead_ref,
+                coord: coordinate,
+                force_create: false,
+                flags: 0,
+            });
+        }
         Some(
             world_receiver::apply_area_damage(
                 self,

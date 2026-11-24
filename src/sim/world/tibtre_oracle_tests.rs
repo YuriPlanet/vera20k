@@ -288,7 +288,6 @@ fn compare(s: &Scene, coords: &[(u16, u16)], native: &Value, context: &str) {
 /// The stock Terrain AI timelines end in the stock forced spread, which a
 /// Phobos build replaces with its own `SpawnsTiberium.*` scan.
 #[test]
-#[cfg(not(feature = "phobos"))]
 fn terrain_ai_timelines_match_native_stage_timers_ore_queues_and_rng() {
     let corpus = corpus();
     let stock = &corpus["retail_inputs"]["rows"][0];

@@ -121,11 +121,30 @@ impl Simulation {
         // 6FFD42's default arm, including AreaGuard and Sabotage. Caller
         // loops own suppression of later actors; this owner spends only Main.
         if voice_field == "VoiceSpecialAttack" {
+            // Phobos `TechnoClass_ClickedMission_VoiceSpecialAttack`
+            // (0x6FFD4C, `Ext/Techno/Hooks.cpp:2507-2528`): an Eaten click on
+            // a `Grinding=` building speaks this foot's `VoiceEnterGrinder`
+            // and skips the selector, spending no Main draw.
+            if let Some(sound) = self.voice_enter_grinder_request(rules, entity_id, target) {
+                return Self::queue_voice_request(Some(sound), voices_enabled, audible_owner);
+            }
             return self.voice_request_from_list(
                 &object.voice_special_attack,
                 voices_enabled,
                 audible_owner,
             );
+        }
+        // Phobos `TechnoClass_ResponseMove_Pickup`
+        // (`src/Ext/Techno/Hooks.cpp:1370-1397`, hook `0x00708FC0`, size 5):
+        // the type's `VoicePickup` replaces the whole VoiceMove choice for a
+        // `Carryall=` aircraft that has a used radio link
+        // (`RadioClass::HasAnyLink @ 0x0065AE30`) and whose Destination is a
+        // Foot. QueueVoice708D90 then takes the registered scalar without a
+        // Main draw, as Harvest/Enter/Capture scalars do.
+        if voice_field == "VoiceMove"
+            && let Some(sound) = self.carryall_pickup_voice(entity, object, target)
+        {
+            return Self::queue_voice_request(Some(sound), voices_enabled, audible_owner);
         }
         let scalar = match voice_field {
             "VoiceMove" => None,
@@ -142,6 +161,69 @@ impl Simulation {
         // QueueVoice's enable/House rejection. The caller enable gate above
         // instead prevents reaching VoiceMove at all (6FFCBD..6FFCCB).
         self.voice_request_from_list(object.voice_move(), voices_enabled, audible_owner)
+    }
+
+    /// Phobos `TechnoClass_ClickedMission_VoiceSpecialAttack` (`0x6FFD4C`,
+    /// `Ext/Techno/Hooks.cpp:2507-2528`): the clicked Eaten target's building
+    /// type must be `Grinding=`; the speaking foot's `VoiceEnterGrinder` then
+    /// replaces the `VoiceSpecialAttack` selector. An unset or unknown
+    /// catalog reference leaves the stock list path.
+    fn voice_enter_grinder_request<'a>(
+        &self,
+        rules: &'a RuleSet,
+        entity_id: u64,
+        target: Option<crate::sim::combat::TargetKind>,
+    ) -> Option<&'a str> {
+        use crate::map::entities::EntityCategory;
+        let crate::sim::combat::TargetKind::Entity(building_id) = target? else {
+            return None;
+        };
+        let building = self.entities().get(building_id)?;
+        if building.category() != EntityCategory::Structure {
+            return None;
+        }
+        let building_type = self.interner.object_type(building.type_ref(), rules)?;
+        if !building_type.grinding {
+            return None;
+        }
+        let foot = self.entities().get(entity_id)?;
+        self.interner
+            .object_type(foot.type_ref(), rules)?
+            .phobos_voice_enter_grinder
+            .as_deref()
+    }
+
+    /// Phobos `TechnoClass_ResponseMove_Pickup` (`Ext/Techno/Hooks.cpp:1370-1397`):
+    /// the AircraftType's `VoicePickup` when the actor is a `Carryall=` aircraft
+    /// that already holds a radio link (`RadioClass::HasAnyLink @ 0x0065AE30`,
+    /// the retained RadioLinks store) and the committed Destination is a Foot
+    /// (`generic_cast<FootClass*>`: Infantry, Unit or Aircraft, never a
+    /// Building). `target` is that Destination: the Move click's object, which
+    /// the native click handler installs before QueueMegaMission asks for the
+    /// voice. Every other arm falls through to the stock VoiceMove list.
+    fn carryall_pickup_voice<'a>(
+        &self,
+        entity: &crate::sim::game_entity::GameEntity,
+        object: &'a crate::rules::object_type::ObjectType,
+        target: Option<crate::sim::combat::TargetKind>,
+    ) -> Option<&'a str> {
+        use crate::map::entities::EntityCategory;
+        if entity.category() != EntityCategory::Aircraft
+            || !object.carryall
+            || entity.seldom.radio_contacts.is_empty()
+        {
+            return None;
+        }
+        let crate::sim::combat::TargetKind::Entity(destination) = target? else {
+            return None;
+        };
+        let destination = self.entities().get(destination)?;
+        matches!(
+            destination.category(),
+            EntityCategory::Infantry | EntityCategory::Unit | EntityCategory::Aircraft
+        )
+        .then(|| object.phobos_voice_pickup())
+        .flatten()
     }
 
     /// VoiceAttack7090A0 through the existing SelectWeapon/GetWeapon,
@@ -194,6 +276,43 @@ impl Simulation {
             rules,
             &self.interner,
         );
+        // Phobos `TechnoClass_VoiceAttack` (`Ext/TechnoType/Hooks.MultiWeapon.cpp:82-142`,
+        // hook `0x7090A0`): `GetVoiceAttack` runs before the stock list, and
+        // when it answers, the whole stock/Ares selection is skipped. Order:
+        // repairing weapon (`VoiceIFVRepair`, then the literal `FV` global),
+        // the multi-weapon slot voices, then the `IsSecondary`-chosen
+        // primary/secondary slot overrides, then `VoiceAttack`.
+        {
+            let elite = veterancy::raw_is_elite(entity.veterancy.raw());
+            let repair = weapon
+                .is_some_and(|weapon| weapon.damage < 0)
+                .then(|| {
+                    object.phobos_voice_ifv_repair().or_else(|| {
+                        (object.id == "FV")
+                            .then(|| rules.general.voice_ifv_repair())
+                            .flatten()
+                    })
+                })
+                .flatten();
+            if let Some(sound) = repair {
+                return Self::queue_voice_request(Some(sound), voices_enabled, audible_owner);
+            }
+            if let Some(sound) = object.phobos_voice_weapon_attack(index, elite) {
+                return Self::queue_voice_request(Some(sound), voices_enabled, audible_owner);
+            }
+            let secondary = object
+                .phobos_multi_weapon
+                .is_secondary(index, object.is_gattling);
+            if let Some(sound) = object.phobos_voice_attack_override(secondary, elite) {
+                return Self::queue_voice_request(Some(sound), voices_enabled, audible_owner);
+            }
+            //70918D..7091C4: unsigned raw draw/modulo, including a singleton.
+            return self.voice_request_from_list(
+                object.voice_attack(),
+                voices_enabled,
+                audible_owner,
+            );
+        }
         // Ares 3.0 TechnoClass_SelectFiringVoice (1004B1D0, hook 0x7090A8):
         // a repairing weapon takes `VoiceRepair`, else the case-sensitive
         // `FV` VoiceIFVRepair; then the rank's slot override, an elite one

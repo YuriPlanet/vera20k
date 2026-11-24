@@ -425,11 +425,45 @@ fn harvest_looking(
         snap.state = MinerState::ReturnToRefinery;
         return Ok(());
     }
-    let archive = sim
+    #[allow(unused_mut)]
+    let mut archive = sim
         .substrate
         .entities
         .get(id)
         .and_then(|entity| entity.archive_target());
+    // Phobos `UnitClass_MissionHarvest_HarvesterScanAfterUnload` (hook
+    // `0x73E730`, `Ext/Unit/Hooks.Harvester.cpp:145-170`): a harvester
+    // released with a focus whose type enables the key replaces that focus
+    // with a nearer `TiberiumLongScan` ore cell.
+    if let Some(focus) = archive {
+        let (enabled, weeder) = sim.interner.object_type(snap.type_id, rules).map_or(
+            (rules.phobos_globals.harvester_scan_after_unload, false),
+            |object| {
+                (
+                    object
+                        .phobos_harvester_scan_after_unload
+                        .unwrap_or(rules.phobos_globals.harvester_scan_after_unload),
+                    object.weeder,
+                )
+            },
+        );
+        if enabled && !weeder {
+            let range = super::ore_scan::scan_cells(rules.general.tiberium_long_scan);
+            if let Some(cell) =
+                super::ore_scan::scan_for_tiberium(sim, rules, overlay_registry, id, range)?
+            {
+                let found = crate::sim::combat::TargetKind::Cell(cell.0, cell.1);
+                let to_ore = sim.object_distance_to(id, found);
+                let to_focus = sim.object_distance_to(id, focus);
+                if let (Some(to_ore), Some(to_focus)) = (to_ore, to_focus)
+                    && to_ore > 0
+                    && to_ore < to_focus
+                {
+                    archive = Some(found);
+                }
+            }
+        }
+    }
     if let Some(archive) = archive {
         assign_archive_destination(sim, rules, id, archive, frame_effects);
         if let Some(entity) = sim.substrate.entities.get_mut(id) {

@@ -120,7 +120,7 @@ impl DigEffects {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct TunnelRuntime {
     /// `+0x18`.
-    state: TunnelState,
+    pub(crate) state: TunnelState,
     /// `+0x1C`. The zero coordinate is native's null (`0x00B0F910`).
     destination: DriveCoord,
     /// `+0x28`: start frame and duration (its `+0x2C` dword is a stale stack
@@ -130,6 +130,12 @@ pub struct TunnelRuntime {
     /// take the phase's progress as `(rate - left) / rate`; a zero rate is
     /// done.
     dig_timer_rate: i32,
+    /// The height sampled when the dig-in timer completed, in leptons. Native
+    /// keeps no sample (`ProcessDugIn` sinks to `0xFFFFFF00` and
+    /// `ProcessPreDigOut` re-reads `0x578080`), so this is only the
+    /// terrain-free fallback for a caller without a map.
+    #[serde(default)]
+    pub(crate) ground_z: i32,
 }
 
 impl TunnelRuntime {
@@ -141,11 +147,23 @@ impl TunnelRuntime {
             destination: NULL_COORD,
             dig_timer: CdTimer::started(binary_frame as i32, 0),
             dig_timer_rate: 0,
+            ground_z: 0,
         }
     }
 
     pub fn state(&self) -> TunnelState {
         self.state
+    }
+
+    /// The `DigTimer.start`/`DigTimer.duration` pair `Z_Adjust` reads.
+    pub(crate) fn dig_timer_pair(&self) -> (u32, u32) {
+        (self.dig_timer.start_frame().max(0) as u32, self.dig_timer_rate.max(0) as u32)
+    }
+
+    /// Rebuild the timer from a start frame and a duration.
+    pub(crate) fn set_dig_timer_pair(&mut self, start: u32, duration: u32) {
+        self.dig_timer = CdTimer::started(start as i32, duration as i32);
+        self.dig_timer_rate = duration as i32;
     }
 
     pub(crate) fn set_state(&mut self, state: TunnelState) {
@@ -155,6 +173,22 @@ impl TunnelRuntime {
     /// `Is_Moving` (`0x00728A50`): State is not Idle.
     pub(crate) fn is_moving(&self) -> bool {
         self.state != TunnelState::Idle
+    }
+    /// `Is_Moving_Now 0x728A60`: `Is_Moving`, and then `State != 1`
+    /// (`0x728A6F` loads State, `0x728A77` compares it against 1): only a
+    /// `PreDigIn` owner answers moving now.
+    pub(crate) fn is_moving_now(&self) -> bool {
+        self.state == TunnelState::PreDigIn
+    }
+
+    /// The three defined fields the world hash folds: `+0x18` State,
+    /// `+0x28` DigTimer.start and `+0x34` the timer rate.
+    pub(crate) fn hash_fields(&self) -> (u8, i32, i32) {
+        (
+            self.state.raw(),
+            self.dig_timer.start_frame(),
+            self.dig_timer_rate,
+        )
     }
 
     /// `Destination` (`0x00728A90`): the stored coordinate while moving, else

@@ -536,6 +536,7 @@ fn render_original_body_pixels(
                 light,
                 &sim,
                 None,
+                false,
                 crate::app::presentation::lighting::TechnoDraw::Shape,
             );
             let word = shp_colour_word(gi_record, &sim, &rules, || {

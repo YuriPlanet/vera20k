@@ -349,6 +349,139 @@ fn a_battle_fortress_crushing_a_tank_plays_its_death_explosion() {
     assert_eq!(rocking.native_bits()[3], 0xbd4c_cccd);
 }
 
+/// The rocking words after a level crusher crushes a Unit through
+/// `per_cell_process`; `extra` is appended to the crusher's section.
+fn unit_crush_rocking(extra: &str) -> [u32; 4] {
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::ruleset::RuleSet;
+
+    let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+        "[VehicleTypes]\n0=TANK\n1=VICTIM\n\
+         [TANK]\nStrength=300\nArmor=heavy\nCrusher=yes\nSpeed=4\n{extra}\
+         [VICTIM]\nStrength=50\nArmor=none\nCrushable=yes\nSpeed=4\n"
+    )))
+    .unwrap();
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x741941);
+    let tank = sim
+        .spawn_object("TANK", "Russians", 10, 10, 0, &rules)
+        .unwrap();
+    let spike = sim
+        .spawn_object("VICTIM", "Americans", 12, 10, 0, &rules)
+        .unwrap();
+    let mut position = sim.substrate.entities.get(tank).unwrap().position;
+    let centre = position_world_coord(&position);
+    position.put_world_xy([centre.x + 16, centre.y]);
+    sim.substrate.entities.get_mut(spike).unwrap().position = position;
+    // The level crusher rocks only if it carries the state the native
+    // Techno allocates when built; a zero forward velocity takes the store.
+    sim.substrate.entities.get_mut(tank).unwrap().rocking =
+        Some(crate::sim::rocking::RockingState::default());
+    sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
+    sim.per_cell_process(
+        tank,
+        PerCellReason::Arrival,
+        &rules,
+        None,
+        &mut FrameEffects::default(),
+    )
+    .unwrap();
+    assert!(
+        sim.substrate
+            .entities
+            .get(spike)
+            .is_none_or(|victim| !victim.lifecycle.object_alive()),
+        "the victim vehicle is crushed"
+    );
+    sim.substrate
+        .entities
+        .get(tank)
+        .unwrap()
+        .rocking
+        .expect("the crusher rocks")
+        .native_bits()
+}
+
+/// Phobos `CrushForwardTiltPerFrame=` (`Ext/UnitType/Body.cpp:71`,
+/// `Nullable<double>` unset `Ext/UnitType/Body.h:56`): the crush tail
+/// (`0x00741954`, hook `0x741941` at `Ext/Unit/Hooks.Crushing.cpp:35`) stores
+/// the crusher type's value instead of the stock binary32 -0.05.
+#[test]
+fn crush_forward_tilt_per_frame_replaces_the_stock_tilt() {
+    assert_eq!(unit_crush_rocking("")[3], 0xbd4c_cccd);
+    assert_eq!(
+        unit_crush_rocking("CrushForwardTiltPerFrame=-0.125\n")[3],
+        (-0.125_f32).to_bits()
+    );
+}
+
+/// Phobos `TiltsWhenCrushes.Vehicles=` (`Ext/UnitType/Body.cpp:69`,
+/// `Nullable<bool>`, `Body.h:54`): the OverrunSquare tail (hook `0x741941`)
+/// gates the store on the type override, else the stock `TiltsWhenCrushes`.
+#[test]
+fn tilts_when_crushes_vehicles_gates_the_unit_crush_tilt() {
+    // An unset override keeps the stock key.
+    assert_eq!(unit_crush_rocking("TiltsWhenCrushes=no\n")[3], 0);
+    // The type override wins over the stock value in both directions.
+    assert_eq!(
+        unit_crush_rocking("TiltsWhenCrushes=no\nTiltsWhenCrushes.Vehicles=yes\n")[3],
+        0xbd4c_cccd
+    );
+    assert_eq!(unit_crush_rocking("TiltsWhenCrushes.Vehicles=no\n")[3], 0);
+}
+
+/// Phobos `TiltsWhenCrushes.Overlays=` (`Ext/UnitType/Body.cpp:70`,
+/// `Nullable<bool>`, `Body.h:55`): the overlay-crush tail (hook `0x73B05B`)
+/// gates the recoil on the type override, else the stock `TiltsWhenCrushes`.
+#[test]
+fn tilts_when_crushes_overlays_gates_the_overlay_recoil() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::overlay_types::OverlayTypeRegistry;
+    use crate::rules::ruleset::RuleSet;
+    use crate::sim::overlay_grid::OverlayGrid;
+
+    let recoil_bits = |extra: &str| {
+        let ini = IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=TANK\n[OverlayTypes]\n0=FENCE\n\
+             [TANK]\nStrength=300\nArmor=heavy\nCrusher=yes\nSpeed=4\n{extra}\
+             [FENCE]\nCrushable=yes\nStrength=100\n"
+        ));
+        let rules = RuleSet::from_ini(&ini).unwrap();
+        let registry = OverlayTypeRegistry::from_ini(&ini, None);
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x73B05B);
+        let tank = sim
+            .spawn_object("TANK", "Russians", 10, 10, 0, &rules)
+            .unwrap();
+        sim.substrate.entities.get_mut(tank).unwrap().rocking =
+            Some(crate::sim::rocking::RockingState::default());
+        let mut grid = OverlayGrid::new(32, 32);
+        grid.place_overlay(10, 10, 0, 0);
+        sim.overlay_grid = Some(grid);
+        sim.unit_per_cell_overlay_crush(
+            tank,
+            (10, 10),
+            &rules,
+            &registry,
+            &mut FrameEffects::default(),
+        );
+        sim.substrate
+            .entities
+            .get(tank)
+            .unwrap()
+            .rocking
+            .unwrap()
+            .native_bits()
+    };
+
+    // An unset override keeps the stock key; the type key wins in both
+    // directions. The stock +0.02 binary32 is 0x3CA3D70A.
+    assert_eq!(recoil_bits("TiltsWhenCrushes=no\n")[3], 0);
+    assert_eq!(
+        recoil_bits("TiltsWhenCrushes=no\nTiltsWhenCrushes.Overlays=yes\n")[3],
+        0x3ca3_d70a
+    );
+    assert_eq!(recoil_bits("TiltsWhenCrushes.Overlays=no\n")[3], 0);
+}
+
 /// Ares UnitClass_CrushCell_CrushDamage (hook 0x7418AA): crushing a type
 /// with `CrushDamage=` damages the crusher with its `CrushDamage.Warhead`;
 /// an explicit `none` warhead deals nothing.

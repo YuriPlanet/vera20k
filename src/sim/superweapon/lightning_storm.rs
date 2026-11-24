@@ -788,15 +788,17 @@ pub(super) fn ground_strike(
     let mut bridge_changed = false;
     if let Some(warhead) = warhead {
         let warhead_ref = sim.interner.intern(&general.lightning_warhead);
-        sim.combat_light_requests
-            .emit(crate::sim::combat::CombatLightRequest::Impact {
-                target_id: None,
-                damage: general.lightning_damage,
-                warhead_ref,
-                coord: coordinate,
-                force_create: false,
-                flags: 0,
-            });
+        if crate::sim::combat::combat_light_chance_admits(sim, rules, warhead_ref) {
+            sim.combat_light_requests
+                .emit(crate::sim::combat::CombatLightRequest::Impact {
+                    target_id: None,
+                    damage: general.lightning_damage,
+                    warhead_ref,
+                    coord: coordinate,
+                    force_create: false,
+                    flags: 0,
+                });
+        }
         let house = sim.lightning_storm.owner;
         bridge_changed = crate::sim::combat::world_receiver::apply_area_damage(
             sim,

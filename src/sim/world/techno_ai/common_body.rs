@@ -21,7 +21,6 @@ use crate::sim::intern::StringInterner;
 use crate::sim::mission::MissionType;
 use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
-use crate::sim::world::FrameChannel;
 use crate::sim::world::SimSoundEvent;
 
 /// The promotion detector of `TechnoClass::AI_Update @ 0x006FA054..0x006FA145`,
@@ -38,42 +37,53 @@ use crate::sim::world::SimSoundEvent;
 /// counter is stepped later by4CC770 at6FAC4D, through flash_step; a
 /// newly promoted object's timer therefore loses one on this same visit.
 /// Ares replaces this whole block (`Simulation::update_ares_veterancy`).
-fn veterancy_promotion_step(
-    interner: &mut StringInterner,
-    substrate: &mut ObjectSubstrate,
-    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-    sound_events: &mut FrameChannel<SimSoundEvent>,
-    id: u64,
-    rules: &RuleSet,
-) {
-    let Some(entity) = substrate
-        .entities
-        .get_mut_if(id, |entity| entity.veterancy.rank_changed())
-    else {
+fn veterancy_promotion_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+    use crate::sim::combat::veterancy::LEVEL_UNSAMPLED;
+    use crate::sim::combat::veterancy::Promotion;
+
+    // `previous` and `level` feed the Phobos promotion-animation arm only.
+    let (previous, promotion, level, owner, type_id, world) = {
+        let terrain = sim.resolved_terrain.as_ref();
+        let Some(entity) = sim
+            .substrate
+            .entities
+            .get_mut_if(id, |entity| entity.veterancy.rank_changed())
+        else {
+            return;
+        };
+        let previous = entity.veterancy.rank_cache();
+        let promotion = entity
+            .veterancy
+            .sample_promotion(&mut entity.flashing, rules.general.elite_flash_timer);
+        (
+            previous,
+            promotion,
+            entity.veterancy.rank_cache(),
+            entity.owner(),
+            // The promoted object's type is already interned on the entity;
+            // carry it out so the accessibility line can name the game's own
+            // object without a second lookup or a guessed translation.
+            // Transient fact only.
+            entity.type_ref(),
+            crate::sim::movement::ground_pose::object_location(entity, terrain).into(),
+        )
+    };
+    // Phobos `TechnoClass_AI_PromoteAnim @ 0x6FA07A` (`Ext/Techno/Hooks.cpp:
+    // 158-170`) replaces the promotion block's `GetRemainingLevel` call, so it
+    // runs on every sampled rank change — demotions included — before the
+    // stock sound and flash arms.
+    if rules.phobos() && previous != LEVEL_UNSAMPLED && level != previous {
+        super::show_promote_anim(sim, rules, id, owner, level);
+    }
+    let Some(promotion) = promotion else {
         return;
     };
-    let Some(promotion) = entity
-        .veterancy
-        .sample_promotion(&mut entity.flashing, rules.general.elite_flash_timer)
-    else {
-        return;
-    };
-    let owner = entity.owner();
-    // The promoted object's type is already interned on the entity; carry it
-    // out so the accessibility line can name the game's own object without a
-    // second lookup or a guessed translation. Transient fact only.
-    let type_id = entity.type_ref();
-    let world = crate::sim::movement::ground_pose::object_location(entity, terrain).into();
     let sound = match promotion {
-        crate::sim::combat::veterancy::Promotion::Elite => {
-            rules.general.upgrade_elite_sound.as_deref()
-        }
-        crate::sim::combat::veterancy::Promotion::Veteran => {
-            rules.general.upgrade_veteran_sound.as_deref()
-        }
+        Promotion::Elite => rules.general.upgrade_elite_sound.as_deref(),
+        Promotion::Veteran => rules.general.upgrade_veteran_sound.as_deref(),
     };
-    let sound_id = sound.map(|name| interner.intern(name));
-    sound_events.emit(super::SimSoundEvent::UnitPromoted {
+    let sound_id = sound.map(|name| sim.interner.intern(name));
+    sim.sound_events.emit(SimSoundEvent::UnitPromoted {
         owner,
         sound_id,
         type_id,
@@ -120,10 +130,27 @@ pub(super) fn house_self_heal_step(
     session: &ScenarioSession,
     substrate: &mut ObjectSubstrate,
     houses: &Houses,
+    house_alliances: &crate::sim::house_diplomacy::HouseAlliances,
     resolved_terrain: &Option<ResolvedTerrainGrid>,
     id: u64,
     rules: &RuleSet,
 ) {
+    // Phobos `TechnoClass_AI_SelfHealGain` (0x6FA793,
+    // `Ext/Techno/Hooks.cpp:146-155`) replaces the two stock arms with one
+    // type-resolved pass; unset keys reproduce the stock classification.
+    if rules.phobos() {
+        phobos_apply_gained_self_heal(
+            interner,
+            session,
+            substrate,
+            houses,
+            house_alliances,
+            resolved_terrain,
+            id,
+            rules,
+        );
+        return;
+    }
     house_heal_arm(
         interner,
         session,
@@ -144,6 +171,215 @@ pub(super) fn house_self_heal_step(
         rules,
         true,
     );
+}
+
+/// `TechnoExt::ApplyGainedSelfHeal` (`Ext/Techno/Body.Update.cpp:591-705`):
+/// the TechnoType's `SelfHealGainType`, else the stock classification
+/// (Infantry, organic Unit -> Infantry; other Unit -> Units; everything else
+/// -> NoHeal), picks the frame gate, house count and amount. The Phobos caps
+/// clamp the count; `GainSelfHealFromPlayerControl`/`FromAllies` add other
+/// houses' counts. The healed object's damage particle retires on the same
+/// crossing condition the stock unit arm uses.
+#[allow(clippy::too_many_arguments)]
+fn phobos_apply_gained_self_heal(
+    interner: &StringInterner,
+    session: &ScenarioSession,
+    substrate: &mut ObjectSubstrate,
+    houses: &Houses,
+    house_alliances: &crate::sim::house_diplomacy::HouseAlliances,
+    resolved_terrain: &Option<ResolvedTerrainGrid>,
+    id: u64,
+    rules: &RuleSet,
+) {
+    use crate::rules::phobos_self_heal::SelfHealGainType;
+
+    let globals = &rules.phobos_globals;
+    let Some(entity) = substrate.entities.get(id) else {
+        return;
+    };
+    let Some(object) = interner.object_type(entity.type_ref(), rules) else {
+        return;
+    };
+    let owner = entity.owner();
+    if !crate::sim::self_heal::multiplay_passive_allowed(
+        houses,
+        owner,
+        globals.gain_self_heal_allow_multiplay_passive,
+    ) {
+        return;
+    }
+    let health = entity.health.current();
+    let deficit = object.strength.wrapping_sub(health);
+    if health == 0 || deficit <= 0 {
+        return;
+    }
+    let kind = crate::sim::self_heal::gain_kind(
+        entity.category(),
+        object.organic,
+        object.phobos_self_heal_gain_type,
+    );
+    if kind == SelfHealGainType::NoHeal {
+        return;
+    }
+    let infantry = kind == SelfHealGainType::Infantry;
+    let frames = if infantry {
+        rules.general.self_heal_infantry_frames
+    } else {
+        rules.general.self_heal_unit_frames
+    };
+    let frame = session.binary_frame() as i32;
+    // Keep the latest-main refusal for an authored zero/signed-MIN period:
+    // outside data never stops the game.
+    if frame.checked_rem(frames) != Some(0) {
+        return;
+    }
+    let amount_key = if infantry {
+        rules.general.self_heal_infantry_amount
+    } else {
+        rules.general.self_heal_unit_amount
+    };
+    let cap = if infantry {
+        globals.infantry_gain_self_heal_cap
+    } else {
+        globals.units_gain_self_heal_cap
+    };
+    let count = phobos_self_heal_source_count(
+        interner,
+        session,
+        houses,
+        house_alliances,
+        owner,
+        infantry,
+        cap,
+        globals.gain_self_heal_from_player_control,
+        globals.gain_self_heal_from_allies,
+    );
+    let amount = amount_key.wrapping_mul(count);
+    if amount == 0 {
+        return;
+    }
+    let amount = if amount >= deficit { deficit } else { amount };
+    let was_damaged = crate::sim::pathfinding::terrain_speed::is_at_or_below_condition_yellow(
+        health,
+        object.strength,
+        rules.general.condition_yellow,
+    );
+    if let Some(entity) = substrate.entities.get_mut(id) {
+        entity.health.heal(amount);
+    }
+    if was_damaged {
+        // Phobos' tail retires the damage particle above ConditionYellow or
+        // below -10 leptons. VERA derives the building's damaged art from
+        // live health, so no explicit ToggleDamagedAnims mark is kept.
+        Simulation::retire_damage_smoke_after_self_heal(
+            interner,
+            substrate,
+            resolved_terrain,
+            id,
+            rules,
+        );
+    }
+}
+
+/// The healed house count `ApplyGainedSelfHeal` multiplies the amount by: the
+/// owner's counter plus, under `GainSelfHealFromPlayerControl` (campaign) and
+/// `GainSelfHealFromAllies`, other eligible houses. A set Phobos cap clamps
+/// the sum with its `.max(1)` lower bound, as the native clamp does. The
+/// self-heal marker's `hasSelfHeal` display query asks this same scan, so a
+/// drawn marker always corresponds to a heal source.
+#[allow(clippy::too_many_arguments)]
+fn phobos_self_heal_source_count(
+    interner: &StringInterner,
+    session: &ScenarioSession,
+    houses: &Houses,
+    house_alliances: &crate::sim::house_diplomacy::HouseAlliances,
+    owner: crate::sim::intern::InternedId,
+    infantry: bool,
+    cap: Option<i32>,
+    from_player_control: bool,
+    from_allies: bool,
+) -> i32 {
+    let heal_count = |house: &crate::sim::house_state::HouseState| {
+        if infantry {
+            house.self_heal_infantry()
+        } else {
+            house.self_heal_units()
+        }
+    };
+    let mut count = houses.get(&owner).map_or(0, heal_count);
+    let cap_active = cap.is_some();
+    let cap = cap.unwrap_or(0).max(1);
+    if cap_active && count >= cap {
+        return cap;
+    }
+    let is_campaign = session.uses_campaign_world();
+    let from_player = from_player_control
+        && is_campaign
+        && houses
+            .get(&owner)
+            .is_some_and(|house| house.is_human() || house.player_control());
+    if from_player || from_allies {
+        for &house_id in houses.order() {
+            if house_id == owner {
+                continue;
+            }
+            let Some(house) = houses.get(&house_id) else {
+                continue;
+            };
+            let eligible = (from_player && (house.is_human() || house.player_control()))
+                || (from_allies
+                    && (!is_campaign || (!house.is_human() && !house.player_control()))
+                    && house_alliances.is_allied(interner, house_id, owner));
+            if eligible {
+                count = count.wrapping_add(heal_count(house));
+                if cap_active && count >= cap {
+                    count = cap;
+                    break;
+                }
+            }
+        }
+    }
+    count
+}
+
+impl Simulation {
+    /// `TechnoExt::DrawSelfHealPips`' `hasSelfHeal` display query
+    /// (`Ext/Techno/Body.Visuals.cpp:31-63`): whether any house source would
+    /// heal this owner at all. It runs the heal owner's own scan, so a drawn
+    /// marker always has a matching source. Read-only.
+    pub fn phobos_self_heal_sources_active(
+        &self,
+        owner: crate::sim::intern::InternedId,
+        infantry: bool,
+        rules: &RuleSet,
+    ) -> bool {
+        if !rules.phobos() {
+            return self.houses.get(&owner).is_some_and(|house| {
+                if infantry {
+                    house.self_heal_infantry() > 0
+                } else {
+                    house.self_heal_units() > 0
+                }
+            });
+        }
+        let globals = &rules.phobos_globals;
+        let cap = if infantry {
+            globals.infantry_gain_self_heal_cap
+        } else {
+            globals.units_gain_self_heal_cap
+        };
+        phobos_self_heal_source_count(
+            &self.interner,
+            &self.session,
+            &self.houses,
+            &self.house_alliances,
+            owner,
+            infantry,
+            cap,
+            globals.gain_self_heal_from_player_control,
+            globals.gain_self_heal_from_allies,
+        ) > 0
+    }
 }
 
 /// One arm of [`house_self_heal_step`]. `infantry` selects the hospital arm:
@@ -525,8 +761,9 @@ pub(super) fn techno_common_steps(
     }
     // Phobos `TechnoExt::UpdateAttachEffects` (Body.Update.cpp:895): one AI
     // phase and the animation check for every AttachEffect on this object.
-    #[cfg(feature = "phobos")]
-    sim.update_phobos_attach_effects_with(id, rules, effects, overlay_registry);
+    if rules.phobos() {
+        sim.update_phobos_attach_effects_with(id, rules, effects, overlay_registry);
+    }
     if rules.ares() {
         sim.update_ares_operator_operability(id, rules, effects);
         // Installed6F9E50 ->1004B320 owns delayed Building reactivation before
@@ -590,17 +827,10 @@ pub(super) fn techno_common_steps(
         // Ares TechnoClass_Update_Veterancy1004F2E0 (hook6FA054..6FA14B).
         sim.update_ares_veterancy(id, false, true, rules, effects);
     } else if !quiet {
-        veterancy_promotion_step(
-            &mut sim.interner,
-            &mut sim.substrate,
-            sim.resolved_terrain.as_ref(),
-            &mut sim.sound_events,
-            id,
-            rules,
-        );
+        veterancy_promotion_step(sim, id, rules);
     }
     if !quiet {
-        crate::sim::credit_income::drain_common_step(sim, id, rules);
+        crate::sim::credit_income::drain_common_step(sim, id, rules, effects.reborrow());
     }
     // Techno6FA224..6FA244: only a valid loaded main VXL reaches
     // RockingUpdate70B570 and its immediate Alive guard. This precedes
@@ -895,7 +1125,7 @@ pub(super) fn target_reach_step(
     if !matches!(
         entity.category(),
         EntityCategory::Unit | EntityCategory::Infantry
-    ) || sim.team_script_vm.team_of(id).is_some()
+    ) || sim.team_script_vm.team_for_member(id).is_some()
         || entity.navigation.nav_com().is_some()
     {
         return;
@@ -1109,6 +1339,7 @@ pub(super) fn techno_after_acquisition(
             &sim.session,
             &mut sim.substrate,
             &sim.houses,
+            &sim.house_alliances,
             &sim.resolved_terrain,
             id,
             rules,

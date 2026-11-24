@@ -123,6 +123,8 @@ pub mod track_process;
 mod track_speed;
 pub(crate) mod track_turn;
 pub mod tunnel_movement;
+pub use tunnel_movement::{TunnelRuntime, TunnelState};
+mod tunnel_locomotion;
 mod tunnel_process;
 #[cfg(all(test, tests_sim_movement))]
 mod tunnel_tests;

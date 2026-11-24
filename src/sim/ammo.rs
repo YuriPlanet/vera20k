@@ -95,6 +95,25 @@ impl TechnoAmmo {
         self.current
     }
 
+    /// Phobos `WarheadTypeExt::ApplyAmmoModifier`
+    /// (`Ext/WarheadType/Detonate.cpp:923-932`): `new = Ammo + current`,
+    /// then `new < 0 ? 0 : new`, then `new > maxAmmo ? maxAmmo : new`. The
+    /// maximum is the target type's live `Ammo=`, which is `-1` for a type
+    /// that leaves it unset, so a clamped store can be negative there.
+    /// Returns the new count.
+    pub(crate) fn apply_warhead_delta(&mut self, delta: i32, max_ammo: i32) -> i32 {
+        let new = self.current.wrapping_add(delta);
+        let new = new.max(0);
+        self.current = if new > max_ammo { max_ammo } else { new };
+        self.current
+    }
+
+    /// Phobos `UnitExt::HandleOnDeployAmmoChange` (`Ext/Unit/Body.cpp:249`):
+    /// the clamped deploy rewrite, followed by StartReloading at the caller.
+    pub(crate) fn set_current(&mut self, current: i32) {
+        self.current = current;
+    }
+
     /// TechnoClass::DecreaseAmmo70D670, virtual+390: only positive counts
     /// debit. Aircraft overrides the slot with RET41B900 at the caller.
     /// Ares100441F0 calls the same DecreaseAmmo slot once per positive
@@ -189,6 +208,14 @@ impl TechnoAmmo {
     /// fire request alone is not admission.
     pub(crate) fn begin_release(&mut self) {
         self.pending_release = true;
+    }
+
+    /// Phobos `AircraftExt::FireWeapon` clears `ShouldLoseAmmo` after a
+    /// `Strafing.UseAmmoPerShot` debit (`Ext/Aircraft/Body.cpp:39`): that flag
+    /// is Aircraft `+0x6C8`, VERA's pending release, so the per-shot debit
+    /// replaces the round's one release debit.
+    pub(crate) fn cancel_release(&mut self) {
+        self.pending_release = false;
     }
 
     #[cfg(any(test, feature = "test-support"))]

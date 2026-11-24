@@ -22,8 +22,10 @@ use std::borrow::Cow;
 
 use crate::app::presentation::picture_hud::covering;
 use crate::app::presentation::text_hud::TextHud;
+use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::{BitFont, Fit};
-use crate::render::sidebar_text::CREDITS_DEPTH;
+pub use crate::render::sidebar_text::credits_tint;
+use crate::render::sidebar_text::{CREDITS_DEPTH, build_indicator_instances};
 use crate::ui::match_layout::TextAlign;
 use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarPart, SidebarView};
 
@@ -84,7 +86,10 @@ pub(crate) fn credits_pen(
         TextAlign::Right => (plate_x + plate_width.round() - measured as f32).round(),
     };
     (
-        [x + money[0], view.panel_rect.y.round() + (credits[1] + money[1])],
+        [
+            x + money[0],
+            view.panel_rect.y.round() + (credits[1] + money[1]),
+        ],
         measured,
     )
 }
@@ -119,6 +124,32 @@ pub(crate) fn draw_credits(
     );
 }
 
+/// Every Phobos sidebar indicator resolved for this frame, in the order the
+/// per-frame owner stored them. Each carries its own colour, so unlike the
+/// credits counter this takes no theme tint.
+pub fn build_sidebar_indicator_instances(
+    font: &BitFont,
+    indicators: &[crate::ui::sidebar::SidebarIndicator],
+    panel_rect: crate::ui::sidebar::Rect,
+    camera_offset: [f32; 2],
+) -> Vec<SpriteInstance> {
+    indicators
+        .iter()
+        .flat_map(|indicator| {
+            build_indicator_instances(
+                font,
+                &indicator.text,
+                panel_rect,
+                indicator.anchor_x,
+                indicator.anchor_y,
+                indicator.align,
+                indicator.tint,
+                camera_offset,
+            )
+        })
+        .collect()
+}
+
 #[cfg(all(test, tests_app_presentation))]
 mod tests {
     use super::*;
@@ -139,6 +170,56 @@ mod tests {
             ],
             4,
         )
+    }
+
+    fn panel() -> crate::ui::sidebar::Rect {
+        crate::ui::sidebar::Rect {
+            x: 632.0,
+            y: 0.0,
+            w: 168.0,
+            h: 600.0,
+        }
+    }
+
+    /// `0x4A25E0` anchors an indicator on `width / 2` plus its own base column,
+    /// and the `TextPrintType` bits decide how the measured string sits there:
+    /// left starts at the anchor, centre pulls it back half its width, right
+    /// ends it at it. `"12"` measures `3 + 6 + 2 * spacing = 11`.
+    #[test]
+    fn indicator_anchor_and_alignment_use_the_native_print_bits() {
+        use crate::rules::phobos_sidebar_indicators::SidebarTextAlign;
+        use crate::ui::sidebar::SidebarIndicator;
+
+        let font = digit_font();
+        let resolved = |anchor_x: i32, align| SidebarIndicator {
+            text: "12".to_string(),
+            tint: [0.0, 1.0, 0.0],
+            anchor_x,
+            anchor_y: 5,
+            align,
+        };
+        let build = |indicator: &SidebarIndicator| {
+            build_sidebar_indicator_instances(
+                &font,
+                std::slice::from_ref(indicator),
+                panel(),
+                [0.0; 2],
+            )
+        };
+        let left = build(&resolved(50, SidebarTextAlign::Left));
+        assert_eq!(left[0].position[0], 766.0);
+        assert_eq!(
+            left[1].position[0] - left[0].position[0],
+            3.0 + CHAR_SPACING as f32
+        );
+        assert_eq!(left[0].position[1], 5.0);
+        assert_eq!(left[0].tint, [0.0, 1.0, 0.0], "ColorGreen packs 0,255,0");
+        let centre = build(&resolved(50, SidebarTextAlign::Center));
+        assert_eq!(centre[0].position[0], 761.0, "11 measured, integer halving");
+        let right = build(&resolved(50, SidebarTextAlign::Right));
+        assert_eq!(right[0].position[0], 755.0);
+        let delta = build(&resolved(-70, SidebarTextAlign::Left));
+        assert_eq!(delta[0].position[0], 646.0);
     }
 
     /// A stock 1024x768 view whose counter shows `credits`.
@@ -236,7 +317,10 @@ mod tests {
         let ([x, _], width) = credits_pen(&font, "1", &view, spec, 167.0, TextAlign::Center);
         assert_eq!(width, 4);
         // 167/2 = 83, 4/2 = 2 → 81. Float halving would give 81.5.
-        assert_eq!(x, plate_x.round() + 81.0 + spec.place(SidebarPart::Money)[0]);
+        assert_eq!(
+            x,
+            plate_x.round() + 81.0 + spec.place(SidebarPart::Money)[0]
+        );
         assert_eq!(x.fract(), 0.0);
 
         // A fractional panel origin still resolves to a whole pixel.

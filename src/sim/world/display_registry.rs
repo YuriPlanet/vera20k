@@ -15,7 +15,32 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::StringInterner;
 use crate::sim::movement::ground_pose::{building_render_order_parts, position_world_coord};
+use crate::sim::movement::locomotor::MovementLayer;
+use crate::sim::terrain_object::TerrainObjectStore;
 use crate::sim::world::ObjectSubstrate;
+
+/// `ILocomotion::In_Which_Layer`'s Underground answer, cached on the active
+/// locomotor (`MovementLayer::Underground`, which VERA's `LocomotorState`
+/// stores; native's Tunnel locomotor returns it from its process calls). A
+/// techno riding it answers `Layer::Underground` (0) whatever its height,
+/// which is the layer Phobos reads from `pTargetTechno->InWhichLayer()` in
+/// `Ext/Techno/Hooks.Firing.cpp:151`, `:188`, `:223` and `:549`.
+///
+/// VERA resolves that CLSID as dormant — `rules/locomotor_type.rs` leaves the
+/// Tiberian Sun Tunnel, Mech and DropPod classes out of the installed table —
+/// so no VERA unit ever caches this layer. Stock `ini/rulesmd.ini` never names
+/// the CLSID (that is the dormancy golden); a mod's rules may. The branch is
+/// what the layer answer becomes once the Tunnel locomotor exists, and what
+/// fixtures set meanwhile.
+pub fn entity_is_underground(entity: &GameEntity) -> bool {
+    entity
+        .locomotor
+        .as_ref()
+        .is_some_and(|locomotor| locomotor.layer() == MovementLayer::Underground)
+}
+
+/// Foot4DB7E0 / Aircraft41ADC0 dispatch to the active locomotor. Fly4CFCF0
+/// reads physical GetHeight, Jumpjet54B8D0 additionally reads structural
 
 /// Foot4DB7E0 / Aircraft41ADC0 dispatch to the active locomotor. Tunnel72A1A0
 /// answers from its State, Fly4CFCF0 reads physical GetHeight, Jumpjet54B8D0 additionally reads structural
@@ -30,6 +55,11 @@ pub(crate) fn entity_layer(
     rules: Option<(&RuleSet, &crate::sim::intern::StringInterner)>,
 ) -> DisplayLayer {
     let kind = entity.locomotor.as_ref().map(|l| l.active_kind());
+    // The Tunnel locomotor answers `In_Which_Layer` before any height query,
+    // so a burrowed techno never falls through to the Ground answer below.
+    if entity_is_underground(entity) {
+        return DisplayLayer::UNDERGROUND;
+    }
     if entity.category() != EntityCategory::Structure {
         // Rocket In_Which_Layer (`0x00663460`) answers the Air layer.
         if kind == Some(LocomotorKind::Rocket) {

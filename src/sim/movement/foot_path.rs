@@ -1274,8 +1274,8 @@ impl Simulation {
                 //0x4D3A30..0x4D3A57: a team member keeps a target within its
                 //team's stray (TeamClass::Get_Stray 0x6F03B0), anyone else
                 //within CloseEnough.
-                let keep_within = match self.team_script_vm.team_of(id) {
-                    Some(team_id) => self.team_stray(team_id, rules),
+                let keep_within = match self.team_script_vm.team_for_member(id) {
+                    Some((team_id, _)) => self.team_stray(team_id, rules),
                     None => rules.general.close_enough,
                 };
                 //0x4D3944..0x4D3A2B: |+48 coordinate - target centre| with z.

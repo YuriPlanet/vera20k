@@ -674,7 +674,6 @@ pub(crate) fn render_game(
         .map(|runtime| &runtime.resources.rules)
         .or(state.frontend.frontend_rules.as_ref());
     let show_power_plant_enhancer_range = {
-        #[cfg(feature = "phobos")]
         {
             rules.is_some_and(|rules| rules.power_plant_enhancer.show_range)
                 && state
@@ -682,9 +681,13 @@ pub(crate) fn render_game(
                     .match_presentation
                     .show_power_plant_enhancer_range
         }
-        #[cfg(not(feature = "phobos"))]
+    };
+    // The [Phobos] client and [AudioVisual] rules halves of the designator
+    // range rings; the armed [SuperWeaponType] half is checked in build.
+    let show_designator_range = {
         {
-            false
+            rules.is_some_and(|rules| rules.phobos_globals.show_designator_range)
+                && state.match_state.match_presentation.show_designator_range
         }
     };
     let match_presentation = &mut state.match_state.match_presentation;
@@ -697,6 +700,7 @@ pub(crate) fn render_game(
         armed_building.as_deref(),
         cursor_cell,
         show_power_plant_enhancer_range,
+        show_designator_range,
         match_presentation.target_lines.unit_action_lines_enabled(),
         &mut match_presentation.placement_range_pulse,
         &mut match_presentation.superweapon_range_pulse,
@@ -939,6 +943,13 @@ pub(crate) fn render_game(
             viewport_rect: &sidebar.viewport_rect,
             smooth_chrome: sidebar.smooth_chrome,
             smooth_command_bar: sidebar.smooth_command_bar,
+            software_cursor: ui.software_cursor_draw,
+            tooltip_blur_rects: state
+                .match_state
+                .match_presentation
+                .tooltip_blur_rects
+                .clone(),
+            tooltip_blur_size: state.match_state.match_presentation.tooltip_blur_size,
         },
     );
     let finished = render_started.map(|_| Instant::now());
@@ -1100,6 +1111,13 @@ fn upload_to_gpu(
     let (message_fill, message_text) =
         crate::app::input::messages::build_message_instances(state, &mut message_hud);
     state.match_state.match_presentation.message_hud = message_hud;
+    // Phobos `TacticalClass_Render_Banner` (`0x6D4B25`): the trigger banners
+    // draw after the timer lines, before the outcome draw.
+    let (banner_fill, banner_text) = if state.rules().is_some_and(|rules| rules.phobos()) {
+        crate::app::presentation::banners::build_banner_instances(state)
+    } else {
+        (Vec::new(), Vec::new())
+    };
     let verdict = crate::app::presentation::outcome_banner::visible_verdict(state);
     let mut banner_huds =
         std::mem::take(&mut state.match_state.match_presentation.outcome_banner_huds);
@@ -1113,7 +1131,8 @@ fn upload_to_gpu(
         }
     };
     state.match_state.match_presentation.outcome_banner_huds = banner_huds;
-    let rendered_verdict = verdict.filter(|_| !outcome_shape.is_empty() || !outcome_text.is_empty());
+    let rendered_verdict =
+        verdict.filter(|_| !outcome_shape.is_empty() || !outcome_text.is_empty());
 
     // A4 in-game tooltip: built before the pool borrow (it reads &AppState);
     // fill (darken texture) + text (GAME.FNT atlas), drawn after the chat
@@ -1134,6 +1153,49 @@ fn upload_to_gpu(
         tooltip_border.extend(borders);
         tooltip_text.extend(texts);
     }
+    // Phobos `ToolTipBlur` (`Misc/PhobosToolTip.cpp:439`): the fill quads'
+    // rects and the resolved `ToolTip.Background.BlurSize` — side first over
+    // the `[AudioVisual]` global; the switch off or a zero size keeps
+    // native's no-op.
+    {
+        let rects: Vec<[f32; 4]> = if state.rules().is_some_and(|rules| rules.phobos())
+            && state.match_state.match_presentation.tool_tip_blur
+        {
+            tooltip_fill
+                .iter()
+                .map(|quad| {
+                    [
+                        quad.position[0],
+                        quad.position[1],
+                        quad.size[0],
+                        quad.size[1],
+                    ]
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let size = state.rules().map_or(0.0, |rules| {
+            if !rules.phobos() {
+                return 0.0;
+            }
+            let side = state
+                .match_state
+                .sim_runtime
+                .runtime()
+                .and_then(|runtime| Some(runtime.simulation.session().scenario_side()))
+                .unwrap_or(0);
+            f32::from_bits(
+                rules
+                    .side_tool_tip_blur_size(side)
+                    .unwrap_or(rules.phobos_globals.tool_tip_background_blur_size)
+                    .bits(),
+            )
+        });
+        let presentation = &mut state.match_state.match_presentation;
+        presentation.tooltip_blur_rects = rects;
+        presentation.tooltip_blur_size = size;
+    }
 
     // TacticalClass::Draw's timer lines, which follow the PixelFX sparkles:
     // their step (the Supers' blinks, the dock's rows and hit areas) runs
@@ -1153,7 +1215,11 @@ fn upload_to_gpu(
     // The buttons and texts the side's layout adds over the battlefield
     // share the timers' lanes: white boxes, then text, inside its clip.
     {
-        let side_text = state.match_state.match_presentation.sidebar_layout_spec.side_text;
+        let side_text = state
+            .match_state
+            .match_presentation
+            .sidebar_layout_spec
+            .side_text;
         let placed = crate::app::presentation::layout_parts::placed(state);
         let layout_parts = &mut state.match_state.match_presentation.added_part_huds.field;
         layout_parts.draw(
@@ -1306,7 +1372,6 @@ fn upload_to_gpu(
     pool.upload_strokes("ground_strokes", &ui.ground_strokes);
     pool.upload("software_cursor", &software_cursor);
     pool.upload("placement", &ui.placement);
-    #[cfg(feature = "phobos")]
     pool.upload("placement_ghost", &ui.placement_ghost);
     pool.upload_strokes("factory_rally_first", &ui.factory_rally_first);
     pool.upload_strokes("target_lines", &ui.target_line);
@@ -1334,7 +1399,6 @@ fn upload_to_gpu(
     pool.upload_following("sidebar_label_text", &sidebar.label_text, text_camera);
     pool.upload_following("sidebar_cameo_overlay", &sidebar.cameo_overlay, ui_camera);
     pool.upload_following("sidebar_text", &sidebar.text, text_camera);
-    #[cfg(feature = "phobos")]
     {
         pool.upload("sw_sidebar_chrome", &sidebar.sw_sidebar_chrome);
         pool.upload("sw_sidebar_cameo", &sidebar.sw_sidebar_cameo);
@@ -1345,6 +1409,8 @@ fn upload_to_gpu(
     }
     pool.upload("message_text", &message_text);
     pool.upload("message_fill", &message_fill);
+    pool.upload("banner_fill", &banner_fill);
+    pool.upload("banner_text", &banner_text);
     pool.upload("outcome_shape", &outcome_shape);
     pool.upload("outcome_text", &outcome_text);
     pool.upload("tooltip_fill", &tooltip_fill);

@@ -495,8 +495,7 @@ impl Simulation {
         // therefore precedes the hooks inside that body; the Ares extension's
         // relative position is unobserved and kept as the AttachEffect branch
         // had it.
-        #[cfg(feature = "phobos")]
-        self.limbo_phobos_attach_effects(
+            self.limbo_phobos_attach_effects(
             stable_id,
             context.rules(),
             context.registry(),
@@ -553,8 +552,7 @@ impl Simulation {
                 context.effects(),
             );
             // 6F6BD1: Removed_From_Game, also only on the first Limbo.
-            #[cfg(feature = "phobos")]
-            self.phobos_tracking_before_limbo(stable_id);
+                    self.phobos_tracking_before_limbo(stable_id);
             self.house_removed_from_game(stable_id, context.rules(), context.effects());
             // Ares BuildingClass_Remove_Academy (hook 0x00445905 ->
             // 10023690) precedes them: a marked academy leaves its owner's list.

@@ -1,6 +1,6 @@
 # Optional Phobos centred pause-menu background
 
-Build with `--features phobos` and set `[Sidebar] CenterPauseMenuBackground=yes`
+Phobos is in every build; turn it on from a game's data and set `[Sidebar] CenterPauseMenuBackground=yes`
 in `uimd.ini` to place the active-scenario modal background at its own size at
 the centre of the battlefield. Default is `no`, where VERA stretches the art over
 the whole battlefield instead, since VERA's frames take any size

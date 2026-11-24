@@ -341,7 +341,8 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return 0;
         };
-        if entity.building.no_survivor.is_set() || !object.crewed {
+        let prevent_crew_escape = entity.seldom.phobos_prevent_crew_escape;
+        if entity.building.no_survivor.is_set() || !object.crewed || prevent_crew_escape {
             return 0;
         }
         let Some(house) = self.houses.get(&entity.owner()) else {
@@ -367,7 +368,8 @@ impl Simulation {
         } else {
             divisor
         };
-        let Some(factors) = Self::house_cost_factors(&self.houses, entity.owner()) else {
+        let Some(factors) = Self::house_cost_factors_for(&self.houses, entity.owner(), object)
+        else {
             return 0;
         };
         let refund = crate::sim::production::type_refund(
@@ -763,7 +765,8 @@ impl Simulation {
             return;
         };
         let captor_type = entity.seldom.capture_infantry_type_index.get();
-        if captor_type == -1 && (prevent_escape || !object.crewed || object.passengers != 0) {
+        let prevent_crew_escape = prevent_escape || entity.seldom.phobos_prevent_crew_escape;
+        if captor_type == -1 && (prevent_crew_escape || !object.crewed || object.passengers != 0) {
             return;
         }
         let owner = entity.owner();
@@ -876,6 +879,12 @@ impl Simulation {
         dying: DyingTransport,
         effects: &mut FrameEffects<'_>,
     ) {
+        // Phobos `UnitClass_ReceiveDamage_Cargo_SyncOwner @ 0x737F80`
+        // (`Ext/Techno/Hooks.Transport.cpp:125-149`) replaces 6 bytes at the
+        // head of this block, before the stock open-topped clear below and
+        // before Ares survivor handling: every passenger that still holds a
+        // recorded board-time house takes it back.
+        self.phobos_revert_cargo_on_dying_transport(unit_id, rules, registry, effects);
         let Some(unit) = self.substrate.entities.get(unit_id) else {
             return;
         };
@@ -1071,6 +1080,8 @@ impl Simulation {
             if let Some(entity) = sim.substrate.entities.get_mut(passenger) {
                 entity.passenger_role_mut().clear_transporter();
             }
+            // Phobos `FootClass_LeaveTransport` (0x4DE722): unlisted here.
+            sim.remove_transport_reloader(passenger);
 
             // `0x00738104..0x0073812A`: Assign_Target(NULL).
             if open_topped && passenger_owner != unit_owner {
@@ -1083,8 +1094,8 @@ impl Simulation {
             // `0x00738143..0x0073816E`: a computer passenger joins the unit's Team
             // (`TeamClass::Add_Member @ 0x006EA500`), or Hunts without one.
             if !sim.owner_is_human(passenger_owner) {
-                match sim.team_script_vm.team_of(unit_id) {
-                    Some(team_id) => {
+                match sim.team_script_vm.team_for_member(unit_id) {
+                    Some((team_id, _)) => {
                         sim.team_add_member(team_id, passenger, false, rules, effects);
                     }
                     None => sim

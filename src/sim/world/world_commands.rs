@@ -1230,6 +1230,25 @@ impl Simulation {
                     production::RepairControl::Toggle,
                 )
             }
+            Command::TogglePlayerAutoRepair { enabled } => {
+                // Phobos EventExt `RaiseTogglePlayerAutoRepair`: the event's
+                // house flips its own flag; the next building visit stops each
+                // still-repairing building when it is off
+                // (`Ext/Event/Body.cpp:116-128`, `Ext/House/Hooks.cpp:813-824`).
+                {
+                    if !rules.phobos_globals.extended_player_repair {
+                        return false;
+                    }
+                    let Some(owner) = self.interner.key_id(command_owner) else {
+                        return false;
+                    };
+                    let Some(house) = self.houses.get_mut(&owner) else {
+                        return false;
+                    };
+                    house.set_player_auto_repair(*enabled);
+                    true
+                }
+            }
             Command::UnloadPassengers { transport_id } => {
                 if !self.command_entity_allowed(
                     command_owner,
@@ -1829,6 +1848,8 @@ impl Simulation {
                 );
                 token
             }
+            // No event token names a Bullet.
+            combat::TargetKind::Bullet(..) => None,
         }
     }
 
@@ -1943,6 +1964,19 @@ impl Simulation {
         if !self.order_actor_admits(entity_id) {
             return MegaMissionExecution::Refused;
         }
+        // Phobos `EventClass_Execute_MegaMission_MoveCommand @ 0x4C7462`
+        // clears the latch for every Unit MegaMission that does not take its
+        // keep arm (`Ext/Techno/Hooks.Misc.cpp:1071`); the keep branch below
+        // sets it again.
+        if self
+            .substrate
+            .entities
+            .get(entity_id)
+            .is_some_and(|entity| entity.category() == EntityCategory::Unit)
+            && let Some(entity) = self.substrate.entities.get_mut(entity_id)
+        {
+            entity.set_phobos_keep_target_on_move(false);
+        }
         for token in [target, destination] {
             if let Some(id) = self.event_token_object(token)
                 && !self.order_object_token_admits(id)
@@ -2012,6 +2046,31 @@ impl Simulation {
         }
         // `0x004C745B`, then the target setter.
         let target = self.resolve_event_token(target);
+        // Phobos `EventClass_Execute_MegaMission_MoveCommand @ 0x4C7462`
+        // (`Ext/Techno/Hooks.Misc.cpp:1036-1075`) replaces that setter for a
+        // Move order: a unit whose live target is already close enough to
+        // attack keeps it, stores the order destination itself and skips the
+        // shared target clear and destination setter.
+        if mission == MissionType::Move
+            && target.is_none()
+            && crate::sim::keep_target_on_move::move_order_keeps_target(
+                self,
+                entity_id,
+                rules,
+                Some(rules.overlay_registry()),
+            )
+        {
+            let destination = self.resolve_event_token(destination);
+            if let Err(cause) = self.assign_destination_represented(
+                entity_id,
+                destination.map(Into::into),
+                rules,
+                frame_effects,
+            ) {
+                log::warn!("KeepTargetOnMove destination {entity_id}: {cause}");
+            }
+            return MegaMissionExecution::Executed;
+        }
         // Its changed-null path6FCF5B also resets retained burst state;
         // dropping Target alone cannot.
         let _ = self.assign_target_represented(entity_id, target, rules, frame_effects);

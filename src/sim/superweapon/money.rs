@@ -42,19 +42,6 @@ pub(super) fn can_transact(houses: &Houses, owner: InternedId, amount: i32) -> b
     })
 }
 
-/// HouseClass::TransactMoney: GiveMoney (Add_Credits) for a positive amount,
-/// TakeMoney (Spend_Money) of its negation otherwise. Callers admit first.
-pub(super) fn settle(houses: &mut Houses, owner: InternedId, amount: i32) {
-    if amount < 0 {
-        // Affordability proves the positive cost fits a signed wallet, so the
-        // checked conversion cannot overflow even for an authored i32::MIN.
-        let cost = amount.checked_neg().expect("admitted signed cost");
-        crate::sim::credit_income::spend_money(houses, owner, cost);
-    } else if amount > 0 {
-        crate::sim::credit_income::add_credits(houses, owner, amount);
-    }
-}
-
 pub(super) fn valid_target(sim: &Simulation, sw: &SuperWeaponType, cell: (u16, u16)) -> bool {
     // Action=None (or the constructor's missing action) is the ordinary
     // direct-launch cameo path, whose event intentionally carries (0, 0).
@@ -96,6 +83,7 @@ pub(super) fn transact(
     if !admit(sound_events, houses, owner, sw_type, sw) {
         return false;
     }
-    settle(houses, owner, sw.money_amount);
+    // `HouseClass::TransactMoney`; admission above proves a negative cost fits.
+    crate::sim::credit_income::transact_money(houses, owner, sw.money_amount);
     true
 }

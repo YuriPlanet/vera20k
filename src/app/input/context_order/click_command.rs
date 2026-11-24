@@ -385,6 +385,25 @@ pub(super) fn move_click_command(
             entity_id,
             target_id,
         },
+        TargetKind::Bullet(id) => {
+            // A projectile is a point destination; a gone bullet falls
+            // through to the object order, which fails closed.
+            match crate::sim::movement::ground_pose::target_get_coords(
+                TargetKind::Bullet(id),
+                sim,
+                None,
+            ) {
+                Some(point) => Command::Move {
+                    entity_id,
+                    target_rx: point.x.div_euclid(256).clamp(0, i32::from(u16::MAX)) as u16,
+                    target_ry: point.y.div_euclid(256).clamp(0, i32::from(u16::MAX)) as u16,
+                },
+                None => Command::MoveToObject {
+                    entity_id,
+                    target_id: id,
+                },
+            }
+        }
     }
 }
 

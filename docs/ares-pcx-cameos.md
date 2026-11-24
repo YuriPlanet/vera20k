@@ -9,7 +9,7 @@ not redirect these reads. A present name is lowercased and limited to 31 bytes.
 `none` and `<none>` are literal attempted filenames, not clear tokens.
 
 The existing asset manager and PCX decoder supply indexed pixels and their
-embedded palette. With `--features phobos`, a 3-plane 24-bit PCX loads too, its
+embedded palette. With Phobos play enabled from a game's data, a 3-plane 24-bit PCX loads too, its
 colours used as stored: Phobos `RGB_PCX_Loader` (`0x6B9D9C`) keeps the 16-bit
 surface gamemd's decoder packs from it. Without Phobos, gamemd's palette
 conversion garbles such a file, and VERA keeps the SHP fallback instead. A

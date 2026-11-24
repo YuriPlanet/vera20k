@@ -369,3 +369,88 @@ fn stock_carrier_spawner_fire_reveals_to_its_human_victim() {
     }
     panic!("normal Carrier Attack did not reach the parent Spawner fire handoff");
 }
+
+/// One spawned aircraft with a three-slot spawn manager; slots 0 and 1 are
+/// docked so the row renders two filled and one empty pip.
+fn spawn_pips(type_keys: &str) -> Vec<(usize, [i32; 2])> {
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&format!(
+        "[AircraftTypes]\n0=BEAR\n1=SPAWN\n\
+         [BEAR]\nStrength=100\nSpeed=10\nSpawns=SPAWN\nSpawnsNumber=3\n{type_keys}\
+         [SPAWN]\nStrength=50\nSpeed=10\n"
+    )))
+    .expect("spawn pip rules");
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let owner = sim.interner().get("Americans").unwrap();
+    sim.fog_mut_for_test().reveal_all_for_owner(owner);
+    let id = sim
+        .spawn_object("BEAR", "Americans", 10, 10, 64, &rules)
+        .expect("spawner aircraft");
+    {
+        let manager = sim
+            .entities_mut_for_test()
+            .get_mut_for_test(id)
+            .expect("aircraft")
+            .spawn_manager
+            .as_mut()
+            .expect("SpawnsNumber creates the manager");
+        for (slot, state) in manager.slots_mut_for_test().iter_mut().zip([
+            SpawnSlotState::ReadyDocked,
+            SpawnSlotState::Reloading,
+            SpawnSlotState::Regenerating,
+        ]) {
+            slot.set_state_for_test(state);
+        }
+    }
+    let entity = crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, id);
+    super::ui_overlays::scale_pip_draws(
+        &sim,
+        &entity,
+        Some(id),
+        Some(entity.owner()),
+        &rules,
+    )
+    .into_iter()
+    .map(|pip| (pip.frame, pip.offset_pixels))
+    .collect()
+}
+
+/// Constructor defaults: frames 1/0 at the generic 4x0 mobile step.
+#[test]
+fn spawn_pips_default_to_frames_one_and_zero() {
+    assert_eq!(spawn_pips(""), [(1, [0, 10]), (1, [4, 10]), (0, [8, 10])]);
+}
+
+/// The authored frames, size and offset replace the stock row.
+#[test]
+fn spawn_pip_keys_replace_the_frames_size_and_anchor() {
+    assert_eq!(
+        spawn_pips(
+            "SpawnsPipFrame=7\nEmptySpawnsPipFrame=3\n\
+             SpawnsPipSize=9,5\nSpawnsPipOffset=2,-1\n"
+        ),
+        [(7, [2, 9]), (7, [11, 14]), (3, [20, 19])]
+    );
+}
+
+/// `ShowSpawnsPips=no` suppresses the row.
+#[test]
+fn show_spawns_pips_no_suppresses_the_row() {
+    assert!(spawn_pips("ShowSpawnsPips=no\n").is_empty());
+}
+
+/// `TechnoClass_DrawPips_Spawns` falls back to the Generic size pair when the
+/// type authors no `SpawnsPipSize` (`Ext/Techno/Hooks.Pips.cpp:214-218`).
+#[test]
+fn spawn_pips_fall_back_to_the_global_generic_size() {
+    assert_eq!(
+        spawn_pips("SpawnsPipSize=9,5\n"),
+        [(1, [0, 10]), (1, [9, 15]), (0, [18, 20])]
+    );
+    assert_eq!(
+        spawn_pips("\n[AudioVisual]\nPips.Generic.Size=7,3\n"),
+        [(1, [0, 10]), (1, [7, 13]), (0, [14, 16])],
+        "the generic global replaces the stock 4x0 fallback"
+    );
+}

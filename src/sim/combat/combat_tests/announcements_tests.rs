@@ -531,7 +531,6 @@ fn a_techno_speaks_its_voice_feedback_only_on_the_half_strength_crossing() {
 
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
-#[cfg(not(feature = "phobos"))]
 #[test]
 fn fatal_sound_selection_uses_human_voice_then_die_sound_main_draws() {
     let rules = RuleSet::from_ini(&IniFile::from_str(

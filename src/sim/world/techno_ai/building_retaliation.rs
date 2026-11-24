@@ -97,7 +97,7 @@ impl Simulation {
         // The radar cell is the building's GetCoords (vt+0x48, `0x00447AC0`,
         // the foundation centre; `0x004F94AE`, `0x004F950E`, `0x004F956A`).
         let (rx, ry, _, _) = resolve_target_coords(&TargetKind::Entity(id), self)?;
-        let ping = (!obj.insignificant && !obj.is_1x1_with_undeploy()).then(|| UnderAttackEvent {
+        let ping = (!obj.insignificant && !obj.is_vehicle()).then(|| UnderAttackEvent {
             rx,
             ry,
             owner: building.owner(),
