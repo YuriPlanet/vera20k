@@ -210,7 +210,7 @@ fn an_e1_tag_trigger_runs_its_stock_action_and_delivers_a_filtered_hit() {
 #[test]
 fn a_mistake_in_the_ini_refuses_the_start_naming_section_and_key() {
     let misspelt = GI_PANIC.replace("Event=", "Evnt=");
-    let refused = PreparedExtModules::load(&IniFile::from_str(&misspelt), None, &IniFile::empty())
+    let refused = PreparedExtModules::load(&IniFile::from_str(&misspelt), None, &IniFile::empty(), 0)
         .err()
         .expect("a misspelt key refuses");
     assert!(

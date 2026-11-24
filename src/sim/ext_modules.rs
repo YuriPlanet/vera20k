@@ -107,11 +107,17 @@ use crate::sim::world::{FrameEffects, Simulation};
 mod triggers;
 pub(crate) use triggers::ModuleEvent;
 
-/// The frame budget B at most (RFC 15.2 proposes about 2 ms on the slowest
-/// platform; open question 7): the limit of one call, and the frame's use
+/// The frame budget B at most and the mod module's default (RFC 15.4,
+/// 0.0.21; open question 7): the limit of one call, and the frame's use
 /// past which no further batch starts. A frame stays below 3B plus the
-/// decision pools (RFC section 5).
-pub const FRAME_BUDGET: u64 = 200_000;
+/// decision pools (RFC section 5). Claimed seats add [`SEAT_BUDGET`] each.
+pub const FRAME_BUDGET: u64 = 500_000;
+/// A map module's default budget (RFC 15.4).
+pub const MAP_FRAME_BUDGET: u64 = 100_000;
+/// What each claimed seat adds by default, and at most (RFC 15.4, 6i).
+pub const SEAT_BUDGET: u64 = 500_000;
+/// A configured budget below this refuses the match (RFC 15.4).
+pub const MIN_BUDGET: u64 = 20_000;
 /// Operations for each one-time call: `vera_init` and `on_scenario_start`.
 pub const ONCE_BUDGET: u64 = 5_000_000;
 

@@ -536,6 +536,9 @@ pub struct HostRules {
     /// from before it cannot read options that carry it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub building_production_queue: bool,
+    /// The host's `[VERA] WasmBudget=`, 0 while unset. Left out while unset.
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub wasm_budget: u32,
     /// The host's VERARULES.INI in base64, which games sent until the file
     /// was retired for New Mod. Never sent now; read only so that a room or a
     /// replay from such a game is refused by [`Self::personal_rules`] with a
@@ -546,7 +549,10 @@ pub struct HostRules {
 
 impl HostRules {
     pub fn is_empty(&self) -> bool {
-        !self.terrain_deformation && self.superweapon_limit == 0 && !self.building_production_queue
+        !self.terrain_deformation
+            && self.superweapon_limit == 0
+            && !self.building_production_queue
+            && self.wasm_budget == 0
     }
 
     /// The host's own rules as its room shares them: its Terrain Deformation
@@ -556,6 +562,7 @@ impl HostRules {
             terrain_deformation: own.terrain_deformation(),
             superweapon_limit: own.superweapon_limit(),
             building_production_queue: own.building_production_queue(),
+            wasm_budget: own.wasm_budget(),
             retired_personal_rules: None,
         }
     }
@@ -570,11 +577,16 @@ impl HostRules {
         rules.set_terrain_deformation(self.terrain_deformation);
         rules.set_superweapon_limit(i32::from(self.superweapon_limit));
         rules.set_building_production_queue(self.building_production_queue);
+        rules.set_wasm_budget(self.wasm_budget);
         Ok(rules)
     }
 }
 
 fn is_zero(value: &u8) -> bool {
+    *value == 0
+}
+
+fn is_zero_u32(value: &u32) -> bool {
     *value == 0
 }
 
