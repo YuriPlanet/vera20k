@@ -377,6 +377,9 @@ impl Simulation {
                 frame_effects,
             );
             crate::sim::ai_base_building::update_production_choices(self, rules, owner, registry);
+            // VERA's own computer player, when a game's `[VeraAI]` section
+            // turns it on: the tactics above the native build queue.
+            crate::sim::vera_ai::update_vera_ai(self, rules, owner, frame_effects);
             generated.extend(self.recheck_house_tech_tree(owner, rules, frame_effects));
             if let Some(house) = self.houses.get_mut(&owner) {
                 house.release_repair_latch(self.session.binary_frame());

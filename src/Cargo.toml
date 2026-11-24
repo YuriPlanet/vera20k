@@ -31,6 +31,14 @@ path = "bin/sim-bench.rs"
 name = "vera20k-play"
 path = "bin/vera20k-play.rs"
 
+[[bin]]
+name = "ai-eval"
+path = "bin/ai-eval.rs"
+
+[[bin]]
+name = "ai-train"
+path = "bin/ai-train.rs"
+
 # The saved-game layout id the browser build compiles in (tools/wasm/build.py).
 [[bin]]
 name = "snapshot-layout"

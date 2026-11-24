@@ -827,6 +827,8 @@ pub struct RuleSet {
     /// Empty for every rules set without that section — which is all retail
     /// data — and an empty catalog is what keeps the feature entirely inert.
     personalities: crate::rules::personality::PersonalityCatalog,
+    /// Optional computer-player policy from `[VeraAI]`. Retail rules keep the stock AI.
+    vera_ai: crate::rules::vera_ai::VeraAiPolicy,
     /// `[CommanderFeedback]`: the talking-head layer's own switches, next to
     /// the personalities they govern.
     commander_feedback: crate::rules::personality::CommanderFeedbackRules,

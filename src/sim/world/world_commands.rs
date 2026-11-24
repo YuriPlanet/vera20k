@@ -117,7 +117,7 @@ fn trace_wall_sell_zone_repair_step(
 
 /// What [`Simulation::apply_megamission_command`] did with an order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MegaMissionExecution {
+pub(crate) enum MegaMissionExecution {
     /// The actor or an object token failed the admission gate: nothing
     /// changed, and the actor keeps its previous order.
     Refused,
@@ -1913,7 +1913,7 @@ impl Simulation {
     ///
     /// Before the setters the event flashes one object
     /// ([`Self::flash_order_object`]).
-    fn apply_megamission_command(
+    pub(crate) fn apply_megamission_command(
         &mut self,
         entity_id: u64,
         mission: MissionType,

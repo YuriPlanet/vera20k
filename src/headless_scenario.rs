@@ -20,6 +20,9 @@
 #[cfg(any(test, feature = "test-support"))]
 pub mod radiation_test_evidence;
 
+/// Playing a match between computer houses, headless, for evaluation.
+pub mod ai_match;
+
 use std::path::Path;
 
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};

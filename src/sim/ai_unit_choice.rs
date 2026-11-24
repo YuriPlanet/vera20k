@@ -209,7 +209,8 @@ pub(crate) fn choose(
             )
         }
     };
-    if let Some(index) = choice
+    if let Some(index) =
+        choice.or_else(|| crate::sim::vera_ai::production_choice(sim, rules, owner, kind))
         && let Some(house) = sim.houses.get_mut(&owner)
     {
         *house.ai_unit_choices_mut().slot_mut(kind) = index;

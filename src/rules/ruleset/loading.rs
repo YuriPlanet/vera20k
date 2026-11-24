@@ -1385,12 +1385,8 @@ impl RuleSet {
         // Original-RA2 `[AI]` ore-scan radii (game.exe 0x0064D005/0x0064D025,
         // ReadInt into RulesClass+0x13E0/+0x13E4; constructor default 0). YR
         // has no such keys, so it reads the 0 default with no behavior change.
-        let tiberium_near_scan = ini
-            .section_or_empty("AI")
-            .read_int("TiberiumNearScan", 0);
-        let tiberium_far_scan = ini
-            .section_or_empty("AI")
-            .read_int("TiberiumFarScan", 0);
+        let tiberium_near_scan = ini.section_or_empty("AI").read_int("TiberiumNearScan", 0);
+        let tiberium_far_scan = ini.section_or_empty("AI").read_int("TiberiumFarScan", 0);
         // `DifficultyClass::ReadINI_IntVector @ 0x00475D70`, reached by
         // `RulesClass::ReadGeneral` for AISlaveMinerNumber
         // `0x00670585..0x006705B7`, AIExtraRefineries `0x006705F9..0x0067062A`
@@ -1904,6 +1900,9 @@ impl RuleSet {
             country_indices: country_side_registry.country_indices,
             side_ids: country_side_registry.side_ids,
             personalities,
+            vera_ai: crate::rules::vera_ai::VeraAiPolicy::from_ini(
+                ini.section_or_empty(crate::rules::vera_ai::SECTION),
+            ),
             commander_feedback: crate::rules::personality::parse_commander_feedback(ini),
             end_game_screens: crate::rules::end_game::parse_end_game_screens(
                 ini,

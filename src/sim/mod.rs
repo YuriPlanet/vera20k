@@ -241,6 +241,8 @@ pub mod ai_buildable;
 pub(crate) mod ai_team_creation;
 pub(crate) mod ai_unit_choice;
 pub(crate) mod naval_base_placement;
+/// VERA's own computer player: the tactics above the native build queue.
+pub(crate) mod vera_ai;
 pub mod replay;
 #[cfg(all(test, tests_sim_p_s))]
 mod replay_determinism_tests;

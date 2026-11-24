@@ -7,6 +7,16 @@ use crate::rules::object_type::ObjectCategory;
 use super::RuleSet;
 
 impl RuleSet {
+    /// The optional computer-player policy read from `[VeraAI]`.
+    pub fn vera_ai(&self) -> &crate::rules::vera_ai::VeraAiPolicy {
+        &self.vera_ai
+    }
+
+    /// Replace the policy for a headless evaluation before the match begins.
+    pub fn set_vera_ai(&mut self, policy: crate::rules::vera_ai::VeraAiPolicy) {
+        self.vera_ai = policy;
+    }
+
     /// Ares1003DB30/1003DB50. Both group labels and ordinary type IDs share
     /// one namespace; callers compare these keys case-insensitively.
     pub fn type_selection_key<'a>(&'a self, category: ObjectCategory, type_id: &'a str) -> &'a str {

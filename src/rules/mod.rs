@@ -170,6 +170,7 @@ pub const NPATCH_ENABLED: bool = cfg!(feature = "npatch");
 /// Whether this binary includes the NPBUG bug-fix extension. INIs cannot
 /// change it; builds without the feature keep every native path.
 pub const NPBUG_ENABLED: bool = cfg!(feature = "npbug");
+pub mod vera_ai;
 pub mod ares_switch;
 pub(crate) mod ares_prerequisites;
 pub(crate) mod ares_armor;
