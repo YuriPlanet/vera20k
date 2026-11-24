@@ -1857,7 +1857,9 @@ pub(crate) fn select_best_for_action(
         let obj = rules.and_then(|r| sim.interner().object_type(entity.type_ref(), r));
         let priority = if entity.berserk.is_active() {
             0
-        } else if entity.is_under_emp() {
+        } else if entity.is_immobilized(sim.session().binary_frame() as i32) {
+            // Firestorm 2.0's ranker `0x004E86F0` asks Is_Immobilized, which
+            // also ranks a webbed infantryman 1 (`0x004D5B10`).
             1
         } else if !obj.zip(rules).is_some_and(|(obj, rules)| {
             is_armed(entity, obj, sim.entities(), rules, sim.interner())

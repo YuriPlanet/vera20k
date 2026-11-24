@@ -71,6 +71,8 @@ impl Simulation {
     }
 }
 
+/// SystemAI62E6D0, and Firestorm 2.0 `ParticleSystemClass::AI_Web`
+/// 0x005A7170, whose two walks are the same ([`super::web`]).
 pub(super) fn tick_system(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -92,20 +94,26 @@ pub(super) fn tick_system(
         let Some(mut p) = sim.particle_systems().particle_for_tick(system, index, id) else {
             continue;
         };
-        if rules.particle_type(p.type_id).behaves_like == ParticleBehavesLike::Gas {
-            if let Err(error) = tick_particle(
-                &mut p,
-                sim,
-                rules,
-                owner_house,
-                owner_entity,
-                context.reborrow(),
-            ) {
-                super::system_ai::retire_refused(&mut p, &error);
+        match rules.particle_type(p.type_id).behaves_like {
+            ParticleBehavesLike::Gas => {
+                if let Err(error) = tick_particle(
+                    &mut p,
+                    sim,
+                    rules,
+                    owner_house,
+                    owner_entity,
+                    context.reborrow(),
+                ) {
+                    super::system_ai::retire_refused(&mut p, &error);
+                }
+                super::system_ai::finish_lifetime(&mut p);
             }
-            super::system_ai::finish_lifetime(&mut p);
-        } else {
-            super::system_ai::tick_particle(&mut p, sim, rules, owner_house, owner_entity);
+            // A web's hits run in this system's frame, as Gas's do.
+            ParticleBehavesLike::Web => {
+                super::web::tick_particle(&mut p, sim, rules, context.reborrow());
+                super::system_ai::finish_lifetime(&mut p);
+            }
+            _ => super::system_ai::tick_particle(&mut p, sim, rules, owner_house, owner_entity),
         }
         sim.substrate
             .particle_systems

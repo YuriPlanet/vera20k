@@ -295,6 +295,7 @@ impl<'a> FireSubject<'a> {
                     > 0,
             emp_remaining: firer.emp_remaining(),
             death_frame_counter: firer.unit_death_counter.get(),
+            webbed: firer.is_webbed(frame as i32),
             on_bridge: firer.on_bridge(),
             z: self.terrain().map_or(0, |terrain| {
                 crate::sim::movement::ground_pose::object_world_z_leptons(firer, Some(terrain))
@@ -803,6 +804,7 @@ impl FireQuery for WorldQuery<'_, '_> {
                     obj,
                     subject.terrain(),
                     self.house_allied(subject.firer.owner(), entity.owner()),
+                    subject.world.session.binary_frame() as i32,
                     subject.rules,
                     &subject.world.interner,
                 )

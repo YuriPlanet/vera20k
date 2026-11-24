@@ -586,6 +586,16 @@ pub(crate) fn shp_visitor<'a>(
                 art.palette,
             ))
         });
+        // Firestorm 2.0 `InfantryClass::Get_Image_Data` 0x004D9030: a man
+        // doing Struggle draws `[AudioVisual] WebbedInfantry=`'s image, at
+        // his own Struggle frame (docs/ts-webs.md). The atlas plans it for
+        // each type with a Struggle record.
+        let webbed_image = entity
+            .infantry_sprite_pose()
+            .filter(|&(doing, _)| doing == crate::rules::infantry_sequence::DO_STRUGGLE)
+            .and(rules)
+            .and_then(|rules| rules.general.webbed_infantry.as_deref())
+            .map(|name| name.to_ascii_uppercase_smolstr());
         let key: ShpSpriteKey = match &door_body {
             Some((name, half, _, palette)) => ShpSpriteKey {
                 palette_context: *palette,
@@ -596,7 +606,8 @@ pub(crate) fn shp_visitor<'a>(
             },
             None => ShpSpriteKey {
                 palette_context: crate::render::sprite_atlas::ShpPaletteContext::Legacy,
-                type_id: make_type_id.as_deref().unwrap_or(type_str).into(),
+                type_id: webbed_image
+                    .unwrap_or_else(|| make_type_id.as_deref().unwrap_or(type_str).into()),
                 facing: 0,
                 frame: shp_frame,
                 house_color: hc,

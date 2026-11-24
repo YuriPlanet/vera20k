@@ -994,6 +994,7 @@ fn assert_recorded_scores(fixture: &SuppliedFootFixture, rules: &RuleSet, row: &
                 coefficients,
                 ThreatReference::Coords(xyz(&score["anchor_xyz"])),
                 None,
+                0,
             )
             .unwrap();
             // Actual `_ftol` receipt at6F8710, before VHPScan and Evaluate's

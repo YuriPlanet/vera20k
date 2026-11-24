@@ -319,6 +319,33 @@ fn admit_attacker_fire<'r>(
         subject(&*world, &mut |s| code = Some(s.fire_error(true)));
         code?
     };
+    // Firestorm 2.0 `UnitClass::Firing_AI` 0x0064E770 (`0x0064E7C3..
+    // 0x0064E870`), after Can_Fire: a vehicle whose selected weapon webs and
+    // whose target is an infantryman still freshly webbed drops him
+    // (Assign_Target(NULL), vt+0x2F8), takes Guard (vt+0x158) and does not
+    // fire this turn; its CANT goes to no case of the switch. Neither Infantry
+    // nor Building firing has the test.
+    if snap.category == EntityCategory::Unit
+        && let Some(web) = selected
+            .as_ref()
+            .and_then(|selected| selected.warhead.webby())
+        && let TargetKind::Entity(target_id) = snap.target
+        && world
+            .substrate
+            .entities
+            .get(target_id)
+            .is_some_and(|target| target.web_outlasts_quarter(binary_frame as i32, web.duration))
+    {
+        let _ = world.assign_target_represented(snap.stable_id, None, rules, effects);
+        let _ = world.mission_queue_exact(
+            snap.stable_id,
+            crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Guard),
+            0,
+            world.session.binary_frame(),
+            &crate::sim::mission::authority::LiveReadyInputProvider { rules },
+        );
+        return None;
+    }
     let direction = crate::sim::movement::turret::facing_toward_lepton(
         snap.pos_rx,
         snap.pos_ry,

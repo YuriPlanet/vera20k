@@ -992,6 +992,15 @@ pub struct Seldom {
     /// [`FootSpeedState::limpeted`]: crate::sim::components::FootSpeedState::limpeted
     #[serde(default)]
     pub(crate) limpets: crate::sim::limpet::Limpets,
+    /// Tiberian Sun's web timer (Firestorm InfantryClass+0x370), a
+    /// [`WebTimer`] that `sim::infantry` owns. Nothing unless a `Webby=`
+    /// warhead webbed the man; a byte in his [`InfantryRuntime`] spares
+    /// every other object this read.
+    ///
+    /// [`WebTimer`]: crate::sim::infantry::WebTimer
+    /// [`InfantryRuntime`]: crate::sim::infantry::InfantryRuntime
+    #[serde(default)]
+    pub(crate) web: crate::sim::infantry::WebTimer,
     /// The Ares 3.0 TechnoExt and BuildingExt state, an [`AresPart`] kept out
     /// of line and only once Ares code writes it.
     #[serde(default)]
@@ -2561,6 +2570,7 @@ impl GameEntity {
                 damage_smoke_system_id: Default::default(),
                 transport_unload_keep_count: Default::default(),
                 limpets: Default::default(),
+                web: Default::default(),
                 #[cfg(feature = "phobos")]
                 shield: None,
             }),
