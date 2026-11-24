@@ -239,6 +239,9 @@ pub(crate) struct ProjectileFacts {
     pub aa: bool, // +0x2A4
     pub ag: bool, // +0x2A5
     pub rot: i32, // +0x2DC
+    /// Kratos `AAOnly`: this projectile may only be fired at a target in the
+    /// air (`src/Extension/BulletTypeExt.h`).
+    pub aa_only: bool,
 }
 
 /// The firer's own fields.
@@ -567,6 +570,8 @@ impl Default for TargetTypeFacts {
 pub(crate) struct FireFacts {
     /// [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
     pub ares: bool,
+    /// [`RuleSet::kratos`](crate::rules::ruleset::RuleSet::kratos).
+    pub kratos: bool,
     pub class: FirerClass,
     /// `[0x00A8ED84]`.
     pub frame: i32,
@@ -1009,6 +1014,19 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
     // firer) right after the weapon exists and before the per-target arms.
     if !query.attach_effect_gate(facts.weapon_index) {
         return Cant;
+    }
+    // Kratos `TechnoClass_CanFire` (`0x6FC339`, its refusal returns
+    // `0x6FCB7E` = ILLEGAL): `TechnoStatus::CanFire_CheckBullet` stops an
+    // `AAOnly` projectile when the target is not in the air. A firer whose
+    // LandTargeting is 1 (`Land_Not_OK`) never gets here with a low target,
+    // so T40 has already refused it.
+    if facts.kratos
+        && weapon.projectile.aa_only
+        && weapon.projectile.aa
+        && !query.high_flying()
+        && firer_type.land_targeting != 1
+    {
+        return Illegal;
     }
     // T22 (IonSensitive) asks `0x0053A130`, which is `XOR AL,AL; RET`.
     let warhead = weapon.warhead.unwrap_or_default();
