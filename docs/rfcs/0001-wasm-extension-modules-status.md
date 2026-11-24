@@ -36,6 +36,7 @@ content as work lands; do not append a diary.
 | Property writes (`Health`, `Owner`, `Rank`, `Mission`, `Ammo`, `Online`) | `src/sim/ext_modules/writes.rs` |
 | Object, type and global property reads beyond the basics; viewpoint reads (`read_in`) | `src/sim/ext_modules/props.rs` |
 | Action state kept across frames: `AllowType` forbids, timed `Convert` reversions | `src/sim/ext_modules/held.rs` |
+| INI registration (addendum `0001-ini-register.zh-CN.md`): registered names, event IDs, string table | `src/sim/ext_modules/ini_names.rs`; start records `ini_start.rs`; `RaiseEvent` in `actions.rs`; `Event=Wasm:`, `Wasm:name(target,text)` in `ini_triggers.rs`; tests `ext_modules_ini_register_tests.rs`, demo smoke `ini_demo_mods_reach_their_marks` |
 | Modder guide | `docs/wasm-modules.md` |
 | Tutorials (Chinese) | `docs/wasm-modules-tutorial.zh-CN.md` (Rust, builds and checks); `docs/wasm-modules-tutorial-ts.zh-CN.md` (TypeScript, written ahead of the SDK from RFC 5a and appendix 3 to review the planned API; nothing in it is compiled) |
 | The `action` import and trigger actions: `run_action` (atomic actions through their owners, stock actions mapped onto the map trigger executor) | `src/sim/ext_modules/actions.rs`; executor without a live trigger `src/sim/trigger_runtime/untriggered.rs` |
@@ -264,6 +265,37 @@ module (merge timers into one function).
 
 - The `Seldom` size ceiling in `object_turn_lookup_tests.rs` is 832 bytes (was 824):
   the modifier cache pointer. Approved by the maintainer.
+
+## Done (phase 1b: INI registration)
+
+The addendum `docs/rfcs/0001-ini-register.zh-CN.md` (version 1): modules give
+modders INI names.
+
+- `ini_register` (import 24, `vera_init` only; elsewhere invalid) registers a key on
+  a section kind (`IniSection` 0..6), a registry (list section) or a module event
+  (object or global). Names 1..63 bytes of `[A-Za-z0-9._]`, unique per kind across
+  mod and map (the later one gets `Refused`), `Vera.` refused, 4096 per module. Both
+  init paths register: `RulesHost` (modules with `on_rules`, kept in
+  `PreparedExtModules::ini` until install) and the install-time `Host`.
+- Before each module's `on_scenario_start` the module phase delivers `IniEntry`
+  (1041; each distinct entry of its registries, `args` the entry name, `value` its
+  position) then `IniKey` (1042; each section of the key's kind with a non-empty
+  value, `subject` its type reference, `args` the value) from the merged rules text,
+  out of the one-time budget, outside the per-frame record limits.
+- `ModuleEvent` (1040, `EventDef.id` the event ID) raised by atomic action
+  `RaiseEvent` (1042; 1041 `ApplyEffect` reserved); INI `Event=Wasm:name` and
+  `RaiseEvent(target,Name,value,value2)`. Object events go through the type and
+  object bindings, global ones to every global trigger with them.
+- Module actions carry `args` (parameter text as a string ID, interned once at
+  `trigger_create` into the `Module` action's unused `value`) and `target`; INI
+  `Wasm:name(target,text)`. Name kind 18 `String` reads string IDs, 24
+  `ModuleEvent` looks events up.
+- `EventRecord` is 120 bytes (`args` 108, `target` 112), `DecideRecord` 160; the SDK
+  delivery area holds 8 records. Registrations and strings are saved
+  (`SavedExtModules::ini`) and in the state hash and checksum.
+- Rust SDK: `ini::{key, registry, event}`, `IniKeyRecord`, `IniEntryRecord`,
+  `ModuleEventRecord`, `Trigger::on_module_event`, `Action::raise_event`,
+  `ActionDef::module_with`, args helpers (`ini::split`, `ini::int`, `ini::ints`).
 
 ## Provisional numbering (open question 5)
 
