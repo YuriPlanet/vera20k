@@ -112,7 +112,8 @@ VERA20K 預設使用《尤里的復仇》原版規則。你可以在 **Options**
 《命令與征服》和《紅色警戒》原始碼、World-Altering Editor、Final Alert、YRpp、Ares、Phobos，
 以及其他為此做出貢獻的專案和社群。
 
-版權所有 © 2026 Halvor Nikolai Rusten 及 VERA20K 貢獻者。本專案採用 [GPLv3](LICENSE-GPL) 許可證，並附有[附加條款](LEGAL.md#additional-terms)。本倉庫不包含遊戲檔案。
+版權所有 © 2026 Halvor Nikolai Rusten 及 VERA20K 貢獻者。本專案採用 [GPLv3](LICENSE-GPL) 許可證，並附有[附加條款](LEGAL.md#additional-terms)。
+VERA20K 經許可隨附《Tiberian Sun: Firestorm》的雪地和冰面地塊，這些地塊仍歸 Electronic Arts 所有。玩家需自行提供《紅色警戒2：尤里的復仇》的遊戲檔案。
 Command & Conquer 和 Red Alert 是 Electronic Arts Inc. 的商標，截圖和應用圖示（《紅色警戒2》的紅星）中的遊戲美術資源歸 Electronic Arts 所有。
 VERA20K 與 Electronic Arts 無隸屬關係，也未獲其認可。
 
