@@ -686,6 +686,26 @@ fn retail_snow_theater_runs_no_ice() {
 }
 
 #[test]
+fn an_ice_map_gets_bundled_tiles_then_an_ordinary_snow_map_gets_stock_tiles() {
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let map = IniFile::from_str("[Map]\nTheater=SNOW\nVeraIce=yes\n");
+    let ice = load_scenario_theater(&mut assets, "SNOW", &map, true).unwrap();
+    assert_eq!(ice.ice_sets, Some([4096, 4160, 4224]));
+    assert_eq!(ice.lookup.filename(964), None);
+    let cracked = ice.lookup.filename(4112).unwrap();
+    let (bytes, source) = assets.get_with_source_ref(cracked).unwrap();
+    assert_eq!(source, "vera_ice.mix");
+    assert!(TmpFile::from_bytes(bytes).is_ok());
+
+    let stock = load_scenario_theater(&mut assets, "SNOW", &IniFile::empty(), false).unwrap();
+    assert_eq!(stock.ice_sets, None);
+    assert_eq!(stock.lookup.filename(4096), None);
+    assert_eq!(ice.lookup.filename(963), stock.lookup.filename(963));
+}
+
+#[test]
 fn selected_retail_temperate_rmg_roles_reach_tile_ids() {
     use crate::map::rmg::tiles::TileIds;
     use crate::util::sha256::sha256_hex;
@@ -1279,6 +1299,7 @@ fn synthetic_theater_with_bridge_keys(
         cliff_ranges: TheaterCliffRanges::default(),
         rmg_tiles: super::RmgTileKeys::default(),
         ice_sets: None,
+        terrain_files: crate::map::theater::TerrainFiles::GameFolder,
     }
 }
 

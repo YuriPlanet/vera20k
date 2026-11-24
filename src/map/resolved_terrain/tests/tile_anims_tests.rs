@@ -46,6 +46,7 @@ Tile03ZAdjust=-10
         cliff_ranges: crate::map::theater::TheaterCliffRanges::default(),
         rmg_tiles: crate::map::theater::RmgTileKeys::default(),
         ice_sets: None,
+        terrain_files: crate::map::theater::TerrainFiles::GameFolder,
     }
 }
 

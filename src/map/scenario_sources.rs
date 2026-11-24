@@ -16,7 +16,9 @@ use crate::map::skirmish_scenarios::{
     PKT_DEFAULT_MAX_PLAYERS, PKT_DEFAULT_MIN_PLAYERS, PKT_GAME_MODE_CAPACITY, PktEntryFields,
     SkirmishScenarioRecord, SkirmishScenarioSource, read_game_modes,
 };
-use crate::map::source::{game_folder_file_in, game_folders_in, read_map_ini_for_metadata};
+use crate::map::source::{
+    LoadedMapSource, game_folder_file_in, game_folders_in, read_map_ini_for_metadata,
+};
 use crate::map::waypoints::DEFAULT_SKIRMISH_PLAYER_CAPACITY;
 use crate::rules::ini_parser::IniFile;
 use crate::util::case_insensitive_path::{native_listing, native_listing_over};
@@ -153,6 +155,48 @@ pub fn list_skirmish_scenario_records_with_assets(
         crate::map::source::downloaded_maps_dir(),
         assets,
     )?;
+
+    // A bundled YR scenario belongs to the standard game's catalog. A
+    // replacement catalog or a selected mod decides which maps it offers.
+    if assets.mod_dir().is_none()
+        && assets.ini_roots().is_stock()
+        && !crate::util::ra2_launch::enabled()
+    {
+        if records.is_empty() {
+            // Keep the normal shell fallback for installs without a PKT/YRO
+            // catalog, before the bundled row makes this list nonempty.
+            records.extend(
+                list_available_maps_in(ra2_dir, Some(assets))?
+                    .iter()
+                    .enumerate()
+                    .map(|(index, map)| SkirmishScenarioRecord::from_map_menu_entry(index, map)),
+            );
+        }
+        let name = crate::map::source::ICE_LAKE;
+        if !records
+            .iter()
+            .any(|record| record.file_name.eq_ignore_ascii_case(name))
+            && let Ok(loaded) =
+                crate::map::source::load_map_ini_by_name_or_path_with_assets(ra2_dir, name, assets)
+        {
+            // A same-name file in the YR root or in a MIX may have no PKT
+            // row. Describe and preview the physical map the match will use.
+            let source = match loaded.source {
+                LoadedMapSource::Loose { .. } => SkirmishScenarioSource::LooseMap(name.to_owned()),
+                LoadedMapSource::Mix { .. } => SkirmishScenarioSource::ArchiveMap,
+                LoadedMapSource::Bundled { .. } => SkirmishScenarioSource::Bundled,
+                LoadedMapSource::Generated { .. } | LoadedMapSource::LegacyFallback { .. } => {
+                    return Ok(records);
+                }
+            };
+            records.push(SkirmishScenarioRecord::concrete_from_ini(
+                records.len(),
+                source,
+                name,
+                &loaded.ini,
+            ));
+        }
+    }
 
     Ok(records)
 }
@@ -541,6 +585,81 @@ mod tests {
     use crate::map::source::test_support::{TestDirectory, make_new_format_mix_bytes};
 
     #[test]
+    fn bundled_ice_lake_chooser_launch_and_transfer_share_the_map() {
+        use crate::map::source::{
+            load_map_by_name_or_path_with_assets, prepare_transfer_map_source,
+        };
+        let game = TestDirectory::new("bundled-ice-lake");
+        game.write(
+            "missionsmd.pkt",
+            b"[MultiMaps]\n0=Arena\n[Arena]\nGameMode=standard\n",
+        );
+        game.write("Arena.map", b"[Basic]\nName=Arena\n[Map]\nSize=0,0,16,16\n");
+        let mut assets = AssetManager::from_loose_root_for_test(game.path());
+        let catalog = |assets: &mut AssetManager| {
+            list_skirmish_scenario_records_with_assets(game.path(), assets, None).unwrap()
+        };
+        let records = catalog(&mut assets);
+        assert!(
+            records
+                .iter()
+                .any(|r| r.source == SkirmishScenarioSource::MissionsMdPkt)
+        );
+        let lake = records
+            .iter()
+            .find(|r| r.display_name == "Ice Lake")
+            .expect("Ice Lake in Skirmish");
+        assert_eq!(lake.player_capacity, 2);
+        assert_eq!(lake.game_modes, ["standard"]);
+        let loaded =
+            load_map_by_name_or_path_with_assets(game.path(), &lake.file_name, &assets).unwrap();
+        let (len, hash) = loaded.source.physical_identity().unwrap();
+        let upload = prepare_transfer_map_source(&loaded.source, &assets).unwrap();
+        let bytes = upload.read(hash, len).unwrap();
+        assert_eq!(loaded.map.basic.name.as_deref(), Some("Ice Lake"));
+        assert_eq!(
+            crate::map::map_file::MapFile::from_bytes(&bytes)
+                .unwrap()
+                .basic
+                .name,
+            loaded.map.basic.name
+        );
+
+        game.write(
+            "lakes.yro",
+            &make_new_format_mix_bytes(&[(
+                &lake.file_name,
+                b"[Basic]\nName=Archival lake\n[Map]\nSize=0,0,16,16\n",
+            )]),
+        );
+        let records = catalog(&mut assets);
+        let archived = records
+            .iter()
+            .find(|r| r.file_name == lake.file_name)
+            .unwrap();
+        assert_eq!(archived.display_name, "Archival lake");
+        assert_eq!(archived.source, SkirmishScenarioSource::ArchiveMap);
+
+        game.write(
+            &lake.file_name,
+            b"[Basic]\nName=Local lake\n[Map]\nSize=0,0,16,16\n",
+        );
+        let records = catalog(&mut assets);
+        let rows: Vec<_> = records
+            .iter()
+            .filter(|r| r.file_name == lake.file_name)
+            .map(|r| (r.display_name.as_str(), &r.source))
+            .collect();
+        assert_eq!(
+            rows,
+            [(
+                "Local lake",
+                &SkirmishScenarioSource::LooseMap(lake.file_name.clone())
+            )]
+        );
+    }
+
+    #[test]
     fn skirmish_lists_custom_map_extensions_in_the_maps_folder() {
         let game = TestDirectory::new("skirmish-game");
         let maps = TestDirectory::new("skirmish-maps");
@@ -700,7 +819,10 @@ mod tests {
             let records =
                 list_skirmish_scenario_records_with_assets(dir.path(), &mut assets, None).unwrap();
             assert_eq!(
-                records.first().map(|r| r.display_name.as_str()),
+                records
+                    .iter()
+                    .find(|r| r.file_name.eq_ignore_ascii_case("Coast.MPR"))
+                    .map(|r| r.display_name.as_str()),
                 enabled.then_some("Included coast")
             );
         }

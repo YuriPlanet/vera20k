@@ -2319,7 +2319,12 @@ impl MapLoadInitial {
         // constructor replay on that owner, the GPU-free population funnel,
         // standard Battle launch application, and the shared Post_Map_Init
         // finalizer.
-        let theater_result = theater::load_theater(asset_manager, &map_data.header.theater);
+        let theater_result = theater::load_scenario_theater(
+            asset_manager,
+            &map_data.header.theater,
+            &map_data.ini,
+            false,
+        );
         let (mut rules, _, art_ini, native_rules_receipt) = generated_rules
             .expect("generated-map receipt includes its early Full_Init Rules")
             .native
@@ -3187,8 +3192,9 @@ fn load_match_theater(
     map: &crate::map::map_file::MapFile,
     network: bool,
 ) -> Option<theater::TheaterData> {
-    let loaded = theater::load_theater_for_play(asset_manager, &map.header.theater, network)?;
-    if !asset_manager.names_pinned() {
+    let loaded =
+        theater::load_scenario_theater(asset_manager, &map.header.theater, &map.ini, network)?;
+    if loaded.uses_bundled_ice() || !asset_manager.names_pinned() {
         return Some(loaded);
     }
     if crate::map::resolved_terrain::map_tiles_exist(map, &loaded.lookup, |name| {
@@ -3290,6 +3296,7 @@ fn load_map_first_step(
     let map_hash = match &map_source {
         LoadedMapSource::Loose { .. }
         | LoadedMapSource::Mix { .. }
+        | LoadedMapSource::Bundled { .. }
         | LoadedMapSource::Generated { .. } => Some(map_data.ini.content_hash()),
         LoadedMapSource::LegacyFallback { .. } => None,
     };
@@ -3300,6 +3307,13 @@ fn load_map_first_step(
         &map_data,
         startup.session_mode().is_network(),
     );
+    if theater_result.is_none()
+        && theater::map_requests_bundled_ice(&map_data.header.theater, &map_data.ini)
+    {
+        anyhow::bail!(
+            "This map needs the original Yuri’s Revenge snow terrain. Check your game data folder in Options and try again."
+        );
+    }
     if theater_cache_mismatch {
         services.progress.milestone(12)?;
         // Native advances while rebuilding each color scheme. Rust's theater
