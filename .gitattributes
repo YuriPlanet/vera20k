@@ -9,6 +9,8 @@ tools/**/*.py text eol=lf
 tests/maps/*.map text eol=lf
 # Map identity is shared by bundled games built on different platforms.
 src/map/bundled/*.map text eol=lf
+# Keep the packed map byte-identical to the already distributed playtest copy.
+src/map/bundled/Arctic_Circle_16_Ice_Passages.map binary
 # Native replay and proof identities hash exact bytes, including LF endings.
 tools/rules_oracle/ares_prerequisites.json -text
 tools/spatial_oracle/_factory_infantry_output/** -text
