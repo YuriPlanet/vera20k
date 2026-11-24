@@ -1069,3 +1069,26 @@ fn runtime_frame_call_order_matches_the_app_seam() {
     );
     assert!(runtime.simulation.take_due_commands().is_empty());
 }
+
+/// A frame is one native logic frame however fast the host paced it, so the
+/// session's simulated clock must not follow the step its caller declared
+/// (issue #5107: the client declares 22 ms, headless 66 ms).
+#[test]
+fn the_session_clock_counts_native_frames_not_the_host_step() {
+    let mut client = Simulation::new();
+    let mut headless = Simulation::new();
+    for _ in 0..3 {
+        client.advance_tick(&[], None, None, None, 22);
+        headless.advance_tick(&[], None, None, None, 66);
+    }
+    assert_eq!(
+        client.session.total_sim_ms(),
+        headless.session.total_sim_ms(),
+        "22 ms and 66 ms steps report different simulated time for 3 frames"
+    );
+    assert_eq!(
+        client.session.total_sim_ms(),
+        3 * 1000 / u64::from(crate::util::fixed_math::RA2_LOGIC_FRAMES_PER_SECOND),
+        "3 native frames are 200 ms, not 3 x the host's step"
+    );
+}
