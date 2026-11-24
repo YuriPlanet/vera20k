@@ -1367,6 +1367,13 @@ impl<'a> Order<'a> {
     pub const fn launch_super_weapon(ty: TypeRef, cell: Cell) -> Self {
         Self::new(Command::LaunchSuperWeapon, cell.0, ty.0, &[])
     }
+
+    /// Lets the finished unit out of the house's factory of `kind`, the
+    /// index of `Factory.<Kind>` (2 Infantry, 3 Vehicle, 4 Naval,
+    /// 5 Aircraft), as a player's sidebar does for a ready unit.
+    pub const fn take_product(kind: i64) -> Self {
+        Self::new(Command::TakeProduct, 0, kind, &[])
+    }
 }
 
 impl House {

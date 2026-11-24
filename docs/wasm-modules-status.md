@@ -357,6 +357,53 @@ modders INI names.
   `ModuleEventRecord`, `Trigger::on_module_event`, `Action::raise_event`,
   `ActionDef::module_with`, args helpers (`ini::split`, `ini::int`, `ini::ints`).
 
+## Done (phase 1c: house domain claims)
+
+RFC 0001 section 6i, the claim part (`OrderRefused`, the read properties and the
+seat budgets are separate work).
+
+- House property `ControlDomains` (`Domain` mask, appendix 8.3 enum 25): `get` reads
+  it, `set` claims and releases. The value is the set of bits the writer holds on
+  that house; bits outside `DOMAIN_ALL` are invalid; `Refused` for a human,
+  defeated or local player's house and for a bit the other source holds; leaving a
+  bit out releases only the writer's own. A stopped module releases all its bits.
+  Saved (`SavedExtModules::claims`), hashed and in the checksum only while any claim
+  exists. `ExtModules::claimed_seats(source)` counts a source's seats.
+- "Mod AI" seats: `SkirmishLaunchSession::mod_ai_slots` (AI `raw_slot_index`
+  values, left out of the launch JSON while empty) names the seats. The modules are
+  installed before the launch houses exist, so `initialize_skirmish_launch_houses`
+  calls `Simulation::seat_mod_ai_houses`, which claims all four bits for the mod
+  module when the mod's `[VeraWasm] Controller=yes` (`WasmPolicy::controller`) and
+  its module runs; otherwise the native AI keeps the seat and the log says so.
+- Native AI gates (`Simulation::module_claims`, one emptiness check without
+  claims):
+  - `Production`: the chooser block of `HouseClass::Update`
+    (`update_production_choices`), `Factory_AI`'s start of production
+    (`factory_ai`), `AI_Manage_Build_Queue` and `Fire_Sale` in the strategy tick,
+    the house AI's MCV deploy (`owner_builds_its_own_base`).
+  - `Forces`: team creation and AI triggers (`update_team_creation`), the house's
+    teams in `TeamClass::AI` (`team_ai`, the teams stand still), `All_To_Hunt` in the
+    strategy tick, the regroup after an MCV deploys.
+  - `Abilities`: the computer-only unit arms: the AI auto-deploy of `Deployer=`
+    infantry, `Mission_Hunt`'s computer undeploy, the computer capture arm
+    (engineer capture, spy infiltration, garrisoning).
+  - `SuperWeapons`: `AI_TryFireSW` (`superweapon::ai_fire::try_fire`).
+- Residuals (also in `claims.rs`): the strategy tick's enemy search, anger and timer
+  draw keep running; a building already in the yard when `Production` is claimed is
+  still placed; the production mode still steps at exits; `Abilities` has no
+  house-level entry (house AI ability orders mostly come through team scripts);
+  ungarrisoning, the base defense response and a capturer's Hunt after capture are
+  not gated; a claimed house's emptied team is not dissolved until the claim goes.
+  The lobby does not offer "mod AI" yet (it must send `mod_ai_slots`; an older
+  game refuses such a launch, `deny_unknown_fields`).
+- Demo mod `sdk/examples/ai-takeover` (`rulesmd.ini` with `Controller=yes`, Chinese
+  README): claims every computer house and plays it through orders only (MCV deploy,
+  a four-building order placed at `Placeable` cells, infantry and tanks let out with
+  `TakeProduct`, `AttackMove` at the player's base), hearing `Commanded`,
+  `OrderRefused` and `Birth`. Its `ini_demo_mods_reach_their_marks` marks:
+  `claim,deploy,build,place,train,attack,order-rejected,native-idle`. SDK:
+  `Event::ORDER_REFUSED`, `Order::take_product`.
+
 ## Done (phase 1c: reads for driving a house)
 
 RFC 0001 section 6i's read surface (branch `impl-6i-reads`; claims and orders are
