@@ -112,7 +112,7 @@ pub const IMPORTS: &[(&str, &str)] = &[
     ),
 ];
 
-/// `IniKind` (INI registration addendum, enum 23): what `ini_register`
+/// `IniKind` (RFC 0001 appendix 8.3, enum 23): what `ini_register`
 /// registers.
 pub const INI_KEY: i32 = 0;
 pub const INI_REGISTRY: i32 = 1;
@@ -150,6 +150,11 @@ pub const ENTRY_COST: u64 = 10;
 /// clause of the query.
 pub const SCAN_COST: u64 = 2;
 pub const CLAUSE_COST: u64 = 6;
+/// What a clause on a "derived, high" property (appendix 7: a fire or range
+/// check per candidate) adds to [`CLAUSE_COST`].
+pub const HIGH_CLAUSE_COST: u64 = 60;
+/// The "derived, high" properties a host evaluates.
+pub const HIGH_COST_PROPERTIES: &[&str] = &["Engage"];
 /// Candidates one `find` examines at most (RFC 15.4); fewer where they
 /// would cost more than half the call's budget.
 pub const MAX_SCAN: u64 = 16_384;
@@ -171,12 +176,12 @@ pub const NAME_COUNTRY: i32 = 11;
 pub const NAME_TEAM_TYPE: i32 = 12;
 pub const NAME_VARIABLE: i32 = 15;
 /// Engine-held strings: parameter texts and the INI start records' names
-/// and values (INI registration addendum, section 7).
+/// and values (RFC 0001 section 6h).
 pub const NAME_STRING: i32 = 18;
 pub const NAME_PROPERTY: i32 = 19;
 /// Answered by the sandbox from [`STOCK_ACTIONS`] and [`ATOMIC_ACTIONS`].
 pub const NAME_ACTION_KIND: i32 = 21;
-/// Registered module events (INI registration addendum).
+/// Registered module events (RFC 0001 section 6h).
 pub const NAME_MODULE_EVENT: i32 = 24;
 pub const NAME_KINDS: i32 = 25;
 
@@ -191,6 +196,7 @@ pub const SCOPE_OBJECTS: i32 = 0;
 pub const SCOPE_HOUSES: i32 = 1;
 pub const SCOPE_CELLS: i32 = 2;
 pub const SCOPE_MODIFIERS: i32 = 7;
+pub const SCOPE_SUPER_WEAPONS: i32 = 8;
 pub const SCOPES: i32 = 9;
 
 /// Every property name of appendix section 7, deduplicated (properties with
@@ -244,7 +250,64 @@ pub const PROPERTIES: &[&str] = &[
     // 7.6 Cells: Passable.<SpeedType>
     "Passable.Foot", "Passable.Track", "Passable.Wheel", "Passable.Hover", "Passable.Winged",
     "Passable.Float", "Passable.Amphibious", "Passable.FloatBeach",
+    // RFC 0001 6i (0.0.21): driving a house. 7.1 objects
+    "Destination", "WeaponReady", "Deployed", "UnderConstruction", "Parasite", "ControlGroup",
+    // (`Visible` shares the client node property's ID)
+    "Engage",
+    // 7.5 houses
+    "ControlDomains",
+    "Factory.Building.Type", "Factory.Building.Progress", "Factory.Building.Ready",
+    "Factory.Building.Queued",
+    "Factory.Defense.Type", "Factory.Defense.Progress", "Factory.Defense.Ready",
+    "Factory.Defense.Queued",
+    "Factory.Infantry.Type", "Factory.Infantry.Progress", "Factory.Infantry.Ready",
+    "Factory.Infantry.Queued",
+    "Factory.Vehicle.Type", "Factory.Vehicle.Progress", "Factory.Vehicle.Ready",
+    "Factory.Vehicle.Queued",
+    "Factory.Naval.Type", "Factory.Naval.Progress", "Factory.Naval.Ready",
+    "Factory.Naval.Queued",
+    "Factory.Aircraft.Type", "Factory.Aircraft.Progress", "Factory.Aircraft.Ready",
+    "Factory.Aircraft.Queued",
+    // 7.6 cells: Zone.<MovementZone> in MovementZone order, then Obstructed
+    "Zone.Normal", "Zone.Crusher", "Zone.Destroyer", "Zone.AmphibiousDestroyer",
+    "Zone.AmphibiousCrusher", "Zone.Amphibious", "Zone.Subterrannean", "Zone.Infantry",
+    "Zone.InfantryDestroyer", "Zone.Fly", "Zone.Water", "Zone.WaterBeach", "Zone.CrusherAll",
+    "Obstructed",
+    // 7.8 global
+    "AutomationAllowed",
 ];
+
+/// `Domain` (appendix 8.3, enum 25): the bits of a house's `ControlDomains`.
+pub const DOMAIN_PRODUCTION: i64 = 1 << 0;
+pub const DOMAIN_FORCES: i64 = 1 << 1;
+pub const DOMAIN_ABILITIES: i64 = 1 << 2;
+pub const DOMAIN_SUPER_WEAPONS: i64 = 1 << 3;
+pub const DOMAIN_ALL: i64 = 0b1111;
+
+/// `RefuseReason` (appendix 8.3, enum 26): `OrderRefused`'s `value2`.
+pub mod refuse_reason {
+    pub const OTHER: i64 = 0;
+    pub const GONE: i64 = 1;
+    pub const IGNORES_ORDERS: i64 = 2;
+    pub const ILLEGAL_TARGET: i64 = 3;
+    pub const PREREQUISITE: i64 = 4;
+    pub const CANNOT_AFFORD: i64 = 5;
+    pub const QUEUE_FULL: i64 = 6;
+    pub const CANNOT_PLACE: i64 = 7;
+    pub const NOT_READY: i64 = 8;
+    pub const VETOED: i64 = 9;
+    pub const RATE_LIMITED: i64 = 10;
+}
+
+/// `EngageResult` (appendix 8.3, enum 27): the `Engage` property.
+pub const ENGAGE_OK: i64 = 0;
+pub const ENGAGE_ILLEGAL: i64 = 1;
+pub const ENGAGE_OUT_OF_RANGE: i64 = 2;
+pub const ENGAGE_NO_DAMAGE: i64 = 3;
+
+/// Factory kinds of the `Factory.<Kind>.*` properties and `TakeProduct`'s
+/// value (appendix 7.5, 8.3), in that order.
+pub const FACTORY_KINDS: [&str; 6] = ["Building", "Defense", "Infantry", "Vehicle", "Naval", "Aircraft"];
 
 /// A property's ID by name, ASCII case-insensitive.
 pub fn property_id(name: &str) -> Option<i32> {
@@ -409,9 +472,17 @@ impl Query {
         })
     }
 
-    /// Operations for each candidate examined.
+    /// Operations for each candidate examined: [`HIGH_CLAUSE_COST`] more
+    /// for each clause on a [`HIGH_COST_PROPERTIES`] property.
     pub fn scan_cost(&self) -> u64 {
-        SCAN_COST + CLAUSE_COST * self.clauses.len() as u64
+        self.clauses.iter().fold(SCAN_COST, |cost, clause| {
+            let high = matches!(
+                clause.subject,
+                ClauseSubject::Property(prop)
+                    if property_name(prop).is_some_and(|name| HIGH_COST_PROPERTIES.contains(&name))
+            );
+            cost + CLAUSE_COST + if high { HIGH_CLAUSE_COST } else { 0 }
+        })
     }
 }
 
@@ -749,6 +820,16 @@ impl Limits {
     pub const MOD: Self = Self {
         memory_bytes: 32 << 20,
     };
+
+    /// Memory a "mod AI" seat adds to the mod module (RFC 0001 15.4).
+    pub const SEAT_MEMORY: usize = 8 << 20;
+
+    /// These limits with `seats` "mod AI" seats added.
+    pub const fn with_seats(self, seats: usize) -> Self {
+        Self {
+            memory_bytes: self.memory_bytes + seats * Self::SEAT_MEMORY,
+        }
+    }
 }
 
 /// Why a module could not be loaded. It never runs; the match should not start.

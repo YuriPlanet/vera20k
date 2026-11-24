@@ -299,7 +299,7 @@ enum Target {
     House(usize),
     Cell(u16, u16),
     Waypoint(i32),
-    /// Type and global rules references: never an action target.
+    /// Type, superweapon and global rules references: never an action target.
     Other,
 }
 
@@ -310,7 +310,9 @@ fn decode(reference: i64) -> Act<Target> {
         Some(super::Ref::House(index)) => Target::House(index),
         Some(super::Ref::Cell { x, y }) => Target::Cell(x, y),
         Some(super::Ref::Waypoint(number)) => Target::Waypoint(number),
-        Some(super::Ref::Type { .. } | super::Ref::Global) => Target::Other,
+        Some(super::Ref::Type { .. } | super::Ref::SuperWeapon { .. } | super::Ref::Global) => {
+            Target::Other
+        }
     })
 }
 
@@ -423,7 +425,7 @@ impl Run<'_, '_, '_, '_> {
     }
 
     /// An object target that exists; 0 or a removed object is `Gone`.
-    /// `RaiseEvent` (INI registration addendum, section 6): a registered
+    /// `RaiseEvent` (RFC 0001 section 6h): a registered
     /// module event, on the target object (object event) or for every
     /// global trigger with it (global event).
     fn raise_event(&mut self, target: i64) -> Act<i64> {

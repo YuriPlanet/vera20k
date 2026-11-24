@@ -25,9 +25,9 @@ use crate::sim::command::DeployRecord;
 #[cfg(test)]
 use crate::sim::command::StopRecord;
 use crate::sim::command::{
-    ArchiveRecord, AresTrenchRedirectRecord, Command, CommandRecord, CycleProducerRecord,
-    MEGAMISSION_AUXILIARY_KIND_OFFSET, MEGAMISSION_PLANNING_OFFSET, MegaMissionRecord,
-    MegaMissionTarget, PlaceRecord, ProductionEvent, ProductionRecord,
+    ArchiveRecord, AresTrenchRedirectRecord, Command, CommandRecord, CommandRefusal, CommandSender,
+    CycleProducerRecord, MEGAMISSION_AUXILIARY_KIND_OFFSET, MEGAMISSION_PLANNING_OFFSET,
+    MegaMissionRecord, MegaMissionTarget, PlaceRecord, ProductionEvent, ProductionRecord,
 };
 use crate::sim::control_authority::CommandCapability;
 use crate::sim::house_diplomacy::HouseAlliances;
@@ -118,9 +118,11 @@ fn trace_wall_sell_zone_repair_step(
 /// What [`Simulation::apply_megamission_command`] did with an order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MegaMissionExecution {
-    /// The actor or an object token failed the admission gate: nothing
-    /// changed, and the actor keeps its previous order.
-    Refused,
+    /// The actor failed the admission gate: nothing changed.
+    ActorRefused,
+    /// An object token failed the admission gate: nothing changed, and the
+    /// actor keeps its previous order.
+    TokenRefused,
     /// A repeated Enter onto the building the actor is already linked to,
     /// consumed before any write (`0x004C729F..0x004C72E2`).
     RepeatedEnter,
@@ -129,9 +131,14 @@ enum MegaMissionExecution {
 }
 
 impl MegaMissionExecution {
-    /// Whether the event ran, a repeated Enter included.
-    fn accepted(self) -> bool {
-        self != Self::Refused
+    /// `Ok` when the event ran, a repeated Enter included; a refused actor
+    /// is `Gone`, a refused token `IllegalTarget`.
+    fn result(self) -> Result<(), CommandRefusal> {
+        match self {
+            Self::ActorRefused => Err(CommandRefusal::Gone),
+            Self::TokenRefused => Err(CommandRefusal::IllegalTarget),
+            Self::RepeatedEnter | Self::Executed => Ok(()),
+        }
     }
 }
 
@@ -184,17 +191,19 @@ impl Simulation {
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: &mut FrameEffects<'_>,
-    ) -> bool {
+    ) -> Result<(), CommandRefusal> {
         let Some((owner, record)) = self.house_command_record(record) else {
-            return false;
+            return Err(CommandRefusal::Other);
         };
         let record = record.as_ref();
         if let Some(event) = CycleProducerRecord::decode(record) {
-            return production::cycle_active_producer_for_owner_category(
-                self,
-                rules,
-                owner,
-                event.category,
+            return CommandRefusal::Other.unless(
+                production::cycle_active_producer_for_owner_category(
+                    self,
+                    rules,
+                    &owner,
+                    event.category,
+                ),
             );
         }
         if let Some(event) = ProductionRecord::decode(record) {
@@ -209,26 +218,25 @@ impl Simulation {
                 }
                 ProductionEvent::Suspend => {
                     let Some(category) = selection.category(rules) else {
-                        return false;
+                        return Err(CommandRefusal::Other);
                     };
-                    production::suspend_production(
+                    CommandRefusal::Other.unless(production::suspend_production(
                         &self.interner,
                         &mut self.production,
                         &self.session,
                         owner,
                         category,
-                    )
+                    ))
                 }
-                ProductionEvent::Abandon | ProductionEvent::AbandonAll => {
-                    production::cancel_production_for_owner(
+                ProductionEvent::Abandon | ProductionEvent::AbandonAll => CommandRefusal::Other
+                    .unless(production::cancel_production_for_owner(
                         self,
                         rules,
                         owner,
                         production::ProductionCancellation::Selected(selection),
                         event.event == ProductionEvent::AbandonAll,
                         effects,
-                    )
-                }
+                    )),
             };
         }
         if let Some(event) = PlaceRecord::decode(record) {
@@ -248,7 +256,7 @@ impl Simulation {
                 effects,
             );
         }
-        false
+        Err(CommandRefusal::Other)
     }
 
     /// Dispatch a single command, returning true if it was successfully applied.
@@ -260,27 +268,33 @@ impl Simulation {
         rules: Option<&RuleSet>,
     ) -> bool {
         self.apply_command_with_overlays(
-            None,
+            CommandSender::Player(None),
             command_owner,
             cmd,
             rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
             None,
             &mut crate::sim::world::FrameEffects::default(),
         )
+        .is_ok()
     }
 
-    /// The receiver for one command of `command_owner`: the id the command
-    /// carries, or a fixture's or tool's house name.
-    pub(crate) fn apply_command_with_overlays<'k>(
+    /// The command receiver, `EventClass::Execute @ 0x004C6CB0`: applies one
+    /// command, or says why it refused it ([`CommandRefusal`], VERA-only:
+    /// the reason a Wasm module's `OrderRefused` carries; a refusal changes
+    /// nothing a refusal changed before the reason existed).
+    pub(crate) fn apply_command_with_overlays(
         &mut self,
-        sender: Option<i8>,
-        command_owner: impl Into<InternKey<'k>>,
+        sender: CommandSender,
+        command_owner: &str,
         cmd: &Command,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
-    ) -> bool {
-        let command_owner = command_owner.into();
+    ) -> Result<(), CommandRefusal> {
+        let (sender, house_order) = match sender {
+            CommandSender::Player(source) => (source, false),
+            CommandSender::HouseOrder => (None, true),
+        };
         // A semantic envelope cannot promote an embedded record into an
         // authenticated source. DoList supplies this byte from its raw entry.
         let has_grants = self.session.has_custom_control_grants();
@@ -288,7 +302,7 @@ impl Simulation {
             && let Command::SynchronizedRecord { record } | Command::PlanningRecord { record } = cmd
             && sender != Some(record.house_id())
         {
-            return false;
+            return Err(CommandRefusal::Other);
         }
         // Event command receivers clear Plan tokens before applying ordinary
         // orders. Flag2 acknowledges its path without detaching it; use the
@@ -308,7 +322,7 @@ impl Simulation {
         };
         let cmd = if let Some(record) = native_mission {
             let Some((typed, _)) = MegaMissionRecord::decode_planned(record) else {
-                return false;
+                return Err(CommandRefusal::Other);
             };
             auxiliary = typed.auxiliary;
             // Only the temporary semantic projection omits the planning flag
@@ -319,7 +333,7 @@ impl Simulation {
             ordinary.payload_mut()[MEGAMISSION_AUXILIARY_KIND_OFFSET] = 0;
             let Some(envelope) = self.decode_native_command_record(&ordinary, self.session.tick())
             else {
-                return false;
+                return Err(CommandRefusal::Other);
             };
             if planned {
                 if has_grants {
@@ -331,7 +345,7 @@ impl Simulation {
                         || !u64::try_from(typed.source_id)
                             .is_ok_and(|actor| self.planning_acknowledge_generated(actor, record))
                     {
-                        return false;
+                        return Err(CommandRefusal::Other);
                     }
                 } else if let Ok(actor) = u64::try_from(typed.source_id) {
                     self.planning_acknowledge(actor);
@@ -345,10 +359,17 @@ impl Simulation {
         let granted_source =
             sender.and_then(|source| self.resolve_command_grant_source(command_owner, source));
         if (has_grants && sender.is_some() && granted_source.is_none())
-            || self.network_command_actor_foreign(command_owner, granted_source, cmd, rules, None)
+            || self.network_command_actor_foreign(
+                command_owner,
+                granted_source,
+                cmd,
+                rules,
+                None,
+                house_order,
+            )
             || !self.command_subject_can_receive_order(cmd, rules, sender)
         {
-            return false;
+            return Err(CommandRefusal::Other);
         }
         // VERA extension, Wasm module `CommandAllowed` (RFC 0001 appendix
         // 4.5, `sim::ext_modules::decide`): EventClass::Execute @ 0x004C6CB0
@@ -360,7 +381,9 @@ impl Simulation {
         let narrowed;
         let cmd = match self.module_admits_command(rules, cmd) {
             crate::sim::ext_modules::CommandAdmission::Allowed => cmd,
-            crate::sim::ext_modules::CommandAdmission::Refused => return false,
+            crate::sim::ext_modules::CommandAdmission::Refused => {
+                return Err(CommandRefusal::Vetoed);
+            }
             crate::sim::ext_modules::CommandAdmission::Narrowed(command) => {
                 narrowed = command;
                 &narrowed
@@ -399,27 +422,27 @@ impl Simulation {
                         == self.control_projection().local_command_house()
                 };
                 if !for_this_client {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
                 if self.replaying_recorded_commands {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
                 self.lifecycle_outputs
                     .emit(super::LifecycleOutput::OptionsRequested);
-                true
+                Ok(())
             }
             Command::SetLatencyFudge { value } => {
                 // Event LATENCYFUDGE4C7F4F stores the unmodified dword; its
                 // network-session owner receives the write after MainTick.
-                let Some(owner) = self.interner.key_id(command_owner) else {
-                    return false;
+                let Some(owner) = self.interner.get(command_owner) else {
+                    return Err(CommandRefusal::Other);
                 };
                 self.lifecycle_outputs
                     .emit(super::LifecycleOutput::LatencyFudgeChanged {
                         owner,
                         value: *value,
                     });
-                true
+                Ok(())
             }
             Command::MegaMission {
                 entity_id,
@@ -436,10 +459,9 @@ impl Simulation {
                     rules,
                     frame_effects,
                 )
-                .accepted(),
-            Command::PlanningRecord { record } => {
-                self.apply_planning_record(sender, command_owner, record, rules)
-            }
+                .result(),
+            Command::PlanningRecord { record } => CommandRefusal::Other
+                .unless(self.apply_planning_record(sender, command_owner, record, rules)),
             Command::SynchronizedRecord { record } => {
                 if let Some((owner, command)) = self.superweapon_command_from_record(record, rules)
                 {
@@ -453,7 +475,7 @@ impl Simulation {
                 }
                 if let Some(event) = ArchiveRecord::decode(record) {
                     let Ok(entity_id) = u64::try_from(event.entity_id) else {
-                        return false;
+                        return Err(CommandRefusal::Other);
                     };
                     let target = match event.target {
                         MegaMissionTarget::Null => None,
@@ -464,40 +486,46 @@ impl Simulation {
                             u64::try_from(id).ok().map(combat::TargetKind::Entity)
                         }
                     };
-                    return self.execute_archive_event(entity_id, target, rules.ares());
+                    return CommandRefusal::Other.unless(self.execute_archive_event(
+                        entity_id,
+                        target,
+                        rules.ares(),
+                    ));
                 }
                 if let Some(event) = crate::sim::command::DetonateRecord::decode(record) {
                     let Ok(carrier) = u64::try_from(event.entity_id) else {
-                        return false;
+                        return Err(CommandRefusal::Other);
                     };
-                    return self.execute_detonate_event(
+                    return CommandRefusal::Other.unless(self.execute_detonate_event(
                         carrier,
                         rules,
                         overlay_registry,
                         frame_effects,
-                    );
+                    ));
                 }
                 if rules.ares()
                     && let Some(event) =
                         crate::sim::command::AresTrenchRedirectRecord::decode(record)
                 {
-                    return self.ares_respond_to_trench_redirect(
+                    return CommandRefusal::Other.unless(self.ares_respond_to_trench_redirect(
                         granted_source.map(|(source, _)| source),
                         &event,
                         rules,
                         overlay_registry,
                         frame_effects,
-                    );
+                    ));
                 }
                 self.apply_production_record(record, rules, overlay_registry, frame_effects)
             }
             Command::AssignControlGroup { group, entity_ids } => {
-                self.assign_control_group(*group, entity_ids)
+                CommandRefusal::Other.unless(self.assign_control_group(*group, entity_ids))
             }
-            Command::Select { entity_ids, .. } => self.apply_selection_snapshot(
-                entity_ids,
-                super::UninitContext::new(rules).with_effects(frame_effects),
-            ),
+            Command::Select { entity_ids, .. } => {
+                CommandRefusal::Other.unless(self.apply_selection_snapshot(
+                    entity_ids,
+                    super::UninitContext::new(rules).with_effects(frame_effects),
+                ))
+            }
             Command::Scatter { entity_id } => {
                 // Event7 4C7859..4C78D5: clear planning tokens, then Foot,
                 // alive, on-map and untethered. There is no HP/owner/mission
@@ -513,7 +541,7 @@ impl Simulation {
                             && actor.seldom.tether.partner().is_none()
                     });
                 if !admitted {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
                 // Native also writes +6B2. Its observed consumers are class
                 // CRC4DBD60 and raw native Save/Load41035E/4103CD, not active
@@ -537,9 +565,9 @@ impl Simulation {
                     frame_effects,
                 ) {
                     log::warn!("Scatter order for {entity_id} refused: {cause}");
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
-                true
+                Ok(())
             }
             Command::Move {
                 entity_id,
@@ -555,7 +583,7 @@ impl Simulation {
                     rules,
                     frame_effects,
                 )
-                .accepted(),
+                .result(),
             Command::MoveToObject {
                 entity_id,
                 target_id,
@@ -569,7 +597,7 @@ impl Simulation {
                     rules,
                     frame_effects,
                 )
-                .accepted(),
+                .result(),
             Command::Stop { entity_id } => {
                 // Event IDLE 0x004C74CB..0x004C76BB replaces the Event
                 // receiver with its decoded actor at 0x004C74D3. It never
@@ -587,7 +615,7 @@ impl Simulation {
                     .get(*entity_id)
                     .is_some_and(|e| e.is_active() && !e.lifecycle.in_limbo())
                 {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
                 // The IDLE arm returns at `0x004C7504..0x004C750C` when the
                 // object's tether byte (`+0x418`) is set: a miner that has
@@ -604,7 +632,7 @@ impl Simulation {
                             || matches!(entity.mission.current().raw(), 0x12 | 0x13)
                     })
                 {
-                    return true;
+                    return Ok(());
                 }
                 // `0x004C752A..0x004C7577`: off a bridge, an actor on a flat
                 // cell whose screen projection lands in another cell (low
@@ -612,7 +640,7 @@ impl Simulation {
                 // write, as DEPLOY's arm does. A harvesting miner there keeps
                 // its mission and NavCom.
                 if crate::sim::movement::ground_pose::event_hidden_flat_cell(self, *entity_id) {
-                    return true;
+                    return Ok(());
                 }
                 // Event6 IDLE4C74CB..4C76BB retains the committed/queued
                 // mission and its dispatch timer. Only the ore-miner exception
@@ -706,7 +734,7 @@ impl Simulation {
                     self.commit_stop_miner_guard(*entity_id, rules);
                     self.reset_slave_manager(*entity_id, rules, frame_effects);
                 }
-                true
+                Ok(())
             }
             // A Cell target is the Ctrl click on the ground.
             Command::Attack {
@@ -722,7 +750,7 @@ impl Simulation {
                     rules,
                     frame_effects,
                 )
-                .accepted(),
+                .result(),
             Command::ForceAttackCell {
                 attacker_id,
                 target_rx,
@@ -737,7 +765,7 @@ impl Simulation {
                     rules,
                     frame_effects,
                 )
-                .accepted(),
+                .result(),
             Command::AttackMove {
                 entity_id,
                 target,
@@ -752,7 +780,7 @@ impl Simulation {
                     rules,
                     frame_effects,
                 )
-                .accepted(),
+                .result(),
             Command::Guard { entity_id, target } => self
                 .apply_megamission_command(
                     *entity_id,
@@ -763,11 +791,16 @@ impl Simulation {
                     rules,
                     frame_effects,
                 )
-                .accepted(),
+                .result(),
             Command::DeployMcv { entity_id } => {
                 // Event09's4C76BC receiver has no actor-owner comparison.
                 // D/self-click selection checks belong to their producers.
-                crate::sim::deploy::issue_order(self, *entity_id, rules, frame_effects)
+                CommandRefusal::Other.unless(crate::sim::deploy::issue_order(
+                    self,
+                    *entity_id,
+                    rules,
+                    frame_effects,
+                ))
             }
             // Legacy targetless order: no client sends it since the deploy key
             // refuses buildings (CanDeploySlashUnload), but recorded commands
@@ -780,17 +813,17 @@ impl Simulation {
                     *entity_id,
                     CommandCapability::FullControl,
                 ) {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
                 let delegated =
                     self.command_delegates_yard_redeploy(granted_source, *entity_id, rules);
-                self.undeploy_building(
+                CommandRefusal::Other.unless(self.undeploy_building(
                     *entity_id,
                     delegated,
                     rules,
                     overlay_registry,
                     frame_effects,
-                )
+                ))
             }
             // The synchronized self-deploy order is the Unload MEGAMISSION
             // (see the transport arm of `UnloadPassengers`); the concrete
@@ -811,17 +844,17 @@ impl Simulation {
                     *entity_id,
                     CommandCapability::Tactical,
                 ) {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
                 let Some(actor) = self.substrate.entities.get(*entity_id) else {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 };
                 if actor.category() != EntityCategory::Infantry
                     || !self
                         .object_type(actor.type_ref(), rules)
                         .is_some_and(|object| object.deployer)
                 {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
                 self.apply_megamission_command(
                     *entity_id,
@@ -832,38 +865,58 @@ impl Simulation {
                     rules,
                     frame_effects,
                 )
-                .accepted()
+                .result()
             }
             Command::SetRally {
                 rx,
                 ry,
                 producer_ids,
-            } => self.set_rally_point_for_producers(producer_ids, *rx, *ry, rules.ares()),
+            } => CommandRefusal::Other.unless(self.set_rally_point_for_producers(
+                producer_ids,
+                *rx,
+                *ry,
+                rules.ares(),
+            )),
             Command::ArchiveObject {
                 entity_id,
                 target_id,
-            } => self.execute_archive_event(
+            } => CommandRefusal::Other.unless(self.execute_archive_event(
                 *entity_id,
                 Some(combat::TargetKind::Entity(*target_id)),
                 rules.ares(),
-            ),
+            )),
             // Production events act on the event's own house (the
             // EventClass header's house id); the payload names no owner.
-            Command::QueueProduction { type_id } => production::enqueue_by_type(
-                self,
-                rules,
-                command_owner,
-                *type_id,
-                frame_effects,
-                false,
-            ),
-            Command::SuspendProduction { category } => production::suspend_production(
-                &self.interner,
-                &mut self.production,
-                &self.session,
-                command_owner,
-                *category,
-            ),
+            Command::QueueProduction { type_id } => {
+                let type_s = self.interner.resolve(*type_id).to_string();
+                // VERA: a Wasm module's house order passes the checks its
+                // house's player would (RFC 0001 6g), where a computer
+                // house's own CanBuild asks no prerequisites.
+                if house_order
+                    && let Some(owner) = self.interner.get(command_owner)
+                    && let Some(object) = rules.object(&type_s)
+                    && !production::buildable_by_player(self, rules, owner, object)
+                {
+                    return Err(CommandRefusal::Prerequisite);
+                }
+                production::enqueue_by_type(
+                    self,
+                    rules,
+                    command_owner,
+                    &type_s,
+                    frame_effects,
+                    false,
+                )
+            }
+            Command::SuspendProduction { category } => {
+                CommandRefusal::Other.unless(production::suspend_production(
+                    &self.interner,
+                    &mut self.production,
+                    &self.session,
+                    command_owner,
+                    *category,
+                ))
+            }
             Command::TogglePrimaryFactory { entity_id } => {
                 // Event17 4C718F resolves a Building, then6386E0 receives
                 // that pointer (NULL is a no-op). Only afterward4C71A7 tests
@@ -872,22 +925,23 @@ impl Simulation {
                     (entity.category() == EntityCategory::Structure)
                         .then_some(entity.lifecycle.object_alive())
                 }) else {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 };
                 self.planning_detach_actor(*entity_id);
                 if !alive {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
                 // The issuer adds no ownership/online/limbo/HP admission.
-                production::toggle_factory_primary(self, rules, *entity_id)
+                CommandRefusal::Other
+                    .unless(production::toggle_factory_primary(self, rules, *entity_id))
             }
             Command::CycleProducerFocus { category } => {
-                production::cycle_active_producer_for_owner_category(
+                CommandRefusal::Other.unless(production::cycle_active_producer_for_owner_category(
                     self,
                     rules,
                     command_owner,
                     *category,
-                )
+                ))
             }
             Command::PlaceReadyBuilding { type_id, rx, ry } => {
                 production::place_production_with_overlays(
@@ -915,7 +969,8 @@ impl Simulation {
                 )
             }
             Command::CancelProductionByType { type_id, all } => {
-                production::cancel_production_for_owner(
+                let type_s = self.interner.resolve(*type_id).to_string();
+                CommandRefusal::Other.unless(production::cancel_production_for_owner(
                     self,
                     rules,
                     command_owner,
@@ -928,7 +983,7 @@ impl Simulation {
                     },
                     *all,
                     frame_effects,
-                )
+                ))
             }
             // EventClass::Execute @ 0x004C6CB0, SELL arm 0x004C6F12:
             // the prefix above detaches Planning (4C6F20), then +90/alive
@@ -939,7 +994,7 @@ impl Simulation {
             // plays (below); otherwise buildings alone are sold.
             Command::SellBuilding { entity_id } => {
                 let Some(entity) = self.substrate.entities.get(*entity_id) else {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 };
                 if !entity.lifecycle.object_alive()
                     || !self.command_house_allowed(
@@ -949,7 +1004,7 @@ impl Simulation {
                         CommandCapability::FullControl,
                     )
                 {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
                 // 4C6F5A..4C6F96: a Unit or Aircraft with a Building in the
                 // cell of its coordinate takes On_Sold(-1). Ares makes the
@@ -977,14 +1032,16 @@ impl Simulation {
                             )
                         })
                         .is_some();
-                    return on_building
-                        && production::foot_on_sold(
-                            self,
-                            rules,
-                            *entity_id,
-                            crate::sim::world::UninitContext::new(rules)
-                                .with_effects(frame_effects),
-                        );
+                    return CommandRefusal::Other.unless(
+                        on_building
+                            && production::foot_on_sold(
+                                self,
+                                rules,
+                                *entity_id,
+                                crate::sim::world::UninitContext::new(rules)
+                                    .with_effects(frame_effects),
+                            ),
+                    );
                 }
                 let order =
                     if self.command_delegates_yard_redeploy(granted_source, *entity_id, rules) {
@@ -992,21 +1049,21 @@ impl Simulation {
                     } else {
                         production::SellOrder::Player
                     };
-                production::sell_back(
+                CommandRefusal::Other.unless(production::sell_back(
                     self,
                     rules,
                     *entity_id,
                     order,
                     overlay_registry,
                     frame_effects,
-                )
+                ))
             }
             Command::SellWallAtCell { x, y } => {
                 let Some(overlays) = overlay_registry else {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 };
                 // Event 0x4C6FC4 passes 0; ordinary SELL remains audible.
-                self.sell_wall_at_cell(
+                CommandRefusal::Other.unless(self.sell_wall_at_cell(
                     command_owner,
                     granted_source,
                     *x,
@@ -1015,7 +1072,7 @@ impl Simulation {
                     rules,
                     overlays,
                     frame_effects,
-                )
+                ))
             }
             // Event1/Event2 (0x004C6CB0 branches 0x004C6CF0/0x004C6D4D) drive the
             // BuildingClass+0x660 power latch through GoOnline 0x00452260 /
@@ -1024,11 +1081,11 @@ impl Simulation {
             // Stuff flag, factory queue refresh, EVA line for a human house). The
             // dispatch has no owner check; only the VERA network gate above adds one.
             Command::SetBuildingOnLine { entity_id, on } => {
-                let Some(owner) = self.interner.key_id(command_owner) else {
-                    return false;
+                let Some(owner) = self.interner.get(command_owner) else {
+                    return Err(CommandRefusal::Other);
                 };
                 if !self.houses.contains_key(&owner) {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
                 // `0x004C6D09`/`0x004C6D17` (and `0x004C6D68`/`0x004C6D76` on the
                 // 0x02 branch): a null target, one whose ObjectClass IsAlive
@@ -1039,10 +1096,10 @@ impl Simulation {
                 // the create path at `0x0044EC68`/`0x0044ECC4` brackets object
                 // construction with a save/set/restore of the same byte.
                 let Some(entity) = self.substrate.entities.get(*entity_id) else {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 };
                 if !entity.lifecycle.object_alive() || entity.lifecycle.in_limbo() {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
                 let type_ref = entity.type_ref();
                 // The branch's last gate reads `[target+0x520]+0x16C0`, and
@@ -1055,34 +1112,36 @@ impl Simulation {
                     .object_type(type_ref, rules)
                     .is_some_and(|object| object.firestorm_wall)
                 {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
-                if *on {
+                CommandRefusal::Other.unless(if *on {
                     self.go_building_online(*entity_id, rules, frame_effects)
                 } else {
                     self.go_building_offline(*entity_id, rules, frame_effects)
-                }
+                })
             }
             // Offline game-speed transitions are consumed at master-frame
             // ingress so early authoritative animation work sees the new rate.
             // Reaching the ordinary EventClass-shaped tail must not apply one.
-            Command::SetGameSpeed { .. } => false,
+            Command::SetGameSpeed { .. } => Err(CommandRefusal::Other),
             // 0x0D (type 13, `0x004C794B`) stores the setting at the
             // EventClass tail, before any House check.
-            Command::LiveGameSpeed { speed } => self.session.apply_in_game_speed(*speed),
+            Command::LiveGameSpeed { speed } => {
+                CommandRefusal::Other.unless(self.session.apply_in_game_speed(*speed))
+            }
             Command::Cheer => {
-                let Some(owner) = self.interner.key_id(command_owner) else {
-                    return false;
+                let Some(owner) = self.interner.get(command_owner) else {
+                    return Err(CommandRefusal::Other);
                 };
                 if !self.houses.contains_key(&owner) {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
                 self.house_cheer(owner, rules, frame_effects);
-                true
+                Ok(())
             }
             Command::Destruct => {
-                let Some(owner) = self.interner.key_id(command_owner) else {
-                    return false;
+                let Some(owner) = self.interner.get(command_owner) else {
+                    return Err(CommandRefusal::Other);
                 };
                 // VERA shared control: one player resigning (B6 Leave beside
                 // Observe, Surrender's OK) leaves a House other players still
@@ -1091,20 +1150,20 @@ impl Simulation {
                     .executing_sender(sender, owner)
                     .is_some_and(|sender| self.house_keeps_other_sender(owner, sender))
                 {
-                    return true;
+                    return Ok(());
                 }
                 // Type-8 entry 0x004C7BDF: Flag_To_Die on the header House,
                 // with no human or mode test. Destruction waits for the
                 // House rung (Update 0x004F87C2).
                 self.flag_house_to_die(owner);
-                true
+                Ok(())
             }
             Command::ExitMatch => {
-                let Some(owner) = self.interner.key_id(command_owner) else {
-                    return false;
+                let Some(owner) = self.interner.get(command_owner) else {
+                    return Err(CommandRefusal::Other);
                 };
                 if !self.houses.contains_key(&owner) {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
                 let sender = self.executing_sender(sender, owner);
                 // VERA shared control: a House another player still controls
@@ -1160,9 +1219,11 @@ impl Simulation {
                     }
                     self.departed_senders.extend(sender);
                 }
-                true
+                Ok(())
             }
-            Command::MoveFlash { rx, ry } => self.spawn_move_flash(rules, (*rx, *ry)),
+            Command::MoveFlash { rx, ry } => {
+                CommandRefusal::Other.unless(self.spawn_move_flash(rules, (*rx, *ry)))
+            }
             Command::Ally { house_index } => {
                 // EventClass::Execute 0x004C6DEE..0x004C6E23: no admission
                 // gate; the sender toggles on its own mask, announced.
@@ -1172,7 +1233,7 @@ impl Simulation {
                         .ok()
                         .and_then(|index| self.houses.order().get(index).copied()),
                 ) else {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 };
                 if crate::sim::combat::combat_weapon::is_ally_by_object(
                     Some(self.house_alliances()),
@@ -1184,7 +1245,7 @@ impl Simulation {
                 } else {
                     self.make_ally(owner, other, rules, overlay_registry, frame_effects, true);
                 }
-                true
+                Ok(())
             }
             Command::RemovePlayer { source } => {
                 // EventClass::Execute 0x004C7B73: IsHumanControlled
@@ -1194,10 +1255,10 @@ impl Simulation {
                 // RESIDUAL: mode 4's ladder-stats call (0x004C7BA0..0x004C7BBA)
                 // is backend.
                 let Ok(source) = i8::try_from(*source) else {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 };
                 let Some(owner) = self.command_sender_owner(source) else {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 };
                 if !self.session.wol_tournament_game()
                     && !self
@@ -1205,7 +1266,7 @@ impl Simulation {
                         .get(&owner)
                         .is_some_and(|house| house.is_human())
                 {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
                 // VERA shared control: a House another player still controls
                 // survives losing one of them.
@@ -1215,7 +1276,7 @@ impl Simulation {
                 // REMOVEPLAYER is synchronized source loss, distinct from
                 // DESTRUCT/defeat: a connected WOL observer remains a publisher.
                 self.session.retire_network_command_source(source);
-                true
+                Ok(())
             }
             // Event4C6ED2 resolves Techno and detaches planning6386E0 above,
             // before its only admission: Object+90. Accepted events survive
@@ -1237,14 +1298,14 @@ impl Simulation {
                     .is_some_and(|entity| entity.lifecycle.object_alive())
                     || !production::player_repair_type_admits(self, rules, *entity_id)
                 {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
-                production::toggle_repair(
+                CommandRefusal::Other.unless(production::toggle_repair(
                     self,
                     rules,
                     *entity_id,
                     production::RepairControl::Toggle,
-                )
+                ))
             }
             Command::UnloadPassengers { transport_id } => {
                 if !self.command_entity_allowed(
@@ -1253,7 +1314,7 @@ impl Simulation {
                     *transport_id,
                     CommandCapability::Tactical,
                 ) {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
                 let has_passengers = self.substrate.entities.get(*transport_id).is_some_and(|t| {
                     !t.passenger_role().occupants().is_empty()
@@ -1279,7 +1340,7 @@ impl Simulation {
                     has_passengers
                 };
                 if !has_passengers && !gap_generator {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
                 let category = self
                     .substrate
@@ -1298,7 +1359,7 @@ impl Simulation {
                         // callers. D uses the separate Event9 receiver, whose
                         // class setters clear both target and destination.
                         if !self.order_actor_admits(*transport_id) {
-                            return false;
+                            return Err(CommandRefusal::Other);
                         }
                         self.queue_megamission(
                             *transport_id,
@@ -1318,7 +1379,7 @@ impl Simulation {
                             Some(combat::TargetKind::Entity(*transport_id)),
                             None,
                         );
-                        true
+                        Ok(())
                     }
                     Some(crate::map::entities::EntityCategory::Unit)
                     | Some(crate::map::entities::EntityCategory::Aircraft) => {
@@ -1337,11 +1398,11 @@ impl Simulation {
                                 .and_then(|t| self.object_type(t.type_ref(), rules))
                                 .is_some_and(|obj| obj.passengers > 0);
                         if !is_transport {
-                            return false;
+                            return Err(CommandRefusal::Other);
                         }
                         if category == Some(crate::map::entities::EntityCategory::Aircraft) {
                             if !self.order_actor_admits(*transport_id) {
-                                return false;
+                                return Err(CommandRefusal::Other);
                             }
                             // Aircraft readiness has no live transition-latch
                             // producer, so a queued mission would never
@@ -1359,7 +1420,7 @@ impl Simulation {
                                 crate::sim::mission::MissionId::from_known(MissionType::Unload),
                                 now,
                             );
-                            return true;
+                            return Ok(());
                         }
                         // The self-click's `ClickedMission(Unload, NULL, NULL)`
                         // (FootClass slot +0x144 case 4, `0x004D74E0`): the
@@ -1378,9 +1439,9 @@ impl Simulation {
                             rules,
                             frame_effects,
                         )
-                        .accepted()
+                        .result()
                     }
-                    _ => false,
+                    _ => Err(CommandRefusal::Other),
                 }
             }
             Command::PlantC4 {
@@ -1393,7 +1454,7 @@ impl Simulation {
                     *attacker_id,
                     CommandCapability::Tactical,
                 ) {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
                 if self
                     .substrate
@@ -1401,7 +1462,7 @@ impl Simulation {
                     .get(*attacker_id)
                     .is_some_and(|e| e.is_deployed())
                 {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
                 // Validate attacker has C4=yes flag.
                 let c4_ok = self.substrate.entities.get(*attacker_id).and_then(|e| {
@@ -1409,7 +1470,7 @@ impl Simulation {
                     obj.c4.then_some(())
                 });
                 if c4_ok.is_none() {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
                 // Validate target is a CanC4, non-invisible building, not iron-curtained.
                 // These gates stand in for the cursor's (What_Action), which
@@ -1448,7 +1509,7 @@ impl Simulation {
                         Some(())
                     });
                 let Some(()) = target_info else {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 };
                 // The command carries the selected Sabotage action. Native
                 // What_Action permits Ctrl on allies (7003C4..700406); the
@@ -1467,7 +1528,7 @@ impl Simulation {
                     rules,
                     frame_effects,
                 )
-                .accepted()
+                .result()
             }
             Command::CaptureBuilding {
                 engineer_id,
@@ -1479,7 +1540,7 @@ impl Simulation {
                     *engineer_id,
                     CommandCapability::Tactical,
                 ) {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
                 // A Building destination with a coordinate; the event arm
                 // gates its liveness. Capture's class arrival owner evaluates
@@ -1503,7 +1564,7 @@ impl Simulation {
                         .ok()
                     });
                 if target_info.is_none() {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
                 // Infantry51F190 maps actions28/29 toFootaction9 before
                 // delayed Event delivery. Mutable type, relation and HP
@@ -1520,7 +1581,7 @@ impl Simulation {
                     rules,
                     frame_effects,
                 )
-                .accepted()
+                .result()
             }
             Command::LaunchSuperWeapon { .. }
             | Command::CompletePaidSuperWeapon { .. }
@@ -1550,7 +1611,7 @@ impl Simulation {
                     *bunker_id,
                     CommandCapability::Tactical,
                 ) {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 }
                 let Some(unit_id) = self
                     .substrate
@@ -1558,13 +1619,22 @@ impl Simulation {
                     .get(*bunker_id)
                     .and_then(|b| b.bunker.occupant())
                 else {
-                    return false;
+                    return Err(CommandRefusal::Other);
                 };
-                crate::sim::deploy::issue_order(self, unit_id, rules, frame_effects)
+                CommandRefusal::Other.unless(crate::sim::deploy::issue_order(
+                    self,
+                    unit_id,
+                    rules,
+                    frame_effects,
+                ))
             }
         }
     }
 
+    /// A superweapon command for `owner`. A refusal is `Prerequisite` when
+    /// the house holds no granted Super of the command's type, `NotReady`
+    /// when that Super is not charged, `Other` otherwise (VERA-only reasons,
+    /// read after the refusal changed nothing of the Super).
     fn apply_superweapon_command_for_house(
         &mut self,
         owner: InternedId,
@@ -1572,8 +1642,14 @@ impl Simulation {
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
-    ) -> bool {
-        match command {
+    ) -> Result<(), CommandRefusal> {
+        let sw_type = match command {
+            Command::LaunchSuperWeapon { sw_type_id, .. } => Some(*sw_type_id),
+            Command::CompletePaidSuperWeapon { selection, .. } => Some(selection.destination),
+            Command::BeginPaidSuperWeapon { selection, .. } => Some(selection.source),
+            _ => None,
+        };
+        let applied = match command {
             Command::LaunchSuperWeapon {
                 sw_type_id,
                 target_rx,
@@ -1628,7 +1704,21 @@ impl Simulation {
                 Some(*selection),
             ),
             _ => false,
+        };
+        if applied {
+            return Ok(());
         }
+        let instance = sw_type.and_then(|sw_type| {
+            self.super_weapons
+                .get(&owner)
+                .and_then(|supers| supers.get(&sw_type))
+        });
+        Err(match instance {
+            Some(instance) if !instance.is_active() => CommandRefusal::Prerequisite,
+            None if sw_type.is_some() => CommandRefusal::Prerequisite,
+            Some(instance) if !instance.is_ready() => CommandRefusal::NotReady,
+            _ => CommandRefusal::Other,
+        })
     }
 
     /// The rally click's event 0x1E for each selected factory:
@@ -1957,13 +2047,13 @@ impl Simulation {
         // when the void class setter leaves NavCom NULL. Decoded commands
         // must not repeat the input wrapper's separate no-order decision.
         if !self.order_actor_admits(entity_id) {
-            return MegaMissionExecution::Refused;
+            return MegaMissionExecution::ActorRefused;
         }
         for token in [target, destination] {
             if let Some(id) = self.event_token_object(token)
                 && !self.order_object_token_admits(id)
             {
-                return MegaMissionExecution::Refused;
+                return MegaMissionExecution::TokenRefused;
             }
         }
         if mission == MissionType::Enter && self.duplicate_enter_is_noop(entity_id, destination) {

@@ -331,6 +331,9 @@ pub fn initialize_skirmish_launch_houses(
         }
     }
     populate_special_houses(sim, house_roster, rules);
+    // VERA: "mod AI" seats (RFC 0001 6i). The Wasm modules were installed
+    // before the houses existed, so their claims are given here.
+    sim.seat_mod_ai_houses(&session.mod_ai_house_names());
 }
 
 /// VERA shared control: when players share Houses, record which House each
@@ -833,7 +836,7 @@ pub fn normalized_launch_slots(session: &SkirmishLaunchSession) -> Vec<Normalize
     }
     for (index, opponent) in session.opponents.iter().enumerate() {
         slots.push(NormalizedSkirmishSlot {
-            owner_name: format!("Computer{}", index + 1),
+            owner_name: crate::skirmish_launch::computer_house_name(index),
             country: opponent.country,
             color_index: opponent.color_index,
             start_position: opponent.start_position,

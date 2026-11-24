@@ -1,7 +1,7 @@
 # Wasm extension modules: development status
 
-The current checkpoint for implementing [RFC 0001](0001-wasm-extension-modules.md)
-(API in the [appendix](0001-wasm-extension-modules-api.md)). Replace this file's
+The current checkpoint for implementing [RFC 0001](rfcs/0001-wasm-extension-modules.md)
+(API in the [appendix](rfcs/0001-wasm-extension-modules-api.md)). Replace this file's
 content as work lands; do not append a diary.
 
 ## Where the work is
@@ -39,12 +39,14 @@ content as work lands; do not append a diary.
 | Property writes (`Health`, `Owner`, `Rank`, `Mission`, `Ammo`, `Online`) | `src/sim/ext_modules/writes.rs` |
 | Object, type and global property reads beyond the basics; viewpoint reads (`read_in`) | `src/sim/ext_modules/props.rs` |
 | Action state kept across frames: `AllowType` forbids, timed `Convert` reversions | `src/sim/ext_modules/held.rs` |
-| INI registration (addendum `0001-ini-register.zh-CN.md`): registered names, event IDs, string table | `src/sim/ext_modules/ini_names.rs`; start records `ini_start.rs`; `RaiseEvent` in `actions.rs`; `Event=Wasm:`, `Wasm:name(target,text)` in `ini_triggers.rs`; tests `ext_modules_ini_register_tests.rs`, demo smoke `ini_demo_mods_reach_their_marks` |
+| INI registration (RFC 0001 section 6h): registered names, event IDs, string table | `src/sim/ext_modules/ini_names.rs`; start records `ini_start.rs`; `RaiseEvent` in `actions.rs`; `Event=Wasm:`, `Wasm:name(target,text)` in `ini_triggers.rs`; tests `ext_modules_ini_register_tests.rs`, demo smoke `ini_demo_mods_reach_their_marks` |
 | Modder guide | `docs/wasm-modules.md` |
 | Tutorials (Chinese) | `docs/wasm-modules-tutorial.zh-CN.md` (Rust, builds and checks); `docs/wasm-modules-tutorial-ts.zh-CN.md` (TypeScript, written ahead of the SDK from RFC 5a and appendix 3 to review the planned API; nothing in it is compiled) |
 | The `action` import and trigger actions: `run_action` (atomic actions through their owners, stock actions mapped onto the map trigger executor) | `src/sim/ext_modules/actions.rs`; executor without a live trigger `src/sim/trigger_runtime/untriggered.rs` |
 | House orders: `order` checks and queues per module slot; `take_due_orders` turns them into player commands | `src/sim/ext_modules/orders.rs`; executed by `Simulation::run_ext_module_orders` (`src/sim/world/command_schedule.rs`) from `run_network_command_tail` in `master_frame.rs` |
 | Cell and global properties, `find` over cells | `src/sim/ext_modules/cells.rs` |
+| Superweapon references, properties and `find` over superweapons | `src/sim/ext_modules/supers.rs` |
+| 6i reads: `Visible` (`Simulation::object_seen_by`, `techno_ai/common_body.rs`), `Engage` (`Simulation::engage_check`, `techno_ai/target_scan.rs`), factories (`FactoryRegistry::owner_view`, `production/factory.rs`); tests | `src/sim/ext_modules/props.rs`; `ext_modules_drive_tests.rs` |
 | Rules stage: `[VeraWasm]` policy, `VeraMinVersion`, `PreparedExtModules` (the `ExtRulesHook`), `RulesHost` for `vera_init`/`on_rules`, `rules_get`/`rules_set` | `src/sim/ext_modules/rules.rs`; hook trait `ExtRulesHook` and the extra pass in `src/rules/native_processing.rs`; entry `NativeRulesProcessOwner::load_scenario_with_ext_rules` (`process_owner.rs`) |
 | Build version and `version_serves` (mods and maps) | `src/util/version.rs` (`GAME_VERSION`) |
 | Module phase hook | end of the Triggers arm in `src/sim/world/master_frame.rs` |
@@ -153,13 +155,35 @@ module (merge timers into one function).
   answers `Refused` (empty allowlist).
 - House orders (6g): `order` for a computer house that is not defeated and not the
   local player's; the command table (appendix 8.3) checks target and value kinds,
-  units must be object references, at most 64 orders and 4096 unit entries per module
+  units must be object references, at most 256 orders and 4096 unit entries per module
   per frame. Orders queue in the module's slot (saved, hashed, cleared when the module
   stops) and execute in the next frame's command step, after the player commands
   (`run_ext_module_orders` in `run_network_command_tail`), as the player commands the
   house's player would send, through the same receiver (`apply_one_due_command`).
   Units that died or changed owner drop out; a defeated house's orders are dropped.
-  Orders never enter the network stream.
+  Orders never enter the network stream. Every command of the table but `EjectBunker`
+  runs: `Guard` with a cell is the area-guard click, `Harvest` the harvest click,
+  `Enter` the entry click's MEGAMISSION (Eaten at a Grinder), `SuspendProduction`
+  SUSPEND for the type's production category, `TakeProduct` the mobile PLACE of the
+  factory kind (Infantry, Vehicle, Naval, Aircraft). A module order is its house's own
+  sender (`CommandSender::HouseOrder`): custom control grants do not refuse its
+  house-wide commands, and its `QueueProduction` asks the prerequisites the house's
+  player would be asked (`production::buildable_by_player`).
+- Order results (6i): `Commanded` (1016, object) on each actor of a command the
+  receiver applied, `value` the 8.3 number, `other`/`cell` the target, `value2` a serial
+  shared by one module order or by consecutive same-target commands of one house (a
+  click); `OrderRefused` (1043, global) for a refused command, once per actor or once
+  with subject 0 and `id` the type for a house-wide command, `house` the issuer, `value2`
+  the `RefuseReason`. Both for player commands and module orders, raised after the
+  receiver in `apply_one_due_command`, and only when a module trigger listens. The
+  receiver (`apply_command_with_overlays`) returns `Result<(), CommandRefusal>`:
+  MEGAMISSION actor gate `Gone`, token gate `IllegalTarget`; `CommandAllowed` and
+  `ProductionQueued` vetoes `Vetoed`; PRODUCE without a factory (or, for a module
+  order, without the player's prerequisites) `Prerequisite`, a refused append or a busy
+  building factory `QueueFull`; PLACE without a finished product `NotReady`, a refused
+  placement or exit `CannotPlace`; a superweapon not granted `Prerequisite`, not charged
+  `NotReady`; every other refusal `Other`, read as `Gone` when its actor is no longer
+  alive.
 - Mod policy (`[VeraWasm]` in the mod's own `rulesmd.ini`): `Budget`, `MapBudget`
   (clamped to 1..=200000 operations: the most one call may use, and the frame's
   use past which no more event batches start), `MapWasm=no` refusing maps with
@@ -294,7 +318,7 @@ module (merge timers into one function).
 
 ## Done (phase 1b: INI registration)
 
-The addendum `docs/rfcs/0001-ini-register.zh-CN.md` (version 1): modules give
+RFC 0001 section 6h (0.0.21): modules give
 modders INI names.
 
 - `ini_register` (import 24, `vera_init` only; elsewhere invalid) registers a key on
@@ -319,9 +343,46 @@ modders INI names.
 - `EventRecord` is 120 bytes (`args` 108, `target` 112), `DecideRecord` 160; the SDK
   delivery area holds 8 records. Registrations and strings are saved
   (`SavedExtModules::ini`) and in the state hash and checksum.
+- Demo mods, configured only in INI (`sdk/examples/ini-shield`, `ini-aura`,
+  `ini-counter`, `ini-academy`, each with `rulesmd.ini` and a Chinese README):
+  `ini_demo_mods_reach_their_marks` plays 3000 frames with each and checks its
+  `DEMO-OK` marks when `VERA20K_TEST_INI_DEMOS` lists
+  `module.wasm|rulesmd.ini|marks` entries (`;`-separated): shield
+  `entry,key,absorb,broken,restore`, aura `entry,key,apply,event,action`, counter
+  `entry,count,reward,event`, academy `entry,key,enter,promote,event,action`. All
+  pass (2026-11-24). Known gaps they found: `CreateObject` cannot target a factory
+  (rewards appear beside it), INI triggers cannot hear a global module event (only
+  code triggers), no stock evict action (the academy unloads by mission).
 - Rust SDK: `ini::{key, registry, event}`, `IniKeyRecord`, `IniEntryRecord`,
   `ModuleEventRecord`, `Trigger::on_module_event`, `Action::raise_event`,
   `ActionDef::module_with`, args helpers (`ini::split`, `ini::int`, `ini::ints`).
+
+## Done (phase 1c: reads for driving a house)
+
+RFC 0001 section 6i's read surface (branch `impl-6i-reads`; claims and orders are
+separate work):
+
+- Objects: `Destination` (NavCom, cell or object), `WeaponReady` (rearm timer run
+  out), `Deployed` (`is_fully_deployed`), `UnderConstruction` (BState 0),
+  `Parasite` (ParasiteEatingMe); `ControlGroup` answers `Unsupported` (client only);
+  `Armor` was already readable.
+- Viewpoint: `Visible` (the viewpoint house's fog as the translucent fog draws,
+  current sight under FogOfWar, and the screen GetVisualState `0x00703860` for
+  cloak and sensors; `FogState::shows_objects_to` is now the one owner the draw
+  plan, pickers and modules share) and `Engage` (`EngageResult`: GetFireError
+  without range, the selected Warhead's Verses against the target's armor, InRange).
+  `Query.viewpoint` may be an object: `Engage` reads for it, house viewpoint
+  properties for its owner; filter clauses keep the trigger house. A clause on a
+  "derived, high" property (`HIGH_COST_PROPERTIES`, now `Engage`) costs
+  `HIGH_CLAUSE_COST` (60) more per candidate.
+- Houses: `Factory.<Kind>.Type/Progress/Ready/Queued` for the six kinds, from the
+  House slot factory or, for a computer house, the first building-held one.
+- Cells: `Zone.<MovementZone>` (MapClass::GetZoneID `0x0056D230`), `Obstructed`
+  (a building in the cell, or a wall or impassable overlay).
+- Global `AutomationAllowed` reads 0 until the room switch exists (phase 2).
+- Superweapons: references (bit 46, house index and `[SuperWeaponTypes]` index),
+  `Type`, `Owner`, `Ready`, `ChargePercent` (writing runs stock action 129), and
+  `find` scope 8 `SuperWeapons` over granted Supers, by house then type.
 
 ## Provisional numbering (open question 5)
 
@@ -330,7 +391,7 @@ modders INI names.
 - New events from 1000 in appendix order, 4.3 then 4.4 then 4.5: `TakeDamage` =
   1000, `Killed` = 1004, `Fire` = 1005, `Birth` = 1011, `TransportEntered` = 1012,
   `PassengerAdded` = 1014, `HouseTransferred` = 1019, `Timer` = 1023,
-  `SuperWeaponLaunched` = 1024; polls 1026..1030 (`PropertyPoll`, `HousePowerPoll`,
+  `SuperWeaponLaunched` = 1024, `Commanded` = 1016, `OrderRefused` = 1043; polls 1026..1030 (`PropertyPoll`, `HousePowerPoll`,
   `ModifierCountPoll`, `DistancePoll`, `VariablePoll`); decision-only 1031..1036
   (`ProductionAllowed` 1031, `ProductionQueued` 1032, `Defeat` 1033, `CommandAllowed`
   1034; `Launch` and `ProjectileFrame` reserved). Stock events keep 0..88. One name
@@ -353,7 +414,9 @@ modders INI names.
   `[SuperWeaponTypes]` order; overlay ID: overlay type index; waypoint reference kind 3,
   global reference kind 4.
 - References: object = entity `stable_id`; house = bit 47 over the house index (the RFC
-  wants houses on the shared creation counter); type `(1<<48)|(kind<<32)|id`;
+  wants houses on the shared creation counter); superweapon = bit 46 over
+  `(house index << 16) | [SuperWeaponTypes] index` (same reason; documented at
+  `SUPER_REF_BIT`); type `(1<<48)|(kind<<32)|id`;
   cell `(2<<48)|(x<<16)|y`; global `4<<48`.
 - `Command` numbers (appendix 8.3) 0..25 as the SDK's `Command` lists them; the
   `Order` layout is a 24-byte header (kind, count, target, value) and the unit handles.
@@ -362,6 +425,13 @@ modders INI names.
 - Variable IDs: 1000 on, mod module's declarations then the map's, in declaration order.
 
 ## Remaining in phase 1
+
+- RFC 0.0.21 section 6i (driving a house: `ControlDomains`, "mod AI" seats,
+  `SimEvent`, `Visible`/`Engage` and the other read properties, the
+  500,000 default budget, `SeatBudget`, `VERA.INI` `WasmBudget`, memory per seat) is
+  specified but not implemented. The implementation still has the old budgets: map
+  default 200,000 (RFC 100,000) and values under 20,000 clamped to 1 (RFC: refuse the
+  start).
 
 Phase 1 is complete as far as this engine has owners for the RFC's tables; what is
 left is listed under residuals. Small follow-ups found by the playtest mods:
@@ -393,10 +463,11 @@ modules, external modders, freeze), and the later items (`Launch`,
   reason inside it is English only.
 - Events not raised: stock 0, 2, 3, 24, 31, 33, 51, 53, 54, 59, Ares 87, 88; 4.3
   `HitByWarhead`, `SpawnFire`, `HitTarget`, `TargetChanged`, `ProjectileIncoming`,
-  `Detonated`, `Commanded`, `Crushed`, `HouseTransfer`, `ProductionCancelled`
+  `Detonated`, `Crushed`, `HouseTransfer`, `ProductionCancelled`
   (reasons in `events.rs`). `Birth` misses paradrops, spawned aircraft, crate units,
-  survivors and starting objects; garrisons and non-departure cargo removal raise no
-  passenger events; type-bound timers scan every object when due, and type-bound
+  survivors and starting objects; a garrison entry raises `TransportEntered` and
+  `PassengerAdded` with `value2` 1, but garrison exits and non-departure cargo removal
+  raise no passenger events; type-bound timers scan every object when due, and type-bound
   polls walk the IDs, reading only the due phase's types; `Timer` with only
   weapon/projectile bindings never fires.
 - Decisions: decision triggers cannot have immediate actions; `ProductionAllowed`
@@ -424,10 +495,25 @@ modules, external modders, freeze), and the later items (`Launch`,
 - Rules stage: `random` writes 0 with `Ok`; `set` on a type reference in `on_rules`
   answers `Unsupported`; the merged rules text is saved with every module save;
   `MapUI` is not saved; the lobby compares neither `on_rules` results nor `Api=`.
-- Orders: custom control grants refuse house-wide module orders; `IgnoreOrders` is
-  not honoured; `SuspendProduction`, `EjectBunker`, `Enter` answer `Unsupported`.
+- Orders: `IgnoreOrders` is not honoured (no `IgnoresOrders` refusal) and no receiver
+  refuses for credits (no `CannotAfford`); `EjectBunker` answers `Unsupported`;
+  `Enter` skips the entry click's What_Action rows (they read the local player's
+  control view); native AI gives missions without commands, so its units raise no
+  `Commanded`; a rally point `CommandAllowed` narrowed still raises `Commanded` on
+  every producer named; a player's SUSPEND, mobile PLACE and wall sale refusals carry
+  `id` -1; a MEGAMISSION record carrying NavComAux, Planning Mode records and Ares'
+  paid two-stage superweapon commands raise neither result event.
 - INI: sounds take numbers only; the map `Wasm.Tags` warning is a match notice, not
   a lobby warning; one module per trigger's `Wasm:` actions.
+- 6i reads: `Engage` uses the target type's own armor (no `TargetArmor`), and a
+  transient GetFireError answer (Rearm, Facing, Moving, Busy, ...) reads as `Ok` in
+  range and can hide a later Illegal check; `Visible` uses current sight under
+  FogOfWar for every client and counts a tunnel unit's ripple as visible;
+  `Zone.<MovementZone>` reads the ground zone under a bridge deck; `Obstructed`
+  ignores trees and units; a computer house with two factories of a kind reports
+  the first built; `ChargePercent` 50 reads 49 for most recharge times
+  (SetPercentage's f32 0.01). The Rust SDK has no `Find` helpers yet for scope 8
+  or an object viewpoint (set `Query` fields directly).
 - A type name shared by two categories resolves to the first. Houses queries with
   area, type or owner answer `Unsupported`.
 - The Rust SDK's delivery area is fixed at address 8 (9 records); one

@@ -51,7 +51,7 @@ pub const DECISION_ONLY_EVENTS: [i32; 4] = [
 pub const DECIDE_BUDGET: u64 = 20_000;
 
 /// `DecideRecord` (appendix "Fixed layouts"), 160 bytes little endian
-/// (the INI registration addendum grew `EventRecord` to 120).
+/// (RFC 0001 0.0.21 grew `EventRecord` to 120).
 ///
 /// Result areas (`area`, `area_cap`, `previous_len`) are always 0: of the
 /// kinds with a result area in appendix 4.3 and 4.5 (`Fire`'s shot plan,

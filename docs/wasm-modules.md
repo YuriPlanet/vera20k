@@ -190,7 +190,7 @@ when it starts. A map's module binds its triggers in code (`Trigger::on(..).bind
 ## INI names a module registers
 
 A module can give modders INI keys of its own: the modder writes INI, the module
-implements it ([addendum](rfcs/0001-ini-register.zh-CN.md), Chinese).
+implements it ([RFC 0001 section 6h](rfcs/0001-wasm-extension-modules.md#6h-ini-registration)).
 
 ```ini
 [HTNK]
@@ -307,7 +307,7 @@ difference shows within 15 frames.
   properties, variables, decisions, orders) and 15 (performance).
 - [The appendix](rfcs/0001-wasm-extension-modules-api.md): every import, event,
   action, property and enum, with the INI keys.
-- [Development status](rfcs/0001-wasm-extension-modules-status.md): what this build
+- [Development status](wasm-modules-status.md): what this build
   implements so far.
 - `sdk/examples/` in the source: `minimal-rules`, `modifier-vars`, `panic-triggers`,
   `actions-demo`, `orders-rules`, `decide-damage`, `playtest`, `tutorial-bounty`, a

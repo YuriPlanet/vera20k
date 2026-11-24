@@ -30,6 +30,11 @@ pub use ini::{
     EventScope, IniEntryRecord, IniKeyRecord, IniSection, ModuleEvent, ModuleEventRecord,
 };
 pub use triggers::{
+    AttackedByEvent, BirthEvent, FatalDamageEvent, HouseTransferredEvent, KilledByWarheadEvent,
+    ModifierEvent, ModifierStacksEvent, PassengerAddedEvent, PassengerRemovedEvent, PollEvent,
+    StockEvent, SuperWeaponLaunchedEvent, TransportEnteredEvent, TransportExitedEvent,
+};
+pub use triggers::{
     ActionDef, DELIVERY_SECTION, Event, EventRecord, FireEvent, KilledEvent, TakeDamageEvent,
     Target, TimerEvent, Trigger, TriggerRef, actions_section, actions_section_len,
 };
@@ -43,7 +48,11 @@ pub mod prelude {
         ModifierOp, ModuleEvent, ModuleEventRecord, NameKind, Op, Order, Outcome,
         ProductionAllowedDecision, ProductionQueuedDecision, Prop, Ref, Relation, Rules, SpeedType,
         Status, TakeDamageDecision, TakeDamageEvent, Target, Techno, TimerEvent, Trigger,
-        TriggerRef, TypeRef, Var, Waypoint, anim_id, fixed, frame, ini, log, lookup, random,
+        TriggerRef, TypeRef, Var, Waypoint, anim_id, fail, fixed, frame, ini, log, lookup, random,
+    };
+    pub use crate::{
+        BirthEvent, PassengerAddedEvent, TransportEnteredEvent, TransportExitedEvent,
+        PassengerRemovedEvent,
     };
 }
 
@@ -283,6 +292,18 @@ pub fn random(lo: i32, hi: i32) -> i32 {
 /// One line in the in-game log.
 pub fn log(line: &str) {
     unsafe { sys::log(line.as_ptr(), line.len() as i32) }
+}
+
+/// Logs `why` and stops the module for good: the engine disables it on
+/// every machine and tells the players (RFC section 3). For a value the
+/// module cannot use, such as a malformed registered INI key; name the
+/// section and key in `why`.
+pub fn fail(why: &str) -> ! {
+    log(why);
+    #[cfg(target_arch = "wasm32")]
+    core::arch::wasm32::unreachable();
+    #[cfg(not(target_arch = "wasm32"))]
+    loop {}
 }
 
 /// The ID of `name` in name kind `kind`.
@@ -1001,7 +1022,7 @@ impl Action {
         Self::run(Self::ADD_PASSENGER, transport.0, &params).map(drop)
     }
 
-    /// Raises module event `event` (RFC 0001 INI addendum, section 6) on
+    /// Raises module event `event` (RFC 0001 section 6h) on
     /// `target`: an object for an object event, anything (`Global`) for a
     /// global one. `other`, `value` and `value2` go into the record; its
     /// triggers' module actions are queued. Not in a decision handler.
@@ -1264,6 +1285,10 @@ pub enum Command {
     Scatter = 23,
     TogglePrimaryFactory = 24,
     Enter = 25,
+    /// Cell target, harvester units.
+    Harvest = 26,
+    /// No units; `value` is a factory kind index (`FACTORY_KINDS`, 2..5).
+    TakeProduct = 27,
 }
 
 /// Most units one [`Order`] sent through [`House::order`] carries.

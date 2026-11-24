@@ -47,7 +47,7 @@ pub const FIRST_DELIVERED_EVENT: i32 = 1000;
 /// New events in appendix order, the number being [`FIRST_DELIVERED_EVENT`]
 /// plus the index: delivered events (4.3, 1000..1025), polling events (4.4,
 /// 1026..1030), decision-only events (4.5, 1031..1036), the reserved
-/// 1037..1039, then the INI registration addendum (1040..1042).
+/// 1037..1039, then RFC 0001 section 6h (1040..1042).
 #[rustfmt::skip]
 pub const DELIVERED_EVENTS: &[&str] = &[
     "TakeDamage", "HitByWarhead", "AttackedBy", "FatalDamage", "Killed", "Fire", "SpawnFire",
@@ -62,9 +62,11 @@ pub const DELIVERED_EVENTS: &[&str] = &[
     "ProjectileFrame",
     // 1037..1039: reserved and the preview shield event, not raised here
     "OnBehavior", "OnBehaviorExpire", "DamageIncoming",
-    // INI registration addendum: the module event and the start-of-match
+    // RFC 0001 section 6h: the module event and the start-of-match
     // records (1040..1042)
     "ModuleEvent", "IniEntry", "IniKey",
+    // RFC 0001 6i: an order refused at execution (1043)
+    "OrderRefused",
 ];
 
 /// An event kind's number by name, ASCII case-insensitive.

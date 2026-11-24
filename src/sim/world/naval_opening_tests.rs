@@ -291,14 +291,17 @@ fn default_rally_reaches_the_first_paid_destroyer_exit_without_an_explicit_click
         .unwrap()
         .economy_mut()
         .add_credits(50_000);
-    assert!(production::enqueue_by_type(
-        &mut sim,
-        rules,
-        "Americans",
-        "DEST",
-        &mut FrameEffects::default(),
-        false,
-    ));
+    assert!(
+        production::enqueue_by_type(
+            &mut sim,
+            rules,
+            "Americans",
+            "DEST",
+            &mut FrameEffects::default(),
+            false,
+        )
+        .is_ok()
+    );
     let ship = sim
         .production
         .factories()

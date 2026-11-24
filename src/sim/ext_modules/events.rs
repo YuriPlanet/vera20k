@@ -59,7 +59,11 @@
 //!   mind control and Dominator transfer the object;
 //! - `SuperWeaponLaunched` after SuperClass::Launch (`0x006CC390`);
 //! - `ModifierStart`, `ModifierStacks` and `ModifierExpire` on the modified
-//!   object, from the modifier store's callers (`ext_modules::modifiers`).
+//!   object, from the modifier store's callers (`ext_modules::modifiers`);
+//! - `Commanded` on each actor of a command the receiver
+//!   (EventClass::Execute 0x004C6CB0) applied, and `OrderRefused` (global)
+//!   for one it refused, player commands and module orders alike, after the
+//!   receiver in the command step (`ext_modules::orders`).
 //!
 //! Polling events (appendix 4.4): `PropertyPoll`, `HousePowerPoll` (the
 //! trigger's house's `PowerOutput` minus `PowerDrain`), `ModifierCountPoll`
@@ -91,7 +95,7 @@
 //! - The other 4.3 events answer `Unsupported`: `HitByWarhead` and
 //!   `HitTarget` (no raise point apart from `TakeDamage` that knows the
 //!   immune hit or the shooter's weapon), `SpawnFire`, `TargetChanged`,
-//!   `ProjectileIncoming`, `Detonated`, `Commanded`, `Crushed`,
+//!   `ProjectileIncoming`, `Detonated`, `Crushed`,
 //!   `HouseTransfer` (before ChangeOwner, which would have to recheck),
 //!   the modifier events and `ProductionCancelled` (House Abandon 0x004FAA10
 //!   also settles every delivery).
@@ -106,6 +110,7 @@ use vera20k_wasm_ext::triggers::{
     EVENT_PROPERTY_POLL, EVENT_SUPER_WEAPON_LAUNCHED, EVENT_TAKE_DAMAGE, EVENT_TIMER,
     EVENT_TRANSPORT_ENTERED, EVENT_TRANSPORT_EXITED, EVENT_VARIABLE_POLL, EventDef,
 };
+use vera20k_wasm_ext::triggers::{EVENT_COMMANDED, EVENT_ORDER_REFUSED};
 use vera20k_wasm_ext::{Invalid, Status, VarScope, property_id, property_name};
 
 use super::triggers::variable_scope;
@@ -119,8 +124,8 @@ use crate::sim::trigger_runtime::{
 use crate::sim::world::{FrameEffects, Simulation};
 
 /// New delivered events this engine raises (appendix 4.3, and the INI
-/// registration addendum's module event).
-const DELIVERED: [i32; 17] = [
+/// module event of RFC 0001 section 6h).
+const DELIVERED: [i32; 19] = [
     EVENT_TAKE_DAMAGE,
     EVENT_ATTACKED_BY,
     EVENT_FATAL_DAMAGE,
@@ -138,6 +143,8 @@ const DELIVERED: [i32; 17] = [
     EVENT_MODIFIER_EXPIRE,
     EVENT_MODIFIER_STACKS,
     EVENT_MODULE,
+    EVENT_COMMANDED,
+    EVENT_ORDER_REFUSED,
 ];
 
 /// The polling events (appendix 4.4), every one of which this engine checks.
@@ -262,9 +269,10 @@ impl Host<'_, '_> {
             return invalid(format!("interval {}", def.interval));
         }
         let scope = match def.kind {
-            EVENT_TIMER | EVENT_SUPER_WEAPON_LAUNCHED | EVENT_HOUSE_POWER_POLL => {
-                TriggerScope::Global
-            }
+            EVENT_TIMER
+            | EVENT_SUPER_WEAPON_LAUNCHED
+            | EVENT_HOUSE_POWER_POLL
+            | EVENT_ORDER_REFUSED => TriggerScope::Global,
             // A registered module event: object or global as registered.
             EVENT_MODULE => match self.sim.ext_modules.ini.event_is_global(def.id) {
                 Some(true) => TriggerScope::Global,
@@ -296,7 +304,8 @@ impl Host<'_, '_> {
             | EVENT_HOUSE_TRANSFERRED
             | EVENT_MODIFIER_START
             | EVENT_MODIFIER_EXPIRE
-            | EVENT_MODIFIER_STACKS => object,
+            | EVENT_MODIFIER_STACKS
+            | EVENT_COMMANDED => object,
             // Appendix 4.4: other properties are refused at creation.
             EVENT_PROPERTY_POLL => match property_name(def.id) {
                 Some("Money") => TriggerScope::Global,
@@ -771,6 +780,33 @@ impl Simulation {
                     };
                     self.raise_module_event(rules, frame_effects, event);
                 }
+            }
+        }
+    }
+
+    /// `TransportEntered` on `occupant` and `PassengerAdded` on `building`
+    /// once an occupier garrisoned it (appendix 4.3: `value` the occupants
+    /// now inside, `value2` 1 for a garrison).
+    pub(crate) fn raise_module_garrison_entered(
+        &mut self,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+        building: u64,
+        occupant: u64,
+        occupants: i32,
+    ) {
+        for (kind, subject, other) in [
+            (EVENT_TRANSPORT_ENTERED, occupant, building),
+            (EVENT_PASSENGER_ADDED, building, occupant),
+        ] {
+            if self.trigger_runtime.module_listens(kind) {
+                let event = ModuleEvent {
+                    other,
+                    value: i64::from(occupants),
+                    value2: 1,
+                    ..ModuleEvent::new(kind, subject)
+                };
+                self.raise_module_event(rules, frame_effects, event);
             }
         }
     }

@@ -519,5 +519,5 @@ AssemblyScript 的报错一般能直接指出问题。最常见的是用了第 6
 - [Rust 版教程](wasm-modules-tutorial.zh-CN.md)：现在就能编译运行的版本
 - [模块指南（英文）](wasm-modules.md)：功能总览和 INI 语法
 - [RFC 0001](rfcs/0001-wasm-extension-modules.md)：设计说明，TypeScript SDK 的约定在第 5a 节；[附录](rfcs/0001-wasm-extension-modules-api.md)：全部接口、事件、动作、属性，TypeScript 写法在第 3 节
-- [开发进度](rfcs/0001-wasm-extension-modules-status.md)：当前版本实现了哪些、还缺什么
+- [开发进度](wasm-modules-status.md)：当前版本实现了哪些、还缺什么
 - RFC 待定问题 2：TypeScript 用 AssemblyScript 编译，还是在模块里嵌一个 JavaScript 引擎。本教程按 AssemblyScript 写；如果最后选了后者，第 6 节的限制大多会取消，但模块会大很多。

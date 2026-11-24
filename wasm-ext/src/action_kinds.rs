@@ -66,8 +66,10 @@ pub const ATOMIC_ACTIONS: &[&str] = &[
     "DetonateWeapon", "DetonateWarhead", "CreateProjectile", "DetonateProjectile",
     "RemoveProjectile", "EndFor", "SetScore", "AddScore", "Log", "Convert", "Push", "Module",
     "CreateTeamUnlimited", "DisbandTeam", "AddTeamMember", "RemoveTeamMember",
-    // 1041 is reserved; 1042 comes from the INI registration addendum
+    // 1041 is reserved; 1042 comes from RFC 0001 section 6h
     "ApplyEffect", "RaiseEvent",
+    // RFC 0001 6i: engine-side routines, reserved (later)
+    "AttachRoutine", "DetachRoutine",
 ];
 
 /// An action kind's ID by name, ASCII case-insensitive.

@@ -8,13 +8,13 @@ use crate::rules::ini_parser::IniFile;
 const MAP: &str = "XMP03T4.MAP";
 const SEED: u32 = 0x1269;
 
-fn scenario() -> Option<HeadlessScenario> {
+pub(super) fn scenario() -> Option<HeadlessScenario> {
     let (retail, _) = crate::rules::retail_ini_fixture::retail_assets()?;
     Some(crate::headless_scenario::load(&retail, MAP, SEED).expect("retail scenario loads"))
 }
 
 /// The Battle on [`MAP`] against one computer house.
-fn session_with_computer() -> crate::skirmish_launch::SkirmishLaunchSession {
+pub(super) fn session_with_computer() -> crate::skirmish_launch::SkirmishLaunchSession {
     crate::headless_scenario::battle_session(
         MAP,
         &[(
@@ -25,7 +25,7 @@ fn session_with_computer() -> crate::skirmish_launch::SkirmishLaunchSession {
 }
 
 /// [`scenario`] against one computer house.
-fn scenario_with_computer() -> Option<HeadlessScenario> {
+pub(super) fn scenario_with_computer() -> Option<HeadlessScenario> {
     let (retail, _) = crate::rules::retail_ini_fixture::retail_assets()?;
     Some(
         crate::headless_scenario::load_session(&retail, MAP, SEED, session_with_computer())
@@ -610,12 +610,15 @@ fn muster_field_ends_when_the_last_banner_falls() {
 
 /// Spawns a Grizzly for the first computer house beside its base.
 /// Returns (house index, tank, its cell).
-fn computer_tank(scene: &mut HeadlessScenario) -> (usize, u64, (u16, u16)) {
+pub(super) fn computer_tank(scene: &mut HeadlessScenario) -> (usize, u64, (u16, u16)) {
     spawn_for_computer(scene, "MTNK")
 }
 
 /// Spawns `type_name` for the first computer house beside its base.
-fn spawn_for_computer(scene: &mut HeadlessScenario, type_name: &str) -> (usize, u64, (u16, u16)) {
+pub(super) fn spawn_for_computer(
+    scene: &mut HeadlessScenario,
+    type_name: &str,
+) -> (usize, u64, (u16, u16)) {
     let rules = &scene.runtime.resources.rules;
     let sim = &mut scene.runtime.simulation;
     let (index, house) = sim
@@ -781,14 +784,14 @@ fn a_mod_can_refuse_map_modules_and_a_map_can_need_a_newer_game() {
     let map = IniFile::from_str(&map);
     let stock = IniFile::from_str("[General]\n");
     let refusing = IniFile::from_str("[VeraWasm]\nMapWasm=no\n");
-    let allowed = super::PreparedExtModules::load(&stock, None, &map).expect("stock allows it");
+    let allowed = super::PreparedExtModules::load(&stock, None, &map, 0).expect("stock allows it");
     assert_eq!(allowed.modules.len(), 1);
-    let refused = super::PreparedExtModules::load(&refusing, None, &map)
+    let refused = super::PreparedExtModules::load(&refusing, None, &map, 0)
         .err()
         .expect("the mod refuses map modules");
     assert!(refused.contains("MapWasm=no"), "{refused}");
     let newer = IniFile::from_str("[Basic]\nVeraMinVersion=999.0\n");
-    let refused = super::PreparedExtModules::load(&stock, None, &newer)
+    let refused = super::PreparedExtModules::load(&stock, None, &newer, 0)
         .err()
         .expect("the map needs a newer game");
     assert!(refused.contains("999.0"), "{refused}");
@@ -1020,11 +1023,11 @@ fn a_module_finds_a_houses_objects_and_reads_them() {
     assert!(scene.sim().trigger_runtime.local_variable_is_set(6));
 }
 
-fn prop(name: &str) -> i32 {
+pub(super) fn prop(name: &str) -> i32 {
     vera20k_wasm_ext::property_id(name).expect("known property")
 }
 
-fn install(scene: &mut HeadlessScenario, source: ModuleSource, module: &[u8]) {
+pub(super) fn install(scene: &mut HeadlessScenario, source: ModuleSource, module: &[u8]) {
     scene
         .runtime
         .simulation
@@ -1038,16 +1041,16 @@ fn memory_at<const N: usize>(scene: &HeadlessScenario, slot: usize, at: usize) -
     memory[at..at + N].try_into().expect("in memory")
 }
 
-fn mem_i32(scene: &HeadlessScenario, slot: usize, at: usize) -> i32 {
+pub(super) fn mem_i32(scene: &HeadlessScenario, slot: usize, at: usize) -> i32 {
     i32::from_le_bytes(memory_at(scene, slot, at))
 }
 
-fn mem_i64(scene: &HeadlessScenario, slot: usize, at: usize) -> i64 {
+pub(super) fn mem_i64(scene: &HeadlessScenario, slot: usize, at: usize) -> i64 {
     i64::from_le_bytes(memory_at(scene, slot, at))
 }
 
 /// The modules' share of the state hash: modules, modifiers and variables.
-fn ext_hash(scene: &HeadlessScenario) -> u64 {
+pub(super) fn ext_hash(scene: &HeadlessScenario) -> u64 {
     use std::hash::Hasher;
     let mut hasher = std::hash::DefaultHasher::new();
     scene.sim().ext_modules.hash_state(&mut hasher);
@@ -1056,7 +1059,7 @@ fn ext_hash(scene: &HeadlessScenario) -> u64 {
 
 /// A save of `live` loaded into a fresh scenario, as the existing save test
 /// does it.
-fn saved_and_loaded(live: &HeadlessScenario) -> HeadlessScenario {
+pub(super) fn saved_and_loaded(live: &HeadlessScenario) -> HeadlessScenario {
     use crate::sim::snapshot::GameSnapshot;
     let rules = &live.runtime.resources.rules;
     let bytes = GameSnapshot::save_validated(
@@ -1553,7 +1556,7 @@ fn a_rust_built_modifier_module_runs() {
 
 /// `ActionParams` with `id`, `arg`, `value` and `house` set, as WAT stores
 /// at `at` (appendix "Fixed layouts").
-fn params_wat(at: u32, id: i32, arg: i32, value: i64, house: i64) -> String {
+pub(super) fn params_wat(at: u32, id: i32, arg: i32, value: i64, house: i64) -> String {
     format!(
         "(i32.store (i32.const {at}) (i32.const {id})) (i32.store (i32.const {}) (i32.const {arg})) \
          (i64.store (i32.const {}) (i64.const {value})) (i64.store (i32.const {}) (i64.const {house}))",
@@ -1822,7 +1825,7 @@ fn a_module_reads_object_type_and_global_properties_through_their_owners() {
 
 /// Query bytes: `scope`, area 0 or a 1x1 rectangle at `cell`, `owner`,
 /// `viewpoint`, and property clauses `(property, Eq, value)`.
-fn query_wat(
+pub(super) fn query_wat(
     at: u32,
     scope: i32,
     cell: Option<i64>,
@@ -2049,9 +2052,32 @@ fn ini_triggers_bind_weapons_and_take_enum_names() {
         &IniFile::empty(),
         None,
         &IniFile::from_str("[E1]\nWasm.Tags=MapTag\n"),
+        0,
     )
     .expect("the map loads")
     .notices;
     assert_eq!(notice.len(), 1);
     assert!(notice[0].contains("[E1]"), "{notice:?}");
+}
+
+
+/// RFC 15.4 (0.0.21): budget defaults, the ceiling, the room's
+/// `WasmBudget=` and the floor that refuses the match.
+#[test]
+fn wasm_budgets_default_clamp_and_refuse() {
+    use super::rules::WasmPolicy;
+    let policy = WasmPolicy::read(&IniFile::empty(), 0).expect("defaults read");
+    assert_eq!(
+        (policy.budget, policy.map_budget, policy.seat_budget),
+        (super::FRAME_BUDGET, super::MAP_FRAME_BUDGET, super::SEAT_BUDGET)
+    );
+    let high = IniFile::from_str("[VeraWasm]\nBudget=9000000\nMapBudget=300000\n");
+    let policy = WasmPolicy::read(&high, 0).expect("reads");
+    assert_eq!((policy.budget, policy.map_budget), (500_000, 300_000));
+    let room = WasmPolicy::read(&high, 250_000).expect("reads");
+    assert_eq!(room.budget, 250_000, "the room's WasmBudget replaces Budget");
+    let low = IniFile::from_str("[VeraWasm]\nMapBudget=5000\n");
+    let error = WasmPolicy::read(&low, 0).expect_err("below the floor");
+    assert!(error.contains("MapBudget=5000"), "{error}");
+    assert!(WasmPolicy::read(&IniFile::empty(), 100).is_err());
 }
