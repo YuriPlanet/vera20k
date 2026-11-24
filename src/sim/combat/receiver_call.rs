@@ -732,13 +732,9 @@ pub(super) fn receiver_anger_delta(final_damage: i32, strength: i32, cost: i32) 
 /// `CellSpread` and `DelayKillAtMax` are native binary32 inputs; every other
 /// operand is signed i32 and the two ftol results use their low dword.
 ///
-/// The interpolation runs with the FPU's exceptions masked, so the masked
-/// owner (`MaskedX87Chop53`) keeps native's result for every value the
-/// reader admits, including the delay that overflows `Math__ftol
-/// @ 0x007C5F00` into the integer indefinite, whose low dword is zero. The
-/// reader that owns `DelayKillAtMax` refuses a non-finite value
-/// (`rules::warhead_type::refused_delay_kill_at_max`), so this path never
-/// sees the ±inf the native field keeps.
+/// For a non-finite or out-of-range duration, the masked conversion in
+/// `Math__ftol @ 0x007C5F00` yields the signed qword's integer indefinite.
+/// The timer receives its low dword, zero.
 fn postmortem_delay_duration(warhead: &WarheadType, distance_leptons: i32) -> i32 {
     use crate::util::native_x87::MaskedX87Chop53 as X87;
     let base = X87::load_i32(warhead.delay_kill_frames);
@@ -913,17 +909,12 @@ mod house_damage_tests {
     }
 }
 
-/// The PostMortem delayed-death branch: a building that dies from a warhead
-/// with `CausesDelayKill=yes` and `EligibleForDelayKill=yes` keeps the
-/// building alive with its C4 timer armed.
 #[cfg(all(test, tests_sim_combat_d_z))]
 mod postmortem_delay_tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
 
-    /// A building and the warhead that kills it, with the given
-    /// `DelayKillAtMax`.
-    fn rules_with(delay_kill_at_max: &str) -> RuleSet {
+    fn armed_duration(delay_kill_at_max: &str) -> i32 {
         let ini = IniFile::from_str(&format!(
             "[VehicleTypes]\n\
              [BuildingTypes]\n0=BARREL\n\
@@ -933,33 +924,16 @@ mod postmortem_delay_tests {
              DelayKillFrames=5\nDelayKillAtMax={delay_kill_at_max}\n\
              Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
         ));
-        RuleSet::from_ini(&ini).expect("PostMortem rules")
-    }
-
-    /// The fuse a killed building's PostMortem arm takes, through the ordinary
-    /// damage transaction, at the given distance from the blast.
-    fn postmortem_delay(rules: &RuleSet, distance_leptons: i32) -> i32 {
+        let rules = RuleSet::from_ini(&ini).expect("PostMortem rules");
         let mut sim = crate::sim::world::Simulation::new();
-        sim.resolve_type_handles(rules);
+        sim.resolve_type_handles(&rules);
         let barrel = sim
-            .spawn_object("BARREL", "Neutral", 8, 5, 0, rules)
+            .spawn_object("BARREL", "Neutral", 8, 5, 0, &rules)
             .expect("barrel spawns");
         let warhead = sim.interner.intern("W");
-        sim.commit_noncombat_aoe_hits(
-            rules,
-            None,
-            &[EntityDamageEvent::area(
-                barrel,
-                10,
-                distance_leptons,
-                RAD_NO_ATTACKER,
-                None,
-                warhead,
-            )],
-            &mut crate::sim::world::FrameEffects::default(),
-        );
-        sim.substrate
-            .entities
+        let hit = EntityDamageEvent::area(barrel, 10, 512, RAD_NO_ATTACKER, None, warhead);
+        sim.commit_noncombat_aoe_hits(&rules, None, &[hit], &mut Default::default());
+        sim.entities()
             .get(barrel)
             .and_then(|entity| entity.building.pending_c4_detonation.pending())
             .expect("a qualifying fatal hit becomes PostMortem")
@@ -967,30 +941,9 @@ mod postmortem_delay_tests {
             .duration()
     }
 
-    /// A `DelayKillAtMax` the float scan makes infinite must not stop the
-    /// game. The reader that owns the key refuses it (see
-    /// `rules::warhead_type::refused_delay_kill_at_max`), so the warhead keeps
-    /// the constructor's 1.0 and the delayed death keeps the base
-    /// `DelayKillFrames` instead of native's 0 frames.
     #[test]
-    fn an_infinite_delay_kill_at_max_does_not_stop_the_game() {
-        let finite = rules_with("7");
-        assert_eq!(
-            postmortem_delay(&finite, 512),
-            20,
-            "the native slope: 5 + 512 * (7 * 5 - 5) / 1024"
-        );
-
-        let infinite = rules_with("1e39");
-        assert_eq!(
-            infinite.warhead("W").unwrap().delay_kill_at_max_f64,
-            1.0,
-            "the reader refuses the out-of-range literal"
-        );
-        assert_eq!(
-            postmortem_delay(&infinite, 512),
-            5,
-            "the refused value leaves the base DelayKillFrames"
-        );
+    fn postmortem_arms_the_native_duration_for_finite_and_overflowing_multipliers() {
+        assert_eq!(armed_duration("7"), 20);
+        assert_eq!(armed_duration("1e39"), 0);
     }
 }
