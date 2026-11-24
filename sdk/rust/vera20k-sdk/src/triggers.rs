@@ -721,6 +721,12 @@ impl EventRecord {
         Techno(self.other)
     }
 
+    /// The tag holder: the bound object, or the object or cell whose tag
+    /// holds the trigger (raw reference; 0 for none).
+    pub fn holder(&self) -> i64 {
+        self.holder
+    }
+
     pub fn house(&self) -> House {
         House(self.house)
     }
