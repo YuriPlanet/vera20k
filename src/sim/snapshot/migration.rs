@@ -40,10 +40,11 @@ const TS_ANIM_SOUNDS: u32 = 0x9441_E8D8;
 // Older writers stored neither Kratos inputs nor its infantry firing offsets.
 const KRATOS_FLH: u32 = 0x9F1B_D701;
 // Tiberian Sun webs (docs/ts-webs.md) store the frame an infantryman's web
-// runs out, a warhead's web keys and an infantry type's Struggle record.
-// Older worlds hold none: end frame 0 has passed, no warhead webs and no
-// type has Struggle frames.
-const TS_WEBS: u32 = 0xF993_CCE7;
+// runs out with a byte saying he was webbed, a warhead's web keys and an
+// infantry type's Struggle record. Older worlds hold none: no man was
+// webbed, end frame 0 has passed, no warhead webs and no type has Struggle
+// frames.
+const TS_WEBS: u32 = 0xF215_BF3A;
 
 /// The rules digest a converted save carries: the loader takes the rules the
 /// game has instead of proving the digest the old writer computed, whose
@@ -97,7 +98,8 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
     const ANIM_SOUNDS: (&str, &[&str]) = ("AnimTypeReferences", &["bounce_sound", "expire_sound"]);
     const KRATOS_INPUTS: (&str, &[&str]) = ("ProcessedRulesLayers", &["kratos_inputs"]);
     const KRATOS_OFFSETS: (&str, &[&str]) = ("WeaponOffsets", &["crawling", "elite_crawling"]);
-    const WEB: (&str, &[&str]) = ("InfantryRuntime", &["web"]);
+    const WEB: (&str, &[&str]) = ("InfantryRuntime", &["webbed"]);
+    const WEB_TIMER: (&str, &[&str]) = ("Seldom", &["web"]);
     const WARHEAD_WEB: (&str, &[&str]) = ("WarheadAnimReadState", &["web"]);
     const STRUGGLE: (&str, &[&str]) = ("InfantrySequenceBank", &["struggle"]);
     let absent_fields: &'static [_] = match source {
@@ -118,6 +120,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
             WEB,
+            WEB_TIMER,
             WARHEAD_WEB,
             STRUGGLE,
         ],
@@ -137,6 +140,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
             WEB,
+            WEB_TIMER,
             WARHEAD_WEB,
             STRUGGLE,
         ],
@@ -155,6 +159,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
             WEB,
+            WEB_TIMER,
             WARHEAD_WEB,
             STRUGGLE,
         ],
@@ -170,6 +175,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
             WEB,
+            WEB_TIMER,
             WARHEAD_WEB,
             STRUGGLE,
         ],
@@ -184,6 +190,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
             WEB,
+            WEB_TIMER,
             WARHEAD_WEB,
             STRUGGLE,
         ],
@@ -195,6 +202,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
             WEB,
+            WEB_TIMER,
             WARHEAD_WEB,
             STRUGGLE,
         ],
@@ -205,6 +213,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
             WEB,
+            WEB_TIMER,
             WARHEAD_WEB,
             STRUGGLE,
         ],
@@ -213,11 +222,19 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
             WEB,
+            WEB_TIMER,
             WARHEAD_WEB,
             STRUGGLE,
         ],
-        TS_ANIM_SOUNDS => &[KRATOS_INPUTS, KRATOS_OFFSETS, WEB, WARHEAD_WEB, STRUGGLE],
-        KRATOS_FLH => &[WEB, WARHEAD_WEB, STRUGGLE],
+        TS_ANIM_SOUNDS => &[
+            KRATOS_INPUTS,
+            KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
+        ],
+        KRATOS_FLH => &[WEB, WEB_TIMER, WARHEAD_WEB, STRUGGLE],
         _ => return None,
     };
     Some(save_codec::PreviousLayout {

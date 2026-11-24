@@ -3022,10 +3022,7 @@ fn evaluate_candidate(
     // an infantryman still freshly webbed. gamemd has no such gate; it sits
     // here, before the score, in VERA's port of the scan.
     if let Some(duration) = ctx.scanner_web_duration
-        && candidate
-            .infantry
-            .as_ref()
-            .is_some_and(|infantry| infantry.web_outlasts_quarter(ctx.frame, duration))
+        && candidate.web_outlasts_quarter(ctx.frame, duration)
     {
         return None;
     }

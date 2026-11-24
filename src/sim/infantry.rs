@@ -62,14 +62,70 @@ pub struct InfantryRuntime {
     /// Infantry Mission_Move restart `0x00520FF1` and save/load `0x00521D0F`.
     #[serde(default)]
     cell_entry_blocked: bool,
-    /// The Tiberian Sun web timer, Firestorm 2.0 InfantryClass `+0x370`
-    /// (ctor `0x004D1F50`: Delay 0, expired), kept as the frame it runs out:
-    /// a web never pauses, so its start plus its delay is all its readers
-    /// need, and the record stays under its size ceiling. Only a `Webby=`
-    /// warhead sets it ([`Self::renew_web`]); its remainder holds the man
-    /// ([`GameEntity::is_immobilized`](crate::sim::game_entity::GameEntity::is_immobilized)).
-    /// Zero, which a save written without it decodes to, has run out.
-    web: i32,
+    /// Whether a web has held this man. The web timer itself is a
+    /// [`WebTimer`] in the object's seldom part; this byte, in the record's
+    /// padding, spares every man never webbed that read. Only
+    /// [`GameEntity::renew_web`] sets it, with the timer.
+    #[serde(default)]
+    webbed: bool,
+}
+
+/// The Tiberian Sun web timer, Firestorm 2.0 InfantryClass `+0x370` (ctor
+/// `0x004D1F50`: Delay 0, expired), kept as the frame it runs out: a web
+/// never pauses, so its start plus its delay is all its readers need. It
+/// sits in the object's seldom part (`Seldom::web`); only a `Webby=` warhead
+/// sets it ([`GameEntity::renew_web`]), and its remainder holds the man
+/// ([`GameEntity::is_immobilized`]). Zero, which a save written without it
+/// decodes to, has run out.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct WebTimer(i32);
+
+impl GameEntity {
+    /// The web timer's remainder at `frame`, the value Firestorm 2.0 inlines
+    /// at every reader of InfantryClass `+0x370`; 0 for a man never webbed
+    /// and for every other object.
+    pub fn web_remaining(&self, frame: i32) -> i32 {
+        if !self
+            .infantry
+            .as_ref()
+            .is_some_and(|infantry| infantry.webbed)
+        {
+            return 0;
+        }
+        self.seldom.web.0.wrapping_sub(frame).max(0)
+    }
+
+    /// Whether an infantryman's web timer still runs at `frame`.
+    pub fn is_webbed(&self, frame: i32) -> bool {
+        self.web_remaining(frame) > 0
+    }
+
+    /// Firestorm 2.0's fresh-web test, inlined in `Evaluate_Object`
+    /// (`0x0062D583..0x0062D5B6`) and `UnitClass::Firing_AI`
+    /// (`0x0064E81D..0x0064E851`): more is left of the web than a quarter of
+    /// the attacker's warhead `WebDuration=` (signed, toward zero).
+    pub(crate) fn web_outlasts_quarter(&self, frame: i32, web_duration: i32) -> bool {
+        self.web_remaining(frame) > web_duration / 4
+    }
+
+    /// The frame the web runs out (0 before any web), for the world hash.
+    pub(crate) fn web_end(&self) -> i32 {
+        self.seldom.web.0
+    }
+
+    /// Firestorm 2.0 `InfantryClass::Take_Damage` `0x004D2420..0x004D2476`:
+    /// a new web of `duration` frames restarts an infantryman's timer only
+    /// when the current remainder is not longer (`rem <= new`); otherwise
+    /// the old one is kept.
+    pub(crate) fn renew_web(&mut self, frame: i32, duration: i32) {
+        if self.infantry.is_none() || self.web_remaining(frame) > duration {
+            return;
+        }
+        self.seldom.web = WebTimer(frame.wrapping_add(duration));
+        if let Some(infantry) = self.infantry.as_mut() {
+            infantry.webbed = true;
+        }
+    }
 }
 
 impl Default for InfantryRuntime {
@@ -106,35 +162,6 @@ impl InfantryRuntime {
     /// `+0x6DC`, the failed-path receiver's Can_Enter_Cell answer.
     pub fn cell_entry_blocked(&self) -> bool {
         self.cell_entry_blocked
-    }
-
-    /// The web timer's remainder at `frame`, the value Firestorm 2.0 inlines
-    /// at every reader of InfantryClass `+0x370`; 0 when not webbed.
-    pub fn web_remaining(&self, frame: i32) -> i32 {
-        self.web.wrapping_sub(frame).max(0)
-    }
-
-    /// Firestorm 2.0's fresh-web test, inlined in `Evaluate_Object`
-    /// (`0x0062D583..0x0062D5B6`) and `UnitClass::Firing_AI`
-    /// (`0x0064E81D..0x0064E851`): more is left of the web than a quarter of
-    /// the attacker's warhead `WebDuration=` (signed, toward zero).
-    pub(crate) fn web_outlasts_quarter(&self, frame: i32, web_duration: i32) -> bool {
-        self.web_remaining(frame) > web_duration / 4
-    }
-
-    /// The frame the web runs out (0 before any web), for the world hash.
-    pub(crate) fn web_end(&self) -> i32 {
-        self.web
-    }
-
-    /// Firestorm 2.0 `InfantryClass::Take_Damage` `0x004D2420..0x004D2476`:
-    /// a new web of `duration` frames restarts the timer only when the
-    /// current remainder is not longer (`rem <= new`); otherwise the old one
-    /// is kept.
-    pub(crate) fn renew_web(&mut self, frame: i32, duration: i32) {
-        if self.web_remaining(frame) <= duration {
-            self.web = frame.wrapping_add(duration);
-        }
     }
 
     /// Do_Action's Down.
@@ -184,7 +211,7 @@ impl InfantryRuntime {
             is_prone: false,
             idle_action_timer: MissionTimer::default(),
             cell_entry_blocked: false,
-            web: 0,
+            webbed: false,
         }
     }
 }
@@ -331,7 +358,7 @@ impl crate::sim::world::Simulation {
     ///   (`0x004D2410`, Scenario `+0x218`), made even when the web is not
     ///   renewed;
     /// - the web timer restarts at `WebDuration` plus that, unclamped, unless
-    ///   more is left ([`InfantryRuntime::renew_web`]);
+    ///   more is left ([`GameEntity::renew_web`]);
     /// - a forced Struggle that starts at a random stage (`0x004D2493`,
     ///   vt+0x3C0); its answer is ignored.
     ///
@@ -367,13 +394,8 @@ impl crate::sim::world::Simulation {
             .next_range_i32_inclusive(variation.wrapping_neg(), variation);
         let duration = web.duration.wrapping_add(extra);
         let frame = self.session.binary_frame() as i32;
-        if let Some(infantry) = self
-            .substrate
-            .entities
-            .get_mut(id)
-            .and_then(|target| target.infantry.as_mut())
-        {
-            infantry.renew_web(frame, duration);
+        if let Some(target) = self.substrate.entities.get_mut(id) {
+            target.renew_web(frame, duration);
         }
         let struggle = crate::sim::movement::infantry_action::DO_STRUGGLE;
         if let Err(cause) = self.infantry_do_action_random_start(id, struggle, true, rules, effects)

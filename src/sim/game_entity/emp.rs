@@ -45,12 +45,6 @@ impl GameEntity {
     pub fn is_immobilized(&self, frame: i32) -> bool {
         self.is_under_emp() || self.is_webbed(frame)
     }
-    /// Whether an infantryman's web timer still runs at `frame`.
-    pub fn is_webbed(&self, frame: i32) -> bool {
-        self.infantry
-            .as_ref()
-            .is_some_and(|infantry| infantry.web_remaining(frame) > 0)
-    }
     /// [`Self::is_under_emp`] from the raw counters: `+0x504` and, for a
     /// Unit, `+0x6D8`.
     pub(crate) fn under_emp(emp_remaining: i32, unit_death_counter: Option<i32>) -> bool {

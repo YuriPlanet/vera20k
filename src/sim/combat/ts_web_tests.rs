@@ -170,8 +170,7 @@ fn step(sim: &mut Simulation, rules: &RuleSet, grid: &PathGrid) {
 
 fn web_left(sim: &Simulation, id: u64) -> i32 {
     let frame = sim.session.binary_frame() as i32;
-    let infantry = sim.entities().get(id).unwrap().infantry.as_ref().unwrap();
-    infantry.web_remaining(frame)
+    sim.entities().get(id).unwrap().web_remaining(frame)
 }
 
 fn doing(sim: &Simulation, id: u64) -> i32 {

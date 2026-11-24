@@ -334,10 +334,7 @@ fn admit_attacker_fire<'r>(
             .substrate
             .entities
             .get(target_id)
-            .and_then(|target| target.infantry.as_ref())
-            .is_some_and(|infantry| {
-                infantry.web_outlasts_quarter(binary_frame as i32, web.duration)
-            })
+            .is_some_and(|target| target.web_outlasts_quarter(binary_frame as i32, web.duration))
     {
         let _ = world.assign_target_represented(snap.stable_id, None, rules, effects);
         let _ = world.mission_queue_exact(
