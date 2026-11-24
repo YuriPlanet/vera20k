@@ -28,7 +28,9 @@ use crate::render::main_menu_shell_chrome::WolPageArt;
 use crate::render::shell_paint::{self, ModalButton, ModalDepths};
 use crate::render::shell_text::{self, ShellTextDraw};
 use crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas;
-use crate::ui::shell::geom::{FAMILY_CAPTION_W, RectPx, ShellAlign, ShellScale};
+use crate::ui::shell::geom::{
+    FAMILY_CAPTION_W, RectPx, SDBTNANM_CELL_W_NARROW, ShellAlign, ShellScale,
+};
 use vera20k_gui::shell::trackbar::{TrackbarRange, value_text_rect};
 
 /// Sprites (skirmish atlas), page-art pictures and texts of a dialog's
@@ -117,17 +119,26 @@ pub(crate) enum ComboArt {
 /// Share the right-panel heading's text width while keeping the retail
 /// type-1 button label's center and pressed offset (0x00612B70). The
 /// button's painted rect and hit target are still the original cell.
-fn column_caption_rect(rect: RectPx, pressed: bool, scale: ShellScale) -> RectPx {
-    scale.derive_rect(rect, |rect| {
-        let label =
-            crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed);
-        let width = label.w.min(FAMILY_CAPTION_W);
-        RectPx::new(
-            label.x + (label.w - width) / 2,
-            label.y,
-            width,
-            label.h,
-        )
+fn right_panel_caption_rect(
+    art: ButtonArt,
+    standard_panel_art: bool,
+    rect: RectPx,
+    pressed: bool,
+    scale: ShellScale,
+) -> Option<RectPx> {
+    // A full-width Panel uses the same SDBTNANM face as Column. Keep the old
+    // fit for narrower controls, nonstandard SHP canvases, and PCX fallback.
+    let shares_face = art == ButtonArt::Column
+        || (art == ButtonArt::Panel
+            && standard_panel_art
+            && scale.base_rect(rect).w >= SDBTNANM_CELL_W_NARROW);
+    shares_face.then(|| {
+        scale.derive_rect(rect, |rect| {
+            let label =
+                crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed);
+            let width = label.w.min(FAMILY_CAPTION_W);
+            RectPx::new(label.x + (label.w - width) / 2, label.y, width, label.h)
+        })
     })
 }
 
@@ -453,20 +464,23 @@ pub(crate) fn paint_gui_with(
                     ButtonArt::Modal | ButtonArt::ModalCentred | ButtonArt::ModalSqueezed => held,
                     _ => captured,
                 } == Some(node);
+                let mut standard_panel_art = false;
                 match art {
                     ButtonArt::Host => continue,
                     ButtonArt::Caption => {}
-                    ButtonArt::Panel | ButtonArt::PanelCentred => super::chrome::push_right_panel_button_shp(
-                        &mut paint.controls,
-                        atlas,
-                        rect,
-                        vera20k_gui::shell::button::ButtonVisual {
-                            pressed,
-                            highlighted: flag(gui, node, Prop::Toggled, false),
-                        },
-                        !enabled,
-                        SHELL_CONTROL_DEPTH,
-                    ),
+                    ButtonArt::Panel | ButtonArt::PanelCentred => {
+                        standard_panel_art = super::chrome::push_right_panel_button_shp(
+                            &mut paint.controls,
+                            atlas,
+                            rect,
+                            vera20k_gui::shell::button::ButtonVisual {
+                                pressed,
+                                highlighted: flag(gui, node, Prop::Toggled, false),
+                            },
+                            !enabled,
+                            SHELL_CONTROL_DEPTH,
+                        );
+                    }
                     ButtonArt::Column => {
                         let visual = vera20k_gui::shell::button::ButtonVisual {
                             pressed,
@@ -538,14 +552,18 @@ pub(crate) fn paint_gui_with(
                         (rect, ShellAlign::H_CENTER | ShellAlign::V_CENTER)
                     }
                     (_, Some(_)) => (rect, align),
-                    (ButtonArt::Column, None) => (
-                        column_caption_rect(rect, pressed, scale),
-                        ShellAlign::ART_CAPTION | ShellAlign::V_CENTER,
-                    ),
-                    (_, None) => (
-                        button_label_rect_px(rect, pressed, scale),
-                        ShellAlign::BUTTON_CAPTION,
-                    ),
+                    (_, None) => {
+                        right_panel_caption_rect(art, standard_panel_art, rect, pressed, scale)
+                            .map_or_else(
+                                || {
+                                    (
+                                        button_label_rect_px(rect, pressed, scale),
+                                        ShellAlign::BUTTON_CAPTION,
+                                    )
+                                },
+                                |label| (label, ShellAlign::ART_CAPTION | ShellAlign::V_CENTER),
+                            )
+                    }
                 };
                 paint
                     .texts
@@ -1028,7 +1046,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn column_caption_shares_width_and_keeps_the_pressed_anchor_at_scale() {
+    fn full_panel_and_column_captions_share_width_and_keep_the_pressed_anchor() {
         use crate::ui::shell::geom::{RETAIL_SCALE, shell_scale};
 
         let button = RectPx::new(644, 199, 156, 42);
@@ -1036,11 +1054,34 @@ mod tests {
             (false, RectPx::new(664, 200, 114, 41)),
             (true, RectPx::new(665, 204, 114, 37)),
         ] {
-            assert_eq!(column_caption_rect(button, pressed, RETAIL_SCALE), expected);
-            let scale = shell_scale(1600, 1200);
+            for scale in [RETAIL_SCALE, shell_scale(1024, 768), shell_scale(1600, 1200)] {
+                for (art, standard) in [(ButtonArt::Column, false), (ButtonArt::Panel, true)] {
+                    assert_eq!(
+                        right_panel_caption_rect(
+                            art, standard, scale.scale_rect(button), pressed, scale,
+                        ),
+                        Some(scale.scale_rect(expected)),
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn other_button_faces_do_not_take_the_shared_width() {
+        use crate::ui::shell::geom::RETAIL_SCALE;
+
+        let button = RectPx::new(644, 199, 156, 42);
+        let narrow = RectPx::new(690, 199, 110, 42);
+        for (art, standard, rect) in [
+            (ButtonArt::Panel, false, button),
+            (ButtonArt::Panel, true, narrow),
+            (ButtonArt::PanelCentred, true, button),
+            (ButtonArt::ModalSqueezed, false, button),
+        ] {
             assert_eq!(
-                column_caption_rect(scale.scale_rect(button), pressed, scale),
-                scale.scale_rect(expected),
+                right_panel_caption_rect(art, standard, rect, true, RETAIL_SCALE),
+                None,
             );
         }
     }
