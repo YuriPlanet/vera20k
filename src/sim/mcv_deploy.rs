@@ -114,11 +114,14 @@ fn deploys_into_build_const(sim: &Simulation, entity: &GameEntity, rules: &RuleS
 
 /// The owner's AutoBaseBuilding latch (House+0x1F3) and that no human
 /// controls it (`IsControlledByHuman 0x0050B730`).
+///
+/// VERA: false while a Wasm module claims the house's `Production` (RFC 0001
+/// 6i, `sim::ext_modules::claims`): the module deploys the MCV by order.
 fn owner_builds_its_own_base(sim: &Simulation, entity: &GameEntity) -> bool {
     sim.houses.get(&entity.owner()).is_some_and(|house| {
         house.ai_activation().auto_base_building
             && !house.is_controlled_by_human(sim.session.rule_policy())
-    })
+    }) && !sim.module_claims(entity.owner(), vera20k_wasm_ext::DOMAIN_PRODUCTION)
 }
 
 /// `UnitClass::AI @ 0x007363DE..0x0073645B`, just before the Ready/Commence

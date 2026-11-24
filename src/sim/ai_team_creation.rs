@@ -145,6 +145,12 @@ pub(crate) fn update_team_creation(
     {
         return;
     }
+    // VERA: a Wasm module that claimed `Forces` raises the house's forces
+    // itself; the timer stays expired, as for a human house (RFC 0001 6i,
+    // `sim::ext_modules::claims`).
+    if sim.module_claims(owner, vera20k_wasm_ext::DOMAIN_FORCES) {
+        return;
+    }
     let admission = AiTriggerAdmission::resolve(&sim.session, house);
     let team_types = select_team_types(sim, rules, owner, admission, frame_effects);
     for team_type in team_types {

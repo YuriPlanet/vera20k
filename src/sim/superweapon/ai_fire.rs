@@ -182,6 +182,11 @@ pub(crate) fn try_fire(
     if !ares && human {
         return;
     }
+    // VERA: a Wasm module that claimed `SuperWeapons` chooses and fires
+    // them by order (RFC 0001 6i, `sim::ext_modules::claims`).
+    if sim.module_claims(owner, vera20k_wasm_ext::DOMAIN_SUPER_WEAPONS) {
+        return;
+    }
     for name in &rules.super_weapon_order {
         let Some(sw) = rules.super_weapon(name) else {
             continue;

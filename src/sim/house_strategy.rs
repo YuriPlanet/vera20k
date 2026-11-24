@@ -169,7 +169,9 @@ fn building_strategy(
     if no_factory {
         last_legs_actions(sim, rules, owner, registry, frame_effects);
     }
-    if build_need {
+    // VERA: a Wasm module that claimed `Production` manages the build
+    // queue instead (RFC 0001 6i, `sim::ext_modules::claims`).
+    if build_need && !sim.module_claims(owner, vera20k_wasm_ext::DOMAIN_PRODUCTION) {
         crate::sim::ai_build_need::manage_build_queue(sim, rules, owner, registry, frame_effects);
     }
 
@@ -191,8 +193,14 @@ fn sell_off_and_hunt(
         "{} sells off and hunts ({why})",
         sim.interner.resolve(owner)
     );
-    fire_sale(sim, rules, owner, registry, frame_effects);
-    all_to_hunt(sim, rules, owner, registry, frame_effects);
+    // VERA: a Wasm module's claims take the sale (`Production`) and the
+    // hunt (`Forces`) from the native AI (RFC 0001 6i).
+    if !sim.module_claims(owner, vera20k_wasm_ext::DOMAIN_PRODUCTION) {
+        fire_sale(sim, rules, owner, registry, frame_effects);
+    }
+    if !sim.module_claims(owner, vera20k_wasm_ext::DOMAIN_FORCES) {
+        all_to_hunt(sim, rules, owner, registry, frame_effects);
+    }
 }
 
 /// `0x004FD8F7..0x004FD907`, the no-factory block's calls, as Phobos
@@ -244,12 +252,12 @@ fn phobos_last_legs_actions(
                 None => false,
             }
         };
-        if sale_due {
+        if sale_due && !sim.module_claims(owner, vera20k_wasm_ext::DOMAIN_PRODUCTION) {
             log::debug!("{} sells off on its last legs", sim.interner.resolve(owner));
             fire_sale(sim, rules, owner, registry, frame_effects);
         }
     }
-    if rules.general.ai_all_to_hunt {
+    if rules.general.ai_all_to_hunt && !sim.module_claims(owner, vera20k_wasm_ext::DOMAIN_FORCES) {
         all_to_hunt(sim, rules, owner, registry, frame_effects);
     }
 }

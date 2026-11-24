@@ -77,6 +77,10 @@ pub struct WasmPolicy {
     /// `MapWasm=`: whether maps with modules may start under this mod.
     pub map_wasm: bool,
     pub map_ui: MapUi,
+    /// `Controller=`: the lobby offers "mod AI" for computer seats, and
+    /// such a seat's house starts with every domain claimed by the mod
+    /// module (RFC 6i, `claims`).
+    pub controller: bool,
 }
 
 impl Default for WasmPolicy {
@@ -88,6 +92,7 @@ impl Default for WasmPolicy {
             seat_budget: SEAT_BUDGET,
             map_wasm: true,
             map_ui: MapUi::Overlay,
+            controller: false,
         }
     }
 }
@@ -119,7 +124,8 @@ impl WasmPolicy {
             seat_budget: budget("SeatBudget", SEAT_BUDGET, SEAT_BUDGET)?,
             map_wasm: section.read_bool("MapWasm", true),
             map_ui,
-        })
+            controller: section.read_bool("Controller", false),
+        }
     }
 
     pub const fn budget_of(&self, source: ModuleSource) -> u64 {
