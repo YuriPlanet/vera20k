@@ -465,6 +465,16 @@ change like the one the batch already makes for no-queue walk requests, not
 a free win. Deferring only the own-cell requests (bench probe, reverted) left
 the inline count at 95 and the hash at `569418b4d9d2f0dd`: no gain.
 
+Per site (bench probe, reverted), of those 95: Drive/Ship 61 searches and
+4.6 ms, walk 14.8 and 0.6, walk admission 19.2 and 1.0, hover and linked
+cars none. They are not requests the deferral missed: `defer_path_search`
+refused 292 times a frame only because the Foot already had an answer to
+claim, and the claimed answer's key mismatched 0.4 times a frame. The batch
+holds one answer per Foot per frame (`ready` is keyed by actor id, and
+`pending` keeps one registration per Foot), so a Foot's second and later
+requests in the same frame still search inline. Answering several per Foot
+is a batch redesign, not a missing early-out, and its worth is those 4–5 ms.
+
 No single item is 5 ms. Two times the frame needs either the two-phase shard
 design above or a general cut in per-object work; 30 fps (33 ms) is reachable
 by removing the inline searches' immediate path, the 22 ms step is not.
