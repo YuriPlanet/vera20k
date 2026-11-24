@@ -1698,7 +1698,18 @@ fn run_recorded_handler(
         super::dispatch_foot_mission(&mut fixture.sim, fixture.actor, rules, ctx).unwrap();
     } else {
         let actual = if row["input"]["mission"] == 21 {
-            super::evaluate_foot_rescue(&mut fixture.sim, fixture.actor, rules, ctx)
+            // The Rescue body is the shared owner
+            // (`sim::mission::rescue`), which the Foot dispatcher and the
+            // aircraft dispatcher both run.
+            super::MissionHandlerEvaluation::cadence(
+                crate::sim::mission::rescue::mission_rescue(
+                    &mut fixture.sim,
+                    rules,
+                    ctx.overlay_registry,
+                    fixture.actor,
+                    &mut ctx.effects,
+                ),
+            )
         } else {
             assert_eq!(
                 row["input"]["mission"], 11,
@@ -1959,7 +1970,11 @@ fn original_full_retail_supplied_rescue_gates_compare_distance_and_range_prerequ
         assert_eq!(range["caller"], "0x4de0f3");
         assert_eq!(range["args"][0], 1);
         assert_eq!(
-            super::foot_threat_range(&fixture.sim, fixture.actor, &rules),
+            crate::sim::combat::threat_range::object_threat_range(
+                &fixture.sim,
+                fixture.actor,
+                &rules
+            ),
             signed(&range["result_eax"]),
             "{name}: original live7012C0/707E60 range"
         );
