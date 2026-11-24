@@ -67,6 +67,15 @@ unsafe extern "C" {
     ) -> i32;
     pub fn send_notify(to: i64, id: i32, ptr: *const u8, len: i32) -> i32;
     pub fn order(house: i64, ptr: *const u8, len: i32) -> i32;
+    /// Only inside `vera_init` (RFC 0001 INI addendum, section 3).
+    pub fn ini_register(
+        kind: i32,
+        section: i32,
+        name: *const u8,
+        len: i32,
+        key: i32,
+        out: *mut i32,
+    ) -> i32;
 }
 
 /// `ActionParams`, 72 bytes.
@@ -162,7 +171,7 @@ pub struct ActionDef {
     pub params: ActionParams,
 }
 
-/// `EventRecord`, 112 bytes, read in place in `on_events`.
+/// `EventRecord`, 120 bytes, read in place in `on_events`.
 #[repr(C)]
 #[derive(Clone, Copy, Default, Debug)]
 pub struct EventRecord {
@@ -183,10 +192,15 @@ pub struct EventRecord {
     pub x: i32,
     pub y: i32,
     pub z: i32,
+    /// String ID (`name_of(String, ..)`): a module action's parameter text,
+    /// an `IniEntry` entry name, an `IniKey` value; 0 for none.
+    pub args: i32,
+    /// A module action's `ActionTarget`; 0 on other records.
+    pub target: i32,
     pub reserved: i32,
 }
 
-/// `DecideRecord`, 152 bytes, read and written in place in `on_decide`.
+/// `DecideRecord`, 160 bytes, read and written in place in `on_decide`.
 #[repr(C)]
 #[derive(Clone, Copy, Default, Debug)]
 pub struct DecideRecord {
@@ -208,6 +222,12 @@ const _: () = {
     assert!(size_of::<TriggerDef>() == 32);
     assert!(size_of::<EventDef>() == 32);
     assert!(size_of::<ActionDef>() == 80);
-    assert!(size_of::<EventRecord>() == 112);
-    assert!(size_of::<DecideRecord>() == 152);
+    assert!(size_of::<EventRecord>() == 120);
+    assert!(size_of::<DecideRecord>() == 160);
+    // The offsets the engine writes (RFC 0001 INI addendum, section 8).
+    assert!(core::mem::offset_of!(EventRecord, args) == 108);
+    assert!(core::mem::offset_of!(EventRecord, target) == 112);
+    assert!(core::mem::offset_of!(DecideRecord, native) == 120);
+    assert!(core::mem::offset_of!(DecideRecord, handled) == 144);
+    assert!(core::mem::offset_of!(DecideRecord, previous_len) == 156);
 };
