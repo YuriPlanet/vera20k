@@ -488,7 +488,7 @@ pub(crate) fn render_multiplayer_setup(
         let chat_edit = GuiStyle {
             focus_of: Some(&chat_focus),
             caret_of: Some(&chat_caret),
-            ime_target: Some(crate::app::input::ime::ImeTarget::SetupChat),
+            ime: true,
             rgb: label_rgb,
             ..GuiStyle::default()
         };
