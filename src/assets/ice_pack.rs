@@ -8,7 +8,11 @@ type FileIdentity = (&'static str, usize, [u8; 32]);
 const FILES: [FileIdentity; 2] = include!(concat!(env!("OUT_DIR"), "/ice_file_identities.rs"));
 pub const FILE_NAMES: [&str; 2] = [FILES[0].0, FILES[1].0];
 
-#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+// A browser imports the pack at /Terrain, and a WASI host preopens it there.
+#[cfg(any(
+    target_os = "wasi",
+    all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")
+))]
 fn terrain_directory() -> io::Result<PathBuf> {
     Ok(Path::new("/").join(DIRECTORY))
 }
@@ -22,6 +26,7 @@ fn terrain_directory() -> io::Result<PathBuf> {
 
 #[cfg(not(any(
     target_os = "android",
+    target_os = "wasi",
     all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")
 )))]
 fn terrain_directory() -> io::Result<PathBuf> {
