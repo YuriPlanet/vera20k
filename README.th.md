@@ -106,7 +106,9 @@ Command & Conquer และ Red Alert ภายใต้ GPL, World-Altering Edi
 และอีกหลายโครงการ
 
 ลิขสิทธิ์ © 2026 Halvor Nikolai Rusten และผู้ร่วมพัฒนา VERA20K
-เผยแพร่ภายใต้สัญญาอนุญาต [GPLv3](LICENSE-GPL) พร้อม[ข้อกำหนดเพิ่มเติม](LEGAL.md#additional-terms) ที่เก็บโค้ดนี้ไม่มีไฟล์เกม
+เผยแพร่ภายใต้สัญญาอนุญาต [GPLv3](LICENSE-GPL) พร้อม[ข้อกำหนดเพิ่มเติม](LEGAL.md#additional-terms)
+VERA20K ได้รับอนุญาตให้รวมไทล์แผนที่หิมะและน้ำแข็งจาก Tiberian Sun: Firestorm ไว้ในชุดติดตั้ง ไทล์เหล่านี้ยังคงเป็นทรัพย์สินของ Electronic Arts
+ผู้เล่นต้องใช้ไฟล์เกมจาก Red Alert 2: Yuri's Revenge ฉบับที่ตนเป็นเจ้าของ
 Command & Conquer และ Red Alert เป็นเครื่องหมายการค้าของ Electronic Arts Inc.
 ภาพหน้าจอและไอคอนแอป (ดาวแดงของ Red Alert 2) แสดงงานภาพจากเกมที่เป็นของ Electronic Arts
 VERA20K ไม่มีความเกี่ยวข้องกับ Electronic Arts และไม่ได้รับการรับรองจาก Electronic Arts

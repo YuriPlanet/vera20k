@@ -729,6 +729,35 @@ pub fn object_get_coords(
     }
 }
 
+/// The cell an object physically stands in, as the Cell target the Foot
+/// missions anchor their scan on: the raw physical Map565730 Cell receiver,
+/// never Foot's HeadTo. Real map cells retain their canonical coordinates;
+/// the tagged Cell adapter does not yet preserve a retained Dummy pointer
+/// across subsequent stamps.
+///
+/// Without terrain the object's own cell division answers; with it, the
+/// canonical lookup of the object's world XY does. An object's cell is its
+/// ground cell whatever its layer, so an aircraft over the map answers the
+/// cell below it.
+pub(crate) fn physical_cell_target(
+    sim: &Simulation,
+    id: u64,
+) -> Option<crate::sim::combat::TargetKind> {
+    let actor = sim.substrate.entities.get(id)?;
+    let coord = position_world_coord(&actor.position);
+    let cell = sim.resolved_terrain.as_ref().map_or(
+        ((coord.x / 256) as i16, (coord.y / 256) as i16),
+        |terrain| {
+            let query = NativeCellQuery::canonical(terrain);
+            terrain.native_cell_coord(query.lookup_world(coord.x, coord.y))
+        },
+    );
+    Some(crate::sim::combat::TargetKind::Cell(
+        cell.0 as u16,
+        cell.1 as u16,
+    ))
+}
+
 /// Object virtual+A4: Object41BDD0 forwards GetCoords; Building4500A0 adds
 /// its type's retained TargetCoordOffset in world leptons. This differs from
 /// virtual+58, whose Object410540 forwarding must keep the unshifted centre.

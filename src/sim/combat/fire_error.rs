@@ -243,6 +243,9 @@ pub(crate) struct ProjectileFacts {
     pub aa: bool, // +0x2A4
     pub ag: bool, // +0x2A5
     pub rot: i32, // +0x2DC
+    /// Kratos `AAOnly`: this projectile may only be fired at a target in the
+    /// air (`src/Extension/BulletTypeExt.h`).
+    pub aa_only: bool,
 }
 
 /// The firer's own fields.
@@ -621,7 +624,7 @@ pub(crate) trait FireQuery {
     fn allied(&mut self) -> bool;
     /// `0x00703B10` IsOnBridge_ForFiring (T35).
     fn bridge_for_firing(&mut self) -> bool;
-    /// `HouseClass::Available_Money` (`0x004F9790`) of the firer's house,
+    /// `HouseClass::Available_Money` (`0x004F6990`) of the firer's house,
     /// asked by Kratos' `NoMoneyNoTalk` arm.
     fn available_money(&mut self) -> i32;
     /// ParasiteClass `0x0062A8E0` CanInfect (T50) and CaptureManager
@@ -1018,6 +1021,19 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
     // firer) right after the weapon exists and before the per-target arms.
     if !query.attach_effect_gate(facts.weapon_index) {
         return Cant;
+    }
+    // Kratos `TechnoClass_CanFire` (`0x6FC339`, its refusal returns
+    // `0x6FCB7E` = ILLEGAL): `TechnoStatus::CanFire_CheckBullet` stops an
+    // `AAOnly` projectile when the target is not in the air. Kratos leaves a
+    // firer whose LandTargeting is 1 (`Land_Not_OK`) to the stock land-target
+    // refusals at T40 and T41 below.
+    if facts.kratos
+        && weapon.projectile.aa_only
+        && weapon.projectile.aa
+        && !query.high_flying()
+        && firer_type.land_targeting != 1
+    {
+        return Illegal;
     }
     // Kratos `TechnoClass_CanFire` (`0x6FC339`) `CanFire_CheckWeapon`: the
     // shot waits until the firer's house can pay `NoMoneyNoTalk`; a negative

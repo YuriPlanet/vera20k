@@ -62,6 +62,25 @@ SecondaryCrawlingFLH=0,0,20
 VERA 按射手自身的姿态计算枪口位置，弹丸起点、枪口动画和开火音效都使用这一坐标。
 同类型步兵可以独立站立或卧倒。[上游姿态和等级判定](https://github.com/ra2diy/KratosPP/blob/v0.2.4/src/Ext/TechnoType/CrawlingFLH.cpp#L17-L90)
 
+## 只打空中的抛射体
+
+在 `[ProjectileType]`（抛射体类型）段写 `AAOnly=yes`，该抛射体就拒绝朝不在空中的目标开火：
+
+```ini
+[MissileAA]
+AA=yes
+AAOnly=yes
+```
+
+Kratos 把这个检查放在 `TechnoClass_CanFire` 钩子（`0x6FC339`，拒绝时返回 `0x6FCB7E` =
+ILLEGAL）：当目标不在空中、开火者的 `LandTargeting` 不为 `1`（`Land_Not_OK`，原版对陆地目标本来就会
+拒绝）且抛射体带 `AA=yes` 时终止发射。没有 `AA=yes` 时该键不起作用，与 Kratos 一致
+（[源码](https://github.com/ra2diy/KratosPP/blob/v0.2.4/src/Ext/TechnoType/Status/CanFireCheck.cpp)）。
+
+VERA 把这个键读进 `ProjectileType::aa_only`，在 `sim::combat::fire_error` 里与同一个钩子的
+Phobos、Ares 分支并列判定。它只是原版已有类型上的一个开关，所以放在该类型的读取器里，
+而不是单独开一个模块。
+
 ## 武器要钱
 
 在 `[WeaponType]` 写 `NoMoneyNoTalk`，开火方所属不够这笔钱就无法开火；写负数则是「钱太多就不
@@ -99,6 +118,8 @@ VERA20K 的 GPLv3 组合作品保留该许可证。
 
 - 卧倒射击点（`CrawlingFLH`）— **双杀步枪（ChrisLv_CN）**，
   `src/Ext/TechnoType/CrawlingFLH.cpp` 与 `CrawlingFLHData.h`。
+- 只打空中的抛射体（`AAOnly`）— **双杀步枪（ChrisLv_CN）**，
+  `src/Ext/TechnoType/Status/CanFireCheck.cpp`。
 - 武器要钱（`NoMoneyNoTalk`）— **双杀步枪（ChrisLv_CN）**，
   `src/Ext/TechnoType/Status/CanFireCheck.cpp`。
 
@@ -107,11 +128,23 @@ VERA20K 的 GPLv3 组合作品保留该许可证。
 各扩展功能的 Rust 移植由 VERA20K 贡献者以合并的 pull request 完成；下面用 GitHub 用户名
 标注每个链条对应的合并 PR 作者：
 
-- **1372704087** — Kratos 的逐局开关、卧倒射击点（`CrawlingFLH`）与武器要钱
-  （`NoMoneyNoTalk`）。
+- **1372704087** — Kratos 的逐局开关、卧倒射击点（`CrawlingFLH`）、只打空中的抛射体
+  （`AAOnly`）与武器要钱（`NoMoneyNoTalk`）。
 
 ## 添加一个功能
 
 已移植的功能把它的键放在 `kratos_read` 里读取，这些读取会被标记为 Kratos 读取器；开关只统计没有
 被其它读取器读到的键。键名、默认值和钳制值来自 Kratos PP 以及 Kratos 所挂钩的 `gamemd.exe`，
 不是凭清单猜的；原生地址写在 Rust 代码旁。没有该键的游戏保持原版路径。
+
+### 一个功能一个模块
+
+每项功能的键、默认值和判定都放在 `src/rules/<扩展>_<功能>.rs`，测试放在同目录的
+`<扩展>_<功能>_tests.rs`。读取逻辑遵循 Kratos 对应的 `Read` 方法，模拟在用到该值时调用此模块的判定。
+
+例如，`kratos_crawling_flh.rs` 对应 `Ext/TechnoType/CrawlingFLHData.h`。读取器把两组坐标写入
+`WeaponOffsets.crawling` 和 `WeaponOffsets.elite_crawling`。`get_weapon_record` 通过借用这两个字段
+的视图调用 `flh(slot, elite, prone)`。玩家存档的布局记录字段名、类型和顺序，因此这两个字段保留原来的
+名称、类型和顺序。
+
+类型数据保存在共享的 `RuleSet` 中，即使场上有两万个单位，同一类型的单位也共用一组偏移量。

@@ -240,11 +240,13 @@ impl<'a> FireSubject<'a> {
                     aa: false,
                     ag: true,
                     rot: 0,
+                    aa_only: false,
                 },
                 |projectile| ProjectileFacts {
                     aa: projectile.aa,
                     ag: projectile.ag,
                     rot: projectile.rot,
+                    aa_only: projectile.aa_only,
                 },
             ),
         }

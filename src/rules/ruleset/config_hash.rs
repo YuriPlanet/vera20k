@@ -256,7 +256,7 @@ impl RuleSet {
                     .filter(|object| {
                         object.category == ObjectCategory::Infantry && !object.fearless
                     })
-                    .map(|object| (&object.id, object.kratos_weapon_offsets())),
+                    .map(|object| (&object.id, object.kratos_crawling().arrays())),
             )
             .hash(&mut hasher);
         }

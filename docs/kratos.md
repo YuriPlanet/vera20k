@@ -64,6 +64,27 @@ VERA resolves the offset for each shooter when calculating its projectile, muzzl
 animation and positioned report sound. Infantry sharing a type can stand and crawl
 independently. [Upstream stance and rank selection](https://github.com/ra2diy/KratosPP/blob/v0.2.4/src/Ext/TechnoType/CrawlingFLH.cpp#L17-L90)
 
+## Anti-air-only projectile
+
+`AAOnly=yes` on a `[ProjectileType]` section (the bullet) refuses every shot at a target that
+is not in the air:
+
+```ini
+[MissileAA]
+AA=yes
+AAOnly=yes
+```
+
+Kratos runs the check at its `TechnoClass_CanFire` hook (`0x6FC339`, whose refusal returns
+`0x6FCB7E` = ILLEGAL): the shot stops when the target is not in the air, the firer's
+`LandTargeting` is not `1` (`Land_Not_OK`, which the original refuses on land) and the
+projectile has `AA=yes`. Without `AA=yes` the key does nothing, as in Kratos
+([source](https://github.com/ra2diy/KratosPP/blob/v0.2.4/src/Ext/TechnoType/Status/CanFireCheck.cpp)).
+
+VERA reads the key into `ProjectileType::aa_only` and answers it in `sim::combat::fire_error`,
+beside the Phobos and Ares arms of the same hook. It is one flag on a type the original already
+has, so it lives in that type's reader instead of a module of its own.
+
 ## Weapon money gate
 
 `NoMoneyNoTalk` on a `[WeaponType]` keeps the shot from starting until the firing house holds
@@ -102,6 +123,8 @@ The features ported here originate with:
 
 - Infantry firing offsets (`CrawlingFLH`) -
   **双杀步枪 (ChrisLv_CN)**, `src/Ext/TechnoType/CrawlingFLH.cpp` and `CrawlingFLHData.h`.
+- Anti-air-only projectiles (`AAOnly`) -
+  **双杀步枪 (ChrisLv_CN)**, `src/Ext/TechnoType/Status/CanFireCheck.cpp`.
 - Weapon money gate (`NoMoneyNoTalk`) -
   **双杀步枪 (ChrisLv_CN)**, `src/Ext/TechnoType/Status/CanFireCheck.cpp`.
 
@@ -110,8 +133,8 @@ The features ported here originate with:
 The Rust ports are individual VERA20K contributions; GitHub usernames name the merged pull
 requests that carried each chain:
 
-- **1372704087** — the Kratos switch, the prone firing offset (`CrawlingFLH`) and the weapon
-  money gate (`NoMoneyNoTalk`).
+- **1372704087** — the Kratos switch, the prone firing offset (`CrawlingFLH`), the
+  anti-air-only projectile (`AAOnly`) and the weapon money gate (`NoMoneyNoTalk`).
 
 简体中文：[Kratos 扩展支持](zh-CN/kratos.md) · [扩展支持与原作者](zh-CN/credits.md).
 
@@ -122,3 +145,18 @@ reader's; the switch then counts a key that no other reader found. The keys, the
 and their clamps come from Kratos PP and from `gamemd.exe` where Kratos hooks it, not from a
 list; the address of the native site goes next to the Rust. A game without the key keeps the
 native path.
+
+### One piece, one module
+
+Put a piece’s keys, defaults and decision in `src/rules/<ext>_<feature>.rs`, with
+tests in `<ext>_<feature>_tests.rs`. Its reader follows the corresponding Kratos
+`Read` method. The simulation uses the decision where it needs that value.
+
+For example, `kratos_crawling_flh.rs` implements `Ext/TechnoType/CrawlingFLHData.h`.
+Its reader fills `WeaponOffsets.crawling` and `WeaponOffsets.elite_crawling`.
+`get_weapon_record` asks a borrowed view for `flh(slot, elite, prone)`. Keeping both
+fields in their original order preserves the player-save layout, which records
+field names and types as well as their order.
+
+Type-level data belongs in the shared `RuleSet` so all units of a type use the
+same offsets at 20,000 units.

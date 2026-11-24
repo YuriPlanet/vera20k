@@ -428,23 +428,30 @@ fn idle_squid_body_counter_starts_move_sound() {
         .unwrap()
         .body_frame_counter
         .get();
-    crate::sim::animation::tick_foot_body_frame_counter(
-        sim.substrate.entities.get_mut(1).unwrap(),
-        crate::sim::movement::SpeedRules::new(
-            crate::rules::ruleset::RuleSet::empty_for_test(),
-            &sim.interner,
-            &sim.houses,
-        ),
-        crate::sim::animation::FootBodyCadence {
-            walk_rate: object.walk_rate,
-            idle_rate: object.idle_rate,
-        },
-        object.hover_attack,
-        object.deploy_to_land,
-        0,
-        None,
-        4,
-    );
+    {
+        let entity = sim.substrate.entities.get(1).unwrap();
+        let due = crate::sim::animation::foot_body_frame_due(
+            entity,
+            crate::sim::movement::SpeedRules::new(
+                crate::rules::ruleset::RuleSet::empty_for_test(),
+                &sim.interner,
+                &sim.houses,
+            ),
+            crate::sim::animation::FootBodyCadence {
+                walk_rate: object.walk_rate,
+                idle_rate: object.idle_rate,
+            },
+            object.hover_attack,
+            object.deploy_to_land,
+            0,
+            None,
+            4,
+        );
+        crate::sim::animation::tick_foot_body_frame_counter(
+            sim.substrate.entities.get_mut(1).unwrap(),
+            due,
+        );
+    }
     assert_eq!(
         sim.substrate
             .entities

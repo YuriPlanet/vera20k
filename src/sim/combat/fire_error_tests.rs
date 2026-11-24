@@ -158,6 +158,7 @@ fn weapon(slot: &Value, input: &Value) -> Option<WeaponFacts> {
             aa: flag(&projectile["aa"]),
             ag: flag(&projectile["ag"]),
             rot: int(&projectile["rot"]),
+            aa_only: flag(&projectile["aa_only"]),
         },
     })
 }
@@ -670,6 +671,46 @@ fn ares_heal_and_temporal_fire_errors() {
     assert_eq!(code("I2.medic_vs_cell"), illegal);
     assert_eq!(code("I2.medic_vs_healthy_infantry"), illegal);
     assert_ne!(code("U10.temporal_idle_moving"), FireError::Moving as i32);
+}
+
+/// Kratos `AAOnly` (hook `0x6FC339`, refusal `0x6FCB7E`): a projectile that may
+/// only be fired at a target in the air refuses a grounded one. The corpus
+/// defaults are a Unit firing an AA+AG projectile at a grounded Unit with
+/// LandTargeting 0, which the original allows.
+#[test]
+fn kratos_aa_only_refuses_a_ground_target() {
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fire_error.json",
+    ))
+    .unwrap();
+    let mut input = resolve(
+        &corpus["defaults"],
+        &serde_json::json!({"name": "kratos.aa_only"}),
+    );
+    assert_eq!(evaluate(&input, false).0, FireError::Ok as i32);
+
+    input["kratos"] = true.into();
+    input["projectile"]["aa_only"] = true.into();
+    assert_eq!(evaluate(&input, false).0, FireError::Illegal as i32);
+
+    // The projectile's own AA flag is part of the condition.
+    input["projectile"]["aa"] = false.into();
+    assert_eq!(evaluate(&input, false).0, FireError::Ok as i32);
+    input["projectile"]["aa"] = true.into();
+
+    // A target in the air is what the piece allows.
+    input["verdicts"]["high_flying"] = true.into();
+    assert_eq!(evaluate(&input, false).0, FireError::Ok as i32);
+    input["verdicts"]["high_flying"] = false.into();
+
+    // LandTargeting 2 (`Land_Secondary`) is not `Land_Not_OK`, so the piece
+    // still stops the shot.
+    input["firer_type"]["land_targeting"] = 2.into();
+    assert_eq!(evaluate(&input, false).0, FireError::Illegal as i32);
+
+    // A game that does not play Kratos keeps the original answer.
+    input["kratos"] = false.into();
+    assert_eq!(evaluate(&input, false).0, FireError::Ok as i32);
 }
 
 /// Kratos `NoMoneyNoTalk` (hook `0x6FC339`, refusal `0x6FCB7E`): the shot waits
