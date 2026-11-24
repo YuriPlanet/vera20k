@@ -502,6 +502,9 @@ impl Simulation {
                 self.alpha_shapes.purge_disabled();
             }
             FrameStep::CrateRegen => {
+                // Firestorm's pending terrain dent (Firestorm 2.0 0x51EA50)
+                // runs in this slot of its LogicClass::AI.
+                self.finish_terrain_dent(rules, effects);
                 // Called between `AlphaShapeClass::PurgeDisabled` and the
                 // Tactical, Factory and House callbacks, on the
                 // pre-increment frame counter this tick's steps have all

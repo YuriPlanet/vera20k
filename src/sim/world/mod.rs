@@ -917,6 +917,9 @@ pub struct Simulation {
     /// (`ice`, docs/ts-ice.md). Empty unless the map runs ice.
     #[serde(default)]
     ice_cracks: Vec<ice::CrackedIce>,
+    /// The second step of the last terrain dent, Firestorm's one pending
+    /// slot (`terrain_deformation`). Only terrain deformation fills it.
+    terrain_dent: Option<terrain_deformation::PendingTerrainDent>,
     pub(crate) bridge_state: Option<BridgeRuntimeState>,
     /// Resident Map+D4 ordered collapse coordinates. Independent of optional
     /// geometry so even standalone fallout/save retains its native publication.

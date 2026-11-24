@@ -26,6 +26,9 @@ const HOUSE_DEGRADES: u32 = 0xD6C7_5D57;
 // its solidify list and each unit's ice-sinking flag. Older worlds ran no
 // ice: no timer, no cracks and no unit sinking through ice.
 const TS_ICE: u32 = 0xAFC7_F643;
+// The next writer stores terrain deformation's pending second dent step.
+// Older worlds have none pending.
+const TERRAIN_DENT: u32 = 0x82C3_2EA4;
 
 /// The rules digest a converted save carries: the loader takes the rules the
 /// game has instead of proving the digest the old writer computed, whose
@@ -59,7 +62,7 @@ pub fn supports(header: &GameSnapshotHeader) -> bool {
         && previous_layout(header.layout).is_some()
         && header.compatibility().matches_build()
         && SNAPSHOT_ENVELOPE_VERSION == MIGRATION_ENVELOPE_VERSION
-        && snapshot_layout() == TS_ICE
+        && snapshot_layout() == TERRAIN_DENT
 }
 
 fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
@@ -73,6 +76,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
     const ICE_TIMER: (&str, &[&str]) = ("ScenarioSession", &["ice_growth_timer"]);
     const ICE_CRACKS: (&str, &[&str]) = ("Simulation", &["ice_cracks"]);
     const ICE_SINK: (&str, &[&str]) = ("SinkingState", &["ice"]);
+    const DENT: (&str, &[&str]) = ("Simulation", &["terrain_dent"]);
     let absent_fields: &'static [_] = match source {
         V0_3_8_AND_0_3_9 | V0_4_0 => &[
             IMAGE_FLAGS,
@@ -84,6 +88,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ICE_TIMER,
             ICE_CRACKS,
             ICE_SINK,
+            DENT,
         ],
         ALPHA_SHAPE_LISTENER => &[
             IMAGE_FLAGS,
@@ -94,6 +99,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ICE_TIMER,
             ICE_CRACKS,
             ICE_SINK,
+            DENT,
         ],
         ALTERNATE_THEATER_ART => &[
             DECK,
@@ -103,9 +109,11 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ICE_TIMER,
             ICE_CRACKS,
             ICE_SINK,
+            DENT,
         ],
-        BRIDGE_DECK_AND_FLY_SPIN => &[DEGRADES, ICE_TIMER, ICE_CRACKS, ICE_SINK],
-        HOUSE_DEGRADES => &[ICE_TIMER, ICE_CRACKS, ICE_SINK],
+        BRIDGE_DECK_AND_FLY_SPIN => &[DEGRADES, ICE_TIMER, ICE_CRACKS, ICE_SINK, DENT],
+        HOUSE_DEGRADES => &[ICE_TIMER, ICE_CRACKS, ICE_SINK, DENT],
+        TS_ICE => &[DENT],
         _ => return None,
     };
     Some(save_codec::PreviousLayout {
@@ -121,7 +129,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
 /// only its stock Arctic setting and latch. Keep both exactly as saved.
 pub fn migrate(bytes: &mut Vec<u8>) -> Result<(), MigrationError> {
     let target = snapshot_layout();
-    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != TS_ICE {
+    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != TERRAIN_DENT {
         return Err(MigrationError::UnsupportedTarget(target));
     }
 
@@ -253,7 +261,9 @@ mod tests {
         let original = bytes.clone();
         let error = migrate(&mut bytes).unwrap_err();
         assert_eq!(bytes, original);
-        if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || snapshot_layout() != TS_ICE {
+        if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION
+            || snapshot_layout() != TERRAIN_DENT
+        {
             assert!(matches!(error, MigrationError::UnsupportedTarget(_)));
             return;
         }

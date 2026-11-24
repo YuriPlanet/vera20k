@@ -34,6 +34,12 @@ pub struct GeneralRules {
     /// (`0x0066571B`), read by ReadInteger at `0x006719A1` without a clamp.
     /// ReceiveDamage starts each Techno's radar combat flash with it.
     pub radar_combat_flash_time: i32,
+    /// `[General] CraterLevel=`, which gamemd does not read: Firestorm's
+    /// meteor craters (`docs/terrain-deformation.md`). Firestorm 2.0 0x5C4600
+    /// gives Rules `+0x2B8` 4 and 0x5C9A39 reads it with `INIClass::Get_Int`
+    /// (0x4DD0C0, gamemd's ReadInteger) without a clamp. Retail sets 1. It
+    /// acts only while `[CombatDamage] TerrainDeformation=` is on.
+    pub crater_level: i32,
     /// `[AudioVisual]` thresholds copied to the presentation frame-rate
     /// controller by Fill_In_Data6850F5 and the radar movie transitions.
     pub detail: DetailRules,
@@ -1849,6 +1855,7 @@ impl Default for GeneralRules {
             flash_frame_time: 7,
             weed_capacity: 0,
             radar_combat_flash_time: 21,
+            crater_level: 4,
             detail: DetailRules::default(),
             pose_dir: 0,
             deploy_dir: 0,
@@ -2693,6 +2700,7 @@ impl GeneralRules {
             weed_capacity: general.read_int("WeedCapacity", defaults.weed_capacity),
             radar_combat_flash_time: general
                 .read_int("RadarCombatFlashTime", defaults.radar_combat_flash_time),
+            crater_level: general.read_int("CraterLevel", defaults.crater_level),
             scroll_multiplier: audio_visual
                 .read_double("ScrollMultiplier", defaults.scroll_multiplier),
             savour_delay_minutes,

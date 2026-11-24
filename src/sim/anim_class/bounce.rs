@@ -315,6 +315,11 @@ impl Simulation {
                 self.spawn_named_anim(rules, child, location, 0, BOUNCE_CONTACT_DRAW_FLAGS, 0);
             }
         }
+        // Firestorm's meteor craters (Firestorm 2.0 0x4151B1), VERA's terrain
+        // deformation.
+        if config.is_meteor && !above_deck {
+            self.dig_meteor_craters(position, rules, frame_effects);
+        }
         if config.is_tiberium && !above_deck {
             self.anim_landing_tiberium(config, rules, overlay_registry, position, frame_effects)?;
         }
