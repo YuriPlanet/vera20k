@@ -382,7 +382,16 @@ impl App {
             });
         let mut game_config = startup_asset_or_error(game_config, &mut main_menu_shell_error);
         if let Some(config) = &game_config {
-            crate::map::source::set_downloaded_maps_dir(config.paths.downloaded_maps_dir());
+            let maps_dir = config.paths.downloaded_maps_dir();
+            #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+            if let Err(error) = crate::map::installed::install_desktop_map(&maps_dir) {
+                log::warn!(
+                    "Could not install {} in {}: {error}",
+                    crate::map::installed::ARCTIC_MAP,
+                    maps_dir.display()
+                );
+            }
+            crate::map::source::set_downloaded_maps_dir(maps_dir);
             crate::render::locomotor_visual::set_high_terrain_building_lift(
                 config.graphics.high_terrain_building_lift,
             );
@@ -421,6 +430,15 @@ impl App {
         if ares_setting != crate::util::ares_launch::AresSetting::Auto {
             log::info!("Ares setting for this start: {}", ares_setting.ini_value());
         }
+        // The Kratos setting holds for the whole launch too; the rules the
+        // manager selects carry it into every game (`RuleSet::kratos`).
+        let kratos_setting = options_profile.kratos;
+        if kratos_setting != crate::util::kratos_launch::KratosSetting::Auto {
+            log::info!(
+                "Kratos setting for this start: {}",
+                kratos_setting.ini_value()
+            );
+        }
         // Before the first CSF load below, which layers this language over it.
         crate::i18n::init(
             game_config
@@ -444,7 +462,8 @@ impl App {
             .as_ref()
             .map(|config| config.ini.clone())
             .unwrap_or_default();
-        let (resources, ares_setting) = mods.select_resources(&base_ini, ares_setting);
+        let (resources, ares_setting, kratos_setting) =
+            mods.select_resources(&base_ini, ares_setting, kratos_setting);
         // VERARULES.INI is no longer read: a file that still holds settings
         // is named once the main menu is up, in the language just chosen.
         if capture_dimensions.is_none()
@@ -664,6 +683,7 @@ impl App {
                 quickplay_allowed,
                 resources,
                 ares_setting,
+                kratos_setting,
             )
         };
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
@@ -693,6 +713,7 @@ impl App {
         quickplay_allowed: bool,
         resources: crate::util::mod_definition::ResourceConfig,
         ares_setting: crate::util::ares_launch::AresSetting,
+        kratos_setting: crate::util::kratos_launch::KratosSetting,
     ) -> Result<InitializationStep> {
         let batch_renderer: BatchRenderer = BatchRenderer::new(&gpu);
         let status_screen_fill = batch_renderer.create_texture(&gpu, &[255; 4], 1, 1);
@@ -742,7 +763,8 @@ impl App {
             )
         });
         // This is the game the launch plays (`util::ares_launch`).
-        if let Some(assets) = &startup_asset_manager {
+        if let Some(assets) = &mut startup_asset_manager {
+            assets.set_kratos_setting(kratos_setting);
             assets.open_for_play();
         }
         // Native process startup seeds Scenario before the MPModes loader. The
@@ -855,15 +877,15 @@ impl App {
             // Ordinary interactive startup runs with the frame above on
             // screen: the presented swapchain frame stays composited while this
             // thread blocks.
-            let mut process_assets =
-                crate::app::process_assets::ProcessAssets::new(
-                    startup_options.media_archive_mode,
-                    startup_audio.load_audio_indices,
-                )
-                .with_resources(resources)
-                .with_mod_name(mods.active.as_ref().map(|active| active.folder.clone()))
-                .with_personal_rules(personal_rules)
-                .with_ares_setting(ares_setting);
+            let mut process_assets = crate::app::process_assets::ProcessAssets::new(
+                startup_options.media_archive_mode,
+                startup_audio.load_audio_indices,
+            )
+            .with_resources(resources)
+            .with_mod_name(mods.active.as_ref().map(|active| active.folder.clone()))
+            .with_personal_rules(personal_rules)
+            .with_ares_setting(ares_setting)
+            .with_kratos_setting(kratos_setting);
             process_assets.csf = startup_csf;
             let (startup_rules, startup_rules_projection) = startup_asset_manager
                 .as_ref()

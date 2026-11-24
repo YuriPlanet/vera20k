@@ -352,10 +352,16 @@ pub(crate) fn can_load(
         }
     }
     // `0x0043C4F8..0x0043C500`: a `Grinding=` building (`+0x16AD`) takes
-    // anyone the gates above admit. Original RA2 has no Grinding= field: the
-    // refund-on-entry behavior is hardcoded on the Cloning vats, so on the
-    // RA2 profile a `Cloning=` building also takes any admitted foot here.
-    if building_type.grinding || (rules.ra2() && building_type.cloning) {
+    // anyone the gates above admit, vehicles included. Original RA2 has no
+    // Grinding= field: refund-on-entry is hardcoded on the Cloning vats and
+    // is an infantry-only behavior there. On the RA2 profile a `Cloning=`
+    // building therefore takes only an admitted infantryman; a vehicle is
+    // not a vat customer and must be refused (issue: tanks were recycled).
+    if building_type.grinding
+        || (rules.ra2()
+            && building_type.cloning
+            && unit.category() == EntityCategory::Infantry)
+    {
         return CanLoad::Answer(RadioResponse::Roger);
     }
     // 0x0043C506..0x0043C541, a `Bunker=` building (+0x16AB): CanEnterBunker

@@ -128,6 +128,8 @@ This product includes software developed by the [Ares Contributors](LICENSES/Are
 
 This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
+This product includes software developed by the [Kratos PP author](docs/kratos.md#original-project-and-authors).
+
 **Read the [legal notice](LEGAL.md) before you share, sell or fork VERA20K.**
 
 ## Documentation
@@ -135,7 +137,8 @@ This product includes software developed by the [Phobos Developers](docs/phobos.
 - [WebAssembly preview](docs/wasm.md): an opt-in single-player build that runs in a browser.
 - [Modding guide](docs/modding.md): what mods can and can't do, and how VERA20K differs from the original game.
 - [INI profiles](docs/ini-roots.md): choosing rules, art and AI files.
-- [Ares](docs/ares.md), [Phobos](docs/phobos.md), [NPatch](docs/npatch.md) and [VeraX](docs/verax.md): extension support and limitations.
+- [Ares](docs/ares.md), [Phobos](docs/phobos.md), [Kratos](docs/kratos.md),
+  [NPatch](docs/npatch.md) and [VeraX](docs/verax.md): extension support and limitations.
 - [Engine overview](docs/index.md): code layout and how the engine fits together.
 - [Developer tools](tools/README.md): builds, tests and asset inspection.
 - [Map testing](tools/map_observation.md): scripted scenarios, screenshots and match observations.

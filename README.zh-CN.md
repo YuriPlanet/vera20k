@@ -120,6 +120,8 @@ This product includes software developed by the [Ares Contributors](LICENSES/Are
 
 This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
 
+This product includes software developed by the [Kratos PP author](docs/zh-CN/kratos.md).
+
 **在分享、出售或复刻（fork）VERA20K 之前，请先阅读[法律声明](LEGAL.md)。**
 
 ## 文档
@@ -127,7 +129,7 @@ This product includes software developed by the [Phobos Developers](docs/phobos.
 - [WebAssembly 预览版](docs/wasm.zh-CN.md)：在浏览器中运行的可选单人版本。
 - [模组制作指南](docs/modding.md)：模组能做什么、不能做什么，以及 VERA20K 与原版游戏的区别。
 - [INI 配置方案](docs/ini-roots.md)：选择规则、美术和 AI 文件。
-- [Ares](docs/ares.md)、[Phobos](docs/phobos.md) 和 [NPatch](docs/npatch.md)：扩展的支持情况与限制。
+- [Ares](docs/ares.md)、[Phobos](docs/phobos.md)、[Kratos](docs/zh-CN/kratos.md) 和 [NPatch](docs/npatch.md)：扩展的支持情况与限制。
 - [引擎概览](docs/index.md)：代码结构以及引擎各部分如何协同工作。
 - [开发者工具](tools/README.md)：构建、测试和资源检查。
 - [地图测试](tools/map_observation.md)：脚本化场景、截图和对局观察。

@@ -97,6 +97,22 @@ pub(crate) fn ares_label(setting: crate::util::ares_launch::AresSetting) -> Stri
     })
 }
 
+/// The `[VERA] Kratos=` list's rows, top to bottom; the first is the default.
+pub(crate) fn kratos_choices() -> Vec<crate::util::kratos_launch::KratosSetting> {
+    use crate::util::kratos_launch::KratosSetting;
+    vec![KratosSetting::Auto, KratosSetting::On, KratosSetting::Off]
+}
+
+/// The `[VERA] Kratos=` list's row text.
+pub(crate) fn kratos_label(setting: crate::util::kratos_launch::KratosSetting) -> String {
+    use crate::util::kratos_launch::KratosSetting;
+    crate::i18n::tr(match setting {
+        KratosSetting::Auto => "VERA:KratosSettingAuto",
+        KratosSetting::On => "VERA:KratosSettingOn",
+        KratosSetting::Off => "VERA:KratosSettingOff",
+    })
+}
+
 /// A Zoom row: the zoom and the battle's size in game pixels in this window,
 /// what `App::sync_zoom_pass` will give the match.
 pub(crate) fn zoom_label(zoom: Zoom, (width, height): (u32, u32), original_shape: bool) -> String {
@@ -754,6 +770,9 @@ pub(crate) enum LauncherComboId {
     /// The Ares extension setting, from the next start
     /// (`util::ares_launch::AresSetting`).
     Ares,
+    /// The Kratos extension setting, from the next start
+    /// (`util::kratos_launch::KratosSetting`).
+    Kratos,
     /// The `[VERA] GraphicsAPI=` list: the renderer, from the next start;
     /// on the page where it chooses anything ([`HAS_GRAPHICS_API`]).
     GraphicsApi,
@@ -1085,6 +1104,7 @@ pub(crate) const ROWS: &[Row] = {
         row!(Gameplay, Checkbox(AutoRepair), "AutoRepair"),
         row!(Gameplay, Checkbox(Ra2Mode), "Ra2Mode"),
         row!(Gameplay, List(Ares), "AresSetting"),
+        row!(Gameplay, List(Kratos), "KratosSetting"),
         row!(
             Gameplay,
             Checkbox(CustomEndGameBanner),
@@ -1282,6 +1302,8 @@ pub(crate) enum LauncherOptionsEvent {
     HealthBarModeSelected(HealthBarMode),
     /// Played from the next start.
     AresSelected(crate::util::ares_launch::AresSetting),
+    /// Played from the next start.
+    KratosSelected(crate::util::kratos_launch::KratosSetting),
     /// The `[VERA] GraphicsAPI=` list's pick, read at the next start.
     GraphicsApiSelected(GraphicsApi),
     ColorVisionModeSelected(ColorVisionMode),
@@ -1344,6 +1366,7 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) sidebar_columns: SidebarColumns,
     pub(crate) health_bars: HealthBarMode,
     pub(crate) ares: crate::util::ares_launch::AresSetting,
+    pub(crate) kratos: crate::util::kratos_launch::KratosSetting,
     /// The Graphics API list's choice; it applies from the next start.
     pub(crate) graphics_api: GraphicsApi,
     pub(crate) color_vision: ColorVisionMode,
@@ -1369,6 +1392,7 @@ impl Default for LauncherOptionsValues {
             sidebar_columns: SidebarColumns::default(),
             health_bars: HealthBarMode::default(),
             ares: Default::default(),
+            kratos: Default::default(),
             graphics_api: GraphicsApi::default(),
             color_vision: ColorVisionMode::default(),
         }
@@ -1715,6 +1739,7 @@ impl OptionsDialogState {
             E::SidebarColumnsSelected(columns) => v.sidebar_columns = *columns,
             E::HealthBarModeSelected(mode) => v.health_bars = *mode,
             E::AresSelected(setting) => v.ares = *setting,
+            E::KratosSelected(setting) => v.kratos = *setting,
             E::GraphicsApiSelected(api) => v.graphics_api = *api,
             E::ColorVisionModeSelected(mode) => v.color_vision = *mode,
             E::DisplaySelected(display) if *display == self.display => return,

@@ -1832,6 +1832,22 @@ fn a_request_for_the_foots_own_cell_does_not_wait() {
         .flat_map(|request| away.iter().map(move |&id| (id, request)))
         .collect();
     assert_eq!(sim.path_batch.as_ref().unwrap().pending, waiting);
+
+    // Both registrations survive the save in arrival order. The pass then
+    // searches only the latest request of each Foot.
+    let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "repeated_paths", 0);
+    let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+        .expect("the save loads")
+        .sim;
+    assert_eq!(restored.path_batch.as_ref().unwrap().pending, waiting);
+
+    sim.answer_batched_path_searches(&rules);
+    assert_eq!(sim.path_batch_stats().unwrap().searched, 2);
+    let batch = sim.path_batch.as_ref().unwrap();
+    assert!(batch.pending.is_empty());
+    for id in away {
+        assert_eq!(batch.ready[&id].request, CODE2);
+    }
 }
 
 /// An own-cell request that is the Foot's first in a frame claims the pass's
