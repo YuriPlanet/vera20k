@@ -432,3 +432,112 @@ Not done:
   `always` ends without a desync.
 - Before phase 2, measure client draw CPU at 2,000 units. If drawing alone
   exceeds the frame budget, it needs its own work.
+
+## Where a 30-house frame goes
+
+Measured with `sim-bench --scenario match --map scale/match30.map --houses 30
+--ticks 300 --frame-profile` on a `--features telemetry` build, 22,142 live
+objects (21,059 AI visits, 18,114 ground Processes). Shares, not absolutes:
+each `frame_profile::Span` costs two clock reads per object, so the totals
+below include what the telemetry itself added: 54.5 ms against 52.2 ms for
+the release build of the same state (hash `7fca7db00cb332dc`), which is what
+`main` measures. The 45 fps step needs 22 ms.
+
+| Part of one object's turn | ms | share |
+|---|---|---|
+| before the AI visit | 0.7 | 1% |
+| the AI visit | 6.6 | 13% |
+| between the visit and Process | 1.7 | 3% |
+| the ground locomotor's Process | 28.8 | 55% |
+| after the Process | 7.7 | 15% |
+| other class branches | 7.5 | 14% |
+
+Inside the Process: pending-work loop 16.2, inline path searches 6.2, the
+track/turn gate 5.9, walk admission 2.2, path request 1.0, tail 2.3. Inside
+the post-Process tail: firing 3.0, Foot body cadence 1.2, Foot sounds 0.7,
+idle Scatter/piggyback/pending-entry 0.7, disguise/sinking/trailer 2.1.
+
+The inline searches are 95 per frame, 9,147 expansions, 6.2 ms: 14 of them
+take over 100 µs (the slowest 1.6 ms) and own about 5 ms of that. They are
+the immediate requests — a mission order or a Drive/Ship Process path, which
+the mover needs this frame — so deferring them to the batch is a behavior
+change like the one the batch already makes for no-queue walk requests, not
+a free win. Deferring only the own-cell requests (bench probe, reverted) left
+the inline count at 95 and the hash at `569418b4d9d2f0dd`: no gain.
+
+Per site (bench probe, reverted), of those 95: Drive/Ship 61 searches and
+4.6 ms, walk 14.8 and 0.6, walk admission 19.2 and 1.0, hover and linked
+cars none. They are not requests the deferral missed: `defer_path_search`
+refused 292 times a frame only because the Foot already had an answer to
+claim, and the claimed answer's key mismatched 0.4 times a frame. The batch
+holds one answer per Foot per frame (`ready` is keyed by actor id, and
+`pending` keeps one registration per Foot), so a Foot's second and later
+requests in the same frame still search inline. Answering several per Foot
+is a batch redesign, not a missing early-out, and its worth is those 4–5 ms.
+
+No single item is 5 ms. Two times the frame needs either the two-phase shard
+design above or a general cut in per-object work; the 22 ms step is not
+reachable from any one site in this table.
+
+Two attempts to remove those inline searches, both measured and reverted:
+
+- Deferring only the own-cell requests left the count at 95 and moved the
+  hash to `569418b4d9d2f0dd`.
+- Answering several requests per Foot per frame (`ready` holding a slot per
+  registration, `pending` no longer collapsed to one per Foot) took the count
+  from 95.2 to 94.1 and left the frame at 54.2 ms against 53.8, with the hash
+  at `0673fb10a05d8a73`. It is not the one-answer-per-Foot rule that keeps
+  these searches inline: of the 298 slots a pass stages, 202 carry an answer
+  and 96 are empty because `batched_search` refuses the request (a
+  destination redirect, the Foot's own cell, a `Stopped` or `CellEntryUnavailable`
+  search, or no destination at all). Each of those Feet then searches at its
+  own turn, and an inline search pays about ten times the batch's cost per
+  expansion because it walks its own code-2 chains where a batch shares one
+  cell's chain across the searches that ask about it.
+
+## Sharded object pass, costed
+
+The pass (`Simulation::advance_live_object_pass`) walks live objects in
+stable-id order and each turn writes several owners besides its own entity: the
+substrate's cell and occupancy records, terrain objects, production queues, fog
+and shroud, sound events, another entity's health and lifecycle through damage
+and kills, and the path batch's registrations. The vision planes are the
+exception the pass already defers and applies in parallel.
+
+Sharding therefore cannot call today's turn as it stands: every one of those
+writes needs a shard-local overlay with a merge ordered by shard, and every
+read needs the rule "writes my shard made, then the frame's start", which
+makes a write visible to another shard one tick late. That is the deviation a
+bench probe of the pass's own order measured: walking the same snapshot in
+reverse diverges, and with the path batch off it still does.
+
+Measured basis for the payoff: the pass is about 92% of a 30-house frame
+(53 of 57 ms in the telemetry build, 48 of 52.2 ms release against `main`),
+and a telemetry probe of the pass found 0.35% of the write time crossing
+objects. Amdahl with that share: 5× on the pass leaves 13–14 ms, 8× leaves
+10–11 ms, both inside 22 ms.
+
+The work is not the 3,395 `self.` sites; it is the per-writer overlay and the
+merge order, so the first change is the one that costs nothing to keep:
+route the pass through an overlay that stages every write and applies it in
+the same stable-id order, single-threaded, with a per-owner staged-write
+counter. Behavior must stay identical (hash `7fca7db00cb332dc` on the
+30-house map); what it buys is the journal's real breadth and cost and the
+list of owners whose writes actually cross objects. Running K shards
+concurrently is the second change, and only that one carries the deviation.
+
+A bench-only probe measured the journal that design would need: on the same
+30-house map it counted 154,380 mutable hand-outs of the turn's own entity per
+frame, 548 of another entity (2.5% of them) and 15,691 writes of the shared
+cell grid (0.71 per visited object), with the state hash unchanged. The
+staging volume is therefore small — a shard owns its own entities outright —
+and what the design really costs is splitting `&mut Simulation`, which every
+turn takes, into per-shard views. The probe also shows the pass is
+read-coupled rather than write-coupled: 0.7 cell writes per visited object
+change decisions because other turns read them.
+
+That measurement is where this route stopped: the staging fits, the split of
+`&mut Simulation` across 3,395 `self.` sites does not, and no counter prices
+it.
+
+
