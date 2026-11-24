@@ -210,6 +210,10 @@ pub(crate) struct WeaponFacts {
     /// `+0xA0`. Never NULL natively (read unchecked at T38, T39, T41, U11 and
     /// U12).
     pub projectile: ProjectileFacts,
+    /// Kratos `NoMoneyNoTalk`: money the firer's house needs for this weapon.
+    pub no_money_no_talk: i32,
+    /// Kratos `DontNeedMoney`: this weapon ignores [`Self::no_money_no_talk`].
+    pub dont_need_money: bool,
 }
 
 /// A WarheadTypeClass, as the tests read it against this target.
@@ -620,6 +624,9 @@ pub(crate) trait FireQuery {
     fn allied(&mut self) -> bool;
     /// `0x00703B10` IsOnBridge_ForFiring (T35).
     fn bridge_for_firing(&mut self) -> bool;
+    /// `HouseClass::Available_Money` (`0x004F6990`) of the firer's house,
+    /// asked by Kratos' `NoMoneyNoTalk` arm.
+    fn available_money(&mut self) -> i32;
     /// ParasiteClass `0x0062A8E0` CanInfect (T50) and CaptureManager
     /// `0x00471C90` CanCapture (T53).
     fn can_infect(&mut self) -> bool;
@@ -1027,6 +1034,22 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
         && firer_type.land_targeting != 1
     {
         return Illegal;
+    }
+    // Kratos `TechnoClass_CanFire` (`0x6FC339`) `CanFire_CheckWeapon`: the
+    // shot waits until the firer's house can pay `NoMoneyNoTalk`; a negative
+    // value refuses while the house holds more than its magnitude, and
+    // `DontNeedMoney` skips the test. The AE that can supply the value is not
+    // ported, so only the weapon's own key counts.
+    if facts.kratos && !weapon.dont_need_money && weapon.no_money_no_talk != 0 {
+        let need = i64::from(weapon.no_money_no_talk);
+        let money = i64::from(query.available_money());
+        if if need > 0 {
+            money < need
+        } else {
+            money > need.abs()
+        } {
+            return Illegal;
+        }
     }
     // T22 (IonSensitive) asks `0x0053A130`, which is `XOR AL,AL; RET`.
     let warhead = weapon.warhead.unwrap_or_default();

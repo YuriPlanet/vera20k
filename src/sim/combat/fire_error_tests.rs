@@ -140,6 +140,8 @@ fn weapon(slot: &Value, input: &Value) -> Option<WeaponFacts> {
         fire_in_transport: flag(&slot["fire_in_transport"]),
         area_fire: flag(&slot["area_fire"]),
         is_mag_beam: flag(&slot["is_mag_beam"]),
+        no_money_no_talk: slot["no_money_no_talk"].as_i64().unwrap_or(0) as i32,
+        dont_need_money: flag(&slot["dont_need_money"]),
         warhead: Some(WarheadFacts {
             mind_control: flag(&warhead["mind_control"]),
             ivan_bomb: flag(&warhead["ivan_bomb"]),
@@ -424,6 +426,9 @@ impl FireQuery for RowQuery<'_> {
     fn bridge_for_firing(&mut self) -> bool {
         flag(self.verdict("bridge_for_firing"))
     }
+    fn available_money(&mut self) -> i32 {
+        int(self.verdict("available_money"))
+    }
     fn can_infect(&mut self) -> bool {
         flag(self.verdict("can_infect"))
     }
@@ -701,6 +706,46 @@ fn kratos_aa_only_refuses_a_ground_target() {
     // LandTargeting 2 (`Land_Secondary`) is not `Land_Not_OK`, so the piece
     // still stops the shot.
     input["firer_type"]["land_targeting"] = 2.into();
+    assert_eq!(evaluate(&input, false).0, FireError::Illegal as i32);
+
+    // A game that does not play Kratos keeps the original answer.
+    input["kratos"] = false.into();
+    assert_eq!(evaluate(&input, false).0, FireError::Ok as i32);
+}
+
+/// Kratos `NoMoneyNoTalk` (hook `0x6FC339`, refusal `0x6FCB7E`): the shot waits
+/// until the firer's house holds the named money, a negative value refuses
+/// while it holds more than the magnitude, and `DontNeedMoney` skips the test.
+#[test]
+fn kratos_no_money_no_talk_gates_the_shot() {
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fire_error.json",
+    ))
+    .unwrap();
+    let mut input = resolve(
+        &corpus["defaults"],
+        &serde_json::json!({"name": "kratos.no_money"}),
+    );
+    assert_eq!(evaluate(&input, false).0, FireError::Ok as i32);
+    input["kratos"] = true.into();
+    input["weapons"][0]["no_money_no_talk"] = 1000.into();
+
+    input["verdicts"]["available_money"] = 500.into();
+    assert_eq!(evaluate(&input, false).0, FireError::Illegal as i32);
+
+    input["verdicts"]["available_money"] = 1500.into();
+    assert_eq!(evaluate(&input, false).0, FireError::Ok as i32);
+
+    // `DontNeedMoney` ignores the price.
+    input["weapons"][0]["dont_need_money"] = true.into();
+    input["verdicts"]["available_money"] = 0.into();
+    assert_eq!(evaluate(&input, false).0, FireError::Ok as i32);
+    input["weapons"][0]["dont_need_money"] = false.into();
+
+    // A negative value refuses the house that holds too much.
+    input["weapons"][0]["no_money_no_talk"] = (-1000).into();
+    assert_eq!(evaluate(&input, false).0, FireError::Ok as i32);
+    input["verdicts"]["available_money"] = 1500.into();
     assert_eq!(evaluate(&input, false).0, FireError::Illegal as i32);
 
     // A game that does not play Kratos keeps the original answer.

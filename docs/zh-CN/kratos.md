@@ -81,6 +81,25 @@ VERA 把这个键读进 `ProjectileType::aa_only`，在 `sim::combat::fire_error
 Phobos、Ares 分支并列判定。它只是原版已有类型上的一个开关，所以放在该类型的读取器里，
 而不是单独开一个模块。
 
+## 武器要钱
+
+在 `[WeaponType]` 写 `NoMoneyNoTalk`，开火方所属不够这笔钱就无法开火；写负数则是「钱太多就不
+打」，超过该数值的绝对值时拒绝：
+
+```ini
+[GoldShell]
+NoMoneyNoTalk=1000
+```
+
+同一段写 `DontNeedMoney=yes` 跳过该检查。数值在每次请求开火时读取，所以所属攒够钱后下一次
+尝试就能开火。
+
+Kratos 在 `TechnoStatus::CanFire_CheckWeapon` 里做这件事，运行于 `TechnoClass::CanFire`
+钩子（`0x6FC339`，拒绝返回 `0x6FCB7E` = ILLEGAL），并且它的 AE 也能提供该数值
+（`src/Ext/TechnoType/Status/CanFireCheck.cpp`）。VERA 在 `kratos_read` 里读取这两个武器键，
+并在 `sim::combat::fire_error` 中与同一钩子的其它分支并列判定。提供数值的 AttachEffect 尚未
+移植：只认武器自己写的键。
+
 ## 原作者与项目
 
 VERA20K 用 Rust 重新实现行为，不加载 `Kratos.dll`，也不重新分发 Kratos 二进制；每个已移植的
@@ -101,14 +120,16 @@ VERA20K 的 GPLv3 组合作品保留该许可证。
   `src/Ext/TechnoType/CrawlingFLH.cpp` 与 `CrawlingFLHData.h`。
 - 只打空中的抛射体（`AAOnly`）— **双杀步枪（ChrisLv_CN）**，
   `src/Ext/TechnoType/Status/CanFireCheck.cpp`。
+- 武器要钱（`NoMoneyNoTalk`）— **双杀步枪（ChrisLv_CN）**，
+  `src/Ext/TechnoType/Status/CanFireCheck.cpp`。
 
 ## VERA20K 移植署名
 
 各扩展功能的 Rust 移植由 VERA20K 贡献者以合并的 pull request 完成；下面用 GitHub 用户名
 标注每个链条对应的合并 PR 作者：
 
-- **1372704087** — Kratos 的逐局开关、卧倒射击点（`CrawlingFLH`）与只打空中的抛射体
-  （`AAOnly`）。
+- **1372704087** — Kratos 的逐局开关、卧倒射击点（`CrawlingFLH`）、只打空中的抛射体
+  （`AAOnly`）与武器要钱（`NoMoneyNoTalk`）。
 
 ## 添加一个功能
 

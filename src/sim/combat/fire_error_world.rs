@@ -211,6 +211,8 @@ impl<'a> FireSubject<'a> {
             fire_in_transport: weapon.fire_in_transport,
             area_fire: weapon.area_fire,
             is_mag_beam: weapon.is_mag_beam,
+            no_money_no_talk: weapon.no_money_no_talk,
+            dont_need_money: weapon.dont_need_money,
             warhead: warhead.map(|warhead| WarheadFacts {
                 mind_control: warhead.mind_control,
                 ivan_bomb: warhead.ivan_bomb,
@@ -964,6 +966,13 @@ impl FireQuery for WorldQuery<'_, '_> {
         self.subject
             .terrain()
             .is_some_and(|terrain| in_range::is_on_bridge_for_firing(self.subject.firer, terrain))
+    }
+
+    fn available_money(&mut self) -> i32 {
+        crate::sim::credit_income::available_money(
+            &self.subject.world.houses,
+            self.subject.firer.owner(),
+        )
     }
 
     fn can_infect(&mut self) -> bool {
