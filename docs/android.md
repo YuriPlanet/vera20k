@@ -145,19 +145,22 @@ Two more conditions come from the game:
 - **Player names are the LAN identity**, and a clash looks like "the other
   player does not exist". A player discards advertisements whose name matches
   its own, so two peers left at the default `[New Player]` never see each
-  other's games. Android has no text input yet, so the activity
+  other's games. The stock name repeats on every install, so the activity
   appends the last three hex digits of the Android ID: a fresh install enters
-  the lobby as `[New Player]-1A2` (`util::device_identity`). The ID survives
-  reinstall and an app-data clear and changes only on a factory reset. Every
-  other platform keeps the stock name.
+  the lobby as `[New Player]-1A2` (`util::device_identity`), and the player can
+  rename it in the lobby. The ID survives reinstall and an app-data clear and
+  changes only on a factory reset. Every other platform keeps the stock name.
 
 A guest also needs the host's map in its own map library.
 
 ## Deliberate choices
 
-- **`NativeActivity`, not `GameActivity`.** Smallest M0. It has no IME, so text
-  entry (player name, chat, passwords) is unusable until P6 chooses: switch winit
-  to `android-game-activity`, or overlay a Java `EditText` and add JNI.
+- **`GameActivity`, not `NativeActivity`.** NativeActivity was the smaller first
+  milestone, but it has no IME, so text entry (player name, chat, passwords) was
+  unusable. GameActivity carries the text input the engine's chat edits need;
+  `VeraActivity` extends it and loads `libvera20k_android.so` itself, since
+  GameActivity has no `android.app.lib_name` metadata. Its build-time glue must
+  match the `androidx.games:games-activity` AAR version (2.0.2 here).
 - **Vulkan only.** The manifest requires `android.hardware.vulkan.level 0`;
   GLES-only devices cannot install. Whether to port the existing `webgl`
   fallback to a runtime capability check is P4's call.
@@ -238,6 +241,80 @@ They have not been independently reproduced for the current code.
   starves the main thread and Android kills the app for an ANR.
 - Toolchain used: cmdline-tools 23.0, platforms/android-36, build-tools 36.1.0,
   NDK 28.2.13676358, AGP 8.11.1, Gradle 8.13, JDK 19.
+
+## Touch chat
+
+The in-match chat opens with a long press on the message lane (the touch mapper's
+own right click) and sends with a tap on the lane. Text itself comes from the
+platform input method through `util::android_ime`: winit 0.30's Android backend
+delivers no `WindowEvent::Ime`, so the bridge reads the platform's text state each
+frame, seeds it from the focused edit and hands its changes to that screen's own
+input path. An open composition stays ours to draw until the GUI library carries
+`ImeEvent` (its `Preedit`/`Commit`/`Enabled` and `focus_rect` are specified but
+not yet used by the engine), so the chooser's search line and the setup room's
+chat still paint it themselves.
+
+The edits belong to the GUI library (`gui/`, `docs/gui-library-api.md`): each shell
+page keeps its `Edit` nodes in a `vera20k_gui` tree — the shell's one
+`DialogController`, the WOL lobby's own tree, and the saved-game browsers' — so the
+bridge asks the tree the current page owns for its focused edit, and takes from it
+the text and caret to seed the platform buffer with, the node's rectangle for the
+candidate window, and `Prop::Password` for the input method's password flag. The
+finished text and each Backspace go back through that screen's own key entry
+(`handle_wol_key`, `shell_lan::key_press`, `multiplayer_setup::key_press`,
+`choose_map_search_text`, the saved-game browser's), the path a typed character
+takes on the desktop. No screen keeps IME state of its own; the in-game message
+lane is the one edit outside the GUI trees, and keeps the bridge it always had.
+
+The keyboard comes up for the edit the player tapped. A press that lands on a GUI
+`Edit` arms it (`util::android_ime::arm`, recorded by the shell's dialog
+controller), because the pages give their edits the focus when they open: without
+the tap, entering the LAN lobby, the setup room or Choose Map would put the
+keyboard over the page. The WOL lobby and the save-name prompts ask for it without
+a tap.
+
+The bridge holds the input method's composing range back from those commits and
+draws it in the IME colour, so a pinyin run only reaches the game once it is
+committed. The password boxes report themselves
+(`TYPE_TEXT_VARIATION_PASSWORD`), so the keyboard's dictionary never learns them,
+and the name boxes drop units at or above `0x100` (`0x4D1(1)`), which keeps a
+Chinese name out of the single-byte roster row.
+
+The engine needs an 8 MiB stack on the glue's game thread; `android/build.rs`
+links `-Wl,--wrap=pthread_create` and the wrapper raises the requested stack, so
+`android-activity` stays the crates.io 0.6.0 release.
+
+A long press elsewhere on the battlefield is the touch mapper's right click
+(`app::input::touch`, 400 ms), so it cancels whatever a right click cancels —
+including a pending placement. Over the message lane the long press opens the
+chat instead, and in an offline skirmish it opens it as the `ChatTarget::Skirmish`
+that the plain Enter key picks, which cancels a pending `/…` spawn group
+(`docs/skirmish-cheats.md`). A tap on the lane sends, as Enter does.
+
+Residuals:
+
+- The touch entry is Android-only. The browser build already takes text from the
+  platform through its hidden textarea (`web::ime`), but on a touch browser the
+  in-game chat has no way to open: it still needs the Enter key. Making the entry
+  platform-neutral (Android and wasm) is recorded in the local plan as a separate
+  change.
+- Discoverability: the long press is invisible, so the first network match a
+  profile plays posts one localized line into the lane (`VERA:TouchToChat`, five
+  seconds in, white, expiring) and spends `[Android] ChatHint=no` the way
+  `[Intro] Play` is spent, like `persistence::chat_hint`. Later matches stay
+  silent until a fresh install.
+- The soft keyboard is not kept out of the way. On a phone it covers the online
+  login's edited field, and the password box's dots are what the player cannot
+  see; the text still reaches the game because the bridge reads the platform's
+  buffer, not the screen. `android-activity` reports the IME height through
+  `MainEvent::InsetsChanged`, which winit drops, so lifting a page above the
+  keyboard is a separate change (IME insets).
+- When a tablet is connected to an external keyboard, ColorOS's secure input
+  that a tap expands, while the same build on a phone shows the ordinary
+  full-width secure keyboard. That is the input method's large-screen behaviour
+  for a password field, not the app's editor info, so it stays as it is; if
+  another input method shows a full-width secure keyboard on the tablet, this
+  residual can be dropped.
 
 ## Windows local-build gotchas
 
