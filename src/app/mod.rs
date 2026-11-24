@@ -130,6 +130,7 @@ mod shell_wol;
 pub(crate) mod sidebar_projection;
 #[cfg(all(test, tests_app))]
 mod sidebar_projection_tests;
+pub(crate) mod spawn_frame_cost;
 pub(crate) mod spawn_probe;
 mod state;
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
