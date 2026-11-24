@@ -188,6 +188,15 @@ impl Event {
     /// Delivery only, never in a trigger: one registered key
     /// ([`crate::IniKeyRecord`]).
     pub const INI_KEY: i32 = 1042;
+
+    // RFC 0001 section 6i (appendix 4.3).
+    /// Global: an order ([`crate::House::order`]) or player command the
+    /// execution step did not carry out, once per unit, or once with
+    /// subject 0 for a house-level order. `house` is the issuing house,
+    /// `value` the [`crate::Command`], `value2` the reason (appendix 8.3
+    /// `RefuseReason`), `other` and `cell` the target, `id` the type of a
+    /// house-level order (otherwise -1).
+    pub const ORDER_REFUSED: i32 = 1043;
 }
 
 /// What a trigger action acts on (`ActionTarget`, appendix 5.1).
