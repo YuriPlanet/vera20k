@@ -242,6 +242,18 @@ pub(super) fn effective_reach_against(
     let Some(target) = obs.entity_type(rules, victim) else { return 0; };
     let air = target.category == ObjectCategory::Aircraft
         || (target.jumpjet && !obs.is_deployed(victim));
+    if gun.gunner {
+        let Some(weapon) = obs.active_gunner_weapon(rules, attacker) else { return 0; };
+        if weapon.never_use { return 0; }
+        let projectile_ok = rules.weapon_projectile(weapon).is_some_and(|p|
+            if air { p.aa } else { p.ag });
+        let verses_ok = weapon.warhead.as_deref()
+            .and_then(|id| rules.warhead(id)).is_some_and(|head|
+                f64::from_bits(head.interaction(target.armor_id()).multiplier().bits()) > 0.0);
+        return if projectile_ok && verses_ok {
+            super::advance::weapon_reach_cells(weapon)
+        } else { 0 };
+    }
     (0..gun.weapon_record_count()).filter_map(|slot| {
         let weapon = rules.weapon(gun.weapon_at(slot)?)?;
         if weapon.never_use { return None; }
@@ -283,6 +295,27 @@ fn vehicle_exchange_output(rules: &RuleSet, attacker: &ObjectType, defender: &Ob
     }).max().unwrap_or(0)
 }
 
+/// An empty/loaded Gunner cannot claim the best DPS of *every* IFVMode.
+/// Use the native selected weapon for an existing instance; non-Gunner units
+/// retain their target-dependent primary/secondary selection estimate.
+fn vehicle_exchange_output_live(
+    rules: &RuleSet, obs: &Observation<'_>, id: u64,
+    attacker: &ObjectType, defender: &ObjectType,
+) -> i64 {
+    if !attacker.gunner { return vehicle_exchange_output(rules, attacker, defender); }
+    let Some(weapon) = obs.active_gunner_weapon(rules, id) else { return 0; };
+    if weapon.never_use || weapon.damage <= 0
+        || !rules.weapon_projectile(weapon).is_some_and(|p| p.ag) { return 0; }
+    let Some(head) = weapon.warhead.as_deref().and_then(|name| rules.warhead(name))
+    else { return 0; };
+    let multiplier = f64::from_bits(
+        head.interaction(defender.armor_id()).multiplier().bits());
+    if multiplier <= 0.0 { return 0; }
+    let hit = (f64::from(weapon.damage) * multiplier).clamp(0.0, 100_000.0) as i64;
+    hit.saturating_mul(i64::from(weapon.burst.max(1))).saturating_mul(90)
+        / i64::from(weapon.rof.max(15))
+}
+
 /// True only for a *pronounced* losing solo exchange, not an equal fight.
 /// An overwhelming allied tank group can still make a good coordinated push.
 fn losing_vehicle_trade(our_dps: i64, their_dps: i64, our_hp: i32, their_hp: i32,
@@ -307,8 +340,8 @@ pub(super) fn unfavourable_vehicle_duel(
     let (Some(own_hp), Some(enemy_hp)) = (obs.health(actor), obs.health(enemy))
     else { return false; };
     losing_vehicle_trade(
-        vehicle_exchange_output(rules, ours, theirs),
-        vehicle_exchange_output(rules, theirs, ours), own_hp, enemy_hp,
+        vehicle_exchange_output_live(rules, obs, actor, ours, theirs),
+        vehicle_exchange_output_live(rules, obs, enemy, theirs, ours), own_hp, enemy_hp,
         effective_reach_against(rules, obs, actor, enemy),
         effective_reach_against(rules, obs, enemy, actor),
     )

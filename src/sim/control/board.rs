@@ -798,7 +798,9 @@ fn order_stands(
             // captured building until the last hit point is gone. Asking
             // `is_hostile` per frame is the whole point — the order has to die
             // with the enmity it was issued under.
-            if !obs.is_hostile(target) {
+            if !obs.is_hostile(target)
+                && !obs.can_control_neutral(rules, actor, target)
+            {
                 return None;
             }
             (obs.attack_target(actor) == Some(target)).then_some("on that target")

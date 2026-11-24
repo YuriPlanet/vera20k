@@ -465,6 +465,10 @@ impl Unit {
             Some(
                 MissionType::Capture
                     | MissionType::Enter
+                    // Native Grind click runs Eaten, not Enter. Treat it as
+                    // a long-running building-entry job or the task retry
+                    // layer will restart the walk every 75 frames.
+                    | MissionType::Eaten
                     | MissionType::Repair
                     | MissionType::Sabotage
             )

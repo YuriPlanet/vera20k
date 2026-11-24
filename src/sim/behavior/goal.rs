@@ -36,6 +36,10 @@ pub enum Goal {
     Capture { target: u64 },
     /// Enter a building or transport (`Command::MegaMission`, mission Enter).
     Enter { target: u64 },
+    /// Native Grinder click: `EntryClickAction::Grind` queues Eaten, not
+    /// Enter. A controlled prize sent on Enter would reach the building
+    /// but never execute the native refund/destruction.
+    Grind { target: u64 },
     /// Harvest an ore cell (`Command::MegaMission`, mission Harvest).
     Harvest { cell: (u16, u16) },
     /// Deploy an MCV or a simple deployer (`Command::DeployMcv`).
@@ -106,6 +110,12 @@ impl Goal {
                 target: None,
                 destination: Some(TargetKind::Entity(target)),
             },
+            Self::Grind { target } => Command::MegaMission {
+                entity_id: actor,
+                mission: MissionType::Eaten,
+                target: None,
+                destination: Some(TargetKind::Entity(target)),
+            },
             Self::Harvest { cell } => Command::MegaMission {
                 entity_id: actor,
                 mission: MissionType::Harvest,
@@ -119,5 +129,27 @@ impl Goal {
                 transport_id: actor,
             },
         }
+    }
+}
+
+#[cfg(all(test, tests_sim_a_b))]
+mod grinder_goal_tests {
+    use super::*;
+
+    #[test]
+    fn grinder_click_is_eaten_not_transport_enter() {
+        assert!(matches!(
+            Goal::Grind { target: 71 }.command(19),
+            Command::MegaMission {
+                entity_id: 19,
+                mission: MissionType::Eaten,
+                target: None,
+                destination: Some(TargetKind::Entity(71)),
+            }
+        ));
+        assert!(matches!(
+            Goal::Enter { target: 71 }.command(19),
+            Command::MegaMission { mission: MissionType::Enter, .. }
+        ));
     }
 }

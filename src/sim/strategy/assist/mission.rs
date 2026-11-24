@@ -109,6 +109,8 @@ fn valid_goal(
             && orders::admits(rules, obs, actor, &goal),
         Goal::Enter { target } => obs.health(target).is_some()
             && orders::admits(rules, obs, actor, &goal),
+        Goal::Grind { target } => obs.controlled_by_own_controller(actor)
+            && obs.can_enter_grinder(rules, actor, target),
         Goal::Move { cell } | Goal::AttackMove { cell }
         | Goal::GuardAt { cell } => orders::on_map(cell, obs.map_extent())
             && orders::reachable(rules, obs, actor, cell),
@@ -213,7 +215,7 @@ pub(super) fn resume(
         };
         let (target, cell) = match goal {
             Goal::Attack { target } | Goal::Capture { target }
-            | Goal::Enter { target } => (Some(target), None),
+            | Goal::Enter { target } | Goal::Grind { target } => (Some(target), None),
             Goal::Move { cell } | Goal::AttackMove { cell }
             | Goal::GuardAt { cell } | Goal::Harvest { cell } => (None, Some(cell)),
             Goal::Guard => (None, None),

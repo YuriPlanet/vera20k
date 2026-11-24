@@ -513,6 +513,48 @@ impl<'a> Observation<'a> {
         Some(controller_id)
     }
 
+    /// Current Gunner weapon *on this specific vehicle*. Its passenger has
+    /// already selected the chassis slot in the native passenger engine.
+    /// The 17 weapon records in an IFV type are alternatives, not a loadout.
+    pub fn active_gunner_weapon<'r>(
+        &self, rules: &'r RuleSet, actor: u64,
+    ) -> Option<&'r crate::rules::weapon_type::WeaponType> {
+        let entity = self.sim.entities().get(actor)?;
+        let ty = self.sim.object_type(entity.type_ref(), rules)?;
+        if !ty.gunner { return None; }
+        crate::sim::combat::combat_weapon::current_weapon(
+            entity, ty, self.sim.entities(), rules, self.sim.interner(),
+        )
+    }
+
+    /// A controlled prize is eligible for recycling only if its *current*
+    /// controller is one of this player's own objects. A mere unit ownership
+    /// change (engineer capture, crate, factory production) is not proof.
+    pub fn controlled_by_own_controller(&self, actor: u64) -> bool {
+        let Some(unit) = self.sim.entities().get(actor) else { return false; };
+        if unit.owner() != self.house { return false; }
+        let Some(controller) = unit.seldom.mind_control.controller() else { return false; };
+        self.sim.entities().get(controller).is_some_and(|entity|
+            entity.owner() == self.house && entity.health.current() > 0)
+    }
+
+    /// Native player click admission for entering an owned grinder; unlike a
+    /// transport it has no passenger seats, so `can_enter_transport` is false.
+    pub fn can_enter_grinder(&self, rules: &RuleSet, actor: u64, grinder: u64) -> bool {
+        self.sim.entry_click_action(
+            actor, grinder,
+            crate::sim::world::EntryBaseAction::Select, rules,
+        ) == Some(crate::sim::world::EntryClickAction::Grind)
+    }
+
+    /// Exact native refund, including `Soylent=`, owner/country modifiers and
+    /// the current rule policy. Never use an arbitrary fraction of Cost=.
+    pub fn grinder_refund(&self, rules: &RuleSet, actor: u64) -> Option<i32> {
+        let entity = self.sim.entities().get(actor)?;
+        (entity.owner() == self.house)
+            .then(|| crate::sim::production::techno_refund(self.sim, rules, actor))?
+    }
+
     /// Whether a harvester's hold is full: it should be on its way to a
     /// refinery, not standing where it filled.
     pub fn miner_cargo_full(&self, entity_id: u64) -> Option<bool> {
@@ -695,6 +737,64 @@ impl<'a> Observation<'a> {
                     && own.health.current() > 0
             })
         })
+    }
+
+    /// Visible, passive, unarmed civilian vehicles which might be acquired by
+    /// a native mind-control weapon. The ordinary enemy iterator deliberately
+    /// excludes neutral civilians; this is a separate read-only opportunity
+    /// list and NEVER permission for a normal combat weapon to attack them.
+    pub fn visible_neutral_vehicles<'r>(
+        &'r self,
+        rules: &'r RuleSet,
+    ) -> impl Iterator<Item = EnemyEntity> + 'r {
+        self.sim.entities().values().filter_map(move |entity| {
+            if entity.owner() == self.house || entity.lifecycle.in_limbo()
+                || entity.health.current() <= 0
+                || !self.is_cell_visible(entity.position.rx(), entity.position.ry())
+                || !self.sim.houses().get(&entity.owner())
+                    .is_some_and(|house| house.multiplay_passive())
+                || self.is_hostile(entity.stable_id())
+            { return None; }
+            let ty = self.sim.object_type(entity.type_ref(), rules)?;
+            if ty.category != ObjectCategory::Vehicle
+                || ty.immune_to_psionics || ty.balloon_hover
+                || ty.resource_gatherer || ty.harvester
+                || ty.soylent <= 0
+                || (0..ty.weapon_record_count()).any(|slot|
+                    ty.weapon_at(slot).and_then(|name| rules.weapon(name))
+                        .is_some_and(|weapon| !weapon.never_use && weapon.damage > 0))
+                || entity.seldom.mind_control.controller().is_some()
+            { return None; }
+            Some(EnemyEntity {
+                entity_id: entity.stable_id(),
+                type_id: entity.type_ref(),
+                cell: (entity.position.rx(), entity.position.ry()),
+            })
+        })
+    }
+
+    /// Narrow, *nonlethal* exception to the normal hostile-target order gate.
+    /// Only a real, currently selected native MindControl weapon against a
+    /// visible neutral civilian vehicle can pass. Never let a rifleman or a
+    /// normal gun force-fire passive residents through this policy.
+    pub fn can_control_neutral(
+        &self, rules: &RuleSet, controller: u64, target: u64,
+    ) -> bool {
+        if !self.own_entities().any(|unit|
+            unit.entity_id == controller && unit.orderable)
+            || !self.visible_neutral_vehicles(rules).any(|neutral|
+                neutral.entity_id == target)
+        { return false; }
+        let Some(actor) = self.sim.entities().get(controller) else { return false; };
+        let Some(kind) = self.sim.object_type(actor.type_ref(), rules) else { return false; };
+        if actor.capture_manager.is_none() { return false; }
+        let Some(weapon) = crate::sim::combat::combat_weapon::current_weapon(
+            actor, kind, self.sim.entities(), rules, self.sim.interner())
+        else { return false; };
+        let psychic = weapon.warhead.as_deref()
+            .and_then(|name| rules.warhead(name))
+            .is_some_and(|head| head.mind_control);
+        psychic && !weapon.never_use && self.can_engage(rules, controller, target)
     }
 
     /// Two *currently visible* enemy objects belong to the same owner.
@@ -1428,18 +1528,10 @@ impl<'a> Observation<'a> {
         };
         let armour = target_type.map_or(
             crate::rules::armor::ArmorId::default(), |ty| ty.armor_id());
-        (0..unit_type.weapon_record_count()).any(|slot| {
-            let Some(name) = unit_type.weapon_at(slot) else {
-                return false;
-            };
-            let Some(weapon) = rules.weapon(name) else {
-                return false;
-            };
-            if weapon.never_use {
-                return false;
-            }
-            if air && !rules.weapon_projectile(weapon)
-                .is_some_and(|projectile| projectile.aa)
+        let weapon_answers = |weapon: &crate::rules::weapon_type::WeaponType| {
+            if weapon.never_use { return false; }
+            if !rules.weapon_projectile(weapon)
+                .is_some_and(|projectile| if air { projectile.aa } else { projectile.ag })
             {
                 // A projectile with no AA flag cannot hit a flying Kirov,
                 // even when the object lives in VehicleTypes.
@@ -1459,7 +1551,16 @@ impl<'a> Observation<'a> {
             // acquisition and plain zero for fire; a weapon that does no
             // damage is not a weapon for this target either way.
             f64::from_bits(warhead.interaction(armour).multiplier().bits()) != 0.0
-        })
+        };
+        if unit_type.gunner {
+            // The current passenger, not any possible passenger in a mod,
+            // selects a single native Gunner slot for the whole vehicle.
+            return self.active_gunner_weapon(rules, unit)
+                .is_some_and(weapon_answers);
+        }
+        (0..unit_type.weapon_record_count()).any(|slot|
+            unit_type.weapon_at(slot).and_then(|name| rules.weapon(name))
+                .is_some_and(|weapon| weapon_answers(weapon)))
     }
 
     /// Why `firer` may not fire at `target` right now, when it may not. `None`

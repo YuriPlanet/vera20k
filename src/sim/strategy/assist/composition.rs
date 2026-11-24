@@ -21,7 +21,7 @@
 
 use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
-use crate::rules::unit_role::ROLES;
+use crate::rules::unit_role::{ROLES, Role};
 use crate::sim::control::brain::Outbox;
 use crate::sim::control::intent::Intent;
 use crate::sim::control::observation::Observation;
@@ -297,6 +297,12 @@ pub(super) fn fill_lines(
         let urgent_capture = category == ProductionCategory::Infantry
             && (urgent_engineer(brain, rules, obs, budget.free).is_some()
                 || maintenance_engineer(brain, rules, obs, budget.free).is_some());
+        // A useful empty IFV or open-top fortress has a genuine capability
+        // gap when no existing spare soldier can fill its fire port. Permit
+        // *one* rules-derived passenger purchase even if generic infantry
+        // share has reached its ceiling, but not over the strategic lab bank.
+        let combo_due = category == ProductionCategory::Infantry
+            && combo_passenger_purchase(brain, rules, obs, budget.free).is_some();
         // The wallet saved for a scarce-map lab should not be silently spent
         // by ordinary unit ranking, but an engineer or spy with a real mission
         // may still use its own specialist priority.
@@ -307,7 +313,7 @@ pub(super) fn fill_lines(
         if (bank_for_tech || bank_for_heavy)
             && !urgent_infiltration && !urgent_capture { continue; }
         if barracks_holds && category == ProductionCategory::Infantry
-            && !urgent_infiltration && !urgent_capture
+            && !urgent_infiltration && !urgent_capture && !combo_due
         { continue; }
         // A line holding a product, a queue or a finished object is working and
         // is not given another request; a line with nothing in it — including
@@ -846,6 +852,61 @@ fn battery_counter_product<'r>(
     Some((price <= free).then_some((ty,id)))
 }
 
+/// Fill one *currently empty* combat carrier by manufacturing a genuine
+/// rules-compatible passenger, only after the economy can afford a luxury
+/// combined platform. Do not buy a passenger while there is already a
+/// suitable, free soldier who can board it. The carrier itself and the
+/// soldier are found from actual ownership and current `CanBuild`; this also
+/// discovers cross-faction combinations after acquiring another tech tree.
+fn combo_passenger_purchase<'r>(
+    brain: &AssistBrain, rules: &'r RuleSet, obs: &Observation<'_>, free: i32,
+) -> Option<(&'r ObjectType, InternedId)> {
+    if brain.director.under_attack_now() || brain.director.recovering_income()
+        || brain.census.refineries < 2 || brain.census.harvesters < 2
+        || brain.census.fighters < 12 || free < 4_000
+    { return None; }
+    let available_defenders = brain.squads.squad(super::squads::Role::Defend)
+        .map(|squad| &squad.members);
+    let carrier = brain.census.units.iter()
+        .filter(|u| u.controllable() && !u.in_service())
+        .filter_map(|u| {
+            let ty = obs.entity_type(rules, u.entity_id)?;
+            ((ty.gunner || ty.open_topped) && ty.passengers > 0
+                && obs.passengers(u.entity_id) < ty.passengers as usize
+                && !ty.naval
+                && brain.census.base_cell.is_some_and(|home|
+                    super::squared_distance(home, u.cell) <= 24 * 24))
+                .then_some((u, ty))
+        })
+        .find(|(carrier,ty)| !brain.census.units.iter().any(|soldier| {
+            if !soldier.controllable() || soldier.in_service()
+                || !available_defenders.is_some_and(|members|
+                    members.contains(&soldier.entity_id))
+                || soldier.slot != Slot::Infantry || !soldier.traits.combat
+                || obs.inside_transport(soldier.entity_id).is_some()
+                || super::squared_distance(soldier.cell, carrier.cell) > 24 * 24
+                || !obs.can_enter_transport(rules, soldier.entity_id, carrier.entity_id)
+            { return false; }
+            obs.entity_type(rules, soldier.entity_id).is_some_and(|kind|
+                super::combinations::passenger_value(rules,obs,ty,kind,carrier.cell) > 0)
+        }))?;
+    build::class_types(rules, obs, ObjectCategory::Infantry)
+        .filter(|(ty,_)| super::orders::is_combat_unit(rules,ty)
+            && !ty.engineer && !ty.agent && !ty.infiltrate
+            && !ty.c4 && !ty.naval)
+        .filter(|(ty,_)| obs.cost_of(rules,ty) <= free.saturating_sub(2_000))
+        .filter_map(|(ty,id)| {
+            let value=super::combinations::passenger_value(
+                rules,obs,carrier.1,ty,carrier.0.cell);
+            (value > 0).then_some((ty,id,value,obs.cost_of(rules,ty)))
+        })
+        .max_by_key(|(_,id,value,cost)| (
+            value.saturating_mul(1_000) / i64::from((*cost).max(1)),
+            *value, std::cmp::Reverse(*id),
+        ))
+        .map(|(ty,id,_,_)| (ty,id))
+}
+
 /// What one idle line starts next.
 fn product_for<'r>(
     brain: &mut AssistBrain,
@@ -963,6 +1024,14 @@ fn product_for<'r>(
         && !brain.director.under_attack_now()
         && !brain.director.recovering_income()
         && let Some(found) = early_spy_infiltration(brain, rules, obs, budget.free)
+    {
+        return Some(found);
+    }
+    // This is not a fixed "Shock Trooper + IFV" recipe: for each actual
+    // buildable infantry type evaluate IFVMode or OpenTransportWeapon on the
+    // empty carrier and buy the best cost-adjusted, legal combat seat.
+    if category == ProductionCategory::Infantry
+        && let Some(found) = combo_passenger_purchase(brain, rules, obs, budget.free)
     {
         return Some(found);
     }
@@ -1512,6 +1581,48 @@ fn fighter<'r>(
             }))
             .min_by_key(|(_,id,cost)| (brain.census.type_count(*id), *cost, *id))
         { return Some((ty,id)); }
+    }
+
+    // A campaign which has already secured income converts surplus into
+    // endgame strength. This reads the live rule-derived role weights and the
+    // current legal production choices: a mod's best siege/armour unit may
+    // have a completely different type name, weapon and cost band.
+    if category == ObjectCategory::Vehicle && brain.campaign.prefer_quality()
+        && can_field_advanced
+    {
+        let pool: usize = brain.census.tiers[slot_category(category).index()].iter().sum();
+        let line_price = super::economy::line_vehicle_floor(rules, obs)
+            .unwrap_or(COMBAT_MIN_CREDITS).max(1);
+        let heavy: Vec<(&ObjectType, InternedId, i32)> = affordable.iter().copied()
+            .filter(|(_,_,cost)| *cost >= line_price.saturating_mul(3) / 2)
+            .collect();
+        let heavy_held: usize = brain.census.by_type.iter().filter_map(|(id,count)| {
+            obs.object_type(rules, *id).filter(|ty| {
+                ty.category == ObjectCategory::Vehicle
+                    && obs.cost_of(rules, ty) >= line_price.saturating_mul(3) / 2
+            }).map(|_| *count)
+        }).sum();
+        if !heavy.is_empty() && pool >= 6 && heavy_held.saturating_mul(5) < pool.saturating_mul(2) {
+            let scored: Vec<_> = {
+                let roles = brain.roles(rules);
+                heavy.iter().copied().map(|(ty,id,cost)| {
+                    let weight = roles.weights(&ty.id);
+                    // Structure-busting and stand-off fire matter for the
+                    // final assault; armoured duels and AA remain valuable.
+                    let score = 0.45 * weight.get(Role::AntiStructure)
+                        + 0.4 * weight.get(Role::Artillery)
+                        + 0.25 * weight.get(Role::AntiVehicle)
+                        + 0.10 * weight.get(Role::AntiAir);
+                    (ty,id,cost,score)
+                }).collect()
+            };
+            if let Some((ty,id,_,_)) = scored.into_iter()
+                .filter(|(_,_,_,score)| *score > 0.0)
+                .max_by(|a,b| a.3.total_cmp(&b.3)
+                    .then_with(|| brain.census.type_count(b.1).cmp(&brain.census.type_count(a.1)))
+                    .then_with(|| b.2.cmp(&a.2)))
+            { return Some((ty,id)); }
+        }
     }
 
     // Reserve a bounded share for unlocked advanced weapons. Without this,

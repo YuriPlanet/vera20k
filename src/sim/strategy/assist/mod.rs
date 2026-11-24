@@ -122,8 +122,10 @@ pub(super) mod advanced;
 pub(super) mod army;
 pub(super) mod avoidance;
 pub(super) mod build;
+pub(super) mod campaign;
 pub(super) mod census;
 pub(super) mod composition;
+pub(super) mod combinations;
 pub(super) mod dodge;
 pub(super) mod economy;
 pub(super) mod escort;
@@ -136,9 +138,11 @@ pub(super) mod orders;
 pub(super) mod ore;
 pub(super) mod pilots;
 pub(super) mod plan;
+pub(super) mod recycle;
 pub(super) mod squads;
 pub(super) mod strategy;
 pub(super) mod tactics;
+pub(super) mod tasks;
 pub(super) mod terrain;
 pub(super) mod threats;
 pub(super) mod tracked;
@@ -229,6 +233,12 @@ pub struct AssistBrain {
     pub(super) squads: squads::Squads,
     /// Persistent priorities shared by base, factories and expansion.
     pub(super) director: strategy::Director,
+    /// One campaign-wide commitment: keep the fist for a decisive operation
+    /// while scouts, raiders, defenders and miners work uninterrupted.
+    pub(super) campaign: campaign::Campaign,
+    /// Throttle native grinder recycling so a controlled prize has time to
+    /// reach the building without entering a new order auction every tick.
+    pub(super) recycle_after: u64,
     /// Engineer-to-defender escort assignments; separate from player groups
     /// and from the squads that decide who may be spared.
     pub(super) escorts: BTreeMap<u64, escort::Escort>,
@@ -307,6 +317,12 @@ pub struct AssistBrain {
     pub(super) assault_wait: Option<(u64, u64)>,
     /// Reach of the gun line currently preventing this push, in map cells.
     pub(super) siege_reach: Option<i32>,
+    /// A confirmed spy power operation persists across target re-evaluation,
+    /// including the moment the tower shuts down and the siege gate disappears.
+    pub(super) blackout: Option<advance::BlackoutOperation>,
+    /// Reissuing a retreat every tick restarts native Move; each withdrawal
+    /// attempt gets an observable travel interval before it can be retried.
+    pub(super) blackout_withdraw_after: BTreeMap<u64, u64>,
     /// The house's income, measured: samples of `Observation::earned` a window
     /// apart. Not a simulation stream and not the brain's generator — it is a
     /// reading of the house's own books, kept here because the brain is the
@@ -416,6 +432,9 @@ pub struct AssistBrain {
     /// target to be attempted again after a short recon/recruit window.
     pub(super) spy_attempts: BTreeMap<u64, (u64, (u16, u16), u64)>,
     pub(super) spy_target_retry: BTreeMap<u64, u64>,
+    /// A specialist that observed a newly armed route temporarily rejects the
+    /// exact dangerous objective. Never retry it on the next frame unchanged.
+    pub(super) specialist_risk_after: BTreeMap<(u64, u64), u64>,
     /// Last *attempt* by effect category, not a claim of success. Repeated
     /// money/power attempts should not crowd out an available laboratory or
     /// production-factory infiltration when the route is equally safe.
@@ -557,6 +576,8 @@ impl AssistBrain {
             tracked: Tracker::new(),
             squads: squads::Squads::new(),
             director: strategy::Director::default(),
+            campaign: campaign::Campaign::default(),
+            recycle_after: 0,
             escorts: BTreeMap::new(),
             site_jobs: BTreeMap::new(),
             outpost_builds: BTreeMap::new(),
@@ -580,6 +601,8 @@ impl AssistBrain {
             siege_wait: None,
             assault_wait: None,
             siege_reach: None,
+            blackout: None,
+            blackout_withdraw_after: BTreeMap::new(),
             income: plan::IncomeMeter::new(),
             avoid_cursor: 0,
             avoid_deadends: BTreeMap::new(),
@@ -603,6 +626,7 @@ impl AssistBrain {
             spy_sites: BTreeMap::new(),
             spy_attempts: BTreeMap::new(),
             spy_target_retry: BTreeMap::new(),
+            specialist_risk_after: BTreeMap::new(),
             spy_kind_recent: BTreeMap::new(),
             spy_still: BTreeMap::new(),
             spy_uniform_retry: BTreeMap::new(),
@@ -823,15 +847,13 @@ impl Brain for AssistBrain {
                 unit.cell, obs.destination(unit.entity_id));
         }
         self.void_orders_the_world_does_not_show();
+        self.tracked.tasks.reconcile(obs.tick(), rules, obs, &self.census);
         // What each unit is *for*, before anything decides what it does: the
         // membership is rebuilt on its own term, not every frame.
         let opponents: BTreeSet<_> = obs.visible_enemy_entities()
             .filter_map(|enemy| obs.visible_enemy_house(enemy.entity_id))
             .collect();
         self.squads.regroup_focused(obs.tick(), &self.census, opponents.len() > 1);
-        // Before micro/dodge own the frame, preserve a truly synchronized
-        // siege charge already committed against a visible live battery.
-        advance::prepare_siege_charge(self, rules, obs);
         let attack_members = self.squads.squad(squads::Role::Attack)
             .map_or(0, |squad| squad.members.len());
         let signals = strategy::Signals::read(
@@ -856,6 +878,24 @@ impl Brain for AssistBrain {
                 signals.raiders_visible, signals.far_ore_stock,
                 signals.income_per_minute,
             );
+        }
+        let emergency = matches!(self.director.objective(),
+            strategy::Objective::RecoverYard | strategy::Objective::RecoverIncome
+                | strategy::Objective::HoldBase);
+        if let Some((before, after)) = self.campaign.observe(
+            obs.tick(), rules, obs, &self.census, &self.squads,
+            signals, emergency, self.push_target.map(|(_, _, cell)| cell),
+        ) {
+            log::info!(
+                "auto play: campaign {:?} -> {:?} route={:?} target_fist={} seen_opponents={} tick={}",
+                before, after, self.campaign.route(), self.campaign.wanted(),
+                obs.enemy_house_count(), obs.tick(),
+            );
+        }
+        // A siege charge belongs to a committed operation. Do not prepare
+        // another suicide wave while a healthy house is deliberately saving.
+        if !self.campaign.holding_fist() {
+            advance::prepare_siege_charge(self, rules, obs);
         }
         // What the wallet can still spend, and what the house earns: the two
         // numbers every step below is gated on, so they are read once.
@@ -1055,9 +1095,14 @@ impl Brain for AssistBrain {
             // Boarding and engineer repairs reserve only a spare specialist.
             // Run them before generic capture selection, which otherwise
             // sends every engineer to the first visible neutral building.
+            // Recycle only already controlled, low-operational-value prizes;
+            // claim their long trip before generic combat/transport steps.
+            recycle::run(self, rules, obs, out);
             advanced::free_repair_ifv_seat(self, rules, obs, out);
             advanced::combat_carriers(self, rules, obs, out);
             orders::repair_garrisons(self, rules, obs, out);
+            orders::supervise_specialists(self, rules, obs, out);
+            orders::resume_specialist_jobs(self, rules, obs, out);
             orders::captures(self, rules, obs, out);
             orders::protect_engineer_prizes(self, rules, obs, out);
         }
@@ -1170,11 +1215,13 @@ impl Brain for AssistBrain {
             // A player scope change is a hand-off, not a native rejection.
             // Do not resurrect the old strategic mission on a later toggle.
             self.tracked.forget_primary(*actor);
+            self.tracked.tasks.release(*actor);
         }
     }
 
     fn orders_refused(&mut self, refused: &[(u64, Goal)]) {
         for (actor, goal) in refused {
+            self.tracked.tasks.refused(*actor, *goal);
             if let Goal::Enter { target } = *goal {
                 // A refused boarding command cannot reserve a ferry (and
                 // thereby withhold the engineer from captures) for 3600 ticks.

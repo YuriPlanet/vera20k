@@ -61,6 +61,7 @@ use crate::sim::strategy::assist::AssistBrain;
 use super::advance::cell_distance;
 use super::squared_distance;
 use super::tracked::TrackedKind;
+use super::tasks::JobKind;
 
 mod common;
 
@@ -159,6 +160,7 @@ pub(super) fn captures(
         log::debug!("auto play: spy {agent} disappeared at target {building}; outcome unconfirmed, retry permitted later");
     }
     brain.spy_target_retry.retain(|_,until| *until > tick);
+    brain.specialist_risk_after.retain(|_, until| *until > tick);
     brain.spy_kind_recent.retain(|_, when|
         tick.saturating_sub(*when) < 2_400);
     brain.spy_still.retain(|agent,_| alive.contains(agent));
@@ -341,6 +343,7 @@ pub(super) fn captures(
             } else if tick.saturating_sub(state.1) >= 300
                 && let Some((building, _, _)) = brain.spy_attempts.remove(&unit.entity_id)
             {
+                brain.tracked.tasks.release(unit.entity_id);
                 brain.spy_target_retry.insert(building, tick.saturating_add(360));
                 brain.tracked.void(unit.entity_id, TrackedKind::Capture);
                 brain.tracked.forget_primary(unit.entity_id);
@@ -425,12 +428,22 @@ pub(super) fn captures(
         }
         // A spy takes what is worth most; anyone else takes what is nearest.
         let chosen = if ty.agent {
-            spy_targets
+            let reserved = brain.tracked.tasks.get(unit.entity_id)
+                .filter(|job| job.kind == JobKind::Spy).and_then(|job|
+                    spy_targets.iter().find(|(target, _)| Some(target.entity_id) == job.target
+                        && obs.can_take_building(rules, unit.entity_id, target.entity_id))
+                    .map(|(target, _)| *target));
+            reserved.or_else(|| spy_targets
                 .iter()
                 .filter(|(target, _)| obs.can_take_building(
                     rules, unit.entity_id, target.entity_id))
                 .filter(|(target, _)| !brain.tracked.claimed_by_other(
                     tick, TrackedKind::Capture, target.entity_id, unit.entity_id))
+                .filter(|(target, _)| !brain.tracked.tasks.reserved(
+                    JobKind::Spy, target.entity_id, unit.entity_id))
+                .filter(|(target, _)| !brain.specialist_risk_after
+                    .get(&(unit.entity_id, target.entity_id))
+                    .is_some_and(|until| *until > tick))
                 // A safe target cell is not enough if the shortest approach
                 // runs through a dog or a mind-controller. Keep the spy for
                 // another opportunity instead of consuming it for nothing.
@@ -448,7 +461,7 @@ pub(super) fn captures(
                 .max_by_key(|(target, value)| (spy_target_score(
                     brain, rules, obs, target, *value, tick),
                     -squared_distance(unit.cell, target.cell)))
-                .map(|(target, _)| *target)
+                .map(|(target, _)| *target))
         } else {
             // One building takes one engineer. Without this both were sent at
             // the same derrick, the first took it, and the second arrived at a
@@ -467,19 +480,21 @@ pub(super) fn captures(
                         TrackedKind::Capture,
                         target.entity_id,
                         unit.entity_id,
-                    )
+                    ) && !brain.tracked.tasks.reserved(
+                        JobKind::Engineer, target.entity_id, unit.entity_id)
+                        && !brain.specialist_risk_after
+                            .get(&(unit.entity_id, target.entity_id))
+                            .is_some_and(|until| *until > tick)
                 })
                 .collect();
-            engineer_preference(
-                rules,
-                obs,
-                &free,
-                &hostile,
-                &guards,
-                &structures,
-                unit.cell,
-                brain.census.refineries < DERRICK_WORTH_REFINERIES,
-            )
+            brain.tracked.tasks.get(unit.entity_id)
+                .filter(|job| job.kind == JobKind::Engineer)
+                .and_then(|job| free.iter().find(|target| Some(target.entity_id) == job.target)
+                    .copied())
+                .or_else(|| engineer_preference(
+                    rules, obs, &free, &hostile, &guards, &structures,
+                    unit.cell, brain.census.refineries < DERRICK_WORTH_REFINERIES,
+                ))
         };
         let Some(target) = chosen else {
             // A spy may have been produced *after* the dog last saw the
@@ -523,7 +538,7 @@ pub(super) fn captures(
         // The aim is not 'ignore towers' but 'ignore towers that truly regard
         // this spy as friendly'. A native disguise rejected by the observer
         // makes all regular weapons dangerous along the route.
-        let guns_unsafe = ty.agent && !wearing_enemy_uniform
+        let guns_unsafe = (!ty.agent || !wearing_enemy_uniform)
             && spy_gun_crossfire(rules, obs, unit.entity_id, unit.cell, target.cell);
         let close = route_threats.iter().any(|cell| {
             squared_distance(*cell, unit.cell) <= CAPTURE_CLEAR_CELLS * CAPTURE_CLEAR_CELLS
@@ -531,13 +546,21 @@ pub(super) fn captures(
         let crossed = tick % CAPTURE_RECHECK_FRAMES == 0
             && path_crosses(route_threats, unit.cell, target.cell, PATH_CLEAR_CELLS);
         if close || crossed || guns_unsafe {
+            brain.tracked.tasks.release(unit.entity_id);
+            brain.specialist_risk_after.insert((unit.entity_id, target.entity_id),
+                tick.saturating_add(240));
             brain.tracked.void(unit.entity_id, TrackedKind::Capture);
             // The walk is no longer safe: it is an abort, not a
             // temporary dodge that should later restore Capture. Clear
             // its strategic primary so a bodyguard also stands down.
             brain.tracked.forget_primary(unit.entity_id);
+            // Cancel an already accepted native Capture: forgetting the L4
+            // intent alone does not stop a specialist walking into gunfire.
+            if !out.ordered_this_frame(unit.entity_id) {
+                let _ = out.want(unit.entity_id, 0, Goal::Stop);
+            }
             log::debug!(
-                "auto play: engineer {} drops the walk, the ground turned bad",
+                "auto play: specialist {} drops the walk, the ground turned bad",
                 unit.entity_id
             );
             continue;
@@ -552,6 +575,9 @@ pub(super) fn captures(
         ) {
             continue;
         }
+        brain.tracked.tasks.claim(tick, unit.entity_id,
+            if ty.agent { JobKind::Spy } else { JobKind::Engineer },
+            Some(target.entity_id), Some(target.cell), unit.cell);
         // Remember the requested one-time infiltration class until the spy
         // disappears, then check the *actual* house effect before crediting it.
         // Death on the route must never count as a successful unlock.
@@ -568,6 +594,138 @@ pub(super) fn captures(
             }
         }
         issued += 1;
+    }
+}
+
+/// Revalidate the *entire remaining path* of each live specialist mission.
+/// An old native Capture keeps walking even if a new tower is discovered.
+/// Merely removing the tracked intent does not stop it; this pass must replace
+/// the dangerous native mission with a safe extraction or Stop order.
+/// Only visible enemies contribute to the veto, so fog remains honest.
+pub(super) fn supervise_specialists(
+    brain: &mut AssistBrain, rules: &RuleSet,
+    obs: &Observation<'_>, out: &mut Outbox,
+) {
+    let tick = obs.tick();
+    let jobs: Vec<_> = brain.tracked.tasks.entries()
+        .filter(|(_, job)| matches!(job.kind, JobKind::Engineer | JobKind::Spy))
+        .collect();
+    for (actor, job) in jobs.into_iter().take(FORCE_ORDERS_PER_FRAME) {
+        let Some(unit) = brain.census.units.iter()
+            .find(|unit| unit.entity_id == actor && unit.controllable()) else { continue };
+        let Some(to) = job.cell else { continue };
+        let disguised = job.kind == JobKind::Spy
+            && job.target.is_some_and(|id| obs.disguised_to_visible_enemy(actor, id));
+        let watched = obs.visible_enemy_entities().any(|enemy| {
+            let Some(ty) = obs.entity_type(rules, enemy.entity_id) else { return false };
+            let watcher = super::census::Traits::of(rules, ty).scout
+                || mind_controls(rules, ty)
+                || super::kite::carries_parasite(rules, ty);
+            if job.kind == JobKind::Spy && disguised {
+                watcher && path_crosses(&[enemy.cell], unit.cell, to, SPY_WATCH_CELLS)
+            } else {
+                (watcher && job.kind == JobKind::Spy
+                    && path_crosses(&[enemy.cell], unit.cell, to, SPY_WATCH_CELLS))
+                    || (obs.can_hurt(rules, enemy.entity_id, actor)
+                        && super::tactics::effective_reach_against(
+                            rules, obs, enemy.entity_id, actor) > 0
+                        && path_crosses(&[enemy.cell], unit.cell, to,
+                            super::tactics::effective_reach_against(
+                                rules, obs, enemy.entity_id, actor).saturating_add(1)))
+            }
+        });
+        if !watched { continue; }
+        brain.tracked.tasks.release(actor);
+        brain.tracked.void(actor, TrackedKind::Capture);
+        brain.tracked.forget_primary(actor);
+        if let Some(target) = job.target {
+            brain.specialist_risk_after.insert((actor, target), tick.saturating_add(240));
+            if job.kind == JobKind::Spy {
+                brain.spy_target_retry.insert(target, tick.saturating_add(180));
+                brain.spy_attempts.remove(&actor);
+            }
+        }
+        // Prefer a reachable nearby cell outside current visible weapons.
+        // An unactionable Stop is the fallback, never a blind walk through the
+        // same defence to a distant home anchor.
+        let zone = obs.entity_type(rules, actor).map(|ty| ty.movement_zone);
+        let safe = [(0, -8), (8, 0), (0, 8), (-8, 0),
+            (-6, -6), (6, -6), (6, 6), (-6, 6),
+            (0, -12), (12, 0), (0, 12), (-12, 0)]
+            .into_iter().filter_map(|(dx, dy)| {
+                let x = u16::try_from(i32::from(unit.cell.0) + dx).ok()?;
+                let y = u16::try_from(i32::from(unit.cell.1) + dy).ok()?;
+                let cell = (x, y);
+                (obs.is_cell_in_playfield(x, y) && obs.is_ground_walkable(x, y)
+                    && zone.is_some_and(|zone| obs.can_reach(zone, unit.cell, cell))
+                    && !super::tactics::unsafe_post(rules, obs, actor, cell))
+                    .then_some(cell)
+            }).min_by_key(|cell| (squared_distance(unit.cell, *cell), *cell));
+        let command = safe.map_or(Goal::Stop, |cell| Goal::Move { cell });
+        if out.want(actor, 0, command) {
+            log::info!("auto play: {:?} {actor} aborts unsafe capture {:?}, extracts to {:?}",
+                job.kind, job.target, safe);
+        }
+    }
+}
+
+/// Bring a long-running job back after its native Move/Capture was interrupted.
+/// The task survives the tactical interruption, but reissue is bounded and
+/// requires a missing destination and an observable still-valid goal.
+pub(super) fn resume_specialist_jobs(
+    brain: &mut AssistBrain, rules: &RuleSet,
+    obs: &Observation<'_>, out: &mut Outbox,
+) {
+    let tick = obs.tick();
+    let jobs: Vec<_> = brain.tracked.tasks.entries().collect();
+    let mut resumed = 0;
+    for (actor, job) in jobs {
+        if resumed >= FORCE_ORDERS_PER_FRAME { break; }
+        if job.kind == JobKind::Yard || out.ordered_this_frame(actor)
+            || !brain.tracked.tasks.needs_retry(tick, actor, obs.destination(actor))
+            || brain.tracked.live_kind(tick, actor)
+                .is_some_and(|kind| kind.temporary())
+        { continue; }
+        let Some(unit) = brain.census.units.iter().find(|unit|
+            unit.entity_id == actor && unit.controllable()) else { continue };
+        // Capture uses an object navigation target, not a cell. Its native
+        // destination may therefore be None for the *entire valid mission*.
+        // Do not reset a living Capture mission every 75 frames; if the unit
+        // truly stops, reissue even when it has reached the building door.
+        if job.kind != JobKind::Crate && unit.in_service() { continue; }
+        let (kind, target, goal) = match job.kind {
+            JobKind::Crate => {
+                let Some(cell) = job.cell else { continue };
+                if squared_distance(unit.cell, cell) > 2 * 2
+                    && obs.is_cell_visible(cell.0, cell.1)
+                    && !obs.visible_crate_at(rules, cell) { continue; }
+                (TrackedKind::Move, None, Goal::Move { cell })
+            }
+            JobKind::Engineer | JobKind::Spy | JobKind::Garrison => {
+                let Some(target) = job.target else { continue };
+                if job.kind != JobKind::Garrison
+                    && !obs.visible_enemy_entities().any(|enemy|
+                        enemy.entity_id == target)
+                    && obs.is_hostile(target) { continue; }
+                (TrackedKind::Capture, Some(target), Goal::Capture { target })
+            }
+            JobKind::Recycle => {
+                let Some(target) = job.target else { continue };
+                if !obs.controlled_by_own_controller(actor)
+                    || !obs.can_enter_grinder(rules, actor, target)
+                { continue; }
+                (TrackedKind::Enter, Some(target), Goal::Grind { target })
+            }
+            JobKind::Yard => continue,
+        };
+        brain.tracked.void(actor, kind);
+        if issue_tracked(&mut brain.tracked, brain.trace, out, rules, obs,
+            actor, kind, target, job.cell, goal)
+        {
+            brain.tracked.tasks.claim(tick, actor, job.kind, job.target,
+                job.cell, unit.cell);
+            resumed += 1;
+        }
     }
 }
 
@@ -1087,7 +1245,8 @@ pub(super) fn garrison(
         .map(|billet| {
             let pending = brain.tracked.pending_captures(tick, billet.building_id)
                 .filter(|id| obs.inside_transport(*id).is_none())
-                .count();
+                .count().max(brain.tracked.tasks.pending_at(
+                    JobKind::Garrison, billet.building_id));
             (billet.building_id, (billet.room as usize).saturating_sub(pending))
         }).collect();
     let limit = garrison_budget(front_available, billets.iter()
@@ -1161,6 +1320,8 @@ pub(super) fn garrison(
             Some(billet.building_id), Some(billet.cell),
             Goal::Capture { target: billet.building_id },
         ) {
+            brain.tracked.tasks.claim(tick, unit.entity_id,
+                JobKind::Garrison, Some(billet.building_id), Some(billet.cell), unit.cell);
             issued += 1;
             garrisoned += 1;
             available_mobiles = available_mobiles.saturating_sub(1);
@@ -2628,10 +2789,11 @@ pub(super) fn crates(
             || brain.census.units.iter().any(|unit|
                 unit.entity_id == **id && unit.traits.yard_maker)
             || *until <= tick || !cells.contains(cell)
-            || brain.tracked.primary_goal(**id) != Some(Goal::Move { cell: *cell }))
+            || !brain.tracked.tasks.active(**id, JobKind::Crate))
         .map(|(id, _)| *id).collect();
     for id in finished {
         brain.crate_claims.remove(&id);
+        brain.tracked.tasks.release(id);
         brain.tracked.void(id, TrackedKind::Move);
         brain.tracked.forget_primary(id);
         // Returning alone to a home 100 cells away may be more dangerous
@@ -2839,6 +3001,7 @@ pub(super) fn crates(
         ) {
             sent.insert(id);
             brain.crate_claims.insert(id,(cell,tick.saturating_add(CRATE_CLAIM_FRAMES)));
+            brain.tracked.tasks.claim(tick, id, JobKind::Crate, None, Some(cell), from);
             log::info!(
                 "auto play: unit {id} goes for the crate at {cell:?} taken={}",
                 obs.ground_object_cells(rules).contains(&cell)

@@ -289,7 +289,14 @@ pub(super) fn run(
                 // armour floor the native target scan applies, not the fire
                 // error. Without this a dog spent the match on a tank while
                 // the infantry behind it walked past.
-                super::orders::admits(rules, obs, item.entity_id, &Goal::Attack { target })
+                // During long-term strategic reserve, do not let the micro
+                // pass undo the whole campaign by engaging an undefended
+                // building with one lonely tank. Mobile enemies and any gun
+                // currently firing at this actor remain legitimate defence.
+                (!brain.campaign.holding_fist() || item.role != Role::Attack
+                    || !structures.contains(&target)
+                    || aimed_at.get(&target) == Some(&item.entity_id))
+                    && super::orders::admits(rules, obs, item.entity_id, &Goal::Attack { target })
                     && obs.can_hurt(rules, item.entity_id, target)
                     && (!super::tactics::unfavourable_vehicle_duel(
                         rules, obs, item.entity_id, target)
@@ -430,6 +437,14 @@ pub(super) fn run(
                     continue;
                 }
             }
+        }
+        // The main fist is not a free pool of solo demolition crews during
+        // campaign accumulation. Local *mobile* threats and self-defence were
+        // handled above; any further voluntary combat/march belongs to the
+        // persistent campaign's safe formation/staging operation below.
+        // The Harass team is unaffected and keeps cutting enemy income.
+        if brain.campaign.holding_fist() && item.role == Role::Attack {
+            continue;
         }
         // Nobody's building in the way. It is in no enemy list — nobody owns
         // it — so nothing in this layer would ever shoot it, and the unit

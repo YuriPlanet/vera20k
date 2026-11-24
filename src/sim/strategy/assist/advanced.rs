@@ -677,18 +677,27 @@ pub(super) fn combat_carriers(brain: &mut AssistBrain, rules: &RuleSet,
                 && !brain.tracked.held(obs.tick(), unit.entity_id)
                 && obs.can_enter_transport(rules, unit.entity_id, carrier.entity_id)
                 && squared_distance(carrier.cell, unit.cell)
-                    <= CARRIER_BOARD_RANGE * CARRIER_BOARD_RANGE);
-        let soldier = soldiers.min_by_key(|unit| {
-            let mode = obs.entity_type(rules, unit.entity_id)
-                .map_or(0, |kind| kind.ifv_mode);
-            let range = obs.entity_type(rules, unit.entity_id)
-                .and_then(|kind| kind.weapon_at(0))
-                .and_then(|name| rules.weapon(name))
-                .map_or(0, |weapon| weapon.range_leptons);
-            let mode_count = modes.get(&mode).copied().unwrap_or(0);
-            (if ty.gunner { mode_count } else { 0 },
-                if ty.open_topped { -range } else { 0 },
-                squared_distance(unit.cell, carrier.cell), unit.entity_id)
+                    <= CARRIER_BOARD_RANGE * CARRIER_BOARD_RANGE)
+            // Empty seats are preferable to loading someone who contributes
+            // no safe, real damage. Suicide and negative-damage modes require
+            // a specialist task instead of being treated as generic guns.
+            .filter(|unit| obs.entity_type(rules, unit.entity_id).is_some_and(|passenger|
+                super::combinations::passenger_value(rules, obs, ty, passenger, carrier.cell) > 0));
+        let soldier = soldiers.max_by_key(|unit| {
+            let passenger = obs.entity_type(rules, unit.entity_id);
+            let mode = passenger.map_or(0, |kind| kind.ifv_mode);
+            let value = passenger.map_or(0, |kind|
+                super::combinations::passenger_value(rules, obs, ty, kind, carrier.cell));
+            // Repetition is useful only if it answers current threats; a
+            // distinctive weapon mode should win a close tie, not override a
+            // clearly superior anti-air/anti-armour configuration.
+            let diversity = if ty.gunner {
+                i64::try_from(modes.get(&mode).copied().unwrap_or(0))
+                    .unwrap_or(i64::MAX).saturating_mul(20)
+            } else { 0 };
+            (value.saturating_sub(diversity),
+                -i64::from(squared_distance(unit.cell, carrier.cell)),
+                std::cmp::Reverse(unit.entity_id))
         });
         let Some(soldier) = soldier else { continue; };
         if issue_tracked(&mut brain.tracked, brain.trace, out, rules, obs,

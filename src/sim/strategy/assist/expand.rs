@@ -249,6 +249,14 @@ pub(super) fn deploy_yard_maker(
     let Some((entity_id, cell, yard)) = picked else {
         return;
     };
+    // Reserve a durable deployment job. The plot is kept across native Move
+    // interruptions, and the yard receipt is checked when this maker vanishes.
+    let intended = brain.maker_journeys.get(&entity_id)
+        .map_or(cell, |(site, _, _)| *site);
+    brain.tracked.tasks.yard_site(obs.tick(), entity_id, intended, cell);
+    if let Some(type_id) = obs.type_id(&yard.id) {
+        brain.tracked.tasks.yard_type(entity_id, type_id);
+    }
     // A yard already stands, so this maker is not the way back from a loss: it
     // is the second base. It walks out and deploys where the house has ground
     // of its own.
@@ -352,7 +360,14 @@ pub(super) fn deploy_yard_maker(
                 }
             }
             if obs.deploy_site_admits(rules, entity_id, yard) {
-                if super::orders::issue(brain, out, rules, obs, entity_id, Goal::Deploy) {
+                // A deploy request is not proof of a finished construction
+                // yard. Retain this task until the actual native building
+                // appears, but do not restart Deploy every simulation frame.
+                if (!yard_committed(brain, obs.tick(), entity_id)
+                        || brain.tracked.tasks.yard_retry_due(obs.tick(), entity_id))
+                    && super::orders::issue(brain, out, rules, obs, entity_id, Goal::Deploy)
+                {
+                    brain.tracked.tasks.yard_requested(obs.tick(), entity_id);
                     brain.yard_commit.insert(entity_id, obs.tick());
                     brain.retrieve_makers.remove(&entity_id);
                 }
@@ -471,9 +486,11 @@ pub(super) fn deploy_yard_maker(
         // The one guard the pack also runs: a yard the house only just packed
         // home is inside its term, and deploying it again is the round trip the
         // commitment exists to stop.
-        if !yard_committed(brain, obs.tick(), entity_id)
+        if (!yard_committed(brain, obs.tick(), entity_id)
+                || brain.tracked.tasks.yard_retry_due(obs.tick(), entity_id))
             && super::orders::issue(brain, out, rules, obs, entity_id, Goal::Deploy)
         {
+            brain.tracked.tasks.yard_requested(obs.tick(), entity_id);
             brain.yard_commit.insert(entity_id, obs.tick());
         }
         return;
@@ -524,14 +541,19 @@ pub(super) fn deploy_yard_maker(
             );
             match nearest_deploy_site(obs, rules, &space, entity_id, yard, cell) {
                 Some(target) => {
-                    super::orders::issue(
+                    if super::orders::issue(
                         brain,
                         out,
                         rules,
                         obs,
                         entity_id,
                         Goal::Move { cell: target },
-                    );
+                    ) {
+                        // Also lock fallback plots. Otherwise placement can
+                        // choose A/B/A plots while the first MCV is walking.
+                        brain.maker_journeys.insert(entity_id,
+                            (target, cell, obs.tick()));
+                    }
                 }
                 None => {
                     let next = (attempt + 1) % PLACEMENT_ATTEMPTS;
@@ -857,9 +879,11 @@ fn deploy_second_yard(
         && space.ground_at(cell).buildable()
         && obs.deploy_site_admits(rules, entity_id, yard)
     {
-        if !yard_committed(brain, obs.tick(), entity_id)
+        if (!yard_committed(brain, obs.tick(), entity_id)
+                || brain.tracked.tasks.yard_retry_due(obs.tick(), entity_id))
             && super::orders::issue(brain, out, rules, obs, entity_id, Goal::Deploy)
         {
+            brain.tracked.tasks.yard_requested(obs.tick(), entity_id);
             brain.yard_commit.insert(entity_id, obs.tick());
             brain.maker_journeys.remove(&entity_id);
         }

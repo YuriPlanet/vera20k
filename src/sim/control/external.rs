@@ -184,6 +184,7 @@ impl ActionSlot {
             Goal::Attack { .. } => Goal::Attack { target },
             Goal::Capture { .. } => Goal::Capture { target },
             Goal::Enter { .. } => Goal::Enter { target },
+            Goal::Grind { .. } => Goal::Grind { target },
             Goal::MoveToObject { .. } => Goal::MoveToObject { target },
             Goal::AttackCell { .. } => Goal::AttackCell { cell },
             Goal::AttackMove { .. } => Goal::AttackMove { cell },

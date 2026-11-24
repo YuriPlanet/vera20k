@@ -105,8 +105,18 @@ fn mass_charge_ready(ready: usize, guns: usize, ours: i32, enemy: i32,
 /// Continue a coherent charge as a unit operation. Retreat/micro are allowed
 /// outside the short window; a dead or invisible target cancels the order.
 pub(super) fn charge_member(brain: &AssistBrain, tick: u64, actor: u64) -> bool {
-    brain.siege_charge.as_ref().is_some_and(|wave|
+    if brain.siege_charge.as_ref().is_some_and(|wave|
         tick < wave.until && wave.members.contains(&actor))
+    { return true; }
+    // A confirmed outage is a finite coordinated operation, not a reason
+    // for the ordinary dodge/kite/micro passes to split its assault group.
+    // The blackout commander makes the attack/withdraw choice each frame.
+    brain.blackout.is_some_and(|plan| {
+        matches!(plan.phase, BlackoutPhase::Committed | BlackoutPhase::Withdrawal)
+            && brain.census.units.iter().any(|unit| unit.entity_id == actor
+                && unit.traits.combat && unit.controllable()
+                && cell_distance(unit.cell, plan.cell) <= 34)
+    })
 }
 
 /// Called before tactical passes so a charged cohort is not scattered by
@@ -187,11 +197,10 @@ pub(super) fn prepare_siege_charge(
 }
 
 fn execute_siege_charge(
-    siege_charge: &Option<SiegeCharge>, census: &Census,
-    tracked: &mut super::tracked::Tracker, push_gate: &mut &'static str,
-    rules: &RuleSet, obs: &Observation<'_>, out: &mut Outbox,
+    brain: &mut AssistBrain, rules: &RuleSet, obs: &Observation<'_>,
+    out: &mut Outbox,
 ) -> bool {
-    let Some(wave) = siege_charge.as_ref() else { return false; };
+    let Some(wave) = brain.siege_charge.as_ref() else { return false; };
     if obs.tick() >= wave.until { return false; }
     let target = wave.target;
     let members: Vec<u64> = wave.members.iter().copied().collect();
@@ -201,7 +210,7 @@ fn execute_siege_charge(
     let mut issued = 0;
     for id in members {
         if issued >= ADVANCE_ORDERS_PER_FRAME { break; }
-        let Some(unit) = census.units.iter().find(|unit|
+        let Some(unit) = brain.census.units.iter().find(|unit|
             unit.entity_id == id && unit.controllable() && !unit.in_service())
         else { continue; };
         if !obs.can_hurt(rules, id, target)
@@ -211,13 +220,13 @@ fn execute_siege_charge(
         // One synchronized charge uses a rank above the ordinary firing
         // cycle. This is a native Attack command, never a direct sim write.
         if out.want(id, 2, goal) {
-            tracked.record_goal(obs.tick(), id,
+            brain.tracked.record_goal(obs.tick(), id,
                 super::tracked::TrackedKind::Attack,
                 Some(target), Some(enemy.cell), goal);
             issued += 1;
         }
     }
-    *push_gate = "siege-mass-charge";
+    brain.push_gate = "siege-mass-charge";
     true
 }
 
@@ -326,8 +335,187 @@ fn searching_cell(obs: &Observation<'_>, anchor: (u16, u16)) -> Option<(u16, u16
 ///
 /// Three is the crate's own reach plus a cell: the box is on the way, not on
 /// the target.
+/// A blackout is not a timer-driven attack order. We first observe a spy
+/// assigned to a real power plant, then require a currently *visible* defence
+/// to switch off, then attack with the group, and finally stop the native
+/// attack missions before/when that defence becomes powered again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum BlackoutPhase { Staging, Committed, Withdrawal }
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct BlackoutOperation {
+    pub(super) battery: u64,
+    pub(super) cell: (u16, u16),
+    pub(super) started: u64,
+    pub(super) phase: BlackoutPhase,
+    pub(super) off_since: Option<u64>,
+}
+
+fn blackout_transition(phase: BlackoutPhase, visible: bool, operational: bool,
+    elapsed_off: u64, max_window: u64) -> BlackoutPhase {
+    match phase {
+        BlackoutPhase::Staging if visible && !operational => BlackoutPhase::Committed,
+        BlackoutPhase::Committed if !visible || operational
+            || elapsed_off >= max_window => BlackoutPhase::Withdrawal,
+        _ => phase,
+    }
+}
+
+/// Apply the already-planned operation before ordinary push scoring. Without
+/// this, the same power loss which makes need_siege() return None can also
+/// discard the earlier waiting-for-spy plan and the army never moves.
+fn drive_blackout(
+    brain: &mut AssistBrain, rules: &RuleSet,
+    obs: &Observation<'_>, out: &mut Outbox, fighters: &[&Unit],
+) -> bool {
+    let Some(mut plan) = brain.blackout else { return false };
+    let tick = obs.tick();
+    let seen = obs.visible_enemy_entities()
+        .any(|enemy| enemy.entity_id == plan.battery);
+    if !seen && obs.is_cell_visible(plan.cell.0, plan.cell.1) {
+        // A currently visible empty plot is evidence that the defence fell;
+        // fog outside our vision is not such evidence.
+        brain.blackout = None;
+        brain.blackout_withdraw_after.clear();
+        return false;
+    }
+    if plan.phase == BlackoutPhase::Staging
+        && tick.saturating_sub(plan.started) > 1_500
+    {
+        brain.blackout = None;
+        brain.blackout_withdraw_after.clear();
+        return false;
+    }
+    let powered = seen && obs.visible_enemy_building_operational(rules, plan.battery);
+    let off_elapsed = plan.off_since.map_or(0, |since| tick.saturating_sub(since));
+    let duration = u64::try_from(rules.general.spy_power_blackout.max(0)).unwrap_or(0);
+    // Leave a safety margin for a one-second command queue, formation travel
+    // and nonzero native attack latency. A longer brownout is not guaranteed
+    // merely because a spy was the original cause.
+    let safe_window = duration.saturating_sub(120).max(60);
+    let next = blackout_transition(plan.phase, seen, powered, off_elapsed, safe_window);
+    if next != plan.phase {
+        if next == BlackoutPhase::Committed { plan.off_since = Some(tick); }
+        log::info!("auto play: blackout {:?} -> {:?} for battery {} at tick {}",
+            plan.phase, next, plan.battery, tick);
+        plan.phase = next;
+    }
+    if plan.phase == BlackoutPhase::Staging {
+        brain.blackout = Some(plan);
+        return false; // the normal range-aware siege staging owns this phase
+    }
+    if plan.phase == BlackoutPhase::Committed {
+        // A genuine currently-visible off-line battery opens one bounded
+        // coordinated attack window. Do not infer blackout from fog or from a
+        // missing spy, and do not send a single scout to test an active tower.
+        if !seen || powered { brain.blackout = Some(plan); return true; }
+        let available = fighters.iter().filter(|unit| unit.controllable()
+            && !unit.in_service() && cell_distance(unit.cell, plan.cell) <= 34
+            && obs.can_hurt(rules, unit.entity_id, plan.battery)).count();
+        if available < 3 {
+            brain.push_gate = "blackout-awaiting-fist";
+            brain.blackout = Some(plan);
+            return true;
+        }
+        let mut issued = 0;
+        for unit in fighters {
+            if issued >= ADVANCE_ORDERS_PER_FRAME { break; }
+            if !unit.controllable() || unit.in_service()
+                || cell_distance(unit.cell, plan.cell) > 34
+                || !obs.can_hurt(rules, unit.entity_id, plan.battery)
+                || obs.attack_target(unit.entity_id) == Some(plan.battery)
+            { continue; }
+            let goal = Goal::Attack { target: plan.battery };
+            if !super::orders::admits(rules, obs, unit.entity_id, &goal) { continue; }
+            if out.want(unit.entity_id, 2, goal) {
+                brain.tracked.record_goal(tick, unit.entity_id,
+                    super::tracked::TrackedKind::Attack,
+                    Some(plan.battery), Some(plan.cell), goal);
+                issued += 1;
+            }
+        }
+        brain.siege_charge = None;
+        brain.push_gate = "blackout-commit";
+        brain.blackout = Some(plan);
+        return true;
+    }
+    // The grid has come back, the battery was lost in fog, or the safe end of
+    // the outage is approaching. Merely changing `push_gate` leaves every
+    // native Attack/AttackMove already en route; replace those orders now.
+    let mut issued = 0;
+    for unit in fighters {
+        if issued >= ADVANCE_ORDERS_PER_FRAME { break; }
+        if !unit.controllable() || unit.in_service() || obs.is_deployed(unit.entity_id)
+            || unit.slot == super::census::Slot::Aircraft
+        { continue; }
+        let near = cell_distance(unit.cell, plan.cell) <= 24;
+        let charging = obs.attack_target(unit.entity_id) == Some(plan.battery)
+            || obs.destination(unit.entity_id).is_some_and(|dest|
+                cell_distance(dest, plan.cell) <= 18);
+        if !near && !charging { continue; }
+        let reach = if seen { obs.entity_type(rules, plan.battery)
+            .map_or(13, |ty| weapon_range_cells(rules, ty, false).max(5)) }
+            else { 13 };
+        let post = super::tactics::siege_post(
+            rules, obs, unit.entity_id, unit.cell, plan.cell, reach)
+            .or_else(|| brain.census.base_cell.filter(|cell|
+                super::orders::reachable(rules, obs, unit.entity_id, *cell)
+                    && !super::tactics::unsafe_post(rules, obs, unit.entity_id, *cell)));
+        let goal = post.map_or(Goal::Stop, |cell| Goal::Move { cell });
+        if post.is_some_and(|cell| obs.destination(unit.entity_id) == Some(cell))
+            || brain.blackout_withdraw_after.get(&unit.entity_id)
+                .is_some_and(|until| tick < *until)
+        { continue; }
+        if out.want(unit.entity_id, 0, goal) {
+            brain.blackout_withdraw_after.insert(unit.entity_id,
+                tick.saturating_add(90));
+            brain.tracked.void(unit.entity_id, super::tracked::TrackedKind::Attack);
+            brain.tracked.void(unit.entity_id, super::tracked::TrackedKind::AttackMove);
+            brain.tracked.forget_primary(unit.entity_id);
+            issued += 1;
+        }
+    }
+    brain.push_gate = "blackout-withdraw";
+    // Withdraw for a bounded interval, not forever. A later normal siege
+    // re-evaluation can resume once the front is safe and capabilities change.
+    if tick.saturating_sub(plan.off_since.unwrap_or(plan.started)) >= duration.saturating_add(240) {
+        brain.blackout = None;
+        brain.blackout_withdraw_after.clear();
+    } else {
+        brain.blackout = Some(plan);
+    }
+    true
+}
+
 fn siege_blackout_wait(start: u64, tick: u64, live_power_infiltration: bool) -> bool {
     live_power_infiltration && tick.saturating_sub(start) < 1_500
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v31_blackout_state_tests {
+    use super::{blackout_transition, BlackoutPhase};
+
+    #[test]
+    fn only_a_visible_observed_outage_commits_the_raid() {
+        assert_eq!(blackout_transition(BlackoutPhase::Staging, false, false, 0, 880),
+            BlackoutPhase::Staging);
+        assert_eq!(blackout_transition(BlackoutPhase::Staging, true, true, 0, 880),
+            BlackoutPhase::Staging);
+        assert_eq!(blackout_transition(BlackoutPhase::Staging, true, false, 0, 880),
+            BlackoutPhase::Committed);
+    }
+
+    #[test]
+    fn power_return_loss_of_sight_and_expiry_all_require_withdrawal() {
+        assert_eq!(blackout_transition(BlackoutPhase::Committed, true, true, 80, 880),
+            BlackoutPhase::Withdrawal);
+        assert_eq!(blackout_transition(BlackoutPhase::Committed, false, false, 80, 880),
+            BlackoutPhase::Withdrawal);
+        assert_eq!(blackout_transition(BlackoutPhase::Committed, true, false, 880, 880),
+            BlackoutPhase::Withdrawal);
+        assert_eq!(blackout_transition(BlackoutPhase::Committed, true, false, 500, 880),
+            BlackoutPhase::Committed);
+    }
 }
 
 #[cfg(all(test, tests_sim_p_s))]
@@ -683,6 +871,95 @@ fn stage_siege(
     issued
 }
 
+/// A strategic reserve is still a real front, not twelve tanks idling at
+/// their factories. Position the main fist on the *friendly* side of the
+/// known enemy base at a conservative offset, without walking through any
+/// currently visible defensive battery on the way. This runs only while the
+/// long-lived campaign is containing/stockpiling/refitting; the Harass team
+/// is free to keep interdicting miners elsewhere.
+fn stage_strategic_reserve(
+    tracker: &mut super::tracked::Tracker, trace: Option<u64>,
+    fighters: &[&Unit], rules: &RuleSet, obs: &Observation<'_>,
+    out: &mut Outbox, front: (u16,u16), home: Option<(u16,u16)>,
+) -> usize {
+    let guns: Vec<_> = obs.visible_enemy_entities().filter_map(|enemy| {
+        let ty = obs.entity_type(rules, enemy.entity_id)?;
+        if !ty.is_base_defense
+            || !obs.visible_enemy_building_operational(rules, enemy.entity_id)
+        { return None; }
+        let reach = weapon_range_cells(rules, ty, false);
+        (reach > 0 && cell_distance(front, enemy.cell) <= 28)
+            .then_some((enemy.cell, reach))
+    }).collect();
+    // Collect once, rather than walking the enemy store once per fighter.
+    // On a 120-house map even visible-only queries must remain bounded.
+    let visible_structures: BTreeSet<u64> = obs.visible_enemy_entities()
+        .filter(|enemy| obs.entity_type(rules, enemy.entity_id)
+            .is_some_and(|ty| ty.category ==
+                crate::rules::object_type::ObjectCategory::Building))
+        .map(|enemy| enemy.entity_id).collect();
+    let distant_reach = guns.iter().map(|(_,r)| *r).max().unwrap_or(0);
+    let radius = (distant_reach + 5).max(20);
+    let home = home.unwrap_or_else(|| fighters.first().map_or(front, |unit| unit.cell));
+    let mut dx = (i32::from(home.0) - i32::from(front.0)).signum();
+    let dy = (i32::from(home.1) - i32::from(front.1)).signum();
+    if dx == 0 && dy == 0 { dx = 1; }
+    let lateral = (-dy, dx);
+    let mut issued = 0;
+    for unit in fighters.iter().cycle()
+        .skip((obs.tick() as usize) % fighters.len().max(1))
+        .take(fighters.len().min(32))
+    {
+        if issued >= 7 { break; }
+        if !unit.controllable() || unit.in_service() || obs.is_deployed(unit.entity_id)
+            || unit.slot == super::census::Slot::Aircraft
+            || super::orders::ordered_this_frame(out, unit.entity_id)
+        { continue; }
+        let mut post = None;
+        for range in [radius, radius + 4, radius + 8] {
+            for shift in [0i32, 3, -3, 6, -6] {
+                let x = i32::from(front.0) + dx * range + lateral.0 * shift;
+                let y = i32::from(front.1) + dy * range + lateral.1 * shift;
+                let (Ok(x), Ok(y)) = (u16::try_from(x), u16::try_from(y)) else { continue };
+                let cell = (x,y);
+                if !obs.is_ground_walkable(x,y)
+                    || !super::orders::reachable(rules,obs,unit.entity_id,cell)
+                    || super::tactics::unsafe_post(rules,obs,unit.entity_id,cell)
+                { continue; }
+                if guns.iter().any(|(gun,reach)|
+                    (cell_distance(unit.cell,*gun) > *reach + 2)
+                    && super::orders::path_crosses(&[*gun],unit.cell,cell,*reach + 2))
+                { continue; }
+                post = Some(cell);
+                break;
+            }
+            if post.is_some() { break; }
+        }
+        let dangerous_old_attack = obs.attack_target(unit.entity_id)
+            .is_some_and(|id| visible_structures.contains(&id))
+            || obs.destination(unit.entity_id).is_some_and(|cell|
+                cell_distance(cell,front) <= 10);
+        if let Some(post) = post {
+            if cell_distance(unit.cell,post) <= 3 {
+                if dangerous_old_attack && super::orders::issue_tracked(
+                    tracker,trace,out,rules,obs,unit.entity_id,
+                    super::tracked::TrackedKind::Avoid,None,Some(post),Goal::Stop,
+                ) { issued += 1; }
+                continue;
+            }
+            if obs.destination(unit.entity_id) == Some(post) { continue; }
+            if super::orders::issue_tracked(
+                tracker,trace,out,rules,obs,unit.entity_id,
+                super::tracked::TrackedKind::Avoid,None,Some(post),Goal::Move { cell: post },
+            ) { issued += 1; }
+        } else if dangerous_old_attack && super::orders::issue_tracked(
+            tracker,trace,out,rules,obs,unit.entity_id,
+            super::tracked::TrackedKind::Avoid,None,None,Goal::Stop,
+        ) { issued += 1; }
+    }
+    issued
+}
+
 /// An outgunned front should not be an inert front. A small number of
 /// visible enemy units/towers may be traded with safely by standoff pieces
 /// even while the rest of the army waits for reinforcements. This is not an
@@ -928,10 +1205,9 @@ pub(super) fn advance(
         Some(members) => army
             .members
             .iter()
-            .copied()
             .filter(|unit| members.contains(&unit.entity_id))
             .collect(),
-        None => army.members.clone(),
+        None => army.members.iter().collect(),
     };
     // A hero does not march with the fist in the first place. `BuildLimit=1` is
     // a unit the house cannot buy another of, and a push that spends it for a
@@ -948,10 +1224,12 @@ pub(super) fn advance(
             .is_some_and(|until| *until > obs.tick())
         && !super::advanced::repair_ifv_loaded(rules, obs, &brain.census, unit.entity_id));
     if fighters.is_empty() { return false; }
-    if execute_siege_charge(
-        &brain.siege_charge, &brain.census, &mut brain.tracked, &mut brain.push_gate,
-        rules, obs, out,
-    ) { return true; }
+    if drive_blackout(brain, rules, obs, out, &fighters) { return true; }
+    if execute_siege_charge(brain, rules, obs, out) { return true; }
+    // The strategic campaign's stockpile is not a combat order. Defence,
+    // harassing, scouting and the task ledger have already run this frame;
+    // only the dedicated Attack fist is barred from piecemeal probing.
+    let strategic_hold = brain.campaign.holding_fist();
     // No exclusion for a unit whose weapon spends it. It was here with a
     // matching errand of its own, and together they cost fourfold on two seeds
     // (see the note where the errand used to be called). The tag itself is
@@ -1027,6 +1305,17 @@ pub(super) fn advance(
     brain.push_gate = gate;
     if gate != "push" {
         brain.assault_wait = None;
+        // A squad can drop below the normal advance-size gate *after* we
+        // chose a strategic reserve. Keep ownership of its old dangerous
+        // native order even when there is no new target selection this frame.
+        if strategic_hold && !raided {
+            if let Some((_,_,front)) = brain.push_target {
+                stage_strategic_reserve(&mut brain.tracked,brain.trace,
+                    &fighters,rules,obs,out,front,
+                    brain.census.rally.or(brain.census.base_cell));
+            }
+            return true;
+        }
         return false;
     }
     let tick = obs.tick();
@@ -1069,6 +1358,21 @@ pub(super) fn advance(
         super::tactics::need_siege(rules,obs,target_cell,&fighters)
     } else { None };
     brain.siege_reach = siege_reach;
+    if strategic_hold && !raided {
+        // A reserve needs a *physical* safe post and must cancel existing
+        // native attack missions. Merely returning false here allowed the
+        // old AttackMove to keep carrying tanks into prism batteries.
+        stage_siege(&mut brain.tracked, brain.trace,
+            &fighters, rules, obs, out, target_cell);
+        stage_strategic_reserve(&mut brain.tracked, brain.trace,
+            &fighters, rules, obs, out, target_cell,
+            brain.census.rally.or(brain.census.base_cell));
+        // Keep the real target/reach for the production planner. The economy
+        // may then select long-ranged damage instead of feeding line tanks.
+        brain.push_gate = if siege_reach.is_some() { "need-siege" }
+            else { "strategic-stockpile" };
+        return true;
+    }
     // Real standoff batteries must be allowed to fire while the shorter-range
     // screen holds outside the enemy gun line. This is a bounded *breach*, not
     // another request to make more artillery when one already exists.
@@ -1112,7 +1416,26 @@ pub(super) fn advance(
         // Visibility and the native Capture intent, not a guessed effect,
         // justify the wait; after 1,500 frames it must not deadlock the army.
         let blackout_window = siege_blackout_wait(start, tick, spy_power_attempt_live);
-        if blackout_window { brain.push_gate = "spy-blackout-staging"; }
+        if blackout_window {
+            brain.push_gate = "spy-blackout-staging";
+            if brain.blackout.is_none() {
+                if let Some(battery) = obs.visible_enemy_entities().filter(|enemy|
+                    cell_distance(enemy.cell, target_cell) <= 14)
+                    .filter(|enemy| obs.entity_type(rules, enemy.entity_id)
+                        .is_some_and(|ty| ty.is_base_defense)
+                        && obs.visible_enemy_building_operational(rules, enemy.entity_id))
+                    .max_by_key(|enemy| obs.entity_type(rules, enemy.entity_id)
+                        .map_or(0, |ty| weapon_range_cells(rules, ty, false)))
+                {
+                    brain.blackout = Some(BlackoutOperation {
+                        battery: battery.entity_id, cell: battery.cell,
+                        started: tick, phase: BlackoutPhase::Staging, off_since: None,
+                    });
+                    log::info!("auto play: coordinated blackout plan for battery {}",
+                        battery.entity_id);
+                }
+            }
+        }
         // Waiting must be an actual manoeuvre, not just a label. A tank
         // already walking into the pillbox will keep that native order
         // unless we deliberately move it back out of the gunline.

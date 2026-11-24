@@ -78,10 +78,12 @@ pub(in crate::sim::strategy::assist) fn admits(
         Goal::Attack { target } => {
             // A remembered position may be searched by AttackMove, but an
             // entity-id Attack is a click on a currently visible object.
-            obs.is_hostile(target)
-                && obs.visible_enemy_entities().any(|enemy| enemy.entity_id == target)
+            ((obs.is_hostile(target)
+                && obs.visible_enemy_entities().any(|enemy| enemy.entity_id == target))
+                || obs.can_control_neutral(rules, unit, target))
                 && obs.can_engage(rules, unit, target)
-                && (obs.can_hurt(rules, unit, target)
+                && (obs.can_control_neutral(rules, unit, target)
+                    || obs.can_hurt(rules, unit, target)
                     || (obs.entity_type(rules, target)
                         .is_some_and(|ty| ty.category == ObjectCategory::Infantry)
                         && obs.entity_type(rules, unit)
@@ -93,6 +95,8 @@ pub(in crate::sim::strategy::assist) fn admits(
                 || obs.visible_enemy_entities().any(|enemy| enemy.entity_id == target))
                 && obs.can_take_building(rules, unit, target)
         }
+        Goal::Grind { target } => obs.controlled_by_own_controller(unit)
+            && obs.can_enter_grinder(rules, unit, target),
         Goal::MoveToObject { target } | Goal::Enter { target }
             if obs.is_hostile(target) => {
                 obs.visible_enemy_entities().any(|enemy| enemy.entity_id == target)
@@ -217,6 +221,7 @@ pub(in crate::sim::strategy::assist) fn issue(
     unit: u64,
     goal: Goal,
 ) -> bool {
+    if !brain.tracked.tasks.permits(unit, None, goal) { return false; }
     let rank = brain
         .tracked
         .rank_of(obs.tick(), unit)
@@ -269,6 +274,7 @@ pub(in crate::sim::strategy::assist) fn issue_tracked(
     {
         return false;
     }
+    if !tracker.tasks.permits(unit, Some(kind), goal) { return false; }
     if !tracker.admits(tick, unit, kind, target, cell) {
         return false;
     }

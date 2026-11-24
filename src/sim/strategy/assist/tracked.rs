@@ -193,7 +193,7 @@ pub(super) fn primary_kind(goal: Goal) -> Option<TrackedKind> {
         Goal::AttackMove { .. } => Some(TrackedKind::AttackMove),
         Goal::Attack { .. } => Some(TrackedKind::Attack),
         Goal::Capture { .. } => Some(TrackedKind::Capture),
-        Goal::Enter { .. } => Some(TrackedKind::Enter),
+        Goal::Enter { .. } | Goal::Grind { .. } => Some(TrackedKind::Enter),
         Goal::Harvest { .. } => Some(TrackedKind::Harvest),
         Goal::Guard | Goal::GuardAt { .. } => Some(TrackedKind::Guard),
         _ => None,
@@ -254,6 +254,8 @@ struct RestoreRequest {
 /// Every unit's standing intent, and the units a routine is busy with.
 #[derive(Debug, Default)]
 pub(super) struct Tracker {
+    /// Long-term missions outlive the per-order priority and timeout.
+    pub(super) tasks: super::tasks::TaskLedger,
     intents: BTreeMap<u64, UnitRuntime>,
     /// The standing strategic order beneath temporary tactical overrides.
     ///
@@ -278,6 +280,7 @@ pub(super) struct Tracker {
 impl Tracker {
     pub(super) fn new() -> Self {
         Self {
+            tasks: super::tasks::TaskLedger::new(),
             intents: BTreeMap::new(),
             primary: BTreeMap::new(),
             paused: BTreeMap::new(),
@@ -695,7 +698,7 @@ pub(super) fn kinds_for(goal: Goal) -> &'static [TrackedKind] {
         ],
         Goal::Guard | Goal::GuardAt { .. } => &[TrackedKind::Guard],
         Goal::Capture { .. } => &[TrackedKind::Capture],
-        Goal::Enter { .. } => &[TrackedKind::Enter],
+        Goal::Enter { .. } | Goal::Grind { .. } => &[TrackedKind::Enter],
         Goal::Deploy => &[TrackedKind::Deploy],
         Goal::AttackCell { .. } => &[TrackedKind::Breach],
         Goal::Harvest { .. } => &[TrackedKind::Harvest],
