@@ -55,6 +55,7 @@ dent; it converts with none pending. The `06789b62b` writer's layout
 `0x82C32EA4` predates the Tiberian Sun limpets; its objects convert with none.
 The `8d55b4a73` writer's layout `0xF6127DC1` predates Tiberian Sun's
 BounceSound and ExpireSound; its animation types convert with neither sound.
+The `8852f7a76` writer covers direct loading of layout `0x9441E8D8`.
 
 Run the menu and compatibility tests with this command.
 
