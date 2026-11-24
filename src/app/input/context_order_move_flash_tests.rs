@@ -31,6 +31,7 @@ fn scene(rules: &RuleSet) -> (Simulation, [u64; 2]) {
             .unwrap();
         sim.entity_mut_for_test(id)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(true);
         id

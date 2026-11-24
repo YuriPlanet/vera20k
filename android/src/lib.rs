@@ -36,6 +36,7 @@ fn with_activity<R>(f: impl FnOnce(&mut jni::JNIEnv, &JObject) -> R) -> Option<R
     // global reference the loader owns.
     let vm = unsafe { JavaVM::from_raw(context.vm().cast()) }.ok()?;
     let mut env = vm.attach_current_thread().ok()?;
+    // SAFETY: the activity handle is the loader's JNI global reference above.
     let activity = unsafe { JObject::from_raw(context.context().cast()) };
     Some(f(&mut env, &activity))
 }
@@ -318,6 +319,23 @@ fn keep_screen_on(app: &AndroidApp) {
     );
 }
 
+fn install_packaged_map(app: &AndroidApp) -> anyhow::Result<()> {
+    use vera20k::map::installed::{ARCTIC_MAP, install_arctic_map};
+
+    let maps = vera20k::util::config::GameConfig::load()?
+        .paths
+        .downloaded_maps_dir();
+    install_arctic_map(&maps, || {
+        let name = std::ffi::CString::new(ARCTIC_MAP)?;
+        let mut asset = app
+            .asset_manager()
+            .open(&name)
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, ARCTIC_MAP))?;
+        Ok(asset.buffer()?.to_vec())
+    })?;
+    Ok(())
+}
+
 /// Resolved by `android-activity`'s loader trampoline; the name is the ABI.
 ///
 /// Android calls the symbol with the activity's handle, which
@@ -356,6 +374,9 @@ fn android_main(app: AndroidApp) {
 
     let log_path = vera20k::entry::init_logging();
     vera20k::entry::log_banner(log_path.as_deref());
+    if let Err(error) = install_packaged_map(&app) {
+        log::warn!("Could not install the packaged skirmish map: {error:#}");
+    }
     // Bind the picker's callback before the player can reach the button, and say
     // whether it took: a silent failure here is what turned a missing folder
     // picker into an `UnsatisfiedLinkError` at the worst moment.

@@ -155,7 +155,7 @@ fn wave_pointer_expiry_owner_allows_dying_damage_then_uninit_nulls_later_calls()
         &rules,
         None,
         &request,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -181,7 +181,7 @@ fn wave_pointer_expiry_owner_allows_dying_damage_then_uninit_nulls_later_calls()
         &rules,
         None,
         &request,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -281,7 +281,7 @@ fn gsi_01_05_lethal_bullet_commits_receiver_before_retirement_and_double_compact
     let mut visited = Vec::new();
     sim.for_each_live_object(|sim, id| {
         visited.push(id);
-        assert!(sim.object_ai_visit_one(id, Some(&rules), ObjectAiCtx::default()));
+        assert!(sim.object_ai_visit_one(id, Some(&rules), &mut ObjectAiCtx::default()));
     });
 
     assert_eq!(visited, vec![projectile_id]);
@@ -395,7 +395,7 @@ fn gsi_01_05_terminal_wave_damages_once_before_single_current_removal() {
     let mut visited = Vec::new();
     sim.for_each_live_object(|sim, id| {
         visited.push(id);
-        assert!(sim.object_ai_visit_one(id, Some(&rules), ObjectAiCtx::default()));
+        assert!(sim.object_ai_visit_one(id, Some(&rules), &mut ObjectAiCtx::default()));
     });
 
     assert_eq!(visited, vec![wave_id, successor_id]);
@@ -476,7 +476,7 @@ fn terminal_type_zero_wave_with_empty_recorded_vector_has_no_damage_area_tail() 
     sim.scenario_rng = crate::sim::rng::SimRng::new(0x45_4d_50_54_59);
     let expected_rng = sim.scenario_rng.logical_state();
 
-    assert!(sim.object_ai_visit_one(wave_id, Some(&rules), ObjectAiCtx::default()));
+    assert!(sim.object_ai_visit_one(wave_id, Some(&rules), &mut ObjectAiCtx::default()));
 
     assert_eq!(sim.scenario_rng.logical_state(), expected_rng);
     assert!(!sim.active_wave_links.contains_key(&firer_id));
@@ -571,7 +571,7 @@ fn wave_elite_ambient_damage_carries_within_cell_and_resets_on_next_cell() {
     sim.active_wave_links.insert(firer_id, wave_id);
     sim.lifecycle_test_events.clear();
 
-    assert!(sim.object_ai_visit_one(wave_id, Some(&rules), ObjectAiCtx::default()));
+    assert!(sim.object_ai_visit_one(wave_id, Some(&rules), &mut ObjectAiCtx::default()));
 
     assert_eq!(
         sim.substrate
@@ -661,6 +661,7 @@ fn wave_shared_damage_passes_a_unit_inside_its_war_factory() {
         let factory = sim.substrate.entities.get_mut(factory_id).unwrap();
         factory.set_type_ref_for_test(sim.interner.intern("WEAP"));
         factory
+            .seldom
             .type_facts
             .set_foundation_for_test("1x1".to_string().into());
     }
@@ -672,6 +673,7 @@ fn wave_shared_damage_passes_a_unit_inside_its_war_factory() {
         .entities
         .get_mut(first_id)
         .unwrap()
+        .seldom
         .radio_contacts
         .insert(factory_id)
         .unwrap();
@@ -700,7 +702,7 @@ fn wave_shared_damage_passes_a_unit_inside_its_war_factory() {
     wave.replace_recorded_cells(vec![WaveRecordedCell::real(4, 5)]);
     sim.admit_wave(wave_id, wave);
 
-    assert!(sim.object_ai_visit_one(wave_id, Some(&rules), ObjectAiCtx::default()));
+    assert!(sim.object_ai_visit_one(wave_id, Some(&rules), &mut ObjectAiCtx::default()));
     let health = |id: u64| sim.substrate.entities.get(id).unwrap().health.current();
     assert_eq!(health(first_id), 100);
     assert_eq!(health(second_id), 90);
@@ -747,6 +749,7 @@ fn wave_walks_nonbuilding_terrain_building_order_and_terrain_owns_wood_gate() {
             let building = sim.substrate.entities.get_mut(building_id).unwrap();
             building.set_type_ref_for_test(sim.interner.intern("BLDG"));
             building
+                .seldom
                 .type_facts
                 .set_foundation_for_test("1x1".to_string().into());
         }
@@ -789,7 +792,7 @@ fn wave_walks_nonbuilding_terrain_building_order_and_terrain_owns_wood_gate() {
         sim.admit_wave(wave_id, wave);
         sim.lifecycle_test_events.clear();
 
-        assert!(sim.object_ai_visit_one(wave_id, Some(&rules), ObjectAiCtx::default()));
+        assert!(sim.object_ai_visit_one(wave_id, Some(&rules), &mut ObjectAiCtx::default()));
         let selected = sim
             .lifecycle_test_events
             .iter()
@@ -916,7 +919,7 @@ fn wave_tail_consumes_wall_roll_before_mandatory_cliff_chance_roll() {
     assert!(sim.object_ai_visit_one(
         wave_id,
         Some(&rules),
-        ObjectAiCtx {
+        &mut ObjectAiCtx {
             overlay_registry: Some(&registry),
             ..ObjectAiCtx::default()
         },
@@ -997,7 +1000,7 @@ fn assert_direct_fatal_death_weapon_starts_crater(bridge: bool) {
             4,
             5,
             Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     } else {
         let firer_id = sim.substrate.allocate_stable_id();
@@ -1031,7 +1034,7 @@ fn assert_direct_fatal_death_weapon_starts_crater(bridge: bool) {
         assert!(sim.object_ai_visit_one(
             wave_id,
             Some(&rules),
-            ObjectAiCtx {
+            &mut ObjectAiCtx {
                 overlay_registry: Some(&registry),
                 ..ObjectAiCtx::default()
             },
@@ -1234,7 +1237,7 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
     assert!(sim.object_ai_visit_one(
         wave_id,
         Some(&rules),
-        ObjectAiCtx {
+        &mut ObjectAiCtx {
             overlay_registry: Some(&overlay_registry),
             ..ObjectAiCtx::default()
         },
@@ -1429,6 +1432,7 @@ fn gsi_01_05_wave_reselects_live_cell_list_after_fatal_receiver_unmark() {
         let building = sim.substrate.entities.get_mut(building_id).unwrap();
         building.set_type_ref_for_test(building_type);
         building
+            .seldom
             .type_facts
             .set_foundation_for_test("2x1".to_string().into());
         building.health.set_for_test(10);
@@ -1473,7 +1477,7 @@ fn gsi_01_05_wave_reselects_live_cell_list_after_fatal_receiver_unmark() {
     sim.set_logic_order_for_test(vec![wave_id, building_id]);
     sim.lifecycle_test_events.clear();
 
-    assert!(sim.object_ai_visit_one(wave_id, Some(&rules), ObjectAiCtx::default()));
+    assert!(sim.object_ai_visit_one(wave_id, Some(&rules), &mut ObjectAiCtx::default()));
 
     let selected = sim
         .lifecycle_test_events

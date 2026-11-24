@@ -59,6 +59,13 @@ pub struct ProjectileType {
     pub aa: bool,
     /// Can hit ground units and buildings. True by default for most projectiles.
     pub ag: bool,
+    /// Tiberian Sun's `AV=` (docs/ts-limpets.md): the projectile hunts only
+    /// vehicles. Firestorm 2.0 reads it into BulletType+0x136 with ReadBool
+    /// over the current value (`0x00448027..0x00448047`; the constructor
+    /// zeroes it at `0x00447BB9`); gamemd has no such key. Its one reader is
+    /// `WeaponTypeClass::Allowable_Threat @ 0x00681150`
+    /// (`combat_weapon::weapon_class_bits`).
+    pub av: bool,
 
     // --- Flight behavior ---
     /// Ballistic arc trajectory (e.g., artillery shells). Cannot be intercepted.
@@ -323,7 +330,7 @@ impl ProjectileArtState {
         // Image may be empty: native then attempts .SHP and .GHP, clearing +A4
         // when neither exists. Inviso can instead retain the base-prefix load.
         if !self.inviso {
-            image.load_unowned_shp(ObjectImageKind::Ordinary, theater);
+            image.load_unowned_shp(ObjectImageKind::Ordinary, theater, None);
         }
         // 46C40B..46C417: independent of Inviso, after the clearing Image
         // read. A false Voxel flag preserves the prior pair; missing/empty
@@ -438,6 +445,7 @@ impl ProjectileType {
             // Targeting
             aa: section.read_bool("AA", false),
             ag: section.read_bool("AG", true),
+            av: section.read_bool("AV", false),
             // Flight behavior
             arcing: section.read_bool("Arcing", false),
             rot: section.read_int("ROT", 0),
@@ -513,7 +521,7 @@ impl ProjectileType {
         let mut image = ObjectImageState::new(id);
         image.read_input(section);
         image.read_art(image_section);
-        image.load_for_read(ObjectImageKind::Ordinary, ImageTheater::Uninitialized);
+        image.load_for_read(ObjectImageKind::Ordinary, ImageTheater::Uninitialized, None);
         let mut art = ProjectileArtState::new();
         art.read_bullet_fields(
             &mut image,

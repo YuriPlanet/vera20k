@@ -132,7 +132,7 @@ impl DamageConsequences {
         self,
         world: &mut Simulation,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> DamageCommitReceipt {
         let Self {
             mut effects,
@@ -297,7 +297,7 @@ pub(crate) fn admit_muzzle_anim(world: &mut Simulation, rules: &RuleSet, event: 
         descriptor,
         coord,
         constructor,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ) {
         log::debug!(
             "muzzle anim [{}] did not construct: {error}",

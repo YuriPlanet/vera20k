@@ -19,8 +19,9 @@ use crate::rules::weapon_type::WeaponType;
 #[cfg(any(test, feature = "test-support"))]
 use super::next_rule_set_serial;
 use super::{
-    HouseCostFactors, ProjectileHandle, ResolvedWeapon, RuleSet, TypeHandle, TypeWeapons,
-    WarheadHandle, WeaponHandle, WeaponParts, native_minutes_to_frames, upper_name_key,
+    HouseCostFactors, ProjectileHandle, ResolvedDebris, ResolvedWeapon, RuleSet, TypeHandle,
+    TypeWeapons, WarheadHandle, WeaponHandle, WeaponParts, native_minutes_to_frames,
+    upper_name_key,
 };
 #[cfg(any(test, feature = "test-support"))]
 use super::{NAME_KEY_COPIES, TYPE_NAME_LOOKUPS};
@@ -132,6 +133,7 @@ impl RuleSet {
     pub(crate) fn with_fresh_serial(mut self) -> Self {
         self.serial = next_rule_set_serial();
         self.resolve_handles();
+        self.rebuild_sound_names();
         self
     }
 
@@ -526,9 +528,9 @@ impl RuleSet {
         Self::lookup_ci(&self.weapons, id).copied()
     }
 
-    /// Dereference a handle this set resolved.
+    /// The weapon `handle` names in this set, which made it.
     #[inline]
-    fn weapon_by_handle(&self, handle: WeaponHandle) -> &WeaponType {
+    pub(crate) fn weapon_by_handle(&self, handle: WeaponHandle) -> &WeaponType {
         &self.weapon_types[handle.0 as usize]
     }
 
@@ -553,10 +555,13 @@ impl RuleSet {
     }
 
     /// Resolve every type's weapon records against this set's weapons
-    /// ([`TypeWeapons`]) and every weapon's warhead and projectile
-    /// ([`WeaponParts`]). Runs when the set is built, after the records'
-    /// last writer (`RulesTypeReferences::apply_to` sets the occupy
-    /// weapons), and when a copy takes its own serial.
+    /// ([`TypeWeapons`]), every weapon's warhead and projectile
+    /// ([`WeaponParts`]), and every type's and warhead's `DebrisTypes=`
+    /// against its `[VoxelAnims]` ([`ResolvedDebris`]). Runs when the set
+    /// is built, after the records' last writer
+    /// (`RulesTypeReferences::apply_to` sets the occupy weapons, and the
+    /// ordered Rules pass the warheads' debris), and when a copy takes its
+    /// own serial.
     pub(super) fn resolve_handles(&mut self) {
         let resolve = |id: Option<&str>| id.and_then(|id| self.weapon_handle(id));
         let resolved: Vec<TypeWeapons> = self
@@ -601,6 +606,88 @@ impl RuleSet {
         for (weapon, parts) in self.weapon_types.iter_mut().zip(parts) {
             weapon.project_parts(parts);
         }
+        let object_debris: Vec<ResolvedDebris> = self
+            .object_list
+            .iter()
+            .map(|object| self.resolve_debris(&object.debris_types))
+            .collect();
+        for (object, debris) in self.object_list.iter_mut().zip(object_debris) {
+            object.project_resolved_debris(debris);
+        }
+        let warhead_debris: Vec<ResolvedDebris> = self
+            .warhead_types
+            .iter()
+            .map(|warhead| self.resolve_debris(&warhead.debris_types))
+            .collect();
+        for (warhead, debris) in self.warhead_types.iter_mut().zip(warhead_debris) {
+            warhead.project_resolved_debris(debris);
+        }
+        self.radiation_site_warhead = self.warhead_handle(&self.radiation.site_warhead);
+    }
+
+    /// The warhead `[Radiation] RadSiteWarhead=` names, as
+    /// [`Self::warhead`] answers for it, through the handle this set
+    /// resolved; debug builds compare it with the name's.
+    #[inline]
+    pub(crate) fn radiation_site_warhead(&self) -> Option<&WarheadType> {
+        debug_assert!(
+            !crate::util::debug_checks::live_read_check_enabled()
+                || self.radiation_site_warhead == self.warhead_handle(&self.radiation.site_warhead),
+            "RadSiteWarhead resolved to {:?}, unlike its name {:?}",
+            self.radiation_site_warhead,
+            self.radiation.site_warhead
+        );
+        self.radiation_site_warhead
+            .map(|handle| self.warhead_by_handle(handle))
+    }
+
+    /// `names`, a `DebrisTypes=` list, as this set resolves it.
+    fn resolve_debris(&self, names: &[String]) -> ResolvedDebris {
+        ResolvedDebris {
+            rules_serial: self.serial,
+            types: names
+                .iter()
+                .map(|name| self.voxel_anim_type_id_by_name(name))
+                .collect(),
+        }
+    }
+
+    /// `object`'s `DebrisTypes=` as `[VoxelAnims]` types, in list order,
+    /// `None` for a name none has: the ids this set resolved when it holds
+    /// `object`, else each name looked up.
+    pub(crate) fn object_debris_types<'a>(
+        &self,
+        object: &'a ObjectType,
+    ) -> std::borrow::Cow<'a, [Option<VoxelAnimTypeId>]> {
+        self.debris_types(&object.debris_types, object.resolved_debris())
+    }
+
+    /// `warhead`'s `DebrisTypes=`, as [`Self::object_debris_types`] reads a
+    /// type's.
+    pub(crate) fn warhead_debris_types<'a>(
+        &self,
+        warhead: &'a WarheadType,
+    ) -> std::borrow::Cow<'a, [Option<VoxelAnimTypeId>]> {
+        self.debris_types(&warhead.debris_types, warhead.resolved_debris())
+    }
+
+    /// `names` through `resolved` when this set resolved it; debug builds
+    /// compare the ids with the names'.
+    fn debris_types<'a>(
+        &self,
+        names: &[String],
+        resolved: &'a ResolvedDebris,
+    ) -> std::borrow::Cow<'a, [Option<VoxelAnimTypeId>]> {
+        if resolved.rules_serial != self.serial {
+            return std::borrow::Cow::Owned(self.resolve_debris(names).types.into_vec());
+        }
+        debug_assert!(
+            !crate::util::debug_checks::live_read_check_enabled()
+                || resolved.types == self.resolve_debris(names).types,
+            "debris {names:?} resolved to {:?}, unlike their names",
+            resolved.types
+        );
+        std::borrow::Cow::Borrowed(&resolved.types)
     }
 
     /// Number of WeaponType global88756C allocation slots, including refused
@@ -747,6 +834,14 @@ impl RuleSet {
         self.ares
     }
 
+    /// VERA: whether the player's Ares setting Off is what keeps Ares from
+    /// playing in this game: its Rules layers or map hold a key that turns
+    /// Ares on for a player set to Auto (`ares_switch::AresInputs::kept_off`).
+    /// Their games are not the same game, which a refused network start says.
+    pub fn ares_kept_off(&self) -> bool {
+        self.ares_kept_off
+    }
+
     /// Whether Phobos plays in this game: its Rules layers or map hold a key
     /// of a Phobos piece that runs in every build, or the build has the
     /// `phobos` feature (`rules::phobos_switch`). Sim and presentation read
@@ -754,6 +849,23 @@ impl RuleSet {
     #[inline]
     pub fn phobos(&self) -> bool {
         self.phobos
+    }
+
+    /// Whether Kratos plays in this game: its Rules, art, mode or map hold a
+    /// key of a Kratos piece that runs in every build
+    /// (`rules::kratos_switch`). Sim and presentation read this one answer.
+    #[inline]
+    pub fn kratos(&self) -> bool {
+        self.kratos
+    }
+
+    /// VERA: whether this game plays RA2 Mode (docs/ra2-mode.md): original
+    /// Red Alert 2's rules where they differ from Yuri's Revenge. Sim and
+    /// rules read this one answer; app, asset and INI-root code read the
+    /// launch's choice (`util::ra2_launch`) it comes from.
+    #[inline]
+    pub fn ra2(&self) -> bool {
+        self.ra2
     }
 
     /// Whether this game's Rules were read the Ares way
@@ -920,6 +1032,16 @@ impl RuleSet {
         self.phobos && self.parallel_ai_queues.allows_parallel()
     }
 
+    /// Whether Ares' serial AI queues act in this game: Ares plays and
+    /// `[GlobalControls] AllowParallelAIQueues=no`. Ares then lets one
+    /// factory building per category start production at a time
+    /// (`BuildingClass_Update_Factory`, hook `0x4502F4`, Ares.dll
+    /// `10024E00`). The one key keeps it apart from the Phobos hooks
+    /// ([`Self::parallel_ai_queues_act`]), so the two share the house's slots.
+    pub fn serial_ai_queues_act(&self) -> bool {
+        self.ares && !self.parallel_ai_queues.allows_parallel()
+    }
+
     /// A superweapon type's `SuperWeaponTypeClass` array index (its
     /// `[SuperWeaponTypes]` position, case-insensitive), the value
     /// `SuperWeapon=` stores (BuildingType `+0x16F0`).
@@ -976,6 +1098,11 @@ impl RuleSet {
     /// Look up a `[VoxelAnims]` type by ID. Panics if `id` is out of range.
     pub fn voxel_anim_type(&self, id: VoxelAnimTypeId) -> &VoxelAnimType {
         &self.voxel_anim_types[id.0 as usize]
+    }
+
+    /// [`Self::voxel_anim_type`], or `None` for an id these rules do not hold.
+    pub(crate) fn find_voxel_anim_type(&self, id: VoxelAnimTypeId) -> Option<&VoxelAnimType> {
+        self.voxel_anim_types.get(id.0 as usize)
     }
 
     /// Resolve a `[VoxelAnims]` type name to its ID (case-insensitive).

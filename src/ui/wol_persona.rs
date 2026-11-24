@@ -15,18 +15,19 @@
 //! The models own the controls and what each close answers; `wolinfoMD.ini`
 //! and the service belong to the app's WOL owner.
 
-use crate::ui::shell::button::ShellButtonInteraction;
-use crate::ui::shell::descriptor::DialogId;
-use crate::ui::shell::geom::{
-    RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window, dlu_rect,
-};
-use crate::ui::shell::layout::status_line_rect;
-use crate::ui::shell::list::ListScrollInteraction;
-use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
-pub(crate) const AUTO_LOGIN_DIALOG: DialogId = DialogId(0x0112);
-pub(crate) const LOCALE_DIALOG: DialogId = DialogId(0x00FE);
-pub(crate) const ADD_BUDDY_DIALOG: DialogId = DialogId(0x0122);
+use crate::ui::shell::descriptor::DialogResourceId;
+use crate::ui::shell::geom::ShellAlign;
+use crate::ui::shell::geom::{RectPx, ShellScale};
+use crate::ui::shell::layout::RectTable;
+use crate::ui::shell::layout_data;
+use crate::ui::shell::menu_page::{MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
+use crate::ui::shell::page;
+
+pub(crate) const AUTO_LOGIN_DIALOG: DialogResourceId = DialogResourceId(0x0112);
+pub(crate) const LOCALE_DIALOG: DialogResourceId = DialogResourceId(0x00FE);
+pub(crate) const ADD_BUDDY_DIALOG: DialogResourceId = DialogResourceId(0x0122);
 /// IDOK/IDCANCEL: Yes/No on `0x112` and `0x122`, OK/Cancel on `0xFE`.
 pub(crate) const ACCEPT: u16 = 0x0001;
 pub(crate) const DECLINE: u16 = 0x0002;
@@ -38,20 +39,8 @@ pub(crate) const LOCALE_LIST: u16 = 0x03F0;
 pub(crate) const AUTO_LOGIN_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: AUTO_LOGIN_DIALOG,
     title_key: "GUI:AutoLoginQueryTitle",
-    stacked: &[MenuPageButtonSpec {
-        id: ACCEPT,
-        dlu_top: 116,
-        csf_key: "GUI:Yes",
-        tooltip_key: "STT:WOLAutoLoginYes",
-        result: Some(1),
-    }],
-    back: MenuPageButtonSpec {
-        id: DECLINE,
-        dlu_top: 257,
-        csf_key: "GUI:No",
-        tooltip_key: "STT:WOLAutoLoginNo",
-        result: Some(2),
-    },
+    stacked: &[MenuPageButtonSpec::new(ACCEPT, 116, "GUI:Yes", "STT:WOLAutoLoginYes").returning(1)],
+    back: MenuPageButtonSpec::new(DECLINE, 257, "GUI:No", "STT:WOLAutoLoginNo").returning(2),
 };
 
 /// RT_DIALOG `0xFE`: OK (created disabled, `0x5800000B`) on top, Cancel on
@@ -59,20 +48,8 @@ pub(crate) const AUTO_LOGIN_PAGE: MenuPageSpec = MenuPageSpec {
 pub(crate) const LOCALE_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: LOCALE_DIALOG,
     title_key: "GUI:Location",
-    stacked: &[MenuPageButtonSpec {
-        id: ACCEPT,
-        dlu_top: 116,
-        csf_key: "GUI:OK",
-        tooltip_key: "STT:WOLLocaleOK",
-        result: Some(1),
-    }],
-    back: MenuPageButtonSpec {
-        id: DECLINE,
-        dlu_top: 257,
-        csf_key: "GUI:Cancel",
-        tooltip_key: "STT:WOLLocaleCancel",
-        result: Some(2),
-    },
+    stacked: &[MenuPageButtonSpec::new(ACCEPT, 116, "GUI:OK", "STT:WOLLocaleOK").returning(1)],
+    back: MenuPageButtonSpec::new(DECLINE, 257, "GUI:Cancel", "STT:WOLLocaleCancel").returning(2),
 };
 
 /// RT_DIALOG `0x122`: Yes on top, No on the bottom row, and no heading
@@ -80,20 +57,10 @@ pub(crate) const LOCALE_PAGE: MenuPageSpec = MenuPageSpec {
 pub(crate) const ADD_BUDDY_PAGE: MenuPageSpec = MenuPageSpec {
     dialog: ADD_BUDDY_DIALOG,
     title_key: "",
-    stacked: &[MenuPageButtonSpec {
-        id: ACCEPT,
-        dlu_top: 116,
-        csf_key: "GUI:Yes",
-        tooltip_key: "STT:WOLAddBuddyQueryYes",
-        result: Some(1),
-    }],
-    back: MenuPageButtonSpec {
-        id: DECLINE,
-        dlu_top: 257,
-        csf_key: "GUI:No",
-        tooltip_key: "STT:WOLAddBuddyQueryNo",
-        result: Some(2),
-    },
+    stacked: &[
+        MenuPageButtonSpec::new(ACCEPT, 116, "GUI:Yes", "STT:WOLAddBuddyQueryYes").returning(1),
+    ],
+    back: MenuPageButtonSpec::new(DECLINE, 257, "GUI:No", "STT:WOLAddBuddyQueryNo").returning(2),
 };
 
 /// The question text: a centred static (`0x50020201`).
@@ -105,7 +72,7 @@ pub(crate) const DO_NOT_ASK_KEY: &str = "GUI:DoNotAsk";
 pub(crate) const LOCALE_LABEL_KEY: &str = "GUI:YourLocation";
 
 /// Status help of the two pages' children (executed `0x006040B0`).
-pub(crate) fn tooltip_key(dialog: DialogId, control: u16) -> Option<&'static str> {
+pub(crate) fn tooltip_key(dialog: DialogResourceId, control: u16) -> Option<&'static str> {
     match (dialog, control) {
         (AUTO_LOGIN_DIALOG, DO_NOT_ASK) => Some("STT:WOLAutoLoginDoNotAsk"),
         (AUTO_LOGIN_DIALOG, _) => AUTO_LOGIN_PAGE.button(control).map(|spec| spec.tooltip_key),
@@ -128,31 +95,17 @@ pub(crate) enum AutoLoginAnswer {
     No { ask_again: bool },
 }
 
-/// Dialog `0x112` or `0x122` while it exists. Init leaves Don't Ask
-/// unchecked; there is no Escape or Enter case.
+/// Dialog `0x112` or `0x122` while it exists; its Don't Ask box (unchecked
+/// at init) lives in the dialog's widgets. There is no Escape or Enter case.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) struct WolAutoLoginQuery {
-    pub(crate) do_not_ask: bool,
-    pub(crate) buttons: ShellButtonInteraction<u16>,
-    pub(crate) hovered: Option<u16>,
-}
+pub(crate) struct WolAutoLoginQuery;
 
 impl WolAutoLoginQuery {
-    /// A click on Don't Ask's icon: BS_AUTOCHECKBOX flips it.
-    pub(crate) fn toggle(&mut self) {
-        self.do_not_ask = !self.do_not_ask;
-    }
-
-    /// `0x122` writes `[Ask] AddMatchBuddies` from this on both buttons.
-    pub(crate) fn ask_again(&self) -> bool {
-        !self.do_not_ask
-    }
-
-    pub(crate) fn activate(&self, control: u16) -> Option<AutoLoginAnswer> {
+    pub(crate) fn activate(control: u16, do_not_ask: bool) -> Option<AutoLoginAnswer> {
         match control {
             ACCEPT => Some(AutoLoginAnswer::Yes),
             DECLINE => Some(AutoLoginAnswer::No {
-                ask_again: !self.do_not_ask,
+                ask_again: !do_not_ask,
             }),
             _ => None,
         }
@@ -200,55 +153,79 @@ pub(crate) fn locale_rows(texts: impl IntoIterator<Item = (i32, String)>) -> Vec
     leading
 }
 
-/// Dialog `0xFE` while it exists.
+/// Dialog `0xFE` while it exists: its rows; the list's selection (none
+/// after the fill's LB_SETCURSEL(-1), so OK starts disabled) lives in the
+/// dialog's widgets.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct WolLocalePage {
     pub(crate) rows: Vec<LocaleRow>,
-    /// LB_SETCURSEL(-1) after the fill: nothing is selected, so OK starts
-    /// disabled.
-    pub(crate) selected: Option<usize>,
-    pub(crate) top: usize,
-    pub(crate) scroll: ListScrollInteraction,
-    pub(crate) buttons: ShellButtonInteraction<u16>,
-    pub(crate) hovered: Option<u16>,
 }
 
 impl WolLocalePage {
     /// Init `0x497` (`0x00796C8E..0x00796D2F`): the rows of
-    /// [`locale_rows`], none selected.
+    /// [`locale_rows`].
     pub(crate) fn fill(&mut self, texts: impl IntoIterator<Item = (i32, String)>) {
         self.rows = locale_rows(texts);
-        self.selected = None;
-        self.top = 0;
     }
 
-    /// LBN_SELCHANGE (`0x00796C3C`): OK is enabled exactly while a row is
-    /// selected.
-    pub(crate) fn select(&mut self, row: usize) {
-        if row < self.rows.len() {
-            self.selected = Some(row);
-        }
-    }
-
-    pub(crate) fn button_enabled(&self, control: u16) -> bool {
-        control != ACCEPT || self.selected.is_some()
-    }
-
-    /// OK closes with the selected row's item data (0 with none), Cancel
-    /// with 0.
-    pub(crate) fn activate(&self, control: u16) -> Option<i32> {
-        if !self.button_enabled(control) {
-            return None;
-        }
+    /// OK closes with the selected row's item data, Cancel with 0. OK is
+    /// enabled exactly while a row is selected (LBN_SELCHANGE `0x00796C3C`).
+    pub(crate) fn activate(&self, control: u16, selected: Option<usize>) -> Option<i32> {
         match control {
-            ACCEPT => Some(
-                self.selected
-                    .and_then(|row| self.rows.get(row))
-                    .map_or(0, |row| row.locale),
-            ),
+            ACCEPT => Some(self.rows.get(selected?)?.locale),
             DECLINE => Some(0),
             _ => None,
         }
+    }
+}
+
+/// The question or the list's caption (a static without an id).
+pub(crate) const TEXT: u16 = 0xFFFF;
+
+/// A persona page's widgets: the column's buttons, the centred question and
+/// Don't Ask (`OwnerDraw_CheckBox 0x006163A0`, toggled on its icon's press),
+/// or the caption and the locale list (`0x00618D40`, every press selects).
+pub(crate) fn spec(dialog: DialogResourceId) -> NodeSpec {
+    let text = NodeSpec::new(NodeKind::Text).id(TEXT.into());
+    let (text, control) = if dialog == LOCALE_DIALOG {
+        let list = NodeSpec::new(NodeKind::List);
+        (
+            text.label(LOCALE_LABEL_KEY)
+                .with(Prop::Align, align(ShellAlign::H_CENTER)),
+            list.id(LOCALE_LIST.into()),
+        )
+    } else {
+        let checkbox = NodeSpec::new(NodeKind::Checkbox).label(DO_NOT_ASK_KEY);
+        let text = text.with(
+            Prop::Align,
+            align(ShellAlign::H_CENTER | ShellAlign::V_CENTER),
+        );
+        (text, checkbox.id(DO_NOT_ASK.into()))
+    };
+    let control = match tooltip_key(dialog, control_id(dialog)) {
+        Some(key) => control.tooltip(key),
+        None => control,
+    };
+    let text = if dialog == AUTO_LOGIN_DIALOG {
+        text.label(AUTO_LOGIN_TEXT_KEY)
+    } else {
+        text
+    };
+    NodeSpec::new(NodeKind::Dialog)
+        .children(page::menu_buttons(WolPersonaLayout::spec(dialog)))
+        .child(text)
+        .child(control)
+}
+
+fn align(align: ShellAlign) -> Value {
+    Value::Int(i32::from(align.0))
+}
+
+fn control_id(dialog: DialogResourceId) -> u16 {
+    if dialog == LOCALE_DIALOG {
+        LOCALE_LIST
+    } else {
+        DO_NOT_ASK
     }
 }
 
@@ -257,30 +234,15 @@ impl WolLocalePage {
 /// (`0x0060C0C0`).
 #[derive(Debug, Clone)]
 pub(crate) struct WolPersonaLayout {
-    pub(crate) dialog: DialogId,
+    pub(crate) dialog: DialogResourceId,
     pub(crate) page: MenuPageLayout,
-    pub(crate) status_help: RectPx,
-    /// `0x112`/`0x122`: the question; `0xFE`: the list's caption.
-    pub(crate) text: RectPx,
-    /// `0x112`/`0x122`: Don't Ask; `0xFE`: the list `0x3F0`.
-    pub(crate) control: RectPx,
+    /// The question or the list's caption [`TEXT`], and Don't Ask or the
+    /// list `0x3F0`.
+    pub(crate) rects: RectTable,
 }
 
 impl WolPersonaLayout {
-    pub(crate) fn new(dialog: DialogId, width: i32, height: i32) -> Self {
-        Self::build(dialog, width, height, ShellScale::RETAIL)
-    }
-
-    pub(crate) fn responsive(dialog: DialogId, width: i32, height: i32) -> Self {
-        Self::build(
-            dialog,
-            width,
-            height,
-            ShellScale::from_screen(width, height),
-        )
-    }
-
-    pub(crate) fn spec(dialog: DialogId) -> &'static MenuPageSpec {
+    pub(crate) fn spec(dialog: DialogResourceId) -> &'static MenuPageSpec {
         match dialog {
             LOCALE_DIALOG => &LOCALE_PAGE,
             ADD_BUDDY_DIALOG => &ADD_BUDDY_PAGE,
@@ -288,77 +250,25 @@ impl WolPersonaLayout {
         }
     }
 
-    fn build(dialog: DialogId, width: i32, height: i32, scale: ShellScale) -> Self {
-        let spec = Self::spec(dialog);
-        let locale = dialog == LOCALE_DIALOG;
-        let status_template = RectPx::new(2, 355, 316, 12);
-        let (mut page, status_help) = if scale.is_retail() {
-            (
-                menu_page::compute_layout(spec, width as u32, height as u32),
-                status_line_rect(status_template, width, height),
-            )
-        } else {
-            (
-                menu_page::compute_responsive_layout(spec, width as u32, height as u32),
-                scale.scale_rect(status_line_rect(
-                    status_template,
-                    SHELL_BASE_W,
-                    SHELL_BASE_H,
-                )),
-            )
-        };
-        // 0x112's heading 0x694 is 108x11 DLU and placed by 0x0060B1D0, one
-        // row taller than the family's. 0xFE's is not placed at all: it
-        // stays at its template rect at every size.
-        let title = if locale {
-            child_window(424, 4, 108, 11)
-        } else {
-            let mut title =
-                menu_page::compute_layout(spec, SHELL_BASE_W as u32, SHELL_BASE_H as u32).title;
-            title.h = dlu_rect(316, 4, 108, 11).h + 1;
-            title
-        };
-        if scale.is_retail() && !locale {
-            page.title.h = title.h;
-        } else {
-            page.title = scale.scale_rect(title);
-        }
-        let (text, control) = match dialog {
-            LOCALE_DIALOG => (
-                child_window(119, 91, 187, 15),
-                child_window(119, 112, 188, 145),
-            ),
-            ADD_BUDDY_DIALOG => (
-                child_window(21, 73, 380, 109),
-                child_window(109, 222, 220, 14),
-            ),
-            _ => (
-                child_window(15, 131, 392, 109),
-                child_window(124, 236, 157, 14),
-            ),
-        };
+    pub(crate) fn new(
+        dialog: DialogResourceId,
+        width: i32,
+        height: i32,
+        scale: ShellScale,
+    ) -> Self {
+        let section = format!("{:#X}", dialog.0);
+        let (page, rects) =
+            layout_data::menu_page(Self::spec(dialog), &section, scale, width, height);
         Self {
             dialog,
             page,
-            status_help,
-            text: scale.scale_rect(text),
-            control: scale.scale_rect(control),
+            rects,
         }
     }
 
-    /// The control under `(x, y)`: buttons first, then the list or the
-    /// checkbox.
-    pub(crate) fn control_at(&self, x: i32, y: i32) -> Option<u16> {
-        if let Some(button) = self.page.buttons.iter().find(|b| b.rect.contains(x, y)) {
-            return Some(button.id);
-        }
-        self.control
-            .contains(x, y)
-            .then_some(if self.dialog == LOCALE_DIALOG {
-                LOCALE_LIST
-            } else {
-                DO_NOT_ASK
-            })
+    /// Where control `id` sits.
+    pub(crate) fn rect_of(&self, id: u16) -> Option<RectPx> {
+        self.rects.get(id).or_else(|| self.page.button_rect(id))
     }
 }
 
@@ -382,19 +292,21 @@ mod tests {
             let key = format!("0x{:X}", dialog.0);
             for (size, case) in corpus["layouts"][&key]["sizes"].as_object().unwrap() {
                 let (width, height) = size.split_once('x').unwrap();
-                let layout =
-                    WolPersonaLayout::new(dialog, width.parse().unwrap(), height.parse().unwrap());
+                let layout = WolPersonaLayout::new(
+                    dialog,
+                    width.parse().unwrap(),
+                    height.parse().unwrap(),
+                    crate::ui::shell::geom::RETAIL_SCALE,
+                );
                 for (control, child) in case["controls"].as_object().unwrap() {
                     let id = u16::from_str_radix(&control[2..], 16).unwrap();
                     let actual = match id {
                         0x71C => layout.page.warning_monitor,
                         0x694 => layout.page.title,
-                        0x695 => layout.status_help,
-                        0xFFFF | 0x71B => layout.text,
-                        DO_NOT_ASK | LOCALE_LIST => layout.control,
+                        0x695 => layout.page.status_help,
+                        0x71B => layout.rect_of(TEXT).unwrap(),
                         _ => layout
-                            .page
-                            .button_rect(id)
+                            .rect_of(id)
                             .unwrap_or_else(|| panic!("{key} {control}")),
                     };
                     assert_eq!(actual, rect(&child["rect"]), "{key} {size} {control}");
@@ -425,18 +337,17 @@ mod tests {
 
     #[test]
     fn auto_login_answers_follow_the_proc() {
-        let mut query = WolAutoLoginQuery::default();
-        assert_eq!(query.activate(ACCEPT), Some(AutoLoginAnswer::Yes));
+        let activate = WolAutoLoginQuery::activate;
+        assert_eq!(activate(ACCEPT, false), Some(AutoLoginAnswer::Yes));
         assert_eq!(
-            query.activate(DECLINE),
+            activate(DECLINE, false),
             Some(AutoLoginAnswer::No { ask_again: true })
         );
-        query.toggle();
         assert_eq!(
-            query.activate(DECLINE),
+            activate(DECLINE, true),
             Some(AutoLoginAnswer::No { ask_again: false })
         );
-        assert_eq!(query.activate(DO_NOT_ASK), None);
+        assert_eq!(activate(DO_NOT_ASK, true), None);
     }
 
     #[test]
@@ -452,13 +363,10 @@ mod tests {
         ]);
         let order: Vec<i32> = page.rows.iter().map(|row| row.locale).collect();
         assert_eq!(order, [0, 1, 3, 5, 4, 2]);
-        assert!(!page.button_enabled(ACCEPT));
-        assert_eq!(page.activate(ACCEPT), None);
-        assert_eq!(page.activate(DECLINE), Some(0));
-        page.select(3);
-        assert!(page.button_enabled(ACCEPT));
-        assert_eq!(page.activate(ACCEPT), Some(5));
-        page.select(99);
-        assert_eq!(page.selected, Some(3));
+        // Nothing selected: OK answers nothing (it is disabled).
+        assert_eq!(page.activate(ACCEPT, None), None);
+        assert_eq!(page.activate(DECLINE, None), Some(0));
+        assert_eq!(page.activate(ACCEPT, Some(3)), Some(5));
+        assert_eq!(page.activate(ACCEPT, Some(99)), None);
     }
 }

@@ -2,11 +2,15 @@
 //! retrying commands, and the finish, leave, logout, relay-renewal and report
 //! bookkeeping the service keeps for its visit.
 
+#[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
+use super::DEFAULT_LOBBY_URL;
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+use super::lobby_base_url;
 use super::{
     ENDED_AGO_LIMIT, LiveService, MatchReport, RELAY_GRANT_LIFETIME, RELAY_RENEWAL_MARGIN,
     RELAY_RENEWAL_RETRY_MS, RELAY_TIMEOUT, RetryingCommand, RoomAgreement, Translations,
-    WatchStart, Watching, decode, http, lobby_base_url, maps, relay_failure_line, relay_uuid,
-    update_required_text, wire,
+    WatchStart, Watching, decode, http, maps, relay_failure_line, relay_uuid, update_required_text,
+    wire,
 };
 use crate::util::time::Instant;
 use anyhow::{Context, Result, ensure};
@@ -96,18 +100,19 @@ impl LiveService {
             auth_attempt: 0,
             revision: 0,
             room: RoomAgreement::default(),
-            campaign_rooms: false,
             start_preparation: None,
             locally_refused_start: false,
             player_id: String::new(),
             member_ids: BTreeMap::new(),
             pending: None,
             match_id: None,
+            switching_room: None,
             finishing: None,
             leaving: None,
             logging_out: None,
             next_renewal_attempt: None,
             relay_renewal_due: None,
+            relay_lapses_at: None,
             maps: Default::default(),
             translations: Translations::default(),
             spawned: false,
@@ -259,6 +264,7 @@ impl LiveService {
         }
         self.next_renewal_attempt = None;
         self.relay_renewal_due = None;
+        self.relay_lapses_at = None;
         let payload = self.finish_payload(&match_id, now);
         self.back_to_room = false;
         self.network_quality = None;
@@ -510,7 +516,14 @@ impl LiveService {
     pub(super) fn relay_granted(&mut self, now_ms: u32) {
         let renew_after = (RELAY_GRANT_LIFETIME - RELAY_RENEWAL_MARGIN).as_millis() as u32;
         self.relay_renewal_due = Some(now_ms.wrapping_add(renew_after));
+        self.relay_lapses_at = Some(now_ms.wrapping_add(RELAY_GRANT_LIFETIME.as_millis() as u32));
         self.next_renewal_attempt = None;
+    }
+
+    /// The newest gameplay grant lapsed by `now_ms`; false with none.
+    pub(super) fn relay_pass_lapsed(&self, now_ms: u32) -> bool {
+        self.relay_lapses_at
+            .is_some_and(|lapses_at| deadline_reached(now_ms, lapses_at))
     }
 
     /// The lobby already reserved this match's place. Release it if its start
@@ -553,6 +566,7 @@ impl LiveService {
         };
         self.next_renewal_attempt = None;
         self.relay_renewal_due = None;
+        self.relay_lapses_at = None;
         self.command("unwatch", json!({"match_id":watching.match_id}));
         true
     }
@@ -574,9 +588,11 @@ impl LiveService {
         };
         // Short-lived grants renew before expiry. Retry a missing reply without
         // replacing the live route or resetting the event cursor.
-        // Windows' timeGetTime wraps this 32-bit word every 49.7 days.
-        let reached = |deadline: u32| now_ms.wrapping_sub(deadline) as i32 >= 0;
-        if !reached(due) || self.next_renewal_attempt.is_some_and(|next| !reached(next)) {
+        if !deadline_reached(now_ms, due)
+            || self
+                .next_renewal_attempt
+                .is_some_and(|next| !deadline_reached(now_ms, next))
+        {
             return;
         }
         let match_id = match_id.clone();
@@ -698,4 +714,10 @@ impl LiveService {
             self.send_command(id, operation, payload);
         }
     }
+}
+
+/// `deadline` on the low 32 bits of frame_pacer::wall_clock_ms has come by
+/// `now_ms`. Windows' timeGetTime wraps this word every 49.7 days.
+fn deadline_reached(now_ms: u32, deadline: u32) -> bool {
+    now_ms.wrapping_sub(deadline) as i32 >= 0
 }

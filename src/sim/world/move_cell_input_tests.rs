@@ -126,7 +126,7 @@ fn ground_walk_order_preserves_native_human_deploy_refusal() {
         id,
         Some(crate::sim::components::NavTargetRef::cell(11, 10)),
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let actor = sim.substrate.entities.get(id).unwrap();
     let walk = actor.locomotor.as_ref().unwrap();
@@ -174,6 +174,59 @@ fn retail_scene(type_name: &str) -> Option<(Simulation, RuleSet, InternedId, u64
         );
     }
     Some((sim, rules, owner, gi, id))
+}
+
+/// Foot ClickedAction 4D81A9..4D8231 orders Move beyond the opposite mouth.
+#[test]
+fn infantry_and_unit_click_through_a_tunnel_but_jumpjet_infantry_cannot() {
+    use crate::map::tube_facts::{TubeFact, TubeId};
+    use crate::rules::terrain_rules::LandType;
+    let Some((mut sim, rules, owner, gi, tank)) = retail_scene("MTNK") else {
+        return;
+    };
+    let rocket = sim
+        .spawn_object("JUMPJET", "Local", 6, 6, 0, &rules)
+        .unwrap();
+    let terrain = sim.resolved_terrain().unwrap();
+    let mut cells = terrain.cells().iter().cloned().collect::<Vec<_>>();
+    let mouths = [(7u16, 5u16), (11, 5)];
+    for (id, &(x, y)) in mouths.iter().enumerate() {
+        let cell = &mut cells[usize::from(y) * 16 + usize::from(x)];
+        cell.land_type = LandType::Tunnel.as_index();
+        cell.tube_index = Some(TubeId(id as u16));
+    }
+    sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells_with_tubes(
+        16,
+        16,
+        cells,
+        vec![
+            TubeFact::explicit(mouths[0], mouths[1], 2, vec![2; 4]),
+            TubeFact::explicit(mouths[1], mouths[0], 6, vec![6; 4]),
+        ],
+    ));
+    for unit in [gi, tank] {
+        assert_eq!(
+            sim.cell_move_action(owner, unit, mouths[0], query(true, false), &rules)
+                .unwrap()
+                .native(),
+            0x23
+        );
+        assert_eq!(
+            sim.cell_click_destination(owner, unit, mouths[0], true, &rules)
+                .unwrap(),
+            Some((12, 5))
+        );
+        assert!(
+            !sim.cell_click_flashes_move(owner, unit, mouths[0], true, &rules)
+                .unwrap()
+        );
+    }
+    assert_eq!(
+        sim.cell_move_action(owner, rocket, mouths[0], query(true, false), &rules)
+            .unwrap()
+            .native(),
+        0
+    );
 }
 
 fn query(mouse_over: bool, shift: bool) -> CellActionQuery {

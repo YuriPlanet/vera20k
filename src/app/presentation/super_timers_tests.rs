@@ -313,7 +313,7 @@ fn sixty_supers_fold_page_and_shrink_without_losing_local_or_mission_rows() {
     assert_eq!(expanded.len(), 12); // mission + arrow + two local + eight others
     assert_eq!(expanded[1], DockRow::Toggle);
     dock.scroll_rows
-        .push(crate::ui::gadget::GadgetRect::new(700, 500, 97, 14));
+        .push(crate::ui::shell::geom::RectPx::new(700, 500, 97, 14));
     assert!(!dock.wheel(699, 505, -1.0));
     assert!(dock.wheel(750, 505, -1.0));
     let scrolled = dock.rows(&lines, Some(house(29)), [800, 600], 12, true);

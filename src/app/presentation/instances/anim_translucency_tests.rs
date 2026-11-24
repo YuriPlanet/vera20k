@@ -7,7 +7,7 @@
 use super::{DisplayEffectInputs, build_display_effect_instances};
 use crate::app::presentation::detail::DetailState;
 use crate::app::presentation::render::draw_plan_lowering::{
-    NativeDisplayOrder, ObjectTexture, PlannedObjectInstance, lower_object_instances,
+    NativeDisplayOrder, ObjectTexture, OwnedPlannedObject, PlannedObjects, lower_object_instances,
 };
 use crate::map::houses::HouseColorMap;
 use crate::map::lighting::CellLightGrid;
@@ -100,7 +100,7 @@ fn emit(
     rules: &RuleSet,
     id: u64,
     atlas: &SpriteAtlas,
-) -> Vec<PlannedObjectInstance> {
+) -> Vec<OwnedPlannedObject> {
     emit_with_house_colors(sim, rules, id, atlas, &Default::default())
 }
 
@@ -110,7 +110,7 @@ fn emit_with_house_colors(
     id: u64,
     atlas: &SpriteAtlas,
     house_colors: &HouseColorMap,
-) -> Vec<PlannedObjectInstance> {
+) -> Vec<OwnedPlannedObject> {
     emit_with_lighting(
         sim,
         rules,
@@ -130,7 +130,7 @@ fn emit_with_lighting(
     house_colors: &HouseColorMap,
     lighting: &CellLightGrid,
     intensities: Option<&std::collections::BTreeMap<u64, i32>>,
-) -> Vec<PlannedObjectInstance> {
+) -> Vec<OwnedPlannedObject> {
     // Meteor's real constructor changes its launch coordinate. Follow the
     // resulting location with the camera; do not overwrite the instance.
     let coord = sim.anim_absolute_coord(id).unwrap();
@@ -147,7 +147,7 @@ fn emit_with_lighting(
     let order = NativeDisplayOrder::from_world(&sim, None);
     let before_hash = sim.state_hash();
     let before_rng = sim.rng_state();
-    let mut out = Vec::new();
+    let mut out = PlannedObjects::default();
     build_display_effect_instances(
         &DisplayEffectInputs {
             sim,
@@ -174,6 +174,7 @@ fn emit_with_lighting(
         &order,
         Default::default(),
     );
+    let out = out.into_owned();
     assert_eq!(sim.state_hash(), before_hash);
     assert_eq!(sim.rng_state(), before_rng);
     out
@@ -600,7 +601,7 @@ fn remapped_free_anim_uses_constructor_light_and_native_material() {
         plain[0].pieces[0].instance.position
     );
     assert_eq!(piece.instance.size, plain[0].pieces[0].instance.size);
-    let layers = lower_object_instances(remapped);
+    let layers = lower_object_instances(remapped.into());
     assert_eq!(layers[layer_index].owners, [id]);
     assert_eq!(layers[layer_index].runs.len(), 1);
     assert_eq!(layers[layer_index].runs[0].packed_parent, Some(id));
@@ -680,7 +681,7 @@ fn free_anim_material_transport_preserves_special_draw_fallbacks() {
                 "{name}: complete legacy material"
             );
         }
-        let layers = lower_object_instances(out);
+        let layers = lower_object_instances(out.into());
         let layer = &layers[layer_index];
         assert_eq!(layer.owners, vec![id; count], "{name}");
         assert_eq!(layer.runs.len(), count, "{name}");
@@ -762,7 +763,7 @@ fn free_anim_suppressed_ramp_emits_no_piece_for_ordinary_or_special_paths() {
             out.is_empty(),
             "{name}: suppressed draw must not become an opaque piece"
         );
-        let layers = lower_object_instances(out);
+        let layers = lower_object_instances(out.into());
         assert!(
             layers
                 .iter()

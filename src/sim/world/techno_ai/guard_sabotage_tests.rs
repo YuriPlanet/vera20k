@@ -51,7 +51,7 @@ fn a_computer_tanya_guarding_with_a_building_target_queues_sabotage() {
         entity
             .attack_target
             .set_for_test(Some(TargetKind::Entity(barracks)));
-        crate::sim::world::dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default())
+        crate::sim::world::dispatch_foot_mission(&mut sim, id, &rules, &mut ObjectAiCtx::default())
             .unwrap();
         sim.substrate
             .entities
@@ -105,7 +105,7 @@ fn area_guard_sabotage_precedes_the_leash_and_draws_nothing() {
     entity.attack_target.set_for_test(Some(target));
     let before = sim.rng_state();
 
-    crate::sim::world::dispatch_foot_mission(&mut sim, tanya, &rules, ObjectAiCtx::default())
+    crate::sim::world::dispatch_foot_mission(&mut sim, tanya, &rules, &mut ObjectAiCtx::default())
         .unwrap();
 
     let entity = sim.substrate.entities.get(tanya).unwrap();

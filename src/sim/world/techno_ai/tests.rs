@@ -77,7 +77,7 @@ fn a_network_game_builds_no_behind_anim_for_the_local_players_lamp() {
         hide(&mut sim, true, (10, 10));
         behind_indicator_step(&mut sim, lamp, &rules);
         let lamp = sim.substrate.entities.get(lamp).unwrap();
-        assert!(lamp.discovery.owned_by_current_house());
+        assert!(lamp.seldom.discovery.owned_by_current_house());
         assert_eq!(lamp.behind_anim().is_some(), takes_anim, "{mode:?}");
     }
 }
@@ -372,9 +372,9 @@ fn a_dead_medic_lets_go_of_an_enemy_on_its_corpse_visit() {
             id,
             crate::sim::world::InfantryDeathSequence::Die1,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
-        sim.object_ai_visit_one(id, Some(&rules), ObjectAiCtx::default());
+        sim.object_ai_visit_one(id, Some(&rules), &mut ObjectAiCtx::default());
         let corpse = sim.substrate.entities.get(id).unwrap();
         assert_eq!(corpse.mission_leaf.as_infantry().unwrap().doing(), 11);
         assert!(corpse.is_object_alive() && corpse.health.current() == 0);
@@ -572,7 +572,7 @@ fn rocking_tipover_uses_real_c4_receiver_before_the_alive_guard() {
     }))
     .unwrap();
     sim.substrate.entities.get_mut(victim).unwrap().rocking = Some(prior);
-    sim.object_ai_visit_one(victim, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(victim, Some(&rules), &mut ObjectAiCtx::default());
     assert!(
         sim.substrate.entities.get(victim).is_none_or(|entity| {
             !entity.lifecycle.object_alive() || entity.health.current() <= 0
@@ -603,11 +603,11 @@ fn rocking_crash_birth_respects_the_victims_live_logic_slot() {
         let mut rates = None;
         sim.for_each_live_object(|sim, id| {
             if id == caller {
-                assert!(sim.foot_crash(victim, None, &rules, FrameEffects::default()));
+                assert!(sim.foot_crash(victim, None, &rules, &mut FrameEffects::default()));
                 let rocking = sim.substrate.entities.get(victim).unwrap().rocking.unwrap();
                 rates = Some((rocking.vel_sideways(), rocking.vel_forwards()));
             }
-            sim.object_ai_visit_one(id, Some(&rules), ObjectAiCtx::default());
+            sim.object_ai_visit_one(id, Some(&rules), &mut ObjectAiCtx::default());
         });
         let rates = rates.unwrap();
         assert!(rates.0 != SimFixed::ZERO || rates.1 != SimFixed::ZERO);
@@ -624,7 +624,7 @@ fn rocking_crash_birth_respects_the_victims_live_logic_slot() {
         );
         sim.session
             .set_binary_frame_for_test(sim.session.binary_frame() + 1);
-        sim.object_ai_stage_with(Some(&rules), ObjectAiCtx::default());
+        sim.object_ai_stage_with(Some(&rules), &mut ObjectAiCtx::default());
         let rocking = sim.substrate.entities.get(victim).unwrap().rocking.unwrap();
         assert_eq!(
             (rocking.angle_sideways(), rocking.angle_forwards()),
@@ -659,7 +659,7 @@ fn rocking_skips_unloaded_temporal_tube_and_limbo_entries() {
                     Some(victim),
                     &rules,
                     None,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 );
                 assert!(sim.substrate.entities.get(victim).unwrap().ai_frozen());
             }
@@ -694,7 +694,7 @@ fn rocking_skips_unloaded_temporal_tube_and_limbo_entries() {
         // Tube owns its separate Process; this component test stops at
         // the AI shell, without fabricating a Tube map or calling it twice.
         if gate == "tube" {
-            sim.object_ai_stage_with(Some(&rules), ObjectAiCtx::default());
+            sim.object_ai_stage_with(Some(&rules), &mut ObjectAiCtx::default());
         } else {
             assert!(
                 sim.advance_tick(&[], Some(&rules), None, None, 33)
@@ -756,13 +756,13 @@ fn unit_voice_interest_follows_reached_logic_heads_without_sorted_or_unvisited_o
     // Taking the interest projection without an AI pass (including a
     // paused app pass) cannot create a visit or consume any voice latch.
     assert!(unit_voice_facts(&sim).is_empty());
-    sim.object_ai_stage_with(Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_stage_with(Some(&rules), &mut ObjectAiCtx::default());
     assert_eq!(unit_voice_facts(&sim), vec![(9, false), (3, false)]);
 
     // No pending owners means no per-actor output for the whole live walk.
     sim.sound_events.clear_for_test();
     sim.prepare_unit_voice_visits(Default::default());
-    sim.object_ai_stage_with(Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_stage_with(Some(&rules), &mut ObjectAiCtx::default());
     assert!(unit_voice_facts(&sim).is_empty());
 }
 
@@ -773,17 +773,32 @@ fn unit_voice_disposal_stays_ordered_after_visits_and_before_a_removed_owners_sl
     // Ordinary UnInit removes id3 before its slot; the common physical
     // destructor must still clear a pending, never-visited voice owner.
     sim.uninit_with_rules(3, &rules);
-    sim.process_pending_delete_with(&rules, crate::sim::world::FrameEffects::default(), 1, false);
-    sim.object_ai_stage_with(Some(&rules), ObjectAiCtx::default());
+    sim.process_pending_delete_with(
+        &rules,
+        &mut crate::sim::world::FrameEffects::default(),
+        1,
+        false,
+    );
+    sim.object_ai_stage_with(Some(&rules), &mut ObjectAiCtx::default());
     sim.uninit_with_rules(9, &rules);
-    sim.process_pending_delete_with(&rules, crate::sim::world::FrameEffects::default(), 1, false);
+    sim.process_pending_delete_with(
+        &rules,
+        &mut crate::sim::world::FrameEffects::default(),
+        1,
+        false,
+    );
     assert_eq!(
         unit_voice_facts(&sim),
         vec![(3, true), (9, false), (9, true)]
     );
 
     // Repeating the drain cannot publish a second destructor marker.
-    sim.process_pending_delete_with(&rules, crate::sim::world::FrameEffects::default(), 1, false);
+    sim.process_pending_delete_with(
+        &rules,
+        &mut crate::sim::world::FrameEffects::default(),
+        1,
+        false,
+    );
     assert_eq!(
         unit_voice_facts(&sim),
         vec![(3, true), (9, false), (9, true)]
@@ -810,7 +825,7 @@ fn unit_voice_interest_is_not_snapshot_or_hash_state_and_expires_after_a_frame()
         crate::rules::ruleset::RuleSet::empty_for_test(),
         67,
         super::super::TickLane::Ordinary,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .expect("empty authoritative frame");
     sim.record_unit_voice_visit(3);
@@ -884,7 +899,7 @@ fn object_ai_stage_visits_dying_object_in_its_live_slot() {
         .death
         .set_dying_for_test(true);
 
-    let visited = sim.object_ai_walk(true, None, ObjectAiCtx::default());
+    let visited = sim.object_ai_walk(true, None, &mut ObjectAiCtx::default());
     assert_eq!(
         visited,
         vec![1, 2],
@@ -913,7 +928,7 @@ fn bracket_pre_guard_short_circuits_dead_unit() {
             &mut sim,
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            ObjectAiCtx::default(),
+            &mut ObjectAiCtx::default(),
             &mut ObjectAiOutcome::default()
         ),
         BracketReach::DiedInPre
@@ -1349,7 +1364,7 @@ fn queued_guard_does_not_open_passive_gate_before_commence() {
     .unwrap();
     let before = sim.scenario_rng.logical_state();
     let timer = sim.substrate.entities.get(1).unwrap().passive_scan.timer();
-    passive_acquire_step(&mut sim, 1, &rules, ObjectAiCtx::default());
+    passive_acquire_step(&mut sim, 1, &rules, &mut ObjectAiCtx::default());
     assert_eq!(sim.scenario_rng.logical_state(), before);
     assert_eq!(
         sim.substrate.entities.get(1).unwrap().passive_scan.timer(),
@@ -1358,7 +1373,7 @@ fn queued_guard_does_not_open_passive_gate_before_commence() {
 
     sim.substrate.mission_commence_exact(1, 45).unwrap();
     sim.session.set_binary_frame_for_test(46);
-    passive_acquire_step(&mut sim, 1, &rules, ObjectAiCtx::default());
+    passive_acquire_step(&mut sim, 1, &rules, &mut ObjectAiCtx::default());
     assert_ne!(sim.scenario_rng.logical_state(), before);
     assert_eq!(
         sim.substrate
@@ -1450,7 +1465,7 @@ fn passive_gate_arms_follow_the_original() {
     let mut sim = Simulation::new();
     let scans = |sim: &mut Simulation, id: u64| {
         let before = sim.scenario_rng.state();
-        passive_acquire_step(sim, id, &rules, ObjectAiCtx::default());
+        passive_acquire_step(sim, id, &rules, &mut ObjectAiCtx::default());
         sim.scenario_rng.state() != before
     };
     let on_move =
@@ -1624,7 +1639,12 @@ fn a_berserk_object_calms_down_when_its_time_runs_out() {
         actor.berserk.set_active_for_test(true);
         actor.berserk.set_timer_for_test(2);
         let step = |sim: &mut Simulation| {
-            berserk_step(sim, 1, &rules, crate::sim::world::FrameEffects::default());
+            berserk_step(
+                sim,
+                1,
+                &rules,
+                &mut crate::sim::world::FrameEffects::default(),
+            );
             let actor = sim.substrate.entities.get(1).unwrap();
             (
                 actor.berserk.is_active(),
@@ -1728,7 +1748,7 @@ fn power_does_not_gate_the_scan_but_an_empty_garrison_does() {
     sim.power_states.map_mut_for_test().insert(owner, power);
 
     let before = sim.scenario_rng.state();
-    passive_acquire_step(&mut sim, 1, &rules, ObjectAiCtx::default());
+    passive_acquire_step(&mut sim, 1, &rules, &mut ObjectAiCtx::default());
     assert_ne!(
         sim.scenario_rng.state(),
         before,
@@ -1736,7 +1756,7 @@ fn power_does_not_gate_the_scan_but_an_empty_garrison_does() {
     );
 
     let before = sim.scenario_rng.state();
-    passive_acquire_step(&mut sim, 2, &rules, ObjectAiCtx::default());
+    passive_acquire_step(&mut sim, 2, &rules, &mut ObjectAiCtx::default());
     assert_eq!(
         sim.scenario_rng.state(),
         before,
@@ -1864,7 +1884,7 @@ fn attack_band_delay(seed: u64, type_name: &str, category: EntityCategory) -> (i
     let mut sim = attack_band_fixture(seed, type_name, category);
     let mut expected_rng = sim.clone_scenario_rng();
     let jitter = expected_rng.next_range_u32_inclusive(0, 2) as i32;
-    sim.object_ai_visit_one(1, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(1, Some(&rules), &mut ObjectAiCtx::default());
     assert_eq!(
         sim.scenario_rng.logical_state(),
         expected_rng.logical_state(),
@@ -1881,7 +1901,11 @@ fn move_handler_rearms_from_the_authoritative_object_ai_host() {
     let mut expected_rng = sim.clone_scenario_rng();
     let jitter = expected_rng.next_range_u32_inclusive(0, 2) as i32;
 
-    assert!(sim.object_ai_visit_one(ORDINARY_DRIVE_HOST_ID, Some(&rules), ObjectAiCtx::default(),));
+    assert!(sim.object_ai_visit_one(
+        ORDINARY_DRIVE_HOST_ID,
+        Some(&rules),
+        &mut ObjectAiCtx::default(),
+    ));
 
     let entity = sim
         .substrate
@@ -1937,7 +1961,11 @@ fn move_handler_preserves_pending_timer_without_consuming_rng() {
         });
     let before_rng = sim.scenario_rng.logical_state();
 
-    sim.object_ai_visit_one(ORDINARY_DRIVE_HOST_ID, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(
+        ORDINARY_DRIVE_HOST_ID,
+        Some(&rules),
+        &mut ObjectAiCtx::default(),
+    );
 
     assert_eq!(dispatch_timer_of(&sim, ORDINARY_DRIVE_HOST_ID), pending);
     assert_eq!(sim.scenario_rng.logical_state(), before_rng);
@@ -2171,7 +2199,7 @@ fn an_aircraft_drops_a_target_in_the_air() {
                 &mut sim,
                 1,
                 RuleSet::empty_for_test(),
-                FrameEffects::empty(),
+                &mut FrameEffects::empty(),
             );
             assert_eq!(dropped, target_of(&sim, 1).is_none());
             !dropped
@@ -2183,7 +2211,7 @@ fn an_aircraft_drops_a_target_in_the_air() {
     let visited = |altitude: i32| {
         let mut sim = pair(altitude);
         sim.session.set_binary_frame_for_test(1);
-        sim.object_ai_visit_one(1, None, ObjectAiCtx::default());
+        sim.object_ai_visit_one(1, None, &mut ObjectAiCtx::default());
         target_of(&sim, 1)
     };
     // The visit's rules (`None`) are the empty test rules.
@@ -2229,7 +2257,7 @@ fn an_aircraft_asks_its_own_house_before_dropping_a_cloaked_target() {
             &mut sim,
             1,
             RuleSet::empty_for_test(),
-            FrameEffects::empty(),
+            &mut FrameEffects::empty(),
         );
         target_of(&sim, 1).is_some()
     };
@@ -2276,7 +2304,7 @@ fn a_natural_attacker_lets_go_of_an_unnatural_target_on_the_sixteenth_frame() {
         let dog = sim.substrate.entities.get_mut(1).unwrap();
         dog.attack_target.set_for_test(Some(TargetKind::Entity(2)));
         commit_due_mission(&mut dog.mission, MissionType::Attack, frame);
-        sim.object_ai_visit_one(1, Some(&rules), ObjectAiCtx::default());
+        sim.object_ai_visit_one(1, Some(&rules), &mut ObjectAiCtx::default());
         target_of(&sim, 1).is_some()
     };
     assert!(
@@ -2308,7 +2336,7 @@ fn guard_heads_run_the_bio_reactor_seek_while_its_latch_holds() {
         sim.substrate.entities.insert(infantry);
         let before_rng = sim.scenario_rng.logical_state();
 
-        sim.object_ai_visit_one(1, Some(&rules), ObjectAiCtx::default());
+        sim.object_ai_visit_one(1, Some(&rules), &mut ObjectAiCtx::default());
 
         let infantry = sim.substrate.entities.get(1).unwrap();
         assert_eq!(
@@ -2318,7 +2346,7 @@ fn guard_heads_run_the_bio_reactor_seek_while_its_latch_holds() {
         );
         assert_eq!(sim.scenario_rng.logical_state(), before_rng, "{mission:?}");
         assert!(
-            !infantry.building_entry.should_enter_absorber(),
+            !infantry.seldom.building_entry.should_enter_absorber(),
             "{mission:?}"
         );
         assert_eq!(infantry.mission.current(), MissionId::from_known(mission));
@@ -2342,7 +2370,7 @@ fn area_guard_head_returns_a_bunkered_object_to_guard() {
         register_entity(&mut sim, unit);
         let before_rng = sim.scenario_rng.logical_state();
 
-        sim.object_ai_visit_one(1, Some(&rules), ObjectAiCtx::default());
+        sim.object_ai_visit_one(1, Some(&rules), &mut ObjectAiCtx::default());
 
         let unit = sim.substrate.entities.get(1).unwrap();
         let guard = MissionId::from_known(MissionType::Guard);
@@ -2375,13 +2403,14 @@ fn guard_handler_waits_out_the_rearm_without_a_draw() {
             let rules = representative_foot_handler_rules();
             let mut object = entity_of(1, category);
             object
+                .seldom
                 .rearm_timer
                 .set_for_test(crate::sim::timer::CdTimer::started(armed_at, 30));
             commit_due_mission(&mut object.mission, mission, 0);
             register_entity(&mut sim, object);
             let before_rng = sim.scenario_rng.logical_state();
 
-            sim.object_ai_visit_one(1, Some(&rules), ObjectAiCtx::default());
+            sim.object_ai_visit_one(1, Some(&rules), &mut ObjectAiCtx::default());
 
             let timer = dispatch_timer_of(&sim, 1);
             let case = format!("{category:?} {mission:?} armed at {armed_at}");
@@ -2416,7 +2445,7 @@ fn infantry_hunt_handler_uses_foot_jittered_cadence() {
     let _scan_jitter = expected_rng.next_range_u32_inclusive(0, 2);
     let expected_delay = 14 + expected_rng.next_range_u32_inclusive(0, 2) as i32;
 
-    sim.object_ai_visit_one(1, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(1, Some(&rules), &mut ObjectAiCtx::default());
 
     assert_eq!(
         dispatch_timer_of(&sim, 1),
@@ -2532,7 +2561,7 @@ fn gsi_07_20_stupid_hunt_type_never_scans_and_draws_once() {
     let mut expected_rng = sim.clone_scenario_rng();
     let expected_delay = 14 + expected_rng.next_range_u32_inclusive(0, 2) as i32;
 
-    sim.object_ai_visit_one(1, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(1, Some(&rules), &mut ObjectAiCtx::default());
 
     let hunter = sim.substrate.entities.get(1).expect("hunter present");
     assert!(
@@ -2582,7 +2611,7 @@ fn gsi_07_06_cadence_band_admits_a_distance_above_the_squared_bound() {
 
     let mut expected_rng = sim.clone_scenario_rng();
     let jitter = expected_rng.next_range_u32_inclusive(0, 2) as i32;
-    sim.object_ai_visit_one(1, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(1, Some(&rules), &mut ObjectAiCtx::default());
 
     assert_eq!(
         dispatch_timer_of(&sim, 1).delay(),
@@ -2611,7 +2640,7 @@ fn gsi_07_16_deployed_deploy_fire_infantry_takes_the_shim_on_area_guard() {
     let mut expected_rng = sim.clone_scenario_rng();
     let expected_delay = 14 + expected_rng.next_range_u32_inclusive(0, 2) as i32;
 
-    sim.object_ai_visit_one(1, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(1, Some(&rules), &mut ObjectAiCtx::default());
 
     assert_eq!(
         dispatch_timer_of(&sim, 1).delay(),
@@ -2656,7 +2685,7 @@ fn base_stub_missions_rearm_450_frames_without_touching_rng() {
         register_entity(&mut sim, unit);
         let before_rng = sim.scenario_rng.logical_state();
 
-        sim.object_ai_visit_one(1, Some(&rules), ObjectAiCtx::default());
+        sim.object_ai_visit_one(1, Some(&rules), &mut ObjectAiCtx::default());
 
         assert_eq!(
             dispatch_timer_of(&sim, 1),
@@ -2682,12 +2711,12 @@ fn move_arrival_drops_the_vehicle_target_and_queues_guard() {
     unit.attack_target.set_for_test(Some(TargetKind::Entity(2)));
     unit.passive_scan
         .set_passively_acquired_target_for_test(true);
-    unit.weapon_burst.complete_shot(2);
+    unit.seldom.weapon_burst.complete_shot(2);
     commit_due_mission(&mut unit.mission, MissionType::Move, 0);
     register_entity(&mut sim, unit);
     let before_rng = sim.scenario_rng.logical_state();
 
-    sim.object_ai_visit_one(1, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(1, Some(&rules), &mut ObjectAiCtx::default());
 
     let entity = sim.substrate.entities.get(1).expect("fixture entity");
     assert_eq!(
@@ -2701,7 +2730,7 @@ fn move_arrival_drops_the_vehicle_target_and_queues_guard() {
     assert!(!entity.passive_scan.acquired());
     // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53) keeps
     // the burst word through Assign_Target(NULL).
-    assert_eq!(entity.weapon_burst.index(), i32::from(rules.ares()));
+    assert_eq!(entity.seldom.weapon_burst.index(), i32::from(rules.ares()));
     assert_eq!(
         entity.mission.dispatch_timer(),
         MissionDispatchTimer::from_raw(0, 1),
@@ -2724,7 +2753,7 @@ fn move_arrival_promotes_an_infantry_target_to_attack() {
     commit_due_mission(&mut man.mission, MissionType::Move, 0);
     register_entity(&mut sim, man);
 
-    sim.object_ai_visit_one(1, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(1, Some(&rules), &mut ObjectAiCtx::default());
 
     let entity = sim.substrate.entities.get(1).expect("fixture entity");
     assert_eq!(
@@ -2756,7 +2785,7 @@ fn area_guard_rearms_at_its_own_rate_with_a_one_to_five_jitter() {
     let jitter = expected_rng.next_range_u32_inclusive(1, 5) as i32;
     assert!((1..=5).contains(&jitter));
 
-    sim.object_ai_visit_one(1, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(1, Some(&rules), &mut ObjectAiCtx::default());
 
     assert_eq!(
         dispatch_timer_of(&sim, 1),
@@ -2838,6 +2867,7 @@ fn register_in_logic(sim: &mut Simulation, id: u64) {
         .entities
         .get_mut(id)
         .expect("fixture entity")
+        .seldom
         .in_logic_vector
         .set_for_test(true);
 }
@@ -2880,7 +2910,7 @@ fn host_promotes_before_the_shared_native_mission_counter() {
         assert_eq!(e.mission.queued().known(), Some(MissionType::Move));
 
         sim.session.set_binary_frame_for_test(7);
-        sim.object_ai_visit_one(1, Some(&rules), ObjectAiCtx::default());
+        sim.object_ai_visit_one(1, Some(&rules), &mut ObjectAiCtx::default());
 
         let e = sim.substrate.entities.get(1).unwrap();
         assert_eq!(e.mission.current().known(), Some(MissionType::Move));
@@ -2953,7 +2983,7 @@ fn gsi_05_06_aircraft_ready_queue_promotes_only_post_movement() {
     insert_interned(&mut sim, 1, EntityCategory::Aircraft);
     queue_mission(&mut sim, 1, MissionType::Move);
 
-    sim.object_ai_visit_one(1, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(1, Some(&rules), &mut ObjectAiCtx::default());
 
     let aircraft = sim.substrate.entities.get(1).expect("aircraft present");
     assert_eq!(aircraft.mission.current(), MissionId::NONE);
@@ -3001,6 +3031,7 @@ fn host_promotion_holds_on_weapons_factory_contact() {
         .entities
         .get_mut(1)
         .unwrap()
+        .seldom
         .radio_contacts
         .insert(2);
 
@@ -3180,7 +3211,7 @@ fn ares_emp_building_common_post_preserves_early_stage() {
     sim.substrate.entities.insert(entity);
     sim.session.set_binary_frame_for_test(1);
     let rng = sim.rng_state();
-    techno_common_post(&mut sim, 1, &rules, FrameEffects::empty());
+    techno_common_post(&mut sim, 1, &rules, &mut FrameEffects::empty());
     assert_eq!(sim.entities().get(1).unwrap().native_stage(), &early);
     assert_eq!(sim.rng_state(), rng);
 }
@@ -3244,6 +3275,7 @@ fn spark_system(sim: &Simulation, id: u64) -> Option<u64> {
         .entities
         .get(id)
         .unwrap()
+        .seldom
         .spark_particle_system
         .system()
 }
@@ -3330,7 +3362,7 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
         }
         let mut expect = sim.scenario_rng.clone();
         let main = sim.main_rng.state();
-        techno_common_post(&mut sim, 1, &rules, FrameEffects::empty());
+        techno_common_post(&mut sim, 1, &rules, &mut FrameEffects::empty());
         for &max in draws {
             expect.next_range_u32_inclusive(0, max);
         }
@@ -3350,7 +3382,7 @@ fn s4b_two_draws_when_roll_succeeds() {
     insert_cyborg_unit(&mut sim, 1, 20);
     let mut expect = sim.scenario_rng.clone();
     let main = sim.main_rng.state();
-    techno_common_post(&mut sim, 1, &rules, FrameEffects::empty());
+    techno_common_post(&mut sim, 1, &rules, &mut FrameEffects::empty());
     expect.next_range_u32_inclusive(0, DAMAGE_SPARK_ROLL_MAX); // roll
     expect.next_range_u32_inclusive(0, 1); // list-pick over 2 sparks
     assert_eq!(
@@ -3378,12 +3410,12 @@ fn s4b_no_draw_while_actual_system_live_then_expiry_resumes_roll() {
     let rules = cyborg_rules("1.0", "1.0", "SparkA,SparkB", TWO_SPARK_SYSTEMS);
     let mut sim = Simulation::new();
     insert_cyborg_unit(&mut sim, 1, 20);
-    techno_common_post(&mut sim, 1, &rules, FrameEffects::empty());
+    techno_common_post(&mut sim, 1, &rules, &mut FrameEffects::empty());
     let first = spark_system(&sim, 1).unwrap();
     let frozen = sim.scenario_rng.state();
     // Advancing the session clock alone must never expire a live link.
     sim.session.set_tick_for_test(1_000_000);
-    techno_common_post(&mut sim, 1, &rules, FrameEffects::empty());
+    techno_common_post(&mut sim, 1, &rules, &mut FrameEffects::empty());
     assert_eq!(sim.scenario_rng.state(), frozen);
     assert_eq!(spark_system(&sim, 1), Some(first));
 
@@ -3397,7 +3429,7 @@ fn s4b_no_draw_while_actual_system_live_then_expiry_resumes_roll() {
     let mut expect = sim.scenario_rng.clone();
     expect.next_range_u32_inclusive(0, DAMAGE_SPARK_ROLL_MAX);
     expect.next_range_u32_inclusive(0, 1);
-    techno_common_post(&mut sim, 1, &rules, FrameEffects::empty());
+    techno_common_post(&mut sim, 1, &rules, &mut FrameEffects::empty());
     assert_eq!(sim.scenario_rng.state(), expect.state());
     assert_ne!(spark_system(&sim, 1), Some(first));
     assert!(spark_system(&sim, 1).is_some());
@@ -3413,7 +3445,7 @@ fn s4b_nonpositive_lifetime_retires_through_done_empty_system_ai() {
     );
     let mut sim = Simulation::new();
     insert_cyborg_unit(&mut sim, 1, 20);
-    techno_common_post(&mut sim, 1, &rules, FrameEffects::empty());
+    techno_common_post(&mut sim, 1, &rules, &mut FrameEffects::empty());
     let system_id = spark_system(&sim, 1).unwrap();
     assert_eq!(
         sim.particle_systems().get(system_id).unwrap().lifetime(),
@@ -3473,7 +3505,7 @@ fn an_unarmed_mover_in_the_reach_block_drops_its_target_and_walks_toward_it() {
         mcv,
         Some(TargetKind::Entity(tank)),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .expect("the target assigns");
     sim.substrate
@@ -3487,7 +3519,7 @@ fn an_unarmed_mover_in_the_reach_block_drops_its_target_and_walks_toward_it() {
         Ok(false),
         "the water wall puts the tank out of the MCV's zone"
     );
-    target_reach_step(&mut sim, mcv, &rules, None, FrameEffects::default());
+    target_reach_step(&mut sim, mcv, &rules, None, &mut FrameEffects::default());
     let entity = sim.substrate.entities.get(mcv).unwrap();
     assert_eq!(
         entity.attack_target.target(),

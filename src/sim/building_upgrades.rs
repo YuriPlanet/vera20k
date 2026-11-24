@@ -240,7 +240,7 @@ mod tests {
                     row["initial_count"].as_i64().unwrap() as i8,
                     types,
                 );
-            sim.power_down_building_upgrade(host, &rules, Default::default());
+            sim.power_down_building_upgrade(host, &rules, &mut Default::default());
             let actual = sim
                 .substrate
                 .entities
@@ -322,7 +322,7 @@ mod tests {
                     .anim_slots_mut_for_test()[slot] = Some(anim);
                 sentinels.push((slot, anim));
             }
-            sim.power_down_building_upgrade(host, &rules, Default::default());
+            sim.power_down_building_upgrade(host, &rules, &mut Default::default());
             let actual = sim.entities().get(host).unwrap();
             assert_eq!(
                 i64::from(actual.building_upgrades().count()),
@@ -550,10 +550,18 @@ impl Simulation {
         if let Some(host) = self.substrate.entities.get_mut(host_id) {
             host.commit_building_upgrade_type(type_id);
         }
-        // Ares4409F4 ->10014490/100144CD uses the installed host's retained
-        // Country, after the new upgrade pointer has been committed.
+        // Ares 0x004409F4 -> 10014490, after the new upgrade pointer is
+        // committed: the upgrade's own cash timer, then
+        // UpdateFactoryOwnersPlans (100449D0) of the upgrade being put (ESI),
+        // with its own type and retained Country, not the host's.
         if rules.ares_form() {
-            self.grant_factory_plans(host_id, rules);
+            crate::sim::credit_income::ares_produce_cash_on_put(
+                &self.session,
+                &mut self.substrate,
+                host_id,
+                upgrade.produce_cash_delay,
+            );
+            self.grant_factory_plans(temporary_id, rules);
         }
         crate::sim::superweapon::grant_provided_supers(self, rules, owner);
         self.houses.request_house_tech_tree_recheck(owner);
@@ -617,7 +625,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Option<InternedId> {
         let entity = self.substrate.entities.get(id)?;
         let slot = usize::try_from(i32::from(entity.building_upgrades().count()) - 1).ok()?;

@@ -33,7 +33,7 @@ fn enemy_sensed_prefilter(entity: &crate::sim::game_entity::GameEntity) -> bool 
     } else if entity.category() == EntityCategory::Aircraft {
         entity.ammo().is_none_or(|ammo| (ammo.current() as i8) < 0)
     } else {
-        entity.low_bridge_tube_state.is_none()
+        entity.active_tube().is_none()
     }
 }
 
@@ -82,11 +82,17 @@ fn radar_get_height_leptons(
                 .wrapping_mul(crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS)
         });
     // `object_world_z_leptons(entity, None)`.
-    let mut height = entity.world_z_leptons_off_map().wrapping_sub(ground);
-    if entity.on_bridge() {
-        height = height.wrapping_sub(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-    }
-    height
+    let surface = if entity.on_bridge() {
+        resolved_terrain
+            .and_then(|terrain| terrain.corrected_high_bridge_deck_level((rx as u16, ry as u16)))
+            .map_or_else(
+                || ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS),
+                |deck| i32::from(deck) * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS,
+            )
+    } else {
+        ground
+    };
+    entity.world_z_leptons_off_map().wrapping_sub(surface)
 }
 
 /// `MapClass::IsShrouded @ 0x00586360` for `viewer` at `point`
@@ -545,6 +551,7 @@ mod tests {
             crate::sim::game_entity::GameEntity::test_default(1, "BLDG", "Enemy", 4, 5);
         entity.set_category_for_test(EntityCategory::Structure);
         entity
+            .seldom
             .type_facts
             .set_foundation_for_test("3x2".to_string().into());
         let raw = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
@@ -634,7 +641,7 @@ mod tests {
         let mut tracker = super::super::tracker::RetainedRadarTracker::default();
         tracker.update_object(update(&sim), false);
         assert!(tracker.is_registered(id));
-        sim.begin_ship_sinking(id, &rules, crate::sim::world::FrameEffects::default());
+        sim.begin_ship_sinking(id, &rules, &mut crate::sim::world::FrameEffects::default());
         assert!(sim.entities().get(id).unwrap().lifecycle.object_alive());
         tracker.update_object(update(&sim), false);
         assert!(
@@ -986,6 +993,7 @@ mod tests {
         let mut entity =
             crate::sim::game_entity::GameEntity::test_default(1, "BLDG", "Enemy", 4, 4);
         entity
+            .seldom
             .type_facts
             .set_foundation_for_test("3x2".to_string().into());
         let location = crate::sim::movement::ground_pose::object_location(&entity, None);
@@ -1018,6 +1026,7 @@ mod tests {
             crate::sim::game_entity::GameEntity::test_default(2, "BLDG", "Enemy", 10, 10);
         building.set_category_for_test(EntityCategory::Structure);
         building
+            .seldom
             .type_facts
             .set_foundation_for_test("2x2".to_string().into());
         building.lifecycle.set_in_limbo_for_test(false);
@@ -1106,6 +1115,7 @@ mod tests {
             crate::sim::game_entity::GameEntity::test_default(2, "BLDG", "Enemy", 10, 10);
         building.set_category_for_test(EntityCategory::Structure);
         building
+            .seldom
             .type_facts
             .set_foundation_for_test("2x2".to_string().into());
         building.lifecycle.set_in_limbo_for_test(false);
@@ -1242,7 +1252,7 @@ impl RadarFacts {
         Self {
             enemy_sensed_prefilter: enemy_sensed_prefilter(entity),
             foundation: (entity.category() == EntityCategory::Structure)
-                .then(|| parse_foundation_size(entity.type_facts.foundation())),
+                .then(|| parse_foundation_size(entity.seldom.type_facts.foundation())),
             location: [location.x, location.y, location.z],
             navigation_cell: cells.and_then(|cells| {
                 crate::sim::movement::ground_pose::entity_navigation_cell_identity(
@@ -1252,7 +1262,10 @@ impl RadarFacts {
                 )
                 .ok()
             }),
-            combat_flash_remaining: entity.radar_combat_flash.remaining(binary_frame as i32),
+            combat_flash_remaining: entity
+                .seldom
+                .radar_combat_flash
+                .remaining(binary_frame as i32),
             disguise_house: [false, true]
                 .map(|allied| entity.disguise_house(false, observer, allied)),
             click_cell: sim

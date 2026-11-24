@@ -93,7 +93,7 @@ fn campaign_large_move_batch_reaches_every_actor_after_snapshot() {
             })
             .collect();
         sim.transfer_local_commands();
-        let (executed, _) = sim.apply_due_commands(&[], &rules, 0, Default::default());
+        let (executed, _) = sim.apply_due_commands(&[], &rules, 0, &mut Default::default());
         assert_eq!(executed, actors.len());
         for (index, &actor) in actors.iter().enumerate() {
             let actual = sim.entities().get(actor).unwrap().navigation.nav_com();
@@ -171,7 +171,7 @@ fn borrowed_execution_observer_reports_actual_timing_acceptance() {
         );
     }
     let observed = RefCell::new(Vec::new());
-    let observer = |sim: &Simulation, record: &crate::sim::command::CommandRecord, applied| {
+    let mut observer = |sim: &Simulation, record: &crate::sim::command::CommandRecord, applied| {
         observed.borrow_mut().push((
             record.opcode(),
             record.house_id(),
@@ -190,7 +190,7 @@ fn borrowed_execution_observer_reports_actual_timing_acceptance() {
         33,
         crate::sim::world::TickLane::Ordinary,
         false,
-        FrameEffects::default().with_command_applied(&observer),
+        &mut FrameEffects::default().with_command_applied(&mut observer),
     )
     .unwrap();
     let rows = observed.into_inner();
@@ -460,13 +460,13 @@ fn native_frame_and_house_override_carrier_metadata() {
 }
 
 #[test]
-fn group_move_spreads_owned_units_and_excludes_a_transferred_unit() {
+fn group_move_spreads_only_units_that_can_receive_the_order() {
     use crate::sim::command::CommandRecord;
     use crate::sim::components::NavTargetRef;
     use crate::sim::world::TickLane;
     use std::cell::RefCell;
 
-    let run = |transfer_second| {
+    let run = |transfer_second, enslave_second| {
         let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
             "[VehicleTypes]\n0=MOVER\n[MOVER]\nStrength=100\nSpeed=8\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
         );
@@ -509,11 +509,15 @@ fn group_move_spreads_owned_units_and_excludes_a_transferred_unit() {
                 other,
                 &rules,
                 Some(&registry),
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
         }
+        if enslave_second {
+            sim.entity_mut_for_test(units[1]).unwrap().seldom.slave =
+                crate::sim::slave_manager::SlaveLink::for_test(Some(units[0]), Vec::new());
+        }
         let observed = RefCell::new(Vec::new());
-        let observe =
+        let mut observe =
             |_: &Simulation, _: &CommandRecord, applied| observed.borrow_mut().push(applied);
         sim.advance_master_frame(
             &[],
@@ -522,15 +526,18 @@ fn group_move_spreads_owned_units_and_excludes_a_transferred_unit() {
             33,
             TickLane::Ordinary,
             false,
-            FrameEffects::default().with_command_applied(&observe),
+            &mut FrameEffects::default().with_command_applied(&mut observe),
         )
         .unwrap();
-        assert_eq!(observed.into_inner(), [true, !transfer_second]);
+        assert_eq!(
+            observed.into_inner(),
+            [true, !(transfer_second || enslave_second)]
+        );
         units.map(|id| sim.entities().get(id).unwrap().navigation.nav_com())
     };
 
     assert_eq!(
-        run(false),
+        run(false, false),
         [
             Some(NavTargetRef::cell(20, 17)),
             Some(NavTargetRef::cell(19, 17))
@@ -538,9 +545,14 @@ fn group_move_spreads_owned_units_and_excludes_a_transferred_unit() {
         "both owned units get distinct group destinations",
     );
     assert_eq!(
-        run(true),
+        run(true, false),
         [Some(NavTargetRef::cell(19, 17)), None],
         "the remaining unit keeps the clicked destination",
+    );
+    assert_eq!(
+        run(false, true),
+        [Some(NavTargetRef::cell(19, 17)), None],
+        "a slave contributes no formation slot",
     );
 }
 
@@ -699,7 +711,7 @@ fn future_native_admission_is_recorded_once_and_replays_at_its_raw_frame() {
                 RuleSet::empty_for_test(),
                 33,
                 crate::sim::world::TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         let recorded = output.take_admitted_commands();
@@ -711,7 +723,7 @@ fn future_native_admission_is_recorded_once_and_replays_at_its_raw_frame() {
                 RuleSet::empty_for_test(),
                 33,
                 crate::sim::world::TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         assert_eq!(
@@ -745,7 +757,7 @@ fn frame_info_failure_resumes_only_the_remaining_tail_after_acknowledgement() {
         compared: Cell<usize>,
     }
     impl crate::sim::world::NetworkCommandBoundary for NetworkBoundary {
-        fn record_frame_checksum(&self, frame: u32, _checksum: u32) {
+        fn record_frame_checksum(&mut self, frame: u32, _checksum: u32) {
             self.published.set(Some(frame));
         }
         fn compare_frame_info(
@@ -795,7 +807,7 @@ fn frame_info_failure_resumes_only_the_remaining_tail_after_acknowledgement() {
             .encode()
             .unwrap(),
         );
-        let boundary = NetworkBoundary {
+        let mut boundary = NetworkBoundary {
             published: Cell::new(None),
             compared: Cell::new(0),
         };
@@ -805,7 +817,7 @@ fn frame_info_failure_resumes_only_the_remaining_tail_after_acknowledgement() {
                 RuleSet::empty_for_test(),
                 33,
                 crate::sim::world::TickLane::Ordinary,
-                FrameEffects::default().with_network_commands(&boundary),
+                &mut FrameEffects::default().with_network_commands(&mut boundary),
             )
             .unwrap();
         assert!(output.network_failure.is_some());
@@ -845,12 +857,12 @@ fn frame_info_failure_resumes_only_the_remaining_tail_after_acknowledgement() {
                     RuleSet::empty_for_test(),
                     33,
                     crate::sim::world::TickLane::Ordinary,
-                    FrameEffects::default()
+                    &mut FrameEffects::default()
                 )
                 .is_err()
         );
         let resumed = restored
-            .resume_after_network_failure(RuleSet::empty_for_test(), FrameEffects::default())
+            .resume_after_network_failure(RuleSet::empty_for_test(), &mut FrameEffects::default())
             .unwrap();
         assert!(resumed.network_failure.is_none());
         assert_eq!(resumed.tick.frame_committed, !terminal);
@@ -871,7 +883,10 @@ fn frame_info_failure_resumes_only_the_remaining_tail_after_acknowledgement() {
         );
         assert!(
             restored
-                .resume_after_network_failure(RuleSet::empty_for_test(), FrameEffects::default())
+                .resume_after_network_failure(
+                    RuleSet::empty_for_test(),
+                    &mut FrameEffects::default()
+                )
                 .is_err()
         );
     }
@@ -889,7 +904,7 @@ fn frame_info_without_its_process_owner_is_not_silently_acknowledged() {
             RuleSet::empty_for_test(),
             33,
             crate::sim::world::TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .err()
         .expect("missing callback fails");
@@ -937,7 +952,7 @@ fn synchronized_tail_admits_human_or_player_controlled_houses_only() {
             &Command::LiveGameSpeed { speed: 5 },
             RuleSet::empty_for_test(),
             None,
-            FrameEffects::default()
+            &mut FrameEffects::default()
         ));
         assert_eq!(sim.session.game_options().game_speed, 5);
     }
@@ -990,7 +1005,7 @@ fn options_opens_only_after_accepted_local_dispatch_and_never_during_replay() {
             RuleSet::empty_for_test(),
             33,
             crate::sim::world::TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     assert!(
@@ -1013,7 +1028,7 @@ fn options_opens_only_after_accepted_local_dispatch_and_never_during_replay() {
             RuleSet::empty_for_test(),
             33,
             crate::sim::world::TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     assert_eq!(
@@ -1034,7 +1049,7 @@ fn options_opens_only_after_accepted_local_dispatch_and_never_during_replay() {
             RuleSet::empty_for_test(),
             33,
             crate::sim::world::TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     assert!(
@@ -1069,7 +1084,7 @@ fn latency_event_occupies_a_slot_and_publishes_its_unclamped_session_write() {
             RuleSet::empty_for_test(),
             33,
             crate::sim::world::TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     assert!(output.lifecycle_outputs.contains(
@@ -1151,7 +1166,7 @@ fn replay_keeps_future_local_work_on_the_admitted_scheduler() {
             RuleSet::empty_for_test(),
             33,
             crate::sim::world::TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     assert_eq!(first.admitted_commands, [future.clone()]);
@@ -1164,7 +1179,7 @@ fn replay_keeps_future_local_work_on_the_admitted_scheduler() {
             RuleSet::empty_for_test(),
             33,
             crate::sim::world::TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     assert_eq!(replay.pending_command_snapshot(), [future.clone()]);
@@ -1176,7 +1191,7 @@ fn replay_keeps_future_local_work_on_the_admitted_scheduler() {
             RuleSet::empty_for_test(),
             33,
             crate::sim::world::TickLane::Ordinary,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     assert_eq!(replay.session.game_options().game_speed, 4);
@@ -1249,4 +1264,115 @@ fn a_shared_house_survives_one_players_surrender() {
     sim.advance_tick(&[], None, None, None, 33);
     let house = &sim.houses[&shared];
     assert!(house.is_to_die() || house.has_lost());
+}
+
+/// Source: `BuildingClass::Can_Repair @ 0x00452630` reads `ClickRepairable=`
+/// (`+0x157A`); `EventClass::Execute 0x004C6ED2` (the REPAIR receiver) does not
+/// recheck it. The wrench cursor's producer does, so a REPAIR event delivered
+/// without it must be refused by the receiver too.
+#[test]
+fn a_repair_order_obeys_click_repairable_at_the_receiver() {
+    let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+        "[BuildingTypes]\n0=NO\n1=YES\n2=WHOLE\n3=DEPLOYED\n[VehicleTypes]\n0=MOBILE\n[NO]\nStrength=100\nClickRepairable=no\n\
+         [YES]\nStrength=100\nClickRepairable=yes\n\
+         [WHOLE]\nStrength=100\nClickRepairable=yes\n\
+         [DEPLOYED]\nStrength=100\nClickRepairable=yes\nUndeploysInto=MOBILE\n",
+    ))
+    .unwrap();
+    let name = "Americans";
+    let mut sim = Simulation::new();
+    let owner = sim.interner.intern(name);
+    sim.houses
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
+    for (id, kind, health) in [
+        (1, "NO", 50),
+        (2, "YES", 50),
+        (3, "WHOLE", 100),
+        (4, "DEPLOYED", 50),
+    ] {
+        let kind = sim.interner.intern(kind);
+        sim.substrate.entities.insert(
+            crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
+                id,
+                12,
+                12,
+                0,
+                0,
+                owner,
+                crate::sim::combat::Health::new(health),
+                kind,
+                EntityCategory::Structure,
+                0,
+                5,
+                false,
+            ),
+        );
+    }
+    let repair = |entity_id| Command::ToggleRepair { entity_id };
+    assert!(!sim.apply_command(name, &repair(1), Some(&rules)));
+    assert!(!sim.entities().get(1).unwrap().building.repairing.is_on());
+    assert!(sim.apply_command(name, &repair(2), Some(&rules)));
+    assert!(sim.entities().get(2).unwrap().building.repairing.is_on());
+    // The native receiver admits a whole building too; the gate is the
+    // wrench's type permission, not the per-frame `can_repair_building` test.
+    assert!(sim.apply_command(name, &repair(3), Some(&rules)));
+    assert!(!sim.apply_command(name, &repair(4), Some(&rules)));
+    assert!(!sim.entities().get(4).unwrap().building.repairing.is_on());
+}
+
+/// `TechnoClass::IsControllable @ 0x00700C40` (vt+0xA0) is false for an
+/// enslaved object (`SlaveOwner +0x2DC`), which is why the click producers
+/// drop one. A command that reaches the receiver anyway — a replayed native
+/// record or an injected order — must still be refused. A freed slave is a
+/// normal unit and stays orderable.
+#[test]
+fn an_enslaved_unit_refuses_its_own_orders_and_bunker_ejection() {
+    let (mut sim, rules, _registry) = super::super::entry_test_fixture::fixture_with_rules("");
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
+    let free = sim
+        .spawn_object("ENGINEER", "Americans", 8, 8, 0, &rules)
+        .unwrap();
+    let enslaved = sim
+        .spawn_object("ENGINEER", "Americans", 10, 8, 0, &rules)
+        .unwrap();
+    sim.entity_mut_for_test(enslaved).unwrap().seldom.slave =
+        crate::sim::slave_manager::SlaveLink::for_test(Some(free), Vec::new());
+    // EjectBunker names the bunker but issues the order to its occupant.
+    let bunker_type = sim.interner.intern("GAPOWR");
+    sim.substrate.entities.insert(
+        crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
+            3,
+            12,
+            12,
+            0,
+            0,
+            owner,
+            crate::sim::combat::Health::new(100),
+            bunker_type,
+            EntityCategory::Structure,
+            0,
+            5,
+            false,
+        ),
+    );
+    sim.entity_mut_for_test(3)
+        .unwrap()
+        .bunker
+        .set_bunker_occupant_for_test(Some(enslaved));
+
+    let move_order = |entity_id| Command::Move {
+        entity_id,
+        target_rx: 14,
+        target_ry: 8,
+    };
+    assert!(sim.apply_command("Americans", &move_order(free), Some(&rules)));
+    assert!(!sim.apply_command("Americans", &move_order(enslaved), Some(&rules)));
+    assert!(!sim.can_issue_local_command(&move_order(enslaved), &rules));
+    assert!(!sim.apply_command(
+        "Americans",
+        &Command::EjectBunker { bunker_id: 3 },
+        Some(&rules),
+    ));
 }

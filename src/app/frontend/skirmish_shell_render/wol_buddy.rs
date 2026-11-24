@@ -5,16 +5,12 @@
 //! compositor draws them, and the group box, over its own backdrop and
 //! chrome.
 
-use super::chrome::push_flag_entry_clipped_centered;
-use super::controls::{ControlPaint, list_controls, paint_control};
-use super::text::rect_to_text_rect;
-use super::wol_lobby::{WolLobbyPaint, label, push_icon, row_rgb};
-use super::{SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
+use super::gui_paint::{ButtonArt, CellRow, GuiStyle, Picture, paint_gui_styled};
+use crate::render::hud_paint::Material;
+use super::wol_lobby::{WolLobbyPaint, row_rgb};
 use crate::app::AppState;
 use crate::render::main_menu_shell_chrome::WolPageArt;
-use crate::render::shell_paint;
-use crate::render::shell_text::{self, ShellAlign};
-use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::geom::ShellAlign;
 use crate::ui::wol_buddy::*;
 
 pub(crate) fn paint_wol_buddy_children(
@@ -24,159 +20,98 @@ pub(crate) fn paint_wol_buddy_children(
     art: Option<&WolPageArt>,
 ) -> WolLobbyPaint {
     let mut paint = WolLobbyPaint::default();
-    let Some(atlas) = state.frontend.skirmish_shell_chrome.as_ref() else {
+    if state.frontend.skirmish_shell_chrome.is_none() {
+        return paint;
+    }
+    let scale = layout.page.scale;
+    // The captions, heading, statistics and observer box are widgets; so
+    // are Refresh's picture (released, pressed, or disabled: the released
+    // face; the owner-draw button greys nothing of a picture) and the
+    // observer image's eye.
+    let controller = &state.frontend.shell_controller;
+    let gui = controller.gui();
+    // The page's Refresh and list, found when its tree was built.
+    let Some(nodes) = controller
+        .root_in(DIALOG)
+        .and_then(|root| ui.nodes(gui, root))
+    else {
         return paint;
     };
-    let font = &state.renderer.bit_font;
-    let scale = layout.page.scale;
-    let text = |value: &str, rect: RectPx, align: ShellAlign, rgb: [f32; 3]| {
-        shell_text::draw_in_rect_scaled(
-            font,
-            value,
-            rect_to_text_rect(rect),
-            rgb,
-            align,
-            [0.0; 2],
-            SHELL_CONTROL_TEXT_DEPTH,
-            scale.factor(),
-        )
+    let refresh_pressed = nodes.refresh.is_some_and(|refresh| gui.shows_pressed(refresh));
+    let art_of = |id: i32| (id == i32::from(REFRESH)).then_some(ButtonArt::Image);
+    let pressed_of = |id: i32| (id == i32::from(REFRESH)).then_some(refresh_pressed);
+    let picture_of = |id: i32| match u16::try_from(id).ok()? {
+        REFRESH => Some(Picture::Icon {
+            released: REFRESH_FACES.0,
+            pressed: REFRESH_FACES.1,
+        }),
+        OBSERVER_IMAGE => Some(Picture::Observer { on: ui.observer }),
+        _ => None,
     };
-    // A cell `x` base columns into a row, `w` wide (to the row's end when 0).
-    let cell = |row: RectPx, x: i32, w: i32| {
-        scale.derive_rect(row, |row| {
-            let w = if w > 0 { w } else { row.w - x - 2 };
-            RectPx::new(row.x + x, row.y, w, row.h)
+    let style = GuiStyle {
+        art,
+        art_of: Some(&art_of),
+        pressed_of: Some(&pressed_of),
+        picture_of: Some(&picture_of),
+        ..GuiStyle::default()
+    };
+    // The root's children in tree order, the list after the rest.
+    let children = gui.tree().children(nodes.root).unwrap_or_default();
+    for child in children.iter().filter(|child| **child != nodes.list) {
+        let widgets = paint_gui_styled(state, gui, *child, scale, &[], style);
+        paint.controls.extend(widgets.lane(Material::Controls).copied());
+        paint.icons.extend(widgets.lane(Material::Icons).copied());
+        paint.texts.extend(widgets.texts);
+    }
+
+    // The list over its widget, each row's cells the page's: only the rows
+    // the list shows are filled.
+    let list = nodes.list;
+    let top = gui.list_view(list).map_or(0, |view| view.top);
+    let shown = gui.list_geometry(list).map_or(0, |geometry| geometry.visible_rows);
+    let cells_of = |id: i32| {
+        (id == i32::from(LIST)).then(|| {
+            let rows = ui.rows.iter().enumerate();
+            rows.map(|(index, row)| match (top..top + shown).contains(&index) {
+                true => buddy_cells(row),
+                false => CellRow::default(),
+            })
+            .collect()
         })
     };
-    // The headers are left-aligned statics; the statistics' labels SS_RIGHT.
-    for (index, ((key, _), rect)) in LABELS.iter().zip(layout.labels).enumerate() {
-        let align = if index < 2 {
-            ShellAlign::NONE
-        } else {
-            ShellAlign::H_RIGHT
-        };
-        paint
-            .texts
-            .push(text(&label(state, key), rect, align, SHELL_LABEL_TEXT_RGB));
-    }
-    let value = |id: u16| match &ui.texts {
-        Some(texts) => texts
-            .iter()
-            .find(|(control, _)| *control == id)
-            .map(|(_, value)| value.clone())
-            .unwrap_or_default(),
-        None if id == HEADING => String::new(),
-        None => label(state, UNKNOWN_STATS_KEY),
+    let style = GuiStyle {
+        cells_of: Some(&cells_of),
+        art,
+        control_lists: true,
+        ..Default::default()
     };
-    let heading = value(HEADING);
-    if !heading.is_empty() {
-        paint.texts.push(text(
-            &heading,
-            layout.heading,
-            ShellAlign::H_CENTER,
-            SHELL_LABEL_TEXT_RGB,
-        ));
-    }
-    for (id, rect) in STATS.iter().copied().zip(layout.stats) {
-        let value = value(id);
-        if !value.is_empty() {
-            paint
-                .texts
-                .push(text(&value, rect, ShellAlign::NONE, SHELL_LABEL_TEXT_RGB));
-        }
-    }
-
-    // Refresh's picture: released, pressed, or disabled (the released
-    // face; the owner-draw button greys nothing of a picture).
-    if let Some(art) = art {
-        let face = if ui.buttons.is_pressed(REFRESH) {
-            REFRESH_FACES.1
-        } else {
-            REFRESH_FACES.0
-        };
-        if let Some((_, entry)) = art.icons.iter().find(|(name, _)| name == face) {
-            let (w, h) = entry.native_size();
-            let base = scale.base_rect(layout.refresh);
-            let [x, y] = scale.scale_point([base.x + (base.w - w) / 2, base.y + (base.h - h) / 2]);
-            shell_paint::push_entry_grown(
-                &mut paint.icons,
-                *entry,
-                x,
-                y,
-                scale,
-                SHELL_CONTROL_DEPTH - 0.00003,
-            );
-        }
-    }
-    paint_control(
-        &mut paint.controls,
-        &atlas.control_chrome(),
-        ControlPaint::Checkbox {
-            rect: layout.observer_toggle,
-            checked: ui.observer,
-        },
-        scale,
-    );
-    if let Some(entry) = atlas.lan_observer_toggle(ui.observer) {
-        push_flag_entry_clipped_centered(
-            &mut paint.controls,
-            entry,
-            layout.observer_image,
-            scale,
-            SHELL_CONTROL_DEPTH,
-        );
-    }
-
-    let geometry = ui.list.geometry(layout.list, ui.rows.len(), scale);
-    list_controls(&mut paint.controls, atlas, geometry, &ui.list, true, scale);
-    for (visible, row) in ui
-        .rows
-        .iter()
-        .skip(ui.list.top_index)
-        .take(geometry.visible_rows)
-        .enumerate()
-    {
-        let rect = geometry.row(visible);
-        let rgb = row_rgb(row.color);
-        paint.texts.push(text(
-            &row.name,
-            cell(rect, NAME_X, NAME_W),
-            ShellAlign::V_CENTER,
-            rgb,
-        ));
-        paint.texts.push(text(
-            &row.status,
-            cell(rect, STATUS_X, STATUS_W),
-            ShellAlign::V_CENTER,
-            rgb,
-        ));
-        let Some(game) = &row.game else {
-            continue;
-        };
-        paint.texts.push(text(
-            &game.ping.to_string(),
-            cell(rect, PING_X, 0),
-            ShellAlign::V_CENTER,
-            rgb,
-        ));
-        if let Some(art) = art {
-            if let Some(file) = game.kind.file() {
-                push_icon(&mut paint.icons, art, file, rect, TYPE_X, scale);
-            }
-            if game.keyed {
-                push_icon(
-                    &mut paint.icons,
-                    art,
-                    "wolpriv.pcx",
-                    rect,
-                    PASSWORD_X,
-                    scale,
-                );
-            }
-            if let Some(file) = game.limit_icon {
-                push_icon(&mut paint.icons, art, file, rect, LIMIT_X, scale);
-            }
-        }
-    }
+    let list = paint_gui_styled(state, gui, list, scale, &[], style);
+    paint.controls.extend(list.lane(Material::Controls).copied());
+    paint.icons.extend(list.lane(Material::Icons).copied());
+    paint.texts.extend(list.texts);
     paint
+}
+
+/// A buddy row's cells (`0x4A8` at the `0x0084A1C4` stops): name and
+/// status, and for one in a game its ping and its type, key and limit
+/// pictures (on the page art, when it is loaded).
+fn buddy_cells(row: &WolBuddyRow) -> CellRow {
+    let mut cells = CellRow::default();
+    let rgb = row_rgb(row.color);
+    cells.text(NAME_X, NAME_W, &row.name, ShellAlign::V_CENTER, rgb);
+    cells.text(STATUS_X, STATUS_W, &row.status, ShellAlign::V_CENTER, rgb);
+    let Some(game) = &row.game else {
+        return cells;
+    };
+    cells.text(PING_X, 0, &game.ping.to_string(), ShellAlign::V_CENTER, rgb);
+    if let Some(file) = game.kind.file() {
+        cells.icons.push((TYPE_X, file));
+    }
+    if game.keyed {
+        cells.icons.push((PASSWORD_X, "wolpriv.pcx"));
+    }
+    if let Some(file) = game.limit_icon {
+        cells.icons.push((LIMIT_X, file));
+    }
+    cells
 }

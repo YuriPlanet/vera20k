@@ -203,7 +203,7 @@ impl SimRuntime {
             commands,
             tick_ms,
             crate::sim::world::TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .map(|output| {
             output
@@ -222,14 +222,14 @@ impl SimRuntime {
         commands: &[crate::sim::command::CommandEnvelope],
         tick_ms: u32,
         lane: crate::sim::world::TickLane,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> Result<crate::sim::world::SimFrameOutput, crate::sim::world::FrameAdvanceError> {
         self.simulation
             .advance_app_frame(commands, &self.resources.rules, tick_ms, lane, effects)
     }
     pub fn resume_outcome_wait(
         &mut self,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> Result<crate::sim::world::SimFrameOutput, crate::sim::world::FrameAdvanceError> {
         self.simulation
             .resume_outcome_wait(&self.resources.rules, effects)
@@ -239,7 +239,7 @@ impl SimRuntime {
     /// resources and without re-entering Logic or synchronized dispatch.
     pub fn resume_after_network_failure(
         &mut self,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> Result<crate::sim::world::SimFrameOutput, crate::sim::world::FrameAdvanceError> {
         self.simulation
             .resume_after_network_failure(&self.resources.rules, effects)
@@ -247,7 +247,7 @@ impl SimRuntime {
 
     pub fn resume_network_wait(
         &mut self,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> Result<crate::sim::world::SimFrameOutput, crate::sim::world::FrameAdvanceError> {
         self.simulation
             .resume_network_wait(&self.resources.rules, effects)
@@ -255,7 +255,7 @@ impl SimRuntime {
 
     pub fn leave_network_wait(
         &mut self,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> Result<crate::sim::world::SimFrameOutput, crate::sim::world::FrameAdvanceError> {
         self.simulation
             .leave_network_wait(&self.resources.rules, effects)
@@ -278,7 +278,7 @@ impl SimRuntime {
             command,
             &self.resources.rules,
             Some(self.resources.rules.overlay_registry()),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
     }
 
@@ -333,7 +333,7 @@ mod tests {
                     &[],
                     67,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("bound production frame")
                 .trigger_effects
@@ -485,7 +485,7 @@ mod tests {
                 &[],
                 33,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
 
@@ -728,7 +728,7 @@ mod tests {
                 .native_unique_id(),
             ids[0].1
         );
-        restored.process_pending_delete_with(&rules, Default::default(), 1, true);
+        restored.process_pending_delete_with(&rules, &mut Default::default(), 1, true);
         assert!(restored.terrain_objects.get(doomed).is_none());
         assert_eq!(
             restored.native_identity_cursor(),
@@ -827,7 +827,9 @@ pub fn spawn_terrain_tile_animations(
         // constructor 0x00421EA0 has no refusal path). A refused launch
         // removes the anim; a refused Tiberium start, which fails after the
         // constructor registered and revealed the anim, leaves it registered
-        // without its ZAdjust (residual, in the anim constructor).
+        // without its ZAdjust (residual, in the anim constructor). The map
+        // plays on without a notice: only that tile's decoration is missing,
+        // and the log names the anim and cell for the modder.
         let id = match sim.spawn_anim_at_world(rules, descriptor, world) {
             Ok(id) => id,
             Err(error) => {

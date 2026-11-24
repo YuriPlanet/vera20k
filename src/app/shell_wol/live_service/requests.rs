@@ -30,11 +30,27 @@ pub(super) fn request_service(
             nickname,
             password,
             remember,
+            generated_guest,
             ..
         } => {
             service.auth_attempt = service.auth_attempt.wrapping_add(1);
-            let credential =
-                sign_in_credential(settings_dir(state), service, &nickname, password, remember);
+            let credential = if generated_guest {
+                Some(http::Credential::GeneratedGuest)
+            } else {
+                sign_in_credential(settings_dir(state), service, &nickname, password, remember)
+            };
+            let Some(credential) = credential else {
+                super::apply_response(
+                    state,
+                    service,
+                    http::Response::SignInRefused {
+                        attempt: service.auth_attempt,
+                        message: tr("VERA:LobbySignInWithPassword"),
+                        bad_credential: false,
+                    },
+                );
+                return;
+            };
             service.signing_in_remembered = matches!(credential, http::Credential::Remembered(_));
             // What this game changes from the original game, which a room
             // names when its rules differ from the host's.
@@ -66,7 +82,13 @@ pub(super) fn request_service(
         }
         WolServiceRequest::JoinChannel { channel, key } => {
             if super::lobby::bind_online_request(state, service.next_request) {
-                service.command("join", json!({"channel":channel.name,"key":key}));
+                let payload = json!({"channel":channel.name,"key":key});
+                if super::lobby::switching_room(state) {
+                    service.switching_room =
+                        Some(service.retrying_command("join", payload, Instant::now()));
+                } else {
+                    service.command("join", payload);
+                }
             }
         }
         WolServiceRequest::VisitLobby => {
@@ -261,27 +283,26 @@ pub(super) fn send_chat(
 /// unverified expanded content.
 pub(super) fn local_agreement(state: &mut AppState, revision: u64) -> Result<Value> {
     let session = &state.match_state.session;
-    if let Some(room) = session.campaign_room() {
-        let (map_digest, effective_map_digest) =
+    let (map_digest, effective_map_digest, staging_digest) =
+        if let Some(room) = session.campaign_room() {
             if campaign_room::local_map_verified(session) == Some(true) {
                 let (map, effective) = campaign_room::online_agreement(room);
-                (map.to_owned(), effective.to_owned())
+                (map.to_owned(), Some(effective.to_owned()), String::new())
             } else {
-                (String::new(), "0".repeat(64))
-            };
-        let agreement = crate::app::shell_network_setup::agreement::local(state)?;
-        return Ok(
-            json!({"revision":revision,"version":agreement.version,"rules_digest":agreement.rules_digest,"map_digest":map_digest,"effective_map_digest":effective_map_digest,"staging_digest":""}),
-        );
-    }
-    let map_digest = session
-        .network_local_map_source()
-        .and_then(|source| source.physical_identity())
-        .map_or_else(String::new, |(_, digest)| digest.to_owned());
-    let effective_map_digest = session
-        .network_local_map_effective_digest()
-        .map_or_else(|| "0".repeat(64), str::to_owned);
-    let staging_digest = crate::app::shell_network_setup::maps::staging_digest(state);
+                (String::new(), None, String::new())
+            }
+        } else {
+            let map = session
+                .network_local_map_source()
+                .and_then(|source| source.physical_identity())
+                .map_or_else(String::new, |(_, digest)| digest.to_owned());
+            let effective = session
+                .network_local_map_effective_digest()
+                .map(str::to_owned);
+            let staging = crate::app::shell_network_setup::maps::staging_digest(state);
+            (map, effective, staging)
+        };
+    let effective_map_digest = effective_map_digest.unwrap_or_else(|| "0".repeat(64));
     let agreement = crate::app::shell_network_setup::agreement::local(state)?;
     Ok(
         json!({"revision":revision,"version":agreement.version,"rules_digest":agreement.rules_digest,"map_digest":map_digest,"effective_map_digest":effective_map_digest,"staging_digest":staging_digest}),

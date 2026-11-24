@@ -44,6 +44,7 @@ fn blink(sim: &mut Simulation, mirage: u64, duration: i32) {
         .entities
         .get_mut(mirage)
         .unwrap()
+        .seldom
         .disguise
         .as_mut()
         .unwrap()
@@ -95,6 +96,7 @@ fn a_retail_mirage_shot_starts_its_blink_for_its_weapons_fake_blink_time() {
             .entities
             .get(mirage)
             .unwrap()
+            .seldom
             .disguise
             .as_ref()
             .unwrap()

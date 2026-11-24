@@ -89,7 +89,7 @@ impl<'a> SimulationAuthoredLoadHost<'a> {
                 descriptor,
                 world,
                 AnimConstructorInput::AssignedIdentity(native_unique_id),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .map_err(Into::into)
     }
@@ -248,7 +248,7 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
             request,
             ground,
             AnimConstructorInput::AssignedIdentity(native_unique_id),
-            super::FrameEffects::default(),
+            &mut super::FrameEffects::default(),
         )?)
     }
 
@@ -275,7 +275,7 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
     fn drain_deferred(&mut self) -> Result<(), Self::Error> {
         self.sim.process_pending_delete_with(
             self.rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             0,
             false,
         );

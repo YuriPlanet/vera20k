@@ -564,13 +564,13 @@ fn deployed_desolator_self_irradiates_and_refires_below_third() {
         sim.object_ai_visit_one(
             deso,
             Some(&rules),
-            crate::sim::world::ObjectAiCtx::default(),
+            &mut crate::sim::world::ObjectAiCtx::default(),
         );
         sim.visit_combat_tail(
             first_tail,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         sim.fire_events.clone()
     };

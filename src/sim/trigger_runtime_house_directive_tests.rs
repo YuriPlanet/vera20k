@@ -69,7 +69,7 @@ fn run(
         &mut Vec::new(),
         rules,
         Some(registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -259,10 +259,16 @@ fn house_directive_base_control_and_saved_return_use_reverse_live_lists_and_shar
     for id in [ids[1], ids[2]] {
         let entity = sim.substrate.entities.get(id).unwrap();
         assert_eq!(entity.owner(), houses[0]);
-        assert_eq!(entity.mind_control.house_controller(), Some(houses[0]));
-        assert_eq!(entity.mind_control.house_original_owner(), Some(houses[1]));
+        assert_eq!(
+            entity.seldom.mind_control.house_controller(),
+            Some(houses[0])
+        );
+        assert_eq!(
+            entity.seldom.mind_control.house_original_owner(),
+            Some(houses[1])
+        );
         assert!(
-            !entity.mind_control.is_mind_controlled(),
+            !entity.seldom.mind_control.is_mind_controlled(),
             "House control is a separate native gate"
         );
         assert_eq!(sim.techno_original_owner(id), Some(houses[1]));
@@ -320,8 +326,8 @@ fn house_directive_base_control_and_saved_return_use_reverse_live_lists_and_shar
     for id in [ids[1], ids[2]] {
         let e = loaded.substrate.entities.get(id).unwrap();
         assert_eq!(e.owner(), houses[1]);
-        assert_eq!(e.mind_control.house_controller(), None);
-        assert_eq!(e.mind_control.house_original_owner(), None);
+        assert_eq!(e.seldom.mind_control.house_controller(), None);
+        assert_eq!(e.seldom.mind_control.house_original_owner(), None);
         assert_eq!(loaded.techno_original_owner(id), Some(houses[1]));
     }
     assert!(loaded.can_capture(ids[3], ids[1], &rules));
@@ -345,11 +351,14 @@ fn house_directive_ordinary_capture_keeps_controller_but_clears_original_and_res
         houses[2],
         &rules,
         Some(&registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let entity = sim.substrate.entities.get(ids[1]).unwrap();
-    assert_eq!(entity.mind_control.house_controller(), Some(houses[0]));
-    assert_eq!(entity.mind_control.house_original_owner(), None);
+    assert_eq!(
+        entity.seldom.mind_control.house_controller(),
+        Some(houses[0])
+    );
+    assert_eq!(entity.seldom.mind_control.house_original_owner(), None);
     assert_eq!(sim.techno_original_owner(ids[1]), None);
     assert_ne!(sim.state_hash(), hash);
     assert!(run(
@@ -398,6 +407,7 @@ fn house_directive_ordinary_capture_keeps_controller_but_clears_original_and_res
             .entities
             .get(ids[1])
             .unwrap()
+            .seldom
             .mind_control
             .house_controller(),
         None
@@ -430,7 +440,7 @@ fn house_directive_transferred_base_dies_with_original_house() {
         houses[2],
         &rules,
         Some(&registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(sim.techno_original_owner(ids[2]), None);
     assert!(run(
@@ -478,6 +488,7 @@ fn house_directive_self_control_and_retained_selector_keep_native_state_writes()
             .entities
             .get(ids[0])
             .unwrap()
+            .seldom
             .mind_control
             .house_controller(),
         Some(houses[0])
@@ -496,6 +507,7 @@ fn house_directive_self_control_and_retained_selector_keep_native_state_writes()
             .entities
             .get(ids[0])
             .unwrap()
+            .seldom
             .mind_control
             .house_controller(),
         None
@@ -577,7 +589,7 @@ fn house_directive_target_kind_reaches_first_own_team_threat_scan_and_real_super
         &rules,
         houses[0],
         Some(&registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(sim.sound_events.iter().any(|e| matches!(e,crate::sim::world::SimSoundEvent::SuperWeaponLaunched { owner,sw_type,world } if *owner==houses[0] && *sw_type==sw && world.to_cell_sub_z().0==17 && world.to_cell_sub_z().1==15)), "the closer third House is excluded by native arg3=true");
     assert!(
@@ -601,7 +613,7 @@ fn house_directive_target_kind_reaches_first_own_team_threat_scan_and_real_super
         &rules,
         houses[0],
         Some(&registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(sim.sound_events.iter().any(|e| matches!(
         e,
@@ -612,7 +624,7 @@ fn house_directive_target_kind_reaches_first_own_team_threat_scan_and_real_super
         .get_mut(&houses[0])
         .unwrap()
         .clear_preferred_super_weapon_target();
-    sim.destroy_team(team, &rules, FrameEffects::default());
+    sim.destroy_team(team, &rules, &mut FrameEffects::default());
     sim.sound_events.clear_for_test();
     crate::sim::superweapon::chronosphere_tests::charge_super(&mut sim, houses[0], "REVEAL");
     let rng = sim.rng_state();
@@ -621,7 +633,7 @@ fn house_directive_target_kind_reaches_first_own_team_threat_scan_and_real_super
         &rules,
         houses[0],
         Some(&registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(
         crate::sim::superweapon::superweapon_views_for_owner(&sim, &rules, &houses[0])

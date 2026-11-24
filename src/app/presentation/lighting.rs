@@ -69,6 +69,8 @@ pub(crate) fn body_extra_light(
                 let height = air_movement::queried_flight_height(entity, Some(cells));
                 if entity.on_bridge() {
                     height >= 0
+                } else if let Some(deck) = ground_pose::corrected_deck_z(cells.terrain(), current) {
+                    ground_pose::object_world_z_leptons(entity, Some(cells.terrain())) >= deck
                 } else {
                     height >= crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
                 }

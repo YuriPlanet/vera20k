@@ -177,6 +177,7 @@ fn a_plain_step_answers_as_the_full_body() {
         .entities
         .get_mut(ENGINEER)
         .unwrap()
+        .seldom
         .tether
         .set_for_test(Some(TRUCK));
     assert_eq!(answered(&sim, ENGINEER, 0), 0);

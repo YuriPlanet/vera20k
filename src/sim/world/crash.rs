@@ -141,7 +141,7 @@ impl Simulation {
         id: u64,
         attacker: Option<u64>,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -150,9 +150,9 @@ impl Simulation {
             return false;
         }
         if entity.health.current() > 0 {
-            let context = UninitContext::new(rules).with_effects(frame_effects);
+            let mut context = UninitContext::new(rules).with_effects(frame_effects);
             if attacker.is_some() {
-                self.dispatch_object_tag_event(id, 38, Some(id), None, context);
+                self.dispatch_object_tag_event(id, 38, Some(id), None, context.reborrow());
             }
             if self
                 .substrate
@@ -160,7 +160,7 @@ impl Simulation {
                 .get(id)
                 .is_some_and(|entity| entity.is_object_alive())
             {
-                self.dispatch_object_tag_event(id, 41, Some(id), None, context);
+                self.dispatch_object_tag_event(id, 41, Some(id), None, context.reborrow());
             }
             if attacker.is_some()
                 && self
@@ -169,7 +169,7 @@ impl Simulation {
                     .get(id)
                     .is_some_and(|entity| entity.is_object_alive())
             {
-                self.dispatch_object_tag_event(id, 41, Some(id), attacker, context);
+                self.dispatch_object_tag_event(id, 41, Some(id), attacker, context.reborrow());
             }
             if self
                 .substrate
@@ -287,7 +287,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let terrain = self.resolved_terrain.as_ref();
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -312,9 +312,9 @@ impl Simulation {
         };
         let counter = runtime.advance_fall(true);
         if placed {
-            let context = UninitContext::new(rules).with_effects(frame_effects);
+            let mut context = UninitContext::new(rules).with_effects(frame_effects);
             self.substrate.display.remove(id);
-            self.unmark_entity_remove(id, context);
+            self.unmark_entity_remove(id, context.reborrow());
             let dropped = crate::sim::components::DriveCoord {
                 z: location.z.wrapping_sub(counter),
                 ..location
@@ -354,7 +354,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         if !self.substrate.entities.contains(id) {
             return false;
@@ -403,7 +403,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -467,7 +467,7 @@ impl Simulation {
         };
         // `0x0054D097..0x0054D0A7`: after the notice, the drop's credit goes.
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.drop_credit.forget();
+            entity.seldom.drop_credit.forget();
         }
         bridge_state_changed
     }
@@ -509,7 +509,7 @@ impl Simulation {
         ground_warhead: &str,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         use crate::util::native_x87::{MaskedX87Chop53, NativeF32Bits};
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -529,7 +529,7 @@ impl Simulation {
             )),
         ))
         .max(0);
-        let attacker = entity.drop_credit.manipulated_by().unwrap_or(id);
+        let attacker = entity.seldom.drop_credit.manipulated_by().unwrap_or(id);
         let coords = crate::sim::movement::ground_pose::object_get_coords(
             entity,
             self.resolved_terrain.as_ref(),
@@ -615,7 +615,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         crate::sim::combat::death_weapon_detonation(
             &mut self.interner,
@@ -658,15 +658,15 @@ impl Simulation {
         let object = interner.object_type(entity.type_ref(), rules);
         let sound = if water {
             object
-                .and_then(|object| object.impact_water_sound.clone())
-                .or_else(|| rules.general.impact_water_sound.clone())
+                .and_then(|object| object.impact_water_sound.as_deref())
+                .or(rules.general.impact_water_sound.as_deref())
         } else {
             object
-                .and_then(|object| object.impact_land_sound.clone())
-                .or_else(|| rules.general.impact_land_sound.clone())
+                .and_then(|object| object.impact_land_sound.as_deref())
+                .or(rules.general.impact_land_sound.as_deref())
         };
         if let Some(sound_id) = sound {
-            let event = super::SimSoundEvent::voc_at(sound_id, &entity.position);
+            let event = super::SimSoundEvent::voc_at(rules.sound_name(sound_id), &entity.position);
             sound_events.emit(event);
         }
     }
@@ -708,18 +708,21 @@ impl Simulation {
             let entity = substrate.entities.get(id).expect("checked above");
             let owner = entity.owner();
             let object = interner.object_type(entity.type_ref(), rules);
-            let voice = object.and_then(|object| object.voice_crashing.clone());
-            let crashing_sound = object.and_then(|object| object.crashing_sound.clone());
+            let voice = object.and_then(|object| object.voice_crashing.as_deref());
+            let crashing_sound = object.and_then(|object| object.crashing_sound.as_deref());
             if let Some(voice) = voice
                 && Simulation::is_human_player(session, houses, owner)
             {
-                sound_events.emit(super::SimSoundEvent::voc_at(voice, &entity.position));
+                sound_events.emit(super::SimSoundEvent::voc_at(
+                    rules.sound_name(voice),
+                    &entity.position,
+                ));
             }
             if let Some(sound) = crashing_sound {
                 let world = Self::movement_sound_world(entity);
                 sound_events.emit(super::SimSoundEvent::AnimationStarted {
                     anim_id: id,
-                    sound_id: sound,
+                    sound_id: rules.sound_name(sound),
                     world,
                 });
             }
@@ -753,12 +756,16 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return;
         };
-        let red = matches!(
-            entity
-                .health
-                .compare_ratio(object.strength, rules.general.condition_red),
-            Less | Unordered
-        );
+        // Stock's `test ah,1` (`0x0041509A`) takes an unordered ratio (0/0)
+        // as red; Ares' `fcompi`/`jbe` (`0x10047BA6..0x10047BAA`) does not.
+        let red = match entity
+            .health
+            .compare_ratio(object.strength, rules.general.condition_red)
+        {
+            Less => true,
+            Unordered => !rules.ares(),
+            _ => false,
+        };
         if !red || current_fly_height(entity, terrain) <= 0 {
             return;
         }
@@ -837,7 +844,7 @@ impl Simulation {
         transport: u64,
         attacker: Option<u64>,
         nested_by_self: bool,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) {
         loop {
             let Some(passenger) = self
@@ -863,8 +870,8 @@ impl Simulation {
             } else {
                 attacker
             };
-            self.kill_cargo_passengers(passenger, nested, nested_by_self, context);
-            self.record_kill_and_uninit(passenger, attacker, context);
+            self.kill_cargo_passengers(passenger, nested, nested_by_self, context.reborrow());
+            self.record_kill_and_uninit(passenger, attacker, context.reborrow());
         }
     }
 
@@ -878,13 +885,13 @@ impl Simulation {
         &mut self,
         victim: u64,
         attacker: Option<u64>,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) {
         self.record_the_kill(
             victim,
             crate::sim::combat::KillSource::Techno(attacker),
             crate::sim::combat::KillCallback::Terminal,
-            context,
+            context.reborrow(),
         );
         self.uninit_with_context(victim, context);
     }

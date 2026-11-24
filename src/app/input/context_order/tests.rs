@@ -277,6 +277,7 @@ fn an_all_berserk_click_follows_the_best_objects_class() {
     // 0 over an object already selected does nothing (`0x004ABE0B`).
     sim.entity_mut_for_test(friend)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
     assert_eq!(
@@ -313,10 +314,10 @@ fn the_ivan_self_bomb_gate_counts_the_whole_selection() {
     let ivan = sim
         .spawn_object("IVAN", "Americans", 3, 5, 0, &rules)
         .unwrap();
-    assert!(friendly_bomb_ivans(&sim, &rules, &[ivan], 1, ivan, None).is_empty());
+    assert!(friendly_ivans(&sim, &rules, &[ivan], 1, ivan, false, None).is_empty());
     assert_eq!(
-        friendly_bomb_ivans(&sim, &rules, &[ivan], 2, ivan, None),
-        [ivan]
+        friendly_ivans(&sim, &rules, &[ivan], 2, ivan, false, None),
+        [(ivan, FriendlyIvanAction::Bomb)]
     );
 }
 
@@ -431,6 +432,7 @@ fn specialist_infiltration_keeps_c4_click_and_cursor_priority() {
                 crate::app::input::context_order::OrderModifier::Normal,
                 false,
                 false,
+                &mut Default::default(),
             ),
             expected_cursor
         );
@@ -476,6 +478,7 @@ fn specialist_infiltration_keeps_c4_click_and_cursor_priority() {
             crate::app::input::context_order::OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         ),
         crate::app::types::CursorFeedbackKind::Enter
     );
@@ -701,6 +704,7 @@ fn a_refused_shot_moves_the_receiver_near_the_object() {
                 crate::app::input::context_order::OrderModifier::Normal,
                 false,
                 false,
+                &mut Default::default(),
             ),
             crate::app::types::CursorFeedbackKind::Invalid
         );
@@ -809,6 +813,7 @@ fn an_unarmed_receiver_selects_another_houses_object() {
             crate::app::input::context_order::OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         )
     };
 
@@ -834,6 +839,7 @@ fn an_unarmed_receiver_selects_another_houses_object() {
 
     sim.entity_mut_for_test(enemy)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
     assert_eq!(action(&sim, mcv), AttackAction::NoMove);
@@ -864,12 +870,16 @@ fn an_unarmed_receiver_selects_another_houses_object() {
     );
     sim.entity_mut_for_test(enemy)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(false);
 
     let loaner = sim.entity_mut_for_test(mcv).unwrap();
-    loaner.mission_only.mark();
-    loaner.discovery.set_owned_by_current_house_for_test(true);
+    loaner.seldom.mission_only.mark();
+    loaner
+        .seldom
+        .discovery
+        .set_owned_by_current_house_for_test(true);
     assert_eq!(action(&sim, mcv), AttackAction::NoMove);
 
     assert_eq!(
@@ -910,6 +920,7 @@ fn a_harrier_moves_to_an_object_it_may_not_attack() {
     let wingman = sim.spawn_object("ORCA", "Local", 6, 5, 0, &rules).unwrap();
     sim.entity_mut_for_test(wingman)
         .unwrap()
+        .seldom
         .selection
         .set_selected_for_test(true);
     for flier in [kirov, rocketeer] {
@@ -953,6 +964,7 @@ fn a_harrier_moves_to_an_object_it_may_not_attack() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         )
     };
     let click = |target| {
@@ -1026,6 +1038,7 @@ fn a_harrier_moves_to_an_object_it_may_not_attack() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         ),
         CursorFeedbackKind::Move
     );
@@ -1124,6 +1137,7 @@ fn campaign_shroud_over_an_object_answers_move_or_no_move() {
                 OrderModifier::Normal,
                 false,
                 false,
+                &mut Default::default(),
             ),
             cursor
         );
@@ -1210,6 +1224,7 @@ fn campaign_shroud_rewrites_the_key_chords_over_an_object() {
             modifier,
             false,
             false,
+            &mut Default::default(),
         )
     };
     let guard_click = |sim: &Simulation, actor| {
@@ -1315,6 +1330,7 @@ fn campaign_shroud_shift_takes_the_passenger_rows() {
             OrderModifier::Shift,
             false,
             false,
+            &mut Default::default(),
         )
     };
     let click = |sim: &Simulation| {
@@ -1385,6 +1401,7 @@ fn c4_and_infiltration_need_the_attack_foot_hands_them() {
                 modifier,
                 alt,
                 false,
+                &mut Default::default(),
             )
         };
         let attacks = infantry_arm_attacks(sim, &rules, tanya, reactor, modifier, alt, None);
@@ -1454,6 +1471,7 @@ fn a_self_click_in_a_larger_selection_dispatches_no_move() {
     for id in selected {
         sim.entity_mut_for_test(id)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(true);
     }
@@ -1477,6 +1495,7 @@ fn a_self_click_in_a_larger_selection_dispatches_no_move() {
         OrderModifier::Normal,
         false,
         false,
+        &mut Default::default(),
     );
     assert_eq!(cursor_id_for_feedback(cursor), Some(CursorId::NoMove));
     assert_eq!(
@@ -1597,6 +1616,7 @@ fn a_harrier_over_a_flier_above_an_enemy_wall_answers_attack() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         )
     };
     let click = |target| {
@@ -1717,6 +1737,7 @@ fn a_tank_and_a_gi_refuse_to_attack_an_immune_object() {
                 OrderModifier::Normal,
                 false,
                 false,
+                &mut Default::default(),
             )
         };
         let click = |target| {
@@ -1793,6 +1814,7 @@ fn a_tank_and_a_gi_refuse_to_attack_an_immune_object() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         ),
         CursorFeedbackKind::IvanBomb
     );
@@ -2587,6 +2609,7 @@ fn retail_nonprimary_war_factory_self_click_queues_its_primary_selection() {
             crate::app::input::context_order::OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         )
     };
     let nonprimary_cursor = cursor(&[second], second);
@@ -2620,6 +2643,7 @@ fn retail_nonprimary_war_factory_self_click_queues_its_primary_selection() {
     for id in [first, second] {
         sim.entity_mut_for_test(id)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(true);
     }
@@ -2633,6 +2657,7 @@ fn retail_nonprimary_war_factory_self_click_queues_its_primary_selection() {
         crate::app::input::context_order::OrderModifier::Normal,
         false,
         false,
+        &mut Default::default(),
     );
     assert_eq!(
         cursor_id_for_feedback(group),
@@ -2678,6 +2703,7 @@ fn a_loaded_bio_reactor_self_click_and_hover_cursor_offer_unload() {
         crate::app::input::context_order::OrderModifier::Normal,
         false,
         false,
+        &mut Default::default(),
     );
 
     assert_eq!(
@@ -2729,6 +2755,7 @@ fn a_loaded_transport_on_a_bridge_offers_no_deploy() {
                 crate::app::input::context_order::OrderModifier::Normal,
                 false,
                 false,
+                &mut Default::default(),
             ),
         )
     };
@@ -2794,6 +2821,7 @@ fn retail_siege_chopper_self_click_and_cursor_offer_the_same_deploy_action() {
                 crate::app::input::context_order::OrderModifier::Normal,
                 false,
                 false,
+                &mut Default::default(),
             ),
             crate::app::types::CursorFeedbackKind::Deploy,
         );
@@ -2824,6 +2852,7 @@ fn retail_siege_chopper_self_click_and_cursor_offer_the_same_deploy_action() {
         crate::app::input::context_order::OrderModifier::Normal,
         false,
         false,
+        &mut Default::default(),
     );
     assert_eq!(feedback, crate::app::types::CursorFeedbackKind::NoDeploy);
     assert_eq!(
@@ -2970,13 +2999,30 @@ fn bomb_click_orders() {
     let selected = [ivan, engineer];
 
     assert_eq!(
-        friendly_bomb_ivans(&sim, &rules, &selected, selected.len(), own_tank, None),
-        vec![ivan]
+        friendly_ivans(
+            &sim,
+            &rules,
+            &selected,
+            selected.len(),
+            own_tank,
+            false,
+            None
+        ),
+        vec![(ivan, FriendlyIvanAction::Bomb)]
     );
     // 0% Verses: ILLEGAL to the Ivan, so the friend stays a selection
     // click, as the cursor shows it.
     assert!(
-        friendly_bomb_ivans(&sim, &rules, &selected, selected.len(), armoured, None).is_empty()
+        friendly_ivans(
+            &sim,
+            &rules,
+            &selected,
+            selected.len(),
+            armoured,
+            false,
+            None
+        )
+        .is_empty()
     );
     {
         let cursor = |target| {
@@ -2993,6 +3039,7 @@ fn bomb_click_orders() {
                 crate::app::input::context_order::OrderModifier::Normal,
                 false,
                 false,
+                &mut Default::default(),
             )
         };
         assert_eq!(
@@ -3021,12 +3068,29 @@ fn bomb_click_orders() {
         "an unseen bomb"
     );
     assert!(
-        friendly_bomb_ivans(&sim, &rules, &selected, selected.len(), own_tank, None).is_empty(),
+        friendly_ivans(
+            &sim,
+            &rules,
+            &selected,
+            selected.len(),
+            own_tank,
+            false,
+            None
+        )
+        .is_empty(),
         "a bombed friend stays a selection click"
     );
     assert_eq!(
-        friendly_bomb_ivans(&sim, &rules, &selected, selected.len(), spare_tank, None),
-        vec![ivan]
+        friendly_ivans(
+            &sim,
+            &rules,
+            &selected,
+            selected.len(),
+            spare_tank,
+            false,
+            None
+        ),
+        vec![(ivan, FriendlyIvanAction::Bomb)]
     );
     assert!(ivan_cannot_bomb(&sim, &rules, ivan, own_tank));
     assert!(!ivan_cannot_bomb(&sim, &rules, engineer, own_tank));
@@ -3396,7 +3460,7 @@ fn represented_infantry_controllability_gates_match_native_hut_clicks() {
                 ));
         }
         if gates["slave_owner"] == true {
-            sim.entity_mut_for_test(engineer).unwrap().slave =
+            sim.entity_mut_for_test(engineer).unwrap().seldom.slave =
                 crate::sim::slave_manager::SlaveLink::for_test(Some(hover.stable_id), vec![]);
         }
         if let Some(native_slots) = gates["spawn_slots"].as_array() {

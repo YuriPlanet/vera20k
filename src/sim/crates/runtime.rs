@@ -205,7 +205,7 @@ pub(crate) fn tick_crate_regeneration(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: &OverlayTypeRegistry,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Result<CrateRegeneration, RuntimeOverlayError> {
     let mut result = CrateRegeneration::default();
     if !sim.session.rule_policy().uses_match_crates() || !sim.session.game_options().crates {
@@ -435,6 +435,66 @@ mod tests {
         next.restore_user_loaded_land(&saved.user_load_land_values().unwrap())
             .unwrap();
         assert_eq!(next.cell(15, 15).unwrap().land_type, 7);
+    }
+
+    /// Ares skips CellLoad's crate clear (hook `0x00483BF1`) and Map
+    /// no-init's slot reset (`0x00565215`): a loaded Ares game keeps both.
+    #[test]
+    fn user_load_keeps_crates_only_in_an_ares_game() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::sim::snapshot::GameSnapshot;
+
+        let slot = CrateSlot {
+            start_frame: 30,
+            aux: 0x1234,
+            duration: 80,
+            cell_x: 15,
+            cell_y: 15,
+        };
+        for ares in [false, true] {
+            let _way = crate::rules::ares_switch::read_ares_way(ares);
+            let rules = crate_ruleset(if ares {
+                "[General]\nTogglePowerAllowed=yes\n"
+            } else {
+                ""
+            });
+            assert_eq!(rules.ares(), ares);
+            let registry =
+                OverlayTypeRegistry::from_ini(&IniFile::from_str("[OverlayTypes]\n"), None);
+            let mut sim = sim_with_grid(17);
+            let mut baseline = sim.resolved_terrain.take().unwrap();
+            baseline.set_land_speed_rules_for_test(&rules.terrain_rules);
+            sim.install_resolved_terrain_for_new_map(baseline.clone());
+            sim.overlay_grid
+                .as_mut()
+                .unwrap()
+                .place_overlay(15, 15, 179, 3);
+            *sim.crate_authority_mut_for_test().slot_mut_for_test(0) = slot;
+            assert!(sim.rebuild_dynamic_navigation(&rules));
+
+            let mut saved = baseline.capture_saved_template().unwrap();
+            saved
+                .capture_live_cell_land(sim.resolved_terrain().unwrap())
+                .unwrap();
+            let land = saved.user_load_land_values().unwrap();
+            let bytes = GameSnapshot::save(&sim, 0, 0, "user", 0);
+            let mut loaded = GameSnapshot::load(&bytes).unwrap().sim;
+            loaded.restore_after_snapshot_load().unwrap();
+            loaded.rebuild_caches_after_load(baseline, Default::default(), &rules);
+            loaded
+                .restore_map_authority_after_user_load(&rules, &registry, None, land)
+                .unwrap();
+
+            let cell = loaded.overlay_grid().unwrap().cell(15, 15);
+            let kept = loaded.crate_authority().slots()[0];
+            if ares {
+                assert_eq!((cell.overlay_id, cell.overlay_data), (Some(179), 3));
+                assert_eq!(kept, slot);
+            } else {
+                assert_eq!((cell.overlay_id, cell.overlay_data), (None, 0));
+                assert_eq!((kept.cell_x, kept.cell_y), (0, 0));
+            }
+        }
     }
 
     #[test]
@@ -724,7 +784,7 @@ mod tests {
             let rng_before = sim.scenario_rng.state();
 
             let regen =
-                tick_crate_regeneration(&mut sim, &rules, registry, FrameEffects::default())
+                tick_crate_regeneration(&mut sim, &rules, registry, &mut FrameEffects::default())
                     .unwrap();
 
             assert_eq!(regen, CrateRegeneration::default());
@@ -767,7 +827,8 @@ mod tests {
         let untouched = sim.crate_authority().slots()[0];
 
         let regen =
-            tick_crate_regeneration(&mut sim, &rules, registry, FrameEffects::default()).unwrap();
+            tick_crate_regeneration(&mut sim, &rules, registry, &mut FrameEffects::default())
+                .unwrap();
 
         assert_eq!(regen.expired, 1, "only the due slot expires");
         assert_eq!(regen.accepted, 1, "one replacement placer call");
@@ -815,7 +876,8 @@ mod tests {
         };
 
         let regen =
-            tick_crate_regeneration(&mut sim, &rules, registry, FrameEffects::default()).unwrap();
+            tick_crate_regeneration(&mut sim, &rules, registry, &mut FrameEffects::default())
+                .unwrap();
 
         assert_eq!(regen.expired, 1);
         assert_eq!(regen.visible, 1);

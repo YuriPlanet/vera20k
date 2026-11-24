@@ -41,12 +41,8 @@ pub(crate) fn cancel_placement_modes(
 /// only for prior byte1, including after repeated locks.
 pub(crate) fn apply_lock_effect(state: &mut AppState, locked: bool, was_locked: bool) {
     if locked {
-        state
-            .match_state
-            .match_presentation
-            .in_game_gadgets
-            .cancel_pointer_capture();
-        crate::app::input::cursor::reset_cursor_shape();
+        crate::app::input::chrome_input::cancel(state);
+        state.match_state.input.reset_cursor_shape();
     }
     lock_input(&mut state.match_state.input, locked, was_locked);
     crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);

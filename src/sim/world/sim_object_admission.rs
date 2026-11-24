@@ -172,6 +172,7 @@ impl Simulation {
                 .is_some_and(|kind| kind.inviso);
             let placement = projectile.initial_target_position;
             self.admit_projectile(stable_id, projectile);
+            self.unlimbo_alpha_shape(stable_id, ObjectKind::Projectile, rules);
             Self::construct_bullet_scheme(
                 &self.interner,
                 &self.substrate,
@@ -245,7 +246,7 @@ impl Simulation {
                     .substrate
                     .entities
                     .values()
-                    .filter(|entity| entity.in_logic_vector.is_member())
+                    .filter(|entity| entity.seldom.in_logic_vector.is_member())
                     .count(),
                 ObjectKind::Anim => self
                     .substrate
@@ -321,12 +322,12 @@ impl Simulation {
                     entity.stable_id()
                 );
                 debug_assert!(
-                    !entity.in_logic_vector.is_member(),
+                    !entity.seldom.in_logic_vector.is_member(),
                     "dead entity {} must leave LogicVector before alive clear",
                     entity.stable_id()
                 );
                 debug_assert!(
-                    entity.kill_record.is_recorded(),
+                    entity.seldom.kill_record.is_recorded(),
                     "dead entity {} must close its kill record before alive clear",
                     entity.stable_id()
                 );
@@ -561,7 +562,9 @@ impl Simulation {
         for spawn in spawns {
             let stable_id = spawn.object.stable_id();
             self.substrate.voxel_anims.insert(spawn.object);
-            self.reveal_voxel_anim(stable_id);
+            if self.reveal_voxel_anim(stable_id) {
+                self.unlimbo_alpha_shape(stable_id, ObjectKind::VoxelAnim, rules);
+            }
             // The constructor's tail (`0x00749864..0x007498BD`) builds the
             // type's AttachedSystem at the input location, aimed at the cell
             // there (Map565730), owned by the anim, with zero target coords

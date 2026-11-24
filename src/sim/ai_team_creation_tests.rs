@@ -258,7 +258,7 @@ fn the_selector_matches_the_original() {
                 answers[slot]
             },
             |_, low, high| draws.draw(low, high),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let slot_of = |id: InternedId| team_types.iter().position(|&tt| tt == id).unwrap();
         let picked: Vec<usize> = picked.into_iter().map(slot_of).collect();
@@ -408,7 +408,7 @@ fn the_team_block_matches_the_original() {
             &mut sim,
             &rules,
             owner,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let timer = sim.houses[&owner].team_creation().timer;
         assert_eq!(
@@ -457,11 +457,45 @@ fn a_command_driven_house_stands_down_from_team_creation() {
         &mut sim,
         &rules,
         owner,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         rng_digest(&sim.scenario_rng),
         before,
         "the selector never draws for a command-driven house"
     );
+}
+
+/// A non-finite running weight, which only a damaged save can hold, counts
+/// as weight 0 (FISTP's indefinite low dword) instead of stopping the draw.
+#[test]
+fn a_non_finite_saved_weight_draws_as_zero() {
+    let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
+    let mut sim = Simulation::new();
+    let owner = sim.interner.intern("H0");
+    let [broken, kept, broken_team, kept_team] =
+        ["BROKEN", "KEPT", "BROKENTEAM", "KEPTTEAM"].map(|name| sim.interner.intern(name));
+    let nan = NativeF64Bits::from_bits(f64::NAN.to_bits());
+    sim.team_script_vm
+        .register_ai_trigger(ai_trigger(broken, broken_team, None, nan));
+    sim.team_script_vm.register_ai_trigger(ai_trigger(
+        kept,
+        kept_team,
+        None,
+        NativeF64Bits::from_bits(3.0f64.to_bits()),
+    ));
+    let mut asked = Vec::new();
+    let picked = draw_ai_trigger(
+        &mut sim,
+        &rules,
+        owner,
+        None,
+        false,
+        |_, _, _, _| true,
+        |_, low, high| {
+            asked.push((low, high));
+            high
+        },
+    );
+    assert_eq!((asked, picked), (vec![(1, 3)], vec![kept_team]));
 }

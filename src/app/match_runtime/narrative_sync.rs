@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, VecDeque};
 use crate::app::frontend::fullscreen_movie::{FullscreenMovie, MovieReturn};
 use crate::app::lan_service::CampaignControlSend;
 use crate::app::{App, AppState, GameScreen};
+use crate::net::global::GlobalBatch;
 use crate::net::lan_messages::extended_setup::campaign::Signal;
 use crate::net::live_commands::NarrativeHold;
 use crate::sim::replay::ScenarioServiceInput;
@@ -30,7 +31,7 @@ struct Barrier {
     movie_pause: bool,
     timed: bool,
     sent_ready: bool,
-    release_discard_baseline: Option<u64>,
+    release_batch: Option<GlobalBatch>,
 }
 
 enum HostRelease {
@@ -80,7 +81,7 @@ impl NarrativeSync {
         let Some(barrier) = self.barrier.as_ref() else {
             return HostRelease::Wait;
         };
-        if barrier.release_discard_baseline.is_some() {
+        if barrier.release_batch.is_some() {
             if delivered {
                 HostRelease::Complete
             } else {
@@ -217,7 +218,7 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
             movie_pause,
             timed,
             sent_ready: false,
-            release_discard_baseline: None,
+            release_batch: None,
         });
         if !session.local_connection_watches()
             && let Some(live) = state.match_state.live_network.as_mut()
@@ -377,15 +378,13 @@ fn finish_or_wait(state: &mut AppState, chrono: bool, wall_ms: u64) {
         let delivered = sync
             .barrier
             .as_ref()
-            .and_then(|barrier| barrier.release_discard_baseline)
-            .is_some_and(|discarded| {
-                live.is_some_and(|live| live.global_sends_delivered(discarded))
-            });
+            .and_then(|barrier| barrier.release_batch)
+            .is_some_and(|batch| live.is_some_and(|live| live.global().batch_delivered(batch)));
         match sync.host_release(delivered) {
             HostRelease::Wait => {}
             HostRelease::Complete => release(state, wall_ms),
             HostRelease::Send => {
-                if let Some(CampaignControlSend::Queued(discarded_at_enqueue)) =
+                if let Some(CampaignControlSend::Queued(batch)) =
                     crate::app::lan_service::send_campaign_control(
                         state,
                         &peers,
@@ -405,7 +404,7 @@ fn finish_or_wait(state: &mut AppState, chrono: bool, wall_ms: u64) {
                             .barrier
                             .as_mut()
                         {
-                            barrier.release_discard_baseline = Some(discarded_at_enqueue);
+                            barrier.release_batch = Some(batch);
                         }
                     } else {
                         release(state, wall_ms);
@@ -466,7 +465,7 @@ mod tests {
             movie_pause: true,
             timed: false,
             sent_ready: false,
-            release_discard_baseline: None,
+            release_batch: None,
         });
         assert!(sync.owns_fullscreen(Some(&MovieReturn::RunningScenario)));
         assert!(!sync.owns_fullscreen(Some(&MovieReturn::StartupIntro)));
@@ -485,7 +484,7 @@ mod tests {
             movie_pause: true,
             timed: false,
             sent_ready: false,
-            release_discard_baseline: None,
+            release_batch: None,
         };
         let mut sync = NarrativeSync::default();
         sync.record_ready(0, point, &barrier.playing_sources);
@@ -497,7 +496,13 @@ mod tests {
         assert!(sync.all_ready(&barrier));
         sync.barrier = Some(barrier);
         assert!(matches!(sync.host_release(true), HostRelease::Send));
-        sync.barrier.as_mut().unwrap().release_discard_baseline = Some(0);
+        let release = crate::net::global::GlobalChannel::new(
+            Default::default(),
+            crate::net::reliable::RetryTiming::LAN_GUEST_COMPLETED_GLOBAL,
+        )
+        .send_reliable_batch(b"", &[])
+        .unwrap();
+        sync.barrier.as_mut().unwrap().release_batch = Some(release);
         assert!(matches!(sync.host_release(false), HostRelease::Wait));
         assert!(matches!(sync.host_release(true), HostRelease::Complete));
     }

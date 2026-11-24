@@ -103,7 +103,7 @@ impl Simulation {
         self.session.install_current_house(Some(owner));
         for entity in self.substrate.entities.values_mut() {
             let owned = entity.owner() == owner;
-            entity.discovery.follow_view(owned, view);
+            entity.seldom.discovery.follow_view(owned, view);
         }
         true
     }
@@ -145,7 +145,7 @@ impl Simulation {
     /// uncloaking.
     pub(crate) fn shared_owned_by_current_house(&self, entity: &GameEntity) -> bool {
         !self.session.execution_topology().is_lockstep()
-            && entity.discovery.owned_by_current_house()
+            && entity.seldom.discovery.owned_by_current_house()
     }
 
     /// Retained discovery for a specified logical map, rather than this
@@ -156,13 +156,13 @@ impl Simulation {
         };
         if self.session.execution_topology().is_lockstep() {
             self.network_discovery_view_bit(viewer)
-                .map_or(entity.discovery.network_other_discovery, |bit| {
-                    entity.discovery.network_human_discovery & bit != 0
+                .map_or(entity.seldom.discovery.network_other_discovery, |bit| {
+                    entity.seldom.discovery.network_human_discovery & bit != 0
                 })
         } else if self.session.current_house() == Some(viewer) {
-            entity.discovery.discovered_by_current_house
+            entity.seldom.discovery.discovered_by_current_house
         } else {
-            entity.discovery.discovered_by_other_house
+            entity.seldom.discovery.discovered_by_other_house
         }
     }
 
@@ -184,7 +184,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        if entity.discovery.discovered_by_current_house {
+        if entity.seldom.discovery.discovered_by_current_house {
             return;
         }
         let coords = crate::sim::movement::ground_pose::object_get_coords(entity, Some(terrain));
@@ -194,6 +194,7 @@ impl Simulation {
                 .entities
                 .get_mut(id)
                 .expect("queried Techno remains stored")
+                .seldom
                 .discovery
                 .discovered_by_current_house = true;
         }
@@ -212,7 +213,7 @@ impl Simulation {
         &mut self,
         stable_id: u64,
         viewer: InternedId,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
         admitted_network_views: u32,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
@@ -229,7 +230,7 @@ impl Simulation {
         } else {
             actual_current
         };
-        let history = entity.discovery;
+        let history = entity.seldom.discovery;
         let actual_view = self
             .session
             .current_house()
@@ -270,26 +271,26 @@ impl Simulation {
             // PlayerPtr. Stamp those admissions before callbacks, so an
             // opening's RevealToAll cannot reenter the same shared opening
             // through another logical view whose CellPUT is still pending.
-            entity.discovery.network_human_discovery |= admitted_network_views;
+            entity.seldom.discovery.network_human_discovery |= admitted_network_views;
             if actual_view.is_some_and(|bit| admitted_network_views & bit != 0) {
-                entity.discovery.discovered_by_current_house = true;
+                entity.seldom.discovery.discovered_by_current_house = true;
             }
             if admitted_network_views & !actual_view.unwrap_or(0) != 0 {
-                entity.discovery.discovered_by_other_house = true;
+                entity.seldom.discovery.discovered_by_other_house = true;
             }
         } else if network {
             if let Some(bit) = network_view {
-                entity.discovery.network_human_discovery |= bit;
+                entity.seldom.discovery.network_human_discovery |= bit;
             } else {
-                entity.discovery.network_other_discovery = true;
+                entity.seldom.discovery.network_other_discovery = true;
             }
         }
         if !actual_current {
             // 6F4990 precedes base discovery and the mission inquiry.
-            entity.discovery.discovered_by_other_house = true;
+            entity.seldom.discovery.discovered_by_other_house = true;
         }
         if actual_current {
-            entity.discovery.discovered_by_current_house = true;
+            entity.seldom.discovery.discovered_by_current_house = true;
         }
         if !controlled
             && entity.mission.effective().known()
@@ -311,7 +312,13 @@ impl Simulation {
                 if !self.object_placement_scope_active() {
                     //6F4A03..6F4A18: the attachment owner resolves the Tag,
                     // including an Event48-only chain's no-match traversal.
-                    self.dispatch_object_tag_event(stable_id, 4, Some(stable_id), None, context);
+                    self.dispatch_object_tag_event(
+                        stable_id,
+                        4,
+                        Some(stable_id),
+                        None,
+                        context.reborrow(),
+                    );
                 }
             }
         }
@@ -368,10 +375,10 @@ impl Simulation {
         &mut self,
         id: u64,
         viewer: InternedId,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
         admitted_network_views: u32,
     ) -> bool {
-        if !self.record_techno_discovery(id, viewer, context, admitted_network_views) {
+        if !self.record_techno_discovery(id, viewer, context.reborrow(), admitted_network_views) {
             return false;
         }
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -381,7 +388,7 @@ impl Simulation {
             return true;
         }
         let owner = entity.owner();
-        let no_radio = entity.radio_contacts.is_empty();
+        let no_radio = entity.seldom.radio_contacts.is_empty();
         //44D5ED..44D60D records the owner's last BuildingType after shared
         //discovery admits, outside ScenarioInit, before Grand_Opening.
         //This shares House's field owner with Record_Last_Built4FB6B0 and

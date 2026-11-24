@@ -126,7 +126,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> SleepVisit {
         if !self.idle_sleep.on {
             return SleepVisit::Awake;
@@ -467,8 +467,8 @@ impl Simulation {
             && infantry.fear_level() == 0
             && !infantry.is_prone()
             && !infantry.is_psycho()
-            && entity.slave.owner().is_none()
-            && !entity.mega_mission.is_attack_move()
+            && entity.seldom.slave.owner().is_none()
+            && !entity.seldom.mega_mission.is_attack_move()
             && !crate::sim::movement::motion_query::is_moving_now(
                 entity,
                 crate::sim::movement::SpeedRules::new(rules, &self.interner, &self.houses),
@@ -529,7 +529,7 @@ fn infantry_rests(entity: &crate::sim::game_entity::GameEntity, object: &ObjectT
         && !entity.is_warped_out()
         && !entity.is_warping_in()
         // The tube tests return before the AI counter.
-        && entity.low_bridge_tube_state.is_none()
+        && entity.active_tube().is_none()
         && entity.drain.is_idle()
         && !entity.veterancy.rank_changed()
         && !crate::sim::rocking::updates(entity)

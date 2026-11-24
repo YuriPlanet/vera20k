@@ -1,6 +1,7 @@
 use super::*;
 use crate::net::reliable::LanConnectionConfig;
 use crate::net::udp::UdpBindConfig;
+use crate::net::udp::test_support::settle_loopback;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
 use crate::sim::command::{CommandEnvelope, CommandRecord};
 use crate::sim::command_queue::{FrameChecksumState, FrameInfo};
@@ -17,29 +18,6 @@ use std::time::{Duration, Instant};
 /// debug build sharing a small CI machine with the rest of the suite runs many times
 /// slower, and only the wall clock bounds their loops.
 const STALL_LIMIT: Duration = Duration::from_secs(120);
-
-/// Returns once every datagram this thread has already sent over loopback can be
-/// read. macOS delivers them on a kernel thread after `send_to` has returned, so a
-/// read straight after a send usually finds nothing yet. A step in the relay loops
-/// below counts as 16 ms of match time but takes microseconds, so when a busy CI
-/// machine stalls that thread, a whole loop can pass before its packets land.
-/// Delivery keeps its order: once a datagram sent now comes back, the earlier ones
-/// have arrived.
-fn settle_loopback() {
-    thread_local! {
-        static PROBE: UdpSocket = {
-            let probe = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-            probe.connect(probe.local_addr().unwrap()).unwrap();
-            probe.set_read_timeout(Some(STALL_LIMIT)).unwrap();
-            probe
-        };
-    }
-    PROBE.with(|probe| {
-        probe.send(&[0]).unwrap();
-        // Only a wait: if the probe is ever lost, the step carries on without it.
-        let _ = probe.recv(&mut [0]);
-    });
-}
 
 fn transport() -> LanUdpTransport {
     LanUdpTransport::bind(
@@ -87,6 +65,7 @@ fn fixture_agreement(
         10,
         30,
         rate,
+        0,
         0,
         "",
         "",
@@ -280,9 +259,12 @@ impl Boundary {
     }
 }
 
-impl NetworkCommandBoundary for Boundary {
+/// Implemented on the shared reference: one test boundary is read by its
+/// `command_applied` callback, by the test's assertions and by the pair loops
+/// that hold every client's boundary at once, so its state stays in cells.
+impl NetworkCommandBoundary for &Boundary {
     fn exchange_commands(
-        &self,
+        &mut self,
         context: NetworkQueueContext,
         queues: &mut NetworkCommandQueues<'_>,
     ) -> Result<Option<NetworkQueuePass>, NetworkCommandError> {
@@ -305,7 +287,7 @@ impl NetworkCommandBoundary for Boundary {
         .map_err(|error| NetworkCommandError::Unavailable(error.to_string()))
     }
 
-    fn record_frame_checksum(&self, frame: u32, checksum: u32) {
+    fn record_frame_checksum(&mut self, frame: u32, checksum: u32) {
         self.checksums
             .borrow_mut()
             .record_frame_checksum(frame, checksum);
@@ -372,19 +354,20 @@ fn stop_scene_with_rules(rules: &RuleSet) -> (Simulation, [u64; 2]) {
 }
 
 fn production_frame(sim: &mut Simulation, rules: &RuleSet, boundary: &Boundary) -> SimFrameOutput {
-    let applied = |sim: &Simulation, record: &CommandRecord, applied: bool| {
+    let mut applied = |sim: &Simulation, record: &CommandRecord, applied: bool| {
         boundary
             .applied
             .borrow_mut()
             .push((sim.session().binary_frame(), record.clone(), applied));
     };
-    let effects = FrameEffects::empty()
-        .with_network_commands(boundary)
-        .with_command_applied(&applied);
+    let mut network = boundary;
+    let mut effects = FrameEffects::empty()
+        .with_network_commands(&mut network)
+        .with_command_applied(&mut applied);
     if sim.pending_network_wait() {
-        sim.resume_network_wait(rules, effects).unwrap()
+        sim.resume_network_wait(rules, &mut effects).unwrap()
     } else {
-        sim.advance_app_frame(&[], rules, 33, TickLane::Ordinary, effects)
+        sim.advance_app_frame(&[], rules, 33, TickLane::Ordinary, &mut effects)
             .unwrap()
     }
 }

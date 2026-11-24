@@ -25,7 +25,7 @@ impl Simulation {
         self.uninit_with_context(stable_id, UninitContext::new(rules));
     }
 
-    pub fn uninit_with_context(&mut self, stable_id: u64, context: UninitContext<'_>) {
+    pub fn uninit_with_context(&mut self, stable_id: u64, mut context: UninitContext<'_>) {
         if self.classify_object(stable_id) == Some(ObjectKind::Terrain) {
             self.retire_non_entity_object(stable_id, context);
             return;
@@ -106,7 +106,7 @@ impl Simulation {
             self.phobos_tracking_begin_uninit(stable_id);
             // `ObjectClass::UnInit` kills a Techno's passengers with no attacker
             // (`0x005F660D`).
-            self.kill_passengers(stable_id, None, context);
+            self.kill_passengers(stable_id, None, context.reborrow());
 
             #[cfg(any(test, feature = "test-support"))]
             {
@@ -132,7 +132,7 @@ impl Simulation {
             &mut self.sound_events,
             stable_id,
         );
-        self.notify_pointer_expired(stable_id, context);
+        self.notify_pointer_expired(stable_id, context.reborrow());
 
         match kind {
             ObjectKind::Spotlight => {
@@ -241,9 +241,9 @@ impl Simulation {
             return;
         }
         self.substrate.pending_delete.remove_object(stable_id);
-        // RESIDUAL: each particle's own destructor announces its expiry
-        // (`0x0062D9C8`); VERA only conceals them. No listener holds a
-        // particle id.
+        // Each particle's own destructor announces its expiry
+        // (`0x0062D9C8`); the common destructor below gives it to the glows,
+        // the only listener that holds a particle id.
         self.finalize_and_remove_common(stable_id, context, 1);
     }
 
@@ -314,7 +314,7 @@ impl Simulation {
     pub(crate) fn scalar_delete_building_cargo(
         &mut self,
         building_id: u64,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
         game_state: i32,
     ) {
         if self.object_placement_scope_active() {
@@ -334,7 +334,7 @@ impl Simulation {
                 break;
             };
             if self.substrate.entities.contains(passenger) {
-                self.finalize_and_remove_common(passenger, context, game_state);
+                self.finalize_and_remove_common(passenger, context.reborrow(), game_state);
             }
         }
     }
@@ -345,7 +345,7 @@ impl Simulation {
     pub(in crate::sim::world) fn finalize_and_remove_common(
         &mut self,
         stable_id: u64,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
         game_state: i32,
     ) {
         let kind = self.classify_object(stable_id);
@@ -353,7 +353,7 @@ impl Simulation {
             self.destroy_spotlight(stable_id, context);
             return;
         }
-        self.destroy_spotlight_for_parent(stable_id, context);
+        self.destroy_spotlight_for_parent(stable_id, context.reborrow());
         let foot = self
             .substrate
             .entities
@@ -411,7 +411,7 @@ impl Simulation {
                 .get(stable_id)
                 .is_some_and(|entity| entity.category() == EntityCategory::Aircraft)
         {
-            self.kill_passengers(stable_id, None, context);
+            self.kill_passengers(stable_id, None, context.reborrow());
         }
         if foot && (game_state as u8) != 0 {
             // Ares3.0's Unit7357F6/Infantry517DF2/Aircraft4140EB hooks
@@ -444,45 +444,45 @@ impl Simulation {
             // The ordinary done-empty AI already announced its earlier
             // live Limbo; both callbacks use the same retained-reference
             // owner instead of clearing only its producer after removal.
-            self.notify_pointer_expired(stable_id, context);
+            self.notify_pointer_expired(stable_id, context.reborrow());
             self.conceal_particle_system(stable_id);
         }
         if kind == Some(ObjectKind::Particle) {
             // ParticleDtor62D9A0: its already-limbo check does no work,
             // then62D9C8 announces again before ObjectDtor5F3B80 unregisters
             // and frees the body. No Particle-specific RNG/timer writes.
-            self.notify_pointer_expired(stable_id, context);
+            self.notify_pointer_expired(stable_id, context.reborrow());
         }
         if kind == Some(ObjectKind::VoxelAnim) {
             // Voxel destructor749A11 announces expiry before its GameActive
             // Limbo749A86 and before ObjectDtor749B0C releases the body.
-            self.notify_pointer_expired(stable_id, context);
+            self.notify_pointer_expired(stable_id, context.reborrow());
             if (game_state as u8) != 0 {
-                self.object_conceal_with_context(stable_id, context);
+                self.object_conceal_with_context(stable_id, context.reborrow());
             }
         }
         if kind == Some(ObjectKind::Smudge) {
             // Scalar Smudge6B4FA0 sends its third removed=true expiry at
             //6B4FC6 before leaving Smudge/Object registries. Place's cells
             // survive this destructor and Building Mark(0).
-            self.notify_pointer_expired(stable_id, context);
+            self.notify_pointer_expired(stable_id, context.reborrow());
         }
         if kind == Some(ObjectKind::Terrain) {
             // Terrain destructor71B7D6 repeats expiry before leaving its
             // registry. This is later than the live lethal/UnInit callbacks.
-            self.notify_pointer_expired(stable_id, context);
+            self.notify_pointer_expired(stable_id, context.reborrow());
             // TerrainDtor71B7B0 at71B824..71B840 repeats Limbo while GameActive,
             // even for a never-placed or previously UnInit'd object. Its
             // suffix still queries/recalculates the retained cell; the
             // already-InLimbo prefix performs no unmark or extra expiry.
             if (game_state as u8) != 0 {
-                self.limbo_terrain_with_context(stable_id, context);
+                self.limbo_terrain_with_context(stable_id, context.reborrow());
             }
         }
         if kind == Some(ObjectKind::Projectile) {
             // BulletDtor466581 announces expiry before clearing construction
             // fields or leaving its registry, including never-Fired bullets.
-            self.notify_pointer_expired(stable_id, context);
+            self.notify_pointer_expired(stable_id, context.reborrow());
         }
         if self
             .substrate
@@ -502,7 +502,7 @@ impl Simulation {
             // even when a limbo object never reached UnInit. The original
             // constructed-cancel controls execute this under Factory's
             // A8E7AC bracket; the ordinary late drain repeats it after UnInit.
-            self.notify_pointer_expired(stable_id, context);
+            self.notify_pointer_expired(stable_id, context.reborrow());
             // Building43BD6C..43BD6E then Limbos the building, whatever
             // GameState holds. The repeat under it at 43BF3B takes the
             // in-limbo branch and only reruns the factory-queue update
@@ -510,7 +510,7 @@ impl Simulation {
             // settled; it is not ported. After UnInit this call is itself
             // that repeat; a building destroyed while placed leaves its
             // cells here.
-            self.techno_limbo_with_context(stable_id, context);
+            self.techno_limbo_with_context(stable_id, context.reborrow());
             // Building43BDC5 -> ClearAnimSlot451E40(-2) synchronously deletes
             // ordinary21slots, then43BDE0 destroys the distinct eight fire
             // Anims, before Techno tracking removal43BF34. Whole original
@@ -570,7 +570,7 @@ impl Simulation {
             .get(stable_id)
             .is_some_and(|entity| entity.category() == EntityCategory::Aircraft);
         if (infantry || aircraft) && (game_state as u8) != 0 {
-            self.techno_limbo_with_context(stable_id, context);
+            self.techno_limbo_with_context(stable_id, context.reborrow());
         }
         // Building43BF40..43BF51 scalar-deletes its Factory (`+0x524`) after
         // Remove_Tracking, outside the GameState gate. Limbo's Detach_All
@@ -618,7 +618,7 @@ impl Simulation {
                     break;
                 };
                 if self.substrate.entities.contains(passenger) {
-                    self.finalize_and_remove_common(passenger, context, game_state);
+                    self.finalize_and_remove_common(passenger, context.reborrow(), game_state);
                 }
             }
         }
@@ -632,7 +632,7 @@ impl Simulation {
                 .get(stable_id)
                 .is_some_and(|entity| entity.category() == EntityCategory::Unit)
         {
-            self.techno_limbo_with_context(stable_id, context);
+            self.techno_limbo_with_context(stable_id, context.reborrow());
         }
         if foot {
             // Class scalar destructors dispatch removed=true independently of
@@ -640,7 +640,7 @@ impl Simulation {
             // delegated Foot cached-cell/sound tail: Unit735892,
             // Infantry517E75 and Aircraft414125 -> original7258D0. This also
             // repairs observers of a rejected constructor that never UnInits.
-            self.notify_pointer_expired(stable_id, context);
+            self.notify_pointer_expired(stable_id, context.reborrow());
         }
         // Infantry517E75 announces expiry while still Alive;517F83 clears it
         // only afterward, before delegated Foot517F89. HP/kill state survive.
@@ -783,7 +783,12 @@ impl Simulation {
                     // vector is freed. Ordinary AI retirement has no children left;
                     // direct disposal must still remove each individual AIR entry.
                     for particle in system.particles() {
-                        self.substrate.conceal_particle(particle.stable_id());
+                        let id = particle.stable_id();
+                        self.substrate.conceal_particle(id);
+                        // ParticleDtor62D9C8 announces the expiry: a glow
+                        // waits for PurgeDisabled, or under Ares goes now.
+                        self.alpha_shapes.pointer_expired(id);
+                        self.delete_alpha_shape(id, context.rules());
                     }
                 }
                 system.is_some()
@@ -825,6 +830,10 @@ impl Simulation {
             // constructor-owned child's ticket).
             None => false,
         };
+        // Ares `ObjectClass_DTOR` (hook `0x005F3D65`, `Ares.dll 100476E0`).
+        if removed {
+            self.delete_alpha_shape(stable_id, context.rules());
+        }
         debug_assert!(
             removed || kind.is_none(),
             "{kind:?} {stable_id} left no store at its destructor"
@@ -844,7 +853,7 @@ impl Simulation {
     pub(crate) fn process_pending_delete(&mut self) {
         self.process_pending_delete_with(
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
             1,
             self.session.started(),
         );
@@ -861,7 +870,7 @@ impl Simulation {
     pub fn process_pending_delete_with(
         &mut self,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
         game_state: i32,
         started: bool,
     ) {
@@ -903,7 +912,9 @@ impl Simulation {
             }
         }
         self.substrate.pending_delete.finish_drain();
-        self.substrate.anims.drain_local_deletes();
+        for anim in self.substrate.anims.drain_local_deletes() {
+            self.delete_anim_alpha_shape(anim);
+        }
     }
 
     /// Test compatibility only.  Production has one ordinary tail drain.

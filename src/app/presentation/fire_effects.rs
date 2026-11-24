@@ -221,7 +221,7 @@ mod tests {
                 gun,
                 Some(TargetKind::Entity(target)),
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
             for _ in 0..300 {
@@ -273,7 +273,7 @@ mod tests {
                 let coord = event.fire_coord;
                 let reports: Vec<_> = sim.sound_events().iter().filter(|sound| matches!(sound,
                     crate::sim::world::SimSoundEvent::VocAt { sound_id, .. }
-                        if sound_id == sim.interner().resolve(event.report_sound_id.unwrap())
+                        if sound_id.name_in(rules) == sim.interner().resolve(event.report_sound_id.unwrap())
                 )).collect();
                 match reports.as_slice() {
                     [
@@ -288,7 +288,7 @@ mod tests {
                         },
                     ] => {
                         assert_eq!(
-                            sound_id,
+                            sound_id.name_in(rules),
                             sim.interner().resolve(event.report_sound_id.unwrap())
                         );
                         assert_eq!(

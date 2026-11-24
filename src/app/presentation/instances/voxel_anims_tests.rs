@@ -4,6 +4,21 @@ use super::*;
 use crate::render::vxl_raster::{BodyTilt, VxlRenderParams, render_vxl};
 use crate::sim::world::display_layers::DisplayLayer;
 
+/// [`voxel_anim_draw_instance`]'s plan of one piece, read back.
+fn planned_debris(
+    id: u64,
+    piece: &VoxelAnimObject,
+    kind: &VoxelAnimType,
+    palette: (u32, u32, PaletteLight),
+    view: &DebrisView<'_>,
+    order: &NativeDisplayOrder,
+    render: impl FnOnce(i32, glam::Mat4) -> Option<(UnitSpriteEntry, Option<UnitSpriteEntry>)>,
+) -> Option<crate::app::presentation::render::draw_plan_lowering::OwnedPlannedObject> {
+    let mut plan = PlannedObjects::default();
+    voxel_anim_draw_instance(id, piece, kind, palette, view, order, &mut plan, render)?;
+    plan.into_owned().pop()
+}
+
 fn screen(x: i32, y: i32, z: i32) -> [f32; 2] {
     let (x, y) = absolute_leptons_to_screen(x, y, z);
     [x, y]
@@ -13,16 +28,16 @@ fn screen(x: i32, y: i32, z: i32) -> [f32; 2] {
 fn a_piece_at_a_bridge_deck_shadows_one_lepton_above_it() {
     // Object6D2140 of (2688, 5248, 1040) is native (-300, 315), plus VERA's
     // world row bias of 15 (the projectile builder's bridge-height pin).
-    let over = geometry(IVec3::new(2688, 5248, 1040), 624, true);
+    let over = geometry(IVec3::new(2688, 5248, 1040), 624, Some(1040));
     assert_eq!(over.body.point, [-300.0, 330.0]);
     assert_eq!(over.body.z_adjust, -2 - adjust_for_z_standard(1040));
     assert_eq!(over.shadow.point, screen(2688, 5248, 1041));
     assert_eq!(over.shadow.z_adjust, -4 - adjust_for_z_standard(1040));
     // Below the deck, or off a bridge, the shadow falls to the ground.
-    let below = geometry(IVec3::new(2688, 5248, 1039), 624, true);
+    let below = geometry(IVec3::new(2688, 5248, 1039), 624, Some(1040));
     assert_eq!(below.shadow.point, screen(2688, 5248, 624));
     assert_eq!(below.shadow.z_adjust, -4 - adjust_for_z_standard(624));
-    let plain = geometry(IVec3::new(2688, 5248, 1040), 624, false);
+    let plain = geometry(IVec3::new(2688, 5248, 1040), 624, None);
     assert_eq!(plain.body, over.body);
     assert_eq!(plain.shadow, below.shadow);
 }
@@ -64,18 +79,18 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
         miner,
         rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let ids = sim.voxel_anims().ids();
     // [HARV] MaxDebris=6, DebrisTypes=TIRE: this seed's budget is positive.
     assert!(!ids.is_empty(), "the death threw no tyre");
     for _ in 0..6 {
         for &id in &ids {
-            sim.visit_voxel_anim(id, rules, crate::sim::world::FrameEffects::default())
+            sim.visit_voxel_anim(id, rules, &mut crate::sim::world::FrameEffects::default())
                 .unwrap();
             sim.process_pending_delete_with(
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
                 1,
                 sim.session().started(),
             );
@@ -135,19 +150,18 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
             "a scheme Convert"
         );
         let mut rendered = None;
-        let object =
-            voxel_anim_draw_instance(id, piece, kind, palette, &view, &order, |section, m| {
-                rendered = Some(m);
-                cache.render_tumble(
-                    &assets,
-                    rules.voxel_anim_model(piece.type_id())?,
-                    section,
-                    m,
-                    false,
-                    None,
-                )
-            })
-            .expect("an admitted piece in view draws");
+        let object = planned_debris(id, piece, kind, palette, &view, &order, |section, m| {
+            rendered = Some(m);
+            cache.render_tumble(
+                &assets,
+                rules.voxel_anim_model(piece.type_id())?,
+                section,
+                m,
+                false,
+                None,
+            )
+        })
+        .expect("an admitted piece in view draws");
         assert_eq!(object.parent.layer.0, DisplayLayer::AIR.index());
         assert_eq!(
             object.parent.display_order,
@@ -202,11 +216,11 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
     // Expiry removes every piece from the store and the Air layer.
     for _ in 0..200 {
         for &id in &ids {
-            sim.visit_voxel_anim(id, rules, crate::sim::world::FrameEffects::default())
+            sim.visit_voxel_anim(id, rules, &mut crate::sim::world::FrameEffects::default())
                 .unwrap();
             sim.process_pending_delete_with(
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
                 1,
                 sim.session().started(),
             );
@@ -254,11 +268,11 @@ fn an_unowned_retail_tyre_draws_with_the_global_plain_convert() {
     assert_eq!(ids.len(), 1);
     let id = ids[0];
     for _ in 0..6 {
-        sim.visit_voxel_anim(id, rules, crate::sim::world::FrameEffects::default())
+        sim.visit_voxel_anim(id, rules, &mut crate::sim::world::FrameEffects::default())
             .unwrap();
         sim.process_pending_delete_with(
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             1,
             sim.session().started(),
         );
@@ -308,7 +322,7 @@ fn an_unowned_retail_tyre_draws_with_the_global_plain_convert() {
     };
     let mut cache = crate::render::unit_pose_cache::VxlPoseFrameCache::default();
     assert_eq!(cache.fill_test_page().page, 0);
-    let object = voxel_anim_draw_instance(
+    let object = planned_debris(
         id,
         piece,
         kind,

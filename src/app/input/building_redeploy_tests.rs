@@ -11,7 +11,7 @@ fn step(sim: &mut Simulation, rules: &RuleSet) {
         rules,
         33,
         crate::sim::world::TickLane::Ordinary,
-        Default::default(),
+        &mut Default::default(),
     )
     .unwrap();
 }
@@ -77,11 +77,13 @@ fn retail_mcvs_repack_and_follow_the_ground_click_after_deployment() {
             // sides, rather than requiring an empty link at input time.
             sim.entity_mut_for_test(yard)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .insert(peer)
                 .unwrap();
             sim.entity_mut_for_test(peer)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .insert(yard)
                 .unwrap();
@@ -139,7 +141,14 @@ fn retail_mcvs_repack_and_follow_the_ground_click_after_deployment() {
             ))
         );
         let converted = converted.expect("MCV must return");
-        assert!(sim.entities().get(peer).unwrap().radio_contacts.is_empty());
+        assert!(
+            sim.entities()
+                .get(peer)
+                .unwrap()
+                .seldom
+                .radio_contacts
+                .is_empty()
+        );
         let unit = sim.entities().get(converted).unwrap();
         assert!(
             [unit.mission.current(), unit.mission.queued()]
@@ -197,6 +206,7 @@ fn construction_yard_ground_orders_match_native_redeploy_admission() {
         if contact {
             sim.entity_mut_for_test(yard)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .insert(peer)
                 .unwrap();
@@ -851,6 +861,7 @@ fn an_alt_click_rallies_a_war_factory_only_onto_an_object_it_can_reach() {
             OrderModifier::ForceMove,
             true,
             false,
+            &mut Default::default(),
         )
     };
     let alt = |building, target| {

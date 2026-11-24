@@ -83,7 +83,7 @@ impl PrismScene {
                 source,
                 Some(TargetKind::Entity(victim)),
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         Some(Self {
@@ -154,7 +154,7 @@ impl PrismScene {
             100,
             &mut CombatEmit::default(),
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("retail Comet launch")
     }
@@ -317,7 +317,7 @@ fn retail_comet_terrain_child_keeps_construction_height_through_first_logic() {
         .set_binary_frame_for_test(scene.world.session.binary_frame() + 1);
     scene
         .world
-        .visit_combat_tail(child.0, &scene.rules, None, FrameEffects::default());
+        .visit_combat_tail(child.0, &scene.rules, None, &mut FrameEffects::default());
     scene.world.flush_pending_delete();
     // Lowering the ground creates an above-ground Inviso bullet, not an
     // immediate impact. Ordinary AI467494..467B7A sees old height624, so
@@ -376,7 +376,7 @@ fn retail_elite_comet_terrain_child_recurses_from_its_tree_on_first_logic() {
         .set_binary_frame_for_test(scene.world.session.binary_frame() + 1);
     scene
         .world
-        .visit_combat_tail(child, &scene.rules, None, FrameEffects::default());
+        .visit_combat_tail(child, &scene.rules, None, &mut FrameEffects::default());
     assert!(
         scene.world.lifecycle_outputs.iter().any(|output| matches!(
             output, LifecycleOutput::LaserCreated(beam) if beam.from == tree_coord
@@ -466,7 +466,7 @@ fn stock_shock_repairs_the_live_prism_terrain_child_before_limbo() {
             warhead,
             true,
             (shock_source, Some(owner), warhead_ref),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     }
     assert_eq!(scene.world.terrain_objects.objects()[&tree_id].health(), 25);
@@ -492,7 +492,7 @@ fn stock_shock_repairs_the_live_prism_terrain_child_before_limbo() {
         .set_binary_frame_for_test(scene.world.session.binary_frame() + 1);
     scene
         .world
-        .visit_combat_tail(parent, &scene.rules, None, FrameEffects::default());
+        .visit_combat_tail(parent, &scene.rules, None, &mut FrameEffects::default());
 
     // Native Logic55B608..55B619 increments after removal: parent skips
     // spacer, then Shock kills Terrain before the first appended child AI.
@@ -705,6 +705,7 @@ fn terrain_bullet_expiry_matches_original_live_observer() {
             false,
             &scene.rules,
             None,
+            &mut Vec::new(),
         );
         run.finish();
         check(&scene, &expected["after_receiver"]);
@@ -863,7 +864,7 @@ fn spawn_shrapnel_matches_the_original(ares_way: bool) {
     use crate::sim::movement::locomotor::MovementLayer;
     use crate::sim::native_identity::NativeUniqueIdCursor;
     use crate::sim::occupancy::{CellListInsertion, OccupancyGrid};
-    use crate::sim::rng::{MainRng, SimRng};
+    use crate::sim::rng::SimRng;
     use crate::util::fixed_math::SimFixed;
     let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
@@ -1027,7 +1028,7 @@ fn spawn_shrapnel_matches_the_original(ares_way: bool) {
         world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
             row["native_id_before"].as_u64().unwrap() as u32,
         ));
-        world.main_rng = MainRng::new(seed);
+        world.main_rng = SimRng::new(seed);
         world.scenario_rng = SimRng::new(seed + 1);
         world.mapgen_rng = SimRng::new(seed + 2);
         assert_eq!(
@@ -1388,9 +1389,12 @@ fn elite_bounces_recurse_only_when_children_get_their_logic_visits() {
             .world
             .session
             .set_binary_frame_for_test(scene.world.session.binary_frame() + 1);
-        scene
-            .world
-            .visit_combat_tail(first_child, &scene.rules, None, FrameEffects::default());
+        scene.world.visit_combat_tail(
+            first_child,
+            &scene.rules,
+            None,
+            &mut FrameEffects::default(),
+        );
         scene.world.flush_pending_delete();
     }
     assert_eq!(

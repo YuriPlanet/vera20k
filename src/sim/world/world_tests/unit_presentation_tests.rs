@@ -106,15 +106,14 @@ fn a_ship_wakes_every_eighth_frame_unless_it_is_underwater() {
     };
 
     sim.session.set_binary_frame_for_test(10);
-    sim.spawn_wakes_for_frame(&rules);
+    sim.spawn_wakes_for_frame(&rules, &Default::default());
     assert_eq!(wakes(&sim), 0, "a ship ignores Drive's 10th frame");
     sim.session.set_binary_frame_for_test(8);
-    sim.spawn_wakes_for_frame(&rules);
+    sim.spawn_wakes_for_frame(&rules, &Default::default());
     assert_eq!(wakes(&sim), 1, "only the surface ship wakes on the 8th");
 }
 
-#[test]
-fn moving_water_unit_spawns_rules_bound_wake_without_preinterned_effect_name() {
+fn moving_drive_boat() -> (Simulation, RuleSet, u64) {
     // A drive-family boat: the native wake gate is the drive locomotor's
     // `Is_Moving_Now` slot, so the fixture names the Drive locomotor.
     let ini: IniFile = IniFile::from_str(
@@ -193,11 +192,61 @@ Rate=120
             .set_speed_fraction(crate::util::fixed_math::SIM_ONE);
     }
 
+    (sim, rules, boat_id)
+}
+
+#[test]
+fn a_drive_tube_turn_omits_the_wake_even_when_it_finishes_on_water() {
+    use crate::map::tube_facts::{TubeFact, TubeId};
+    use crate::sim::components::DriveCoord;
+    use crate::sim::movement::tube_movement::LowBridgeTubeMovementState;
+
+    let (mut sim, rules, id) = moving_drive_boat();
+    let cells = sim
+        .resolved_terrain
+        .as_ref()
+        .unwrap()
+        .cells()
+        .iter()
+        .cloned()
+        .collect();
+    let tube = TubeFact::explicit((0, 0), (1, 0), 2, vec![2]);
+    sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells_with_tubes(
+        2,
+        1,
+        cells,
+        vec![tube],
+    ));
+    crate::sim::arena_fixture::supply_native_map(&mut sim);
+    sim.remove_entity_occupancy(id);
+    let actor = sim.substrate.entities.get_mut(id).unwrap();
+    actor.position.put_location(DriveCoord::cell(1, 0, 0));
+    actor.low_bridge_tube_state = Some(LowBridgeTubeMovementState::for_test(
+        TubeId(0),
+        1,
+        DriveCoord::cell(1, 0, 0),
+    ));
+    sim.session.set_binary_frame_for_test(10);
+    sim.advance_tick(&[], Some(&rules), None, Some(rules.overlay_registry()), 33);
+    assert!(
+        sim.entities().get(id).unwrap().active_tube().is_none(),
+        "the unit completed its exit"
+    );
+    assert!(
+        sim.anims()
+            .all(|(_, a)| sim.interner.resolve(a.type_id()) != "WAKE1"),
+        "the Unit tube turn replaced Drive Process on a wake frame"
+    );
+}
+
+#[test]
+fn moving_water_unit_spawns_rules_bound_wake_without_preinterned_effect_name() {
+    let (mut sim, rules, boat_id) = moving_drive_boat();
     // The movement step of a full tick would rewrite the drive runtime from
     // the fixture's (non-)motion, so exercise the spawn owner directly at a
     // frame the native cadence accepts.
     assert_eq!(sim.session.binary_frame() % 10, 0);
-    sim.spawn_wakes_for_frame(&rules);
+    sim.spawn_wakes_for_frame(&rules, &Default::default());
 
     let wake_anims: Vec<u64> = sim
         .logic_order()
@@ -227,7 +276,7 @@ Rate=120
 
     // Off-cadence frames and a unit that is not moving now spawn nothing.
     sim.session.set_binary_frame_for_test(5);
-    sim.spawn_wakes_for_frame(&rules);
+    sim.spawn_wakes_for_frame(&rules, &Default::default());
     sim.session.set_binary_frame_for_test(10);
     sim.substrate
         .entities
@@ -235,7 +284,7 @@ Rate=120
         .expect("boat")
         .foot_speed
         .set_speed_fraction(crate::util::fixed_math::SIM_ZERO);
-    sim.spawn_wakes_for_frame(&rules);
+    sim.spawn_wakes_for_frame(&rules, &Default::default());
     let count_after = sim
         .logic_order()
         .iter()
@@ -293,7 +342,7 @@ fn a_hover_wake_starts_at_the_hulls_height() {
     );
     assert_eq!(hull.z, 90);
 
-    sim.spawn_wakes_for_frame(&rules);
+    sim.spawn_wakes_for_frame(&rules, &Default::default());
 
     let wakes: Vec<_> = sim
         .logic_order()
@@ -379,23 +428,30 @@ fn idle_squid_body_counter_starts_move_sound() {
         .unwrap()
         .body_frame_counter
         .get();
-    crate::sim::animation::tick_foot_body_frame_counter(
-        sim.substrate.entities.get_mut(1).unwrap(),
-        crate::sim::movement::SpeedRules::new(
-            crate::rules::ruleset::RuleSet::empty_for_test(),
-            &sim.interner,
-            &sim.houses,
-        ),
-        crate::sim::animation::FootBodyCadence {
-            walk_rate: object.walk_rate,
-            idle_rate: object.idle_rate,
-        },
-        object.hover_attack,
-        object.deploy_to_land,
-        0,
-        None,
-        4,
-    );
+    {
+        let entity = sim.substrate.entities.get(1).unwrap();
+        let due = crate::sim::animation::foot_body_frame_due(
+            entity,
+            crate::sim::movement::SpeedRules::new(
+                crate::rules::ruleset::RuleSet::empty_for_test(),
+                &sim.interner,
+                &sim.houses,
+            ),
+            crate::sim::animation::FootBodyCadence {
+                walk_rate: object.walk_rate,
+                idle_rate: object.idle_rate,
+            },
+            object.hover_attack,
+            object.deploy_to_land,
+            0,
+            None,
+            4,
+        );
+        crate::sim::animation::tick_foot_body_frame_counter(
+            sim.substrate.entities.get_mut(1).unwrap(),
+            due,
+        );
+    }
     assert_eq!(
         sim.substrate
             .entities
@@ -408,7 +464,7 @@ fn idle_squid_body_counter_starts_move_sound() {
     Simulation::tick_move_sound_after_process(
         &sim.interner,
         &sim.session,
-        &sim.main_rng,
+        &mut sim.main_rng,
         &mut sim.substrate,
         &mut sim.sound_events,
         &sim.houses,
@@ -472,7 +528,7 @@ fn trigger_move_sound_tail(sim: &mut Simulation, rules: &RuleSet) {
     Simulation::tick_move_sound_after_process(
         &sim.interner,
         &sim.session,
-        &sim.main_rng,
+        &mut sim.main_rng,
         &mut sim.substrate,
         &mut sim.sound_events,
         &sim.houses,
@@ -488,7 +544,7 @@ fn move_sound_start_consumes_exactly_one_main_draw() {
     let mut sim = move_sound_test_sim();
     let scenario_before = sim.scenario_rng.state();
     let mapgen_before = sim.mapgen_rng.state();
-    let mut expected_main = sim.main_rng.snapshot_for_test();
+    let mut expected_main = sim.main_rng.clone();
 
     // Retail calls Random::Next even before modulo-by-one. Full native
     // vector, timer and paid-visit controls live in foot_move_sound.json.
@@ -531,7 +587,7 @@ fn move_sound_start_consumes_exactly_one_main_draw() {
     Simulation::tick_move_sound_after_process(
         &sim.interner,
         &sim.session,
-        &sim.main_rng,
+        &mut sim.main_rng,
         &mut sim.substrate,
         &mut sim.sound_events,
         &sim.houses,

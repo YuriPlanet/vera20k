@@ -57,6 +57,7 @@ mod general;
 mod loading;
 mod lookup;
 mod sections;
+mod sound_names;
 
 pub use general::GeneralRules;
 pub(crate) use general::{
@@ -70,6 +71,7 @@ pub use sections::{
     BridgeRules, DetailRules, DifficultyRules, ElevationModel, GarrisonRules, GeneralBuildingTypes,
     ParadropList, PrismSupportRules, ProductionRules, RadiationRules,
 };
+pub use sound_names::{SoundName, SoundNameId, SoundNames};
 
 #[cfg(any(test, feature = "test-support"))]
 thread_local! {
@@ -678,6 +680,19 @@ impl TypeWeapons {
     }
 }
 
+/// A `DebrisTypes=` list, a TechnoType's or a warhead's, as the set that
+/// built it resolved its names to `[VoxelAnims]` types
+/// ([`RuleSet::resolve_handles`]): list order kept, `None` for a name no
+/// `[VoxelAnims]` section has, so a death or a hit reads the ids without
+/// hashing a name ([`RuleSet::object_debris_types`],
+/// [`RuleSet::warhead_debris_types`]). Derived: never hashed or serialized.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ResolvedDebris {
+    /// The resolving set's serial; 0 for a list no set resolved.
+    rules_serial: u64,
+    types: Box<[Option<VoxelAnimTypeId>]>,
+}
+
 /// `id` as the uppercase key the type name indexes hold: the name itself
 /// unless it has a lowercase letter. Retail type names are uppercase, so a
 /// lookup by name rarely copies it.
@@ -758,6 +773,9 @@ pub struct RuleSet {
     /// Distinct for every `RuleSet` the process builds, so a cache of this
     /// set's handles can tell it from another set ([`Self::serial`]).
     serial: u64,
+    /// Every sound name the set's fields hold, as the Copy ids sound events
+    /// carry. Kept out of the simulation's interner ([`SoundNames`]).
+    sound_names: SoundNames,
     /// Per-native-registry identity authority. Unlike the broad lookup above,
     /// this retains distinct types when malformed/custom rules list the same
     /// ID in more than one category.
@@ -926,6 +944,13 @@ pub struct RuleSet {
     pub allied_base_defense_counts: Vec<i32>,
     pub soviet_base_defense_counts: Vec<i32>,
     pub third_base_defense_counts: Vec<i32>,
+    /// Original-RA2 `[AI] TiberiumNearScan=` (cell radius to scan for ore in a
+    /// single patch, game.exe RulesClass+0x13E0). Absent in YR; default 0
+    /// matches the native constructor. Consumed when the RA2 profile is active.
+    pub tiberium_near_scan: i32,
+    /// Original-RA2 `[AI] TiberiumFarScan=` (cell radius to find a new ore
+    /// patch, game.exe RulesClass+0x13E4). Absent in YR; default 0.
+    pub tiberium_far_scan: i32,
     /// Signed `[General] AINavalYardAdjacency=` in cells. Native constructor
     /// default is 20 and the consumer shifts it left by eight without clamping.
     pub ai_naval_yard_adjacency: i32,
@@ -952,9 +977,20 @@ pub struct RuleSet {
     /// Whether Ares plays in this game, decided once from its Rules layers
     /// and `ares.mix` by `rules::ares_switch`. Read through [`Self::ares`].
     ares: bool,
+    /// VERA: the player's Ares setting Off is what keeps Ares from playing in
+    /// this game. Read through [`Self::ares_kept_off`].
+    ares_kept_off: bool,
     /// Whether Phobos plays in this game, decided once from its Rules
     /// projection by `rules::phobos_switch`. Read through [`Self::phobos`].
     phobos: bool,
+    /// Whether Kratos plays in this game, decided once from the reads its
+    /// processed rules and projection made by `rules::kratos_switch`. Read
+    /// through [`Self::kratos`].
+    kratos: bool,
+    /// VERA: whether this game plays RA2 Mode (docs/ra2-mode.md), decided once
+    /// at load from the launch's choice (`util::ra2_launch`). Read through
+    /// [`Self::ra2`].
+    ra2: bool,
     /// Whether its Rules were read the Ares way (`ares_switch::ares_way`).
     /// Read through [`Self::reads_ares_way`].
     reads_ares_way: bool,
@@ -1015,8 +1051,13 @@ pub struct RuleSet {
     pub allied_wall_transparency: bool,
     /// `[ElevationModel]`, InRange's range bonus for a shot fired downhill.
     pub elevation_model: ElevationModel,
-    /// Per-cell radiation-field constants from [Radiation].
+    /// Per-cell radiation-field constants from [Radiation]. `site_warhead` is
+    /// resolved once when the set is built: a write to it afterwards is not
+    /// seen by [`Self::radiation_site_warhead`].
     pub radiation: RadiationRules,
+    /// Derived: the warhead `radiation.site_warhead` names, as
+    /// [`Self::resolve_handles`] resolved it ([`Self::radiation_site_warhead`]).
+    radiation_site_warhead: Option<WarheadHandle>,
     /// Phobos `[ShieldTypes]` catalog, read per Rules pass by the ordered
     /// Process owner. Empty in builds without the capability.
     #[cfg(feature = "phobos")]
@@ -1137,8 +1178,9 @@ pub struct RuleSet {
     /// Presentation keeps its separate body-frame projection.
     terrain_assets: crate::rules::terrain_asset_catalog::TerrainAssetCatalog,
     /// Every loaded ObjectType `AlphaImage=` SHP (`bind_alpha_images`). Not
-    /// in the fingerprint: it places and draws light glows, which no
-    /// gameplay reads.
+    /// in `simulation_config_hash`: it places and draws light glows. An Ares
+    /// particle system also picks its simulation by whether its held type's
+    /// loaded (`particles::ares_system`), which `file_inputs_hash` folds.
     alpha_images: crate::rules::alpha_image_assets::AlphaImageCatalog,
     /// Complete immutable per-object animation timing catalog. Gameplay reads
     /// this rules-owned resource directly; presentation cannot replace timing

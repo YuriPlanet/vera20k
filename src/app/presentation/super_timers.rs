@@ -12,10 +12,14 @@
 use std::collections::HashMap;
 
 use crate::app::AppState;
-use crate::app::presentation::super_timer_groups::{TeamSuperRow, grouped_super_rows};
-use crate::assets::csf_file::{CsfFile, type_ui_name};
+use crate::app::presentation::text_hud::{self, TextHud};
+use crate::app::presentation::super_timer_groups::{TeamKey, TeamSuperRow, grouped_super_rows};
+use crate::assets::csf_file::type_ui_name;
+use crate::map::houses::is_allied_with;
 use crate::render::batch::SpriteInstance;
-use crate::rules::house_colors::{HouseColorIndex, NO_REMAP, house_text_rgb};
+use crate::rules::house_colors::{
+    HouseColorIndex, NO_REMAP, RELATION_ALLY, RELATION_ENEMY, RELATION_SELF, house_text_rgb,
+};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::superweapon::SuperTimerView;
@@ -225,8 +229,8 @@ pub(crate) struct TimerDock {
     expanded: bool,
     offset: usize,
     max_offset: usize,
-    toggle_rect: Option<crate::ui::gadget::GadgetRect>,
-    scroll_rows: Vec<crate::ui::gadget::GadgetRect>,
+    toggle_rect: Option<crate::ui::shell::geom::RectPx>,
+    scroll_rows: Vec<crate::ui::shell::geom::RectPx>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -245,7 +249,7 @@ impl TimerDock {
         self.scroll_rows.clear();
     }
 
-    pub(crate) fn toggle_rect(&self) -> Option<crate::ui::gadget::GadgetRect> {
+    pub(crate) fn toggle_rect(&self) -> Option<crate::ui::shell::geom::RectPx> {
         self.toggle_rect
     }
 
@@ -350,7 +354,7 @@ impl TimerDock {
         }
         if let Some(index) = rows.iter().position(|row| *row == DockRow::Toggle) {
             let y = place_line(index, view, font_height, 0, 0).1.y;
-            self.toggle_rect = Some(crate::ui::gadget::GadgetRect::new(
+            self.toggle_rect = Some(crate::ui::shell::geom::RectPx::new(
                 view[0] - RIGHT_MARGIN - 16,
                 y - 1,
                 16,
@@ -383,12 +387,6 @@ pub(crate) fn wheel(state: &mut AppState, delta: f32) -> bool {
         .wheel(x, y, delta)
 }
 
-/// The string table's text for `key` (`0x00734E60`); the key itself only
-/// without a string table (an assetless run).
-fn localized(csf: Option<&CsfFile>, key: &str) -> String {
-    csf.map_or_else(|| key.to_string(), |csf| csf.text(key).into_owned())
-}
-
 /// The colour a blinking time prints in: [`BLINK_SCHEME`], or with Phobos
 /// `ColorScheme::Array[TimerBlinkColorScheme]` (`PrintTimerOnTactical_BlinkColor`
 /// at `0x006D4CD9`). A `none` (-1) keeps the native scheme where Phobos would
@@ -404,11 +402,30 @@ fn blink_rgb(rules: &RuleSet) -> [u8; 3] {
     house_text_rgb(&rules.color_schemes, scheme)
 }
 
-/// The timer lines as UI sprites: the black boxes, drawn first, and the text.
-/// The tactical view starts at the screen's origin.
-pub(crate) fn build_super_timer_instances(
-    state: &mut AppState,
-) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+/// What the timer lines show this frame, worked out before they are drawn
+/// ([`update_super_timers`]): each shown text in drawing order, and the
+/// dock's toggle while it has one.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct TimerFrame {
+    /// A line's label, then its time: the text, where it prints and its
+    /// colour.
+    pub(crate) texts: Vec<(String, TextPlace, [u8; 3])>,
+    /// The dock's toggle and whether the dock is open.
+    pub(crate) toggle: Option<(crate::ui::shell::geom::RectPx, bool)>,
+}
+
+/// Each drawn frame's timer step, before its timers are drawn: the lines,
+/// their places and colours ([`TimerFrame`]), the dock's rows and hit areas,
+/// and each Super's blink, which steps on the wall clock. The drawing then
+/// only reads what this left ([`build_super_timer_instances`]).
+pub(crate) fn update_super_timers(state: &mut AppState) {
+    state
+        .match_state
+        .match_presentation
+        .super_timer_frame
+        .texts
+        .clear();
+    state.match_state.match_presentation.super_timer_frame.toggle = None;
     state
         .match_state
         .match_presentation
@@ -423,12 +440,12 @@ pub(crate) fn build_super_timer_instances(
     // A layout that leaves the timers out draws none and keeps no hit area.
     if state.frontend.screen != GameScreen::InGame || !field_parts::shows(state, FieldPart::Timers)
     {
-        return (Vec::new(), Vec::new());
+        return;
     }
     let (Some(runtime), Some(rules)) =
         (state.match_state.sim_runtime.presentation(), state.rules())
     else {
-        return (Vec::new(), Vec::new());
+        return;
     };
     let sim = &runtime.simulation;
     let frame = sim.session().binary_frame();
@@ -453,6 +470,42 @@ pub(crate) fn build_super_timer_instances(
     });
     let scenario = sim.session().scenario_timer_view();
     let grouped = state.persistence.options_profile.grouped_super_timers;
+    let local = sim.session().current_house();
+    // Teams are the match's REAL launch teams, kept for the whole game in the
+    // app-owned SkirmishLaunchSession. Do not infer them from
+    // sim.house_alliances(): MakeAlly/MakeEnemy, triggers and the Paranoid AI
+    // rewrite that graph mid-match, splitting houses that launched on one team
+    // (the reported "enemy in D, me in -, both team A" bug).
+    // normalized_launch_slots' owner_name is exactly the name the sim interner
+    // registered for that house (asserted at launch).
+    //
+    // One entry per launched House: its real team, and whether it is a player
+    // seat (a human-controlled or AI House, not an observer). The per-team
+    // player count is how many such houses sit on that team; it is the "N" in
+    // the no-team row's `(N)` caption.
+    let launch = state
+        .match_state
+        .session
+        .network_setup()
+        .or_else(|| state.match_state.startup.offline_launch());
+    let mut team_by_name: HashMap<String, Option<u8>> = HashMap::new();
+    let mut players_by_team: HashMap<Option<u8>, usize> = HashMap::new();
+    if let Some(launch) = launch {
+        for slot in crate::sim::scenario_bootstrap::normalized_launch_slots(launch) {
+            let team = match slot.team() {
+                crate::skirmish_launch::LaunchTeam::Team(team) => Some(team),
+                crate::skirmish_launch::LaunchTeam::None => None,
+            };
+            if !slot.observer {
+                *players_by_team.entry(team).or_insert(0) += 1;
+            }
+            team_by_name.insert(slot.owner_name, team);
+        }
+    }
+    let local_team = local
+        .and_then(|house| team_by_name.get(sim.interner().resolve(house)))
+        .copied()
+        .flatten();
     let mut lines = timer_lines(
         scenario.map(|(left, _)| left),
         if grouped { &[] } else { &supers },
@@ -462,12 +515,17 @@ pub(crate) fn build_super_timer_instances(
     if grouped {
         // The team lines take the Super lines' place: after the Scenario
         // line, before the blackouts.
-        let alliances = sim.house_alliances();
         let teams = grouped_super_rows(
             sim.houses().order(),
-            |asker, other| alliances.is_allied(sim.interner(), asker, other),
+            |house| {
+                team_by_name
+                    .get(sim.interner().resolve(house))
+                    .copied()
+                    .flatten()
+            },
             &supers,
-            sim.session().current_house(),
+            local,
+            |team| players_by_team.get(&team).copied().unwrap_or(0),
         );
         let at = usize::from(scenario.is_some());
         lines.splice(
@@ -479,7 +537,7 @@ pub(crate) fn build_super_timer_instances(
         );
     }
     if lines.is_empty() {
-        return (Vec::new(), Vec::new());
+        return;
     }
 
     let csf = state.process_assets.csf.as_ref();
@@ -505,30 +563,67 @@ pub(crate) fn build_super_timer_instances(
             csf,
         )
     };
+    // Grouped rows use fixed relation bands rather than a house's map colour:
+    // your own team is blue, a team you are allied with is green, the rest are
+    // red. Same-team is decided by the launch team (stable all match); the
+    // green check uses the live alliance graph, which is the right source for
+    // "are we allies right now" even though it must never decide grouping.
+    let alliances = sim.house_alliances();
+    let local_name = local.map(|house| sim.interner().resolve(house));
+    let team_rgb = |row: &TeamSuperRow| {
+        let same_team = match (row.team, local_team) {
+            (TeamKey::Named(team), Some(own)) => team == own,
+            (TeamKey::Unteamed, None) => true,
+            _ => false,
+        };
+        let relation = if same_team {
+            RELATION_SELF
+        } else if local_name.is_some_and(|name| {
+            is_allied_with(
+                alliances.as_map(),
+                name,
+                sim.interner().resolve(row.representative),
+            )
+        }) {
+            RELATION_ALLY
+        } else {
+            RELATION_ENEMY
+        };
+        house_text_rgb(schemes, relation)
+    };
     let lines: Vec<(TimerLine, String, [u8; 3])> = lines
         .into_iter()
         .map(|line| {
-            let (house, label) = match line.source {
+            let (house, label, team_color) = match line.source {
                 TimerSource::Scenario => (
                     sim.session().current_house(),
                     scenario
                         .filter(|(_, caption)| !caption.is_empty())
-                        .map_or_else(String::new, |(_, caption)| localized(csf, caption)),
+                        .map_or_else(String::new, |(_, caption)| {
+                            crate::i18n::label(csf, caption, caption)
+                        }),
+                    None,
                 ),
-                TimerSource::Super(view) => (Some(view.owner()), super_name(view.sw_type())),
-                TimerSource::Blackout(house) => (Some(house), localized(csf, BLACKOUT_LABEL)),
+                TimerSource::Super(view) => (Some(view.owner()), super_name(view.sw_type()), None),
+                TimerSource::Blackout(house) => (
+                    Some(house),
+                    crate::i18n::label(csf, BLACKOUT_LABEL, BLACKOUT_LABEL),
+                    None,
+                ),
                 TimerSource::Team(row) => (
                     Some(row.representative),
                     format!(
                         "{} {} {}/{}",
-                        row.team.label(),
+                        row.team.label(row.players),
                         super_name(row.sw_type),
                         row.ready,
                         row.total
                     ),
+                    Some(team_rgb(&row)),
                 ),
             };
-            (line, label, house_rgb(house))
+            let rgb = team_color.unwrap_or_else(|| house_rgb(house));
+            (line, label, rgb)
         })
         .collect();
     let blink_rgb = blink_rgb(rules);
@@ -536,12 +631,7 @@ pub(crate) fn build_super_timer_instances(
     // The dock stacks up from the bottom right of its box, the battlefield
     // in the original interface, and works in the box's own pixels.
     let [_, _, view_w, view_h] = field_parts::rect(state, FieldPart::Timers);
-    // Screen-space lanes add back the world camera the UI shader subtracts,
-    // and the box's corner.
-    let camera = field_parts::lane_camera(state, FieldPart::Timers);
-
     let font = &state.renderer.bit_font;
-    let local = sim.session().current_house();
     let timer_lines: Vec<_> = lines.iter().map(|(line, _, _)| *line).collect();
     // The grouped lines are few; they replace the compact dock's paging.
     let compact = state.persistence.options_profile.compact_super_timers && !grouped;
@@ -560,18 +650,7 @@ pub(crate) fn build_super_timer_instances(
         }
     }
     let blinks = &mut state.match_state.match_presentation.super_timer_blinks;
-    let tint = |rgb: [u8; 3]| rgb.map(|channel| f32::from(channel) / 255.0);
-    let fill = |[x, y, w, h]: [i32; 4]| SpriteInstance {
-        position: [x as f32 + camera[0], y as f32 + camera[1]],
-        size: [w as f32, h as f32],
-        uv_origin: [0.0, 0.0],
-        uv_size: [1.0, 1.0],
-        tint: [0.0; 3],
-        alpha: 1.0,
-        ..Default::default()
-    };
-    let mut fills = Vec::with_capacity(2 * lines.len());
-    let mut texts = Vec::new();
+    let mut shown = Vec::with_capacity(2 * lines.len());
     let mut next_flip_ms: Option<u64> = None;
     for (index, (line, label, rgb)) in lines.iter().enumerate() {
         let blink = match line.source {
@@ -606,49 +685,90 @@ pub(crate) fn build_super_timer_instances(
         );
         let time_rgb = if blinking { blink_rgb } else { *rgb };
         if dock.expanded && matches!(line.source, TimerSource::Super(_)) {
-            dock.scroll_rows.push(crate::ui::gadget::GadgetRect::new(
+            dock.scroll_rows.push(crate::ui::shell::geom::RectPx::new(
                 label_at.fill[0],
                 label_at.fill[1],
                 time_at.fill[0] + time_at.fill[2] - label_at.fill[0],
                 label_at.fill[3],
             ));
         }
-        for (text, at, rgb) in [(&label, label_at, *rgb), (&time, time_at, time_rgb)] {
-            fills.push(fill(at.fill));
-            texts.extend(font.build_text(
-                text,
-                at.x as f32,
-                at.y as f32,
-                1.0,
+        shown.push((label, label_at, *rgb));
+        shown.push((time, time_at, time_rgb));
+    }
+    let toggle = dock.toggle_rect.map(|rect| (rect, dock.expanded));
+    let presentation = &mut state.match_state.match_presentation;
+    presentation.super_timer_next_flip_ms = next_flip_ms;
+    presentation.super_timer_frame.texts = shown;
+    presentation.super_timer_frame.toggle = toggle;
+}
+
+/// The timer lines as UI sprites, from what [`update_super_timers`] worked
+/// out this frame: a box and a text node of `hud` for each text, the boxes
+/// drawn first, then the text. Returns the boxes and the glyphs.
+pub(crate) fn build_super_timer_instances(
+    state: &AppState,
+    hud: &mut TextHud,
+) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+    use crate::app::presentation::field_parts;
+    use crate::ui::field_layout::FieldPart;
+    let frame = &state.match_state.match_presentation.super_timer_frame;
+    // Screen-space lanes add back the world camera the UI shader subtracts,
+    // and the box's corner.
+    let camera = if frame.texts.is_empty() {
+        [0.0; 2]
+    } else {
+        field_parts::lane_camera(state, FieldPart::Timers)
+    };
+    draw_timer_frame(frame, camera, &state.renderer.bit_font, hud)
+}
+
+/// [`build_super_timer_instances`] for a given frame and lane camera.
+fn draw_timer_frame(
+    frame: &TimerFrame,
+    camera: [f32; 2],
+    font: &crate::render::bit_font::BitFont,
+    hud: &mut TextHud,
+) -> (Vec<SpriteInstance>, Vec<SpriteInstance>) {
+    hud.begin();
+    if !frame.texts.is_empty() {
+        let black = text_hud::rgb([0; 3]);
+        let fill = |hud: &mut TextHud, [x, y, w, h]: [i32; 4]| {
+            hud.fill(
+                vera20k_gui::Rect::new(x, y, w, h),
+                [x as f32 + camera[0], y as f32 + camera[1]],
+                [w as f32, h as f32],
+                black,
                 0.0,
-                tint(rgb),
-                camera,
-            ));
+            );
+        };
+        for (text, at, rgb) in &frame.texts {
+            fill(hud, at.fill);
+            hud.text(
+                vera20k_gui::Rect::new(at.x, at.y, at.fill[2], at.fill[3]),
+                text,
+                [at.x as f32 + camera[0], at.y as f32 + camera[1]],
+                text_hud::rgb(*rgb),
+                None,
+            );
+        }
+        if let Some((rect, expanded)) = frame.toggle {
+            // Solid 7x4 pixel triangles, no font substitution, frame or backing box.
+            for row in 0..4 {
+                let width = if expanded { 7 - row * 2 } else { 1 + row * 2 };
+                fill(
+                    hud,
+                    [
+                        rect.x + (rect.w - width) / 2,
+                        rect.y + (rect.h - 4) / 2 + row,
+                        width,
+                        1,
+                    ],
+                );
+            }
         }
     }
-    state
-        .match_state
-        .match_presentation
-        .super_timer_next_flip_ms = next_flip_ms;
-    if let Some(rect) = dock.toggle_rect {
-        // Solid 7x4 pixel triangles, no font substitution, frame or backing box.
-        for row in 0..4 {
-            let width = if dock.expanded {
-                7 - row * 2
-            } else {
-                1 + row * 2
-            };
-            let mut triangle = fill([
-                rect.x + (rect.w - width) / 2,
-                rect.y + (rect.h - 4) / 2 + row,
-                width,
-                1,
-            ]);
-            triangle.tint = [0.0, 0.0, 0.0];
-            fills.push(triangle);
-        }
-    }
-    (fills, texts)
+    hud.finish(font);
+    (hud.boxes().copied().collect(), hud.glyphs().copied().collect())
 }
 
 /// Whether a 0 s Super line's blink flips on the next timer draw

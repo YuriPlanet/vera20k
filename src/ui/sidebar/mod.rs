@@ -18,8 +18,8 @@ mod sidebar_view;
 
 use crate::sim::production::ProductionCategory;
 
-pub use frame::{BOTTOM_STRIP_HEIGHT_PX, Edge, PanelPlaces, SIDEBAR_WIDTH_PX, SidebarFrame};
-pub use layout_spec::{SidebarChromeLayoutSpec, SidebarPart, SidebarTheme};
+pub use frame::{BOTTOM_STRIP_HEIGHT_PX, Edge, PanelPlaces, SidebarFrame};
+pub use layout_spec::{ArtKey, PartKind, SidebarChromeLayoutSpec, SidebarPart, SidebarTheme};
 pub use power_bar_anim::PowerBarAnimState;
 pub(crate) use sidebar_view::ArmedSidebarEntry;
 #[cfg(test)]
@@ -55,23 +55,6 @@ impl Rect {
             }
         }
     }
-}
-
-#[cfg(test)]
-pub fn radar_minimap_rect(screen_w: f32) -> Rect {
-    radar_minimap_rect_with_spec(screen_w, SidebarChromeLayoutSpec::stock())
-}
-
-pub fn radar_minimap_rect_with_spec(screen_w: f32, spec: SidebarChromeLayoutSpec) -> Rect {
-    // The aperture sits in the radar housing; the GDI/NOD tables move it,
-    // which the spec carries.
-    Rect {
-        x: spec.sidebar_x(screen_w) + spec.radar_housing_x + spec.radar_x,
-        y: spec.radar_housing_y + spec.radar_y,
-        w: spec.radar_width,
-        h: spec.radar_height,
-    }
-    .shown(spec.shows(SidebarPart::Radar))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -252,25 +235,87 @@ pub struct SidebarScrollButton {
     pub frame_index: u8,
 }
 
+impl SidebarLayout {
+    /// The top-left corner of `part` on the layout screen: its place in its
+    /// panel's corner, the sidebar's for a part with no panel, and for the
+    /// scroll buttons the cameo strip's left edge at the bottom of its last
+    /// row.
+    pub fn origin(&self, spec: &SidebarChromeLayoutSpec, part: SidebarPart) -> [f32; 2] {
+        let [x, y] = spec.place(part);
+        match part.panel() {
+            None => [self.sidebar_x + x, y],
+            Some(SidebarPart::Cameos) => [
+                self.sidebar_x + spec.place(SidebarPart::Cameos)[0] + x,
+                self.cameo_grid_bottom + y,
+            ],
+            Some(panel) => {
+                let [panel_x, panel_y] = self.origin(spec, panel);
+                [panel_x + x, panel_y + y]
+            }
+        }
+    }
+
+    /// The radar's map picture: the minimap's corner in the radar housing,
+    /// which the GDI/NOD tables move, and the aperture's size
+    /// (`RadarClass::One_Time @ 0x00652CF0`). Empty for a layout without the
+    /// radar.
+    pub fn minimap_rect(&self, spec: &SidebarChromeLayoutSpec) -> Rect {
+        let [x, y] = self.origin(spec, SidebarPart::Minimap);
+        Rect {
+            x,
+            y,
+            w: spec.radar_width,
+            h: spec.radar_height,
+        }
+        .shown(spec.shows(SidebarPart::Radar))
+    }
+
+    /// The height of the cameo strip's rows.
+    pub fn cameo_grid_height(&self) -> f32 {
+        self.cameo_grid_bottom - self.cameo_grid_top
+    }
+
+    /// The top-left corner of the cameo grid's first picture: the strip's
+    /// corner and the cameo inset.
+    pub fn grid_origin(&self, spec: &SidebarChromeLayoutSpec) -> [f32; 2] {
+        [
+            self.origin(spec, SidebarPart::Cameos)[0] + spec.cameo_inset_x,
+            self.cameo_grid_top + spec.cameo_inset_y,
+        ]
+    }
+}
+
+impl SidebarView {
+    /// A button part's rect and the frame its picture shows: the top
+    /// buttons, Repair and Sell, the tabs and the scroll buttons. `None` for
+    /// any other part, or a tab the view has no button for.
+    pub fn button(&self, part: SidebarPart) -> Option<(Rect, u8)> {
+        let scroll = |button: &SidebarScrollButton| (button.rect, button.frame_index);
+        let toggle = |button: &SidebarToggleButton| (button.rect, button.frame_index);
+        match part {
+            SidebarPart::Diplomacy => Some(scroll(&self.top_buttons[0])),
+            SidebarPart::Options => Some(scroll(&self.top_buttons[1])),
+            SidebarPart::Repair => Some(toggle(&self.repair_button)),
+            SidebarPart::Sell => Some(toggle(&self.sell_button)),
+            SidebarPart::ScrollDown => Some(scroll(&self.scroll_down_button)),
+            SidebarPart::ScrollUp => Some(scroll(&self.scroll_up_button)),
+            _ => {
+                let index = SidebarPart::TABS.iter().position(|&tab| tab == part)?;
+                self.tabs
+                    .iter()
+                    .find(|button| button.tab.tab_index() == index)
+                    .map(|button| (button.rect, button.frame_index))
+            }
+        }
+    }
+}
+
 /// Where each chrome section sits on the layout screen, computed from the
 /// layout table and the screen size.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SidebarLayout {
     pub sidebar_x: f32,
-    /// CREDITS.SHP plate.
-    pub credits_x: f32,
-    pub credits_y: f32,
-    /// TOP.SHP strip.
-    pub top_x: f32,
-    pub top_y: f32,
-    /// Radar housing.
-    pub radar_x: f32,
-    pub radar_y: f32,
-    pub side1_x: f32,
-    pub side1_y: f32,
-    pub tabs_y: f32,
-    /// Left edge of the SIDE2 rows, SIDE3 and ADDON.
-    pub strip_x: f32,
+    /// The top and the bottom of the cameo strip's rows.
     pub cameo_grid_top: f32,
     pub cameo_grid_bottom: f32,
     pub side3_y: f32,
@@ -364,23 +409,15 @@ pub fn default_active_tab() -> SidebarTab {
     SidebarTab::Building
 }
 
-/// Compute the vertical layout of chrome sections for a given screen height.
-/// The sidebar shell fills the available height; item count only affects scrolling.
-pub fn compute_layout(screen_w: f32, screen_h: f32, item_rows: usize) -> SidebarLayout {
-    compute_layout_with_spec(
-        SidebarChromeLayoutSpec::stock(),
-        screen_w,
-        screen_h,
-        item_rows,
-    )
-}
-
+/// Where the chrome sections sit on `frame`'s layout screen
+/// ([`SidebarFrame::layout_screen`]): the sidebar at the frame's left edge
+/// for it, filling the screen's height. The item count only affects
+/// scrolling.
 pub(crate) fn compute_layout_with_spec(
     spec: SidebarChromeLayoutSpec,
-    screen_w: f32,
-    screen_h: f32,
-    _item_rows: usize,
+    frame: SidebarFrame,
 ) -> SidebarLayout {
+    let (_, screen_h) = frame.layout_screen();
     // Original 6A5090/6A5130: capacity depends on screen height and side,
     // never on build-item count. Integer division truncates toward zero.
     // Native keeps 60 select buttons per strip (0x3C stride, InitSelectZones
@@ -394,27 +431,17 @@ pub(crate) fn compute_layout_with_spec(
     // the same way: footer 26, or 18 when Scenario +0x34B8 (the side) is set,
     // plus 7, which the table carries as one height.
     let row_height = (spec.cameo_row_height as i32).max(1);
-    let rows = ((screen_h as i32 - spec.strip_y as i32 - spec.strip_footer as i32) / row_height)
-        .max(0) as usize;
-    let sidebar_x = spec.sidebar_x(screen_w);
+    let strip_y = spec.place(SidebarPart::Cameos)[1];
+    let rows = ((screen_h as i32 - strip_y as i32 - spec.strip_footer as i32) / row_height).max(0)
+        as usize;
     SidebarLayout {
-        sidebar_x,
-        credits_x: sidebar_x + spec.credits_x,
-        credits_y: spec.credits_y,
-        top_x: sidebar_x + spec.top_x,
-        top_y: spec.top_y,
-        radar_x: sidebar_x + spec.radar_housing_x,
-        radar_y: spec.radar_housing_y,
-        side1_x: sidebar_x + spec.side1_x,
-        side1_y: spec.side1_y,
-        tabs_y: spec.side1_y + spec.tab_y,
-        strip_x: sidebar_x + spec.strip_x,
-        cameo_grid_top: spec.strip_y,
-        cameo_grid_bottom: spec.strip_y + (rows as i32 * row_height) as f32,
+        sidebar_x: frame.layout_left(),
+        cameo_grid_top: strip_y,
+        cameo_grid_bottom: strip_y + (rows as i32 * row_height) as f32,
         // Native 6A6C30 advances by the loaded SIDE2 canvas height. VERA's
         // columns shrink the row, so there SIDE3 follows the row's own
         // height instead; the original table sets both to the same 50.
-        side3_y: spec.strip_y
+        side3_y: strip_y
             + rows as f32
                 * if spec.cameo_columns > 2.0 {
                     row_height as f32
@@ -428,37 +455,14 @@ pub(crate) fn compute_layout_with_spec(
 /// Native PowerClass tooltip (`6403A0`). The 8-pixel hit width is distinct
 /// from POWERP's actual canvas width and the 3-pixel paint stride.
 pub fn power_bar_rect(layout: &SidebarLayout, spec: SidebarChromeLayoutSpec) -> Rect {
+    let [x, y] = layout.origin(&spec, SidebarPart::Power);
     Rect {
-        x: layout.sidebar_x + spec.power_bar_x,
-        y: spec.power_bar_y,
+        x,
+        y,
         w: 8.0,
-        h: layout.cameo_grid_bottom - layout.cameo_grid_top,
+        h: layout.cameo_grid_height(),
     }
     .shown(spec.shows(SidebarPart::Power))
-}
-
-/// Native R-DN/R-UP anchors (`6ABD30`), with actual SHP canvas hit sizes.
-pub fn scroll_button_rects(
-    layout: &SidebarLayout,
-    spec: SidebarChromeLayoutSpec,
-    down_size: Option<[f32; 2]>,
-    up_size: Option<[f32; 2]>,
-) -> (Rect, Rect) {
-    let [dw, dh] = down_size.unwrap_or([0.0, 0.0]);
-    let [uw, uh] = up_size.unwrap_or([0.0, 0.0]);
-    let x = layout.strip_x + spec.scroll_x;
-    let y = layout.cameo_grid_bottom + spec.scroll_y;
-    let shown = spec.shows(SidebarPart::Cameos);
-    (
-        Rect { x, y, w: dw, h: dh }.shown(shown),
-        Rect {
-            x: x + spec.scroll_pitch,
-            y,
-            w: uw,
-            h: uh,
-        }
-        .shown(shown),
-    )
 }
 
 /// Forward cameo presses to the live Super or Factory click decision.
@@ -485,9 +489,9 @@ pub(crate) fn hit_test_item(item: &SidebarItem, right_click: bool, shift: bool) 
 
 // `sidebar::hit_test` (the legacy press-path hit-test) was retired in A6: every
 // in-game surface — tabs/repair/sell/scroll (A1), cameos (A2) and tactical/minimap
-// (A3) — is now owned by the `app::input::gadget_input`
-// retained list (one order = hit + draw, R7 complete). `hit_test_item` (the cameo
-// click→action map) stays public for the driver.
+// (A3) — is now owned by the match's chrome (`app::input::chrome_input`, the
+// GUI's chrome layer). `hit_test_item` (the cameo click→action map) stays
+// public for it.
 
 #[cfg(all(test, tests_ui))]
 mod native_geometry_tests;

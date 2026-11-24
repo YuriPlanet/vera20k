@@ -304,7 +304,7 @@ impl WolCapture {
                 set_window_pointer_to_rect_center(state, rect);
                 crate::app::input::multiplayer_setup::cursor_moved(state);
                 let help = setup::view::player_help(state, &view, combo.id);
-                let label = |key: &str| App::csf_label(state, key, key);
+                let label = |key: &str| state.csf_label(key, key);
                 let expected = crate::i18n::fill(
                     &label("VERA:PlayerHelp"),
                     &[
@@ -433,7 +433,7 @@ impl WolCapture {
             WolTarget::ClanNoStart => {
                 setup_requests(state);
                 setup_button(state, crate::ui::multiplayer_setup::START)?;
-                let text = App::csf_label(state, "TXT_CLAN_NOSTART", "TXT_CLAN_NOSTART");
+                let text = state.csf_label("TXT_CLAN_NOSTART", "TXT_CLAN_NOSTART");
                 let requests = setup_requests(state);
                 // The line wraps; its first row starts the text.
                 let lines: Vec<String> = state
@@ -572,7 +572,7 @@ impl WolCapture {
                         by: member("Tanya", MEMBER_OPERATOR, ""),
                     },
                 );
-                let kicked = App::csf_label(state, "TXT_USER_KICKED", "TXT_USER_KICKED");
+                let kicked = state.csf_label("TXT_USER_KICKED", "TXT_USER_KICKED");
                 let expected = crate::assets::csf_file::format_csf(
                     &kicked,
                     &[

@@ -3,7 +3,7 @@
 //! packed-half words; it is a renderer control, not a full native scene.
 
 use super::super::draw_plan_lowering::{
-    ObjectPieceInstance, PlannedObjectInstance, lower_object_instances,
+    ObjectPieceInstance, OwnedPlannedObject, lower_object_instances,
 };
 use super::*;
 use crate::render::batch::InstanceBufferPool;
@@ -60,7 +60,7 @@ fn ordinary_anim_no_z_shadow_preserves_holes_depth_and_display_fences() {
             .map(|(index, policy)| {
                 let mut instance = sprite([0.0, 0.0], [4.0, 2.0], 65535.0);
                 instance.draw_state = DrawState::from_native_selector(0, 1);
-                PlannedObjectInstance::object(
+                OwnedPlannedObject::object(
                     ObjectDraw {
                         id: index as u64,
                         layer: TacticalLayer(2),
@@ -74,7 +74,7 @@ fn ordinary_anim_no_z_shadow_preserves_holes_depth_and_display_fences() {
                     }],
                 )
             });
-        let last = PlannedObjectInstance::object(
+        let last = OwnedPlannedObject::object(
             ObjectDraw {
                 id: 2,
                 layer: TacticalLayer(2),

@@ -54,7 +54,7 @@ fn grant(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, sw: InternedI
 
 fn at(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, frame: u32) {
     sim.session.set_binary_frame_for_test(frame);
-    tick_house_superweapon_instances(sim, rules, owner, Default::default());
+    tick_house_superweapon_instances(sim, rules, owner, &mut Default::default());
 }
 
 fn fire(
@@ -75,7 +75,7 @@ fn fire(
         },
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -175,7 +175,7 @@ fn always_granted_needs_no_provider_but_keeps_availability_gates() {
     let computer = sim.interner.get("Russians").unwrap();
     for house in [owner, computer] {
         grant_provided_supers(&mut sim, &rules, house);
-        update_owned_supers(&mut sim, &rules, house, Default::default());
+        update_owned_supers(&mut sim, &rules, house, &mut Default::default());
     }
     assert!(sim.super_weapons[&owner][&strike].is_active());
     assert!(!sim.super_weapons[&owner][&plain].is_active());
@@ -200,7 +200,7 @@ fn show_cameo_hides_only_an_auto_fire_super_from_the_strip() {
     );
     let (mut sim, owner, _) = scene(&rules, "Guard");
     grant_provided_supers(&mut sim, &rules, owner);
-    update_owned_supers(&mut sim, &rules, owner, Default::default());
+    update_owned_supers(&mut sim, &rules, owner, &mut Default::default());
     let mut shown: Vec<_> = superweapon_views_for_owner(&sim, &rules, &owner)
         .into_iter()
         .map(|view| (view.display_name, view.ares_show_cameo))
@@ -304,6 +304,7 @@ fn sonar_pulse_marks_affected_enemies_in_range_and_whole_map_pulses_need_no_targ
             .entities
             .get(id)
             .unwrap()
+            .seldom
             .ares
             .sonar_timer
             .remaining(500)

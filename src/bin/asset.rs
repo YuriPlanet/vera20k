@@ -108,6 +108,9 @@ fn run(cli: Cli) -> Result<(), RunError> {
             ra2_dir.display()
         )),
     })?;
+    // The tool reads the game it opened as that game's launch does
+    // (`util::ares_launch`).
+    manager.open_for_play();
 
     match cli.verb {
         Verb::Help | Verb::CampaignCheck(_) => unreachable!("handled before archive dispatch"),

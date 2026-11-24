@@ -162,7 +162,7 @@ impl Simulation {
         &mut self,
         stable_id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
@@ -247,7 +247,7 @@ impl Simulation {
         &mut self,
         owner: InternedId,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if !self.houses.contains_key(&owner) {
             return;
@@ -340,7 +340,7 @@ impl Simulation {
     pub(crate) fn append_live_build_const(&mut self, stable_id: u64) {
         let Some(owner) = self.substrate.entities.get(stable_id).and_then(|entity| {
             (entity.category() == EntityCategory::Structure
-                && entity.type_facts.build_const_eligible()
+                && entity.seldom.type_facts.build_const_eligible()
                 && entity.lifecycle.object_alive()
                 && !entity.lifecycle.in_limbo()
                 && entity.lifecycle.cell_marked())
@@ -368,11 +368,12 @@ impl Simulation {
         houses: &mut Houses,
         stable_id: u64,
     ) {
-        let Some((owner, eligible)) = substrate
-            .entities
-            .get(stable_id)
-            .map(|entity| (entity.owner(), entity.type_facts.build_const_eligible()))
-        else {
+        let Some((owner, eligible)) = substrate.entities.get(stable_id).map(|entity| {
+            (
+                entity.owner(),
+                entity.seldom.type_facts.build_const_eligible(),
+            )
+        }) else {
             return;
         };
         if eligible && let Some(house) = houses.get_mut(&owner) {
@@ -391,7 +392,7 @@ impl Simulation {
             new_owner,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     }
 
@@ -438,7 +439,7 @@ impl Simulation {
         new_owner: InternedId,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         self.change_owner_impl(stable_id, new_owner, rules, registry, effects);
     }
@@ -449,7 +450,7 @@ impl Simulation {
         new_owner: InternedId,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
@@ -525,7 +526,7 @@ impl Simulation {
         new_owner: InternedId,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some((old_owner, category, has_spawn_manager, build_const_eligible)) =
             self.substrate.entities.get(stable_id).map(|entity| {
@@ -533,12 +534,20 @@ impl Simulation {
                     entity.owner(),
                     entity.category(),
                     entity.spawn_manager.is_some(),
-                    entity.type_facts.build_const_eligible(),
+                    entity.seldom.type_facts.build_const_eligible(),
                 )
             })
         else {
             return;
         };
+        crate::sim::ra2_all02_diagnostic::on_owner_change(
+            self,
+            stable_id,
+            old_owner,
+            new_owner,
+            rules,
+            "BEFORE",
+        );
         // FootChangeOwner4DBEFB removes at the current cell before its
         // Techno delegate, including the same-owner refusal at7014A0.
         self.remove_unit_sensors_at_current(stable_id, rules, registry);
@@ -635,7 +644,7 @@ impl Simulation {
         if rules.ares()
             && let Some(building) = self.substrate.entities.get_mut(stable_id)
         {
-            building.ares.display_production_to.remove(new_owner);
+            building.seldom.ares.display_production_to.remove(new_owner);
         }
         // Building4484AF precedes the delegated Techno owner transfer.
         self.enable_building_after_owner_change(stable_id, rules);
@@ -778,6 +787,14 @@ impl Simulation {
             stable_id,
             new_owner,
         );
+        crate::sim::ra2_all02_diagnostic::on_owner_change(
+            self,
+            stable_id,
+            old_owner,
+            new_owner,
+            rules,
+            "AFTER",
+        );
         // Ares3.0 ChangeOwner7015EB ->1004E7F0 follows the two tracking
         // calls and precedes both the capture stats and owner pointer store.
         // Buildings retain their own existing44936E/449379 recheck tail.
@@ -810,9 +827,9 @@ impl Simulation {
         //701674 Mark(UP),70D4A0 detach and701691 Mark(DOWN) all precede
         //the owner store. PlaceDown's Cell discovery therefore observes the
         //old House and can dirty its radar as well as its power.
-        let mark_context = UninitContext::new(rules).with_effects(effects);
+        let mut mark_context = UninitContext::new(rules).with_effects(effects);
         if on_map {
-            self.unmark_entity_remove(stable_id, mark_context);
+            self.unmark_entity_remove(stable_id, mark_context.reborrow());
         }
         // `TechnoClass::ChangeOwner` runs the live-detach targeting sweep next,
         // before the house swap: everything shooting at this object is released
@@ -820,7 +837,7 @@ impl Simulation {
         // garrison transfer both come through here, so a squad that was firing
         // at a building stops the instant the building changes hands instead of
         // shooting at what is now its own structure.
-        self.stop_all_targeting_on_detach(stable_id, rules, effects);
+        self.stop_all_targeting_on_detach(stable_id, rules, mark_context.effects());
         if on_map {
             self.mark_entity_put(stable_id, mark_context);
         }
@@ -914,6 +931,7 @@ impl Simulation {
         // A former current-house object's +41B history survives the transfer.
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity
+                .seldom
                 .discovery
                 .classify_owner(self.session.current_house() == Some(new_owner));
         }
@@ -925,6 +943,7 @@ impl Simulation {
         // House; the controlling House+2CC survives an ordinary capture.
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity
+                .seldom
                 .mind_control
                 .clear_house_original_owner_on_owner_change();
         }
@@ -1050,14 +1069,14 @@ impl Simulation {
         new_owner: InternedId,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Vec<(u64, bool)> {
         use crate::sim::radio::{RadioMessage, RadioPayload, RadioResponse, transmit};
         let mut taken = Vec::new();
         let Some((capacity, weapons_factory)) =
             self.substrate.entities.get(building).map(|entity| {
                 (
-                    entity.radio_contacts.capacity(),
+                    entity.seldom.radio_contacts.capacity(),
                     self.object_type(entity.type_ref(), rules)
                         .is_some_and(|object| object.weapons_factory),
                 )
@@ -1070,7 +1089,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(building)
-                .and_then(|entity| entity.radio_contacts.slot(slot))
+                .and_then(|entity| entity.seldom.radio_contacts.slot(slot))
             else {
                 continue;
             };
@@ -1102,7 +1121,7 @@ impl Simulation {
                     .substrate
                     .entities
                     .get(contact)
-                    .is_some_and(|entity| entity.tether.partner().is_some());
+                    .is_some_and(|entity| entity.seldom.tether.partner().is_some());
                 self.change_owner_impl(contact, new_owner, rules, registry, effects);
                 taken.push((contact, tethered));
             } else {
@@ -1155,7 +1174,7 @@ impl Simulation {
         building: u64,
         taken: &[(u64, bool)],
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         for &(contact, tethered) in taken {
             crate::sim::radio::transmit(
@@ -1169,10 +1188,10 @@ impl Simulation {
             );
             if tethered {
                 if let Some(entity) = self.substrate.entities.get_mut(building) {
-                    entity.tether.attach(contact);
+                    entity.seldom.tether.attach(contact);
                 }
                 if let Some(entity) = self.substrate.entities.get_mut(contact) {
-                    entity.tether.attach(building);
+                    entity.seldom.tether.attach(building);
                 }
             }
         }
@@ -1260,7 +1279,7 @@ impl Simulation {
         &mut self,
         stable_id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         use crate::sim::mission::{MissionId, MissionType};
         let Some(entity) = self.substrate.entities.get(stable_id) else {
@@ -1284,7 +1303,8 @@ impl Simulation {
             return;
         }
         let in_factory_contact = self.substrate.entities.get(stable_id).is_some_and(|e| {
-            e.radio_contacts
+            e.seldom
+                .radio_contacts
                 .iter_live()
                 .any(|other| self.is_weapons_factory(other, rules))
         });

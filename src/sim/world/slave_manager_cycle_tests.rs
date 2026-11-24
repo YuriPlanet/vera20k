@@ -146,7 +146,11 @@ fn slave_refinery_deploys_digs_carries_home_pays_and_goes_out_again() {
             let entity = s.scene.sim.substrate.entities.get(slave).unwrap();
             if let Some((doing, _)) = entity.infantry_sprite_pose() {
                 if doing == 39 {
-                    assert_eq!(entity.slave.cargo().len(), 4, "Carry needs a full load");
+                    assert_eq!(
+                        entity.seldom.slave.cargo().len(),
+                        4,
+                        "Carry needs a full load"
+                    );
                     carry_shown = true;
                     assert_eq!(
                         s.scene
@@ -160,9 +164,9 @@ fn slave_refinery_deploys_digs_carries_home_pays_and_goes_out_again() {
                     );
                 }
                 empty_walk_after_payment |=
-                    paid_at.is_some() && doing == 3 && entity.slave.cargo().is_empty();
+                    paid_at.is_some() && doing == 3 && entity.seldom.slave.cargo().is_empty();
             }
-            dug |= !entity.slave.cargo().is_empty();
+            dug |= !entity.seldom.slave.cargo().is_empty();
             shovel_shown |= entity
                 .infantry_sprite_pose()
                 .is_some_and(|(doing, _)| doing == 38);
@@ -244,7 +248,7 @@ fn kill(s: &mut SlaveScene, target: u64, attacker: Option<u64>) {
             &s.scene.rules,
             Some(registry()),
             &[hit],
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
     panic!("{target} survived ten hits");
@@ -279,8 +283,24 @@ fn a_destroyed_refinery_frees_its_slaves_to_the_killer() {
         .spawn_object("MTNK", "Russians", 10, 20, 0, &s.scene.rules)
         .expect("killer");
     s.scene.sim.sound_events.clear_for_test();
+    let ordered = s.slaves[&1];
+    let move_order = Command::Move {
+        entity_id: ordered,
+        target_rx: 18,
+        target_ry: 17,
+    };
+    assert!(
+        !s.scene
+            .sim
+            .can_issue_local_command(&move_order, &s.scene.rules)
+    );
     let master = s.master;
     kill(&mut s, master, Some(killer));
+    assert!(
+        s.scene
+            .sim
+            .can_issue_local_command(&move_order, &s.scene.rules)
+    );
 
     let sim = &s.scene.sim;
     assert!(
@@ -294,7 +314,7 @@ fn a_destroyed_refinery_frees_its_slaves_to_the_killer() {
     for index in [0, 1] {
         let slave = sim.substrate.entities.get(s.slaves[&index]).unwrap();
         assert_eq!(slave.owner(), russians, "slave {index} joins the killer");
-        assert_eq!(slave.slave.owner(), None);
+        assert_eq!(slave.seldom.slave.owner(), None);
         assert_eq!(slave.mission.current().known(), Some(MissionType::Guard));
         assert_eq!(
             slave.mission_leaf.as_infantry().unwrap().doing(),
@@ -312,7 +332,7 @@ fn a_destroyed_refinery_frees_its_slaves_to_the_killer() {
     assert!(sim.sound_events.iter().any(|event| matches!(
         event,
         SimSoundEvent::VocAt { sound_id, rx, ry, .. }
-            if sound_id == "SlavesFreed" && (*rx, *ry) == (freed.position.rx(), freed.position.ry())
+            if sound_id.name_in(&s.scene.rules) == "SlavesFreed" && (*rx, *ry) == (freed.position.rx(), freed.position.ry())
     )));
 
     // The Cheer cannot be interrupted: a Move order given during it walks the
@@ -320,17 +340,10 @@ fn a_destroyed_refinery_frees_its_slaves_to_the_killer() {
     // (Ready_To_Commence). The Cheer's end, `InfantryClass::DoType_Sequencer`'s
     // default arm, forces Ready on a standing slave or Walk on a moving one;
     // the queued Move then commences.
-    let ordered = s.slaves[&1];
     let tick = s.scene.sim.session.tick();
-    s.scene.sim.queue_command(CommandEnvelope::new(
-        russians,
-        tick + 1,
-        Command::Move {
-            entity_id: ordered,
-            target_rx: 18,
-            target_ry: 17,
-        },
-    ));
+    s.scene
+        .sim
+        .queue_command(CommandEnvelope::new(russians, tick + 1, move_order));
     let doing = |s: &SlaveScene, id: u64| {
         s.scene
             .sim
@@ -454,7 +467,7 @@ fn deploy_and_undeploy_hand_the_slave_manager_over() {
             smin,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ),
         "deploy to YAREFN"
     );
@@ -492,7 +505,13 @@ fn deploy_and_undeploy_hand_the_slave_manager_over() {
     );
     for &slave in &slaves {
         assert_eq!(
-            sim.substrate.entities.get(slave).unwrap().slave.owner(),
+            sim.substrate
+                .entities
+                .get(slave)
+                .unwrap()
+                .seldom
+                .slave
+                .owner(),
             Some(yarefn)
         );
     }
@@ -508,7 +527,7 @@ fn deploy_and_undeploy_hand_the_slave_manager_over() {
             false,
             &rules,
             Some(registry()),
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ),
         "undeploy to SMIN"
     );
@@ -521,7 +540,7 @@ fn deploy_and_undeploy_hand_the_slave_manager_over() {
         yarefn,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
         std::mem::take(&mut sim.mission_spawned_entities),
@@ -546,7 +565,13 @@ fn deploy_and_undeploy_hand_the_slave_manager_over() {
     );
     for slave in slaves {
         assert_eq!(
-            sim.substrate.entities.get(slave).unwrap().slave.owner(),
+            sim.substrate
+                .entities
+                .get(slave)
+                .unwrap()
+                .seldom
+                .slave
+                .owner(),
             Some(back)
         );
     }
@@ -657,7 +682,13 @@ fn a_refinery_whose_ore_runs_out_packs_up_and_moves_to_the_next_field() {
     );
     for &slave in &slaves {
         assert_eq!(
-            sim.substrate.entities.get(slave).unwrap().slave.owner(),
+            sim.substrate
+                .entities
+                .get(slave)
+                .unwrap()
+                .seldom
+                .slave
+                .owner(),
             Some(relocated)
         );
     }
@@ -747,7 +778,7 @@ fn an_attacker_of_a_packing_refinery_takes_the_slave_miner() {
         false,
         &rules,
         Some(registry()),
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     sim.substrate
         .entities
@@ -758,7 +789,7 @@ fn an_attacker_of_a_packing_refinery_takes_the_slave_miner() {
         refinery,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
         std::mem::take(&mut sim.mission_spawned_entities),
@@ -893,7 +924,7 @@ fn a_player_cell_order_relocates_a_refinery_with_its_existing_slave_manager() {
             [slave]
         );
         assert_eq!(
-            sim.entities().get(slave).unwrap().slave.owner(),
+            sim.entities().get(slave).unwrap().seldom.slave.owner(),
             Some(converted)
         );
     }

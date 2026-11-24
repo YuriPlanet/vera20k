@@ -69,7 +69,7 @@ impl Simulation {
     pub(super) fn object_conceal_with_context(
         &mut self,
         stable_id: u64,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) -> ConcealOutcome {
         let Some((in_limbo, object_alive)) = self
             .substrate
@@ -170,9 +170,9 @@ impl Simulation {
         // itself, so a live spawner's Limbo runs its SpawnManager's owner arm:
         // docked children UnInit with a zero regen timer, and airborne ones
         // turn kamikaze on the wing's target (`0x006B7100`).
-        self.notify_pointer_expired(stable_id, context);
+        self.notify_pointer_expired(stable_id, context.reborrow());
 
-        let unmarked = self.unmark_entity_remove(stable_id, context)
+        let unmarked = self.unmark_entity_remove(stable_id, context.reborrow())
             || self
                 .substrate
                 .voxel_anims
@@ -198,7 +198,8 @@ impl Simulation {
         //5F4D89 detaches the custom-sound handle (+50): `object_sound`.
         // They are separate from Foot+544/Anim+1A0/Building+6A0.
         self.object_sound_conceal(stable_id, context.rules());
-        context.effects().flush_sound(self, context.rules());
+        let rules = context.rules();
+        context.effects().flush_sound(self, rules);
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealVocBoundary);
 
@@ -211,7 +212,7 @@ impl Simulation {
             .substrate
             .entities
             .get(stable_id)
-            .is_some_and(|entity| entity.removal_facts.dirty_rect_eligible());
+            .is_some_and(|entity| entity.seldom.removal_facts.dirty_rect_eligible());
         if dirty_rect_eligible {
             self.lifecycle_outputs
                 .emit(LifecycleOutput::DirtyTacticalRect { stable_id });
@@ -278,7 +279,7 @@ impl Simulation {
         if human == Some(false)
             && let Some(entity) = substrate.entities.get_mut(stable_id)
         {
-            entity.discovery.clear_current_discovery();
+            entity.seldom.discovery.clear_current_discovery();
         }
     }
 
@@ -301,7 +302,7 @@ impl Simulation {
     pub fn techno_limbo_with_context(
         &mut self,
         stable_id: u64,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) -> ConcealOutcome {
         if !self.substrate.entities.contains(stable_id) {
             return ConcealOutcome::MissingOrDead;
@@ -482,9 +483,9 @@ impl Simulation {
         if context.rules.ares() {
             self.remove_radar_jammer(stable_id);
             if let Some(entity) = self.substrate.entities.get_mut(stable_id)
-                && entity.ares.powered_by.is_some()
+                && entity.seldom.ares.powered_by.is_some()
             {
-                entity.ares.powered_by = None;
+                entity.seldom.ares.powered_by = None;
             }
             self.limbo_ares_attach_effects(stable_id, context.rules());
         }
@@ -531,7 +532,7 @@ impl Simulation {
             if reveal_to_all {
                 self.rereveal_sight_to_current_house(stable_id, rules, false);
             } else {
-                self.release_object_sight_with_context(stable_id, context);
+                self.release_object_sight_with_context(stable_id, context.reborrow());
             }
             Self::remove_building_gap(
                 &self.interner,
@@ -592,7 +593,7 @@ impl Simulation {
         // Dead and InLimbo are independent native state. TechnoClass::Limbo
         // still reaches ObjectClass::Conceal for a stored dead object; the
         // latter's InLimbo branch alone decides whether Conceal is a no-op.
-        self.clear_building_base_reservation_and_repair(stable_id, context);
+        self.clear_building_base_reservation_and_repair(stable_id, context.reborrow());
         // The same TechnoClass::Limbo sound cleanup releases the turret
         // rotation loop's `+0x488` handle before the gattling report handle,
         // and re-arms its latch.
@@ -605,10 +606,11 @@ impl Simulation {
             .get(stable_id)
             .is_some_and(|entity| entity.lifecycle.in_limbo);
         if !already_in_limbo {
-            self.turret_rotate_sound_limbo(stable_id, context.effects(), context.rules());
+            let rules = context.rules();
+            self.turret_rotate_sound_limbo(stable_id, context.effects(), rules);
             // TechnoClass::Limbo releases the gattling loop and clears the
             // report latch (`0x006F6C6B`, `0x006F6C76`) ahead of its radio pass.
-            self.gattling_limbo(stable_id, context);
+            self.gattling_limbo(stable_id, context.reborrow());
         }
         // RadioLimbo65AA80..65AA99 tests InLimbo before Broadcast(3).
         // CargoAdd4733B0 repeats virtual Limbo after Hospital51A35F's
@@ -621,7 +623,7 @@ impl Simulation {
         {
             crate::sim::radio::broadcast_break(self, stable_id, context.rules(), context.effects());
         }
-        let outcome = self.object_conceal_with_context(stable_id, context);
+        let outcome = self.object_conceal_with_context(stable_id, context.reborrow());
         // Ares 3.0 UnitClass_Remove (1005D610, hook 0x7440BD), after a Foot
         // Limbo that removed the Unit: its Tank Bunker lets it go
         // (`BuildingClass::ClearBunker @ 0x00459470`).
@@ -701,7 +703,7 @@ impl Simulation {
     /// `0x0062A260`) and a dropped Crashable unit (Notice `0x00746100`).
     pub(crate) fn close_kill_record(substrate: &mut ObjectSubstrate, stable_id: u64) {
         if let Some(entity) = substrate.entities.get_mut(stable_id) {
-            entity.kill_record.close();
+            entity.seldom.kill_record.close();
         }
     }
 }

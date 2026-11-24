@@ -272,6 +272,68 @@ SpawnCount=3
     assert_eq!(meteor.spawn_count, 3);
 }
 
+/// A type's and a warhead's `DebrisTypes=`, here from a map layer, read as
+/// the `[VoxelAnims]` ids their names resolve to, in list order and in any
+/// case, from the ids the set resolved at build; a copy another set never
+/// resolved reads its names.
+#[test]
+fn debris_types_read_the_ids_their_names_resolve_to() {
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[VoxelAnims]\n0=PIECE\n1=TIRE\n[PIECE]\nDuration=75\n[TIRE]\nDuration=150\n\
+         [VehicleTypes]\n0=TRUCK\n[TRUCK]\nStrength=100\n[Warheads]\n0=WH\n",
+    ));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str(
+            "[TRUCK]\nDebrisTypes=tire,Piece,TIRE\nDebrisMaximums=1,1,1\n\
+             [WH]\nDebrisTypes=piece\n",
+        ),
+    );
+    let rules = RuleSet::from_rules_layers(&layers).expect("layered debris rules parse");
+    let by_name = |names: &[String]| -> Vec<_> {
+        names
+            .iter()
+            .map(|name| rules.voxel_anim_type_id_by_name(name))
+            .collect()
+    };
+    let (piece, tire) = (
+        rules.voxel_anim_type_id_by_name("PIECE"),
+        rules.voxel_anim_type_id_by_name("TIRE"),
+    );
+    let truck = rules.object("TRUCK").unwrap();
+    let debris = rules.object_debris_types(truck);
+    assert!(matches!(debris, std::borrow::Cow::Borrowed(_)));
+    assert_eq!(*debris, [tire, piece, tire]);
+    assert_eq!(*debris, *by_name(&truck.debris_types));
+    let warhead = rules.warhead("WH").unwrap();
+    let debris = rules.warhead_debris_types(warhead);
+    assert!(matches!(debris, std::borrow::Cow::Borrowed(_)));
+    assert_eq!(*debris, [piece]);
+    let other = RuleSet::from_rules_layers(&layers).unwrap();
+    assert_eq!(*other.object_debris_types(truck), [tire, piece, tire]);
+    assert_eq!(*other.warhead_debris_types(warhead), [piece]);
+}
+
+/// `[Radiation] RadSiteWarhead=` reads the warhead its name resolves to, in
+/// any case, from a later layer too.
+#[test]
+fn radiation_site_warhead_reads_the_warhead_its_name_names() {
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[Radiation]\nRadSiteWarhead=RadSite\n[Warheads]\n0=RadSite\n1=Hot\n",
+    ));
+    let rules = RuleSet::from_rules_layers(&layers).unwrap();
+    assert!(std::ptr::eq(
+        rules.radiation_site_warhead().unwrap(),
+        rules.warhead("RADSITE").unwrap()
+    ));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[Radiation]\nRadSiteWarhead=hot\n"),
+    );
+    let rules = RuleSet::from_rules_layers(&layers).unwrap();
+    assert_eq!(rules.radiation_site_warhead().unwrap().id, "Hot");
+}
+
 #[test]
 fn test_object_lookup() {
     let ini: IniFile = IniFile::from_str(&make_test_rules());
@@ -1420,6 +1482,36 @@ fn recalc_difficulty_vectors_parse_exact_lengths_and_layer_defaults() {
     assert!(missing.allied_base_defense_counts.is_empty());
 }
 
+#[test]
+fn ra2_launch_supplies_native_hardcoded_difficulty_vectors_when_ini_omits_them() {
+    // ra2_launch is process-global; serialize against other tests that toggle
+    // it and always restore the value we found.
+
+    let ini = "[BuildingTypes]\n0=DUMMY\n[DUMMY]\nFoundation=1x1\n";
+    crate::util::ra2_launch::set_override(true);
+    let ra2 = RuleSet::from_ini(&IniFile::from_str(ini)).expect("ra2 vectors");
+    assert_eq!(ra2.ai_slave_miner_number, [4, 3, 2]);
+    assert_eq!(ra2.ai_extra_refineries, [2, 1, 0]);
+    assert_eq!(ra2.third_base_defense_counts, [25, 22, 6]);
+    // Allied/Soviet counts are authored in RA2 rules.ini; a bare fixture that
+    // omits them must stay empty (no fabricated fallback).
+    assert!(ra2.allied_base_defense_counts.is_empty());
+
+    // A present value wins over the RA2 fallback.
+    let ini_with = "[General]\nAISlaveMinerNumber=7,8\n\
+                    [BuildingTypes]\n0=DUMMY\n[DUMMY]\nFoundation=1x1\n";
+    let ra2_present = RuleSet::from_ini(&IniFile::from_str(ini_with)).expect("ra2 present");
+    assert_eq!(ra2_present.ai_slave_miner_number, [7, 8]);
+
+    crate::util::ra2_launch::set_override(false);
+    let yr = RuleSet::from_ini(&IniFile::from_str(ini)).expect("yr vectors");
+    assert!(yr.ai_slave_miner_number.is_empty());
+    assert!(yr.ai_extra_refineries.is_empty());
+    assert!(yr.third_base_defense_counts.is_empty());
+
+    crate::util::ra2_launch::clear_override();
+}
+
 /// Slice 8 acceptance: the sim TypeHandleTable resolves every interned type id
 /// (no orphans) and does so case-insensitively (htnk vs [HTNK]).
 #[test]
@@ -1609,6 +1701,17 @@ fn a_huge_spawn_count_stops_at_the_spawn_bound() {
 }
 
 #[test]
+fn a_huge_slave_count_stops_at_the_slave_bound() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=SLAV\n[VehicleTypes]\n0=SMIN\n\
+             [SLAV]\nStrength=100\n[SMIN]\nEnslaves=SLAV\nSlavesNumber=2147483647\n",
+    ))
+    .unwrap();
+    let limit = crate::rules::object_type::SLAVES_NUMBER_LIMIT;
+    assert_eq!(rules.object("SMIN").unwrap().slaves_number, limit);
+}
+
+#[test]
 fn sides_past_one_byte_are_not_allocated() {
     let sides: String = (0..257).map(|i| format!("S{i}=Americans\n")).collect();
     let rules = RuleSet::from_ini(&IniFile::from_str(&format!("[Sides]\n{sides}"))).unwrap();
@@ -1715,4 +1818,24 @@ fn gsi_04_11_infantry_death_anim_bindings_use_general_and_animation_order() {
     assert_eq!(defaults.infantry_death_anim(3), None);
     assert_eq!(defaults.infantry_death_anim(5), Some("ELECTRO"));
     assert_eq!(defaults.infantry_death_anim(10), None);
+}
+
+/// Original-RA2 `[AI]` ore-scan radii parse to the authored values; YR data
+/// has no such keys and keeps the native constructor default of 0.
+#[test]
+fn ra2_tiberium_scan_radii_parse_from_the_ai_section() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[AI]\nTiberiumNearScan=6\nTiberiumFarScan=48\n\
+         [BuildingTypes]\n0=DUMMY\n[DUMMY]\nFoundation=1x1\n",
+    ))
+    .expect("scan radii");
+    assert_eq!(rules.tiberium_near_scan, 6);
+    assert_eq!(rules.tiberium_far_scan, 48);
+
+    let missing = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=DUMMY\n[DUMMY]\nFoundation=1x1\n",
+    ))
+    .expect("missing scan radii");
+    assert_eq!(missing.tiberium_near_scan, 0);
+    assert_eq!(missing.tiberium_far_scan, 0);
 }

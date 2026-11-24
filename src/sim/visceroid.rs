@@ -58,7 +58,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -134,7 +134,7 @@ impl Simulation {
         if entity.navigation.nav_com().is_some() || entity.attack_target.target().is_some() {
             return;
         }
-        let kept = entity.idle_wander.direction;
+        let kept = entity.seldom.idle_wander.direction;
         let direction = if kept == -1 || self.scenario_rng.next_range_i32_inclusive(0, 2) == 0 {
             let direction = self.scenario_rng.next_range_i32_inclusive(0, 7);
             self.set_idle_wander(id, direction);
@@ -219,7 +219,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let small = |sim: &Self, entity: &crate::sim::game_entity::GameEntity| {
             entity.category() == EntityCategory::Unit
@@ -273,7 +273,7 @@ impl Simulation {
 
     fn set_idle_wander(&mut self, id: u64, direction: i32) {
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.idle_wander.direction = direction;
+            entity.seldom.idle_wander.direction = direction;
         }
     }
 }

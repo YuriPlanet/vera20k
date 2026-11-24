@@ -38,7 +38,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> (u8, i32) {
         let entity = self.substrate.entities.get(id).expect("aircraft dispatch");
         let target = entity
@@ -85,7 +85,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> (u8, i32) {
         (self.advance_aircraft_approach(id, rules, effects), 1)
     }
@@ -94,7 +94,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> u8 {
         let entity = self
             .substrate
@@ -159,7 +159,7 @@ impl Simulation {
                 &fire_coord::FireSource::from(&snap),
                 object,
                 0,
-                entity.weapon_burst.index() as u8,
+                entity.seldom.weapon_burst.index() as u8,
                 crate::rules::flh::Flh::default(),
             )
             .coord;
@@ -193,7 +193,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> (u8, i32) {
         let entity = self.substrate.entities.get(id).expect("aircraft dispatch");
         let facts = attack_mission::ExitFacts {
@@ -209,7 +209,7 @@ impl Simulation {
                 sim: self,
                 id,
                 rules,
-                effects,
+                effects: effects.reborrow(),
             },
         );
         if let Some(latch) = visit.latch
@@ -233,7 +233,7 @@ struct WorldExit<'a> {
 impl attack_mission::ExitHost for WorldExit<'_> {
     fn clear_target(&mut self) {
         self.sim
-            .assign_target_represented(self.id, None, self.rules, FrameEffects::default())
+            .assign_target_represented(self.id, None, self.rules, &mut FrameEffects::default())
             .expect("aircraft dispatch");
     }
 
@@ -244,7 +244,7 @@ impl attack_mission::ExitHost for WorldExit<'_> {
                 self.id,
                 Some(NavTargetRef::cell(rx, ry)),
                 self.rules,
-                self.effects,
+                &mut self.effects,
             );
         }
     }
@@ -264,7 +264,7 @@ impl attack_mission::ExitHost for WorldExit<'_> {
             self.sim,
             self.id,
             self.rules,
-            self.effects,
+            &mut self.effects,
         );
     }
 }

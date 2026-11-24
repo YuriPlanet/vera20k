@@ -723,6 +723,7 @@ fn a_prime_acquires_a_placed_pillbox_before_construction_commences() {
         sim.entities()
             .get(pillbox)
             .unwrap()
+            .seldom
             .mind_control
             .controller(),
         Some(prime)
@@ -755,7 +756,7 @@ fn place_building(
         owner,
         ProductionPlacement::Building { type_id, cell },
         overlays,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
 }
 
@@ -1512,7 +1513,7 @@ fn ares_free_unit_comes_from_the_first_opening_only() {
         false,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
         sim.substrate
@@ -1908,7 +1909,7 @@ fn placement_command_rejects_marked_ground_mobiles_until_they_are_unmarked() {
                 blocker_id,
                 crate::sim::world::InfantryDeathSequence::Die1,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         }
 
@@ -2300,7 +2301,7 @@ fn gsi_04_07_command_places_authoritative_owned_wall_without_entity() {
                 owner: event_owner, ..
             } if *event_owner == owner => Some("BuildingSlam"),
             crate::sim::world::SimSoundEvent::VocAt { sound_id, .. }
-                if sound_id == "FixtureWallCreated" =>
+                if sound_id.name_in(&rules) == "FixtureWallCreated" =>
             {
                 Some("CreateSound")
             }
@@ -2328,7 +2329,7 @@ fn gsi_04_07_command_places_authoritative_owned_wall_without_entity() {
             else {
                 return None;
             };
-            (sound_id == "FixtureWallCreated").then_some((
+            (sound_id.name_in(&rules) == "FixtureWallCreated").then_some((
                 *audible_to,
                 *rx,
                 *ry,
@@ -3411,7 +3412,7 @@ fn blocked_active_war_factory_does_not_spawn_from_second_factory() {
             category: ProductionCategory::Vehicle
         },
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     let produced = sim.substrate.entities.get(held).unwrap();
 
@@ -3556,7 +3557,7 @@ fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
                 1,
                 order,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             "{order:?}"
         );
@@ -3574,7 +3575,7 @@ fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
                 1,
                 order,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             "{order:?}"
         );
@@ -3593,7 +3594,7 @@ fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
         1,
         SellOrder::Player,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(selling(&sim));
     assert!(!can_sell_building(&sim, &rules, 1));
@@ -3610,7 +3611,7 @@ fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
         1,
         SellOrder::Player,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert_eq!(clicks(&sim), 2, "the repeated order clicks");
     assert_eq!(
@@ -3629,7 +3630,7 @@ fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
         1,
         SellOrder::Computer,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert_eq!(clicks(&sim), 2);
 
@@ -3640,7 +3641,7 @@ fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
         1,
         SellOrder::Computer,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(selling(&sim));
     assert_eq!(clicks(&sim), 1);
@@ -3662,7 +3663,7 @@ fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
         1,
         SellOrder::Computer,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(!selling(&sim));
     assert_eq!(clicks(&sim), 0);
@@ -3673,7 +3674,7 @@ fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
         1,
         SellOrder::Player,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert!(selling(&sim));
     assert_eq!(clicks(&sim), 1);
@@ -3997,7 +3998,7 @@ fn stock_infantry_fallback_unit_ready_uses_producer_getcoords() {
         &rules,
         "Americans",
         "E1",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let category = ProductionCategory::Infantry;
@@ -4030,11 +4031,11 @@ fn stock_infantry_fallback_unit_ready_uses_producer_getcoords() {
     let position = ground_pose::position_world_coord(&product.position);
     assert_eq!([position.x, position.y, position.z], [3712, 3968, 0]);
     assert_eq!((product.position.rx(), product.position.ry()), (14, 15));
-    assert_eq!(product.radio_contacts.slot(0), Some(producer));
-    assert_eq!(product.tether.partner(), Some(producer));
+    assert_eq!(product.seldom.radio_contacts.slot(0), Some(producer));
+    assert_eq!(product.seldom.tether.partner(), Some(producer));
     let producer_entity = sim.substrate.entities.get(producer).unwrap();
-    assert_eq!(producer_entity.radio_contacts.slot(0), Some(held));
-    assert_eq!(producer_entity.tether.partner(), Some(held));
+    assert_eq!(producer_entity.seldom.radio_contacts.slot(0), Some(held));
+    assert_eq!(producer_entity.seldom.tether.partner(), Some(held));
     let notifications: Vec<_> = sim.sound_events[event_start..]
         .iter()
         .filter_map(|event| match event {
@@ -4193,7 +4194,7 @@ fn stock_yuri_cloning_vat_duplicates_a_successfully_placed_infantry() {
         &rules,
         "YuriCountry",
         "E1",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let category = ProductionCategory::Infantry;
@@ -4298,6 +4299,7 @@ fn cloning_vat_keeps_a_refused_copy_in_limbo() {
         .entities
         .get_mut(vat)
         .unwrap()
+        .seldom
         .radio_contacts
         .set_slot(0, barracks);
 
@@ -4306,7 +4308,7 @@ fn cloning_vat_keeps_a_refused_copy_in_limbo() {
         &rules,
         "YuriCountry",
         "E1",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let category = ProductionCategory::Infantry;
@@ -4389,7 +4391,7 @@ fn cloning_vats_do_not_duplicate_yuri_vehicle_factory_output() {
         &rules,
         "YuriCountry",
         "YTNK",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let category = ProductionCategory::Vehicle;
@@ -4459,7 +4461,7 @@ fn cloning_vat_copies_wait_for_the_source_dock_cell() {
         &rules,
         "YuriCountry",
         "E1",
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     let category = ProductionCategory::Infantry;
@@ -4597,7 +4599,7 @@ fn an_airfield_puts_each_aircraft_it_builds_on_its_own_pad() {
             &rules,
             "Americans",
             "ORCA",
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             false,
         ));
         let built = super::lifecycle_tests::held_id(&sim, owner, ProductionCategory::Aircraft);
@@ -4623,8 +4625,8 @@ fn an_airfield_puts_each_aircraft_it_builds_on_its_own_pad() {
             [centre.x + dx, centre.y + dy],
             "slot {slot}: on its pad"
         );
-        assert_eq!(plane.radio_contacts.slot(0), Some(airfield));
-        assert_eq!(plane.tether.partner(), None, "TETHER");
+        assert_eq!(plane.seldom.radio_contacts.slot(0), Some(airfield));
+        assert_eq!(plane.seldom.tether.partner(), None, "TETHER");
         assert_eq!(
             plane.ammo().and_then(|ammo| ammo.dock()),
             Some(airfield),
@@ -4632,7 +4634,7 @@ fn an_airfield_puts_each_aircraft_it_builds_on_its_own_pad() {
         );
         assert_eq!(plane.mission.current().known(), Some(MissionType::Guard));
         let pad = sim.substrate.entities.get(airfield).unwrap();
-        assert_eq!(pad.radio_contacts.slot(slot), Some(built));
+        assert_eq!(pad.seldom.radio_contacts.slot(slot), Some(built));
     }
 }
 
@@ -4681,6 +4683,7 @@ fn ares_kick_out_clones_follow_cloneable_cloned_as_and_delete_refusals() {
                 .entities
                 .get_mut(vat)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .set_slot(0, barracks);
         }
@@ -4689,7 +4692,7 @@ fn ares_kick_out_clones_follow_cloneable_cloned_as_and_delete_refusals() {
             &rules,
             "YuriCountry",
             "E1",
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             false,
         ));
         let category = ProductionCategory::Infantry;

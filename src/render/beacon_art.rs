@@ -49,7 +49,6 @@ impl BeaconArt {
 
     /// `unit_palette` is the theater's unit palette; `ramps` holds each
     /// beacon row's House ramp, in House order.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,

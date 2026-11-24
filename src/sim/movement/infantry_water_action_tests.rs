@@ -190,7 +190,7 @@ fn fixture(row: &Value, rules: &RuleSet, type_name: &str) -> (Simulation, u64) {
             0,
             0,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("water action constructor");
     let actor = sim.substrate.entities.get_mut(id).unwrap();
@@ -231,9 +231,7 @@ fn fixture(row: &Value, rules: &RuleSet, type_name: &str) -> (Simulation, u64) {
     ));
     sim.sound_events.clear_for_test();
     if row["rng_before"].is_object() {
-        sim.main_rng = serde_json::from_value::<SimRng>(row["rng_before"]["main"].clone())
-            .unwrap()
-            .into();
+        sim.main_rng = serde_json::from_value::<SimRng>(row["rng_before"]["main"].clone()).unwrap();
         sim.scenario_rng =
             serde_json::from_value::<SimRng>(row["rng_before"]["scenario"].clone()).unwrap();
         sim.mapgen_rng =
@@ -268,7 +266,7 @@ fn compare(row: &Value, rules: &RuleSet, type_name: &str) -> (Simulation, u64) {
             signed(&input["request"]),
             input["force"].as_bool().unwrap_or(false),
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     assert_eq!(accepted, row["accepted"] == 1, "{type_name}: {input}");
@@ -338,7 +336,7 @@ fn compare(row: &Value, rules: &RuleSet, type_name: &str) -> (Simulation, u64) {
         else {
             panic!("{input}: expected the positional native Voc request");
         };
-        assert_eq!(sound_id, name, "{input}: sound identity");
+        assert_eq!(sound_id.name_in(&rules), name, "{input}: sound identity");
         assert!(audible_to.is_none(), "{input}: native context0");
         assert_eq!(
             [
@@ -480,7 +478,11 @@ fn native_physical_ghost_tanya_wet_death_uses_raw_doing_and_stage() {
             .get_mut(id)
             .unwrap()
             .set_native_stage_value(frames);
-        assert!(sim.infantry_sequencer(id, &rules, crate::sim::world::FrameEffects::default()));
+        assert!(sim.infantry_sequencer(
+            id,
+            &rules,
+            &mut crate::sim::world::FrameEffects::default()
+        ));
         assert!(
             sim.substrate
                 .entities
@@ -529,7 +531,7 @@ fn physical_wet_death_advances_in_logic_and_uninitializes_without_animation() {
                 crate::sim::world::InfantryDeathSequence::Die2
             },
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let doing = signed(&row["after"]["doing"]);
         let frames = rules

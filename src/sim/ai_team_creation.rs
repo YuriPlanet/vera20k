@@ -57,7 +57,7 @@ use crate::sim::team_script_vm::{
 };
 use crate::sim::timer::CdTimer;
 use crate::sim::world::Simulation;
-use crate::util::native_x87::X87Chop53;
+use crate::util::native_x87::MaskedX87Chop53;
 
 /// The AI trigger weight that takes precedence (`0x006F0C72`): once one
 /// qualifies, only triggers of this weight compete.
@@ -132,7 +132,7 @@ pub(crate) fn update_team_creation(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner: InternedId,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let frame = sim.session.binary_frame() as i32;
     let Some(house) = sim.houses.get(&owner) else {
@@ -193,7 +193,7 @@ fn select_team_types(
     rules: &RuleSet,
     owner: InternedId,
     admission: AiTriggerAdmission,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> Vec<InternedId> {
     select_team_types_with(
         sim,
@@ -215,7 +215,7 @@ pub(crate) fn select_team_types_with(
     owner: InternedId,
     eligible: impl FnMut(&Simulation, &TeamAiTriggerDefinition, Option<InternedId>, bool) -> bool,
     mut draw: impl FnMut(&mut Simulation, i32, i32) -> i32,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> Vec<InternedId> {
     let Some(house) = sim.houses.get(&owner) else {
         return Vec::new();
@@ -323,9 +323,11 @@ fn draw_ai_trigger(
         if !eligible(sim, trigger, enemy, defense_full) {
             continue;
         }
-        let native = X87Chop53::ftol_i32_low_masked(
-            X87Chop53::load_f64(record.weight()).expect("an AI trigger weight is finite"),
-        );
+        // The running weight is saved state, so a damaged save can hold a
+        // non-finite one; the masked load converts it as native's FLD/FISTP
+        // do (to 0) instead of trusting the record() clamp alone.
+        let native =
+            MaskedX87Chop53::ftol_i32_low_masked(MaskedX87Chop53::load_f64(record.weight()));
         let weight = match personality {
             Some(personality) => {
                 match personality.effective_weight(

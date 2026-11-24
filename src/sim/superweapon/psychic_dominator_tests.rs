@@ -238,7 +238,7 @@ fn retail_process_steps_match_native() {
             &mut sim,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let state = sim.psychic_dominator;
@@ -674,7 +674,7 @@ fn retail_dominator_strike_captures_the_block() {
     let struck_at = frames;
     for id in [tank, conscript, squad[0], squad[1], own] {
         assert_eq!(owner_name(&sim, id), "Americans");
-        let link = &sim.substrate.entities.get(id).unwrap().mind_control;
+        let link = &sim.substrate.entities.get(id).unwrap().seldom.mind_control;
         assert!(link.is_mind_controlled() && link.controller().is_none());
         assert!(attached_anim(&sim, id, "MINDANIMR"), "{id} ringed");
     }
@@ -685,6 +685,7 @@ fn retail_dominator_strike_captures_the_block() {
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .mind_control
                 .is_mind_controlled()
         );
@@ -720,11 +721,12 @@ fn retail_dominator_strike_captures_the_block() {
     for id in [tank, conscript] {
         let entity = loaded.substrate.entities.get(id).unwrap();
         assert_eq!(
-            entity.mind_control,
-            sim.substrate.entities.get(id).unwrap().mind_control
+            entity.seldom.mind_control,
+            sim.substrate.entities.get(id).unwrap().seldom.mind_control
         );
         assert!(
-            entity.mind_control.is_mind_controlled() && entity.mind_control.controller().is_none()
+            entity.seldom.mind_control.is_mind_controlled()
+                && entity.seldom.mind_control.controller().is_none()
         );
     }
 
@@ -785,6 +787,7 @@ fn retail_dominator_strike_captures_the_block() {
             .entities
             .get(tank)
             .unwrap()
+            .seldom
             .mind_control
             .is_mind_controlled()
     );
@@ -810,7 +813,7 @@ fn retail_computer_dominator_sends_its_captives_hunting() {
         sw_type,
         TARGET,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         true,
     ));
     let mut frames = 0;
@@ -859,7 +862,7 @@ fn retail_computer_aims_its_dominator_at_the_group() {
         &rules,
         russians,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert_eq!(sim.psychic_dominator.status_number(), 1);
@@ -876,7 +879,7 @@ fn retail_computer_aims_its_dominator_at_the_group() {
         &rules,
         russians,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(sim.super_weapons[&russians][&sw_type].is_ready);
     assert_eq!(sim.psychic_dominator.cell(), cell);
@@ -919,7 +922,7 @@ fn retail_dominator_takes_a_captive_from_its_controller() {
         tank,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert_eq!(owner_name(&sim, tank), "YuriCountry");
     assert!(attached_anim(&sim, tank, "MINDANIM"));
@@ -932,7 +935,13 @@ fn retail_dominator_takes_a_captive_from_its_controller() {
         assert!(frames < 200, "no strike");
     }
     assert_eq!(owner_name(&sim, tank), "Americans");
-    let link = &sim.substrate.entities.get(tank).unwrap().mind_control;
+    let link = &sim
+        .substrate
+        .entities
+        .get(tank)
+        .unwrap()
+        .seldom
+        .mind_control;
     assert!(link.is_mind_controlled() && link.controller().is_none());
     let manager = sim
         .substrate

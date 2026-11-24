@@ -60,15 +60,18 @@ pub(crate) fn entity_layer(
     let mut adjusted_height = height;
     if kind == Some(LocomotorKind::Jumpjet) && !entity.on_bridge() {
         // This map lookup precedes the high-flying gate even when +74 is false.
-        let flags = terrain.map_or(0, |terrain| {
+        if let Some(terrain) = terrain {
             let cell = terrain.native_cell_identity(((raw.x / 256) as i16, (raw.y / 256) as i16));
-            terrain.native_cell_flags(cell)
-        });
-        if flags & 0x100 != 0
-            && height >= crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
-            && !entity.is_falling_down()
-        {
-            adjusted_height = height.wrapping_sub(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+            if terrain.native_cell_flags(cell) & 0x100 != 0 && !entity.is_falling_down() {
+                let above_deck = crate::sim::movement::ground_pose::corrected_deck_z(terrain, cell)
+                    .map_or_else(
+                        || height.wrapping_sub(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS),
+                        |deck| raw.z.wrapping_sub(deck),
+                    );
+                if above_deck >= 0 {
+                    adjusted_height = above_deck;
+                }
+            }
         }
     }
     // The owner's +54 (Foot4DE620 -> Object5F6B90, Aircraft41B920).

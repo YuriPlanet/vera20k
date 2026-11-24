@@ -131,9 +131,9 @@ pub(super) fn hash_entity_owed(
     entity.produce_cash.timer().hash(hasher);
     // Ares' upgrade timers fold once any was started, so other buildings
     // hash as earlier schemas did.
-    if entity.ares.cash_upgrade_timers != <[crate::sim::timer::CdTimer; 3]>::default() {
+    if entity.seldom.ares.cash_upgrade_timers != <[crate::sim::timer::CdTimer; 3]>::default() {
         b"ares-produce-cash-upgrades-v1".hash(hasher);
-        entity.ares.cash_upgrade_timers.hash(hasher);
+        entity.seldom.ares.cash_upgrade_timers.hash(hasher);
     }
     entity.drain.target().hash(hasher);
     entity.drain.draining_me().hash(hasher);
@@ -157,9 +157,9 @@ pub(super) fn hash_entity_owed(
     }
     // Foot+5C4..+5D1, an attack-move order: its scan, resume and
     // pointer expiry (`sim::mission::mega_mission`).
-    if entity.mega_mission != Default::default() {
+    if entity.seldom.mega_mission != Default::default() {
         0x5c4_u32.hash(hasher);
-        entity.mega_mission.hash(hasher);
+        entity.seldom.mega_mission.hash(hasher);
     }
     if entity.building.has_been_captured.is_set() {
         // Building+6E3: doubles the survivor divisor, widens the
@@ -226,20 +226,21 @@ pub(super) fn hash_entity_owed(
         b"foot-pending-entry-500".hash(hasher);
         pending.hash(hasher);
     }
-    if entity.building_entry.seeking() {
+    if entity.seldom.building_entry.seeking() {
         b"foot-building-entry-68f-690".hash(hasher);
-        entity.building_entry.hash(hasher);
+        entity.seldom.building_entry.hash(hasher);
     }
     let latches = entity.house_tracking_latches();
     #[cfg(feature = "phobos")]
     {
         b"phobos-techno-placement-v1".hash(hasher);
-        entity.phobos_placement.hash(hasher);
-        if let Some(shield) = &entity.shield {
+        entity.seldom.phobos_placement.hash(hasher);
+        if let Some(shield) = &entity.seldom.shield {
             b"phobos-shield-v1".hash(hasher);
             shield.hash(hasher);
         }
         entity
+            .seldom
             .wh_anim_remaining_creation_interval
             .hash_state(hasher);
     }
@@ -249,7 +250,7 @@ pub(super) fn hash_entity_owed(
         b"naval-tracking-eligibility-v1".hash(hasher);
     }
     entity.tracking_facts().hash_retained_inputs(hasher);
-    if let Some(multiplier) = entity.ares.factory_plant_multiplier {
+    if let Some(multiplier) = entity.seldom.ares.factory_plant_multiplier {
         b"ares-plant-multiplier-v1".hash(hasher);
         multiplier.hash(hasher);
     }
@@ -262,11 +263,11 @@ pub(super) fn hash_entity_owed(
         b"slave-manager-v209".hash(hasher);
         manager.hash(hasher);
     }
-    if entity.slave.owner().is_some() || !entity.slave.cargo().is_empty() {
+    if entity.seldom.slave.owner().is_some() || !entity.seldom.slave.cargo().is_empty() {
         b"slave-v209".hash(hasher);
-        entity.slave.owner().hash(hasher);
-        entity.slave.cargo().len().hash(hasher);
-        for bale in entity.slave.cargo() {
+        entity.seldom.slave.owner().hash(hasher);
+        entity.seldom.slave.cargo().len().hash(hasher);
+        for bale in entity.seldom.slave.cargo() {
             bale.tiberium_type.0.hash(hasher);
             (bale.resource_type as u8).hash(hasher);
             bale.value.hash(hasher);
@@ -291,8 +292,12 @@ pub(super) fn hash_entity_owed(
     entity.lifecycle.in_limbo().hash(hasher);
     entity.lifecycle.cell_marked().hash(hasher);
     entity.death.is_dying().hash(hasher);
-    entity.removal_facts.dirty_rect_eligible().hash(hasher);
-    entity.kill_record.is_recorded().hash(hasher);
+    entity
+        .seldom
+        .removal_facts
+        .dirty_rect_eligible()
+        .hash(hasher);
+    entity.seldom.kill_record.is_recorded().hash(hasher);
     // TechnoClass+0x3D5 is mutable admission state, not a derived
     // position query: ordinary movement is promote-only while
     // teleport and Set_Clipped_LocalSize own exact demotions.
@@ -305,7 +310,7 @@ pub(super) fn hash_entity_owed(
         entity.sinking.hash(hasher);
     }
     entity.is_mission_only().hash(hasher);
-    if entity.on_carryall.get() {
+    if entity.seldom.on_carryall.get() {
         b"foot-on-carryall-v1".hash(hasher);
     }
     entity.move_sound.countdown().hash(hasher);
@@ -342,7 +347,7 @@ pub(super) fn hash_entity_owed(
         b"building-tesla-charge-v1".hash(hasher);
         entity.building.tesla_charge.hash(hasher);
     }
-    if entity.tesla_charger.is_active() {
+    if entity.seldom.tesla_charger.is_active() {
         b"foot-tesla-charger-v1".hash(hasher);
     }
     // Building+6E6 is retained transition state, independent of HP.
@@ -425,37 +430,37 @@ pub(super) fn hash_entity_owed(
         b"techno-deactivated-v1".hash(hasher);
     }
     entity.hash_emp_state(hasher);
-    if let Some(source) = entity.ares.powered_by {
+    if let Some(source) = entity.seldom.ares.powered_by {
         b"ares-powered-by-v1".hash(hasher);
         source.hash(hasher);
     }
-    if !entity.ares.radar_jam.is_default() {
+    if !entity.seldom.ares.radar_jam.is_default() {
         b"ares-radar-jam-v1".hash(hasher);
-        entity.ares.radar_jam.hash(hasher);
+        entity.seldom.ares.radar_jam.hash(hasher);
     }
-    if !entity.ares.sensor_array_counter.is_zero() {
+    if !entity.seldom.ares.sensor_array_counter.is_zero() {
         b"ares-sensor-array-counter-v1".hash(hasher);
-        entity.ares.sensor_array_counter.hash(hasher);
+        entity.seldom.ares.sensor_array_counter.hash(hasher);
     }
-    if !entity.ares.ares_dock_reload_timers.is_empty() {
+    if !entity.seldom.ares.ares_dock_reload_timers.is_empty() {
         b"ares-dock-reload-timers-v1".hash(hasher);
-        entity.ares.ares_dock_reload_timers.hash(hasher);
+        entity.seldom.ares.ares_dock_reload_timers.hash(hasher);
     }
-    if !entity.ares.ares_firestorm_wall.is_zero() {
+    if !entity.seldom.ares.ares_firestorm_wall.is_zero() {
         b"ares-firestorm-wall-frame-v1".hash(hasher);
-        entity.ares.ares_firestorm_wall.hash(hasher);
+        entity.seldom.ares.ares_firestorm_wall.hash(hasher);
     }
-    if entity.ares.sonar_timer != crate::sim::timer::CdTimer::default() {
+    if entity.seldom.ares.sonar_timer != crate::sim::timer::CdTimer::default() {
         b"ares-sonar-timer-v1".hash(hasher);
-        entity.ares.sonar_timer.hash(hasher);
+        entity.seldom.ares.sonar_timer.hash(hasher);
     }
-    if entity.ares.ares_disable_weapons != crate::sim::timer::CdTimer::default() {
+    if entity.seldom.ares.ares_disable_weapons != crate::sim::timer::CdTimer::default() {
         b"ares-disable-weapons-timer-v1".hash(hasher);
-        entity.ares.ares_disable_weapons.hash(hasher);
+        entity.seldom.ares.ares_disable_weapons.hash(hasher);
     }
-    if entity.ares.ares_self_heal_combat != crate::sim::timer::CdTimer::default() {
+    if entity.seldom.ares.ares_self_heal_combat != crate::sim::timer::CdTimer::default() {
         b"ares-self-heal-combat-timer-v1".hash(hasher);
-        entity.ares.ares_self_heal_combat.hash(hasher);
+        entity.seldom.ares.ares_self_heal_combat.hash(hasher);
     }
     entity.hash_attach_effects(hasher);
     #[cfg(feature = "phobos")]
@@ -493,20 +498,29 @@ pub(super) fn hash_entity_owed(
     (entity.category() as u8).hash(hasher);
     // Keep the stock name encoding used before Foundation became an enum.
     // Custom values still fold their full dimensions, cells and exit outline.
-    let foundation = entity.type_facts.foundation();
+    let foundation = entity.seldom.type_facts.foundation();
     match foundation {
         crate::rules::foundation::Foundation::Stock(_) => foundation.name().hash(hasher),
         _ => foundation.hash(hasher),
     }
-    entity.type_facts.building_hidden_occupancy().hash(hasher);
-    entity.type_facts.base_reservation_spacing().hash(hasher);
-    if entity.type_facts.build_const_eligible() {
-        b"naval-build-const-entity-v1".hash(hasher);
-        entity.type_facts.build_const_eligible().hash(hasher);
-    }
-    entity.type_facts.base_plan_type_index().hash(hasher);
-    entity.type_facts.base_plan_is_defense().hash(hasher);
     entity
+        .seldom
+        .type_facts
+        .building_hidden_occupancy()
+        .hash(hasher);
+    entity
+        .seldom
+        .type_facts
+        .base_reservation_spacing()
+        .hash(hasher);
+    if entity.seldom.type_facts.build_const_eligible() {
+        b"naval-build-const-entity-v1".hash(hasher);
+        entity.seldom.type_facts.build_const_eligible().hash(hasher);
+    }
+    entity.seldom.type_facts.base_plan_type_index().hash(hasher);
+    entity.seldom.type_facts.base_plan_is_defense().hash(hasher);
+    entity
+        .seldom
         .type_facts
         .base_plan_has_undeploy_target()
         .hash(hasher);
@@ -519,33 +533,45 @@ pub(super) fn hash_entity_owed(
     // The flash countdown (+F0) is not folded: TechnoClass::Flash's gate and
     // the MegaMission event's flash read the current player, so lockstep
     // peers hold different values, and no gameplay decision reads it.
-    entity.crate_multipliers.crate_armor().bits().hash(hasher);
-    if entity.armor_multiplier() != entity.crate_multipliers.crate_armor() {
+    entity
+        .seldom
+        .crate_multipliers
+        .crate_armor()
+        .bits()
+        .hash(hasher);
+    if entity.armor_multiplier() != entity.seldom.crate_multipliers.crate_armor() {
         b"attached-armor-v1".hash(hasher);
         entity.armor_multiplier().bits().hash(hasher);
     }
     // Folded only once a Firepower crate changed it, so the legacy
     // hash stream of every untouched object is preserved.
-    if entity.crate_multipliers.crate_firepower() != crate::util::native_x87::NativeF64Bits::ONE {
+    if entity.seldom.crate_multipliers.crate_firepower()
+        != crate::util::native_x87::NativeF64Bits::ONE
+    {
         b"firepower-mult-v1".hash(hasher);
         entity
+            .seldom
             .crate_multipliers
             .crate_firepower()
             .bits()
             .hash(hasher);
     }
-    if entity.firepower_multiplier() != entity.crate_multipliers.crate_firepower() {
+    if entity.firepower_multiplier() != entity.seldom.crate_multipliers.crate_firepower() {
         b"attached-firepower-v1".hash(hasher);
         entity.firepower_multiplier().bits().hash(hasher);
     }
     entity.berserk.hash(hasher);
-    entity.ai_sell_repair.was_attacked_by_enemy().hash(hasher);
+    entity
+        .seldom
+        .ai_sell_repair
+        .was_attacked_by_enemy()
+        .hash(hasher);
     if entity.category() == crate::map::entities::EntityCategory::Structure {
-        entity.ai_sell_repair.ai_sellable().hash(hasher);
+        entity.seldom.ai_sell_repair.ai_sellable().hash(hasher);
     }
     if entity.category() == crate::map::entities::EntityCategory::Structure {
         entity.building.repairing.is_on().hash(hasher);
-        entity.ai_sell_repair.ai_repairable().hash(hasher);
+        entity.seldom.ai_sell_repair.ai_repairable().hash(hasher);
     }
     let ai_placement_timer = entity.building.ai_placement_timer.timer();
     if ai_placement_timer != crate::sim::timer::CdTimer::default() {
@@ -553,13 +579,13 @@ pub(super) fn hash_entity_owed(
         ai_placement_timer.hash(hasher);
     }
     b"base-defense-response-v1".hash(hasher);
-    entity.base_defense_response.hash(hasher);
+    entity.seldom.base_defense_response.hash(hasher);
     entity.mover_facts.regular_crusher().hash(hasher);
     entity.mover_facts.drive_accelerates().hash(hasher);
     entity.damage_fires.is_active().hash(hasher);
     entity.damage_fires.anim_ids().hash(hasher);
-    entity.sight.range().hash(hasher);
-    entity.sight_refresh_timers.hash(hasher);
+    entity.seldom.sight.range().hash(hasher);
+    entity.seldom.sight_refresh_timers.hash(hasher);
     if entity.building.gap_generator != crate::sim::world::GapGeneratorRuntime::default() {
         b"gap-operational-v144".hash(hasher);
         entity.building.gap_generator.hash(hasher);
@@ -636,21 +662,21 @@ pub(super) fn hash_entity_owed(
         0x2b0_u32.hash(hasher);
         source.hash(hasher);
     }
-    if entity.drop_credit.being_manipulated() {
+    if entity.seldom.drop_credit.being_manipulated() {
         0x427_u32.hash(hasher);
     }
-    if let Some(firer) = entity.drop_credit.manipulated_by() {
+    if let Some(firer) = entity.seldom.drop_credit.manipulated_by() {
         0x428_u32.hash(hasher);
         firer.hash(hasher);
     }
-    if let Some(house) = entity.drop_credit.warped_by_house() {
+    if let Some(house) = entity.seldom.drop_credit.warped_by_house() {
         0x42c_u32.hash(hasher);
         house.hash(hasher);
     }
     // Techno+0x1F8 is up only between the Teleporter arm's can't-end
     // branch and the next Unit setter call; the tag keeps every
     // established stream unchanged while it is clear.
-    if entity.setter_force_reassign.is_raised() {
+    if entity.seldom.setter_force_reassign.is_raised() {
         0x1f8_u32.hash(hasher);
     }
     // Techno+0x284 stays zero until a blocked Chronosphere landing
@@ -658,6 +684,12 @@ pub(super) fn hash_entity_owed(
     if entity.chrono_warp_delay() != 0 {
         0x284_u32.hash(hasher);
         entity.chrono_warp_delay().hash(hasher);
+    }
+    // Tiberian Sun's limpets (`sim::limpet`), which Firestorm's sync CRC
+    // folds (`Object_CRC 0x00638F4E`); tagged like +0x1F8.
+    if entity.seldom.limpets.is_attached() {
+        b"ts-limpets-v1".hash(hasher);
+        entity.seldom.limpets.hash(hasher);
     }
 
     if let Some(ref loco) = entity.locomotor {
@@ -674,6 +706,7 @@ pub(super) fn hash_entity_owed(
 
     entity.on_bridge().hash(hasher);
     entity
+        .seldom
         .runtime_bridge_transition
         .pending_mismatch()
         .hash(hasher);
@@ -704,7 +737,7 @@ pub(super) fn hash_entity_owed(
     } else {
         0u8.hash(hasher);
     }
-    if let Some(disguise) = entity.disguise.as_ref() {
+    if let Some(disguise) = entity.seldom.disguise.as_ref() {
         1u8.hash(hasher);
         disguise.hash_state(hasher);
     } else {
@@ -725,15 +758,15 @@ pub(super) fn hash_entity_owed(
     } else {
         0u8.hash(hasher);
     }
-    entity.rearm_timer.start_frame().hash(hasher);
-    entity.rearm_timer.duration().hash(hasher);
-    entity.weapon_burst.hash(hasher);
+    entity.seldom.rearm_timer.start_frame().hash(hasher);
+    entity.seldom.rearm_timer.duration().hash(hasher);
+    entity.seldom.weapon_burst.hash(hasher);
     entity.building.pending_building_fire.pending().hash(hasher);
     if entity.building.prism_support_count.count() != 0 {
         b"prism-support-count-v1".hash(hasher);
         entity.building.prism_support_count.count().hash(hasher);
     }
-    entity.ares.ares_prism.hash_state(hasher);
+    entity.seldom.ares.ares_prism.hash_state(hasher);
     // One native weapon owner replaces last-shot/transport copies.
     // The turret index and saved charge duration only drive drawing.
     entity.current_weapon_number().hash(hasher);
@@ -741,10 +774,10 @@ pub(super) fn hash_entity_owed(
     // Slot-indexed fold: capacity + each slot's Option (null holes and
     // pad positions are hash-relevant). Replaces the old len + ordered-id
     // fold — an intended one-time re-baseline at this behavior boundary.
-    entity.radio_contacts.hash_fold(hasher);
+    entity.seldom.radio_contacts.hash_fold(hasher);
     // Dock-entered flag (+0x418 analogue). Intended one-time re-baseline
     // at this behavior boundary alongside the slot-folded contacts.
-    match entity.tether.partner() {
+    match entity.seldom.tether.partner() {
         Some(sid) => {
             1u8.hash(hasher);
             sid.hash(hasher);
@@ -761,10 +794,11 @@ pub(super) fn hash_entity_owed(
         }
         None => false.hash(hasher),
     }
-    entity.ares.display_production_to.hash_state(hasher);
-    entity.idle_wander.hash_state(hasher);
-    entity.ares.ares_raid.hash_state(hasher);
+    entity.seldom.ares.display_production_to.hash_state(hasher);
+    entity.seldom.idle_wander.hash_state(hasher);
+    entity.seldom.ares.ares_raid.hash_state(hasher);
     entity
+        .seldom
         .ares
         .ares_initial_payload
         .hash_state(entity.category(), hasher);
@@ -783,9 +817,9 @@ pub(super) fn hash_entity_owed(
 
     // Unit+68C remains the deployment authority. The former MCV-only
     // turn observation now hashes once in its retained locomotor class.
-    if entity.mcv_deploy_pending.is_pending() {
+    if entity.seldom.mcv_deploy_pending.is_pending() {
         0x4d435644u32.hash(hasher);
-        entity.mcv_deploy_pending.is_pending().hash(hasher);
+        entity.seldom.mcv_deploy_pending.is_pending().hash(hasher);
     }
     entity.hash_deploy_attachment(hasher);
     entity.hash_behind_anim(hasher);
@@ -891,8 +925,12 @@ pub(super) fn hash_entity_owed(
             // transport's own Unload state 0. Folded only when set so
             // objects that never unloaded (every pinned harness
             // object) keep their v-schema bytes.
-            if entity.transport_unload_keep_count.count() != 0 {
-                entity.transport_unload_keep_count.count().hash(hasher);
+            if entity.seldom.transport_unload_keep_count.count() != 0 {
+                entity
+                    .seldom
+                    .transport_unload_keep_count
+                    .count()
+                    .hash(hasher);
             }
         }
         None => {
@@ -954,16 +992,16 @@ pub(super) fn hash_entity_owed(
     // conditional field has it too. It is not reachable here — a live
     // pool always folds a tag plus its spawn type and mode — but the
     // invariant is "no known aliasing", not "aliasing is impossible".
-    entity.airstrike.hash_state(hasher);
+    entity.seldom.airstrike.hash_state(hasher);
     entity.airstrike_tint.hash_state(hasher);
-    if entity.type_facts.spawned_non_missile_aircraft() {
+    if entity.seldom.type_facts.spawned_non_missile_aircraft() {
         b"spawned-non-missile-aircraft".hash(hasher);
     }
     if let Some(ref manager) = entity.spawn_manager {
         1u8.hash(hasher);
         manager.hash(hasher);
     }
-    if let Some(owner_id) = entity.spawn_owner_id.owner() {
+    if let Some(owner_id) = entity.seldom.spawn_owner_id.owner() {
         2u8.hash(hasher);
         owner_id.hash(hasher);
     }
@@ -974,10 +1012,10 @@ pub(super) fn hash_entity_owed(
         3u8.hash(hasher);
         manager.hash(hasher);
     }
-    if entity.mind_control != crate::sim::capture_manager::MindControlLink::default() {
+    if entity.seldom.mind_control != crate::sim::capture_manager::MindControlLink::default() {
         // The victim's MindControlledBy (+2C0) and ring (+2C8).
         0x2c0_u32.hash(hasher);
-        entity.mind_control.hash(hasher);
+        entity.seldom.mind_control.hash(hasher);
     }
     // TemporalImUsing (+274) and TemporalTargetingMe (+278). Objects
     // with neither fold nothing, so worlds without a Temporal firer
@@ -1032,11 +1070,11 @@ pub(super) fn hash_entity_owed(
 
     hash_mission_com(&entity.mission, owed_visits, hasher);
     hash_mission_leaf(&entity.mission_leaf, hasher);
-    if let Some(post) = entity.patrol_post.cell() {
+    if let Some(post) = entity.seldom.patrol_post.cell() {
         b"foot-patrol-post-v1".hash(hasher);
         post.hash(hasher);
     }
-    entity.removal_facts.occupier().hash(hasher);
+    entity.seldom.removal_facts.occupier().hash(hasher);
     entity.passive_scan.timer().hash(hasher);
     // Passive-acquire bookkeeping. `passively_acquired_target` gates
     // the stale-target drop and the off-mission clear, so a
@@ -1052,7 +1090,7 @@ pub(super) fn hash_entity_owed(
         0x004D_9920_u32.hash(hasher);
         true.hash(hasher);
     }
-    match entity.suspended_attack_target.target() {
+    match entity.seldom.suspended_attack_target.target() {
         Some(target) => {
             1u8.hash(hasher);
             target.hash(hasher);
@@ -1082,20 +1120,21 @@ pub(super) fn hash_entity_owed(
     // Preserve the constructor-NULL representation while hashing the actual
     // retained system identity, which gates FireAt/GetROF and future AI draws.
     entity
+        .seldom
         .spark_particle_system
         .system()
         .unwrap_or(0)
         .hash(hasher);
     // ReceiveDamage damage-Smoke `+0x310` identity. This gates later
     // spawn/RNG and remains set while a marked system drains.
-    entity.damage_smoke_system_id.system().hash(hasher);
+    entity.seldom.damage_smoke_system_id.system().hash(hasher);
     // The Railgun `+0x314` link gates the next railgun shot. Hashed only
     // when set, so objects that never fired a railgun hash as before.
-    if let Some(system) = entity.railgun_particle_system.system() {
+    if let Some(system) = entity.seldom.railgun_particle_system.system() {
         system.hash(hasher);
     }
     // The Fire `+0x304` link gates the next fire shot, hashed the same way.
-    if let Some(system) = entity.fire_particle_system.system() {
+    if let Some(system) = entity.seldom.fire_particle_system.system() {
         (0x304_u16, system).hash(hasher);
     }
     // A Building's natural `+0x30C` link gates the cloak fade-in's rebuild
@@ -1195,6 +1234,11 @@ fn hash_locomotor_payload(
             state.fall_counter().hash(hasher);
             state.target_speed().bits().hash(hasher);
             state.current_speed().bits().hash(hasher);
+            // Fly+53/+54 (Power_Off `0x004CFD20`), only while it spins: a
+            // game without a spin keeps its hash.
+            if let Some(rate) = state.spin() {
+                rate.hash(hasher);
+            }
         }
         LocomotorRuntimePayload::Jumpjet(state) => {
             10u8.hash(hasher);

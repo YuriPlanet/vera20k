@@ -2,7 +2,7 @@
 //! plain (Terrain/Overlay/Smudge), Particle, ParticleSystem, VoxelAnim, Tiberium.
 
 use super::RulesPassProcessor;
-use super::{ProcessedType, RulesTypeFamily, read_ares_type_ref};
+use super::{ProcessedType, RulesTypeFamily, read_ares_type_ref, read_member};
 use crate::rules::error::RulesError;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ini_parser::is_native_none_type_name;
@@ -55,6 +55,20 @@ impl RulesPassProcessor {
                     section,
                     "StopSound",
                     member.anim_references.stop_sound.take(),
+                );
+                // Tiberian Sun's BounceSound= and ExpireSound=, read as
+                // Firestorm 2.0 reads them (0x00419181..0x00419216):
+                // ReadString 0x80 and VocClass::From_Name (0x00664ED0), an
+                // empty or unknown name keeping the slot. gamemd reads neither.
+                member.anim_references.bounce_sound = fixed_sounds.read_rules_reference(
+                    section,
+                    "BounceSound",
+                    member.anim_references.bounce_sound.take(),
+                );
+                member.anim_references.expire_sound = fixed_sounds.read_rules_reference(
+                    section,
+                    "ExpireSound",
+                    member.anim_references.expire_sound.take(),
                 );
                 // AnimTypeRead427D1B admits the inherited Object read, then
                 //427D9D..427DDD supplies its own theater flags and image call.
@@ -138,9 +152,7 @@ impl RulesPassProcessor {
         let ares_way = crate::rules::ares_switch::ares_way();
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::Weapon) {
-            if let Some((_id, raw, _effective)) =
-                self.begin_rules_member_read(RulesTypeFamily::Weapon, index, pass)
-            {
+            if let Some(raw) = self.begin_rules_member_read(RulesTypeFamily::Weapon, index, pass) {
                 // 7722D4..772350: these scalar reads precede the later
                 // constructor-capable animation and type-reference reads.
                 let state = &mut self.family_mut(RulesTypeFamily::Weapon)[index].weapon;
@@ -258,7 +270,7 @@ impl RulesPassProcessor {
                     self.family_mut(RulesTypeFamily::Weapon)[index]
                         .weapon
                         .ares_abductor_anim = anim;
-                    self.families.get_mut(&RulesTypeFamily::Weapon).unwrap()[index]
+                    read_member(&mut self.families, RulesTypeFamily::Weapon, index)
                         .weapon
                         .ares_cursors
                         .read_pass(&raw, &self.ares_mouse_cursors);
@@ -309,7 +321,7 @@ impl RulesPassProcessor {
         let color_names: Vec<_> = self.colors.iter().map(|(name, _)| name.clone()).collect();
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::Projectile) {
-            if let Some((_id, raw, _effective)) =
+            if let Some(raw) =
                 self.begin_rules_member_read(RulesTypeFamily::Projectile, index, pass)
             {
                 // Full native body46BEE0: base Object ART reads precede the
@@ -355,9 +367,7 @@ impl RulesPassProcessor {
         let ares_way = crate::rules::ares_switch::ares_way();
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::Warhead) {
-            if let Some((_id, raw, _effective)) =
-                self.begin_rules_member_read(RulesTypeFamily::Warhead, index, pass)
-            {
+            if let Some(raw) = self.begin_rules_member_read(RulesTypeFamily::Warhead, index, pass) {
                 let particle = self.resolve_scalar_from(
                     &raw,
                     "Particle",
@@ -579,8 +589,7 @@ impl RulesPassProcessor {
     ) {
         let mut index = 0;
         while index < self.family_len(family) {
-            if let Some((_id, raw, _effective)) = self.begin_rules_member_read(family, index, pass)
-            {
+            if let Some(raw) = self.begin_rules_member_read(family, index, pass) {
                 self.family_mut(family)[index].read_object_sound(&raw, fixed_sounds);
                 let theater = self.image_theater;
                 let tree_strength = self.rules_tree_strength;
@@ -683,8 +692,7 @@ impl RulesPassProcessor {
     pub(super) fn process_particle_family(&mut self, pass: &IniFile, fixed_sounds: &SoundRegistry) {
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::Particle) {
-            if let Some((_id, raw, _effective)) =
-                self.begin_rules_member_read(RulesTypeFamily::Particle, index, pass)
+            if let Some(raw) = self.begin_rules_member_read(RulesTypeFamily::Particle, index, pass)
             {
                 self.family_mut(RulesTypeFamily::Particle)[index]
                     .read_object_sound(&raw, fixed_sounds);
@@ -715,7 +723,7 @@ impl RulesPassProcessor {
     ) {
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::ParticleSystem) {
-            if let Some((_id, raw, _effective)) =
+            if let Some(raw) =
                 self.begin_rules_member_read(RulesTypeFamily::ParticleSystem, index, pass)
             {
                 self.family_mut(RulesTypeFamily::ParticleSystem)[index]
@@ -745,15 +753,13 @@ impl RulesPassProcessor {
     ) {
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::VoxelAnimation) {
-            if let Some((_id, raw, _effective)) =
+            if let Some(raw) =
                 self.begin_rules_member_read(RulesTypeFamily::VoxelAnimation, index, pass)
             {
                 self.family_mut(RulesTypeFamily::VoxelAnimation)[index]
                     .read_object_sound(&raw, fixed_sounds);
                 // ObjectRead5F92D0 runs before the subtype's model selection.
-                self.families
-                    .get_mut(&RulesTypeFamily::VoxelAnimation)
-                    .unwrap()[index]
+                read_member(&mut self.families, RulesTypeFamily::VoxelAnimation, index)
                     .object_image
                     .read_ini(
                         &raw,
@@ -850,10 +856,8 @@ impl RulesPassProcessor {
                             })
                     })
                 });
-                let member = &mut self
-                    .families
-                    .get_mut(&RulesTypeFamily::VoxelAnimation)
-                    .unwrap()[index];
+                let member =
+                    read_member(&mut self.families, RulesTypeFamily::VoxelAnimation, index);
                 member.voxel_anim_read = true;
                 member.voxel_anim_share_flags = flags;
                 if flags.iter().any(|flag| *flag) {

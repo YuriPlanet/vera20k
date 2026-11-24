@@ -249,6 +249,8 @@ fn synthetic_theater_with_wood_bridge_set() -> TheaterData {
         automatic_tube_bases: [-1; 4],
         cliff_ranges: crate::map::theater::TheaterCliffRanges::default(),
         rmg_tiles: crate::map::theater::RmgTileKeys::default(),
+        ice_sets: None,
+        terrain_files: crate::map::theater::TerrainFiles::GameFolder,
     }
 }
 
@@ -274,6 +276,8 @@ fn synthetic_theater_from_ini(ini: &[u8]) -> TheaterData {
         automatic_tube_bases: [-1; 4],
         cliff_ranges: crate::map::theater::TheaterCliffRanges::default(),
         rmg_tiles: crate::map::theater::RmgTileKeys::default(),
+        ice_sets: None,
+        terrain_files: crate::map::theater::TerrainFiles::GameFolder,
     }
 }
 

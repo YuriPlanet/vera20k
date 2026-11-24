@@ -17,6 +17,7 @@ use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::timer::CdTimer;
 use crate::sim::world::FrameEffects;
+use crate::sim::world::ObjectKind;
 use crate::sim::world::{SimSoundEvent, Simulation};
 use crate::util::native_x87::{NativeF64Bits, X87Chop53};
 
@@ -68,7 +69,7 @@ impl Simulation {
         id: AnimId,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, RuntimeOverlayError> {
         // One read serves the visit's prefix and gates: most visits end at a
         // gate, and each step that may write the anim re-reads it (VERA-only,
@@ -79,15 +80,21 @@ impl Simulation {
         let type_id = anim.type_id;
         let mut gates = AnimGates::of(anim);
         // Borrowed from the rules, not the world: the visit below mutates the
-        // world while it reads the type.
-        let Some(config) = rules
-            .art()
-            .anim_runtime_config(self.interner.resolve(type_id))
-        else {
+        // world while it reads the type. Found by the type id's handle, not
+        // its name (VERA-only, same config).
+        let Some(config_handle) = self.interner.anim_type_config_handle(type_id, rules) else {
             self.destroy_anim(id, rules);
             return Ok(false);
         };
+        let config = rules.art().anim_config(config_handle);
 
+        // Ares `AnimClass_Update_AlphaLight` (hook `0x00423B0B`,
+        // `Ares.dll 100476C0`) moves a glow before the flaming-guy test; a
+        // flaming guy's moves at the head of its ObjectClass::AI
+        // (`anim_flaming_guy_ai`).
+        if rules.ares() && !config.is_flaming_guy {
+            self.update_alpha_shape(id, ObjectKind::Anim, rules);
+        }
         //423B17/423B1E precede the ordinary first-AI, delay and timer gates.
         if config.is_flaming_guy {
             self.anim_flaming_guy_ai(id, &config, rules, overlay_registry);
@@ -191,7 +198,7 @@ impl Simulation {
                 descriptor,
                 world_coord,
                 constructor,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             ) {
                 Ok(_) => {}
                 Err(AnimSpawnError::Tiberium(error)) => {
@@ -210,11 +217,9 @@ impl Simulation {
         //AnimAI424322..42435F: a DropZone marker ends over the first ground
         //Building at its current GetCoords, before first-AI/delay/timer gates.
         //NoEffects does not gate this test; a deck-only Building does not end it.
-        if rules
-            .general
-            .drop_zone_anim
-            .as_deref()
-            .is_some_and(|name| name.eq_ignore_ascii_case(self.interner.resolve(type_id)))
+        //The type compare is by config handle: the same answer as the names'
+        //case-insensitive compare for this type, which has a config.
+        if self.interner.is_drop_zone_anim(config_handle, rules)
             && self.anim_absolute_coord(id).is_some_and(|world| {
                 Self::map_coord_cell(&self.resolved_terrain, world.x, world.y)
                     .and_then(|(x, y)| {
@@ -285,6 +290,8 @@ impl Simulation {
                     .ok_or(TiberiumImageError::MissingOverlay(i32::from(overlay)))?
                     .cell_anim
                     .as_deref()
+                    // The overlay type holds its CellAnim= as a name, not an
+                    // AnimType handle; the compare allocates nothing.
                     .is_some_and(|name| name.eq_ignore_ascii_case(self.interner.resolve(type_id)))
             } else {
                 false
@@ -401,7 +408,7 @@ impl Simulation {
         config: &AnimTypeRuntimeConfig,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let ares = rules.ares_form();
         let Some(anim) = self.anim(id) else {
@@ -567,7 +574,7 @@ impl Simulation {
         damage: i32,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let (Some(warhead), Some(coord)) =
             (weapon.warhead.as_deref(), self.anim_absolute_coord(id))
@@ -645,7 +652,7 @@ impl Simulation {
         make_infantry: i32,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some((location, owner)) = self
             .anim(id)
@@ -688,7 +695,6 @@ impl Simulation {
         let Some(owner) = owner else {
             return true;
         };
-        let owner_name = self.interner.resolve(owner).to_string();
         let (rx, ry, _, _, _) = location.to_cell_sub_z();
         // Rules6707DC/67BB10 retains an InfantryType pointer; AnimAI4249F9
         // calls that type's creator, independent of other name registries.
@@ -699,7 +705,7 @@ impl Simulation {
         };
         let Some(infantry) = self.construct_resolved_object_limbo_at_height(
             object,
-            &owner_name,
+            owner,
             rx,
             ry,
             0,
@@ -824,13 +830,14 @@ impl Simulation {
         config: &AnimTypeRuntimeConfig,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), AnimSpawnError> {
         let ares = rules.ares_form();
         let sound_name = self.anim(id).and_then(|anim| {
             (!anim.no_effects())
-                .then(|| config.start_sound.clone())
+                .then(|| config.start_sound.as_deref())
                 .flatten()
+                .map(|name| rules.sound_name(name))
         });
         if let Some(sound_name) = sound_name
             && let Some(world) = self.anim_absolute_coord(id)
@@ -874,9 +881,9 @@ impl Simulation {
         else {
             return Ok(());
         };
-        if !rules
-            .art()
-            .anim_runtime_config(self.interner.resolve(type_id))
+        if !self
+            .interner
+            .anim_type_config(type_id, rules)
             .is_some_and(|config| config.tiberium_chain_reaction)
         {
             return Ok(());
@@ -1111,12 +1118,11 @@ impl Simulation {
         if stored.z.wrapping_sub(ground) >= ANIM_MIDDLE_MAX_HEIGHT {
             return;
         }
-        let type_name = self
+        // The middle frame's size is on the ART entry, which the lookup
+        // finds by the name in ASCII uppercase, on the stack.
+        let (width, height) = self
             .anim(id)
-            .map(|anim| self.interner.resolve(anim.type_id).to_ascii_uppercase());
-        let (width, height) = type_name
-            .as_deref()
-            .and_then(|name| rules.art().get(name))
+            .and_then(|anim| rules.art().get(self.interner.resolve(anim.type_id)))
             .map_or((30, 30), |entry| {
                 (i32::from(entry.frame_width), i32::from(entry.frame_height))
             });
@@ -1205,7 +1211,7 @@ impl Simulation {
         next: &str,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), AnimSpawnError> {
         let Some(config) = rules.art().anim_runtime_config(next) else {
             self.destroy_anim(id, rules);

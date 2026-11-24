@@ -34,6 +34,7 @@ use crate::sim::occupancy::{OccupancyGrid, RawCellOccupationGrid};
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::pathfinding::zone_map::ZoneGrid;
+use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS;
 use crate::util::native_x87::{X87Chop53, sqrt_approx_f32};
 
 /// Foot4CBC40..4CBEE2: search the side of `target` facing `from`, in
@@ -191,8 +192,8 @@ pub struct NearbyQuery<'a> {
     /// Bridge filter applied AFTER passability (an FNPC filter, not a passability arg).
     pub allow_bridge_cells: bool,
     /// Caller's terrain-level gate. When set, a candidate is admitted only while it
-    /// stays within one level of the seed cell, with a four-level correction for a
-    /// candidate that carries a bridge. Both free-unit placement attempts set it.
+    /// stays within one level of the seed cell. Structural candidates use their
+    /// effective deck level. Both free-unit placement attempts set this gate.
     pub check_height: bool,
     /// Native independent tenth argument, checked after the height gate.
     pub require_burrowable: bool,
@@ -391,8 +392,8 @@ where
     let cap = q.radius_cap.min(RADIUS_HARD_CAP) as i32;
     let mut direct_found = false;
     //56DC6B..56DC92 always performs the seed lookup, even with height gate
-    //disabled. The bridge-aware second lookup56DCA8..56DCDC adds four to
-    //this retained level when the seed has structural bit100.
+    //disabled. The bridge-aware second lookup56DCA8..56DCDC selects the deck
+    //when the seed has structural bit100.
     let mut level = projection_cell_view(q, seed.0, seed.1).signed_level as i16;
     if q.passability.bridge_aware_zone
         && if q.resolved_terrain.is_some() {
@@ -403,7 +404,9 @@ where
             candidate_is_bridge_cell(q, seed.0, seed.1)
         }
     {
-        level = level.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS as i16);
+        level = nearby_terrain(q)
+            .and_then(|terrain| fixed_deck_level(terrain, seed.0, seed.1))
+            .unwrap_or_else(|| level.wrapping_add(BRIDGE_DECK_HEIGHT_LEVELS as i16));
     }
     let seed_level = q.check_height.then_some(level);
 
@@ -450,8 +453,9 @@ where
 /// their lookup order and shared-dummy stamps are future-affecting behavior, not a
 /// threshold-table optimization opportunity.
 ///
-/// Candidate `CellClass+0x140 & 0x1000` gates a four-level addition when the same
-/// probe view carries `CellClass+0x140 & 0x100`. The probe level is signed. Native
+/// Candidate `CellClass+0x140 & 0x1000` selects the deck when the same probe
+/// view carries `CellClass+0x140 & 0x100`. The stock deck is four levels above the
+/// signed probe level. Native
 /// tests the projected axes before testing whether the current probe cell reached
 /// the candidate; the returned cell is direct exactly when it equals the candidate.
 // gamemd-derived: `FUN_006D6410 @ 0x006D6410`; candidate conversions/lookups
@@ -464,9 +468,23 @@ fn is_direct_candidate(q: &NearbyQuery<'_>, cx: i32, cy: i32) -> bool {
 
 fn project_candidate(q: &NearbyQuery<'_>, cx: i32, cy: i32) -> (i32, i32) {
     let (cx, cy) = crate::map::cell_index::packed_cell_coord(cx, cy);
-    project_world_coordinate_with_lookup(cx * 256 + 128, cy * 256 + 128, |x, y| {
-        projection_cell_view(q, x, y)
-    })
+    project_world_coordinate_with_terrain(
+        cx * 256 + 128,
+        cy * 256 + 128,
+        nearby_terrain(q),
+        |x, y| projection_cell_view(q, x, y),
+    )
+}
+
+fn nearby_terrain<'a>(q: &NearbyQuery<'a>) -> Option<&'a ResolvedTerrainGrid> {
+    q.native_cells
+        .map(|cells| cells.terrain())
+        .or(q.resolved_terrain)
+}
+
+/// Sample the real cell's deck without adding a lookup that stamps the Dummy.
+fn fixed_deck_level(terrain: &ResolvedTerrainGrid, x: i32, y: i32) -> Option<i16> {
+    terrain.corrected_high_bridge_deck_level((x as u16, y as u16))
 }
 
 fn projection_cell_view(q: &NearbyQuery<'_>, cx: i32, cy: i32) -> CellClassProjectionView {
@@ -488,13 +506,19 @@ fn projection_cell_view(q: &NearbyQuery<'_>, cx: i32, cy: i32) -> CellClassProje
 /// signed cell words. A negative cell's center can project from a different
 /// seed: center(-1)=-128, whose /256 quotient is zero. Scatter and FNPC must
 /// both pass through this conversion before the cell-based kernel.
-pub(crate) fn project_world_coordinate_with_lookup<F>(x: i32, y: i32, lookup: F) -> (i32, i32)
+pub(crate) fn project_world_coordinate_with_terrain<F>(
+    x: i32,
+    y: i32,
+    terrain: Option<&ResolvedTerrainGrid>,
+    lookup: F,
+) -> (i32, i32)
 where
     F: FnMut(i32, i32) -> CellClassProjectionView,
 {
     project_candidate_with_lookup(
         i32::from(crate::util::lepton::lepton_to_cell_packed(x)),
         i32::from(crate::util::lepton::lepton_to_cell_packed(y)),
+        terrain,
         lookup,
     )
 }
@@ -502,7 +526,12 @@ where
 /// Instruction-faithful projection kernel after world-to-cell conversion.
 /// The lookup closure represents one
 /// native `MapClass::Get_CellClass` call and must return level and flags together.
-fn project_candidate_with_lookup<F>(cx: i32, cy: i32, mut lookup: F) -> (i32, i32)
+fn project_candidate_with_lookup<F>(
+    cx: i32,
+    cy: i32,
+    terrain: Option<&ResolvedTerrainGrid>,
+    mut lookup: F,
+) -> (i32, i32)
 where
     F: FnMut(i32, i32) -> CellClassProjectionView,
 {
@@ -529,12 +558,23 @@ where
             i32::from(crate::util::lepton::lepton_to_cell_packed(probe_world_y)),
         );
         let probe_view = lookup(probe.0, probe.1);
-        let mut level_delta = probe_view.signed_level.wrapping_sub(candidate_level);
-        if candidate_is_forward_side
+        let probe_level = if candidate_is_forward_side
             && probe_view.raw_flags_0x1180 & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0
         {
-            level_delta = level_delta.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS);
-        }
+            terrain
+                .and_then(|terrain| fixed_deck_level(terrain, probe.0, probe.1))
+                .map_or_else(
+                    || {
+                        probe_view
+                            .signed_level
+                            .wrapping_add(BRIDGE_DECK_HEIGHT_LEVELS)
+                    },
+                    i32::from,
+                )
+        } else {
+            probe_view.signed_level
+        };
+        let level_delta = probe_level.wrapping_sub(candidate_level);
 
         let projection_shift = level_delta.wrapping_mul(PROJECTION_LEVEL_LEPTONS);
         let projected_x = i32::from(crate::util::lepton::lepton_to_cell_packed(
@@ -668,8 +708,8 @@ fn candidate_passes(
 }
 
 /// The caller's height gate: `abs(seedLevel - bridgeRise - candidateLevel) < 2`,
-/// where `bridgeRise` is [`crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS as i16`] when the candidate carries a bridge
-/// and 0 otherwise.
+/// where `bridgeRise` is four for a stock bridge candidate and 0 for ground.
+/// When the candidate has a fixed deck, compare directly against its level.
 ///
 /// For an ordinary candidate that is "stay within one level of the seed". For a
 /// bridge candidate the rise comes off the SEED side of the subtraction, so a deck
@@ -684,11 +724,15 @@ fn candidate_passes(
 /// those callsites also set `allow_bridge_cells = false`, so a bridge candidate is
 /// dropped by the bridge filter whatever this gate says.
 ///
-/// The seed is independently raised by four at56DCDC when the caller is
-/// bridge-aware and that seed is structural; collection retains that value.
+/// The seed's effective deck level is selected independently at56DCDC when
+/// the caller is bridge-aware and that seed is structural.
 fn candidate_height_ok(q: &NearbyQuery<'_>, seed_level: i16, cx: i32, cy: i32) -> bool {
     let bridge_rise = if candidate_is_bridge_cell(q, cx, cy) {
-        crate::util::lepton::BRIDGE_DECK_HEIGHT_LEVELS as i16
+        if let Some(deck) = nearby_terrain(q).and_then(|terrain| fixed_deck_level(terrain, cx, cy))
+        {
+            return seed_level.abs_diff(deck) < MAX_SEED_LEVEL_DELTA_EXCLUSIVE as u16;
+        }
+        BRIDGE_DECK_HEIGHT_LEVELS as i16
     } else {
         0
     };
@@ -1376,7 +1420,7 @@ mod tests {
     #[test]
     fn find_nearby_projection_kernel_reads_candidate_then_repeated_far_to_near_cells() {
         let mut transcript = Vec::new();
-        let returned = project_candidate_with_lookup(5, 5, |x, y| {
+        let returned = project_candidate_with_lookup(5, 5, None, |x, y| {
             transcript.push((x, y));
             CellClassProjectionView {
                 signed_level: 0,
@@ -1394,6 +1438,42 @@ mod tests {
         assert_eq!(returned, (5, 5));
         assert_eq!(transcript, expected);
         assert_eq!(transcript.len(), 179, "two candidate reads plus 177 probes");
+    }
+
+    #[test]
+    fn find_nearby_uses_the_fixed_deck_for_height_and_projection() {
+        use crate::map::bridge_facts::BRIDGE_FLAG_ANCHOR_SELF;
+        use crate::sim::movement::locomotor::MovementLayer;
+        use crate::sim::occupancy::CellListInsertion;
+
+        let mut terrain = crate::map::resolved_terrain::test_flat_ground_grid(8);
+        let candidate = terrain.native_cell_identity((1, 1));
+        terrain.write_native_cell_flags(candidate, BRIDGE_FLAG_FORWARD_SIDE);
+        let deck = terrain.native_cell_identity((2, 2));
+        terrain.write_native_cell_flags(deck, BRIDGE_FLAG_ANCHOR_SELF | BRIDGE_FLAG_STRUCTURAL);
+        terrain.write_native_cell_level(deck, (-3_i8) as u8);
+        terrain.set_authored_high_bridge_deck(deck, 0);
+
+        let path_grid = PathGrid::from_resolved_terrain(&terrain);
+        let mut q = base_query(&terrain, &path_grid);
+        assert_eq!(project_candidate(&q, 1, 1), (1, 1));
+        assert!(candidate_height_ok(&q, -1, 2, 2));
+
+        let mut occupied = OccupancyGrid::new();
+        occupied.add(
+            2,
+            2,
+            1,
+            MovementLayer::Bridge,
+            None,
+            CellListInsertion::PrependNonBuilding,
+        );
+        q.occupancy = Some(&occupied);
+        q.passability.bridge_aware_zone = true;
+        q.check_height = true;
+        q.target_cell = Some((1, 1));
+        q.radius_cap = 2;
+        assert_eq!(find_nearby_passable_cell((2, 2), &q, 0), Some((1, 1)));
     }
 
     #[test]

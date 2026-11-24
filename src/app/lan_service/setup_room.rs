@@ -8,9 +8,8 @@ use crate::net::lan_messages::LanPayload;
 use std::net::SocketAddrV4;
 
 use super::{
-    AppState, DepartureReason, DueBroadcasts, ObservedParticipant, SessionMode, active_game_name,
-    chat_packet, direct, endpoint_id, local_control_proof, local_name, options, send,
-    verify_setup_agreement,
+    AppState, DueBroadcasts, SessionMode, active_game_name, chat_packet, direct, endpoint_id,
+    local_control_proof, local_name, options, send, verify_setup_agreement,
 };
 
 pub(super) fn setup_liveness_active(state: &AppState) -> bool {
@@ -39,21 +38,15 @@ pub(super) fn poll_setup_leases(state: &mut AppState, now: u32) {
     // final-options ACK barrier is draining, so still-editable guests do not
     // mistake a busy host for a crash before GO itself can be admitted.
     loop {
-        let expired = state
-            .match_state
-            .lan_service
-            .as_mut()
-            .expect("visit")
-            .expired_setup_peer(&state.match_state.session, now);
-        let Some((index, endpoint)) = expired else {
+        // A HostLeft or ParticipantLeft event below can close the visit.
+        let Some(service) = state.match_state.lan_service.as_mut() else {
             break;
         };
-        let host_left = state
-            .match_state
-            .lan_service
-            .as_mut()
-            .expect("visit")
-            .retire_setup_peer(endpoint);
+        let Some((index, endpoint)) = service.expired_setup_peer(&state.match_state.session, now)
+        else {
+            break;
+        };
+        let host_left = service.retire_setup_peer(endpoint);
         let event = if host_left {
             super::shell_network_setup::lock_lan_departure(state);
             super::shell_network_setup::NetworkSetupEvent::HostLeft
@@ -111,8 +104,9 @@ pub(super) fn announce(state: &mut AppState, now: u32) {
         }
     }
     if presence && lease_active {
-        let service = state.match_state.lan_service.as_mut().expect("visit");
-        if let Err(error) = service.send_setup_keepalives(&state.match_state.session) {
+        if let Some(service) = state.match_state.lan_service.as_mut()
+            && let Err(error) = service.send_setup_keepalives(&state.match_state.session)
+        {
             log::debug!("LAN setup keepalive unavailable: {error:#}");
         }
     } else if presence && !in_setup {
@@ -211,7 +205,7 @@ fn setup_request(
                 .match_state
                 .lan_service
                 .as_mut()
-                .expect("visit")
+                .ok_or_else(super::closed_visit)?
                 .kick_peer(&state.match_state.session, name, *keep_out, now);
         }
         NetworkSetupRequest::PublishOptions => return options::publish_options(state),
@@ -266,7 +260,7 @@ fn setup_request(
                 .match_state
                 .lan_service
                 .as_mut()
-                .expect("visit")
+                .ok_or_else(super::closed_visit)?
                 .queue_go(&LanMessage::go(*max_ahead_frames), &destinations)?
             {
                 return Ok(false);
@@ -283,19 +277,6 @@ fn setup_request(
             &active_game_name(state).unwrap_or_default(),
             text,
         )?,
-        NetworkSetupRequest::Leave => {
-            let now = super::match_runtime::frame_pacer::frame_bucket(
-                super::match_runtime::frame_pacer::wall_clock_ms(),
-            );
-            state
-                .match_state
-                .lan_service
-                .as_mut()
-                .expect("visit")
-                .begin_departure(&state.match_state.session, DepartureReason::Back, now)?;
-            super::shell_network_setup::lock_lan_departure(state);
-            return Ok(true);
-        }
         NetworkSetupRequest::PlayerChoices { slot, observer, .. } => {
             let message = LanMessage::player_choices(
                 &local_name(state),
@@ -313,7 +294,7 @@ fn setup_request(
                     .match_state
                     .lan_service
                     .as_ref()
-                    .expect("visit")
+                    .ok_or_else(super::closed_visit)?
                     .control_proof()?,
             )?;
             let endpoint = state
@@ -327,7 +308,7 @@ fn setup_request(
                 .match_state
                 .lan_service
                 .as_mut()
-                .expect("visit")
+                .ok_or_else(super::closed_visit)?
                 .queue_setup(std::iter::once((
                     message.as_bytes().to_vec(),
                     direct(endpoint),
@@ -394,7 +375,7 @@ fn setup_request(
                 .match_state
                 .lan_service
                 .as_mut()
-                .expect("visit")
+                .ok_or_else(super::closed_visit)?
                 .apply_start_timing(false, false);
             verify_setup_agreement(state)?;
             super::shell_network_setup::prepare_lan_guest_handoff(state)?;
@@ -402,7 +383,7 @@ fn setup_request(
                 .match_state
                 .lan_service
                 .as_mut()
-                .expect("visit")
+                .ok_or_else(super::closed_visit)?
                 .queue_go(&LanMessage::ready_to_go(), &[direct(endpoint)])?;
             assert!(admitted, "guest GO preflight must retain its reserved slot");
             let now = super::match_runtime::frame_pacer::frame_bucket(
@@ -411,8 +392,15 @@ fn setup_request(
             super::shell_network_setup::mark_lan_go_packets_queued(state, now)?;
             return Ok(true);
         }
-        // The WOL requests: a LAN setup queues none.
-        _ => return Ok(false),
+        // None of these reaches a LAN service. The rest are WOL's requests, and
+        // LAN Back departs through `lan_service::request_setup_back`.
+        NetworkSetupRequest::Leave
+        | NetworkSetupRequest::WolChat(_)
+        | NetworkSetupRequest::WolEmote(_)
+        | NetworkSetupRequest::StartGame { .. }
+        | NetworkSetupRequest::Advertise
+        | NetworkSetupRequest::Balance
+        | NetworkSetupRequest::ObserverSlot { .. } => return Ok(false),
     };
     let require_rules = matches!(
         request,
@@ -442,7 +430,7 @@ fn setup_request(
             .match_state
             .lan_service
             .as_ref()
-            .expect("visit")
+            .ok_or_else(super::closed_visit)?
             .control_proof()?
     };
     let message = if matches!(request, NetworkSetupRequest::Chat(_)) {
@@ -459,7 +447,7 @@ fn setup_request(
         .match_state
         .lan_service
         .as_mut()
-        .expect("visit")
+        .ok_or_else(super::closed_visit)?
         .queue_setup(
             destinations
                 .into_iter()
@@ -542,36 +530,28 @@ pub(super) fn observe_participant(
     if message.name().eq_ignore_ascii_case(&local_name(state)) {
         return;
     }
-    let service = state.match_state.lan_service.as_mut().expect("visit");
-    if let Some(peer) = service
-        .observed_participants
-        .iter_mut()
-        .find(|peer| peer.endpoint == endpoint && peer.message.kind() == message.kind())
-    {
-        peer.message = message;
-        peer.last_seen = now;
-    } else {
-        service.observed_participants.push(ObservedParticipant {
-            endpoint,
-            message,
-            last_seen: now,
-        });
-    }
+    let Some(service) = state.match_state.lan_service.as_mut() else {
+        return;
+    };
+    service.record_observed_participant(endpoint, message, now);
     project_players(state);
 }
 
 pub(super) fn project_players(state: &mut AppState) {
-    let service = state.match_state.lan_service.as_ref().expect("visit");
+    let Some(service) = state.match_state.lan_service.as_ref() else {
+        return;
+    };
     let game = service.selected_game.and_then(|id| service.game(id));
+    let game_name_hash = game.map(|game| crate::net::lan_messages::game_name_hash(&game.name));
     let selected = service.selected_game;
     let mut players = Vec::new();
     if game.is_none() {
         players.push(super::shell_lan::local_lobby_row(&local_name(state)));
     }
     for peer in &service.observed_participants {
-        let color = match (game, peer.message.payload()) {
-            (Some(game), LanPayload::ParticipantDetails(fields)) => {
-                if fields.game_name_hash != crate::net::lan_messages::game_name_hash(&game.name) {
+        let color = match (game_name_hash, peer.message.payload()) {
+            (Some(hash), LanPayload::ParticipantDetails(fields)) => {
+                if fields.game_name_hash != hash {
                     continue;
                 }
                 fields.color

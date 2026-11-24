@@ -14,7 +14,6 @@ use crate::sim::intern::InternedId;
 use crate::sim::occupancy::OccupancyGrid;
 use crate::sim::pathfinding::terrain_speed;
 use crate::sim::production::ProductionState;
-use crate::sim::rng::MainRng;
 use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::team_script_vm::TeamScriptVm;
@@ -203,7 +202,7 @@ impl Simulation {
             reflected_warhead: None,
             ares_made_up_rules: None,
             scenario_rng: SimRng::new(seed),
-            main_rng: MainRng::new(seed),
+            main_rng: SimRng::new(seed),
             mapgen_rng: SimRng::new(0),
             native_unique_ids: None,
             authored_tiberium_value_total: None,
@@ -216,6 +215,7 @@ impl Simulation {
             lifecycle_outputs: FrameChannel::default(),
             unit_voice_visit_interest: Default::default(),
             mission_spawned_entities: false,
+            ice_zones_stale: false,
             ownership_changed_since_output: false,
             frame_overlay_updates: Vec::new(),
             frame_overlay_removals: Vec::new(),
@@ -256,6 +256,8 @@ impl Simulation {
             native_allocated_cell_cursor: None,
             real_cell_bridge_flags_0x1180: RealCellBridgeFlags0x1180::default(),
             dynamic_terrain_cells: Default::default(),
+            ice_cracks: Vec::new(),
+            terrain_dent: None,
             bridge_state: None,
             pending_bridge_collapses: Default::default(),
             overlay_grid: None,
@@ -334,18 +336,10 @@ impl Simulation {
     }
 
     // --- Main/global process stream (`main_rng`) ---
-    // Its owning modules consume the same cursor: terrain-load variants
-    // (`terrain_load_draws`), selection_voice, Gattling Report, death sounds
-    // and MoveSound. Local selection calls the domain operation; it must not
-    // create a seeded copy that loses loading or live-consumer continuation.
-
-    /// This simulation's Main886B88 cell, which the sounds the tick plays
-    /// draw from (the app draws its own: `install_fresh_process_main`).
-    /// Draws remain outside Scenario/hash/save state.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn presentation_main_draws(&self) -> crate::sim::rng::MainRngDraws {
-        self.main_rng.draws()
-    }
+    // Its owning modules draw the same generator through `&mut`: terrain-load
+    // variants (`terrain_load_draws`), selection_voice, Gattling Report, death
+    // sounds and MoveSound. Local selection calls the domain operation; it must
+    // not create a seeded copy that loses loading or live-consumer continuation.
 
     /// The occupancy grid (per-cell object lists). Read access for systems above sim/.
     pub fn occupancy(&self) -> &OccupancyGrid {
@@ -455,7 +449,6 @@ impl Simulation {
         copy.house_alliances = self
             .house_alliances
             .detached(&self.interner, &copy.interner);
-        copy.main_rng = self.main_rng.detached_copy();
         copy.shared_cell_dummy = copy.shared_cell_dummy.fork_query_identity();
         self.fog = fog;
         self.substrate.entities = entities;

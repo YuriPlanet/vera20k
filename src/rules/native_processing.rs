@@ -58,7 +58,7 @@ pub(crate) use processed_type::{
 };
 use processed_type::{
     EXPLICIT_RULE_TYPE_FAMILIES, PROJECTED_RULE_TYPE_FAMILIES, ProcessedType, RulesTypeFamily,
-    SelectAnimRulesState, find_existing_type, find_or_construct_type,
+    SelectAnimRulesState, find_existing_type, find_or_construct_type, read_member,
 };
 pub(crate) use registry_state::{
     NativeRulesRegistryState, NativeTypeConstructionEvent, NativeTypeConstructionTrace,
@@ -158,7 +158,7 @@ pub(crate) fn ares_country_index_of_name<'a>(
 ) -> Option<crate::rules::ruleset::CountryIdx> {
     ares_type_index_of_name(incoming, countries).map(|index| {
         crate::rules::ruleset::CountryIdx(
-            u16::try_from(index).expect("[Countries] exceeds u16 identity space"),
+            u16::try_from(index).expect("COUNTRY_LIMIT keeps the Country registry within u16"),
         )
     })
 }
@@ -274,8 +274,11 @@ pub struct RulesLayerStack {
     /// or the player's Ares setting is On.
     ships_ares: bool,
     /// VERA: the player's Ares setting is Off, so no Ares key turns Ares on
-    /// (`ares_switch::launch_keys_off`).
+    /// (`AssetManager::ares_setting`).
     ares_keys_off: bool,
+    /// VERA: the player's Kratos setting (`AssetManager::kratos_setting`);
+    /// Auto lets the game's data decide (`rules::kratos_switch`).
+    kratos_setting: crate::util::kratos_launch::KratosSetting,
 }
 
 impl RulesLayerStack {
@@ -285,11 +288,13 @@ impl RulesLayerStack {
                 kind: RulesLayerKind::RulesMd,
                 ini: rulesmd,
             }],
-            // The game's owner sets this from the installed archives
-            // (`NativeRulesProcessOwner::startup_layers`); a fixture stack
-            // stands for the game `ares_switch::game_ships_ares` says.
-            ships_ares: crate::rules::ares_switch::game_ships_ares(false),
-            ares_keys_off: crate::rules::ares_switch::launch_keys_off(),
+            // The game's owner sets both from its asset manager
+            // (`NativeRulesProcessOwner::startup_layers`). A stack built
+            // without saying stands for the game its thread reads
+            // (`ares_switch::ares_way`), with the Ares setting Auto.
+            ships_ares: crate::rules::ares_switch::ares_way(),
+            ares_keys_off: false,
+            kratos_setting: crate::util::kratos_launch::KratosSetting::Auto,
         }
     }
 
@@ -305,10 +310,22 @@ impl RulesLayerStack {
 
     /// VERA: the stack of a game whose player set Ares Off, where no Ares key
     /// turns Ares on. The game's owner sets it from the launch
-    /// (`NativeRulesProcessOwner::startup_layers`); a fixture stack reads the
-    /// launch's (`ares_switch::launch_keys_off`).
+    /// (`NativeRulesProcessOwner::startup_layers`); a stack built without
+    /// saying reads as Auto.
     pub fn with_ares_keys_off(mut self, off: bool) -> Self {
         self.ares_keys_off = off;
+        self
+    }
+
+    /// VERA: the stack of a launch whose player chose a Kratos setting
+    /// (`util::kratos_launch::KratosSetting`). The game's owner sets it from
+    /// the launch (`NativeRulesProcessOwner::startup_layers`); a stack built
+    /// without saying reads as Auto.
+    pub fn with_kratos_setting(
+        mut self,
+        setting: crate::util::kratos_launch::KratosSetting,
+    ) -> Self {
+        self.kratos_setting = setting;
         self
     }
 
@@ -530,18 +547,11 @@ impl RulesLayerStack {
             if kind == RulesLayerKind::Scenario
                 && let Some(after_map) = after_map.take()
             {
-                let ares_inputs = crate::rules::ares_switch::AresInputs::from_passes(
-                    &processor.ares_reads,
-                    self.ships_ares,
-                    self.ares_keys_off,
+                let prefix = self.finish_rules(
+                    processor.clone(),
+                    fixed_art,
+                    self.content_hash_for_layers(index + 1),
                 );
-                let (ini, native_type_construction_trace) = processor.clone().finish();
-                let prefix = ProcessedRulesLayers {
-                    ini,
-                    content_hash: self.content_hash_for_layers(index + 1),
-                    native_type_construction_trace,
-                    ares_inputs,
-                };
                 let rules = match RuleSet::from_processed_rules(&prefix) {
                     Ok(rules) => rules,
                     Err(error) => {
@@ -565,21 +575,54 @@ impl RulesLayerStack {
             processor.init_overlay_theater();
             processor.init_anim_theater();
         }
+        Ok((
+            self.finish_rules(processor, fixed_art, self.content_hash()),
+            after_map_result,
+        ))
+    }
+
+    fn finish_rules(
+        &self,
+        mut processor: RulesPassProcessor,
+        fixed_art: &IniFile,
+        content_hash: u64,
+    ) -> ProcessedRulesLayers {
+        // Kratos reads an eligible infantry's final Image when its component
+        // first updates. Earlier Images or a type the map made Fearless cannot
+        // contribute ART keys to Auto. This also applies to the map prefix.
+        let (_, reads) = crate::rules::ares_switch::record(|| {
+            if let Some(infantry) = processor.families.get_mut(&RulesTypeFamily::Infantry) {
+                for kind in infantry {
+                    if !kind.body.read_bool("Fearless", false) {
+                        let image = kind
+                            .body
+                            .read_name("Image", 2048)
+                            .unwrap_or(&kind.native_stored_id);
+                        kind.weapon_slots
+                            .offsets
+                            .read_kratos_infantry_flh(fixed_art.section_or_empty(image));
+                    }
+                }
+            }
+        });
+        processor.ares_reads.absorb(reads);
         let ares_inputs = crate::rules::ares_switch::AresInputs::from_passes(
             &processor.ares_reads,
             self.ships_ares,
             self.ares_keys_off,
         );
+        let kratos_inputs = crate::rules::kratos_switch::KratosInputs::from_passes(
+            &processor.ares_reads,
+            self.kratos_setting,
+        );
         let (ini, native_type_construction_trace) = processor.finish();
-        Ok((
-            ProcessedRulesLayers {
-                ini,
-                content_hash: self.content_hash(),
-                native_type_construction_trace,
-                ares_inputs,
-            },
-            after_map_result,
-        ))
+        ProcessedRulesLayers {
+            ini,
+            content_hash,
+            native_type_construction_trace,
+            ares_inputs,
+            kratos_inputs,
+        }
     }
 }
 
@@ -882,6 +925,11 @@ pub struct ProcessedRulesLayers {
     /// What the passes give the per-game Ares switch; saved with the rules,
     /// so a loaded game projects the same answer.
     ares_inputs: crate::rules::ares_switch::AresInputs,
+    /// What the passes give the per-game Kratos switch (the ART keys they
+    /// read); saved with the rules for the same reason. A rules set saved
+    /// before the switch existed reads as no Kratos key.
+    #[serde(default)]
+    kratos_inputs: crate::rules::kratos_switch::KratosInputs,
 }
 
 #[cfg(all(test, tests_rules_a_n))]

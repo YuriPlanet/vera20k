@@ -401,13 +401,21 @@ impl Wave {
         self.recorded_cells = cells;
     }
 
-    pub fn constructor_distance_is_live(&self) -> bool {
+    pub fn constructor_distance_is_live(&self, vera_only_map: bool) -> bool {
         // 75EA59..75EA91 squares in wrapping dwords, then compares the
         // original Sqrt_Approx result directly with240; no integer conversion.
-        let dx = self.target.x.wrapping_sub(self.source.x);
-        let dy = self.target.y.wrapping_sub(self.source.y);
-        let squared = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy));
-        let root = sqrt_approx_f32(X87Chop53::load_i32(squared))
+        let squared = crate::util::native_coord::squared_xy_leptons_for_map(
+            [self.source.x, self.source.y],
+            [self.target.x, self.target.y],
+            vera_only_map,
+        );
+        let squared = if vera_only_map {
+            X87Chop53::load_f64(NativeF64Bits::from_bits((squared as f64).to_bits()))
+                .expect("a VERA-only squared distance is finite")
+        } else {
+            X87Chop53::load_i32(squared as i32)
+        };
+        let root = sqrt_approx_f32(squared)
             .expect("a signed dword fits the native approximate-root input");
         X87Chop53::compare(
             load_f32(root),

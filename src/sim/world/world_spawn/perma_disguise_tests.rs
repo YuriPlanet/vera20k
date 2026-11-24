@@ -61,7 +61,14 @@ fn a_perma_disguised_spy_starts_wearing_its_sides_rules_disguise() {
         let spy = sim
             .spawn_object_at_height("SPY", owner, 10 + 3 * i as u16, 10, 0, 0, &rules)
             .expect("SPY spawns");
-        let disguise = sim.substrate.entities.get(spy).unwrap().disguise.clone();
+        let disguise = sim
+            .substrate
+            .entities
+            .get(spy)
+            .unwrap()
+            .seldom
+            .disguise
+            .clone();
         let disguise = disguise.expect("constructed disguised");
         assert!(disguise.is_disguised());
         assert_eq!(disguise.type_id(), Some(sim.interner.intern(worn)));
@@ -77,6 +84,7 @@ fn a_perma_disguised_spy_starts_wearing_its_sides_rules_disguise() {
             .entities
             .get(mirage)
             .unwrap()
+            .seldom
             .disguise
             .as_ref()
             .is_some_and(|d| d.is_disguised()),
@@ -100,7 +108,14 @@ fn a_none_rules_disguise_starts_the_spy_with_no_disguise_type() {
     let spy = sim
         .spawn_object_at_height("SPY", "Americans", 10, 10, 0, 0, &rules)
         .expect("SPY spawns");
-    let disguise = sim.substrate.entities.get(spy).unwrap().disguise.clone();
+    let disguise = sim
+        .substrate
+        .entities
+        .get(spy)
+        .unwrap()
+        .seldom
+        .disguise
+        .clone();
     let disguise = disguise.expect("constructed disguised");
     assert!(disguise.is_disguised());
     assert_eq!(disguise.type_id(), None);
@@ -133,7 +148,14 @@ fn a_retail_spy_starts_disguised_as_its_sides_infantry() {
     let spy = sim
         .spawn_object_at_height("SPY", "Russians", 10, 10, 0, 0, &rules)
         .expect("SPY spawns");
-    let disguise = sim.substrate.entities.get(spy).unwrap().disguise.clone();
+    let disguise = sim
+        .substrate
+        .entities
+        .get(spy)
+        .unwrap()
+        .seldom
+        .disguise
+        .clone();
     assert_eq!(
         disguise.and_then(|d| d.type_id()),
         Some(sim.interner.intern("E2"))
@@ -162,7 +184,14 @@ fn ares_fourth_side_perma_disguise_uses_side_extension_default_or_override() {
         let spy = sim
             .spawn_object_at_height("SPY", "Neutral", 10, 10, 0, 0, &rules)
             .expect("SPY spawns");
-        let disguise = sim.substrate.entities.get(spy).unwrap().disguise.clone();
+        let disguise = sim
+            .substrate
+            .entities
+            .get(spy)
+            .unwrap()
+            .seldom
+            .disguise
+            .clone();
         assert_eq!(
             disguise.and_then(|disguise| disguise.type_id()),
             Some(sim.interner.intern(worn)),

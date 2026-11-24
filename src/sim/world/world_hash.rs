@@ -177,7 +177,11 @@ impl Simulation {
             ),
             (
                 "terrain_cells",
-                digest(|h| self.dynamic_terrain_cells.hash_simulation(h)),
+                digest(|h| {
+                    self.dynamic_terrain_cells.hash_simulation(h);
+                    self.hash_ice_cracks(h);
+                    self.hash_terrain_dent(h);
+                }),
             ),
             (
                 "burrowing",
@@ -405,6 +409,8 @@ impl Simulation {
         self.real_cell_bridge_flags_0x1180.hash(hasher);
         b"dynamic-terrain-cells-v2".hash(hasher);
         self.dynamic_terrain_cells.hash_simulation(hasher);
+        self.hash_ice_cracks(hasher);
+        self.hash_terrain_dent(hasher);
         if let Some(terrain) = &self.resolved_terrain {
             terrain.hash_burrowing_permissions(hasher);
         }
@@ -528,12 +534,12 @@ impl Simulation {
             };
             parallel::any_index(entities.len(), |index| {
                 let entity = entities[index];
-                if entity.patrol_post.cell() == Some(NativeCellIdentity::Dummy) {
+                if entity.seldom.patrol_post.cell() == Some(NativeCellIdentity::Dummy) {
                     return true;
                 }
                 [
                     entity.attack_target.target(),
-                    entity.suspended_attack_target.target(),
+                    entity.seldom.suspended_attack_target.target(),
                     entity.archive_target(),
                 ]
                 .into_iter()
@@ -779,7 +785,7 @@ impl Simulation {
         self.substrate
             .entities
             .values()
-            .filter(|entity| entity.owner() == owner && !entity.kill_record.is_recorded())
+            .filter(|entity| entity.owner() == owner && !entity.seldom.kill_record.is_recorded())
             .fold((0, 0), |(buildings, others), entity| {
                 if entity.category() == crate::map::entities::EntityCategory::Structure {
                     (buildings + 1, others)
@@ -1246,7 +1252,7 @@ impl Simulation {
             |&(entity, owed), hasher| {
                 hash_entity_owed(entity, frame, owed, hasher);
                 if network {
-                    entity.discovery.hash_network(hasher);
+                    entity.seldom.discovery.hash_network(hasher);
                 }
             },
         )

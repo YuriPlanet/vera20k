@@ -13,6 +13,17 @@
 //!   the mission selector vocabulary in rules/mission_data (the `MISSION=` column is
 //!   the same 32-name table the scenario reader resolves through).
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use std::borrow::Cow;
 
 use crate::rules::ini_parser::{IniFile, IniSection};

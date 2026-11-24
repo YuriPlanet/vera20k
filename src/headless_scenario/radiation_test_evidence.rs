@@ -200,7 +200,7 @@ pub fn visit_paid_deso_light_lifecycle(
                 .get(deso)
                 .expect("actual paid DESO before Deploy");
             assert!(delivered && actor.is_object_alive() && !actor.lifecycle.in_limbo());
-            assert!(actor.lifecycle.cell_marked() && actor.in_logic_vector.is_member());
+            assert!(actor.lifecycle.cell_marked() && actor.seldom.in_logic_vector.is_member());
             assert_eq!(
                 (actor.position.rx(), actor.position.ry()),
                 center,
@@ -216,10 +216,10 @@ pub fn visit_paid_deso_light_lifecycle(
             .production()
             .factories()
             .strip_visits_for_test(owner);
-        let effects = FrameEffects::default().with_production_strip(&visits, &|_| {});
+        let mut effects = FrameEffects::default().with_production_strip(&visits);
         let output = scene
             .runtime
-            .advance_frame(&due, 22, TickLane::Ordinary, effects)
+            .advance_frame(&due, 22, TickLane::Ordinary, &mut effects)
             .expect("ordinary paid DESO frame");
         assert!(output.tick.frame_committed);
         if !bound_deso
@@ -406,7 +406,11 @@ fn assert_paid_deso_lifecycle(profile_path: &'static str) {
         if let Some(output) = output {
             frames += 1;
             assert!(output.tick.frame_committed);
-            assert_eq!(scene.sim().session.total_sim_ms(), frames * 22);
+            assert_eq!(
+                scene.sim().session.total_sim_ms(),
+                frames * 1000 / u64::from(crate::util::fixed_math::RA2_LOGIC_FRAMES_PER_SECOND),
+                "frame {frames}"
+            );
         }
         if let Some(phase) = phase {
             phases.push(phase.to_owned());

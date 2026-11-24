@@ -51,7 +51,7 @@ fn marked_probe_survives_modern_foot_search_and_mark_restoration() {
                 goal,
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             Ok(Ok(()))
         ));
@@ -102,7 +102,7 @@ fn marked_probe_survives_modern_foot_search_and_mark_restoration() {
                     goal,
                     &rules,
                     Some(&registry),
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 ),
                 Ok(Ok(()))
             ));

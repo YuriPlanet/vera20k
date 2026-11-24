@@ -12,6 +12,7 @@ use crate::util::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 
+use crate::app::frontend::shell_pass::{TexturedDraw, encode_sprite_pass};
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::csf_file::CsfFile;
 use crate::assets::pal_file::Palette;
@@ -24,7 +25,7 @@ use crate::render::shell_ui_style_assets::{
     ShellUiAssetLocator, ShellUiAssetPair, ShellUiAssetResolver, decode_ui_shp, mod_art_candidates,
     read_client_png,
 };
-use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale};
+use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W};
 
 use super::shell_layout::window_takes_fitted_shell;
 
@@ -133,7 +134,6 @@ impl VisibleHold {
 
 pub(crate) struct StartupSplashPresentation {
     texture: BatchTexture,
-    instance_buffer: wgpu::Buffer,
     /// The text, drawn over the art at the window's resolution.
     lines: Vec<SplashLine>,
     /// Where the composition sits in the window, and its width there.
@@ -171,24 +171,8 @@ impl StartupSplashPresentation {
             compose_startup_splash(assets, width as usize, height as usize, yr_original_style)?;
         let lines = splash_lines(csf, font, width as i32, height as i32);
         let texture = batch.create_texture(gpu, &rgba, width, height);
-        let instance = SpriteInstance {
-            position: [placement.x as f32, placement.y as f32],
-            size: [placement.w as f32, placement.h as f32],
-            uv_origin: [0.0, 0.0],
-            uv_size: [1.0, 1.0],
-            depth: 0.0,
-            tint: [1.0, 1.0, 1.0],
-            alpha: 1.0,
-            ..Default::default()
-        };
-        let (instance_buffer, count) = batch
-            .create_instance_buffer(gpu, &[instance])
-            .context("create startup splash instance buffer")?;
-        debug_assert_eq!(count, 1);
-
         Ok(Self {
             texture,
-            instance_buffer,
             lines,
             placement,
             composition_width: width,
@@ -236,68 +220,48 @@ pub(crate) fn render_and_present(
     font: &BitFont,
     splash: Option<&StartupSplashPresentation>,
 ) -> Result<bool> {
-    batch.update_camera(
-        gpu,
-        gpu.config.width as f32,
-        gpu.config.height as f32,
-        0.0,
-        0.0,
-        1.0,
-        crate::render::batch::DepthAxis::NONE,
-    );
-
     let Some(output) = gpu
         .acquire_frame()
         .context("acquire startup splash surface")?
     else {
         return Ok(false);
     };
-    let text =
-        splash.and_then(|splash| batch.create_instance_buffer(gpu, &splash.text_instances(font)));
-    let source_view = presenter.source_render_view();
     let mut encoder = gpu
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Retail Startup Splash"),
         });
-    {
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Retail Startup Splash Composition"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &source_view,
-                resolve_target: None,
-                depth_slice: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                // The shared passthrough batch pipeline declares Depth32Float
-                // even though it compares Always and does not write depth.
-                view: depth,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Store,
-                }),
-                stencil_ops: None,
-            }),
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        if let Some(splash) = splash {
-            batch.draw_with_buffer_ui_passthrough(
-                &mut pass,
-                &splash.texture,
-                &splash.instance_buffer,
-                1,
-            );
-        }
-        if let Some((buffer, count)) = &text {
-            batch.draw_with_buffer_ui_passthrough(&mut pass, font.atlas(), buffer, *count);
-        }
-    }
+    let draws = splash.map(|splash| {
+        let placement = splash.placement;
+        let art = SpriteInstance {
+            position: [placement.x as f32, placement.y as f32],
+            size: [placement.w as f32, placement.h as f32],
+            uv_size: [1.0, 1.0],
+            tint: [1.0, 1.0, 1.0],
+            alpha: 1.0,
+            ..SpriteInstance::default()
+        };
+        [
+            TexturedDraw {
+                texture: &splash.texture,
+                instances: vec![art],
+            },
+            TexturedDraw {
+                texture: font.atlas(),
+                instances: splash.text_instances(font),
+            },
+        ]
+    });
+    let targets = (&presenter.source_render_view(), depth);
+    let label = "Retail Startup Splash Composition";
+    encode_sprite_pass(
+        gpu,
+        batch,
+        &mut encoder,
+        targets,
+        label,
+        draws.as_ref().map_or(&[], |d| d),
+    );
     presenter.encode_present(&mut encoder, &output.texture);
     performance_overlay.encode(gpu, batch, &mut encoder, &output.texture, font, None);
     // The splash presents outside the frame loop, so it uses the shared
@@ -315,7 +279,7 @@ pub(crate) fn render_and_present(
 /// left to the black clear. gamemd itself draws 1:1, centred, at every size.
 fn splash_placement(client_width: u32, client_height: u32) -> ([u32; 2], RectPx) {
     if window_takes_fitted_shell((client_width, client_height)) {
-        let scale = ShellScale::from_screen(client_width as i32, client_height as i32);
+        let scale = crate::ui::shell::geom::shell_scale(client_width as i32, client_height as i32);
         (
             [SHELL_BASE_W as u32, SHELL_BASE_H as u32],
             scale.dialog_rect(),
@@ -797,7 +761,11 @@ mod tests {
         // That is where the fitted main menu puts its page, so the menu that
         // follows the splash lines up with it.
         for (width, height) in [(1920, 1080), (1024, 768), (3024, 1964), (640, 400)] {
-            let menu = crate::ui::main_menu_shell::compute_responsive_layout(width, height);
+            let menu = crate::ui::shell::geom::fit_window(
+                width,
+                height,
+                crate::ui::main_menu_shell::compute_layout,
+            );
             assert_eq!(
                 splash_placement(width, height),
                 ([800, 600], menu.scale.dialog_rect())

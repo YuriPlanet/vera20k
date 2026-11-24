@@ -41,7 +41,7 @@ async function fixture(t, { otherRelays = [], ...extra } = {}) {
   await listen(upstream);
   const relay = `127.0.0.1:${udp.address().port}`;
   const options = { lobby: `http://127.0.0.1:${upstream.address().port}`, allowHttp: true,
-    relays: [relay, ...otherRelays], origin, ...extra };
+    relays: [relay, ...otherRelays], origins: [origin], ...extra };
   const serverSockets = [];
   const emit = WebSocketServer.prototype.emit;
   t.mock.method(WebSocketServer.prototype, 'emit', function (event, ...args) {
@@ -253,6 +253,31 @@ test('one network holds at most a tenth of the game sockets and of the lobby exc
 test('without a client address header, loopback peers are a local proxy or test and are not capped', { timeout: 10000 }, async t => {
   const { socket } = await fixture(t);
   for (let i = 0; i <= LIMITS.networkConnections; i++) await socket();
+});
+
+test('each listed web origin is answered under its own name; others stay refused', { timeout: 10000 }, async t => {
+  const second = 'https://second.example';
+  const { relay, base, options } = await fixture(t, { origins: [origin, second], lanSignal: { iceServers: [] } });
+  assert.throws(() => createGateway({ ...options, origins: [] }), /VERA_WEB_ORIGIN/);
+  assert.throws(() => createGateway({ ...options, origins: [origin, 'second.example'] }), /VERA_WEB_ORIGIN: "second.example"/);
+  assert.deepEqual(gatewayOptionsFromEnv({ VERA_WEB_ORIGIN: `${origin}, ${second}` }).origins, [origin, second]);
+  for (const site of [origin, second]) {
+    const response = await fetch(`${base}/v1/events`, { headers: { origin: site } });
+    assert.equal(response.headers.get('access-control-allow-origin'), site);
+    const preflight = await fetch(`${base}/v1/sessions`, { method: 'OPTIONS', headers: {
+      origin: site, 'access-control-request-method': 'POST', 'access-control-request-headers': 'vera-build',
+    } });
+    assert.equal(preflight.status, 204);
+    assert.equal(preflight.headers.get('access-control-allow-origin'), site);
+    for (const path of [`/game/primary/${relay}`, '/lan/signal']) {
+      const ws = new WebSocket(`${base.replace('http:', 'ws:')}${path}`, { origin: site });
+      t.after(() => ws.terminate());
+      await once(ws, 'open');
+    }
+  }
+  const foreign = { origin: 'https://foreign.example' };
+  assert.equal((await fetch(`${base}/v1/events`, { headers: foreign })).status, 403);
+  await once(new WebSocket(`${base.replace('http:', 'ws:')}/lan/signal`, foreign), 'error');
 });
 
 test('WS rejects foreign origins, text and oversized messages', { timeout: 10000 }, async t => {

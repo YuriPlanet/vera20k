@@ -275,7 +275,7 @@ impl Fixture {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         sim.reveal_constructed_object_at_height(
@@ -286,7 +286,7 @@ impl Fixture {
             0,
             super::PlacementEvidence::MarkSucceeded,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         if prior.get("attacker").is_none() {
@@ -297,7 +297,7 @@ impl Fixture {
             for (rx, ry) in crate::sim::crew_survival::foundation_cells(
                 entity.position.rx(),
                 entity.position.ry(),
-                entity.type_facts.foundation(),
+                entity.seldom.type_facts.foundation(),
             ) {
                 sim.substrate.raw_cell_occupation.clear_ground(
                     rx,
@@ -345,7 +345,7 @@ impl Fixture {
             false,
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(
             sim.substrate
@@ -364,7 +364,7 @@ impl Fixture {
                 unit,
                 Some(TargetKind::Entity(building)),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
             let actor = sim.substrate.entities.get_mut(unit).unwrap();
@@ -392,6 +392,7 @@ impl Fixture {
                     ),
                 });
             actor
+                .seldom
                 .rearm_timer
                 .set_for_test(crate::sim::timer::CdTimer::from_raw(
                     int(&attacker["rearm_timer"][0]),
@@ -423,7 +424,7 @@ impl Fixture {
         sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(prior["rng"]["scenario"].as_str().unwrap());
         sim.main_rng =
-            SimRng::from_native_state_hex_for_test(prior["rng"]["main"].as_str().unwrap()).into();
+            SimRng::from_native_state_hex_for_test(prior["rng"]["main"].as_str().unwrap());
         sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(prior["rng"]["mapgen"].as_str().unwrap());
         Self {
@@ -456,7 +457,7 @@ impl Fixture {
             &self.rules,
             Some(&self.registry),
             &[hit],
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
 
@@ -728,8 +729,8 @@ impl Fixture {
         );
         assert_eq!(
             [
-                attacker.rearm_timer.start_frame(),
-                attacker.rearm_timer.duration()
+                attacker.seldom.rearm_timer.start_frame(),
+                attacker.seldom.rearm_timer.duration()
             ],
             [
                 int(&expected["rearm_timer"][0]),
@@ -743,7 +744,7 @@ impl Fixture {
             "{boundary}: firing timestamp"
         );
         assert_eq!(
-            attacker.weapon_burst.index(),
+            attacker.seldom.weapon_burst.index(),
             int(&expected["burst_index"]),
             "{boundary}: retained burst"
         );
@@ -1160,7 +1161,7 @@ impl Fixture {
                 facing,
                 0,
                 &self.rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         assert_eq!(self.native_id(id), int(&native["constructor"]["native_id"]));
@@ -1178,7 +1179,7 @@ impl Fixture {
                 super::PlacementEvidence::MarkSucceeded,
                 &self.rules,
                 Some(&self.registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         assert_eq!(int(&native["unlimbo"]["result"]) & 255, 1);
         assert_eq!(
@@ -1438,7 +1439,7 @@ impl Fixture {
 
         restored.process_pending_delete_with(
             &self.rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             1,
             false,
         );
@@ -1594,7 +1595,7 @@ fn assert_ready_fatal_routes(corpus: &Value) {
             },
             &fixture.rules,
             Some(&fixture.registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         fixture.assert_live_frame(
             route,
@@ -1627,7 +1628,7 @@ fn assert_ready_fatal_routes(corpus: &Value) {
                 .advance_live_object_pass(
                     &fixture.rules,
                     Some(&fixture.registry),
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             fixture.assert_live_frame(
@@ -1650,7 +1651,7 @@ fn assert_ready_fatal_routes(corpus: &Value) {
                 .set_binary_frame_for_test(fixture.sim.session.binary_frame().wrapping_add(1));
             fixture.sim.process_pending_delete_with(
                 &fixture.rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
                 1,
                 false,
             );
@@ -1672,7 +1673,7 @@ fn assert_ready_fatal_routes(corpus: &Value) {
             .set_binary_frame_for_test(int(&route["after_frame_increment"]["frame"]) as u32);
         fixture.sim.process_pending_delete_with(
             &fixture.rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             1,
             false,
         );
@@ -1773,7 +1774,7 @@ fn original_direct_ap_receivers_join_debris_crew_uninit_power_and_deferred_destr
         .set_binary_frame_for_test(int(&route["after_frame_increment"]["frame"]) as u32);
     fixture.sim.process_pending_delete_with(
         &fixture.rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         1,
         false,
     );

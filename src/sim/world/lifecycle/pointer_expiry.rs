@@ -39,14 +39,18 @@ impl Simulation {
         listener.held_anims().for_each(&mut name);
         for target in [
             listener.attack_target.target(),
-            listener.suspended_attack_target.target(),
+            listener.seldom.suspended_attack_target.target(),
             listener.archive_target(),
         ] {
             if let Some(TargetKind::Entity(id)) = target {
                 name(id);
             }
         }
-        listener.radio_contacts.iter_live().for_each(&mut name);
+        listener
+            .seldom
+            .radio_contacts
+            .iter_live()
+            .for_each(&mut name);
         listener
             .building
             .tesla_charge
@@ -78,11 +82,11 @@ impl Simulation {
             listener.passenger_role().inside_transport_id(),
             listener.passenger_role().transporter(),
             listener.pending_entry(),
-            listener.spawn_owner_id.owner(),
-            listener.fire_particle_system.system(),
-            listener.spark_particle_system.system(),
-            listener.railgun_particle_system.system(),
-            listener.damage_smoke_system_id.system(),
+            listener.seldom.spawn_owner_id.owner(),
+            listener.seldom.fire_particle_system.system(),
+            listener.seldom.spark_particle_system.system(),
+            listener.seldom.railgun_particle_system.system(),
+            listener.seldom.damage_smoke_system_id.system(),
             listener.ammo().and_then(|ammo| ammo.dock()),
             listener
                 .building
@@ -91,7 +95,7 @@ impl Simulation {
                 .and_then(|pending| pending.source_entity_id()),
             listener.lift.target(),
             listener.lift.source(),
-            listener.drop_credit.manipulated_by(),
+            listener.seldom.drop_credit.manipulated_by(),
             listener.building.building_light.light(),
             listener.building.natural_particle_system.system(),
             listener.building.destroy_smoke_particle_system.system(),
@@ -99,7 +103,11 @@ impl Simulation {
         .into_iter()
         .flatten()
         .for_each(&mut name);
-        listener.mega_mission.referenced_ids().for_each(&mut name);
+        listener
+            .seldom
+            .mega_mission
+            .referenced_ids()
+            .for_each(&mut name);
         listener.distributed_fire_references().for_each(&mut name);
         // The SpawnManager, CaptureManager and TemporalClass forwards act on
         // the listener's own expiry and on the ids they hold.
@@ -114,7 +122,7 @@ impl Simulation {
             .warp_target()
             .into_iter()
             .for_each(&mut name);
-        listener.airstrike.owns_manager() || listener.parasite.eater().is_some()
+        listener.seldom.airstrike.owns_manager() || listener.parasite.eater().is_some()
     }
 
     /// Whether the pointer-expiry forwards an entity listener receives can
@@ -234,7 +242,7 @@ impl Simulation {
         &mut self,
         detach_id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         self.stop_all_targeting_target(TargetKind::Entity(detach_id), rules, effects);
     }
@@ -247,7 +255,7 @@ impl Simulation {
         rx: u16,
         ry: u16,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> TargetingSweepReceipt {
         self.stop_all_targeting_target(TargetKind::Cell(rx, ry), rules, effects)
     }
@@ -256,7 +264,7 @@ impl Simulation {
         &mut self,
         target: TargetKind,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> TargetingSweepReceipt {
         // VERA-only: the sweep releases a batched target scan's pick as it
         // does a TarCom (`techno_ai::scan_batch`).
@@ -352,7 +360,7 @@ impl Simulation {
         &mut self,
         hut_id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         // Infantry ctor517B34 appends to its type registry. Represented
         // PointerExpired receivers do not construct/delete registry entries;
@@ -437,7 +445,7 @@ impl Simulation {
         expired_owner: Option<InternedId>,
         control: PointerExpiryControl,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         // ObjectClass::PointerExpired5F5268 clears +88 regardless of control.
         if self
@@ -477,7 +485,7 @@ impl Simulation {
                 .is_some_and(|cargo| cargo.passengers().contains(&expired_id));
         // `0x007077EE..0x007077FD`, after the radio and cargo, whatever the
         // control: a child whose SpawnOwner (`+0x2D4`) expires forgets it.
-        let drops_spawn_owner = listener.spawn_owner_id.owner() == Some(expired_id);
+        let drops_spawn_owner = listener.seldom.spawn_owner_id.owner() == Some(expired_id);
 
         // `TechnoClass::PointerExpired @ 0x007077C0`, the `allowClear` local
         // (`[ESP+0x24]`): it starts true and is cancelled only on the
@@ -544,7 +552,7 @@ impl Simulation {
                 let _ = cargo.disembark(expired_id);
             }
             if drops_spawn_owner {
-                listener.spawn_owner_id.forget();
+                listener.seldom.spawn_owner_id.forget();
             }
         }
 
@@ -578,16 +586,18 @@ impl Simulation {
         // same-owner exemption applies only to `+0x2B4`.
         let clear_suspended_target = allow_clear
             && matches!(
-                listener.suspended_attack_target.target(),
+                listener.seldom.suspended_attack_target.target(),
                 Some(TargetKind::Entity(id)) if id == expired_id
             );
         // Techno707AC2..707AD7 clears eight retained effect pointers on an
         // exact match, including damage-Smoke+310. It precedes the control
         // gate707AE7 and is independent of the target's sensor/owner guards.
-        let clear_damage_smoke = listener.damage_smoke_system_id.system() == Some(expired_id);
-        let clear_fire_system = listener.fire_particle_system.system() == Some(expired_id);
-        let clear_spark_system = listener.spark_particle_system.system() == Some(expired_id);
-        let clear_railgun_system = listener.railgun_particle_system.system() == Some(expired_id);
+        let clear_damage_smoke =
+            listener.seldom.damage_smoke_system_id.system() == Some(expired_id);
+        let clear_fire_system = listener.seldom.fire_particle_system.system() == Some(expired_id);
+        let clear_spark_system = listener.seldom.spark_particle_system.system() == Some(expired_id);
+        let clear_railgun_system =
+            listener.seldom.railgun_particle_system.system() == Some(expired_id);
         // A Building's natural `+0x30C` and destroy-smoke `+0x320` links are
         // two more of those eight.
         let clear_natural_system =
@@ -623,7 +633,7 @@ impl Simulation {
         let current_nav_matches = listener.navigation.nav_com() == Some(expired_nav);
         let retain_capture_nav = current_nav_matches
             && listener.category() == EntityCategory::Infantry
-            && listener.removal_facts.occupier()
+            && listener.seldom.removal_facts.occupier()
             && listener.mission.current().known()
                 == Some(crate::sim::mission::MissionType::Capture)
             && expired_object_alive
@@ -668,7 +678,7 @@ impl Simulation {
         // `0x004D9AC9..0x004D9B43`, on either control: an attack-move's
         // MegaTarget becomes a MegaDestination at its GetCoords cell, and its
         // MegaDestination is dropped.
-        let expire_mega_pointer = listener.mega_mission.references(expired_id);
+        let expire_mega_pointer = listener.seldom.mega_mission.references(expired_id);
         // Building44EA77 removes a charger for either control, irrespective
         // of the base target exemptions. Only later AI changes the weapon latch.
         let clear_tesla_charger = listener
@@ -721,19 +731,19 @@ impl Simulation {
             .get_mut(listener_id)
             .expect("expiry listener read above");
         if clear_suspended_target {
-            listener.suspended_attack_target.clear();
+            listener.seldom.suspended_attack_target.clear();
         }
         if clear_damage_smoke {
-            listener.damage_smoke_system_id.forget();
+            listener.seldom.damage_smoke_system_id.forget();
         }
         if clear_fire_system {
-            listener.fire_particle_system.forget();
+            listener.seldom.fire_particle_system.forget();
         }
         if clear_spark_system {
-            listener.spark_particle_system.forget();
+            listener.seldom.spark_particle_system.forget();
         }
         if clear_railgun_system {
-            listener.railgun_particle_system.forget();
+            listener.seldom.railgun_particle_system.forget();
         }
         if clear_natural_system {
             listener.building.natural_particle_system.forget();
@@ -778,6 +788,7 @@ impl Simulation {
         }
         if expire_mega_pointer {
             listener
+                .seldom
                 .mega_mission
                 .pointer_expired(expired_id, expired_get_coords_cell);
         }
@@ -893,7 +904,7 @@ impl Simulation {
         &mut self,
         expired_id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         self.announce_detach_all(expired_id, UninitContext::new(rules).with_effects(effects));
     }
@@ -993,6 +1004,9 @@ impl Simulation {
         if !self.substrate.anims.contains_key(expired_id) {
             return;
         }
+        // Only an Ares Anim shape joins these listeners
+        // (`AlphaShapeClass_CTOR_Anims`); it touches no other listener's state.
+        self.alpha_shapes.anim_pointer_expired(expired_id);
         // VERA-only: each callback below clears only its own entity's fields
         // that name the Anim (`GameEntity::held_anims`) and draws nothing, so
         // visiting just the entities the anim-holder index finds, ascending,
@@ -1058,7 +1072,7 @@ impl Simulation {
         &mut self,
         expired_id: u64,
         control: PointerExpiryControl,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) {
         // VERA-only: a batched target scan holds its pick across the turns
         // before its scanner's as a TarCom does (`techno_ai::scan_batch`).
@@ -1115,14 +1129,16 @@ impl Simulation {
             let mut named = self.production.factory_product_expired(expired_id);
             // `HouseClass::PointerExpired @ 0x004FB9B0`, each house a listener
             // (`0x004F5FFB`), forgets House+54E0 whatever the control. Phobos'
-            // `AnnounceInvalidPointer` hook at this dispatcher's entry
-            // (`0x7258D0`, resuming there) sends a removed building to every
-            // house's `HouseExt::OnDetach`, which clears the AI factory slots
-            // naming it; no other listener reads them.
-            let phobos_detach = context.rules.phobos() && control == PointerExpiryControl::Uninit;
+            // and Ares' `AnnounceInvalidPointer` hooks at this dispatcher's
+            // entry (`0x7258D0`, resuming there) send a removed building to
+            // every house's `HouseExt::OnDetach` / `InvalidatePointer` (Ares
+            // `100052B0`), which clear the AI factory slots naming it; no
+            // other listener reads them.
+            let slot_detach = (context.rules.phobos() || context.rules.ares())
+                && control == PointerExpiryControl::Uninit;
             for house in self.houses.values_mut() {
                 named |= house.forget_lost_building(expired_id);
-                if phobos_detach {
+                if slot_detach {
                     named |= house
                         .ai_production_mut()
                         .forget_parallel_factory(expired_id);
@@ -1570,7 +1586,7 @@ impl Simulation {
                     .get(listener_id)
                     .is_some_and(|projectile| projectile.target().object_id() == Some(expired_id));
                 let projectile_replacement_target = if target_matches {
-                    self.projectile_lost_target(expired_id, context)
+                    self.projectile_lost_target(expired_id, context.reborrow())
                 } else {
                     ProjectileTarget::None
                 };

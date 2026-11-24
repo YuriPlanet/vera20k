@@ -296,8 +296,27 @@ impl AnimStore {
     }
 
     /// The local anims, in the order they were made (the local list's).
+    #[cfg(test)]
     pub(crate) fn local_ids(&self) -> Vec<AnimId> {
         self.local.keys().copied().collect()
+    }
+
+    /// The id the next local anim will take: a walk that stops before it
+    /// leaves out every local anim made while it runs.
+    pub(crate) fn local_id_end(&self) -> AnimId {
+        self.next_local
+    }
+
+    /// The first local anim after `after` (from the first with `None`) and
+    /// before `end`, in the local list's order: a cursor over the list that
+    /// skips an anim removed since the walk began. Local ids are never given
+    /// out twice, so the walk meets the anims a copy of the list would hold.
+    pub(crate) fn next_local_id(&self, after: Option<AnimId>, end: AnimId) -> Option<AnimId> {
+        let from = after.map_or(std::ops::Bound::Unbounded, std::ops::Bound::Excluded);
+        self.local
+            .range((from, std::ops::Bound::Excluded(end)))
+            .next()
+            .map(|(&id, _)| id)
     }
 
     /// The local anims and their ids, in the local list's order.
@@ -335,10 +354,12 @@ impl AnimStore {
     /// Remove the retired local anims. Their Destroy already released the
     /// sound and left Display; the destructor's `0x00422A69` takes each out
     /// of the local list.
-    pub(crate) fn drain_local_deletes(&mut self) {
-        for id in std::mem::take(&mut self.local_deletes) {
+    pub(crate) fn drain_local_deletes(&mut self) -> Vec<AnimId> {
+        let drained = std::mem::take(&mut self.local_deletes);
+        for &id in &drained {
             self.remove(id);
         }
+        drained
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&AnimId, &AnimObject)> {

@@ -8,7 +8,7 @@
 
 use super::*;
 use crate::app::input::cursor::{capability_cursor_for_hover, cursor_id_for_feedback};
-use crate::app::types::CursorId;
+use crate::app::types::{CursorFeedbackKind, CursorId};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::house_state::HouseState;
 use crate::sim::world::Simulation;
@@ -102,6 +102,7 @@ fn chord_cursor(
         modifier,
         force_move_key,
         false,
+        &mut Default::default(),
     ))
 }
 
@@ -238,6 +239,7 @@ fn delegated_infantry_grinds_when_its_house_is_hostile_to_the_viewer() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         )),
         Some(CursorId::Enter)
     );
@@ -279,8 +281,14 @@ fn delegated_infantry_grinds_when_its_house_is_hostile_to_the_viewer() {
     queue.commit_local_mirrors(&records).unwrap();
     for _ in 0..900 {
         let commands = sim.take_due_commands();
-        sim.advance_app_frame(&commands, rules, 67, TickLane::Ordinary, Default::default())
-            .unwrap();
+        sim.advance_app_frame(
+            &commands,
+            rules,
+            67,
+            TickLane::Ordinary,
+            &mut Default::default(),
+        )
+        .unwrap();
         if sim.entities().get(infantry).is_none() {
             break;
         }
@@ -333,6 +341,7 @@ fn allied_delegated_grinder_refuses_other_house_infantry_on_hover_and_click() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         )),
         Some(CursorId::NoEnter)
     );
@@ -435,6 +444,78 @@ fn a_crazy_ivan_bombs_the_players_grinder_rather_than_entering() {
             Some(&registry)
         ),
         None
+    );
+}
+
+/// Ares `100254B0` (hook `0x0051EB48`): a Crazy Ivan over an allied
+/// Grinder answers Grind ahead of the bomb test while the force-fire key is
+/// up, Shift's cancel aside, and the click sends him in as mission Eaten;
+/// he is ground there. With the key down he bombs it, as in stock.
+#[test]
+fn an_ares_crazy_ivan_walks_into_an_allied_grinder_unless_ctrl_is_held() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "Hills.mmx",
+        &crate::rules::ini_parser::IniFile::from_str("[General]\nTogglePowerAllowed=yes\n"),
+    ) else {
+        return;
+    };
+    let rules = &retail.rules;
+    assert!(rules.ares());
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &retail.processed_rules,
+        Some(&retail.fixed_art),
+    );
+    let (mut sim, grinder, _, _) = scene(rules, "Russians");
+    // The player keeps a building too, so neither House is defeated.
+    sim.spawn_object("GAPOWR", "Americans", 3, 8, 0, rules)
+        .expect("american power plant");
+    let ivan = sim
+        .spawn_object("IVAN", "Americans", 15, 19, 0, rules)
+        .expect("ivan");
+    let selected = [ivan];
+    let cursor = |force_fire_key| {
+        crate::app::input::cursor::ActionQuery {
+            sim: &sim,
+            rules: Some(rules),
+            overlays: Some(&registry),
+            viewer: sim.session().current_house(),
+            selected: &selected,
+            modifier: OrderModifier::Normal,
+            force_move_key: false,
+            force_fire_key,
+            order_mode: crate::app::types::OrderMode::Move,
+            planning: false,
+            mouse_over: true,
+            full_visibility: true,
+        }
+        .selection_action((20, 16), Some(HoverObject::Techno(hover(grinder))))
+        .0
+    };
+    assert_eq!(cursor(false), Some(CursorFeedbackKind::Grind));
+    assert_eq!(cursor(true), Some(CursorFeedbackKind::IvanBomb));
+    assert_eq!(
+        friendly_ivans(&sim, rules, &selected, 1, grinder, true, Some(&registry)),
+        [(ivan, FriendlyIvanAction::Bomb)]
+    );
+    assert_eq!(
+        friendly_ivans(&sim, rules, &selected, 1, grinder, false, Some(&registry)),
+        [(ivan, FriendlyIvanAction::Grind)]
+    );
+
+    let russians = sim.interner().get("Russians").unwrap();
+    let credits = sim.houses()[&russians].economy().credits();
+    assert!(sim.apply_command("Americans", &eaten(ivan, grinder), Some(rules)));
+    for _ in 0..900 {
+        sim.advance_tick(&[], Some(rules), None, None, 67);
+        if sim.entities().get(ivan).is_none() {
+            break;
+        }
+    }
+    assert!(sim.entities().get(ivan).is_none(), "the Ivan is ground");
+    assert!(
+        sim.houses()[&russians].economy().credits() > credits,
+        "the Grinder's House is refunded"
     );
 }
 
@@ -737,6 +818,7 @@ fn screen_overlap_with_hovering_rocketeer_keeps_bunker_enter_action() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         )),
         Some(CursorId::Enter)
     );
@@ -862,6 +944,7 @@ fn carrier_cursor(
         modifier,
         modifier == OrderModifier::ForceMove,
         false,
+        &mut Default::default(),
     ))
 }
 
@@ -1105,6 +1188,7 @@ fn a_gi_selected_with_the_ifv_boards_it_when_the_ifv_is_clicked() {
     for id in [gi, ifv] {
         sim.entity_mut_for_test(id)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(true);
     }
@@ -1310,6 +1394,7 @@ fn a_carryall_over_the_players_tank_totes_it() {
             OrderModifier::Normal,
             false,
             false,
+            &mut Default::default(),
         )),
         Some(CursorId::Tote)
     );

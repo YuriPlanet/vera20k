@@ -43,7 +43,7 @@ fn scene(rules: &RuleSet, kind: &str) -> (Simulation, u64) {
 
 fn visit(sim: &mut Simulation, id: u64, rules: &RuleSet, frame: u32) -> i32 {
     sim.session.set_binary_frame_for_test(frame);
-    tick_stock_cloak_producer(sim, id, rules, None, FrameEffects::default());
+    tick_stock_cloak_producer(sim, id, rules, None, &mut FrameEffects::default());
     sim.substrate
         .entities
         .get(id)
@@ -54,12 +54,12 @@ fn visit(sim: &mut Simulation, id: u64, rules: &RuleSet, frame: u32) -> i32 {
         .state()
 }
 
-fn sounds(sim: &Simulation) -> Vec<&str> {
+fn sounds<'a>(rules: &'a RuleSet, sim: &'a Simulation) -> Vec<&'a str> {
     sim.sound_events
         .as_slice()
         .iter()
         .filter_map(|event| match event {
-            SimSoundEvent::CloakSound { sound_id, .. } => Some(sound_id.as_str()),
+            SimSoundEvent::CloakSound { sound_id, .. } => Some(sound_id.name_in(rules)),
             _ => None,
         })
         .collect()
@@ -105,8 +105,8 @@ fn ares_cloak_stages_and_sounds_follow_the_type_before_rules() {
     assert_eq!((sub_depth, plain_depth), (2, 8));
     // Hook70380A: the type's CloakSound; hook70375B: the type's explicit
     // none silences the decloak, while an unset type uses DecloakSound.
-    assert_eq!(sounds(&sub), ["SubCloak"]);
-    assert_eq!(sounds(&plain), ["NavalUnitEmerge", "GlobalDecloak"]);
+    assert_eq!(sounds(&rules, &sub), ["SubCloak"]);
+    assert_eq!(sounds(&rules, &plain), ["NavalUnitEmerge", "GlobalDecloak"]);
 }
 
 #[test]

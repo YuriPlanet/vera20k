@@ -157,6 +157,26 @@ impl Foundation {
             .chain(listed.iter().copied())
     }
 
+    /// Whether [`Self::cell_offsets`] yields `offset`, without walking it: a
+    /// stock rectangle by its bounds, the refinery's eight-entry list, and a
+    /// custom list by binary search over its sorted, unique cells.
+    pub fn contains_cell_offset(&self, offset: (i16, i16)) -> bool {
+        match self {
+            Self::Stock(id) => {
+                let def = &FOUNDATION_TABLE[usize::from(*id)];
+                if def.id == REFINERY_FOUNDATION_ID {
+                    REFINERY_CELL_OFFSETS.contains(&offset)
+                } else {
+                    let (dx, dy) = offset;
+                    (0..i32::from(def.width)).contains(&i32::from(dx))
+                        && (0..i32::from(def.height)).contains(&i32::from(dy))
+                }
+            }
+            Self::Custom(custom) => custom.cells.binary_search(&offset).is_ok(),
+            Self::InvalidCustom => unreachable!("invalid foundation rejected before projection"),
+        }
+    }
+
     pub(crate) fn custom_outline(&self) -> Option<&[(i16, i16)]> {
         match self {
             Self::Custom(custom) => Some(&custom.outline),
@@ -533,6 +553,30 @@ mod tests {
             rules.object("TEST").unwrap().foundation,
             Foundation::default()
         );
+    }
+
+    /// The membership search relies on the reader keeping a custom list
+    /// sorted and unique, whatever order the art lists its cells in.
+    #[test]
+    fn custom_cells_are_found_whatever_order_the_art_lists_them_in() {
+        use crate::rules::ini_parser::IniFile;
+        let art = IniFile::from_str(
+            "[ART]\nFoundation=Custom\nFoundation.X=3\nFoundation.Y=2\n\
+            Foundation.0=2,1\nFoundation.1=0,0\nFoundation.2=1,0\nFoundation.3=0,0\n",
+        );
+        let mut foundation = Foundation::default();
+        foundation.read_custom_pass(art.section_or_empty("ART"));
+        let listed = [(0, 0), (1, 0), (2, 1)];
+        assert_eq!(foundation.cell_offsets().collect::<Vec<_>>(), listed);
+        for dx in -1..4 {
+            for dy in -1..3 {
+                assert_eq!(
+                    foundation.contains_cell_offset((dx, dy)),
+                    listed.contains(&(dx, dy)),
+                    "({dx}, {dy})"
+                );
+            }
+        }
     }
 
     #[test]

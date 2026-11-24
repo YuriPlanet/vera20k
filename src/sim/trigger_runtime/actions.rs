@@ -78,13 +78,12 @@ impl Simulation {
         target: crate::sim::intern::InternedId,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let mut found = false;
         for powered_pass in [false, true] {
             let mut ordinal = 0;
-            while ordinal < self.substrate.entities.techno_registry_len() {
-                let id = self.substrate.entities.techno_registry_at(ordinal).unwrap();
+            while let Some(id) = self.substrate.entities.techno_registry_at(ordinal) {
                 let eligible = self.substrate.entities.get(id).is_some_and(|entity| {
                     let powered = entity.category()
                         == crate::map::entities::EntityCategory::Structure
@@ -126,7 +125,7 @@ impl Simulation {
         type_name: &str,
         rules: &crate::rules::ruleset::RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(at) = self.session.waypoint_cell(waypoint) else {
             return false;
@@ -149,11 +148,9 @@ impl Simulation {
         }) else {
             return false;
         };
-        let type_id = object.id.clone();
-        let owner_name = self.interner.resolve(owner).to_owned();
         let Some(created) = self.construct_object_limbo_at_height(
-            &type_id,
-            &owner_name,
+            object.id.as_str(),
+            owner,
             0,
             0,
             0,
@@ -199,7 +196,7 @@ impl Simulation {
         effects: &mut Vec<TriggerEffect>,
         rules: &crate::rules::ruleset::RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         #[cfg(any(test, feature = "test-support"))]
         if self.trigger_runtime.stop_before_action == Some(action.entry.kind) {
@@ -260,7 +257,7 @@ impl Simulation {
         effects: &mut Vec<TriggerEffect>,
         rules: &crate::rules::ruleset::RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         // Ares 3.0 TActionExt::Execute (100396C0, hook 0x6DD8D7) answers its
         // own kinds before the stock switch.
@@ -480,12 +477,7 @@ impl Simulation {
                 };
                 let mut matched = false;
                 let mut ordinal = 0;
-                while ordinal < self.substrate.entities.building_registry_len() {
-                    let id = self
-                        .substrate
-                        .entities
-                        .building_registry_at(ordinal)
-                        .unwrap();
+                while let Some(id) = self.substrate.entities.building_registry_at(ordinal) {
                     let light = self
                         .substrate
                         .entities
@@ -520,12 +512,7 @@ impl Simulation {
                 };
                 let mut matched = false;
                 let mut ordinal = 0;
-                while ordinal < self.substrate.entities.building_registry_len() {
-                    let id = self
-                        .substrate
-                        .entities
-                        .building_registry_at(ordinal)
-                        .unwrap();
+                while let Some(id) = self.substrate.entities.building_registry_at(ordinal) {
                     let eligible = self.substrate.entities.get(id).is_some_and(|entity| {
                         entity.category() == crate::map::entities::EntityCategory::Structure
                             && entity.lifecycle.object_alive()
@@ -557,12 +544,7 @@ impl Simulation {
                 let online = action.kind == 62;
                 let mut matched = false;
                 let mut ordinal = 0;
-                while ordinal < self.substrate.entities.building_registry_len() {
-                    let id = self
-                        .substrate
-                        .entities
-                        .building_registry_at(ordinal)
-                        .unwrap();
+                while let Some(id) = self.substrate.entities.building_registry_at(ordinal) {
                     let eligible = self.substrate.entities.get(id).is_some_and(|entity| {
                         entity.lifecycle.object_alive()
                             && entity.lifecycle.cell_marked()
@@ -602,7 +584,7 @@ impl Simulation {
                         self.substrate
                             .entities
                             .get_mut(id)
-                            .unwrap()
+                            .expect("the eligibility check read this entity just above")
                             .infantry
                             .as_mut()
                             .expect("Infantry constructor owns its runtime")
@@ -705,8 +687,7 @@ impl Simulation {
                 loop {
                     let mut visited_match = false;
                     let mut ordinal = 0;
-                    while ordinal < self.substrate.entities.techno_registry_len() {
-                        let id = self.substrate.entities.techno_registry_at(ordinal).unwrap();
+                    while let Some(id) = self.substrate.entities.techno_registry_at(ordinal) {
                         if refused.contains(&id) {
                             ordinal += 1;
                             continue;
@@ -778,7 +759,7 @@ impl Simulation {
                         crate::sim::world::bridge_orchestrator::BridgeDamageDrivers::new(
                             self,
                             rules,
-                            frame_effects,
+                            frame_effects.reborrow(),
                         );
                     for _ in 0..4 {
                         if driver.apply_damage_to_cell(context.input.cell) {
@@ -831,8 +812,7 @@ impl Simulation {
                     return false;
                 };
                 let mut ordinal = 0;
-                while ordinal < self.substrate.entities.techno_registry_len() {
-                    let id = self.substrate.entities.techno_registry_at(ordinal).unwrap();
+                while let Some(id) = self.substrate.entities.techno_registry_at(ordinal) {
                     let eligible = self.substrate.entities.get(id).is_some_and(|e| {
                         e.category() == crate::map::entities::EntityCategory::Structure
                             && e.lifecycle.object_alive()
@@ -975,8 +955,7 @@ impl Simulation {
                 };
                 let mut found = false;
                 let mut ordinal = 0;
-                while ordinal < self.substrate.entities.techno_registry_len() {
-                    let id = self.substrate.entities.techno_registry_at(ordinal).unwrap();
+                while let Some(id) = self.substrate.entities.techno_registry_at(ordinal) {
                     let eligible = self.substrate.entities.get(id).is_some_and(|entity| {
                         entity.lifecycle.object_alive()
                             && entity.lifecycle.cell_marked()
@@ -1533,7 +1512,7 @@ impl Simulation {
                                     {
                                         self.trigger_runtime.triggers[live]
                                             .as_mut()
-                                            .unwrap()
+                                            .expect("the scan read this live Trigger just above")
                                             .enabled = true;
                                         Self::reset_trigger_timers(
                                             &self.session,
@@ -1546,7 +1525,7 @@ impl Simulation {
                                 ACTION_DISABLE_TRIGGER => {
                                     self.trigger_runtime.triggers[live]
                                         .as_mut()
-                                        .unwrap()
+                                        .expect("the scan read this live Trigger just above")
                                         .enabled = false;
                                 }
                                 _ => unreachable!(),

@@ -136,7 +136,7 @@ pub(crate) fn launched_stock_submarine_torpedo(
                 &rules,
                 33,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("ordinary submarine Attack frame");
         assert!(output.tick.frame_committed);
@@ -266,7 +266,7 @@ fn stock_submarine_attack_has_a_visible_flat_voxel_torpedo(elite: bool) {
             &rules,
             33,
             crate::sim::world::TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("ordinary torpedo flight/impact frame");
         if sim.projectiles().get(id).is_none() {
@@ -381,7 +381,12 @@ fn admitted_stock_kirov_bomb_has_a_visible_voxel_body() {
             .unwrap();
         for frame in 1..=8 {
             sim.session_mut_for_test().set_binary_frame_for_test(frame);
-            sim.visit_combat_tail(id, rules, None, crate::sim::world::FrameEffects::default());
+            sim.visit_combat_tail(
+                id,
+                rules,
+                None,
+                &mut crate::sim::world::FrameEffects::default(),
+            );
             if let Some(expected) = shot["frames"]
                 .as_array()
                 .unwrap()

@@ -6,6 +6,17 @@
 //! This module owns formatting only. The app owns membership, map
 //! verification and launch state.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use super::{LanMessage, LanMessageError, LanMessageKind, c_string};
 
 const BODY_OFFSET: usize = 0x2f;

@@ -668,6 +668,43 @@ fn retail_lunar_water_family_uses_the_original_postpass() {
     assert!(TileIds::resolve(&theater).is_water_shore_or_waterfall(0));
 }
 
+/// Retail SNOWMD.INI names Ice1Set..IceShoreSet but gives those sets no
+/// tiles, so the retail snow theater runs no ice (docs/ts-ice.md).
+#[test]
+fn retail_snow_theater_runs_no_ice() {
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let theater = load_theater(&mut assets, "SNOW").expect("load retail snow theater");
+    let ini = IniFile::from_bytes(&theater.ini_data).expect("SNOWMD.INI");
+    let general = ini.section("General").expect("[General]");
+    for key in ["Ice1Set", "Ice2Set", "Ice3Set", "IceShoreSet"] {
+        let set = usize::try_from(general.read_int(key, -1)).expect(key);
+        assert_eq!(theater.lookup.bounds()[set].count, 0, "{key}");
+    }
+    assert_eq!(theater.ice_sets, None);
+}
+
+#[test]
+fn an_ice_map_gets_bundled_tiles_then_an_ordinary_snow_map_gets_stock_tiles() {
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let map = IniFile::from_str("[Map]\nTheater=SNOW\nVeraIce=yes\n");
+    let ice = load_scenario_theater(&mut assets, "SNOW", &map, true).unwrap();
+    assert_eq!(ice.ice_sets, Some([4096, 4160, 4224]));
+    assert_eq!(ice.lookup.filename(964), None);
+    let cracked = ice.lookup.filename(4112).unwrap();
+    let (bytes, source) = assets.get_with_source_ref(cracked).unwrap();
+    assert_eq!(source, "vera_ice.mix");
+    assert!(TmpFile::from_bytes(bytes).is_ok());
+
+    let stock = load_scenario_theater(&mut assets, "SNOW", &IniFile::empty(), false).unwrap();
+    assert_eq!(stock.ice_sets, None);
+    assert_eq!(stock.lookup.filename(4096), None);
+    assert_eq!(ice.lookup.filename(963), stock.lookup.filename(963));
+}
+
 #[test]
 fn selected_retail_temperate_rmg_roles_reach_tile_ids() {
     use crate::map::rmg::tiles::TileIds;
@@ -1261,6 +1298,8 @@ fn synthetic_theater_with_bridge_keys(
         automatic_tube_bases: [-1; 4],
         cliff_ranges: TheaterCliffRanges::default(),
         rmg_tiles: super::RmgTileKeys::default(),
+        ice_sets: None,
+        terrain_files: crate::map::theater::TerrainFiles::GameFolder,
     }
 }
 
@@ -1444,6 +1483,79 @@ fn load_theater_prefers_the_profile_theater_ini_then_the_stock_name() {
         AssetManager::from_loose_root_for_test(dir.path()).with_selected_ini_roots(roots);
     let theater = load_theater(&mut assets, "TEMPERATE").expect("profile theater INI");
     assert_eq!(theater.ini_data, profile_ini);
+}
+
+/// VERA: a load of the original terrain reads the theater INI and tiles a
+/// retail install reads, past a tile pack in `expandmd06.mix` and loose
+/// files: the pack's table, its bytes for a retail tile, its tile in a slot
+/// retail leaves empty and a loose variant are all passed over, and every
+/// later read of those names follows until the next load. A loose theater
+/// MIX that does not open still leaves the shipped copy it hides.
+#[test]
+fn original_terrain_reads_past_the_game_folders_terrain_files() {
+    use crate::assets::asset_manager::MediaArchiveMode;
+    let dir = terrain_test_install("original-terrain");
+    let open = || AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+    let mut assets = open();
+
+    let original = load_theater_with(&mut assets, "SNOW", TerrainFiles::Original).unwrap();
+    assert!(assets.names_pinned());
+    assert!(!original.lookup.is_morphable(0));
+    assert_eq!(original.lookup.variant_filenames(0), ["clear01a.sno"]);
+    assert_eq!(assets.get_ref("clear01.sno"), Some(&b"tile"[..]));
+    assert_eq!(assets.get_ref("clear02.sno"), None, "the pack's tile");
+    assert_eq!(assets.get_ref("clear01b.sno"), None, "the loose variant");
+
+    let folder = load_theater(&mut assets, "SNOW").unwrap();
+    assert!(!assets.names_pinned());
+    assert!(folder.lookup.is_morphable(0));
+    assert_eq!(
+        folder.lookup.variant_filenames(0),
+        ["clear01a.sno", "clear01b.sno"]
+    );
+    assert_eq!(assets.get_ref("clear01.sno"), Some(&b"changed"[..]));
+    assert_eq!(assets.get_ref("clear02.sno"), Some(&b"added"[..]));
+
+    std::fs::write(dir.path().join("isosnomd.mix"), b"not a MIX").unwrap();
+    let mut assets = open();
+    load_theater_with(&mut assets, "SNOW", TerrainFiles::Original).unwrap();
+    assert_eq!(assets.get_ref("clear01.sno"), Some(&b"tile"[..]));
+}
+
+/// VERA: on a retail install the original terrain is the terrain every other
+/// load reads: one INI, one table, the same variants and bytes. A network
+/// match then loads what a skirmish does.
+#[test]
+fn a_retail_installs_original_terrain_is_what_it_reads_anyway() {
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let read = |assets: &AssetManager, lookup: &TilesetLookup| -> Vec<Option<(usize, u64)>> {
+        let names = lookup.entries.iter().flatten();
+        names
+            .chain(lookup.variant_filenames.iter().flatten())
+            .map(|name| {
+                let bytes = assets.get_ref(name)?;
+                let sum = bytes.iter().fold(0u64, |sum, &byte| {
+                    sum.wrapping_mul(31).wrapping_add(u64::from(byte))
+                });
+                Some((bytes.len(), sum))
+            })
+            .collect()
+    };
+    let folder = load_theater(&mut assets, "TEMPERATE").expect("retail Temperate");
+    let folder_tiles = read(&assets, &folder.lookup);
+    let original = load_theater_with(&mut assets, "TEMPERATE", TerrainFiles::Original)
+        .expect("the original Temperate");
+    assert!(assets.names_pinned());
+    assert_eq!(original.ini_data, folder.ini_data);
+    assert_eq!(original.lookup.entries, folder.lookup.entries);
+    assert_eq!(
+        original.lookup.variant_filenames,
+        folder.lookup.variant_filenames
+    );
+    assert!(folder_tiles.iter().flatten().count() > 500);
+    assert_eq!(read(&assets, &original.lookup), folder_tiles);
 }
 
 /// A map cell names its subtile in one byte, so a template's cells past the

@@ -102,7 +102,7 @@ impl Simulation {
                         .raw_cell_occupation
                         .retain_process_dummy_from(&live.substrate.raw_cell_occupation);
                 }
-                self.main_rng = live.main_rng.staged_copy();
+                self.main_rng = live.main_rng.clone();
                 self.bind_shared_cell_dummy(live.effective_shared_cell_dummy());
             }
             SnapshotProcessState::Cold(main) => {
@@ -110,7 +110,7 @@ impl Simulation {
                     self.session.record_random_seed(0);
                     self.mapgen_rng = SimRng::new(0);
                 }
-                self.main_rng = main.staged_copy();
+                self.main_rng = main.checkpoint();
             }
         }
     }
@@ -155,22 +155,20 @@ impl Simulation {
         // consumes it when adjusting the active trigger traversal cursors.
         self.session.publish_started();
         self.scenario_rng = scenario;
-        // Keep the existing process draw capabilities attached when the
-        // normal rendered loader already installed its Main owner.
-        self.main_rng.install_from(main.into());
+        self.main_rng = main;
         self.mapgen_rng = mapgen;
         Ok(())
     }
 
     /// Init_Random_Number_System52FC20. The caller supplies the resolved
-    /// clock/override seed. Both Scenario and process Main are reseeded,
-    /// Main in its shared process cell; MapGen is untouched.
+    /// clock/override seed. Both Scenario and this simulation's Main are
+    /// reseeded; MapGen is untouched.
     /// Executed full-state controls:
     /// tools/rmg_oracle/vectors/rng.json::menu_rng_cases.
     pub fn initialize_random_number_system(&mut self, seed: u32) {
         self.session.record_random_seed(u64::from(seed));
         self.scenario_rng = SimRng::new(u64::from(seed));
-        self.main_rng.install_from(MainRng::new(u64::from(seed)));
+        self.main_rng = SimRng::new(u64::from(seed));
     }
 
     /// Apply the successful load's native MapClass Resize reconstruction to
@@ -241,7 +239,7 @@ impl Simulation {
         &self.scenario_rng
     }
 
-    pub fn main_rng(&self) -> &MainRng {
+    pub fn main_rng(&self) -> &SimRng {
         &self.main_rng
     }
 
@@ -934,7 +932,7 @@ impl Simulation {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub fn main_rng_mut_for_test(&mut self) -> &mut MainRng {
+    pub fn main_rng_mut_for_test(&mut self) -> &mut SimRng {
         &mut self.main_rng
     }
 
@@ -1026,6 +1024,7 @@ impl Simulation {
         self.real_cell_bridge_flags_0x1180 =
             resolved_terrain.capture_real_cell_bridge_flags_0x1180();
         self.dynamic_terrain_cells.clear();
+        self.ice_cracks.clear();
         self.resolved_terrain = Some(resolved_terrain);
         // A fresh grid restarts its mutation epoch; drop any plane keyed on the old one.
         self.movement_pass_cache = Default::default();
@@ -1104,12 +1103,12 @@ impl Simulation {
     /// generation. Called only by sim's opaque bootstrap owner; Scenario
     /// remains independently owned by the Fill pass.
     pub(in crate::sim) fn install_variant_advanced_main_rng(&mut self, main_rng: SimRng) {
-        self.main_rng = main_rng.into();
+        self.main_rng = main_rng;
     }
 
     /// Bind a successful fresh or saved scenario to the retained process Main
-    /// cell: its staged cursor moves into the process cell, and the
-    /// simulation continues from that cursor in a cell of its own.
+    /// cell: the process cell takes this simulation's staged cursor, and the
+    /// simulation continues from that same cursor in its own generator.
     /// App orchestration must first cancel the outgoing playback callbacks.
     ///
     /// Residual (sim-scale deviation, docs/sim-thread.md): gamemd's one Main
@@ -1118,9 +1117,9 @@ impl Simulation {
     /// install on. Main is outside saves and the state hash, so only which
     /// random voice or variation plays can differ from gamemd.
     pub fn install_fresh_process_main(&mut self, process: &MainRng) {
-        let staged = std::mem::replace(&mut self.main_rng, process.shared_owner());
-        process.install_from(staged);
-        self.main_rng = process.detached_copy();
+        // Two streams from one cursor is the intent: from here the app and
+        // the simulation each draw their own.
+        process.install(self.main_rng.clone());
     }
 
     /// Install the process MapGen cursor prepared by the bootstrap owner.

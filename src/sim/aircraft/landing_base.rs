@@ -38,6 +38,7 @@ pub(crate) fn landing_base(
         //65AD40 reads raw slot0, not the first live contact. A hole must not
         // promote another dock to this special ground-level landing case.
         let docking_at_ground = entity
+            .seldom
             .radio_contacts
             .slot(0)
             .and_then(|id| entities.get(id))
@@ -55,7 +56,7 @@ pub(crate) fn landing_base(
         }
     }
     //65AE30 scans every slot. It does not require the contact to be a building.
-    if loaded || !entity.radio_contacts.is_empty() {
+    if loaded || !entity.seldom.radio_contacts.is_empty() {
         100
     } else {
         0
@@ -79,8 +80,9 @@ pub(crate) fn landing_direction(
     pose_dir: i32,
 ) -> i32 {
     let dir8 = |facing: u16| i32::from(crate::util::direction_tables::dir_from_facing16(facing));
-    if !entity.radio_contacts.is_empty()
+    if !entity.seldom.radio_contacts.is_empty()
         && let Some(contact) = entity
+            .seldom
             .radio_contacts
             .slot(0)
             .and_then(|id| entities.get(id))

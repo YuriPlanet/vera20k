@@ -214,17 +214,17 @@ fn generic_member_follows_capture_and_limbo_through_existing_owners() {
         can_build(&sim, &rules, owner, product, false, false),
         CanBuild::No
     );
-    sim.change_owner_with_rules(member, owner, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(member, owner, &rules, None, &mut FrameEffects::default());
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, false),
         CanBuild::Yes
     );
-    sim.change_owner_with_rules(member, other, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(member, other, &rules, None, &mut FrameEffects::default());
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, false),
         CanBuild::No
     );
-    sim.change_owner_with_rules(member, owner, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(member, owner, &rules, None, &mut FrameEffects::default());
     sim.techno_limbo_with_rules(member, &rules);
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, false),
@@ -245,7 +245,12 @@ fn generic_member_follows_capture_and_limbo_through_existing_owners() {
         1,
         "UnInit leaves ctor-to-dtor tracking until physical destruction"
     );
-    sim.process_pending_delete_with(&rules, FrameEffects::default(), 1, sim.session.started());
+    sim.process_pending_delete_with(
+        &rules,
+        &mut FrameEffects::default(),
+        1,
+        sim.session.started(),
+    );
     assert_eq!(
         sim.houses[&owner]
             .tracking()
@@ -260,13 +265,22 @@ fn alternate_follows_owned_limbo_acquisition_and_destruction() {
     let (mut sim, rules, owner) = lifecycle_world("TechLevel=1\nPrerequisite=custom");
     let product = rules.object("Q").unwrap();
     let alternate = sim
-        .construct_object_limbo_at_height("ALT", "H1", 0, 0, 0, 0, &rules, FrameEffects::default())
+        .construct_object_limbo_at_height(
+            "ALT",
+            "H1",
+            0,
+            0,
+            0,
+            0,
+            &rules,
+            &mut FrameEffects::default(),
+        )
         .unwrap();
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, false),
         CanBuild::No
     );
-    sim.change_owner_with_rules(alternate, owner, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(alternate, owner, &rules, None, &mut FrameEffects::default());
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, false),
         CanBuild::Yes
@@ -278,7 +292,7 @@ fn alternate_follows_owned_limbo_acquisition_and_destruction() {
             .active_count(EntityCategory::Unit, type_id),
         0
     );
-    sim.discard_constructed_limbo(alternate, &rules, FrameEffects::default());
+    sim.discard_constructed_limbo(alternate, &rules, &mut FrameEffects::default());
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, false),
         CanBuild::No
@@ -293,19 +307,37 @@ fn generic_override_precedes_tech_and_prerequisites_then_checks_build_limit() {
     );
     let product = rules.object("Q").unwrap();
     let alternate = sim
-        .construct_object_limbo_at_height("ALT", "H0", 0, 0, 0, 0, &rules, FrameEffects::default())
+        .construct_object_limbo_at_height(
+            "ALT",
+            "H0",
+            0,
+            0,
+            0,
+            0,
+            &rules,
+            &mut FrameEffects::default(),
+        )
         .unwrap();
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, false),
         CanBuild::Yes
     );
-    sim.construct_object_limbo_at_height("Q", "H0", 0, 0, 0, 0, &rules, FrameEffects::default())
-        .unwrap();
+    sim.construct_object_limbo_at_height(
+        "Q",
+        "H0",
+        0,
+        0,
+        0,
+        0,
+        &rules,
+        &mut FrameEffects::default(),
+    )
+    .unwrap();
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, false),
         CanBuild::AtLimit
     );
-    sim.discard_constructed_limbo(alternate, &rules, FrameEffects::default());
+    sim.discard_constructed_limbo(alternate, &rules, &mut FrameEffects::default());
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, false),
         CanBuild::No
@@ -357,7 +389,7 @@ fn installed_upgrade_direct_and_group_requirements_follow_host_lifecycle() {
             0,
             0,
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     assert!(sim.try_install_building_upgrade(temporary, host, &rules, UninitContext::new(&rules),));
@@ -368,10 +400,15 @@ fn installed_upgrade_direct_and_group_requirements_follow_host_lifecycle() {
             .lifecycle
             .object_alive()
     );
-    sim.process_pending_delete_with(&rules, FrameEffects::default(), 1, sim.session.started());
+    sim.process_pending_delete_with(
+        &rules,
+        &mut FrameEffects::default(),
+        1,
+        sim.session.started(),
+    );
     assert!(sim.entities().get(temporary).is_none());
     admission(&sim, CanBuild::No);
-    sim.change_owner_with_rules(host, owner, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(host, owner, &rules, None, &mut FrameEffects::default());
     admission(&sim, CanBuild::Yes);
     let upgrade = sim.interner.get("UPGRADE").unwrap();
     assert_eq!(
@@ -380,12 +417,12 @@ fn installed_upgrade_direct_and_group_requirements_follow_host_lifecycle() {
             .active_count(EntityCategory::Structure, upgrade),
         0
     );
-    sim.change_owner_with_rules(host, other, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(host, other, &rules, None, &mut FrameEffects::default());
     admission(&sim, CanBuild::No);
-    sim.change_owner_with_rules(host, owner, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(host, owner, &rules, None, &mut FrameEffects::default());
     admission(&sim, CanBuild::Yes);
     assert_eq!(
-        sim.power_down_building_upgrade(host, &rules, Default::default()),
+        sim.power_down_building_upgrade(host, &rules, &mut Default::default()),
         Some(upgrade)
     );
     admission(&sim, CanBuild::No);
@@ -505,8 +542,17 @@ fn check_build_limit_counts_the_held_object_once() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
     let (mut sim, rules, owner) = lifecycle_world("BuildLimit=2");
     let product = rules.object("Q").unwrap();
-    sim.construct_object_limbo_at_height("Q", "H0", 0, 0, 0, 0, &rules, FrameEffects::default())
-        .unwrap();
+    sim.construct_object_limbo_at_height(
+        "Q",
+        "H0",
+        0,
+        0,
+        0,
+        0,
+        &rules,
+        &mut FrameEffects::default(),
+    )
+    .unwrap();
     let q = sim.interner.get("Q").unwrap();
     assert!(sim.production.factories_mut().test_enqueue_kernel(
         owner,
@@ -516,8 +562,17 @@ fn check_build_limit_counts_the_held_object_once() {
         0
     ));
     assert!(!check_build_limit(&sim, &rules, owner, product));
-    sim.construct_object_limbo_at_height("Q", "H0", 0, 0, 0, 0, &rules, FrameEffects::default())
-        .unwrap();
+    sim.construct_object_limbo_at_height(
+        "Q",
+        "H0",
+        0,
+        0,
+        0,
+        0,
+        &rules,
+        &mut FrameEffects::default(),
+    )
+    .unwrap();
     assert!(check_build_limit(&sim, &rules, owner, product));
 }
 

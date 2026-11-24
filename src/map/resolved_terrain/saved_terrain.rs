@@ -185,6 +185,10 @@ impl SavedTerrainTemplate {
         (self.width, self.height)
     }
 
+    pub(crate) fn tube(&self, id: TubeId) -> Option<&TubeFact> {
+        self.tube_facts.get(id.as_usize())
+    }
+
     pub fn validate(&self) -> Result<(), SavedTerrainError> {
         // Resize565C10 owns the fixed512x512 cell table. A one-sided empty
         // rectangle is not a materialized grid produced by the map owner.
@@ -295,7 +299,7 @@ impl SavedTerrainTemplate {
         Ok(ResolvedTerrainGrid {
             width: self.width,
             height: self.height,
-            level_span: LevelSpan::of(self.cells.iter().map(|cell| cell.level)),
+            level_span: LevelSpan::of_terrain(&self.cells),
             cells: super::terrain_cells::TerrainCells::new(self.cells),
             land_speed_costs: land_speed_cost_profiles(None),
             overlay_passability: Default::default(),
@@ -315,10 +319,12 @@ impl SavedTerrainTemplate {
             dummy_accepts_smudge: false,
             bridge_set_start: None,
             high_bridge_rim_tiles: None,
+            wood_bridge_rim_tiles: Default::default(),
             wood_bridge_set_start: None,
             tile_animations: self.tile_animations,
             destroyable_cliff_catalog: None,
             deformation_catalog: None,
+            ice_catalog: None,
             deformation_enabled: false,
             bridge_recalc_catalog: None,
             allocation_caches: Default::default(),
@@ -402,10 +408,6 @@ impl ResolvedTerrainGrid {
 
     /// Derived asset/catalog binding shared by fresh construction and saved
     /// loading. It never materializes cells or enters the variant selector.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "theater, assets, both rules projections and the selector inputs"
-    )]
     pub(super) fn bind_asset_catalogs(
         &mut self,
         theater: Option<&TheaterData>,
@@ -439,6 +441,12 @@ impl ResolvedTerrainGrid {
         self.dummy_accepts_smudge =
             theater.is_some_and(|td| current_tile_permissions(&td.lookup, 0xffff).0);
         self.high_bridge_rim_tiles = theater.map(|td| td.high_bridge_rim_tiles);
+        self.wood_bridge_rim_tiles =
+            theater
+                .zip(assets)
+                .map_or_else(Default::default, |(td, assets)| {
+                    crate::map::bridge_rim_tiles::WoodBridgeRimTiles::from_theater(td, assets)
+                });
         self.bridge_set_start = theater.and_then(|td| {
             td.bridge_set
                 .and_then(|set| td.lookup.bounds().get(usize::from(set)))
@@ -453,6 +461,7 @@ impl ResolvedTerrainGrid {
             self.native_tmp_draw_heights.clear();
             self.destroyable_cliff_catalog = None;
             self.deformation_catalog = None;
+            self.ice_catalog = None;
             self.bridge_recalc_catalog = None;
             return;
         }
@@ -460,6 +469,7 @@ impl ResolvedTerrainGrid {
         self.destroyable_cliff_catalog = build_destroyable_cliff_catalog(theater, assets, rules);
         self.deformation_catalog =
             super::deformation::build_deformation_catalog(theater, assets, rules);
+        self.ice_catalog = super::ice::build_ice_catalog(theater, assets, rules);
         self.bridge_recalc_catalog = match (theater, assets, rules) {
             (Some(theater), Some(assets), Some(rules)) => {
                 Some(Arc::new(BridgeRecalcCatalog::for_runtime_terrain(
@@ -486,10 +496,6 @@ impl ResolvedTerrainGrid {
     /// Bind the future-restore baseline after the actual loaded cells have
     /// visited the selector. A baseline is not itself a native loaded-cell pass
     /// and must never initialize a cold table or consume additional Main draws.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the existing map binder inputs plus the scenario's overlay types"
-    )]
     pub fn bind_saved_template_assets(
         &mut self,
         theater: &TheaterData,
@@ -519,10 +525,6 @@ impl ResolvedTerrainGrid {
     /// native iterator/variant scan. Run this after dynamic cells, before final
     /// publication. Later presentation reads use the same retained table; only
     /// presentation projections change, never Cell gameplay/Tube/Anim values.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the existing map binder inputs plus the saved Size and selector continuation"
-    )]
     pub fn finish_loaded_assets(
         &mut self,
         theater: &TheaterData,

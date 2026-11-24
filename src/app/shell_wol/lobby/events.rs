@@ -3,6 +3,7 @@
 //! channel bans.
 
 use crate::app::shell_network_setup as setup;
+use crate::app::shell_route::ShellRoute;
 use crate::app::shell_wol::service::{self, WolServiceEvent, WolServiceRequest};
 use crate::app::{App, AppState};
 use crate::ui::lan_shell::LanChatLine;
@@ -10,12 +11,12 @@ use crate::ui::wol_chat;
 use crate::ui::wol_lobby::*;
 
 use super::{
-    BoxThen, Runner, Step, awaiting_room, base_names, close_runner, close_wait, created, csf,
+    BoxThen, Runner, Step, awaiting_room, base_names, close_runner, close_wait, created,
     host_changed, join_picked_lobby, joined, leave_finished, lobby, lobby_dialog, lobby_mut,
-    message_line, modern_lobby, nickname, open_art, put_box, refill_games, refill_lobbies,
-    refill_players, request, request_squad, room_not_returned, room_reopened, setup_channel_left,
-    show_box, show_wait, sort_lobby, units, visit_joined, visit_room_left, visit_settles,
-    visit_user_joined, visit_user_left, visiting, watch_refused,
+    message_line, modern_lobby, nickname, put_box, refill_games, refill_lobbies, refill_players,
+    request, request_squad, room_not_returned, room_reopened, setup_channel_left, show_box,
+    show_wait, sort_lobby, units, visit_joined, visit_room_left, visit_settles, visit_user_joined,
+    visit_user_left, visiting, watch_refused,
 };
 
 /// Lobby events of the service. Events nothing waits for are stale.
@@ -30,7 +31,6 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
             if kind == GAME_CHANNEL && lobby.runner == Runner::QuickMatch {
                 lobby.games = channels.clone();
                 super::quick_match::games_listed(state, &channels);
-                state.platform.window.request_redraw();
                 return;
             }
             if kind == GAME_CHANNEL {
@@ -45,7 +45,6 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
                     close_wait(state);
                     super::buddy::game_listed(state, &name, true);
                 }
-                state.platform.window.request_redraw();
                 return;
             }
             lobby.set_lobbies(channels);
@@ -179,14 +178,15 @@ pub(in crate::app::shell_wol) fn service_event(state: &mut AppState, event: WolS
         WolServiceEvent::WatchRefused(code) => watch_refused(state, code),
         other => log::debug!("WOL event not for the lobby: {other:?}"),
     }
-    state.platform.window.request_redraw();
 }
 
 /// The runner is in a game channel with C2/C9 open over the hidden `0x113`,
 /// or with Quick Match's setup under `0x117`.
 pub(super) fn in_setup_channel(state: &AppState) -> bool {
     // A visitor's room goes on while the lobby page shows.
-    (state.frontend.shell_route.network_setup() || setup::quick_match(state) || visiting(state))
+    (state.frontend.shell_route == ShellRoute::NetworkSetup
+        || setup::quick_match(state)
+        || visiting(state))
         && lobby(state)
             .and_then(|lobby| lobby.current.as_ref())
             .is_some_and(|current| current.kind == GAME_CHANNEL)
@@ -285,7 +285,8 @@ pub(in crate::app::shell_wol) fn message_received(state: &mut AppState, message:
     if visit && !visiting(state) {
         return;
     }
-    let room = !visit && (state.frontend.shell_route.network_setup() || visiting(state));
+    let room =
+        !visit && (state.frontend.shell_route == ShellRoute::NetworkSetup || visiting(state));
     let in_game = state
         .frontend
         .wol
@@ -329,7 +330,6 @@ pub(in crate::app::shell_wol) fn message_received(state: &mut AppState, message:
             visit,
         },
     );
-    state.platform.window.request_redraw();
 }
 
 /// The find sink `0x007A9970` for a locate this user sent (`[0xB76E28]`),
@@ -343,7 +343,6 @@ pub(in crate::app::shell_wol) fn message_received(state: &mut AppState, message:
 pub(in crate::app::shell_wol) fn located(state: &mut AppState, result: Result<WolChannel, u32>) {
     // 0x007A9986: a pending buddy locate takes any answer first.
     if super::buddies::located(state, &result) {
-        state.platform.window.request_redraw();
         return;
     }
     // 0x007A997A: with 0xCF in the stack its status takes the answer.
@@ -362,7 +361,7 @@ pub(in crate::app::shell_wol) fn located(state: &mut AppState, result: Result<Wo
                 None => channel.name.clone(),
             };
             format_csf(
-                &csf(state, "TXT_USER_FOUND"),
+                &state.csf_text("TXT_USER_FOUND"),
                 &[CsfArg::Str(&name), CsfArg::Str(&room)],
             )
         }
@@ -372,7 +371,7 @@ pub(in crate::app::shell_wol) fn located(state: &mut AppState, result: Result<Wo
                 0x0004_0132 => "TXT_USER_FIND_DISABLED",
                 _ => "TXT_USER_NOT_ONLINE",
             };
-            format_csf(&csf(state, key), &[CsfArg::Str(&name)])
+            format_csf(&state.csf_text(key), &[CsfArg::Str(&name)])
         }
     };
     // 0x007AA5D5..0x007AA685: colour [0x7EEF28] = -1; `[0xB76E28]` is
@@ -387,7 +386,6 @@ pub(in crate::app::shell_wol) fn located(state: &mut AppState, result: Result<Wo
     if let Some(visit) = state.frontend.wol.as_mut() {
         visit.locate_name = None;
     }
-    state.platform.window.request_redraw();
 }
 
 /// The page-send result sink `0x007A9800`: success writes `TXT_PAGESENT`
@@ -411,7 +409,6 @@ pub(in crate::app::shell_wol) fn page_result(state: &mut AppState, result: Resul
     } else {
         super::page::current_window_line(state, line);
     }
-    state.platform.window.request_redraw();
 }
 
 /// The NetStatus sink `0x007AA6D0` outside the server-list wait: only
@@ -467,34 +464,31 @@ pub(in crate::app::shell_wol) fn net_status(state: &mut AppState, status: u32) {
         // 0x7AA7E3: TXT_YOURE_DISCON needs 0x113 open; the Quick Match
         // runner only takes event 0, and its exit has no channel to leave.
         super::quick_match::exit(state);
-        state.platform.window.request_redraw();
         return;
     }
     if lobby.runner == Runner::Buddy {
         // The Buddy List runner's pump takes event 0: 0x116 ends without a
         // slide and TXT_YOURE_DISCON shows before the welcome. Over C2/C9
         // the setup is dropped first, as for the lobby.
-        if state.frontend.shell_route.network_setup() {
+        if state.frontend.shell_route == ShellRoute::NetworkSetup {
             crate::app::shell_network_setup::abandon_for_wol_runner(state);
         }
         super::buddy::dialog_ended(state);
         show_box(state, "TXT_YOURE_DISCON", false, BoxThen::Close);
-        state.platform.window.request_redraw();
         return;
     }
-    if state.frontend.shell_route.network_setup() {
+    if state.frontend.shell_route == ShellRoute::NetworkSetup {
         crate::app::shell_network_setup::abandon_for_wol_runner(state);
-        state.frontend.shell_route = crate::app::shell_route::ShellRoute::WolLobby;
+        state.frontend.shell_route = ShellRoute::WolLobby;
         if let Some(lobby) = lobby_mut(state) {
             lobby.shown = true;
             lobby.covered = false;
         }
-        open_art(state);
+        super::leaf::open_art(state, DIALOG);
     }
     // The records are zeroed without a list refill; the box shows over the
     // lists as they were, and the runner then closes.
     show_box(state, "TXT_YOURE_DISCON", false, BoxThen::Close);
-    state.platform.window.request_redraw();
 }
 
 /// The kick sink `0x007AB670` in a chat lobby; nothing while a match runs.
@@ -535,19 +529,19 @@ pub(in crate::app::shell_wol) fn kicked(
         // made it their channel.
         if user.flags & MEMBER_LOCAL != 0 && visiting(state) {
             let text = format_csf(
-                &csf(state, setup::kicked_key(state)),
+                &state.csf_text(setup::kicked_key(state)),
                 &[CsfArg::Str(&channel.name), CsfArg::Str(&by.name)],
             );
             visit_settles(state, text);
             return;
         }
-        if !state.frontend.shell_route.network_setup() && !visiting(state) {
+        if state.frontend.shell_route != ShellRoute::NetworkSetup && !visiting(state) {
             return;
         }
         if user.flags & MEMBER_LOCAL != 0 {
             let key = setup::kicked_key(state);
             let text = format_csf(
-                &csf(state, key),
+                &state.csf_text(key),
                 &[CsfArg::Str(&channel.name), CsfArg::Str(&by.name)],
             );
             crate::app::shell_lan::append_wol_lobby_chat(
@@ -562,7 +556,7 @@ pub(in crate::app::shell_wol) fn kicked(
             return;
         }
         let text = format_csf(
-            &csf(state, "TXT_USER_KICKED"),
+            &state.csf_text("TXT_USER_KICKED"),
             &[
                 CsfArg::Str(&user.name),
                 CsfArg::Str(&channel.name),
@@ -579,14 +573,14 @@ pub(in crate::app::shell_wol) fn kicked(
     }
     if user.flags & MEMBER_LOCAL != 0 {
         let text = format_csf(
-            &csf(state, "TXT_YOURE_KICKED"),
+            &state.csf_text("TXT_YOURE_KICKED"),
             &[CsfArg::Str(&channel.name), CsfArg::Str(&by.name)],
         );
-        let message = service::message_box_text(state, text, false);
+        let message = service::message_box(state, text, false);
         put_box(state, message, BoxThen::Kicked);
     } else {
         let text = format_csf(
-            &csf(state, "TXT_USER_KICKED"),
+            &state.csf_text("TXT_USER_KICKED"),
             &[
                 CsfArg::Str(&user.name),
                 CsfArg::Str(&channel.name),
@@ -599,7 +593,6 @@ pub(in crate::app::shell_wol) fn kicked(
         }
         refill_players(state);
     }
-    state.platform.window.request_redraw();
 }
 
 /// The ban sink `0x007AB3C0`: outside a match, `TXT_CHAN_BAN` or
@@ -619,11 +612,10 @@ pub(in crate::app::shell_wol) fn channel_ban(state: &mut AppState, name: &str, b
         "TXT_CHAN_UNBAN"
     };
     let text = crate::assets::csf_file::format_csf(
-        &csf(state, key),
+        &state.csf_text(key),
         &[crate::assets::csf_file::CsfArg::Str(name)],
     );
     message_line(state, text);
-    state.platform.window.request_redraw();
 }
 
 /// The page sinks after their gates: the ANSI one (`0x007A9200`) keeps the
@@ -649,7 +641,7 @@ pub(in crate::app::shell_wol) fn page_received(
             state,
             &from,
             &text,
-            state.frontend.shell_route.network_setup(),
+            state.frontend.shell_route == ShellRoute::NetworkSetup,
         )
     {
         return;
@@ -685,7 +677,7 @@ pub(in crate::app::shell_wol) fn page_received(
         // (also while Options `0x2BC` hides it), C2/C9's, or `0x11E`'s.
         let route = state.frontend.shell_route;
         let transcript = super::page::page_received(state).is_none()
-            && (route.network_setup()
+            && (route == ShellRoute::NetworkSetup
                 || lobby_dialog(state).is_some()
                 || super::quick_match::page_open(state));
         if transcript {

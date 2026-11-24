@@ -140,7 +140,7 @@ fn a_run_on_coordinates_no_cell_token_expresses_keeps_its_records() {
     sim.adjust_staged_megamission_destinations(&mut run, &rules, None);
     assert_eq!(run, before);
 
-    sim.apply_due_commands(&records, &rules, 0, Default::default());
+    sim.apply_due_commands(&records, &rules, 0, &mut Default::default());
     let grid = sim.path_grid.clone();
     for _ in 0..32 {
         sim.advance_tick(&[], Some(&rules), grid.as_deref(), Some(&registry), 67);
@@ -340,7 +340,7 @@ fn planning_flags_use_the_production_group_destination_distributor() {
         &records,
         &rules,
         0,
-        crate::sim::world::FrameEffects::empty(),
+        &mut crate::sim::world::FrameEffects::empty(),
     );
     let graph = sim.planning_draw_graph(owner, None, None);
     assert_eq!(graph.nodes.len(), 1, "one click is one shared waypoint");
@@ -368,7 +368,7 @@ fn planning_flags_use_the_production_group_destination_distributor() {
                 )
             })
             .collect();
-        sim.apply_due_commands(&batch, &rules, 0, Default::default());
+        sim.apply_due_commands(&batch, &rules, 0, &mut Default::default());
     }
     let graph = sim.planning_draw_graph(owner, None, None);
     assert_eq!(graph.nodes.len(), 3);
@@ -390,7 +390,7 @@ fn planning_flags_use_the_production_group_destination_distributor() {
     sim.publish_planning_commands();
     let due = sim.take_frame_commands_for_test();
     sim.session.set_binary_frame_for_test(5);
-    sim.apply_due_commands(&due, &rules, 2, Default::default());
+    sim.apply_due_commands(&due, &rules, 2, &mut Default::default());
     for actor in actors {
         let entity = sim.entities().get(actor).unwrap();
         assert_eq!(

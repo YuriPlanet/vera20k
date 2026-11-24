@@ -738,7 +738,9 @@ impl TriggerRuntime {
         }
         if let Some(tag) = tag {
             self.cell_tags.insert(cell, tag);
-            let live = self.tags[tag].as_mut().unwrap();
+            let live = self.tags[tag]
+                .as_mut()
+                .expect("a Tag handed to a cell is a live Tag");
             live.refs = live.refs.wrapping_add(1);
             #[cfg(any(test, feature = "dev-overlays"))]
             self.trace_refs(tag);
@@ -759,7 +761,9 @@ impl TriggerRuntime {
         }
         if let Some(tag) = tag {
             self.attachments.insert(attachment, tag);
-            let live = self.tags[tag].as_mut().unwrap();
+            let live = self.tags[tag]
+                .as_mut()
+                .expect("a Tag handed to an attachment is a live Tag");
             if matches!(attachment, TagAttachment::Object(_)) {
                 live.refs = live.refs.wrapping_add(1);
                 #[cfg(any(test, feature = "dev-overlays"))]

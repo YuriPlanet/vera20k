@@ -83,7 +83,7 @@ fn unit_refusals_match_native_and_leave_orders_and_rng_untouched() {
             facing.set(0x4000, frame);
         }
         actor.body_facing = facing;
-        let admitted = unit_scatter_admitted(&actor, flags, &rules, now);
+        let admitted = unit_scatter_admitted(&StringInterner::new(), &actor, flags, &rules, now);
         assert_eq!(admitted, row["admitted"].as_bool().unwrap(), "{input}");
         if !admitted {
             // The production receiver, not only the predicate: a refusal
@@ -100,7 +100,7 @@ fn unit_refusals_match_native_and_leave_orders_and_rng_untouched() {
                     flags,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 )
                 .unwrap()
             );
@@ -114,6 +114,34 @@ fn unit_refusals_match_native_and_leave_orders_and_rng_untouched() {
         checked += 1;
     }
     assert_eq!(checked, 69);
+}
+
+/// TechnoClass::CanScatter (0x006F32B7) refuses trains before either
+/// coordinate arm can draw its scatter direction or assign a destination.
+#[test]
+fn forced_scatter_leaves_a_train_in_place() {
+    let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+        "[VehicleTypes]\n0=LOCO\n[LOCO]\nIsTrain=yes\nStrength=200\nSpeed=6\n\
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::new();
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    let id = sim
+        .spawn_object("LOCO", "Americans", 10, 10, 0, &rules)
+        .unwrap();
+    let rng = sim.scenario_rng.state();
+    sim.scatter(
+        id,
+        Some(DriveCoord::cell(9, 10, 0)),
+        ScatterFlags::new(true, true),
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
+    assert_eq!(sim.scenario_rng.state(), rng);
+    assert_eq!(sim.entities().get(id).unwrap().navigation.nav_com(), None);
 }
 
 /// Without the flags the mission's `Scatter=` (`0x00743AD8..0x00743AEA`) and
@@ -130,18 +158,21 @@ fn unit_flags_override_mission_scatter_and_nav_com() {
     let guard = with_mission(&actor, MissionType::Guard);
     let hunt = with_mission(&actor, MissionType::Hunt);
     assert!(!unit_scatter_admitted(
+        &StringInterner::new(),
         &guard,
         ScatterFlags::new(false, false),
         &rules,
         100
     ));
     assert!(unit_scatter_admitted(
+        &StringInterner::new(),
         &guard,
         ScatterFlags::new(true, false),
         &rules,
         100
     ));
     assert!(unit_scatter_admitted(
+        &StringInterner::new(),
         &hunt,
         ScatterFlags::new(false, false),
         &rules,
@@ -151,12 +182,14 @@ fn unit_flags_override_mission_scatter_and_nav_com() {
     nav.navigation
         .set_nav_com_for_test(Some(NavTargetRef::cell(8, 8)));
     assert!(!unit_scatter_admitted(
+        &StringInterner::new(),
         &nav,
         ScatterFlags::new(true, false),
         &rules,
         100
     ));
     assert!(unit_scatter_admitted(
+        &StringInterner::new(),
         &nav,
         ScatterFlags::new(false, true),
         &rules,
@@ -172,7 +205,13 @@ fn unit_checks_active_locomotor_and_body_rotation_not_stashed_slot_or_turret() {
     actor.set_category_for_test(EntityCategory::Unit);
     let mut actor = with_mission(&actor, MissionType::Move);
     actor.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Teleport));
-    assert!(!unit_scatter_admitted(&actor, flags, &rules, 100));
+    assert!(!unit_scatter_admitted(
+        &StringInterner::new(),
+        &actor,
+        flags,
+        &rules,
+        100
+    ));
     assert!(crate::sim::movement::locomotor_owner::begin_drive_for_teleporter(&mut actor, 100));
     actor.turret_rotation_latch.set_for_test(true);
     actor
@@ -189,7 +228,7 @@ fn unit_checks_active_locomotor_and_body_rotation_not_stashed_slot_or_turret() {
             ))
     );
     assert!(
-        unit_scatter_admitted(&actor, flags, &rules, 100),
+        unit_scatter_admitted(&StringInterner::new(), &actor, flags, &rules, 100),
         "no moving or turret gate, and no-kidding passes the NavCom"
     );
 }
@@ -219,6 +258,7 @@ fn unit_receiver_does_not_read_its_own_motion() {
     );
     assert_eq!(super::super::motion_query::is_moving(&actor), Some(true));
     assert!(unit_scatter_admitted(
+        &StringInterner::new(),
         &actor,
         ScatterFlags::new(true, true),
         &no_rules(),
@@ -249,7 +289,7 @@ fn building_receiver_is_the_object_no_op() {
             ScatterFlags::new(true, true),
             &no_rules(),
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         )
         .unwrap()
     );
@@ -514,7 +554,7 @@ fn unit_null_arm_moves_hover_and_jumpjet_units() {
             flags,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         )
         .unwrap()
     );
@@ -536,7 +576,7 @@ fn unit_null_arm_moves_hover_and_jumpjet_units() {
             flags,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         )
         .unwrap()
     );
@@ -617,7 +657,7 @@ fn unit_null_arm_matches_original_execution() {
                 flags,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             )
             .unwrap()
         );
@@ -686,7 +726,7 @@ fn receive_damage_scatter_gates_match_original_execution() {
             actor.locomotor = Some(locomotor);
         }
         if flag("tether") {
-            actor.tether.set_for_test(Some(9));
+            actor.seldom.tether.set_for_test(Some(9));
         }
         if flag("target") {
             actor
@@ -747,7 +787,7 @@ fn receive_damage_scatter_gates_match_original_execution() {
                 retaliation,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
             if !scatter {
@@ -878,7 +918,7 @@ fn unit_source_arm_matches_original_execution() {
                 flags,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap()
         );
@@ -953,7 +993,7 @@ fn an_idle_tank_behind_a_cliff_scatters_every_sixty_four_frames() {
             tank,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         sim.substrate

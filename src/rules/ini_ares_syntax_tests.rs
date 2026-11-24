@@ -135,7 +135,8 @@ fn mod_rules_allocate_plus_registries_inherit_across_includes_and_take_later_key
         b"[VehicleTypes]\n+=TANK2\n[TANK2]:[MTNK]\nSight=9\n",
     );
     dir.write("artmd.ini", b"[MTNK]\nVoxel=yes\n");
-    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(dir.path());
+    let assets =
+        crate::assets::asset_manager::AssetManager::from_loose_root_with_ares_for_test(dir.path());
     let (_, _, mut owner) = load_startup_rules(&assets, Default::default(), Default::default())
         .unwrap()
         .into_parts();

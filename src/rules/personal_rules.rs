@@ -27,7 +27,7 @@ pub struct PersonalRules {
     /// BuildingProductionQueue=` in VERA.INI). It sets Phobos' `[General]
     /// BuildingProductionQueue=` in the scenario root, so the simulation
     /// reads it from the rules every peer, save and replay reads. A network
-    /// room plays its host's ([`HostRules`](crate::skirmish_launch::HostRules)).
+    /// room shares its host's ([`HostRules`](crate::skirmish_launch::HostRules)).
     building_production_queue: bool,
 }
 
@@ -65,7 +65,7 @@ impl PersonalRules {
     }
 
     /// The selected root as each scenario reads it: the switches' rules
-    /// composed over it; unchanged while both are off. Composing here rather
+    /// composed over it; unchanged while all are off. Composing here rather
     /// than before the cold start lets a process play another player's
     /// switches without rebuilding its one registry
     /// (`NativeRulesProcessOwner::use_personal_rules`). Terrain Deformation

@@ -108,7 +108,7 @@ fn a_driving_mcv_reads_its_lift_as_the_deploy_performs_it() {
         crate::sim::components::NavTargetRef::cell(18, 12),
         rules,
         true,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     let mut ahead_held = 0;
     for frame in 101..260 {
@@ -144,13 +144,13 @@ fn a_driving_mcv_reads_its_lift_as_the_deploy_performs_it() {
         );
         let read = !sim.unit_self_deploy_site_refused(mcv, rules, None);
         let effects = crate::sim::world::FrameEffects::default;
-        assert!(sim.foot_mark_remove(mcv, rules, None, effects()));
+        assert!(sim.foot_mark_remove(mcv, rules, None, &mut effects()));
         sim.locomotor_mark_all_occupation_bits(mcv, false, rules.ares_form());
         let lifted = crate::sim::build_site::can_place_building_at(
             &sim, rules, None, yard, origin, None, None, None,
         );
         sim.locomotor_mark_all_occupation_bits(mcv, true, rules.ares_form());
-        assert!(sim.foot_mark_put(mcv, rules, None, effects()));
+        assert!(sim.foot_mark_put(mcv, rules, None, &mut effects()));
         assert_eq!(read, lifted, "frame {frame}");
         assert!(lifted, "frame {frame}: the arena admits the yard");
     }

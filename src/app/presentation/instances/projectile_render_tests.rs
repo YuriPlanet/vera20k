@@ -26,12 +26,11 @@ fn check_row(input: &Value, row: &Value, terrain: &ResolvedTerrainGrid) {
         xyz[1].as_i64().unwrap() as i32,
         xyz[2].as_i64().unwrap() as i32,
     );
-    let (ground, structural) =
-        super::super::foot_depth::floor_probe(terrain, coord.x, coord.y).unwrap();
+    let (ground, deck) = super::super::foot_depth::floor_probe(terrain, coord.x, coord.y).unwrap();
     let actual = geometry(
         coord,
         ground,
-        structural,
+        deck,
         flag(input, "on_bridge", false),
         flag(input, "shadow", true),
     );

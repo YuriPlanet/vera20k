@@ -46,6 +46,8 @@ pub(crate) fn display_draw_ids(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TacticalEntityPurpose {
     Drawing,
+    /// Health bars and other class extras draw separately from the body.
+    Extras,
     /// The selectable list (`TacticalClass::AddSelectable @ 0x006D9EF0`).
     ScreenSelection,
 }
@@ -116,6 +118,7 @@ pub(crate) fn observer_draw_context(
     });
     let object = rules.and_then(|r| sim.interner().object_type(entity.type_ref(), r));
     let disguise_cell = entity
+        .seldom
         .disguise
         .as_ref()
         .filter(|disguise| disguise.is_disguised())
@@ -249,11 +252,18 @@ pub(crate) fn tactical_entity_admission(
     if (entity.category() == EntityCategory::Structure && !entity.lifecycle.object_alive())
         // Tactical6D9985..6D9996 skips the live building while its frozen
         // FoggedObjectClass is drawn by the separate4D1890 base pass.
-        || (purpose == TacticalEntityPurpose::Drawing
+        || (purpose != TacticalEntityPurpose::ScreenSelection
             && entity.category() == EntityCategory::Structure
             && !ignore_visibility
             && local_owner_id
                 .is_some_and(|viewer| fog.is_object_fogged(viewer, entity.stable_id())))
+        // BuildingClass::DrawIt (gamemd 0x0043D308..0x0043D316, RA2 game.exe
+        // 0x0043A658..0x0043A666) skips the body even for the lamp's owner.
+        || (purpose == TacticalEntityPurpose::Drawing
+            && entity.place.structure.is_some_and(|art| art.invisible_in_game))
+        // Unit DrawIt 73D30E skips both voxel and SHP bodies in a tube;
+        // Infantry DrawIt 5190DE branches to AddSelectable at 519609.
+        || (purpose == TacticalEntityPurpose::Drawing && entity.in_tube)
         || entity.lifecycle.in_limbo()
         || entity.passenger_role.is_inside_transport()
         // UnitClass::DrawIt returns before AddSelectable while the unit
@@ -954,6 +964,64 @@ mod tests {
     const STOCK_FLIGHT_LEVEL_LEPTONS: i32 = 1500;
 
     #[test]
+    fn band_selection_before_drawing_uses_the_lent_frames_display_order() {
+        use crate::app::match_runtime::sim_host::SimHost;
+        use crate::sim::runtime::SimRuntime;
+        use crate::sim::world::Simulation;
+
+        let mut sim = Simulation::new();
+        let owner = sim.intern("Americans");
+        let tank = sim.intern("MTNK");
+        for id in [2, 1] {
+            let mut entity = GameEntity::new_at_frame_zero_for_test(
+                id,
+                10,
+                10,
+                0,
+                0,
+                owner,
+                crate::sim::combat::Health::new(100),
+                tank,
+                EntityCategory::Unit,
+                0,
+                5,
+                true,
+            );
+            entity.lifecycle.set_in_limbo_for_test(true);
+            sim.entities_mut_for_test().insert(entity);
+            sim.reveal(id);
+        }
+
+        let mut host = SimHost::default();
+        host.install(Some(SimRuntime::from_simulation(sim)));
+        assert!(host.lend(Box::new(|_| Box::new(()))));
+        let sim = &host.presentation().unwrap().simulation;
+        let frame = host.frame().unwrap();
+        let bounds = (-10_000.0, -10_000.0, 10_000.0, 10_000.0);
+
+        // Box-release preflight can be the first consumer of this frame.
+        let candidates = compose_tactical_screen_entity_encounter_order(
+            sim,
+            frame,
+            bounds,
+            Some(owner),
+            sim.fog(),
+            true,
+            0,
+            true,
+        );
+        assert_eq!(candidates, [2, 1]);
+        let drawn: Vec<_> = frame
+            .display_members(sim)
+            .objects()
+            .iter()
+            .map(|member| member.id)
+            .collect();
+        assert_eq!(drawn, candidates);
+        assert!(host.take_job_result().is_some());
+    }
+
+    #[test]
     fn item83_equal_tactical_keys_keep_live_registration_order() {
         let mut sim = crate::sim::world::Simulation::new();
         *sim.fog_mut_for_test() = FogState::new(32, 32);
@@ -1010,6 +1078,48 @@ mod tests {
             [1, 2],
             "resubmission follows retained equal-key members"
         );
+    }
+
+    #[test]
+    fn owned_invisible_lamp_keeps_its_light_without_drawing_its_body() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = retail.rules;
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 43);
+        let owner = sim.interner().get("Americans").unwrap();
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
+        sim.resolve_type_handles(&rules);
+        for (x, name, draws_body) in [(10, "GALITE", true), (12, "INYELWLAMP", false)] {
+            let id = sim
+                .spawn_object(name, "Americans", x, 10, 0, &rules)
+                .unwrap();
+            let building = ObjectRecord::of_test_sim(&sim, &rules, id);
+            assert!(
+                sim.entities()
+                    .get(id)
+                    .unwrap()
+                    .seldom
+                    .discovery
+                    .owned_by_current_house()
+            );
+            let body = tactical_entity_admission(
+                TacticalEntityPurpose::Drawing,
+                &building,
+                Some(owner),
+                sim.fog(),
+                false,
+                sim.session().binary_frame(),
+                0,
+                building.seen.observer,
+            );
+            assert_eq!(body.is_some(), draws_body, "{name} building sprite");
+            assert!(
+                sim.lighting_sources().buildings()[&id].active,
+                "{name} light"
+            );
+        }
     }
 
     #[test]
@@ -1103,6 +1213,52 @@ mod tests {
             compared, 6,
             "all ordinary visibility/lifecycle controls must run"
         );
+    }
+
+    #[test]
+    fn a_foot_in_a_tube_skips_its_body_and_keeps_its_selectable_entry() {
+        use crate::map::tube_facts::TubeId;
+        use crate::sim::components::DriveCoord;
+        use crate::sim::movement::tube_movement::LowBridgeTubeMovementState;
+
+        let fog = FogState::new(8, 8);
+        for (kind, category) in [
+            ("MTNK", EntityCategory::Unit),
+            ("E1", EntityCategory::Infantry),
+        ] {
+            let mut actor =
+                GameEntity::test_default_of_category(1, kind, "Americans", 2, 2, category);
+            actor.lifecycle.set_in_limbo_for_test(false);
+            for inside in [false, true] {
+                actor.low_bridge_tube_state = inside.then(|| {
+                    LowBridgeTubeMovementState::for_test(TubeId(0), 1, DriveCoord::cell(3, 2, 0))
+                });
+                let record = ObjectRecord::of_test(&actor);
+                let admitted = |purpose| {
+                    tactical_entity_admission(
+                        purpose,
+                        &record,
+                        Some(actor.owner()),
+                        &fog,
+                        true,
+                        0,
+                        0,
+                        Default::default(),
+                    )
+                    .is_some()
+                };
+                assert_eq!(
+                    admitted(TacticalEntityPurpose::Drawing),
+                    !inside,
+                    "{kind} body"
+                );
+                assert!(admitted(TacticalEntityPurpose::Extras), "{kind} extras");
+                assert!(
+                    admitted(TacticalEntityPurpose::ScreenSelection),
+                    "{kind} selection"
+                );
+            }
+        }
     }
 
     #[test]

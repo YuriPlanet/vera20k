@@ -154,7 +154,7 @@ fn native_marked_foundation_entry_parking_and_retry_match_shared_owners() {
                         NavTargetRef::Object { id: scene.depot },
                         &scene.rules,
                         true,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     );
                 }
                 "park_dispatch" => {
@@ -162,7 +162,7 @@ fn native_marked_foundation_entry_parking_and_retry_match_shared_owners() {
                         &mut scene.sim,
                         scene.tank,
                         &scene.rules,
-                        ObjectAiCtx::default(),
+                        &mut ObjectAiCtx::default(),
                     )
                     .unwrap();
                 }
@@ -174,7 +174,7 @@ fn native_marked_foundation_entry_parking_and_retry_match_shared_owners() {
                         &mut scene.sim,
                         &scene.rules,
                         scene.tank,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     );
                 }
                 "release_by_break" | "blocked_goal_release_by_break" => {
@@ -185,7 +185,7 @@ fn native_marked_foundation_entry_parking_and_retry_match_shared_owners() {
                         RadioMessage::Break,
                         RadioPayload::default(),
                         &scene.rules,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     );
                 }
                 "null_destination_on_foundation" => {
@@ -193,7 +193,7 @@ fn native_marked_foundation_entry_parking_and_retry_match_shared_owners() {
                         scene.tank,
                         &scene.rules,
                         None,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     );
                 }
                 other => panic!("unrepresented original waiter control {other}"),
@@ -304,7 +304,7 @@ fn native_actual_ally_entry_near_stop_preserves_pending_until_foundation_refusal
         TrackFamily::Drive,
         ProcessMovementArgs::OUTER,
         &scene.rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let (calls, unused) = fresh_oracle_seam::finish();
     result.unwrap();
@@ -325,13 +325,13 @@ fn native_actual_ally_entry_near_stop_preserves_pending_until_foundation_refusal
         RadioMessage::Break,
         RadioPayload::default(),
         &scene.rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     try_pending_entry(
         &mut scene.sim,
         &scene.rules,
         scene.tank,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let refused = case["controls"]
         .as_array()

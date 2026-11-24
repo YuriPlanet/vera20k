@@ -2,13 +2,19 @@
 //! Uncompress64BDD0. The session owns these caches; Simulation keeps the only
 //! OutList/DoList. Inputs and mirror records are transient transfer values.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)
+)]
+
 use std::collections::BTreeMap;
 
 use crate::sim::command::{
     ADD_PLAYER_OPCODE, COMMAND_RECORD_LEN, CommandRecord, FRAME_SYNC_OPCODE,
     MEGAMISSION_ACTION_OFFSET, MEGAMISSION_DESTINATION_KIND_OFFSET, MEGAMISSION_OPCODE,
     MEGAMISSION_OWNED_PAYLOAD_LEN, MEGAMISSION_SECONDARY_VALUE_OFFSET,
-    MEGAMISSION_SOURCE_KIND_OFFSET, RESPONSE_TIME_OPCODE,
+    MEGAMISSION_SOURCE_KIND_OFFSET, RESPONSE_TIME_OPCODE, event_body_len,
 };
 use crate::sim::command_queue::{FRAMEINFO_EVENT_OPCODE, FrameInfo};
 use crate::util::read_helpers::{array_at, read_i32_le};
@@ -138,34 +144,6 @@ fn decode_header(bytes: &[u8], opcode: u8) -> Option<FrameInfo> {
     record[..HEADER_LEN].copy_from_slice(&bytes[..HEADER_LEN]);
     record[0] = FRAMEINFO_EVENT_OPCODE;
     FrameInfo::decode(&CommandRecord::decode_exact(&record).expect("fixed native Event"))
-}
-
-/// Original byte table8208EC, indexed by the 47 Event opcodes (0..2E).
-/// RESPONSE_TIME1B starts at Event+0D; ADDPLAYER1F carries external storage.
-const PAYLOAD_LENGTHS: [u8; 47] = [
-    0, 5, 5, 4, 23, 24, 5, 5, 0, 5, 5, 16, 0, 4, 12, 12, 12, 5, 8, 0, 16, 5, 5, 4, 4, 0, 0, 1, 7,
-    0, 10, 4, 5, 2, 0, 4, 4, 104, 64, 0, 4, 5, 10, 0, 5, 4, 12,
-];
-
-// VERA fixed records reuse this codec and its existing reliable/cache owners.
-// Native entries retain the original8208EC table unchanged.
-fn event_payload_len(opcode: u8) -> Option<u8> {
-    match opcode {
-        crate::sim::command::VERA_PAID_SUPER_OPCODE => {
-            Some(crate::sim::command::VERA_PAID_SUPER_PAYLOAD_LEN)
-        }
-        crate::sim::command::VERA_EJECT_BUNKER_OPCODE => Some(5),
-        crate::sim::command::VERA_CYCLE_PRODUCER_OPCODE => Some(1),
-        crate::sim::command::TARGET_HOUSE_OPCODE => {
-            Some(crate::sim::command::TARGET_HOUSE_PAYLOAD_LEN)
-        }
-        // Ares 3.0 1006A130: TrenchRedirectClick (0x60) carries 10 bytes. Only
-        // a game Ares plays in raises one (`context_order`'s trench Enter).
-        crate::sim::command::ARES_TRENCH_REDIRECT_OPCODE => {
-            Some(crate::sim::command::ARES_TRENCH_REDIRECT_PAYLOAD_LEN)
-        }
-        _ => PAYLOAD_LENGTHS.get(usize::from(opcode)).copied(),
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -309,7 +287,7 @@ impl EventPacketCodec {
         let mut run: Option<OpenRun> = None;
         for (index, &source) in records.iter().enumerate() {
             let opcode = source.opcode();
-            let payload_len = event_payload_len(opcode);
+            let payload_len = event_body_len(opcode);
             let unsupported = match opcode {
                 ADD_PLAYER_OPCODE => Some(EncodeBlock::ExtendedPayload),
                 FRAMEINFO_EVENT_OPCODE | FRAME_SYNC_OPCODE => {
@@ -494,7 +472,7 @@ impl EventPacketCodec {
                     DecodeFailureKind::UnexpectedHeader,
                 ));
             }
-            let Some(len) = event_payload_len(opcode) else {
+            let Some(len) = event_body_len(opcode) else {
                 return Err(decode_error(
                     bytes,
                     start,
@@ -608,16 +586,19 @@ impl EventPacketCodec {
                     );
                     actors
                 };
-                if count > 1 {
-                    self.receive.entry(source_house).or_default()[usize::from(slot)] =
-                        vec![actors[0]];
-                }
+                let mut cache = (count > 1).then(|| {
+                    let cache =
+                        &mut self.receive.entry(source_house).or_default()[usize::from(slot)];
+                    *cache = vec![actors[0]];
+                    cache
+                });
                 for (index, actor) in actors.iter().enumerate() {
-                    if count > 1 && index > 0 {
+                    if index > 0
+                        && let Some(cache) = cache.as_mut()
+                    {
                         //64C057..64C091 updates the next cached actor after
                         //the preceding admission, before attempting this one.
-                        self.receive.get_mut(&source_house).unwrap()[usize::from(slot)]
-                            .push(*actor);
+                        cache.push(*actor);
                     }
                     record.payload_mut()[..ACTOR_TOKEN_LEN].copy_from_slice(actor);
                     if !admit(record.clone()) {

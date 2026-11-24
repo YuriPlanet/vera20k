@@ -447,10 +447,10 @@ const ARES_WITH_CONST_RULES: &str = "[General]\nBaseUnit=AMCV\n[AI]\nBuildConst=
 /// Ares MPGameMode_SpawnBaseUnit_BuildConst (1001F0B0, hook 0x5D7048)
 /// and CreateStartingUnits_BaseCenter (1001ED60, hook 0x5D6F61): a
 /// WithConst house's base unit is its first BuildConst yard, one cell
-/// up-left of its start for a 4x3 foundation, with Guard queued. A human's
-/// yard is not opened, so the forced Guard stays current; a computer's
-/// opens and commences Construction, and its house also gets the
-/// deploy's AI half at that cell.
+/// up-left of its start for a 4x3 foundation, with Guard queued. Either
+/// owner's yard opens during its Unlimbo (a human's at its cell put, a
+/// computer's at its owner discovery) and commences Construction; a
+/// computer's house also gets the deploy's AI half at that cell.
 #[test]
 fn ares_start_with_const_places_a_construction_yard_for_the_base_unit() {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
@@ -473,6 +473,10 @@ fn ares_start_with_const_places_a_construction_yard_for_the_base_unit() {
         });
         let terrain = techno_constructor_flat_start_terrain(96);
         let mut sim = techno_constructor_start_sim(0xC701_1006, 96);
+        // A skirmish's discovery rules: the cell put's DiscoveredBy(PlayerPtr)
+        // runs outside a campaign (`0x0047E9C8..0x0047E9DC`).
+        sim.session
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
         sim.install_resolved_terrain_for_new_map(terrain.clone());
         initialize_skirmish_launch_houses(&mut sim, &HouseRoster::default(), &rules, &launch);
         let owner = sim.session.current_house().unwrap();
@@ -499,13 +503,10 @@ fn ares_start_with_const_places_a_construction_yard_for_the_base_unit() {
             .unwrap();
         assert_eq!(sim.interner.resolve(yard.type_ref()), "GACNST");
         let yard_id = yard.stable_id();
+        assert!(yard.building_art.actually_placed(), "the yard opened");
         assert_eq!(
             yard.mission.current(),
-            MissionId::from_known(if human {
-                MissionType::Guard
-            } else {
-                MissionType::Construction
-            })
+            MissionId::from_known(MissionType::Construction)
         );
         assert_eq!(
             yard.mission.queued(),
@@ -513,12 +514,9 @@ fn ares_start_with_const_places_a_construction_yard_for_the_base_unit() {
         );
         let house = &sim.houses[&owner];
         // The decrement moves only the yard: its Unlimbo republishes the
-        // primary centre (House 4FD150), which leaves none for the
-        // unopened human yard, and 1001ED60 restores the start cell it
-        // saved before the callback.
-        if human {
-            assert_eq!(house.base_center(), Some((44, 48)));
-        }
+        // primary centre (House 4FD150), which leaves none here, and
+        // 1001ED60 restores the start cell it saved before the callback.
+        assert_eq!(house.base_center(), Some((44, 48)));
         assert!(sim.substrate.occupancy.contains_entity(43, 47, yard_id));
         assert!(!sim.substrate.occupancy.contains_entity(47, 47, yard_id));
         if !human {
@@ -930,10 +928,10 @@ fn network_local_perspectives_share_startup_fog_and_ordinary_frame_hashes() {
         assert!(right.simulation.prepare_fog_view_for("Guest"));
         assert!(right.simulation.prepare_fog_view_for("Guest"));
         let a = left
-            .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::empty())
+            .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::empty())
             .unwrap();
         let b = right
-            .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::empty())
+            .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::empty())
             .unwrap();
         assert!(a.tick.frame_committed && b.tick.frame_committed);
         assert_eq!(
@@ -977,8 +975,12 @@ fn network_zero_sight_discovery_uses_each_human_admission_and_retains_shared_has
     let unseen = left.simulation.state_hash();
     for viewer in [host, guest] {
         for runtime in [&mut left, &mut right] {
-            let context = UninitContext::new(&runtime.resources.rules);
-            assert!(runtime.simulation.discover_techno(ids[0], viewer, context));
+            let mut context = UninitContext::new(&runtime.resources.rules);
+            assert!(
+                runtime
+                    .simulation
+                    .discover_techno(ids[0], viewer, context.reborrow())
+            );
             assert!(!runtime.simulation.discover_techno(ids[0], viewer, context));
             assert!(
                 runtime
@@ -1033,10 +1035,10 @@ fn network_high_discovery_bits_survive_observer_and_early_player_removal() {
     for viewer in [last, observer] {
         let before = left.simulation.state_hash();
         for runtime in [&mut left, &mut right] {
-            let context = UninitContext::new(&runtime.resources.rules);
+            let mut context = UninitContext::new(&runtime.resources.rules);
             let sim = &mut runtime.simulation;
             assert!(!sim.techno_discovered_by_viewer(ids[0], viewer));
-            assert!(sim.discover_techno(ids[0], viewer, context));
+            assert!(sim.discover_techno(ids[0], viewer, context.reborrow()));
             assert!(sim.techno_discovered_by_viewer(ids[0], viewer));
             if viewer == last {
                 assert!(!sim.techno_discovered_by_viewer(ids[0], observer));
@@ -1065,10 +1067,10 @@ fn network_high_discovery_bits_survive_observer_and_early_player_removal() {
     assert!(right.simulation.admit_native_command_record(record));
     for _ in 0..6 {
         let a = left
-            .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::empty())
+            .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::empty())
             .unwrap();
         let b = right
-            .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::empty())
+            .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::empty())
             .unwrap();
         assert!(a.tick.frame_committed && b.tick.frame_committed);
         assert_eq!(a.tick.state_hash, b.tick.state_hash);
@@ -1099,8 +1101,13 @@ fn network_high_discovery_bits_survive_observer_and_early_player_removal() {
     let saved = crate::util::save_codec::serialize(&left.simulation).unwrap();
     let restored: Simulation = crate::util::save_codec::deserialize(&saved).unwrap();
     assert_eq!(
-        restored.entities().get(ids[0]).unwrap().discovery,
-        left.simulation.entities().get(ids[0]).unwrap().discovery,
+        restored.entities().get(ids[0]).unwrap().seldom.discovery,
+        left.simulation
+            .entities()
+            .get(ids[0])
+            .unwrap()
+            .seldom
+            .discovery,
     );
     for viewer in [last, observer] {
         assert!(restored.techno_discovered_by_viewer(ids[0], viewer));
@@ -1152,7 +1159,7 @@ fn network_trigger_and_reveal_to_all_lifecycle_update_both_logical_maps() {
             .unwrap();
         let camera = sim.entities().get(id).unwrap();
         assert!(rules.object("CAMERA").unwrap().reveal_to_all);
-        assert_eq!(camera.sight.range(), 3);
+        assert_eq!(camera.seldom.sight.range(), 3);
         assert!(camera.in_playfield());
         assert!(camera.building_art.actually_placed());
         assert!(sim.fog.sight_is_latched(id, host));
@@ -1168,7 +1175,7 @@ fn network_trigger_and_reveal_to_all_lifecycle_update_both_logical_maps() {
     assert_eq!(ids[0], ids[1]);
     for runtime in [&mut left, &mut right] {
         let frame = runtime
-            .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::empty())
+            .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::empty())
             .unwrap();
         assert!(frame.tick.frame_committed);
         let sim = &mut runtime.simulation;
@@ -1215,10 +1222,10 @@ fn network_two_human_destruct_keeps_full_frame_and_terminal_score_hashes_equal()
             assert!(right.simulation.admit_native_command_record(record));
         }
         let a = left
-            .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::empty())
+            .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::empty())
             .unwrap();
         let b = right
-            .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::empty())
+            .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::empty())
             .unwrap();
         assert_eq!(a.tick.tick, b.tick.tick, "frame {frame}");
         assert_eq!(
@@ -1281,7 +1288,7 @@ fn network_defeated_viewer_and_storm_keep_shared_maps_and_radar() {
     for _ in 0..6 {
         for runtime in [&mut left, &mut right] {
             runtime
-                .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::empty())
+                .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::empty())
                 .unwrap();
         }
         assert_eq!(
@@ -1334,7 +1341,7 @@ fn network_defeated_viewer_and_storm_keep_shared_maps_and_radar() {
     for _ in 0..2 {
         for runtime in [&mut left, &mut right] {
             runtime
-                .advance_frame(&[], 33, TickLane::Ordinary, FrameEffects::empty())
+                .advance_frame(&[], 33, TickLane::Ordinary, &mut FrameEffects::empty())
                 .unwrap();
         }
         assert_eq!(left.simulation.state_hash(), right.simulation.state_hash());
@@ -3374,11 +3381,10 @@ fn gsi_04_12_prefix_fill_and_generated_trace_share_one_scenario_owner() {
     sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
     {
-        let (mut scenario_fill, main) = sim.terrain_load_draws();
+        let (mut scenario_fill, _main) = sim.terrain_load_draws();
         let actual = scenario_fill.next_range_u32_inclusive(5, 17);
         let expected = reference.next_range_u32_inclusive(5, 17);
         assert_eq!(actual, expected);
-        drop(main);
     }
 
     let mut trace = RmgConstructionTrace::default();
@@ -3514,11 +3520,10 @@ fn gsi_04_12_generated_trace_continues_into_starting_techno_and_post_map_crate()
     sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
     {
-        let (mut scenario_fill, main) = sim.terrain_load_draws();
+        let (mut scenario_fill, _main) = sim.terrain_load_draws();
         let actual = scenario_fill.next_range_u32_inclusive(5, 17);
         let expected = reference.next_range_u32_inclusive(5, 17);
         assert_eq!(actual, expected, "terrain Fill continues the prefix");
-        drop(main);
     }
 
     let mut trace = RmgConstructionTrace::default();
@@ -3989,6 +3994,53 @@ fn cooperative_refuses_more_humans_than_the_maps_human_start_spots() {
         PreFillScenarioPrefixPlanError::CoopHumanStartSpotsFull {
             human_start_spots: 1,
             human_count: 2,
+        }
+    );
+}
+
+#[test]
+fn cooperative_refuses_a_launch_whose_observer_takes_the_last_start() {
+    let refusal = prefix_refusal_before_hang_guard(|| {
+        use LaunchStartPosition::Auto;
+        // One human, one observer, two AI: Gather keeps the three authored
+        // starts for the three Houses that play, and the observer takes one.
+        let mut session = quick_coop_session([Auto, Auto], [Auto, Auto]);
+        session.mode.class = crate::skirmish_modes::MpModeClass::Cooperative;
+        session.humans[1].set_observer(true);
+        use crate::skirmish_launch::{PreFillAiHouseSlot, PreFillHouseRoster, PreFillHumanHouse};
+        session.set_recorded_house_roster_for_test(PreFillHouseRoster::new(
+            (0..2)
+                .map(|order| PreFillHumanHouse {
+                    priority: i32::from(order),
+                    source_order: order,
+                    observer: order == 1,
+                })
+                .collect(),
+            (0..8)
+                .map(|slot_index| PreFillAiHouseSlot {
+                    slot_index,
+                    valid: matches!(slot_index, 2 | 3),
+                })
+                .collect(),
+        ));
+        let starts: Vec<Waypoint> = [6, 20, 30]
+            .into_iter()
+            .enumerate()
+            .map(|(index, rx)| Waypoint {
+                index: index as u32,
+                rx,
+                ry: 20,
+            })
+            .collect();
+        let mut map = prefix_map_with_starts(&starts);
+        map.ini = IniFile::from_str("[Header]\nNumCoopHumanStartSpots=1\n");
+        (MatchLaunchDescriptor::from_resolved(session).unwrap(), map)
+    });
+    assert_eq!(
+        refusal,
+        PreFillScenarioPrefixPlanError::CoopStartsExhausted {
+            start_count: 3,
+            house_count: 4,
         }
     );
 }

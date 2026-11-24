@@ -96,7 +96,7 @@ fn stock_sniper_damage_retaliation_uses_wall_context_before_sight_fallback() {
             rules,
             Some(&registry),
             EntityDamageEvent::area(victim, 1, 0, source, Some(source_owner), warhead),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let actor = sim.substrate.entities.get(victim).unwrap();
         assert!(
@@ -486,8 +486,12 @@ fn gsi_04_07_should_retaliate_world_refusals() {
     // `0x007087EB`: a slave (SlaveOwner `+0x2DC`). GetFireError's T2
     // refuses a slave as well, so this outcome does not isolate the gate.
     let (mut sim, rules) = tank(false);
-    sim.substrate.entities.get_mut(GATE_VICTIM).unwrap().slave =
-        crate::sim::slave_manager::SlaveLink::for_test(Some(9), Vec::new());
+    sim.substrate
+        .entities
+        .get_mut(GATE_VICTIM)
+        .unwrap()
+        .seldom
+        .slave = crate::sim::slave_manager::SlaveLink::for_test(Some(9), Vec::new());
     assert!(!should_retaliate(&sim, &rules, GATE_VICTIM, GATE_SOURCE));
     // `0x00708899`: the source is disguised to the victim's house as one of
     // its own (vt+0xC8).
@@ -497,6 +501,7 @@ fn gsi_04_07_should_retaliate_world_refusals() {
         .entities
         .get_mut(GATE_SOURCE)
         .unwrap()
+        .seldom
         .disguise
         .get_or_insert_with(Default::default)
         .acquire(0, None, Some(victim_owner));
@@ -827,7 +832,7 @@ fn gsi_04_07_damage_retaliation_peek_rejects_limbo_attacker() {
         let victim = entities.get(2).expect("victim survives");
         (
             victim.health.current(),
-            victim.ai_sell_repair.was_attacked_by_enemy(),
+            victim.seldom.ai_sell_repair.was_attacked_by_enemy(),
             victim.mission.current(),
             victim.mission.suspended(),
             victim.attack_target.target(),
@@ -937,14 +942,14 @@ fn gsi_04_07_damage_invulnerability_impact_precedes_warping_and_postlude() {
         &rules,
         None,
         &hits,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     for id in protected {
         let victim = sim.substrate.entities.get(id).unwrap();
         assert_eq!(victim.health.current(), 100);
-        assert!(!victim.ai_sell_repair.was_attacked_by_enemy());
-        assert_eq!(victim.damage_smoke_system_id.system(), None);
+        assert!(!victim.seldom.ai_sell_repair.was_attacked_by_enemy());
+        assert_eq!(victim.seldom.damage_smoke_system_id.system(), None);
     }
     assert_eq!(
         sim.substrate
@@ -1043,7 +1048,7 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
             Some(source_owner),
             hit_wh,
         )],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     let victim = sim.substrate.entities.get(victim_id).unwrap();
@@ -1058,6 +1063,7 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
         "retaliation sees the receiver after synchronous smoke creation"
     );
     let system_id = victim
+        .seldom
         .damage_smoke_system_id
         .system()
         .expect("yellow crossing attaches a Smoke system");
@@ -1119,7 +1125,7 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
             Some(source_owner),
             hit_wh,
         )],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.particle_systems().len(),
@@ -1131,6 +1137,7 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
             .entities
             .get(victim_id)
             .unwrap()
+            .seldom
             .damage_smoke_system_id
             .system(),
         Some(system_id)
@@ -1147,7 +1154,7 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
             Some(source_owner),
             hit_wh,
         )],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -1170,6 +1177,7 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
             .entities
             .get(victim_id)
             .unwrap()
+            .seldom
             .damage_smoke_system_id
             .system(),
         Some(system_id),
@@ -1182,6 +1190,7 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
             .entities
             .get(victim_id)
             .unwrap()
+            .seldom
             .damage_smoke_system_id
             .system(),
         None,
@@ -1491,7 +1500,7 @@ fn gsi_04_07_damage_full_capture_manager_blocks_retaliation() {
             let mut controlled = make_entity(id, "LINK", 10 + offset as u16, 5, 100);
             controlled.set_owner_for_test(victim_owner);
             controlled.set_type_ref_for_test(link_type);
-            controlled.mind_control =
+            controlled.seldom.mind_control =
                 crate::sim::capture_manager::MindControlLink::controlled_by_for_test(2);
             controlled.lifecycle.set_in_limbo_for_test(false);
             controlled.lifecycle.set_cell_marked_for_test(true);

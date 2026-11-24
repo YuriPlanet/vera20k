@@ -4,7 +4,7 @@
 use super::RulesPassProcessor;
 use super::{
     RulesTypeFamily, SideRegisteredTypes, ares_country_index_of_name, house_type_mask_from_indices,
-    read_nullable_type_vector, read_valueable_int_vector, read_valueable_type,
+    read_member, read_nullable_type_vector, read_valueable_int_vector, read_valueable_type,
     read_valueable_type_vector,
 };
 use crate::rules::ini_parser::IniFile;
@@ -22,9 +22,7 @@ impl RulesPassProcessor {
         // now; a later pass cannot resolve an earlier unknown retroactively.
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::Country) {
-            if let Some((_id, raw, _effective)) =
-                self.begin_rules_member_read(RulesTypeFamily::Country, index, pass)
-            {
+            if let Some(raw) = self.begin_rules_member_read(RulesTypeFamily::Country, index, pass) {
                 let member = &mut self
                     .families
                     .get_mut(&RulesTypeFamily::Country)
@@ -336,9 +334,23 @@ impl RulesPassProcessor {
         let ares_way = crate::rules::ares_switch::ares_way();
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::SuperWeapon) {
-            if let Some((_id, raw, effective)) =
+            if let Some(raw) =
                 self.begin_rules_member_read(RulesTypeFamily::SuperWeapon, index, pass)
             {
+                // `Type=` of every pass so far, as Ares reads it: an Ares
+                // read, so the key stays among the Ares inputs saved with the
+                // rules. An owned copy: the reads below allocate types into
+                // the families the body is read from.
+                let kind = ares_way
+                    .then(|| {
+                        crate::rules::ares_switch::ares_read(|| {
+                            self.families[&RulesTypeFamily::SuperWeapon][index]
+                                .body
+                                .read_name("Type", 0x28)
+                                .map(str::to_owned)
+                        })
+                    })
+                    .flatten();
                 if let Some(weapon) =
                     self.resolve_scalar_from(&raw, "WeaponType", RulesTypeFamily::Weapon, 0x80)
                 {
@@ -380,7 +392,7 @@ impl RulesPassProcessor {
                     // LoadFromINIFile10033250: the first call runs the Type
                     // handler's Initialize, then LoadFromINI10033370 reads
                     // EVA.Ready/Activated/Detected before the other fields.
-                    let kind = effective.read_name("Type", 0x28);
+                    let kind = kind.as_deref();
                     let initialized = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_targeting
                         .read_pass(&raw, kind);
@@ -409,11 +421,9 @@ impl RulesPassProcessor {
                     presentation.eva.read_pass(&raw, _fixed_eva);
                     // The handler's Initialize names its cursor; 10033370
                     // reads Cursor/NoCursor after SW.ChargeToDrainRatio.
-                    let cursors = &mut self
-                        .families
-                        .get_mut(&RulesTypeFamily::SuperWeapon)
-                        .unwrap()[index]
-                        .ares_super_weapon_cursors;
+                    let cursors =
+                        &mut read_member(&mut self.families, RulesTypeFamily::SuperWeapon, index)
+                            .ares_super_weapon_cursors;
                     if initialized {
                         cursors.initialize_for_kind(kind);
                     }

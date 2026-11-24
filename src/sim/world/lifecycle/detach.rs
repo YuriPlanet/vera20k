@@ -56,7 +56,7 @@ impl Simulation {
     /// VERA constructs LineTrails only for bullets (`admit_projectile`).
     ///
     /// [`sensor_visible_to_player`]: super::techno_ai_cloak::sensor_visible_to_player
-    pub(crate) fn detach_all(&mut self, stable_id: u64, all: bool, context: UninitContext<'_>) {
+    pub(crate) fn detach_all(&mut self, stable_id: u64, all: bool, mut context: UninitContext<'_>) {
         let Some((category, owner)) = self
             .substrate
             .entities
@@ -102,13 +102,13 @@ impl Simulation {
                     .substrate
                     .entities
                     .get(stable_id)
-                    .map_or(0, |entity| entity.radio_contacts.capacity());
+                    .map_or(0, |entity| entity.seldom.radio_contacts.capacity());
                 for slot in 0..capacity {
                     if let Some(contact) = self
                         .substrate
                         .entities
                         .get(stable_id)
-                        .and_then(|entity| entity.radio_contacts.slot(slot))
+                        .and_then(|entity| entity.seldom.radio_contacts.slot(slot))
                         .filter(|&contact| !allied_with(self, contact))
                     {
                         crate::sim::radio::transmit(
@@ -134,7 +134,7 @@ impl Simulation {
                     .substrate
                     .entities
                     .get(stable_id)
-                    .and_then(|entity| entity.radio_contacts.slot(0))
+                    .and_then(|entity| entity.seldom.radio_contacts.slot(0))
                     .filter(|&contact| all || !allied_with(self, contact))
                 {
                     crate::sim::radio::transmit(
@@ -278,16 +278,16 @@ impl Simulation {
                         arg6: true,
                     },
                 );
-                let (nested, mut pings) = crate::sim::combat::world_receiver::commit_entities(
+                let nested = crate::sim::combat::world_receiver::commit_entities(
                     self,
                     run,
                     &[event],
                     Some(false),
                     rules,
                     overlay_registry,
+                    &mut under_attack_events,
                 );
                 death_effects.append(nested);
-                under_attack_events.append(&mut pings);
             }
         }
         (death_effects, under_attack_events)
@@ -318,7 +318,7 @@ impl Simulation {
     /// (`0x004D5667`), Path[0] = -1 (`0x004D5673`), Stop_Driver through
     /// vtable `+0x500` (Unit/aircraft locomotor stop or Infantry
     /// `0x0051DAF0`), then the base Techno stun.
-    fn foot_stun(&mut self, stable_id: u64, context: UninitContext<'_>) {
+    fn foot_stun(&mut self, stable_id: u64, mut context: UninitContext<'_>) {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
         };
@@ -370,7 +370,7 @@ impl Simulation {
     /// A further hit on a building already at Health 0 skips Destroy
     /// (`0x005F5752..0x005F575F`) but still takes the death arm, so this is
     /// its only detach.
-    fn techno_stun(&mut self, stable_id: u64, context: UninitContext<'_>) {
+    fn techno_stun(&mut self, stable_id: u64, mut context: UninitContext<'_>) {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
         };
@@ -384,7 +384,7 @@ impl Simulation {
                 stable_id,
                 None,
                 context.rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
         } else if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             crate::sim::mission::concrete_effects::represented_assign_target(
@@ -412,7 +412,11 @@ impl Simulation {
             .get(stable_id)
             .is_some_and(|entity| entity.category().is_foot() && entity.lift.swap_active());
         if !foot_lifted {
-            crate::sim::spawn_manager::kill_all_spawns_with_context(self, stable_id, context);
+            crate::sim::spawn_manager::kill_all_spawns_with_context(
+                self,
+                stable_id,
+                context.reborrow(),
+            );
             crate::sim::spawn_manager::clear_all_spawn_targets(
                 self,
                 stable_id,
@@ -429,7 +433,7 @@ impl Simulation {
         &mut self,
         request: LifecycleRequest,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         match request {
             LifecycleRequest::Uninit {

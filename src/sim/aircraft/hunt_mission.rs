@@ -116,7 +116,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        ctx: ObjectAiCtx<'_>,
+        ctx: &mut ObjectAiCtx<'_>,
     ) -> i32 {
         let entity = self.substrate.entities.get(id).expect("aircraft dispatch");
         debug_assert_eq!(entity.category(), EntityCategory::Aircraft);
@@ -131,7 +131,7 @@ impl Simulation {
                 sim: self,
                 id,
                 rules,
-                ctx,
+                ctx: ctx.reborrow(),
             },
         )
     }
@@ -176,7 +176,7 @@ impl HuntHost for WorldHunt<'_> {
                 self.id,
                 threat,
                 self.rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("hunting aircraft");
     }
@@ -186,12 +186,12 @@ impl HuntHost for WorldHunt<'_> {
     }
 
     fn enter_idle_mode(&mut self) {
-        super::enter_idle_mode_for(self.sim, self.id, self.rules, self.ctx.effects);
+        super::enter_idle_mode_for(self.sim, self.id, self.rules, &mut self.ctx.effects);
     }
 
     fn leave_team(&mut self) {
         self.sim
-            .leave_team(self.id, false, self.rules, self.ctx.effects);
+            .leave_team(self.id, false, self.rules, &mut self.ctx.effects);
     }
 
     fn epilogue(&mut self) -> i32 {

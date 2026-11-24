@@ -94,20 +94,23 @@ pub(super) fn center_sample(
 
 /// `Calc_Center`'s arithmetic (`0x006EB225..0x006EB31B`): the mean XY of
 /// the samples (wrapping sums, signed truncating division), and the one
-/// nearest `focus` by squared XY distance (`0x005F6500`, `native_coord::squared_xy_distance`; 0
-/// without a focus). A smaller distance, or any distance after a kept 0,
-/// replaces the one kept, so without a focus the last sample is closest.
-/// `None` without samples. One pass in member order, so the caller hands
-/// its member walk over as it goes.
+/// nearest `focus` by squared XY distance (`0x005F6500`,
+/// `native_coord::squared_xy_distance_for_map`; 0 without a focus). A smaller
+/// distance, or any distance after a kept 0, replaces the one kept, so without
+/// a focus the last sample is closest. `None` without samples. One pass in
+/// member order, so the caller hands its member walk over as it goes. A
+/// VERA-only map compares the true 64-bit square instead of the wrapped
+/// native one.
 pub(super) fn center_of(
     samples: impl IntoIterator<Item = CenterSample>,
     focus: Option<[i32; 2]>,
     ares: bool,
+    vera_only_map: bool,
 ) -> Option<([i32; 2], Option<u64>)> {
     let mut sum = [0i32; 2];
     let mut count = 0i32;
     let mut closest = None;
-    let mut closest_distance = 0i32;
+    let mut closest_distance = 0i64;
     for sample in samples {
         for _ in 0..if sample.doubled { 2 } else { 1 } {
             sum[0] = sum[0].wrapping_add(sample.xy[0]);
@@ -118,7 +121,12 @@ pub(super) fn center_of(
             continue;
         }
         let distance = focus.map_or(0, |focus| {
-            crate::util::native_coord::squared_xy_distance(sample.xy, focus, ares)
+            crate::util::native_coord::squared_xy_distance_for_map(
+                sample.xy,
+                focus,
+                ares,
+                vera_only_map,
+            )
         });
         if closest_distance == 0 || distance < closest_distance {
             closest_distance = distance;
@@ -156,7 +164,7 @@ impl Simulation {
         &mut self,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let unfilled_team_timeout = self
             .session
@@ -182,7 +190,7 @@ impl Simulation {
         team_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
         unfilled_team_timeout: Option<i32>,
     ) {
         let current_frame = self.session.binary_frame() as i32;
@@ -277,7 +285,7 @@ impl Simulation {
         &mut self,
         team_id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let vm = &self.team_script_vm;
         let Some(team) = vm.teams.get(&team_id) else {
@@ -323,7 +331,7 @@ impl Simulation {
         team_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let vm = &mut self.team_script_vm;
         let Some(team) = vm.teams.get(&team_id) else {
@@ -424,7 +432,12 @@ impl Simulation {
             )
         });
         let head = team.members.first().map(|member| member.id);
-        let (zone, closest) = match center_of(samples, focus, rules.ares()) {
+        let (zone, closest) = match center_of(
+            samples,
+            focus,
+            rules.ares(),
+            self.session.map_exceeds_original_size(),
+        ) {
             None => (None, None),
             Some((mean, closest)) => {
                 // CalcCenter6EB331 selects Map565730's Cell before CanEnter.
@@ -502,18 +515,14 @@ impl Simulation {
         &mut self,
         team_id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         use crate::sim::mission::MissionType;
-        let vm = &mut self.team_script_vm;
-        let Some(team) = vm.teams.get(&team_id) else {
+        if !self.team_script_vm.teams.contains_key(&team_id) {
             return true;
-        };
+        }
         // The walk reads a copy: a member's join or move can change the list.
-        // Taken from the VM's scratch and put back, so a walk reached from
-        // inside this one finds it empty and makes its own.
-        let mut members = std::mem::take(&mut vm.regroup_members);
-        members.extend_from_slice(&team.members);
+        let members = self.team_script_vm.copy_members(team_id);
         let mut regrouped = true;
         for &member in &members {
             let Some(zone) = self
@@ -524,17 +533,17 @@ impl Simulation {
             else {
                 break;
             };
-            let Some(entity) = self.substrate.entities.get(member.id) else {
+            let Some(entity) = self.substrate.entities.get(member) else {
                 continue;
             };
             if !entity.lifecycle.object_alive() {
                 continue;
             }
-            self.team_member_join_up(team_id, member.id, rules, frame_effects);
-            let Some(entity) = self.substrate.entities.get(member.id) else {
+            self.team_member_join_up(team_id, member, rules, frame_effects);
+            let Some(entity) = self.substrate.entities.get(member) else {
                 continue;
             };
-            let initiated = self.team_member_initiated(team_id, member.id);
+            let initiated = self.team_member_initiated(team_id, member);
             if !member_is_live_joined(entity, initiated, self.object_placement_scope_active()) {
                 continue;
             }
@@ -546,20 +555,19 @@ impl Simulation {
                 if entity.navigation.nav_com().is_some() {
                     continue;
                 }
-                self.team_member_queue_mission(member.id, MissionType::Move, rules);
+                self.team_member_queue_mission(member, MissionType::Move, rules);
                 regrouped = false;
                 let cell = zone.and_then(|zone| self.team_target_cell_of_coord(zone));
-                self.team_member_set_destination(member.id, cell, rules, frame_effects);
+                self.team_member_set_destination(member, cell, rules, frame_effects);
             } else {
                 if mission == Some(MissionType::AreaGuard) {
                     continue;
                 }
-                self.team_member_queue_mission(member.id, MissionType::Guard, rules);
-                self.team_member_set_destination(member.id, None, rules, frame_effects);
+                self.team_member_queue_mission(member, MissionType::Guard, rules);
+                self.team_member_set_destination(member, None, rules, frame_effects);
             }
         }
-        members.clear();
-        self.team_script_vm.regroup_members = members;
+        self.team_script_vm.restore_member_ids(members);
         regrouped
     }
 
@@ -573,7 +581,7 @@ impl Simulation {
         team_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(team) = self.team_script_vm.teams.get_mut(&team_id) else {
             return;
@@ -830,7 +838,7 @@ impl Simulation {
         team_id: u64,
         member: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         use crate::sim::mission::MissionType;
         let Some(entity) = self.substrate.entities.get(member) else {
@@ -960,6 +968,7 @@ mod tests {
             .entities
             .get_mut(hornet)
             .expect("aircraft")
+            .seldom
             .discovery
             .set_owned_by_current_house_for_test(true);
         sim.fog = crate::sim::vision::FogState::new(33, 33);

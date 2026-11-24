@@ -115,6 +115,10 @@ pub(crate) trait JumpjetOrderHost {
     fn floor_height(&self, xy: [i32; 2]) -> i32;
     /// `CellClass+0x140 & 0x100` of the cell holding `xy`.
     fn cell_high_bridge(&self, xy: [i32; 2]) -> bool;
+    fn bridge_deck_z(&self, xy: [i32; 2], ground: i32) -> Option<i32> {
+        self.cell_high_bridge(xy)
+            .then(|| ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS))
+    }
     /// `0x0054D6D0`'s arm for an owner that is not a Unit: `0x004ACA10`
     /// picks the sub-cell, drawing on the Scenario RNG, and the floor is
     /// sampled again at its XY ([`infantry_destination_coordinate`]).
@@ -137,10 +141,8 @@ pub(crate) fn owner_mission_is_enter(owner: &crate::sim::game_entity::GameEntity
 /// a cell, so the arm's NullCoord return (`0x0054D736`) is unreachable.
 fn unit_destination(centre: DriveCoord, host: &impl JumpjetOrderHost) -> DriveCoord {
     let [x, y] = host.cell_coords([centre.x, centre.y]);
-    let mut z = host.floor_height([x, y]);
-    if host.cell_high_bridge([x, y]) {
-        z = z.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-    }
+    let ground = host.floor_height([x, y]);
+    let z = host.bridge_deck_z([x, y], ground).unwrap_or(ground);
     DriveCoord { x, y, z }
 }
 
@@ -372,10 +374,8 @@ impl JumpjetRuntime {
             return StopOutcome::SearchFailed;
         };
         let WorldCoordinate { x, y, .. } = cell_center(cell.into(), 0);
-        let mut z = host.floor_height([x, y]);
-        if host.cell_high_bridge([x, y]) {
-            z = z.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-        }
+        let ground = host.floor_height([x, y]);
+        let z = host.bridge_deck_z([x, y], ground).unwrap_or(ground);
         StopOutcome::Retargeted(self.move_to(DriveCoord { x, y, z }, host))
     }
 
@@ -435,10 +435,9 @@ pub(crate) fn infantry_destination_coordinate(
     )?;
     let selected_cell =
         terrain.native_cell_identity(((adjusted.x / 256) as i16, (adjusted.y / 256) as i16));
-    if terrain.native_cell_flags(selected_cell) & 0x100 != 0 {
-        adjusted.z = adjusted
-            .z
-            .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+    let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+    if cells.flags(selected_cell) & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0 {
+        adjusted.z = super::ground_pose::deck_surface_z(&cells, selected_cell, adjusted.z);
     }
     Some(adjusted)
 }
@@ -552,6 +551,12 @@ impl JumpjetOrderHost for WorldOrderHost<'_> {
     }
     fn cell_high_bridge(&self, xy: [i32; 2]) -> bool {
         self.terrain().native_cell_flags(self.cell_identity(xy)) & 0x100 != 0
+    }
+    fn bridge_deck_z(&self, xy: [i32; 2], ground: i32) -> Option<i32> {
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(self.terrain());
+        let cell = self.cell_identity(xy);
+        (cells.flags(cell) & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0)
+            .then(|| super::ground_pose::deck_surface_z(&cells, cell, ground))
     }
     fn infantry_destination(&mut self, centre: DriveCoord) -> Option<DriveCoord> {
         infantry_destination_coordinate(
@@ -713,7 +718,7 @@ impl Simulation {
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         if self.object_placement_scope_active() {
             return true;
@@ -756,7 +761,7 @@ impl Simulation {
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(health) = self.substrate.entities.get(id).map(|e| e.health.current()) else {
             return;

@@ -9,7 +9,7 @@ use crate::sim::world::{FrameEffects, TickLane};
 
 fn step(runtime: &mut SimRuntime) {
     let output = runtime
-        .advance_frame(&[], 67, TickLane::Ordinary, FrameEffects::default())
+        .advance_frame(&[], 67, TickLane::Ordinary, &mut FrameEffects::default())
         .expect("ordinary repair frame");
     assert!(output.tick.frame_committed);
 }

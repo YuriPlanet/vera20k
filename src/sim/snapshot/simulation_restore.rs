@@ -45,12 +45,14 @@ impl Simulation {
         Ok(())
     }
 
-    /// Each object's type and owner, each House's key and type and each
-    /// bullet's warhead, BulletType and Weapon must name an entry of the saved
-    /// interner: both come from the file, and `StringInterner::resolve`
+    /// Every interned id the saved Simulation holds must name an entry of the
+    /// saved interner: both come from the file, and `StringInterner::resolve`
     /// panics on an id it never produced. A save that fails this is refused
-    /// before any restore step reads one. Team, script and trigger ids are
-    /// not covered here.
+    /// before any restore step reads one. Objects, Houses and bullets are
+    /// checked first, so their refusal names the object; the walk over the
+    /// whole saved state ([`super::saved_ids`]) then covers every other
+    /// field (teams and scripts, superweapons, production, House state and
+    /// the rest) and names the saved struct and field.
     pub(super) fn validate_saved_interned_ids(&self) -> Result<(), SnapshotRestoreError> {
         let check = |registry, object_id, field, id: crate::sim::intern::InternedId| {
             self.interner
@@ -82,6 +84,7 @@ impl Simulation {
                 check("bullet", bullet_id, "weapon", weapon)?;
             }
         }
+        super::saved_ids::check_saved_interned_ids(self, self.interner.len())?;
         Ok(())
     }
 
@@ -102,7 +105,7 @@ impl Simulation {
     pub(crate) fn restore_after_snapshot_load(&mut self) -> Result<(), SnapshotRestoreError> {
         let retain_continuation = self.retains_snapshot_continuation();
         for (_, entity) in self.substrate.entities.iter_sorted() {
-            if !entity.type_facts.foundation().valid() {
+            if !entity.seldom.type_facts.foundation().valid() {
                 return Err(SnapshotRestoreError::InvalidFoundation {
                     object_id: entity.stable_id(),
                 });
@@ -131,6 +134,9 @@ impl Simulation {
             .map_err(SnapshotRestoreError::InvalidRadiationSiteOrder)?;
         self.validate_planning_references()
             .map_err(|reason| SnapshotRestoreError::InvalidPlanningReferences { reason })?;
+        self.team_script_vm
+            .validate_restored_task_forces()
+            .map_err(|reason| SnapshotRestoreError::InvalidTeamState { reason })?;
         if let Some(owner) = self.session.current_house()
             && !self.houses.contains_key(&owner)
         {
@@ -421,7 +427,8 @@ impl Simulation {
     }
 
     /// Player-file CellLoad4839F0 / Map no-init565190 crate resets.
-    /// Internal simulation continuations keep their saved crates.
+    /// Internal simulation continuations and Ares games keep their saved
+    /// crates.
     pub(crate) fn restore_map_authority_after_user_load(
         &mut self,
         rules: &crate::rules::ruleset::RuleSet,
@@ -582,7 +589,11 @@ impl Simulation {
             if !zones.is_native_load_pending() {
                 return Err(SnapshotRestoreError::NavigationAuthorityPublicationFailed);
             }
-            if !self.retains_snapshot_continuation() {
+            // Ares skips both resets, so a loaded Ares game keeps its crates:
+            // CellClass_Load_Crates (hook 0x00483BF1 -> 0x00483BFE, Ares.dll
+            // 1006ADE0) and MapClass_CTOR_NoInit_Crates (0x00565215 ->
+            // 0x0056522D, 1006AEC0).
+            if !self.retains_snapshot_continuation() && !rules.ares() {
                 self.reset_crates_after_user_load(saved_land)?;
             }
         }
@@ -612,7 +623,7 @@ impl Simulation {
                 self.resolved_terrain
                     .as_mut()
                     .expect("validated terrain cache"),
-                self.main_rng.draws(),
+                &mut self.main_rng,
                 size_width,
             )
             .map_err(|reason| SnapshotRestoreError::TerrainAssetPreparationFailed { reason })?;

@@ -445,6 +445,7 @@ fn gsi_04_12_common_raw_occupation_building_foundation_is_ground_only() {
     {
         let building = sim.substrate.entities.get_mut(1).expect("building");
         building
+            .seldom
             .type_facts
             .set_foundation_for_test("2x2".to_string().into());
         building.set_on_bridge(true);
@@ -479,15 +480,18 @@ fn gsi_04_05_hidden_lifecycle_follows_base_lists_without_expanding_them() {
     {
         let building = sim.substrate.entities.get_mut(1).expect("building");
         building
+            .seldom
             .type_facts
             .set_foundation_for_test("2x2".to_string().into());
         let mut profile = building
+            .seldom
             .type_facts
             .building_hidden_occupancy()
             .expect("structure constructor profile");
         profile.add_occupy[0] = Some((-1, 0));
         profile.remove_occupy[0] = Some((1, 1));
         building
+            .seldom
             .type_facts
             .set_building_hidden_occupancy_for_test(Some(profile));
     }
@@ -598,7 +602,7 @@ fn gsi_04_12_object_raw_occupation_airborne_and_non_fly_aircraft_are_excluded() 
         1,
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     insert_entity(&mut sim, 2, EntityCategory::Aircraft);
@@ -691,7 +695,7 @@ fn gsi_04_12_object_raw_occupation_production_fly_tick_unmarks_takeoff_and_marks
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
 
@@ -732,7 +736,7 @@ fn gsi_04_12_object_raw_occupation_production_fly_tick_unmarks_takeoff_and_marks
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
 
@@ -778,7 +782,7 @@ fn gsi_05_05_fly_takeoff_commits_absolute_z_after_remove_process() {
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
 
@@ -810,7 +814,7 @@ fn gsi_05_05_fly_landing_on_bridge_uses_absolute_z_for_deck_put() {
         1,
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(3, 4), 0);
     assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(3, 4), 0);
@@ -831,7 +835,7 @@ fn gsi_05_05_fly_landing_on_bridge_uses_absolute_z_for_deck_put() {
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
 
@@ -931,7 +935,7 @@ fn gsi_05_05_mapless_fly_uses_dummy_ground_then_bridge_height() {
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
 
@@ -968,7 +972,7 @@ fn gsi_04_07_damage_air_spatial_entry_crossing_and_exit_keep_vector_order() {
             id,
             416,
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, id);
     }
@@ -988,7 +992,7 @@ fn gsi_04_07_damage_air_spatial_entry_crossing_and_exit_keep_vector_order() {
         20,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert_eq!(
@@ -1016,7 +1020,7 @@ fn gsi_04_07_damage_air_spatial_entry_crossing_and_exit_keep_vector_order() {
         20,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     let crossed = sim.substrate.entities.get(20).unwrap();

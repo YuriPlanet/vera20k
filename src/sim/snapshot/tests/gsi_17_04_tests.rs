@@ -111,7 +111,7 @@ fn add_marked_unit(sim: &mut Simulation, cell: (u16, u16), on_bridge: bool) {
         true,
     );
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.in_logic_vector.set_for_test(true);
+    entity.seldom.in_logic_vector.set_for_test(true);
     entity.set_on_bridge(on_bridge);
     sim.substrate.entities.insert(entity);
     sim.add_entity_occupancy(stable_id);

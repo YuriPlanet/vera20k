@@ -126,7 +126,7 @@ fn dock_exit_coordinate_and_facing(
         [centre(dock.0), centre(dock.1)],
     );
     let facing = crate::util::direction_tables::quantize::round_facing16_to_8(word);
-    let (width, height) = producer.type_facts.foundation().dimensions();
+    let (width, height) = producer.seldom.type_facts.foundation().dimensions();
     let inward = |cell: i16, base: i16, size: u16| {
         if i32::from(cell) >= i32::from(base) + i32::from(size) {
             cell.wrapping_sub(1)
@@ -161,7 +161,7 @@ pub fn mark_war_factory_spawn_contact(
     rules: &RuleSet,
     producer_id: u64,
     produced_id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     for message in [
         crate::sim::radio::RadioMessage::Hello,
@@ -216,7 +216,7 @@ impl Simulation {
         if unit.category() != crate::map::entities::EntityCategory::Unit {
             return None;
         }
-        unit.radio_contacts.slot(0).filter(|&contact| {
+        unit.seldom.radio_contacts.slot(0).filter(|&contact| {
             self.is_weapons_factory(contact, rules)
                 && self.substrate.occupancy.first_building_on_layer(
                     unit.position.rx(),
@@ -375,7 +375,7 @@ pub(super) fn unlimbo_held_naval_unit(
     stable_id: u64,
     cell: (u16, u16),
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Option<u64> {
     // The selected Cell's GetCoords (`0x00486840`).
     let coord = crate::sim::movement::target_cell_coord(
@@ -450,7 +450,10 @@ mod tests {
                 14,
                 crate::map::entities::EntityCategory::Structure,
             );
-            producer.type_facts.set_foundation_for_test("3x2".into());
+            producer
+                .seldom
+                .type_facts
+                .set_foundation_for_test("3x2".into());
             producer.position.put_location(location);
             let dock = (number("dock", 0) as i16, number("dock", 1) as i16);
             let producer_type = rules.object("GAPILE").unwrap();
@@ -629,7 +632,7 @@ mod tests {
                 stable_id,
                 (8, 8),
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             Some(stable_id)
         );

@@ -47,6 +47,7 @@ mod disk_laser_tests;
 pub(crate) mod entry_test_fixture;
 mod frame_channel;
 mod frame_effects;
+mod ice;
 mod idle_sleep;
 #[cfg(all(test, tests_sim_world_c_o))]
 mod idle_sleep_tests;
@@ -66,7 +67,7 @@ pub(crate) use voxel_anim_effects::BounceContactDamage;
 mod unit_repair_seek;
 pub(crate) use frame_channel::FrameChannel;
 pub use frame_effects::{
-    FrameEffects, LocalPlanningBoundary, NetworkCommandBoundary, NetworkCommandError,
+    FrameClient, FrameEffects, LocalPlanningBoundary, NetworkCommandBoundary, NetworkCommandError,
     OutcomeWaitBoundary, SoundBoundary, TacticalRadarBoundary,
 };
 pub use network_commands::{
@@ -150,7 +151,7 @@ pub use world_orders::HealArmKeys;
 pub use world_orders::InfiltrateAction;
 pub use world_orders::UnitRepairAction;
 pub(crate) use world_orders::VehicleCaptureOutcome;
-pub use world_orders::{AresHeal, ControlProjection};
+pub use world_orders::{ControlProjection, InfantryHealAction};
 pub use world_orders::{EntryBaseAction, EntryClickAction};
 mod fog_objects;
 mod projectile_collision;
@@ -581,8 +582,8 @@ pub struct SimulationRngState {
     pub mapgen: SimRngLogicalState,
 }
 
-fn deserialized_main_rng_placeholder() -> MainRng {
-    MainRng::new(0)
+fn deserialized_main_rng_placeholder() -> SimRng {
+    SimRng::new(0)
 }
 
 fn every_frame() -> Option<std::num::NonZeroU64> {
@@ -669,8 +670,10 @@ pub struct Simulation {
     /// Main/global RNG — gamemd `g_MainRng` (0x00886B88). This is a
     /// process-global cursor: it is neither part of ScenarioClass saves nor
     /// multiplayer checksums, and the live cursor continues across a load.
+    /// The simulation owns this copy alone and draws it through `&mut`; the
+    /// app keeps the process cell ([`MainRng`], `install_fresh_process_main`).
     #[serde(skip, default = "deserialized_main_rng_placeholder")]
-    pub(crate) main_rng: MainRng,
+    pub(crate) main_rng: SimRng,
     /// Map-generator RNG — gamemd `g_MapGenRng` (0x00ABE890). VERA's fresh
     /// fixed-map construction uses `Random__Seed(0)`, matching the verified
     /// native fresh-process state; launch `.SED` generation installs its exact
@@ -735,6 +738,11 @@ pub struct Simulation {
     /// gameplay state; saves occur at frame boundaries.
     #[serde(skip)]
     mission_spawned_entities: bool,
+    /// An ice run's Recalc_Ice changed land this frame; the frame tail
+    /// rebuilds the zones once (`ice`, docs/ts-ice.md). Derived frame
+    /// output, like `mission_spawned_entities`.
+    #[serde(skip)]
+    ice_zones_stale: bool,
     /// The shared ownership chokepoint's report, drained into the tick's
     /// `ownership_changed`, including changes outside the live object pass.
     /// Not saved or hashed.
@@ -905,6 +913,13 @@ pub struct Simulation {
     /// overlay/bridge/navigation reconstruction on restore.
     #[serde(default)]
     pub(crate) dynamic_terrain_cells: crate::map::resolved_terrain::DynamicTerrainCells,
+    /// Firestorm 2.0 MapClass+0x14C, the cracked ice waiting to freeze over
+    /// (`ice`, docs/ts-ice.md). Empty unless the map runs ice.
+    #[serde(default)]
+    ice_cracks: Vec<ice::CrackedIce>,
+    /// The second step of the last terrain dent, Firestorm's one pending
+    /// slot (`terrain_deformation`). Only terrain deformation fills it.
+    terrain_dent: Option<terrain_deformation::PendingTerrainDent>,
     pub(crate) bridge_state: Option<BridgeRuntimeState>,
     /// Resident Map+D4 ordered collapse coordinates. Independent of optional
     /// geometry so even standalone fallout/save retains its native publication.
@@ -1611,10 +1626,12 @@ pub(crate) fn wake_anchor_for(
         return None;
     }
     let on_cadence = match entity.locomotor.as_ref().map(|loco| loco.active_kind()) {
-        Some(
-            crate::rules::locomotor_type::LocomotorKind::Drive
-            | crate::rules::locomotor_type::LocomotorKind::Hover,
-        ) => binary_frame.is_multiple_of(10),
+        Some(crate::rules::locomotor_type::LocomotorKind::Drive) => binary_frame.is_multiple_of(10),
+        // Hover Process 514705..514717 exits before its wake on entering
+        // a tube. The Drive/Ship tails have no such check.
+        Some(crate::rules::locomotor_type::LocomotorKind::Hover) => {
+            binary_frame.is_multiple_of(10) && entity.active_tube().is_none()
+        }
         Some(crate::rules::locomotor_type::LocomotorKind::Ship) => {
             binary_frame.is_multiple_of(8) && !underwater
         }

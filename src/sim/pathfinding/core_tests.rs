@@ -1043,6 +1043,39 @@ fn astar_uses_explicit_nonzero_tube_edge() {
     assert_eq!(path, vec![(0, 0), (4, 0)]);
 }
 
+/// A refused tunnel exit that is the goal ends the path at the entrance,
+/// just as a refused compass candidate does (0x00429F54, 0x0042A17D).
+#[test]
+fn a_refused_tunnel_exit_ends_the_route_at_its_entrance() {
+    let mut cells: Vec<_> = (0..6).map(|x| make_resolved_cell(x, 0)).collect();
+    let (entrance, exit) = ((1, 0), (5, 0));
+    cells[1].tube_index = Some(TubeId(0));
+    let terrain = ResolvedTerrainGrid::from_cells_with_tubes(
+        6,
+        1,
+        cells,
+        vec![TubeFact::explicit(entrance, exit, 2, vec![2; 4])],
+    );
+    let grid = PathGrid::from_resolved_terrain(&terrain);
+    let entry = RefusedGoal {
+        goal: exit,
+        passive_unit: false,
+    };
+    let options = AStarOptions {
+        resolved_terrain: Some(&terrain),
+        ..AStarOptions::new(&entry)
+    };
+    let path = astar_search(&grid, (0, 0), MovementLayer::Ground, exit, &options).unwrap();
+    assert_eq!(
+        path.iter().map(|s| (s.rx, s.ry)).collect::<Vec<_>>(),
+        [(0, 0), entrance]
+    );
+    assert!(matches!(
+        astar_search(&grid, entrance, MovementLayer::Ground, exit, &options),
+        Err(PathSearchFailure::CellSearchExhausted)
+    ));
+}
+
 #[test]
 fn astar_rejects_zero_step_auto_shell_tube_edge() {
     let mut cells: Vec<_> = (0..5).map(|x| make_resolved_cell(x, 0)).collect();
@@ -1450,4 +1483,35 @@ fn terrain_relaxation_never_reopens_a_cliff_cell() {
     let terrain = ResolvedTerrainGrid::from_cells(1, 1, vec![cliff_with_tree]);
     let grid = PathGrid::from_resolved_terrain(&terrain);
     assert!(!grid.is_walkable_for_infantry(0, 0));
+}
+
+/// The heuristic's root is the x87-stored root, bit for bit, over the
+/// offsets a cell can hold: the small ones, the ones past the binary32
+/// chopping boundary, and the 32-bit wrap of a far corner.
+#[test]
+fn the_heuristic_root_matches_the_x87_stored_root() {
+    use crate::util::native_x87::{X87Chop53, sqrt_approx_f32};
+
+    for (dx, dy) in [
+        (0i32, 0i32),
+        (1, 0),
+        (0, 1),
+        (3, 4),
+        (255, 255),
+        (4096, 4096),
+        (32767, 32767),
+        (-32768, -32768),
+    ] {
+        let cell = (dx as u16, dy as u16);
+        let goal = (0u16, 0u16);
+        let squares = dy.wrapping_mul(dy).wrapping_add(dx.wrapping_mul(dx));
+        let expected = sqrt_approx_f32(X87Chop53::load_i32(squares))
+            .expect("a square is finite")
+            .bits();
+        assert_eq!(
+            heuristic(cell, goal).to_bits(),
+            expected,
+            "offset {dx},{dy}"
+        );
+    }
 }

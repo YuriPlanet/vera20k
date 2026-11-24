@@ -48,7 +48,7 @@ fn counted_action58_uses_literal_intensity_and_tail_waypoint_through_live_dispat
         &mut effects,
         &rules,
         None,
-        crate::sim::world::FrameEffects::empty()
+        &mut crate::sim::world::FrameEffects::empty()
     ));
     assert!(direct.trigger_meteor_shower(&rules, 0, 7));
     assert_eq!(sim.state_hash(), direct.state_hash());
@@ -100,7 +100,7 @@ fn action43_drops_retail_meteor01_on_its_waypoint_cell_and_scatters_pebbles() {
         &mut Vec::new(),
         &rules,
         None,
-        crate::sim::world::FrameEffects::empty()
+        &mut crate::sim::world::FrameEffects::empty()
     ));
     let ids = sim.voxel_anims().ids();
     assert_eq!(ids.len(), 1);

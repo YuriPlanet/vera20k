@@ -529,9 +529,7 @@ impl SuppliedFootFixture {
         // cursor, including pre-fixture Main/MapGen history; no seed fitting.
         sim.scenario_rng =
             serde_json::from_value::<SimRng>(row["rng_before"]["scenario"].clone()).unwrap();
-        sim.main_rng = serde_json::from_value::<SimRng>(row["rng_before"]["main"].clone())
-            .unwrap()
-            .into();
+        sim.main_rng = serde_json::from_value::<SimRng>(row["rng_before"]["main"].clone()).unwrap();
         sim.mapgen_rng =
             serde_json::from_value::<SimRng>(row["rng_before"]["mapgen"].clone()).unwrap();
         let friendly = sim.interner.intern("SuppliedFriendlyHouse");
@@ -773,7 +771,10 @@ impl SuppliedFootFixture {
                         signed(&before["targeting_timer"][2]) as u32,
                     ));
                 if before["scan"] != 0 {
-                    entity.foot_retarget_after_stop.mark_stopped_cannot_fire();
+                    entity
+                        .seldom
+                        .foot_retarget_after_stop
+                        .mark_stopped_cannot_fire();
                 }
                 // Foot+68D is serialized for every concrete Foot class. This
                 // includes the supplied Unit raw-load control; it does not
@@ -1170,7 +1171,7 @@ fn original_literal_foot_rows_compare_mask_and_empty_result_lifecycle_only() {
             .as_u64()
             .unwrap() as u32;
         assert_eq!(
-            actor.foot_retarget_after_stop.coerce_mask(mask),
+            actor.seldom.foot_retarget_after_stop.coerce_mask(mask),
             row["greatest_threat_masks"]["greatest"][0]
                 .as_u64()
                 .unwrap() as u32,
@@ -1181,6 +1182,7 @@ fn original_literal_foot_rows_compare_mask_and_empty_result_lifecycle_only() {
         // lifecycle owner, without claiming this executes the raw scan body.
         assert_eq!(row["returned_eax"], 0);
         actor
+            .seldom
             .foot_retarget_after_stop
             .finish_scan(row["returned_eax"] != 0);
         assert_eq!(
@@ -1678,7 +1680,7 @@ fn run_recorded_handler(
     fixture: &mut SuppliedFootFixture,
     rules: &RuleSet,
     row: &Value,
-    ctx: super::super::ObjectAiCtx<'_>,
+    ctx: &mut super::super::ObjectAiCtx<'_>,
 ) {
     let name = row["input"]["name"].as_str().unwrap();
     for event in row["events"].as_array().unwrap() {
@@ -1696,7 +1698,18 @@ fn run_recorded_handler(
         super::dispatch_foot_mission(&mut fixture.sim, fixture.actor, rules, ctx).unwrap();
     } else {
         let actual = if row["input"]["mission"] == 21 {
-            super::evaluate_foot_rescue(&mut fixture.sim, fixture.actor, rules, ctx)
+            // The Rescue body is the shared owner
+            // (`sim::mission::rescue`), which the Foot dispatcher and the
+            // aircraft dispatcher both run.
+            super::MissionHandlerEvaluation::cadence(
+                crate::sim::mission::rescue::mission_rescue(
+                    &mut fixture.sim,
+                    rules,
+                    ctx.overlay_registry,
+                    fixture.actor,
+                    &mut ctx.effects,
+                ),
+            )
         } else {
             assert_eq!(
                 row["input"]["mission"], 11,
@@ -1764,7 +1777,7 @@ fn original_rescue_and_area_guard_complete_represented_handler_rows() {
             &mut fixture,
             &rules,
             row,
-            super::super::ObjectAiCtx::default(),
+            &mut super::super::ObjectAiCtx::default(),
         );
         compared += 1;
     }
@@ -1799,7 +1812,7 @@ fn original_physical_retail_area_guard_idle_runs_before_cadence() {
             &mut fixture,
             &rules,
             row,
-            super::super::ObjectAiCtx::default(),
+            &mut super::super::ObjectAiCtx::default(),
         );
         compared += 1;
     }
@@ -1840,7 +1853,7 @@ fn original_full_retail_cell_leash_matches_move_idle_and_cadence_boundaries() {
             &mut fixture,
             &rules,
             row,
-            super::super::ObjectAiCtx::default(),
+            &mut super::super::ObjectAiCtx::default(),
         );
         compared += 1;
     }
@@ -1872,7 +1885,7 @@ fn original_full_retail_rescue_matches_native_scan_hit_and_empty_prefix() {
                 &mut fixture,
                 &rules,
                 row,
-                super::super::ObjectAiCtx::default(),
+                &mut super::super::ObjectAiCtx::default(),
             );
             assert_destination_projection(&fixture, row);
             complete_hits += 1;
@@ -1896,6 +1909,7 @@ fn original_full_retail_rescue_matches_native_scan_hit_and_empty_prefix() {
                 .entities
                 .get_mut(fixture.actor)
                 .unwrap()
+                .seldom
                 .foot_retarget_after_stop
                 .clear_for_rescue();
             let actual = fixture
@@ -1956,7 +1970,11 @@ fn original_full_retail_supplied_rescue_gates_compare_distance_and_range_prerequ
         assert_eq!(range["caller"], "0x4de0f3");
         assert_eq!(range["args"][0], 1);
         assert_eq!(
-            super::foot_threat_range(&fixture.sim, fixture.actor, &rules),
+            crate::sim::combat::threat_range::object_threat_range(
+                &fixture.sim,
+                fixture.actor,
+                &rules
+            ),
             signed(&range["result_eax"]),
             "{name}: original live7012C0/707E60 range"
         );
@@ -2018,7 +2036,7 @@ fn original_retail_foot_stray_and_empty_rescue_home_complete_destination_transac
             &mut fixture,
             &rules,
             row,
-            super::super::ObjectAiCtx {
+            &mut super::super::ObjectAiCtx {
                 overlay_registry: Some(scene.runtime.resources.rules.overlay_registry()),
                 ..Default::default()
             },
@@ -2073,7 +2091,7 @@ fn original_initial_stationary_e1_action_enters_ready_without_rng() {
     assert!(!fixture.sim.infantry_sequencer(
         fixture.actor,
         &rules,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert_foot_projection(&fixture, &row);
 }
@@ -2133,7 +2151,7 @@ fn original_ground_fireup_stage_uses_absolute_native_frames() {
                     4,
                     false,
                     &rules,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 )
                 .unwrap()
         );
@@ -2195,7 +2213,7 @@ fn original_idle_completion_releases_doing_at_existing_completion_owner() {
         assert!(!fixture.sim.infantry_sequencer(
             fixture.actor,
             &rules,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         assert_foot_projection(&fixture, row);
         compared += 1;
@@ -2293,7 +2311,7 @@ fn dying_infantry_visits_shared_native_clock() {
         fixture.actor,
         crate::sim::world::InfantryDeathSequence::Die1,
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let actor = fixture
         .sim
@@ -2306,7 +2324,7 @@ fn dying_infantry_visits_shared_native_clock() {
     fixture.sim.object_ai_visit_one(
         fixture.actor,
         Some(&rules),
-        super::super::ObjectAiCtx::default(),
+        &mut super::super::ObjectAiCtx::default(),
     );
     assert_eq!(
         *fixture
@@ -2421,7 +2439,7 @@ fn original_do_action_restart_preserves_independent_stage_fields() {
                 signed(&args[0]),
                 args[1] != 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         assert_eq!(

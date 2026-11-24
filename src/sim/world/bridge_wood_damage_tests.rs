@@ -207,7 +207,7 @@ fn retail_wood_force_fire_collapses_then_engineer_rebuilds() {
             std::slice::from_ref(&command),
             SIM_TICK_MS,
             crate::sim::world::TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     export(&scene, "attack_command_applied");
@@ -229,7 +229,7 @@ fn retail_wood_force_fire_collapses_then_engineer_rebuilds() {
                 &[],
                 SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         for shot in output
@@ -294,7 +294,7 @@ fn retail_wood_force_fire_collapses_then_engineer_rebuilds() {
                 &[],
                 SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         assert!(

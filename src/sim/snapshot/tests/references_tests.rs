@@ -3,6 +3,7 @@
 //! targets keep their identity, and process dummies stay unserialized.
 
 use super::*;
+use crate::sim::snapshot::saved_ids::{SavedIdError, check_saved_interned_ids};
 
 #[test]
 fn restore_validates_references_then_rebuilds_logic_particles_and_cells() {
@@ -42,6 +43,7 @@ fn restore_validates_references_then_rebuilds_logic_particles_and_cells() {
         .entities
         .get_mut(entity_id)
         .unwrap()
+        .seldom
         .spark_particle_system
         .bind(Some(particle_id));
     sim.set_logic_order_for_test(vec![particle_id, entity_id]);
@@ -72,6 +74,7 @@ fn restore_validates_references_then_rebuilds_logic_particles_and_cells() {
             .entities
             .get(entity_id)
             .expect("entity")
+            .seldom
             .in_logic_vector
             .is_member()
     );
@@ -110,6 +113,7 @@ fn restore_validates_references_then_rebuilds_logic_particles_and_cells() {
             .entities
             .get(entity_id)
             .unwrap()
+            .seldom
             .spark_particle_system
             .system(),
         Some(particle_id)
@@ -477,7 +481,7 @@ fn terrain_projectile_target_cell_repair_survives_pending_delete_roundtrip() {
         rules.warhead("WH").unwrap(),
         true,
         (RAD_NO_ATTACKER, None, warhead_id),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let cell_target = ProjectileTarget::Cell { rx: 1, ry: 1 };
     assert_eq!(
@@ -558,7 +562,10 @@ fn gsi_17_03_reference_fixture() -> (Simulation, Gsi1703Ids) {
     sim.substrate.entities.insert(parent_entity);
 
     let mut child_entity = GameEntity::test_default(child, "HORNET", "AMERICANS", 2, 1);
-    child_entity.spawn_owner_id.set_for_test(Some(parent));
+    child_entity
+        .seldom
+        .spawn_owner_id
+        .set_for_test(Some(parent));
     sim.substrate.entities.insert(child_entity);
     sim.substrate
         .entities
@@ -650,6 +657,7 @@ fn gsi_17_03_each_spawn_and_projectile_pointer_role_must_resolve_atomically() {
                     .entities
                     .get_mut(ids.child)
                     .unwrap()
+                    .seldom
                     .spawn_owner_id
                     .set_for_test(Some(9_999));
                 ("EntityStore", ids.child, "spawn_owner_id")
@@ -726,6 +734,7 @@ fn gsi_17_03_null_and_cell_reference_forms_need_no_object_identity() {
         .entities
         .get_mut(ids.child)
         .unwrap()
+        .seldom
         .spawn_owner_id
         .set_for_test(None);
     let projectile = sim.projectiles.get_mut(ids.projectile).unwrap();
@@ -1117,6 +1126,7 @@ fn gsi_17_03_repeated_aliases_do_not_imply_reciprocal_spawn_ownership() {
         .entities
         .get_mut(ids.child)
         .unwrap()
+        .seldom
         .spawn_owner_id
         .set_for_test(Some(ids.target));
 
@@ -1140,6 +1150,7 @@ fn gsi_17_03_repeated_aliases_do_not_imply_reciprocal_spawn_ownership() {
             .entities
             .get(ids.child)
             .unwrap()
+            .seldom
             .spawn_owner_id
             .owner(),
         Some(ids.target)
@@ -1282,5 +1293,78 @@ fn bullet_warhead_id_past_the_saved_interner_refuses_the_load() {
             field: "warhead",
             id: unknown.index(),
         },
+    );
+}
+
+/// The Team VM's saved ids (here a ScriptType's) are resolved by name when
+/// Teams are made and traced, so one past the saved interner refuses the load.
+/// No list names the field: the walk over the saved state finds it.
+#[test]
+fn script_type_id_past_the_saved_interner_refuses_the_load() {
+    use crate::sim::team_script_vm::TeamScriptDefinition;
+
+    let mut sim = Simulation::new();
+    let unknown = crate::sim::intern::InternedId::from_index(9_999);
+    sim.team_script_vm.register_script(TeamScriptDefinition {
+        id: unknown,
+        actions: Vec::new(),
+        source: crate::rules::team_ai_ini::TeamAiDefinitionSource::FixedAimd,
+    });
+    let bytes = GameSnapshot::save(&sim, 0, 0, "unknown-script", 0);
+    let Err(error) = GameSnapshot::load(&bytes).unwrap().restore_player_world(
+        crate::sim::world::SnapshotProcessState::Live(&Simulation::new()),
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        flat_terrain(8, 8),
+        Default::default(),
+        PlayerSaveCells::FixtureBaseline,
+    ) else {
+        panic!("a ScriptType id past the saved interner must refuse the load");
+    };
+    assert_eq!(
+        error,
+        SnapshotRestoreError::UnknownSavedId(SavedIdError::Unknown {
+            owner: "TeamScriptVm",
+            field: "scripts",
+            id: unknown.index(),
+        }),
+    );
+}
+
+/// The walk reads an id wherever the saved shape holds one (a map key, an
+/// `Option`, an enum's field, a tuple) and takes no other `u32` for one.
+#[test]
+fn saved_id_walk_finds_ids_in_nested_shapes_and_ignores_plain_numbers() {
+    use crate::sim::intern::InternedId;
+    use std::collections::BTreeMap;
+
+    #[derive(serde::Serialize)]
+    enum Order {
+        Build { what: InternedId },
+    }
+    #[derive(serde::Serialize)]
+    struct Saved {
+        count: u32,
+        by_name: BTreeMap<InternedId, (u32, Option<InternedId>)>,
+        orders: Vec<Order>,
+    }
+    let id = InternedId::from_index;
+    let saved = |key, value, what| Saved {
+        count: 4_000_000_000,
+        by_name: BTreeMap::from([(id(key), (4_000_000_000, Some(id(value))))]),
+        orders: vec![Order::Build { what: id(what) }],
+    };
+    let unknown = |owner, field, id| Err(SavedIdError::Unknown { owner, field, id });
+    assert_eq!(check_saved_interned_ids(&saved(2, 2, 2), 3), Ok(()));
+    assert_eq!(
+        check_saved_interned_ids(&saved(3, 2, 2), 3),
+        unknown("Saved", "by_name", 3)
+    );
+    assert_eq!(
+        check_saved_interned_ids(&saved(2, 7, 2), 3),
+        unknown("Saved", "by_name", 7)
+    );
+    assert_eq!(
+        check_saved_interned_ids(&saved(2, 2, 9), 3),
+        unknown("Order", "what", 9)
     );
 }

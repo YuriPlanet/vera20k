@@ -246,7 +246,7 @@ pub(crate) fn place_production_with_overlays(
     owner: &str,
     request: ProductionPlacement<'_>,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     //4FB0FE..4FB191 uses the requested type only to choose a Factory slot.
     // The completed object in that slot supplies the actual placement type;
@@ -643,7 +643,7 @@ fn failed_building_unlimbo(
     rules: &RuleSet,
     owner: InternedId,
     yard: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     sim.sound_events
         .emit(crate::sim::world::SimSoundEvent::CannotDeployHere { owner });

@@ -521,7 +521,7 @@ fn moving_ramp_snapshot_continues_residual_bridge_crossing_through_paid_points()
             .expect("moving ramp snapshot")
             .sim;
         // The original and restored controls run as independent test processes.
-        restored.main_rng = sim.main_rng.snapshot_for_test().into();
+        restored.main_rng = sim.main_rng.clone();
         restored.mapgen_rng = sim.mapgen_rng.clone();
         restored
             .restore_after_snapshot_load()
@@ -972,7 +972,7 @@ fn forced_track_terminal_samples_full_head_xy_before_relink() {
         },
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     if sim.path_grid.is_none() {
         sim.path_grid = Some(std::sync::Arc::new(grid.clone()));
@@ -1033,7 +1033,7 @@ fn ordinary_drive_ship_command_keeps_subcell_origin_through_terminal_cleanup() {
                 crate::sim::components::NavTargetRef::cell(destination.0, destination.1),
                 &rules,
                 true,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ));
             for frame in 0..128 {
                 sim.session.set_binary_frame_for_test(frame);
@@ -1255,6 +1255,7 @@ fn getcoords_xy_is_the_location_or_a_buildings_foundation_centre() {
         ("not-a-native-foundation", raw),
     ] {
         entity
+            .seldom
             .type_facts
             .set_foundation_for_test(foundation.to_string().into());
         assert_eq!(
@@ -1340,7 +1341,7 @@ fn two_marked_units() -> Simulation {
             id,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
     }
     sim
@@ -1362,7 +1363,7 @@ fn set_height_on_a_marked_object_re_marks_it_at_the_head_of_its_cell() {
         1,
         30,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(next_in_cell(&sim, 1), Some(Entity(2)));
     let entity = sim.substrate.entities.get(1).unwrap();
@@ -1392,13 +1393,13 @@ fn set_height_on_an_unmarked_object_writes_z_without_marking_it() {
         1,
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     sim.set_object_height(
         1,
         60,
         crate::rules::ruleset::RuleSet::empty_for_test(),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let entity = sim.substrate.entities.get(1).unwrap();
     assert!(!entity.lifecycle.cell_marked());

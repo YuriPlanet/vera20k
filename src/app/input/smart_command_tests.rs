@@ -84,6 +84,7 @@ fn add_entity(
         false,
     );
     entity
+        .seldom
         .type_facts
         .set_foundation_for_test(object.foundation.clone());
     sim.entities_mut_for_test().insert(entity);
@@ -384,6 +385,7 @@ fn ivan_orders_never_target_the_planter() {
         false,
     );
     target
+        .seldom
         .type_facts
         .set_foundation_for_test("1x1".to_owned().into());
     sim.entities_mut_for_test().insert(target);

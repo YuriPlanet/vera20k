@@ -67,10 +67,19 @@ pub struct FlyRuntime {
     /// Landing reads this instance value; BeginLanding separately reads live type.
     #[serde(default)]
     airport_bound: bool,
-    /// Fly+58, the fall counter: the constructor clears it (`0x004CCA06`) and
-    /// only Process's fall block writes it (`0x004CD6C6`), never resetting it.
+    /// Fly+58, the fall counter: the constructor clears it (`0x004CCA06`),
+    /// Process's fall block adds to it (`0x004CD6C6`) and Power_Off of a
+    /// moving Fly (`0x004CFD20`) clears it again.
     #[serde(default)]
     fall_counter: i32,
+    /// Fly+53, Spinning: Power_Off of a moving Fly (`0x004CFD20`) sets it,
+    /// and Process's spin step (`0x004CE5A0`) clears it once power is back.
+    #[serde(default)]
+    spinning: bool,
+    /// Fly+54, SpinRate: what the spin step turns the owner by, in steps of
+    /// 256, before it moves one toward 0. Read only while spinning.
+    #[serde(default)]
+    spin_rate: i32,
     /// Fly+40, the target speed fraction the ramp chases. The constructor
     /// (`0x004CC9E5`) starts it at 0; Process's slowdown
     /// ([`Self::write_target_speed`]), Horizontal_Step's arrival
@@ -365,6 +374,45 @@ impl FlyRuntime {
         self.fall_counter
     }
 
+    /// Power_Off for a moving Fly (`0x004CFD20`): it spins at `rate`.
+    pub(crate) fn start_spin(&mut self, rate: i32) {
+        self.spinning = true;
+        self.spin_rate = rate;
+    }
+
+    /// See the field.
+    pub(crate) fn clear_fall(&mut self) {
+        self.fall_counter = 0;
+    }
+
+    /// SpinRate while the Fly spins, else None.
+    pub(crate) fn spin(&self) -> Option<i32> {
+        self.spinning.then_some(self.spin_rate)
+    }
+
+    /// The spin step (`0x004CE5A0`) for a Fly whose owner is alive: None
+    /// while it does not spin, and a powered one stops spinning
+    /// (`0x004CE636`). An unpowered one answers the PrimaryFacing turn,
+    /// `SpinRate << 8` as a 16-bit direction, and steps SpinRate one toward
+    /// 0 (`0x004CE60A..0x004CE62E`).
+    pub(crate) fn spin_step(&mut self, powered: bool) -> Option<u16> {
+        if !self.spinning {
+            return None;
+        }
+        if powered {
+            self.spinning = false;
+            return None;
+        }
+        let turn = self.spin_rate.wrapping_shl(8) as u16;
+        let step = self.spin_rate.wrapping_abs().min(1);
+        self.spin_rate = if self.spin_rate < 0 {
+            self.spin_rate.wrapping_add(step)
+        } else {
+            self.spin_rate.wrapping_sub(step)
+        };
+        Some(turn)
+    }
+
     ///4CEB53..4CEB90, once per admitted BeginLanding, strictly below300.
     pub(crate) fn admit_landing_effect(&mut self, height: i32) -> bool {
         if self.landing_effect_latched || height >= 300 {
@@ -592,24 +640,25 @@ impl FlyRuntime {
             world_z,
             ground_z,
             mut on_bridge,
-            structural_bridge,
+            bridge_deck_z,
             health,
             has_passenger,
             is_dropship,
             flight_level,
             hunter_seeker,
         } = input;
-        // Object GetHeight5F5F40 subtracts ground and its current OnBridge
-        // adjustment. Fly then independently normalizes an unattached deck.
-        let mut height = super::ground_pose::height_at_z(world_z, ground_z, on_bridge);
-        let mut bridge_bonus = 0;
-        if !on_bridge
-            && height >= crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
-            && structural_bridge
-        {
-            height = height.wrapping_sub(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-            bridge_bonus = crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
-        }
+        // Object GetHeight5F5F40 subtracts the current surface. The Fly
+        // height step (4CDD0D..4CDFB6) also uses an unattached structural deck
+        // once the aircraft's Location reaches it.
+        let on_bridge_surface_z = bridge_deck_z
+            .unwrap_or_else(|| super::ground_pose::z_at_height(ground_z, 0, true));
+        let reached_bridge = !on_bridge && bridge_deck_z.is_some_and(|deck| world_z >= deck);
+        let surface_z = if on_bridge || reached_bridge {
+            on_bridge_surface_z
+        } else {
+            ground_z
+        };
+        let mut height = world_z.wrapping_sub(surface_z);
         let mut output_z = world_z;
         if height < self.target_height && health > 0 {
             let ordinary = if has_passenger { 10 } else { 20 };
@@ -628,11 +677,7 @@ impl FlyRuntime {
             let rate = if is_dropship { 16 } else { ordinary };
             let step = self.target_height.wrapping_sub(height).min(rate);
             // SetHeight happens BEFORE OnBridge is cleared (4CDE9D/4CDEA6).
-            output_z = super::ground_pose::z_at_height(
-                ground_z,
-                height.wrapping_add(step).wrapping_add(bridge_bonus),
-                on_bridge,
-            );
+            output_z = surface_z.wrapping_add(height).wrapping_add(step);
             on_bridge = false;
         }
         // Native compares the original normalized height again. Health==0
@@ -662,21 +707,16 @@ impl FlyRuntime {
                 height = 1;
             } else if height <= 0 {
                 height = 0;
-                if bridge_bonus > 0 {
+                if reached_bridge {
                     on_bridge = true;
-                    bridge_bonus = 0;
                 }
             }
-            output_z = super::ground_pose::z_at_height(
-                ground_z,
-                height.wrapping_add(bridge_bonus),
-                on_bridge,
-            );
+            output_z = surface_z.wrapping_add(height);
         }
         HeightOutput {
             world_z: output_z,
             on_bridge,
-            height: super::ground_pose::height_at_z(output_z, ground_z, on_bridge),
+            height: output_z.wrapping_sub(if on_bridge { on_bridge_surface_z } else { ground_z }),
             descended,
         }
     }
@@ -686,7 +726,7 @@ pub(crate) struct HeightInput {
     pub world_z: i32,
     pub ground_z: i32,
     pub on_bridge: bool,
-    pub structural_bridge: bool,
+    pub bridge_deck_z: Option<i32>,
     pub health: i32,
     pub has_passenger: bool,
     pub is_dropship: bool,
@@ -786,7 +826,8 @@ mod tests {
                 world_z: integer("z", 0),
                 ground_z,
                 on_bridge: flag("on_bridge"),
-                structural_bridge: flag("bridge"),
+                bridge_deck_z: flag("bridge")
+                    .then(|| super::super::ground_pose::z_at_height(ground_z, 0, true)),
                 health: integer("health", 100),
                 has_passenger: flag("loaded") && c["kind"].as_str() != Some("unit"),
                 is_dropship: flag("dropship"),
@@ -828,7 +869,7 @@ mod tests {
                     world_z,
                     ground_z: 0,
                     on_bridge: false,
-                    structural_bridge: false,
+                    bridge_deck_z: None,
                     health: 100,
                     has_passenger: false,
                     is_dropship: false,

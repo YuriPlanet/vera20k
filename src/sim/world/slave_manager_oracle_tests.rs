@@ -235,6 +235,7 @@ pub(super) fn row_scene_edited(
             .unwrap_or_else(|| panic!("slave miner for {}", input["name"]));
         let entity = sim.substrate.entities.get_mut(smin).unwrap();
         entity
+            .seldom
             .mcv_deploy_pending
             .set_for_test(input["deploy_pending"] == true);
         if let Some((nx, ny)) = input.get("owner_nav").map(cell) {
@@ -337,7 +338,7 @@ fn place_slave(
             0,
             0,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .expect("slave");
     // make_slave supplies Object+9C's full XYZ after construction, including
@@ -414,7 +415,7 @@ fn place_slave(
             });
         }
     }
-    entity.slave = SlaveLink::for_test(Some(master), cargo);
+    entity.seldom.slave = SlaveLink::for_test(Some(master), cargo);
     id
 }
 
@@ -525,7 +526,7 @@ fn compare_state(s: &SlaveScene, row: &Value, context: &str) {
         };
         assert_eq!(nav, expected["nav"], "{context}: owner NavCom");
         assert_eq!(
-            u64::from(owner.mcv_deploy_pending.is_pending()),
+            u64::from(owner.seldom.mcv_deploy_pending.is_pending()),
             expected["deploy_pending"].as_u64().unwrap(),
             "{context}: owner deploy pending"
         );
@@ -609,6 +610,7 @@ fn compare_state(s: &SlaveScene, row: &Value, context: &str) {
         );
         let count = |kind| {
             entity
+                .seldom
                 .slave
                 .cargo()
                 .iter()
@@ -632,7 +634,7 @@ fn compare_state(s: &SlaveScene, row: &Value, context: &str) {
             "{context}: EstimatedHealth"
         );
         assert_eq!(
-            entity.slave.owner() == Some(holder),
+            entity.seldom.slave.owner() == Some(holder),
             expected["owner"].as_bool().unwrap(),
             "{context}: SlaveOwner"
         );
@@ -721,7 +723,7 @@ fn ai_update_matches_the_original_node_machine() {
                 s.master,
                 &s.scene.rules,
                 Some(registry()),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         compare_state(&s, row, &name);
@@ -751,7 +753,7 @@ fn manager_machine_matches_the_original_owner_states_and_relocation() {
                     s.master,
                     &s.scene.rules,
                     Some(registry()),
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             compare_state(&s, row, &name);
@@ -769,7 +771,7 @@ fn placed_hand_off_matches_the_original() {
         s.scene.sim.slave_manager_hand_off(
             s.master,
             &s.scene.rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         compare_state(&s, row, &name);
     }
@@ -784,7 +786,7 @@ fn deploy_slaves_matches_the_original_unlimbo_and_scatter() {
             s.master,
             &s.scene.rules,
             Some(registry()),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         compare_state(&s, row, &name);
     }
@@ -803,7 +805,7 @@ fn slave_mission_harvest_matches_the_original_dig() {
                 slave,
                 &s.scene.rules,
                 Some(registry()),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         if guard {
@@ -859,16 +861,20 @@ fn slave_miner_helpers_match_the_original() {
                     "{name}: ShouldRecallSlaves"
                 );
             }
-            "begin_hunt" => {
-                sim.begin_slave_hunt(master, rules, crate::sim::world::FrameEffects::default())
-            }
-            "reset" => {
-                sim.reset_slave_manager(master, rules, crate::sim::world::FrameEffects::default())
-            }
+            "begin_hunt" => sim.begin_slave_hunt(
+                master,
+                rules,
+                &mut crate::sim::world::FrameEffects::default(),
+            ),
+            "reset" => sim.reset_slave_manager(
+                master,
+                rules,
+                &mut crate::sim::world::FrameEffects::default(),
+            ),
             "handle_returned" => sim.handle_returned_slaves(
                 master,
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             other => panic!("{name}: helper {other}"),
         }
@@ -890,7 +896,7 @@ fn slave_miner_kick_matches_the_original_guard_and_area_guard() {
                 mission,
                 &s.scene.rules,
                 Some(registry()),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         assert_eq!(

@@ -225,7 +225,7 @@ fn a_stationary_arrival_on_water_kills_all_but_c4_infantry() {
             crate::sim::movement::PerCellReason::Arrival,
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         assert_eq!(
@@ -259,7 +259,7 @@ fn mission_attacks_c4_arm_sends_a_demolition_man_to_sabotage() {
             .mission_assign_exact(actor, MissionId::from_known(MissionType::Attack), now)
             .unwrap();
 
-        sim.object_ai_visit_one(actor, Some(&rules), ObjectAiCtx::default());
+        sim.object_ai_visit_one(actor, Some(&rules), &mut ObjectAiCtx::default());
 
         let entity = sim.substrate.entities.get(actor).unwrap();
         let case = format!("{owner} {kind} on {building}");
@@ -290,7 +290,7 @@ fn a_hunting_demolition_man_whose_scan_finds_a_building_sabotages_it() {
         .mission_assign_exact(actor, MissionId::from_known(MissionType::Hunt), now)
         .unwrap();
 
-    sim.object_ai_visit_one(actor, Some(&rules), ObjectAiCtx::default());
+    sim.object_ai_visit_one(actor, Some(&rules), &mut ObjectAiCtx::default());
 
     let entity = sim.substrate.entities.get(actor).unwrap();
     assert!(
@@ -370,8 +370,8 @@ fn a_tanya_ordered_to_sabotage_walks_in_and_plants_the_charge() {
         .frames();
     assert!((12..=13).contains(&flash), "flash {flash}");
     let planter = sim.substrate.entities.get(tanya).unwrap();
-    assert_eq!(planter.rearm_timer.start_frame(), planted as i32);
-    assert!((3..=5).contains(&planter.rearm_timer.duration()));
+    assert_eq!(planter.seldom.rearm_timer.start_frame(), planted as i32);
+    assert!((3..=5).contains(&planter.seldom.rearm_timer.duration()));
     assert_eq!(planter.navigation.nav_com(), None, "the planter stopped");
     assert!(
         (16..18).contains(&planter.position.rx()) && (10..12).contains(&planter.position.ry()),
@@ -436,10 +436,10 @@ fn a_retail_area_guard_tanya_with_a_building_target_plants_c4() {
         tanya,
         Some(TargetKind::Entity(building)),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
-    crate::sim::world::dispatch_foot_mission(&mut sim, tanya, &rules, ObjectAiCtx::default())
+    crate::sim::world::dispatch_foot_mission(&mut sim, tanya, &rules, &mut ObjectAiCtx::default())
         .unwrap();
     assert_eq!(
         sim.substrate.entities.get(tanya).unwrap().mission.queued(),
@@ -646,7 +646,7 @@ fn a_second_planter_leaves_the_first_charge_alone() {
     let second = spawn(&mut sim, &rules, "GHOST", "Americans", 15, 11);
     stand_in(&mut sim, first, building);
     assert!(
-        sim.infantry_per_cell_c4(first, &rules, None, FrameEffects::default())
+        sim.infantry_per_cell_c4(first, &rules, None, &mut FrameEffects::default())
             .unwrap()
             .returns
     );
@@ -669,7 +669,7 @@ fn a_second_planter_leaves_the_first_charge_alone() {
     let (rof, after) = expected_draws(&sim, true);
 
     assert!(
-        sim.infantry_per_cell_c4(second, &rules, None, FrameEffects::default())
+        sim.infantry_per_cell_c4(second, &rules, None, &mut FrameEffects::default())
             .unwrap()
             .returns
     );
@@ -680,8 +680,8 @@ fn a_second_planter_leaves_the_first_charge_alone() {
     let planter = sim.substrate.entities.get(second).unwrap();
     assert_eq!(
         (
-            planter.rearm_timer.start_frame(),
-            planter.rearm_timer.duration()
+            planter.seldom.rearm_timer.start_frame(),
+            planter.seldom.rearm_timer.duration()
         ),
         (sim.session.binary_frame() as i32, rof)
     );
@@ -719,7 +719,7 @@ fn a_sold_or_curtained_building_takes_no_charge() {
         let (rof, after) = expected_draws(&sim, false);
 
         assert!(
-            sim.infantry_per_cell_c4(tanya, &rules, None, FrameEffects::default())
+            sim.infantry_per_cell_c4(tanya, &rules, None, &mut FrameEffects::default())
                 .unwrap()
                 .returns
         );
@@ -731,7 +731,7 @@ fn a_sold_or_curtained_building_takes_no_charge() {
         );
         assert_eq!(target.flashing.frames(), 0, "curtained {curtained}");
         let planter = sim.substrate.entities.get(tanya).unwrap();
-        assert_eq!(planter.rearm_timer.duration(), rof);
+        assert_eq!(planter.seldom.rearm_timer.duration(), rof);
         assert_eq!(sim.scenario_rng.logical_state(), after);
     }
 }
@@ -777,7 +777,7 @@ fn the_arm_plants_only_from_a_sabotage_c4_arrival_at_its_navcom() {
         let before = sim.scenario_rng.logical_state();
 
         assert!(
-            !sim.infantry_per_cell_c4(actor, &rules, None, FrameEffects::default())
+            !sim.infantry_per_cell_c4(actor, &rules, None, &mut FrameEffects::default())
                 .unwrap()
                 .returns,
             "{case}"
@@ -856,17 +856,17 @@ fn a_computer_tanya_reaching_her_navcom_cell_on_sabotage_sets_off_c4_there() {
         tanya,
         Some(NavTargetRef::cell(10, 14)),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     sim.assign_target_represented(
         tanya,
         Some(TargetKind::Entity(building)),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
-    crate::sim::world::dispatch_foot_mission(&mut sim, tanya, &rules, ObjectAiCtx::default())
+    crate::sim::world::dispatch_foot_mission(&mut sim, tanya, &rules, &mut ObjectAiCtx::default())
         .unwrap();
     let queued = sim.substrate.entities.get(tanya).unwrap();
     assert_eq!(queued.mission.queued(), SABOTAGE);
@@ -933,7 +933,7 @@ fn the_sourceless_blasts_kill_a_c4_infantryman_standing_in_its_cell() {
         .set_nav_com_for_test(Some(NavTargetRef::cell(12, 10)));
 
     let (arrival, visits) = area_visits(|| {
-        sim.infantry_per_cell_c4(tanya, &rules, None, FrameEffects::default())
+        sim.infantry_per_cell_c4(tanya, &rules, None, &mut FrameEffects::default())
             .unwrap()
     });
 
@@ -980,7 +980,7 @@ fn ares_a_veteran_c4_ability_plants_the_charge() {
             .set_rank_for_test(rank);
         stand_in(&mut sim, actor, building);
         let arrival = sim
-            .infantry_per_cell_c4(actor, &rules, None, FrameEffects::default())
+            .infantry_per_cell_c4(actor, &rules, None, &mut FrameEffects::default())
             .unwrap();
         assert_eq!(arrival.returns, planted, "rank {rank}");
         let charge = sim

@@ -562,7 +562,7 @@ struct FootSearchKey {
 pub(super) fn code2_ladder_destination(actor: &GameEntity) -> Option<DriveCoord> {
     let loco = actor.locomotor.as_ref()?;
     match loco.active_kind() {
-        LocomotorKind::Walk => Some(
+        LocomotorKind::Walk | LocomotorKind::Mech => Some(
             loco.walk_destination()
                 .unwrap_or(super::foot_coordinate::NULL_COORD),
         ),
@@ -578,7 +578,7 @@ pub(super) fn code2_ladder_destination(actor: &GameEntity) -> Option<DriveCoord>
 fn no_queue_destination(actor: &GameEntity) -> Option<DriveCoord> {
     let loco = actor.locomotor.as_ref()?;
     match loco.active_kind() {
-        LocomotorKind::Walk => loco.walk_destination(),
+        LocomotorKind::Walk | LocomotorKind::Mech => loco.walk_destination(),
         LocomotorKind::Drive | LocomotorKind::Ship => super::track_path::track_destination(actor),
         _ => None,
     }
@@ -691,7 +691,13 @@ impl Simulation {
         &mut self,
         request: &FootPathRequest,
         goal: DriveCoord,
+        rules: &RuleSet,
     ) -> Option<Result<Vec<i32>, MovePathFailure>> {
+        // Only ordinary zero-prefix requests register with the batch. A
+        // train extending its last queued step has a different search origin.
+        if request.retain_head {
+            return None;
+        }
         let id = request.entity_id;
         if !self
             .path_batch
@@ -702,7 +708,7 @@ impl Simulation {
         {
             return None;
         }
-        let key = self.foot_search_key(request, goal)?;
+        let key = self.foot_search_key(request, goal, rules)?;
         let batch = self.path_batch.as_mut()?;
         let slot = batch.ready.get_mut(&id)?;
         if slot.answer.as_ref()?.key != key {
@@ -735,25 +741,30 @@ impl Simulation {
         batch.ready.clear();
         #[cfg(any(test, feature = "test-support"))]
         batch.answered.clear();
-        let pending = std::mem::take(&mut batch.pending);
         // Last pass's left-outs went into this frame's registrations.
         batch.left_out_code2.clear();
         batch.left_out_recursions.clear();
+        let pending = &mut batch.pending;
         if pending.is_empty() {
             batch.stats.finish(started.elapsed(), 0, 0, 0, 0, [0; 2]);
             return;
         }
-        // A Foot's latest registration this frame stands: its latest state
-        // makes the request it repeats.
-        let pending: Vec<(u64, WaitingRequest)> = pending
-            .into_iter()
-            .collect::<BTreeMap<_, _>>()
-            .into_iter()
-            .collect();
+        // Saves and hashes see registrations in arrival order. At the pass,
+        // sort stably by Foot id and keep each Foot's latest registration.
+        // Drain the buffer into the turns so the next frame can reuse it.
+        pending.sort_by_key(|&(id, _)| id);
+        pending.dedup_by(|later, earlier| {
+            if later.0 == earlier.0 {
+                earlier.1 = later.1;
+                true
+            } else {
+                false
+            }
+        });
         let waiting = pending.len();
         let mut repath_turns: [Vec<(u64, WaitingRequest)>; 2] = Default::default();
         let mut others = Vec::new();
-        for entry in pending {
+        for entry in pending.drain(..) {
             match entry.1.repath_turn() {
                 Some(turn) => repath_turns[turn].push(entry),
                 None => others.push(entry),
@@ -1060,7 +1071,7 @@ impl Simulation {
             return None;
         }
         Some(BatchedSearch {
-            key: self.foot_search_key(&request, goal)?,
+            key: self.foot_search_key(&request, goal, rules)?,
             found,
         })
     }
@@ -1102,6 +1113,7 @@ impl Simulation {
         &self,
         request: &FootPathRequest,
         goal: DriveCoord,
+        rules: &RuleSet,
     ) -> Option<FootSearchKey> {
         let actor = self.substrate.entities.get(request.entity_id)?;
         let snap = request.snapshot();
@@ -1124,7 +1136,10 @@ impl Simulation {
             movement_zone: snap.movement_zone,
             crushers: (snap.regular_crusher, snap.omni_crusher),
             locomotor: snap.locomotor_kind,
-            allow_zone_hierarchy: self.foot_search_allows_hierarchy(request),
+            allow_zone_hierarchy: self.foot_search_allows_hierarchy(
+                request,
+                self.interner.object_type(actor.type_ref(), rules)?.is_train,
+            ),
             threat_coefficient: self.foot_path_threat_coefficient(request.entity_id).bits(),
             owner: actor.owner(),
             veterancy: actor.veterancy.rank(),
@@ -1132,7 +1147,7 @@ impl Simulation {
             mission: actor.mission.current(),
             nav_com: actor.navigation.nav_com(),
             attack_target: actor.attack_target.target(),
-            radio_contacts: actor.radio_contacts.clone(),
+            radio_contacts: actor.seldom.radio_contacts.clone(),
         })
     }
 }

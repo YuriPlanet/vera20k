@@ -10,6 +10,12 @@
 //! peer roster. Residual: router/localhost rewriting, native self-source
 //! filtering, spare sockets and platform socket-buffer tuning are not ported.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)
+)]
+
 use std::collections::VecDeque;
 use std::io;
 #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
@@ -50,6 +56,34 @@ pub use vera20k_relay_protocol::{
 pub mod test_support {
     //Client regressions exercise the same authenticated server/codec owner.
     pub use vera20k_relay_protocol::{MAX_DATAGRAM, RelayServer, SecretKey, derive_packet_key};
+
+    use std::net::{Ipv4Addr, UdpSocket};
+
+    /// Returns once every datagram this thread has already sent over loopback can be
+    /// read. macOS delivers them on a kernel thread after `send_to` has returned, so a
+    /// read straight after a send usually finds nothing yet. A step in a test's relay
+    /// loop counts as 16 ms of match time but takes microseconds, so when a busy CI
+    /// machine stalls that thread, a whole loop can pass before its packets land.
+    /// Delivery keeps its order: once a datagram sent now comes back, the earlier ones
+    /// have arrived.
+    pub fn settle_loopback() {
+        thread_local! {
+            static PROBE: UdpSocket = {
+                let probe = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+                probe.connect(probe.local_addr().unwrap()).unwrap();
+                // A debug build on a loaded CI machine can stall for many seconds.
+                probe
+                    .set_read_timeout(Some(std::time::Duration::from_secs(120)))
+                    .unwrap();
+                probe
+            };
+        }
+        PROBE.with(|probe| {
+            probe.send(&[0]).unwrap();
+            // Only a wait: if the probe is ever lost, the step carries on without it.
+            let _ = probe.recv(&mut [0]);
+        });
+    }
 }
 
 use super::global::{
@@ -243,14 +277,13 @@ impl UdpServiceReport {
     }
 }
 
-/// The global queue and discard history read under one I/O-owner lock.
-/// The pending service failure is also used by the LAN setup drain.
+/// The global queue and its pending service failure read under one I/O-owner
+/// lock, for the LAN setup drain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GlobalTransportObservation {
     pub queued_sends: usize,
     pub response_time: u32,
     pub pending_delivery_failure: bool,
-    pub discarded_global_sends: u64,
 }
 
 #[derive(Debug)]
@@ -385,7 +418,6 @@ struct UdpIo {
     alternate_send: UdpSendQueue,
     connections: LanConnections,
     global: GlobalChannel,
-    discarded_global_sends: u64,
     broadcast_targets: Vec<SocketAddrV4>,
     relay: Option<RelayRoute>,
     // The last route was released for silence (`RELAY_ABSENT_TICKS`).
@@ -507,6 +539,8 @@ impl LanUdpTransport {
             .spawn(move || {
                 while !worker_stop.load(Ordering::Acquire) {
                     {
+                        // Poisoned here means the game thread panicked with
+                        // the lock held: the game is already ending.
                         let mut io = io.lock().expect("UDP I/O owner poisoned");
                         if worker_stop.load(Ordering::Acquire) {
                             break;
@@ -542,6 +576,16 @@ impl LanUdpTransport {
         }
     }
 
+    /// A worker pass that panicked ends the game: this assert, the poisoned
+    /// lock below and the re-raise in `stop_io_pump` are deliberate. With a
+    /// worker, `UdpIo::service` runs on it alone, and only that marks the
+    /// relay absent, retries a Leave and releases a retirement. A transport
+    /// that outlived a failed pass would leave a relay match on Reconnecting
+    /// with no end, keep its place in the room looking alive to the relay
+    /// (the game thread still sends), and hold every later online admission
+    /// behind a retirement nothing services. Turning the failure into a lost
+    /// connection needs that close path to run without the worker first;
+    /// until then the crash is the outcome that ends cleanly for the room.
     fn check_worker(&self) {
         if let Some(pump) = &self.pump {
             assert!(
@@ -553,7 +597,9 @@ impl LanUdpTransport {
 
     fn lock(&self) -> MutexGuard<'_, UdpIo> {
         self.check_worker();
-        self.io.lock().expect("UDP I/O owner poisoned")
+        self.io
+            .lock()
+            .expect("a thread panicked while holding the UDP I/O lock (see check_worker)")
     }
 
     fn wake(&self) {
@@ -596,37 +642,6 @@ impl LanUdpTransport {
 
     pub fn global_mut(&mut self) -> UdpWriteGuard<'_, GlobalChannel> {
         self.write(|io| &io.global, |io| &mut io.global)
-    }
-
-    /// Queue a reliable batch and take its discard baseline under the same
-    /// lock, before the worker can send or expire any of the batch.
-    pub fn enqueue_reliable_globals(
-        &mut self,
-        payload: &[u8],
-        recipients: &[SocketAddrV4],
-    ) -> Option<u64> {
-        use super::reliable::Delivery;
-
-        let mut io = self.lock();
-        if io.global.available_send_slots() < recipients.len() {
-            return None;
-        }
-        let snapshot = recipients
-            .iter()
-            .all(|&endpoint| {
-                io.global.send(
-                    payload,
-                    GlobalDestination::direct(endpoint),
-                    Delivery::Reliable,
-                    0,
-                )
-            })
-            .then_some(io.discarded_global_sends);
-        drop(io);
-        if snapshot.is_some() {
-            self.wake();
-        }
-        snapshot
     }
 
     /// Send a last notification on the current LAN scope or relay route
@@ -677,7 +692,6 @@ impl LanUdpTransport {
             queued_sends: io.global.queued_send_count(),
             response_time: io.global.mean_response_time(),
             pending_delivery_failure: io.pending_report.delivery_failed(),
-            discarded_global_sends: io.discarded_global_sends,
         }
     }
 
@@ -780,15 +794,10 @@ impl LanUdpTransport {
         let mut io = self.lock();
         let route =
             active_relay(&mut io.relay).ok_or_else(|| io::Error::other("no relay route"))?;
-        let parsed = vera20k_relay_protocol::OrderingCertificate::parse(&certificate)
+        route
+            .session
+            .admit_certificate(&certificate)
             .map_err(relay_io_error)?;
-        // A watcher has no source of its own (relay README "Watchers").
-        if !route.session.is_watching() && parsed.sources_mask & (1 << route.session.source()) == 0
-        {
-            return Err(io::Error::other(
-                "ordering certificate excludes local source",
-            ));
-        }
         route.ordering_certificate = Some(certificate);
         Ok(())
     }
@@ -1261,7 +1270,6 @@ impl UdpIo {
             alternate_send: UdpSendQueue::default(),
             connections,
             global,
-            discarded_global_sends: 0,
             broadcast_targets: Vec::new(),
             relay: None,
             relay_absent: false,
@@ -1510,31 +1518,29 @@ impl UdpIo {
                 "invalid peer probe roster",
             ));
         }
-        if self.global.available_send_slots() < sources.len() {
-            return Err(io::Error::new(
-                io::ErrorKind::WouldBlock,
-                "global send queue is full",
-            ));
-        }
-        let mut probes = Vec::with_capacity(sources.len());
-        for &source in sources {
-            let endpoint = relay_peer_endpoint(source).map_err(relay_io_error)?;
-            let sequence = self.global.next_send_sequence();
-            let accepted = self.global.send(
-                &[],
-                GlobalDestination::direct(endpoint),
-                super::reliable::Delivery::Reliable,
-                0,
-            );
-            assert!(accepted, "reserved global probe slots must fit");
-            probes.push(PeerProbe {
-                source,
-                endpoint,
-                sequence,
-                elapsed: None,
-            });
-        }
-        route.peer_probes = Some(probes);
+        let endpoints = sources
+            .iter()
+            .map(|&source| relay_peer_endpoint(source).map_err(relay_io_error))
+            .collect::<io::Result<Vec<_>>>()?;
+        let batch = self
+            .global
+            .send_reliable_batch(&[], &endpoints)
+            .ok_or_else(|| {
+                io::Error::new(io::ErrorKind::WouldBlock, "global send queue is full")
+            })?;
+        route.peer_probes = Some(
+            sources
+                .iter()
+                .zip(endpoints)
+                .zip(batch.sequences())
+                .map(|((&source, endpoint), sequence)| PeerProbe {
+                    source,
+                    endpoint,
+                    sequence,
+                    elapsed: None,
+                })
+                .collect(),
+        );
         Ok(())
     }
 
@@ -1715,8 +1721,12 @@ impl UdpIo {
                     .is_some_and(|heard| now_ticks.wrapping_sub(heard) as i32 > RELAY_ABSENT_TICKS);
                 // Keep the NAT mapping alive even without player input. During
                 // initial admission retry once a second; established routes ping
-                // every two seconds. These wall buckets never enter simulation.
-                let interval = if route.session.is_ready() && route.renewing.is_none() {
+                // every two seconds, except at an interval that finds the hop
+                // trading traffic both ways (`ClientSession::busy_both_ways`):
+                // a match's UPLINKs and the relay's pushes are its keepalive.
+                // These wall buckets never enter simulation.
+                let established = route.session.is_ready() && route.renewing.is_none();
+                let interval = if established {
                     RELAY_PING_TICKS
                 } else {
                     RELAY_HANDSHAKE_TICKS
@@ -1730,6 +1740,9 @@ impl UdpIo {
                     for session in
                         std::iter::once(&mut route.session).chain(route.renewing.iter_mut())
                     {
+                        if established && session.busy_both_ways(now_ms) {
+                            continue;
+                        }
                         match session.probe_at(now_ms, &mut route.encoded) {
                             Ok(()) => {
                                 if let Err(error) =
@@ -1846,9 +1859,6 @@ impl UdpIo {
             );
         }) {
             report.discarded_global_sends = self.global.discard_failed_sends();
-            self.discarded_global_sends = self
-                .discarded_global_sends
-                .saturating_add(report.discarded_global_sends as u64);
         }
         while let Some(response) = self.global.pop_response_time() {
             if let Some(probes) = self
@@ -2101,12 +2111,14 @@ fn drain_socket(
                 (datagram, source, None)
             }
         };
-        if datagram.len() < CHECKSUM_LEN || datagram.len() > UDP_DATAGRAM_CAPACITY {
+        let Some((checksum, frame)) = datagram
+            .split_first_chunk::<CHECKSUM_LEN>()
+            .filter(|_| datagram.len() <= UDP_DATAGRAM_CAPACITY)
+        else {
             report.malformed_datagrams += 1;
             continue;
-        }
-        let checksum = u32::from_le_bytes(datagram[..CHECKSUM_LEN].try_into().unwrap());
-        let frame = &datagram[CHECKSUM_LEN..];
+        };
+        let checksum = u32::from_le_bytes(*checksum);
         //7B3F82..7B3FB9 validates this before publishing to the manager.
         if checksum != udp_checksum(frame) {
             report.malformed_datagrams += 1;

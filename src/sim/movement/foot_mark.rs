@@ -180,9 +180,14 @@ pub(super) fn raw_occupation_plane(
     path_grid: Option<&PathGrid>,
 ) -> ((u16, u16), MovementLayer) {
     let at = ((coord.x / 256) as u16, (coord.y / 256) as u16);
-    let ground = ground_pose::ground_surface_z_at([coord.x, coord.y], false, terrain, path_grid)
-        .unwrap_or(coord.z);
-    let deck = coord.z >= ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
+    let deck_surface =
+        ground_pose::ground_surface_z_at([coord.x, coord.y], true, terrain, path_grid)
+            .unwrap_or_else(|| {
+                coord
+                    .z
+                    .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
+            });
+    let deck = coord.z >= deck_surface
         && (!needs_structural
             || terrain
                 .and_then(|terrain| terrain.cell(at.0, at.1))
@@ -223,13 +228,13 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         if self
             .substrate
             .entities
             .get(id)
-            .is_some_and(|entity| entity.tether.partner().is_some())
+            .is_some_and(|entity| entity.seldom.tether.partner().is_some())
         {
             crate::sim::radio::transmit_to_contact(
                 self,
@@ -249,7 +254,20 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> bool {
+        self.foot_mark_remove_with(id, rules, registry, frame_effects, true)
+    }
+
+    /// [`Self::foot_mark_remove`], with the Pick_Up's Recalc only when
+    /// `recalc` asks for it ([`Self::foot_mark_query_scope`]).
+    fn foot_mark_remove_with(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
+        recalc: bool,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return false;
@@ -258,8 +276,39 @@ impl Simulation {
             return false;
         }
         self.techno_mark_after_object(id, rules, frame_effects);
-        self.foot_pick_up(id, rules, registry);
+        self.foot_pick_up(id, rules, registry, recalc);
         true
+    }
+
+    /// Mark0, a query, Mark1: the fresh arm's `4B345B..4B34D1` asks the entry
+    /// question with its own mark dropped so the Cell answers without it.
+    /// `body` asks about a Cell other than the one the mark holds, so nothing
+    /// reads the unmarked state: the pair's two Recalcs (`47D2B0` after Mark0
+    /// and Mark1) would recompute the held Cell from the same occupancy (minus
+    /// list order, which the structure question ignores) and end where they
+    /// started. Skip just those two, and keep the Recalc a mark that really
+    /// moves a Foot still runs.
+    ///
+    /// Sim-scale deviation: native runs both Recalcs, so a replay that marks
+    /// and unmarks in this scope pays two Recalcs fewer than gamemd does. The
+    /// Cell they address is the one the mark held, and the Recalc reads no
+    /// Foot in it, so the pair leaves its attributes as they were. Bridge
+    /// Cells are where Recalc does the most work: a 200-tick match on
+    /// `Arctic_Circle_16_Ice_Passages.map` kept its final hash with the skip.
+    pub(crate) fn foot_mark_query_scope<R>(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
+        body: impl FnOnce(&mut Simulation) -> R,
+    ) -> R {
+        let marked = self.foot_mark_remove_with(id, rules, registry, frame_effects, false);
+        let answer = body(self);
+        if marked {
+            self.foot_mark_put_with(id, rules, registry, &mut |_, _| {}, frame_effects, false);
+        }
+        answer
     }
 
     /// `MapClass::Pick_Up` (`0x005687F0`) of a Foot: at the Cell and on the
@@ -272,6 +321,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
+        recalc: bool,
     ) {
         let Some((cell, layer)) = self.foot_mark_cell(id) else {
             return;
@@ -292,7 +342,9 @@ impl Simulation {
             #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationCleared);
         }
-        self.recalculate_track_cell(cell, rules, registry);
+        if recalc {
+            self.recalculate_track_cell(cell, rules, registry);
+        }
     }
 
     pub(crate) fn foot_mark_put(
@@ -300,7 +352,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         self.foot_mark_put_observed(id, rules, registry, &mut |_, _| {}, frame_effects)
     }
@@ -314,7 +366,21 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         receive: &mut impl FnMut(&mut Simulation, u64),
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> bool {
+        self.foot_mark_put_with(id, rules, registry, receive, frame_effects, true)
+    }
+
+    /// [`Self::foot_mark_put_observed`], with the Place_Down's Recalc only
+    /// when `recalc` asks for it ([`Self::foot_mark_query_scope`]).
+    fn foot_mark_put_with(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        receive: &mut impl FnMut(&mut Simulation, u64),
+        frame_effects: &mut FrameEffects<'_>,
+        recalc: bool,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return false;
@@ -323,7 +389,7 @@ impl Simulation {
             return false;
         }
         self.techno_mark_after_object(id, rules, frame_effects);
-        self.foot_place_down(id, rules, registry, receive, frame_effects);
+        self.foot_place_down(id, rules, registry, receive, frame_effects, recalc);
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::CellMarked);
         true
@@ -342,7 +408,8 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         receive: &mut impl FnMut(&mut Simulation, u64),
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
+        recalc: bool,
     ) {
         let Some((cell, layer)) = self.foot_mark_cell(id) else {
             return;
@@ -376,7 +443,9 @@ impl Simulation {
             #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationMarked);
         }
-        self.recalculate_track_cell(cell, rules, registry);
+        if recalc {
+            self.recalculate_track_cell(cell, rules, registry);
+        }
     }
 
     /// The Cell Pick_Up/Place_Down address and the OnBridge list, or `None`

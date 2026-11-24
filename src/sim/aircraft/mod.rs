@@ -36,6 +36,8 @@ mod ai_head_tests;
 #[cfg(all(test, tests_sim_a_b))]
 mod dock_cycle_tests;
 #[cfg(all(test, tests_sim_a_b))]
+mod foot_mission_tests;
+#[cfg(all(test, tests_sim_a_b))]
 mod release_tests;
 #[cfg(all(test, tests_sim_a_b))]
 mod team_strike_tests;
@@ -95,7 +97,7 @@ pub fn tick_aircraft_missions(
     order
         .into_iter()
         // This batch fixture has no resident overlay table.
-        .filter(|&id| dispatch_mission(sim, id, rules, ObjectAiCtx::default()).is_some())
+        .filter(|&id| dispatch_mission(sim, id, rules, &mut ObjectAiCtx::default()).is_some())
         .collect()
 }
 
@@ -195,17 +197,40 @@ pub(crate) fn restart_patrol_after_restore(entity: &mut GameEntity) {
 /// 29 for an aircraft: its type refuses to attack-move, so
 /// `Assign_Target_Command` answers Move.
 ///
-/// RESIDUAL: the Foot handlers of Capture
-/// and Sabotage (`0x004D4B20`), Eaten (`0x004D4CB0`) and Rescue
-/// (`0x004DDF90`) are not run: the timer stays due and nothing happens.
-/// Trigger: a map or trigger giving an aircraft one of those missions; no
-/// retail AI script does. Effect: the aircraft keeps flying to its
-/// destination and then hovers there.
+/// The Foot missions an aircraft shares with the ground classes run the same
+/// bodies the Unit and Infantry dispatch runs: Capture and Sabotage
+/// (`FootClass::Mission_Capture @ 0x004D4B20`), Eaten (`0x004D4CB0`) and
+/// Rescue (`0x004DDF90`). AircraftClass keeps those three addresses in its
+/// own slots: the retail table at `0x007E22A4` holds `4D4B20` at `vt+0x214`,
+/// `4D4CB0` at `vt+0x218` and `4DDF90` at `vt+0x258`. Their timers are
+/// rearmed as gamemd's are, so an aircraft on one of them no longer hovers
+/// over its destination with the timer due.
+///
+/// The bodies keep their native class tests: the capturer's building
+/// destination and the Occupier exclusion belong to an infantryman, and the
+/// idle and scatter exits run the receiver's own `Enter_Idle_Mode` (vt+0x484,
+/// `AircraftClass::Enter_Idle_Mode @ 0x004176F0`) through
+/// [`crate::sim::world::enter_idle_mode`] and the aircraft arm of
+/// [`crate::sim::world::Simulation::scatter`].
+///
+/// RESIDUALS: [`crate::sim::mission::rescue`] records the two steps an
+/// aircraft on Rescue still lacks, the approach (`0x004DDFEB`, whose Foot
+/// body refuses an aircraft) and the House500200 home cell (only its
+/// Unit/Infantry arm is ported). An aircraft that reaches the idle exit of
+/// Capture or Eaten runs `AircraftClass::Enter_Idle_Mode @ 0x004176F0`,
+/// which may fly it to its airfield, dock it, retreat it or, with
+/// `AirportBound=`, crash it; the ground classes' idle exit does none of
+/// those. Trigger: an aircraft on Capture or Eaten whose body reaches the
+/// idle exit. Effect: the aircraft may leave the mission for its airfield.
+/// Frequency: VERA's only Rescue producer queues on infantry and units, so
+/// an aircraft on these missions comes from a map or a trigger. Downstream
+/// risk: an aircraft given Capture or Eaten by a map leaves for its airfield
+/// instead of holding the captured cell.
 pub(crate) fn dispatch_mission(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
 ) -> Option<DamageCommitReceipt> {
     let now = sim.session.binary_frame();
     let entity = sim.substrate.entities.get(id)?;
@@ -219,23 +244,23 @@ pub(crate) fn dispatch_mission(
             // The Move slot `0x004166C0`: a `Carryall=` type (Type+0xDFC)
             // tail-jumps to Mission_Move_Carryall `0x00416D50`.
             let (next, delay) = if sim.is_carryall(id, rules) {
-                sim.aircraft_move_carryall(id, state, rules, ctx.effects)
+                sim.aircraft_move_carryall(id, state, rules, &mut ctx.effects)
             } else {
-                sim.aircraft_move(id, state, rules, ctx.effects)
+                sim.aircraft_move(id, state, rules, &mut ctx.effects)
             };
             write_state(&mut sim.substrate, id, state, next);
             delay
         }
         Some(MissionType::Attack) => {
             let state = handler_state(entity);
-            let Some((next, delay)) = attack_visit(sim, id, state, rules, ctx.effects) else {
+            let Some((next, delay)) = attack_visit(sim, id, state, rules, &mut ctx.effects) else {
                 // The strike writes its own state and epilogue
                 // (`combat::aircraft_release`).
                 return Some(sim.commit_fire_visit(
                     crate::sim::combat::world_fire::FireVisit::AircraftStrike(id),
                     rules,
                     registry,
-                    ctx.effects,
+                    &mut ctx.effects,
                 ));
             };
             write_state(&mut sim.substrate, id, state, next);
@@ -245,31 +270,40 @@ pub(crate) fn dispatch_mission(
             sim.aircraft_mission_guard(id, rules, ctx)
         }
         Some(MissionType::AreaGuard) => sim.aircraft_mission_area_guard(id, rules, ctx),
-        Some(MissionType::Enter) => sim.aircraft_mission_enter(id, rules, ctx.effects),
+        Some(MissionType::Enter) => sim.aircraft_mission_enter(id, rules, &mut ctx.effects),
         Some(MissionType::Hunt) => sim.aircraft_mission_hunt(id, rules, ctx),
         Some(MissionType::Patrol) => sim.aircraft_mission_patrol(id, rules, ctx),
-        Some(MissionType::Retreat) => retreat_mission::retreat(sim, id, rules, ctx.effects),
+        Some(MissionType::Retreat) => retreat_mission::retreat(sim, id, rules, &mut ctx.effects),
         Some(MissionType::Unload) => {
-            crate::sim::transport_unload::mission_unload(sim, id, rules, registry, ctx.effects)
+            crate::sim::transport_unload::mission_unload(sim, id, rules, registry, &mut ctx.effects)
         }
         Some(MissionType::ParadropApproach) => {
-            paradrop_mission::approach(sim, id, rules, ctx.effects)
+            paradrop_mission::approach(sim, id, rules, &mut ctx.effects)
         }
         Some(MissionType::ParadropOverfly) => {
-            paradrop_mission::overfly(sim, id, rules, ctx.effects)
+            paradrop_mission::overfly(sim, id, rules, &mut ctx.effects)
         }
         Some(MissionType::SpyplaneApproach) => {
-            spyplane_mission::approach(sim, id, rules, ctx.effects)
+            spyplane_mission::approach(sim, id, rules, &mut ctx.effects)
         }
         Some(MissionType::SpyplaneOverfly) => {
-            spyplane_mission::overfly(sim, id, rules, ctx.effects)
+            spyplane_mission::overfly(sim, id, rules, &mut ctx.effects)
         }
-        Some(
-            MissionType::Capture
-            | MissionType::Sabotage
-            | MissionType::Eaten
-            | MissionType::Rescue,
-        ) => return None,
+        Some(MissionType::Capture | MissionType::Sabotage) => {
+            // `FootClass::Mission_Capture @ 0x004D4B20`, which Infantry,
+            // Unit and Aircraft share (the retail table at `0x007E22A4`
+            // holds it at `vt+0x214`).
+            crate::sim::mission::capture::mission_capture(sim, rules, registry, id, &mut ctx.effects)
+        }
+        Some(MissionType::Eaten) => {
+            // `FootClass::Mission_Eaten @ 0x004D4CB0` (`vt+0x218`).
+            crate::sim::mission::eaten::mission_eaten(sim, rules, registry, id, &mut ctx.effects)
+        }
+        Some(MissionType::Rescue) => {
+            // `FootClass::Mission_Rescue @ 0x004DDF90`; AircraftClass keeps
+            // that address in its own Rescue slot (`vt+0x258`).
+            crate::sim::mission::rescue::mission_rescue(sim, rules, registry, id, &mut ctx.effects)
+        }
         _ => MISSION_STUB_FRAMES,
     };
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
@@ -339,7 +373,7 @@ fn attack_visit(
     id: u64,
     state: u8,
     rules: &RuleSet,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> Option<(u8, i32)> {
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         attack_mission::enter_attack_state(entity, state);

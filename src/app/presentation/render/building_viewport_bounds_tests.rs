@@ -2,7 +2,7 @@
 //! Component admission and pixels through the actual lowerer, BUILDNGZ, SHP
 //! dispatcher and wheel-zoom pass. This is not a native whole-Display capture.
 
-use super::draw_plan_lowering::{NativeDisplayOrder, lower_object_instances};
+use super::draw_plan_lowering::{NativeDisplayOrder, PlannedObjects, lower_object_instances};
 use super::merge_passes::{ObjectDrawPhase, draw_native_object_pass};
 use crate::app::presentation::instances::{ShpInputs, build_shp_instances_from_inputs};
 use crate::map::{houses::HouseColorMap, lighting::CellLightGrid};
@@ -126,13 +126,14 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
     let zshape_skips = std::cell::RefCell::default();
     let order = NativeDisplayOrder::from_world(&sim, None);
     let before = (sim.state_hash(), sim.rng_state());
-    let mut parents = Vec::new();
+    let mut parents = PlannedObjects::default();
     build_shp_instances_from_inputs(
         &ShpInputs {
             runtime: &scene.runtime,
             frame: &crate::app::presentation::frame::PresentationFrame::capture(
                 &scene.runtime,
-                &Default::default(), false,
+                &Default::default(),
+                false,
             ),
             atlas: Some(&atlas),
             overlay_atlas: None,
@@ -158,6 +159,7 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
         &mut parents,
         &order,
     );
+    let parents = parents.into_owned();
     let parent = parents
         .into_iter()
         .find(|parent| parent.parent.id == building.stable_id())
@@ -181,7 +183,7 @@ fn retail_rushhr_roof_below_viewport_keeps_its_visible_body() {
     );
     batch.bind_shroud(&gpu.device, Some(&fog));
     let layer_index = parent.parent.layer.0 as usize;
-    let layers = lower_object_instances(vec![parent]);
+    let layers = lower_object_instances(vec![parent].into());
     let layer = &layers[layer_index];
     let mut pool = InstanceBufferPool::new();
     pool.upload_on_device(&gpu.device, &gpu.queue, "roof", &layer.instances);

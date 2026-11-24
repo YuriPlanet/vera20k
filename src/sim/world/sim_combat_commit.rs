@@ -85,7 +85,7 @@ impl Simulation {
         stage: crate::sim::combat::FatalLifecycleStage,
         stable_id: u64,
         category: EntityCategory,
-        uninit_context: UninitContext<'_>,
+        mut uninit_context: UninitContext<'_>,
     ) {
         match stage {
             crate::sim::combat::FatalLifecycleStage::MaintainDamageSmoke { state } => {
@@ -157,7 +157,7 @@ impl Simulation {
                             (building.position.rx(), building.position.ry()),
                         )
                     });
-                self.uninit_with_context(stable_id, uninit_context);
+                self.uninit_with_context(stable_id, uninit_context.reborrow());
                 if let Some((type_id, origin)) = destroyed_building {
                     self.building_after_destruction(
                         rules,
@@ -182,7 +182,7 @@ impl Simulation {
         logic_order: &[u64],
         fire_suppressed: &BTreeSet<u64>,
         projectile_detonations: &[crate::sim::projectile::ProjectileDetonation],
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> crate::sim::combat::CombatTickResult {
         let mut run =
             crate::sim::combat::world_receiver::ReceiverRun::default().with_effects(frame_effects);
@@ -207,7 +207,7 @@ impl Simulation {
         visit: crate::sim::combat::world_fire::FireVisit,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> damage_consequences::DamageCommitReceipt {
         let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::FIRING);
         #[cfg(test)]
@@ -279,7 +279,7 @@ impl Simulation {
     pub(crate) fn commit_no_fire(
         &mut self,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> damage_consequences::DamageCommitReceipt {
         damage_consequences::DamageConsequences::live_fire(
             Default::default(),
@@ -298,7 +298,7 @@ impl Simulation {
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         detonations: &[crate::sim::projectile::ProjectileDetonation],
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         if detonations.is_empty() {
             return false;
@@ -414,7 +414,7 @@ impl Simulation {
         rules: &RuleSet,
     ) {
         let stable_id = self.substrate.allocate_stable_id();
-        if !wave.constructor_distance_is_live() {
+        if !wave.constructor_distance_is_live(self.session.map_exceeds_original_size()) {
             // Constructor UnInit precedes registration and unique identity,
             // but FireAt stores the returned dead pointer. The stable id only
             // represents that same-frame deferred cleanup window.
@@ -457,7 +457,7 @@ impl Simulation {
         first_tail_id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let mut bridge_state_changed = false;
         let mut index = 0;
@@ -468,8 +468,8 @@ impl Simulation {
                     .object_ai_visit_one_with_effects(
                         stable_id,
                         rules,
-                        techno_ai::ObjectAiCtx {
-                            effects: frame_effects,
+                        &mut techno_ai::ObjectAiCtx {
+                            effects: frame_effects.reborrow(),
                             overlay_registry,
                             ..techno_ai::ObjectAiCtx::default()
                         },
@@ -490,7 +490,7 @@ impl Simulation {
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         request: &crate::sim::wave::WaveDamageRequest,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         // DamageArea reads WaveClass+0x1D4 at the call boundary. Health and
         // Rust death-animation state do not null that pointer; only the exact
@@ -659,17 +659,16 @@ impl Simulation {
                                 scenario_rng_state: self.scenario_rng.state(),
                             },
                         );
-                        let (nested, mut pings, damage) =
-                            crate::sim::combat::world_receiver::commit_receiver(
-                                self,
-                                &mut run,
-                                receiver,
-                                rules,
-                                overlay_registry,
-                            );
+                        let (nested, damage) = crate::sim::combat::world_receiver::commit_receiver(
+                            self,
+                            &mut run,
+                            receiver,
+                            rules,
+                            overlay_registry,
+                            &mut under_attack_events,
+                        );
                         shared_damage = damage;
                         effects.append(nested);
-                        under_attack_events.append(&mut pings);
                     }
 
                     // Native loads current->NextObject only after its callback.
@@ -693,7 +692,7 @@ impl Simulation {
                 // damage follows receivers and reloads raw AmbientDamage,
                 // ignoring the shared mutable occupant value.
                 if rules.ares() && self.overlay_chain_reacts((rx, ry), overlay_registry) {
-                    self.ares_cell_chain_react((rx, ry), rules, overlay_registry, frame_effects);
+                    self.ares_cell_chain_react((rx, ry), rules, overlay_registry, run.effects());
                 }
                 if let (Some(grid), Some(registry)) = (self.overlay_grid.as_mut(), overlay_registry)
                     && let Some(overlay_id) = grid.cell(rx, ry).overlay_id
@@ -739,7 +738,7 @@ impl Simulation {
                     ry,
                     rules,
                     overlay_registry,
-                    frame_effects,
+                    run.effects(),
                     &mut effects,
                 );
             }
@@ -771,8 +770,14 @@ impl Simulation {
         ry: u16,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
-        #[cfg_attr(not(any(test, feature = "test-support")), allow(unused_variables))]
+        frame_effects: &mut FrameEffects<'_>,
+        #[cfg_attr(
+            not(any(test, feature = "test-support")),
+            allow(
+                unused_variables,
+                reason = "only the test-support receiver records into it"
+            )
+        )]
         effects: &mut crate::sim::combat::DeathEffects,
     ) {
         let destroyable_cliff = self
@@ -903,17 +908,19 @@ impl Simulation {
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         event: crate::sim::combat::EntityDamageEvent,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> damage_consequences::DamageCommitReceipt {
         let mut run =
             crate::sim::combat::world_receiver::ReceiverRun::default().with_effects(frame_effects);
-        let (effects, under_attack_events) = crate::sim::combat::world_receiver::commit_entities(
+        let mut under_attack_events = Vec::new();
+        let effects = crate::sim::combat::world_receiver::commit_entities(
             self,
             &mut run,
             std::slice::from_ref(&event),
             Some(false),
             rules,
             overlay_registry,
+            &mut under_attack_events,
         );
         let terrain_navigation_changed_cells = run.finish();
         self.absorb_noncombat_damage_effects(
@@ -937,7 +944,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(health) = self.substrate.entities.get(id).map(|e| e.health.current()) else {
             return;
@@ -970,17 +977,19 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         event: crate::sim::combat::TerrainDamageEvent,
         ignore_defenses: bool,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> damage_consequences::DamageCommitReceipt {
         let mut run =
             crate::sim::combat::world_receiver::ReceiverRun::default().with_effects(frame_effects);
-        let (effects, under_attack_events, _) = crate::sim::combat::world_receiver::commit_terrain(
+        let mut under_attack_events = Vec::new();
+        let (effects, _) = crate::sim::combat::world_receiver::commit_terrain(
             self,
             &mut run,
             event,
             ignore_defenses,
             rules,
             overlay_registry,
+            &mut under_attack_events,
         );
         let terrain_navigation_changed_cells = run.finish();
         self.absorb_noncombat_damage_effects(
@@ -1002,7 +1011,7 @@ impl Simulation {
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         hits: &[crate::sim::combat::EntityDamageEvent],
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let receivers = hits
             .iter()
@@ -1019,18 +1028,19 @@ impl Simulation {
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         receivers: &[crate::sim::combat::combat_aoe::AreaDamageReceiver],
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> damage_consequences::DamageCommitReceipt {
         let mut run =
             crate::sim::combat::world_receiver::ReceiverRun::default().with_effects(frame_effects);
-        let (effects, under_attack_events, area_result) =
-            crate::sim::combat::world_receiver::commit_area_with_dispatch(
-                self,
-                &mut run,
-                receivers,
-                rules,
-                overlay_registry,
-            );
+        let mut under_attack_events = Vec::new();
+        let (effects, area_result) = crate::sim::combat::world_receiver::commit_area_with_dispatch(
+            self,
+            &mut run,
+            receivers,
+            rules,
+            overlay_registry,
+            &mut under_attack_events,
+        );
         let terrain_navigation_changed_cells = run.finish();
         let mut receipt = self.absorb_noncombat_damage_effects(
             rules,
@@ -1053,7 +1063,7 @@ impl Simulation {
         effects: crate::sim::combat::DeathEffects,
         under_attack_events: Vec<crate::sim::combat::UnderAttackEvent>,
         terrain_navigation_changed_cells: Vec<(u16, u16)>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> damage_consequences::DamageCommitReceipt {
         damage_consequences::DamageConsequences::immediate(
             effects,
@@ -1071,7 +1081,7 @@ impl Simulation {
         event: crate::sim::combat::UnderAttackEvent,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         self.submit_under_attack_warning(event, rules, effects);
         self.raise_house_attacked_tags(event.owner, rules, registry, effects);
@@ -1084,7 +1094,7 @@ impl Simulation {
         &mut self,
         event: crate::sim::combat::UnderAttackEvent,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         Self::dispatch_under_attack_events(
             &self.interner,

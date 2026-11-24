@@ -460,7 +460,7 @@ fn assert_retail_wall_fire_profile(
                 &due,
                 22, // Normal client interval; the headless convenience tick is 66ms.
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         assert!(output.tick.frame_committed);
@@ -594,9 +594,9 @@ fn retail_unit_per_cell_removes_authored_fence_before_returning() {
     }
     impl crate::sim::world::SoundBoundary for CueBoundary {
         fn consume(
-            &self,
+            &mut self,
             sim: &Simulation,
-            _: &RuleSet,
+            rules: &RuleSet,
             events: &[crate::sim::world::SimSoundEvent],
         ) {
             for event in &events[self.delivered.get()..] {
@@ -605,7 +605,7 @@ fn retail_unit_per_cell_removes_authored_fence_before_returning() {
                 } = event
                 {
                     assert_eq!((*rx, *ry), (43, 82));
-                    assert_eq!(sound_id, "WallCrushBlack");
+                    assert_eq!(sound_id.name_in(rules), "WallCrushBlack");
                     assert!(
                         sim.overlay_grid
                             .as_ref()
@@ -633,7 +633,7 @@ fn retail_unit_per_cell_removes_authored_fence_before_returning() {
             self.delivered.get()
         }
     }
-    let cue = CueBoundary {
+    let mut cue = CueBoundary {
         delivered: std::cell::Cell::new(0),
         crushed: std::cell::Cell::new(0),
     };
@@ -681,7 +681,13 @@ fn retail_unit_per_cell_removes_authored_fence_before_returning() {
         );
         crate::sim::movement::target_cell_coord(at.0, at.1, Some(&cells))
     };
-    sim.foot_set_location_marked(id, position, rules, Some(registry), FrameEffects::default());
+    sim.foot_set_location_marked(
+        id,
+        position,
+        rules,
+        Some(registry),
+        &mut FrameEffects::default(),
+    );
     assert_eq!(
         sim.overlay_grid
             .as_ref()
@@ -695,7 +701,7 @@ fn retail_unit_per_cell_removes_authored_fence_before_returning() {
         crate::sim::movement::PerCellReason::Arrival,
         rules,
         Some(registry),
-        FrameEffects::for_sound(&cue),
+        &mut FrameEffects::for_sound(&mut cue),
     )
     .unwrap();
     assert_eq!(
@@ -1014,13 +1020,13 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
         );
         // Original native controls reseed all three streams after setup. These
         // explicit component inputs do not claim native whole-load RNG parity.
-        sim.process_pending_delete_with(rules, FrameEffects::default(), 0, true);
+        sim.process_pending_delete_with(rules, &mut FrameEffects::default(), 0, true);
         for expected in case["initial_patch"].as_array().unwrap() {
             assert_cell(sim, expected, &neighbor_domain);
         }
         let seed = case["input"]["seed"].as_u64().unwrap();
         sim.scenario_rng = SimRng::new(seed);
-        sim.main_rng = SimRng::new(seed).into();
+        sim.main_rng = SimRng::new(seed);
         sim.mapgen_rng = SimRng::new(seed);
         assert_eq!(rng(sim), case["initial"]["rng"]);
         if case.get("construction").is_none() {
@@ -1070,7 +1076,7 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
                         warhead,
                         true,
                         (crate::sim::combat::RAD_NO_ATTACKER, None, ap),
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                     );
                 }
             });
@@ -1214,7 +1220,7 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
                 &sim.dirty_cells.tactical_for_test()[tactical_start..],
                 expected_tactical
             );
-            sim.process_pending_delete_with(rules, FrameEffects::default(), 0, true);
+            sim.process_pending_delete_with(rules, &mut FrameEffects::default(), 0, true);
             assert_eq!(rng(sim), step["after"]["rng"]);
             assert_eq!(
                 json!(sim.substrate.pending_delete.len()),
@@ -1279,7 +1285,7 @@ fn retail_mtnk_move_crushes_fences_through_per_cell_with_body_rocking() {
                 },
                 22,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         let sim = scene.sim();
@@ -1306,7 +1312,7 @@ fn retail_mtnk_move_crushes_fences_through_per_cell_with_body_rocking() {
             .filter(|event| {
                 matches!(event,
                     crate::sim::world::SimSoundEvent::WallCrushed { sound_id, .. }
-                        if sound_id == "WallCrushBlack"
+                        if sound_id.name_in(&scene.runtime.resources.rules) == "WallCrushBlack"
                 )
             })
             .count();

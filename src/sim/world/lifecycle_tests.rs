@@ -119,9 +119,11 @@ fn insert_reservation_building(
         false,
     );
     entity
+        .seldom
         .type_facts
         .set_foundation_for_test(foundation.clone());
     entity
+        .seldom
         .type_facts
         .set_base_reservation_spacing_for_test(Some(spacing));
     sim.substrate.entities.insert(entity);
@@ -173,7 +175,7 @@ fn commit_receiver_authority_lethal_hit(sim: &mut Simulation, target_id: u64) {
         &rules,
         None,
         &[hit],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 }
 

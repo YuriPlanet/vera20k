@@ -18,7 +18,10 @@ use super::PhobosOreGathering;
 use super::{AbilityFlags, BarrelVoxelOffsets, BuildCategory, BuildingHiddenOccupancyProfile};
 use super::{DEBRIS_LIMIT, DEFAULT_LEPTON_MIND_CONTROL_OFFSET, DEFAULT_TECH_LEVEL, HouseMasks};
 use super::{InfantryPips, ObjectCategory, ObjectType};
-use super::{PipScale, SPAWNS_NUMBER_LIMIT, TargetZoneScanType, VhpScan, WEAPON_SLOT_COUNT};
+use super::{
+    PipScale, SLAVES_NUMBER_LIMIT, SPAWNS_NUMBER_LIMIT, TargetZoneScanType, VhpScan,
+    WEAPON_SLOT_COUNT,
+};
 
 /// The pi/180 double multiplied by `TechnoTypeClass::ReadINI @ 0x00712170`
 /// when storing RollAngle at `+0x3A0` (`FMUL [0x007F4FB8] @ 0x007123BC`).
@@ -709,12 +712,17 @@ impl ObjectType {
             spawn_regen_rate: section.read_int("SpawnRegenRate", 0).max(0) as u32,
             spawn_reload_rate: section.read_int("SpawnReloadRate", 0).max(0) as u32,
             missile_spawn: section.read_bool("MissileSpawn", false),
-            no_spawn_alt: section.read_bool("NoSpawnAlt", false),
+            no_spawn_alt_model: section.read_bool("NoSpawnAlt", false).then(|| {
+                format!(
+                    "{id}{}",
+                    crate::rules::voxel_frame_catalog::NO_SPAWN_ALT_SUFFIX
+                )
+            }),
 
             // Slave Miner / economy fields
             // Constructor null; only the ordered Process owner reads it.
             enslaves: None,
-            slaves_number: section.read_int("SlavesNumber", 0),
+            slaves_number: section.read_int("SlavesNumber", 0).min(SLAVES_NUMBER_LIMIT),
             slave_regen_rate: section.read_int("SlaveRegenRate", 0),
             slave_reload_rate: section.read_int("SlaveReloadRate", 0),
             slaved: section.read_bool("Slaved", false),
@@ -797,6 +805,10 @@ impl ObjectType {
             balloon_hover: section.read_bool("BalloonHover", false),
             target_laser: section.read_bool("TargetLaser", false),
             is_simple_deployer: section.read_bool("IsSimpleDeployer", false),
+            is_limpet_mine: category == ObjectCategory::Building
+                && section.read_bool("IsLimpetMine", false),
+            is_limpet_drone: category == ObjectCategory::Vehicle
+                && section.read_bool("IsLimpetDrone", false),
             small_visceroid: category == ObjectCategory::Vehicle
                 && section.read_bool("SmallVisceroid", false),
             large_visceroid: category == ObjectCategory::Vehicle
@@ -945,6 +957,8 @@ impl ObjectType {
             crate_beneath_is_money: category == ObjectCategory::Building
                 && section.read_bool("CrateBeneathIsMoney", false),
             can_occupy_fire: section.read_bool("CanOccupyFire", false),
+            // Decided by the RuleSet at load.
+            ra2_occupy_fire: false,
             show_occupant_pips: section.read_bool("ShowOccupantPips", true),
             bridge_repair_hut: section.read_bool("BridgeRepairHut", false),
             laser_fence: section.read_bool("LaserFence", false),
@@ -1006,6 +1020,7 @@ impl ObjectType {
             weapon_list: vec![None; WEAPON_SLOT_COUNT],
             elite_weapon_list: vec![None; WEAPON_SLOT_COUNT],
             resolved_weapons: Default::default(),
+            resolved_debris: Default::default(),
             weapon_offsets: Default::default(),
             weapon_count: 0,
             naval_targeting: section.read_int("NavalTargeting", 0),

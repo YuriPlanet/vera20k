@@ -268,6 +268,50 @@ mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
 
+    /// `TechnoClass::GetROF`'s signed IDIV by the occupant count is the sole
+    /// mechanism that makes a full garrison fire faster than one occupant, in
+    /// both game.exe and gamemd.exe. RA2 has no OccupyROFMultiplier rule, so
+    /// its value stays at identity (1.0); the divisor must still apply. With
+    /// the same RNG the jitter draw is shared, so five occupants give a fifth
+    /// of the single-occupant reload. This guards the -ra2 garrison ROF path.
+    #[test]
+    fn garrison_occupant_divisor_applies_at_ra2_identity_multiplier() {
+        let weapon = {
+            let ini = IniFile::from_str("[GUN]\nROF=120\nBurst=1\n");
+            WeaponType::from_ini_section("GUN", ini.section("GUN").unwrap())
+        };
+        let rof_with = |occupants: i32, rng_seed: u64| {
+            let query = RofQuery {
+                building_ammo: None,
+                weapon: Some(&weapon),
+                live: LiveParticles::default(),
+                burst_index: 1,
+                unit_burst_delays: None,
+                house_rof: NativeF64Bits::ONE,
+                ae_rof: 1.0,
+                attached_rof: None,
+                #[cfg(feature = "phobos")]
+                rof_random_delay: None,
+                rof_ability: false,
+                veteran_rof: 1.0,
+                occupants: Some(occupants),
+                bunkered: false,
+                occupy_rof_multiplier: 1.0,
+                bunker_rof_multiplier: 1.0,
+            };
+            get_rof(&query, &mut SimRng::new(rng_seed))
+        };
+        // Same seed -> same jitter draw, so only the IDIV differs.
+        let one = rof_with(1, 9);
+        let five = rof_with(5, 9);
+        assert_eq!(
+            one / 5,
+            five,
+            "five occupants reload at a fifth of one occupant's rate"
+        );
+        assert!(five < one, "a full garrison fires faster than a lone one");
+    }
+
     /// Phobos `TechnoClass_RearmDelay_ROF` (`0x006FD0B5`): after stock's
     /// `RandomRanged(0, 2)`, a ranged `ROF.RandomDelay` draws the jitter again
     /// and a single value replaces it without a draw.

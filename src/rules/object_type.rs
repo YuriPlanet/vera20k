@@ -388,6 +388,12 @@ pub const DEBRIS_LIMIT: i32 = 256;
 /// value near `i32::MAX` exhausts memory; no carrier needs more.
 pub const SPAWNS_NUMBER_LIMIT: i32 = 128;
 
+/// VERA's bound on `SlavesNumber=`, read by `TechnoTypeClass::ReadINI`'s
+/// ReadInt (`0x00714E29`, `+0xD44`). `TechnoClass::Init_Managers` builds
+/// that many slaves the moment an `Enslaves=` master is constructed, so a
+/// value near `i32::MAX` exhausts memory; retail's Slave Miner has 5.
+pub const SLAVES_NUMBER_LIMIT: i32 = 128;
+
 /// Weapon-array slot the `Primary=` / `ElitePrimary=` keys name
 /// (`TechnoTypeClass+0x898` / `+0xA94`).
 pub const WEAPON_SLOT_PRIMARY: usize = 0;
@@ -1571,14 +1577,17 @@ pub struct ObjectType {
     /// YR parent sets it, so the 9-frame branch is unreachable in stock play.
     pub missile_spawn: bool,
     /// `NoSpawnAlt=yes` — swap to the `<TYPE>WO` art while the pool is empty.
-    pub no_spawn_alt: bool,
+    /// Holds that art's name, built once from the section name; `None` for
+    /// `NoSpawnAlt=no`.
+    no_spawn_alt_model: Option<String>,
 
     // -- Slave Miner / economy fields --
     /// Infantry type enslaved/spawned by this unit (Enslaves= in rules.ini, YR only).
     /// Used by Slave Miner (SMIN) to spawn SLAV workers.
     pub enslaves: Option<String>,
     /// `TechnoType+0xD44`, `SlavesNumber=`: the slaves Init_Managers builds.
-    /// `TechnoTypeClass::ReadINI` ReadInt at `0x00714E29`; constructor 0.
+    /// `TechnoTypeClass::ReadINI` ReadInt at `0x00714E29`; constructor 0, at
+    /// most [`SLAVES_NUMBER_LIMIT`].
     pub slaves_number: i32,
     /// `TechnoType+0xD48`, `SlaveRegenRate=`: frames before a lost slave is
     /// regrown. ReadInt at `0x00714E08`; constructor 0.
@@ -1694,6 +1703,20 @@ pub struct ObjectType {
     /// The Jumpjet cruise reads it on a Unit owner at arrival
     /// (`State3_Translate 0x0054C1FE`).
     pub is_simple_deployer: bool,
+    /// Tiberian Sun's `IsLimpetMine=` (docs/ts-limpets.md), a BuildingType
+    /// key: Firestorm 2.0 `BuildingTypeClass::Read_INI @ 0x00440A40` reads it
+    /// into BuildingType+0x890 with ReadBool over the current value
+    /// (`0x00440C27..0x00440C3B`); the constructor zeroes it (`0x0043F666`).
+    /// A limpet mine cannot be ordered to attack, and vehicles drive into
+    /// its cell (`sim::limpet`).
+    pub is_limpet_mine: bool,
+    /// Tiberian Sun's `IsLimpetDrone=` (docs/ts-limpets.md), a VehicleType
+    /// key: Firestorm 2.0 `UnitTypeClass::Read_INI @ 0x0065BBA0` reads it into
+    /// UnitType+0x4A2 with ReadBool over the current value
+    /// (`0x0065BE44..0x0065BE67`); the constructor zeroes it (`0x0065B764`).
+    /// Its readers run the Unit's Stage as a ten-frame loop and draw the
+    /// body from it (`sim::limpet::wrap_drone_stage`).
+    pub is_limpet_drone: bool,
     /// UnitType+E18/E19, original747862..747896: the Unit section's
     /// ReadBool SmallVisceroid/LargeVisceroid, distinct from General's type
     /// references with the same keys. Unit Unlimbo737BF5 reads these bytes.
@@ -2002,6 +2025,12 @@ pub struct ObjectType {
     /// Parsed from `CanOccupyFire=yes` in rules.ini. Building must also
     /// have `CanBeOccupied=yes` and at least one occupant for fire to occur.
     pub can_occupy_fire: bool,
+    /// VERA RA2 Mode: original Red Alert 2 has no `CanOccupyFire=`, so a
+    /// `CanBeOccupied=` building's occupants fire without it. Derived from
+    /// [`RuleSet::ra2`](crate::rules::ruleset::RuleSet::ra2) by the RuleSet
+    /// at load, its one writer; false in Yuri's Revenge. Read through
+    /// [`Self::occupants_fire`].
+    pub(crate) ra2_occupy_fire: bool,
 
     /// Whether to show pip indicators for each occupant inside the building.
     /// Parsed from `ShowOccupantPips=yes` in rules.ini.
@@ -2210,6 +2239,9 @@ pub struct ObjectType {
     /// `occupy_weapon` and `elite_occupy_weapon` name, as the RuleSet that
     /// built the type resolved them (`RuleSet::resolve_handles`).
     resolved_weapons: crate::rules::ruleset::TypeWeapons,
+    /// Derived: `debris_types` as the RuleSet that built the type resolved
+    /// it (`RuleSet::resolve_handles`).
+    resolved_debris: crate::rules::ruleset::ResolvedDebris,
     /// Retained WeaponStruct and transport-port coordinates, projected from
     /// the ordered type reader rather than reconstructed from the final Image.
     weapon_offsets: crate::rules::weapon_offsets::WeaponOffsets,
@@ -2430,7 +2462,8 @@ pub struct ObjectType {
     /// Whether this building can be toggled on/off by the player.
     /// Parsed from `TogglePower=yes` in rules.ini.
     /// Defaults to true for buildings (most can be powered down).
-    /// Triggers `TogglePower` cursor when hovering this building in power-toggle mode.
+    /// Triggers `TogglePower` cursor when hovering this building in power mode
+    /// ([`Self::can_toggle_power`]).
     pub toggle_power: bool,
 
     /// `InfantryGainSelfHeal=` (`BuildingTypeClass+0x1564`, read by the

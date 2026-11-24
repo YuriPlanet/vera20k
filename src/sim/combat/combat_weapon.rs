@@ -344,7 +344,7 @@ pub(crate) fn controlled_transport_house(
         .object_type(transport.type_ref(), rules)
         .is_some_and(|obj| obj.open_topped);
     open_topped
-        .then(|| transport.mind_control.controller())
+        .then(|| transport.seldom.mind_control.controller())
         .flatten()
         .and_then(|controller| entities.get(controller))
         .map(|controller| controller.owner())
@@ -496,8 +496,8 @@ pub fn is_armed(
 /// Aircraft auxiliary+18/41B7F0: the primary projectile selects the attack
 /// approach and release branches. All callers use the live weapon tier.
 pub(crate) fn aircraft_strafes(rules: &RuleSet, obj: &ObjectType, veterancy: u16) -> bool {
-    primary_for_tier(obj, veterancy)
-        .and_then(|name| rules.weapon(name))
+    weapon_for_index(obj, veterancy, 0)
+        .and_then(|record| record.weapon(rules))
         .and_then(|weapon| rules.weapon_projectile(weapon))
         .is_some_and(|projectile| projectile.rot <= 1 && !projectile.inviso)
 }
@@ -669,10 +669,20 @@ fn projectile_aa(rules: &RuleSet, weapon: &WeaponType) -> bool {
 /// ORs `0xB8`. A weapon naming no projectile section reads the reader's
 /// defaults (AA=no, AG=yes), as weapon selection does; retail weapons always
 /// name one.
+///
+/// Tiberian Sun's `AV=` (docs/ts-limpets.md) comes first: Firestorm 2.0
+/// `WeaponTypeClass::Allowable_Threat @ 0x00681150` answers only `0x10`
+/// (vehicles, the same bit in gamemd's mask) for an AV projectile
+/// (`0x00681153..0x00681162`), whatever its AA and AG say.
 fn weapon_class_bits(rules: &RuleSet, weapon: &WeaponType) -> u32 {
-    let (aa, ag) = rules
+    let (aa, ag, av) = rules
         .weapon_projectile(weapon)
-        .map_or((false, true), |projectile| (projectile.aa, projectile.ag));
+        .map_or((false, true, false), |projectile| {
+            (projectile.aa, projectile.ag, projectile.av)
+        });
+    if av {
+        return 0x10;
+    }
     let mut bits = 0;
     if aa {
         bits = 4;
@@ -714,8 +724,8 @@ pub(crate) fn primary_warhead_spares_medium_and_wood(
     obj: &ObjectType,
     veterancy: u16,
 ) -> bool {
-    let warhead = primary_for_tier(obj, veterancy)
-        .and_then(|id| rules.weapon(id))
+    let warhead = weapon_for_index(obj, veterancy, 0)
+        .and_then(|record| record.weapon(rules))
         .and_then(|weapon| rules.weapon_warhead(weapon));
     warhead.is_some_and(WarheadType::uses_medium_wood_target_mask)
 }
@@ -1307,11 +1317,13 @@ fn occupant_weapon_record(occupant: &ObjectType, veterancy: u16) -> Option<Weapo
 /// `BuildingClass::IsOccupied @ 0x00458DD0` (vt+0x400; every other class
 /// answers false through `0x0041BFB0`): a building whose type is
 /// `CanBeOccupied=` (`+0x157B`) and `CanOccupyFire=` (`+0x157C`), holding an
-/// occupant (vt+0x408, `+0x694`).
+/// occupant (vt+0x408, `+0x694`). Original RA2 has no `CanOccupyFire=`:
+/// in RA2 Mode `CanBeOccupied=` alone arms the garrison, with the gun on the
+/// building's own Primary/Secondary ([`ObjectType::occupants_fire`]).
 pub(crate) fn is_occupied(entity: &GameEntity, obj: &ObjectType) -> bool {
     entity.category() == EntityCategory::Structure
         && obj.can_be_occupied
-        && obj.can_occupy_fire
+        && obj.occupants_fire()
         && entity.passenger_role().occupants().count() > 0
 }
 
@@ -1327,6 +1339,17 @@ pub(crate) fn half_foundation(obj: &ObjectType) -> i32 {
 /// range with it shifted to leptons (`0x006F7288..0x006F729F`), and
 /// Greatest_Threat walks one ring beyond it (`0x006F9189..0x006F91A3`).
 pub(crate) fn occupied_reach_cells(obj: &ObjectType, rules: &RuleSet) -> i32 {
+    if rules.ra2() {
+        // Original RA2 has no [CombatDamage] OccupyWeaponRange override: the
+        // garrison gun keeps its own WeaponType Range (AlliedOccupyW /
+        // SovietOccupyW are Range=7). Use the building's Primary slot range in
+        // cells, matching the gun `get_weapon_record` resolves for index 0.
+        if let Some(id) = obj.weapon_at(0)
+            && let Some(weapon) = rules.weapon(id)
+        {
+            return weapon.range_leptons.wrapping_shr(8);
+        }
+    }
     half_foundation(obj).wrapping_add(rules.garrison_rules.occupy_weapon_range)
 }
 
@@ -1397,6 +1420,15 @@ pub(crate) fn get_weapon_record<'r>(
         }
     }
     if let Some(id) = firing_occupant_id(entity, obj) {
+        if rules.ra2() {
+            // Original RA2 keeps the garrison gun on the building itself
+            // (e.g. [CARUS03] Primary=AlliedOccupyW, Secondary=SovietOccupyW).
+            // The occupant only supplies the trigger; its own weapon dict is
+            // not consulted. Resolve through the building's slot so the
+            // native Per Index selection and FLH stay intact.
+            return weapon_for_index(obj, entity.veterancy.rank(), index)
+                .or_else(|| weapon_for_index(obj, entity.veterancy.rank(), 0));
+        }
         let occupant = entities.get(id)?;
         let kind = interner.object_type_in_category(
             occupant.type_ref(),
@@ -1405,7 +1437,24 @@ pub(crate) fn get_weapon_record<'r>(
         )?;
         return occupant_weapon_record(kind, occupant.veterancy.rank());
     }
-    weapon_for_index(obj, entity.veterancy.rank(), index)
+    let mut record = weapon_for_index(obj, entity.veterancy.rank(), index)?;
+    // Kratos PP v0.2.4 CrawlingFLH::OnUpdate, dispatched at the entry to
+    // TechnoClass::AI 0x006F9E50 (stock prologue resumes at 0x006F9E55),
+    // selects by the man's rank even when GetWeapon 0x0070E140 falls back to
+    // his normal gun. Resolve per shooter at the GetFLH 0x006F3B28 read so
+    // infantry sharing a type cannot overwrite each other's muzzle position.
+    if rules.kratos()
+        && entity.category() == EntityCategory::Infantry
+        && !obj.fearless
+        && let Some(infantry) = entity.infantry
+        && (0..=1).contains(&index)
+    {
+        let elite = entity.veterancy.rank() >= RANK_ELITE_U16;
+        record.flh = obj
+            .kratos_crawling()
+            .flh(index as usize, elite, infantry.is_prone());
+    }
+    Some(record)
 }
 
 #[cfg(all(test, tests_sim_combat_a_c))]
@@ -1486,7 +1535,7 @@ mod tests {
         .unwrap();
         assert_eq!((selected.index, selected.weapon_id), (1, "SECOND"));
         assert_eq!(
-            world.power_down_building_upgrade(1, &rules, Default::default()),
+            world.power_down_building_upgrade(1, &rules, &mut Default::default()),
             world.interner.get("UP2")
         );
         let host = world.substrate.entities.get(1).unwrap();
@@ -1502,7 +1551,7 @@ mod tests {
             .is_none()
         );
         assert_eq!(
-            world.power_down_building_upgrade(1, &rules, Default::default()),
+            world.power_down_building_upgrade(1, &rules, &mut Default::default()),
             world.interner.get("UP1")
         );
         let host = world.substrate.entities.get(1).unwrap();
@@ -2050,8 +2099,12 @@ mod tests {
             ));
         // The fixture entities' names were interned by `test_default`.
         sim.interner = crate::sim::intern::test_interner();
-        sim.substrate.entities.get_mut(1).unwrap().mind_control =
-            MindControlLink::controlled_by_for_test(3);
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .seldom
+            .mind_control = MindControlLink::controlled_by_for_test(3);
         sim.substrate
             .entities
             .get_mut(2)
@@ -2075,6 +2128,98 @@ mod tests {
             Some(expected),
             "a transport-arm rider reaches its OpenTopped carrier's controller"
         );
+    }
+
+    // ---- Kratos prone firing offset ----------------------------------------
+
+    fn infantry_muzzle(
+        rules: &RuleSet,
+        unit: &str,
+        slot: i32,
+        prone: bool,
+        elite: bool,
+    ) -> [i32; 3] {
+        let world = Simulation::new();
+        let mut entity = GameEntity::test_default_of_category(
+            1,
+            unit,
+            "Americans",
+            5,
+            5,
+            EntityCategory::Infantry,
+        );
+        entity
+            .infantry
+            .as_mut()
+            .unwrap()
+            .set_is_prone_for_test(prone);
+        if elite {
+            entity.veterancy.set_rank_for_test(RANK_ELITE_U16);
+        }
+        get_weapon_record(
+            &entity,
+            rules.object(unit).unwrap(),
+            slot,
+            &world.substrate.entities,
+            rules,
+            &world.interner,
+        )
+        .unwrap()
+        .flh
+        .into()
+    }
+
+    #[test]
+    fn kratos_crawling_flh_replaces_the_fire_flh_only_while_prone() {
+        let roster = IniFile::from_str(
+            "[InfantryTypes]\n0=GI\n1=HERO\n[GI]\nPrimary=GUN\n[HERO]\nPrimary=GUN\nFearless=yes",
+        );
+        let stock = RuleSet::from_ini_with_fixed_art_for_test(
+            &roster,
+            &IniFile::from_str("[GI]\nPrimaryFireFLH=80,0,105"),
+        )
+        .unwrap();
+        assert!(!stock.kratos());
+        assert_eq!(infantry_muzzle(&stock, "GI", 0, true, false), [80, 0, 105]);
+
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &roster,
+            &IniFile::from_str(
+                "[GI]\nPrimaryFireFLH=80,0,105\nSecondaryCrawlingFLH=7,8,9\n\
+                [HERO]\nPrimaryFireFLH=60,0,101\nPrimaryCrawlingFLH=1,2,3",
+            ),
+        )
+        .unwrap();
+        assert!(rules.kratos());
+        assert_eq!(infantry_muzzle(&rules, "GI", 0, false, false), [80, 0, 105]);
+        assert_eq!(infantry_muzzle(&rules, "GI", 0, true, false), [80, 0, 20]);
+        assert_eq!(
+            infantry_muzzle(&rules, "HERO", 0, true, false),
+            [60, 0, 101]
+        );
+    }
+
+    #[test]
+    fn kratos_elite_muzzles_follow_rank_with_normal_weapons() {
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str("[InfantryTypes]\n0=GI\n[GI]\nPrimary=GUN\nSecondary=GUN"),
+            &IniFile::from_str(
+                "[GI]\nPrimaryFireFLH=20,0,80\nElitePrimaryFireFLH=90,0,99\n\
+                ElitePrimaryCrawlingFLH=1Eh,4\nSecondaryCrawlingFLH=4,5,6\n\
+                EliteSecondaryFireFLH=8,9,72\nEliteSecondaryCrawlingFLH=77,88,99",
+            ),
+        )
+        .unwrap();
+        assert!(rules.kratos());
+        let gi = rules.object("GI").unwrap();
+        assert_eq!(gi.elite_weapon_at(0), None);
+        assert_eq!(gi.elite_weapon_at(1), None);
+        assert_eq!(infantry_muzzle(&rules, "GI", 0, false, true), [90, 0, 99]);
+        // Kratos's integer parser accepts a hex suffix and zero-fills the missing Z.
+        assert_eq!(infantry_muzzle(&rules, "GI", 0, true, true), [30, 4, 0]);
+        assert_eq!(infantry_muzzle(&rules, "GI", 1, true, false), [4, 5, 6]);
+        // v0.2.4 reads EliteSecondaryFireFLH for both stances.
+        assert_eq!(infantry_muzzle(&rules, "GI", 1, true, true), [8, 9, 72]);
     }
 
     // ---- Garrison ----------------------------------------------------------

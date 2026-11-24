@@ -39,16 +39,13 @@ pub(crate) fn bullet_land(
     receiver_dispatched: bool,
     ignore_units: bool,
 ) -> i32 {
-    let floor = crate::sim::projectile::projectile_ground_z(
+    let surface = crate::sim::projectile::projectile_surface_z(
         world.resolved_terrain.as_ref(),
         &world.effective_shared_cell_dummy(),
         coordinate,
+        on_bridge,
     );
-    let height = coordinate.z.wrapping_sub(floor).wrapping_sub(if on_bridge {
-        crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
-    } else {
-        0
-    });
+    let height = coordinate.z.wrapping_sub(surface);
     if height >= 2 * crate::util::lepton::LEPTONS_PER_LEVEL as i32 {
         return -1;
     }
@@ -106,7 +103,10 @@ fn damage_band<'a>(list: &'a [impl AsRef<str>], damage: i32, step: i32) -> Optio
 pub(crate) struct SelectedAnim {
     pub name: InternedId,
     /// Only the Phobos Bullet tail reads this.
-    #[cfg_attr(not(feature = "phobos"), allow(dead_code))]
+    #[cfg_attr(
+        not(feature = "phobos"),
+        expect(dead_code, reason = "the Phobos tail reads it")
+    )]
     pub splashed: bool,
 }
 
@@ -400,6 +400,7 @@ pub(crate) fn bullet_effects(
         && let Some(source) = world.substrate.entities.get_mut(source_id)
     {
         source
+            .seldom
             .wh_anim_remaining_creation_interval
             .interval_allows(interval)
     } else {
@@ -1579,6 +1580,7 @@ CreateUnit.Owner=special
                 .entities
                 .get(1)
                 .unwrap()
+                .seldom
                 .wh_anim_remaining_creation_interval
                 .remaining(),
             2

@@ -24,7 +24,7 @@ impl Simulation {
         weapon_index: i32,
         waypoint: i32,
         overlays: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Option<bool> {
         // 6E23A8..6E2426: signed centre, ground, then separate raw bridge
         // flag queries. Share their existing owner, including Dummy writes.

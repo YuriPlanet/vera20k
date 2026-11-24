@@ -333,14 +333,14 @@ fn the_superweapon_script_actions_match_native() {
                 int(&row["argument"]),
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             57 => sim.team_action_chronoshift(
                 team,
                 super::ChronoshiftTarget::Quarry(int(&row["argument"])),
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ),
             other => panic!("action {other}"),
         }
@@ -521,7 +521,7 @@ fn ares_iron_curtain_action_matches_ai_mode_and_group() {
             9,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let fired: Vec<_> = AI_FIRE_LOG
             .take()

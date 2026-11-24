@@ -513,7 +513,7 @@ impl CrushTarget {
     pub fn from_entity(entity: &GameEntity, current_frame: u32) -> Self {
         Self {
             category: entity.category(),
-            crushable: entity.crushable_facts.crushable(),
+            crushable: entity.seldom.crushable_facts.crushable(),
             deploy_crush_immune: deploy_crush_immune(entity),
             omni_crush_resistant: entity.mover_facts.omni_crush_resistant(),
             iron_curtained: crate::sim::superweapon::invulnerability::is_invulnerable(

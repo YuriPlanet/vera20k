@@ -70,7 +70,7 @@ fn grind(sim: &mut Simulation, rules: &RuleSet, foot: u64, grinder: u64) {
     entity
         .attack_target
         .set_for_test(Some(TargetKind::Entity(grinder)));
-    assert!(sim.foot_per_cell_eaten(foot, rules, None, FrameEffects::default()));
+    assert!(sim.foot_per_cell_eaten(foot, rules, None, &mut FrameEffects::default()));
 }
 
 fn eva_lines(sim: &mut Simulation) -> Vec<&'static str> {
@@ -146,6 +146,7 @@ fn a_ground_hijacked_vehicle_refunds_its_hijacker() {
             .entities
             .get_mut(tank)
             .unwrap()
+            .seldom
             .capture_infantry_type_index
             .record(captor);
         let before = sim.houses[&owner].economy().credits();

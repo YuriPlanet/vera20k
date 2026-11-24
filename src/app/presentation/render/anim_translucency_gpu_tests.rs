@@ -5,7 +5,9 @@
 //! replay a Flak shot or a complete battle. No tested SpriteInstance is supplied
 //! or modified: all effect pieces come from build_display_effect_instances.
 
-use super::draw_plan_lowering::{NativeDisplayOrder, ObjectTexture, lower_object_instances};
+use super::draw_plan_lowering::{
+    NativeDisplayOrder, ObjectTexture, PlannedObjects, lower_object_instances,
+};
 use super::merge_passes::{ObjectDrawPhase, draw_native_object_pass};
 use crate::app::presentation::detail::DetailState;
 use crate::app::presentation::instances::{DisplayEffectInputs, build_display_effect_instances};
@@ -186,7 +188,7 @@ fn retail_smkpuff_effect_builder_matches_original_translucency() {
                 while visits < target_visits {
                     clock += 1;
                     sim.session_mut_for_test().set_binary_frame_for_test(clock);
-                    sim.visit_anim(id, &rules, None, FrameEffects::default())
+                    sim.visit_anim(id, &rules, None, &mut FrameEffects::default())
                         .unwrap();
                     visits += 1;
                 }
@@ -248,7 +250,7 @@ fn retail_smkpuff_effect_builder_matches_original_translucency() {
                 detail.throttle_tail(0);
                 let detail = RefCell::new(detail);
                 let order = NativeDisplayOrder::from_world(&sim, None);
-                let mut parents = Vec::new();
+                let mut parents = PlannedObjects::default();
                 build_display_effect_instances(
                     &DisplayEffectInputs {
                         sim: &sim,
@@ -277,6 +279,7 @@ fn retail_smkpuff_effect_builder_matches_original_translucency() {
                     &order,
                     Default::default(),
                 );
+                let parents = parents.into_owned();
                 assert_eq!(
                     parents.len(),
                     1,
@@ -326,7 +329,7 @@ fn retail_smkpuff_effect_builder_matches_original_translucency() {
                 if sprite.draw_state.native_selector_bits() != selector || sprite.alpha != 1. {
                     transport_differences.push(format!("{name} stage{stage} {format:?}: selector{} alpha{} expected selector{selector} alpha1", sprite.draw_state.native_selector_bits(), sprite.alpha));
                 }
-                let layers = lower_object_instances(parents);
+                let layers = lower_object_instances(parents.into());
                 let layer = &layers[layer_index];
                 assert_eq!(layer.instances.len(), 1);
                 assert_eq!(layer.owners, [id]);

@@ -9,6 +9,17 @@
 //! ## Dependency rules
 //! - config.rs is part of util/ â€” no dependencies on game modules.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail, ensure};
@@ -111,6 +122,14 @@ impl PathsConfig {
     /// map's SHA-256 (`app::map_picture`).
     pub fn map_pictures_dir(&self) -> PathBuf {
         self.settings_dir.join("MapPreviews")
+    }
+
+    /// VERA's folder of player-supplied background music. Files here are
+    /// auto-indexed for in-match theme playback when `musics/music.ini`
+    /// enables it (`audio::custom_music`). Kept beside VERA.INI, never in the
+    /// retail installation, like [`Self::downloaded_maps_dir`].
+    pub fn musics_dir(&self) -> PathBuf {
+        self.settings_dir.join("musics")
     }
 
     fn separate_settings_from_assets(&mut self) -> Result<()> {
@@ -319,31 +338,58 @@ impl GameConfig {
 
     /// [`GameConfig::load`] for a process with this working directory and executable.
     pub fn load_from(working_dir: &Path, executable: &Path) -> Result<Self> {
-        for path in config_candidates(working_dir, executable)? {
-            match crate::util::file_system::read(&path) {
-                Ok(bytes) => {
-                    let contents = String::from_utf8(bytes)
-                        .map_err(|error| {
-                            anyhow::anyhow!(
-                                "the file is not UTF-8 text (invalid byte at offset {}); \
-                                 save it as UTF-8",
-                                error.utf8_error().valid_up_to()
-                            )
-                        })
-                        .context(ConfigFileError::read(&path))?;
-                    return Self::parse_from(&contents, &path);
+        let mut config = 'load: {
+            for path in config_candidates(working_dir, executable)? {
+                match crate::util::file_system::read(&path) {
+                    Ok(bytes) => {
+                        let contents = String::from_utf8(bytes)
+                            .map_err(|error| {
+                                anyhow::anyhow!(
+                                    "the file is not UTF-8 text (invalid byte at offset {}); \
+                                     save it as UTF-8",
+                                    error.utf8_error().valid_up_to()
+                                )
+                            })
+                            .context(ConfigFileError::read(&path))?;
+                        break 'load Self::parse_from(&contents, &path)?;
+                    }
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(err) => return Err(err).context(ConfigFileError::read(&path)),
                 }
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-                Err(err) => return Err(err).context(ConfigFileError::read(&path)),
             }
+            let root = retail_asset_root_from_executable(executable)?;
+            log::info!(
+                "No {}; using retail executable directory: {}",
+                CONFIG_FILE_NAME,
+                root.display()
+            );
+            Self::from_retail_asset_root(root)?
+        };
+        config.apply_ra2_launch();
+        Ok(config)
+    }
+
+    /// VERA: RA2 mode for this launch, once VERA.INI has been read: the
+    /// `-ra2` switch already recorded, or the player's saved Options choice
+    /// (`[VERA] RA2Mode=`, `saved_choice`). Either turns it on for the whole
+    /// process (`util::ra2_launch`) and selects its INI roots.
+    pub fn use_ra2_mode(&mut self, saved_choice: bool) {
+        if saved_choice {
+            crate::util::ra2_launch::set(true);
         }
-        let root = retail_asset_root_from_executable(executable)?;
-        log::info!(
-            "No {}; using retail executable directory: {}",
-            CONFIG_FILE_NAME,
-            root.display()
-        );
-        Self::from_retail_asset_root(root)
+        self.apply_ra2_launch();
+    }
+
+    /// RA2 mode replaces the whole `[ini]` policy with the fixed non-md roots.
+    /// It wins over anything in config.toml so a single switch is sufficient.
+    fn apply_ra2_launch(&mut self) {
+        if crate::util::ra2_launch::enabled() {
+            log::info!("-ra2 launch: selecting original RA2 non-md INI roots");
+            self.ini = crate::util::ini_roots::IniRootConfig {
+                profile: crate::util::ini_roots::IniProfile::Ra2,
+                ..Default::default()
+            };
+        }
     }
 
     fn parse_from(contents: &str, path: &Path) -> Result<Self> {
@@ -698,6 +744,7 @@ fn retail_asset_root_from_executable(executable: &Path) -> Result<PathBuf> {
 #[cfg(all(test, tests_util))]
 mod tests {
     use super::*;
+    use crate::util::ini_roots::IniProfile;
 
     #[test]
     fn ini_roots_config_defaults_and_profiles_are_explicit() {
@@ -747,6 +794,24 @@ mod tests {
                 "{bad}"
             );
         }
+    }
+
+    #[test]
+    fn ra2_launch_flag_overrides_ini_policy() {
+        // A config that explicitly selects custom YR-ish roots; RA2 mode must
+        // win wholesale.
+        let mut config = GameConfig::parse(
+            "[paths]\nra2_dir='retail'\n[ini]\n\
+             profile='custom'\nrules='r.ini'\nart='a.ini'\nai='i.ini'\n",
+        )
+        .unwrap();
+        crate::util::ra2_launch::set(true);
+        config.apply_ra2_launch();
+        assert_eq!(config.ini.profile, IniProfile::Ra2);
+        let roots = config.ini.resolve(|_| true).unwrap();
+        assert_eq!(roots.names(), ["rules.ini", "art.ini", "ai.ini"]);
+        assert_eq!(roots.theater_ini("snow"), "snow.ini");
+        crate::util::ra2_launch::set(false);
     }
 
     #[test]

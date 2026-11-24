@@ -3,7 +3,7 @@
 
 mod start;
 use super::*;
-use crate::app::match_runtime::session::NetworkRowKind;
+use crate::app::match_runtime::session::{NetworkRowKind, PeerChoicesChange};
 use crate::skirmish_launch::{AiDifficulty, LaunchCountry, LaunchStartPosition, LaunchTeam};
 use crate::ui::multiplayer_setup::*;
 use anyhow::Context;
@@ -28,9 +28,6 @@ fn held_while_starting(phase: StartPhase, action: &SetupAction, kick: bool) -> b
         | SetupAction::Trackbar { .. }
         | SetupAction::Join { .. }
         | SetupAction::DropRow { .. }
-        | SetupAction::TeamStarts
-        | SetupAction::TeamColors
-        | SetupAction::Balance
         | SetupAction::Lobby => phase.in_progress(),
         _ => false,
     }
@@ -99,7 +96,10 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                     if !(dialog.wol() && !dialog.host) {
                         App::leave_shell_dialog(
                             state,
-                            shell_transition::ShellExitThen::NetworkSetupBack(dialog),
+                            crate::app::frontend::shell_transition::ShellSlideKind::NetworkSetup(
+                                dialog,
+                            ),
+                            crate::app::shell_network_setup::commit_back,
                         );
                     }
                 }
@@ -117,7 +117,8 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
             {
                 App::leave_shell_dialog(
                     state,
-                    shell_transition::ShellExitThen::NetworkSetupChooseMap(dialog),
+                    crate::app::frontend::shell_transition::ShellSlideKind::NetworkSetup(dialog),
+                    crate::app::shell_network_setup::open_choose_map,
                 );
             }
             Ok(())
@@ -142,20 +143,14 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                 && let Some(ui) = state.frontend.multiplayer_setup.as_mut()
             {
                 ui.page_rows(&view.pages, forward);
+                crate::app::input::multiplayer_setup::drop_pointer(state, true);
             }
             Ok(())
         }
-        SetupAction::OpenBox(open) => {
+        SetupAction::GameOptions(open) => {
+            crate::app::input::multiplayer_setup::drop_pointer(state, true);
             if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
-                ui.show_box(open);
-            }
-            Ok(())
-        }
-        SetupAction::TeamStarts => team_starts(state),
-        SetupAction::TeamColors => team_colors(state),
-        SetupAction::Balance => {
-            if super::view(state).is_some_and(|current| current.enabled(BALANCE)) {
-                super::teams::balance(state);
+                ui.show_game_options(open);
             }
             Ok(())
         }
@@ -164,10 +159,10 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
             Ok(())
         }
         SetupAction::MapOffer { download } => {
+            crate::app::input::multiplayer_setup::drop_pointer(state, false);
             let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
                 return;
             };
-            ui.cancel_pointer();
             if download {
                 if let Some(offer) = ui.map_offer.as_mut() {
                     offer.downloading = true;
@@ -177,7 +172,6 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
                 ui.map_offer = None;
                 apply_action(state, SetupAction::Back);
             }
-            state.platform.window.request_redraw();
             Ok(())
         }
         SetupAction::Page => {
@@ -207,7 +201,6 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
     if let Err(error) = result {
         log::warn!("network setup command refused: {error:#}");
     }
-    state.platform.window.request_redraw();
 }
 
 pub(super) fn queue(state: &mut AppState, request: NetworkSetupRequest) {
@@ -228,11 +221,16 @@ fn toggle(state: &mut AppState, control: u16) -> anyhow::Result<()> {
         .clone();
     match control {
         0x54E => {
-            options.short_game = !options.short_game;
-            if options.short_game {
-                options.bases = true;
-            }
+            crate::skirmish_launch::click_short_game(&mut options.short_game, &mut options.bases)
         }
+        BASES => {
+            crate::skirmish_launch::click_bases(&mut options.bases, &mut options.short_game)
+        }
+        // C2's other hidden session checkboxes: Multi-Engineer (0x78FB2B),
+        // Harvester Truce (0x78FBBB) and Fog of War (0x78FC07).
+        MULTI_ENGINEER => options.multi_engineer = !options.multi_engineer,
+        HARVESTER_TRUCE => options.harvester_truce = !options.harvester_truce,
+        FOG_OF_WAR => options.fog_of_war = !options.fog_of_war,
         0x3E8 => options.mcv_redeploy = !options.mcv_redeploy,
         0x54D => options.crates = !options.crates,
         0x69A => options.super_weapons = !options.super_weapons,
@@ -263,7 +261,7 @@ fn toggle(state: &mut AppState, control: u16) -> anyhow::Result<()> {
 
 /// C2 checkbox and slider handlers (`0x78F9C1`, `0x78FA97`) clear every
 /// remote acceptance at once (`005E9850`); BC leaves that to peers' A0.
-fn host_option_edited(state: &mut AppState) -> anyhow::Result<()> {
+pub(super) fn host_option_edited(state: &mut AppState) -> anyhow::Result<()> {
     if super::dialog(state).wol() {
         super::wol::clear_guest_acceptance(state)?;
     }
@@ -348,6 +346,7 @@ fn trackbar(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()
                 }
                 options.host_rules.superweapon_limit = limit;
             }
+            TECH_LEVEL => options.tech_level = value,
             _ => anyhow::bail!("unknown setup slider"),
         }
         // A drag sends only when its value moves.
@@ -378,6 +377,17 @@ fn select(state: &mut AppState, control: u16, value: i32) -> anyhow::Result<()> 
         );
     if matches!(control, CAMPAIGN_SERIES | CAMPAIGN_STAGE) || room_role {
         return super::campaign_room::select(state, control, combo.row, value);
+    }
+    // The team bar's lists: the caption and a grey item do nothing.
+    if matches!(control, TEAM_MENU | SEAT_MENU) {
+        if combo
+            .choices
+            .iter()
+            .any(|choice| choice.value == value && !choice.greyed)
+        {
+            return super::team_menus::select(state, control, value);
+        }
+        return Ok(());
     }
     if let Some(page_row) = team_add_ai_row(control) {
         let group = current.headers[page_row]
@@ -543,28 +553,6 @@ fn commit_row(
     Ok(())
 }
 
-/// The host's Team Starts in the Teams box: every player's start by team.
-fn team_starts(state: &mut AppState) -> anyhow::Result<()> {
-    let current = super::view(state).ok_or_else(|| anyhow::anyhow!("no setup"))?;
-    anyhow::ensure!(current.enabled(TEAM_STARTS), "Team Starts is not offered");
-    if super::teams::team_starts(state, false)? {
-        host_option_edited(state)?;
-        queue(state, NetworkSetupRequest::PublishOptions);
-    }
-    Ok(())
-}
-
-/// The host's Team Colors in the Teams box: every player's colour by team.
-fn team_colors(state: &mut AppState) -> anyhow::Result<()> {
-    let current = super::view(state).ok_or_else(|| anyhow::anyhow!("no setup"))?;
-    anyhow::ensure!(current.enabled(TEAM_COLORS), "Team Colors is not offered");
-    if super::teams::team_colors(state)? {
-        host_option_edited(state)?;
-        queue(state, NetworkSetupRequest::PublishOptions);
-    }
-    Ok(())
-}
-
 /// VERA's header Join: the player moves to the header's team as its Team
 /// list does, a spectator into a free seat on it as a side in its Side list
 /// does; the spectators' Watch asks to watch as Observer there does.
@@ -601,9 +589,7 @@ fn join(state: &mut AppState, control: u16) -> anyhow::Result<()> {
     commit_row(state, row, slot, observer)
 }
 
-/// The host drops a dragged roster row on another box: a person moves
-/// there as the host's Team list or Seat and Move to spectators would move
-/// them (`service::move_player`), an AI as its Team list would.
+/// The host drops a dragged roster row on another box ([`put_on_team`]).
 fn drop_row(state: &mut AppState, row: u8, group: SetupGroup) -> anyhow::Result<()> {
     let current = super::view(state).ok_or_else(|| anyhow::anyhow!("no setup"))?;
     let page_row = current
@@ -621,7 +607,23 @@ fn drop_row(state: &mut AppState, row: u8, group: SetupGroup) -> anyhow::Result<
         _ => LaunchTeam::None,
     };
     let observer = group == SetupGroup::Spectators;
-    let launch = session.network_setup().expect("view has setup");
+    let change = put_on_team(state, row, team, observer)?;
+    super::service::publish_choices(state, change);
+    Ok(())
+}
+
+/// The host puts roster row `row` on `team`, or to watch keeping its team:
+/// a person as the host's Team list or Seat and Move to spectators would
+/// move them (`service::move_player`), an AI as its Team list would. The
+/// caller publishes the change.
+pub(super) fn put_on_team(
+    state: &mut AppState,
+    row: u8,
+    team: LaunchTeam,
+    observer: bool,
+) -> anyhow::Result<PeerChoicesChange> {
+    let session = &state.match_state.session;
+    let launch = session.network_setup().context("no setup")?;
     if let Some(index) = launch
         .humans
         .iter()
@@ -632,9 +634,7 @@ fn drop_row(state: &mut AppState, row: u8, group: SetupGroup) -> anyhow::Result<
         } else {
             team
         };
-        let change = super::service::move_player(state, index, team, observer)?;
-        super::service::publish_choices(state, change);
-        return Ok(());
+        return super::service::move_player(state, index, team, observer);
     }
     let mut slot = session
         .network_row_choices(row)
@@ -644,8 +644,10 @@ fn drop_row(state: &mut AppState, row: u8, group: SetupGroup) -> anyhow::Result<
         .match_state
         .session
         .set_network_row_choices(row, slot)?;
-    queue(state, NetworkSetupRequest::PublishOptions);
-    Ok(())
+    Ok(PeerChoicesChange {
+        roster: false,
+        options: true,
+    })
 }
 
 /// The host's Add AI on a box header: an AI of the picked difficulty in

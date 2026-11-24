@@ -24,7 +24,7 @@ impl Simulation {
         stable_id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<crate::sim::movement::air_movement::AirMovementTickStats, super::FrameAdvanceError>
     {
         use crate::rules::locomotor_type::LocomotorKind;
@@ -86,7 +86,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let admitted = self.substrate.entities.get(id).is_some_and(|entity| {
             entity.lifecycle.object_alive
@@ -176,7 +176,7 @@ impl Simulation {
                     .and_then(|e| e.locomotor.as_ref())
                     .and_then(|l| l.fly_runtime())
                     .is_some_and(|s| s.taking_off())
-                && !self.foot_land_zone_clear(id, below, rules)
+                && !self.foot_land_zone_clear(id, below, rules, None)
             {
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
                     entity
@@ -232,22 +232,10 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
     ) {
-        use crate::sim::movement::{air_movement, fly_height::TakeoffFacing, ground_pose};
+        use crate::sim::movement::{fly_height::TakeoffFacing, ground_pose};
         let entity = substrate.entities.get(id).expect("admitted Fly callback");
         let xy = ground_pose::position_world_xy(&entity.position);
-        let mut height = air_movement::current_fly_height(entity, resolved_terrain.as_ref());
-        //4CE696..4CE6DF: query structure even below416; bridge-normalize only
-        // when not already OnBridge and high enough above a structural deck.
-        if !entity.on_bridge() {
-            let bridge = resolved_terrain.as_ref().is_some_and(|terrain| {
-                let cell =
-                    terrain.native_cell_identity(((xy[0] / 256) as i16, (xy[1] / 256) as i16));
-                terrain.native_cell_flags(cell) & 0x100 != 0
-            });
-            if bridge && height >= crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS {
-                height = height.wrapping_sub(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-            }
-        }
+        let height = Self::fly_bridge_relative_height(entity, resolved_terrain.as_ref(), false);
         let landing_base = crate::sim::aircraft::landing_base::landing_base(
             entity,
             &substrate.entities,

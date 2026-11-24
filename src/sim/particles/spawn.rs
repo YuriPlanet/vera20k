@@ -139,7 +139,7 @@ impl Simulation {
         };
         if !below(rules.general.condition_yellow)
             || Self::damage_particle_owner_height(&self.resolved_terrain, entity) <= -10
-            || entity.spark_particle_system.system().is_some()
+            || entity.seldom.spark_particle_system.system().is_some()
         {
             return;
         }
@@ -191,7 +191,7 @@ impl Simulation {
             rules,
         );
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.spark_particle_system.bind(system);
+            entity.seldom.spark_particle_system.bind(system);
         }
     }
 
@@ -390,6 +390,13 @@ impl Simulation {
         );
         self.substrate.particle_systems.insert(sys);
         self.reveal_particle_system(stable_id);
+        // A system at 0,0,0 gets no glow even where VERA reveals it
+        // (`unlimbo_alpha_shape`).
+        self.unlimbo_alpha_shape(
+            stable_id,
+            crate::sim::world::ObjectKind::ParticleSystem,
+            rules,
+        );
         Some(stable_id)
     }
 
@@ -488,7 +495,7 @@ impl Simulation {
             .health
             .compare_ratio(object.strength, rules.general.condition_yellow)
             == crate::util::native_x87::MaskedX87Ordering::Greater;
-        let current_system = entity.damage_smoke_system_id.system();
+        let current_system = entity.seldom.damage_smoke_system_id.system();
 
         if above_yellow {
             self.substrate.retire_attached_damage_smoke(stable_id);
@@ -549,7 +556,7 @@ impl Simulation {
             return;
         };
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-            entity.damage_smoke_system_id.system = Some(system_id);
+            entity.seldom.damage_smoke_system_id.system = Some(system_id);
         }
     }
 
@@ -693,7 +700,7 @@ impl crate::sim::world::ObjectSubstrate {
         let system_id = self
             .entities
             .get(stable_id)
-            .and_then(|entity| entity.damage_smoke_system_id.system());
+            .and_then(|entity| entity.seldom.damage_smoke_system_id.system());
         if let Some(system_id) = system_id
             && let Some(system) = self.particle_systems.get_mut(system_id)
         {
@@ -759,8 +766,7 @@ pub(super) fn spawn_particle(
     let Some(pt_id) = pst.holds_what else {
         return false;
     };
-    let pt = rules.particle_type(pt_id);
-    let particle = Particle::new(pt_id, coords, target_coords, pt, sim);
+    let particle = Particle::new(pt_id, coords, target_coords, rules, sim);
     sys.particles.push(particle);
     true
 }
@@ -822,9 +828,15 @@ pub(super) fn spawn_state_ai_advance(
     if !pt.normalized {
         return pt.state_ai_advance;
     }
-    let load = |bits| X87Chop53::load_f32(bits).expect("a particle's binary32 is finite");
-    let speed = load(speed);
-    let step = |component| X87Chop53::ftol_i32_low_masked(X87Chop53::mul(load(component), speed));
+    use crate::util::native_x87::MaskedX87Chop53 as Masked;
+    // `speed` is the type's `Velocity=` (`ParticleClass+0xE4`), which INI
+    // text can make infinite: the step product is the masked x87's, whose
+    // conversion of an infinity or NaN gives 0, so such an axis has no step.
+    // Everything after a step is a whole number or a constant.
+    let speed = Masked::load_f32(speed);
+    let step =
+        |component| Masked::ftol_i32_low_masked(Masked::mul(Masked::load_f32(component), speed));
+    let load = |bits| X87Chop53::load_f32(bits).expect("a stored whole-number tick is finite");
     let [step_x, step_y] = [
         step(velocity[0]).wrapping_abs(),
         step(velocity[1]).wrapping_abs(),
@@ -912,7 +924,7 @@ mod tests {
             kind,
             IVec3::new(256, 256, 0),
             IVec3::new(512, 256, 0),
-            rules.particle_type(kind),
+            &rules,
             &mut sim,
         );
         assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
@@ -967,6 +979,7 @@ mod tests {
                 .entities()
                 .get(id)
                 .unwrap()
+                .seldom
                 .damage_smoke_system_id
                 .system();
             assert_eq!(
@@ -1031,6 +1044,7 @@ mod tests {
                 .entities
                 .get_mut(id)
                 .unwrap()
+                .seldom
                 .damage_smoke_system_id
                 .set_for_test(Some(system_id));
             let before_rng = sim.scenario_rng.logical_state();
@@ -1049,6 +1063,7 @@ mod tests {
                     .entities
                     .get(id)
                     .unwrap()
+                    .seldom
                     .damage_smoke_system_id
                     .system(),
                 Some(system_id)
@@ -1150,6 +1165,30 @@ mod tests {
             );
         }
         assert_eq!(rows.len(), 13);
+    }
+
+    /// `Velocity=1e999` reads as an infinity; the masked step conversion
+    /// gives neither axis a step, so the advance is from the 9999.0 ticks:
+    /// the low byte of `ftol(9999 / 1 + 1)`.
+    #[test]
+    fn an_infinite_normalized_velocity_has_no_axis_step() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[Particles]\n1=FireStream\n\
+             [FireStream]\nBehavesLike=Fire\nMaxEC=10\nVelocity=1e999\n\
+             StateAIAdvance=6\nFinalDamageState=0\nNormalized=yes\n",
+        ))
+        .expect("rules parse");
+        let pt = rules.particle_type(crate::rules::particle_type::ParticleTypeId(0));
+        let source = IVec3::new(0, 0, 0);
+        let target = IVec3::new(700, -300, 0);
+        let advance = spawn_state_ai_advance(
+            pt,
+            source,
+            target,
+            native_velocity(source, target),
+            pt.velocity,
+        );
+        assert_eq!(advance, 10_000u32 as u8);
     }
 
     /// Build a tiny RuleSet with one ParticleType + one ParticleSystemType.

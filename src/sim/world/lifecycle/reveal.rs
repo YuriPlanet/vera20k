@@ -76,7 +76,7 @@ impl Simulation {
         &self,
         stable_id: u64,
         position: RevealPosition,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) -> Option<i32> {
         use crate::sim::movement::ground_pose::ground_surface_z_at;
 
@@ -90,7 +90,7 @@ impl Simulation {
                 .exact_z_leptons()
                 .or(entity.position.exact_z_leptons());
         }
-        if entity.low_bridge_tube_state.is_some() {
+        if entity.active_tube().is_some() {
             return None;
         }
         let aircraft_type = (entity.category() == EntityCategory::Aircraft)
@@ -115,7 +115,7 @@ impl Simulation {
                 let object = aircraft_type?;
                 return Some(
                     if !entity.is_mission_only()
-                        && self.reveal_position_is_in_playfield(position, context)
+                        && self.reveal_position_is_in_playfield(position, context.reborrow())
                     {
                         ground_z
                     } else {
@@ -134,6 +134,11 @@ impl Simulation {
             );
         let input_z = if let Some(input_z) = position.exact_z_leptons() {
             input_z
+        } else if entity.on_bridge()
+            && let Some(deck) = terrain
+                .corrected_high_bridge_deck_level(((xy[0] / 256) as u16, (xy[1] / 256) as u16))
+        {
+            i32::from(deck).wrapping_mul(LEPTONS_PER_LEVEL as i32)
         } else if entity.on_bridge() && i32::from(position.z() as i8) == i32::from(level) + 4 {
             // VERA input adapter: retain the ramp remainder that the existing
             // coarse bridge-level API cannot carry. Native clamp remains max.
@@ -264,7 +269,7 @@ impl Simulation {
         &mut self,
         stable_id: u64,
         request: RevealRequest,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) -> RevealOutcome {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return RevealOutcome::Failed(RevealFailure::MissingObject);
@@ -285,7 +290,7 @@ impl Simulation {
         // Foot4D9C60 adjusts query-local height/list pointers. OnBridge and
         // the caller's requested XYZ remain independent through Unlimbo.
         let position = request.position;
-        let exact_z = self.unlimbo_z(stable_id, position, context);
+        let exact_z = self.unlimbo_z(stable_id, position, context.reborrow());
         // RESIDUAL: `ObjectClass::Unlimbo` sets this Location through
         // SetLocation (vt+0x1B4 at 0x005F4FA8, before its Mark(1) at
         // 0x005F4FB4), which for a Foot also runs the OpenTopped rider tail.
@@ -318,7 +323,7 @@ impl Simulation {
             return RevealOutcome::Failed(RevealFailure::MarkFailed);
         }
 
-        if !self.mark_entity_put(stable_id, context) {
+        if !self.mark_entity_put(stable_id, context.reborrow()) {
             if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
                 entity.lifecycle.in_limbo = true;
             }
@@ -328,7 +333,7 @@ impl Simulation {
         // precedes the +3D5 establishment at6F6CFE. Failed Mark retains the
         // prior byte. Headless fixtures have no MapClass authority and retain
         // the constructor default through this existing writer.
-        self.establish_entity_playfield_membership_on_unlimbo(stable_id, context);
+        self.establish_entity_playfield_membership_on_unlimbo(stable_id, context.reborrow());
         // Techno6F6D04/D0C tests +90 once before the synchronous sight
         // receiver. Original6F6D27..6EDE does not recheck it after callbacks;
         // carry this admission while each owner retains object-existence safety.
@@ -340,7 +345,7 @@ impl Simulation {
         //6F6D27/6F6D61: source sight and Cell ground-frame border run
         //synchronously before Added_To_Game and the ordinary discovery tail.
         if techno_alive_on_entry {
-            self.reveal_object_sight_on_unlimbo(stable_id, context);
+            self.reveal_object_sight_on_unlimbo(stable_id, context.reborrow());
         }
         // `TechnoClass::Unlimbo` calls Added_To_Game once placement succeeded
         // (`0x006F6D8F`), behind its alive gate (`0x006F6D04`: a dead Techno
@@ -405,7 +410,7 @@ impl Simulation {
             ) == Some(false)
             && let Some(entity) = self.substrate.entities.get_mut(stable_id)
         {
-            entity.discovery.clear_current_discovery();
+            entity.seldom.discovery.clear_current_discovery();
         }
         // Techno6F6ED2/6F6EDE publishes its current threat before the Foot
         // tail. Failed Mark and the dead successful Reveal arm publish none.
@@ -479,7 +484,7 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get(stable_id)
             && entity.category() != EntityCategory::Structure
         {
-            self.discover_techno(stable_id, entity.owner(), context);
+            self.discover_techno(stable_id, entity.owner(), context.reborrow());
         }
         let high_flight = self.foot_neighbors_after_unlimbo(stable_id, context.rules);
         // Foot4D72B2/+54 requires high flight, then Type ConsideredAircraft
@@ -554,18 +559,20 @@ impl Simulation {
             .get(stable_id)
             .is_some_and(|entity| entity.category() == EntityCategory::Unit)
         {
-            let visceroid = self
-                .substrate
-                .entities
-                .get(stable_id)
-                .and_then(|entity| {
-                    self.interner.object_type_in_category(
-                        entity.type_ref(),
-                        entity.category().into(),
-                        context.rules(),
-                    )
-                })
-                .is_some_and(|object| object.small_visceroid || object.large_visceroid);
+            let object = self.substrate.entities.get(stable_id).and_then(|entity| {
+                self.interner.object_type_in_category(
+                    entity.type_ref(),
+                    entity.category().into(),
+                    context.rules(),
+                )
+            });
+            let visceroid =
+                object.is_some_and(|object| object.small_visceroid || object.large_visceroid);
+            // Firestorm 2.0 `UnitClass::Unlimbo @ 0x0064F790` also starts a
+            // Tiberian Sun Limpet Drone's Stage at 0, rate 1, after the same
+            // visceroid test (`0x0064F808`, `0x0064F83D..0x0064F85E`); its
+            // body draws that Stage (`sim::limpet::wrap_drone_stage`).
+            let drone = object.is_some_and(|object| object.is_limpet_drone);
             let value = if visceroid {
                 self.scenario_rng.next_range_i32_inclusive(0, 29)
             } else {
@@ -575,7 +582,7 @@ impl Simulation {
                 entity.restart_native_stage(
                     value,
                     self.session.binary_frame() as i32,
-                    i32::from(visceroid),
+                    i32::from(visceroid || drone),
                 );
             }
         }
@@ -613,9 +620,9 @@ impl Simulation {
         }
         if let Some(entity) = self.substrate.entities.get_mut(stable_id)
             && entity.category() == EntityCategory::Infantry
-            && entity.sight.is_zero()
+            && entity.seldom.sight.is_zero()
         {
-            entity.discovery.clear_current_discovery();
+            entity.seldom.discovery.clear_current_discovery();
         }
         // Then `InfantryClass::Unlimbo` marks the man's sub-cell through his
         // vt+0xF0 (`0x005217C0`) unless he was placed more than a deck above
@@ -633,14 +640,14 @@ impl Simulation {
             })
         {
             let terrain = context.terrain().or(self.resolved_terrain.as_ref());
-            let ground = crate::sim::movement::ground_pose::ground_surface_z_at(
+            let deck = crate::sim::movement::ground_pose::ground_surface_z_at(
                 [coord.x, coord.y],
-                false,
+                true,
                 terrain,
                 None,
             )
-            .unwrap_or(coord.z);
-            if coord.z <= ground.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS) {
+            .unwrap_or_else(|| coord.z.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS));
+            if coord.z <= deck {
                 crate::sim::movement::walk_head::raw_at(
                     &mut self.substrate.raw_cell_occupation,
                     owner,
@@ -680,7 +687,7 @@ impl Simulation {
                 .is_some_and(|entity| entity.category() == EntityCategory::Structure)
         {
             for &viewer in self.fog_viewers().iter() {
-                self.freeze_building_in_fog(viewer, stable_id, false, context);
+                self.freeze_building_in_fog(viewer, stable_id, false, context.reborrow());
             }
         }
         // Ares 3.0 BuildingClass_Put_FirestormWall (10014A70, hook
@@ -731,15 +738,15 @@ impl Simulation {
         }
         // Residual (invisible): native marks at 0x00440C34, before
         // 0x00440D07..0x00440D2D above; only House AI reads the marks.
-        self.mark_building_base_reservation_with_arg(stable_id, false, context);
-        self.light_building_at_unlimbo(stable_id, context);
+        self.mark_building_base_reservation_with_arg(stable_id, false, context.reborrow());
+        self.light_building_at_unlimbo(stable_id, context.reborrow());
         // Residual: 0x00440E02..0x00440E57. A LaserFencePost= building, in
         // the world and not in limbo outside the placement scope
         // (0x00A8E7AC), extends fence sections toward the posts in its four
         // directions (0x00452DC0 with 0, 2, 4, 6) and reconnects
         // (0x004533A0(1)). VERA has no fence sections: a mod's posts stand
         // without a fence between them. No retail type is LaserFencePost=.
-        self.discover_building_owner_after_unlimbo(stable_id, context);
+        self.discover_building_owner_after_unlimbo(stable_id, context.reborrow());
         // 0x00440E99..0x00440EB5: a type with NaturalParticleSystem=
         // (Type+0x764) and no system yet (+0x30C) builds one. No retail
         // BuildingType sets the key.
@@ -800,7 +807,11 @@ impl Simulation {
                 logic_registered = self.register_logic_object(stable_id);
             }
             // Unlimbo's AlphaShapeClass block follows the Logic registration.
-            self.construct_alpha_shape(stable_id, context.rules());
+            self.unlimbo_alpha_shape(
+                stable_id,
+                crate::sim::world::substrate::ObjectKind::Entity,
+                context.rules(),
+            );
         }
         // Building4415D8: successful normal Unlimbo after opening/base-plan.
         // The early dead/failed paths do not reach this call.
@@ -850,7 +861,7 @@ impl Simulation {
             })
             && let Some(entity) = substrate.entities.get_mut(stable_id)
         {
-            entity.ai_sell_repair.make_repairable();
+            entity.seldom.ai_sell_repair.make_repairable();
         }
     }
 
@@ -873,7 +884,7 @@ impl Simulation {
         };
         let (rx, ry) = (entity.position.rx(), entity.position.ry());
         let lit = self.session.uses_local_player_shroud()
-            && (entity.discovery.discovered_by_current_house()
+            && (entity.seldom.discovery.discovered_by_current_house()
                 || !self
                     .session
                     .current_house()

@@ -247,7 +247,7 @@ fn sim_for(row: &Value, rules: &RuleSet) -> (Simulation, InternedId) {
                 0,
                 0,
                 rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("the supplied factory object constructs");
         assert_eq!(
@@ -579,13 +579,13 @@ fn captured_secret_lab_grants_before_normal_tech_admission_and_retracts_on_loss(
         can_build(&sim, &rules, owner, product, false, true),
         CanBuild::No
     );
-    sim.change_owner_with_rules(lab, owner, &rules, None, Default::default());
+    sim.change_owner_with_rules(lab, owner, &rules, None, &mut Default::default());
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, true),
         CanBuild::Yes,
         "captured lab grant bypasses TechLevel=-1 and the unmet ordinary prerequisite"
     );
-    sim.change_owner_with_rules(lab, other, &rules, None, Default::default());
+    sim.change_owner_with_rules(lab, other, &rules, None, &mut Default::default());
     assert_eq!(
         can_build(&sim, &rules, owner, product, false, true),
         CanBuild::No

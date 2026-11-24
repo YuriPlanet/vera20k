@@ -33,7 +33,7 @@ fn run(sim: &mut Simulation, action: &RuntimeAction, rules: Option<&RuleSet>) ->
         &mut Vec::new(),
         rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 

@@ -113,7 +113,7 @@ fn country_starting_rank_reaches_held_construction_and_map_percent_overrides() {
                 0,
                 0,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         assert_eq!(

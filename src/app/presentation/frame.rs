@@ -81,6 +81,13 @@ pub(crate) struct ObjectRecord {
     pub(crate) body_frame_counter: crate::sim::animation::BodyFrameCounter,
     pub(crate) unit_firing_counter: crate::sim::animation::UnitFiringCounter,
     pub(crate) unit_death_counter: crate::sim::animation::UnitDeathCounter,
+    /// The Foot occupation enable (`+0x6B6`), which a still SHP Unit's body
+    /// image reads (`0x0073C6D5`).
+    pub(crate) foot_occupation_enabled: bool,
+    /// IsOnCarryall (`+0x424`): `UnitClass::DrawIt` draws a carried Unit's
+    /// body lower, and its SHP shadows higher, by
+    /// [`crate::app::presentation::instances::CARRIED_DROP_PIXELS`].
+    pub(crate) on_carryall: bool,
     pub(crate) turret_anim_frame: crate::sim::combat::gattling::TurretAnimCounter,
     pub(crate) health: crate::sim::combat::Health,
     pub(crate) veterancy: crate::sim::combat::veterancy::Veterancy,
@@ -88,6 +95,7 @@ pub(crate) struct ObjectRecord {
     pub(crate) deactivated: Deactivated,
     pub(crate) repairing: Repairing,
     pub(crate) lifecycle: crate::sim::world::ObjectLifecycle,
+    pub(crate) in_tube: bool,
     pub(crate) locomotor: Option<LocomotorView>,
     pub(crate) navigation: Navigation,
     pub(crate) last_fire_frame: crate::sim::combat::world_fire::LastFireFrame,
@@ -125,6 +133,12 @@ pub(crate) struct ObjectRecord {
     answers: Answers,
     /// [`RenderPose::read`] at the committed binary frame.
     pub(crate) pose: RenderPose,
+    /// PrimaryFacing (`+0x388`) at the committed binary frame as an SHP
+    /// Unit's body draw reads it: through `FacingClass::Current @ 0x004C93D0`
+    /// (called at `0x0073C636`), or under Ares through its own copy
+    /// (`UnitClass_DrawSHP_FacingsA`, Ares.dll `0x10048064..0x10048102`).
+    /// The pose's `body` is SecondaryFacing for a Fly locomotor.
+    pub(crate) shp_body_facing: u16,
     /// Its tether redraws (`instances::tether_redraw`).
     pub(crate) tether_draw: TetherDraw,
     /// What placing it reads of the world.
@@ -161,6 +175,7 @@ struct Answers {
     #[cfg(feature = "phobos")]
     is_power_plant_enhancer_active: bool,
     emp_remaining: i32,
+    is_under_emp: bool,
     #[cfg(feature = "phobos")]
     shield: Option<crate::sim::shield::ShieldState>,
     #[cfg(feature = "phobos")]
@@ -190,6 +205,7 @@ impl Answers {
             #[cfg(feature = "phobos")]
             is_power_plant_enhancer_active: entity.is_power_plant_enhancer_active(),
             emp_remaining: entity.emp_remaining(),
+            is_under_emp: entity.is_under_emp(),
             #[cfg(feature = "phobos")]
             shield: entity.shield().cloned(),
             #[cfg(feature = "phobos")]
@@ -316,6 +332,8 @@ pub(crate) struct Place {
     pub(crate) contact0: Option<Contact>,
     /// `presentation::lighting::body_extra_light`.
     pub(crate) extra_light: i32,
+    /// Infantry5192C9 reads the navigation cell for top lighting.
+    pub(crate) infantry_light_cell: Option<(u16, u16)>,
     /// Its action line's world endpoints
     /// (`target_lines::action_line_endpoints`).
     pub(crate) action_line: Option<crate::app::presentation::target_lines::SelectedActionLine>,
@@ -349,7 +367,7 @@ pub(crate) struct AirstrikeDesignation {
 impl AirstrikeDesignation {
     fn of(entity: &GameEntity, at: &Capture<'_>) -> Option<Self> {
         let id = entity.stable_id();
-        if !entity.airstrike.links_to(id) {
+        if !entity.seldom.airstrike.links_to(id) {
             return None;
         }
         Some(Self {
@@ -371,6 +389,7 @@ pub(crate) struct Contact {
 /// A Structure's `sim::building_art` answers for its own type.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct StructureArt {
+    pub(crate) invisible_in_game: bool,
     /// `building_image` without and with a Buildup.
     pub(crate) image: [crate::sim::building_art::BuildingImage; 2],
     /// `current_body_frame` at its type's tech level.
@@ -394,6 +413,7 @@ impl StructureArt {
             .gate
             .then(|| art.map_or(9, |entry| entry.building_gate_stages));
         Some(Self {
+            invisible_in_game: object.invisible_in_game,
             image: [
                 building_art::building_image(entity, false),
                 building_art::building_image(entity, true),
@@ -434,7 +454,8 @@ impl Place {
         // attack line of a `TargetLaser=` Unit, selected or not, are drawn
         // (`target_lines`, `target_laser_draws`).
         let draws_action_line = psychically_detected
-            || (entity.selection.is_selected() && entity.category() != EntityCategory::Structure)
+            || (entity.seldom.selection.is_selected()
+                && entity.category() != EntityCategory::Structure)
             || (entity.category() == EntityCategory::Unit
                 && entity.attack_target.target().is_some()
                 && at
@@ -464,6 +485,15 @@ impl Place {
             ),
             moving: crate::sim::movement::motion_query::is_moving(entity),
             center_xy: crate::sim::movement::ground_pose::object_center_xy(entity),
+            infantry_light_cell: (entity.category() == EntityCategory::Infantry)
+                .then(|| sim.foot_navigation_coordinate(entity.stable_id()).ok())
+                .flatten()
+                .map(|coord| {
+                    (
+                        crate::util::lepton::lepton_to_cell_packed(coord.x) as u16,
+                        crate::util::lepton::lepton_to_cell_packed(coord.y) as u16,
+                    )
+                }),
             world_z_leptons_off_map: crate::sim::movement::ground_pose::object_world_z_leptons(
                 entity, None,
             ),
@@ -502,6 +532,7 @@ impl Place {
             airstrike_laser_target_color: sim
                 .airstrike_laser_target_color(entity.stable_id(), at.rules()),
             contact0: entity
+                .seldom
                 .radio_contacts
                 .slot(0)
                 .and_then(|id| sim.entities().get(id))
@@ -541,7 +572,7 @@ impl Seen {
         let visual_character = entity.visual_character(
             observer.cloaking_stages,
             observer.invisible,
-            entity.discovery.owned_by_current_house(),
+            entity.seldom.discovery.owned_by_current_house(),
             crate::sim::cloak_disguise::VisualCharacterQuery::screen(
                 true,
                 observer.observer_present,
@@ -604,6 +635,8 @@ impl ObjectRecord {
             body_frame_counter: entity.body_frame_counter,
             unit_firing_counter: entity.unit_firing_counter,
             unit_death_counter: entity.unit_death_counter,
+            foot_occupation_enabled: entity.foot_occupation_enabled(),
+            on_carryall: entity.is_on_carryall(),
             turret_anim_frame: entity.turret_anim_frame,
             health: entity.health,
             veterancy: entity.veterancy,
@@ -617,6 +650,7 @@ impl ObjectRecord {
                 on: entity.building.repairing.is_on(),
             },
             lifecycle: entity.lifecycle,
+            in_tube: entity.low_bridge_tube_state.is_some(),
             locomotor: entity.locomotor.as_ref().map(|locomotor| {
                 LocomotorView::of(locomotor, || {
                     let type_name = at.sim.interner().resolve(entity.type_ref());
@@ -627,6 +661,8 @@ impl ObjectRecord {
                 nav_com: entity.navigation.nav_com(),
             },
             last_fire_frame: entity.last_fire_frame,
+            // The frame owns what it draws: the simulation moves on before
+            // the frame reaches the screen. Only a Structure holds art.
             building_art: entity.building_art.clone(),
             animation: entity.animation,
             miner: entity.miner.as_deref().map(|miner| Miner {
@@ -658,13 +694,13 @@ impl ObjectRecord {
             rocking: entity.rocking.as_ref().map(|_| ()),
             mission: Mission::of(&entity.mission),
             tether: Tether {
-                partner: entity.tether.partner().is_some(),
+                partner: entity.seldom.tether.partner().is_some(),
             },
-            disguise: entity.disguise,
+            disguise: entity.seldom.disguise,
             display_type_override: DisplayTypeOverride {
-                image: entity.display_type_override.image(),
+                image: entity.seldom.display_type_override.image(),
             },
-            selection: entity.selection,
+            selection: entity.seldom.selection,
             applied_fraction: entity.foot_speed.native_applied_fraction(),
             // Only an Aircraft can be a Carryall.
             drawn_cargo: (entity.category() == EntityCategory::Aircraft)
@@ -676,6 +712,11 @@ impl ObjectRecord {
             hud,
             scene,
             pose,
+            shp_body_facing: if at.rules().ares() {
+                entity.body_facing_current_ares(at.binary_frame)
+            } else {
+                entity.body_facing_current(at.binary_frame)
+            },
             tether_draw,
         }
     }
@@ -799,6 +840,11 @@ impl ObjectRecord {
 
     pub(crate) fn emp_remaining(&self) -> i32 {
         self.answers.emp_remaining
+    }
+
+    /// vt+0x37C IsUnderEMP ([`GameEntity::is_under_emp`]).
+    pub(crate) fn is_under_emp(&self) -> bool {
+        self.answers.is_under_emp
     }
 
     /// `GameEntity::voxel_recoil`, which the pose holds.
@@ -1171,7 +1217,7 @@ pub(crate) struct PresentationFrame {
     display_members:
         crate::util::sync::OnceLock<crate::app::presentation::display_members::DisplayMembers>,
     /// The Display order of the world this frame was captured from, built by
-    /// the first draw that asks ([`Self::display_order`]). The frame is
+    /// the first live-world read or before publishing a detached copy. The frame is
     /// dropped before that world can change, so every later draw of it reads
     /// the same order.
     display_order: crate::util::sync::OnceLock<

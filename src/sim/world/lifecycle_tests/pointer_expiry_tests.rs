@@ -184,7 +184,7 @@ fn nested_transport_parent_expiry_preserves_its_independent_cargo() {
                     // retaining the expired object's Alive and Health fields.
                     sim.object_conceal(1);
                 } else {
-                    sim.detach_all_pointer_expired(1, &rules, super::FrameEffects::default());
+                    sim.detach_all_pointer_expired(1, &rules, &mut super::FrameEffects::default());
                 }
             };
             if placement_scope {
@@ -230,12 +230,14 @@ fn uninit_pointer_expiry_walks_global_object_order_before_break_and_conceal() {
         .entities
         .get_mut(1)
         .unwrap()
+        .seldom
         .radio_contacts
         .insert(4);
     sim.substrate
         .entities
         .get_mut(4)
         .unwrap()
+        .seldom
         .radio_contacts
         .insert(1);
     sim.lifecycle_test_events.clear();
@@ -338,6 +340,7 @@ fn pointer_expiry_clears_live_target_and_navigation_refs() {
         .attack_target
         .set_for_test(Some(TargetKind::Entity(2)));
     listener
+        .seldom
         .suspended_attack_target
         .set_for_test(Some(TargetKind::Entity(2)));
     listener
@@ -358,7 +361,7 @@ fn pointer_expiry_clears_live_target_and_navigation_refs() {
 
     let listener = sim.substrate.entities.get(1).unwrap();
     assert!(listener.attack_target.target().is_none());
-    assert!(listener.suspended_attack_target.target().is_none());
+    assert!(listener.seldom.suspended_attack_target.target().is_none());
     assert!(listener.navigation.suspended_nav_com().is_none());
     assert!(listener.navigation.nav_com_aux().is_none());
     assert!(listener.navigation.nav_com().is_none());
@@ -383,7 +386,7 @@ fn occupier_capture_retains_live_non_selling_nav_target() {
         .unwrap();
 
     let listener = sim.substrate.entities.get_mut(1).unwrap();
-    listener.removal_facts.set_occupier_for_test(true);
+    listener.seldom.removal_facts.set_occupier_for_test(true);
     listener
         .navigation
         .set_suspended_nav_com_for_test(Some(NavTargetRef::Object { id: 2 }));
@@ -434,7 +437,7 @@ fn selling_target_disables_occupier_capture_nav_retention() {
         .unwrap();
 
     let listener = sim.substrate.entities.get_mut(1).unwrap();
-    listener.removal_facts.set_occupier_for_test(true);
+    listener.seldom.removal_facts.set_occupier_for_test(true);
     listener
         .navigation
         .set_nav_com_aux_for_test(Some(NavTargetRef::Object { id: 2 }));
@@ -464,6 +467,7 @@ fn target_expiry_rearms_passive_scan_and_restores_suspended_mission() {
         .attack_target
         .set_for_test(Some(TargetKind::Entity(2)));
     listener
+        .seldom
         .suspended_attack_target
         .set_for_test(Some(TargetKind::Entity(3)));
     listener
@@ -573,6 +577,7 @@ fn detach_sensor_guard_applies_to_techno_but_not_constructed_terrain() {
                 .attack_target
                 .set_for_test(Some(TargetKind::Entity(expired)));
             actor
+                .seldom
                 .suspended_attack_target
                 .set_for_test(Some(TargetKind::Entity(saved)));
             actor.set_archive_target(Some(TargetKind::Entity(expired)));
@@ -602,6 +607,7 @@ fn detach_sensor_guard_applies_to_techno_but_not_constructed_terrain() {
                 .attack_target
                 .set_for_test(Some(TargetKind::Entity(expired)));
             actor
+                .seldom
                 .suspended_attack_target
                 .set_for_test(Some(TargetKind::Entity(expired)));
             actor.set_archive_target(Some(TargetKind::Entity(expired)));
@@ -640,7 +646,7 @@ fn detach_sensor_guard_applies_to_techno_but_not_constructed_terrain() {
                 owner,
                 PointerExpiryControl::DetachAll,
                 &rules,
-                super::FrameEffects::default(),
+                &mut super::FrameEffects::default(),
             );
         }
         let actor = sim.substrate.entities.get(listener).unwrap();
@@ -669,7 +675,7 @@ fn detach_sensor_guard_applies_to_techno_but_not_constructed_terrain() {
             }
         );
         assert_eq!(
-            actor.suspended_attack_target.target(),
+            actor.seldom.suspended_attack_target.target(),
             Some(TargetKind::Entity(saved))
         );
         assert_eq!(
@@ -694,7 +700,7 @@ fn detach_sensor_guard_applies_to_techno_but_not_constructed_terrain() {
         let actor = sim.substrate.entities.get(references).unwrap();
         let retained = (!terrain_expires).then_some(TargetKind::Entity(expired));
         assert_eq!(actor.attack_target.target(), retained);
-        assert_eq!(actor.suspended_attack_target.target(), retained);
+        assert_eq!(actor.seldom.suspended_attack_target.target(), retained);
         assert_eq!(actor.archive_target(), None);
         let retained_nav = (!terrain_expires).then_some(NavTargetRef::object(expired));
         assert_eq!(actor.navigation.nav_com(), retained_nav);
@@ -724,7 +730,7 @@ fn detach_sensor_guard_applies_to_techno_but_not_constructed_terrain() {
                 owner,
                 PointerExpiryControl::DetachAll,
                 &rules,
-                super::FrameEffects::default(),
+                &mut super::FrameEffects::default(),
             );
         }
         let actor = sim.substrate.entities.get(listener).unwrap();
@@ -770,7 +776,7 @@ fn infantry_target_expiry_clears_firing_action_before_target() {
                 doing,
                 true,
                 &rules,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             )
             .unwrap()
         );
@@ -806,12 +812,14 @@ fn particle_system_retirement_clears_only_the_indexed_techno_spark_link() {
         .entities
         .get_mut(3)
         .unwrap()
+        .seldom
         .spark_particle_system
         .bind(Some(1));
     sim.substrate
         .entities
         .get_mut(4)
         .unwrap()
+        .seldom
         .spark_particle_system
         .bind(Some(2));
     sim.substrate
@@ -830,6 +838,7 @@ fn particle_system_retirement_clears_only_the_indexed_techno_spark_link() {
             .entities
             .get(3)
             .unwrap()
+            .seldom
             .spark_particle_system
             .system(),
         None
@@ -839,6 +848,7 @@ fn particle_system_retirement_clears_only_the_indexed_techno_spark_link() {
             .entities
             .get(4)
             .unwrap()
+            .seldom
             .spark_particle_system
             .system(),
         Some(2)
@@ -880,6 +890,7 @@ fn techno_spark_pointer_expiry_is_exact_and_independent_of_control() {
             .entities
             .get_mut(3)
             .unwrap()
+            .seldom
             .spark_particle_system
             .bind(Some(1));
         let before = [
@@ -903,13 +914,14 @@ fn techno_spark_pointer_expiry_is_exact_and_independent_of_control() {
             None,
             control,
             crate::rules::ruleset::RuleSet::empty_for_test(),
-            super::FrameEffects::default(),
+            &mut super::FrameEffects::default(),
         );
         assert_eq!(
             sim.substrate
                 .entities
                 .get(3)
                 .unwrap()
+                .seldom
                 .spark_particle_system
                 .system()
                 .map(|_| "system"),
@@ -1011,6 +1023,7 @@ fn completed_empty_smoke_limbo_clears_every_matching_techno_before_late_drain() 
             .entities
             .get_mut(id)
             .unwrap()
+            .seldom
             .damage_smoke_system_id
             .set_for_test(Some(smoke_id));
     }
@@ -1026,6 +1039,7 @@ fn completed_empty_smoke_limbo_clears_every_matching_techno_before_late_drain() 
             .entities
             .get(1)
             .unwrap()
+            .seldom
             .damage_smoke_system_id
             .system(),
         Some(4)
@@ -1046,6 +1060,7 @@ fn completed_empty_smoke_limbo_clears_every_matching_techno_before_late_drain() 
             .entities
             .get(1)
             .unwrap()
+            .seldom
             .damage_smoke_system_id
             .system(),
         Some(4)
@@ -1067,6 +1082,7 @@ fn completed_empty_smoke_limbo_clears_every_matching_techno_before_late_drain() 
                 .entities
                 .get(id)
                 .unwrap()
+                .seldom
                 .damage_smoke_system_id
                 .system(),
             None,
@@ -1078,6 +1094,7 @@ fn completed_empty_smoke_limbo_clears_every_matching_techno_before_late_drain() 
             .entities
             .get(3)
             .unwrap()
+            .seldom
             .damage_smoke_system_id
             .system(),
         Some(5)
@@ -1126,6 +1143,7 @@ fn completed_empty_smoke_limbo_clears_every_matching_techno_before_late_drain() 
             .entities
             .get(3)
             .unwrap()
+            .seldom
             .damage_smoke_system_id
             .system(),
         Some(5)
@@ -1310,6 +1328,7 @@ fn gsi_05_03_duplicate_uninit_repeats_direct_expiry_and_queue_but_finalizes_once
             .entities
             .get(1)
             .unwrap()
+            .seldom
             .kill_record
             .is_recorded()
     );
@@ -1423,6 +1442,7 @@ fn lifecycle_authority_uninit_records_once_and_the_drain_removes_the_tracking() 
             .entities
             .get(1)
             .unwrap()
+            .seldom
             .kill_record
             .is_recorded()
     );

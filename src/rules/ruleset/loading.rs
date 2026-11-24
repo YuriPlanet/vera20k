@@ -41,9 +41,9 @@ impl RuleSet {
 
     /// Project processed Rules into the game's rules, the Ares way when their
     /// registry reads that way (`ares_switch::ares_way`). The projection's
-    /// reader lookups are recorded, so the per-game Ares and Phobos switches
-    /// it stores ([`Self::ares`], [`Self::phobos`]) also count the keys only
-    /// these readers read.
+    /// reader lookups are recorded, so the per-game Ares, Phobos and Kratos
+    /// switches it stores ([`Self::ares`], [`Self::phobos`], [`Self::kratos`])
+    /// also count the keys only these readers read.
     pub fn from_processed_rules(processed: &ProcessedRulesLayers) -> Result<Self, RulesError> {
         let _ares_way = crate::rules::ares_switch::read_ares_way(
             processed.native_registry_state().reads_ares_way(),
@@ -51,9 +51,27 @@ impl RuleSet {
         let (rules, reads) = crate::rules::ares_switch::record(|| Self::project(processed));
         let mut rules = rules?;
         rules.ares = processed.ares_inputs().decide(&reads);
+        rules.ares_kept_off = processed.ares_inputs().kept_off(&reads);
         rules.phobos = crate::rules::phobos_switch::decide(&reads);
+        rules.kratos = processed.kratos_inputs().decide(&reads);
         rules.reads_ares_way = processed.native_registry_state().reads_ares_way();
+        rules.apply_ra2(crate::util::ra2_launch::enabled());
         Ok(rules)
+    }
+
+    /// Record whether this game plays RA2 Mode, with what each type keeps of
+    /// that answer ([`ObjectType::occupants_fire`]). The answer's one writer.
+    fn apply_ra2(&mut self, ra2: bool) {
+        self.ra2 = ra2;
+        for object in &mut self.object_list {
+            object.ra2_occupy_fire = ra2;
+        }
+    }
+
+    /// Test-only: play this game in RA2 Mode, or not, as a load would decide.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_ra2_for_test(&mut self, ra2: bool) {
+        self.apply_ra2(ra2);
     }
 
     fn project(processed: &ProcessedRulesLayers) -> Result<Self, RulesError> {
@@ -896,6 +914,7 @@ impl RuleSet {
         rules.project_house_masks();
         rules.rebuild_animation_sequences();
         rules.resolve_handles();
+        rules.rebuild_sound_names();
         Ok(rules)
     }
 
@@ -975,6 +994,14 @@ impl RuleSet {
         self.general.create_aircraft_sound = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "CreateAircraftSound", None));
+        // ReadAudioVisual 0x66b550..0x66b596 clears Rules+0x648, then reads
+        // IceCrackSounds with ReadSoundList525430 over the emptied list.
+        // Residual: the processed section keeps the last pass that set the
+        // key, where a later pass without it empties gamemd's list.
+        self.general.ice.crack_sounds =
+            ini.section("AudioVisual").map_or_else(Vec::new, |section| {
+                sounds.read_rules_sound_list(section, "IceCrackSounds")
+            });
         // Original66A763..66A973, in native read order for these bound fields. Use the same fixed
         // registry and history-aware reader as every other bound Voc ID.
         self.general.game_closed_sound = ini
@@ -1268,6 +1295,7 @@ impl RuleSet {
                 object.bind_sequence_sounds(sounds);
             }
         }
+        self.rebuild_sound_names();
     }
 
     pub(crate) fn bind_terrain_type_sound_references(
@@ -1452,6 +1480,11 @@ impl RuleSet {
             .section_or_empty("AI")
             .read_int("AIBaseSpacing", 1)
             .clamp(-AI_BASE_SPACING_LIMIT, AI_BASE_SPACING_LIMIT);
+        // Original-RA2 `[AI]` ore-scan radii (game.exe 0x0064D005/0x0064D025,
+        // ReadInt into RulesClass+0x13E0/+0x13E4; constructor default 0). YR
+        // has no such keys, so it reads the 0 default with no behavior change.
+        let tiberium_near_scan = ini.section_or_empty("AI").read_int("TiberiumNearScan", 0);
+        let tiberium_far_scan = ini.section_or_empty("AI").read_int("TiberiumFarScan", 0);
         // `DifficultyClass::ReadINI_IntVector @ 0x00475D70`, reached by
         // `RulesClass::ReadGeneral` for AISlaveMinerNumber
         // `0x00670585..0x006705B7`, AIExtraRefineries `0x006705F9..0x0067062A`
@@ -1466,6 +1499,39 @@ impl RuleSet {
         let allied_base_defense_counts = parse_difficulty_vector("AlliedBaseDefenseCounts");
         let soviet_base_defense_counts = parse_difficulty_vector("SovietBaseDefenseCounts");
         let third_base_defense_counts = parse_difficulty_vector("ThirdBaseDefenseCounts");
+        // Original RA2 hardcodes these three difficulty vectors in game.exe and
+        // does not print them into rules.ini (YR moved them to rulesmd.ini with
+        // the "formerly hardcoded" comment). With no INI value VERA would build
+        // empty vectors -> BasePlan preflight fails -> MCV deploy is refused and
+        // the AI never leaves its opening lull. Only the RA2 launch profile
+        // substitutes the native hardcoded values; YR data always carries the
+        // keys, so the YR path is untouched.
+        let (ai_slave_miner_number, ai_extra_refineries, third_base_defense_counts) =
+            if crate::util::ra2_launch::enabled() {
+                (
+                    if ai_slave_miner_number.is_empty() {
+                        vec![4, 3, 2]
+                    } else {
+                        ai_slave_miner_number
+                    },
+                    if ai_extra_refineries.is_empty() {
+                        vec![2, 1, 0]
+                    } else {
+                        ai_extra_refineries
+                    },
+                    if third_base_defense_counts.is_empty() {
+                        vec![25, 22, 6]
+                    } else {
+                        third_base_defense_counts
+                    },
+                )
+            } else {
+                (
+                    ai_slave_miner_number,
+                    ai_extra_refineries,
+                    third_base_defense_counts,
+                )
+            };
         // gamemd-derived: `RulesClass::Constructor @ 0x00666922` stores 20 at
         // +0xE0C; `RulesClass::ReadGeneral @ 0x006701D9..0x006701FE` reads the
         // signed `AINavalYardAdjacency=` override.
@@ -1908,6 +1974,7 @@ impl RuleSet {
             object_list,
             object_index,
             serial: next_rule_set_serial(),
+            sound_names: Default::default(),
             object_category_index,
             native_techno_type_order: Vec::new(),
             ares_techno_type_first: LookupMap::default(),
@@ -1978,6 +2045,8 @@ impl RuleSet {
             allied_base_defense_counts,
             soviet_base_defense_counts,
             third_base_defense_counts,
+            tiberium_near_scan,
+            tiberium_far_scan,
             ai_naval_yard_adjacency,
             initial_veteran,
             infantry_ids,
@@ -1990,7 +2059,10 @@ impl RuleSet {
             emp_sparkles: None,
             // Decided by `from_processed_rules` once its readers ran.
             ares: false,
+            ares_kept_off: false,
             phobos: false,
+            kratos: false,
+            ra2: false,
             reads_ares_way: false,
             ares_global_controls: processed.ares_global_controls().clone(),
             ares_mouse_cursors: processed.ares_mouse_cursors().clone(),
@@ -2017,6 +2089,7 @@ impl RuleSet {
             allied_wall_transparency,
             elevation_model,
             radiation,
+            radiation_site_warhead: None,
             #[cfg(feature = "phobos")]
             shield_types,
             #[cfg(feature = "phobos")]
@@ -2164,7 +2237,7 @@ fn project_country_side_registry<'a>(
         side_indices
             .entry(id.to_ascii_uppercase())
             .or_insert_with(|| {
-                SideIdx(u8::try_from(index).expect("[Sides] exceeds u8 identity space"))
+                SideIdx(u8::try_from(index).expect("SIDE_LIMIT keeps the Side registry within u8"))
             });
     }
     let mut country_ids = Vec::new();
@@ -2173,7 +2246,8 @@ fn project_country_side_registry<'a>(
     let mut rules = HashMap::new();
     for (id, section, color, side, parent, veteran) in countries {
         let index = CountryIdx(
-            u16::try_from(country_ids.len()).expect("[Countries] exceeds u16 identity space"),
+            u16::try_from(country_ids.len())
+                .expect("COUNTRY_LIMIT keeps the Country registry within u16"),
         );
         country_ids.push(id.to_owned());
         country_indices
@@ -2182,7 +2256,7 @@ fn project_country_side_registry<'a>(
         country_sides.push((side >= 0).then(|| {
             let index = usize::try_from(side).expect("nonnegative Side index");
             assert!(index < side_ids.len(), "retained Country Side exists");
-            SideIdx(u8::try_from(side).expect("[Sides] exceeds u8 identity space"))
+            SideIdx(u8::try_from(side).expect("SIDE_LIMIT keeps the Side registry within u8"))
         }));
         rules.entry(id.to_owned()).or_insert_with(|| {
             let mut fields = CountryRules::from_ini_section(section);
