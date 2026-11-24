@@ -284,6 +284,13 @@ impl<I> SavedSeedBrowserState<I> {
 
     /// The description edit as NewEdit paints it: the first shown unit is
     /// its `Top`, the focus the browser's own.
+    /// Android: the browser's own widget tree, whose focused `Edit` takes the
+    /// platform's text (`app::input::ime`).
+    #[cfg(target_os = "android")]
+    pub(crate) fn ime_ui(&self) -> &DialogController {
+        &self.ui
+    }
+
     pub fn edit(&self) -> NewEdit {
         let edit = self
             .node(EDIT)

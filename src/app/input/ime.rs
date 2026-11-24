@@ -225,6 +225,9 @@ enum GuiScreen {
     /// The WOL lobby's own dialog (`0x113`), which keeps its own GUI tree.
     WolLobby,
     Skirmish,
+    /// VERA's Setups page and the saved-seed browser, which keep their own
+    /// widget trees (`SavedSeedBrowserState::ime_ui`).
+    Setups,
     ChooseMap,
     /// The in-game `0xCF` page.
     InGamePage,
@@ -272,14 +275,21 @@ fn gui_screen(state: &AppState) -> Option<(GuiScreen, &vera20k_gui::Gui)> {
             Some((GuiScreen::ChooseMap, shell.gui()))
         }
         InputLayer::Screen(ScreenPage::NetworkSetup) => Some((GuiScreen::SetupRoom, shell.gui())),
-        // VERA's seed and Setups browsers keep their own trees, with no text
-        // entry of their own to route.
+        // VERA's Setups page (and the saved-seed browser) draw in their own
+        // trees: the platform's text goes to the page's own key path.
         InputLayer::Screen(ScreenPage::Skirmish)
-            if state.frontend.skirmish_shell_state.saved_seed_browser.is_none()
-                && state.frontend.skirmish_shell_state.setups_browser.is_none() =>
+            if state.frontend.skirmish_shell_state.setups_browser.is_some() =>
         {
-            Some((GuiScreen::Skirmish, shell.gui()))
+            let browser = state.frontend.skirmish_shell_state.setups_browser.as_ref()?;
+            Some((GuiScreen::Setups, browser.ime_ui().gui()))
         }
+        InputLayer::Screen(ScreenPage::Skirmish)
+            if state.frontend.skirmish_shell_state.saved_seed_browser.is_some() =>
+        {
+            let browser = state.frontend.skirmish_shell_state.saved_seed_browser.as_ref()?;
+            Some((GuiScreen::Setups, browser.ime_ui().gui()))
+        }
+        InputLayer::Screen(ScreenPage::Skirmish) => Some((GuiScreen::Skirmish, shell.gui())),
         InputLayer::Screen(ScreenPage::Wol) if lobby_shows(state) => Some((
             GuiScreen::WolLobby,
             crate::app::shell_wol::lobby::ime_gui(state)?,
@@ -347,10 +357,18 @@ fn gui_edit(state: &AppState) -> Option<(GuiScreen, GuiEdit)> {
 /// then take the keyboard (`util::android_ime::arm`).
 #[cfg(target_os = "android")]
 fn gui_armed(state: &AppState) -> bool {
-    state
-        .frontend
-        .shell_controller
-        .top_id()
+    let shell = &state.frontend.skirmish_shell_state;
+    let controller = gui_screen(state).and_then(|(screen, _)| match screen {
+        GuiScreen::Setups => shell
+            .setups_browser
+            .as_ref()
+            .map(|browser| browser.ime_ui())
+            .or_else(|| shell.saved_seed_browser.as_ref().map(|browser| browser.ime_ui())),
+        _ => None,
+    });
+    controller
+        .or_else(|| Some(&state.frontend.shell_controller))
+        .and_then(|controller| controller.top_id())
         .is_some_and(|dialog| crate::util::android_ime::armed(dialog.0))
 }
 
@@ -385,6 +403,13 @@ fn gui_key(state: &mut AppState, code: Option<winit::keyboard::KeyCode>, text: O
             // text goes through its text argument with Enter as the code.
             let code = code.unwrap_or(winit::keyboard::KeyCode::Enter);
             crate::app::App::handle_skirmish_shell_key_input(state, code, text);
+        }
+        GuiScreen::Setups => {
+            if state.frontend.skirmish_shell_state.setups_browser.is_some() {
+                crate::app::App::handle_skirmish_setups_key(state, code, text);
+            } else {
+                crate::app::App::handle_saved_seed_browser_key(state, code, text);
+            }
         }
         GuiScreen::ChooseMap => match code {
             Some(winit::keyboard::KeyCode::Backspace) => {
