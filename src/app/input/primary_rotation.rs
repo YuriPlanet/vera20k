@@ -14,10 +14,8 @@
 //! kind without one. Rotation sends nothing of that kind while an admitted
 //! order is on its way, even if the selection changes: until the factory it
 //! names is primary or the order has surely executed ([`command_executed_by`]).
-//! An order the command queue refuses is no order: the group keeps that turn
-//! and sends it again when the queue has room. The turns are quiet on this
-//! game: the
-//! "Primary building selected" line each order makes is skipped
+//! A full command queue or a scenario input lock leaves the turn owed.
+//! The local game skips each order's "Primary building selected" line
 //! ([`QuietSounds`](crate::app::match_audio::QuietSounds)).
 //!
 //! A group is local input state: it is not saved, the computer does not use
@@ -98,7 +96,9 @@ impl RotationGroup {
             }
             self.pending = None;
         }
-        if self.members.len() < 2 {
+        // A scenario can lock player input while its factories keep building.
+        // Leave the completion count untouched until orders are allowed again.
+        if self.members.len() < 2 || sim.session().input_locked() {
             return None;
         }
         let primary = self
@@ -516,6 +516,23 @@ mod tests {
         // The same turn is still due, and the freed queue admits it.
         let turns = rotation.check(&sim, &rules, owner, 16);
         assert_eq!(turns.len(), 1);
+        admit(&mut rotation, &mut sim, &rules, turns);
+        execute_only_toggle(&mut sim, &rules, b);
+    }
+
+    #[test]
+    fn a_completion_during_an_input_lock_rotates_after_unlock() {
+        let (mut sim, rules, owner, [a, b, ..]) = factories();
+        let mut rotation = PrimaryRotationState::default();
+        rotation.toggle(&sim, &rules, owner, &[a, b], 0).unwrap();
+        sim.session_mut_for_test().set_input_locked_for_test(true);
+        finish_infantry(&mut sim, owner);
+        let turns = rotation.check(&sim, &rules, owner, 8);
+        admit(&mut rotation, &mut sim, &rules, turns);
+        assert_eq!(sim.pending_local_command_count(), 0);
+
+        sim.session_mut_for_test().set_input_locked_for_test(false);
+        let turns = rotation.check(&sim, &rules, owner, 16);
         admit(&mut rotation, &mut sim, &rules, turns);
         execute_only_toggle(&mut sim, &rules, b);
     }
