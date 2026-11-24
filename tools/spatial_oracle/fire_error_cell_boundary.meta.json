@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Techno GetFireError early center-cell query boundaries.\n\nPhysical FV weapon/HE readers and supplied Unit/House lifecycle come from the\ncomposed fixture. Temporal-manager/limbo/lifted/cloak state are explicit controls,\nnot claimed ordinary empty-FV lifecycle producers.\n",
+  "assumptions": [
+    "Full original TechnoGetFireError body, supplied inherited setup and explicit special lifecycle fields. No gate/query/sensor return substitutions.",
+    "Three separate Cell486840 thenMap565730 controls execute original bodies with a supplied retained Cell/dummy identity and coordinates; this leaf is not itself a whole FireError invocation.",
+    "Target physical/missing-cellXYZ supplied; center identity retained by actual direct call. This FV receiver does not distinguish centerXY fromphysicalXY."
+  ],
+  "substitutions": [
+    "Only preparation boundaries inherited from composed fixture."
+  ],
+  "entry_points": {
+    "techno_fire_error": "0x006FC0B0",
+    "target_center_lookup": "0x006FC197",
+    "sensor": "0x004870D0",
+    "cell_center": "0x00486840",
+    "map_cell": "0x00565730"
+  },
+  "payload_sha256": "646ef98eb1c42eef66ca3799d90550f6c28f6d3726249d43f6f92074cc418be8"
+}

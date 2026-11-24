@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original theater545150 General integer reads and ordinal projection.\n\nThe complete56-read block545535..545C3F runs, including native defaults,\nread order, scalar parser and result stores. Supplied INI caches retain source\norder and duplicate records; original sort/search executes. This is not full\nINI file loading or a full theater/TMP loader. See the adjacent Markdown.\n",
+  "assumptions": [
+    "The complete contiguous56-read General block executes with a supplied loader frame and INI cache. Every call/default/key/result store is observed, with no replacement integer parser. Original executable bytes remain unchanged.",
+    "Physical six-theater General text comes from retail files whose full-file hashes are retained. Unique General section/keys are asserted. The supplied lexical boundary trims ASCII controls, strips entry comments, omits empty entries/sections and retains duplicate records; long physical lines are excluded.",
+    "INI CRC arrays preserve physical order and begin unsorted, so original native sort/search chooses duplicate winners. This covers only the stated bounded duplicate layouts; full physical INI loading, arbitrary duplicate/collision behavior and archive precedence are not certified.",
+    "All results are original signed DWORDs. Ten bridge piece globals retain them directly. Ordinal controls execute the original compare/publish block with explicitly supplied loop ordinal and cumulative base; they do not execute TMP construction, count accumulation, loader termination or later lunar global zeroing.",
+    "Seven ordinal controls retain three signed-width cases and add four controls within current u16 tile projections: all46 ordinal keys=$13 at ordinal19/base1234, plus mixed BridgeSet=$13, WoodBridgeSet=1, CliffSet=bogus and DestroyableCliffs=$nothex at ordinal/base0/0,1/7,19/1234.",
+    "Python success establishes bounded native evidence only. Production Rust reader comparisons and the release theater/map loader are separate validation obligations."
+  ],
+  "substitutions": [
+    "Shared Reader/Fixture supplies the original image, bump allocator, inert delete and CRT TLS context. Prepared INI records substitute physical archive/file loading; no Reader result is overridden."
+  ],
+  "entry_points": {
+    "theater_loader": "0x00545150",
+    "general_begin": "0x00545535",
+    "general_stop": "0x00545C3F",
+    "read_int": "0x005276D0",
+    "ordinal_projection_begin": "0x00545CEF",
+    "ordinal_projection_stop": "0x00545FA3"
+  },
+  "payload_sha256": "e6344cb99c13088707cea53a1f6c40529263b8bfecd01742be2a012baaae25fa"
+}

@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Foot applied-fraction clamp, including non-finite and signed-zero requests, and preservation across complete Drive/Ship construction and successful Drive END",
+  "assumptions": [
+    "Supplied disjoint owner/class memory, finite exactly representable fractions (setter-only rows: any double) and startup x87 state",
+    "Constructor global frame/null values use mapped image state; their runtime producers are excluded",
+    "END uses supplied owner-link/stash; caller release, active-slot replacement and callback admission are excluded"
+  ],
+  "substitutions": [
+    "No code patches, hooks returning call results, or omitted constructor callees"
+  ],
+  "entry_points": {
+    "setter": "0x004D3710",
+    "drive_constructor": "0x004AF540",
+    "ship_constructor": "0x0069EC50",
+    "common_constructor": "0x0055A6C0",
+    "drive_end": "0x004AF930"
+  },
+  "payload_sha256": "de2a237b9eeb143728a16538ce2700a097838bd36c5b860ff80715410a114746"
+}

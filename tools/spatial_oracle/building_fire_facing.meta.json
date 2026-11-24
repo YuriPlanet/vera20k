@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "BuildingClass vt+0x4E8 (0x43ED40), vt+0x308 (0x44D7D0) and vt+0x2A8 (0x445E50) over a BuildingClass with the row's Location, type flags, pixel offsets, TarCom and a +0x388 facing at rest",
+  "assumptions": [
+    "BuildingClass vtable 0x7E3EBC over zeroed memory; no upgrades (+0x702 = 0)",
+    "the unit target is ObjectClass GetCoords 0x5F65A0 behind a vtable holding only +0x48; Locations at Z 0",
+    "the Tactical matrix from the TacticalClass constructor initializer; FPCW 0x0E7F",
+    "+0x388 at rest: desired = start = the facing, duration 0, ROT 0x0A00"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "direction_to": "0x0043ED40",
+    "fire_facing": "0x0044D7D0",
+    "turret_facing": "0x00445E50",
+    "get_coords": "0x00447AC0",
+    "matrix_initializer": "0x006D1DC5"
+  },
+  "payload_sha256": "de70486b5dd23276293bd29f12c1cae01ebea84aaa17b08c4f50e5ceaf70f1c0"
+}

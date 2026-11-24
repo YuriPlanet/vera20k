@@ -1,0 +1,24 @@
+{
+  "assumptions": [
+    "Original native SoundList/types bind the physical FV MoveSound before the full UnitType reader. Original paid Unit/Foot/Drive/Fire AI executes unchanged. Only the isolated healthy native physical-map continuation is measured."
+  ],
+  "entry_points": {
+    "foot_ai": "0x004DA530",
+    "move_draw": "0x004DAACB",
+    "sound_reader": "0x00750440",
+    "sound_registry": "0x007510D0",
+    "unit_type_reader": "0x00747620"
+  },
+  "payload_sha256": "763dd1ccaddef13b76f7748940e03ea4a3ba458075616b773c2b8188a7942316",
+  "schema_version": 1,
+  "scope": "Original FV MoveSound binding and first native paid AI Main-RNG receipt.\n\nThis composes the existing selected sound reader with Paid before its original\nfull UnitType reader. Sound playback remains the inherited device boundary.\n",
+  "substitutions": [
+    "Inherited OS, asset IO and sound playback transport boundaries. No native sound index, RNG value, movement or firing result is replaced. Audio decoding/mixing and global audio RNG after playback entry are outside this receipt."
+  ],
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ]
+}

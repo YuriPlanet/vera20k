@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original FV InRange cell query order with explicit sparse-map controls.\n\nExecutes full6F7220 on the physical FV/HoverMissile inputs and original Object\nand Techno CRT initialization from bridge_target_composed. Map membership, dummy\nfields and placement are supplied; no query/flight/range return is substituted.\n",
+  "assumptions": [
+    "Six full original FV/nonarcing HoverMissile range calls, actual constructor/retail-reader preparation and Object/Techno CRT groups inherited from composed.",
+    "Supplied sparse Cell table adds real40,41 level1; target41,41 and optional source42,42 are missing and share the original Dummy. Dummy level1/slope0, flags and initial coordinate are explicit state.",
+    "All rows explicitly supply range/minimum fields (baseline1280/0, MinimumRange1000 and unlimitedRange-512). They are not physical HoverMissile tuning; original pre-override retail readback1536/256 is separately recorded. Target mark/OnBridge/XYZ and source coordinate argument are supplied.",
+    "No full map/object placement, movement, Building center/physical distinction, arcing or aircraft override claim."
+  ],
+  "substitutions": [
+    "Only original preparation input/allocation/OS boundaries inherited from composed; all claimed runtime instructions/callees run unchanged."
+  ],
+  "entry_points": {
+    "in_range": "0x006F7220",
+    "target_high_call": "0x006F7263",
+    "target_low_call": "0x006F732F",
+    "target_snap_floor": "0x006F7340",
+    "target_snap_flags": "0x006F7353",
+    "source_flags": "0x006F7601",
+    "source_floor": "0x006F7617"
+  },
+  "payload_sha256": "94841cd84737d133ee9fbc4ec5955cb4f22128289dcc6505a2089713a7963bed"
+}

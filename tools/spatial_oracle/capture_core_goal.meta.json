@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Six supplied matching Building/Capture NavCom states execute original Walk Process, Foot wrapper and Infantry CanEnter; stop before AStar execution and observe unchanged requested goal. No object-order producer, successful route, full Capture or Rust parity claim.",
+  "assumptions": [
+    "Inherited flat two-cell ordinary human Infantry fixture, original Cell setter followed by supplied matching Building NavCom and destination ground-object list. Building uses original7E3EBC vtable; all unused object state zero. Mission8 Capture and nonzero terrain speeds supplied. Target raw bits0/28/32 contrast; not a complete marked object population."
+  ],
+  "substitutions": [
+    "Stops at4CBBA0 before core executes. Inherited OS Interlocked count seams only; no reached gameplay callable result is supplied. The inherited astar_null seam is never reached because the observer stops first."
+  ],
+  "entry_points": {
+    "process": "0x0075AEC0",
+    "wrapper": "0x004D3920",
+    "can_enter": "0x0051BF90",
+    "core_boundary": "0x004CBBA0"
+  },
+  "payload_sha256": "db875e859b6c52ea8c5ebe13afc35496fa6b09d90c22a2fed714bd25374546b3"
+}

@@ -1,0 +1,327 @@
+//! World host of `AircraftClass::Mission_Enter @ 0x00419C80`
+//! (`aircraft::enter_mission`): the radio exchanges with the dock, the
+//! dock coordinate and the landing step.
+use super::{FrameEffects, Simulation};
+use crate::map::entities::EntityCategory;
+use crate::rules::ruleset::RuleSet;
+use crate::sim::aircraft::enter_mission::{self, EnterHost, EnterNav};
+use crate::sim::components::{DriveCoord, NavTargetRef};
+use crate::sim::mission::authority::LiveReadyInputProvider;
+use crate::sim::mission::{MissionId, MissionType};
+use crate::sim::movement::locomotor::MovementLayer;
+use crate::sim::movement::{air_movement, ground_pose};
+use crate::sim::radio::{self, RadioMessage, RadioResponse};
+use crate::sim::world::display_layers::DisplayLayer;
+
+/// How far a descending aircraft steps toward its dock per visit, in leptons
+/// along X and along Y (`0x00419F99..0x00419FC4`).
+const DOCK_STEP_LEPTONS: i32 = 5;
+
+impl Simulation {
+    /// One Mission_Enter visit of aircraft `id`; the frames it returns.
+    pub(crate) fn aircraft_mission_enter(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) -> i32 {
+        enter_mission::enter_visit(&mut WorldEnter {
+            sim: self,
+            id,
+            rules,
+            effects: effects.reborrow(),
+        })
+    }
+}
+
+/// A Mission_Enter visit's world.
+struct WorldEnter<'a> {
+    sim: &'a mut Simulation,
+    id: u64,
+    rules: &'a RuleSet,
+    effects: FrameEffects<'a>,
+}
+
+impl WorldEnter<'_> {
+    fn entity(&self) -> &crate::sim::game_entity::GameEntity {
+        self.sim
+            .substrate
+            .entities
+            .get(self.id)
+            .expect("aircraft dispatch")
+    }
+
+    fn transmit(&mut self, message: RadioMessage) -> RadioResponse {
+        radio::transmit_to_contact(self.sim, self.id, message, self.rules, &mut self.effects)
+    }
+}
+
+impl EnterHost for WorldEnter<'_> {
+    fn height(&mut self) -> i32 {
+        air_movement::current_fly_height(self.entity(), self.sim.resolved_terrain.as_ref())
+    }
+
+    fn airport_bound(&mut self) -> bool {
+        self.sim
+            .object_type(self.entity().type_ref(), self.rules)
+            .is_some_and(|object| object.airport_bound)
+    }
+
+    /// `Mission_Enter @ 0x00419C80`'s NavCom (`+0x5A4`) reads (`0x00419CA4`,
+    /// `0x00419D19`, `0x00419D37`, `0x00419D5D`); What_Am_I 6 is a Building.
+    fn nav_com(&mut self) -> EnterNav {
+        match self.entity().navigation.nav_com() {
+            None => EnterNav::None,
+            Some(NavTargetRef::Cell { .. }) => EnterNav::Other,
+            Some(NavTargetRef::Object { id }) => {
+                if self
+                    .sim
+                    .substrate
+                    .entities
+                    .get(id)
+                    .is_some_and(|object| object.category() == EntityCategory::Structure)
+                {
+                    EnterNav::Building(id)
+                } else {
+                    EnterNav::Other
+                }
+            }
+        }
+    }
+
+    /// The cell of the Location (`MapClass` lookup, the shared dummy cell
+    /// off the map, which holds nothing).
+    fn building_here(&mut self) -> Option<u64> {
+        let coord = ground_pose::position_world_coord(&self.entity().position);
+        let (x, y) = (coord.x / 256, coord.y / 256);
+        let (x, y) = (u16::try_from(x).ok()?, u16::try_from(y).ok()?);
+        self.sim
+            .substrate
+            .occupancy
+            .first_building_on_layer(x, y, MovementLayer::Ground)
+    }
+
+    fn dock(&mut self) -> Option<u64> {
+        self.entity().ammo().and_then(|ammo| ammo.dock())
+    }
+
+    fn set_dock(&mut self, dock: Option<u64>) {
+        self.sim.substrate.set_aircraft_dock(self.id, dock);
+    }
+
+    fn over_out(&mut self) {
+        self.transmit(RadioMessage::Break);
+    }
+
+    fn queue(&mut self, mission: MissionType, start: bool) {
+        let now = self.sim.session.binary_frame();
+        let _ = self.sim.mission_queue_exact(
+            self.id,
+            MissionId::from_known(mission),
+            i32::from(start),
+            now,
+            &LiveReadyInputProvider { rules: self.rules },
+        );
+    }
+
+    fn on_ground_layer(&mut self) -> bool {
+        self.sim.entity_display_layer(self.id, self.rules) == Some(DisplayLayer::GROUND)
+    }
+
+    fn docking(&mut self) -> bool {
+        self.transmit(RadioMessage::CanDock) == RadioResponse::Roger
+    }
+
+    fn approach_pending_entry(&mut self) -> bool {
+        crate::sim::docking::building_dock::park_pending_entry(
+            self.sim,
+            self.rules,
+            self.id,
+            &mut self.effects,
+        )
+    }
+
+    fn enter_idle_mode(&mut self) {
+        crate::sim::aircraft::enter_idle_mode_for(self.sim, self.id, self.rules, &mut self.effects);
+    }
+
+    /// Mission+0xBC as `Mission_Enter @ 0x00419C80` reads it (`0x00419DA9`).
+    fn state(&mut self) -> u32 {
+        self.entity().mission.handler_state()
+    }
+
+    /// Mission+0xBC, Mission_Enter's own stores (`0x00419DC3`, `0x00419E4C`,
+    /// `0x00419EF0`).
+    fn set_state(&mut self, state: u32) {
+        let entity = self.sim.substrate.entities.get_mut(self.id).unwrap();
+        entity.mission.set_handler_state(state);
+    }
+
+    /// `+0x6D4`, `Mission_Enter @ 0x00419C80`'s stores (`0x00419DCD..0x00419FFD`).
+    fn set_transition_ready(&mut self, ready: bool) {
+        let entity = self.sim.substrate.entities.get_mut(self.id).unwrap();
+        entity
+            .mission_leaf
+            .set_aircraft_transition_ready(u8::from(ready));
+    }
+
+    fn in_radio_contact(&mut self) -> bool {
+        !self.entity().seldom.radio_contacts.is_empty()
+    }
+
+    /// A missile's Rocket never Enters: no idle arm picks Enter for an
+    /// aircraft out of radio contact, and nothing links a missile.
+    fn status(&mut self) -> i32 {
+        air_movement::fly_status(self.entity()).unwrap_or(3)
+    }
+
+    /// `Mission_Enter @ 0x00419C80`'s `+0xB4 == -1` test (`0x00419E58`).
+    fn nothing_queued(&mut self) -> bool {
+        self.entity().mission.queued() == MissionId::NONE
+    }
+
+    fn clear_destination(&mut self) {
+        self.sim
+            .assign_aircraft_destination(self.id, None, self.rules, &mut self.effects);
+    }
+
+    /// `Mission_Enter @ 0x00419C80`'s state-7 step: NavCom `+0x5A4` (`0x00419F35`,
+    /// `0x00419F61`), clamped by 5 leptons (`0x00419F99..0x00419FC4`).
+    fn step_toward_nav_com(&mut self) {
+        let Some(nav) = self.entity().navigation.nav_com() else {
+            return;
+        };
+        let building = match self.nav_com() {
+            EnterNav::Building(id) => Some(id),
+            EnterNav::None | EnterNav::Other => None,
+        };
+        let terrain = self.sim.resolved_terrain.as_ref();
+        let target = match building {
+            Some(building) => crate::sim::movement::building_dock_coordinate(
+                &self.sim.substrate.entities,
+                building,
+                Some(self.id),
+                terrain,
+                self.rules,
+                &self.sim.interner,
+            ),
+            None => ground_pose::target_get_coords(
+                crate::sim::combat::TargetKind::from(nav),
+                self.sim,
+                terrain
+                    .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
+                    .as_ref(),
+            ),
+        }
+        .expect("a live NavCom has a coordinate");
+        let here = ground_pose::object_location(self.entity(), terrain);
+        let step = |to: i32, from: i32| {
+            to.wrapping_sub(from)
+                .clamp(-DOCK_STEP_LEPTONS, DOCK_STEP_LEPTONS)
+        };
+        let next = DriveCoord {
+            x: here.x.wrapping_add(step(target.x, here.x)),
+            y: here.y.wrapping_add(step(target.y, here.y)),
+            z: here.z,
+        };
+        self.sim.foot_set_location_marked(
+            self.id,
+            next,
+            self.rules,
+            Some(self.rules.overlay_registry()),
+            &mut self.effects,
+        );
+    }
+
+    fn dock_now(&mut self) -> i32 {
+        i32::from(self.transmit(RadioMessage::DockNow).code())
+    }
+
+    /// RESIDUAL: an aircraft receiver answers DOCK_NOW with 5 (`0x00419300`),
+    /// so an aircraft reaches this with another aircraft as its radio
+    /// contact. Natively its Limbo BREAKs that contact first, so the
+    /// AddPassenger that follows runs on a NULL contact's cargo
+    /// (`0x0041A036..0x0041A048`) and faults; VERA enters idle mode
+    /// instead, as any other answer does. Trigger: an aircraft docking with
+    /// an aircraft, which no order or team action forms.
+    fn board_contact(&mut self) {
+        self.enter_idle_mode();
+    }
+
+    /// The Carryall delivery (`0x0041A06D..0x0041A124`): the cargo's head
+    /// comes off the hold (`CargoClass::RemoveFirstPassenger`), the
+    /// Carryall BREAKs its dock, and the cargo HELLOs that dock. ROGER puts
+    /// it back at the head and drops it there between the Carryall's
+    /// Mark(UP) and Mark(DOWN) (`aircraft::carryall`); otherwise the Carryall
+    /// flies to its nearest friendly airfield. Move is queued either way.
+    ///
+    /// RESIDUAL (DRIFT): natively a cargo the dock refused stays out of the
+    /// hold, in limbo for good; VERA puts it back at the head. Trigger: a
+    /// loaded Carryall docking with a building whose HELLO refuses the
+    /// cargo.
+    fn deliver_cargo(&mut self) -> bool {
+        if !self.sim.is_carryall(self.id, self.rules) {
+            return false;
+        }
+        let contact = self.entity().seldom.radio_contacts.slot(0);
+        let Some((cargo, size)) = self
+            .sim
+            .substrate
+            .entities
+            .get_mut(self.id)
+            .and_then(|entity| entity.passenger_role_mut().cargo_mut())
+            .and_then(|hold| hold.unload_first())
+        else {
+            return false;
+        };
+        self.transmit(RadioMessage::Break);
+        let accepted = contact.is_some_and(|dock| {
+            radio::transmit(
+                self.sim,
+                cargo,
+                dock,
+                RadioMessage::Hello,
+                radio::RadioPayload::default(),
+                self.rules,
+                &mut self.effects,
+            ) == RadioResponse::Roger
+        });
+        let context =
+            crate::sim::world::UninitContext::new(self.rules).with_effects(&mut self.effects);
+        let _ = self
+            .sim
+            .add_cargo_passenger_chain(self.id, &[(cargo, size)], context);
+        if accepted {
+            self.sim.foot_mark_remove(
+                self.id,
+                self.rules,
+                Some(self.rules.overlay_registry()),
+                &mut self.effects,
+            );
+            self.sim.carryall_unload(
+                self.id,
+                self.rules,
+                Some(self.rules.overlay_registry()),
+                &mut self.effects,
+            );
+            self.sim.foot_mark_put(
+                self.id,
+                self.rules,
+                Some(self.rules.overlay_registry()),
+                &mut self.effects,
+            );
+        } else {
+            let airfield = self
+                .sim
+                .aircraft_nearest_friendly_airfield_cell(self.id, self.rules);
+            self.sim.assign_aircraft_destination(
+                self.id,
+                Some(airfield),
+                self.rules,
+                &mut self.effects,
+            );
+        }
+        self.queue(MissionType::Move, false);
+        true
+    }
+}

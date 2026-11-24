@@ -1,0 +1,285 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original FireAt FireOnce continuation and concrete team target release.\n\nThe existing Anytown FootMissions owner supplies construction, readers and world.\nThis additive fixture supplies the already-admitted FireAt caller frame, team\nroster/prior orders and accepted/refused Bullet result. It runs original cleanup\ninstructions; it does not establish the preceding shot or whole-scenario parity.\n",
+  "assumptions": [
+    "Unchanged Anytown FootMissions/Mission owners build the physical crop, source MTNK/E1, enemy candidate, class constructors, actual Drive/Walk factories, original scalar/type readers and Unlimbo/registration. Additional original IVAN/ENGINEER/HTNK type readers and constructors, weapon/projectile/warhead readers and original placement execute. The single supplied human House remains inherited.",
+    "Selected retail RULESMD, optional LANGRULE, stock MPBattleMD and XMP03T4.MAP strings pass through original INI readers using supplied lexical CRC caches. ARTMD is fixed. Physical GI/IVAN/ENGINEER SHPs load through the existing Reader file-buffer owner; no Rust-produced scalar initializes native type/weapon/action fields.",
+    "Each control restores actor/locomotor/weapon/team/Bullet and complete RNG baselines. Native setters produce member targets and destinations; then prior Attack1/queuedNone, team roster/pointers/focus, LeavingMap1, frame1337 and firer original DoAction FireUp4/firing1 or Ready0/firing0 are explicit supplied continuations. The non-Foot bit and FireOnce=no are synthetic controls, with the changed FireOnce key read by original772080.",
+    "Original6C5090 factory constructs a Bullet and returns its interface with the original COM reference count. The already-admitted accepted route begins at6FF749 with that supplied nonnull Bullet result. Refused BulletFire begins at6FF01A with supplied AL0; the failed ballistic route begins at6FF93C. Both must execute original Bullet466560 destruction/null result and the common FireOnce tail. No FireAt prefix, actual launch, bomb attach/defuse effect or input admission runs in these controls; refused and failed-ballistic results are not claims about stock Inviso Ivan launch frequency.",
+    "Original6E9050 queues Guard5 and calls original concrete member destination/target setters in linked member order, preserving unrelated focus/targets; the native FireAt pending write and final repeated firer target setter execute. Complete current/queued mission, action/path/timers, raw call/write order and all three RNG states are observations. Guard is queued; no TeamAI or immediate Script cursor step is executed.",
+    "The prepared Team storage is not a Team constructor/Add proof. Tests exclude outside-map target assignment, aircraft/buildings, spawned/temporal/airstrike/subordinate target lifecycles, deployment, other FireOnce weapons, world scheduling, persistence, rendering, audio-device and whole-engine/whole-scene parity. Native text and the actual actor/locomotor/Bullet class vtables are checked unchanged."
+  ],
+  "substitutions": [
+    "Inherited Mission/Reader successful bump allocation, inert operator-delete, CRT TLS/file buffers/INI caches, empty Windows SEH, wall-clock/atexit/ASCII/CLSID/Interlocked/OleRun/COM activation transports remain. Actual class constructors and concrete gameplay cleanup bodies are not substituted.",
+    "Existing native fixture visual asset/radar/audio sinks, cropped zone/theater input and single-House boundary remain. Team object/prior roster and FireAt caller/launch result are supplied; original queue, destination, action, target, RNG and timer results are never replaced."
+  ],
+  "entry_points": {
+    "accepted_fireat_common_tail": "0x006FF749",
+    "refused_bullet_fire_result": "0x006FF01A",
+    "failed_ballistic_cleanup": "0x006FF93C",
+    "fire_once": "0x006FF8F1",
+    "team_assign_mission_target": "0x006E9050",
+    "team_pending_write": "0x006FF91C",
+    "infantry_target": "0x0051B1F0",
+    "techno_target": "0x006FCDB0",
+    "queue_mission": "0x005B35E0",
+    "unit_destination": "0x00741970",
+    "infantry_destination": "0x0051AA40",
+    "foot_destination": "0x004D94B0",
+    "infantry_action": "0x0051D6F0",
+    "weapon_reader": "0x00772080",
+    "bullet_factory": "0x006C5090",
+    "bullet_destructor": "0x00466560",
+    "bullet_addref": "0x0046AFD0",
+    "bullet_release": "0x0046AFF0"
+  },
+  "commands": [
+    "python -m tools.projectile_oracle.fire_once --write",
+    "python -m tools.projectile_oracle.fire_once --check"
+  ],
+  "required_inputs": [
+    "VERA20K_GAMEMD_EXE",
+    "VERA20K_SHRAPNEL_INPUTS",
+    "VERA20K_ANYTOWN_INPUTS",
+    "VERA20K_FIRE_ONCE_INPUTS"
+  ],
+  "field_mapping": {
+    "current_frame": {
+      "address": "0x00A8ED84",
+      "format": "u32"
+    },
+    "house": {
+      "is_human": {
+        "offset": "0x1EC",
+        "format": "u8"
+      },
+      "player_control": {
+        "offset": "0x1ED",
+        "format": "u8"
+      }
+    },
+    "members": {
+      "abstract_flags": {
+        "offset": "0x14",
+        "format": "u32"
+      },
+      "health": {
+        "offset": "0x6C",
+        "format": "i32"
+      },
+      "alive": {
+        "offset": "0x90",
+        "format": "u8"
+      },
+      "limbo": {
+        "offset": "0x81",
+        "format": "u8"
+      },
+      "position": {
+        "offset": "0x9C",
+        "format": "3xi32",
+        "units": "world leptons"
+      },
+      "on_bridge": {
+        "offset": "0x8C",
+        "format": "u8"
+      },
+      "locomotor_head": {
+        "base": "member+0x674 interface",
+        "offset": "Walk+0x24 or Drive+0x3C",
+        "format": "3xi32",
+        "units": "world leptons"
+      },
+      "target": {
+        "offset": "0x2B4",
+        "format": "pointer label"
+      },
+      "destination": {
+        "offset": "0x5A4",
+        "format": "pointer label"
+      },
+      "archive": {
+        "offset": "0x218",
+        "format": "pointer label"
+      },
+      "mission": {
+        "offset": "0xAC",
+        "format": "i32"
+      },
+      "queued_mission": {
+        "offset": "0xB4",
+        "format": "i32"
+      },
+      "status": {
+        "offset": "0xBC",
+        "format": "i32"
+      },
+      "mission_visit": {
+        "offset": "0xC4",
+        "format": "u32"
+      },
+      "burst": {
+        "offset": "0x3B8",
+        "format": "u32"
+      },
+      "rearm_timer": {
+        "offset": "0x2EC",
+        "format": "3xi32"
+      },
+      "dispatch_timer": {
+        "offset": "0xC8",
+        "format": "3xi32"
+      },
+      "targeting_timer": {
+        "offset": "0x180",
+        "format": "3xi32"
+      },
+      "idle_timer": {
+        "offset": "0x168",
+        "format": "3xi32"
+      },
+      "doing": {
+        "offset": "0x6C4",
+        "format": "i32",
+        "applies_to": "Infantry only; null for Unit"
+      },
+      "firing": {
+        "offset": "0x68D",
+        "format": "u8"
+      },
+      "scan": {
+        "offset": "0x688",
+        "format": "u8"
+      },
+      "path": {
+        "offset": "0x5E0",
+        "format": "24xi32"
+      },
+      "path_reference": {
+        "offset": "0x558",
+        "format": "2xi16"
+      },
+      "sequence_timer": {
+        "offset": "0x100",
+        "format": "4xi32"
+      },
+      "frame_f8": {
+        "offset": "0xF8",
+        "format": "i32"
+      },
+      "movement_timer": {
+        "offset": "0x640",
+        "format": "3xi32"
+      },
+      "movement_retry": {
+        "offset": "0x64C",
+        "format": "i32"
+      },
+      "nav_queue_count": {
+        "offset": "0x598",
+        "format": "u32"
+      }
+    },
+    "team": {
+      "mission_target": {
+        "offset": "0x3C",
+        "format": "pointer label"
+      },
+      "focus": {
+        "offset": "0x40",
+        "format": "pointer label"
+      },
+      "advance_pending": {
+        "offset": "0x80",
+        "format": "u8 boolean"
+      },
+      "is_leaving_map": {
+        "offset": "0x82",
+        "format": "u8 boolean"
+      }
+    },
+    "rng_stream": {
+      "disabled": {
+        "offset": "0x0",
+        "format": "u8 then three padding bytes"
+      },
+      "index_a": {
+        "offset": "0x4",
+        "format": "i32"
+      },
+      "index_b": {
+        "offset": "0x8",
+        "format": "i32"
+      },
+      "state": {
+        "offset": "0xC",
+        "format": "250xu32"
+      }
+    },
+    "bullet_factory_refcount": {
+      "offset": "0x1C",
+      "format": "u32",
+      "source": "Original46AFD0/46AFF0 Interlocked increment/decrement operand"
+    },
+    "timer_words": "Three words are start-frame, raw unused native auxiliary, duration; Sequence adds its repeat rate as word four (DoAction copies selected duration into it). Auxiliary words retain copied caller scratch as observations, not authoritative Rust timer state. Original51DA3A loads uninitialized caller[ESP+10];51DA3E copies it to Sequence+104. Rust imports/compares timer words0/2 and Sequence rate3.",
+    "pointer_labels": "null is NULL; old_target is the original placed HTNK; other_target is the inherited original enemy MTNK. Member roles follow supplied.member_order and type_id; unit_unrelated is E1 despite its stable role name."
+  },
+  "physical_files": [
+    {
+      "name": "RULESMD.INI",
+      "bytes": 743215,
+      "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+    },
+    {
+      "name": "LANGRULE.INI",
+      "absent": true
+    },
+    {
+      "name": "MPBattleMD.ini",
+      "bytes": 295,
+      "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963"
+    },
+    {
+      "name": "XMP03T4.MAP",
+      "bytes": 156269,
+      "sha256": "7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e"
+    },
+    {
+      "name": "ARTMD.INI",
+      "bytes": 336535,
+      "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31"
+    },
+    {
+      "name": "SOUNDMD.INI",
+      "bytes": 99392,
+      "sha256": "0a8e85381aef1a0f97074c953bfe99504da00c6220fae1a023a1afd857023232"
+    },
+    {
+      "name": "TEMPERATMD.INI",
+      "bytes": 25269,
+      "sha256": "bf656852ad19636068f2dde6f9ddd1440ecf0e13e6e4de6cd7fb179a3592549d"
+    },
+    {
+      "name": "GI.SHP",
+      "bytes": 186032,
+      "sha256": "bceaee9c270d6382d80d509f2c4b2893c10565f779096b3add37a4d5321e8be1"
+    },
+    {
+      "name": "IVAN.SHP",
+      "bytes": 118504,
+      "sha256": "4a78fb72494d380cdd34fa89bebf7f4c6c2270724202c3b6811340af66bc7959"
+    },
+    {
+      "name": "ENGINEER.SHP",
+      "bytes": 114032,
+      "sha256": "f8eb0dc0156a877028ac2ed57bf2e71a9445ffcb6ef6a4caf3b0dbb7b111834c"
+    }
+  ],
+  "payload_sha256": "925917509bba7bcb399b360794fad7f097ba6d95016d8c6efa62fd71b643c8f9"
+}

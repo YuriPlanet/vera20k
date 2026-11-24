@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original zero-Health Infantry517FA0, Unit737C90, Aircraft4165C0 -> Foot/Techno/Object -> death-weapon producer70D690 entry",
+  "assumptions": [
+    "Health0, Alive0/1, Type.Explodes1, stock-Super InfDeath2, nullsource/house, forcedtrue/true",
+    "Shared supplied state/virtual results from bridge_zero_health_receiver; no DieSound entries",
+    "Producer body and repeated detonation are excluded; no complete explosion parity claim"
+  ],
+  "substitutions": [
+    "Supplied predicate/Type/mission/height/emptyWeaponRecord virtual results as disclosed by bridge_zero_health_receiver",
+    "No original receiver instructions replaced; producer70D690 is a stop boundary, not a return-value substitution"
+  ],
+  "entry_points": {
+    "infantry_receive": "0x00517FA0",
+    "unit_receive": "0x00737C90",
+    "aircraft_receive": "0x004165C0",
+    "foot_receive": "0x004D7330",
+    "techno_receive": "0x00701900",
+    "object_receive": "0x005F5390"
+  },
+  "payload_sha256": "0f018e5a8a5b4cca71117276a6695868f6d10c6b5d5a3a7a1351ca54ec801ddd"
+}

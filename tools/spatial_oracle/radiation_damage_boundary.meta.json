@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Independent original RadSite warhead percentage reader, Radiation reader, flat-map RadSite spread, Foot radiation admission/producer and direct Object nonlethal receiver. Six bounded rows; no whole Radiation or concrete Techno receiver parity claim.",
+  "assumptions": [
+    "Synthetic radiation_rules fixture input: eleven authored Verses tokens, RadLevelFactor .2, application delay16, cap500, level500/spread2, flat cells3..7 around5,5, fresh objecthealth300 and armor0/5. These are explicit regression inputs, not a claim of full retail layer loading.",
+    "Original Warhead factory/constructor and complete selected scalar/Verses blocks75DDCC..75DE5A execute. Full original Rules Radiation reader66CF70 executes using supplied lexical INI indexes; original CRT floating scanner initialization executes. FPCW0E7F.",
+    "Original spread/radius setter65B4D0, level/duration setter65B4F0 and full25-cell spread65B9C0 execute using original Cell vtables/getters and map lookup5657A0. Fresh zeroed cell radiation fields. No light activation or site AI/decay scheduling.",
+    "Foot4DA554 begins after its ordinary TechnoAI/alive prologue, with valid fresh nonimmune ground Infantry/Unit objects and EBX0; stops before concrete ReceiveDamage4DA629 or at no-application continuation4DA63B. Exact damage ABI asserted: distance0, selectedwarhead, source0, ignoredefenses0, arg6true, sourcehouse0.",
+    "The emitted base then independently enters original kernel489180 and original Object5F5390 nonlethal receiver, retaining actual Infantry/Unit object/type vtables. Concrete Infantry/Unit/Techno receivedamage modifiers and downstream nonlethal effects are not executed. This fixture corresponds to ordinary unranked targets with neutral effective modifiers, but does not prove those omitted gates.",
+    "Rows atframes15/16/17 are independent fixtures, not native elapsed-site scheduling. No source in this comparison emits RNG draws; site duration stores are from original65B4F0. No death/detach calls are reached.",
+    "Native side cell stores299.99999999999994, clamps/truncates299 and emits59. Rust currently stores300 and emits60; both resolve5 versus corrected10%heavy. Native RadLevelFactor ReadDouble bits3fc99999a0000000 differ from current directf64 parser. These are separately recorded unresolved radiation prerequisites, not matching intermediates."
+  ],
+  "substitutions": [
+    "Landing reader helper supplies cached lexical INI entries/CRC indexes, allocator bump storage, no-op delete and CRTTLS storage. No original executable instructions replaced.",
+    "Fixture supplies sparse actual map cell table, explicit instance/type memory and neutral scenario/rules state. Receiver entry is selected explicitly after capturing original Foot arguments; no claim that the intervening concrete receiver body executed."
+  ],
+  "entry_points": {
+    "warhead_verses": "0x0075DDCC",
+    "radiation_reader": "0x0066CF70",
+    "spread_setter": "0x0065B4D0",
+    "level_setter": "0x0065B4F0",
+    "spread": "0x0065B9C0",
+    "foot_gate": "0x004DA554",
+    "cell_level": "0x00487CB0",
+    "foot_receiver_call": "0x004DA629",
+    "warhead_damage": "0x00489180",
+    "object_receiver": "0x005F5390"
+  },
+  "payload_sha256": "363a15ac771f714959d723c97ea6da887139cf4f8d5bcfddd5ce172269577b4f"
+}

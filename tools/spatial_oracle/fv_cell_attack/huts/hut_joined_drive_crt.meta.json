@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "original_execution_metadata_sha256": "52742177f69f4cd77308d66ffee2c5ae3e23fd55b6d14de1f42920cc6b3bd566",
+  "original_payload_sha256": "978dd539e84fad3cef4dd2fbe7af5a10956060e775e5aedbe294378986d325c0",
+  "scope": "Original FV paid movement/fire/collapse with both actual physical Anytown CABHUT Structures rows and full Building AI, followed by admitted bridge repair.",
+  "boundaries": [
+    "Extends the existing paid_world.Paid owner. Its physical whole-map Cell/TMP/Terrain/graph, supplied human FV House, Unit/Drive/command/Logic/Bullet/Anim and declared OS/asset boundaries remain unchanged. This packet is a separate composition and does not replace the no-Building paid golden.",
+    "The original CABHUT type constructor45DD90 and full45FE50 reader execute all applicable retail rules layers plus ART CABHUT. Original45B1C0 initializes the Foundation table. Original Neutral country511850 reader and full House4F54A0 execute. The existing stock_csf parser supplies only two physical CSF cached strings; original734E60 lookup and binary search execute. Full archive/CSF initialization is excluded.",
+    "Original Basic NewINIFormat4 read/store and full Building map reader44F820 consume the two exact physical Structures rows for huts85,58 and89,51, including full43B740 construction,440580 placement and authored flags. Other physical Buildings, Units, Infantry, ambient Anim and Terrain live-AI are excluded. Initial physical Terrain placement remains the existing paid boundary.",
+    "Huts are constructed after the FV command at frame1, so actual native IDs, constructor RNG and append order reflect this declared boundary rather than ScenarioLoad chronology. Neutral is the only constructed House registry entry; the inherited source House remains supplied. Full House/global Scenario phases are excluded.",
+    "Both full BuildingAI43FB20 objects execute in original live Logic order through both Bullet impacts and effect drain. Original NotifyBridgeSpanCollapse575EE0 and global Techno target detach70D4A0 execute with actual huts. Original573540 is then invoked at the established admitted repair start; this is not a new Engineer admission/lifecycle witness.",
+    "OS InterlockedIncrement/Decrement at4A0535/4A0557 transport preserves the atomic count and return value for this single-threaded original COM lifetime; native gameplay instructions and returns are not patched. Three full RNG streams, all source/Drive/hut bytes, memberships, object IDs, callbacks and original.text identity are retained.",
+    "Every replay freshly executes all four physical states via the existing original Navigation owner and compares all frozen cells/planes/graphs before selecting damaged. No external heap cache or pickle input is supported."
+  ],
+  "physical_asset_sha256": {
+    "CTBHUT.SHP": "945216ab1eba7e34e6785fd54e916d096a6df4dee1df1052094e0b68f02630ff"
+  },
+  "publication_changes": [
+    "Copied lexical INI dictionaries/lines become SHA256 through the shared FV publication owner. Original Drive CRT startup precedes construction; the historical image-zero packet remains preserved as superseded evidence.",
+    "Drive startup is the gameplay prerequisite correction; historical execution metadata remains in original_execution.meta.json."
+  ],
+  "payload_sha256": "4a99920c8ec07a2817c963c45132f1658afe2be847e83b71593659555921cdd2",
+  "packaging": "canonical JSON; gzip mtime=0; copied lexical inputs replaced by SHA256"
+}

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Pure Rust projection of the joined original Shrapnel occupant execution.\n\nHouse active-unit totals are native+5574 reads, not EntityStore storage counts.\nOrdered memberships replace aggregate actor-only Logic/Display counts; original\nglobal/per-type counts and absolute native IDs remain in the full native packet.\n",
+  "assumptions": [
+    "Shared project_cases extracts every receiver/timer/RNG result without calculating a gameplay outcome. Complete words/indices for Main/Scenario/MapGen come directly from the native packet.",
+    "House+5574 is compared to HouseTracking active-unit total after subtracting unrelated production-scene units. Raw native per-type inventory+5564 remains full-packet evidence; it is not compared to EntityStore insert/remove storage counts.",
+    "Native ordered Logic, five Display layers and Anim registry use canonical actor/constructor identities. No membership is inferred from Alive/Limbo. Actor-only aggregate counts are omitted because joined constructors admit live Anims.",
+    "Absolute native constructor IDs/cursor remain in the full packet. The Rust projection subtracts the explicitly supplied pre-controller cursor to compare same-call allocation order without claiming whole ScenarioLoad ID parity.",
+    "Constructor requests/results and raw Bouncer fields are retained. No later AnimAI, Bouncer contact, audio playback, complete Logic tick or whole-world initialization parity is claimed."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "occupants": "0x00487A10",
+    "anim_constructor": "0x00421EA0",
+    "bounce_init": "0x004397E0",
+    "anim_start": "0x00424CE0"
+  },
+  "source_files": {
+    "occupants_joined.json.gz": "b3f72c9d9f6b6f47bd937c47609489f89b72aec8bed9a9c9400435c42ac8a3b3",
+    "occupants_joined_promotion.json": "b6469e803fd0f7bf9b7f659e2c9583fe6199084fe9def63e1e50860747013056"
+  },
+  "payload_sha256": "dc858b888b08d57b5b11764f3cee2e8ddcd949649b3d01ddd2796b47908e66f2"
+}

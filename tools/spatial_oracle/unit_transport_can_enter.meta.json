@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Bounded Unit737430 Receive_Radio0F from supplied live transport/passenger state; cargo Size accumulation and capacity/SizeLimit comparisons execute.",
+  "assumptions": [
+    "Reuses refinery_dock actual Drive/Cell/scenario fixture and unchanged Unit/Infantry vtables. House indexes/one-way alliance, live sender flags, cargo links and selected Size/Passengers/SizeLimit fields are supplied, not retail-reader receipts. Constructor/read/physical arrival/radio transmit and passenger attachment lifecycles are excluded.",
+    "Actual Unit receiver0F, alliance/warp/GetCell/building/mind-control/controller/type queries and cargo linked-list sum/ftol execute without supplied query replies. Fractional current-type binary64 sender Size and SizeLimit boundaries are direct consumer inputs, not outputs of ReadDouble. The existing zero SizeLimit row records native rejection for a positive sender. Scenario RNG and original text remain unchanged.",
+    "Each case executes original WinMain controlfp/cache fragment 006BBFB7..006BBFCE from initial word027F; live FPCW and cached [00822D80] are checked as0E3F before Unit737430."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "unit_receive": "0x00737430",
+    "is_ally_by_object": "0x004F9A90",
+    "ground_cell_building": "0x0047C520",
+    "is_mind_controlled": "0x007105E0",
+    "is_controlling": "0x004722C0",
+    "cargo_total_size": "0x00473460",
+    "ftol": "0x007C5F00",
+    "winmain_fpcw": "0x006BBFB7"
+  },
+  "replay_command": "python -m tools.spatial_oracle.unit_transport_can_enter",
+  "payload_sha256": "2ab4f1863b9908339f7cd73e5ca40fc84c7b652d06b6f988964ce7ddd24434fe"
+}

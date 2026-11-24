@@ -1,0 +1,59 @@
+{
+  "schema": 1,
+  "checked_at_utc": "2026-09-28T00:02:50.063155+00:00",
+  "golden_sha256_before_and_after": "5fa78bbbdfadbc1a92d96b2d9000c3eac4c63b702abae86ad7d61af0315330c2",
+  "golden_byte_identical": true,
+  "cases": 158,
+  "all_candidate_payload_fields_match": true,
+  "candidate_key_order": "Shared writer normalizes key order; original checked-in formatting retained.",
+  "region_sha256": {
+    "set_height": "53c69322142504313aa6759e283116f57d30a2f116dbece8ce94a6f0b9e738d4",
+    "get_height": "e41ad7a8db28ae266425fee0e354225a17f8325c1223cd48834a4d85d9e7c248",
+    "ground_lookup": "6619a9891d133f15c4e28355c42eb67baf396e0bc6532ba40b416b7e0fd0c7c7",
+    "ground_evaluator": "8d39a020e0badbb7fe79770e9f5d8c8f48904276a3c8ce2402d5f53970878475",
+    "unit_type_adjust": "2ae1bd8cb4874f5a05e6ce9ad92a6cc80538e623967f6d9a12ad731330d7c51f",
+    "infantry_type_adjust": "1ba50512f5b74ff4b6c8f437c21efd78ca3571cc3b9179a888991891daabc2c8"
+  },
+  "native_commands": [
+    "python -m tools.ramp_height_oracle --write --output <candidate.json>",
+    "python -m tools.ramp_height_oracle --check",
+    "python -O -m tools.ramp_height_oracle --check"
+  ],
+  "native_commands_passed": true,
+  "python_tests": {
+    "command": "python -m tools.run_tests",
+    "total": 257,
+    "passed": 255,
+    "skipped": 2,
+    "skip_reason": "Unchanged documented optional sealed Windows/retail checks."
+  },
+  "rust_regression": [
+    {
+      "command": "python -m tools.cargo_run -- test -p vera20k --lib live_surface_and_coordinate_setter_match_all_native_ramp_vectors",
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "command": "python -m tools.cargo_run -- test -p vera20k --lib live_raw_bridge_height_preserves_native_signed_deck_byte_and_dummy_identity",
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "command": "python -m tools.cargo_run -- test -p vera20k --lib moving_ramp_snapshot_continues_residual_bridge_crossing_through_paid_points",
+      "passed": 1,
+      "failed": 0
+    }
+  ],
+  "coverage_limits": [
+    "All158ground values directly compared. Rust coordinate commit compares native_raw.wrapping_sub(requested_height), testing production zero-height requests, not arbitrary requested-height setters. Getter/placement outputs are retained native observations, not all Rust compared.",
+    "Supplied initialized cells, 104/416-lepton constants, IsMarked=false and live/cached FPCW0E7F. No whole-locomotor, world-entry callback, occupation or rendering parity claim.",
+    "RNG, timers and detach are outside this oracle; no gameplay Rust changed.",
+    "Bridge consumer compares six slope-normalized deck-byte encodings and shared dummy identity, not full signed world-coordinate integration."
+  ],
+  "independent_review": {
+    "passes": 1,
+    "actionable_implementation_defects": 0,
+    "clarification_applied": "Explicitly documented zero-height projection and bounded bridge normalization instead of claiming arbitrary setter/signed-world parity.",
+    "independent_checks": "Normal and optimized native replay, all158payloadrows, unchangedgolden/sourceidentities, sevenfocusedPythonlifecycle/failuretests."
+  }
+}

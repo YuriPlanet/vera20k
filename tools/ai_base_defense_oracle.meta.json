@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "computer base defense choice: coverage spread, defense site key, enemy threat ratios and draws, whole AI_ChooseNextProduction runs without a perimeter vector, and whole FindBaseBuildingSite searches with the defense key on synthetic 64x64 maps",
+  "assumptions": [
+    "fresh emulator per case; fixture House/Rules/Type layouts from live disassembly",
+    "x87 control word 0x0E7F (53-bit chop), the process word ftol callers assume",
+    "BuildingClass objects use the original vtable 0x7E3EBC"
+  ],
+  "substitutions": [
+    "RandomRanged 0x65C7E0 answers from a seeded generator within its range",
+    "HouseTypeClass::FindIndexOfName 0x5117D0 answers country 3",
+    "FindBaseBuildingSite 0x5060B0 answers the row site in the choose section",
+    "operator new/delete and atexit are fixture stubs",
+    "MapClass::operator[] 0x5657A0 answers synthetic cells; CheckOccupancy 0x586780 and CanPlaceAt vt+0xA8 answer a blocked-cell/unplaceable-site model"
+  ],
+  "entry_points": {
+    "coverage_spread": "0x00506D50",
+    "defense_key": "0x00505FD0",
+    "AI_UpdateEnemyThreatRatios": "0x00508150",
+    "AI_ChooseNextProduction": "0x00506EF0",
+    "FindBaseBuildingSite": "0x005060B0"
+  },
+  "payload_sha256": "6253f82490b67a4e798f44e6fda84ae2eb731bd10c5f488366c9591694671de3"
+}

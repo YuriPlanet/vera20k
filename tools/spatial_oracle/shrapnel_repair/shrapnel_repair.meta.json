@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Bounded original ordinary repair composed over physical Shrapnel projection.\n\nNo native scenario loader or already-admitted Engineer prefix is claimed. The\nfrozen production scalar/RNG input is checked against physical packed MAP data.\nRun with PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. from the owning worktree.\n",
+  "assumptions": [
+    "Frozen supplied production scalar cells are checked against physical MAP pack values; absent occupants are an explicit boundary, not a claim about the live map.",
+    "Full Main/Scenario/MapGen state from production is a recorded supplied boundary. Actual598030 and65C780 execute; native map loading and native reachability of input RNG states are not claimed.",
+    "Actual ordinary low570050/57F200/57FBC0 and empty487A10 execute. Existing process CRT precision tail and WinMain rounding block establish x87; OS probe excluded."
+  ],
+  "substitutions": [
+    "Successful bounded allocation/free; zero display rectangles and radar/screen sinks.",
+    "Controller stage substitutes47D2B0. Resident stage executes47D2B0 with actual TMP and native-read overlay/land/theater inputs. Both stages still substitute56C510/586990; no connectivity or hierarchy result claimed."
+  ],
+  "entry_points": {
+    "low": "0x00570050",
+    "ordinary": "0x0057F200",
+    "walker": "0x0057FBC0",
+    "range": "0x00598030",
+    "next": "0x0065C780",
+    "occupants": "0x00487A10",
+    "rectangle": "0x005868A0"
+  },
+  "payload_sha256": "c4cd94c99f567ac49672038cded92f4f3e2f1c7036447f87f3f2babf5769cbff",
+  "packaging": "canonical JSON; gzip mtime=0; copied lexical inputs replaced by SHA256"
+}

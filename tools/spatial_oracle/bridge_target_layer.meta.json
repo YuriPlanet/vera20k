@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original EvaluateCandidate bridge-layer gate and its complete Map getters.\n\nResearch-ahead fixture: enters6F8682 after earlier eligibility, stops at threat\nscoring6F86FE or rejection6F894F. Object XYZ/OnBridge, sparse Map storage and\nretained fallback flags are supplied. No full acquisition/lifecycle claim.\n",
+  "assumptions": [
+    "159 controls:144 raw flag/layer combinations,4 noncanonical OnBridge byte comparisons and11 coordinate/fallback boundaries, including same-layer and first-nonstructural no-short-circuit witnesses.",
+    "Original6F8555 EBX=100 is supplied at the declared gate boundary. Earlier EvaluateCandidate admission and later score/publication are not executed.",
+    "Both original565730 calls execute with sparse fixed512-stride map storage. Missing slots use the actual shared dummy and stamp its signed-short coordinate; dummy raw flags are supplied retained state.",
+    "Read-only hooks observe outputs. All non-stack writes must be the shared dummy coordinate. RNG/identity calls are rejected. No virtual or direct callee is substituted in this slice.",
+    "No native map/object constructors, retail source loading, full scanner, Unit scheduling or target lifecycle is claimed."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "gate": "0x006F8682",
+    "accept": "0x006F86FE",
+    "reject": "0x006F894F",
+    "coordinate_lookup": "0x00565730"
+  },
+  "original_slices": [
+    {
+      "start": "006f8682",
+      "end_exclusive": "006f86fe",
+      "sha256": "e287de1d53d0687bcf16f145713af3984feec91ce6c4ad504bd2f5361a1e92c1"
+    },
+    {
+      "start": "00565730",
+      "end_exclusive": "00565798",
+      "sha256": "167c6f5646ff441bb201241b3985f596832040d1915e67e77eb235cfebf2a348"
+    }
+  ],
+  "payload_sha256": "9da05ad597a1debc2cb34b1407add41b41996f71e6da1afa43d258b22a4acaab"
+}

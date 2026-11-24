@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "7 whole original GrowMeanderArm calls: the canyon and bridge-plateau argument shapes, shortened step budgets, a foreign-region abort and skipped rough cells, with the border seeding, heap, Gaussian heading and frontier claim",
+  "assumptions": [
+    "Existing CliffFixture owns original-constructed Cell backing, admission, the stride-33 scratch, the physical clear/cliff TMP registration and the 49F2F0 direction table; bounds 16..48. Scratch coordinates stamped for in-diamond records only; region and stamp start 0, mask cache -1, shore enable 1, +4B flag 0.",
+    "Declared scene: clear cells, a river row carrying the grown tag, optional foreign region 3 and non-clear (CliffSet base) cells. Generator +180/+184 generated size 16x16. Densities 0x3C23D70A and 0x3B449BA6 are the live callers' pushes; the others are declared to stop growth partway. Not a complete Generate prefix.",
+    "Linear neighbour offsets written as PathfinderClass::ResizeMapArrays 42AC00 computes them for stride 33. Gaussian cache empty with source 598000. FPCW 0E7F. All streams seeded by original 65C6D0."
+  ],
+  "substitutions": [
+    "Existing PaletteReader CRT allocation/free/TLS; native code bytes unchanged. No region, flag, RNG or Gaussian result is supplied."
+  ],
+  "entry_points": {
+    "grow_meander_arm": "0x005A08D0",
+    "next": "0x0065C780",
+    "gaussian": "0x005980C0"
+  },
+  "replay_command": "python -m tools.rmg_oracle.meander_arm",
+  "payload_sha256": "51d6a49989083e3a21ec35526a2fe9dc6ee99de071b9f243743d6c85cf7134ce"
+}

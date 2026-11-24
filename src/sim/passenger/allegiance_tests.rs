@@ -1,0 +1,419 @@
+//! Original458200 decisions against the production owner. The corpus records
+//! supplied downstream callbacks; these checks do not certify native ejection,
+//! animation construction or ChangeOwner side effects. See its meta sidecar.
+
+use super::*;
+use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile};
+use crate::sim::house_state::HouseState;
+use crate::sim::world::ObjectAiCtx;
+use serde_json::Value;
+
+fn corpus() -> &'static Value {
+    crate::test_fixture::json("tools/garrison_oracle/allegiance.json")
+}
+
+fn integer(v: &Value) -> i32 {
+    v.as_i64().unwrap() as i32
+}
+
+fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
+    let sides = input["side_names"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+        .map(|(index, name)| format!("{}=Country{index}\n", name.as_str().unwrap()))
+        .collect::<String>();
+    // Each house's type is `Country{side}`, which `[Sides]` lists under its
+    // side; `Unsided`, in no list, keeps the HouseType constructor's -1.
+    let countries = (0..input["side_names"].as_array().unwrap().len())
+        .map(|index| format!("Country{index}"))
+        .chain(std::iter::once(String::from("Unsided")))
+        .collect::<Vec<_>>();
+    let country_list = countries
+        .iter()
+        .enumerate()
+        .map(|(index, name)| format!("{index}={name}\n"))
+        .collect::<String>();
+    let country_sections = countries
+        .iter()
+        .map(|name| format!("[{name}]\n"))
+        .collect::<String>();
+    let ini = IniFile::from_str(&format!(
+        "[Countries]\n{country_list}{country_sections}\
+         [BuildingTypes]\n0=B\n[InfantryTypes]\n0=E1\n[Sides]\n{sides}\n[B]\nStrength={}\nTechLevel={}\nCanBeOccupied={}\nMaxNumberOccupants=10\n[E1]\nStrength=100\nSpeed=4\nOccupier=yes\n[Animations]\n0=N\n1=D\n2=G\n[AudioVisual]\nBuildingAbandonedSound=Abandon\n",
+        integer(&input["strength"]),
+        integer(&input["tech_level"]),
+        input["can_be_occupied"].as_bool().unwrap_or(true),
+    ));
+    let art_ini = IniFile::from_str(
+        "[B]\nFoundation=1x1\nActiveAnim=N\nActiveAnimDamaged=D\nActiveAnimGarrisoned=G\n[N]\nLoopCount=-1\n[D]\nLoopCount=-1\n[G]\nLoopCount=-1\n",
+    );
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art_ini).unwrap();
+    let object = rules.object("B").unwrap();
+    assert_eq!(object.tech_level, integer(&input["tech_level"]));
+    assert_eq!(object.strength, integer(&input["strength"]));
+    assert_eq!(
+        object.can_be_occupied,
+        input["can_be_occupied"].as_bool().unwrap_or(true)
+    );
+    for (index, name) in input["side_names"].as_array().unwrap().iter().enumerate() {
+        assert_eq!(
+            rules.side_index(name.as_str().unwrap()).unwrap().0 as usize,
+            index
+        );
+    }
+    rules.general.condition_red = f64::from_bits(
+        u64::from_str_radix(input["condition_red_bits"].as_str().unwrap(), 16).unwrap(),
+    );
+    let mut art = ArtRegistry::from_ini(&art_ini);
+    for name in ["N", "D", "G"] {
+        art.bind_anim_frame_count_for_test(name, 40);
+    }
+    rules.install_art_data(art);
+    let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+        "[SoundList]\n0=Abandon\n",
+    ));
+    rules.bind_type_sound_references(&ini, &sounds);
+    let mut sim = Simulation::new();
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    let houses: Vec<_> = input["houses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|house| {
+            let owner = sim.interner.intern(house["name"].as_str().unwrap());
+            let side = integer(&house["side_index"]);
+            let country = sim.interner.intern(&if side < 0 {
+                String::from("Unsided")
+            } else {
+                format!("Country{side}")
+            });
+            let mut state = HouseState::new(
+                owner,
+                side as u8,
+                Some(country),
+                house["is_human"].as_bool().unwrap(),
+                0,
+                10,
+            );
+            state.set_player_control_for_test(house["player_control"].as_bool().unwrap());
+            sim.houses.register(state);
+            owner
+        })
+        .collect();
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+            integer(&input["game_mode"]) != 0,
+        ),
+    );
+    sim.session.set_current_house_for_test(
+        input["local_house"]
+            .as_u64()
+            .map(|index| houses[index as usize]),
+    );
+    let id = sim.substrate.allocate_stable_id();
+    let mut building =
+        GameEntity::test_default_of_category(id, "B", "", 10, 11, EntityCategory::Structure);
+    building.set_type_ref_for_test(sim.interner.intern("B"));
+    building.set_owner_for_test(houses[input["current_owner"].as_u64().unwrap() as usize]);
+    building.health.set_for_test(100);
+    building.building_art.set_actually_placed_for_test(true);
+    building.mission_leaf =
+        crate::sim::mission::leaf::MissionLeafState::for_entity_category(EntityCategory::Structure);
+    building
+        .passenger_role_mut_for_test()
+        .occupants_mut()
+        .set_fire_index_for_test(integer(&input["fire_index"]));
+    for owner in input["occupant_owners"].as_array().unwrap() {
+        let passenger_id = sim.substrate.allocate_stable_id();
+        let mut passenger = GameEntity::test_default_of_category(
+            passenger_id,
+            "E1",
+            "",
+            10,
+            11,
+            EntityCategory::Infantry,
+        );
+        passenger.set_type_ref_for_test(sim.interner.intern("E1"));
+        passenger.set_owner_for_test(houses[owner.as_u64().unwrap() as usize]);
+        passenger.set_passenger_role_for_test(PassengerRole::inside_for_test(id, false));
+        passenger.lifecycle.set_in_limbo_for_test(true);
+        passenger.locomotor = Some(
+            crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+                crate::rules::locomotor_type::LocomotorKind::Walk,
+            ),
+        );
+        building
+            .passenger_role_mut_for_test()
+            .occupants_mut()
+            .add_for_test(passenger_id);
+        sim.substrate.entities.insert(passenger);
+    }
+    sim.substrate.entities.insert(building);
+    assert!(matches!(
+        sim.reveal_entity_with_rules(id, &rules),
+        crate::sim::world::RevealOutcome::Revealed { .. }
+    ));
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .health
+        .set_for_test(integer(&input["current_hp"]));
+    sim.set_building_anim_slot(id, 3, false, false, 0, &rules)
+        .unwrap();
+    sim.sound_events.clear_for_test();
+    (sim, rules, id, houses)
+}
+
+#[test]
+fn allegiance_matches_native_decisions_for_valid_rosters() {
+    let corpus = corpus();
+    let mut replayed = 0;
+    for row in corpus["rows"].as_array().unwrap() {
+        let input = &row["input"];
+        let expected = &row["output"];
+        let name = input["name"].as_str().unwrap();
+        // NULL is a malformed native pointer control. Rust keeps the real
+        //owner for those rosters. The retained-occupant callback is an
+        //injected dependency mutation, not SellBuilding's normal outcome.
+        if input["current_owner"].is_null()
+            || expected["owner_after_callback"].is_null()
+            || !input["eject_retained_occupants"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        {
+            continue;
+        }
+        let (mut sim, rules, id, houses) = fixture(input);
+        let old_anim = sim
+            .substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .building_art
+            .anim_slots()[3];
+        let old_owner = sim.substrate.entities.get(id).unwrap().owner();
+        let changed = reconcile_civilian_garrison_owner_for_building(
+            &mut sim,
+            &rules,
+            None,
+            id,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
+        let building = sim.substrate.entities.get(id).unwrap();
+        let expected_owner = houses[expected["owner_after_callback"].as_u64().unwrap() as usize];
+        assert_eq!(building.owner(), expected_owner, "{name}");
+        assert_eq!(changed, old_owner != expected_owner, "{name}");
+        let occupants = building.passenger_role().occupants();
+        assert_eq!(
+            occupants.fire_index(),
+            integer(&expected["fire_index_after_callback"]),
+            "{name}"
+        );
+        let actual_owners: Vec<_> = occupants
+            .ids()
+            .iter()
+            .map(|id| sim.substrate.entities.get(*id).unwrap().owner())
+            .collect();
+        let expected_owners: Vec<_> = expected["occupant_owners_after_callback"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|index| houses[index.as_u64().unwrap() as usize])
+            .collect();
+        assert_eq!(actual_owners, expected_owners, "{name}");
+        let called = |op: &str| {
+            expected["calls"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|call| call["op"] == op)
+        };
+        assert_eq!(
+            building.building_art.anim_slots()[3] != old_anim,
+            called("refresh_anims"),
+            "{name}"
+        );
+        let event = sim.sound_events.iter().find_map(|event| match event {
+            SimSoundEvent::StructureAbandoned { owner, radar, .. } => Some((*owner, *radar)),
+            _ => None,
+        });
+        assert_eq!(event.is_some(), called("radar_event"), "{name}");
+        if let Some((owner, radar)) = event {
+            assert_eq!(owner, old_owner, "{name}");
+            assert_eq!(
+                radar,
+                crate::sim::radar::RadarEventRequest::new(
+                    crate::sim::radar::RadarEventType::StructureAbandoned,
+                    10,
+                    11,
+                ),
+                "{name}"
+            );
+        }
+        assert_eq!(
+            sim.sound_events.iter().any(|event| matches!(event,
+                SimSoundEvent::VocCentered { sound_id } if sound_id.name_in(&rules) == "Abandon"
+            )),
+            called("abandoned_sound"),
+            "{name}"
+        );
+        replayed += 1;
+    }
+    assert_eq!(replayed, 36);
+}
+
+#[test]
+fn missing_civilian_roster_does_not_fabricate_a_house() {
+    let corpus = corpus();
+    for row in corpus["rows"].as_array().unwrap().iter().filter(|row| {
+        matches!(
+            row["input"]["name"].as_str().unwrap(),
+            "missing_civilian_side_requests_null" | "missing_civilian_house_requests_null"
+        )
+    }) {
+        let (mut sim, rules, id, _) = fixture(&row["input"]);
+        let old_owner = sim.substrate.entities.get(id).unwrap().owner();
+        let houses = sim.houses.order().to_vec();
+        assert!(!reconcile_civilian_garrison_owner_for_building(
+            &mut sim,
+            &rules,
+            None,
+            id,
+            &mut crate::sim::world::FrameEffects::default()
+        ));
+        assert_eq!(sim.substrate.entities.get(id).unwrap().owner(), old_owner);
+        assert_eq!(sim.houses.order(), houses);
+    }
+}
+
+#[test]
+fn building_ai_caller_admission_matches_native_unwarped_gates() {
+    let corpus = corpus();
+    let mut replayed = 0;
+    for row in corpus["caller_rows"].as_array().unwrap() {
+        let input = &row["input"];
+        // Warp admission remains with its existing owner. These controls
+        //execute the actual Building AI for the independent live/HP/type gates.
+        if input["warped_out"] == true || input["warping_in"] == true {
+            continue;
+        }
+        let mut fixture_input = corpus["rows"][0]["input"].clone();
+        fixture_input["current_hp"] = input["health"].clone();
+        fixture_input["can_be_occupied"] = input["can_be_occupied"].clone();
+        let (mut sim, mut rules, id, _) = fixture(&fixture_input);
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .lifecycle
+            .set_object_alive_for_test(input["alive"].as_bool().unwrap());
+        rules.general.condition_red = -1.0; // no ejection or death dependency
+        let old_owner = sim.substrate.entities.get(id).unwrap().owner();
+        sim.object_ai_visit_one(id, Some(&rules), &mut ObjectAiCtx::default());
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| entity.owner() != old_owner),
+            row["output"]["all_gates_allow"].as_bool().unwrap(),
+            "{}",
+            input["name"]
+        );
+        replayed += 1;
+    }
+    assert_eq!(replayed, 7);
+}
+
+#[test]
+fn frame_reports_building_allegiance_from_the_live_object_pass() {
+    let corpus = corpus();
+    let (mut sim, rules, id, _) = fixture(&corpus["rows"][0]["input"]);
+    sim.set_logic_order_for_test(vec![id]);
+    let tick = sim.advance_tick(&[], Some(&rules), None, None, 67);
+    assert!(tick.ownership_changed);
+    assert!(
+        !sim.advance_tick(&[], Some(&rules), None, None, 67)
+            .ownership_changed
+    );
+}
+
+#[test]
+fn zero_capacity_map_garrison_abandons_without_allocated_cargo() {
+    use crate::rules::process_owner::NativeRulesProcessOwner;
+    use crate::rules::sound_ini::SoundRegistry;
+    use std::sync::Arc;
+
+    let root = crate::sim::arena_fixture::clear_ground_ini(
+        "[Countries]\n0=Player\n1=Town\n[Player]\n[Town]\n\
+         [BuildingTypes]\n0=B\n[Sides]\nAllied=Player\nCivilian=Town\n\
+         [B]\nStrength=100\nTechLevel=-1\nCanBeOccupied=yes\nMaxNumberOccupants=10\n\
+         [Animations]\n0=N\n[AudioVisual]\nBuildingAbandonedSound=Abandon\n",
+    );
+    let art_ini = IniFile::from_str("[B]\nFoundation=1x1\nActiveAnim=N\n[N]\nLoopCount=-1\n");
+    let sounds = SoundRegistry::from_ini(&IniFile::from_str("[SoundList]\n0=Abandon\n"));
+    let mut process = NativeRulesProcessOwner::from_cold_start_sources(
+        root,
+        None,
+        art_ini.clone(),
+        Arc::new(sounds),
+        Default::default(),
+    )
+    .unwrap();
+    let (mut rules, _, _, _) = process
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
+            &IniFile::from_str("[B]\nMaxNumberOccupants=0\n"),
+        )
+        .unwrap()
+        .into_parts();
+    assert_eq!(rules.object("B").unwrap().max_number_occupants, 0);
+    let mut art = ArtRegistry::from_ini(&art_ini);
+    art.bind_anim_frame_count_for_test("N", 40);
+    rules.install_art_data(art);
+    let mut sim = Simulation::new();
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    for (name, human) in [("Player", true), ("Town", false)] {
+        let owner = sim.interner.intern(name);
+        let side = rules
+            .side_index(if human { "Allied" } else { "Civilian" })
+            .unwrap()
+            .0;
+        sim.houses
+            .register(HouseState::new(owner, side, None, human, 0, 10));
+        if human {
+            sim.session.set_current_house_for_test(Some(owner));
+        }
+    }
+    // Use the production constructor: unlike the corpus fixture, it represents
+    // zero capacity without PassengerCargo. Native458272 tests only vector count.
+    let id = sim.spawn_object("B", "Player", 10, 11, 0, &rules).unwrap();
+    assert!(
+        sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .passenger_role()
+            .cargo()
+            .is_none()
+    );
+    let old_anim = sim
+        .set_building_anim_slot(id, 3, false, false, 0, &rules)
+        .unwrap();
+    sim.sound_events.clear_for_test();
+    sim.object_ai_visit_one(id, Some(&rules), &mut ObjectAiCtx::default());
+
+    let building = sim.substrate.entities.get(id).unwrap();
+    assert_eq!(sim.interner.resolve(building.owner()), "Town");
+    assert_ne!(building.building_art.anim_slots()[3], Some(old_anim));
+    assert!(sim.sound_events.iter().any(|event| matches!(event,
+        SimSoundEvent::VocCentered { sound_id } if sound_id.name_in(&rules) == "Abandon"
+    )));
+    assert!(sim.sound_events.iter().any(|event| matches!(event,
+        SimSoundEvent::StructureAbandoned { owner, .. }
+            if sim.interner.resolve(*owner) == "Player"
+    )));
+}

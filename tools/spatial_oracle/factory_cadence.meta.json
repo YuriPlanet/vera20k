@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original FactoryClass 0x4C9EA0 (the build start Begin_Production calls at 0x4FA628) and FactoryClass::AI 0x4C9B20 once per frame on a factory holding the Time_To_Build oracle fixture object: the rate, the step timer, each step attempt, the charges through the real Available_Money 0x4F6990 and Spend_Money 0x4F9790, holds on a shortfall and completion; and in the hold rows FactoryClass::Suspend(1) 0x4C9E60 and the build start 0x4C9EA0(0) run before a frame's AI call, with their acceptance and the state after each. No claim about what issues a hold or resume, about when AI runs within a frame, or about rate rewrites after the start (0x4CA6E0).",
+  "assumptions": [
+    "The factory starts as StartProduction 0x4C9C70 leaves a new build (0x4C9D6E..0x4C9DED over the constructor 0x4C98BE..0x4C9917): stage 0, suspended +0x70 and +0x71 set, rate 0, timer {start frame, 0}, step +0x3C 1, object +0x58, owed balance +0x60 = Cost, special +0x68 -1, house +0x6C. Both originals run at the start frame; the frame counter [0xA8ED84] then advances by one per AI call.",
+    "The house is the Time_To_Build fixture house with its IHouse vtable 0x7EA834 at +0x24, credits +0x30C and spent +0x2DC carried between calls, empty ore storage, zero silo capacity +0x310 and a zero storage multiplier (country +0x148). Deposits add to +0x30C before that frame's AI call.",
+    "Inputs are fixture values chosen to cover the rate clamps, retail builds and the money branches; they are not a claim that every combination occurs in retail play. Default native FPCW 0x0E7F."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "start": "0x004C9EA0",
+    "factory_ai": "0x004C9B20",
+    "suspend": "0x004C9E60",
+    "time_to_build": "0x006F47A0"
+  },
+  "payload_sha256": "16146734f72b687768f9e2525e9bc462b5bb865a4eb1c276af4b76c6b316627a"
+}

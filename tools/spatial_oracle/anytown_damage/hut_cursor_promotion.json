@@ -1,0 +1,51 @@
+{
+  "conversion": "Packaging/import/repository-root/output-path changes only; all function/class ASTs remain original. Shared canonical JSON/gzip publication. Projection is identity for this payload, so the original and published canonical hashes are equal and guarded even on --write.",
+  "frozen_receipt": {
+    "files": {
+      "README.md": {
+        "bytes": 5582,
+        "sha256": "9cd5d477fd8d14a1f7e5ab8090c3ead860cbf541fa3aaf349b2116e42a85f161"
+      },
+      "check.log": {
+        "bytes": 179,
+        "sha256": "30e68821a3aae795018c99ed0ac3583c824ebbf1f1b7852d47026020deb91e47"
+      },
+      "hut_cursor.json": {
+        "bytes": 8574726,
+        "sha256": "9de7fdcc7f41f8b003843466121d8f034f383fb5d7be3c8f3883af2ce13d520e"
+      },
+      "hut_cursor.meta.json": {
+        "bytes": 6040,
+        "sha256": "ef43384fbf71434db93b2bcc1a2758c470015f3fcf5b97a3229aa37d03a66aa2"
+      },
+      "native_587410.asm": {
+        "bytes": 17713,
+        "sha256": "5a54a6776a8eef3197b051aae388afe89aae486fc87403cad6e9758cd451ca90"
+      },
+      "native_bytes.json": {
+        "bytes": 2195,
+        "sha256": "d66fa60941918ed6f0c818b8933abb6e0f5eacb5b376e429391aed0bf8c12c57"
+      },
+      "summary.json": {
+        "bytes": 26781,
+        "sha256": "47253ac3ed76093a541dcf6de3c617a68316758dc85c49251b25c02b3e1c9541"
+      },
+      "write.log": {
+        "bytes": 334,
+        "sha256": "af9a59c3506afe2e8e4f303e36aefceb5bc0f18df35776fb3d1577f093207e7c"
+      }
+    },
+    "path": "anytown-hut-cursor-native/receipt.json",
+    "sha256": "c938999494083e486d0378b6cc93f6f91decef2b196be3973fb25fc2ad5ec6af"
+  },
+  "results": {
+    "hut_cursor.json": {
+      "original_file_sha256": "9de7fdcc7f41f8b003843466121d8f034f383fb5d7be3c8f3883af2ce13d520e",
+      "original_metadata_sha256": "ef43384fbf71434db93b2bcc1a2758c470015f3fcf5b97a3229aa37d03a66aa2",
+      "original_path": "anytown-hut-cursor-native/hut_cursor.json",
+      "original_payload_sha256": "444a1e344b60a42e0a77028582d1708246cf6a4bcadcbcccae7dc8fbb0b832e9",
+      "published_payload_sha256": "444a1e344b60a42e0a77028582d1708246cf6a4bcadcbcccae7dc8fbb0b832e9"
+    }
+  },
+  "schema": 1
+}

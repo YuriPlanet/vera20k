@@ -1,0 +1,852 @@
+use super::*;
+
+use crate::map::bridge_facts::{
+    BRIDGE_FLAG_DESTROYED_OR_RAMP, BRIDGE_FLAG_EXTRA_SIDE, BRIDGE_FLAG_STRUCTURAL,
+    BridgeAnchorRelation, BridgeStampFamily, BridgeStampSlot,
+};
+use crate::map::playfield::PlayfieldBounds;
+use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
+use crate::map::terrain::{TerrainGrid, build_terrain_grid_from_resolved};
+use crate::render::radar::helpers::OverlayClassification;
+use crate::render::radar::minimap::{MinimapCellRadarSource, MinimapOverlayDatum};
+use crate::render::radar::projection::MinimapPlayfieldProjection;
+use crate::render::radar::terrain_updates::{
+    RadarTerrainUpdateLayers, apply_radar_terrain_dirty_cells,
+};
+use crate::sim::bridge_state::BridgeRuntimeState;
+use crate::sim::overlay_grid::OverlayGrid;
+use crate::sim::runtime::{SimResources, SimRuntime};
+use crate::sim::snapshot::GameSnapshot;
+use crate::sim::world::Simulation;
+
+const SIDE: u16 = 64;
+const BRIDGE_COLOR: [u8; 3] = [5, 6, 7];
+const LOW_BRIDGE_COLOR: [u8; 3] = [31, 32, 33];
+const LOW_BRIDGE_CD_COLOR: [u8; 3] = [41, 42, 43];
+const OVERLAY_COLOR: [u8; 3] = [11, 12, 13];
+const BASE_COLOR: [u8; 3] = [10, 20, 30];
+// Full original47C060/5FED00 returns black from the shipped six-frame
+// LOBRDG27/28 and LOBRDB27/28 headers; black remains an overlay source.
+const BRIDGE_END_COLOR: [u8; 3] = [0, 0, 0];
+const SAVED_COLLAPSED_TMP_RAW: [u8; 3] = [200, 100, 50];
+const SAVED_COLLAPSED_TMP_COLOR: [u8; 3] = [100, 50, 25];
+
+fn expanded_bounds() -> PlayfieldBounds {
+    PlayfieldBounds {
+        base: 40,
+        off_fc: 2,
+        off_100: 2,
+        off_104: 36,
+        off_108: 30,
+    }
+}
+
+fn shrunken_bounds() -> PlayfieldBounds {
+    PlayfieldBounds {
+        base: 40,
+        off_fc: 10,
+        off_100: 10,
+        off_104: 10,
+        off_108: 8,
+    }
+}
+
+fn fixture(static_bridge: Option<(u16, u16)>) -> (TerrainGrid, ResolvedTerrainGrid) {
+    let cells = (0..SIDE)
+        .flat_map(|ry| {
+            (0..SIDE).map(move |rx| {
+                let mut cell = flat_cell(rx, ry);
+                if static_bridge == Some((rx, ry)) {
+                    mark_high_bridge_source(&mut cell);
+                }
+                cell
+            })
+        })
+        .collect();
+    let resolved = ResolvedTerrainGrid::from_cells(SIDE, SIDE, cells);
+    let grid = build_terrain_grid_from_resolved(&resolved, None);
+    (grid, resolved)
+}
+
+fn mark_high_bridge_source(cell: &mut ResolvedTerrainCell) {
+    cell.bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
+    cell.bridge_facts.family = BridgeStampFamily::Nesw;
+    cell.bridge_facts.direction = Some(0);
+    cell.has_bridge_deck = true;
+    cell.bridge_walkable = true;
+    cell.bridge_deck_level = cell.level.saturating_add(4);
+}
+
+fn mark_extra_dir6_family_only(cell: &mut ResolvedTerrainCell) {
+    cell.bridge_facts.raw_flags = BRIDGE_FLAG_EXTRA_SIDE;
+    cell.bridge_facts.family = BridgeStampFamily::Nesw;
+    cell.bridge_facts.direction = Some(6);
+    cell.bridge_facts.anchor = Some(BridgeAnchorRelation {
+        anchor: (cell.rx, cell.ry),
+        slot: BridgeStampSlot::ExtraDir6,
+        family: BridgeStampFamily::Nesw,
+        direction: 6,
+    });
+}
+
+fn central_cell(grid: &TerrainGrid, bounds: PlayfieldBounds) -> (u16, u16) {
+    grid.cells
+        .iter()
+        .find(|cell| {
+            bounds.contains_geometry_packed(i32::from(cell.rx), i32::from(cell.ry))
+                && cell.rx > 8
+                && cell.ry > 8
+                && cell.rx < SIDE - 8
+                && cell.ry < SIDE - 8
+        })
+        .map(|cell| (cell.rx, cell.ry))
+        .expect("interior playfield cell")
+}
+
+fn live_runtime(resolved: ResolvedTerrainGrid, overlay_grid: OverlayGrid) -> SimRuntime {
+    let mut sim = Simulation::new();
+    *sim.resolved_terrain_mut_for_test() = Some(resolved);
+    *sim.bridge_state_mut_for_test() = Some(BridgeRuntimeState::default());
+    *sim.overlay_grid_mut_for_test() = Some(overlay_grid);
+    SimRuntime::from_simulation(sim)
+}
+
+/// CellClass+44 of an intact (0xCD) or collapsed (0xE7) bridge cell.
+fn with_bridge_overlay(cell: (u16, u16), intact: bool) -> OverlayGrid {
+    let mut overlay_grid = OverlayGrid::new(SIDE, SIDE);
+    overlay_grid.place_overlay(cell.0, cell.1, if intact { 0xCD } else { 0xE7 }, 0);
+    overlay_grid
+}
+
+/// Native47E040 destruction: bit100 clears and bit400 records the collapse.
+fn collapse_flags(resolved: &mut ResolvedTerrainGrid, cell: (u16, u16)) {
+    let facts = &mut resolved
+        .cell_mut_for_test(cell.0, cell.1)
+        .unwrap()
+        .bridge_facts;
+    facts.raw_flags = (facts.raw_flags & !BRIDGE_FLAG_STRUCTURAL) | BRIDGE_FLAG_DESTROYED_OR_RAMP;
+}
+
+fn presentation_overlay(cell: (u16, u16), overlay_id: u8, frame: u8) -> MinimapOverlayDatum {
+    MinimapOverlayDatum {
+        rx: cell.0,
+        ry: cell.1,
+        classification: OverlayClassification::Wall,
+        source: MinimapCellRadarSource::Overlay {
+            overlay_id,
+            frame,
+            is_tiberium: false,
+            has_cell_anim: false,
+            has_tiberium_type: false,
+        },
+    }
+}
+
+fn colors() -> HashMap<(u8, u8), [u8; 3]> {
+    let mut colors = HashMap::from([
+        ((24, 0), BRIDGE_COLOR),
+        ((0x4A, 1), LOW_BRIDGE_COLOR),
+        ((0xCD, 1), LOW_BRIDGE_CD_COLOR),
+        ((10, 4), OVERLAY_COLOR),
+    ]);
+    for id in [100, 101, 231, 232] {
+        for frame in 0..6 {
+            colors.insert((id, frame), BRIDGE_END_COLOR);
+        }
+    }
+    colors
+}
+
+fn projection(
+    grid: &TerrainGrid,
+    runtime: &SimRuntime,
+    presentation: &[MinimapOverlayDatum],
+    bounds: PlayfieldBounds,
+    colors: &HashMap<(u8, u8), [u8; 3]>,
+) -> MinimapPlayfieldProjection {
+    MinimapPlayfieldProjection::derive(
+        grid,
+        runtime.simulation.resolved_terrain(),
+        presentation,
+        colors,
+        "TEMPERATE",
+        Some(bounds),
+        Some(CurrentRadarCellAuthority::from_runtime(runtime)),
+    )
+}
+
+fn raw_pair(projection: &MinimapPlayfieldProjection, cell: (u16, u16)) -> [[u8; 3]; 2] {
+    let geometry = projection
+        .native_radar_surface
+        .expect("native radar surface");
+    let raw = projection
+        .native_radar_terrain
+        .as_ref()
+        .expect("native radar terrain")
+        .raw_rgb();
+    let (x, y) = geometry.cell_to_raw_pixel(cell);
+    assert!(x >= 0 && x + 1 < geometry.raw_size().0);
+    assert!(y >= 0 && y < geometry.raw_size().1);
+    let index = (y * geometry.raw_size().0 + x) as usize;
+    [raw[index], raw[index + 1]]
+}
+
+fn apply_incremental(
+    projection: &mut MinimapPlayfieldProjection,
+    runtime: &SimRuntime,
+    cells: &[(u16, u16)],
+    colors: &HashMap<(u8, u8), [u8; 3]>,
+) {
+    apply_radar_terrain_dirty_cells(
+        RadarTerrainUpdateLayers {
+            base_rgba: &mut projection.base_rgba,
+            terrain_pixels: &projection.terrain_pixels,
+            overlay_pixels: &mut projection.overlay_pixels,
+            native_surface: projection.native_radar_surface,
+            native_terrain: &mut projection.native_radar_terrain,
+            playfield: Some(expanded_bounds()),
+        },
+        CurrentRadarCellAuthority::from_runtime(runtime),
+        BRIDGE_COLOR,
+        colors,
+        cells,
+    );
+}
+
+fn runtime_with_overlay(
+    resolved: ResolvedTerrainGrid,
+    cell: (u16, u16),
+    overlay: Option<(u8, u8)>,
+) -> SimRuntime {
+    let mut overlay_grid = OverlayGrid::new(SIDE, SIDE);
+    if let Some((overlay_id, overlay_data)) = overlay {
+        overlay_grid.place_overlay(cell.0, cell.1, overlay_id, overlay_data);
+    }
+    live_runtime(resolved, overlay_grid)
+}
+
+/// CellClass+44 of a high-bridge cell; `u8::MAX` is native -1.
+fn high_bridge_overlay(cell: (u16, u16), live_overlay: u8) -> OverlayGrid {
+    let mut overlay_grid = OverlayGrid::new(SIDE, SIDE);
+    if live_overlay != u8::MAX {
+        overlay_grid.place_overlay(cell.0, cell.1, live_overlay, 0);
+    }
+    overlay_grid
+}
+
+fn snapshot_restored_collapsed_high_runtime(
+    terrain_template: &ResolvedTerrainGrid,
+    cell: (u16, u16),
+    live_overlay: u8,
+) -> SimRuntime {
+    let mut sim = Simulation::new();
+    sim.session_mut_for_test()
+        .set_map_name_for_test("RADARLOAD.MAP".to_string());
+    sim.install_resolved_terrain_for_new_map(terrain_template.clone());
+    *sim.bridge_state_mut_for_test() = Some(BridgeRuntimeState::from_resolved_terrain(
+        terrain_template,
+        true,
+        1500,
+    ));
+
+    *sim.overlay_grid_mut_for_test() = Some(high_bridge_overlay(cell, live_overlay));
+    let saved_cell = {
+        let live_terrain = sim
+            .resolved_terrain_mut_for_test()
+            .as_mut()
+            .expect("installed terrain");
+        collapse_flags(live_terrain, cell);
+        let saved_cell = live_terrain
+            .cell_mut_for_test(cell.0, cell.1)
+            .expect("saved high bridge cell");
+        saved_cell.radar_left = SAVED_COLLAPSED_TMP_RAW;
+        saved_cell.radar_right = [7, 8, 9];
+        saved_cell.clone()
+    };
+    sim.dynamic_terrain_cells_mut_for_test().record(&saved_cell);
+    *sim.real_cell_bridge_flags_0x1180_mut_for_test() = sim
+        .resolved_terrain()
+        .expect("installed terrain")
+        .capture_real_cell_bridge_flags_0x1180();
+
+    let terrain_speed_config = sim.terrain_speed_config().clone();
+    let bytes = GameSnapshot::save_validated(&sim, 1, 2, "Radar load", 3);
+    let resources = SimResources::empty();
+    let restored = GameSnapshot::load_validated(&bytes, 1, 2, "RADARLOAD.MAP")
+        .expect("validated current snapshot")
+        .restore_checkpoint_map_for_test(
+            &resources.rules,
+            resources.rules.overlay_registry(),
+            terrain_template.clone(),
+            terrain_speed_config,
+        )
+        .expect("restored current map authority");
+    SimRuntime {
+        simulation: restored,
+        resources: resources.into(),
+    }
+}
+
+#[test]
+fn gsi_04_01_structural_high_bridge_wins_in_full_and_incremental_paths() {
+    let (grid, mut resolved) = fixture(None);
+    let cell = central_cell(&grid, expanded_bounds());
+    mark_high_bridge_source(resolved.cell_mut_for_test(cell.0, cell.1).unwrap());
+    let colors = colors();
+    let mut collapsed = resolved.clone();
+    // Native47E040 clears bit100 before the collapsed radar read.
+    collapse_flags(&mut collapsed, cell);
+    let stale_destroyed = live_runtime(collapsed, with_bridge_overlay(cell, false));
+    let current_high = live_runtime(resolved, with_bridge_overlay(cell, true));
+
+    let full = projection(&grid, &current_high, &[], expanded_bounds(), &colors);
+    assert_eq!(raw_pair(&full, cell), [BRIDGE_COLOR; 2]);
+
+    let mut incremental = projection(&grid, &stale_destroyed, &[], expanded_bounds(), &colors);
+    assert_eq!(raw_pair(&incremental, cell), [BRIDGE_END_COLOR; 2]);
+    apply_incremental(&mut incremental, &current_high, &[cell], &colors);
+    assert_eq!(raw_pair(&incremental, cell), [BRIDGE_COLOR; 2]);
+}
+
+#[test]
+fn native_constructor_side_cells_use_structural_radar_without_own_sprite() {
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_constructor.json",
+    ))
+    .unwrap();
+    let colors = HashMap::new();
+    let mut visited = 0;
+    for case in &corpus["cases"].as_array().unwrap()[8..12] {
+        assert_eq!(case["kind"], "success");
+        for native in case["cells"].as_array().unwrap() {
+            let flags = native["flags"].as_u64().unwrap() as u32;
+            if flags & BRIDGE_FLAG_STRUCTURAL == 0 || native["overlay"] != -1 {
+                continue;
+            }
+            let cell = (
+                native["coord"][0].as_u64().unwrap() as u16,
+                native["coord"][1].as_u64().unwrap() as u16,
+            );
+            let (_, mut resolved) = fixture(None);
+            let current = resolved.cell_mut_for_test(cell.0, cell.1).unwrap();
+            current.bridge_facts.raw_flags = flags;
+            let live = crate::sim::overlay_grid::OverlayCell {
+                overlay_data: native["state"].as_u64().unwrap() as u8,
+                ..Default::default()
+            };
+            assert!(crate::sim::bridge_state::cell_render_state(&live, flags).is_none());
+
+            // 47C060 takes its structural color branch before testing +44.
+            // No sprite of its own is required for this CellClass read.
+            let authority = CurrentRadarCellAuthority::new(Some(&resolved), None, None);
+            assert_eq!(
+                authority.source(cell.0, cell.1, BRIDGE_COLOR, &colors),
+                Some((BRIDGE_COLOR, OverlayClassification::Bridge)),
+                "{native}"
+            );
+            resolved
+                .cell_mut_for_test(cell.0, cell.1)
+                .unwrap()
+                .bridge_facts
+                .raw_flags &= !BRIDGE_FLAG_STRUCTURAL;
+            assert_eq!(
+                CurrentRadarCellAuthority::new(Some(&resolved), None, None).source(
+                    cell.0,
+                    cell.1,
+                    BRIDGE_COLOR,
+                    &colors
+                ),
+                None,
+                "no retained deck data can revive a cleared native structural bit"
+            );
+            visited += 1;
+        }
+    }
+    assert_eq!(visited, 12);
+}
+
+#[test]
+fn gsi_04_01_intact_low_overlay_stays_overlay_in_full_and_incremental_paths() {
+    let (grid, resolved) = fixture(None);
+    let cell = central_cell(&grid, expanded_bounds());
+    let colors = colors();
+    let absent = runtime_with_overlay(resolved.clone(), cell, None);
+    for (overlay_id, expected) in [(0x4A, LOW_BRIDGE_COLOR), (0xCD, LOW_BRIDGE_CD_COLOR)] {
+        let intact_low = runtime_with_overlay(resolved.clone(), cell, Some((overlay_id, 9)));
+
+        let full = projection(&grid, &intact_low, &[], expanded_bounds(), &colors);
+        assert_eq!(raw_pair(&full, cell), [expected; 2]);
+        assert_ne!(raw_pair(&full, cell), [BRIDGE_COLOR; 2]);
+
+        let mut incremental = projection(&grid, &absent, &[], expanded_bounds(), &colors);
+        assert_eq!(raw_pair(&incremental, cell), [BASE_COLOR; 2]);
+        apply_incremental(&mut incremental, &intact_low, &[cell], &colors);
+        assert_eq!(raw_pair(&incremental, cell), [expected; 2]);
+    }
+}
+
+#[test]
+fn gsi_04_01_extra_dir6_family_without_deck_flags_keeps_live_overlay() {
+    let (grid, mut resolved) = fixture(None);
+    let cell = central_cell(&grid, expanded_bounds());
+    let auxiliary = resolved
+        .cell_mut_for_test(cell.0, cell.1)
+        .expect("ExtraDir6 auxiliary cell");
+    mark_extra_dir6_family_only(auxiliary);
+    assert!(!auxiliary.bridge_facts.has_structural_bridge());
+    assert!(!auxiliary.has_bridge_deck);
+
+    let colors = colors();
+    let absent = runtime_with_overlay(resolved.clone(), cell, None);
+    let live_overlay = runtime_with_overlay(resolved, cell, Some((10, 4)));
+
+    let full = projection(&grid, &live_overlay, &[], expanded_bounds(), &colors);
+    assert_eq!(raw_pair(&full, cell), [OVERLAY_COLOR; 2]);
+
+    let mut incremental = projection(&grid, &absent, &[], expanded_bounds(), &colors);
+    assert_eq!(raw_pair(&incremental, cell), [BASE_COLOR; 2]);
+    apply_incremental(&mut incremental, &live_overlay, &[cell], &colors);
+    assert_eq!(raw_pair(&incremental, cell), [OVERLAY_COLOR; 2]);
+}
+
+#[test]
+fn gsi_04_01_high_collapse_uses_cellclass_overlay_then_repairs_in_full_and_incremental_paths() {
+    let (grid, mut resolved) = fixture(None);
+    let cell = central_cell(&grid, expanded_bounds());
+    mark_high_bridge_source(resolved.cell_mut_for_test(cell.0, cell.1).unwrap());
+    let colors = colors();
+    let repaired = live_runtime(resolved.clone(), high_bridge_overlay(cell, 0xCD));
+
+    let repaired_full = projection(&grid, &repaired, &[], expanded_bounds(), &colors);
+    assert_eq!(raw_pair(&repaired_full, cell), [BRIDGE_COLOR; 2]);
+
+    for (destroyed_overlay, expected) in [
+        (0xE7, BRIDGE_END_COLOR),
+        (0xE8, BRIDGE_END_COLOR),
+        (u8::MAX, BASE_COLOR),
+    ] {
+        let mut collapsed = resolved.clone();
+        // Keep the same native collapse input as the snapshot case below:
+        // the structural flag is cleared independently of overlay identity.
+        collapse_flags(&mut collapsed, cell);
+        let destroyed = live_runtime(collapsed, high_bridge_overlay(cell, destroyed_overlay));
+        // This is the same full projection used for load/action-40 rebuilds.
+        let full = projection(&grid, &destroyed, &[], expanded_bounds(), &colors);
+        assert_eq!(raw_pair(&full, cell), [expected; 2]);
+        assert_eq!(
+            full.overlay_pixels
+                .iter()
+                .any(|pixel| (pixel.rx, pixel.ry) == cell),
+            destroyed_overlay != u8::MAX,
+            "terminal overlays remain sources; only absence restores TMP",
+        );
+
+        let mut incremental = projection(&grid, &repaired, &[], expanded_bounds(), &colors);
+        assert_eq!(raw_pair(&incremental, cell), [BRIDGE_COLOR; 2]);
+        apply_incremental(&mut incremental, &destroyed, &[cell], &colors);
+        assert_eq!(raw_pair(&incremental, cell), [expected; 2]);
+        apply_incremental(&mut incremental, &repaired, &[cell], &colors);
+        assert_eq!(raw_pair(&incremental, cell), [BRIDGE_COLOR; 2]);
+    }
+}
+
+#[test]
+fn gsi_04_01_snapshot_high_collapse_uses_cellclass_overlay_after_structural_flag_clear() {
+    let (grid, mut terrain_template) = fixture(None);
+    let cell = central_cell(&grid, expanded_bounds());
+    let source_cell = terrain_template
+        .cell_mut_for_test(cell.0, cell.1)
+        .expect("high bridge source cell");
+    mark_high_bridge_source(source_cell);
+
+    let colors = colors();
+    let repaired = live_runtime(terrain_template.clone(), high_bridge_overlay(cell, 0xCD));
+    assert_eq!(
+        raw_pair(
+            &projection(&grid, &repaired, &[], expanded_bounds(), &colors),
+            cell,
+        ),
+        [BRIDGE_COLOR; 2],
+    );
+
+    for (saved_overlay, expected) in [
+        (0xE7, BRIDGE_END_COLOR),
+        (0xE8, BRIDGE_END_COLOR),
+        (u8::MAX, SAVED_COLLAPSED_TMP_COLOR),
+    ] {
+        let restored =
+            snapshot_restored_collapsed_high_runtime(&terrain_template, cell, saved_overlay);
+        let restored_cell = restored
+            .simulation
+            .resolved_terrain()
+            .and_then(|terrain| terrain.cell(cell.0, cell.1))
+            .expect("restored high bridge cell");
+        assert!(!restored_cell.bridge_facts.has_structural_bridge());
+        assert_eq!(restored_cell.bridge_facts.family, BridgeStampFamily::Nesw);
+        assert_eq!(restored_cell.radar_left, SAVED_COLLAPSED_TMP_RAW);
+        assert_eq!(
+            restored
+                .simulation
+                .overlay_grid()
+                .expect("restored overlay grid")
+                .cell(cell.0, cell.1)
+                .overlay_id,
+            (saved_overlay != u8::MAX).then_some(saved_overlay),
+            "the snapshot restores the saved CellClass overlay",
+        );
+        assert!(restored.simulation.radar_terrain_dirty_cells().is_empty());
+
+        let full = projection(&grid, &restored, &[], expanded_bounds(), &colors);
+        assert_eq!(
+            raw_pair(&full, cell),
+            [expected; 2],
+            "saved CellClass overlay {saved_overlay:#04X} selects its current source",
+        );
+
+        let mut incremental = projection(&grid, &repaired, &[], expanded_bounds(), &colors);
+        apply_incremental(&mut incremental, &restored, &[cell], &colors);
+        assert_eq!(
+            raw_pair(&incremental, cell),
+            [expected; 2],
+            "incremental source must share the snapshot-restored high-family authority",
+        );
+    }
+}
+
+#[test]
+fn gsi_04_01_bridge_end_overlays_retain_black_in_full_and_incremental_paths() {
+    let (grid, resolved) = fixture(None);
+    let cell = central_cell(&grid, expanded_bounds());
+    let colors = colors();
+    let intact_low = runtime_with_overlay(resolved.clone(), cell, Some((0x4A, 0)));
+    for id in [100, 101, 231, 232] {
+        let destroyed = runtime_with_overlay(resolved.clone(), cell, Some((id, 1)));
+        let full = projection(&grid, &destroyed, &[], expanded_bounds(), &colors);
+        assert_eq!(raw_pair(&full, cell), [BRIDGE_END_COLOR; 2], "{id}");
+
+        let mut incremental = projection(&grid, &intact_low, &[], expanded_bounds(), &colors);
+        assert_eq!(raw_pair(&incremental, cell), [LOW_BRIDGE_COLOR; 2]);
+        apply_incremental(&mut incremental, &destroyed, &[cell], &colors);
+        assert_eq!(raw_pair(&incremental, cell), [BRIDGE_END_COLOR; 2], "{id}");
+    }
+}
+
+#[test]
+fn retail_bridge_end_headers_reach_full_and_dirty_radar_sources() {
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    crate::map::theater::load_theater(&mut assets, "TEMPERATE")
+        .expect("physical temperate theater");
+    let registry = retail.rules.overlay_registry();
+    let names = std::collections::BTreeMap::from([(
+        100,
+        registry.name(100).expect("stock bridge end").to_string(),
+    )]);
+    let colors = crate::render::overlay_atlas::compute_overlay_radar_colors(
+        &assets,
+        registry,
+        crate::render::overlay_atlas::OverlayRadarColorSource::Cell,
+        &names,
+        "tem",
+        "TEMPERATE",
+        retail.rules.art(),
+    );
+    let (grid, resolved) = fixture(None);
+    let cell = central_cell(&grid, expanded_bounds());
+    assert_eq!(colors.get(&(100, 1)), Some(&BRIDGE_END_COLOR));
+    let mut runtime = runtime_with_overlay(resolved.clone(), cell, Some((100, 1)));
+    runtime.resources_mut().rules = retail.rules;
+    let full = projection(&grid, &runtime, &[], expanded_bounds(), &colors);
+    assert_eq!(raw_pair(&full, cell), [BRIDGE_END_COLOR; 2]);
+
+    let absent = runtime_with_overlay(resolved, cell, None);
+    let mut dirty = projection(&grid, &absent, &[], expanded_bounds(), &colors);
+    assert_eq!(raw_pair(&dirty, cell), [BASE_COLOR; 2]);
+    apply_incremental(&mut dirty, &runtime, &[cell], &colors);
+    assert_eq!(raw_pair(&dirty, cell), [BRIDGE_END_COLOR; 2]);
+}
+
+#[test]
+fn gsi_04_01_load_intact_bridge_discards_abandoned_destroyed_pixels() {
+    let (grid, mut resolved) = fixture(None);
+    let cell = central_cell(&grid, expanded_bounds());
+    mark_high_bridge_source(resolved.cell_mut_for_test(cell.0, cell.1).unwrap());
+    let mut collapsed = resolved.clone();
+    collapse_flags(&mut collapsed, cell);
+    let abandoned = live_runtime(collapsed, with_bridge_overlay(cell, false));
+    let restored = live_runtime(resolved, with_bridge_overlay(cell, true));
+    assert!(restored.simulation.radar_terrain_dirty_cells().is_empty());
+
+    let colors = colors();
+    let stale_destroyed = [presentation_overlay(cell, 239, 0)];
+    assert_eq!(
+        raw_pair(
+            &projection(
+                &grid,
+                &abandoned,
+                &stale_destroyed,
+                expanded_bounds(),
+                &colors
+            ),
+            cell,
+        ),
+        [BRIDGE_END_COLOR; 2],
+        "abandoned destroyed timeline used its current fallen bridge state",
+    );
+    assert_eq!(
+        raw_pair(
+            &projection(
+                &grid,
+                &restored,
+                &stale_destroyed,
+                expanded_bounds(),
+                &colors
+            ),
+            cell,
+        ),
+        [BRIDGE_COLOR; 2],
+        "first restored primary surface comes from saved intact bridge state",
+    );
+}
+
+#[test]
+fn gsi_04_01_load_destroyed_bridge_discards_abandoned_repair_pixels() {
+    let (grid, mut resolved) = fixture(None);
+    let cell = central_cell(&grid, expanded_bounds());
+    mark_high_bridge_source(resolved.cell_mut_for_test(cell.0, cell.1).unwrap());
+    let abandoned = live_runtime(resolved.clone(), with_bridge_overlay(cell, true));
+    collapse_flags(&mut resolved, cell);
+    let restored = live_runtime(resolved, with_bridge_overlay(cell, false));
+    assert!(restored.simulation.radar_terrain_dirty_cells().is_empty());
+
+    let colors = colors();
+    let stale_repaired = [presentation_overlay(cell, 0xCD, 1)];
+    assert_eq!(
+        raw_pair(
+            &projection(
+                &grid,
+                &abandoned,
+                &stale_repaired,
+                expanded_bounds(),
+                &colors
+            ),
+            cell,
+        ),
+        [BRIDGE_COLOR; 2],
+    );
+    let restored_projection = projection(
+        &grid,
+        &restored,
+        &stale_repaired,
+        expanded_bounds(),
+        &colors,
+    );
+    assert_eq!(raw_pair(&restored_projection, cell), [BRIDGE_END_COLOR; 2]);
+    assert!(
+        restored_projection
+            .overlay_pixels
+            .iter()
+            .any(|pixel| (pixel.rx, pixel.ry) == cell && pixel.color == [0, 0, 0, 255]),
+        "the saved terminal overlay retains black over abandoned repaired pixels",
+    );
+}
+
+#[test]
+fn gsi_04_01_load_live_overlay_absence_beats_stale_presentation_tombstone() {
+    let (grid, resolved) = fixture(None);
+    let cell = central_cell(&grid, expanded_bounds());
+    let mut prior_overlay = OverlayGrid::new(SIDE, SIDE);
+    prior_overlay.place_overlay(cell.0, cell.1, 10, 4);
+    let prior = live_runtime(resolved.clone(), prior_overlay);
+    let restored = live_runtime(resolved, OverlayGrid::new(SIDE, SIDE));
+    let stale = [presentation_overlay(cell, 10, 4)];
+    let colors = colors();
+
+    assert_eq!(
+        raw_pair(
+            &projection(&grid, &prior, &stale, expanded_bounds(), &colors),
+            cell,
+        ),
+        [OVERLAY_COLOR; 2],
+    );
+    let restored_projection = projection(&grid, &restored, &stale, expanded_bounds(), &colors);
+    assert_eq!(raw_pair(&restored_projection, cell), [BASE_COLOR; 2]);
+    assert!(
+        restored_projection
+            .overlay_pixels
+            .iter()
+            .all(|pixel| (pixel.rx, pixel.ry) != cell),
+        "full rebuild enumerates restored OverlayGrid, not retained presentation entries",
+    );
+}
+
+#[test]
+fn gsi_04_01_load_restored_local_size_builds_geometry_before_live_cell_pixels() {
+    let (grid, resolved) = fixture(None);
+    let cell = central_cell(&grid, shrunken_bounds());
+    let mut overlay = OverlayGrid::new(SIDE, SIDE);
+    overlay.place_overlay(cell.0, cell.1, 10, 4);
+    let runtime = live_runtime(resolved, overlay);
+    let colors = colors();
+
+    let abandoned = projection(&grid, &runtime, &[], expanded_bounds(), &colors);
+    let restored = projection(&grid, &runtime, &[], shrunken_bounds(), &colors);
+    let abandoned_geometry = abandoned.native_radar_surface.expect("old geometry");
+    let restored_geometry = restored.native_radar_surface.expect("restored geometry");
+    assert_ne!(abandoned_geometry.raw_size(), restored_geometry.raw_size());
+    assert_ne!(
+        abandoned_geometry.cell_to_raw_pixel(cell),
+        restored_geometry.cell_to_raw_pixel(cell),
+    );
+    assert_eq!(raw_pair(&restored, cell), [OVERLAY_COLOR; 2]);
+    assert!(
+        restored
+            .overlay_pixels
+            .iter()
+            .any(|pixel| (pixel.rx, pixel.ry) == cell),
+        "restored current source is projected through restored LocalSize",
+    );
+}
+
+#[test]
+fn gsi_04_01_full_and_incremental_paths_share_current_cell_source_precedence() {
+    let (grid, mut resolved) = fixture(None);
+    let cell = central_cell(&grid, expanded_bounds());
+    resolved
+        .cell_mut_for_test(cell.0, cell.1)
+        .unwrap()
+        .terrain_object_occupation = Some(9);
+    let mut overlay = OverlayGrid::new(SIDE, SIDE);
+    overlay.place_overlay(cell.0, cell.1, 10, 4);
+    let runtime = live_runtime(resolved, overlay);
+    let authority = CurrentRadarCellAuthority::from_runtime(&runtime);
+    let colors = colors();
+    assert_eq!(
+        authority.source(cell.0, cell.1, BRIDGE_COLOR, &colors),
+        Some(([200, 200, 160], OverlayClassification::TerrainObject)),
+    );
+    assert_eq!(
+        raw_pair(
+            &projection(&grid, &runtime, &[], expanded_bounds(), &colors),
+            cell,
+        ),
+        [[200, 200, 160]; 2],
+    );
+}
+
+/// `ProcessDirtyCells @ 0x00655250` redraws only Cells inside the mode-one
+/// playfield (`0x00655285..0x00655298`): a raised Cell in the top row, which
+/// the full build paints, keeps that colour through a dirty update.
+#[test]
+fn dirty_cell_outside_the_mode_one_playfield_keeps_its_colour() {
+    let (grid, mut resolved) = fixture(None);
+    let bounds = expanded_bounds();
+    let cell = grid
+        .cells
+        .iter()
+        .map(|cell| (cell.rx, cell.ry))
+        .find(|&(rx, ry)| {
+            let (x, y) = (i32::from(rx), i32::from(ry));
+            bounds.contains_geometry_packed(x, y)
+                && !bounds.contains_height_aware_packed(x, y, 4, 0)
+        })
+        .expect("a top-row cell");
+    resolved.cell_mut_for_test(cell.0, cell.1).unwrap().level = 4;
+    let colors = colors();
+    let absent = runtime_with_overlay(resolved.clone(), cell, None);
+    let low = runtime_with_overlay(resolved, cell, Some((0x4A, 9)));
+    let full = projection(&grid, &low, &[], bounds, &colors);
+    assert_eq!(raw_pair(&full, cell), [LOW_BRIDGE_COLOR; 2]);
+    let mut incremental = projection(&grid, &absent, &[], bounds, &colors);
+    apply_incremental(&mut incremental, &low, &[cell], &colors);
+    assert_eq!(raw_pair(&incremental, cell), [BASE_COLOR; 2]);
+}
+
+#[test]
+fn native_dirty_cell_without_cellclass_change_keeps_generated_surface() {
+    let (grid, resolved) = fixture(None);
+    let cell = central_cell(&grid, expanded_bounds());
+    let colors = colors();
+    let runtime = live_runtime(resolved, OverlayGrid::new(SIDE, SIDE));
+    let mut native = projection(&grid, &runtime, &[], expanded_bounds(), &colors);
+    let surface = |native: &MinimapPlayfieldProjection| {
+        let terrain = native
+            .native_radar_terrain
+            .as_ref()
+            .expect("generated surface");
+        (terrain.generated_rgb565().to_vec(), terrain.revision())
+    };
+    let generated = surface(&native);
+    apply_incremental(&mut native, &runtime, &[cell], &colors);
+    assert_eq!(
+        surface(&native),
+        generated,
+        "an unchanged CellClass source must not regenerate the surface"
+    );
+    assert!(
+        native.base_rgba.is_empty(),
+        "nor stamp the mapless per-cell color beside it"
+    );
+}
+
+#[test]
+fn mapless_dirty_batch_updates_removes_and_appends_overlay_pixels_in_order() {
+    let (grid, resolved) = fixture(None);
+    let a = central_cell(&grid, expanded_bounds());
+    let (b, c) = ((a.0 + 1, a.1), (a.0 + 2, a.1));
+    let changed = [70, 71, 72];
+    let mut colors = colors();
+    colors.insert((10, 5), changed);
+    let mut before = OverlayGrid::new(SIDE, SIDE);
+    before.place_overlay(a.0, a.1, 10, 4);
+    before.place_overlay(c.0, c.1, 10, 4);
+    let mut after = OverlayGrid::new(SIDE, SIDE);
+    after.place_overlay(b.0, b.1, 10, 4);
+    after.place_overlay(c.0, c.1, 10, 5);
+    let before = live_runtime(resolved.clone(), before);
+    let after = live_runtime(resolved, after);
+    // Without resolved terrain no generated surface exists: the fallback
+    // stamps these retained pixels in list order.
+    let mut fallback = MinimapPlayfieldProjection::derive(
+        &grid,
+        None,
+        &[],
+        &colors,
+        "TEMPERATE",
+        Some(expanded_bounds()),
+        Some(CurrentRadarCellAuthority::from_runtime(&before)),
+    );
+    assert!(fallback.native_radar_terrain.is_none());
+    let rgba = |[r, g, b]: [u8; 3]| [r, g, b, 255];
+    let listed = |projection: &MinimapPlayfieldProjection| {
+        projection
+            .overlay_pixels
+            .iter()
+            .map(|pixel| ((pixel.rx, pixel.ry), pixel.color))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        listed(&fallback),
+        [(a, rgba(OVERLAY_COLOR)), (c, rgba(OVERLAY_COLOR))]
+    );
+
+    apply_incremental(&mut fallback, &after, &[a, b, c, b], &colors);
+    assert_eq!(
+        listed(&fallback),
+        [(c, rgba(changed)), (b, rgba(OVERLAY_COLOR))],
+        "removed cells leave, changed cells keep their slot, new cells append",
+    );
+}
+
+fn flat_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
+    ResolvedTerrainCell {
+        radar_left: [20, 40, 60],
+        radar_right: [90, 90, 90],
+        ..crate::map::resolved_terrain::test_smudge_cell(rx, ry)
+    }
+}

@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original UnitType constructor and the two FootApproach bool readers.\n\nRetained INI-cache entries are supplied through the existing native reader\nfixture. File parsing/type discovery and unrelated whole-reader passes are\noutside this focused original7144A0..7144D4 execution.\n",
+  "assumptions": [
+    "The existing ifv_fire_coord.prepare owner establishes the native type registries and reader environment, then a fresh complete original UnitType7470D0 constructor executes. Exact stores71152A/711530 and AL are observed.",
+    "Rules layers use unique supplied INI CRC-cache lexical entries; original5295F0 bool parser and7144A0..7144D4 retained defaults/read order execute. Missing sections are a reader-fragment input; the outer full type reader section admission is not replayed.",
+    "Physical RULESMD, optionalLANGRULE, MPBattleMD and Anytown map FV entries are read through the same original fragment. Outputs retain only selected short keys and lexical hashes; proprietary INI bodies are not published."
+  ],
+  "substitutions": [
+    "Existing allocator/INI-cache/reader bootstrap only; no bool parser, default, store or branch return is supplied."
+  ],
+  "entry_points": {
+    "unit_type_ctor": "0x007470D0",
+    "techno_type_reader": "0x007144A0",
+    "read_bool": "0x005295F0"
+  },
+  "payload_sha256": "2595f6685a61c24faa2bc5af2fad187e68f721b01b6de36282ac2bd7892a23e2"
+}

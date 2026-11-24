@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original low wooden bridge damage: both axes, full family and physical sequence.\n\nSynthetic input cells isolate selector/root/leaf publication. Shared repository\noracle bodies own execution and declared callback substitutions. The physical\nsequence projects only already-executed repair overlay stores onto its frozen\nphysical crop. Neither stage executes live occupants, Recalc, graph or rendering.\n",
+  "assumptions": [
+    "90 supplied finite15-cell strips: overlays73..102, with74..101 selecting both original axes, each at all3 width inputs; 73/102 are rejected controls",
+    "Supplied scalar cells: tile65535/subtile0, flags0, level2, Land1, frame0/1/2 across width; remaining512-byte Cell storage starts zero. No native Cell constructor/load equivalence",
+    "Three physical Shrapnel sequences project the frozen executed first-repair overlays onto its170-cell controller crop. Recalc is not run, so retained pre-repair land is not healthy-native initialization proof",
+    "Original575EE0 executes on absent CellTags; original5868A0 enumerates the rectangle with successful bounded allocation/free",
+    "Every raw Cell/Dummy byte before/after and ordered CPU writes are retained. All callbacks execute in original order. Executable .text hash is unchanged and CPU .text writes fail",
+    "No RNG producer, structural47DD70 or caller70D4A0 may be reached. This body-boundary assertion is not a full stream/timer proof for excluded callbacks",
+    "FPCW is observed from fixture reset state, not established active-retail startup. No simulated arithmetic/rounding claims are made here"
+  ],
+  "substitutions": [
+    "Shared repository47D2B0/487A10/56C510/586990 callbacks record and return; occupants/movement/damage/land/nav results are excluded",
+    "47FDE0/47FB90 supply zero display rectangles; projection/radar/display sinks do not establish pixels",
+    "7C8E17/7C8B3D supply successful bounded allocation/free; no actual CRT heap",
+    "No outer489280 admission, strength RNG, full physical INI load, firing chronology, tagged notification, restore or rendering executes"
+  ],
+  "entry_points": {
+    "selector": "0x0057BAA0",
+    "ns_root": "0x0057BCF0",
+    "ew_root": "0x0057C2B0",
+    "ns_leaf": "0x0057DD50",
+    "ew_leaf": "0x0057E2A0",
+    "ns_classifier": "0x0057B870",
+    "ew_classifier": "0x0057B990",
+    "ns_endpoints": "0x0057C990",
+    "ew_endpoints": "0x0057C870",
+    "notify": "0x00575EE0",
+    "rectangle": "0x005868A0",
+    "recalc_boundary": "0x0047D2B0",
+    "occupants_boundary": "0x00487A10",
+    "connectivity_boundary": "0x0056C510",
+    "hierarchy_boundary": "0x00586990"
+  },
+  "source_sha256": {
+    "tools/spatial_oracle/shrapnel_repair/shrapnel_repair.json.gz": "cc7367d7fd3f99540a84c43004c8e9638420249224c709f7f6e8a9c9d716c555"
+  },
+  "payload_sha256": "37a35443a01cf13a82472d96ef7acb32a4a6800771ab893e558c0d8fa5cea6f9",
+  "packaging": "canonical JSON; gzip mtime=0; copied lexical inputs replaced by SHA256"
+}

@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original mode-zero LightSource wrapper and complete area dispatch",
+  "assumptions": [
+    "Supplied dense 128x128 Cell table; ordinary GALITE radius5000, detail2 and center24,24",
+    "Source48 starts disabled; each original wrapper retains its native state for the next event",
+    "Original sqrt/ftol runs with runner FPCW0x0E7F; only positive stock-radius coordinates are covered",
+    "Building/radiation callsite mode-zero reachability is separately established in LIGHTSOURCE_QUEUED_MODE_CALLER_CENSUS_GHIDRA_REPORT.md",
+    "No rendering, source intensity/color sampling, global profile update, allocation, power admission or persistence is emulated"
+  ],
+  "substitutions": [
+    "Cell483E30 records actual receiver and six recompute arguments, then returns without computing colors",
+    "Map4F42F0 records redraw argument and returns without display traversal"
+  ],
+  "entry_points": {
+    "enable": "0x00554A60",
+    "disable": "0x00554A80",
+    "area": "0x00554AF0",
+    "slot_admission": "0x005657E0",
+    "cell_lookup": "0x005657A0",
+    "sqrt": "0x004CAC40",
+    "ftol": "0x007C5F00"
+  },
+  "payload_sha256": "b2311f438ff9950e8666afa0da367ec4f7fd8be0d8fd21530f506999577129d1"
+}

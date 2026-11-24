@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original TerrainType71E0D0 placement adjustment, Map578080 ground getter, Object5F6940 raw write and Object5F65A0 retained GetCoords; 41 signed-level/slope/bridge-flag cases. Not complete Terrain construction, placement admission, observers or rendering.",
+  "assumptions": [
+    "Terrain constructor71BC4A..71BC76 supplies signed cell-center XY and inputZ0. Supplied cell10,20 has center2688,5248; extra inputZ999 row characterizes the type callback beyond map constructor inputs.",
+    "Original startup slope matrices initialized by native_slope.slope_matrices and installed atB45188. LevelHeight104 supplied at89E7C0; native x87 control0x0E7F.",
+    "Terrain VT7F522C+48 is5F65A0,+1B4 is5F6940; TerrainType VT7F5458+6C is71E0D0. Calls execute these original leaves directly. The source cell level then changes to7/flat before the GetCoords read."
+  ],
+  "substitutions": [
+    "None; map table and Object storage are supplied fixture state. No code patches or gameplay hooks."
+  ],
+  "entry_points": {
+    "terrain_type_coordinate": "0x0071E0D0",
+    "ground_height": "0x00578080",
+    "set_raw_coords": "0x005F6940",
+    "get_coords": "0x005F65A0"
+  },
+  "payload_sha256": "62fc44b6f28b794404c36a835c3b2b2e700a1cffc531c5a02318d53aa82b291a"
+}

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original5FB2E0 controls for declared GameOptions speed and Anim delay inputs.",
+  "assumptions": [
+    "Stored speed0..7 and input delay0..5/900 are explicit scalar inputs. Original table/code execute in a fresh pinned image for every control. Delays1 at speeds1/3 distinguish the v6 production/native H2O_EXP3 rate boundary."
+  ],
+  "substitutions": [
+    "Only GameOptions receiver scalar and function argument are supplied. No code, output, timer or Anim state is replaced. This controls the rate conversion, not full options loading or animation lifecycle."
+  ],
+  "entry_points": {
+    "speed_normalize": "0x005FB2E0"
+  },
+  "payload_sha256": "242da5fecd91661247fc2c537aca914fdaa88705290311a552ec209d91e39ac2"
+}

@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "10 original Building sampling rows, 13 Techno turret-control visits and 4 Limbo sound-cleanup slices on the supported historical/Steam layout. Rust compares latch transitions, ordered control requests and sampling through its existing owners.",
+  "assumptions": [
+    "The shared runner admits the historical and Steam executable identities with matching file-backed sections/layouts; this record identifies the actual executed binary. Whole Windows startup and audible output are not compared.",
+    "Supplied actor/type and FacingClass prestate, frame counter, empty handles and AI EBP=0. Constructors, whole Building/Techno AI and whole save/load do not execute.",
+    "Original StopAndClear, Release, PlayAt and coordinate functions execute with the audio service absent and the playback byte disabled. Successful source retention, attack/decay timing, selected samples and audible output are outside coverage.",
+    "No audio RNG path is reached under this disabled-device admission. This does not establish the number or order of draws for accepted playback. Unarmed prestate characterizes control continuation, not original Load execution."
+  ],
+  "substitutions": [
+    "The supplied virtual type getter returns the fixture type. No original executable instruction is modified."
+  ],
+  "entry_points": {
+    "building_sample": "0x0043FCC7",
+    "is_rotating": "0x004C9480",
+    "turret_control": "0x006F9F9F",
+    "limbo_sound_cleanup": "0x006F6C4A",
+    "stop": "0x00405D40",
+    "release": "0x00406060",
+    "play_at": "0x007509E0",
+    "coordinate": "0x00750D40"
+  },
+  "replay_command": "python -m tools.spatial_oracle.turret_rotate_sound",
+  "payload_sha256": "db686a3df56a81ac549b687db41098b2bb60659da929b557609940eef80ce7ee"
+}

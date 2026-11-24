@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Sixteen synthetic original-block witnesses for current-tile Morphable and AllowTiberium queries",
+  "assumptions": [
+    "Supplied two-entry registry with opposite permission bits; count2 and Cell+38 span signed and narrowing boundaries",
+    "Smudge starts at6B601A with ESI=Cell and stops before TEST AL at6B603A",
+    "Tiberium starts at4839C0 with EDI=Cell and stops before accepted4839E2 or rejected4839E9 return sequence",
+    "Prior placement gates are assumed passed; later smudge gates and complete placement behavior are excluded",
+    "Registry construction and stock reachability are outside these synthetic boundary witnesses"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "smudge_tile_gate": "0x006B601A",
+    "tiberium_tile_gate": "0x004839C0"
+  },
+  "payload_sha256": "940b30c81d6a04b445c6f5afc0ca4bf445bf6de49ba0fdd8f03c9e018c8e1de5"
+}

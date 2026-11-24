@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "scope": "Ares 3.0 armor token/default/warhead entry inheritance, original armor binding hooks, ordinary weapon admission/selection and bounded GetTotalDamage",
+  "ares_sha256": "93ce890f387a6c1b3240a2dd7b674f25fec5a0e96f0b0d0306796b2edf7b5b83",
+  "payload_sha256": "9d38d3666ba46fc1a697dd3b3b25b6a487bd9ad2731490b93b2ec7454ca1d9af",
+  "control_count": 57,
+  "fpcw": "0x0e7f",
+  "entry_points": {
+    "armor_constructor": "0x10006100",
+    "armor_default_reader": "0x10006890",
+    "armor_name_reader_hook": "0x10006e10",
+    "verses_token_parser": "0x100523e0",
+    "warhead_armor_entry_reader": "0x10006460",
+    "can_fire": "0x100542a0",
+    "passive_acquire": "0x10054270",
+    "retaliate": "0x100543e0",
+    "select_weapon": "0x10054360",
+    "damage_hook": "0x10054230",
+    "damage_hook_site": "0x00489235",
+    "game_get_total_damage": "0x00489180"
+  },
+  "boundaries": [
+    "Synthetic ASCII ReadString/ReadBool returns, existing registries and valid hook register-state objects are supplied; physical INI loading and whole Rules Process are excluded.",
+    "CRT atoi/atof, strchr, string comparison/copy, memory move, allocation and logging are supplied leaf services. Floating token conversion itself is not native-executed or certified; original flag derivation and multiplication execute on supplied binary64 input.",
+    "Original armor constructor/default reader, WH append/copy/override loops, numeric flag derivation, admission and weapon-selection hook bodies execute unchanged; GetTechnoType virtual dispatch returns a fixture type.",
+    "The eight total_damage cases execute original489180 with a guest-only pushad/pushfd/origin adapter for the actual installed489235 Ares hook. Rules MaxDamage, no-damage flag, spread, percent-at-max and distance are declared inputs; full Syringe startup is not executed.",
+    "The six damage_ cases execute only the Ares multiplier hook. Negative input there is characterization only: complete489180 bypasses verses for incoming negative damage at distance<8. Use total_damage cases for the bounded complete receiver.",
+    "No ordinary gameplay world, effects/lifecycle, snapshots, full DLL/extension reader, unknown/mod content or whole-mod/native-rendering parity is claimed."
+  ],
+  "provenance": "Executed the recorded original DLL and executable bytes at preferred VAs with synthetic none/flak/paper/later/magic and TestWH inputs. No game or mod assets are distributed.",
+  "source_leads": [
+    "https://ares-developers.github.io/Ares-docs/new/additionalarmortypesandverses.html",
+    "https://github.com/Ares-Developers/Ares/blob/master/src/Enum/ArmorTypes.cpp",
+    "https://github.com/Ares-Developers/Ares/blob/master/src/Ext/WarheadType/Hooks.Verses.cpp"
+  ],
+  "source_limit": "Public master differs from installed3.0 in WH initialization/override ordering, CanFire gating and hook sites; original instruction execution establishes this corpus.",
+  "unicorn_binding": "2.1.4",
+  "command": "python -m tools.rules_oracle.ares_armor --ares-dll <Ares.dll> --gamemd-exe <gamemd.exe> --check"
+}

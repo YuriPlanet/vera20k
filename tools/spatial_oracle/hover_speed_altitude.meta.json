@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Hover SpeedUpdate 515ED0 (request, ramp, SpeedMult) and altitude controller 513D20 (visible height, spring offset) over supplied object, Foot and map state",
+  "assumptions": [
+    "Hover object and FacingClass memory start zeroed apart from the supplied fields, so the steering facing turns instantly; the turn gate is not exercised",
+    "SpeedUpdate cases always have a head; the null-head arm is excluded",
+    "Rules doubles/ints written at their Rules offsets; map cells flat with supplied levels",
+    "The startup-filled direction delta table 0x0089F6D8 is supplied as cell deltas x256 (the dumped values util::direction_tables::lepton pins)"
+  ],
+  "substitutions": [
+    "Foot vt+0x48 GetCoords returns the supplied Location; vt+0x1C8 GetHeight a supplied value; vt+0x1CC SetHeight records its argument; Foot+4 vt+0x10 returns a supplied ID"
+  ],
+  "entry_points": {
+    "speed_update": "0x00515ED0",
+    "altitude": "0x00513D20"
+  },
+  "payload_sha256": "c4c2d0e538b3fe749c334f1ec991bf0825e06794e58eaa02505e3d75ab80edcd"
+}

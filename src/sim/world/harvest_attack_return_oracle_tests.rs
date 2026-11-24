@@ -1,0 +1,587 @@
+//! Original Unit Attack7447A0 -> Foot4D4DC0 -> idle738970 -> Harvest73E5E0.
+//! Replays the saved original executable packet, not values derived from Rust.
+//! Shared map/ore/Drive setup and state comparisons remain with harvest_field.
+//! Commands, expiry, idle, Stage and promotion call their production owners.
+//!
+//! Native packet: tools/spatial_oracle/harvest_attack_return.{json,md}; the
+//! live-target Approach is an explicit external return seam, replayed through
+//! `movement::approach_oracle_seam` on the Approach owner. The fixture's
+//! unarmed targets and stationary source hold no navigation state the seam
+//! would hide; actual shooting/death is connected separately by
+//! harvest_field_cycle_tests.
+//! Compare every represented step's mission/cursor, MegaMission, dispatch and
+//! passive timer, Target, NavCom, archive, latch, Stage, cargo/ore, spread and
+//! full Scenario RNG.
+//! Raw pointers/event allocation bytes and unused timer padding are not state
+//! identities in Rust. Facing/refinery fields are pinned by existing dock tests.
+
+use super::harvest_field_oracle_tests::{compare_state, registry, row_scene_with};
+use super::lifecycle::PointerExpiryControl;
+use super::refinery_dock_oracle_tests::{Scene, cell};
+use crate::sim::combat::TargetKind;
+use crate::sim::command::Command;
+use crate::sim::house_state::HouseState;
+use crate::sim::mission::state::MissionTestFixture;
+use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionTimer};
+use serde_json::{Value, json};
+
+fn corpus() -> &'static Value {
+    crate::test_fixture::json("tools/spatial_oracle/harvest_attack_return.json")
+}
+
+fn int(value: &Value) -> i32 {
+    value.as_i64().unwrap() as i32
+}
+
+/// The native fixture supplies these two registered Unit objects. Their pointer
+/// tokens are translated to existing Rust stable ids, never used numerically.
+struct Replay {
+    scene: Scene,
+    first: u64,
+    second: u64,
+}
+
+impl Replay {
+    fn new(row: &Value) -> Self {
+        let mut input = row["input"].clone();
+        input["mission"] = "guard".into();
+        input["miner_cell"] = json!([15, 15]);
+        let mut scene = row_scene_with(&input, |text, _| {
+            // Original reader receipt supplies .016 for these committed slots.
+            // Existing field fixture already reads Harvest/Guard and the stock
+            // Harvester, Storage and scan values through their native parsers.
+            text.push_str("[Attack]\nRate=.016\n[Move]\nRate=.016\n");
+            if let Some(control) = input.get("idle_control") {
+                if control["armed"] == true {
+                    *text = text.replacen("[HARV]\n", "[HARV]\nPrimary=IdleWeapon\n", 1);
+                    text.push_str("[IdleWeapon]\nDamage=10\nROF=10\nRange=4\n");
+                }
+                if control["deploys_into"] == true {
+                    *text = text.replacen("[HARV]\n", "[HARV]\nDeploysInto=GAREFN\n", 1);
+                }
+                text.push_str("[Sleep]\nZombie=yes\n");
+            }
+        });
+        let owner = scene.sim.interner.intern("Russians");
+        scene
+            .sim
+            .houses
+            .register(HouseState::new(owner, 1, None, true, 0, 10));
+        let target_owner = if input["same_owner"] == true {
+            "Americans"
+        } else {
+            "Russians"
+        };
+        let first = scene
+            .sim
+            .spawn_object("MTNK", target_owner, 16, 15, 0, &scene.rules)
+            .unwrap();
+        let second = scene
+            .sim
+            .spawn_object("MTNK", "Russians", 15, 16, 0, &scene.rules)
+            .unwrap();
+        for id in [first, second] {
+            scene
+                .sim
+                .substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .health
+                .set_for_test(1000);
+        }
+        let before = &row["before"];
+        let entity = scene.sim.substrate.entities.get_mut(scene.miner).unwrap();
+        entity.mission.apply_test_fixture(MissionTestFixture {
+            current: MissionId::from_raw(int(&before["miner_mission"])),
+            queued: MissionId::from_raw(int(&before["miner_queued"])),
+            suspended: MissionId::from_raw(int(&before["suspended"])),
+            movement_bypass_latch: 0,
+            handler_state: int(&before["miner_status"]) as u32,
+            mission_start_frame: 200,
+            ai_counter: 0,
+            dispatch_timer: MissionDispatchTimer::from_raw(
+                int(&before["dispatch_words"][0]),
+                int(&before["dispatch_words"][2]),
+            ),
+        });
+        entity
+            .lifecycle
+            .set_object_alive_for_test(before["alive"] == 1);
+        entity.health.set_for_test(int(&before["health"]));
+        // Foot+6B3 is the original constructor's 0: the corpus runs no
+        // Unlimbo, whose Enter_Idle_Mode set it here.
+        entity.mission_leaf.set_foot_idle_entry_latch(0);
+        // Foot+5C4: the corpus supplies MegaMission 29 with neither a
+        // MegaDestination nor a MegaTarget.
+        if int(&before["saved_mission"]) == 29 {
+            entity.seldom.mega_mission =
+                crate::sim::mission::mega_mission::MegaMission::attack_move(None);
+        }
+        entity
+            .passive_scan
+            .set_passive_scan_timer_for_test(MissionTimer::armed(
+                int(&before["targeting_words"][0]) as u32,
+                int(&before["targeting_words"][2]) as u32,
+            ));
+        if input["target"] == true {
+            scene
+                .sim
+                .assign_target_represented(
+                    scene.miner,
+                    Some(TargetKind::Entity(first)),
+                    &scene.rules,
+                    &mut crate::sim::world::FrameEffects::default(),
+                )
+                .unwrap();
+        }
+        if input["sensor"] == 1 {
+            let owner = scene.sim.interner.get("Americans").unwrap();
+            scene.sim.fog.set_width_for_test(33);
+            scene.sim.fog.set_height_for_test(33);
+            scene.sim.fog.sensors_add_at(owner, (16, 15), 1);
+        }
+        if let Some(control) = input.get("idle_control") {
+            let entity = scene.sim.substrate.entities.get_mut(scene.miner).unwrap();
+            entity.seldom.weapon_burst =
+                serde_json::from_value(json!({"index": control["burst"]})).unwrap();
+            let object = scene.rules.object("HARV").unwrap();
+            let entity = scene.sim.substrate.entities.get(scene.miner).unwrap();
+            assert_eq!(
+                crate::sim::combat::combat_weapon::is_armed(
+                    entity,
+                    object,
+                    &scene.sim.substrate.entities,
+                    &scene.rules,
+                    &scene.sim.interner
+                ),
+                int(&row["idle_control_receipt"]["is_armed_eax"]) & 255 != 0,
+                "{}: native IsArmed return byte",
+                input["name"]
+            );
+            assert_eq!(
+                object.deploys_into.is_some(),
+                control["deploys_into"] == true
+            );
+            let owner = entity.owner();
+            scene
+                .sim
+                .houses
+                .get_mut(&owner)
+                .unwrap()
+                .set_current_iq_for_test(int(&control["house_iq"]));
+        }
+        // Unit construction consumes shared stream work in Rust. All fixture
+        // allocations precede the declared original Scenario seed/prestate.
+        scene.sim.scenario_rng = crate::sim::rng::SimRng::new(input["seed"].as_u64().unwrap_or(1));
+        if input["area_guard_comparison"] == true {
+            // Independent native seed controls declared by the additive
+            // AreaGuard corpus, installed after the scene's construction.
+            scene.sim.main_rng = crate::sim::rng::SimRng::new(31);
+            scene.sim.mapgen_rng = crate::sim::rng::SimRng::new(42);
+        }
+        Self {
+            scene,
+            first,
+            second,
+        }
+    }
+
+    fn compare(&self, native: &Value, input: &Value, context: &str) {
+        let s = &self.scene;
+        let e = s.sim.substrate.entities.get(s.miner).unwrap();
+        assert_eq!(
+            s.sim.session.binary_frame() as i32,
+            int(&native["frame"]),
+            "{context}: frame"
+        );
+        assert_eq!(
+            e.mission.current().raw(),
+            int(&native["miner_mission"]),
+            "{context}: current"
+        );
+        assert_eq!(
+            e.mission.queued().raw(),
+            int(&native["miner_queued"]),
+            "{context}: queued"
+        );
+        assert_eq!(
+            e.mission.suspended().raw(),
+            int(&native["suspended"]),
+            "{context}: suspended"
+        );
+        assert_eq!(
+            e.seldom.mega_mission.is_attack_move(),
+            int(&native["saved_mission"]) == 29,
+            "{context}: MegaMission"
+        );
+        assert_eq!(
+            e.mission.handler_state(),
+            int(&native["miner_status"]) as u32,
+            "{context}: cursor"
+        );
+        assert_eq!(
+            json!([
+                e.mission.dispatch_timer().start_frame(),
+                e.mission.dispatch_timer().delay()
+            ]),
+            native["dispatch_timer"],
+            "{context}: dispatch timer"
+        );
+        assert_eq!(
+            json!([
+                e.passive_scan.timer().start_frame() as i32,
+                e.passive_scan.timer().duration() as i32
+            ]),
+            json!([native["targeting_words"][0], native["targeting_words"][2]]),
+            "{context}: passive timer"
+        );
+        let target = e
+            .attack_target
+            .target()
+            .map(|t| match t {
+                TargetKind::Entity(id) if id == self.first => "0x200c2000",
+                TargetKind::Entity(id) if id == self.second => "0x200c2800",
+                other => panic!("{context}: unexpected Target {other:?}"),
+            })
+            .unwrap_or("0x0");
+        assert_eq!(
+            target,
+            native["target"].as_str().unwrap(),
+            "{context}: Target"
+        );
+        // The native rows reset the index at Assign_Target(NULL); Ares
+        // TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53) keeps it.
+        if let Some(index) = native.get("burst_index")
+            && !s.rules.ares()
+        {
+            assert_eq!(
+                e.seldom.weapon_burst.index(),
+                int(index),
+                "{context}: burst index"
+            );
+        }
+        assert_eq!(
+            e.navigation.nav_queue().len(),
+            int(&native["nav_queue_count"]) as usize,
+            "{context}: waypoint queue"
+        );
+        assert_eq!(
+            u8::from(e.is_object_alive()),
+            int(&native["alive"]) as u8,
+            "{context}: alive"
+        );
+        assert_eq!(
+            e.health.current(),
+            int(&native["health"]),
+            "{context}: health"
+        );
+        let first = s.sim.substrate.entities.get(self.first).unwrap();
+        assert_eq!(
+            u8::from(first.is_object_alive()),
+            int(&native["target_alive"]) as u8,
+            "{context}: target alive"
+        );
+        assert_eq!(
+            first.health.current(),
+            int(&native["target_health"]),
+            "{context}: target health"
+        );
+        let view = s.sim.scenario_rng.logical_view();
+        assert_eq!(
+            json!({"disabled": view.disabled, "index_a": view.index_a, "index_b": view.index_b, "state": view.words}),
+            native["scenario_rng"],
+            "{context}: full Scenario RNG"
+        );
+        if let Some(other_rng) = native.get("other_rng") {
+            let views = s.sim.rng_views();
+            let main = views.main;
+            let mapgen = views.mapgen;
+            assert_eq!(
+                json!({"disabled": main.disabled, "index_a": main.index_a, "index_b": main.index_b, "state": main.words.as_slice()}),
+                other_rng["main"],
+                "{context}: full Main RNG"
+            );
+            assert_eq!(
+                json!({"disabled": mapgen.disabled, "index_a": mapgen.index_a, "index_b": mapgen.index_b, "state": mapgen.words}),
+                other_rng["mapgen"],
+                "{context}: full MapGen RNG"
+            );
+        }
+        let stage = serde_json::to_value(e.native_stage()).unwrap();
+        assert_eq!(
+            stage["changed"], native["stage_changed"],
+            "{context}: Stage changed"
+        );
+        assert_eq!(
+            stage["increment"], native["stage_step"],
+            "{context}: Stage increment"
+        );
+        for (id, field) in [(s.miner, "miner_contact"), (s.refinery, "refinery_contact")] {
+            let contact = s
+                .sim
+                .substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .seldom
+                .radio_contacts
+                .slot(0)
+                .map_or(Value::Null, |id| s.name(id));
+            assert_eq!(contact, native[field], "{context}: {field}");
+        }
+        compare_state(s, &json!({"input": input, "state": native}), context);
+        if let Some(miner) = e.miner.as_ref() {
+            assert_eq!(
+                u8::from(miner.unload_active()),
+                int(&native["unloading"]) as u8,
+                "{context}: unload latch"
+            );
+        } else {
+            assert_eq!(
+                native["storage"],
+                json!([0.0, 0.0, 0.0, 0.0]),
+                "{context}: no harvester storage"
+            );
+        }
+    }
+
+    fn step(&mut self, step: &Value, context: &str) {
+        let input = &step["input"];
+        let s = &mut self.scene;
+        let now = s.sim.session.binary_frame();
+        match input["op"].as_str().unwrap() {
+            "command" | "stop" => {
+                let command = match input["op"].as_str().unwrap() {
+                    "stop" => Command::Stop { entity_id: s.miner },
+                    _ => match input["mission"].as_str().unwrap() {
+                        "attack" => Command::Attack {
+                            attacker_id: s.miner,
+                            target_id: if input["target"] == "second" {
+                                self.second
+                            } else {
+                                self.first
+                            },
+                        },
+                        "move" => {
+                            let (target_rx, target_ry) = cell(&input["destination"]);
+                            Command::Move {
+                                entity_id: s.miner,
+                                target_rx,
+                                target_ry,
+                            }
+                        }
+                        "area_guard" => {
+                            let (x, y) = cell(&input["post"]);
+                            Command::Guard {
+                                entity_id: s.miner,
+                                target: Some(TargetKind::Cell(x, y)),
+                            }
+                        }
+                        other => panic!("{context}: command {other}"),
+                    },
+                };
+                assert!(
+                    s.sim.apply_command_with_overlays(
+                        None,
+                        "Americans",
+                        &command,
+                        &s.rules,
+                        Some(registry()),
+                        &mut crate::sim::world::FrameEffects::default()
+                    ),
+                    "{context}: command admission"
+                );
+            }
+            "promote" => s.sim.mission_host_promote(s.miner, now, &s.rules),
+            "ready" => assert_eq!(
+                u8::from(s.sim.mission_ready_to_commence(s.miner, &s.rules)),
+                int(&step["returned"]["ready_al"]) as u8,
+                "{context}: ReadyToCommence"
+            ),
+            "dispatch" => {
+                // The packet's dispatch harness intercepts the live-target
+                // Approach vcall with a declared RET4 (one
+                // `supplied_approach_return` event per interception); arm the
+                // same declared answers on the Approach owner for this step,
+                // and require every one of them consumed.
+                let declared: Vec<i32> = step["events"]
+                    .as_array()
+                    .map(|events| {
+                        events
+                            .iter()
+                            .filter(|event| event["kind"] == "supplied_approach_return")
+                            .map(|event| int(&event["returned_eax"]))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                crate::sim::movement::approach_oracle_seam::install_approach_returns(&declared);
+                super::dispatch_foot_mission(
+                    &mut s.sim,
+                    s.miner,
+                    &s.rules,
+                    &mut super::ObjectAiCtx {
+                        overlay_registry: Some(registry()),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                assert_eq!(
+                    crate::sim::movement::approach_oracle_seam::finish_approach_returns(),
+                    0,
+                    "{context}: every declared Approach answer consumed"
+                );
+            }
+            "post_foot_ai" => crate::sim::miner::miner_system::unit_ai_clear_harvesting(
+                &mut s.sim.substrate,
+                s.miner,
+            ),
+            "break_contact" => {
+                let response = crate::sim::radio::transmit_to_contact(
+                    &mut s.sim,
+                    s.miner,
+                    crate::sim::radio::RadioMessage::Break,
+                    &s.rules,
+                    &mut crate::sim::world::FrameEffects::default(),
+                );
+                assert_eq!(
+                    response.code() as i32,
+                    int(&step["returned"]),
+                    "{context}: BREAK"
+                );
+            }
+            "techno_stage_ai" => {
+                s.sim
+                    .substrate
+                    .entities
+                    .get_mut(s.miner)
+                    .unwrap()
+                    .tick_native_stage(now as i32);
+            }
+            "idle" => {
+                let skip_land = input["args"].as_array().is_some_and(|a| a[0] != 0);
+                let result = s.sim.unit_enter_idle_mode(
+                    s.miner,
+                    &s.rules,
+                    skip_land,
+                    &mut crate::sim::world::FrameEffects::default(),
+                );
+                assert_eq!(
+                    u8::from(result),
+                    (int(&step["returned"]) & 255) as u8,
+                    "{context}: saved Foot idle result"
+                );
+            }
+            "expiry" => {
+                let victim = if input["pointer"] == "second" {
+                    self.second
+                } else {
+                    self.first
+                };
+                if input["dead"] == true {
+                    let e = s.sim.substrate.entities.get_mut(victim).unwrap();
+                    e.health.set_for_test(0);
+                    e.lifecycle.set_object_alive_for_test(false);
+                }
+                let e = s.sim.substrate.entities.get(victim).unwrap();
+                let (at, alive, health, owner) = (
+                    (e.position.rx(), e.position.ry()),
+                    e.is_object_alive(),
+                    e.health.current(),
+                    e.owner(),
+                );
+                s.sim.notify_entity_pointer_expired(
+                    s.miner,
+                    victim,
+                    Some(at),
+                    alive,
+                    health,
+                    false,
+                    Some(owner),
+                    if input["control"] == 0 {
+                        PointerExpiryControl::DetachAll
+                    } else {
+                        PointerExpiryControl::Uninit
+                    },
+                    &s.rules,
+                    &mut crate::sim::world::FrameEffects::default(),
+                );
+            }
+            "deadline" => {
+                // Transport the ORIGINAL previous timer's deadline supplied
+                // by this corpus step; never calculate a Rust golden frame.
+                s.sim.session.set_binary_frame_for_test(int(
+                    &step["returned"]["supplied_frame_from_previous_native_timer"],
+                ) as u32);
+            }
+            other => panic!("{context}: operation {other}"),
+        }
+    }
+}
+
+/// The attack-expiry/idle/harvest corpus, then the area-guard transition
+/// corpus read under the same reader receipts.
+#[test]
+fn attack_expiry_idle_area_guard_and_harvest_match_original_executable_steps() {
+    let corpus = corpus();
+    assert_eq!(corpus["row_count"], 53);
+    let area_guard = crate::test_fixture::json("tools/spatial_oracle/harvest_area_guard.json");
+    assert_eq!(area_guard["reader_receipts"], corpus["reader_receipts"]);
+    assert_eq!(area_guard["rows"].as_array().unwrap().len(), 6);
+    let mut compared = 0;
+    for row in corpus["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(area_guard["rows"].as_array().unwrap())
+    {
+        let name = row["input"]["name"].as_str().unwrap();
+        let mut replay = Replay::new(row);
+        replay.compare(&row["before"], &row["input"], &format!("{name}: initial"));
+        for (index, step) in row["steps"].as_array().unwrap().iter().enumerate() {
+            let context = format!("{name}: step {index} {}", step["input"]["op"]);
+            replay.step(step, &context);
+            replay.compare(&step["after"], &row["input"], &context);
+        }
+        compared += 1;
+    }
+    assert_eq!(compared, 53 + 6);
+}
+
+#[test]
+fn retail_inputs_match_original_reader_receipts() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let corpus = corpus();
+    let receipt = &corpus["reader_receipts"]["layers"]
+        .as_array()
+        .unwrap()
+        .last()
+        .unwrap()["after"];
+    let harv = retail.rules.object("HARV").unwrap();
+    assert_eq!(u8::from(harv.harvester), int(&receipt["harvester"]) as u8);
+    assert_eq!(u8::from(harv.weeder), int(&receipt["weeder"]) as u8);
+    assert_eq!(harv.storage, int(&receipt["storage"]));
+    assert_eq!(harv.movement_zone as i32, int(&receipt["movement_zone"]));
+    assert_eq!(harv.dock, vec!["NAREFN", "GAREFN"]);
+    assert_eq!(
+        retail.rules.general.harvester_load_rate,
+        int(&receipt["load_rate"])
+    );
+    assert_eq!(
+        retail.rules.general.tiberium_short_scan,
+        int(&receipt["short_scan"])
+    );
+    assert_eq!(
+        retail.rules.general.tiberium_long_scan,
+        int(&receipt["long_scan"])
+    );
+    for mission in [
+        crate::sim::mission::MissionType::Attack,
+        crate::sim::mission::MissionType::Harvest,
+    ] {
+        assert_eq!(retail.rules.mission_control.rate_frames(mission), 14);
+    }
+}

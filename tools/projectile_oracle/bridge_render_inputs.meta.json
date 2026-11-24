@@ -1,0 +1,13 @@
+{
+  "scope": "Ordinary MTNK105mmCannon physical type/image/palette prerequisite readers; see bridge_render_inputs.md for supplied boundaries",
+  "files": {
+    "bridge_render_inputs.json": "0f5415c6f6b89a519c72d48b0e20fcaf04dc67ef80e430a2843c45a42187cd03",
+    "bridge_render_inputs_palette.json": "64692d8c99f826a518112643c6f33f1276f5067cf9b38e783ee6f24b4fa986b8"
+  },
+  "validation": {
+    "native_reader_check": "PASS",
+    "native_full_palette_constructor_check": "PASS",
+    "rust_atlas_tests": "not run by input owner; root coordinates",
+    "physical_hills_production": "not run by input owner; root coordinates"
+  }
+}

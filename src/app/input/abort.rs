@@ -1,0 +1,208 @@
+//! B6 physical input. Shared capture owns the pointer; app modal outcomes
+//! retain pause/clock, queued EXIT (native48CAA8→6471A0), DESTRUCT
+//! (48CA34/48CAB2) and the campaign restart request (native48CB2E→8B41C0)
+//! authority.
+
+use super::dialog_page::InGameDialog;
+use crate::app::match_runtime::session::SessionMode;
+use crate::app::{App, AppState};
+use crate::ui::pause_menu::{AbortConfirmAction, resolve_abort_action};
+use crate::ui::shell::abort::{self, AbortButton, AbortLayout, AbortSecondary, abort_layout};
+use crate::ui::shell::page::PageEvent;
+
+/// B6 init `0x004F1938..0x004F1A0E` keys control712 on GameMode: 0 shows
+/// Restart, 5 hides it, LAN/WOL show Observe with two or more live humans
+/// while the local House is not defeated. Saved campaigns recover their
+/// continuation inputs at successful load and also offer Restart.
+fn select_abort_secondary(state: &AppState) -> AbortSecondary {
+    secondary_for(
+        state.match_state.session_mode(),
+        state.match_state.startup.installed_campaign().is_some(),
+        state
+            .match_state
+            .sim_runtime
+            .runtime()
+            .map(|runtime| &runtime.simulation),
+    )
+}
+
+fn secondary_for(
+    mode: SessionMode,
+    campaign_installed: bool,
+    sim: Option<&crate::sim::world::Simulation>,
+) -> AbortSecondary {
+    let live_humans = sim.map_or(0, |sim| {
+        sim.houses()
+            .values()
+            .filter(|house| house.is_human() && !house.is_defeated())
+            .count()
+    });
+    let local_defeated = sim.is_some_and(|sim| sim.local_player_defeated());
+    let secondary = AbortSecondary::for_mode(
+        (mode == SessionMode::Campaign).then_some(campaign_installed),
+        mode.is_network(),
+        live_humans,
+        local_defeated,
+    );
+    // VERA shared control: Observe would leave this player controlling the
+    // House their teammate still plays, so B6 offers a plain Leave (EXIT).
+    if secondary == AbortSecondary::Observe
+        && sim.is_some_and(crate::sim::world::Simulation::local_house_has_teammate)
+    {
+        AbortSecondary::Hidden
+    } else {
+        secondary
+    }
+}
+
+/// B6 init runs once per dialog: its stored results and control712 stay
+/// fixed until the dialog closes, whatever the match does meanwhile.
+pub(crate) fn on_open(state: &mut AppState) {
+    state.match_state.match_presentation.abort_secondary = select_abort_secondary(state);
+}
+
+/// B6: no title, Resume 0x686 as the lower right-panel button.
+pub(crate) const DIALOG: InGameDialog = InGameDialog {
+    id: abort::DIALOG,
+    title: None,
+    lower: (0x686, ("GUI:ResumeMission", "Resume Mission")),
+    label: "Active Abort Shell B6",
+    ui: super::dialog_page::shared_ui,
+    ui_mut: super::dialog_page::shared_ui_mut,
+    own_checkbox_sound: false,
+    help_under_held: false,
+    help_fallback: |_| "",
+};
+
+/// The open B6's geometry.
+pub(crate) fn current_abort_layout(state: &AppState) -> Option<AbortLayout> {
+    let secondary = state.match_state.match_presentation.abort_secondary;
+    super::dialog_page::layout(state, |w, h, shell, size| {
+        abort_layout(w, h, shell, size, secondary)
+    })
+}
+
+/// Makes B6's nodes current without input (rects, the hidden 712): its
+/// renderer's call every drawn frame before it paints from them.
+pub(crate) fn sync(state: &mut AppState) -> Option<AbortLayout> {
+    let layout = current_abort_layout(state)?;
+    let nodes = || abort::spec(layout.secondary_kind);
+    let rect_of = |id| layout.rect(id);
+    DIALOG.sync(state, nodes, rect_of, super::dialog_page::no_sync);
+    Some(layout)
+}
+
+/// One pointer message on B6 (`down`: `None` moves).
+pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
+    let Some(layout) = current_abort_layout(state) else {
+        return;
+    };
+    let nodes = || abort::spec(layout.secondary_kind);
+    let events = DIALOG.route(
+        state,
+        down,
+        nodes,
+        |id| layout.rect(id),
+        super::dialog_page::no_sync,
+    );
+    for event in events {
+        if let PageEvent::Activated(id) = event
+            && let Some(button) = AbortButton::from_id(id)
+        {
+            activate(state, button);
+        }
+    }
+}
+
+/// Callback4F18B0 writes the result B6 init stored for the pressed button:
+/// Leave6C9 `[0xA8EE7C]` (2, or 3 beside Observe), 712 `[0xA8EE80]`.
+pub(crate) fn activate(state: &mut AppState, button: AbortButton) {
+    let Some(layout) = current_abort_layout(state) else {
+        return;
+    };
+    let action = match (button, layout.secondary_kind) {
+        (AbortButton::Leave, AbortSecondary::Observe) => AbortConfirmAction::LeaveDestruct,
+        (AbortButton::Leave, _) => AbortConfirmAction::Leave,
+        (AbortButton::Secondary, AbortSecondary::Restart) => AbortConfirmAction::Restart,
+        (AbortButton::Secondary, AbortSecondary::Observe) => AbortConfirmAction::Observe,
+        (AbortButton::Secondary, AbortSecondary::Hidden) => return,
+        (AbortButton::Resume, _) => AbortConfirmAction::Cancel,
+    };
+    App::apply_in_game_modal_outcome(state, resolve_abort_action(action));
+}
+
+#[cfg(all(test, tests_app_input_a_c))]
+mod tests {
+    use super::*;
+    use crate::sim::house_state::HouseState;
+    use crate::sim::world::Simulation;
+
+    #[test]
+    fn observe_counts_undefeated_humans_and_the_local_house() {
+        let mut sim = Simulation::new();
+        let names = ["Local", "Peer", "Ai"];
+        let ids = names.map(|name| sim.intern(name));
+        for (index, id) in ids.iter().enumerate() {
+            sim.houses_mut_for_test().register(HouseState::new(
+                *id,
+                index as i32,
+                None,
+                index < 2,
+                0,
+                10,
+            ));
+        }
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(ids[0]));
+        let secondary = |sim: &Simulation, mode| secondary_for(mode, false, Some(sim));
+        assert_eq!(secondary(&sim, SessionMode::Lan), AbortSecondary::Observe);
+        assert_eq!(secondary(&sim, SessionMode::Wol), AbortSecondary::Observe);
+        assert_eq!(
+            secondary(&sim, SessionMode::Skirmish),
+            AbortSecondary::Hidden
+        );
+        assert_eq!(
+            secondary_for(SessionMode::Campaign, true, Some(&sim)),
+            AbortSecondary::Restart
+        );
+        // A defeated peer leaves one live human: the AI House never counts.
+        sim.houses_mut_for_test()
+            .get_mut(&ids[1])
+            .unwrap()
+            .set_is_defeated_for_test(true);
+        assert_eq!(secondary(&sim, SessionMode::Lan), AbortSecondary::Hidden);
+    }
+
+    #[test]
+    fn a_player_whose_teammate_still_plays_their_house_only_leaves() {
+        // Senders 0 and 1 share House 0; sender 2 plays House 1.
+        let secondary = |admitted: &[i8]| {
+            let mut sim = Simulation::new();
+            let ids = ["Shared", "Rival"].map(|name| sim.intern(name));
+            for (index, id) in ids.iter().enumerate() {
+                sim.houses_mut_for_test().register(HouseState::new(
+                    *id,
+                    index as i32,
+                    None,
+                    true,
+                    0,
+                    10,
+                ));
+            }
+            let session = sim.session_mut_for_test();
+            session.set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
+            session.install_network_timing(10);
+            session.set_current_house_for_test(Some(ids[0]));
+            session.install_shared_house_sources_for_test(vec![0, 0, 1], Some(0));
+            sim.network_command_queues().install_timing(
+                0,
+                std::num::NonZeroU8::new(5).unwrap(),
+                admitted.iter().copied(),
+            );
+            secondary_for(SessionMode::Lan, false, Some(&sim))
+        };
+        assert_eq!(secondary(&[0, 1, 2]), AbortSecondary::Hidden);
+        // Once the teammate has left, the last player may Observe again.
+        assert_eq!(secondary(&[0, 2]), AbortSecondary::Observe);
+    }
+}

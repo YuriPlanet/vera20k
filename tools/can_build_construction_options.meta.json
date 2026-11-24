@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Building4456D0 construction-option admission, actual House CanBuild and SecretLab getter; AddCameo attempt identity/order",
+  "assumptions": [
+    "BuildEmu supplies the existing sized counters, human House and registered type identities. Each catalog is its declared original type-array order; current-player owner, limbo, discovery and online bytes are explicit inputs. The whole4456D0 body calls original4F7870; no admission answer is supplied.",
+    "The phased case executes whole Building pause4521C0/resume452210 with empty animation slots. Captured-lab membership/fallback is supplied to House+110; original459840 executes inside CanBuild. Temporal trigger, capture, assignment RNG and the House update loop are outside this fixture.",
+    "AddCameo6A6300 is an observed sink: attempted kind/index/type identity is recorded, while actual insertion, duplicate handling, EVA, sorting, timers, retained removal and rendering remain covered by the existing sidebar cameo_order corpus and production integration, not these controls.",
+    "All three RNG states are initialized by original65C6D0 and checked unchanged across admission/phases; the profile observes zero RNG calls."
+  ],
+  "substitutions": [
+    "Existing Emu allocator/delete/CRT-registration transport and BuildEmu type RTTI/index/object-type virtual answers; counter growth excluded by the supplied sized arrays.",
+    "AddCameo6A6300 records its two original caller-supplied arguments and returns1 without executing the separate sidebar insertion mechanism."
+  ],
+  "entry_points": {
+    "update_construction_options": "0x004456D0",
+    "can_build": "0x004F7870",
+    "check_build_limit": "0x0050B370",
+    "get_secret_production": "0x00459840",
+    "pause_building": "0x004521C0",
+    "resume_building": "0x00452210",
+    "add_cameo_observed_sink": "0x006A6300"
+  },
+  "replay_command": "python -m tools.can_build_oracle --construction-options",
+  "payload_sha256": "3c705b6ff9905476b2e20e3d2740f6b4853a59d6dc78e737a79b3c7692cecee6"
+}

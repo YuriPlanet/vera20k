@@ -1,0 +1,89 @@
+{
+  "auxiliary_artifacts": {
+    "hut_callsite_bytes.json": {
+      "original_file_sha256": "b50c5a48dc7fb4321d7891c83216620be1b46e1de4a1747f4c8cea9aab61aa48",
+      "original_path": "anytown-hut-native/callsite_bytes.json",
+      "promoted_file_sha256": "b50c5a48dc7fb4321d7891c83216620be1b46e1de4a1747f4c8cea9aab61aa48",
+      "transformation": "byte-identical"
+    },
+    "hut_summary.json.gz": {
+      "canonical_payload_sha256": "6ae009922c6ed85fe82d8bfd5a315911ca50b23ef0dfd1e5dd1496db545d269a",
+      "original_file_sha256": "7698ea5b8fcbb9574c4bd81a0a557e5b30a340689c696904953a19e5fb93210c",
+      "original_path": "anytown-hut-native/summary.json",
+      "promoted_file_sha256": "ff5eb5a40970493f00f6a4e18a9895fb54d427ddeef313fcae946a280c61090a",
+      "transformation": "canonical JSON plus deterministic gzip only"
+    }
+  },
+  "conversion": "Only packaging/import/root-path changes in the harness; native payload hash is checked before publication. Animation layer source_lines are replaced by canonical SHA256; all reader results, trace, RNG, cell and constructor-request outputs stay exact.",
+  "frozen_receipt": {
+    "files": {
+      "README.md": {
+        "bytes": 9449,
+        "sha256": "ff3af400388bbb093676799c2e7903ebcc84fedbb4ea07a2dcd27d1190e88984"
+      },
+      "anytown_hut.json": {
+        "bytes": 5505915,
+        "sha256": "046def26dcfe679b585fd8ff1129d266a8025ad09bd604f41ace537f2ac6912a"
+      },
+      "anytown_hut.meta.json": {
+        "bytes": 6752,
+        "sha256": "9ff8e4de78b27b812c37bdc43ac4c7017ae483d6ef78d37454dd33ef81447a52"
+      },
+      "caller_startup.asm": {
+        "bytes": 8407,
+        "sha256": "8db6f78087583179a311b5c8e1c408543c58c0906979c3579a361a63382a43fc"
+      },
+      "callsite_bytes.json": {
+        "bytes": 2641,
+        "sha256": "b50c5a48dc7fb4321d7891c83216620be1b46e1de4a1747f4c8cea9aab61aa48"
+      },
+      "check.log": {
+        "bytes": 173,
+        "sha256": "9e1d2849a05c7144852a086f137171cab1f5a851b34b8729172c4d802d1317ec"
+      },
+      "native_574000.asm": {
+        "bytes": 13082,
+        "sha256": "7cda68a6cd52a9674c27892f77dcc0ef9d936f56417b80e86025e21f58a67625"
+      },
+      "native_5749C0.asm": {
+        "bytes": 5215,
+        "sha256": "09317a20ad31b776a799bd8933415fc8ba0139c5fae60853eed2cf14afab9b01"
+      },
+      "native_575870.asm": {
+        "bytes": 6719,
+        "sha256": "5a0893946bd4a10e7c98c7489a2ca6f40d9457033120f1c297c8e98526f338ff"
+      },
+      "native_575BA0.asm": {
+        "bytes": 6738,
+        "sha256": "d4a295254e6a4fb6d922870d13d6a95c6412c6c32264bc02d164e3bba2c58086"
+      },
+      "native_587180.asm": {
+        "bytes": 5947,
+        "sha256": "b517270206b02ad81a7d0a4b58c0e049add5ba272478a3988c81a27de2fd0308"
+      },
+      "summary.json": {
+        "bytes": 252783,
+        "sha256": "7698ea5b8fcbb9574c4bd81a0a557e5b30a340689c696904953a19e5fb93210c"
+      },
+      "write.log": {
+        "bytes": 322,
+        "sha256": "ee1032d69ec4a32c83befdbcc4c20b5bf8fc62e1dc42804b24a57c10ebb324ee"
+      }
+    },
+    "path": "anytown-hut-native/receipt.json",
+    "sha256": "a991b9d8e629321dc17c8c1c651421304e8882c4a775eb12484870c6747f724f"
+  },
+  "results": {
+    "hut.json": {
+      "original_file_sha256": "046def26dcfe679b585fd8ff1129d266a8025ad09bd604f41ace537f2ac6912a",
+      "original_metadata_sha256": "9ff8e4de78b27b812c37bdc43ac4c7017ae483d6ef78d37454dd33ef81447a52",
+      "original_path": "anytown-hut-native/anytown_hut.json",
+      "original_payload_sha256": "51a58c909583e7f362c6237257905df5148b4a850ffb03de4fd411f5230bbaa3",
+      "projection": [
+        "animation_inputs.layers[*].source_lines -> source_lines_sha256"
+      ],
+      "published_payload_sha256": "a15bbe36b40348bbba40dee338cf07e575b64f0650cb8568a23321d076ce20fb"
+    }
+  },
+  "schema": 1
+}

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Five commits, 21 path lookups, three loop-head consumptions, two event-dispatch latch controls, four patrol conversions, 15 commit mission/target admission controls, seven RGB controls and16 composed planning stroke/marker controls.",
+  "assumptions": [
+    "Supplied actor, path, node, display predecessor and event records; original constructors do not execute.",
+    "Loop consumption uses three nodes with existing cleanup latches, enough vector capacity and loop start zero; nonloop destruction and whole-game scheduling are not covered."
+  ],
+  "substitutions": [
+    "Commit admission uses supplied actor mission, target class and target identity virtual getters; original 638C70 and target-token construction execute unchanged.",
+    "Patrol conversion executes original639CB0 with supplied path/memberships and Can_Attack_Move virtual return values. All event bytes other than the mission are checked unchanged; local feedback latch and whole-game scheduling are outside coverage.",
+    "Stroke controls reuse Rally's BSurface locking/storage with original7BA8C0 patterned and7BA610 solid pixels. Imported clock returns the supplied ms;63D910/63D960 and63D400/63D480 execute unchanged. Width/selection/endpoints are supplied, not whole-manager admission."
+  ],
+  "entry_points": {
+    "commit": "0x00636CE0",
+    "lookup": "0x00636E60",
+    "consume": "0x00636590",
+    "dispatch_latch": "0x006386E0",
+    "patrol_conversion": "0x00639CB0",
+    "commit_admission": "0x00638C70",
+    "interpolate_rgb": "0x006612C0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.planning_mode",
+  "payload_sha256": "fcc097ae4ce0853863493299bb27e71af04b790a391623425c0dff7527b761cf"
+}

@@ -1,0 +1,285 @@
+{
+  "native_file": "navigation.json.gz",
+  "native_sha256": "a2197179f0818a7b2c231c8956601b2269df164db04e05d856b99db380a15d35",
+  "production_prefix": "concrete-v8",
+  "states": [
+    {
+      "state": "loaded",
+      "production_file": "concrete-v8.loaded.json",
+      "production_sha256": "7e9d78cb89ea343351be3ac6f3e865a2f4be1996ae6c0b99093807e805e75a37",
+      "frame": 0,
+      "checks": {
+        "navigation.base_ids": {
+          "equal": true
+        },
+        "navigation.classes": {
+          "equal": true
+        },
+        "navigation.levels": {
+          "equal": true
+        },
+        "navigation.raw_rows": {
+          "equal": true
+        },
+        "navigation.zone_count": {
+          "equal": true
+        },
+        "graphs.0.ids": {
+          "equal": true
+        },
+        "graphs.0.padding_ids": {
+          "equal": true
+        },
+        "graphs.0.records": {
+          "equal": true
+        },
+        "graphs.1.ids": {
+          "equal": true
+        },
+        "graphs.1.padding_ids": {
+          "equal": true
+        },
+        "graphs.1.records": {
+          "equal": true
+        },
+        "graphs.2.ids": {
+          "equal": true
+        },
+        "graphs.2.padding_ids": {
+          "equal": true
+        },
+        "graphs.2.records": {
+          "equal": true
+        },
+        "native_size": {
+          "equal": true
+        },
+        "live_cell_allocated": {
+          "equal": true
+        },
+        "live_cell_levels_allocated": {
+          "equal": true
+        },
+        "live_cell_slopes_allocated": {
+          "equal": true
+        },
+        "representative_cells": {
+          "equal": true,
+          "count": 77,
+          "mismatches": []
+        },
+        "dummy": "Not compared: production uses Debug text, native stores structured fields; both inspected separately."
+      },
+      "all_compared_equal": true
+    },
+    {
+      "state": "damaged",
+      "production_file": "concrete-v8.damaged.json",
+      "production_sha256": "bfe0824e44f724e4c394d509cff98a8152e8e92ab639e9c8112f02b87dfc0b94",
+      "frame": 0,
+      "checks": {
+        "navigation.base_ids": {
+          "equal": true
+        },
+        "navigation.classes": {
+          "equal": true
+        },
+        "navigation.levels": {
+          "equal": true
+        },
+        "navigation.raw_rows": {
+          "equal": true
+        },
+        "navigation.zone_count": {
+          "equal": true
+        },
+        "graphs.0.ids": {
+          "equal": true
+        },
+        "graphs.0.padding_ids": {
+          "equal": true
+        },
+        "graphs.0.records": {
+          "equal": true
+        },
+        "graphs.1.ids": {
+          "equal": true
+        },
+        "graphs.1.padding_ids": {
+          "equal": true
+        },
+        "graphs.1.records": {
+          "equal": true
+        },
+        "graphs.2.ids": {
+          "equal": true
+        },
+        "graphs.2.padding_ids": {
+          "equal": true
+        },
+        "graphs.2.records": {
+          "equal": true
+        },
+        "native_size": {
+          "equal": true
+        },
+        "live_cell_allocated": {
+          "equal": true
+        },
+        "live_cell_levels_allocated": {
+          "equal": true
+        },
+        "live_cell_slopes_allocated": {
+          "equal": true
+        },
+        "representative_cells": {
+          "equal": true,
+          "count": 77,
+          "mismatches": []
+        },
+        "dummy": "Not compared: production uses Debug text, native stores structured fields; both inspected separately."
+      },
+      "all_compared_equal": true
+    },
+    {
+      "state": "collapsed",
+      "production_file": "concrete-v8.collapsed.json",
+      "production_sha256": "c377e7a2fa73677261dd52660e230addb393434ae05f1ed591dd18e8940d92bf",
+      "frame": 0,
+      "checks": {
+        "navigation.base_ids": {
+          "equal": true
+        },
+        "navigation.classes": {
+          "equal": true
+        },
+        "navigation.levels": {
+          "equal": true
+        },
+        "navigation.raw_rows": {
+          "equal": true
+        },
+        "navigation.zone_count": {
+          "equal": true
+        },
+        "graphs.0.ids": {
+          "equal": true
+        },
+        "graphs.0.padding_ids": {
+          "equal": true
+        },
+        "graphs.0.records": {
+          "equal": true
+        },
+        "graphs.1.ids": {
+          "equal": true
+        },
+        "graphs.1.padding_ids": {
+          "equal": true
+        },
+        "graphs.1.records": {
+          "equal": true
+        },
+        "graphs.2.ids": {
+          "equal": true
+        },
+        "graphs.2.padding_ids": {
+          "equal": true
+        },
+        "graphs.2.records": {
+          "equal": true
+        },
+        "native_size": {
+          "equal": true
+        },
+        "live_cell_allocated": {
+          "equal": true
+        },
+        "live_cell_levels_allocated": {
+          "equal": true
+        },
+        "live_cell_slopes_allocated": {
+          "equal": true
+        },
+        "representative_cells": {
+          "equal": true,
+          "count": 77,
+          "mismatches": []
+        },
+        "dummy": "Not compared: production uses Debug text, native stores structured fields; both inspected separately."
+      },
+      "all_compared_equal": true
+    },
+    {
+      "state": "repaired",
+      "production_file": "concrete-v8.repaired.json",
+      "production_sha256": "3bd3077f933612b52f116dbb7749330f808b6908e31213f4e135f3a6772931e9",
+      "frame": 30,
+      "checks": {
+        "navigation.base_ids": {
+          "equal": true
+        },
+        "navigation.classes": {
+          "equal": true
+        },
+        "navigation.levels": {
+          "equal": true
+        },
+        "navigation.raw_rows": {
+          "equal": true
+        },
+        "navigation.zone_count": {
+          "equal": true
+        },
+        "graphs.0.ids": {
+          "equal": true
+        },
+        "graphs.0.padding_ids": {
+          "equal": true
+        },
+        "graphs.0.records": {
+          "equal": true
+        },
+        "graphs.1.ids": {
+          "equal": true
+        },
+        "graphs.1.padding_ids": {
+          "equal": true
+        },
+        "graphs.1.records": {
+          "equal": true
+        },
+        "graphs.2.ids": {
+          "equal": true
+        },
+        "graphs.2.padding_ids": {
+          "equal": true
+        },
+        "graphs.2.records": {
+          "equal": true
+        },
+        "native_size": {
+          "equal": true
+        },
+        "live_cell_allocated": {
+          "equal": true
+        },
+        "live_cell_levels_allocated": {
+          "equal": true
+        },
+        "live_cell_slopes_allocated": {
+          "equal": true
+        },
+        "representative_cells": {
+          "equal": true,
+          "count": 77,
+          "mismatches": []
+        },
+        "dummy": "Not compared: production uses Debug text, native stores structured fields; both inspected separately."
+      },
+      "all_compared_equal": true
+    }
+  ],
+  "all_compared_equal": true,
+  "scope": "All class/level/base-ID planes,13 complete movement rows,zone count,three graph IDs/padding IDs/full ordered records; allocated live level/slope planes and77 representative cells per state. Runtime objects/occupancy and RNG are not compared across these different caller boundaries. Repaired production export included."
+}

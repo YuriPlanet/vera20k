@@ -1,0 +1,630 @@
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::indexing_slicing
+    )
+)]
+// Ported from FFmpeg's libavformat/bink.c.
+// Copyright (c) 2008-2010 Peter Ross (pross@xvid.org)
+// Copyright (c) 2009 Daniel Verkamp (daniel@drv.nu)
+// Licensed GPL-3.0-or-later. See LICENSE-GPL in the repo root.
+
+//! Bink 1 container demuxer.
+//!
+//! Parses the fixed header, audio track descriptors, per-frame offset table,
+//! and splits each frame packet into its audio blocks + video bitstream.
+//!
+//! Supports BIKi (the retail movies) and BIKk.
+//!
+//! ## Dependency rules
+//! - Part of assets/ — no dependencies on game modules.
+//! - Uses util/read_helpers for binary reading.
+
+use std::sync::Arc;
+
+use crate::assets::error::AssetError;
+use crate::util::read_helpers::read_u32_le;
+
+/// Bink file revision byte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinkVersion {
+    /// BIKi — standard Bink 1 used by nearly all RA2/YR cutscenes.
+    BikI,
+    /// BIKk — minor revision: extra 4-byte header field, 0xBB block-type XOR,
+    /// whole-plane fill shortcut, JPEG color range.
+    BikK,
+}
+
+impl BinkVersion {
+    fn from_tag(tag: u32) -> Result<Self, AssetError> {
+        // The 4-byte tag is "BIKi" / "BIKk" stored little-endian.
+        match tag {
+            0x694B4942 => Ok(Self::BikI), // "BIKi" = 0x42 0x49 0x4B 0x69 little-endian
+            0x6B4B4942 => Ok(Self::BikK), // "BIKk" = 0x42 0x49 0x4B 0x6B little-endian
+            other => Err(AssetError::BinkError {
+                reason: format!(
+                    "unsupported Bink signature 0x{:08X} (not BIKi or BIKk)",
+                    other
+                ),
+            }),
+        }
+    }
+}
+
+/// Flags bits stored in the `video_flags` field (bytes 0x24..0x28).
+pub const BINK_FLAG_ALPHA: u32 = 0x00100000;
+pub const BINK_FLAG_GRAY: u32 = 0x00020000;
+
+/// Fixed-size part of the Bink file header.
+#[derive(Debug, Clone)]
+pub struct BinkHeader {
+    pub version: BinkVersion,
+    /// Real file size in bytes. (On-disk field is `file_size - 8`; we store the real size.)
+    pub file_size: u64,
+    pub num_frames: u32,
+    pub width: u32,
+    pub height: u32,
+    pub fps_num: u32,
+    pub fps_den: u32,
+    pub video_flags: u32,
+    pub num_audio_tracks: u32,
+    pub audio_tracks: Vec<AudioTrack>,
+    /// Byte offset in the source buffer where the frame index table starts.
+    pub frame_index_offset: usize,
+}
+
+impl BinkHeader {
+    /// Inspect the dimensions and timing without parsing the frame index.
+    pub fn probe(data: &[u8]) -> Result<Self, AssetError> {
+        parse_fixed_header(data).map(|(header, _)| header)
+    }
+
+    #[inline]
+    pub fn has_alpha(&self) -> bool {
+        self.video_flags & BINK_FLAG_ALPHA != 0
+    }
+    #[inline]
+    pub fn is_gray(&self) -> bool {
+        self.video_flags & BINK_FLAG_GRAY != 0
+    }
+    #[inline]
+    pub fn fps(&self) -> f64 {
+        if self.fps_den == 0 {
+            0.0
+        } else {
+            self.fps_num as f64 / self.fps_den as f64
+        }
+    }
+}
+
+/// One audio track descriptor from the header.
+#[derive(Debug, Clone, Copy)]
+pub struct AudioTrack {
+    pub sample_rate: u16,
+    pub flags: u16,
+    #[cfg(test)]
+    pub track_id: u32,
+}
+
+impl AudioTrack {
+    /// Bit 0x4000: 16-bit output preferred.
+    #[cfg(test)]
+    #[inline]
+    pub fn is_16bit(self) -> bool {
+        self.flags & 0x4000 != 0
+    }
+    /// Bit 0x2000: stereo (vs mono).
+    #[inline]
+    pub fn is_stereo(self) -> bool {
+        self.flags & 0x2000 != 0
+    }
+    /// Bit 0x1000: use DCT variant (vs RDFT).
+    #[inline]
+    pub fn uses_dct(self) -> bool {
+        self.flags & 0x1000 != 0
+    }
+}
+
+/// Maximum plausible dimensions (from FFmpeg's demuxer).
+const MAX_WIDTH: u32 = 7680;
+const MAX_HEIGHT: u32 = 4800;
+const MAX_FRAMES: u32 = 1_000_000;
+const MAX_AUDIO_TRACKS: u32 = 256;
+
+/// Parse the fixed header prefix (no frame index yet).
+///
+/// Returns the parsed header and the offset in `data` where the audio-track
+/// descriptors (if any) start.
+pub(crate) fn parse_fixed_header(data: &[u8]) -> Result<(BinkHeader, usize), AssetError> {
+    // The whole 0x2C-byte prefix is read before any field is judged.
+    let field = |offset: usize| {
+        read_u32_le(data, offset).ok_or_else(|| AssetError::BinkError {
+            reason: format!(
+                "Bink header truncated: {} bytes, need at least 0x2C",
+                data.len()
+            ),
+        })
+    };
+    let tag = field(0x00)?;
+    let file_size = field(0x04)? as u64 + 8;
+    let num_frames = field(0x08)?;
+    let largest_frame = field(0x0C)?;
+    // 0x10 is skipped (unused).
+    let width = field(0x14)?;
+    let height = field(0x18)?;
+    let fps_num = field(0x1C)?;
+    let fps_den = field(0x20)?;
+    let video_flags = field(0x24)?;
+    let num_audio_tracks = field(0x28)?;
+
+    let version = BinkVersion::from_tag(tag)?;
+
+    // Sanity bounds — matches FFmpeg's probe + header validation.
+    if num_frames == 0 || num_frames > MAX_FRAMES {
+        return Err(AssetError::BinkError {
+            reason: format!("invalid num_frames {}", num_frames),
+        });
+    }
+    if width == 0 || width > MAX_WIDTH {
+        return Err(AssetError::BinkError {
+            reason: format!("invalid width {}", width),
+        });
+    }
+    if height == 0 || height > MAX_HEIGHT {
+        return Err(AssetError::BinkError {
+            reason: format!("invalid height {}", height),
+        });
+    }
+    if fps_num == 0 || fps_den == 0 {
+        return Err(AssetError::BinkError {
+            reason: format!("invalid fps {}/{}", fps_num, fps_den),
+        });
+    }
+    if num_audio_tracks > MAX_AUDIO_TRACKS {
+        return Err(AssetError::BinkError {
+            reason: format!("too many audio tracks: {}", num_audio_tracks),
+        });
+    }
+    if largest_frame as u64 > file_size {
+        return Err(AssetError::BinkError {
+            reason: "largest_frame greater than file_size".to_string(),
+        });
+    }
+
+    let mut next_offset = 0x2C;
+
+    // BIKk has a 4-byte unknown field after num_audio_tracks.
+    if version == BinkVersion::BikK {
+        if data.len() < next_offset + 4 {
+            return Err(AssetError::BinkError {
+                reason: "BIKk header truncated: missing extra 4-byte field".to_string(),
+            });
+        }
+        next_offset += 4;
+    }
+
+    let header = BinkHeader {
+        version,
+        file_size,
+        num_frames,
+        width,
+        height,
+        fps_num,
+        fps_den,
+        video_flags,
+        num_audio_tracks,
+        audio_tracks: Vec::new(),
+        frame_index_offset: 0,
+    };
+
+    Ok((header, next_offset))
+}
+
+/// Parse the audio-track descriptors, returning the offset where the frame
+/// index table starts.
+pub(crate) fn parse_audio_tracks(
+    data: &[u8],
+    header: &mut BinkHeader,
+    start: usize,
+) -> Result<usize, AssetError> {
+    if header.num_audio_tracks == 0 {
+        return Ok(start);
+    }
+
+    let n = header.num_audio_tracks as usize;
+    // Layout: uint32 max_decoded_bytes[n] ; (u16 sample_rate + u16 flags) [n] ; uint32 track_id[n]
+    // max_decoded_bytes[n] is skipped — FFmpeg does the same.
+    let words: &[[u8; 4]] = data
+        .get(start..)
+        .map_or(&[], |descriptors| descriptors.as_chunks().0);
+    let (Some(rates), Some(track_ids)) = (words.get(n..2 * n), words.get(2 * n..3 * n)) else {
+        return Err(AssetError::BinkError {
+            reason: "audio track descriptors truncated".to_string(),
+        });
+    };
+
+    header.audio_tracks = rates
+        .iter()
+        .zip(track_ids)
+        .map(
+            |(&[rate_low, rate_high, flags_low, flags_high], _track_id)| AudioTrack {
+                sample_rate: u16::from_le_bytes([rate_low, rate_high]),
+                flags: u16::from_le_bytes([flags_low, flags_high]),
+                #[cfg(test)]
+                track_id: u32::from_le_bytes(*_track_id),
+            },
+        )
+        .collect();
+    Ok(start + 12 * n)
+}
+
+/// One entry in the frame index table.
+#[derive(Debug, Clone, Copy)]
+pub struct FrameIndexEntry {
+    /// Byte offset of this frame's packet in the file. Keyframe bit is cleared.
+    pub offset: u32,
+    /// Size of this frame's packet in bytes (offset[i+1] - offset[i]).
+    pub size: u32,
+    /// True if this frame is a keyframe. Frame 0 is always a keyframe; for
+    /// others the low bit of the raw index entry encodes the flag.
+    pub is_keyframe: bool,
+}
+
+/// Parse the frame index table. `start` is the offset of the first uint32.
+pub(crate) fn parse_frame_index(
+    data: &[u8],
+    header: &BinkHeader,
+    start: usize,
+) -> Result<Vec<FrameIndexEntry>, AssetError> {
+    let n = header.num_frames as usize;
+
+    // Read raw offsets (with keyframe bits).
+    let Some(table) = data
+        .get(start..)
+        .and_then(|index| index.as_chunks::<4>().0.get(..n))
+    else {
+        return Err(AssetError::BinkError {
+            reason: "frame index table truncated".to_string(),
+        });
+    };
+    // Synthesize trailing sentinel using file_size.
+    let raw: Vec<u32> = table
+        .iter()
+        .copied()
+        .map(u32::from_le_bytes)
+        .chain([header.file_size as u32])
+        .collect();
+
+    let mut entries = Vec::with_capacity(n);
+    for (i, pair) in raw.windows(2).enumerate() {
+        let &[cur, next] = pair else { continue };
+        let next = next & !1;
+        let offset = cur & !1;
+        // Per FFmpeg: frame 0 is always a keyframe; for subsequent frames the
+        // low bit of entry i encodes whether frame i is a keyframe.
+        let is_keyframe = if i == 0 { true } else { (cur & 1) != 0 };
+        if next <= offset {
+            return Err(AssetError::BinkError {
+                reason: format!("invalid frame index at {}: next <= current", i),
+            });
+        }
+        entries.push(FrameIndexEntry {
+            offset,
+            size: next - offset,
+            is_keyframe,
+        });
+    }
+
+    Ok(entries)
+}
+
+/// One audio packet within a frame. Borrows from the parent BinkFile.
+#[derive(Debug, Clone, Copy)]
+pub struct AudioPacket<'a> {
+    pub track_index: usize,
+    /// Number of decoded 16-bit PCM bytes, including all channels.
+    #[cfg(test)]
+    pub decoded_bytes: u32,
+    /// Audio packet payload bytes, starting with the 4-byte little-endian
+    /// decoded PCM byte length.
+    pub bytes: &'a [u8],
+}
+
+/// Parsed Bink file owning its source bytes via `Arc` for cheap shareability.
+pub struct BinkFile {
+    pub header: BinkHeader,
+    pub frame_index: Vec<FrameIndexEntry>,
+    data: Arc<[u8]>,
+}
+
+impl BinkFile {
+    /// Parse a full `.bik` file from owned bytes.
+    pub fn parse(data: Arc<[u8]>) -> Result<Self, AssetError> {
+        let (mut header, next) = parse_fixed_header(&data)?;
+        let next = parse_audio_tracks(&data, &mut header, next)?;
+        header.frame_index_offset = next;
+        let frame_index = parse_frame_index(&data, &header, next)?;
+        Ok(Self {
+            header,
+            frame_index,
+            data,
+        })
+    }
+
+    /// Return the bitstream bytes for video frame `i` (audio already skipped).
+    pub fn video_packet(&self, i: usize) -> Result<&[u8], AssetError> {
+        self.demux_frame(i, |_, _| {})
+    }
+
+    /// Return the audio packets for frame `i`: one per track that carries
+    /// audio. A slot under four bytes holds none and is skipped, as FFmpeg's
+    /// demuxer skips it (`libavformat/bink.c`, `read_packet`).
+    pub fn audio_packets(&self, i: usize) -> Result<Vec<AudioPacket<'_>>, AssetError> {
+        let mut out = Vec::with_capacity(self.header.num_audio_tracks as usize);
+        self.demux_frame(i, |track_index, bytes| {
+            // A slot under four bytes carries no audio: the frame is silent on
+            // this track. The decoder's own length guard stays for malformed
+            // packets, but this is a legal container state, not a failure.
+            if bytes.len() >= 4 {
+                #[cfg(test)]
+                let decoded_bytes = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+                out.push(AudioPacket {
+                    track_index,
+                    #[cfg(test)]
+                    decoded_bytes,
+                    bytes,
+                });
+            }
+        })?;
+        Ok(out)
+    }
+
+    /// Split frame `i`'s packet as FFmpeg's demuxer does (`libavformat/bink.c`,
+    /// `read_packet`): one audio slot per track, in track order, each a
+    /// little-endian u32 size and that many bytes, then the video bitstream.
+    /// Hands `slot` each track's slot and returns the video bitstream. The
+    /// packet must lie inside the file and every slot inside the packet.
+    fn demux_frame<'a>(
+        &'a self,
+        i: usize,
+        mut slot: impl FnMut(usize, &'a [u8]),
+    ) -> Result<&'a [u8], AssetError> {
+        let entry = self
+            .frame_index
+            .get(i)
+            .ok_or(AssetError::BinkFrameOutOfRange {
+                index: i,
+                count: self.frame_index.len(),
+            })?;
+
+        let start = entry.offset as usize;
+        let end = start + entry.size as usize;
+        let mut rest = self
+            .data
+            .get(start..end)
+            .ok_or_else(|| AssetError::BinkError {
+                reason: format!("frame {} packet extends past EOF", i),
+            })?;
+
+        for track_index in 0..self.header.num_audio_tracks as usize {
+            let Some((size, tail)) = rest.split_first_chunk::<4>() else {
+                return Err(AssetError::BinkError {
+                    reason: format!("frame {} audio header truncated", i),
+                });
+            };
+            let audio_size = u32::from_le_bytes(*size) as usize;
+            if audio_size > tail.len() {
+                return Err(AssetError::BinkError {
+                    reason: format!("frame {} audio size {} overflows packet", i, audio_size),
+                });
+            }
+            let (bytes, after) = tail.split_at(audio_size);
+            slot(track_index, bytes);
+            rest = after;
+        }
+
+        Ok(rest)
+    }
+}
+
+#[cfg(all(test, tests_assets))]
+mod tests {
+    use super::*;
+
+    /// Minimum valid BIKi header, 0 audio tracks, 1 frame, 320x240 @ 30fps.
+    pub(super) fn make_biki_header() -> Vec<u8> {
+        let mut h = Vec::with_capacity(0x2C);
+        h.extend_from_slice(b"BIKi"); // 0x00
+        h.extend_from_slice(&1234u32.to_le_bytes()); // 0x04 file_size - 8
+        h.extend_from_slice(&1u32.to_le_bytes()); // 0x08 num_frames
+        h.extend_from_slice(&500u32.to_le_bytes()); // 0x0C largest_frame
+        h.extend_from_slice(&0u32.to_le_bytes()); // 0x10 unused
+        h.extend_from_slice(&320u32.to_le_bytes()); // 0x14 width
+        h.extend_from_slice(&240u32.to_le_bytes()); // 0x18 height
+        h.extend_from_slice(&30u32.to_le_bytes()); // 0x1C fps_num
+        h.extend_from_slice(&1u32.to_le_bytes()); // 0x20 fps_den
+        h.extend_from_slice(&0u32.to_le_bytes()); // 0x24 video_flags
+        h.extend_from_slice(&0u32.to_le_bytes()); // 0x28 num_audio_tracks
+        h
+    }
+
+    #[test]
+    fn parses_minimum_biki_header() {
+        let h = make_biki_header();
+        let (hdr, next) = parse_fixed_header(&h).unwrap();
+        assert_eq!(hdr.version, BinkVersion::BikI);
+        assert_eq!(hdr.num_frames, 1);
+        assert_eq!(hdr.width, 320);
+        assert_eq!(hdr.height, 240);
+        assert_eq!(hdr.fps_num, 30);
+        assert_eq!(hdr.fps_den, 1);
+        assert_eq!(hdr.num_audio_tracks, 0);
+        assert_eq!(next, 0x2C);
+        assert_eq!(hdr.file_size, 1234 + 8);
+    }
+
+    #[test]
+    fn parses_bikk_skips_extra_4_bytes() {
+        let mut h = make_biki_header();
+        h[3] = b'k';
+        h.extend_from_slice(&0u32.to_le_bytes()); // extra BIKk field
+        let (hdr, next) = parse_fixed_header(&h).unwrap();
+        assert_eq!(hdr.version, BinkVersion::BikK);
+        assert_eq!(next, 0x30);
+    }
+
+    #[test]
+    fn rejects_bad_signature() {
+        let mut h = make_biki_header();
+        h[3] = b'b'; // BIKb, not supported
+        assert!(parse_fixed_header(&h).is_err());
+    }
+
+    #[test]
+    fn rejects_gigantic_width() {
+        let mut h = make_biki_header();
+        h[0x14..0x18].copy_from_slice(&99999u32.to_le_bytes());
+        assert!(parse_fixed_header(&h).is_err());
+    }
+
+    #[test]
+    fn rejects_truncated_header() {
+        let h = make_biki_header();
+        for cutoff in 0..0x2C {
+            assert!(
+                parse_fixed_header(&h[..cutoff]).is_err(),
+                "should fail at cutoff {}",
+                cutoff,
+            );
+        }
+    }
+
+    pub(super) fn make_header_with_1_track() -> Vec<u8> {
+        let mut h = make_biki_header();
+        h[0x28..0x2C].copy_from_slice(&1u32.to_le_bytes()); // num_audio_tracks = 1
+        // max_decoded_bytes[0] = 16384
+        h.extend_from_slice(&16384u32.to_le_bytes());
+        // sample_rate = 22050, flags = stereo(0x2000) | dct(0x1000)
+        h.extend_from_slice(&22050u16.to_le_bytes());
+        h.extend_from_slice(&0x3000u16.to_le_bytes());
+        // track_id = 42
+        h.extend_from_slice(&42u32.to_le_bytes());
+        h
+    }
+
+    #[test]
+    fn parses_single_audio_track() {
+        let h = make_header_with_1_track();
+        let (mut hdr, next) = parse_fixed_header(&h).unwrap();
+        let end = parse_audio_tracks(&h, &mut hdr, next).unwrap();
+        assert_eq!(hdr.audio_tracks.len(), 1);
+        let t = hdr.audio_tracks[0];
+        assert_eq!(t.sample_rate, 22050);
+        assert_eq!(t.track_id, 42);
+        assert!(t.is_stereo());
+        assert!(t.uses_dct());
+        assert!(!t.is_16bit());
+        assert_eq!(end, h.len());
+    }
+
+    #[test]
+    fn parses_three_frame_index() {
+        // Header with 3 frames, file_size = 1024.
+        let mut h = make_biki_header();
+        h[0x04..0x08].copy_from_slice(&1016u32.to_le_bytes()); // file_size - 8
+        h[0x08..0x0C].copy_from_slice(&3u32.to_le_bytes()); // num_frames = 3
+        // Raw entries: 0x40, 0x101 (low bit = keyframe), 0x200.
+        // Synthesized sentinel = file_size = 1024.
+        // Frame 0: offset=0x40, size=0x100-0x40=0xC0, keyframe=true (always).
+        // Frame 1: offset=0x100, size=0x200-0x100=0x100, keyframe = 0x101 & 1 = true.
+        // Frame 2: offset=0x200, size=0x400-0x200=0x200, keyframe = 0x200 & 1 = false.
+        h.extend_from_slice(&0x40u32.to_le_bytes());
+        h.extend_from_slice(&0x101u32.to_le_bytes());
+        h.extend_from_slice(&0x200u32.to_le_bytes());
+
+        let (mut hdr, next) = parse_fixed_header(&h).unwrap();
+        let end = parse_audio_tracks(&h, &mut hdr, next).unwrap();
+        let index = parse_frame_index(&h, &hdr, end).unwrap();
+
+        assert_eq!(index.len(), 3);
+        assert_eq!(index[0].offset, 0x40);
+        assert_eq!(index[0].size, 0xC0);
+        assert!(index[0].is_keyframe);
+        assert_eq!(index[1].offset, 0x100);
+        assert_eq!(index[1].size, 0x100);
+        assert!(index[1].is_keyframe);
+        assert_eq!(index[2].offset, 0x200);
+        assert_eq!(index[2].size, 0x200);
+        assert!(!index[2].is_keyframe);
+    }
+
+    #[test]
+    fn rejects_descending_frame_offsets() {
+        let mut h = make_biki_header();
+        h[0x04..0x08].copy_from_slice(&1016u32.to_le_bytes());
+        h[0x08..0x0C].copy_from_slice(&2u32.to_le_bytes()); // 2 frames
+        h.extend_from_slice(&0x200u32.to_le_bytes());
+        h.extend_from_slice(&0x100u32.to_le_bytes()); // descending!
+        let (mut hdr, next) = parse_fixed_header(&h).unwrap();
+        let end = parse_audio_tracks(&h, &mut hdr, next).unwrap();
+        assert!(parse_frame_index(&h, &hdr, end).is_err());
+    }
+
+    #[test]
+    fn video_packet_skips_audio_blocks() {
+        // 1 audio track, 1 frame. Frame packet: [u32 audio_size=8][8 audio bytes][video bytes].
+        let mut h = make_header_with_1_track();
+        let header_end = h.len();
+        let frame_offset = header_end + 4; // index table takes 4 bytes
+        let file_size = frame_offset + 16;
+        h[0x04..0x08].copy_from_slice(&((file_size - 8) as u32).to_le_bytes());
+        h[0x08..0x0C].copy_from_slice(&1u32.to_le_bytes()); // num_frames = 1
+        h[0x0C..0x10].copy_from_slice(&16u32.to_le_bytes()); // largest_frame = 16
+
+        // Frame index: offset=frame_offset (kf by default for i=0).
+        h.extend_from_slice(&(frame_offset as u32).to_le_bytes());
+
+        // Frame packet:
+        h.extend_from_slice(&8u32.to_le_bytes()); // audio_size = 8
+        h.extend_from_slice(&[1u8, 2, 3, 4, 5, 6, 7, 8]); // audio bytes
+        h.extend_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]); // video bytes
+
+        let f = BinkFile::parse(Arc::from(h)).unwrap();
+        let video = f.video_packet(0).unwrap();
+        assert_eq!(video, &[0xAA, 0xBB, 0xCC, 0xDD]);
+
+        let audios = f.audio_packets(0).unwrap();
+        assert_eq!(audios.len(), 1);
+        assert_eq!(audios[0].bytes, &[1u8, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(audios[0].decoded_bytes, 0x04030201);
+    }
+
+    #[test]
+    fn a_frame_with_an_empty_audio_slot_yields_no_packet() {
+        // 1 audio track, 1 frame whose audio slot records zero bytes: retail
+        // movies end with such frames and playback must treat them as silence.
+        let mut h = make_header_with_1_track();
+        let header_end = h.len();
+        let frame_offset = header_end + 4; // index table takes 4 bytes
+        let file_size = frame_offset + 8;
+        h[0x04..0x08].copy_from_slice(&((file_size - 8) as u32).to_le_bytes());
+        h[0x08..0x0C].copy_from_slice(&1u32.to_le_bytes()); // num_frames = 1
+        h[0x0C..0x10].copy_from_slice(&8u32.to_le_bytes()); // largest_frame = 8
+        h.extend_from_slice(&(frame_offset as u32).to_le_bytes());
+
+        h.extend_from_slice(&0u32.to_le_bytes()); // audio_size = 0
+        h.extend_from_slice(&[0xAA, 0xBB, 0xCC, 0xDD]); // video bytes
+
+        let f = BinkFile::parse(Arc::from(h)).unwrap();
+        assert_eq!(f.video_packet(0).unwrap(), &[0xAA, 0xBB, 0xCC, 0xDD]);
+        assert!(
+            f.audio_packets(0).unwrap().is_empty(),
+            "an empty audio slot is silence, not a packet"
+        );
+    }
+}

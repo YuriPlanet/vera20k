@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Engineer bridge-hut action branches and object-click composition.\n\n51E49E/51F9F4 are supplied interior frames, not full WhatAction entries.\n587410 Boolean and Building GetCoords are explicit seams. Original actor\nlocality, Building RTTI/undeploy, action arithmetic, Infantry click mapping,\nFoot switch and IsControllable execute. Stops before QueueMegaMission body.\nAlso executes Display4AAE90's normal/minimap action switches from supplied\ninterior dispatch frames to the cursor virtual+48 boundary.\nAdditive prerequisites execute full Building/Infantry type constructors,\nselected bool field reads, and original Building ART Foundation461225..46125D\nwith original32-byte reader/table and subsequent one-cell Undeploy gate.\n",
+  "assumptions": [
+    "Supplied already-established interior WhatAction frames; original Infantry/Building vtables, type/house fields and linked target. Upstream base WhatAction, modifiers, target discovery, object construction and native mode loading excluded.",
+    "Target relation changes pointer/actor alliance mask+5788; original4F9A90 preflight independently establishes self/allied/hostile labels. The measured hut arm is stopped before its later alliance receiver. Campaign and noncampaign actor locality execute original50B6F0.",
+    "Original IsControllable700C40 executes. The prior click rows use supplied zero flags/links, timer start=-1/duration=0 and EMP0/1. Additive controls supply bunker, Spawned, paralysis timer, both warp bytes, SlaveOwner, native-save Robot/EMP bytes and SpawnManager slots; original6B7D80 counts slots using original child vtables. Constructors, timer/link producers, native save load and repair suffix are excluded.",
+    "Positive Infantry EMP/Robot controls are supplied native-save states, not established ordinary retail producers: Techno6F3112/6F2C9A initialize zero; EMPulseApply4C575E accepts RTTI1/2, not Infantry RTTI15(523340). TechnoLoad70BF50 reaches rawIStreamread410380 and InfantrySize5232F0=6F0; that can retain either field. Robot70FD62 House callers walk ALL Technos but require type-pointer equality to PowersUnit+40C; original713300 resolves that pointer through7480D0 UnitType allocator (7471BF vtable7F6218, RTTI UnitTypeClass at845988). The other active caller is UnitPerCell739F59. Generic50E1C0 has no incoming static references; that alone does not establish unreachability. Initialization and load observations are instruction evidence, not executed constructor/load comparisons.",
+    "Undeploy controls supply BuildingType+408 pointer and+EF0 foundation index0..3. Original465D40 reads original width8192B8/height819310 tables; only nonnull pointer with1x1 shortcircuits the object hut branch. Cell branch has no corresponding gate.",
+    "Additive foundation_reads execute original461225..46125D with supplied interior BuildingType frame, original474DA0/528A10/_stricmp and original22-name/index/width/height tables. Initial+EF0 is explicitly supplied; original first read uses current index as default, second uses the first result as default, first is stored unconditionally and second only if nonzero. Missing sections/keys retain defaults; malformed present names resolve0. Both reads use fixedARTINI887180, first Image+1F8 and then typeID+24. A separate supplied rulesINI with a Foundation value is present in ESI and is not consulted. Effective Image bytes, full Object/Techno/Building reader prefixes/suffixes, physical file loader, ART/source selection and persistence are excluded. Both null/non-null Undeploy pointer fixtures exercise original465D40 after the field read; no pointer factory/lifecycle claim.",
+    "Additive type_default_prerequisites execute full original Building45DD90 and Infantry5236A0 constructors with Object/Techno bases through the existing Reader fixture. Six sequential selected field blocks execute unchanged ReadBool5295F0/current-default stores for BuildingRepairable+CCC, BuildingBridgeRepairHut+16B6 and InfantryEngineer+EC3. Their supplied exact-case INI caches are synthetic; no physical retail-layer or full reader/Rules sweep comparison is claimed. InfantryRepairable=false is captured as constructor evidence only; this target-hut chain consumes BuildingRepairable.",
+    "Display interior switches receive EAX action29/32, ESI supplied receiver and stack+34 argument0/1. Original normal/minimap switch tables execute; selected 28-byte cursor descriptors come unchanged from retail image82D028."
+  ],
+  "substitutions": [
+    "587410 returns an explicitly supplied Boolean. This is caller/action evidence; bridge geometry/query parity belongs to the separate complete587410 oracle.",
+    "Building GetCoords447AC0 returns suppliedXYZ; original signed truncation/packed conversion executes. Foundation coordinate producer is excluded.",
+    "Object ClickedAction51F190 receives its WhatAction call result from the prior native branch fixture as an explicit cross-fixture seam. No code bytes patched.",
+    "QueueMegaMission6FFBE0 is an observed terminal boundary; mission/body/network enqueue, Walk, Engineer consumption, repair effects and audio/render are not executed.",
+    "Rejected branch cases stop before original fallback; no claim about the fallback final action. All text hashes and unchanged fixture bytes checked.",
+    "Display receiver vtable+48 points to an observed terminal sink. Cursor setter/clock/SHP drawing and upstream Display action production do not execute; only original switch selection and immutable selected descriptor bytes are established.",
+    "Additive type prerequisites reuse Reader/Lists bounded operator_new7C8E17, no-op operator_delete7C8B3D and supplied CRT TLS7D140B setup seams; no other function is substituted. Original constructors may reach the allocator, recorded in constructor trace. Measured Foundation/bool reader phases assert no seam is reached and original full text hash is unchanged. Physical asset loading5B40B0 is rejected."
+  ],
+  "entry_points": {
+    "object_interior": "0x0051E49E",
+    "cell_interior": "0x0051F9F4",
+    "locality": "0x0050B6F0",
+    "query_seam": "0x00587410",
+    "getcoords_seam": "0x00447AC0",
+    "object_clicked": "0x0051F190",
+    "foot_clicked": "0x004D74E0",
+    "is_controllable": "0x00700C40",
+    "queue_boundary": "0x006FFBE0",
+    "one_cell_undeploy": "0x00465D40",
+    "foundation_widths": "0x008192B8",
+    "foundation_heights": "0x00819310",
+    "building_type_constructor": "0x0045DD90",
+    "infantry_type_constructor": "0x005236A0",
+    "techno_type_constructor": "0x00710AF0",
+    "building_foundation_begin": "0x00461225",
+    "building_foundation_stop": "0x0046125D",
+    "read_foundation": "0x00474DA0",
+    "foundation_name_table": "0x0081B9D8",
+    "read_bool": "0x005295F0",
+    "read_string": "0x00528A10",
+    "display_normal_dispatch": "0x004AB449",
+    "display_minimap_dispatch": "0x004AB366",
+    "cursor_descriptor_table": "0x0082D028"
+  },
+  "payload_sha256": "924e02f1ba42f9fcc61e6dd2055d01abbded724f7fb06d6d229ac40551a9e613",
+  "replay_command": "python -m tools.spatial_oracle.engineer_bridge_cursor_caller"
+}

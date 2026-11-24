@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Stock YTNK Loop1: original readers, admitted Unit trigger and audio cleanup.\n\nThe native sound service, ring fill, raw/IMA callbacks, soft-release replacement,\nworker endpoint and pool retirement execute original instructions. Supplied\nworld and single-thread OS boundaries exclude complete combat/world scheduling\nand actual hardware concurrency. PCM bytes and RNG states are native outputs.\n",
+  "assumptions": [
+    "Existing unit_voice_playback/GIMoveHistory, EngineerJoinedFixture and NativeAudioPlatform own construction, invocation, the audio registry/cache/channel pool and worker transport; this producer adds domain inputs and read-only observations.",
+    "Selected original UnitType7470D0/747620 and WeaponType772080 readers execute physical RULESMD, optional absent LANGRULE, MPBattleMD and Hills layers; ARTMD and SOUNDMD are fixed physical inputs. Report IDs and Gattling thresholds/rates are original reader outputs.",
+    "Original Unit7353C0 constructs a NULL-House Unit and actual Drive COM. The admitted Unit fire suffix737063..7370AE executes Increase70DE70 and its real positional Loop1 report request; whole Unit736DF0 executes the no-target release path.",
+    "Original SoundService4041D0 executes both start preparations4045D1/404673 and the initial StartPlayback ring fill before the next ready event is loaded. Reallocation750D40 reaches SkipAttack4052E0; initial7509E0 does not.",
+    "All three RandomClass buffers, inclusive requests, raw/rejected advances and ordered native call boundaries are retained. Every numeric value and PCM digest in the payload comes from original execution or exact physical bytes.",
+    "Original409880 ring fills and409D90 raw copies retain source offsets, fill capacity, returned driver state and actual ring SHA256. NativePcmObserver explicitly opts into raw observation and validates original REP writes. GIMove409DE0/40AA70 callbacks retain actual decoded and flush output; one decoded PCM bank is composed only from those original writes.",
+    "Soft release406060, driver Stop40A610, its40A63B endpoint call, decay restart, worker Stop and later405A00/service retirement are distinct executed boundaries. Native silence409B0E/409B15 writes are observed and checked against the actual ring.",
+    "Seven rows cover ordinary Loop1, inaudible reallocation, exact-capacity no-advance, hard stage stop into stock Loop2, an unresolved middle-index control, Loop1 then stock GIMove in one service, and a Loop=3 original-reader release control.",
+    "Four separate shared_one_shot_controls execute stock GIMove global750920 and positional7509E0 requests with a live original GI-owned handle. Release406060 and generic detach405FD0 are distinct original bodies; UpdateState4055C0, driver stop, real worker endpoint and later pool retirement execute without a fake endpoint."
+  ],
+  "substitutions": [
+    "Inherited supplied Cells/House/listener/visibility and16x16 map extent; selected Hills reader input is not a whole scenario. Unit House fields21C/14C and stationary coordinate3456,3712,0 are declared after NULL-House construction; no Unlimbo/full House or world insertion.",
+    "Already-admitted fire code2 is supplied to the original Unit suffix. Target search, GreatestThreat, FindPath, complete projectile/damage and full Scenario scheduling are excluded; original selected Report/type reads are not replaced.",
+    "Physical YTNK/YTNKTUR voxel/HVA files are pinned byte inputs. Physically absent YTNKBARL.VXL/HVA are explicit None inputs at the existing RawFile OS seam, so original availability/read failure branches still execute. This absence is separate from the authored unresolved audio-index control.",
+    "Original Vox, Speech and declared empty ThemeControl initialize shared stream reservations. Physical retail Theme catalog and music playback are excluded.",
+    "NativeAudioPlatform supplies immutable files, QPF/QPC and per-buffer OS status/cursors; the actual created4095B0 worker is resumed across its original Sleep seam. Successful Play status and restart cursors are explicit OS inputs. No native callback, endpoint, gameplay return or arithmetic result is substituted; no real concurrent hardware or audible-output claim.",
+    "Exact-source-end uses declared FillDeviceRing capacities8966 then2, not a hardware-quarter cadence. Hard stage control supplies Increase ticks199, not199 elapsed world frames. Nonretail failure supplies one resolved sample index-1, preserving all physical clips. Counted-loop control overrides only Loop=3 through the original sound reader.",
+    "The interleaved second request enters original global Play750920 with stock GIMove ID, pan0x2000, float volume1.0 and NULL handle. Its GI voice caller/head is covered separately by unit_voice_playback; this row supplies the request boundary.",
+    "Shared one-shot controls use the existing original E1/Infantry/Walk construction and Unlimbo fixture and its handle at4DC. The global or positional sound request is the supplied boundary; no GI voice or movement caller is claimed by these controls. Cleanup enters original Release406060 or generic Detach405FD0 directly on that original handle.",
+    "Repeated ring/callback PCM hex is mechanically omitted after original write/identity validation; scalar states, offsets, counts, digests, all RNG banks and one physical PCM bank remain."
+  ],
+  "entry_points": {
+    "sound_registry_reader": "0x007510D0",
+    "sound_type_reader": "0x00750440",
+    "unit_type_constructor": "0x007470D0",
+    "unit_type_reader": "0x00747620",
+    "weapon_type_reader": "0x00772080",
+    "unit_constructor": "0x007353C0",
+    "admitted_unit_fire_suffix": "0x00737063",
+    "unit_fire_at_target": "0x00736DF0",
+    "gattling_increase": "0x0070DE70",
+    "gattling_update": "0x0070E000",
+    "play_at_position": "0x007509E0",
+    "redrive_loop": "0x00750D40",
+    "global_play": "0x00750920",
+    "skip_attack": "0x004052E0",
+    "audio_service": "0x00406F70",
+    "sound_service": "0x004041D0",
+    "cached_sample_load": "0x00401C00",
+    "prepare_playout": "0x00404700",
+    "advance_playlist": "0x004047B0",
+    "start_playback": "0x004054A0",
+    "release_handle": "0x00406060",
+    "generic_detach_handle": "0x00405FD0",
+    "stop_clear_handle": "0x00405D40",
+    "driver_start": "0x0040A340",
+    "driver_stop": "0x0040A610",
+    "fill_device_ring": "0x00409880",
+    "raw_pcm_copy": "0x00409D90",
+    "ima_pcm_callback": "0x00409DE0",
+    "ima_block": "0x0040AA70",
+    "worker": "0x004095B0",
+    "event_endpoint": "0x00405A00"
+  },
+  "command": "python -m tools.input_oracle.gattling_loop --check",
+  "input_environment": [
+    "VERA20K_GAMEMD_EXE or RA2_DIR",
+    "VERA20K_GATTLING_INPUTS",
+    "VERA20K_GATTLING_VOXELS"
+  ],
+  "shared_owner_extensions": {
+    "tools/spatial_oracle/engineer_repair_admission.py": {
+      "purpose": "Explicit pinned absent prepared-file input at existing immutable RawFile OS seam; original reader and failure branch remain active"
+    },
+    "tools/spatial_oracle/_factory_infantry_output/pcm.py": {
+      "purpose": "Opt-in observation of original409D90 raw copy/REP writes; default IMA-only observation and old corpus projection retained"
+    }
+  },
+  "legacy_GI_payload_identity": {
+    "file": "tools/input_oracle/unit_voice_playback.json",
+    "canonical_payload_sha256": "eba4bdbfcc88cf89c04f26ca063d17c06808aab3080397e962c8f608d34ec47c",
+    "file_sha256": "22fa256b15963d8bfb09f93cdefaf38cea29cea6196345a1638d707e3be1c945"
+  },
+  "field_mapping": {
+    "unit": {
+      "stage": "140",
+      "value": "144",
+      "latch": "4B8",
+      "handle_words": "4A4..4B0",
+      "coord": "9C..A4",
+      "type": "6C4",
+      "veterancy": "150"
+    },
+    "event": {
+      "flags": "18",
+      "state": "1C",
+      "sound": "24",
+      "samples": "28",
+      "sample_count": "A8",
+      "sample_index": "AC",
+      "channel": "B0",
+      "next_buffer": "148",
+      "playlist": "160",
+      "remaining": "1E0",
+      "loop_pass": "1E4"
+    },
+    "cached_sample": {
+      "sorted_index": "14",
+      "loaded": "18",
+      "sample_buffer": "1C",
+      "tracker": "3C",
+      "format_words": "40"
+    },
+    "driver": {
+      "valid_counter": "08 signed",
+      "cursor_quarter": "0C",
+      "source": "28",
+      "chunk_remaining": "2C signed",
+      "write_offset": "30",
+      "bytes_to_ring_end": "38",
+      "end_padding": "3C signed",
+      "ring_bytes": "68",
+      "quantum_bytes": "6C",
+      "copy_callback": "70",
+      "rate": "4C",
+      "channels": "50",
+      "sample_bytes": "54",
+      "sample_end_gate": "CC"
+    },
+    "native_format": {
+      "words": "CachedSample+40: 8 literal words",
+      "callback_selector": "word1: 0 raw409D90; 1 IMA409DE0/40AA70"
+    },
+    "sound_handle": {
+      "words": "event0, serial4, sound_type8, pool_tag0C",
+      "GI_handle_offset": "Infantry+4DC",
+      "Unit_gattling_handle_offset": "Unit+4A4"
+    }
+  },
+  "nullable_callback_counts": "NULL native count pointers project as JSON null; address0 contains fixture SEH state, not a sample byte counter. Shared NativePcmObserver uses0 for that absent counter; its PCM output/write witness remains unchanged.",
+  "payload_sha256": "c6b172324001dbbd27b88c83d17fd9fa82c0dedfb5ac31f95732912daa08951c"
+}

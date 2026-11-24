@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "UnitClass::ReceiveDamage selected passenger737FE3..7381AE: original numeric admission, scope increment, floor/facing, full Unit/Foot/Techno/Object Unlimbo, Map placement/occupation, transporter clear and actual virtual Unit Scatter. Human-owner tail and scope decrement execute. Refusals stop before RecordKill738188.",
+  "assumptions": [
+    "Fresh VM per row. Reuses track_destination original Unit/UnitType/Cell vtables and constructed Drive; its source-scatter vtable observers are replaced with the original Unit vtable.",
+    "Resolved Unit type inputs are in type_input; unarmed controlled type with selected stock MTNK placement fields, not a full MTNK INI/constructor replay. Foot occupation1 at4D344A, waypoint-1 at4D31F1, flags7, display layer-1, alive/limbo1, health300. Native type234/235 Logic/Cell-occupier defaults are class lifecycle fields, not INI Occupier. Original714664..71469F converts supplied Speed7 into type678=17; ROT5 is supplied. Original Foot constructor slice4D32EC..4D3308 initializes saved MegaMission=-1 and its cleared payload for every passenger; this input and observed field are exported. Zero would mean a saved order and incorrectly bypass ordinary Unit EnterIdle during Unlimbo.",
+    "Supplied empty flat32x32 map and mutable class/height planes, size16x16; all clear-land speed rows1.0. Optional independent raw ground masks0x20 have no object-list occupants. Original placement produces measured passenger occupation and cell membership.",
+    "One human owner/Country and display-surface prior, LevelHeight104, active-game1 and actual-game-mode5. Original Foot/Unit geometry, Display/Screen and House-counter constructors execute.",
+    "Closed same-owner ground transport, already absent from map lists, settled facing0x8000; no IsABomb/IgnoreDefenses/selection/bridge. ESI parent, EDI selected passenger and zeroed parent frame are supplied. Passenger selection/cargo removal, boarding and damage prefix are excluded.",
+    "Later passengers retain earlier native map/object/locomotor writes; no movement Process runs between them. Empty radio storage is independent. Refused rows stop before destruction, so their alive/limbo fields are observations at the kill boundary, not survival claims.",
+    "Checks original text unchanged, balanced parent frame, terminal, required original callees, and exact Scatter arguments EmptyCoord/1/0. Positive Guard/no-Nav cases require FNPC and original Unit/Foot/Drive setters; retained-Nav cases require their absence. The Sleep input becomes Guard in original Unlimbo before Scatter; retained Nav selects Move. Drive Process and Find_Path are rejected. No physical scenario, full transport lifetime, AI/team/selection branch, later movement/pathfinding or arrival claim."
+  ],
+  "substitutions": [
+    "Inherited imported Interlocked +/-1 transport, bounded successful heap allocation, atexit registration, setup-only wall clock. No selected gameplay method or return is substituted."
+  ],
+  "entry_points": {
+    "caller": "0x00737FE3",
+    "successful_stop": "0x007381AE",
+    "refusal_stop": "0x00738188",
+    "unit_entry": "0x0073F0A0",
+    "unit_unlimbo": "0x00737BA0",
+    "foot_unlimbo": "0x004D7170",
+    "techno_unlimbo": "0x006F6CA0",
+    "object_unlimbo": "0x005F4EC0",
+    "foot_mark": "0x004D3780",
+    "place_down": "0x005683C0",
+    "unit_occupation": "0x007441B0",
+    "scatter_dispatch": "0x0073813D",
+    "unit_scatter": "0x00743A50",
+    "find_nearby_cell": "0x0056DC20",
+    "unit_set_destination": "0x00741970",
+    "foot_set_destination": "0x004D94B0",
+    "drive_move_to": "0x004AFD40"
+  },
+  "replay_command": "python -m tools.spatial_oracle.vehicle_passenger_escape",
+  "payload_sha256": "ea63387434a07bc878aa43c2164437fb206443941cfef2c8f1a4d215e8a7e672"
+}

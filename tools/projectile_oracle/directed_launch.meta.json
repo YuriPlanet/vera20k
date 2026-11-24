@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "64 synthetic directed FireAt-tail/BulletFire cases using original Unit heading receivers and Dropping origin reset. Full source construction, FireAt admission and world insertion are excluded.",
+  "assumptions": [
+    "Each case starts a fresh emulator with the configured retail executable. Synthetic source, target, type, weapon, Bullet, Rules, virtual table and stack state supply the FireAt tail at 0x006FE8EE; constructors, full FireAt admission, aim selection and retail INI loading are not executed.",
+    "Source X/Y are 1280/1280; Rules gravity is 6. The producer supplies delta, speed and selected type flags. Unwritten mapped fixture memory and native BSS remain zero; this is not a Windows process initialization claim.",
+    "Ambient x87 control word is 0x0E7F: 53-bit precision, truncation, masked exceptions. Native velocity bytes are observed as binary64 including signed zero; this corpus does not establish physical x87 hardware equivalence.",
+    "Execution must reach 0x006FF01A or the failed-launch boundary 0x006FF93C within 200000 instructions and the checked runner's time limit. At the normal boundary the FireAt stack vector must equal persistent Bullet velocity bytes. Failed-launch vector/pitch bytes are observations, not valid launched velocities.",
+    "Source coordinates [1280,1280,0] differ from supplied launch origin [1390,1320,80]. Successful Dropping launches must retain source coordinates; other successful launches must retain the supplied launch origin.",
+    "Original Unit +308 at 0x00740F80 and +2A8 at 0x00746E30 execute on supplied source type, hull/barrel words and Turret byte. The matrix crosses two Z deltas, Arcing, Dropping/ROT pairs, Turret, and four facing pairs at speed 100."
+  ],
+  "substitutions": [
+    "Virtual GetType/GetWeapon and the selected class gate return supplied type/weapon references and a fixture class value. Native source location getter 0x005F65A0 remains executable.",
+    "World SetLocation 0x005F4EC0 copies the requested coordinates to Bullet+0x9C, sets Bullet+0x90 to 1 and returns success. Display Remove 0x004A9770 and Submit 0x004A9720 return success. World admission, registration, map state and those leaf bodies are excluded."
+  ],
+  "entry_points": {
+    "fireat_tail_begin": "0x006FE8EE",
+    "fireat_launched_boundary": "0x006FF01A",
+    "fireat_failed_boundary": "0x006FF93C",
+    "bullet_fire": "0x00468670",
+    "unit_heading_308": "0x00740F80",
+    "unit_facing_2a8": "0x00746E30"
+  },
+  "payload_sha256": "9129172ec9b410b091d3e1ee1333bda07d94dcc3a6a0dd800d0b7a0626a416fc"
+}

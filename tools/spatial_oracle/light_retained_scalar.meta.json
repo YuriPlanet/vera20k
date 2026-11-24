@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Complete Cell484680 refresh using retained native Cell104/108",
+  "assumptions": [
+    "Initial normalization/additive/scalars are selected original palette_oracle finalization records; their file hash and full records accompany results",
+    "Scenario352C current ambient and Normal/Ion Ground/Level are supplied; original effect-query globals are explicit",
+    "Prepared Cell level7 is ordinary positive terrain height; not exhaustive signed byte/word overflow coverage",
+    "No full-cell source gather, palette rebuild, map loop, controller scheduling or gameplay scene is executed"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "scalar_refresh": "0x00484680",
+    "ion": "0x0053A100",
+    "dominator": "0x0053B400",
+    "nuke": "0x0053A110"
+  },
+  "payload_sha256": "1f5bb359c6b2304c99af60b0a1ef7158deeb6996471f790a34905db919b3735c"
+}

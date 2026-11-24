@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original AStar node-height prefix, node-cost and selected-list controls.\n\nExecute 42A460..42A523 and 429E54..429E7F on supplied scalar Cells, node\ndescriptors and current heights. No CanEnter, full route or loader reachability\nis claimed. Rust bridge_walkable is deliberately metadata only: native code\ntests Cell+140 structural0x100 and signed ground bytes.\n\nThe binary32 costs: AStar_create_node 42A460 through its return (g, the\nSqrt_Approx 4CAC40 heuristic and f, from a supplied parent, edge argument and\nwhole-cell offset to the goal); the main loop's edge, 429F72..429FA1 (the\nAStar_compute_edge_cost 429830 call for a class, urgency and 0x40000 marker,\nthen FMUL Pathfinder+4, FADD the 81872C direction tiebreak, FSTP); and a closed\nground candidate's stored g against the current g plus 1.009, 429EE2..429F04.\n",
+  "assumptions": [
+    "Supplied Cells and parent node/descriptor data. Arena provides distinct preallocated original-size node/descriptor pools; original first allocation counters and descriptor writes execute.",
+    "Node prefix stops before g/heuristic computation and node completion; selected-list fragment stops before hierarchy lookup. No concrete entry, closed-list admission, route reconstruction or full-search comparison.",
+    "Raw ground bytes cover native storage-domain sign extension and deck+4. These controls do not claim map-loader or legal gameplay reachability for all values.",
+    "Rust bridge_walkable hints are labels only and never appear in the native image. Structural Cell+140 bit0x100 alone changes the original branches.",
+    "Candidate allocation controls supply a null or real table slot for compass2/tube8 and execute429E19 through the skip or allocated continuation. They stop before any Cell layer/zone/entry semantics and compare retained Dummy bytes unchanged.",
+    "Node-cost rows execute the whole create_node with plain Cells (no structural flag) under the captured process control word: supplied parent g/depth (or no parent), binary32 edge argument and whole-cell offset to the goal. The parent and edge values are chosen inputs, not search states.",
+    "Edge rows execute the main loop from its compute_edge_cost argument pushes through the binary32 store: supplied class, urgency and candidate 0x40000 marker, a candidate with no occupier (so class 2 keeps its base at urgency 0) and the dormant flank flag Pathfinder+1 zero. Pathfinder+4 is supplied as the constructor value 1.0f.",
+    "Closed rows execute the ground-list test with supplied current and stored g; its deck twin at 429F17 is the same instructions on the +20 array."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "node_height_prefix_begin": "0x0042A460",
+    "node_height_prefix_stop": "0x0042A523",
+    "selected_list_begin": "0x00429E54",
+    "selected_list_stop": "0x00429E7F",
+    "candidate_pointer_guard": "0x00429E19",
+    "create_node": "0x0042A460",
+    "sqrt_approx": "0x004CAC40",
+    "edge_cost_begin": "0x00429F72",
+    "edge_cost": "0x00429830",
+    "edge_cost_stop": "0x00429FA1",
+    "closed_retry_begin": "0x00429EE2",
+    "closed_retry_skip": "0x0042A1A1",
+    "closed_retry_continue": "0x00429F37"
+  },
+  "replay_command": "python -m tools.spatial_oracle.astar_structural_height",
+  "payload_sha256": "c93fad06ef9210905281c68752242f42f982570831797e1490c95f5a0b1fbbe0"
+}

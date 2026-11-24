@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "HouseClass::CanBuild over its gates, the human prerequisite arm and the build limit with its factory scan; HouseClass::CheckBuildLimit over AirportBound docks and build limits with the factory of each class. Synthetic fixtures only; see the module docstring for what the house never holds.",
+  "assumptions": [
+    "Fixture objects carry only the fields the entries read.",
+    "Every HouseClass counter is sized past the indexes asked, so CounterClass growth (vtable +8) never runs."
+  ],
+  "substitutions": [
+    "WhatAmI (vtable +0x2C) and GetArrayIndex (+0x40) of a type, and GetTechnoType (+0x84) of a factory's object, answer from the case."
+  ],
+  "entry_points": {
+    "can_build": "0x004F7870",
+    "check_build_limit": "0x0050B370"
+  },
+  "replay_command": "python -m tools.can_build_oracle",
+  "payload_sha256": "66c5de09b93590c8811797b68c88cfabc80f5808df012e6df16e6df1a4fbbc92"
+}

@@ -1,0 +1,686 @@
+//! Tests for drive track data validation, selection and retained projections.
+//!
+//! The retired detached executor tests are covered by the native cursor corpus
+//! in track_process_tests::retained_cursor_and_paid_samples_match_original_drive_and_ship
+//! (3,540 samples, fresh/chain selectors, all arrays, terminal budgets), its
+//! residual_scalar_and_cell_identity_gate_match_original_instructions comparison,
+//! and movement_step_tests' production-host budget and terminal regressions.
+//! Coordinate relinking, chain callbacks and occupation are exercised by
+//! track_host_tests; ground_pose_tests retain the exact-Z and snapshot routes.
+
+use super::*;
+
+/// `Can_Use_Track 0x004B4B00` ratchet over the shipped tables: true only on a
+/// turning curve whose cursor sits on its chain point, with a path head that
+/// leaves the curve's exit octant into another curve.
+#[test]
+fn occupant_can_use_track_answers_only_at_the_chain_point_of_a_turning_curve() {
+    use crate::sim::components::TrackProgress;
+
+    let mut checked_true = 0;
+    for (turn_index, turn) in TURN_TRACKS.iter().enumerate().take(64) {
+        let raw = &RAW_TRACKS[usize::from(turn.normal_track)];
+        let exit = crate::util::direction::direction_from_facing(turn.target_facing);
+        for head in 0u8..8 {
+            let chained = &TURN_TRACKS[usize::from(head) + usize::from(exit) * 8];
+            let chained_entry_nonzero = chained.normal_track != 0
+                && RAW_TRACKS[usize::from(chained.normal_track)].entry_index != 0;
+            // Native compares `RawTrack+0x04` against the cursor and refuses
+            // only a zero cursor, so a straight run's -1 chain index answers
+            // true at cursor -1 — the never-tracked state — exactly as
+            // `0x004B4B80..4B8A` does.
+            let expected = raw.chain_index != 0 && head != exit && chained_entry_nonzero;
+            let at_chain =
+                TrackProgress::for_test(turn_index as i32, i32::from(raw.chain_index), false, 0);
+            assert_eq!(
+                occupant_can_use_track(&at_chain, Some(head)),
+                expected,
+                "turn {turn_index} head {head} at chain point"
+            );
+            if expected {
+                checked_true += 1;
+                for off in [-1, 1] {
+                    let elsewhere = {
+                        let mut value = at_chain;
+                        value.set_cursor(i32::from(raw.chain_index) + off);
+                        value
+                    };
+                    assert!(
+                        !occupant_can_use_track(&elsewhere, Some(head)),
+                        "turn {turn_index} head {head} cursor off by {off}"
+                    );
+                }
+                assert!(!occupant_can_use_track(&at_chain, Some(8)), "tube head");
+                assert!(!occupant_can_use_track(&at_chain, None), "empty queue");
+                assert!(
+                    !occupant_can_use_track(
+                        &{
+                            let mut value = at_chain;
+                            value.set_turn_index(-1);
+                            value
+                        },
+                        Some(head)
+                    ),
+                    "no retained track"
+                );
+            }
+        }
+    }
+    assert!(
+        checked_true > 0,
+        "the shipped tables must expose at least one true case"
+    );
+    // A straight run carries chain index -1 and is never answered true at a
+    // real cursor; the cursor 0 exit closes the fresh-acceptance state too.
+    let straight = TrackProgress::for_test(0, 0, false, 0);
+    assert!(!occupant_can_use_track(&straight, Some(2)));
+}
+
+/// Native comparison: every recorded `Can_Use_Track` answer from
+/// `tools/spatial_oracle/locomotor_can_use_track.json` (Drive `0x004B4B00`,
+/// Ship `0x006A4130`, executed from the retail image) against the Rust port.
+/// The Ship family runs over the Drive tables VERA shares between the two
+/// locomotors; a Ship-only divergence would surface here as a failed case.
+#[test]
+fn occupant_can_use_track_matches_native_oracle() {
+    use crate::sim::components::TrackProgress;
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/locomotor_can_use_track.json",
+    ))
+    .unwrap();
+    let mut checked = 0;
+    for family in ["drive", "ship"] {
+        for case in corpus[family].as_array().unwrap() {
+            let track = TrackProgress::for_test(
+                case["turn"].as_i64().unwrap() as i32,
+                case["cursor"].as_i64().unwrap() as i32,
+                case["reversed"].as_bool().unwrap(),
+                0,
+            );
+            let head = match case["head"].as_i64().unwrap() {
+                -1 => None,
+                head => Some(head as u8),
+            };
+            let expected = case["answer"].as_i64().unwrap() != 0;
+            assert_eq!(
+                occupant_can_use_track(&track, head),
+                expected,
+                "{family} case {case}"
+            );
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, 6400 + 5920);
+}
+
+#[test]
+fn turn_track_0x47_selects_raw_track_15_not_facing_0x47() {
+    let turn = turn_track_at(0x47).expect("TurnTrack 0x47 exists");
+    assert_eq!((turn.normal_track, turn.short_track), (15, 15));
+    assert_eq!(turn.target_facing, 0xC0);
+    assert_ne!(turn.target_facing, 0x47);
+    assert_eq!(turn.flags & 0x07, 0);
+
+    let meta = raw_track_meta(15).expect("RawTrack 15 exists");
+    assert_eq!(meta.points_count, 16);
+    assert_eq!(meta.entry_index, 0);
+    assert_eq!(meta.chain_index, -1);
+    assert_eq!(meta.occupation_handoff_point_index, -1);
+
+    let points = raw_track_points(15);
+    let first = points.first().expect("Track 15 first point");
+    let last = points.last().expect("Track 15 last point");
+    assert_eq!((first.x, first.y, first.facing), (128, -128, 0x80));
+    assert_eq!((last.x, last.y, last.facing), (16, -4, 0xBC));
+}
+
+#[test]
+fn raw_track_2_is_straight_ne_diagonal() {
+    let points = raw_track_points(2);
+    assert_eq!(points.len(), 31);
+    // All points face NE (0x20 = 32)
+    for (i, p) in points.iter().enumerate() {
+        assert_eq!(p.facing, 32, "Track2 point {} should face NE (32)", i);
+    }
+    // Retail Raw2 has (-129,129) at point15, not a uniform (-128,128)
+    // midpoint. Saved original points: locomotor_track_cursor.json raw_tracks.
+    for i in 1..points.len() {
+        let dx = points[i].x - points[i - 1].x;
+        let dy = points[i - 1].y - points[i].y;
+        let step = match i {
+            15 => 7,
+            16 => 9,
+            _ => 8,
+        };
+        assert_eq!(dx, step, "Track2 point {i} X step");
+        assert_eq!(dy, step, "Track2 point {i} Y step");
+    }
+    assert_eq!(points[0].x, -248);
+    assert_eq!(points[0].y, 248);
+    assert_eq!(points[30].x, -8);
+    assert_eq!(points[30].y, 8);
+}
+
+#[test]
+fn raw_track_3_is_north_to_ne_curve() {
+    let points = raw_track_points(3);
+    assert_eq!(points.len(), 54);
+    // Phase 1 (0-13): straight north, x=-256, face=0
+    for (i, point) in points.iter().enumerate().take(14) {
+        assert_eq!(point.x, -256, "Track3 phase1 point {} x", i);
+        assert_eq!(point.facing, 0, "Track3 phase1 point {} face", i);
+    }
+    // Entry index is 12: vehicle starts here
+    assert_eq!(points[12].y, 373);
+    // Phase 2 (14-36): turning — face increases from 1 toward 31
+    assert_eq!(points[14].facing, 1, "first turn point");
+    assert_eq!(points[36].facing, 31, "last turn point before jump");
+    // Jump index 37: face reaches 32 (NE), cell transition
+    assert_eq!(points[37].facing, 32, "jump point faces NE");
+    assert_eq!(points[37].x, -136);
+    assert_eq!(points[37].y, 136);
+    // Phase 3 (37-53): straight NE exit, face=32
+    for (i, point) in points.iter().enumerate().take(54).skip(37) {
+        assert_eq!(point.facing, 32, "Track3 phase3 point {} face", i);
+    }
+    // Final point near origin (sentinel removed, last real point is index 53)
+    assert_eq!(points[53].x, -8);
+    assert_eq!(points[53].y, 8);
+}
+
+// ---------------------------------------------------------------------------
+// facing_to_dir tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn facing_to_dir_rounds_near_boundaries() {
+    // 15 is within 16 of 0 → should round to N (dir 0)
+    assert_eq!(facing_to_dir(15), 0, "15 → N (rounds down)");
+    // 16 is the boundary, rounds to NE (dir 1)
+    assert_eq!(facing_to_dir(16), 1, "16 → NE (rounds up)");
+    // 240 is 16 units from 224 (NW) and 16 units from 256/0 (N)
+    // 240 + 16 = 256 = 0 wrapping, 0 / 32 = 0 → N
+    assert_eq!(facing_to_dir(240), 0, "240 → N (wraps around)");
+    // 241 wraps to 1, 1/32 = 0 → N
+    assert_eq!(facing_to_dir(241), 0, "241 → N (wraps around)");
+}
+
+// ---------------------------------------------------------------------------
+// select_drive_track tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn select_drive_track_null_track_returns_none() {
+    // Facing N (0), moving SE (96) → entry 3: normal_track=0 (null).
+    // Too sharp a turn — should return None.
+    let sel = select_drive_track(0, 96, false);
+    assert!(sel.is_none(), "135° turn should return None (null track)");
+}
+
+#[test]
+fn select_drive_track_north_to_ne_gives_track_3() {
+    // Facing N (0), moving NE (32) → entry 1: normal_track=3 (turning curve A).
+    let sel = select_drive_track(0, 32, false);
+    assert!(sel.is_some(), "N→NE slight turn should give Track 3");
+    let sel = sel.unwrap();
+    assert_eq!(sel.raw_track_index, 3);
+    assert_eq!(sel.target_facing, 0x20);
+    assert_eq!(sel.chain_index, 37);
+    assert_eq!(sel.occupation_handoff_point_index, 22);
+    assert_eq!(sel.entry_index, 12);
+}
+
+#[test]
+fn select_drive_track_all_cardinal_straights_give_track_1() {
+    // All 8 cardinal/diagonal straight-ahead cases should resolve to Track 1 or 2.
+    // Cardinals (N, E, S, W) → Track 1; diagonals (NE, SE, SW, NW) → Track 2.
+    for facing in [0u8, 64, 128, 192] {
+        let sel = select_drive_track(facing, facing, false);
+        assert!(
+            sel.is_some(),
+            "cardinal facing {} should have a track",
+            facing
+        );
+        assert_eq!(
+            sel.unwrap().raw_track_index,
+            1,
+            "cardinal {} → Track 1",
+            facing
+        );
+    }
+    for facing in [32u8, 96, 160, 224] {
+        let sel = select_drive_track(facing, facing, false);
+        assert!(
+            sel.is_some(),
+            "diagonal facing {} should have a track",
+            facing
+        );
+        assert_eq!(
+            sel.unwrap().raw_track_index,
+            2,
+            "diagonal {} → Track 2",
+            facing
+        );
+    }
+}
+
+#[test]
+fn raw_track_4_is_north_to_east_90_degree() {
+    let points = raw_track_points(4);
+    assert_eq!(points.len(), 38);
+    // Starts facing north (0), ends facing east (64)
+    assert_eq!(points[0].facing, 0);
+    assert_eq!(points[37].facing, 64);
+    // Entry at point 11
+    assert_eq!(points[11].facing, 5);
+    // Jump at point 26: face near 64 (east)
+    assert_eq!(points[26].facing, 60);
+    // Phase 3 exit: face=64 (east), y≈0
+    for (i, point) in points.iter().enumerate().take(38).skip(29) {
+        assert!(
+            point.facing >= 64,
+            "Track4 exit point {} face={}",
+            i,
+            point.facing
+        );
+        assert!(point.y <= 9, "Track4 exit point {} y={}", i, point.y);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// GSI-06.13 — the path-window selection basis, through the fresh owners
+// ---------------------------------------------------------------------------
+
+/// Facing bytes used by the fixtures. `0x00`=N, `0x40`=E, `0x80`=S, `0xC0`=W.
+const FACE_E: u8 = 0x40;
+const FACE_S: u8 = 0x80;
+const FACE_W: u8 = 0xC0;
+/// Direction octants (`util::direction::DIRECTION_DELTAS` order).
+const DIR_E: u8 = 2;
+const DIR_SE: u8 = 3;
+const DIR_S: u8 = 4;
+const DIR_SW: u8 = 5;
+
+#[test]
+fn fresh_heading_gate_and_facing_setter_match_original_native_rows() {
+    use crate::sim::movement::track_fresh::fresh_heading_ready;
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/drive_fresh_turn.json",
+    ))
+    .unwrap();
+    assert_eq!(rows.len(), 120);
+    let mut sub_byte_refusals = 0;
+    for row in rows {
+        let input = &row["input"];
+        let initial = input["initial"].as_u64().unwrap() as u16;
+        let direction = input["direction"].as_u64().unwrap() as u8;
+        let call = &row["calls"][0];
+        let refused = !fresh_heading_ready(initial, direction);
+        assert_eq!(refused, call["boundary"] == "turn_then_return", "{input}");
+        if refused && initial >> 8 == u16::from(direction) << 5 {
+            sub_byte_refusals += 1;
+        }
+        let rate = input["rate"].as_i64().unwrap();
+        if rate < 0 {
+            // A supplied raw negative Facing rate is not produced by SetROT.
+            continue;
+        }
+        let mut facing =
+            crate::sim::movement::facing_class::FacingClass::new(initial, (rate >> 8) as u8);
+        if refused {
+            facing.set(u16::from(direction) << 13, 2);
+        }
+        for call in row["calls"].as_array().unwrap() {
+            assert_eq!(
+                u64::from(facing.current(call["frame"].as_u64().unwrap() as u32)),
+                call["sampled_after"].as_u64().unwrap(),
+                "{input}"
+            );
+        }
+    }
+    assert_eq!(sub_byte_refusals, 10);
+}
+
+/// A fresh selection from the cell centre (128,128) as Process_Movement makes
+/// it: the turn table entry, its turns flag (two path nodes) and the head
+/// reached by one `offset_head` per node.
+struct Fresh {
+    turn_index: usize,
+    turn: &'static TurnTrack,
+    two_node: bool,
+    head: crate::sim::components::DriveCoord,
+}
+
+fn fresh(from: u8, to: u8) -> Fresh {
+    let offset = super::super::track_head::offset_head;
+    let turn_index = fresh_turn_index(from, to);
+    let turn = &TURN_TRACKS[turn_index];
+    let two_node = turn.flags & TURN_TRACK_TURNS_FLAG != 0;
+    let centre = crate::sim::components::DriveCoord {
+        x: 128,
+        y: 128,
+        z: 0,
+    };
+    let first = offset(centre, from);
+    Fresh {
+        turn_index,
+        turn,
+        two_node,
+        head: if two_node { offset(first, to) } else { first },
+    }
+}
+
+fn head_cell(fresh: &Fresh) -> (i32, i32) {
+    (fresh.head.x.div_euclid(256), fresh.head.y.div_euclid(256))
+}
+
+/// Fixture A. Path E then S: gamemd indexes `to + from * 8` = 4 + 16 = 20,
+/// whose flags carry the turns bit, so the curve spans two cells and reserves
+/// (1,1), not the straight-east entry 18 with a one-cell head.
+#[test]
+fn gsi_06_13_path_window_indexes_from_the_two_leading_path_directions() {
+    let f = fresh(DIR_E, DIR_S);
+    assert_eq!(f.turn_index, 20, "E->S turn table entry");
+    assert_eq!(f.turn.normal_track, 4, "90 degree curve");
+    assert_eq!(f.turn.flags, 11);
+    assert_eq!(f.turn.target_facing, FACE_S);
+    assert_eq!(
+        head_cell(&f),
+        (1, 1),
+        "the reserved head is the two-cell endpoint"
+    );
+    assert!(f.two_node, "turning curve consumes two path nodes");
+}
+
+/// Fixture B. A 45 degree kink: entry 19 (E->SE), raw track 3, head two cells
+/// away at (2,1).
+#[test]
+fn gsi_06_13_forty_five_degree_kink_uses_entry_19_and_a_two_cell_head() {
+    let f = fresh(DIR_E, DIR_SE);
+    assert_eq!(f.turn_index, 19);
+    assert_eq!(f.turn.normal_track, 3);
+    assert_eq!(f.turn.flags, 11);
+    assert_eq!(head_cell(&f), (2, 1));
+    assert!(f.two_node);
+}
+
+/// Fixture C. Entry 21 (E->SW) is a null curve, so gamemd falls back to
+/// `from * 9` = 18: a straight run along the head node's direction, one node,
+/// head (1,0).
+#[test]
+fn gsi_06_13_null_curve_falls_back_to_head_node_direction_not_body_facing() {
+    assert_eq!(TURN_TRACKS[21].normal_track, 0);
+    let f = fresh(DIR_E, DIR_SW);
+    assert_eq!(f.turn_index, 18, "E*9 straight entry");
+    assert_eq!(f.turn.normal_track, 1);
+    assert_eq!(f.turn.target_facing, FACE_E);
+    assert_eq!(head_cell(&f), (1, 0));
+    assert!(!f.two_node);
+}
+
+/// The last step of a path has no successor: Process_Movement normalises the
+/// `-1` terminator to `to := from` (track_fresh), giving the straight entry.
+#[test]
+fn gsi_06_13_last_step_normalises_to_the_straight_entry() {
+    let f = fresh(DIR_E, DIR_E);
+    assert_eq!(f.turn_index, 18);
+    assert!(!f.two_node);
+    assert_eq!(head_cell(&f), (1, 0));
+}
+
+/// The exact-facing precondition: the body facing must equal
+/// `direction << 13` with zero tolerance.
+#[test]
+fn gsi_06_13_body_off_the_head_octant_turns_before_any_selection() {
+    use crate::sim::movement::track_fresh::fresh_heading_ready;
+    assert!(!fresh_heading_ready(u16::from(FACE_W) << 8, DIR_E));
+    assert!(!fresh_heading_ready((u16::from(FACE_E) << 8) + 1, DIR_E));
+    assert!(fresh_heading_ready(u16::from(FACE_E) << 8, DIR_E));
+}
+
+/// Every pair the selector can see agrees with the table: the turns flag is
+/// set exactly when the two path directions differ and the entry is not null,
+/// and the selection is the ordinary entry or the `from * 9` straight.
+#[test]
+fn gsi_06_13_turns_flag_and_head_span_agree_across_all_direction_pairs() {
+    for from in 0..8u8 {
+        for to in 0..8u8 {
+            let f = fresh(from, to);
+            let ordinary = usize::from(from) * 8 + usize::from(to);
+            assert!(
+                f.turn_index == ordinary || f.turn_index == usize::from(from) * 9,
+                "from {from} to {to}"
+            );
+            assert_ne!(f.turn.normal_track, 0, "from {from} to {to}");
+            assert_eq!(
+                f.two_node,
+                f.turn_index == ordinary && from != to,
+                "from {from} to {to}: flag 8 must drive the node count"
+            );
+        }
+    }
+}
+
+/// The selection finalize resets the track cursor to 0. The lead-in points
+/// carry the mover from its own cell centre into the arc: with the two-cell
+/// head the first point of the E->S curve lands inside the mover's current
+/// cell, which is only true at cursor 0.
+#[test]
+fn gsi_06_13_selected_curve_starts_at_the_movers_own_cell_centre() {
+    let f = fresh(DIR_E, DIR_S);
+    assert!(f.two_node);
+    let points = raw_track_points(f.turn.normal_track);
+    let (tx, ty, tf) =
+        transform_track_point(points[0].x, points[0].y, points[0].facing, f.turn.flags);
+    let sub_x = f.head.x + i32::from(tx);
+    let sub_y = f.head.y + i32::from(ty);
+    assert!(
+        (0..256).contains(&sub_x) && (0..256).contains(&sub_y),
+        "curve point 0 must sit in the mover's own cell, got ({sub_x},{sub_y})"
+    );
+    assert_eq!(tf, FACE_E, "the curve begins on the entry facing");
+    let last = points.len() - 1;
+    let (lx, ly, lf) = transform_track_point(
+        points[last].x,
+        points[last].y,
+        points[last].facing,
+        f.turn.flags,
+    );
+    assert_eq!(
+        (
+            (f.head.x + i32::from(lx)).div_euclid(256),
+            (f.head.y + i32::from(ly)).div_euclid(256),
+        ),
+        (1, 1),
+        "the curve ends on the two-cell endpoint"
+    );
+    assert_eq!(lf, FACE_S, "and on the table's target facing");
+}
+
+/// Every `TURN_TRACKS` and `RAW_TRACKS` entry, as gamemd.exe stores them.
+///
+/// Read from the retail binary at `0x007E7B28`
+/// (72 entries of 12 bytes) and `0x007E7A28` (16 entries of 16 bytes). Native
+/// layout: TurnTrack byte +0x00 normal track, +0x01 short track, dword +0x04
+/// target facing, dword +0x08 flags; RawTrack dword +0x00 points pointer,
+/// +0x04 chain index, +0x08 entry index, +0x0C occupation handoff index, the
+/// last three signed with -1 meaning none.
+///
+/// The A3 examination sampled 8 of the 72 TurnTrack entries and 6 of the 16
+/// RawTrack entries and carried the remainder as a coverage limit. This pins
+/// all of both, so an edit to either table has to answer to the binary.
+///
+/// The pointer column is deliberately absent: VERA stores the points inline
+/// through `points_start`/`points_count`, so there is no address to compare.
+#[test]
+fn track_tables_match_the_retail_bytes_entry_for_entry() {
+    // (normal_track, short_track, target_facing, flags)
+    const NATIVE_TURN_TRACKS: [(u8, u8, u8, u8); 72] = [
+        (1, 0, 0x00, 0x00),
+        (3, 7, 0x20, 0x08),
+        (4, 9, 0x40, 0x08),
+        (0, 0, 0x60, 0x00),
+        (0, 0, 0x80, 0x00),
+        (0, 0, 0xA0, 0x00),
+        (4, 9, 0xC0, 0x0A),
+        (3, 7, 0xE0, 0x0A),
+        (6, 8, 0x00, 0x0F),
+        (2, 0, 0x20, 0x00),
+        (6, 8, 0x40, 0x08),
+        (5, 10, 0x60, 0x08),
+        (0, 0, 0x80, 0x00),
+        (0, 0, 0xA0, 0x00),
+        (0, 0, 0xC0, 0x00),
+        (5, 10, 0xE0, 0x0F),
+        (4, 9, 0x00, 0x0F),
+        (3, 7, 0x20, 0x0F),
+        (1, 0, 0x40, 0x03),
+        (3, 7, 0x60, 0x0B),
+        (4, 9, 0x80, 0x0B),
+        (0, 0, 0xA0, 0x00),
+        (0, 0, 0xC0, 0x00),
+        (0, 0, 0xE0, 0x00),
+        (0, 0, 0x00, 0x00),
+        (5, 10, 0x20, 0x0C),
+        (6, 8, 0x40, 0x0C),
+        (2, 0, 0x60, 0x04),
+        (6, 8, 0x80, 0x0B),
+        (5, 10, 0xA0, 0x0B),
+        (0, 0, 0xC0, 0x00),
+        (0, 0, 0xE0, 0x00),
+        (0, 0, 0x00, 0x00),
+        (0, 0, 0x20, 0x00),
+        (4, 9, 0x40, 0x0C),
+        (3, 7, 0x60, 0x0C),
+        (1, 0, 0x80, 0x04),
+        (3, 7, 0xA0, 0x0E),
+        (4, 9, 0xC0, 0x0E),
+        (0, 0, 0xE0, 0x00),
+        (0, 0, 0x00, 0x00),
+        (0, 0, 0x20, 0x00),
+        (0, 0, 0x40, 0x00),
+        (5, 10, 0x60, 0x09),
+        (6, 8, 0x80, 0x09),
+        (2, 0, 0xA0, 0x01),
+        (6, 8, 0xC0, 0x0E),
+        (5, 10, 0xE0, 0x0E),
+        (4, 9, 0x00, 0x0D),
+        (0, 0, 0x20, 0x00),
+        (0, 0, 0x40, 0x00),
+        (0, 0, 0x60, 0x00),
+        (4, 9, 0x80, 0x09),
+        (3, 7, 0xA0, 0x09),
+        (1, 0, 0xC0, 0x01),
+        (3, 7, 0xE0, 0x0D),
+        (6, 8, 0x00, 0x0D),
+        (5, 10, 0x20, 0x0D),
+        (0, 0, 0x40, 0x00),
+        (0, 0, 0x60, 0x00),
+        (0, 0, 0x80, 0x00),
+        (5, 10, 0xA0, 0x0A),
+        (6, 8, 0xC0, 0x0A),
+        (2, 0, 0xE0, 0x02),
+        (11, 11, 0xA0, 0x00),
+        (12, 12, 0xA0, 0x00),
+        (13, 13, 0xA0, 0x00),
+        (14, 14, 0x20, 0x00),
+        (14, 14, 0x60, 0x04),
+        (14, 14, 0xA0, 0x01),
+        (14, 14, 0xE0, 0x02),
+        (15, 15, 0xC0, 0x00),
+    ];
+    // (chain_index, entry_index, occupation_handoff_point_index)
+    const NATIVE_RAW_TRACKS: [(i16, u16, i16); 16] = [
+        (0, 192, 0),
+        (-1, 0, -1),
+        (-1, 0, -1),
+        (37, 12, 22),
+        (26, 11, 19),
+        (45, 15, 31),
+        (44, 16, 27),
+        (-1, 0, -1),
+        (-1, 0, -1),
+        (-1, 0, -1),
+        (-1, 0, -1),
+        (-1, 0, -1),
+        (-1, 0, -1),
+        (-1, 0, -1),
+        (-1, 0, -1),
+        (-1, 0, -1),
+    ];
+
+    for (index, native) in NATIVE_TURN_TRACKS.iter().enumerate() {
+        let ours = &TURN_TRACKS[index];
+        assert_eq!(
+            (
+                ours.normal_track,
+                ours.short_track,
+                ours.target_facing,
+                ours.flags
+            ),
+            *native,
+            "TURN_TRACKS[{index}] disagrees with gamemd 0x007E7B28 + {index} * 12",
+        );
+    }
+    for (index, native) in NATIVE_RAW_TRACKS.iter().enumerate() {
+        let ours = &RAW_TRACKS[index];
+        assert_eq!(
+            (
+                ours.chain_index,
+                ours.entry_index,
+                ours.occupation_handoff_point_index
+            ),
+            *native,
+            "RAW_TRACKS[{index}] disagrees with gamemd 0x007E7A28 + {index} * 16",
+        );
+    }
+}
+
+/// The immutable catalog omits the separately paid terminal sentinel; no
+/// noninitial real point may masquerade as that zero-XY terminator.
+#[test]
+fn no_shipped_track_holds_an_interior_sentinel_point() {
+    for index in 1..=15u8 {
+        for (slot, point) in raw_track_points(index).iter().enumerate().skip(1) {
+            assert!(
+                point.x != 0 || point.y != 0,
+                "track {index} slot {slot} is an interior zero-XY terminator"
+            );
+        }
+    }
+}
+
+/// Drive4B49B6 compares RawTrack+0x0C against the retained cursor with JGE.
+#[test]
+fn occupation_handoff_releases_on_the_retained_native_cursor() {
+    use crate::rules::locomotor_type::LocomotorKind;
+    use crate::sim::components::DriveCoord;
+    use crate::sim::movement::at_coord::{AtCoordQuery, AtCoordTrack};
+    assert_eq!(
+        raw_track_meta(3).unwrap().occupation_handoff_point_index,
+        22
+    );
+    for kind in [LocomotorKind::Drive, LocomotorKind::Ship] {
+        let claim_at = |cursor| {
+            AtCoordQuery::from_state(
+                kind,
+                DriveCoord::cell(10, 10, 0),
+                Some(DriveCoord::cell(11, 8, 0)),
+                AtCoordTrack {
+                    turn_index: 1,
+                    cursor,
+                    reversed: false,
+                },
+            )
+            .unwrap()
+            .cells()
+            .0
+        };
+        assert!(claim_at(0).is_some(), "fresh acceptance claims the handoff");
+        assert!(claim_at(21).is_some(), "last cursor before handoff");
+        assert!(
+            claim_at(22).is_none(),
+            "the native JGE releases on cursor 22"
+        );
+    }
+}

@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original B6 resource and three complete 60B7A0 question placements",
+  "assumptions": [
+    "Pinned B6 resource bytes; supplied 6x13 dialog base units, not emulated font metrics",
+    "60C0C0 active B6 dispatcher and button/footer exclusions established by original instruction inspection",
+    "Parent origin0 and extents640x480,800x600,1024x768; original base800x600",
+    "Button/footer geometry, painting, keyboard focus and exit transactions are outside this fixture"
+  ],
+  "substitutions": [
+    "Shared native_child_case supplies GetParent/GetWindowRect/MoveWindow and true69BBE0 hooks"
+  ],
+  "entry_points": {
+    "modal": "0x004F1840",
+    "callback": "0x004F18B0",
+    "dispatcher": "0x0060C0C0",
+    "ordinary_child": "0x0060B7A0"
+  },
+  "payload_sha256": "07a3a204928cc481ab065226e96f82679d41483002a6a1b73f3a5222ce223477"
+}

@@ -1,0 +1,97 @@
+{
+  "body_begin": "0x00587410",
+  "body_end_exclusive": "0x00587C4D",
+  "body_sha256": "23b69eb1f4f6b940121f7b2e93670a2a3495f3868033f6fc31167e79c47d2e07",
+  "instructions": [
+    {
+      "address": "0x00587483",
+      "bytes": "8b5038",
+      "mnemonic": "mov",
+      "operands": "edx, dword ptr [eax + 0x38]"
+    },
+    {
+      "address": "0x00587486",
+      "bytes": "a11cadab00",
+      "mnemonic": "mov",
+      "operands": "eax, dword ptr [0xabad1c]"
+    },
+    {
+      "address": "0x00587503",
+      "bytes": "a1280eaa00",
+      "mnemonic": "mov",
+      "operands": "eax, dword ptr [0xaa0e28]"
+    },
+    {
+      "address": "0x005875B1",
+      "bytes": "83f84a",
+      "mnemonic": "cmp",
+      "operands": "eax, 0x4a"
+    },
+    {
+      "address": "0x00587644",
+      "bytes": "3dcd000000",
+      "mnemonic": "cmp",
+      "operands": "eax, 0xcd"
+    },
+    {
+      "address": "0x005876A6",
+      "bytes": "47",
+      "mnemonic": "inc",
+      "operands": "edi"
+    },
+    {
+      "address": "0x005876B0",
+      "bytes": "45",
+      "mnemonic": "inc",
+      "operands": "ebp"
+    },
+    {
+      "address": "0x005876BA",
+      "bytes": "8a442412",
+      "mnemonic": "mov",
+      "operands": "al, byte ptr [esp + 0x12]"
+    },
+    {
+      "address": "0x005876C6",
+      "bytes": "8b4b38",
+      "mnemonic": "mov",
+      "operands": "ecx, dword ptr [ebx + 0x38]"
+    },
+    {
+      "address": "0x00587839",
+      "bytes": "8b4b24",
+      "mnemonic": "mov",
+      "operands": "ecx, dword ptr [ebx + 0x24]"
+    },
+    {
+      "address": "0x005878AF",
+      "bytes": "66ff4c2444",
+      "mnemonic": "dec",
+      "operands": "word ptr [esp + 0x44]"
+    },
+    {
+      "address": "0x00587936",
+      "bytes": "66ff442414",
+      "mnemonic": "inc",
+      "operands": "word ptr [esp + 0x14]"
+    },
+    {
+      "address": "0x005879B0",
+      "bytes": "66ff442416",
+      "mnemonic": "inc",
+      "operands": "word ptr [esp + 0x16]"
+    },
+    {
+      "address": "0x00587A35",
+      "bytes": "66ff4c2446",
+      "mnemonic": "dec",
+      "operands": "word ptr [esp + 0x46]"
+    },
+    {
+      "address": "0x00587C44",
+      "bytes": "32c0",
+      "mnemonic": "xor",
+      "operands": "al, al"
+    }
+  ]
+}

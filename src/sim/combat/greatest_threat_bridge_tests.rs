@@ -1,0 +1,383 @@
+//! Native G27 comparisons plus retained-list integration regressions.
+//! Full retail passive-caller comparisons live with techno_ai::target_scan.
+
+use super::*;
+use crate::map::resolved_terrain::test_flat_cell;
+use crate::rules::ini_parser::IniFile;
+use crate::sim::intern::test_interner;
+use crate::sim::occupancy::CellListInsertion;
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct GateInput {
+    name: String,
+    mapped_cells: [[u16; 2]; 2],
+    coords: [[i32; 3]; 2],
+    flags: [u32; 2],
+    on_bridge: [u8; 2],
+    #[serde(default)]
+    dummy_flags: u32,
+}
+
+#[derive(Deserialize)]
+struct GateRow {
+    input: GateInput,
+    rejected: bool,
+    dummy_coord: [i16; 2],
+}
+
+#[derive(Deserialize)]
+struct GateCorpus {
+    rows: Vec<GateRow>,
+}
+
+#[test]
+fn bridge_layer_gate_matches_original_flags_coordinates_and_retained_dummy() {
+    let corpus: GateCorpus = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_target_layer.json",
+    ))
+    .unwrap();
+    let mut compared = 0;
+    let mut noncanonical_bytes = 0;
+    for row in &corpus.rows {
+        let input = &row.input;
+        // GameEntity owns a bool. Original comparisons of noncanonical bytes
+        // remain evidence about native width, not representable Rust states.
+        if input.on_bridge.iter().any(|byte| *byte > 1) {
+            noncanonical_bytes += 1;
+            continue;
+        }
+        let width = input.mapped_cells.iter().map(|xy| xy[0]).max().unwrap() + 1;
+        let height = input.mapped_cells.iter().map(|xy| xy[1]).max().unwrap() + 1;
+        let mut cells: Vec<_> = (0..height)
+            .flat_map(|y| (0..width).map(move |x| test_flat_cell(x, y)))
+            .collect();
+        for (xy, flags) in input.mapped_cells.iter().zip(input.flags) {
+            cells[usize::from(xy[1]) * usize::from(width) + usize::from(xy[0])]
+                .bridge_facts
+                .raw_flags = flags;
+        }
+        let mut terrain = ResolvedTerrainGrid::from_cells(width, height, cells);
+        terrain.test_set_native_allocated_cells(&input.mapped_cells.map(|[x, y]| (x, y)));
+        let dummy = terrain.shared_cell_dummy();
+        dummy.stamp_coord(1234, -2345);
+        dummy.write_raw_flags(input.dummy_flags);
+        let coord = |index: usize| {
+            let [x, y, z] = input.coords[index];
+            DriveCoord { x, y, z }
+        };
+        let before_epoch = terrain.mutation_epoch();
+        assert_eq!(
+            bridge_layer_rejects_candidate(
+                &terrain,
+                coord(0),
+                input.on_bridge[0] != 0,
+                coord(1),
+                input.on_bridge[1] != 0,
+            ),
+            row.rejected,
+            "{}",
+            input.name
+        );
+        assert_eq!(
+            dummy.snapshot().coord,
+            (i32::from(row.dummy_coord[0]), i32::from(row.dummy_coord[1])),
+            "{} lookup order",
+            input.name
+        );
+        assert_eq!(dummy.raw_flags(), input.dummy_flags, "{}", input.name);
+        assert_eq!(terrain.mutation_epoch(), before_epoch, "{}", input.name);
+        for (xy, flags) in input.mapped_cells.iter().zip(input.flags) {
+            assert_eq!(
+                terrain.cell(xy[0], xy[1]).unwrap().bridge_facts.raw_flags,
+                flags,
+                "{}",
+                input.name
+            );
+        }
+        compared += 1;
+    }
+    assert_eq!(noncanonical_bytes, 4);
+    assert_eq!(compared, corpus.rows.len() - noncanonical_bytes);
+    assert_eq!(compared, 155);
+}
+
+fn list_fixture() -> (RuleSet, EntityStore, OccupancyGrid, ResolvedTerrainGrid) {
+    // Synthetic traversal fixture, not a retail type or native AI admission
+    // claim. The native G27 values are compared independently above.
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=SCANNER\n1=TARGET\n\
+         [SCANNER]\nStrength=200\nPrimary=GUN\nGuardRange=8\n\
+         [TARGET]\nStrength=200\n\
+         [WeaponTypes]\n0=GUN\n\
+         [GUN]\nDamage=20\nRange=8\nProjectile=SHOT\nWarhead=WH\n\
+         [SHOT]\nAG=yes\nAA=no\n\
+         [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ))
+    .unwrap();
+    let mut entities = EntityStore::new();
+    let mut occupancy = OccupancyGrid::new();
+    for (id, kind, owner, x, on_bridge) in [
+        (1, "SCANNER", "Americans", 5, false),
+        (2, "TARGET", "Russians", 6, true),
+        (3, "TARGET", "Russians", 6, false),
+    ] {
+        let mut entity = GameEntity::test_default(id, kind, owner, x, 5);
+        entity.lifecycle.set_in_limbo_for_test(false);
+        entity.lifecycle.set_cell_marked_for_test(true);
+        entity.set_on_bridge(on_bridge);
+        occupancy.add(
+            x,
+            5,
+            id,
+            if on_bridge {
+                MovementLayer::Bridge
+            } else {
+                MovementLayer::Ground
+            },
+            None,
+            CellListInsertion::PrependNonBuilding,
+        );
+        entities.insert(entity);
+    }
+    let cells = (0..20)
+        .flat_map(|y| {
+            (0..20).map(move |x| {
+                let mut cell = test_flat_cell(x, y);
+                if y == 5 && (x == 5 || x == 6) {
+                    cell.bridge_facts.raw_flags = 0x100;
+                }
+                cell
+            })
+        })
+        .collect();
+    (
+        rules,
+        entities,
+        occupancy,
+        ResolvedTerrainGrid::from_cells(20, 20, cells),
+    )
+}
+
+fn pick(
+    rules: &RuleSet,
+    entities: &EntityStore,
+    occupancy: &OccupancyGrid,
+    terrain: &ResolvedTerrainGrid,
+    mission: super::super::ScanMission,
+) -> Option<u64> {
+    super::super::combat_targeting::greatest_threat_for_entity(
+        entities,
+        occupancy,
+        rules,
+        &test_interner(),
+        1,
+        None,
+        Some(terrain),
+        false,
+        mission,
+        None,
+        super::super::line_of_fire::LineOfFireInputs::default(),
+        None,
+        None,
+    )
+    .object()
+}
+
+#[test]
+fn bridge_layer_rejection_does_not_retry_the_ground_list() {
+    let (rules, entities, occupancy, terrain) = list_fixture();
+    assert_eq!(
+        pick(
+            &rules,
+            &entities,
+            &occupancy,
+            &terrain,
+            super::super::ScanMission::Guard
+        ),
+        None,
+        "the selected hostile deck head rejects; the ground list is not tried"
+    );
+    assert_eq!(
+        pick(
+            &rules,
+            &entities,
+            &occupancy,
+            &terrain,
+            super::super::ScanMission::Hunt
+        ),
+        Some(3),
+        "the flat caller reaches each object and can choose the legal ground target"
+    );
+}
+
+#[test]
+fn bridge_layer_gate_reads_current_flags_in_each_scan() {
+    let (rules, entities, occupancy, mut terrain) = list_fixture();
+    let target_cell = NativeCellQuery::canonical(&terrain).lookup((6, 5));
+    for (flags, expected) in [(0x100, None), (0x400, Some(2)), (0x100, None)] {
+        // Isolate publication visibility; full destruction/repair callbacks
+        // and their object consequences are covered by world integration.
+        terrain.write_native_cell_flags(target_cell, flags);
+        assert_eq!(
+            pick(
+                &rules,
+                &entities,
+                &occupancy,
+                &terrain,
+                super::super::ScanMission::Guard
+            ),
+            expected,
+            "raw target flags {flags:x}"
+        );
+    }
+}
+
+#[test]
+fn original_dead_missing_cell_candidate_runs_fire_probe_before_health_rejection() {
+    use crate::sim::combat::fire_error::FireError;
+    use crate::sim::combat::fire_error_world::FireSubject;
+    use crate::sim::movement::{FacingClass, locomotor::LocomotorState};
+    use crate::sim::world::Simulation;
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
+        return;
+    };
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/bridge_target_composed.json",
+    ))
+    .unwrap();
+    let row = &native["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["direct_evaluate"] == true)
+        .unwrap()["steps"][0];
+    let mut world = Simulation::with_seed(31);
+    world.intern_rule_type_ids(&rules);
+    world.session.set_binary_frame_for_test(173);
+    let obj = rules.object("FV").unwrap();
+    for (id, owner, x, y, hp) in [(1, "Americans", 10, 20, 200), (2, "Russians", 41, 41, 0)] {
+        let owner = world.intern(owner);
+        let type_ref = world.intern("FV");
+        let mut entity = GameEntity::new_at_frame_zero_for_test(
+            id,
+            x,
+            y,
+            6,
+            0,
+            owner,
+            crate::sim::combat::Health::new(hp),
+            type_ref,
+            EntityCategory::Unit,
+            0,
+            6,
+            true,
+        );
+        entity.position.set_z_for_test(6);
+        entity.position.set_exact_z_leptons_for_test(Some(624));
+        entity.health.set_for_test(hp);
+        entity.lifecycle.set_cell_marked_for_test(true);
+        entity.lifecycle.set_in_limbo_for_test(false);
+        entity.set_in_playfield(true);
+        entity.locomotor = Some(LocomotorState::from_object_type(obj, 0));
+        entity.barrel_facing = Some(FacingClass::new(16383, 0));
+        world.substrate.entities.insert(entity);
+    }
+    world.resolve_type_handles(&rules);
+    let mut terrain = ResolvedTerrainGrid::from_cells(
+        25,
+        25,
+        (0..25)
+            .flat_map(|y| {
+                (0..25).map(move |x| {
+                    let mut c = test_flat_cell(x, y);
+                    c.level = 6;
+                    c
+                })
+            })
+            .collect(),
+    );
+    terrain.test_set_native_allocated_cells(&[(10, 20)]);
+    world.install_resolved_terrain_for_new_map(terrain);
+    let terrain = world.resolved_terrain.as_ref().unwrap();
+    let dummy = terrain.shared_cell_dummy();
+    dummy.stamp_coord(111, -222);
+    let firer = world.substrate.entities.get(1).unwrap();
+    let candidate = world.substrate.entities.get(2).unwrap();
+    let interner = &world.interner;
+    let snapshot =
+        super::super::build_attacker_snapshot(firer, super::super::TargetKind::Entity(2), None);
+    let context = ScanContext {
+        entities: &world.substrate.entities,
+        scanner: firer,
+        los: Default::default(),
+        rules: &rules,
+        interner,
+        attacker: &snapshot,
+        attacker_obj: obj,
+        fog: None,
+        terrain: Some(terrain),
+        require_playfield_membership: true,
+        range: ScanRange::CanFireAt,
+        coefficients: ThreatCoefficients::resolve(&rules, obj, true),
+        zone_grid: None,
+        mask: 1,
+        scan_coord: [0, 0, 0],
+        standing: ScannerStanding::resolve(Some(&world), &snapshot),
+        cells: &world.substrate.occupancy,
+        healer: false,
+        engineer: false,
+        berserk: false,
+        psycho: false,
+        controller_house: None,
+        fire_world: Some(&world),
+        scanner_facts: attacker_facts(firer, obj),
+        harvester_immune: false,
+        harvester_unit_ids: Vec::new(),
+        frame: 0,
+        scanner_web_duration: None,
+    };
+    let walk = WalkArgs {
+        flags: 0x8042,
+        zone: None,
+        reference: ThreatReference::NullCoord,
+    };
+    let rng_before = world.scenario_rng.native_state_hex();
+    assert_eq!(
+        evaluate_candidate(&context, &mut ScanState::default(), walk, candidate),
+        None
+    );
+    let expected = &row["after"]["dummy_coord"];
+    assert_eq!(
+        dummy.snapshot().coord,
+        (
+            expected[0].as_i64().unwrap() as i32,
+            expected[1].as_i64().unwrap() as i32
+        )
+    );
+    assert_eq!(world.scenario_rng.native_state_hex(), rng_before);
+    assert_eq!(row["rng_before_hex"], row["rng_after_hex"]);
+    // The native early probe is Facing(2), which Evaluate permits before
+    // rejecting health0. Replacing it with a pre-health short circuit loses
+    // the shared Dummy lookup observed above.
+    assert!(
+        row["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|event| event["fire_error_return"] == 2)
+    );
+    assert_eq!(
+        FireSubject {
+            world: &world,
+            rules: &rules,
+            fog: None,
+            firer,
+            obj,
+            target: Some(super::super::TargetKind::Entity(2)),
+            weapon_index: 0,
+        }
+        .fire_error(false),
+        FireError::Facing
+    );
+}

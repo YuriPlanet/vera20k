@@ -1,0 +1,522 @@
+//! Retail process-start command-line switch parsing.
+//!
+//! The returned screen fields seed the process-owned Options profile. That
+//! profile alone performs the later VERA.INI Video read and paired fallback,
+//! keeping argv parsing free of a second settings/filesystem authority.
+//!
+//! Native uppercases every argument after `argv[0]` in place before matching,
+//! so every comparison here is effectively case-insensitive. Matching is a mix
+//! of whole-token equality and substring search, per switch; both forms are
+//! reproduced rather than normalised to one.
+//!
+//! Native's tokenizer stops after 20 `argv` slots. That is a fixed-size stack
+//! array, i.e. exactly the kind of native storage cap the engine replaces, so
+//! the cap is deliberately not reproduced.
+//!
+//! ## Dependency rules
+//! - Pure argv parsing; uses the asset media policy value type only.
+//! - No filesystem/render/sim/ui/audio behavior.
+
+use std::ffi::OsString;
+
+use crate::assets::asset_manager::MediaArchiveMode;
+
+/// The value `OptionsClass::SetDefaults` writes into both screen-size fields
+/// before anything reads them. The built-in default rule tests for exactly this.
+const SCREEN_SIZE_UNSET: i32 = -1;
+
+/// Native substring switch chain, in order. Speed control has a retained local
+/// effect; the other networking/debug switches remain accepted without one.
+/// `true` marks a branch that sets its flag and falls through to the later
+/// tests instead of jumping to the loop tail `0x0052FB17`: MPDEBUG
+/// (`0x0052F8EB`), SPEEDCONTROL (`0x0052F949`), DLINK1, NETGEAR and NOROUTER
+/// (`0x0052F962`, `0x0052F97E`, `0x0052F996`).
+const SUBSTRING_SWITCHES: &[(&str, bool)] = &[
+    ("-DESTNET", false),
+    ("-SOCKET", false),
+    ("-MPDEBUG", true),
+    ("-DROP=", false),
+    (SPEED_CONTROL_SWITCH, true),
+    ("-DLINK1", true),
+    ("-NETGEAR", true),
+    ("-NOROUTER", true),
+    ("-STEALTH", false),
+    ("-MESSAGES", false),
+    ("-ATTRACT", false),
+];
+
+/// Switches native compares whole-token and whose effect this engine has no
+/// subsystem for.
+const ACCEPTED_EXACT_SWITCHES: &[&str] = &["-JABBER", "-STR", "-NOSTR", "-RECORD", "-PLAY", "-O"];
+
+/// VERA's own switch for original Red Alert 2 mode. Native has no such switch;
+/// the argv is consumed here so it never reaches the strict capture parser,
+/// which would otherwise reject it as an unknown argument. The actual choice
+/// is recorded process-wide by `util::ra2_launch::configure` before any switch
+/// parsing, and config loading then selects the non-md INI roots.
+const RA2_SWITCH: &str = "-RA2";
+
+/// The four help forms. Native prints its usage strings and returns a failure
+/// from the switch parser, which makes `WinMain` bail before any window exists.
+const USAGE_SWITCHES: &[&str] = &["/?", "-?", "-H", "/H"];
+
+/// The `-CD` media switch. Native searches for it as a substring, so
+/// `prefix-CDsuffix` selects the wildcard media branch just as bare `-CD` does.
+const CD_MEDIA_SWITCH: &str = "-CD";
+
+/// Windowed presentation.
+const WINDOWED_SWITCH: &str = "-WIN";
+
+/// Audio off.
+const NO_AUDIO_SWITCH: &str = "-NOAUDIO";
+
+const SPEED_CONTROL_SWITCH: &str = "-SPEEDCONTROL";
+
+/// A resolved client size in pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScreenSize {
+    pub width: u32,
+    pub height: u32,
+}
+
+/// A switch that ends the launch before a window opens. Both kinds print
+/// through the shared tail of Parse_Command_Line (`0x0052FB52..0x0052FB69`:
+/// StringTable::LoadString, `_putws`, return 0), and WinMain (`0x006BC093`)
+/// then shuts down at `0x006BE0EB` and returns 1 (EBX=1 at `0x006BBFE1`, kept
+/// in ESI from `0x006BC082`, returned at `0x006BE161`). The parser returns at
+/// the first one, so the first in argument order is the one printed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartupExit {
+    /// A help form: the usage text.
+    Usage,
+    /// `-X` followed by anything but `Q`s (`0x0052FB08` jumps to
+    /// `0x0052FB41`): TXT_INVALID.
+    InvalidSwitch,
+}
+
+/// Everything the native pre-window command-line pass decides. The retained
+/// profile applies `VERA.INI` later, using these screen fields as defaults.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetailStartupOptions {
+    /// A help form or an invalid `-X` tail was passed: print its text and
+    /// terminate before a window opens.
+    pub exit: Option<StartupExit>,
+    /// The one parsed archive policy, retained by the process asset owner.
+    /// Parse_Command_Line52F620 writes 0x89E3A0; Init_Mix_Files530460
+    /// consumes it at 0x53079E. See tools/media_policy.md.
+    pub media_archive_mode: MediaArchiveMode,
+    /// `-WIN` asked for windowed presentation. VERA's window is always one the
+    /// player can resize, with full screen a choice on the Options page, so the
+    /// switch is accepted and has nothing left to change.
+    pub windowed: bool,
+    /// Cleared by `-NOAUDIO`; the interactive `App` consumes it before audio
+    /// output and index construction.
+    pub audio_enabled: bool,
+    /// Parse_Command_Line52F939..52F94B sets the process flag 0xA8EDDC.
+    /// Main_Tick55D767 and Options init4E2050 consume it for campaigns.
+    pub campaign_speed_control: bool,
+    /// `-X` followed by `Q`s: Parse_Command_Line52FB0A sets 0xA8ED64, which
+    /// turns off every Theme entry point and EVA's dequeue.
+    pub theme_and_eva_quiet: bool,
+    /// Screen width, or [`SCREEN_SIZE_UNSET`] while nothing has chosen one.
+    pub screen_width: i32,
+    /// Screen height, or [`SCREEN_SIZE_UNSET`] while nothing has chosen one.
+    pub screen_height: i32,
+}
+
+impl Default for RetailStartupOptions {
+    fn default() -> Self {
+        Self {
+            exit: None,
+            media_archive_mode: MediaArchiveMode::STOCK_DIGITAL,
+            windowed: false,
+            audio_enabled: true,
+            campaign_speed_control: false,
+            theme_and_eva_quiet: false,
+            screen_width: SCREEN_SIZE_UNSET,
+            screen_height: SCREEN_SIZE_UNSET,
+        }
+    }
+}
+
+impl RetailStartupOptions {
+    fn apply(&mut self, recognized: RecognizedSwitch) {
+        match recognized {
+            RecognizedSwitch::Exit(exit) => {
+                self.exit.get_or_insert(exit);
+            }
+            RecognizedSwitch::CdMedia => self.media_archive_mode = MediaArchiveMode::CdWildcard,
+            RecognizedSwitch::Windowed => self.windowed = true,
+            RecognizedSwitch::NoAudio => self.audio_enabled = false,
+            RecognizedSwitch::SpeedControl => self.campaign_speed_control = true,
+            RecognizedSwitch::ThemeAndEvaQuiet => self.theme_and_eva_quiet = true,
+            RecognizedSwitch::ScreenSize { width, height } => {
+                self.screen_width = width;
+                if let Some(height) = height {
+                    self.screen_height = height;
+                }
+            }
+            RecognizedSwitch::NoLocalEffect => {}
+        }
+    }
+}
+
+/// What one argument matched in the native switch chain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RecognizedSwitch {
+    Exit(StartupExit),
+    CdMedia,
+    Windowed,
+    NoAudio,
+    SpeedControl,
+    ThemeAndEvaQuiet,
+    ScreenSize {
+        width: i32,
+        height: Option<i32>,
+    },
+    /// Native acts on it, but the effect has no counterpart here yet. Consuming
+    /// it is still the point: an accepted switch must not abort the launch.
+    NoLocalEffect,
+}
+
+/// Split a raw argument vector into the retail switches it contains and the
+/// arguments that are not retail switches.
+///
+/// Arguments that match nothing in the native chain are passed through
+/// untouched so the strict capture parser still sees — and still rejects — a
+/// misspelled automation flag. Native instead ignores an unrecognised argument
+/// outright; keeping the strict rejection is a VERA-internal deviation that
+/// preserves the sealed capture contract.
+pub fn consume_retail_switches(arguments: Vec<OsString>) -> (RetailStartupOptions, Vec<OsString>) {
+    let mut options = RetailStartupOptions::default();
+    let mut passthrough = Vec::with_capacity(arguments.len());
+    for argument in arguments {
+        // Native uppercases the argument in place before every comparison.
+        let normalized = argument.to_string_lossy().to_ascii_uppercase();
+        let recognized = classify(&normalized);
+        if recognized.is_empty() {
+            passthrough.push(argument);
+        }
+        for switch in recognized {
+            options.apply(switch);
+        }
+    }
+    (options, passthrough)
+}
+
+/// Walk the native switch chain in its native order. The order is load-bearing:
+/// the `-CD` substring test runs before the numeric-size test, and the numeric
+/// test runs before the whole-token `-WIN` test. Most matches end the chain;
+/// the substring switches marked in [`SUBSTRING_SWITCHES`] go on to the later
+/// tests, so one argument can match several. Empty means nothing matched.
+///
+/// Between the help forms and `-CD` native hashes the argument
+/// (`0x005F9E80`) and, on `0xD95C68A2`, sets the `[Intro] Play=` bit
+/// (`[0x00A8E960] & 4`, see app/persistence/intro_play.rs). That hidden
+/// switch's name is unknown and it is not ported.
+fn classify(normalized: &str) -> Vec<RecognizedSwitch> {
+    if normalized == NO_AUDIO_SWITCH {
+        return vec![RecognizedSwitch::NoAudio];
+    }
+    if normalized == RA2_SWITCH {
+        return vec![RecognizedSwitch::NoLocalEffect];
+    }
+    if ACCEPTED_EXACT_SWITCHES.contains(&normalized) {
+        return vec![RecognizedSwitch::NoLocalEffect];
+    }
+    if USAGE_SWITCHES.contains(&normalized) {
+        return vec![RecognizedSwitch::Exit(StartupExit::Usage)];
+    }
+    if normalized.contains(CD_MEDIA_SWITCH) {
+        return vec![RecognizedSwitch::CdMedia];
+    }
+    let mut matched = Vec::new();
+    for &(switch, falls_through) in SUBSTRING_SWITCHES {
+        if !normalized.contains(switch) {
+            continue;
+        }
+        matched.push(if switch == SPEED_CONTROL_SWITCH {
+            RecognizedSwitch::SpeedControl
+        } else {
+            RecognizedSwitch::NoLocalEffect
+        });
+        if !falls_through {
+            return matched;
+        }
+    }
+    // Native reaches its size parser through `isdigit(argument[1])`, then runs
+    // `sscanf(argument, "-%dX%d", &width, &height)`.
+    if normalized.as_bytes().get(1).is_some_and(u8::is_ascii_digit) {
+        // Native consumes the argument here even when the scan assigns
+        // nothing. Passing a non-matching argument through instead keeps a
+        // capture option's numeric value (`--width 800`) out of this branch.
+        // VERA-internal narrowing; native has no such options.
+        if let Some((width, height)) = scan_screen_size(normalized) {
+            matched.push(RecognizedSwitch::ScreenSize { width, height });
+        }
+        return matched;
+    }
+    if normalized == WINDOWED_SWITCH {
+        matched.push(RecognizedSwitch::Windowed);
+        return matched;
+    }
+    // `-X…` (strncmp at 0x0052FAD7): each following `Q` sets 0xA8ED64 at
+    // 0x0052FB0A; a bare `-X` sets nothing. Any other character after it
+    // jumps to 0x0052FB41, which prints TXT_INVALID and ends the launch, even
+    // when Qs before it already set the flag.
+    if let Some(rest) = normalized.strip_prefix("-X") {
+        matched.push(if rest.is_empty() {
+            RecognizedSwitch::NoLocalEffect
+        } else if rest.bytes().all(|byte| byte == b'Q') {
+            RecognizedSwitch::ThemeAndEvaQuiet
+        } else {
+            RecognizedSwitch::Exit(StartupExit::InvalidSwitch)
+        });
+    }
+    matched
+}
+
+/// Reproduce `sscanf(argument, "-%dX%d", &width, &height)`.
+///
+/// The height is assigned only when a literal `X` and a second integer both
+/// follow, and nothing at all is assigned when the leading `-` is missing.
+/// `-480` therefore sets the *width* to 480 and `-16` sets the width to 16 —
+/// the separately named `-480` and `-16` branches further down the native chain
+/// are unreachable, because this numeric test runs ahead of them.
+fn scan_screen_size(normalized: &str) -> Option<(i32, Option<i32>)> {
+    let after_dash = normalized.strip_prefix('-')?;
+    let (width, rest) = scan_i32(after_dash);
+    let width = width?;
+    let Some(rest) = rest.strip_prefix('X') else {
+        return Some((width, None));
+    };
+    Some((width, scan_i32(rest).0))
+}
+
+/// One `%d` conversion: the longest run of leading ASCII digits, and the rest.
+/// A sign or leading whitespace cannot occur here — the caller has already
+/// established that the character after the `-` is a digit, and arguments are
+/// whitespace-split before they arrive.
+fn scan_i32(text: &str) -> (Option<i32>, &str) {
+    let end = text
+        .find(|character: char| !character.is_ascii_digit())
+        .unwrap_or(text.len());
+    let (digits, rest) = text.split_at(end);
+    (digits.parse::<i32>().ok(), rest)
+}
+
+/// The usage text a help switch prints.
+///
+/// Native prints TXT_OPTION_HELP_01..06 through StringTable::LoadString
+/// (`0x0052FB6A..0x0052FC16`). The table is not loaded yet at that point (see
+/// [`exit_text`]), so native prints LoadString's fallback line six times. This
+/// text is VERA's own help instead: it lists VERA's own options too.
+///
+/// Only switches that actually change what this engine does are listed as
+/// working. The rest are parsed and accepted — which is the point, since a
+/// launch must never fail on a switch retail takes — but nothing reads their
+/// result yet, so advertising them would promise behaviour that does not exist.
+pub fn usage_text() -> String {
+    [
+        "Usage: vera20k [options]",
+        "",
+        "  -CD             Use the wildcard media-archive branch.",
+        "  -WIN            No effect: full screen is a choice on the Options page.",
+        "  -NOAUDIO        Disable music and sound output.",
+        "  -ra2            Play original Red Alert 2 (RA2 Mode in Options).",
+        "  -SPAWN          Start an offline CnCNet session from ./spawn.ini.",
+        "  --mod <folder>  Play with the mod in that folder of Mods.",
+        "  --no-mod        Play the original game, whatever config.toml says.",
+        "  -? -h /? /h     Show this message.",
+        "",
+        "Other retail switches are accepted so a launch never fails on them,",
+        "but are not applied yet: -<W>X<H>, -480, -16 (the window keeps",
+        "whatever size it is given), -RECORD, -PLAY, -SOCKET, -DESTNET",
+        "and the remaining net/debug flags.",
+    ]
+    .join("\n")
+}
+
+/// The text a [`StartupExit`] prints. For an invalid switch native asks
+/// StringTable::LoadString (`0x00734E60`) for TXT_INVALID, but the label table
+/// `[0x00B1CF74]` is still empty: WinMain loads it at `0x006BD853`, after the
+/// parser, and the -JABBER/-STR/-NOSTR reloads before that pass the loader a
+/// null file name (`[0x00B1CF68]`, written only by the loader), which it
+/// refuses at `0x007346C1`. So LoadString returns its fallback (`0x0084583C`),
+/// misspelling included, and `_putws` adds the newline.
+pub fn exit_text(exit: StartupExit) -> String {
+    match exit {
+        StartupExit::Usage => usage_text(),
+        StartupExit::InvalidSwitch => {
+            "***FATAL*** String Manager failed to initilaized properly".to_owned()
+        }
+    }
+}
+
+#[cfg(all(test, tests_app_frontend))]
+mod tests {
+    use super::*;
+
+    fn consume(arguments: &[&str]) -> (RetailStartupOptions, Vec<String>) {
+        let (options, passthrough) =
+            consume_retail_switches(arguments.iter().map(OsString::from).collect());
+        (
+            options,
+            passthrough
+                .into_iter()
+                .map(|argument| argument.to_string_lossy().into_owned())
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn every_help_form_requests_usage_in_either_case() {
+        for form in ["/?", "-?", "-h", "/h", "-H", "/H"] {
+            let (options, rest) = consume(&[form]);
+            assert_eq!(
+                options.exit,
+                Some(StartupExit::Usage),
+                "{form} must request usage"
+            );
+            assert!(rest.is_empty(), "{form} must be consumed");
+        }
+    }
+
+    #[test]
+    fn cd_matches_as_a_substring_but_win_matches_whole_token() {
+        // Native searches for `-CD` with `strstr`, so an argument that merely
+        // contains it selects the wildcard media branch.
+        assert_eq!(
+            consume(&["-CD"]).0.media_archive_mode,
+            MediaArchiveMode::CdWildcard
+        );
+        assert_eq!(
+            consume(&["-cd"]).0.media_archive_mode,
+            MediaArchiveMode::CdWildcard
+        );
+        assert_eq!(
+            consume(&["-CDROM"]).0.media_archive_mode,
+            MediaArchiveMode::CdWildcard
+        );
+        assert_eq!(
+            consume(&["prefix-CDsuffix"]).0.media_archive_mode,
+            MediaArchiveMode::CdWildcard
+        );
+        // `-WIN` is a whole-token compare: a superstring is not the switch.
+        assert!(consume(&["-win"]).0.windowed);
+        assert!(consume(&["-WIN"]).0.windowed);
+        let (options, rest) = consume(&["-WINDOW"]);
+        assert!(!options.windowed);
+        assert_eq!(rest, vec!["-WINDOW".to_string()]);
+    }
+
+    #[test]
+    fn numeric_switches_follow_the_sscanf_shape() {
+        let (both, _) = consume(&["-1024X768"]);
+        assert_eq!((both.screen_width, both.screen_height), (1024, 768));
+        // Lowercase `x` survives because native uppercases the argument first.
+        let (lower, _) = consume(&["-640x480"]);
+        assert_eq!((lower.screen_width, lower.screen_height), (640, 480));
+        // `-480` and `-16` reach the same scan, so they set the WIDTH only and
+        // leave the height at the sentinel — which then discards both.
+        let (four_eighty, _) = consume(&["-480"]);
+        assert_eq!(four_eighty.screen_width, 480);
+        assert_eq!(four_eighty.screen_height, SCREEN_SIZE_UNSET);
+        let (sixteen, _) = consume(&["-16"]);
+        assert_eq!(sixteen.screen_width, 16);
+    }
+
+    #[test]
+    fn a_numeric_capture_value_is_not_eaten_as_a_screen_size() {
+        // `--width 800` must survive intact for the sealed capture parser.
+        let (options, rest) = consume(&["--width", "800", "--height", "600"]);
+        assert_eq!(options.screen_width, SCREEN_SIZE_UNSET);
+        assert_eq!(
+            rest,
+            vec![
+                "--width".to_string(),
+                "800".to_string(),
+                "--height".to_string(),
+                "600".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn accepted_switches_are_consumed_without_changing_anything() {
+        let (options, rest) = consume(&[
+            "-record",
+            "-play",
+            "-jabber",
+            "-str",
+            "-nostr",
+            "-ATTRACT",
+            "-MESSAGES",
+            "-STEALTH",
+            "-NOROUTER",
+            "-NETGEAR",
+            "-DLINK1",
+            "-DROP=3",
+            "-MPDEBUG",
+            "-SOCKET1234",
+            "-DESTNET",
+            "-O",
+            "-X",
+        ]);
+        assert!(rest.is_empty(), "every native switch must be consumed");
+        assert_eq!(options, RetailStartupOptions::default());
+    }
+
+    #[test]
+    fn x_with_only_qs_quiets_theme_and_eva() {
+        assert!(consume(&["-xq"]).0.theme_and_eva_quiet);
+        assert!(consume(&["-XQQQ"]).0.theme_and_eva_quiet);
+        assert!(!consume(&["-X"]).0.theme_and_eva_quiet);
+    }
+
+    #[test]
+    fn x_with_anything_but_qs_ends_the_launch_and_the_first_exit_wins() {
+        // 0x0052FB08: Qs, then any other character, still jump to the exit.
+        assert_eq!(consume(&["-XQA"]).0.exit, Some(StartupExit::InvalidSwitch));
+        assert_eq!(consume(&["-x1"]).0.exit, Some(StartupExit::InvalidSwitch));
+        assert_eq!(consume(&["-X"]).0.exit, None);
+        // LoadString's fallback, from retail bytes at 0x0084583C.
+        assert_eq!(
+            exit_text(StartupExit::InvalidSwitch),
+            "***FATAL*** String Manager failed to initilaized properly"
+        );
+        // Parse_Command_Line returns at the first exit it meets.
+        assert_eq!(consume(&["-?", "-XA"]).0.exit, Some(StartupExit::Usage));
+        assert_eq!(
+            consume(&["-XA", "-?"]).0.exit,
+            Some(StartupExit::InvalidSwitch)
+        );
+    }
+
+    #[test]
+    fn a_falling_through_switch_reaches_the_later_tests() {
+        // 0x0052F8EB: MPDEBUG goes on to SPEEDCONTROL in the same argument.
+        assert!(consume(&["-MPDEBUG-SPEEDCONTROL"]).0.campaign_speed_control);
+        // 0x0052F949: SPEEDCONTROL goes on to the size scan.
+        let (both, rest) = consume(&["-1024X768-SPEEDCONTROL"]);
+        assert!(both.campaign_speed_control);
+        assert_eq!((both.screen_width, both.screen_height), (1024, 768));
+        assert!(rest.is_empty());
+        // 0x0052F996: NOROUTER goes on to the `-X` test, where `-` is no Q.
+        assert_eq!(
+            consume(&["-XQ-NOROUTER"]).0.exit,
+            Some(StartupExit::InvalidSwitch)
+        );
+        // DROP= ends the chain, so the SPEEDCONTROL after it is never tested.
+        assert!(!consume(&["-DROP=-SPEEDCONTROL"]).0.campaign_speed_control);
+    }
+
+    #[test]
+    fn speed_control_retains_the_native_case_insensitive_substring_switch() {
+        assert!(!consume(&[]).0.campaign_speed_control);
+        let (options, rest) = consume(&["prefix-speedcontrolsuffix", "-WIN", "--other"]);
+        assert!(options.campaign_speed_control);
+        assert!(options.windowed);
+        assert_eq!(rest, ["--other"]);
+    }
+}

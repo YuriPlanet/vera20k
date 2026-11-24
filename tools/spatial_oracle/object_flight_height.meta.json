@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Object low/high-flight queries through live native terrain height.\n\nUnit vtables and physical map cells inherited from the FV preparation. Original\nObject CRT initializers establish height constants; XYZ/mark/OnBridge are supplied.\nNo altitude, height, map getter or flight-query return is substituted.\n",
+  "assumptions": [
+    "24 controls:marked0/1,OnBridge0/1,relativeheights-1/0/207/208/209; two livegroundlevelchanges and two missing-cell cases.",
+    "Unit pose/lifecycle and sparse flat level6/7 cells are supplied. Original Object translation-unit14CRT entries execute; no native world loading/admission.",
+    "Direct GetHeight then low then high execute independently on unchanged object/terrain. Recorded query lists establish markedfalse skips GetHeight for low/high.",
+    "Uses native Map578080 and original Cell ground calculation; liveflags supplied100. No native bridge destruction/repair or aircraft/jumpjet virtual override claim."
+  ],
+  "substitutions": [
+    "Preparation inherits selected physical FV/weapon INI caches and allocation boundaries. Claimed getter bodies execute unchanged without substituted calls."
+  ],
+  "entry_points": {
+    "object_crt_table": "0x008141D8",
+    "object_get_height": "0x005F5F40",
+    "map_floor": "0x00578080",
+    "low_flying": "0x005F6B60",
+    "high_flying": "0x005F6B90"
+  },
+  "payload_sha256": "5d089ccb4c4480d014d837311ebb4984b8d782a3f1c5451239ffe2290c695919"
+}

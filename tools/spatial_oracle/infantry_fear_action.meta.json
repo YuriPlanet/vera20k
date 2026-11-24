@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "46 original Infantry5200B0 controls, real51D6F0 acceptance/refusal, actual house/motion/IsArmed readers, stage and three full RNG states. Fraidycat admission stops before original Scatter; no complete InfantryAI/world/finite-ammo parity claim.",
+  "assumptions": [
+    "Selected --fear mode reuses the existing movement-action VM. Original198 default rows retain canonical SHA256 2f40b3be270bdce0070d59ac8efb6c02ab89a6ba68ad82d8ba93dada141cab27.",
+    "Supplied Infantry/type/House prior state, original Infantry7EB058 and original Walk7F69F8 tables. Original Walk75AA90 constructor executes. Infantry/type/House construction and retail rule/sequence loading are excluded; all42 sequence counts supplied6 except explicit absent action. Ordinary E1 tests separately use the production RULES/ART readers.",
+    "Fear, Doing, prone, Human1EC/PlayerControl1ED, Session mode, falling, NavCom and Fearless/Crawls/Fraidycat are supplied. NavCom nonnull is a comparison-only sentinel. Retained actual Walk+34 moving byte is supplied independently of motion+36; original COM75AB30 queries it.",
+    "Actor Health100, Alivetrue, no transport/highflight/Jumpjet/water remap. Positive Ammo-1 controls isolate the ordinary unlimited-ammo caller. Three additional zero-ammo controls execute actual IsArmed701120/GetWeapon70E1A0/70E140/7177C0 on supplied rookie/type weapon-slot presence; the nonnull slot pointer is compared only, no weapon/type reader or whole ammo lifecycle is claimed.",
+    "Frame100, old stage7/changed1/start17/duration91/rate92/increment3. Original class action force0/randomStart0. Timer+104 stack auxiliary is not authoritative or compared; refusal retains stage/timer/prone. The old independent motion+36 is not substituted for IsMoving.",
+    "All three native generators are seeded31 by original65C6D0. Full0x3F4 before/after states and actual RNG entry events are retained. These bounded requests draw no RNG; no whole match scheduling or absolute stage advancement is claimed.",
+    "One strict Fraidycat fear51-after-decay stationary/null-Nav control stops before51D0D0, retaining the original pushed NullCoordA8F200/forced1/noKidding0. Its Scatter body, RNG, destination/Process/bridge effects and enclosing5200B0 return are excluded. Other Fraidycat controls execute full5200B0 and prove its gates."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "fear": "0x005200B0",
+    "ai_call": "0x0051BF0B",
+    "do_action": "0x0051D6F0",
+    "house_control": "0x0050B730",
+    "walk_is_moving": "0x0075AB30",
+    "is_armed": "0x00701120",
+    "scatter_boundary": "0x0051D0D0",
+    "rng_seed": "0x0065C6D0"
+  },
+  "payload_sha256": "0bda7c105643c4dd38e41ee460b4ec6de5d6fdcdcb67907792f289ece8022f92"
+}

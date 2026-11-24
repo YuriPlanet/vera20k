@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original zone3 Infantry action remaps and pre-admission water/sound ordering, full Infantry constructor plus layered physical GHOST/TANY type/ART readers and bounded DoAction; no sound playback, scenario loader, full wet death lifecycle or Rust parity.",
+  "assumptions": [
+    "Supplied original Infantry and Cell vtables, currentXYZ2688,2688,0, real Cell10,10, flat level/slope0. Original coordinate and Map5657A0 calls execute; map construction/terrain producers are not executed.",
+    "Historical and synthetic action rows supply MovementZone+5B4=3 except zone0 contrast; actor+2DC=0,+74=false, alive+90=true,+6C=100. They exclude carried/highflight/falling/zero-health callbacks and supply all42 sequence counts6 except declared absent slot.",
+    "Direct requests0/2/3/6 cross LandType0/2/6, OnBridge false/true, old+6E8=0/1 and currentDoing-1/17/31. Additional contrasts test absent requested/mapped sequence, fear200, force and old+6E8=-1/2.",
+    "Frame100, old logical timer17/91/92 and image frame7; ignored middle timer word+104 is excluded. Random-start false. No later timer/sequence advancement.",
+    "Type+EA4/+EA8 sound indices supplied101/102. Original global8464AC is explicitly false, so original7509E0 returns at its disable gate. Observed entry arguments prove caller request ordering only, not audible output or stock sound index identity.",
+    "Native zone identity: ReadINI71605E..716081 writes type+5B4 from474E40; its names table81BA88 has index3 pointer81BB38=AmphibiousDestroyer.",
+    "The first151 payload rows retain their historical complete values. New action rows execute original request4/8/9/10/11/12 remaps, unmapped/direct raw records, absent requested versus mapped counts, and unchanged/noninterruptible/force contrasts. Three complete RNG streams are initialized with original65C6D0 and compared before/after; no gameplay result is supplied.",
+    "Constructor/read receipts reuse FootMissions original setup and actual Infantry517A50/InfantryType5236A0 calls. Original517AC2 writes6E8=2; original523748/52374E write EA4/EA8=-1. The original E1 Ready receiver returns with its non-zone3 water state2 unchanged. Original Foot/Techno/Walk constructors and supplied allocation/House/OS boundaries remain inherited; no native scenario-load or whole House construction claim.",
+    "Physical GHOST/TANY ReadINI5240A0 executes across RULESMD, absent LANGRULE, MPBattleMD and XMP03T4 cached layers; physical ARTMD SEAL/TANY/SealSequence/TanyaSequence produces all42 signed records. Original52440B/524447 ReadString128 then7514D0 resolve exact EnterWaterSound/LeaveWaterSound keys against original selected physical SoundList registration. Voc configuration, sample IO and playback are excluded, and fixture-relative indices are named explicitly.",
+    "Full retail DoAction rows supply constructor-built GHOST/TANY actors physical XYZ22272,12544,416 on the existing real Cell87,49, LandType0/2/6 and OnBridge controls. They do not execute their Unlimbo or prove deck occupancy. Health0 controls execute the real Stop_Driver re-entry, while random-start is false and speed index A8EB60 is supplied0. Audio7509E0 itself executes unchanged through its supplied disabled gate; three full RNG streams remain unchanged."
+  ],
+  "substitutions": [
+    "Only constructor/retail receipts inherit existing FootMissions allocation, prepared physical INI/ART caches, cropped map, supplied House and OS callbacks. The existing mission audio callback is bypassed so original7509E0 executes at its explicit disabled gate; no DoAction/map/sound decision is replaced."
+  ],
+  "entry_points": {
+    "do_action": "0x0051D6F0",
+    "packed_cell_query": "0x005657A0",
+    "sound_request": "0x007509E0",
+    "walk_constructor": "0x0075AA90",
+    "infantry_constructor": "0x00517A50",
+    "infantry_type_constructor": "0x005236A0",
+    "infantry_type_reader": "0x005240A0",
+    "sequence_reader": "0x00523D00",
+    "sound_list": "0x007510D0",
+    "sound_lookup": "0x007514D0",
+    "rng_seed": "0x0065C6D0"
+  },
+  "payload_sha256": "6b696471abcd85c93db9591687edbf3b7c1614723f82dc0d8c636260472e03c9"
+}

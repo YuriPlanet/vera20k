@@ -1,0 +1,148 @@
+<img src="docs/images/new-conscirpt-hero-image.png" alt="VERA20K kapak görseli" width="100%">
+
+<p align="center" dir="ltr">
+  <a href="README.vi.md" lang="vi">Tiếng Việt</a> · <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.zh-TW.md" lang="zh-TW">繁體中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ja.md" lang="ja">日本語</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <strong>Türkçe</strong> · <a href="README.md" lang="en">English</a>
+</p>
+<p align="center" dir="ltr">
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Son Linux kütüphane testi çalıştırması (elle başlatılır)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Linux kütüphane testleri" height="23" align="middle"></a>
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml?query=branch%3Amain" title="Son Windows kütüphane testi çalıştırması (elle başlatılır)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml/badge.svg?branch=main" alt="Windows kütüphane testleri" height="23" align="middle"></a>
+  <a href="https://discord.gg/kmjRUn5m5F"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdiscord.com%2Fapi%2Fv10%2Finvites%2FkmjRUn5m5F%3Fwith_counts%3Dtrue&amp;query=%24.approximate_presence_count&amp;suffix=%20online&amp;label=VERA20K%20Discord&amp;color=5865F2&amp;style=flat&amp;logo=discord&amp;logoColor=white" alt="Discord'a katılın" height="23" align="middle"></a>
+  <img src="https://img.shields.io/badge/VERA20K_QQ-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ grubu (VERA20K)" height="23" align="middle">
+  <img src="https://img.shields.io/badge/ra20k.com_QQ-319832195-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ grubu (ra20k.com)" height="23" align="middle">
+</p>
+
+# VERA20K
+
+VERA20K, Red Alert 2: Yuri's Revenge için yeni bir oyun motorudur. Orijinali gibi oynanır;
+birimler, haritalar ve görünüm aynıdır. Windows, macOS ve Linux'ta çalışır. Daha büyük savaşlar
+için yapılmıştır ve tek bir haritada 20.000 birime ulaşan savaşları destekler. Çevrimdışı çatışmalarda en fazla 120,
+yerel ağda veya internet üzerinden oynanan maçlarda ise en fazla 30 oyuncu yuvası bulunur.
+
+VERA20K oyuncular tarafından, oyuncular için yapılıyor ve projenin nereye gideceğine son sözü
+oyuncular söylüyor.
+
+<img src="docs/images/vera20k-screenshots.png" alt="VERA20K çatışma ayarları ekranı ve oyun içi görünüm" width="100%">
+
+## İndir ve oyna
+
+1. Red Alert 2: Yuri's Revenge'i Steam'den ya da EA uygulamasından kurun.
+2. Sisteminize uygun VERA20K'yi [sürümler sayfasından](https://github.com/YuriPlanet/vera20k/releases) indirin.
+3. İndirdiğiniz dosyayı açın. Oyununuzu bulur ve VERA20K'yi kendi klasörüne kurar.
+
+Takıldınız mı? [Yardım sayfasına](https://vera20k.org/tr/help) göz atın.
+
+## Projenin hedefleri
+
+1. Orijinal Red Alert 2: Yuri's Revenge'in oynanışını, görsellerini ve atmosferini korumak.
+2. 500×500 haritalarda **20.000 birime** kadar çıkan büyük savaşları desteklemek. Çevrimdışı çatışmalarda en fazla **120 oyuncu yuvası**, yerel ağda veya internet üzerinden oynanan maçlarda ise en fazla **30** yuva sunmak.
+3. Bilinen RTS özelliklerini ve daha önce hiç görülmemiş bazı özellikleri eklemek.
+4. Entegre çok oyunculu istemci
+
+## Katkıda bulunma
+
+Katkıda bulunanlar motorun belirli alanlarının sorumluluğunu üstlenebilir ve VERA20K'yi
+ileriye taşıyan değişiklikleri geniş bir özgürlükle yapabilir.
+
+Bakımcılar inceleme, entegrasyon ve birleştirme konusunda yardımcı olur. Katkınız tamamen
+size atfedilir.
+
+Tartışmalar [Discord](https://discord.gg/kmjRUn5m5F) üzerinden ve QQ grubunda (1097193563) yürür.
+
+## Mimari
+
+Motorun üç ana bölümü vardır:
+
+- **Simülasyon:** Oyun durumunu ve mantığını yönetir.
+- **Görüntüleme:** Araziyi, birimleri ve binaları orijinal oyunun görsellerini kullanarak GPU'da çizer.
+- **Uygulama:** Girdi, menüler, ses ve platform entegrasyonunu yönetir, sistemleri birbirine bağlar.
+
+Bu ayrım deterministik oynanışı destekler.
+
+Oklar veri akışını gösterir:
+
+![Uygulama simülasyona komut gönderir ve dünya durumunu alır; görüntülemeye çizim verilerini gönderir.](docs/images/architecture.tr.png)
+
+## Derleme ve çalıştırma
+
+Gerekenler:
+
+- **Rust ve Git:** rustup ile kurulmuş [Rust](https://rustup.rs/) 1.97 veya üzeri ve
+  [Git](https://git-scm.com/).
+- **Derleme araçları:** Windows'ta, Rust kurulum programının kurmayı önerdiği Visual Studio C++
+  derleme araçları; macOS'te `xcode-select --install`; Debian ve Ubuntu'da
+  `sudo apt install build-essential libasound2-dev libxkbcommon-x11-0 pkg-config`.
+
+```sh
+git clone https://github.com/YuriPlanet/vera20k.git
+cd vera20k
+cp config.toml.example config.toml
+# Çalıştırmadan önce config.toml dosyasını düzenleyip ra2_dir değerini oyun klasörünüz olarak ayarlayın:
+cargo run --release --bin vera20k
+```
+
+## Nasıl çalışıyoruz
+
+Kodun büyük bölümünü yapay zekâ kodlama ajanları yazıyor. Ajanlar özgün motoru Ghidra ile
+inceliyor, ardından davranışını Rust'a aktarıyor ve [karşılaştırma araçları](tools/native_oracle.md)
+ile oyun testleri kullanarak kontrol ediyor. Ajanlar [AGENTS.md](AGENTS.md) dosyasını izler.
+
+## Özelleştirme
+
+VERA20K varsayılan olarak Yuri's Revenge'in orijinal kurallarını kullanır. **Options** menüsünden
+ses, grafik ve kontrol ayarlarını değiştirebilir veya VERA özelliklerini açabilirsiniz. Oyun
+tercihlerinizi `VERA.INI` dosyasına kaydeder. VERA'ya özgü ayarlar `[VERA]` bölümünde yer alır.
+
+Lobi ayarları, modlar ve haritalar maç kurallarını değiştirebilir. Modlar ve haritalar, INI
+dosyaları aracılığıyla VERA20K'nin desteklediği [Ares](docs/ares.md) ve [Phobos](docs/phobos.md)
+özelliklerini etkinleştirebilir. Bir mod, `ares.mix` dosyasını içeriyorsa Ares'i de etkinleştirir.
+Bazı Phobos özellikleri için hâlâ `--features phobos` seçeneğiyle derlenmiş bir sürüm gerekir.
+
+Kendi modunuzu yapmak için [mod yapım kılavuzuyla](docs/modding.md) başlayabilirsiniz.
+
+## Destek
+
+<a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="VERA20K'yi PayPal üzerinden destekleyin" height="23"></a>
+
+Alınan tüm bağışlar,
+[TIBTRE katkı defterine](https://github.com/YuriPlanet/tibtre-ledger) göre katkıda
+bulunanlara dağıtılır.
+
+Katkıda bulunanlara ödeme yöntemleri:
+
+<p><img src="https://img.shields.io/badge/PayPal-003087?style=flat&amp;logo=paypal&amp;logoColor=white" alt="PayPal" height="23"> <img src="https://img.shields.io/badge/China_UnionPay-E21836?style=flat&amp;logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9Ii02IC02IDI2OCAxNzIiPjxwYXRoIGQ9Ik01MC4wNDE2MzEsMC4wMDA2Njc1NjMzMDUgTDExMy44MjAyMTEsMC4wMDA2Njc1NjMzMDUgQzEyMi43MjMxMjcsMC4wMDA2Njc1NjMzMDUgMTI4LjI2MDQzOCw3LjI1NzMxMzQ1IDEyNi4xODM1NTgsMTYuMTg5NzY1NyBMOTYuNDkwMDcxNSwxNDMuNjc1NDE2IEM5NC4zOTQ1MzY1LDE1Mi41NzY3NzcgODUuNDgwNzM5LDE1OS44Mzk2NDEgNzYuNTcxNjA1LDE1OS44Mzk2NDEgTDEyLjc5OTI0MzMsMTU5LjgzOTY0MSBDMy45MDg3NjQsMTU5LjgzOTY0MSAtMS42NDA5ODQ0NCwxNTIuNTc2Nzc3IDAuNDM1ODk2MjA4LDE0My42NzU0MTYgTDMwLjE0MTgxODYsMTYuMTg5NzY1NyBDMzIuMjE4Njk5Myw3LjI1NzMxMzQ1IDQxLjEyNzgzMzMsMC4wMDA2Njc1NjMzMDUgNTAuMDQxNjMxLDAuMDAwNjY3NTYzMzA1IiBmaWxsPSIjRTIxODM2IiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iOCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjxwYXRoIGQ9Ik0xMDguNTEzMjgzLDAuMDAwNjY3NTYzMzA1IEwxODEuODU3MDE4LDAuMDAwNjY3NTYzMzA1IEMxOTAuNzU4Mzc4LDAuMDAwNjY3NTYzMzA1IDE4Ni43NDQ1MjcsNy4yNTczMTM0NSAxODQuNjUwNTQ2LDE2LjE4OTc2NTcgTDE1NC45NjE3MjQsMTQzLjY3NTQxNiBDMTUyLjg3ODYyNSwxNTIuNTc2Nzc3IDE1My41Mjg0MjcsMTU5LjgzOTY0MSAxNDQuNjA4NDExLDE1OS44Mzk2NDEgTDcxLjI2NDY3NzUsMTU5LjgzOTY0MSBDNjIuMzQ0NjYxNSwxNTkuODM5NjQxIDU2LjgyNDQ0OTUsMTUyLjU3Njc3NyA1OC45MTk5ODUsMTQzLjY3NTQxNiBMODguNjA3MjUyNSwxNi4xODk3NjU3IEM5MC43MTUyMjQsNy4yNTczMTM0NSA5OS42MDU3MDM1LDAuMDAwNjY3NTYzMzA1IDEwOC41MTMyODMsMC4wMDA2Njc1NjMzMDUiIGZpbGw9IiMwMDQ0N0MiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI4IiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8%2BPHBhdGggZD0iTTE3OC45NDc4MywwLjAwMDY2NzU2MzMwNSBMMjQyLjcyNjQwOSwwLjAwMDY2NzU2MzMwNSBDMjUxLjY0MTc2MiwwLjAwMDY2NzU2MzMwNSAyNTcuMTc5MDc0LDcuMjU3MzEzNDUgMjU1LjA4NTA5MywxNi4xODk3NjU3IEwyMjUuMzk2MjcxLDE0My42NzU0MTYgQzIyMy4zMDA3MzYsMTUyLjU3Njc3NyAyMTQuMzgwNzE5LDE1OS44Mzk2NDEgMjA1LjQ2NjkyMiwxNTkuODM5NjQxIEwxNDEuNzE3ODc5LDE1OS44Mzk2NDEgQzEzMi43OTc4NjMsMTU5LjgzOTY0MSAxMjcuMjY1MjE1LDE1Mi41NzY3NzcgMTI5LjM1NDUzMiwxNDMuNjc1NDE2IEwxNTkuMDQ4MDE3LDE2LjE4OTc2NTcgQzE2MS4xMjQ4OTksNy4yNTczMTM0NSAxNzAuMDI3ODE0LDAuMDAwNjY3NTYzMzA1IDE3OC45NDc4MywwLjAwMDY2NzU2MzMwNSIgZmlsbD0iIzAwN0I4NCIgc3Ryb2tlPSIjZmZmIiBzdHJva2Utd2lkdGg9IjgiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48L3N2Zz4%3D" alt="China UnionPay" height="23"> <img src="https://img.shields.io/badge/Alipay-1677FF?style=flat&amp;logo=alipay&amp;logoColor=white" alt="Alipay" height="23"> <img src="https://img.shields.io/badge/Vipps-FF5B24?style=flat&amp;logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjQzLjUgMjEuNSAyNyAyNyI%2BPHBhdGggZD0iTTU3LjMsNDAuNmMzLjcsMCw1LjgtMS44LDcuOC00LjRjMS4xLTEuNCwyLjUtMS43LDMuNS0wLjlzMS4xLDIuMywwLDMuN2MtMi45LDMuOC02LjYsNi4xLTExLjMsNi4xIGMtNS4xLDAtOS42LTIuOC0xMi43LTcuN2MtMC45LTEuMy0wLjctMi43LDAuMy0zLjRzMi41LTAuNCwzLjQsMUM1MC41LDM4LjMsNTMuNSw0MC42LDU3LjMsNDAuNnogTTY0LjIsMjguM2MwLDEuOC0xLjQsMy0zLDMgcy0zLTEuMi0zLTNzMS40LTMsMy0zQzYyLjgsMjUuMyw2NC4yLDI2LjYsNjQuMiwyOC4zeiIgZmlsbD0iI2ZmZiIvPjwvc3ZnPg%3D%3D" alt="Vipps" height="23"> <img src="https://img.shields.io/badge/SEPA-2D4B9A?style=flat&amp;logo=sepa&amp;logoColor=white" alt="SEPA" height="23"> <img src="https://img.shields.io/badge/Bitcoin-F7931A?style=flat&amp;logo=bitcoin&amp;logoColor=white" alt="Bitcoin" height="23"></p>
+
+## Teşekkürler ve yasal bilgiler
+
+OpenRA, XCC Mixer, ModEnc wiki, Project Perfect Mod, Command & Conquer ve Red Alert'in
+kaynak kodlarını GPL lisansıyla yayımlayan EA, World-Altering Editor, Final Alert, YRpp,
+Ares, Phobos ve daha nicelerine teşekkürler.
+
+Telif hakkı © 2026 Halvor Nikolai Rusten ve VERA20K'ya katkıda bulunanlar.
+[Ek koşullarla](LEGAL.md#additional-terms) birlikte [GPLv3](LICENSE-GPL) ile lisanslanmıştır.
+Tiberian Sun: Firestorm'daki kar ve buz karoları pakete izinle dahil edilmiştir.
+Bu karoların mülkiyeti Electronic Arts'a aittir. Oyuncular Red Alert 2: Yuri's Revenge
+dosyalarını kendi oyun kopyalarından sağlar.
+Command & Conquer ve Red Alert, Electronic Arts Inc. şirketinin ticari markalarıdır.
+Ekran görüntülerindeki ve uygulama simgesindeki (Red Alert 2'nin kırmızı yıldızı) oyun grafikleri
+Electronic Arts'a aittir. VERA20K, Electronic Arts ile bağlantılı değildir ve Electronic Arts
+tarafından desteklenmemektedir.
+
+This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
+This product includes software developed by the [Phobos Developers](docs/phobos.md#original-project-and-authors).
+
+**VERA20K'yı paylaşmadan, satmadan veya fork'lamadan önce [yasal bildirimi](LEGAL.md) okuyun.**
+
+## Belgeler
+
+- [WebAssembly önizlemesi](docs/wasm.md): tarayıcıda çalışan, isteğe bağlı tek oyunculu bir derleme.
+- [Mod yapım kılavuzu](docs/modding.md): modların neleri yapıp neleri yapamayacağı ve VERA20K ile orijinal oyun arasındaki farklar.
+- [INI profilleri](docs/ini-roots.md): kural, grafik ve yapay zekâ dosyalarını seçme.
+- [Ares](docs/ares.md), [Phobos](docs/phobos.md) ve [NPatch](docs/npatch.md): eklenti desteği ve sınırlamaları.
+- [Motora genel bakış](docs/index.md): kodun düzeni ve motorun parçalarının nasıl bir araya geldiği.
+- [Geliştirici araçları](tools/README.md): derlemeler, testler ve oyun kaynaklarının incelenmesi.
+- [Harita testleri](tools/map_observation.md): betikli test senaryoları, ekran görüntüleri ve maç gözlemleri.
+- [Orijinalle karşılaştırmalar](tools/native_oracle.md): davranışı orijinal oyunla karşılaştırma.
+- [Ghidra iş akışı](docs/ghidra-workflow.md): orijinal motoru inceleme.
+
+[README.md](README.md) dosyasının çevirisidir; lütfen İngilizce sürümle güncel tutun.

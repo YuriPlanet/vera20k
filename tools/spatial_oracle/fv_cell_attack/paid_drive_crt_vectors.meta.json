@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Literal, pointer-independent projection of the executed native FV continuation.\n\nNo native decision is computed. This selects recorded native values for Rust\nintegration consumers; the complete source packet retains raw object/Drive bytes.\n",
+  "assumptions": [
+    "Every projected field is read from the executed native source packet; addresses become source-relative native IDs only where the native packet already records IDs. All constructor, placement and per-frame RNG values are preserved as native structs or byte hashes. No gameplay or RNG algorithm is reproduced by the projection."
+  ],
+  "substitutions": [
+    "This file performs JSON selection and raw little-endian struct decoding only."
+  ],
+  "entry_points": {
+    "source_live_logic": "0x0055B5FF"
+  },
+  "source_sha256": "417edf7a157a8fab78e68353705be52a84abe5a7bdb92540c6bdaf8376e9dd87",
+  "source_metadata_sha256": "841d02f536b2992d5095667334a9cd8c3ba6374f0bb652136fce7f75b44d6109",
+  "payload_sha256": "d9e4f14e8d552b28d24714111570b036c85782abb7ae939103fbb2566b827a92"
+}

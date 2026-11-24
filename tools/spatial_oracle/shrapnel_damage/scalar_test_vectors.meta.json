@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "scope": "Project compact Rust inputs/outputs from the frozen native scalar packet.\n\nThis is extraction only. It neither executes gamemd nor computes expected\nbehavior. The complete raw cells, writes and native provenance remain in scalar.\n",
+  "source": "tools/spatial_oracle/shrapnel_damage/scalar.json.gz",
+  "source_sha256": "6415036158cb47aa67e4451e392ea5b858c468ceed3766630b899d9708788333",
+  "source_payload_sha256": "37a35443a01cf13a82472d96ef7acb32a4a6800771ab893e558c0d8fa5cea6f9",
+  "transformation": "Select original input fields and returned/trace/final/dummy; no derived expectations",
+  "payload_sha256": "56be97fb5f3f8c709b08a8eef67c46866ebf0f2da16d8fa54f1c82e26a2f85db"
+}

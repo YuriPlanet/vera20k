@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original56D460/56D5A0 retained-cache selection and adoption; stop before56C510 fallback",
+  "assumptions": [
+    "Supplied Size8,8, retained class/height/base-ID records and row0; current Cell height20 differs from retained4",
+    "Twenty-eight branch witnesses, including ordered transitions, zero candidate, one-time packed clamp and raw neighbor offsets",
+    "One case per helper intentionally supplies row0[0]=2; native56C510 normally initializes this sentinel toFFFF",
+    "Fallback classification stops before original56C510; saved bridge_connectivity corpus executes its separate rebuild",
+    "No out-of-allocation neighbor reads or malformed Size claims; extreme packed coordinates hit retained class7 and return before neighbors"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "assign": "0x0056D460",
+    "merge": "0x0056D5A0",
+    "fallback_boundary": "0x0056C510"
+  },
+  "payload_sha256": "6005605680c9e29c97a728963236fdef3ee93b55ee740ae2b42ee9527854c1b1"
+}

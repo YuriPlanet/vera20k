@@ -1,0 +1,498 @@
+# Ares ground, airborne and building EMP
+
+Every build runs this chain when the game plays Ares ([Ares](ares.md)). Other
+games do not use the extension keys or run its Bullet/AI producers. It covers every Foot
+victim: Drive, Walk, Hover, Ship, Teleport, Fly, Jumpjet, Rocket and Tunnel
+movers, human or AI, in or out of a Team, with Spawn, Slave or Capture managers,
+a held Magnetron victim or a Temporal warp, harvesters, falling and
+mind-controlled victims, and the EMP.Threshold deaths. It admits every
+EMP-prone building: powered ones, Radar and SpySat providers, factories and
+construction yards, Gap generators, superweapon, PowersUnit, Sensors, cloning,
+LaserFence, Tesla-charged, garrisonable, undeploying and Prism-linked ones. It
+spares a tank in a Tank Bunker and announces a hit on the player's miners and
+base (announceAttack).
+
+## Building kinds
+
+IsTypeEMPProne (inlined in isEMPImmune10062D90) makes a BuildingType prone when
+it is Powered with a positive drain, or Radar, SuperWeapon/SuperWeapon2 (a
+resolved index), UndeploysInto, PowersUnit, Sensors, LaserFencePost or
+GapGenerator; InvisibleInGame never is. An explicit `ImmuneToEMP=no` makes any
+other type prone (a war factory, the Cloning Vats). Nothing in the delivery or
+the effect bodies tests a building's kind beyond Radar/SpySat and
+LaserFencePost: each kind's consequence is what gamemd's shared owners do with
+a Deactivated, DisableStuff'd, non-operational building whose House rechecks
+its tech tree and power. VERA reaches those owners:
+
+- Factories and construction yards: Ares Deactivate1004CDC0 and
+  Activate1004CCB0 (hooks 70FC90/70FBE0) refresh a Building's factory queues
+  (UpdateFactoryQueues10013250 -> Update_FactoriesQueues509140) on the
+  transition. Ares FindFactory10020D40 counts a Deactivated factory as
+  offline, so production is suspended while the factory is under EMP and the
+  system hold lifts when it reactivates. UpdateConstructionOptions' hook4456E5
+  drops an EMPed factory's cameos at the House tech pass; placement and Ares
+  CanBuild keep their own answers (AtLimit, not No). Both hooks also skip the
+  activation sound while IKnowWhatImDoing (A8E7AC, VERA's object placement
+  scope) is raised. A computer factory's own production (Factory_AI4500F0)
+  reads no deactivation and keeps building, as in gamemd.
+- Gap generators: DisableStuff452480 removes the gap at the hit; the next
+  operational sample (43FB20 -> 4549B0) restores it after expiry.
+- Superweapons: Ares replaces the House Super pass (hook 50AF10, 10039450;
+  grants 10039580) with GetSuperWeaponStatuses10038F10, whose provider is
+  powered only with HasPower, no EMP and an operator (10062F50), and Charging
+  only when also not warped out and neither current nor queued
+  Construction/Selling. An IsPowered type is held without a powered provider
+  (or on low power), any other type without a Charging one. The stock pass
+  never holds a type that is not IsPowered.
+- PowersUnit: the operational off edge loses the House's powered center
+  (LostPoweredCenter50E0E0) and the robots go offline; the on edge after
+  expiry brings them back (50E010), and Ares PoweredUnit100454F0 refuses a
+  center under EMP.
+- Cloning Vats: KickOutClones' lambda100112D0 skips a non-operational vat.
+- Tesla coils: Is_Operational4555D0 refuses an EMPed building whatever its
+  chargers, and the shared fire error (6FC2E0) refuses its shots.
+- Garrisonable buildings: the occupants stay inside; the building's fire goes
+  through the same fire error. Their click arms are the deactivated-cursor
+  chain ([ares-cloak-power.md](ares-cloak-power.md)).
+- Undeployers: a building hit while undeploying is not deactivated (Selling,
+  10062D60); Mission_Selling's hook44A04C (10053D60) gives the unit the
+  building's counter and its sparkle type when that is not the type default
+  (10062F70), and the unit deactivates at its next AI visit.
+- Prism towers: a tower in a forwarding network leaves it at its next
+  operational sample (Ares10016950, hook454B3D), as one that goes offline.
+- LaserFencePost: DisableEMPEffect100627F0 also enables its Stuff without
+  power. The fence recalc4533A0 both Stuff bodies call has no VERA port, since
+  VERA builds no fence sections.
+
+UpdateSparkleAnim10062FD0 draws a building's sparkle with ZAdjust -1024.
+
+## Independent powered building
+
+The Building path uses the same private `EmpState`, house and animation owners.
+Installed10062B40 dirties House+1FC/+5778, disables Stuff through original452480,
+and preserves Focus+218 across the shared Deactivate/ResetOrdersToGuard.
+`BuildingOnline`+660 remains independent and unchanged. Only the first activation
+performs those House/Stuff transitions and initially saves raw LastMission;
+nonzero refreshes and capped hits retain them. The existing4555D0 operational adapter now reads the shared EMP
+counter, so fire admission, target admission and powered-slot consumers see the
+same value. Existing Building GetFireError and delayed-fire callers remain the
+fire authorities. First-hit and deferred admission both use the existing
+Mission effective selector5B3040: current when present, otherwise queued.
+A freshly Unlimboed building with current=-1 and queued Construction18 retains
+that queue; LastMission still records raw current, not the effective mission.
+Once a deferred victim's effective mission permits deactivation, AI tail
+10053E1A..3E saves raw current and calls only the shared Deactivate. It does not
+repeat House invalidation/DisableStuff or the first-hit Building Focus
+save/restore; the shared Stun therefore clears Focus on that deferred path.
+
+Building43FE56 calls the common Techno AI. Its category branch6FABBC..C2 skips
+only generic Stage advancement (the existing UpdateAnimation4509DE owner already
+stepped it), then reaches flash6FAC31 and the tail. The Structure caller now
+uses the same post owner as Foots, replacing its former manual flash; it must
+neither advance Stage a second time nor flash twice. The installed Ares hook
+replaces original6FAF0D's counter tail at the same reached point, before the
+Building-specific Gattling/repair/factory tail. The original counter body alone
+does not establish an active retail positive-counter producer or a stock bug.
+
+Expiry100627F0 samples operational state before House invalidation. Full power
+enables Stuff through452410 and reactivates, preserving Focus. Low-power expiry
+retires the EMP sparkle but leaves Stuff disabled and Techno deactivated.
+Restored power resumes the retained powered slot via the next Building
+operational edge; the actual common Techno head1004B528..575 then reactivates.
+That later path does not EnableStuff or preserve Focus: the shared Guard reset
+clears it. Structure lacks the Foot flag tested at100628B2, so neither AI nor
+human buildings queue the ground-unit Hunt recovery mission.
+
+The pre-effect coordinate100536E0/10053727 is local to the extension effects;
+original damage keeps its own impact. Its10053660 trampoline calls the existing
+planar Distance_To5F6440 owner, ignoring Z and discounting the target building's
+foundation. Strict distance<64 rereads target GetCoords+48, not Building+A4 or
+TargetCoordOffset. The distance API now resolves source identity from the same
+Abstract ID space, including a Bullet's retained Location; all six former
+Techno source callers still read their original live receiver. No second distance
+kernel or coordinate cache is introduced. Eight original caller-slice controls
+pin63/64, high Z, foundation-discount boundaries, nonzero target offset, absent
+target and an incoming impact distinct from Bullet Location. They stop before
+the effect producers and establish no whole AttachEffect/weapon equivalence.
+Bare component detonations without a retained Bullet and the shared dummy-cell
+route retain their explicit impact; their remaining pointer/caller behavior is
+outside this ordinary live-parent chain (border/temporary-target frequency is
+unmeasured, with possible local effect-center differences).
+
+The [native corpus](../tools/rules_oracle/ares_emp.json) adds four immunity,
+three foundation/collector, four connected building histories and one bounded
+pause/timer control. The histories execute original Stun70F850, the selected
+Building navigation/target setters, AssignMission5B2FD0 and installed activation
+hooks, including nonempty powered slot3. The producer's supplied House dirty
+acknowledgement and mission input changes remain explicit fixture inputs. It
+bounds no RNG/Detach calls on this no-manager path, not whole weapon parity.
+`ares_emp_building_native_admission_refresh_and_slot_lifecycle` consumes those
+controls, plus two original effective-getter/deferred histories. Those use
+actual Construction18, contrast present Move2 with a queued Construction, and
+compare the acknowledged House dirty flags, raw LastMission, cleared Focus,
+mission timer, retained powered slot and untouched RNG. Their supplied queue
+change remains an explicit input, not a full player-placement replay. The
+existing production Unlimbo -> Enter_Idle_Mode44D6A0 queue owner establishes
+where current=-1/queued Construction arises. The parent-Bullet/actual-AI test
+additionally connects fire refusal,
+low-power expiry, next-head recovery and a restored tower shot; synthetic image
+bounds are not a retail drawing comparison. Server Rust checks and a release
+production capture are separate validation steps, not native-corpus claims.
+
+Airburst child fans and AttachEffect remain separate whole-weapon residuals.
+Parent `Airburst=yes` still enters the existing detonation receiver once, and
+EMP runs before ordinary damage and the later native Airburst tail; absence of
+a child-fan consumer is not a reason to suppress the parent's EMP. The
+building kinds above are covered through their own owners, not by this
+connected sample. Positive-output buildings (including explicit ImmuneToEMP=no providers and
+upgrade-added output) are not covered by the negative-power tower comparisons.
+Their EMP/output accounting and downstream House effects remain unproved;
+frequency is unknown and explicit use may expose incorrect power availability.
+No native immunity/output behavior is inferred from that coverage gap.
+
+## Airborne victims and managers
+
+Delivery10062320 hands the first activation to enableEMPEffect10062B40. An
+Aircraft whose GetHeight is above 0 and that no Magnetron holds (Foot+6AD) or
+dropped (+6AE) crashes at once: the counter stays written, the
+63/62 events still fire, then TechnoExt::Destroy10044300 kills it with the
+firer as killer and House (C4 warhead, ignore defenses); no sparkle or
+deactivation. Every other first hit saves LastMission, lets a Temporal
+warper go, releases a Magnetron's held object, takes a Foot out of its team
+(LiberateMember(-1, false)), deactivates (reselecting a selected victim),
+frees a CaptureManager's victims, runs updateSpawnManager10063070 with the
+firer and suspends a SlaveManager's AI timer; these are the shared owners
+PoweredBy's EnableEMPEffect2 also uses (`sim::powered_by`). Under EMP,
+updateSpawnManager destroys each rocket node (+14) with a Unit in states 1..4
+and pauses the SpawnTimer and UpdateTimer; DisableEMPEffect100627F0 (natural
+expiry or a healing hit) resumes them and the slave timer before the sparkle
+and AI recovery. After any delivery that leaves the counter positive, the
+inlined EMP.Threshold (TechnoTypeExt+13C) destroys the victim when the live counter
+exceeds |Threshold|: always for a positive one, and for the default -1 only
+while IsInAir, without a Parachute, not crashing and, for a Foot, not held
+or dropped by a Magnetron. So an airborne Jumpjet hit for more than one frame
+dies by default, and stays deactivated in the air with EMP.Threshold=0. The
+regressions `ares_emp_flying_aircraft_crash_and_airborne_jumpjet_threshold`
+and `ares_emp_spawner_loses_flying_rockets_and_holds_timers_until_expiry`
+cover both paths. The ground recovery of a landed AI Aircraft or Jumpjet is
+the same queued EMPAIRecoverMission/Hunt as AI Drive.
+
+## Every mover, miners, falling and controlled victims
+
+Delivery10062320 tests no mover, so neither does the Rust admission.
+Each admitted mover reaches only shared owners: Deactivate's Power_Off (Hover's
+override516BF0 spins it down and settles it; Fly's4CFD20 spins a moving
+landed Aircraft), the Ares deactivated-Unit stop of
+TechnoClass_Update1004B320, Teleport's deactivated MoveTo refusal1005D3E0, and
+for a flying Aircraft, a V3 or Dreadnought rocket included, the crash of
+enableEMPEffect10062B40. A falling object keeps falling, since ObjectAI5F3F11
+tests no deactivation, and lands offline; its canopy spares it from the
+Threshold in-air arm. A mind-controlled victim keeps its controller; its owner
+is the controller's House, so a computer controller's victim recovers with
+Hunt. A Tunnel mover keeps the base Power_Off and a Process (0x728E30) that
+tests no power. Deactivate's ResetOrdersToGuard (0x70F850) clears its
+destination (vt+0x480 with null, the Unit setter 0x741970), which reaches its
+Stop_Moving (0x728C00): a dig-in becomes DugOut and a sinking one PreDigOut,
+so it ends the dig on the surface. One below
+the cells is on no cell list (Mark UP) and below height 0, so neither gather
+pass reaches it.
+
+A harvester under EMP draws no ore-gather overlay: UnitClass_Draw_OreGatherAnim
+(Ares.dll `10053E50`, hook `0x0073D219`) adds IsUnderEMP (vt+0x37C) to the
+stock refusals before the overlay draw (`harvest_overlay` in
+`app::presentation::instances::units`).
+
+DisableEMPEffect100627F0's Foot tail (100628B2..10062972) is one owner,
+`recover_ares_emp_foot_mission`, which PoweredBy's DisableEMPEffect2 10062650
+calls with Hunt: a driverless Foot queues and starts Harmless; a Unit
+Harvester (Type+E0E) or ResourceGatherer (+5EC), human or computer, queues and
+starts its saved TechnoExt+14 LastMission, Enter for a saved Guard
+(100628DF..10062911); any other Foot of a House no human controls queues the
+recovery mission unstarted. The War Miner, the Chrono Miner and the Slave Miner
+take the miner branch; before this the Slave Miner took the computer Hunt.
+
+A Radar or SpySat provider follows the independent-building path. Both effect
+bodies dirty RecheckRadar (House+5779) for a Radar (+16A4) or SpySat (+16A5)
+type, enable at10062B73..10062B91 and disable at10062840..1006285E whatever the
+power, and the House radar and SpySat scans (Ares10024550/10024620, hooks
+508EBC/508F91) skip an EMPed provider. A Radar type is prone without a power
+drain (IsTypeEMPProne inlined in10062D90).
+
+## announceAttack
+
+enableEMPEffect10062B40 ends with announceAttack10062150. Native first tests
+Owner == PlayerPtr (10062162); Rust tests whether the owner is a human House,
+because the House Tags NotifyUnderAttack raises are state every peer shares, and
+the app plays the radar event and EVA for the local owner alone. With several
+humans native raises those Tags on the victim's client only, which this
+deliberately does not reproduce. A gatherer building (Type+5EC) and a Unit
+Harvester or gatherer get CreateRadarEvent(4) at GetMapCoords41BEA0 and
+`EVA_OreMinerUnderAttack` (100621F9..1006222C), with no siren, ally line or
+Tags. Another building that is neither Insignificant (+232) nor BaseNormal=no
+(+154F) gets NotifyUnderAttack4F93E0 for PlayerPtr (100621B3..100621CB): the
+base cue, the siren and House Tag event 6, but no ally line, since only the
+owner's client calls it; a 1x1 undeployer returns at once (4F93EB..4F93FB).
+The Malicious hook10053980 reads the global only ReceiveDamage sets
+(100536A0), so the own line plays. A flying Aircraft that crashes returns
+before the announcement. `UnderAttackLine` records which call raised a
+warning; the existing damage and Temporal producers keep theirs.
+
+## Input and state ownership
+
+`RulesPassProcessor` retains each reached TechnoType/Warhead extension across
+RULESMD, optional LANGRULE, selected mode and scenario reads, then projects it
+into the corresponding immutable `ObjectType`/`WarheadType`. Missing sections
+skip the pass. `ini_value` owns the shared Ares integer, binary64/percent,
+nullable bool and int-or-bool threshold readers. Constructor defaults are
+Duration=0, Cap=-1, Modifier=1, Threshold=-1, unset ImmuneToEMP and unset nullable
+Type sparkle. Veteran and elite EMPIMMUNE flags retain independently on empty
+reads and replace their own tier on nonempty comma-delimited reads.
+
+`EMP.Sparkles` finds an existing AnimType without allocation. Unknown or empty
+values retain the prior binding; explicit none clears it. The actual selection
+is Warhead sparkle, then the nullable Type override, then retained
+`[General]EMPulseSparkles`. An explicitly null Type override blocks that fallback.
+The General pointer uses the existing RulesClass pointer reader/retainer.
+The same retained Warhead, Type and General names enter
+`effect_asset_catalog::anim_class_roots` only in a game read the Ares way. The app's existing
+tolerant SHP binder supplies their physical frame bounds before Anim construction;
+its scheduler-bound set also supplies the renderer's effect-atlas roots. ART
+metadata existing by name alone does not supply those bounds. This is a required
+dependency of the new Ares producer, not a claim about an active retail EMP path.
+
+The existing global `AresGlobalControls` owner retains nullable
+`[CombatDamage]EMPAIRecoverMission`. Constructor1002A360 initializes its value0
+and present=false. The unconditional before-Type-data reader679A15 ->1002B356
+->1002AB60/1002AECF uses ReadString2048 and the existing named Mission lookup
+5B3910. Missing, empty and invalid values retain the previous selection through
+RULESMD, LANGRULE, mode and scenario passes; named values set it. Numeric strings
+and `none` are not mission aliases. This read is distinct from the earlier
+Process-entry phase-gated GlobalControls read. New Rules construction/reset clears
+the nullable setting; the same owner supplies the rules compatibility hash.
+
+`GameEntity::EmpState` privately owns Techno+504, the held Anim reference and
+LastMission (constructor -1). Existing Deactivation owns the shared offline latch,
+locomotor power and ResetOrdersToGuard; animation construction, ownership and
+retirement remain in AnimClass. `EntityStore::hold_emp_sparkle` stores the
+sparkle on its holder and updates the anim-holder index. AnimPointerExpired
+clears a matching reference. Limbo does
+not clear or advance the counter. Destruction uses the existing object/attached
+Anim lifecycle, without an invented EMP destructor action.
+
+## Connected behavior
+
+Installed Ares Bullet46920B ->100536E0/10052870 runs after radiation and before
+exclusive special/ordinary damage, including Damage=0. Ground collection uses
+existing CellClass occupancy and virtual GetCoords owners, the installed
+10035AC0 cursor, full XYZ cutoff and signed native UniqueID set order/dedup.
+It does not scan every world entity per impact.
+
+Delivery10062320 applies source-directed alliance/nullable owner filtering,
+active iron curtain, warp, type/rank immunity and the native abs(verses)<0.001
+gate. Verses is an admission test, not a duration scale. Only positive durations
+use the Type modifier; native signed-int conversion and cap control the retained
+counter. A first active transition preserves selection, invokes the existing
+Deactivate when the current mission permits it, and creates at most one attached
+sparkle. Repeated capped hits do not repeat deactivation or constructor work.
+The cap branch keeps signed wrapping addition inside the original min/max order:
+positive overflow cannot spuriously clear an already longer effect, and a
+nonpositive delta with cap0 clears it. When a refresh changes the active counter,
+only an explicit Warhead sparkle can construct a replacement. Type/General
+fallback belongs to first activation; an expired fallback stays absent on refresh.
+
+The same delivery owns attached-object EMP trigger events. On first activation
+it raises 63 (Under EMP By House), then 62 (Under EMP); a healing hit that clears
+the counter first runs the existing disable owner, then raises 65 (Removed EMP
+By House), followed by 64 (Removed EMP). Natural countdown expiry raises neither
+removal event. Each raise resolves the current Tag, and the caller rereads Alive
+before the generic event so a synchronous death or tag detach takes effect.
+The existing Tag/Trigger owner evaluates these incidental, nonpersistent events:
+the affected Techno and raised kind must match, the current counter must be
+positive for 62/63 or nonpositive for 64/65, and 63/65 additionally compare the
+source's raw House array index with the event parameter. They use neither the
+country lookup nor Player@X conversion. The native common sparkle tail still
+runs after a tag callback; it queries the live counter and held animation.
+Original Ares3.0 instructions: delivery100624C5..10062563,
+Tag trampoline10025FA0 -> gamemd6E53A0, predicate1004F7DC..1004F870,
+flags1004F6A0 and persistence1004F610. The official release's Ares.dll.inj
+installs the predicate at71E949 and delivery at46920B. These are independently
+read control-flow findings, with production regressions for source filtering,
+both event pairs, callback death/detachment and natural-expiry exclusion.
+
+The actual Techno AI tail6FAF0D ->10053DF0 decrements once per visited object.
+Effective Unload, Construction and Selling defer deactivation. A later ordinary
+mission can deactivate without restoring selection or repeating first-hit
+Building side effects. Expiry invokes the existing
+Reactivate/Guard behavior when powering permits; it does not resume an old human
+move or attack order. It ends the held Anim's remaining loops and releases the
+reference rather than hard-deleting the animation. Control, fire-error and cloak
+consumers read the same counter. Runtime checksum and current-layout snapshots
+include its state; rules compatibility includes the effective extension fields.
+This change does not promise old binary-save layout compatibility.
+
+After that expiry prefix, installed disable100627F0's1006293A block uses the
+existing ControlledByHuman50B730 decision. Ordinary AI Drive victims queue the
+configured recovery mission, or Hunt15 when unset, through the existing
+QueueMission5B35E0 owner with force=false. It does not Commence, restore the saved
+old order, reset a timer or draw RNG. A same-current Guard queue keeps the
+original queue/bypass guards. Campaign PlayerControl counts as human; in
+non-campaign modes only the IsHuman flag does. Human victims skip this block.
+
+The feature also extends the existing shared `techno_reactivate` owner with
+Activate1004CCB0's admission. The selected ordinary live Drive/Walk path vetoes
+while Techno70EFD0 reports positive EMP; PoweredUnit100454F0 additionally requires
+a matching counted PowersUnit building without EMP in the existing House building
+order. This gate protects power-center recovery callers as well as EMP expiry,
+before orders, locomotor or sound change. The EMP caller no longer repeats a
+weaker aggregate-count check. Other games retain original70FBE0 behavior.
+Unit746C90's independent DeathFrame override and custom PoweredBy/other extension
+dependencies are outside this ordinary live-victim chain.
+
+The existing Unit `can_deploy_slash_unload` owner applies the positive-EMP
+virtual veto700E47..700E53 (live Unit746C90 ->70EFD0). This protects an already
+commenced human Unload and autonomous AI deployment through the same Deploy7393CC
+caller, before MCV conversion can discard the EMP victim. Other games retain
+their existing constructor-zero path; active-retail EMP producer reachability
+is not inferred from this shared native consumer. The separate DeathFrame virtual
+override remains outside the ordinary live-ground chain.
+
+An EMP'd `Deployer=` infantryman over itself answers NoDeploy at the head of its
+What_Action (InfantryClass_GetActionOnObject_EMP 10053DB0, hook `0x51E3B0`), online
+or not and before the Deactivated hook (`0x51E440`):
+`ares_emp_deployer_refuses_itself` gives the cursor, the stock one since no Ares
+`Cursor.*` hook is reached, and the click dispatches it
+(`ares_head_hook_selection_click`), so the click orders him nothing and keeps the
+selection. The deploy key asks CanDeploySlashUnload, not What_Action.
+
+## Reproducible evidence and bounds
+
+The installed DLL SHA256 is pinned by the producer and corpus. The exact
+entries, untouched-code guards, transport substitutions and replay command are in
+[`ares_emp.meta.json`](../tools/rules_oracle/ares_emp.meta.json). Input executable
+identities and the replay receipt are retained privately; executable bytes are not
+distributed. The existing
+[`ares_emp.py`](../tools/rules_oracle/ares_emp.py) producer records native reader,
+cap, delivery, collector, AI, sparkle and pointer-expiry executions in
+[`ares_emp.json`](../tools/rules_oracle/ares_emp.json). Original Deactivate,
+Reactivate and Anim constructor internals are declared downstream service
+boundaries in that harness, not certified by its connected sample. The Rust
+chain calls their existing owners instead of duplicating those implementations.
+The `activation` controls additionally execute the installed Activate export and
+the actual Unit/Building EMP virtual leaves, plus its PoweredUnit building scan.
+They use explicit ordinary DeathFrame=-1 and declared downstream interfaces;
+Syringe patch installation, custom PoweredBy and full activation internals are
+not certified. `sparkle_refresh` executes pointer expiry before unchanged/changed
+hits and distinguishes explicit, Type and General sparkle provenance. The Rust
+power-center interleaving regression goes through `powered_center_edge` and the
+shared Reactivate owner, rather than an EMP-only admission helper.
+The existing [`mcv_deploy_oracle`](../tools/mcv_deploy_oracle.py) additionally
+executes whole700D50 with the actual Unit EMP virtual and the7393C0 caller
+admission boundary. Its original mission/turn/site controls stay unchanged.
+`ares_emp_mcv_shared_admission_and_pending_unload_respect_emp` consumes the live
+admission outputs and drives a commenced human Unload through real object AI
+after an EMP hit. The native caller's accepted path stops before movement and
+placement, so the corpus does not certify full conversion or its timing.
+The generic `ares_emp_sparkle_roots_bind_physical_bounds_before_anim_construction`
+regression uses production retained Rules/ART reads, the existing loose-asset
+binder and real Anim constructor. It covers all three name sources and the
+default-off absence without test-only frame-count injection; synthetic SHP headers
+establish metadata binding, not decoded pixels or rendered parity. Its initial
+reader checks consume `registered_animation_readers`: actual constructor427530
+registers generic types before the Ares reader/Find resolves them without further
+allocation. Mod-specific registered-input replay and runtime receipts remain
+private; the public corpus contains only generic names. The runtime observation that led to this
+dependency showed a successful EMP state cycle with no Anim instance, not a
+renderer visibility defect.
+
+The additional `ai_mission_readers` histories and `ai_expiry` controls execute the
+installed nullable reader and the original QueueMission body. The
+`ares_emp_ai_recovery_queue_matches_native_post_reactivate_controls` regression
+compares only the explicit post-Reactivate service boundary, preserving its
+timer sentinels and all three RNG streams. It does not certify Reactivate
+internals from a substituted service. A separate
+`ares_emp_ai_drive_hit_and_actual_visits_queue_recovery_after_sparkle` regression
+connects delivery, two real object AI visits, shared Reactivate, sparkle retirement
+and queued-only Area Guard recovery. These Rust checks require execution before
+claiming a tested implementation; rendered gameplay comparison remains separate.
+The AI MCV regression reuses the same shared MCV scene, exercises autonomous
+Hunt visits during the positive counter, then expiry, queued Hunt and conversion.
+No MCV category exclusion or second deployment guard is used. Its mission-handler
+visits retain the existing Hunt cadence RNG draws; the new admission comparison
+itself draws nothing and performs no timer or detach writes.
+
+The same-named global-mission/hash regression lives inside the RuleSet owner.
+Different physical layer histories legitimately have different `source_ini_hash`
+values, even with the same final text. The test first checks that distinction,
+then normalizes only that private test input before checking retained Ares state
+changes the effective hash ON and leaves it equal OFF. Production hashing and
+visibility remain unchanged.
+
+Rust regressions named `ares_emp_` consume these native outputs, exercise the
+production layered reader and occupancy/coordinate owners, and cover hit,
+current-layout save/load, expiry and pointer clearing. The asset frame count in
+the synthetic animation test is an explicit fixture boundary. An actual rendered
+single-player hit/expiry comparison is separate validation.
+
+The shared INI owner keeps stock atof's existing nearest projection and an
+explicit Ares `%lf` chop mode. WinMain's pre-argument PC53/chop setup is pinned by
+`tools/rules_oracle/read_double_percent.py`; the installed Ares scanner preserves
+that mode. For finite decimal input the Ares mode compares the nearest binary64
+magnitude to its exact decimal rational using the existing big-integer dependency,
+adjusting one ULP toward zero only when needed. Overflow remains infinity and
+signed zero retains its sign. This policy matches the native reader controls;
+arbitrary long-decimal/legacy CRT intermediate double rounding remains unproven.
+It does not implement a second lexical parser or change the readers of a game without Ares.
+
+Duration math uses the existing deterministic PC53 arithmetic/conversion owner.
+Ares CRT100772B0 converts out-of-i32 values to INT_MIN, unlike the stock qword/low32
+conversion. The native corpus includes software dispatch and normal SSE3 controls;
+Unicorn's incorrect SSE3 overflow result is excluded and documented. Range compares
+squared lengths to avoid platform sqrt differences; exact zero/half-cell and XYZ
+boundary controls are pinned, while arbitrary FSQRT rounding boundaries remain a
+small unproven precision residual.
+
+Ledger: the EMP delivery/expiry blocks draw no RNG and call no DetachAll; the
+reused Hunt handler retains its existing cadence draw and the Anim constructor
+can draw for authored RandomRate/bounce settings. Counter writes
+are delivery/cap and one decrement per actual AI visit; Deactivate/Reactivate keep
+their existing mission/destination timer writes. Anim expiry writes loop_remaining=0.
+The building kinds add no draws or DetachAll of their own; their owners keep
+theirs: a Hover Robot Tank's Deactivate draws twice (Power_Off), as does a
+moving landed Aircraft's (Fly's Power_Off, whose Stop_Moving may draw again in
+Find_Attack_Cell), and a factory
+queue's suspend/resume and a Super's hold/release pause and resume their
+timers. The undeploy copy writes the unit's counter only.
+
+Regressions through real fire on retail Hills rules, with an EMP gun layered
+in through the map, are in
+[`emp_victim_tests.rs`](../src/sim/game_entity/emp_victim_tests.rs): a walking
+computer infantryman, the three miners, a Yuri-held tank, a falling
+paratrooper, a Hover APC and a Sea Scorpion, a V3 rocket tilting on its
+launcher, a Spy Satellite Uplink, and the player's miner and base warnings.
+[`emp_building_tests.rs`](../src/sim/game_entity/emp_building_tests.rs) adds
+the building kinds on the same rules: a tank in a Tank Bunker, a construction
+yard's held production, a yard hit while it repacks, a Gap Generator, the
+Psychic Sensor's Reveal, a Robot Control Center, a Prism supporter mid-charge,
+a Tesla Coil with a garrisonable building and Cloning Vats, and a LaserFencePost
+without power.
+
+Delivery's bunker test (10062357..10062376) spares a victim whose
+BunkerLinkedItem is a Building, a tank in a Tank Bunker, unless the Warhead
+PenetratesBunker; the bunker itself is an ordinary building victim.
+
+A landed Aircraft's Deactivate reaches Fly's Power_Off override4CFD20: a
+moving one spins at Random(20, 30) either way (two Scenario draws) and stops,
+and Fly Process turns it while it stays offline (spin step4CE5A0;
+`Simulation::fly_power_off`, `fly_spin_step`).
+
+Still open: a LaserFencePost's fence sections are neither dropped by
+DisableStuff nor rebuilt by EnableStuff (4533A0), since VERA builds none
+(trigger: an EMP hit on a mod's post; effect: no fence to drop; frequency:
+mods with LaserFencePost types). The Super pass still reads only a provider's
+own type, not its upgrades' SuperWeapon keys (the existing residual of
+`superweapon::provided_supers`). Native TypeImmune scanner indices18/19 have synthetic getter evidence,
+but their production configuration meaning is not established; the shared 18-slot
+weapon owner is not expanded. The native lazy default-immunity cache is represented
+by an equivalent immutable Type/category decision on this chain, not persisted as
+a second mutable rules authority. Original active-retail TS EMP producer
+reachability is unproven and is not claimed fixed by this Ares extension.

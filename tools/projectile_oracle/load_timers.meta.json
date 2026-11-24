@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "877 supplied Bullet late-Fire, proximity, Save/global-frame-read/Load and five AI-admission cases per row. Full firing, world scheduling, disk persistence, pointer fixup effects and downstream detonation are excluded.",
+  "assumptions": [
+    "Each row starts with a fresh zero-filled mapped image and fixture objects; x87 control word is NATIVE_FPCW (0x0E7F). Upstream Bullet/ProjectileType/target identities, coordinates, Arm, frame and admission flags are supplied, not retail INI reads.",
+    "Firer at Bullet+0xB0, ProjectileType+0x2A6 and unrelated fixture fields remain zero. Supplied native vtables select original Aircraft WhatAmI 0x41C180 or Unit WhatAmI 0x746E20; the null target is a separate case.",
+    "Original proximity constructor 0x4E1100 runs before late Fire 0x468A3F..0x468A98. Original target WhatAmI and distance/timer arithmetic execute. Padding words are excluded from semantic observations.",
+    "Original Bullet Save 0x46AFB0 runs through Abstract Save and its size receiver; the fixture requires HRESULT zero and 4+0x160 stream bytes. It then changes the live frame, executes global reader 0x67F9C0 through its third successful read to 0x67FA22, and separately invokes Bullet Load 0x46AE70. Outer load dispatch order is supplied, not executed.",
+    "The one failed-load case supplies E_FAIL on Bullet stream reads after successful global-frame restoration. Successful loads must consume the full saved stream; failed loads consume none. The same supplied object address is retained; actual pointer relocation is excluded.",
+    "Original detector 0x4E11F0 runs before and after load. Each of five admission probes restores the loaded detector bytes and supplies Dropping, prior impact, ROT and Ranged; 0x467C0C executes only to 0x467CA9 or 0x467FBA. The detonation body is not executed.",
+    "No RNG or detach effects are established by these selected regions. Timer writes are observed in produced/before/loaded/after fields and admission watermark/mode; no full-game scheduling or persistence parity is claimed."
+  ],
+  "substitutions": [
+    "Synthetic IStream Write/Read receivers collect or provide exact bytes, return S_OK, and pop16 argument bytes; failed Bullet reads return E_FAIL without consuming data.",
+    "Pointer registration/fixup receivers 0x6CF240 and 0x6CF2C0 return zero and pop8/12 argument bytes. Fixture pointers remain unchanged."
+  ],
+  "entry_points": {
+    "proximity_ctor": "0x004E1100",
+    "late_fire_begin": "0x00468A3F",
+    "late_fire_end": "0x00468A98",
+    "check": "0x004E11F0",
+    "save": "0x0046AFB0",
+    "global_read": "0x0067F9C0",
+    "global_read_end": "0x0067FA22",
+    "load": "0x0046AE70",
+    "admission_begin": "0x00467C0C",
+    "detonate_boundary": "0x00467CA9",
+    "continue_boundary": "0x00467FBA"
+  },
+  "payload_sha256": "7c2c343b9b897266d1f0d040dc922f87ee5da25e1cef5babb10a93e5505c114f"
+}

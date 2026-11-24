@@ -1,0 +1,876 @@
+{
+  "source_sha256": "ea5b7f893ea757373a859564545a4cd666335ff41be6dbb818a5721aed2723e4",
+  "manifest_sha256": "eb5727a3be64ab2a0b002e2516180432c1ef783b6fc1061a7c0101d3e81fe59f",
+  "foundation": "3x2",
+  "bounds": "Original444A53..444C7C coordinate/facing slice. Supplied type/coordinate inputs are labeled controls; this is not a full Unlimbo or match comparison. Two extreme-i32 Location rows exceed VERA Position storage and remain a named residual.",
+  "rows": [
+    {
+      "name": "stock_gdi_[15, 16]",
+      "location": [
+        3712,
+        3712,
+        0
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        -64,
+        64,
+        0
+      ],
+      "dock": [
+        15,
+        16
+      ],
+      "coordinate": [
+        3904,
+        4032,
+        0
+      ],
+      "facing": 128,
+      "facing_word": [
+        32767
+      ]
+    },
+    {
+      "name": "stock_gdi_[14, 16]",
+      "location": [
+        3712,
+        3712,
+        0
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        -64,
+        64,
+        0
+      ],
+      "dock": [
+        14,
+        16
+      ],
+      "coordinate": [
+        3712,
+        3968,
+        0
+      ],
+      "facing": 152,
+      "facing_word": [
+        38934
+      ]
+    },
+    {
+      "name": "stock_gdi_[16, 16]",
+      "location": [
+        3712,
+        3712,
+        0
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        -64,
+        64,
+        0
+      ],
+      "dock": [
+        16,
+        16
+      ],
+      "coordinate": [
+        4224,
+        3968,
+        0
+      ],
+      "facing": 104,
+      "facing_word": [
+        26599
+      ]
+    },
+    {
+      "name": "stock_gdi_[13, 16]",
+      "location": [
+        3712,
+        3712,
+        0
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        -64,
+        64,
+        0
+      ],
+      "dock": [
+        13,
+        16
+      ],
+      "coordinate": [
+        3712,
+        3968,
+        0
+      ],
+      "facing": 166,
+      "facing_word": [
+        42557
+      ]
+    },
+    {
+      "name": "stock_gdi_[17, 16]",
+      "location": [
+        3712,
+        3712,
+        0
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        -64,
+        64,
+        0
+      ],
+      "dock": [
+        17,
+        16
+      ],
+      "coordinate": [
+        4224,
+        3968,
+        0
+      ],
+      "facing": 90,
+      "facing_word": [
+        22976
+      ]
+    },
+    {
+      "name": "stock_gdi_[13, 15]",
+      "location": [
+        3712,
+        3712,
+        0
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        -64,
+        64,
+        0
+      ],
+      "dock": [
+        13,
+        15
+      ],
+      "coordinate": [
+        3712,
+        3968,
+        0
+      ],
+      "facing": 182,
+      "facing_word": [
+        46653
+      ]
+    },
+    {
+      "name": "stock_gdi_[17, 15]",
+      "location": [
+        3712,
+        3712,
+        0
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        -64,
+        64,
+        0
+      ],
+      "dock": [
+        17,
+        15
+      ],
+      "coordinate": [
+        4224,
+        3968,
+        0
+      ],
+      "facing": 74,
+      "facing_word": [
+        18880
+      ]
+    },
+    {
+      "name": "stock_gdi_[13, 14]",
+      "location": [
+        3712,
+        3712,
+        0
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        -64,
+        64,
+        0
+      ],
+      "dock": [
+        13,
+        14
+      ],
+      "coordinate": [
+        3712,
+        3712,
+        0
+      ],
+      "facing": 202,
+      "facing_word": [
+        51650
+      ]
+    },
+    {
+      "name": "stock_gdi_[17, 14]",
+      "location": [
+        3712,
+        3712,
+        0
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        -64,
+        64,
+        0
+      ],
+      "dock": [
+        17,
+        14
+      ],
+      "coordinate": [
+        4224,
+        3712,
+        0
+      ],
+      "facing": 54,
+      "facing_word": [
+        13886
+      ]
+    },
+    {
+      "name": "stock_gdi_[14, 13]",
+      "location": [
+        3712,
+        3712,
+        0
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        -64,
+        64,
+        0
+      ],
+      "dock": [
+        14,
+        13
+      ],
+      "coordinate": [
+        3712,
+        3712,
+        0
+      ],
+      "facing": 232,
+      "facing_word": [
+        59369
+      ]
+    },
+    {
+      "name": "stock_gdi_[15, 13]",
+      "location": [
+        3712,
+        3712,
+        0
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        -64,
+        64,
+        0
+      ],
+      "dock": [
+        15,
+        13
+      ],
+      "coordinate": [
+        3968,
+        3712,
+        0
+      ],
+      "facing": 0,
+      "facing_word": [
+        0
+      ]
+    },
+    {
+      "name": "stock_gdi_[16, 13]",
+      "location": [
+        3712,
+        3712,
+        0
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        -64,
+        64,
+        0
+      ],
+      "dock": [
+        16,
+        13
+      ],
+      "coordinate": [
+        4224,
+        3712,
+        0
+      ],
+      "facing": 24,
+      "facing_word": [
+        6167
+      ]
+    },
+    {
+      "name": "stock_gdi_[13, 13]",
+      "location": [
+        3712,
+        3712,
+        0
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        -64,
+        64,
+        0
+      ],
+      "dock": [
+        13,
+        13
+      ],
+      "coordinate": [
+        3712,
+        3712,
+        0
+      ],
+      "facing": 218,
+      "facing_word": [
+        55746
+      ]
+    },
+    {
+      "name": "stock_gdi_[17, 13]",
+      "location": [
+        3712,
+        3712,
+        0
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        -64,
+        64,
+        0
+      ],
+      "dock": [
+        17,
+        13
+      ],
+      "coordinate": [
+        4224,
+        3712,
+        0
+      ],
+      "facing": 38,
+      "facing_word": [
+        9790
+      ]
+    },
+    {
+      "name": "nod_exact_preferred",
+      "location": [
+        3712,
+        3712,
+        0
+      ],
+      "flags": [
+        0,
+        1,
+        0
+      ],
+      "exit_coord": [
+        19,
+        -41,
+        71
+      ],
+      "dock": [
+        16,
+        16
+      ],
+      "coordinate": [
+        4243,
+        3927,
+        71
+      ],
+      "facing": 104,
+      "facing_word": [
+        26599
+      ]
+    },
+    {
+      "name": "nod_other_cell",
+      "location": [
+        3712,
+        3712,
+        0
+      ],
+      "flags": [
+        0,
+        1,
+        0
+      ],
+      "exit_coord": [
+        19,
+        -41,
+        71
+      ],
+      "dock": [
+        14,
+        16
+      ],
+      "coordinate": [
+        3712,
+        3968,
+        0
+      ],
+      "facing": 152,
+      "facing_word": [
+        38934
+      ]
+    },
+    {
+      "name": "yuri_exact_preferred",
+      "location": [
+        3712,
+        3712,
+        0
+      ],
+      "flags": [
+        0,
+        0,
+        1
+      ],
+      "exit_coord": [
+        -29,
+        31,
+        -73
+      ],
+      "dock": [
+        16,
+        15
+      ],
+      "coordinate": [
+        4195,
+        3999,
+        -73
+      ],
+      "facing": 83,
+      "facing_word": [
+        21121
+      ]
+    },
+    {
+      "name": "yuri_other_cell",
+      "location": [
+        3712,
+        3712,
+        0
+      ],
+      "flags": [
+        0,
+        0,
+        1
+      ],
+      "exit_coord": [
+        -29,
+        31,
+        -73
+      ],
+      "dock": [
+        14,
+        16
+      ],
+      "coordinate": [
+        3712,
+        3968,
+        0
+      ],
+      "facing": 152,
+      "facing_word": [
+        38934
+      ]
+    },
+    {
+      "name": "gdi_exact_supplied_offset",
+      "location": [
+        3712,
+        3712,
+        0
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        13,
+        -17,
+        23
+      ],
+      "dock": [
+        15,
+        16
+      ],
+      "coordinate": [
+        3981,
+        3951,
+        23
+      ],
+      "facing": 128,
+      "facing_word": [
+        32767
+      ]
+    },
+    {
+      "name": "gdi_fallback_supplied_offset",
+      "location": [
+        3712,
+        3712,
+        0
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        13,
+        -17,
+        23
+      ],
+      "dock": [
+        14,
+        16
+      ],
+      "coordinate": [
+        3712,
+        3968,
+        0
+      ],
+      "facing": 152,
+      "facing_word": [
+        38934
+      ]
+    },
+    {
+      "name": "gdi_negative_nw",
+      "location": [
+        -384,
+        -384,
+        17
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        -64,
+        64,
+        0
+      ],
+      "dock": [
+        -1,
+        0
+      ],
+      "coordinate": [
+        -128,
+        128,
+        0
+      ],
+      "facing": 128,
+      "facing_word": [
+        32767
+      ]
+    },
+    {
+      "name": "gdi_wide_delta_positive",
+      "location": [
+        -2147483648,
+        -2147483648,
+        0
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        -64,
+        64,
+        0
+      ],
+      "dock": [
+        32767,
+        32767
+      ],
+      "coordinate": [
+        8388224,
+        8388224,
+        0
+      ],
+      "facing": 96,
+      "facing_word": [
+        24451
+      ]
+    },
+    {
+      "name": "gdi_wide_delta_negative",
+      "location": [
+        2147483647,
+        2147483647,
+        0
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        -64,
+        64,
+        0
+      ],
+      "dock": [
+        -32768,
+        -32768
+      ],
+      "coordinate": [
+        -8388224,
+        -8388224,
+        0
+      ],
+      "facing": 96,
+      "facing_word": [
+        24451
+      ]
+    },
+    {
+      "name": "gdi_cardinal_east",
+      "location": [
+        3712,
+        3840,
+        0
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        -64,
+        64,
+        0
+      ],
+      "dock": [
+        16,
+        15
+      ],
+      "coordinate": [
+        4224,
+        3968,
+        0
+      ],
+      "facing": 64,
+      "facing_word": [
+        16383
+      ]
+    },
+    {
+      "name": "gdi_cardinal_west",
+      "location": [
+        3712,
+        3840,
+        0
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        -64,
+        64,
+        0
+      ],
+      "dock": [
+        14,
+        15
+      ],
+      "coordinate": [
+        3712,
+        3968,
+        0
+      ],
+      "facing": 192,
+      "facing_word": [
+        49153
+      ]
+    },
+    {
+      "name": "gdi_cardinal_north",
+      "location": [
+        3712,
+        3840,
+        0
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        -64,
+        64,
+        0
+      ],
+      "dock": [
+        15,
+        14
+      ],
+      "coordinate": [
+        3968,
+        3968,
+        0
+      ],
+      "facing": 0,
+      "facing_word": [
+        0
+      ]
+    },
+    {
+      "name": "gdi_cardinal_south",
+      "location": [
+        3712,
+        3840,
+        0
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        -64,
+        64,
+        0
+      ],
+      "dock": [
+        15,
+        16
+      ],
+      "coordinate": [
+        3968,
+        4224,
+        0
+      ],
+      "facing": 128,
+      "facing_word": [
+        32767
+      ]
+    },
+    {
+      "name": "gdi_cardinal_zero",
+      "location": [
+        3712,
+        3840,
+        0
+      ],
+      "flags": [
+        1,
+        0,
+        0
+      ],
+      "exit_coord": [
+        -64,
+        64,
+        0
+      ],
+      "dock": [
+        15,
+        15
+      ],
+      "coordinate": [
+        3968,
+        3968,
+        0
+      ],
+      "facing": 64,
+      "facing_word": [
+        16383
+      ]
+    }
+  ]
+}

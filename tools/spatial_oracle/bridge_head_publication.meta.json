@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original bridgehead branches of 576BA0 and 571490: tile gate, walk, variant branch, blow-up row, flood tile/level, helper/rim/zone order and the 586990 vector",
+  "assumptions": [
+    "Synthetic BridgeMiddle1/2 templates in native subtile layout, laid over non-structural stock xbayopigs crop cells; no stock bridgehead is loaded",
+    "Template levels are 4 + subtile % 3 so the flood level source is observable",
+    "The concrete and wooden drivers run over the same cells with the stock BridgeSet base in their respective tileset-base globals",
+    "One driver call per case from a fresh crop; outer damage admission/RNG excluded"
+  ],
+  "substitutions": [
+    "BlowUpBridge47DD70/radar/presentation sinks inherited from bridge_rim",
+    "All sixteen UpdateRamp helpers, FloodFillIsoTileType56EB80, rims576770/571050, 56DAE0 (returns0) and 586990 are recording sinks",
+    "operator new/delete (7C8E17/7C8B3D) use a bounded bump heap; 42FCB0/42F860/42F7C0 execute"
+  ],
+  "entry_points": {
+    "high_driver": "0x00576BA0",
+    "low_driver": "0x00571490"
+  },
+  "payload_sha256": "c7a337640c99ea9a84b544ffb03cd1ff44089064c636d2e27f6770bc87784cde"
+}

@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "One selected native105mm/Cannon launch followed by eight original ordinary-motion blocks and original Bullet Render/Draw argument captures. Reader-owned speed/gravity/type inputs, launch and motion numeric outputs are recomputed. This is a bounded composed transcript, not a complete FireAt/AI/collision/Display/scene execution.",
+  "assumptions": [
+    "Independent original Weapon772080 and Cannon46BEE0 readers plus RulesGravity66B3C4..66B3E4 initialize physical selected inputs. Original FireAt6FE4F2..6FE53F computes horizontal range and GetSpeed773070; storedSpeed102 is not substituted for the produced launch speed.",
+    "Upstream source/target/FLH admission is supplied: origin2688,5248,1120, target500leptons east at sameZ. Original Bullet constructor466380 and launch6FE8EE..6FF01A execute; no complete Techno FireAt prefix, aim resolver or launch scatter claim.",
+    "Original ordinary-motion46718F..467494 runs eight frames through the shared ordinary_motion harness; collision commits between frames are supplied as admitted. The current positive-coordinate cell is supplied as level6/flat, with structuralflag256 for frames1..3,0 for4..6,and256 for7..8.",
+    "Draw consumes each native candidate and native velocity; selected native Cannon flags and physical SHP header are supplied unchanged. Camera-600,100 keeps draw points admitted. No expected coordinate/frame/velocity/Z-adjust output is calculated by Python."
+  ],
+  "substitutions": [
+    "Launch virtual GetType/GetWeapon/selected-positive gate return prepared source/type references. World SetLocation5F4EC0 stores supplied native source coordinates; Display Remove4A9770/Submit4A9720 return success. These match the preexisting fireat_launch bounded fixture; registration and map admission are not proved.",
+    "Original motion collision/commit boundary is supplied between visits. Each subsequent Render fixture supplies current mapped cell state; collapse/repair calls are not executed. Final CC_Draw_Shape is a draw-argument sink, as documented by bridge_render.",
+    "Upstream native reader archive/allocation boundaries are documented by bridge_render_inputs. Ambient x87 control0x0E7F."
+  ],
+  "entry_points": {
+    "speed_producer": "0x006FE4F2",
+    "weapon_speed": "0x00773070",
+    "launch_begin": "0x006FE8EE",
+    "launch_end": "0x006FF01A",
+    "bullet_fire": "0x00468670",
+    "motion_begin": "0x0046718F",
+    "motion_end": "0x00467494",
+    "object_render": "0x005F4B10",
+    "bullet_draw": "0x00468090",
+    "shape_sink": "0x004AED70"
+  },
+  "payload_sha256": "fff993044c756b54091760ad8cc4b69a52049b2188c8281e49ceb86872047f1f"
+}

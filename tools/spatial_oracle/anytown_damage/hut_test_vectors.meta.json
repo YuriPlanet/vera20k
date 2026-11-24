@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Project the frozen six native hut cases into uncompressed Rust test inputs.\n\nThis reuses recorded original execution, not a second bridge implementation.\nThe complete native source payload must retain its publication identity.\n",
+  "assumptions": [
+    "Pure projection of hash-pinned hut.json.gz: immediate hut-call before/after complete RNG states, all21 final physical span cells and ordered seven-argument animation requests.",
+    "The native execution and explicit constructor/graph/lifecycle boundaries remain those of hut.meta.json. No new native execution or production comparison occurs while generating this projection."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "hut": "0x00574000",
+    "animation_request": "0x00421EA0"
+  },
+  "source_file": "hut.json.gz",
+  "source_file_sha256": "17a323bb9b789eb5ba13538022b66cc8ab4913aadb7e52eaeeb4c38d6aa4728d",
+  "payload_sha256": "98d561c0979135e8a3136927e4932e5b26c876ee24db7d620d587f58f64251f2"
+}

@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original GADEPT Mark3/0, MTNK busy parking, Unit cell entry and pending-entry admission/refusal on marked flat levels0/4; bounded original Drive blocked-goal response with real Unit entry and a supplied FindPath route.",
+  "assumptions": [
+    "Existing DepotService supplies admitted Unit/Building/House/Drive, no complete constructors or admission history. Flat32x32 Cell coordinate/level priors and33x33 class/height storage; whole original Cell constructors, Building Mark and Recalc produce footprint bits/lists.",
+    "Original process x87/Object14/Cell13/Map CRT initialize before the first Cell height getter; no retrospective cache reset. Building constructor BState slice and BeginMode Idle prefix exclude animation creation. BuildingType+235 is an opaque original constructor byte.",
+    "Uniform sector/zone0 arrays and zero-extents Tactical storage are supplied as existing DockContinuation/Engineer joined fixtures. Full connectivity/Logic/path search/travel excluded.",
+    "Original whole Mark, Nearby/FNPC/raw clearance, Unit entry, Queue/Commence/radio and pending-entry bodies execute. Actor coordinates remain prepared16,16 until the explicit 8,11 foundation control; incumbent is the retained OTHER Techno, not a moving second tank.",
+    "Physical RULESMD, optional LANGRULE, MPBattleMD, XMP03T4, fixed ARTMD selected original read slices establish inputs; read transport is supplied. All three full RNG streams retained.",
+    "Unit entry result cells are measured, not supplied. Mark returns/raw bits, parking choice, cadence draw, pending/contact cleanup are not replaced. This is not a whole native match or proof of the captured three-tank travel path.",
+    "Level4 blocked-goal control prepares a stationary second MTNK by copying admitted Unit fields with separate original Drive and radio storage; original CellPUT places it at8,12. Actor8,11, facing8000, path4,4,4, empty NavQueue and powered Drive are declared priors. Original Drive executes until4B0A7E, before ProcessTrack; actual UnitCanEnter and near-stop distance/NULL/timer effects execute. The single FindPath call alone supplies AL1 and path4,4,4. Then original BREAK and retry execute foundation refusal."
+  ],
+  "substitutions": [
+    "Existing DepotService presentation sinks; original CRT exit-registration 7C978A seam returns0, excluding process-exit callback registration only.",
+    "One level4 Foot FindPath4D3920 call supplies AL1/path4,4,4; all Unit entry classifications remain original."
+  ],
+  "entry_points": {
+    "mark": "0x0043F180",
+    "place_down": "0x005683C0",
+    "cell_put": "0x0047E8A0",
+    "occupation": "0x00453D60",
+    "recalc": "0x0047D2B0",
+    "nearby": "0x00703590",
+    "mission_ai": "0x005B3060",
+    "parking": "0x0070D8F0",
+    "retry": "0x0070D7E0",
+    "unit_entry": "0x0073F0A0",
+    "foot_entry": "0x004D9C10",
+    "building_rows": "0x00458A00",
+    "unit_destination": "0x00741970",
+    "number_impassable_rows_read": "0x00460133",
+    "close_enough_read": "0x00670EDD",
+    "path_delay_read": "0x006739E5",
+    "direction_initializer": "0x0049F3A0",
+    "drive_process": "0x004B0500",
+    "drive_process_movement": "0x004B2630",
+    "find_path": "0x004D3920"
+  },
+  "payload_sha256": "16cd3b4dc860bc6d5f4c8eda0036a9d9a944ddd19ede7d2af460ddf2a76a323c"
+}

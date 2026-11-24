@@ -1,0 +1,438 @@
+//! World observations for the ra2-mono target-preflight port. No mutable
+//! gameplay state is duplicated here: occupancy, power, alliances and fog
+//! stay with their existing VERA owners.
+
+use crate::map::entities::EntityCategory;
+use crate::map::resolved_terrain::NativeCellQuery;
+use crate::rules::ruleset::RuleSet;
+use crate::rules::superweapon_targeting::HouseMask;
+use crate::rules::superweapon_targeting::TargetReject;
+use crate::rules::superweapon_targeting::{
+    LaunchSite, TargetContent, TargetMask, TargetPreflightInput, evaluate_target,
+};
+use crate::rules::superweapon_type::SuperWeaponType;
+use crate::sim::intern::InternedId;
+use crate::sim::movement::locomotor::MovementLayer;
+use crate::sim::world::Simulation;
+
+/// One read-only TargetingData observation (Ares1006D1E0). The owning
+/// command/AI attempt drops it; entity positions, power and alliances remain
+/// authoritative. AI prepares it once, rather than rescanning for every cell.
+pub(super) struct TargetingData {
+    sites: Vec<LaunchSite>,
+    needs_designator: bool,
+    designators: Vec<RangedSite>,
+    inhibitors: Vec<RangedSite>,
+}
+
+impl TargetingData {
+    fn check_influences(&self, cell: (u16, u16)) -> Result<(), TargetReject> {
+        // NewSWType::CanFireAt1006CE5F..1006CF31: after the type and
+        // launch-site checks, require a designator and exclude inhibitors.
+        if self.needs_designator && !self.designators.iter().any(|site| site.contains(cell)) {
+            return Err(TargetReject::NoEligibleDesignator);
+        }
+        if self.inhibitors.iter().any(|site| site.contains(cell)) {
+            return Err(TargetReject::InhibitorInRange);
+        }
+        Ok(())
+    }
+}
+
+struct RangedSite {
+    center: (i16, i16),
+    range_squared: i32,
+}
+
+impl RangedSite {
+    fn contains(&self, cell: (u16, u16)) -> bool {
+        //1006CE80..1006CF16 squares the signed-word differences in x87;
+        // their sum is an exact integer below2^34. i64 preserves it without
+        // FP. The separately IMUL'd range-square1006D440 wraps as an i32.
+        let dx = i64::from(cell.0 as i16) - i64::from(self.center.0);
+        let dy = i64::from(cell.1 as i16) - i64::from(self.center.1);
+        dx * dx + dy * dy <= i64::from(self.range_squared)
+    }
+}
+
+pub(super) fn prepare(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw: &SuperWeaponType,
+) -> TargetingData {
+    let mut data = TargetingData {
+        sites: if rules.super_weapon_target_policy(&sw.id).is_some() {
+            launch_sites(sim, rules, owner, sw)
+                .into_iter()
+                .map(|(_, site)| site)
+                .collect()
+        } else {
+            Vec::new()
+        },
+        needs_designator: false,
+        designators: Vec::new(),
+        inhibitors: Vec::new(),
+    };
+    if rules.super_weapon_target_policy(&sw.id).is_none() {
+        return data;
+    }
+    let Some(influence) = rules
+        .super_weapon_metadata(&sw.id)
+        .map(|metadata| metadata.influence())
+    else {
+        return data;
+    };
+    data.needs_designator = influence.any_designator || !influence.designators.is_empty();
+    if !data.needs_designator && !influence.any_inhibitor && influence.inhibitors.is_empty() {
+        return data;
+    }
+    // Predicates1006D880/1006D900: exact owner for designation, hostile
+    // owner for inhibition, alive/nonzero HP/nonlimbo/not deactivated for
+    // both, plus Building IsPowerOnline4555D0 for inhibitors only.
+    // Query XY is pure; coalescing the two scans draws no RNG and writes no
+    // timer, detach, fog or cell state.
+    for entity in sim.substrate.entities.values() {
+        if !entity.is_object_alive()
+            || entity.health.current() == 0
+            || entity.lifecycle.in_limbo()
+            || entity.deactivated.is_offline()
+        {
+            continue;
+        }
+        let Some(ty) = sim.interner.object_type(entity.type_ref(), rules) else {
+            continue;
+        };
+        let matches = |types: &[crate::rules::superweapon_type::TechnoTypeReference]| {
+            types
+                .iter()
+                .any(|reference| reference.category == ty.category && reference.id == ty.id)
+        };
+        let designator = entity.owner() == owner
+            && (influence.any_designator || matches(&influence.designators));
+        let inhibitor = entity.owner() != owner
+            && !sim
+                .house_alliances
+                .is_allied(&sim.interner, owner, entity.owner())
+            && (influence.any_inhibitor || matches(&influence.inhibitors))
+            && (entity.category() != EntityCategory::Structure
+                || sim.building_operational_state(entity.stable_id(), rules) == Some(true));
+        if !designator && !inhibitor {
+            continue;
+        }
+        let [x, y] = crate::sim::movement::ground_pose::object_center_xy(entity);
+        let center = ((x / 256) as i16, (y / 256) as i16);
+        if designator {
+            let range = ty.designator_range().unwrap_or(ty.sight);
+            if range > 0 {
+                data.designators.push(RangedSite {
+                    center,
+                    range_squared: range.wrapping_mul(range),
+                });
+            }
+        }
+        if inhibitor {
+            let range = ty.inhibitor_range().unwrap_or(ty.sight);
+            if range > 0 {
+                data.inhibitors.push(RangedSite {
+                    center,
+                    range_squared: range.wrapping_mul(range),
+                });
+            }
+        }
+    }
+    data
+}
+
+/// Shared optional-SW target/placement bound, using the terrain owner.
+pub(super) fn on_map(sim: &Simulation, cell: (u16, u16)) -> bool {
+    sim.resolved_terrain
+        .as_ref()
+        .and_then(|terrain| terrain.cell(cell.0, cell.1))
+        .is_some()
+        && crate::sim::cell_rect::cell_is_in_playfield_height_aware_in_query(
+            (i32::from(cell.0), i32::from(cell.1)),
+            sim.playfield_bounds(),
+            sim.resolved_terrain.as_ref(),
+            None,
+        )
+}
+
+impl Simulation {
+    /// Shared extension target gate, suitable for cursor preview and the final
+    /// command transaction. Stock types retain their existing dispatch gates.
+    /// A preview uses an isolated native-cell query, so even a projected fog
+    /// lookup outside the grid cannot mutate the authoritative Dummy cell.
+    pub fn super_weapon_target_check(
+        &self,
+        rules: &RuleSet,
+        owner: InternedId,
+        sw_type: InternedId,
+        cell: (u16, u16),
+        automatic: bool,
+    ) -> Result<(), TargetReject> {
+        let sw = rules
+            .super_weapon(self.interner.resolve(sw_type))
+            .ok_or(TargetReject::InstanceNotFound)?;
+        check(self, rules, owner, sw, cell, automatic)
+    }
+}
+
+pub(super) fn check(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw: &SuperWeaponType,
+    cell: (u16, u16),
+    automatic: bool,
+) -> Result<(), TargetReject> {
+    if !rules.ares_form() {
+        return if sw.kind.is_extension() {
+            Err(TargetReject::InvalidPayload)
+        } else {
+            Ok(())
+        };
+    }
+    // A new type without an action launches without a target: the
+    // sidebar sends SPECIAL_PLACE at (0,0) (6AAF10) and Activate never asks
+    // CanFireAt (HunterSeeker10072850, Battery1006EBD0, a whole-map
+    // SonarPulse100753A0). Selected automatic cells still follow their
+    // shared CanFireAt path.
+    if !automatic && sw.action.is_none() {
+        return Ok(());
+    }
+    let data = prepare(sim, rules, owner, sw);
+    check_with_data(sim, rules, owner, sw, cell, automatic, &data)
+}
+
+/// AI prepares the launcher observation once per SW, not once per candidate.
+/// This is a borrowed query input, never a persistent cache or new authority.
+pub(super) fn check_with_data(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw: &SuperWeaponType,
+    cell: (u16, u16),
+    automatic: bool,
+    data: &TargetingData,
+) -> Result<(), TargetReject> {
+    let Some(policy) = rules.super_weapon_target_policy(&sw.id) else {
+        return Ok(());
+    };
+    if sw.generic_warhead.is_some() && !super::generic_warhead::can_launch(sim, rules, sw, cell) {
+        return Err(
+            if sim
+                .resolved_terrain
+                .as_ref()
+                .is_some_and(|terrain| terrain.cell(cell.0, cell.1).is_some())
+            {
+                TargetReject::InvalidPayload
+            } else {
+                TargetReject::TargetOutOfBounds
+            },
+        );
+    }
+    let requirements = if automatic {
+        policy.automatic()
+    } else {
+        policy.manual()
+    };
+    let terrain = sim
+        .resolved_terrain
+        .as_ref()
+        .ok_or(TargetReject::TargetOutOfBounds)?;
+    let target = terrain
+        .cell(cell.0, cell.1)
+        .ok_or(TargetReject::TargetOutOfBounds)?;
+    let layer =
+        if target.bridge_facts.raw_flags & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0 {
+            MovementLayer::Bridge
+        } else {
+            MovementLayer::Ground
+        };
+    let contents: Vec<_> = sim
+        .substrate
+        .occupancy
+        .get(cell.0, cell.1)
+        .into_iter()
+        .flat_map(|occupancy| occupancy.iter_layer(layer))
+        .filter_map(|occupant| sim.substrate.entities.get(occupant.entity_id))
+        .filter(|entity| entity.is_object_alive() && !entity.lifecycle.in_limbo())
+        .map(|entity| TargetContent {
+            kind: match entity.category() {
+                EntityCategory::Infantry => TargetMask::INFANTRY,
+                EntityCategory::Structure => TargetMask::BUILDING,
+                EntityCategory::Unit | EntityCategory::Aircraft => TargetMask::UNIT,
+            },
+            relation: sim.ares_house_relation(owner, entity.owner()),
+        })
+        .collect();
+    // Ares tests `SW.FireIntoShroud=` only in the player's cursor,
+    // `SWTypeExt::ExtData::WhatAction` (Ares.dll `0x10033EB0`), on the
+    // client's own map; the AI's `CanFireAt` path has no shroud test.
+    let shrouded = (!automatic && !policy.fire_into_shroud()).then(|| {
+        crate::sim::vision::cell_is_shrouded(
+            &sim.fog,
+            &NativeCellQuery::isolated(terrain),
+            owner,
+            cell,
+        )
+    });
+    evaluate_target(&TargetPreflightInput {
+        target_cell: Some((i32::from(cell.0), i32::from(cell.1))),
+        requires_target_cell: true,
+        requirements: &requirements,
+        contents: &contents,
+        target_in_bounds: true,
+        terrain_is_water: Some(
+            target.land_type == crate::rules::terrain_rules::LandType::Water.as_index(),
+        ),
+        fire_into_shroud: policy.fire_into_shroud(),
+        shrouded,
+        range: launch_site_range(rules, sw),
+        requires_launch_site: false,
+        launch_sites: &data.sites,
+    })?;
+    data.check_influences(cell)
+}
+
+/// ra2-mono ResolveSuperweaponLaunchSites adaptation: VERA's retained House
+/// building order and operational-state owner replace OOP/ECS bridge lookups.
+/// The House's buildings that are launch sites of the type ([`launch_site`]).
+pub(super) fn launch_sites(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw: &SuperWeaponType,
+) -> Vec<(u64, LaunchSite)> {
+    sim.houses
+        .get(&owner)
+        .into_iter()
+        .flat_map(|house| house.base_projection().buildings())
+        .filter_map(|&id| launch_site(sim, rules, owner, sw, id).map(|site| (id, site)))
+        .collect()
+}
+
+/// Building `id` as a launch site of the type, `None` when it is not one
+/// (IsLaunchSite 1006D9D0: it provides the type). SW_EMPulse's (10071490)
+/// takes the `EMPulse.Cannons` types whatever they provide, else the
+/// providing `EMPulseCannon=` ones, and gives each its own range
+/// ([`emp_pulse_site_range`]).
+pub(super) fn launch_site(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw: &SuperWeaponType,
+    id: u64,
+) -> Option<LaunchSite> {
+    let emp_pulse = (sw.kind == crate::rules::superweapon_type::SuperWeaponKind::EMPulse)
+        .then(|| rules.super_weapon_metadata(&sw.id))
+        .flatten();
+    let entity = sim.substrate.entities.get(id)?;
+    let provides = || super::building_has_super_weapon(sim, rules, entity, &sw.id);
+    let site = match emp_pulse {
+        Some(metadata) => {
+            let cannons = &metadata.launch().emp_pulse().cannons;
+            let object = sim.object_type(entity.type_ref(), rules)?;
+            if cannons.is_empty() {
+                object.emp_pulse_cannon && provides()
+            } else {
+                cannons.iter().any(|id| id.eq_ignore_ascii_case(&object.id))
+            }
+        }
+        None => provides(),
+    };
+    if !site {
+        return None;
+    }
+    let coord =
+        crate::sim::movement::ground_pose::object_get_coords(entity, sim.resolved_terrain.as_ref());
+    let range = emp_pulse.map(|metadata| emp_pulse_site_range(sim, rules, metadata, entity));
+    Some(LaunchSite {
+        center: (coord.x / 256, coord.y / 256),
+        eligible: entity.owner() == owner
+            && entity.is_object_alive()
+            && !entity.lifecycle.in_limbo()
+            && sim.building_operational_state(id, rules) == Some(true),
+        range_minimum_override: range.map(|range| range.0),
+        range_maximum_override: range.map(|range| range.1),
+    })
+}
+
+/// GetLaunchSiteRange without a building: NewSWType's (1006D180) is
+/// `SW.RangeMinimum`/`.RangeMaximum`; SW_EMPulse's (10071380) is (-1, -1)
+/// under `EMPulse.TargetSelf`, else (0, 0), so its sites are always asked.
+pub(super) fn launch_site_range(rules: &RuleSet, sw: &SuperWeaponType) -> (f64, f64) {
+    let Some(metadata) = rules.super_weapon_metadata(&sw.id) else {
+        return (-1.0, -1.0);
+    };
+    if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::EMPulse {
+        if metadata.launch().emp_pulse().target_self {
+            (-1.0, -1.0)
+        } else {
+            (0.0, 0.0)
+        }
+    } else {
+        metadata.targeting().range()
+    }
+}
+
+/// SW_EMPulse::GetLaunchSiteRange (10071380) for a building: (-1, -1) under
+/// `EMPulse.TargetSelf`; with a weapon 0 (GetWeapon vt+0x3F8), a negative
+/// `SW.RangeMaximum` takes its `Range=` and a negative `SW.RangeMinimum` its
+/// `MinimumRange=` in whole cells (`>> 8` unsigned, `0x100713D9`/`0x100713FB`);
+/// without one, NewSWType's type range.
+fn emp_pulse_site_range(
+    sim: &Simulation,
+    rules: &RuleSet,
+    metadata: &crate::rules::superweapon_type::AresSuperWeaponMetadata,
+    building: &crate::sim::game_entity::GameEntity,
+) -> (f64, f64) {
+    if metadata.launch().emp_pulse().target_self {
+        return (-1.0, -1.0);
+    }
+    let (minimum, maximum) = metadata.targeting().range();
+    let weapon = sim
+        .object_type(building.type_ref(), rules)
+        .and_then(|object| {
+            crate::sim::combat::combat_weapon::get_weapon(
+                building,
+                object,
+                0,
+                &sim.substrate.entities,
+                rules,
+                &sim.interner,
+            )
+        });
+    let Some(weapon) = weapon else {
+        return (minimum, maximum);
+    };
+    let cells = |leptons: i32| f64::from((leptons as u32) >> 8);
+    (
+        if minimum < 0.0 {
+            cells(weapon.minimum_range_leptons)
+        } else {
+            minimum
+        },
+        if maximum < 0.0 {
+            cells(weapon.range_leptons)
+        } else {
+            maximum
+        },
+    )
+}
+
+impl Simulation {
+    /// Ares's house relation (10021440): the same house is the owner, then
+    /// the owner's directed IsAlliedWith(other) makes an ally; any other
+    /// house, including an absent one, is an enemy.
+    pub(crate) fn ares_house_relation(&self, owner: InternedId, other: InternedId) -> HouseMask {
+        if owner == other {
+            HouseMask::OWNER
+        } else if self.house_alliances.is_allied(&self.interner, owner, other) {
+            HouseMask::ALLIES
+        } else {
+            HouseMask::ENEMIES
+        }
+    }
+}

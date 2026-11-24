@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Full original InRange on explicit distance and range controls.\n\nThese direct calls reuse the existing sparse-map range owner. Supplied numeric\nfields isolate the shared range arithmetic changed by the FV Cell migration;\nthey do not claim a Kirov type/source override or a whole firing cycle.\n",
+  "assumptions": [
+    "The complete InRange6F7220 receiver executes with physical FV/weapon constructors/readers from in_range_cell_boundary.execute. Range, minimum, source coordinate argument and unmarked target placement are declared controls. Native floating-point startup, map queries and arithmetic execute; the range inputs are not retail HoverMissile values.",
+    "Range6400 controls exercise the shared maximum used by the HornetLauncher regression. They do not construct a Carrier or execute SpawnManager AI. Original caller bytes and Unit vtable bindings separately establish 6B7B43 -> vslot3AC/6F7780 -> vslot3A8/6F77B0 -> 6F78B8/6F7220. The manager sets mode1 on true and clears targets on false; no additional distance comparison occurs in this Idle admission caller."
+  ],
+  "substitutions": [
+    "Inherited input, heap and OS seams only; no range result substitution."
+  ],
+  "entry_points": {
+    "in_range": "0x006F7220"
+  },
+  "caller_instruction_bytes": {
+    "006b7b29": "8b466c3bc17406894668894e6c8b46683bc174268b4e24508b11ff92ac03000084c0750f8bcee85c0000005f5e5d5b83c458c3c7467001000000",
+    "006f7780": "538b5c2408568bf157538b3eff97e402000050538bceff97a80300005f5e5bc20400",
+    "006f78af": "578d44241053508bcee863f9ffff5f5e5b83c424c20800"
+  },
+  "unit_vtable_bindings": {
+    "2e4": "00746cd0",
+    "3a8": "006f77b0",
+    "3ac": "006f7780"
+  },
+  "payload_sha256": "97e4bcded498ab8386ca5558b71c7afd439dc59a0d01c97ae650336d0845e5dd"
+}

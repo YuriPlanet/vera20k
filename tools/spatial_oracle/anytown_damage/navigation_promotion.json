@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "conversion": "Original native outputs and scalar input fields are retained byte-for-byte after canonical JSON normalization. Uses shared publication projection; no copied INI dictionaries, full MAP/TMP/INI file bodies are present in this payload.",
+  "frozen_receipt": {
+    "path": "anytown-navigation-native/receipt.json",
+    "sha256": "5825de00713f1801c8fb2c5c30e53151a0481c5553f609d7a115b19fea622c34"
+  },
+  "results": {
+    "navigation.json": {
+      "original_path": "anytown-navigation-native/anytown_navigation.json.gz",
+      "original_file_sha256": "a2197179f0818a7b2c231c8956601b2269df164db04e05d856b99db380a15d35",
+      "original_metadata_sha256": "76624ba2c43963a3db1d045ed99596de1b78d893f99740b2d566390e29e88791",
+      "original_payload_sha256": "584e7fbd46e04bfff30b58d3c0c463df80fbcca8263aa15a3868de327842d14e",
+      "published_payload_sha256": "584e7fbd46e04bfff30b58d3c0c463df80fbcca8263aa15a3868de327842d14e"
+    }
+  }
+}

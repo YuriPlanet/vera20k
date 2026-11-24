@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Two original Unit falling callbacks, real temporary Bullet factory/Construct/Detonate/Release, native scatter/light/Anim construction and ID ordering, with declared Unit receiver transition",
+  "assumptions": [
+    "Original746100 enters its746209 lifted-Unit arm. Unit actors, FV type from the shared fixture, null house pointers, coordinates/health and ground linked list are supplied; no Unit constructor, lift flight or actual Unit receiver/death is claimed. Falling HP uses native-read MTNK Strength300; below HP10000 is supplied. CombatDamage names/scalars use original readers over physical RULESMD/LANGRULE/Battle/Hills strings.",
+    "All13 original Object header statics in CRT table8141D8 execute after the shared Bullet/Cell world setup. Object IsHighFlying reads its own AC13C8=104; native precheck establishes falling object height0 and not high. Bullet constructor Location remains originalzero, independent of supplied impact624.",
+    "Physical DefaultDeathWeapon/Invisible/Crush/Super use original full Weapon/Bullet/Warhead readers. Existing impact owner reads eight physical effect ART/SHPs; their native frame/end/rate/flags and asset hashes are recorded and missing images reject generation. Physical DRAGON.SHP is required for the shared prepared world and its hash is recorded. No raw game files are embedded. Sound registry remains empty. This is selected reader execution, not full Rules Process or full scenario construction.",
+    "The first falling Unit ReceiveDamage737C90 boundary supplies health0, one original7258D0 broadcast before marking dead/unlinking, and return4. Other reached Unit receivers return0 with no mutation. Parent/world production tests own actual Unit death admission, all its repeated notifications and damage amount. The boundary supplies no random word, native ID, light or animation output.",
+    "Original702D40 kill accounting and final FootUnInit4DE5D0 return0 as declared external boundaries; the temporary Bullets are actually Released/destroyed before each. No Fire/AI/Logic admission for those Bullets. All timer stores, originalPointerExpired and destructor broadcasts execute.",
+    "Main/Scenario/MapGen full streams seeded31/32/33 by existing RngTrace. Each original BulletCtor obtains its ID before its detonation and nested effect constructors; the measured cursor is a partial prepared-world prefix, not whole startup identity. The physical TWLT070 has26frames and does not end during construction; only the two Inviso scatters draw in this boundary. Its eventual Crater draw during later AnimAI is outside these controls. All reached draws and full states are recorded, never supplied."
+  ],
+  "substitutions": [
+    "Inherited BulletReader archive/INI cache, heap/delete/CRT/TLS transport. Existing COM activation invokes original registered factory6C5090; existing InterlockedIncrement/Decrement and checked IsBadReadPtr boundaries retain original constructor/destructor code.",
+    "Declared737C90 receiver,702D40 accounting and4DE5D0 UnitUnInit seams above. Original Unit callback, Bullet/Anim constructors, AreaDamage traversal, selection, scatter, light, expiry and immediate Bullet destruction are not replaced."
+  ],
+  "entry_points": {
+    "unit_notice": "0x00746100",
+    "drop_arm": "0x00746209",
+    "create": "0x0046B050",
+    "construct": "0x004664C0",
+    "detonate": "0x004690B0",
+    "area": "0x00489280",
+    "scatter": "0x0049F420",
+    "light": "0x0048A620",
+    "anim_ctor": "0x00421EA0",
+    "bullet_dtor": "0x00466560",
+    "object_dtor": "0x005F3B80",
+    "expiry": "0x007258D0",
+    "bullet_pointer_expired": "0x004684E0"
+  },
+  "replay_command": "python -m tools.projectile_oracle.ifv_impact --magnetron-drop",
+  "payload_sha256": "9502abc4f2ff7f77f9c4f2d7e58ef5720dd243be4ddefcd47b8d7f44ce9bfbe9"
+}

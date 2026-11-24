@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Ordinary AMCV Move, actual Drive terminal arrivals, Unit sight border, current SHROUD A/TMP, Stop and idle on physical GoldSt crop.",
+  "assumptions": [
+    "Uses the existing stationary shroud_frontier preparation and physical inputs, one Mission/PaletteReader VM, native Cell/TMP getters, actual AMCV readers/constructor/Unlimbo, initial full A and physical Clear variants. Its starting-force/House/overlay/zone/bootstrap limits remain; this is not a native whole skirmish load.",
+    "Existing Object and Unit/Foot geometry startup plus original Drive CRT dispatcher execute before selected AMCV construction. Object scalars104/416 exclude ordinary ground MCV from the high-flight periodic sight branch. No altitude, sight timer or path answer is supplied.",
+    "Existing Navigation owner derives connectivity/hierarchy/workspace from the already resident physical crop. Outside remains blocked. Existing Mission object-pass/frame-increment/deferred-drain executes160 times, with actual Move then Stop after the observed final arrival. Full Logic prefix/suffix and global tactical scheduling are excluded.",
+    "Seed0 native RNG streams and prepared source constructor timing are inherited. Absolute native arrival frames are fixture observations, not natural-match timing goldens or inputs imported from VERA. Source current XYZ and retained XYZ are separate; comparison is event-relative.",
+    "Exactly two original terminal4B220F reason2 arrivals are observed; accepted-chain4B1CFD is not reached. Pair/border/draw Cell states are distinct. Stop keeps a live source; no expiry/UnInit is observed. Reached RNG, timer/occupation and Mark calls are recorded; no extra teardown is synthesized.",
+    "Native current A is drawn after each selected arrival. Eight independent physical Clear variant controls per changed A permit the production loader to choose its normal variant without using Rust selector/RNG as a native input. Stop/idle reference identical final A rather than duplicate it."
+  ],
+  "substitutions": [
+    "All stationary preparation transports remain: native image/heap/TLS/INI/RawFile/COM and eligible local House plus sparse physical Cell registration. Existing audio debug4068E0 returns0 with cdecl cleanup0; no native Move/Stop/gameplay return is supplied.",
+    "Native draw uses the existing192x160 camera/ABuffer and one-cell material bounds transport. No pose, path, retained sight, Cell counter/cache, native code/vtable, alpha or raster is injected from Rust."
+  ],
+  "entry_points": {
+    "object_initializers": "0x008141D8",
+    "drive_initializers": "0x00812D2C",
+    "move_ctor": "0x004C6860",
+    "stop_ctor": "0x004C65E0",
+    "event_execute": "0x004C6CB0",
+    "drive_process": "0x004B0500",
+    "terminal_arrival": "0x004B220F",
+    "unit_per_cell": "0x00739EC0",
+    "release": "0x0070B1D0",
+    "update": "0x0070AF50",
+    "border": "0x00567DA0",
+    "full_shroud": "0x006D3660",
+    "cell_tile": "0x00480350",
+    "tmp": "0x00547CF0"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.shroud_frontier --moving",
+  "payload_sha256": "c8a6c0665607b0201b2eda52e58b66973fe57d479bad51c40e7e751522b1a6fb"
+}

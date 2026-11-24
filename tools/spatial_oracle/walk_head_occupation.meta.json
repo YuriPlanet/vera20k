@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Bounded original infantry placement/raw leaves and no-target Walk75C240 producer, not complete Walk movement or repair admission",
+  "assumptions": [
+    "Allocated destination Cell(10,10) and producer current Cell(9,10) with supplied signed level/slope and raw bytes/house indices",
+    "Destination rows execute6D1830/6D18C0/6D1BF0 startup and6D2120(60) under027F and hardware-captured startup0E7F (tube_startup_capture.json); original CRT pointer order814E58/814E68/814EA4 lies in active812000..815DA4 loop7CBED3",
+    "Cell destination rows execute original+4C4104F0 ->+48486840 ->sameCell47B3A0 before75ACB0; non-Cell rows supply literalXYZ, not a claim for arbitrary target+4C producers",
+    "Supplied initialized subcell offsets and height steps104/416; map/owner constructors are excluded",
+    "75C240 producer uses no-target/no-slave owner, no crate overlays and original raw/placement callees",
+    "481180 receives final argument0 (use incoming coordinate); both priority and plane choices are supplied",
+    "Original map lookup,578080/47B3A0 ground calculation and seeded Scenario Random execute",
+    "Sloped input and selected XY intentionally differ; returned Z comes from actual original body",
+    "Moving traces execute original Walk constructor75AA90, MoveTo75ACB0, Stop75ADA0 and FindSubCellDest75C240 on a flat nonstructural cell; private head calls are supplied states, not whole movement execution"
+  ],
+  "substitutions": [
+    "47C4D0 ground building lookup supplies missing or Gate object;4525F0 supplies closed/open result",
+    "Producer Infantry+184 supplies mission0 (Sleep); no target/slave pointer is installed",
+    "Moving traces supply false owner+37C/+1D4/+1D8 predicates and observe owner+54C as a no-op callback; no claim for those receiver side effects",
+    "Events observe gate/owner/ground seams only; inline RandomRanged65C7E0 is verified by random_indices, not an event marker",
+    "Infantry+38 supplies mark-time owner index; raw bitmap and owner writes execute unmodified"
+  ],
+  "entry_points": {
+    "producer": "0x0075C240",
+    "placement": "0x00481180",
+    "raw_mark": "0x005217C0",
+    "raw_clear": "0x00521850",
+    "random_seed": "0x0065C6D0",
+    "ground": "0x00578080",
+    "walk_constructor": "0x0075AA90",
+    "walk_move_to": "0x0075ACB0",
+    "walk_stop": "0x0075ADA0",
+    "walk_is_moving": "0x0075AB30",
+    "height_numerator_init": "0x006D1830",
+    "height_angle_init": "0x006D18C0",
+    "height_factor_init": "0x006D1BF0",
+    "walk_destination_height": "0x006D2120",
+    "cell_destination": "0x004104F0",
+    "cell_coordinates": "0x00486840"
+  },
+  "payload_sha256": "03e1a51af79ca38d426e0d1e7022b6bb8640b5ada01bb54e86cffdc8ebd8cd49"
+}

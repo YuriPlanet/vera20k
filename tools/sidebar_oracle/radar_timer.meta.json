@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "600 staged ordinary housing timer cases: phases0/1/2/3, due/notdue/stopped timers, exact0/32 endpoints, bucket edges and a long draw stall.",
+  "assumptions": [
+    "Original RadarDraw register EBP=1, ESI points at explicit phase/frame/timer input.",
+    "SoundEvent release has no attached live audio handle.",
+    "Availability/mode transitions and visual draws are outside this branch fixture."
+  ],
+  "substitutions": [
+    "Imported timeGetTime returns the explicit wall_ms input; native6C8C40 SHR4 executes unchanged."
+  ],
+  "entry_points": {
+    "housing_timer": "0x006531DB",
+    "wall_clock_bucket": "0x006C8C40",
+    "endpoint_sound_release": "0x00406060"
+  },
+  "payload_sha256": "cfafbb9ab41e7a5ad707f0ebb68d3edcb1e89e16a1ec75983dace76325b33ae2"
+}

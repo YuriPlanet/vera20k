@@ -1,0 +1,31 @@
+{
+  "conversion": "Native outputs retained exactly as data. Publication replaces only native_inputs.layers[].sections/source_lines and theater.sets[].physical copied lexical inputs with canonical JSON SHA256; all remaining values are unchanged. Compact JSON is compressed without timestamps or source paths. The production capture is an exact field projection, with separate original whole-file hashes.",
+  "original_receipt_sha256": "2fbdce3cfd6345f8e603f877528d33368b889ae05a3b4f80471a293d8e84a694",
+  "results": {
+    "hierarchy_composition.json": {
+      "original_file_sha256": "f3f596e7d7605daccef8716cc8eeb336bc37d5d7a4a369e2416ddc6d0adc74a4",
+      "original_metadata_sha256": "b12f2821d9502c1f394df94d792d4940b323ce66780a18477920b238d2050ef6",
+      "original_payload_sha256": "89d857f558621c246d1cb904e8be2a73e53911b759f332d06aa382a0508334ef",
+      "published_payload_sha256": "df407f7b2babdf2b083a79e5fdf6c657c74c938919095b5f2dc4ff41f00a34b9"
+    },
+    "production_comparison.json": {
+      "original_file_sha256": "241a02ac5ece0f6c443ffc7ac610a9447a835e19e6cb18d042f94f1d358c3e71",
+      "original_metadata_sha256": "b60054333ea79b2c8b79a6bb286c021429e419ee7a9c0d8706c0eae692e6ae39",
+      "original_payload_sha256": "750cb2a89044472656ed2e05f9f222256573979821e48ec4b912cfc04233a90e",
+      "published_payload_sha256": "750cb2a89044472656ed2e05f9f222256573979821e48ec4b912cfc04233a90e"
+    },
+    "shrapnel_repair.json": {
+      "original_file_sha256": "04a9f2ad89166fe7d042a9233c55d35ae536782e94a1a825397d041bc6ddea81",
+      "original_metadata_sha256": "d5141b6e6e1ad073f1a9075cf7c8e71399f3143c4d4a734858df5edb510b4bd7",
+      "original_payload_sha256": "098af47c204bf0baaff2c6c9c519be445ad716fb5579080fc5be6b3994f0a6f3",
+      "published_payload_sha256": "c4cd94c99f567ac49672038cded92f4f3e2f1c7036447f87f3f2babf5769cbff"
+    },
+    "zone_composition.json": {
+      "original_file_sha256": "690dc9056e53d90eb80189d45521fd6cb3a396cb1178059d252aa78f9d4e135f",
+      "original_metadata_sha256": "31597cfc36883cabb38e5623298c55cc2662cacb22fd1c9763d2201d4a9600dc",
+      "original_payload_sha256": "0d869a48d691a20c195c008aa627308966b27bc701ddc76ac0dc6903433a1260",
+      "published_payload_sha256": "a7008b47ac8382f99c5add830485014ffdcbacfb4316bb0c550e2c0a766bfb51"
+    }
+  },
+  "schema": 1
+}

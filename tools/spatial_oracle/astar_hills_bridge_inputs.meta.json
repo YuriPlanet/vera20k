@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Native Hills high-bridge Cell inputs and concrete MTNK admission.\n\nPhysical map fields, original scalar/type readers, Cell and IsoTileType\nconstructors, relocated physical TMPs and original Recalc establish the terrain.\nThe existing Overlay constructor owner executes original Mark and bridge\nsetters. Native archive/map loading, world-object placement, final map passes,\nconnectivity/hierarchy, ordinary Move and A* are excluded.\n",
+  "assumptions": [
+    "Physical Hills MAP tile/subtile/level/ice/overlay/frame and source overlay order are host-decoded; native map/archive loading and OverlayPack membership admission are excluded.",
+    "Existing Navigation cell_inputs_only producer executes original Cell/IsoTileType construction and full Recalc sweep against authentic relocated TMPs and native-read rules/type/theater fields. Registered long/short and isometric theater archives are checked for unique physical winners; primary TMP absence reached by Recalc fails closed. Terrain/world objects, final initialization, navigation graphs and actor placement are excluded.",
+    "Existing OriginalBridgeConstructor owner is bound to the native map VM, with native-read OverlayTypes and supplied empty registry capacity. Every authored high bridge executes original construction, Mark and its chosen setter. The original loader-side authored frame restoration slice executes on a supplied admitted frame.",
+    "Original Unit/Foot constructor prefix and Drive constructor create the MTNK actor; Navigation supplies its admitted owner/live/movement state and coordinates. The original Unlimbo coefficient copy executes; whole Unlimbo and ordinary Move/A* are excluded.",
+    "Main, Scenario and MapGen start from independently native-seeded0 full states. Complete states are preserved before/after Recalc, bridge stamping and actor construction; this is not a scenario RNG initialization claim."
+  ],
+  "substitutions": [
+    "Inherited bounded successful allocation/free, CRT TLS and atexit; physical lexical INI preparation and archive IO are host supplied.",
+    "Inherited screen/radar/dirty-rectangle sinks and a recorded waterfall animation constructor boundary; native Cell Recalc, bridge stamping, scalar readers, MTNK constructors and CanEnter returns are not replaced."
+  ],
+  "entry_points": {
+    "cell_ctor": "0x0047BBF0",
+    "tile_ctor": "0x005447C0",
+    "recalc": "0x0047D2B0",
+    "overlay_ctor": "0x005FC380",
+    "overlay_mark": "0x005FC570",
+    "concrete_setter": "0x0047E040",
+    "wood_setter": "0x0047E470",
+    "bridge_frame_restore": "0x005FD4F3",
+    "unit_can_enter": "0x0073F0A0",
+    "theater_activation_reading": "0x005349C0",
+    "map_lookup": "0x005657A0"
+  },
+  "payload_sha256": "30eceb888d417505d6d81debe24f7ffae91492ac281e4892ae312ca1959a81c2"
+}

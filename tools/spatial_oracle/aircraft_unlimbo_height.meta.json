@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "146 whole AircraftClass::Unlimbo runs over MissileSpawn, +3D4, playfield, floor, type/Rules FlightLevel and input Z, two with a failed Foot placement. Covers the coordinate handed to Foot Unlimbo, the +3D4 result, the Stage writes and the stored speed fraction. No Foot/Techno Unlimbo, facing, +0x6C9 or OnBridge claim.",
+  "assumptions": [
+    "Supplied Aircraft object/type, Rules FlightLevel and frame; original Aircraft and AircraftType vtables; Selectable, Landable, no weapon.",
+    "Flat supplied floor at every query, not OnBridge."
+  ],
+  "substitutions": [
+    "MapClass floor 0x00578080 returns the supplied ground.",
+    "Playfield membership 0x005785F0 returns the supplied answer.",
+    "FootClass::Unlimbo 0x004D7170 commits the received coordinate as the Location and returns the supplied result.",
+    "Secondary facing setter 0x004C9300 returns without effect."
+  ],
+  "entry_points": {
+    "aircraft_unlimbo": "0x00414310",
+    "type_flight_level": "0x00717800",
+    "get_height": "0x005F5F40",
+    "set_speed_fraction": "0x004D3710"
+  },
+  "payload_sha256": "54fc827271dd660571eef844765537a0680ea08be52644aed64e9955dfe65bf0"
+}

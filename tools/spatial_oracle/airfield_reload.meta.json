@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "BuildingClass::Mission_Repair 0x0044B780 on an airfield whose type has only UnitReload= of the arm selectors, one call per row: its arm 0x0044C836..0x0044C96F. One contact over every combination of the answers (ROGER or NEGATORY) to QUERY_RELOADED 0x1D, NEED_TO_MOVE 0x13, RELOAD 0x1F and REPAIR 0x1C, its Health against the type's Strength (equal, one below, one above) and its Get_Mission (Enter 7, Sleep 0, Guard 5, none -1); the answers 0, 0x14, 0x17, 0x20 and 0x21 to each message where it is asked; Get_Mission answering differently on its second call. One to four slots holding nothing or a contact taking each way through the arm, a count of 0, a count below the slots the vector holds, a count changed by a release during the visit, and one contact in two slots. ReloadRate 0.05 (the default), the value ReadDouble stores for retail `.3` (0.3 as a float, widened; every combination row runs with it), 0.3's own double and values whose product with 900 sits just below, at or above an integer, zero, negatives, products past int32 and int64, infinities and a subnormal, on a serviced visit, and three on a visit that services nothing. Returned value and the ordered log of the count reads, Contact_With_Whom calls, Transmit_Message calls with message and contact, type getter calls, Get_Mission calls, the contacts' Queue_Mission, Enter_Idle_Mode, Assign_Mission (vt+0x1F0) and vt+0x334 with their arguments, and the airfield's Queue_Mission. Not the arms for other building types, the radio receivers' or the stubbed callees' own work.",
+  "assumptions": [
+    "One emulator; per row the scratch region (0x10000 bytes) and the stack frame are rewritten, as aircraft_guard.py's ScratchAircraft does. The airfield is its owner on a clone of the Building vtable 0x007E3EBC with only the stubbed slots replaced, the type +0x520, the radio vector +0xE4/+0xE8 (the row's slots, the count its own) and nothing else; its type is a scratch BuildingTypeClass with UnitReload (+0x16AA) 1 and Bunker (+0x16AB), ConstructionYard (+0x16B9), Hospital (+0x16C1), Armory (+0x16C2) and UnitRepair (+0x16A9) 0.",
+    "Each contact is an Aircraft on a clone of the Aircraft vtable 0x007E22A4 with only the stubbed slots replaced, the row's Health (+0x6C) and a type (+0x6C4) on the real AircraftTypeClass vtable 0x007E2868 whose Strength (+0xA0) is the row's.",
+    "The Rules pointer 0x008871E0 names a scratch RulesClass whose ReloadRate (+0x1508) is the row's double.",
+    "The x87 control word is the game's 0x0E7F: tube_startup_capture.json records it from WinMain entry on, and ftol 0x007C5F00 compares with 0x00822D80, which holds 0x0E7F.",
+    "Per row: RET to the caller with ESP + 4 and EBX/EBP/ESI/EDI preserved; no write outside the stack; every read of scratch bytes falls on bytes the row supplied; the arm's first instruction 0x0044C836 is reached."
+  ],
+  "substitutions": [
+    "The airfield's Transmit_Message vt+0x278 records message and contact and answers the contact's code for that message; its Queue_Mission vt+0x1E8 records its arguments.",
+    "The contacts' Get_Mission vt+0x184 answers the contact's missions in order, the last repeating; Queue_Mission vt+0x1E8, Enter_Idle_Mode vt+0x484, Assign_Mission vt+0x1F0 and vt+0x334 record their arguments, and vt+0x334 of a row's recount contact sets the airfield's count +0xE8."
+  ],
+  "entry_points": {
+    "mission_repair": "0x0044B780",
+    "unit_reload_arm": "0x0044C836",
+    "contact_with_whom": "0x0065AD30",
+    "techno_type_getter": "0x006F3270",
+    "aircraft_type_getter": "0x0041C200",
+    "ftol": "0x007C5F00"
+  },
+  "payload_sha256": "418f76223f361a4182a5ccade47b1d59a3d3cff2d15211b4b418c9a91545ead5"
+}

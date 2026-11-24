@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Rust-facing projection of recorded original Shrapnel occupant executions.\n\nNo gameplay decisions are recomputed. Ordered callbacks, receiver arguments,\ntimer stores and complete RNG words are projected from the hash-pinned packet.\n",
+  "assumptions": [
+    "Pure projection of the immutable original occupants.json.gz packet; every native callback keeps its original instruction visit ordinal. No newly executed native or Rust behavior is claimed by this projection.",
+    "RNG seed0 is the original logical0x3F4 structure without three padding bytes; each stage retains all250 words and both indices for all three streams. Physical world/actor/head, sound and navigation boundaries remain occupants.meta.json.",
+    "Actor+178 padding is preserved as a raw native write; semantic RadarCombatFlash fields are+174 start/+17C duration. Pointer argument fields are retained for provenance, not stable engine entity identifiers."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "occupants": "0x00487A10",
+    "damage": "0x00737C90",
+    "detach": "0x0070D4A0"
+  },
+  "source_files": {
+    "occupants.json.gz": "dae34d6ac6325a51ea22d7658eac9061042fc09807ab59f5216e7d0d1e3b5f66",
+    "occupants_promotion.json": "f6310661ca8d30bd288d939ec49b1925fd6a984c6fc086f60d931e1140a8922e"
+  },
+  "payload_sha256": "85b7c71aa0cbff9e848daf6304bfb0e0df867f7e7a80644f724b058be50afd4a"
+}

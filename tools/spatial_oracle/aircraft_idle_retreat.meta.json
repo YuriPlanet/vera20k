@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "AircraftClass::Enter_Idle_Mode 0x004176F0 as vt+0x484(0, 1) through its whole body: the head, the landed arm, the airborne arm and the tail. On an unarmed MissileSpawn aircraft: every combination of +0x3D4, passengers (+0x118), team (+0x5D4), IsControlledByHuman, In_Radio_Contact, Ready_To_Commence and the Foot base's return, from Move with nothing queued; a suspended selector; each protected current with and without an Airstrike (+0x294); queued missions; Ammo, layer and height values. Without MissileSpawn, the landed arm entered on the ground layer and at the landing altitude over every combination of +0x3D4, passengers, team, IsControlledByHuman, Is_Armed and In_Radio_Contact; armed MissileSpawn rows; the tail's dock hunt after the landed arm (Ammo 0 or -1, radio contact, AirportBound, a dock or none). The airborne arm, with the Foot base answering 1: passengers over +0x3D4, team, Is_Armed, Ammo {0, 2, -1} and the tail's dock; armed, leaving the team over every combination of +0x3D4, IsControlledByHuman, the type's Ammo {0, 2, -1}, team and Has_Entered_Map, each without a weapon in slot 0, with Ammo 0 and with Ammo 2, outside the playfield; re-attacking over Ammo {0, 2, -1}, Target and current x queued in {none, Attack, Enter, Move} with a NavCom; the pick gate over every combination of IsInAir, NavCom, current Enter or Move, Dock= empty or not, +0x3D5 and team; the dock answer (none, ROGER, NEGATORY) over AirportBound, Ammo {0, 2, -1}, radio contact and Ready; and the tail after a pick kept off high flight over every combination of Ammo {0, 2, -1}, Is_Armed, radio contact, the dock, AirportBound and Ready. Together the rows execute every instruction of 0x004176F0..0x00417BAA and both directions of each conditional jump. AircraftClass::Mission_Retreat 0x00415A50 with a NULL NavCom over House+0x1E0 {-1, 0..4, -5} x +0x577C {0..3, -1, 4}, picked cells equal to and differing from the empty cell in either word, and a NavCom that is the owner's cell, another cell or an object. Returned value, ordered call log with arguments, and for Enter_Idle_Mode Mission+0xBC and +0x6D2 afterwards. Not Remove_Member's own body (its nested Enter_Idle_Mode and its writes other than the team), the two dock searches answering differently in one call, the restore's target and destination setters, or PickCellOnEdge's own search and draws.",
+  "assumptions": [
+    "One emulator; per row the scratch region (0x10000 bytes) and the stack frame are rewritten. The owner holds a clone of the Aircraft vtable 0x007E22A4 with only the stubbed slots replaced, House +0x21C, IFlyControl +0x6C0 on a scratch copy of 0x007E2250 with +0xC replaced, and type +0x6C4 with the row's Dock count (+0x3F8; 1 or 0), Ammo (+0x684), MissileSpawn (+0xD68) and AirportBound (+0xE0D). The passengers, Airstrike, Target, NavCom, team, dock, airfield and WeaponType are distinct opaque scratch pointers the function only compares or passes on.",
+    "Enter_Idle_Mode rows preset Mission+0xBC = 7 and +0x6D2 = 1 to show which arm writes them; the arguments are (0, 1), as both Mission_Move and Mission_Attack state 10 push them.",
+    "Both dock searches of one call (the airborne arm's 0x004179A4 and the tail's 0x00417B0C) answer the row's dock.",
+    "The empty cell 0x00889E68 is set by its original static initializer 0x00413C60 (both words 0).",
+    "Per row: RET to the caller with the native cleanup (RET 8 / RET) and EBX/EBP/ESI/EDI preserved; no write outside the stack and the owner; every read of scratch bytes falls on bytes the row supplied."
+  ],
+  "substitutions": [
+    "Enter_Idle_Mode: Restore vt+0x1F8 moves +0xB0 to +0xAC and empties +0xB0; Commence vt+0x1EC, Queue_Mission vt+0x1E8, Assign_Target vt+0x3C8 and Assign_Destination vt+0x480 record their arguments; Ready vt+0x200 and Is_Armed vt+0x2AC answer the row's values; GetWeapon vt+0x3F8 accepts slot 0 only and answers a WeaponStruct holding the row's WeaponType or NULL; IsInAir vt+0x54 records and answers the row's value; the dock search vt+0x528 records its list and two flags and answers the row's dock or NULL; Transmit_Message vt+0x278 records its message and receiver and answers the row's reply; Crash vt+0x3DC records its attacker; the layer vt+0x78, height vt+0x1C8 and landing altitude IFlyControl+0xC answer the row's values. Entry hooks: FootClass::Enter_Idle_Mode 0x004D82B0 records its arguments and answers the row's value; IsControlledByHuman 0x0050B730 answers the row's value; In_Radio_Contact 0x0065AE30 and TeamClass::Has_Entered_Map 0x006EC370 record and answer the row's values; TeamClass::Remove_Member 0x006EA870 records its last two arguments and clears the member's team +0x5D4; Find_Nearest_Friendly_Airfield 0x0041A160 records and answers an opaque pointer.",
+    "Mission_Retreat: GetCell vt+0x1BC answers the owner's cell; Assign_Destination vt+0x480 records; PickCellOnEdge 0x004AA440 records its arguments and writes the row's cell; operator[] 0x005657A0 answers one opaque pointer per cell."
+  ],
+  "entry_points": {
+    "enter_idle_mode": "0x004176F0",
+    "mission_retreat": "0x00415A50",
+    "is_suspended": "0x005B3A10",
+    "get_mission": "0x005B3040",
+    "house_edge": "0x0050DA80",
+    "empty_cell_initializer": "0x00413C60"
+  },
+  "payload_sha256": "d83b3a3eab66e4c9fb0a7034728a5a40fbdae43b1bed522e76e9e93e5642dd76"
+}

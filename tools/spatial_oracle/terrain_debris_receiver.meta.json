@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original423930 bounce-contact admission through original71B920 Terrain receiver, Object damage kernel, immediate Limbo/Cell unlink/Logic removal/deferred deletion. Bounded plain-tree state; custom destructible SpawnsTiberium row supplies allocation failure and executes original nested C4 area body. Not full debris physics, animation, observers, pathfinding, or whole Terrain parity.",
+  "assumptions": [
+    "Pinned retail image loaded; no executable code writes. Native x87 control word0x0E7F. Original49F2F0 initializes actual8-neighbor offsets; actual map table contains cell10,20 level2 and all8 neighboringcells. One-cell footprint; originalvtable pointers for Terrain/TerrainType/Anim/Cell/Logic; no houses/entities/bombs/animations in their global vectors.",
+    "Terrain location2688,5248,208, maxHP200, armorwood6; independent native rules_oracle/bridge_landing_inputs executes TerrainType ctor and selected rules/ART readers for TREE01/TreeStrength200/Armor6/Immune0/Spawns0/occupation4,6/Foundation1x1, HE and Super. Anim fields have independent rules_oracle/bridge_anim_inputs evidence. This harness consumes those results; no INI readers execute inside each contact row.",
+    "HE/Super exact scalar bits and Rules fields come from independently executed original readers in rules_oracle/bridge_landing_inputs. Active retail HE wood0.75, CellSpread/PAM0.5; MaxDamage10000; ConditionRed0.25 at+1708, Yellow0.5 at+1700. C4 Super allverses1, Woodfalse, spread0, PAM1; emptyAnimList supplied. NoDamagefalse; gameRunningtrue; frame1000; ScenarioRNG originalseed1.",
+    "Second linked Terrain is a synthetic mixed-list continuation boundary, not legal map-placement proof. Both occupy suppliedsamecell; only first has neighbor contribution. Allfixtures use one-cell native footprint, terrain occupationbits4 (production retail TREE01), rawoccupation0xFC, Logic membershippresent, no tag/audio/activewarp effect state.",
+    "Process initialized footprint sentinel supplied atAC1398; B0CD48 supplied native render-depth double bits0x3FC25E5374344960. Pending-delete buffer32 and Logicbuffer4 preallocated. Unrelated global vectors empty. Neighbor counts initially1; center count0."
+  ],
+  "substitutions": [
+    "439B00 BounceClass::Update returnscontact1 with suppliedbodyfloat position. This bounds evidence after physics; original423930 reads/ftol/body and handles contact/distance/receiver/next-link logic.",
+    "7C8E17 operatornew supplied bump allocator; allocation from71B9C0 alwaysfails in explicitcustomSpawns row, skippingExplosionAnim selection/construction. Other area collection allocationssucceed. 7C8B3D delete no-op.",
+    "71D160 Terrain render rectangle returns supplied0,0,1,1;6D2790 TacticalDirty no-op;5F5850 ObjectMark returns1 so originalTerrainMark/ExitCell/CellRemoveContent/occupation execute.",
+    "439150 empty BombListPointerGotInvalid boundary;4A9770 displayremoval boundary;47D2B0 cellrecalc,56D460 orphanZone,584550 incrementalZone,6551C0 radarDirty boundaries eachreturn0. Originalcall order logged, callees notproved."
+  ],
+  "entry_points": {
+    "contact": "0x00423930",
+    "terrain_receiver": "0x0071B920",
+    "object_receiver": "0x005F5390",
+    "damage_kernel": "0x00489180",
+    "terrain_limbo": "0x0071C930",
+    "object_limbo": "0x005F4D30",
+    "cell_remove": "0x0047EA90",
+    "logic_unregister": "0x0055BAE0",
+    "uninit": "0x005F65F0",
+    "area": "0x00489280",
+    "neighbor_init": "0x0049F2F0"
+  },
+  "native_landing_inputs_sha256": "d7cedef65837fca09ba0d18c15683e5fd51393d3dc190e322cd1b575f1218541",
+  "payload_sha256": "e8059d702acee9ed69e470767ade3d0f31ea8c81f54107c9339c7e20488f814e"
+}

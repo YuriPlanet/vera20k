@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Ordinary selected or hovered CARRIER independent spawn-count row through original6B7D50 and complete Extras/PIPS2 raster",
+  "assumptions": [
+    "One opt-in spawns mode extends generate_unit_health, _HealthRecorder, existing Unit/Ship, Aircraft/Fly and Infantry/Walk prefixes, native INI cache/readers, PaletteReader and packed Surface/SHP owners in one VM. No second runtime, manager state machine, parser, palette expansion, count formula or renderer supplies expected values. Historical modes retain their allocation/startup order and references.",
+    "Original Rules665650 and UnitType7470D0/TechnoType710AF0 constructors establish CARRIER spawn pointerNULL and count/regen/reload0 at71157E..711590. Exact original read sequence714E97..714F1C reads Spawns through67BD30/Aircraft41CEF0, then SpawnRegenRate, SpawnsNumber and SpawnReloadRate through current-default signed ReadInt5276D0. Physical RULESMD, absent optional LANGRULE, Battle and XMP03T4 produce HORNET/3/600/150, Strength800, PipScaleNone and Passengers0. HORNET is registered by actual AircraftType41C8B0; selected native Strength/Ammo reads yield its consumer fields. Physical lexical cache construction replaces INI file loading, not a scalar reader.",
+    "Original zero-count manager6B6C90 runs completely and records native vtable, zero node/count state, retained rates, UpdateTimer start0/duration20, SpawnTimer start0/duration0, null targets/mode0 and actual RNG requests. Count0 intentionally skips child CreateObject/Limbo; this is constructor-default evidence, not successful native stock Carrier pool construction. Original Unit7353C0..7354CE, Ship69EC50, Aircraft413D20..413DB1/Fly and Infantry517A50..517AE6/Walk prefixes execute separately with their own declared seeded constructor inputs and record RNG/passive timers. These do not certify one continuous world-construction RNG stream, whole COM constructors or Unlimbo.",
+    "Each draw supplies a retained3-node manager/vector prior with nonnull typed HORNET child-prefix objects for states0/2/3/4/6, null child for7, matching owner/SpawnOwner, ready/reloading limbo and explicit node timer0/reload150/regen600. Original CountDockedSpawns6B7D50 executes as actor_results.spawn_count_docked and again from709B91 when admitted; only statuses0/6 count. Manager/child lifecycle remains tools/rocket_oracle/spawn_manager.json and the canonical sim::spawn_manager owner. No manager AI, launch, return, child expiry or detach is replayed by this drawing profile.",
+    "Every raster control executes whole6F5190, actual sinking/selected/hover/observer health gates,6F64A0 and admitted709A90. Nonallied health checks read supplied HouseType index0 and ctor-zero210; this does not establish a producer for nonallied display bits. The independent709B73..709C25 row loops current typeD5C and calls6B7D50 on retained manager2D0, drawing PIPS2 frame1 or0. Its ordinary anchor is the health caller point plus(-5,0), four-pixel step, before any later PipScale row. Original projection, shape/frame origins, center flags, clipping, picker/rowwalker and pixel leaf execute.",
+    "Physical PIPS2 fromra2md/conqmd and PALETTE fromra2/cache enter the existing original palette startup/ConvertN53 owner. Actual spawn4AED70 calls use flags600/remap0/zAdjust0/gradient0/brightness1000; real4912B0 bypassesA/Z. A127/63/2/0, oldZ0, partial viewport/caller clipping, ready/reloading/launch/dead counts, selected/hover/unselected/nonallied/sinking and positive parent overlap are bounded consumer controls. Empty frame0 still stores12 outline pixels per slot; frame1 stores16.",
+    "Authored current_capacity_two executes original reader with SpawnsNumber2 while the explicit retained pool still has3 ready nodes: native count3 yields2 draw slots. Authored independent_passenger_row reads Passengers2/SizeLimit2/PipScalePassengers and actual Cargo4733A0 adds one E1. It emits spawn frames1,1,1 then passenger3,0, restarting at the same origin rather than advancing a concatenated slot index; native overwritten pixels are retained. Patch inputs and before/after native fields are recorded, then original readers restore the prior physical fields. These are authored configuration/retained-state consumer priors, not retail lifecycle production claims.",
+    "Original code/Unit vtables, prepared actor/manager/node bytes and A/Z remain unchanged through measured query/draw intervals. Drawing makes no RNG request, timer write or detach call. Constructor RNG/timers, supplied placement/House/selection/health/current-type/node states and viewport remain separate inputs. Full Display/body, naval placement/paid exit, manager/flight/child combat/audio/removal lifecycle, arbitrary PipScales/types and whole functions/classes remain open."
+  ],
+  "substitutions": [
+    "Existing allocation/delete/CRT TLS and immutable physical archive/cache transports replace platform services. Existing RGB565 BSurface/circular A/Z storage replaces DirectDraw. Spare registry/vector capacity, typed actor/House linkage and retained manager/node/child states are supplied priors. No reached count, status gate, INI scalar, projection, palette, shape or pixel return or original instruction is substituted."
+  ],
+  "entry_points": {
+    "rules_ctor": "0x00665650",
+    "unit_type_ctor": "0x007470D0",
+    "techno_type_ctor": "0x00710AF0",
+    "spawn_reader_begin": "0x00714E97",
+    "spawn_reader_end": "0x00714F1C",
+    "aircraft_lookup_reader": "0x0067BD30",
+    "aircraft_find": "0x0041CEF0",
+    "manager_ctor": "0x006B6C90",
+    "count_docked": "0x006B7D50",
+    "unit_ctor_begin": "0x007353C0",
+    "unit_ctor_stop": "0x007354CE",
+    "ship_ctor": "0x0069EC50",
+    "aircraft_ctor_begin": "0x00413D20",
+    "aircraft_ctor_stop": "0x00413DB1",
+    "extras": "0x006F5190",
+    "health": "0x006F64A0",
+    "pips": "0x00709A90",
+    "spawn_row_begin": "0x00709B73",
+    "spawn_row_end": "0x00709C27",
+    "projection": "0x006D2140",
+    "cargo_add": "0x004733A0",
+    "shape": "0x004AED70",
+    "picker": "0x00490B90",
+    "leaf": "0x004912B0"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.shroud --spawn-pips",
+  "payload_sha256": "0927635c5b7efc16b92dc83da5ca8345ed72233e5e6ca9f62696d0d1fe562ca6"
+}

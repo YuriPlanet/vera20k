@@ -1,0 +1,599 @@
+//! Saved materialized terrain values and their resident asset rebinding.
+//!
+//! MouseClass Load5BE150 restores Cell bodies before546DA0 visits them. Neither
+//! that path nor this value boundary runs authored Fill/Recalc, Tube or Anim
+//! constructors. Process identity and resident catalogs are supplied separately.
+
+use super::build::{MAX_TMP_RAMP_TYPE, load_native_tmp_draw_heights};
+use super::cliffs::build_destroyable_cliff_catalog;
+use super::*;
+use crate::assets::asset_manager::AssetManager;
+use crate::map::tile_variant_selector::TileVariantSelector;
+
+/// Baseline TMP/base metadata plus effective Land captured from live Cells for
+/// user files. Replacements remain in the simulation's dynamic-cell owner.
+/// All fields are private so deserialized values cross the map validator before
+/// they become a grid. Asset bytes, caches and the process dummy are not saved.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SavedTerrainTemplate {
+    land_role: SavedLandRole,
+    width: u16,
+    height: u16,
+    cells: Vec<ResolvedTerrainCell>,
+    native_allocated: Option<Vec<bool>>,
+    radar_color_valid: Vec<bool>,
+    tube_facts: Vec<TubeFact>,
+    native_tube_indices: Vec<NativeTubeCellIndex>,
+    tube_native_ids: Vec<Option<i32>>,
+    tile_animations: Vec<TerrainTileAnimation>,
+    /// Tile Save549D70/Load549C80 preserve the +0x305 flags in the saved
+    /// type bodies. Keep that history when resident TMP assets are rebound.
+    tile_burrowing_permissions: Option<Vec<bool>>,
+}
+
+/// A baseline-only fixture cannot certify the live Cell+EC value. This wire
+/// field also changes strict save-layout admission for older baseline saves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+enum SavedLandRole {
+    Baseline,
+    LiveEffective,
+}
+
+/// Transient user-file restoration input, extracted from the existing saved
+/// Cell bodies. It is never another serialized simulation plane.
+pub struct SavedCellLandValues {
+    width: u16,
+    height: u16,
+    cells: Vec<Option<u8>>,
+}
+
+impl SavedCellLandValues {
+    pub(crate) fn allocated_cells(&self) -> impl Iterator<Item = (u16, u16)> + '_ {
+        self.cells
+            .iter()
+            .enumerate()
+            .filter(|(_, cell)| cell.is_some())
+            .map(|(index, _)| {
+                (
+                    (index % usize::from(self.width)) as u16,
+                    (index / usize::from(self.width)) as u16,
+                )
+            })
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SavedTerrainError {
+    #[error("saved terrain has no captured live Cell Land values")]
+    BaselineOnlyLand,
+    #[error("live Cell Land dimensions or allocation differ from the saved terrain")]
+    LiveLandShape,
+    #[error("saved terrain cell {index} has invalid LandType {land}")]
+    Land { index: usize, land: u8 },
+    #[error("saved terrain dimensions {width}x{height} exceed the native cell table")]
+    Dimensions { width: u16, height: u16 },
+    #[error("saved terrain {plane} storage has {found} entries, expected {expected}")]
+    Storage {
+        plane: &'static str,
+        expected: usize,
+        found: usize,
+    },
+    #[error("saved terrain cell {index} has coordinate {found:?}, expected {expected:?}")]
+    Coordinate {
+        index: usize,
+        expected: (u16, u16),
+        found: (u16, u16),
+    },
+    #[error("saved terrain cell {index} references missing Tube {tube}")]
+    TubeReference { index: usize, tube: u16 },
+    #[error("saved terrain cell {index} has slope {slope}, past the slope tables")]
+    Slope { index: usize, slope: u8 },
+    #[error("saved terrain animation {index} has no allocated cell at {cell:?}")]
+    AnimationCell { index: usize, cell: (u16, u16) },
+    #[error("saved terrain resident assets: {0}")]
+    Assets(String),
+    #[error("saved terrain has {count} tile permissions, beyond the physical tile registry limit")]
+    TilePermissions { count: usize },
+}
+
+impl SavedTerrainTemplate {
+    /// Capture at the actual write boundary, including an initial campaign
+    /// save whose immutable resources were prepared before the frame ran.
+    pub fn capture_live_cell_land(
+        &mut self,
+        live: &ResolvedTerrainGrid,
+    ) -> Result<(), SavedTerrainError> {
+        self.validate()?;
+        if (self.width, self.height) != (live.width, live.height)
+            || self.cells.len() != live.cells.len()
+            || live
+                .native_allocated
+                .as_ref()
+                .is_some_and(|mask| mask.len() != live.cells.len())
+            || (0..self.cells.len()).any(|index| {
+                self.native_allocated
+                    .as_ref()
+                    .is_none_or(|mask| mask[index])
+                    != live
+                        .native_allocated
+                        .as_ref()
+                        .is_none_or(|mask| mask[index])
+            })
+        {
+            return Err(SavedTerrainError::LiveLandShape);
+        }
+        for (index, cell) in live.cells.iter().enumerate() {
+            if self
+                .native_allocated
+                .as_ref()
+                .is_none_or(|mask| mask[index])
+                && LandType::from_index(cell.land_type).is_none()
+            {
+                return Err(SavedTerrainError::Land {
+                    index,
+                    land: cell.land_type,
+                });
+            }
+        }
+        for (index, (cell, live)) in self.cells.iter_mut().zip(live.cells.iter()).enumerate() {
+            if self
+                .native_allocated
+                .as_ref()
+                .is_none_or(|mask| mask[index])
+            {
+                cell.land_type = live.land_type;
+            }
+        }
+        self.land_role = SavedLandRole::LiveEffective;
+        Ok(())
+    }
+
+    /// Cell Save483C10 retains effective Land in its raw body. In particular,
+    /// removal4A1AA0 can leave Water on an overlay-free Rough tile. Neither the
+    /// current overlay identity nor the pristine TMP can recover that value.
+    pub fn user_load_land_values(&self) -> Result<SavedCellLandValues, SavedTerrainError> {
+        self.validate()?;
+        if self.land_role != SavedLandRole::LiveEffective {
+            return Err(SavedTerrainError::BaselineOnlyLand);
+        }
+        let mut cells = Vec::with_capacity(self.cells.len());
+        for (index, cell) in self.cells.iter().enumerate() {
+            if self
+                .native_allocated
+                .as_ref()
+                .is_some_and(|mask| !mask[index])
+            {
+                cells.push(None);
+                continue;
+            }
+            if LandType::from_index(cell.land_type).is_none() {
+                return Err(SavedTerrainError::Land {
+                    index,
+                    land: cell.land_type,
+                });
+            }
+            cells.push(Some(cell.land_type));
+        }
+        Ok(SavedCellLandValues {
+            width: self.width,
+            height: self.height,
+            cells,
+        })
+    }
+
+    pub fn dimensions(&self) -> (u16, u16) {
+        (self.width, self.height)
+    }
+
+    pub(crate) fn tube(&self, id: TubeId) -> Option<&TubeFact> {
+        self.tube_facts.get(id.as_usize())
+    }
+
+    pub fn validate(&self) -> Result<(), SavedTerrainError> {
+        // Resize565C10 owns the fixed512x512 cell table. A one-sided empty
+        // rectangle is not a materialized grid produced by the map owner.
+        if self.width > crate::map::cell_index::MAX_CELL_SIDE
+            || self.height > crate::map::cell_index::MAX_CELL_SIDE
+            || (self.width == 0) != (self.height == 0)
+        {
+            return Err(SavedTerrainError::Dimensions {
+                width: self.width,
+                height: self.height,
+            });
+        }
+        let expected = usize::from(self.width) * usize::from(self.height);
+        for (plane, found) in [
+            ("cells", self.cells.len()),
+            ("radar validity", self.radar_color_valid.len()),
+            ("native Tube indices", self.native_tube_indices.len()),
+        ]
+        .into_iter()
+        .chain(
+            self.native_allocated
+                .as_ref()
+                .map(|mask| ("allocation", mask.len())),
+        ) {
+            if found != expected {
+                return Err(SavedTerrainError::Storage {
+                    plane,
+                    expected,
+                    found,
+                });
+            }
+        }
+        if self.tube_native_ids.len() != self.tube_facts.len() {
+            return Err(SavedTerrainError::Storage {
+                plane: "Tube native identities",
+                expected: self.tube_facts.len(),
+                found: self.tube_native_ids.len(),
+            });
+        }
+        if let Some(permissions) = &self.tile_burrowing_permissions
+            && permissions.len() > usize::from(u16::MAX)
+        {
+            return Err(SavedTerrainError::TilePermissions {
+                count: permissions.len(),
+            });
+        }
+        for (index, cell) in self.cells.iter().enumerate() {
+            let expected = (
+                (index % usize::from(self.width)) as u16,
+                (index / usize::from(self.width)) as u16,
+            );
+            if (cell.rx, cell.ry) != expected {
+                return Err(SavedTerrainError::Coordinate {
+                    index,
+                    expected,
+                    found: (cell.rx, cell.ry),
+                });
+            }
+            if let Some(tube) = cell.tube_index
+                && tube.as_usize() >= self.tube_facts.len()
+            {
+                return Err(SavedTerrainError::TubeReference {
+                    index,
+                    tube: tube.0,
+                });
+            }
+            // Map building flattens a ramp past the 21-record slope tables
+            // (`merge_tmp_metadata`), so only a damaged save holds one; the
+            // Cell coordinate readers (`CellRef::center_coordinate`) expect
+            // one inside.
+            if cell.slope_type > MAX_TMP_RAMP_TYPE {
+                return Err(SavedTerrainError::Slope {
+                    index,
+                    slope: cell.slope_type,
+                });
+            }
+        }
+        // Raw signed Tube indices deliberately admit negative and out-of-range
+        // values. ReadTubesINI728515 publishes source ordinals while its registry
+        // grows; the compatibility Option need not equal a later revalidation.
+        for (index, anim) in self.tile_animations.iter().enumerate() {
+            let slot = usize::from(anim.ry) * usize::from(self.width) + usize::from(anim.rx);
+            if anim.rx >= self.width
+                || anim.ry >= self.height
+                || self
+                    .native_allocated
+                    .as_ref()
+                    .is_some_and(|mask| !mask[slot])
+            {
+                return Err(SavedTerrainError::AnimationCell {
+                    index,
+                    cell: (anim.rx, anim.ry),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Restore values before the simulation reapplies dynamic Cell bodies.
+    /// The caller supplies its detached Resize dummy. No IDs, RNG, native
+    /// constructors, or resident selector decisions occur at this boundary.
+    pub(crate) fn restore_values(
+        self,
+        shared_cell_dummy: SharedCellDummy,
+    ) -> Result<ResolvedTerrainGrid, SavedTerrainError> {
+        self.validate()?;
+        let damaged_radar_metadata = vec![None; self.cells.len()];
+        Ok(ResolvedTerrainGrid {
+            width: self.width,
+            height: self.height,
+            level_span: LevelSpan::of_terrain(&self.cells),
+            cells: super::terrain_cells::TerrainCells::new(self.cells),
+            land_speed_costs: land_speed_cost_profiles(None),
+            overlay_passability: Default::default(),
+            native_tmp_draw_heights: Default::default(),
+            shared_cell_dummy,
+            mutation_epoch: 0,
+            native_allocated: self.native_allocated.map(Into::into),
+            radar_color_valid: self.radar_color_valid.into(),
+            damaged_radar_metadata: damaged_radar_metadata.into(),
+            tube_facts: self.tube_facts,
+            native_tube_indices: self.native_tube_indices,
+            tube_native_ids: self.tube_native_ids,
+            clear_tile_id: 0,
+            water_tiles: crate::map::rmg::tiles::TileIds::from_keys(&Default::default()),
+            tile_registry_len: None,
+            tile_burrowing_permissions: self.tile_burrowing_permissions,
+            dummy_accepts_smudge: false,
+            bridge_set_start: None,
+            high_bridge_rim_tiles: None,
+            wood_bridge_rim_tiles: Default::default(),
+            wood_bridge_set_start: None,
+            tile_animations: self.tile_animations,
+            destroyable_cliff_catalog: None,
+            deformation_catalog: None,
+            ice_catalog: None,
+            deformation_enabled: false,
+            bridge_recalc_catalog: None,
+            allocation_caches: Default::default(),
+        })
+    }
+}
+
+impl ResolvedTerrainGrid {
+    pub fn capture_saved_template(&self) -> Result<SavedTerrainTemplate, SavedTerrainError> {
+        let saved = SavedTerrainTemplate {
+            land_role: SavedLandRole::Baseline,
+            width: self.width,
+            height: self.height,
+            cells: self.cells.all().to_vec(),
+            native_allocated: self.native_allocated.as_deref().cloned(),
+            radar_color_valid: (*self.radar_color_valid).clone(),
+            tube_facts: self.tube_facts.clone(),
+            native_tube_indices: self.native_tube_indices.clone(),
+            tube_native_ids: self.tube_native_ids.clone(),
+            tile_animations: self.tile_animations.clone(),
+            tile_burrowing_permissions: self.tile_burrowing_permissions.clone(),
+        };
+        saved.validate()?;
+        Ok(saved)
+    }
+
+    /// Test convenience for capturing baseline metadata plus actual Cell+EC.
+    /// Production captures Land later, at the actual save-write boundary.
+    /// Native Cell Save483C10 / Load4839F0 preserve these across literal crate
+    /// erasure; a later genuine Recalc must still see the pristine base Land.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn capture_user_saved_template(
+        &self,
+        live: &ResolvedTerrainGrid,
+    ) -> Result<SavedTerrainTemplate, SavedTerrainError> {
+        let mut saved = self.capture_saved_template()?;
+        saved.capture_live_cell_land(live)?;
+        Ok(saved)
+    }
+
+    /// Final Cell value publication for user file loads, after ordinary cache
+    /// reconstruction. CellLoad483A12 clears+4C, and483BE0 erases crate fields
+    /// without Recalc. Map+68's saved classes/IDs/rows remain a separate owner.
+    pub(crate) fn restore_user_loaded_land(
+        &mut self,
+        saved: &SavedCellLandValues,
+    ) -> Result<(), SavedTerrainError> {
+        if (self.width, self.height) != (saved.width, saved.height)
+            || self.cells.len() != saved.cells.len()
+            || saved.cells.iter().enumerate().any(|(index, cell)| {
+                cell.is_some()
+                    != self
+                        .native_allocated
+                        .as_ref()
+                        .is_none_or(|mask| mask[index])
+            })
+        {
+            return Err(SavedTerrainError::LiveLandShape);
+        }
+        for (index, saved) in saved.cells.iter().enumerate() {
+            let Some(land) = saved else { continue };
+            // Cell CheckCellPassability48357D/4835D5 reads retained Land and
+            // indexes the shared89EA40 table, never a saved per-cell speed row.
+            let speed_costs = self.land_speed_costs(i32::from(*land));
+            let cell = &mut self.cells[index];
+            cell.land_type = *land;
+            cell.speed_costs = speed_costs;
+            // This is VERA's derived walk projection, not a native Recalc.
+            // Surviving overlay/terrain presence was restored by their owners.
+            let land_blocked = matches!(
+                LandType::from_index(*land),
+                Some(LandType::Water | LandType::Rock | LandType::Wall)
+            );
+            cell.ground_walk_blocked = (cell.canonical_ramp.is_none() && land_blocked)
+                || cell.terrain_object_blocks
+                || cell.overlay_blocks;
+            cell.zone_type = zone_class::GROUND;
+        }
+        Ok(())
+    }
+
+    /// Derived asset/catalog binding shared by fresh construction and saved
+    /// loading. It never materializes cells or enters the variant selector.
+    pub(super) fn bind_asset_catalogs(
+        &mut self,
+        theater: Option<&TheaterData>,
+        assets: Option<&AssetManager>,
+        rules: Option<&TerrainRules>,
+        overlay_types: Option<&OverlayTypeRegistry>,
+        lat_enabled: bool,
+        cliff_back: u8,
+        selector: TileVariantSelector,
+    ) {
+        self.land_speed_costs = land_speed_cost_profiles(rules);
+        self.overlay_passability = overlay_passability_flags(overlay_types).into();
+        self.clear_tile_id = theater.and_then(|td| td.rmg_tiles.clear_tile).unwrap_or(0);
+        self.water_tiles = theater.map_or_else(
+            || crate::map::rmg::tiles::TileIds::from_keys(&Default::default()),
+            crate::map::rmg::tiles::TileIds::resolve,
+        );
+        self.tile_registry_len = theater.map(|td| td.lookup.len());
+        // Fresh grids project the admitted theater once. TileType Save549D70
+        // already supplied a restored grid's flags; resident rebinding must
+        // not replace those gameplay values with today's theater INI.
+        if self.tile_burrowing_permissions.is_none()
+            && let Some(theater) = theater
+        {
+            self.tile_burrowing_permissions = Some(
+                (0..theater.lookup.len())
+                    .map(|tile| theater.lookup.allows_burrowing(tile as u16))
+                    .collect(),
+            );
+        }
+        self.dummy_accepts_smudge =
+            theater.is_some_and(|td| current_tile_permissions(&td.lookup, 0xffff).0);
+        self.high_bridge_rim_tiles = theater.map(|td| td.high_bridge_rim_tiles);
+        self.wood_bridge_rim_tiles =
+            theater
+                .zip(assets)
+                .map_or_else(Default::default, |(td, assets)| {
+                    crate::map::bridge_rim_tiles::WoodBridgeRimTiles::from_theater(td, assets)
+                });
+        self.bridge_set_start = theater.and_then(|td| {
+            td.bridge_set
+                .and_then(|set| td.lookup.bounds().get(usize::from(set)))
+                .map(|bounds| bounds.start)
+        });
+        self.wood_bridge_set_start = theater.and_then(|td| {
+            td.wood_bridge_set
+                .and_then(|set| td.lookup.bounds().get(usize::from(set)))
+                .map(|bounds| bounds.start)
+        });
+        if self.cells.is_empty() {
+            self.native_tmp_draw_heights.clear();
+            self.destroyable_cliff_catalog = None;
+            self.deformation_catalog = None;
+            self.ice_catalog = None;
+            self.bridge_recalc_catalog = None;
+            return;
+        }
+        self.native_tmp_draw_heights = load_native_tmp_draw_heights(theater, assets).into();
+        self.destroyable_cliff_catalog = build_destroyable_cliff_catalog(theater, assets, rules);
+        self.deformation_catalog =
+            super::deformation::build_deformation_catalog(theater, assets, rules);
+        self.ice_catalog = super::ice::build_ice_catalog(theater, assets, rules);
+        self.bridge_recalc_catalog = match (theater, assets, rules) {
+            (Some(theater), Some(assets), Some(rules)) => {
+                Some(Arc::new(BridgeRecalcCatalog::for_runtime_terrain(
+                    theater,
+                    assets,
+                    rules,
+                    lat_enabled,
+                    cliff_back,
+                    selector,
+                )))
+            }
+            _ => None,
+        };
+    }
+
+    /// Rebind a successfully adopted candidate to the retained process table.
+    /// Asset bodies remain shared; only the selector handle changes identity.
+    pub fn bind_tile_variant_selector(&mut self, selector: TileVariantSelector) {
+        if let Some(catalog) = self.bridge_recalc_catalog.as_mut() {
+            Arc::make_mut(catalog).bind_selector(selector);
+        }
+    }
+
+    /// Bind the future-restore baseline after the actual loaded cells have
+    /// visited the selector. A baseline is not itself a native loaded-cell pass
+    /// and must never initialize a cold table or consume additional Main draws.
+    pub fn bind_saved_template_assets(
+        &mut self,
+        theater: &TheaterData,
+        assets: &AssetManager,
+        rules: &TerrainRules,
+        overlay_types: &OverlayTypeRegistry,
+        lat_enabled: bool,
+        cliff_back: u8,
+        selector: TileVariantSelector,
+    ) -> Result<(), SavedTerrainError> {
+        let catalog =
+            self.saved_presentation_catalog(theater, assets, rules, lat_enabled, cliff_back);
+        self.bind_asset_catalogs(
+            Some(theater),
+            Some(assets),
+            Some(rules),
+            Some(overlay_types),
+            lat_enabled,
+            cliff_back,
+            selector,
+        );
+        self.bind_saved_damaged_radar(&catalog)
+            .map_err(|error| SavedTerrainError::Assets(error.to_string()))
+    }
+
+    /// Mouse Load5BE653..5BE65C restores actual Cell bodies before546DA0's
+    /// native iterator/variant scan. Run this after dynamic cells, before final
+    /// publication. Later presentation reads use the same retained table; only
+    /// presentation projections change, never Cell gameplay/Tube/Anim values.
+    pub fn finish_loaded_assets(
+        &mut self,
+        theater: &TheaterData,
+        assets: &AssetManager,
+        rules: &TerrainRules,
+        overlay_types: &OverlayTypeRegistry,
+        lat_enabled: bool,
+        cliff_back: u8,
+        size_width: i32,
+        selector: &mut TileVariantSelectionContext<'_, '_>,
+    ) -> Result<(), SavedTerrainError> {
+        let clear_tile = theater.rmg_tiles.clear_tile.unwrap_or(0);
+        let mut catalog =
+            self.saved_presentation_catalog(theater, assets, rules, lat_enabled, cliff_back);
+        catalog.bind_selector(selector.selector());
+        let mut visited = Vec::new();
+        for cell in self.native_cell_iterator(size_width) {
+            catalog
+                .select_loaded_variant(cell, clear_tile, selector)
+                .map_err(|error| SavedTerrainError::Assets(error.to_string()))?;
+            visited.push(usize::from(cell.ry) * usize::from(self.width) + usize::from(cell.rx));
+        }
+        self.bind_asset_catalogs(
+            Some(theater),
+            Some(assets),
+            Some(rules),
+            Some(overlay_types),
+            lat_enabled,
+            cliff_back,
+            selector.selector(),
+        );
+        // GetRadarColor47C24A/tactical547F9D are downstream presentation
+        // consumers, not writes performed by546DA0 itself. The scan already
+        // admitted every selector entry, including cold sentinel/count1.
+        for index in visited {
+            self.refresh_cell_presentation(
+                &catalog,
+                index,
+                Some(&mut || {
+                    panic!("loaded-cell scan must initialize every admitted selector consumer")
+                }),
+            )
+            .map_err(|error| SavedTerrainError::Assets(error.to_string()))?;
+        }
+        Ok(())
+    }
+
+    fn saved_presentation_catalog(
+        &self,
+        theater: &TheaterData,
+        assets: &AssetManager,
+        rules: &TerrainRules,
+        lat_enabled: bool,
+        cliff_back: u8,
+    ) -> BridgeRecalcCatalog {
+        let clear_tile = i32::from(theater.rmg_tiles.clear_tile.unwrap_or(0));
+        // Reuse the resident reader even for theaters without a bridge family.
+        // Its separate pristine admission records do not run Recalc callbacks;
+        // presentation files may include animated and Tunnel tiles safely.
+        let ids = self.iter().map(|cell| {
+            if cell.final_tile_index < 0
+                || cell.final_tile_index == 0xffff
+                || cell.final_tile_index as usize >= theater.lookup.len()
+            {
+                clear_tile
+            } else {
+                cell.final_tile_index
+            }
+        });
+        BridgeRecalcCatalog::for_tiles(theater, assets, rules, lat_enabled, cliff_back, ids)
+    }
+}

@@ -1,0 +1,37 @@
+//! Pathfinding system — A* search, zone connectivity, terrain speed, and path smoothing.
+//!
+//! Combines cell-level A* with zone-aware hierarchical search for fast unreachability
+//! detection and hierarchy-marked pruning.
+//!
+//! ## Dependency rules
+//! - Part of sim/ — depends on map/ (terrain, resolved_terrain).
+//! - sim/ NEVER depends on render/, ui/, audio/, net/.
+
+// Core A* algorithm, PathGrid, PathCell
+mod core;
+// Search scratch shared by the cell A* and the zone precheck
+mod search_table;
+
+// Path post-processing
+pub mod path_smooth;
+
+// Terrain and movement costs
+pub mod drive_distance;
+pub mod passability;
+pub mod terrain_speed;
+
+// Zone connectivity (flood-fill zones, hierarchy, zone-aware search)
+pub(crate) mod zone_build;
+pub mod zone_hierarchy;
+pub(crate) mod zone_incremental;
+pub mod zone_map;
+pub mod zone_search;
+
+// Re-export core types so external code uses crate::sim::pathfinding::PathGrid etc.
+pub use self::core::*;
+
+#[cfg(test)] // shared by test groups
+#[path = "zone_map_tests.rs"]
+mod zone_map_tests;
+#[cfg(all(test, any(tests_sim_pathfinding, tests_sim_movement)))]
+mod zone_threat_retail_tests;

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "32 baseline1024 and eight baseline32768 original full Object Render/Bullet Draw executions through physical120MM shape frame/clip/selector/plain-rowwalker/body-shadow pixels, using independently initialized native PALETTE.PAL/ANIM.PAL Convert tables. No whole scene, native Display traversal, fog or GPU parity claim.",
+  "assumptions": [
+    "bridge_render_inputs.load_retail_type independently executes original selected Cannon ctor/layered readers on physical lexical INI caches. The physical48-byte120MM SHP is loaded unchanged. Prepared Bullet retainedXYZ and map cell are boundaries; no gameplay launch/lifecycle is executed here.",
+    "bridge_render_inputs_palette.initialize executes original startup52BE61..52BFCE and complete Convert48E740 plus Blitter initializer48EBF0. Its reached heap and palette/format globals are copied byte-for-byte into each isolated draw machine; copied data is never reconstructed from expected colors.",
+    "Prepared64x96 RGB565 BSurface, circular A/Z buffers, baseline1024 or32768 and A127; all original surface virtual methods, rectangle clipping, frame access, Convert selectors, rowwalking and pixel leaves execute without substitution. Background/oldZ/body screen points are explicit inputs. Camera is derived from original zero-camera projection.",
+    "Captures retain per-shape arguments, reached addresses, original leaf candidates/source rows and RGB565 pixels after each shadow/body draw. Native depth arrays are compared byte-for-byte to their inputs. Cases cover clipping on each boundary, dirty rebasing, bridge deck thresholds, OnBridge, exact depth candidates, image/Inviso and palette controls."
+  ],
+  "substitutions": [
+    "Archive IO and allocator boundaries during upstream native input/Convert construction are documented by bridge_render_inputs and bridge_render_inputs_palette. No call is replaced during the rendered execution."
+  ],
+  "entry_points": {
+    "object_render": "0x005F4B10",
+    "bullet_draw": "0x00468090",
+    "shape": "0x004AED70",
+    "plain_selector": "0x00490B90",
+    "plain_rowwalker": "0x004373B0",
+    "clip": "0x007BC040",
+    "body_leaf": "0x00494B60",
+    "shadow_leaf": "0x00492D20"
+  },
+  "payload_sha256": "276d7a6c3f1629f52685993a119f8abc36a21b415c68710f51ebceb89dc622cf"
+}

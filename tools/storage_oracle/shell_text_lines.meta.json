@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "66 original 434CD0 fixtures: 48 line-admission, six saved-space word-suffix rewinds and 12 no-space hard cuts",
+  "assumptions": [
+    "Supplied font cell height17, A glyph width6, space width3, spacing0, color1; original 4346C0 glyph lookup and 434110 x-position setter execute",
+    "One through four A lines, either explicit LF with width100 or space-delimited words wrapping at width6; origin11,13",
+    "Six additional AA AAAA word-suffix cases use widths18/24/30 and heights0/34; line_count0 means input line count is unspecified, and submissions are the native result",
+    "Twelve no-space cases use AA/AAA/AAAA/AAAAAA, widths6/12/18 and height0; hard-cut instructions are required only when supplied text exceeds width",
+    "Height0 is unbounded; ordinary small control heights1/16/17/18/34; alignment and reveal inputs zero",
+    "Complete 434CD0 body executes from entry to RET0x28, with fresh emulator and explicit required lookup/setter/raster and newline/wrap tail visits",
+    "Captured glyph-call positions establish line admission only, not per-pixel scissor, raster appearance, actual font data or general word wrapping"
+  ],
+  "substitutions": [
+    "4348F0 surface lock/setup and 434990 unlock/cleanup return without a real surface; layout fields are supplied separately",
+    "434120 glyph raster is observed as character/x/y arguments and returns x+6; no raster pixels are produced"
+  ],
+  "entry_points": {
+    "draw_text": "0x00434CD0",
+    "shell_caller": "0x0062102E",
+    "newline_height": "0x00434EC2",
+    "wrap_height": "0x00435112"
+  },
+  "payload_sha256": "1919bbbf3e89393e7abf4a34b45afced2d8cfe91fdc30573723db1e7956ffacc"
+}

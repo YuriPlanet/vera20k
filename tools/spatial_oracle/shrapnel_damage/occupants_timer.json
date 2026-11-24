@@ -1,0 +1,873 @@
+{
+  "cases": [
+    {
+      "events": [
+        {
+          "arg0": "null",
+          "health": 0,
+          "kind": "mark",
+          "this": "mtnk",
+          "visit": 23390
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "remove_content",
+          "this": "cell_115_59",
+          "visit": 23721
+        },
+        {
+          "arg0": "null",
+          "health": 0,
+          "kind": "foot_uninit",
+          "this": "mtnk",
+          "visit": 24794
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "object_uninit",
+          "this": "mtnk",
+          "visit": 24807
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "unit_limbo",
+          "this": "mtnk",
+          "visit": 27759
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "foot_limbo",
+          "this": "mtnk",
+          "visit": 27763
+        },
+        {
+          "arg0": "null",
+          "health": 0,
+          "kind": "techno_limbo",
+          "this": "mtnk",
+          "visit": 28208
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "object_limbo",
+          "this": "mtnk",
+          "visit": 31795
+        },
+        {
+          "arg0": "null",
+          "health": 0,
+          "kind": "mark",
+          "this": "mtnk",
+          "visit": 34824
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "display_remove",
+          "this": "0x87f7e8",
+          "visit": 34962
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "logic_remove",
+          "this": "0x87f778",
+          "visit": 35067
+        }
+      ],
+      "final": {
+        "alive": 0,
+        "current_land": 2,
+        "deferred_count": 1,
+        "display_count": 0,
+        "fraction": 0.0,
+        "ground_head": "null",
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "health": 0,
+        "impact_land": 2,
+        "limbo": 1,
+        "logic_count": 0,
+        "marked": 0,
+        "mission": 5,
+        "nav": "null",
+        "object_next": "null",
+        "on_bridge": 0,
+        "owner_losses": 1,
+        "owner_type_count": 0,
+        "second": null,
+        "sink": 0,
+        "suspended": -1,
+        "suspended_target": "null",
+        "target": "null",
+        "timer": [
+          0,
+          0,
+          0
+        ],
+        "xyz": [
+          29568,
+          15232,
+          208
+        ]
+      },
+      "flash_slot_49c": "0x70ccf0",
+      "input": {
+        "current_cell": [
+          115,
+          59
+        ],
+        "name": "resident_center"
+      },
+      "radar_slot_4a0": "0x70d990",
+      "timer_access": [
+        {
+          "actor": "mtnk",
+          "alive": 1,
+          "kind": "write",
+          "limbo": 0,
+          "offset": "0x174",
+          "pc": "0x701fbd",
+          "size": 4,
+          "stage": "final_collapse",
+          "value": 1000,
+          "visit": 18865
+        },
+        {
+          "actor": "mtnk",
+          "alive": 1,
+          "kind": "write",
+          "limbo": 0,
+          "offset": "0x178",
+          "pc": "0x701fc5",
+          "size": 4,
+          "stage": "final_collapse",
+          "value": 604139252,
+          "visit": 18868
+        },
+        {
+          "actor": "mtnk",
+          "alive": 1,
+          "kind": "write",
+          "limbo": 0,
+          "offset": "0x17c",
+          "pc": "0x701fc8",
+          "size": 4,
+          "stage": "final_collapse",
+          "value": 49,
+          "visit": 18869
+        }
+      ],
+      "unit_vtable": "0x7f5c70"
+    },
+    {
+      "events": [
+        {
+          "arg0": "null",
+          "health": 0,
+          "kind": "mark",
+          "this": "mtnk",
+          "visit": 24190
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "remove_content",
+          "this": "cell_115_58",
+          "visit": 24521
+        },
+        {
+          "arg0": "0x3b80",
+          "health": 0,
+          "kind": "foot_uninit",
+          "this": "mtnk",
+          "visit": 25435
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "object_uninit",
+          "this": "mtnk",
+          "visit": 25448
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "unit_limbo",
+          "this": "mtnk",
+          "visit": 28400
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "foot_limbo",
+          "this": "mtnk",
+          "visit": 28404
+        },
+        {
+          "arg0": "null",
+          "health": 0,
+          "kind": "techno_limbo",
+          "this": "mtnk",
+          "visit": 28997
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "object_limbo",
+          "this": "mtnk",
+          "visit": 32584
+        },
+        {
+          "arg0": "null",
+          "health": 0,
+          "kind": "mark",
+          "this": "mtnk",
+          "visit": 35613
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "display_remove",
+          "this": "0x87f7e8",
+          "visit": 35751
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "logic_remove",
+          "this": "0x87f778",
+          "visit": 35856
+        }
+      ],
+      "final": {
+        "alive": 0,
+        "current_land": 1,
+        "deferred_count": 1,
+        "display_count": 0,
+        "fraction": 0.30000001192092896,
+        "ground_head": "null",
+        "head": [
+          29568,
+          15232,
+          208
+        ],
+        "health": 0,
+        "impact_land": 2,
+        "limbo": 1,
+        "logic_count": 0,
+        "marked": 0,
+        "mission": 5,
+        "nav": "null",
+        "object_next": "null",
+        "on_bridge": 0,
+        "owner_losses": 1,
+        "owner_type_count": 0,
+        "second": null,
+        "sink": 0,
+        "suspended": -1,
+        "suspended_target": "null",
+        "target": "null",
+        "timer": [
+          0,
+          0,
+          0
+        ],
+        "xyz": [
+          29568,
+          14976,
+          208
+        ]
+      },
+      "flash_slot_49c": "0x70ccf0",
+      "input": {
+        "current_cell": [
+          115,
+          58
+        ],
+        "head_cell": [
+          115,
+          59
+        ],
+        "name": "north_head_center"
+      },
+      "radar_slot_4a0": "0x70d990",
+      "timer_access": [
+        {
+          "actor": "mtnk",
+          "alive": 1,
+          "kind": "write",
+          "limbo": 0,
+          "offset": "0x174",
+          "pc": "0x701fbd",
+          "size": 4,
+          "stage": "final_collapse",
+          "value": 1000,
+          "visit": 19664
+        },
+        {
+          "actor": "mtnk",
+          "alive": 1,
+          "kind": "write",
+          "limbo": 0,
+          "offset": "0x178",
+          "pc": "0x701fc5",
+          "size": 4,
+          "stage": "final_collapse",
+          "value": 604139252,
+          "visit": 19667
+        },
+        {
+          "actor": "mtnk",
+          "alive": 1,
+          "kind": "write",
+          "limbo": 0,
+          "offset": "0x17c",
+          "pc": "0x701fc8",
+          "size": 4,
+          "stage": "final_collapse",
+          "value": 49,
+          "visit": 19668
+        }
+      ],
+      "unit_vtable": "0x7f5c70"
+    },
+    {
+      "events": [
+        {
+          "arg0": "null",
+          "health": 0,
+          "kind": "mark",
+          "this": "mtnk",
+          "visit": 24782
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "remove_content",
+          "this": "cell_115_59",
+          "visit": 25113
+        },
+        {
+          "arg0": "mtnk2",
+          "health": 0,
+          "kind": "foot_uninit",
+          "this": "mtnk",
+          "visit": 26186
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "object_uninit",
+          "this": "mtnk",
+          "visit": 26199
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "unit_limbo",
+          "this": "mtnk",
+          "visit": 29440
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "foot_limbo",
+          "this": "mtnk",
+          "visit": 29444
+        },
+        {
+          "arg0": "null",
+          "health": 0,
+          "kind": "techno_limbo",
+          "this": "mtnk",
+          "visit": 29889
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "object_limbo",
+          "this": "mtnk",
+          "visit": 33476
+        },
+        {
+          "arg0": "null",
+          "health": 0,
+          "kind": "mark",
+          "this": "mtnk",
+          "visit": 36794
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "display_remove",
+          "this": "0x87f7e8",
+          "visit": 36932
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "logic_remove",
+          "this": "0x87f778",
+          "visit": 37044
+        },
+        {
+          "arg0": "null",
+          "health": 0,
+          "kind": "mark",
+          "this": "mtnk2",
+          "visit": 46114
+        },
+        {
+          "arg0": "mtnk2",
+          "health": 0,
+          "kind": "remove_content",
+          "this": "cell_115_59",
+          "visit": 46445
+        },
+        {
+          "arg0": "null",
+          "health": 0,
+          "kind": "foot_uninit",
+          "this": "mtnk2",
+          "visit": 47518
+        },
+        {
+          "arg0": "mtnk2",
+          "health": 0,
+          "kind": "object_uninit",
+          "this": "mtnk2",
+          "visit": 47531
+        },
+        {
+          "arg0": "mtnk2",
+          "health": 0,
+          "kind": "unit_limbo",
+          "this": "mtnk2",
+          "visit": 50772
+        },
+        {
+          "arg0": "mtnk2",
+          "health": 0,
+          "kind": "foot_limbo",
+          "this": "mtnk2",
+          "visit": 50776
+        },
+        {
+          "arg0": "null",
+          "health": 0,
+          "kind": "techno_limbo",
+          "this": "mtnk2",
+          "visit": 51221
+        },
+        {
+          "arg0": "mtnk2",
+          "health": 0,
+          "kind": "object_limbo",
+          "this": "mtnk2",
+          "visit": 54615
+        },
+        {
+          "arg0": "null",
+          "health": 0,
+          "kind": "mark",
+          "this": "mtnk2",
+          "visit": 57933
+        },
+        {
+          "arg0": "mtnk2",
+          "health": 0,
+          "kind": "display_remove",
+          "this": "0x87f7e8",
+          "visit": 58071
+        },
+        {
+          "arg0": "mtnk2",
+          "health": 0,
+          "kind": "logic_remove",
+          "this": "0x87f778",
+          "visit": 58176
+        }
+      ],
+      "final": {
+        "alive": 0,
+        "current_land": 2,
+        "deferred_count": 2,
+        "display_count": 0,
+        "fraction": 0.0,
+        "ground_head": "null",
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "health": 0,
+        "impact_land": 2,
+        "limbo": 1,
+        "logic_count": 0,
+        "marked": 0,
+        "mission": 5,
+        "nav": "null",
+        "object_next": "null",
+        "on_bridge": 0,
+        "owner_losses": 2,
+        "owner_type_count": 0,
+        "second": {
+          "alive": 0,
+          "health": 0,
+          "limbo": 1,
+          "marked": 0,
+          "object_next": "null",
+          "target": "null"
+        },
+        "sink": 0,
+        "suspended": -1,
+        "suspended_target": "null",
+        "target": "null",
+        "timer": [
+          0,
+          0,
+          0
+        ],
+        "xyz": [
+          29568,
+          15232,
+          208
+        ]
+      },
+      "flash_slot_49c": "0x70ccf0",
+      "input": {
+        "current_cell": [
+          115,
+          59
+        ],
+        "name": "resident_two_members",
+        "second_member": true
+      },
+      "radar_slot_4a0": "0x70d990",
+      "timer_access": [
+        {
+          "actor": "mtnk",
+          "alive": 1,
+          "kind": "write",
+          "limbo": 0,
+          "offset": "0x174",
+          "pc": "0x701fbd",
+          "size": 4,
+          "stage": "final_collapse",
+          "value": 1000,
+          "visit": 19968
+        },
+        {
+          "actor": "mtnk",
+          "alive": 1,
+          "kind": "write",
+          "limbo": 0,
+          "offset": "0x178",
+          "pc": "0x701fc5",
+          "size": 4,
+          "stage": "final_collapse",
+          "value": 605439652,
+          "visit": 19971
+        },
+        {
+          "actor": "mtnk",
+          "alive": 1,
+          "kind": "write",
+          "limbo": 0,
+          "offset": "0x17c",
+          "pc": "0x701fc8",
+          "size": 4,
+          "stage": "final_collapse",
+          "value": 49,
+          "visit": 19972
+        },
+        {
+          "actor": "mtnk2",
+          "alive": 1,
+          "kind": "write",
+          "limbo": 0,
+          "offset": "0x174",
+          "pc": "0x701fbd",
+          "size": 4,
+          "stage": "final_collapse",
+          "value": 1000,
+          "visit": 41300
+        },
+        {
+          "actor": "mtnk2",
+          "alive": 1,
+          "kind": "write",
+          "limbo": 0,
+          "offset": "0x178",
+          "pc": "0x701fc5",
+          "size": 4,
+          "stage": "final_collapse",
+          "value": 1,
+          "visit": 41303
+        },
+        {
+          "actor": "mtnk2",
+          "alive": 1,
+          "kind": "write",
+          "limbo": 0,
+          "offset": "0x17c",
+          "pc": "0x701fc8",
+          "size": 4,
+          "stage": "final_collapse",
+          "value": 49,
+          "visit": 41304
+        }
+      ],
+      "unit_vtable": "0x7f5c70"
+    },
+    {
+      "events": [
+        {
+          "arg0": "null",
+          "health": 0,
+          "kind": "mark",
+          "this": "mtnk",
+          "visit": 26181
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "remove_content",
+          "this": "cell_115_58",
+          "visit": 26512
+        },
+        {
+          "arg0": "0x3b80",
+          "health": 0,
+          "kind": "foot_uninit",
+          "this": "mtnk",
+          "visit": 27439
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "object_uninit",
+          "this": "mtnk",
+          "visit": 27452
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "unit_limbo",
+          "this": "mtnk",
+          "visit": 30693
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "foot_limbo",
+          "this": "mtnk",
+          "visit": 30697
+        },
+        {
+          "arg0": "null",
+          "health": 0,
+          "kind": "techno_limbo",
+          "this": "mtnk",
+          "visit": 31290
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "object_limbo",
+          "this": "mtnk",
+          "visit": 34877
+        },
+        {
+          "arg0": "null",
+          "health": 0,
+          "kind": "mark",
+          "this": "mtnk",
+          "visit": 38195
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "display_remove",
+          "this": "0x87f7e8",
+          "visit": 38333
+        },
+        {
+          "arg0": "mtnk",
+          "health": 0,
+          "kind": "logic_remove",
+          "this": "0x87f778",
+          "visit": 38445
+        }
+      ],
+      "final": {
+        "alive": 0,
+        "current_land": 1,
+        "deferred_count": 1,
+        "display_count": 1,
+        "fraction": 0.30000001192092896,
+        "ground_head": "mtnk2",
+        "head": [
+          29568,
+          15232,
+          208
+        ],
+        "health": 0,
+        "impact_land": 2,
+        "limbo": 1,
+        "logic_count": 1,
+        "marked": 0,
+        "mission": 5,
+        "nav": "null",
+        "object_next": "null",
+        "on_bridge": 0,
+        "owner_losses": 1,
+        "owner_type_count": 1,
+        "second": {
+          "alive": 1,
+          "health": 300,
+          "limbo": 0,
+          "marked": 1,
+          "object_next": "null",
+          "target": "null"
+        },
+        "sink": 0,
+        "suspended": -1,
+        "suspended_target": "null",
+        "target": "null",
+        "timer": [
+          0,
+          0,
+          0
+        ],
+        "xyz": [
+          29568,
+          14976,
+          208
+        ]
+      },
+      "flash_slot_49c": "0x70ccf0",
+      "input": {
+        "current_cell": [
+          115,
+          58
+        ],
+        "head_cell": [
+          115,
+          59
+        ],
+        "name": "north_two_heads",
+        "second_member": true
+      },
+      "radar_slot_4a0": "0x70d990",
+      "timer_access": [
+        {
+          "actor": "mtnk",
+          "alive": 1,
+          "kind": "write",
+          "limbo": 0,
+          "offset": "0x174",
+          "pc": "0x701fbd",
+          "size": 4,
+          "stage": "final_collapse",
+          "value": 1000,
+          "visit": 21366
+        },
+        {
+          "actor": "mtnk",
+          "alive": 1,
+          "kind": "write",
+          "limbo": 0,
+          "offset": "0x178",
+          "pc": "0x701fc5",
+          "size": 4,
+          "stage": "final_collapse",
+          "value": 605439652,
+          "visit": 21369
+        },
+        {
+          "actor": "mtnk",
+          "alive": 1,
+          "kind": "write",
+          "limbo": 0,
+          "offset": "0x17c",
+          "pc": "0x701fc8",
+          "size": 4,
+          "stage": "final_collapse",
+          "value": 49,
+          "visit": 21370
+        }
+      ],
+      "unit_vtable": "0x7f5c70"
+    }
+  ],
+  "frozen_cases_sha256": "f3af7eba4981a8f9430a48d4eaf6727f8c996cde77e5025ce0c34addc001298d",
+  "original_source": [
+    {
+      "bytes_hex": "8b0de0718800a184eda8008d96740100008b898c00000089028b44244c85ff894204894a08",
+      "end_exclusive": "0x701fcb",
+      "role": "ReceiveDamage timer writes",
+      "start": "0x701fa6"
+    },
+    {
+      "bytes_hex": "8b861c0200008b0d4c3da8005d3bc15b755f8b96740100008b867c0100008b3d84eda80083faff740a8bcf2bca3bc87d402bc185c07e3a8b8e740100008b867c01000083f9ff740e2bf98bcf3bc87d042bc1eb0233c08b0de071880099f7b98800000085d2750a8b168bceff929c0400005f5e83c42cc20400",
+      "end_exclusive": "0x70dc45",
+      "role": "current-house timer reader and flash call",
+      "start": "0x70dbcc"
+    },
+    {
+      "bytes_hex": "81c10802000051b9e8f78700e8cf95f4ffc3",
+      "end_exclusive": "0x70cd02",
+      "role": "radar flash request",
+      "start": "0x70ccf0"
+    },
+    {
+      "bytes_hex": "8a86230400005f3ac3740a8b068bceff9098040000",
+      "end_exclusive": "0x6f6c4a",
+      "role": "Limbo radar-present gate",
+      "start": "0x6f6c35"
+    },
+    {
+      "bytes_hex": "568bf18b860c0200008b8e08020000505156b9e8f78700e8648af4ffc68623040000005ec3",
+      "end_exclusive": "0x70cce5",
+      "role": "remove radar and clear presence",
+      "start": "0x70ccc0"
+    },
+    {
+      "bytes_hex": "8a869000000084c00f84ba080000",
+      "end_exclusive": "0x6fa743",
+      "role": "Techno AI Alive gate",
+      "start": "0x6fa735"
+    },
+    {
+      "bytes_hex": "8b166a008bceff92a0040000",
+      "end_exclusive": "0x6faf0d",
+      "role": "Techno AI radar update",
+      "start": "0x6faf01"
+    },
+    {
+      "bytes_hex": "8a868406000084c07c1b8bcee83bf6ffff8b166a008bceff92a00400005f5e5d5b83c420c3",
+      "end_exclusive": "0x7363c9",
+      "role": "Unit tube-only update",
+      "start": "0x7363a4"
+    },
+    {
+      "bytes_hex": "8b1550eba8008d72ff85f67c15a144eba8006a018b0cb08b11ff92a00400004e79ebb0015ec21000",
+      "end_exclusive": "0x6e2284",
+      "role": "other TriggerAction global Unit traversal",
+      "start": "0x6e225c"
+    }
+  ],
+  "radix": "all source addresses and bytes are hexadecimal",
+  "schema": 1,
+  "slot_498_remove_radar": "0x70ccc0"
+}

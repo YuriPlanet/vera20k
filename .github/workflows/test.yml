@@ -1,0 +1,42 @@
+name: Test (reusable)
+
+# The library test job, shared by the per-platform workflows so each platform
+# reports its own status check, and by the Release workflow, which publishes a
+# dev build only after it passes on every platform the build ships. Runs what a
+# fresh clone can run: no retail game data is available here, so tests that need
+# the gitignored `ini/` print SKIPPED and pass. Local focused runs with `ini/`
+# present cover the retail-data tests a change touches.
+on:
+  workflow_call:
+    inputs:
+      os:
+        required: true
+        type: string
+
+env:
+  # rust-lld ships with rustup and links the large test binary much faster
+  # than link.exe (the maintainer's checkouts use it too). x86-64 Windows only.
+  CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: rust-lld
+
+jobs:
+  test:
+    name: test (${{ inputs.os }})
+    runs-on: ${{ inputs.os }}
+    # About twice the slowest normal run, so a hung test still fails without
+    # false timeouts: on macos-15 (Apple Silicon) the test build alone takes
+    # 24-28 min with a warm cache, 37 min without, and up to 43 min on a slow
+    # runner.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      - name: Library tests
+        # Each package's tests run even after another package's fail, so a
+        # failed run lists every failure, not only the first package's.
+        run: cargo test --workspace --lib --no-fail-fast

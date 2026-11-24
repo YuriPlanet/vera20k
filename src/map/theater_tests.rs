@@ -1,0 +1,1591 @@
+//! Tests for theater INI parsing and tileset lookups.
+//!
+//! Extracted from theater.rs to stay under the 400-line limit.
+
+use super::*;
+use crate::assets::pal_file::Color;
+use crate::util::ini_roots::IniRoots;
+
+/// The retail (YR profile) theater INI name, e.g. `snowmd.ini`.
+fn stock_theater_ini(theater_name: &str) -> String {
+    IniRoots::default().theater_ini(theater_def(theater_name).unwrap().control_name)
+}
+
+fn make_test_ini() -> String {
+    "[TileSet0000]\nSetName=Grass\nFileName=clear\nTilesInSet=1\n\n\
+     [TileSet0001]\nSetName=Blank\nFileName=\nTilesInSet=1\n\n\
+     [TileSet0002]\nSetName=Cliffs\nFileName=cliff\nTilesInSet=3\n"
+        .to_string()
+}
+
+#[test]
+fn active_theater_names_and_archive_order_match_retail() {
+    let expected = [
+        (
+            "TEMPERATE",
+            "temperatmd.ini",
+            &["temperat.mix", "tem.mix", "isotemmd.mix", "isotemp.mix"][..],
+        ),
+        (
+            "SNOW",
+            "snowmd.ini",
+            &[
+                "snowmd.mix",
+                "snow.mix",
+                "sno.mix",
+                "isosnomd.mix",
+                "isosnow.mix",
+            ][..],
+        ),
+        (
+            "URBAN",
+            "urbanmd.ini",
+            &["urban.mix", "urb.mix", "isourbmd.mix", "isourb.mix"][..],
+        ),
+        (
+            "DESERT",
+            "desertmd.ini",
+            &["desert.mix", "des.mix", "isodesmd.mix", "isodes.mix"][..],
+        ),
+        (
+            "NEWURBAN",
+            "urbannmd.ini",
+            &["urbann.mix", "ubn.mix", "isoubnmd.mix", "isoubn.mix"][..],
+        ),
+        (
+            "LUNAR",
+            "lunarmd.ini",
+            &["lunar.mix", "lun.mix", "isolunmd.mix", "isolun.mix"][..],
+        ),
+    ];
+
+    for (name, ini_name, archives) in expected {
+        let def = theater_def(name).expect("active theater definition");
+        assert_eq!(IniRoots::default().theater_ini(def.control_name), ini_name);
+        assert_eq!(def.mix_archives, archives);
+    }
+}
+
+#[test]
+fn missing_theater_palette_uses_native_rgb_ramp() {
+    let palette = native_missing_theater_palette();
+    assert_eq!(palette.color(0), Color::rgb(0, 255, 0));
+    assert_eq!(palette.color(1), Color::rgb(1, 254, 4));
+    assert_eq!(palette.color(64), Color::rgb(64, 191, 0));
+    assert_eq!(palette.color(255), Color::rgb(255, 0, 252));
+}
+
+#[test]
+fn test_parse_tileset_ini_basic() {
+    let ini: &str = &make_test_ini();
+    let lookup: TilesetLookup = parse_tileset_ini(ini.as_bytes(), "tem").expect("Should parse");
+
+    assert_eq!(lookup.len(), 5); // 1 + 1 + 3
+    assert_eq!(lookup.filename(0), Some("clear01.tem"));
+    assert_eq!(lookup.filename(1), None); // blank
+    assert_eq!(lookup.filename(2), Some("cliff01.tem"));
+    assert_eq!(lookup.filename(4), Some("cliff03.tem"));
+
+    // Tileset boundary/index lookups.
+    assert_eq!(lookup.bounds().len(), 3);
+    assert_eq!(lookup.tileset_index(0), Some(0)); // tile 0 → TileSet0000
+    assert_eq!(lookup.tileset_index(1), Some(1)); // tile 1 → TileSet0001
+    assert_eq!(lookup.tileset_index(2), Some(2)); // tile 2 → TileSet0002
+    assert_eq!(lookup.tileset_index(4), Some(2)); // tile 4 → TileSet0002
+    assert_eq!(lookup.tileset_index(99), None); // out of range
+
+    // Edge cases: NO_TILE, negative, and far out-of-range.
+    assert_eq!(lookup.filename(NO_TILE), None);
+    assert_eq!(lookup.filename(-1), None);
+    assert_eq!(lookup.filename(999), None);
+}
+
+#[test]
+fn gsi_04_02_last_tiles_parser_builds_native_ordered_exceptions_and_boundaries() {
+    let lookup = parse_tileset_ini(
+        b"[TileSet0000]\nTilesInSet=3\nFileName=a\n\n\
+          [TileSet0001]\nTilesInSet=5\nLastTilesInSet=2\nFileName=b\n\n\
+          [TileSet0002]\nTilesInSet=4\nLastTilesInSet=6\nFileName=c\n",
+        "tem",
+    )
+    .expect("verified compatibility example parses");
+
+    assert_eq!(
+        lookup.legacy_tile_index_exceptions,
+        vec![
+            LegacyTileIndexException {
+                legacy_boundary: 5,
+                delta: 3,
+            },
+            LegacyTileIndexException {
+                legacy_boundary: 11,
+                delta: -2,
+            },
+        ]
+    );
+    assert_eq!(lookup.len(), 12);
+    assert_eq!(lookup.translate_legacy_map_tile_index(4), 4);
+    assert_eq!(lookup.translate_legacy_map_tile_index(5), 8);
+    assert_eq!(lookup.translate_legacy_map_tile_index(10), 13);
+    assert_eq!(lookup.translate_legacy_map_tile_index(11), 12);
+    assert_eq!(
+        lookup.translate_legacy_map_tile_index(i32::from(u16::MAX)),
+        i32::from(u16::MAX),
+        "only positive 0xFFFF is the native no-tile sentinel"
+    );
+}
+
+#[test]
+fn gsi_04_02_last_tiles_transform_is_signed_original_ordered_and_wrapping() {
+    let signed = parse_tileset_ini(b"[TileSet0000]\nTilesInSet=2\nLastTilesInSet=-2\n", "tem")
+        .expect("negative-boundary theater");
+    assert_eq!(signed.translate_legacy_map_tile_index(-1), 3);
+    assert_eq!(signed.translate_legacy_map_tile_index(0), 4);
+    assert_eq!(
+        signed.translate_legacy_map_tile_index(i32::from(u16::MAX)),
+        i32::from(u16::MAX),
+    );
+
+    let original_raw = parse_tileset_ini(
+        b"[TileSet0000]\nTilesInSet=105\nLastTilesInSet=5\n\n\
+          [TileSet0001]\nTilesInSet=1\nLastTilesInSet=45\n",
+        "tem",
+    )
+    .expect("original-input comparison theater");
+    assert_eq!(original_raw.translate_legacy_map_tile_index(5), 105);
+
+    let nonmonotonic = parse_tileset_ini(
+        b"[TileSet0000]\nTilesInSet=11\nLastTilesInSet=10\n\n\
+          [TileSet0001]\nTilesInSet=-4\nLastTilesInSet=-5\n",
+        "tem",
+    )
+    .expect("nonmonotonic declaration-order theater");
+    assert_eq!(
+        nonmonotonic.legacy_tile_index_exceptions[1].legacy_boundary,
+        5
+    );
+    assert_eq!(nonmonotonic.translate_legacy_map_tile_index(6), 6);
+
+    let wraps_max = parse_tileset_ini(
+        format!(
+            "[TileSet0000]\nTilesInSet={}\nLastTilesInSet={}\n",
+            i32::MIN,
+            i32::MAX
+        )
+        .as_bytes(),
+        "tem",
+    )
+    .expect("wrapping delta theater");
+    assert_eq!(
+        wraps_max.legacy_tile_index_exceptions,
+        vec![LegacyTileIndexException {
+            legacy_boundary: i32::MAX,
+            delta: 1,
+        }]
+    );
+    assert_eq!(
+        wraps_max.translate_legacy_map_tile_index(i32::MAX),
+        i32::MIN
+    );
+
+    let mut wraps_min = parse_tileset_ini(b"", "tem").expect("empty theater");
+    wraps_min.legacy_tile_index_exceptions = vec![LegacyTileIndexException {
+        legacy_boundary: i32::MIN,
+        delta: -1,
+    }];
+    assert_eq!(
+        wraps_min.translate_legacy_map_tile_index(i32::MIN),
+        i32::MAX
+    );
+}
+
+#[test]
+fn gsi_04_02_last_tiles_parser_preserves_readint_termination_and_wrapping() {
+    let parsed = parse_tileset_ini(
+        b"[TileSet0000]\nTilesInSet=junk\nLastTilesInSet=-1\n\n\
+          [TileSet0001]\nTilesInSet=$3\nLastTilesInSet=1H\n\n\
+          [TileSet0002]\nTilesInSet=-1\n\n\
+          [TileSet0003]\nTilesInSet=9\nLastTilesInSet=0\n",
+        "tem",
+    )
+    .expect("ReadInt edge theater");
+    assert_eq!(parsed.bounds().len(), 2);
+    assert_eq!(parsed.bounds()[0].count, 0, "present junk is atoi zero");
+    assert_eq!(
+        parsed.bounds()[1].count,
+        3,
+        "native hexadecimal is accepted"
+    );
+    assert_eq!(
+        parsed.legacy_tile_index_exceptions,
+        vec![LegacyTileIndexException {
+            legacy_boundary: 1,
+            delta: 2,
+        }]
+    );
+
+    for terminator in [
+        "[TileSet0000]\nTilesInSet=0\n\n\
+         [TileSet0001]\nFileName=missing-key\n\n\
+         [TileSet0002]\nTilesInSet=9\n",
+        "[TileSet0000]\nTilesInSet=0\n\n\
+         [TileSet0001]\nTilesInSet=\n\n\
+         [TileSet0002]\nTilesInSet=9\n",
+    ] {
+        let terminated = parse_tileset_ini(terminator.as_bytes(), "tem")
+            .expect("missing or empty TilesInSet terminates");
+        assert_eq!(terminated.bounds().len(), 1);
+        assert_eq!(terminated.len(), 0);
+    }
+
+    let malformed_last = parse_tileset_ini(
+        b"[TileSet0000]\nTilesInSet=2\nLastTilesInSet=not-a-number\n",
+        "tem",
+    )
+    .expect("present malformed LastTilesInSet is native atoi zero");
+    assert_eq!(
+        malformed_last.legacy_tile_index_exceptions,
+        vec![LegacyTileIndexException {
+            legacy_boundary: 0,
+            delta: 2,
+        }]
+    );
+
+    let suppressed = parse_tileset_ini(
+        b"[TileSet0000]\nTilesInSet=2\nLastTilesInSet=-1\n\n\
+          [TileSet0001]\nTilesInSet=3\nLastTilesInSet=3\n",
+        "tem",
+    )
+    .expect("suppressed records");
+    assert!(suppressed.legacy_tile_index_exceptions.is_empty());
+
+    let negative = parse_tileset_ini(
+        b"[TileSet0000]\nTilesInSet=-2\n\n\
+          [TileSet0001]\nTilesInSet=2\nLastTilesInSet=0\n",
+        "tem",
+    )
+    .expect("nonterminating negative count");
+    assert_eq!(negative.bounds()[0], TilesetBounds { start: 0, count: 0 });
+    assert_eq!(negative.bounds()[1], TilesetBounds { start: 0, count: 2 });
+    assert_eq!(
+        negative.legacy_tile_index_exceptions,
+        vec![LegacyTileIndexException {
+            legacy_boundary: -2,
+            delta: 2,
+        }]
+    );
+
+    let cursor_wrap = parse_tileset_ini(
+        format!(
+            "[TileSet0000]\nTilesInSet=0\nLastTilesInSet={}\n\n\
+             [TileSet0001]\nTilesInSet=0\nLastTilesInSet=1\n",
+            i32::MAX
+        )
+        .as_bytes(),
+        "tem",
+    )
+    .expect("wrapping legacy cursor");
+    assert_eq!(
+        cursor_wrap.legacy_tile_index_exceptions,
+        vec![
+            LegacyTileIndexException {
+                legacy_boundary: i32::MAX,
+                delta: -i32::MAX,
+            },
+            LegacyTileIndexException {
+                legacy_boundary: i32::MIN,
+                delta: -1,
+            },
+        ]
+    );
+}
+
+#[test]
+fn gsi_04_02_last_tiles_safe_domains_and_native_string_defaults() {
+    let maximum = parse_tileset_ini(b"[TileSet0000]\nTilesInSet=65535\n", "tem")
+        .expect("all usable u16 tile IDs fit");
+    assert_eq!(maximum.len(), 65_535);
+    assert_eq!(maximum.bounds()[0].count, u16::MAX);
+    assert_eq!(maximum.set_name(0), Some("No Name"));
+    assert_eq!(maximum.filename(0), None);
+
+    assert!(matches!(
+        parse_tileset_ini(b"[TileSet0000]\nTilesInSet=65536\n", "tem"),
+        Err(crate::map::map_file::MapError::TilesetRegistryTooLarge {
+            attempted: 65_536,
+            maximum: 65_535,
+        })
+    ));
+    assert!(matches!(checked_tileset_ordinal(65_535), Ok(65_535)));
+    assert!(matches!(
+        checked_tileset_ordinal(65_536),
+        Err(crate::map::map_file::MapError::TilesetOrdinalOverflow {
+            ordinal: 65_536,
+            maximum: 65_535,
+        })
+    ));
+
+    let absent = IniFile::from_str("[TileSet65535]\nTilesInSet=0\n");
+    assert!(
+        read_tileset_row(&absent, 65_536)
+            .expect("absent row retains the native -1 terminator")
+            .is_none()
+    );
+    let nonterminating = IniFile::from_str("[TileSet65536]\nTilesInSet=0\n");
+    assert!(matches!(
+        read_tileset_row(&nonterminating, 65_536),
+        Err(crate::map::map_file::MapError::TilesetOrdinalOverflow {
+            ordinal: 65_536,
+            maximum: 65_535,
+        })
+    ));
+}
+
+#[test]
+fn gsi_04_02_tileset_10000_is_not_an_artificial_terminator() {
+    let mut ini = String::new();
+    for ordinal in 0..10_000u32 {
+        ini.push_str(&format!("[TileSet{ordinal:04}]\nTilesInSet=0\n\n"));
+    }
+    ini.push_str("[TileSet10000]\nTilesInSet=1\nFileName=late\n");
+    let lookup = parse_tileset_ini(ini.as_bytes(), "tem").expect("ordinal 10000 parses");
+    assert_eq!(lookup.bounds().len(), 10_001);
+    assert_eq!(
+        lookup.bounds()[10_000],
+        TilesetBounds { start: 0, count: 1 }
+    );
+    assert_eq!(lookup.filename(0), Some("late01.tem"));
+}
+
+#[test]
+#[ignore = "requires VERA20K_RETAIL_THEATER_INI_DIR"]
+fn gsi_04_02_all_retail_theaters_have_empty_compatibility_tables() {
+    let root = std::path::PathBuf::from(
+        std::env::var_os("VERA20K_RETAIL_THEATER_INI_DIR")
+            .expect("set VERA20K_RETAIL_THEATER_INI_DIR to extracted retail ini directory"),
+    );
+    let expected = [
+        ("temperatmd.ini", 82, 838, 837),
+        ("snowmd.ini", 83, 964, 960),
+        ("urbanmd.ini", 111, 1_081, 1_077),
+        ("urbannmd.ini", 122, 1_175, 1_174),
+        ("desertmd.ini", 82, 726, 726),
+        ("lunarmd.ini", 85, 198, 192),
+    ];
+    for (name, section_count, slot_count, last_start) in expected {
+        let bytes = std::fs::read(root.join(name)).expect("read extracted retail theater INI");
+        let lookup = parse_tileset_ini(&bytes, "tmp").expect("parse retail theater INI");
+        assert!(lookup.legacy_tile_index_exceptions.is_empty(), "{name}");
+        assert_eq!(lookup.bounds().len(), section_count, "{name}");
+        assert_eq!(lookup.len(), slot_count, "{name}");
+        assert_eq!(
+            lookup.bounds().last().map(|bounds| bounds.start),
+            Some(last_start),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn gsi_02_11_actual_chain_count_stops_at_first_missing_sibling() {
+    let present = [
+        "clear01.urb",
+        "clear01a.urb",
+        "clear01b.urb",
+        "clear01c.urb",
+        "clear01d.urb",
+        "clear01e.urb",
+        "clear01f.urb",
+        "clear01g.urb",
+        // A later file must not bridge the missing `h` slot.
+        "clear01i.urb",
+    ];
+    let siblings = contiguous_variant_filenames("clear01.urb", |name| present.contains(&name));
+    assert_eq!(siblings.len(), 7);
+    assert_eq!(siblings.first().map(String::as_str), Some("clear01a.urb"));
+    assert_eq!(siblings.last().map(String::as_str), Some("clear01g.urb"));
+
+    let orphaned = ["clear01a.urb", "clear01b.urb"];
+    assert!(
+        contiguous_variant_filenames("clear01.urb", |name| orphaned.contains(&name)).is_empty()
+    );
+}
+
+#[test]
+fn gsi_02_11_file_index_resolves_the_exact_independent_tmp_owner() {
+    let mut lookup = parse_tileset_ini(
+        b"[TileSet0000]\nSetName=Clear\nFileName=clear\nTilesInSet=1\n",
+        "urb",
+    )
+    .expect("synthetic tileset");
+    lookup.variant_filenames[0] = vec!["clear01a.urb".to_string(), "clear01b.urb".to_string()];
+
+    assert_eq!(lookup.filename_for_variant(0, 0), Some("clear01.urb"));
+    assert_eq!(lookup.filename_for_variant(0, 1), Some("clear01a.urb"));
+    assert_eq!(lookup.filename_for_variant(0, 2), Some("clear01b.urb"));
+    assert_eq!(lookup.filename_for_variant(0, 3), None);
+}
+
+#[test]
+fn gsi_02_11_positive_subtile_wrap_preserves_requested_identity_boundary() {
+    assert_eq!(wrapped_subtile_index(0, 2, 3), Some(0));
+    assert_eq!(wrapped_subtile_index(9, 2, 3), Some(3));
+    assert_eq!(wrapped_subtile_index(u8::MAX, 2, 3), Some(3));
+    assert_eq!(wrapped_subtile_index(7, 0, 3), None);
+}
+
+#[test]
+fn test_collect_used_tiles() {
+    let cells: Vec<(i32, u8)> = vec![(0, 0), (1, 0), (0, 0), (NO_TILE, 0), (2, 1)];
+    let used: HashSet<TileKey> = collect_used_tiles(&cells);
+    assert_eq!(used.len(), 3); // (0,0), (1,0), (2,1) — deduped, NO_TILE excluded.
+    assert!(used.contains(&TileKey {
+        tile_id: 0,
+        sub_tile: 0,
+        variant: 0,
+    }));
+    assert!(used.contains(&TileKey {
+        tile_id: 2,
+        sub_tile: 1,
+        variant: 0,
+    }));
+}
+
+#[test]
+fn parses_morphable_flag_per_tileset() {
+    let ini = b"[TileSet0000]\n\
+                FileName=foo\n\
+                TilesInSet=1\n\
+                SetName=Foo\n\
+                Morphable=yes\n\
+                \n\
+                [TileSet0001]\n\
+                FileName=bar\n\
+                TilesInSet=1\n\
+                SetName=Bar\n\
+                \n\
+                [TileSet0002]\n\
+                TilesInSet=-1\n";
+    let lookup = parse_tileset_ini(ini, "tem").unwrap();
+    // tile_id 0 = first tile of TileSet0000 (Morphable=yes)
+    assert!(lookup.is_morphable(0));
+    // tile_id 1 = first tile of TileSet0001 (Morphable= unset → default false)
+    assert!(!lookup.is_morphable(1));
+}
+
+#[test]
+fn theater_parse_allow_tiberium_defaults_false() {
+    let ini = b"[TileSet0000]\n\
+                FileName=clear\n\
+                TilesInSet=2\n\
+                SetName=Clear\n\
+                \n\
+                [TileSet0001]\n\
+                FileName=tiber\n\
+                TilesInSet=2\n\
+                SetName=Tiberium\n\
+                AllowTiberium=true\n\
+                \n\
+                [TileSet0002]\n\
+                FileName=rough\n\
+                TilesInSet=1\n\
+                SetName=Rough\n\
+                AllowTiberium=false\n";
+    let lookup = parse_tileset_ini(ini, "tem").unwrap();
+
+    assert!(!lookup.allows_tiberium(0));
+    assert!(!lookup.allows_tiberium(1));
+    assert!(lookup.allows_tiberium(2));
+    assert!(lookup.allows_tiberium(3));
+    assert!(!lookup.allows_tiberium(4));
+    assert!(!lookup.allows_tiberium(99));
+}
+
+fn native_general_corpus() -> &'static serde_json::Value {
+    crate::test_fixture::json("tools/rules_oracle/theater_general_reader.json")
+}
+
+#[test]
+fn active_retail_tile_shadow_route_is_dormant() {
+    // CellClass::DrawTileShadow4802A0 tests tile+2E1 at4802E4. Constructor
+    // 544880 clears it; ReadTheater545150 writes it at5464A6/546AF8 only
+    // when the TileSet section reads ShadowCaster=true and ShadowTiles!=0.
+    // These are theater-only inputs, not layered map/rules keys. Check the
+    // physical files through the production reader, including every set.
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let corpus = native_general_corpus();
+    let mut checked_sets = 0;
+    for (name, _) in THEATER_DEFS {
+        let theater = load_theater(&mut assets, name).expect("load stock theater");
+        let expected = corpus["physical"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["file"].as_str() == Some(stock_theater_ini(name).as_str()))
+            .expect("physical theater provenance");
+        assert_eq!(
+            crate::util::sha256::sha256_hex(&theater.ini_data),
+            expected["sha256"].as_str().unwrap(),
+            "{name}: active retail theater bytes"
+        );
+        for (ordinal, bounds) in theater.lookup.bounds().iter().enumerate() {
+            assert!(
+                (bounds.start..bounds.start + bounds.count)
+                    .all(|tile| !theater.lookup.casts_tile_shadow(tile)),
+                "{name}/TileSet{ordinal:04}: requires native tile-shadow support"
+            );
+            checked_sets += 1;
+        }
+
+        // 545214..54524D binds this literal resource, not RAILBRDG.ext.
+        // 547230 selects frames0..13. CC_Draw_Shape4AEE60..4AEE88 forwards
+        // that index unchanged to69E7E0/69E740, even with flags4601.
+        let raw = assets
+            .get_ref("C_SHADOW.SHP")
+            .expect("stock tile-shadow SHP");
+        assert_eq!(
+            crate::util::sha256::sha256_hex(raw),
+            "58014f556049705ce2a45454e8bc01f15b8988188d660fcccd30a0d02e04717b",
+            "{name}: original tile-shadow artwork"
+        );
+        let shape = crate::assets::shp_file::ShpFile::from_bytes(raw).unwrap();
+        assert_eq!(
+            (shape.width, shape.height, shape.frames.len()),
+            (180, 150, 28)
+        );
+        assert!(
+            shape.frames[..14]
+                .iter()
+                .all(|frame| { frame.frame_width == 0 && frame.frame_height == 0 })
+        );
+        assert!(
+            shape.frames[14..]
+                .iter()
+                .any(|frame| { frame.frame_width != 0 && frame.frame_height != 0 })
+        );
+    }
+    assert_eq!(checked_sets, 565, "all six active theater registries");
+}
+
+#[test]
+fn tile_shadow_flag_needs_shadow_caster_and_nonzero_shadow_tiles() {
+    // ReadTheater545150 reads ShadowCaster (546204) and, only when it is set,
+    // ShadowTiles (546248) from the TileSet section; 5464A6 stores +2E1 when
+    // both are nonzero. A SetName section is never consulted for them.
+    let lookup = parse_tileset_ini(
+        b"[TileSet0000]\nTilesInSet=1\nFileName=a\nSetName=A\nShadowCaster=yes\n\
+          [TileSet0001]\nTilesInSet=1\nFileName=b\nSetName=B\nShadowTiles=3\n\
+          [TileSet0002]\nTilesInSet=1\nFileName=c\nSetName=C\nShadowCaster=yes\nShadowTiles=3\n\
+          [TileSet0003]\nTilesInSet=1\nFileName=d\nSetName=D\n\
+          [D]\nShadowCaster=yes\nShadowTiles=3\n",
+        "tem",
+    )
+    .unwrap();
+    assert_eq!(
+        (0..4)
+            .map(|tile| lookup.casts_tile_shadow(tile))
+            .collect::<Vec<_>>(),
+        [false, false, true, false]
+    );
+}
+
+#[test]
+fn retail_theaters_read_signed_bridge_pieces_once() {
+    // load_theater is the one reader of the ten ReadTheater545150 piece keys
+    // (545B4D..545C2E); rim cleanup and the BridgeMiddle tile view share it.
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let corpus = native_general_corpus();
+    for (name, _) in THEATER_DEFS {
+        let theater = load_theater(&mut assets, name).expect("load stock theater");
+        let values = &corpus["physical"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["file"].as_str() == Some(stock_theater_ini(name).as_str()))
+            .expect("physical theater provenance")["values"];
+        let pair = |key: &str| {
+            [1, 2].map(|n| i32::try_from(values[format!("{key}{n}")].as_i64().unwrap()).unwrap())
+        };
+        let rim = theater.high_bridge_rim_tiles;
+        assert_eq!(
+            [
+                rim.top_left,
+                rim.bottom_right,
+                rim.top_right,
+                rim.bottom_left,
+                rim.middle
+            ],
+            [
+                pair("BridgeTopLeft"),
+                pair("BridgeBottomRight"),
+                pair("BridgeTopRight"),
+                pair("BridgeBottomLeft"),
+                pair("BridgeMiddle"),
+            ],
+            "{name}: signed bridge pieces"
+        );
+        assert_eq!(
+            rim.base,
+            theater.cliff_ranges.bridge_set.map_or(-1, i32::from),
+            "{name}: published BridgeSet base"
+        );
+        assert_eq!(theater.bridge_middles(), [Some(7), Some(12)], "{name}");
+    }
+}
+
+#[test]
+fn retail_lunar_water_family_uses_the_original_postpass() {
+    use crate::map::rmg::tiles::TileIds;
+    use crate::util::sha256::sha256_hex;
+
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let theater = load_theater(&mut assets, "LUNAR").expect("load retail Lunar theater");
+    let corpus = native_general_corpus();
+    let physical = corpus["physical"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["file"] == "lunarmd.ini")
+        .expect("original reader's physical Lunar input");
+    assert_eq!(
+        sha256_hex(&theater.ini_data),
+        physical["sha256"].as_str().unwrap()
+    );
+
+    // Original ReadTheater545150, 546C95..546CB9: seven specific globals
+    // become -1. In particular ShorePieces and WaterBridge are cleared too.
+    // Cell4865D0 still compares against absent bases; this is a production
+    // publication regression, not a supplied tile-base or native-world golden.
+    assert_eq!(theater.rmg_tiles.shore_pieces, None);
+    assert_eq!(theater.rmg_tiles.water_set, None);
+    assert_eq!(theater.rmg_tiles.water_bridge, None);
+    assert!(TileIds::resolve(&theater).is_water_shore_or_waterfall(0));
+}
+
+/// Retail SNOWMD.INI names Ice1Set..IceShoreSet but gives those sets no
+/// tiles, so the retail snow theater runs no ice (docs/ts-ice.md).
+#[test]
+fn retail_snow_theater_runs_no_ice() {
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let theater = load_theater(&mut assets, "SNOW").expect("load retail snow theater");
+    let ini = IniFile::from_bytes(&theater.ini_data).expect("SNOWMD.INI");
+    let general = ini.section("General").expect("[General]");
+    for key in ["Ice1Set", "Ice2Set", "Ice3Set", "IceShoreSet"] {
+        let set = usize::try_from(general.read_int(key, -1)).expect(key);
+        assert_eq!(theater.lookup.bounds()[set].count, 0, "{key}");
+    }
+    assert_eq!(theater.ice_sets, None);
+}
+
+#[test]
+fn an_ice_map_gets_bundled_tiles_then_an_ordinary_snow_map_gets_stock_tiles() {
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let map = IniFile::from_str("[Map]\nTheater=SNOW\nVeraIce=yes\n");
+    let ice = load_scenario_theater(&mut assets, "SNOW", &map, true)
+        .unwrap()
+        .unwrap();
+    assert_eq!(ice.ice_sets, Some([4096, 4160, 4224]));
+    assert_eq!(ice.lookup.filename(964), None);
+    let cracked = ice.lookup.filename(4112).unwrap();
+    let (bytes, source) = assets.get_with_source_ref(cracked).unwrap();
+    assert_eq!(source, "vera_ice.mix");
+    assert!(TmpFile::from_bytes(bytes).is_ok());
+
+    let stock = load_scenario_theater(&mut assets, "SNOW", &IniFile::empty(), false)
+        .unwrap()
+        .unwrap();
+    assert_eq!(stock.ice_sets, None);
+    assert_eq!(stock.lookup.filename(4096), None);
+    assert_eq!(ice.lookup.filename(963), stock.lookup.filename(963));
+}
+
+#[test]
+fn selected_retail_temperate_rmg_roles_reach_tile_ids() {
+    use crate::map::rmg::tiles::TileIds;
+    use crate::util::sha256::sha256_hex;
+
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let theater = load_theater(&mut assets, "TEMPERATE").expect("load retail temperate theater");
+    let corpus = native_general_corpus();
+    let physical = corpus["physical"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["file"] == "temperatmd.ini")
+        .expect("checked native physical temperate input");
+    assert_eq!(
+        sha256_hex(&theater.ini_data),
+        physical["sha256"].as_str().unwrap()
+    );
+
+    // Reader/default/ordinal correctness is independently compared with native
+    // execution by general_helpers_match_original_reader_and_signed_repair_keys
+    // and general_roles_match_original_ordinal_publication below. This assertion
+    // covers production loading/publication, without another key parser.
+    let ini = IniFile::from_bytes(&theater.ini_data).expect("selected theater INI");
+    let expected = resolve_rmg_tile_keys(
+        &theater.lookup,
+        ini.section("General"),
+        theater.slope_set_pieces,
+    );
+    assert_eq!(
+        theater.rmg_tiles, expected,
+        "loader publishes every RMG role"
+    );
+    let mut loaded_ids = TileIds::resolve(&theater);
+    // Canonical cliff ranges come from the theater, not these RMG keys. The
+    // predicates have separate tests; this is only the RMG projection boundary.
+    loaded_ids.cliffs = TheaterCliffRanges::default();
+    assert_eq!(loaded_ids, TileIds::from_keys(&expected));
+}
+
+#[test]
+fn general_helpers_match_original_reader_and_signed_repair_keys() {
+    use crate::map::bridge_rim_tiles::HighBridgeRimTiles;
+    for ares_way in [false, true] {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares_way);
+        let corpus = native_general_corpus();
+        for case in corpus["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .chain(corpus["physical"].as_array().unwrap())
+        {
+            let name = case["name"]
+                .as_str()
+                .or_else(|| case["file"].as_str())
+                .unwrap();
+            // Ares's `INIClass_Parse_Override` (`0x5260D9`) keeps only the later
+            // of two equal keys; this control records the vanilla reader.
+            if ares_way && matches!(name, "duplicate_key" | "duplicate_key_reversed") {
+                continue;
+            }
+            let text = case["input_text"]
+                .as_str()
+                .or_else(|| case["general_text"].as_str())
+                .unwrap();
+            let ini = IniFile::from_bytes(text.as_bytes()).unwrap();
+            let general = ini.section("General");
+            for read in corpus["read_contract"].as_array().unwrap() {
+                let key = read["key"].as_str().unwrap();
+                let default = i32::try_from(read["default"].as_i64().unwrap()).unwrap();
+                assert_eq!(
+                    i64::from(general.map_or(default, |section| section.read_int(key, default))),
+                    case["values"][key].as_i64().unwrap(),
+                    "{name}: original General/{key} at {}",
+                    read["call"]
+                );
+            }
+            for key in [
+                "BridgeSet",
+                "WoodBridgeSet",
+                "SlopeSetPieces",
+                "SlopeSetPieces2",
+                "Tunnels",
+                "TrackTunnels",
+                "DirtTunnels",
+                "DirtTrackTunnels",
+                "BridgeMiddle1",
+                "BridgeMiddle2",
+            ] {
+                assert_eq!(
+                    read_general_u16(general, key),
+                    u16::try_from(case["values"][key].as_i64().unwrap()).ok(),
+                    "{name}: bounded {key} ordinal"
+                );
+            }
+            let rim = HighBridgeRimTiles::from_ini(0, text.as_bytes());
+            let signed_pieces = [
+                rim.top_left,
+                rim.bottom_right,
+                rim.top_right,
+                rim.bottom_left,
+                rim.middle,
+            ]
+            .concat();
+            // Oversized/negative repair identities must survive the signed read.
+            for (index, key) in [
+                "BridgeTopLeft1",
+                "BridgeTopLeft2",
+                "BridgeBottomRight1",
+                "BridgeBottomRight2",
+                "BridgeTopRight1",
+                "BridgeTopRight2",
+                "BridgeBottomLeft1",
+                "BridgeBottomLeft2",
+                "BridgeMiddle1",
+                "BridgeMiddle2",
+            ]
+            .iter()
+            .enumerate()
+            {
+                let native = case["values"][key].as_i64().unwrap();
+                assert_eq!(
+                    i64::from(signed_pieces[index]),
+                    native,
+                    "{name}: signed {key}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn general_roles_match_original_ordinal_publication() {
+    let corpus = native_general_corpus();
+    for case in corpus["projection_cases"].as_array().unwrap() {
+        let native = &case["ordinal_projection"];
+        let ordinal = native["supplied_ordinal"].as_u64().unwrap() as usize;
+        let Ok(base) = u16::try_from(native["supplied_cumulative_base"].as_i64().unwrap()) else {
+            // The corpus also records native DWORD widths beyond the loader's
+            // checked u16 capacity; those are not representable tile fixtures.
+            continue;
+        };
+        let ini = IniFile::from_bytes(case["input_text"].as_str().unwrap().as_bytes()).unwrap();
+        let general = ini.section("General");
+        let mut lookup = parse_tileset_ini(b"", "tem").unwrap();
+        lookup.tileset_bounds = vec![TilesetBounds { start: 0, count: 0 }; ordinal + 1];
+        lookup.tileset_bounds[ordinal].start = base;
+        let cliffs = resolve_cliff_ranges(
+            &lookup,
+            general,
+            read_general_u16(general, "BridgeSet"),
+            read_general_u16(general, "WoodBridgeSet"),
+        );
+        let rmg = resolve_rmg_tile_keys(
+            &lookup,
+            general,
+            read_general_u16(general, "SlopeSetPieces"),
+        );
+        for (key, actual) in [
+            ("BridgeSet", cliffs.bridge_set),
+            ("WoodBridgeSet", cliffs.wood_bridge_set),
+            ("CliffSet", cliffs.cliff_set),
+            ("CliffRamps", cliffs.cliff_ramps),
+            ("WaterCliffs", cliffs.water_cliffs),
+            ("DestroyableCliffs", cliffs.destroyable_cliffs),
+            ("WaterCaves", cliffs.water_caves),
+            ("WaterfallEast", cliffs.waterfall_east),
+            ("WaterfallWest", cliffs.waterfall_west),
+            ("WaterfallNorth", cliffs.waterfall_north),
+            ("WaterfallSouth", cliffs.waterfall_south),
+            ("ClearTile", rmg.clear_tile),
+            ("RampBase", rmg.ramp_base),
+            ("RampSmooth", rmg.ramp_smooth),
+            ("SlopeSetPieces", rmg.slope_set_pieces),
+            ("RoughTile", rmg.rough_tile),
+            ("SandTile", rmg.sand_tile),
+            ("GreenTile", rmg.green_tile),
+            ("ClearToRoughLat", rmg.clear_to_rough_lat),
+            ("ClearToSandLat", rmg.clear_to_sand_lat),
+            ("ClearToGreenLat", rmg.clear_to_green_lat),
+            ("ClearToPaveLat", rmg.clear_to_pave_lat),
+            ("PaveTile", rmg.pave_tile),
+            ("WaterSet", rmg.water_set),
+            ("ShorePieces", rmg.shore_pieces),
+            ("WaterBridge", rmg.water_bridge),
+            ("MiscPaveTile", rmg.misc_pave_tile),
+            ("PavedRoads", rmg.paved_roads),
+            ("PavedRoadEnds", rmg.paved_road_ends),
+            ("Medians", rmg.medians),
+        ] {
+            let read_ordinal = case["values"][key].as_i64().unwrap();
+            if read_ordinal >= 0 && read_ordinal < ordinal as i64 {
+                // Each native control executes one loop ordinal, not earlier
+                // rows. Those other rows have no supplied cumulative bases.
+                continue;
+            }
+            assert_eq!(
+                actual,
+                u16::try_from(native["values"][key].as_i64().unwrap()).ok(),
+                "{}: {key}",
+                case["name"]
+            );
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+fn active_retail_automatic_shell_corpus_is_exact() {
+    use std::collections::BTreeSet;
+    use std::path::PathBuf;
+
+    use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
+    use crate::assets::tmp_file::TmpFile;
+
+    let retail_dir = std::env::var_os("RA2_DIR")
+        .map(PathBuf::from)
+        .or_else(|| {
+            crate::test_fixture::game_config()
+                .ok()
+                .map(|config| config.paths.ra2_dir)
+        })
+        .expect("set RA2_DIR to the installed retail RA2/YR directory");
+    assert!(retail_dir.is_dir(), "{}", retail_dir.display());
+    let mut assets = AssetManager::new(&retail_dir, MediaArchiveMode::STOCK_DIGITAL)
+        .expect("load retail MIX stack");
+
+    let mut loaded_assets = 0usize;
+    let mut candidate_base_ids = 0usize;
+    let mut present_subcells = 0usize;
+    let mut positives = BTreeSet::new();
+    let mut missing_assets = BTreeSet::new();
+    let mut variant_assets = BTreeSet::new();
+    let corpus = native_general_corpus();
+    for theater_name in ["TEMPERATE", "SNOW", "URBAN", "NEWURBAN", "DESERT", "LUNAR"] {
+        let theater = load_theater(&mut assets, theater_name)
+            .unwrap_or_else(|| panic!("load active retail theater {theater_name}"));
+        let expected = corpus["physical"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["file"].as_str() == Some(stock_theater_ini(theater_name).as_str()))
+            .unwrap();
+        let mut digest = crate::util::sha256::Sha256::new();
+        digest.update(&theater.ini_data);
+        assert_eq!(
+            crate::util::sha256::digest_hex(digest.finalize()),
+            expected["sha256"].as_str().unwrap(),
+            "{theater_name}: executed physical INI"
+        );
+        let expected_bridge_middles = ["BridgeMiddle1", "BridgeMiddle2"]
+            .map(|key| u16::try_from(expected["values"][key].as_i64().unwrap()).ok());
+        assert_eq!(
+            theater.bridge_middles(),
+            expected_bridge_middles,
+            "loaded {theater_name} BridgeMiddle keys"
+        );
+
+        let mut candidate_tiles = BTreeSet::new();
+        for set_index in [
+            theater.tunnels,
+            theater.track_tunnels,
+            theater.dirt_tunnels,
+            theater.dirt_track_tunnels,
+        ] {
+            let Some(bounds) =
+                set_index.and_then(|index| theater.lookup.bounds().get(index as usize))
+            else {
+                continue;
+            };
+            for offset in 0..4u16 {
+                let Some(tile_id) = bounds.start.checked_add(offset) else {
+                    continue;
+                };
+                if usize::from(tile_id) < theater.lookup.len() {
+                    candidate_tiles.insert(tile_id);
+                }
+            }
+        }
+
+        candidate_base_ids += candidate_tiles.len();
+        for tile_id in candidate_tiles {
+            for variant in 0..theater.lookup.total_file_count(tile_id) {
+                let filename = theater
+                    .lookup
+                    .filename_for_variant(tile_id, variant)
+                    .expect("enumerated TMP variant has a filename");
+                if variant != 0 {
+                    variant_assets.insert(format!("{theater_name}/{filename}"));
+                }
+                let Some(bytes) = assets.get(filename) else {
+                    missing_assets.insert(format!("{theater_name}/{filename}"));
+                    continue;
+                };
+                let tmp = TmpFile::from_bytes(&bytes)
+                    .unwrap_or_else(|error| panic!("parse {theater_name}/{filename}: {error}"));
+                loaded_assets += 1;
+                for (subtile, tile) in tmp.tiles.iter().enumerate() {
+                    let Some(tile) = tile else {
+                        continue;
+                    };
+                    present_subcells += 1;
+                    if tile.terrain_type == 5 {
+                        positives.insert(format!("{theater_name}/{filename}/{subtile}"));
+                    }
+                }
+            }
+        }
+    }
+
+    let mut expected = BTreeSet::new();
+    for (theater, filename, subtiles) in [
+        ("URBAN", "tunnel01.urb", &[3, 6, 9][..]),
+        ("URBAN", "tunnel02.urb", &[1, 2, 3][..]),
+        ("URBAN", "tunnel03.urb", &[3, 6, 9][..]),
+        ("URBAN", "tunnel04.urb", &[1, 2, 3][..]),
+        ("URBAN", "dtunn01.urb", &[3, 6, 9][..]),
+        ("URBAN", "dtunn02.urb", &[1, 2, 3][..]),
+        ("URBAN", "dtunn03.urb", &[3, 6, 9][..]),
+        ("URBAN", "dtunn04.urb", &[1, 2, 3][..]),
+        ("NEWURBAN", "tunnel01.ubn", &[3, 6, 9][..]),
+        ("NEWURBAN", "tunnel02.ubn", &[1, 2, 3][..]),
+        ("NEWURBAN", "tunnel03.ubn", &[3, 6, 9][..]),
+        ("NEWURBAN", "tunnel04.ubn", &[1, 2, 3][..]),
+    ] {
+        for subtile in subtiles {
+            expected.insert(format!("{theater}/{filename}/{subtile}"));
+        }
+    }
+
+    let expected_missing = [
+        "NEWURBAN/MDrodc01.ubn",
+        "NEWURBAN/MDrodc02.ubn",
+        "SNOW/MDrodc01.sno",
+        "SNOW/MDrodc02.sno",
+        "SNOW/MDrodc03.sno",
+        "SNOW/MDrodc04.sno",
+        "URBAN/MDrodc01.urb",
+        "URBAN/MDrodc02.urb",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+    assert_eq!(missing_assets, expected_missing);
+
+    let expected_variants = [
+        "LUNAR/Green01a.lun",
+        "LUNAR/Green01b.lun",
+        "LUNAR/Green01c.lun",
+        "LUNAR/Green01d.lun",
+        "LUNAR/Green01e.lun",
+        "LUNAR/Green01f.lun",
+        "LUNAR/Green01g.lun",
+        "LUNAR/glat01a.lun",
+        "LUNAR/glat02a.lun",
+        "LUNAR/glat03a.lun",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect();
+    assert_eq!(variant_assets, expected_variants);
+    assert_eq!(
+        (
+            candidate_base_ids,
+            loaded_assets,
+            present_subcells,
+            positives.len()
+        ),
+        (64, 66, 731, 36),
+        "positive set: {positives:#?}"
+    );
+    assert_eq!(positives, expected);
+}
+
+#[test]
+fn gsi_04_03a_rmg_tile_keys_parse_ramp_smooth_and_resolve_ordinals() {
+    let ini_bytes =
+        b"[General]\nClearTile = 0\nRampBase = 1\nRampSmooth = 2\nSlopeSetPieces = 0\nGreenTile = 2\nWaterSet = 1\n\n\
+                [TileSet0000]\nTilesInSet=2\nFileName=clear\nSetName=Clear\n\n\
+                [TileSet0001]\nTilesInSet=3\nFileName=water\nSetName=Water\n\n\
+                [TileSet0002]\nTilesInSet=4\nFileName=green\nSetName=Green\n";
+    let lookup = super::parse_tileset_ini(ini_bytes, "tem").unwrap();
+    let ini = IniFile::from_bytes(ini_bytes).unwrap();
+    let keys = super::resolve_rmg_tile_keys(
+        &lookup,
+        ini.section("General"),
+        super::read_general_u16(ini.section("General"), "SlopeSetPieces"),
+    );
+
+    assert_eq!(keys.clear_tile, Some(0));
+    assert_eq!(keys.ramp_base, Some(2));
+    assert_eq!(keys.ramp_smooth, Some(5));
+    assert_eq!(keys.slope_set_pieces, Some(0), "base zero remains valid");
+    assert_eq!(keys.water_set, Some(2), "set 1 starts at cumulative tile 2");
+    assert_eq!(
+        keys.green_tile,
+        Some(5),
+        "set 2 starts at cumulative tile 5"
+    );
+    assert_eq!(keys.sand_tile, None, "absent key must stay None, not 0");
+    assert_eq!(keys.shore_pieces, None);
+}
+
+/// Ares MediansFix (Ares.dll 1006A920, hook 0x545904): a theater without
+/// `Medians=` (retail SNOWMD.INI) reads ordinal 71; an authored key is kept.
+/// In every build: VERA's opted-in urban pass stamps these tiles without Ares.
+#[test]
+fn missing_medians_key_reads_ordinal_71() {
+    let mut lookup = parse_tileset_ini(b"", "sno").unwrap();
+    lookup.tileset_bounds = vec![TilesetBounds { start: 0, count: 0 }; 72];
+    lookup.tileset_bounds[40].start = 400;
+    lookup.tileset_bounds[71].start = 710;
+    let medians = |text: &str| {
+        let ini = IniFile::from_str(text);
+        super::resolve_rmg_tile_keys(&lookup, ini.section("General"), None).medians
+    };
+    assert_eq!(medians("[General]\nPavedRoads=20\n"), Some(710));
+    assert_eq!(medians(""), Some(710), "no [General] section reads -1 too");
+    assert_eq!(medians("[General]\nMedians=40\n"), Some(400));
+}
+
+#[test]
+fn gsi_04_03a_special_terrain_ranges_match_half_open_boundaries() {
+    let ranges = TheaterCliffRanges {
+        cliff_set: Some(100),
+        cliff_ramps: Some(200),
+        water_cliffs: Some(300),
+        destroyable_cliffs: Some(400),
+        water_caves: Some(500),
+        ..TheaterCliffRanges::default()
+    };
+
+    assert!(ranges.is_special_terrain_tile(100, 0));
+    assert!(ranges.is_special_terrain_tile(139, 0));
+    assert!(!ranges.is_special_terrain_tile(140, 0));
+    assert!(ranges.is_special_terrain_tile(219, 0));
+    assert!(!ranges.is_special_terrain_tile(220, 0));
+    assert!(ranges.is_special_terrain_tile(327, 0));
+    assert!(!ranges.is_special_terrain_tile(328, 0));
+    assert!(ranges.is_special_terrain_tile(401, 0));
+    assert!(!ranges.is_special_terrain_tile(402, 0));
+    assert!(ranges.is_special_terrain_tile(503, 0));
+    assert!(!ranges.is_special_terrain_tile(504, 0));
+}
+
+#[test]
+fn gsi_04_03a_waterfall_endpoints_use_iso_subtile_not_slope() {
+    let ranges = TheaterCliffRanges {
+        waterfall_east: Some(10),
+        waterfall_west: Some(20),
+        waterfall_south: Some(30),
+        waterfall_north: Some(40),
+        ..TheaterCliffRanges::default()
+    };
+
+    assert!(!ranges.is_special_terrain_tile(10, 0));
+    assert!(!ranges.is_special_terrain_tile(10, 4));
+    assert!(ranges.is_special_terrain_tile(10, 1));
+    assert!(ranges.is_special_terrain_tile(11, 0));
+    assert!(ranges.is_special_terrain_tile(12, 4));
+    assert!(!ranges.is_special_terrain_tile(23, 3));
+    assert!(ranges.is_special_terrain_tile(23, 2));
+    assert!(!ranges.is_special_terrain_tile(30, 1));
+    assert!(ranges.is_special_terrain_tile(30, 2));
+    assert!(!ranges.is_special_terrain_tile(43, 2));
+    assert!(ranges.is_special_terrain_tile(43, 1));
+}
+
+#[test]
+fn gsi_04_03a_bridge_ramp_predicate_remains_narrower_than_special_terrain() {
+    let ranges = TheaterCliffRanges {
+        cliff_set: Some(100),
+        cliff_ramps: Some(200),
+        water_cliffs: Some(300),
+        destroyable_cliffs: Some(400),
+        water_caves: Some(500),
+        waterfall_east: Some(600),
+        bridge_set: Some(700),
+        wood_bridge_set: Some(800),
+        ..TheaterCliffRanges::default()
+    };
+
+    assert!(ranges.is_special_terrain_tile(700, 0));
+    assert!(ranges.is_special_terrain_tile(715, 0));
+    assert!(!ranges.is_special_terrain_tile(716, 0));
+    assert!(ranges.is_special_terrain_tile(800, 0));
+    assert!(ranges.is_special_terrain_tile(815, 0));
+    assert!(!ranges.is_special_terrain_tile(816, 0));
+    assert!(ranges.is_on_bridge_ramp_tile(100, 0));
+    assert!(ranges.is_on_bridge_ramp_tile(200, 0));
+    assert!(ranges.is_on_bridge_ramp_tile(601, 0));
+    assert!(!ranges.is_on_bridge_ramp_tile(600, 0));
+    assert!(!ranges.is_on_bridge_ramp_tile(300, 0));
+    assert!(!ranges.is_on_bridge_ramp_tile(400, 0));
+    assert!(!ranges.is_on_bridge_ramp_tile(500, 0));
+    assert!(!ranges.is_on_bridge_ramp_tile(700, 0));
+    assert!(!ranges.is_on_bridge_ramp_tile(800, 0));
+}
+
+#[test]
+fn gsi_04_03a_lunar_postpass_preserves_other_declared_ranges() {
+    let mut ini = String::from(
+        "[General]\n\
+         CliffSet=10\n\
+         WaterCliffs=15\n\
+         CliffRamps=25\n\
+         BridgeSet=19\n\
+         WoodBridgeSet=80\n\
+         WaterfallEast=49\n\n",
+    );
+    for idx in 0..=80 {
+        let tiles = if idx == 0 { 1 } else { 0 };
+        ini.push_str(&format!(
+            "[TileSet{idx:04}]\nTilesInSet={tiles}\nFileName=set{idx}\nSetName=Set{idx}\n\n"
+        ));
+    }
+    let lookup = super::parse_tileset_ini(ini.as_bytes(), "lun").unwrap();
+    let parsed = IniFile::from_bytes(ini.as_bytes()).unwrap();
+    let general = parsed.section("General");
+    let mut bridge_set = super::read_general_u16(general, "BridgeSet");
+    let mut wood_bridge_set = super::read_general_u16(general, "WoodBridgeSet");
+    let mut ranges = super::resolve_cliff_ranges(&lookup, general, bridge_set, wood_bridge_set);
+    let before = ranges;
+    let mut rmg_tiles = RmgTileKeys {
+        water_set: Some(17),
+        shore_pieces: Some(18),
+        water_bridge: Some(19),
+        slope_set_pieces: Some(20),
+        ..RmgTileKeys::default()
+    };
+
+    super::apply_lunar_global_zeroing(
+        "LUNAR",
+        &mut bridge_set,
+        &mut wood_bridge_set,
+        &mut ranges,
+        &mut rmg_tiles,
+    );
+
+    assert_eq!(bridge_set, None);
+    assert_eq!(wood_bridge_set, None);
+    assert_eq!(
+        ranges,
+        TheaterCliffRanges {
+            cliff_set: None,
+            water_cliffs: None,
+            bridge_set: None,
+            wood_bridge_set: None,
+            ..before
+        }
+    );
+    assert_eq!(ranges.cliff_ramps, Some(1));
+    assert_eq!(ranges.waterfall_east, Some(1));
+    assert_eq!(rmg_tiles.water_set, None);
+    assert_eq!(rmg_tiles.shore_pieces, None);
+    assert_eq!(rmg_tiles.water_bridge, None);
+    assert_eq!(rmg_tiles.slope_set_pieces, Some(20));
+}
+
+/// Helper: build a minimal TheaterData for variant-table tests. BridgeSet
+/// at tileset index 0 with 20 tiles starting at tile_id 0. Palettes are
+/// all-zero (tests never read pixels).
+fn synthetic_theater_with_bridge_keys(
+    bridge_middle_1: Option<u16>,
+    bridge_middle_2: Option<u16>,
+) -> super::TheaterData {
+    let ini = b"[TileSet0000]\nTilesInSet=20\nFileName=bridge\nSetName=Bridge\n";
+    let lookup = super::parse_tileset_ini(ini, "tem").unwrap();
+    let empty_palette = crate::assets::pal_file::Palette::from_bytes(&[0u8; 768])
+        .expect("768-byte zero palette parses");
+    super::TheaterData {
+        lookup,
+        iso_palette: empty_palette.clone(),
+        unit_palette: empty_palette.clone(),
+        tiberium_palette: empty_palette,
+        extension: "tem",
+        ini_data: Vec::new(),
+        bridge_set: Some(0),
+        wood_bridge_set: None,
+        slope_set_pieces: None,
+        high_bridge_rim_tiles: crate::map::bridge_rim_tiles::HighBridgeRimTiles {
+            middle: [bridge_middle_1, bridge_middle_2].map(|key| key.map_or(-1, i32::from)),
+            ..crate::map::bridge_rim_tiles::HighBridgeRimTiles::ABSENT
+        },
+        tunnels: None,
+        track_tunnels: None,
+        dirt_tunnels: None,
+        dirt_track_tunnels: None,
+        automatic_tube_bases: [-1; 4],
+        cliff_ranges: TheaterCliffRanges::default(),
+        rmg_tiles: super::RmgTileKeys::default(),
+        ice_sets: None,
+        terrain_files: crate::map::theater::TerrainFiles::GameFolder,
+    }
+}
+
+#[test]
+fn bridge_middle_tiles_cover_every_variant_a_publication_writes() {
+    use super::BridgeMiddleTiles;
+    let td = synthetic_theater_with_bridge_keys(Some(7), Some(12));
+    let tiles = BridgeMiddleTiles::from_theater(&td).expect("tiles");
+    // BridgeSet starts at tile_id 0. NS: BS + M1 - 1 + {0..=4} = 6..=10;
+    // EW: 11..=15. Variant 4 is the collapsed middle.
+    assert_eq!(tiles.tile_ids, (6..=15).collect::<Vec<u16>>());
+}
+
+#[test]
+fn bridge_middle_tiles_need_both_keys() {
+    use super::BridgeMiddleTiles;
+    let td = synthetic_theater_with_bridge_keys(None, Some(12));
+    assert!(BridgeMiddleTiles::from_theater(&td).is_none());
+    let td = synthetic_theater_with_bridge_keys(Some(7), None);
+    assert!(BridgeMiddleTiles::from_theater(&td).is_none());
+}
+
+#[test]
+fn bridge_middle_tiles_skip_zero_keys_and_tiles_past_the_lookup() {
+    use super::BridgeMiddleTiles;
+    let td = synthetic_theater_with_bridge_keys(Some(0), Some(12));
+    assert_eq!(
+        BridgeMiddleTiles::from_theater(&td).unwrap().tile_ids,
+        [11, 12, 13, 14, 15]
+    );
+    // TilesInSet=20: BridgeMiddle1=18 reaches 17..=21, of which 17..=19 exist.
+    let td = synthetic_theater_with_bridge_keys(Some(18), Some(12));
+    assert_eq!(
+        BridgeMiddleTiles::from_theater(&td).unwrap().tile_ids,
+        [17, 18, 19, 11, 12, 13, 14, 15]
+    );
+}
+
+/// Retail shape: the animation keys sit in the section named by `SetName`, not
+/// in `[TileSetNNNN]`. Values copied from `ini/temperatmd.ini` — `[TileSet0053]
+/// SetName=Tunnel Floor` / `[Tunnel Floor]`, and `[Waterfalls-C]`.
+fn make_tile_anim_ini() -> String {
+    "[TileSet0000]\nSetName=Grass\nFileName=clear\nTilesInSet=1\n\n\
+     [TileSet0001]\nSetName=Tunnel Floor\nFileName=tunnel\nTilesInSet=4\n\n\
+     [TileSet0002]\nSetName=Waterfalls-C\nFileName=wfc\nTilesInSet=4\n\n\
+     [Tunnel Floor]\n\
+     Tile01Anim=TUNTOP01\nTile01XOffset=-48\nTile01YOffset=-37\n\
+     Tile01AttachesTo=2\nTile01ZAdjust=-10\n\
+     Tile02Anim=TUNTOP02\nTile02XOffset=48\nTile02YOffset=-37\n\
+     Tile02AttachesTo=10\nTile02ZAdjust=-10\n\n\
+     [Waterfalls-C]\n\
+     Tile04Anim=WC04X\nTile04XOffset=-23\nTile04YOffset=-5\n\
+     Tile04AttachesTo=1\nTile04ZAdjust=0\n"
+        .to_string()
+}
+
+#[test]
+fn gsi_13_04_tile_anims_come_from_the_setname_section() {
+    let lookup = parse_tileset_ini(make_tile_anim_ini().as_bytes(), "tem").unwrap();
+
+    // Tileset 1 starts at tile_id 1 (tileset 0 holds one tile).
+    let first = lookup.tile_anim(1).expect("Tile01 block");
+    assert_eq!(first.anim_name, "TUNTOP01");
+    assert_eq!(first.x_offset, -48);
+    assert_eq!(first.y_offset, -37);
+    assert_eq!(first.attaches_to, 2);
+    assert_eq!(first.z_adjust, -10);
+
+    let second = lookup.tile_anim(2).expect("Tile02 block");
+    assert_eq!(second.anim_name, "TUNTOP02");
+    assert_eq!(second.attaches_to, 10);
+
+    // Tiles 03/04 of that set declare nothing.
+    assert_eq!(lookup.tile_anim(3), None);
+    assert_eq!(lookup.tile_anim(4), None);
+
+    // Tileset 2 starts at tile_id 5; only its 4th tile carries a block, and the
+    // ordinal in the key is 1-based *within the tileset*.
+    assert_eq!(lookup.tile_anim(5), None);
+    let waterfall = lookup.tile_anim(8).expect("Tile04 block");
+    assert_eq!(waterfall.anim_name, "WC04X");
+    assert_eq!(waterfall.x_offset, -23);
+    assert_eq!(waterfall.y_offset, -5);
+    assert_eq!(waterfall.attaches_to, 1);
+
+    // A tileset whose SetName names no section has no animations at all.
+    assert_eq!(lookup.tile_anim(0), None);
+
+    // `none` and `<none>` get no type from FindOrAllocate (`0x00546538`), so
+    // the block is skipped (issue 4493).
+    let none = parse_tileset_ini(
+        b"[TileSet0000]\nSetName=Falls\nFileName=wf\nTilesInSet=2\n\
+          [Falls]\nTile01Anim=none\nTile02Anim=<None>\n",
+        "tem",
+    )
+    .unwrap();
+    assert_eq!((none.tile_anim(0), none.tile_anim(1)), (None, None));
+}
+
+#[test]
+fn gsi_13_04_tile_anim_keys_are_ignored_without_a_name() {
+    // The loader gates the whole block on `Tile%02dAnim` reading back a
+    // non-empty string, so offsets alone never produce an attachment.
+    let ini = "[TileSet0000]\nSetName=Ghost\nFileName=g\nTilesInSet=2\n\n\
+               [Ghost]\n\
+               Tile01XOffset=17\nTile01AttachesTo=0\n\
+               Tile02Anim=\nTile02AttachesTo=0\n";
+    let lookup = parse_tileset_ini(ini.as_bytes(), "tem").unwrap();
+    assert_eq!(lookup.tile_anim(0), None);
+    assert_eq!(lookup.tile_anim(1), None);
+}
+
+#[test]
+fn gsi_13_04_tile_anim_numeric_keys_fall_back_to_constructor_defaults() {
+    // Absent numeric keys keep the tile type's constructed values: offsets and
+    // ZAdjust at 0, AttachesTo at the -1 sentinel that matches no sub-tile.
+    let ini = "[TileSet0000]\nSetName=Bare\nFileName=b\nTilesInSet=1\n\n\
+               [Bare]\nTile01Anim=WA01X\n";
+    let lookup = parse_tileset_ini(ini.as_bytes(), "tem").unwrap();
+    let anim = lookup.tile_anim(0).expect("anim block");
+    assert_eq!(anim.anim_name, "WA01X");
+    assert_eq!(anim.x_offset, 0);
+    assert_eq!(anim.y_offset, 0);
+    assert_eq!(anim.z_adjust, 0);
+    assert_eq!(anim.attaches_to, TILE_ANIM_NO_SUBTILE);
+}
+
+/// Sprite atlas growth draws through the palettes `load_theater` publishes:
+/// the exact active-YR names, every entry opaque. Retail UNITTEM.PAL holds raw
+/// 63,0,63 at indices 204..=239 and ISOTEM.PAL at 10; neither is a chroma key.
+#[test]
+fn atlas_growth_reads_the_published_theater_palettes() {
+    use crate::map::source::test_support::TestDirectory;
+    let mut magenta = vec![0u8; 768];
+    for index in [10, 204] {
+        magenta[index * 3..index * 3 + 3].copy_from_slice(&[63, 0, 63]);
+    }
+    let exact = TestDirectory::new("theater-atlas-palettes");
+    exact.write("unittem.pal", &magenta);
+    exact.write("isotem.pal", &magenta);
+    let assets = AssetManager::from_loose_root_for_test(exact.path());
+    let (unit, iso) = load_theater_unit_and_iso_palettes(&assets, "TEMPERATE").unwrap();
+    assert_eq!(unit.color(204), Color::rgb(252, 0, 252));
+    assert_eq!(iso.color(10), Color::rgb(252, 0, 252));
+    assert_eq!(unit.color(0), Color::rgb(0, 0, 0));
+
+    // No looser search: the generic unit palette is not the theater's.
+    let generic = TestDirectory::new("theater-atlas-palettes-generic");
+    generic.write("unit.pal", &magenta);
+    generic.write("isotem.pal", &magenta);
+    let assets = AssetManager::from_loose_root_for_test(generic.path());
+    assert!(load_theater_unit_and_iso_palettes(&assets, "TEMPERATE").is_none());
+}
+
+/// `Read_Theater_TileSets_INI` (`0x00545150`) formats the theater INI with
+/// `"%sMD.INI"` (`0x005454FE`); a profile with another suffix reads its own
+/// file first and, when that is absent, the stock one.
+#[test]
+fn load_theater_prefers_the_profile_theater_ini_then_the_stock_name() {
+    use crate::map::source::test_support::TestDirectory;
+    use crate::util::ini_roots::IniRootConfig;
+    let roots = IniRootConfig {
+        theater_suffix: Some("alt".into()),
+        ..Default::default()
+    }
+    .resolve(|_| true)
+    .unwrap();
+    let dir = TestDirectory::new("theater-profile-ini");
+    dir.write("isotem.pal", &[0; 768]);
+    dir.write("unittem.pal", &[0; 768]);
+    let stock_ini = b"[TileSet0000]\nFileName=clear\nTilesInSet=1\n";
+    dir.write("temperatmd.ini", stock_ini);
+    let mut assets =
+        AssetManager::from_loose_root_for_test(dir.path()).with_selected_ini_roots(roots.clone());
+    let theater = load_theater(&mut assets, "TEMPERATE").expect("stock fallback");
+    assert_eq!(theater.ini_data, stock_ini);
+
+    let profile_ini = b"[TileSet0000]\nFileName=clear\nTilesInSet=2\n";
+    dir.write("temperatalt.ini", profile_ini);
+    let mut assets =
+        AssetManager::from_loose_root_for_test(dir.path()).with_selected_ini_roots(roots);
+    let theater = load_theater(&mut assets, "TEMPERATE").expect("profile theater INI");
+    assert_eq!(theater.ini_data, profile_ini);
+}
+
+/// VERA: a load of the original terrain reads the theater INI and tiles a
+/// retail install reads, past a tile pack in `expandmd06.mix` and loose
+/// files: the pack's table, its bytes for a retail tile, its tile in a slot
+/// retail leaves empty and a loose variant are all passed over, and every
+/// later read of those names follows until the next load. A loose theater
+/// MIX that does not open still leaves the shipped copy it hides.
+#[test]
+fn original_terrain_reads_past_the_game_folders_terrain_files() {
+    use crate::assets::asset_manager::MediaArchiveMode;
+    let dir = terrain_test_install("original-terrain");
+    let open = || AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+    let mut assets = open();
+
+    let original = load_theater_with(&mut assets, "SNOW", TerrainFiles::Original).unwrap();
+    assert!(assets.names_pinned());
+    assert!(!original.lookup.is_morphable(0));
+    assert_eq!(original.lookup.variant_filenames(0), ["clear01a.sno"]);
+    assert_eq!(assets.get_ref("clear01.sno"), Some(&b"tile"[..]));
+    assert_eq!(assets.get_ref("clear02.sno"), None, "the pack's tile");
+    assert_eq!(assets.get_ref("clear01b.sno"), None, "the loose variant");
+
+    let folder = load_theater(&mut assets, "SNOW").unwrap();
+    assert!(!assets.names_pinned());
+    assert!(folder.lookup.is_morphable(0));
+    assert_eq!(
+        folder.lookup.variant_filenames(0),
+        ["clear01a.sno", "clear01b.sno"]
+    );
+    assert_eq!(assets.get_ref("clear01.sno"), Some(&b"changed"[..]));
+    assert_eq!(assets.get_ref("clear02.sno"), Some(&b"added"[..]));
+
+    std::fs::write(dir.path().join("isosnomd.mix"), b"not a MIX").unwrap();
+    let mut assets = open();
+    load_theater_with(&mut assets, "SNOW", TerrainFiles::Original).unwrap();
+    assert_eq!(assets.get_ref("clear01.sno"), Some(&b"tile"[..]));
+}
+
+/// VERA: on a retail install the original terrain is the terrain every other
+/// load reads: one INI, one table, the same variants and bytes. A network
+/// match then loads what a skirmish does.
+#[test]
+fn a_retail_installs_original_terrain_is_what_it_reads_anyway() {
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let read = |assets: &AssetManager, lookup: &TilesetLookup| -> Vec<Option<(usize, u64)>> {
+        let names = lookup.entries.iter().flatten();
+        names
+            .chain(lookup.variant_filenames.iter().flatten())
+            .map(|name| {
+                let bytes = assets.get_ref(name)?;
+                let sum = bytes.iter().fold(0u64, |sum, &byte| {
+                    sum.wrapping_mul(31).wrapping_add(u64::from(byte))
+                });
+                Some((bytes.len(), sum))
+            })
+            .collect()
+    };
+    let folder = load_theater(&mut assets, "TEMPERATE").expect("retail Temperate");
+    let folder_tiles = read(&assets, &folder.lookup);
+    let original = load_theater_with(&mut assets, "TEMPERATE", TerrainFiles::Original)
+        .expect("the original Temperate");
+    assert!(assets.names_pinned());
+    assert_eq!(original.ini_data, folder.ini_data);
+    assert_eq!(original.lookup.entries, folder.lookup.entries);
+    assert_eq!(
+        original.lookup.variant_filenames,
+        folder.lookup.variant_filenames
+    );
+    assert!(folder_tiles.iter().flatten().count() > 500);
+    assert_eq!(read(&assets, &original.lookup), folder_tiles);
+}
+
+/// A map cell names its subtile in one byte, so a template's cells past the
+/// 256th are not pre-loaded, and never under a wrapped subtile.
+#[test]
+fn template_cells_past_the_256th_are_not_preloaded() {
+    use crate::map::source::test_support::TestDirectory;
+    // A 17x16 template of 8x4 tiles whose only image is cell 256.
+    const CELLS: usize = 17 * 16;
+    let cell_offset = 16 + 4 * CELLS;
+    let mut tmp = vec![0u8; cell_offset + 52 + 16];
+    let header = [
+        (0, 17),
+        (4, 16),
+        (8, 8),
+        (12, 4),
+        (16 + 4 * 256, cell_offset as u32),
+    ];
+    for (offset, value) in header {
+        tmp[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    let dir = TestDirectory::new("theater-wide-template");
+    dir.write("big01.tem", &tmp);
+    let assets = AssetManager::from_loose_root_for_test(dir.path());
+    let lookup = parse_tileset_ini(b"[TileSet0000]\nFileName=big\nTilesInSet=1\n", "tem").unwrap();
+    let mut needed = HashSet::new();
+    inject_template_tiles(&mut needed, 0, &lookup, &assets).unwrap();
+    assert!(needed.is_empty(), "cell 256 is not subtile 0: {needed:?}");
+}

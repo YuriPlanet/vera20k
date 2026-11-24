@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Mechanical Rust projection of both original occupied Shrapnel hut calls.",
+  "assumptions": [
+    "The unchanged shared joined-occupants projector retains native receiver packets, timer stores, ordered callbacks, constructor requests/state, relative identity order, memberships and complete three-stream RNG states.",
+    "The only additions are observed hut-entry/walker/driver calls, before-span cells and Display dirty bytes. No native result is recalculated. All scene, physical ART and outer-lifecycle coverage limits remain in hut_joined.meta.json."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "hut": "0x00574C20",
+    "walker": "0x00575540",
+    "driver": "0x0057BAA0",
+    "occupants": "0x00487A10",
+    "constructor": "0x00421EA0"
+  },
+  "source_files": {
+    "hut_joined.json.gz": "c566fb02a57652f11c26d71e4ed1b1bc8a093b81250efcfcd7f4e21a2eb8e517",
+    "hut_joined_promotion.json": "d5664bfa4608ad8072c3d47f3184727033a242120edc42a94a64fb4548f876e6"
+  },
+  "payload_sha256": "345561dd22970f3700ec4ae92b0be4c6f7895a08aa55a745c85350cd7d402138"
+}

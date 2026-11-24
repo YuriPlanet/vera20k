@@ -1,0 +1,200 @@
+{
+  "archive_inputs": {
+    "RA2_DIR": {
+      "expandmd01.mix": {
+        "bytes": 4813968,
+        "sha256": "0c0a64e741bdecdc3843a0beb6bb1f58aa2df5b86eb3bc4a953821ec98f3d6ec"
+      },
+      "langmd.mix": {
+        "bytes": 84883510,
+        "sha256": "ea608dca312cd59373f121d164b3bf4cec0472f460f6bf1d1238500959637c88"
+      },
+      "language.mix": {
+        "bytes": 53116040,
+        "sha256": "30345ccc41ab98d225cb87c8ea8629eb8cb1467ce0d7f15de87fb307424801e6"
+      },
+      "ra2.mix": {
+        "bytes": 281888480,
+        "sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914"
+      },
+      "ra2md.mix": {
+        "bytes": 204527696,
+        "sha256": "69d886defad9114dd440a013b364c8c004e369b5221d1889957b49d00058559d"
+      }
+    }
+  },
+  "external_inputs": {
+    "VERA20K_ANYTOWN_INPUTS": {
+      "120mm.shp": {
+        "bytes": 48,
+        "sha256": "4c98740538c483eb9ff631d852b2a963eb08928763f1d8383e8098e3a5d6ab3b"
+      },
+      "H2O_EXP1.SHP": {
+        "bytes": 49344,
+        "sha256": "225fd22e2ae2b7f2b185d9e625bcb42dbfb469a668860beca1238485e17195dc"
+      },
+      "H2O_EXP2.SHP": {
+        "bytes": 28424,
+        "sha256": "05bf3a1f03993c6d1b39e0fbdee04dd9496946ece7c1021de4b3f6442294fb2d"
+      },
+      "H2O_EXP3.SHP": {
+        "bytes": 17600,
+        "sha256": "15d204a79c94212e8ffd439d862e3539049f1a6498dec1fba053faca69731585"
+      },
+      "Proad02.tem": {
+        "bytes": 5584,
+        "sha256": "3a0b2d8e83e9bcf4fbe2c9e144cee3cf0e6e670ce6202ceca5b3fad9f9be734b"
+      },
+      "S_CLSN16.SHP": {
+        "bytes": 6088,
+        "sha256": "771b2c8f180dc29d6296cd96084425bdb4323c708aa133fe1e339eb0b2d2d3da"
+      },
+      "S_CLSN22.SHP": {
+        "bytes": 9536,
+        "sha256": "4217fa39c3c970fa718c8e16d500a6bf39ecdb72c1dd7df21a1a6271abb0a294"
+      },
+      "Shore01.tem": {
+        "bytes": 7440,
+        "sha256": "d42e7913ed38b2ffd4f42de1d2c7865b16a22cfe77d6aa7664e5c494a2d9ccf2"
+      },
+      "Shore02.tem": {
+        "bytes": 7440,
+        "sha256": "42f6d7a15d70c0b47b91b87e907846829f403df7d69ffc8bddf3bbe198d972ff"
+      },
+      "Shore17.tem": {
+        "bytes": 7440,
+        "sha256": "7c2794562a923dc510f4a6270a51fd6c89fe1b8d8afb484600fac2e00ce1ed7a"
+      },
+      "Shore18.tem": {
+        "bytes": 7440,
+        "sha256": "c4c0c11d72d65bdff49f3a10302dabfba9afe6f363c0854be08325b61c7a757d"
+      },
+      "Water09.tem": {
+        "bytes": 1872,
+        "sha256": "783f941b2545e4cbafba70ba579bd8e8175879f47c6f709e5655726abb5af6a8"
+      },
+      "Water10.tem": {
+        "bytes": 1872,
+        "sha256": "6960703d3aafa650827e6d1b5d12f15ce15139a8db4c2d52e75c5130af40728d"
+      },
+      "Water11.tem": {
+        "bytes": 1872,
+        "sha256": "cd2216276e5e22d01a1d23fc5d9049a02983f9d45791a3ac25ce50dcc7d21bc1"
+      },
+      "Water12.tem": {
+        "bytes": 1872,
+        "sha256": "6564dfedea436444a37824b183eb2f12692c32aff8d7e8ed966ebdb952875ee5"
+      },
+      "Water13.tem": {
+        "bytes": 1872,
+        "sha256": "e42ce948f6634915aa4367dc724798e6b6965efe1483cce6df28236581835ef4"
+      },
+      "XMP03T4.MAP": {
+        "bytes": 156269,
+        "sha256": "7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e"
+      },
+      "gunfire.shp": {
+        "bytes": 792,
+        "sha256": "863ad6a6a184f8ca1863ea1546af75972f0af973c36efa7e270575ae28a161e9"
+      }
+    },
+    "VERA20K_SHRAPNEL_INPUTS": {
+      "ARTMD.INI": {
+        "bytes": 336535,
+        "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31"
+      },
+      "LANGRULE.INI": {
+        "absent": true
+      },
+      "MPBattleMD.ini": {
+        "bytes": 295,
+        "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963"
+      },
+      "RULESMD.INI": {
+        "bytes": 743215,
+        "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+      },
+      "SOUNDMD.INI": {
+        "bytes": 99392,
+        "sha256": "0a8e85381aef1a0f97074c953bfe99504da00c6220fae1a023a1afd857023232"
+      },
+      "TEMPERATMD.INI": {
+        "bytes": 25269,
+        "sha256": "bf656852ad19636068f2dde6f9ddd1440ecf0e13e6e4de6cd7fb179a3592549d"
+      },
+      "XShrapnel.MAP": {
+        "bytes": 148622,
+        "sha256": "c32e412e938e1b9a0b29f89ff9bc0e6f410f75bc76701fb4acef6581fd19b438"
+      }
+    }
+  },
+  "owned": {
+    "anytown_admission.json.gz": "f54a757f89ec6542e9de8fe96cbc80ade5fdb883436fedab06bcf404c11a9851",
+    "anytown_admission.meta.json": "84487ac21987d3f34ddb52b16cdec501784ca9267bfed774177e8726b35658fb",
+    "anytown_geometry.json.gz": "5f517ae7b60a0d6928577e1ff4b4c548fe3a68c1d7139570fd1de62a12184a4f",
+    "anytown_geometry.meta.json": "05f81f34c5751a6535bb4447973eb7f9fb57aa36deaf031ed2d51b07de126787",
+    "anytown_occupants.json.gz": "696b24143884bed7770758c8d37b80ad61f53f0041a4e295a8ef09a8494ab05f",
+    "anytown_occupants.meta.json": "385c22fdbbfc6cdd7cbf7ff310670562c04624b5d2cbfc753ed6911ec5c1d034",
+    "anytown_resident.json.gz": "a7ec3411940bded3acb5e24874b73565d64ccdb8c7e1a852cc78a6f747783e37",
+    "anytown_resident.meta.json": "bd53eadc3726388ea87b61f86a567d257f2ac1927f080908e81ac0e47ff367f1",
+    "hut.json.gz": "17a323bb9b789eb5ba13538022b66cc8ab4913aadb7e52eaeeb4c38d6aa4728d",
+    "hut.meta.json": "6cc56a9943bdfa89f15056649226f820f1cf3b74bcac556c0e261c4ac26705a8",
+    "hut_callsite_bytes.json": "b50c5a48dc7fb4321d7891c83216620be1b46e1de4a1747f4c8cea9aab61aa48",
+    "hut_cursor.json.gz": "fac4a648591ebb05f7dfcb70909c34a3d495b3ade1e03e2214ecaf36f0febb0e",
+    "hut_cursor.meta.json": "41b5882b4fe784bfa36031f64c7ca19fd0f4cbce1dffd0b6225c06a73815485e",
+    "hut_cursor_native_bytes.json": "d66fa60941918ed6f0c818b8933abb6e0f5eacb5b376e429391aed0bf8c12c57",
+    "hut_cursor_promotion.json": "39982ea12621dbde47e8da0627fac8d7e8f778f6e4b855df66ede127fbf96580",
+    "hut_cursor_receipt.json": "f444cd837fac33b63145e2b41f93fbd734206aae4d5ace72e1b5bf670efb1887",
+    "hut_cursor_summary.json.gz": "9edca6fe53ba79c9638984d1f00caa6a7f1d9069396b9de52f3b2e3c3f452ead",
+    "hut_promotion.json": "9b6bbbfc28cef65808a29a6f1ab1860e7743dcee0b1a67ffeebca73bd76aa888",
+    "hut_receipt.json": "b345099b6d3be049bbecd0323a84aeae03e9826a1e8ca59ac6f2e273df2a7804",
+    "hut_summary.json.gz": "ff5eb5a40970493f00f6a4e18a9895fb54d427ddeef313fcae946a280c61090a",
+    "hut_test_vectors.json": "d759c132c069a2561d26b1c9410ec2b14419b07713c0f27d47f5cba5de1095d6",
+    "hut_test_vectors.meta.json": "32d65c0a032be12c9e3f6765d8b62a8b4d7c1293f26a3706e996c6f127b83ad4",
+    "mission.json.gz": "aee14fed26c792155254fd3e845364fd2794810534bc0cb5bc1c689e8dffdab2",
+    "mission.meta.json": "939b30d66e5f1fcdb1088531a73e611ec285547a197575f074d3f59a6b970566",
+    "mission_counter.input.json": "3ca42781e1b1e8385dabfa52170b625678c5be4231247ff8e300bcc4bf9ccdc8",
+    "mission_counter.json": "2687d98a2320e6ed60ffd1a2e2fc6337eb755b7d7856274386db800f75c08219",
+    "mission_counter.meta.json": "d860f8c8d95de3328cd8528446261aafb9d59d2b2422922346e04c2aebb68d9f",
+    "mission_interleaving.input.json": "602ae9d3b9e686956bc542ef6f23276fee5f6f781fa44f9e2d939c47ba9e544b",
+    "mission_interleaving.json": "cd67898d886cbd17def5add8b22cc934dc4fda6c5cf8ebe08734bdd9d36f118e",
+    "mission_interleaving.meta.json": "37de6c99984fb0bd9775cc4f1230b6181d07173e0cc4f6f0622976264e5bec05",
+    "mission_promotion.json": "3160e6371ef4688325ab72f85827442828891eaf840960cdeff240c91d95899a",
+    "mission_receipt.json": "e2f81d67c3c503b66720e3aa4ebe565e54088522f32d928531e883f287b04c81",
+    "mission_test_vectors.json": "4cdfaeafa94c4fcb3fa71adbd7d24c2df944f9fe53fdf325224b4dcd79947d2d",
+    "mission_test_vectors.meta.json": "e7423c07e41fc520d302ed120d63c11d89796a70eb614c8408a150a32ccf8422",
+    "mtnk_attack.json.gz": "3d35416870916e8577386c90188fd0b34755fc9f69f445ac0e59d47deadee1b2",
+    "mtnk_attack.meta.json": "dc8b138bc90a4a8b1493aff3df3984268dfa538f214639dfc002ba13f805f12f",
+    "navigation.json.gz": "a2197179f0818a7b2c231c8956601b2269df164db04e05d856b99db380a15d35",
+    "navigation.meta.json": "fa906c5ce86aab3c4975280cfc8c98f94cd9764c040afd1a992fba376a828561",
+    "navigation_comparison.json": "35df6a325ec9b85b5d461554bb93e45248666290e24c4bf759326b82d6f6be5f",
+    "navigation_promotion.json": "45cbb90245a6c0b431ab9f2a186fd8655243b0212d77d35a45866c801d50ab6b",
+    "navigation_receipt.json": "40c2df2b9103751e2e23be1d18964ed442bcea34d1b250666dfdeb9701678668",
+    "next_family_native.json.gz": "0f6c0ad83e8922bdb1cdb2cd47934263f03dec74a9984dec6ad0ea764cbf5220",
+    "next_family_native.meta.json": "e872ce09d4d5f7a472711388dfa5e9bb0f9e5ed15c1b2389b5af682454c49e67",
+    "promotion.json": "474fd0a893f3853d7c67b014bdf9e1459ffbaca55728c9a7b4f834d11d0247c4",
+    "retail_manifest.json": "195228947bb6da8c1b6add6fc4565d91c94caa6494389997f034002ba10b64a0",
+    "validation.json": "8d350c2ff2d510cbaacdc0791be08e9b9714533badeb79004e9f80090af5a10a"
+  },
+  "projections": [
+    "tools.spatial_oracle.anytown_damage.hut_test_vectors",
+    "tools.spatial_oracle.anytown_damage.mission_test_vectors"
+  ],
+  "runners": [
+    "tools.spatial_oracle.anytown_damage.next_family_native",
+    "tools.spatial_oracle.anytown_damage.anytown_geometry",
+    "tools.spatial_oracle.anytown_damage.anytown_resident",
+    "tools.spatial_oracle.anytown_damage.anytown_admission",
+    "tools.spatial_oracle.anytown_damage.anytown_occupants",
+    "tools.spatial_oracle.anytown_damage.mtnk_attack",
+    "tools.spatial_oracle.anytown_damage.navigation",
+    "tools.spatial_oracle.anytown_damage.hut",
+    "tools.spatial_oracle.anytown_damage.hut_cursor",
+    "tools.spatial_oracle.anytown_damage.mission",
+    "tools.spatial_oracle.anytown_damage.mission_counter",
+    "tools.spatial_oracle.anytown_damage.mission_interleaving"
+  ],
+  "schema": 2,
+  "scope": "Native family identity, damage/repair geometry, selected Recalc, admission, MTNK occupants/Detach, host-scheduled FireAt/flight/impact, full physical Anytown navigation builders/updates, bounded concrete hut sweeps and physical concrete repair-cursor queries, original live MTNK command/Logic continuation, counter ordering and selected v8 first-shot RNG interleaving. Saved navigation production comparison covers loaded/first-damaged/collapsed and repaired states. Mission evidence excludes other-world scheduling except recorded v8 Terrain Next prefixes; no ordinary movement/head, full hut lifecycle or whole-bridge parity claim.",
+  "validation": "--refresh-receipt stages twelve native witnesses and two Rust projections, requires unchanged payloads and sidecar evidence, then publishes only their sidecars and this receipt. Ten compressed witnesses guard their original unprojected payload and lexical-input projection. The v7 counter comparison guards its frozen original projection; v8 interleaving checks original execution against recorded production inputs. All modes guard historical artifacts and pin their receipt bytes. Earlier receipts keep their original commands and claims; two Rust projections are checked. Manifest-only is read-only, skips native execution and does not repeat the saved navigation production comparison."
+}

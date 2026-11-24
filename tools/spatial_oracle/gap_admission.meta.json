@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Building4555D0 predicate and selected gap/Foot event ordering",
+  "assumptions": [
+    "Complete4555D0 executes with original Building vtable, Mission5B3040 and House4FCE30 callees; supplied receiver/Type/House fields are explicit",
+    "Optional gate cases demonstrate original predicate inputs only, not retail producer admission for disabled_count/special_state/NeedsEngineer",
+    "Ordered cases reuse original shroud leaves and complete120-frame sweep; callbacks and registration order are supplied, not a whole Logic or power-system execution",
+    "The reachable prefix leaves one sight receipt and one hostile gap, counter-1 and closed knowledge after frame120; no raw shroud state is fabricated",
+    "Stock GAGAP power fields and active Building43FB20 edge caller are bound separately in the mechanism report"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "operational": "0x004555D0",
+    "mission": "0x005B3040",
+    "power_ratio": "0x004FCE30",
+    "map_cell": "0x004A9CA0",
+    "gap_add": "0x006FB2F7",
+    "gap_remove": "0x006FB5E1",
+    "periodic_logic": "0x0055B29A"
+  },
+  "payload_sha256": "123d1f6ec02ede8c1d02b0dc3063b27caf573c798822478562152477c4ec6814"
+}

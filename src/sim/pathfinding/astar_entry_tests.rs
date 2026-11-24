@@ -1,0 +1,616 @@
+//! Native AStar height and cost fragments. These compare original
+//! instruction results, not a second Rust model; they do not establish
+//! full-route equivalence.
+
+use super::*;
+use serde_json::Value;
+use std::cell::RefCell;
+
+fn node_corpus() -> &'static Value {
+    crate::test_fixture::json("tools/spatial_oracle/astar_structural_height.json")
+}
+
+fn f32_hex(value: &Value) -> f32 {
+    f32::from_bits(u32::from_str_radix(value.as_str().unwrap(), 16).unwrap())
+}
+
+/// The main loop's edge for every class below 7, urgency and marker, against
+/// the original call and `FMUL`/`FADD`/`FSTP` (`edge_costs`).
+#[test]
+fn original_binary32_edge_cost() {
+    let corpus = node_corpus();
+    let rows = corpus["edge_costs"].as_array().unwrap();
+    assert_eq!(rows.len(), 144);
+    for row in rows {
+        let input = &row["input"];
+        let class = input["cost_class"].as_u64().unwrap() as u8;
+        let mut cost = CLASS_BASE[usize::from(class)];
+        if class == 2 {
+            // The candidate has no occupier, so urgency 0 asks a chain that
+            // clears.
+            let urgency = input["urgency"].as_u64().unwrap() as u8;
+            cost *= code2_multiplier(urgency, || Ok::<_, ()>(false)).unwrap();
+        }
+        let mut overlay = SearchMarkerOverlay::new();
+        if input["marker"].as_bool().unwrap() {
+            overlay.toggle((11, 9));
+        }
+        let cost = apply_search_marker_cost(cost, Some(&overlay), (11, 9));
+        let edge = compass_edge_cost(cost, input["direction"].as_u64().unwrap() as usize);
+        assert_eq!(
+            edge.to_bits(),
+            f32_hex(&row["edge_bits"]).to_bits(),
+            "{input}"
+        );
+    }
+}
+
+/// `AStar_create_node`'s g and f, the heuristic included, against the whole
+/// original function (`node_costs`).
+#[test]
+fn original_binary32_node_costs() {
+    let corpus = node_corpus();
+    let rows = corpus["node_costs"].as_array().unwrap();
+    assert_eq!(rows.len(), 136);
+    for row in rows {
+        let input = &row["input"];
+        let coord = |axis: usize| {
+            let goal = input["goal"][axis].as_i64().unwrap();
+            (
+                goal as u16,
+                (goal + input["offset"][axis].as_i64().unwrap()) as u16,
+            )
+        };
+        let ((goal_x, x), (goal_y, y)) = (coord(0), coord(1));
+        let (g, f) = match input["parent_g_bits"].as_str() {
+            Some(_) => node_costs(
+                f32_hex(&input["parent_g_bits"]),
+                f32_hex(&input["edge_bits"]),
+                (x, y),
+                (goal_x, goal_y),
+            ),
+            // The start node: g 0 and the heuristic alone.
+            None => (0.0, heuristic((x, y), (goal_x, goal_y))),
+        };
+        assert_eq!(g.to_bits(), f32_hex(&row["g_bits"]).to_bits(), "{input}");
+        assert_eq!(f.to_bits(), f32_hex(&row["f_bits"]).to_bits(), "{input}");
+    }
+}
+
+/// The closed-candidate test on both sides of the current g plus 1.009
+/// (`closed_retries`).
+#[test]
+fn original_closed_candidate_retry() {
+    let corpus = node_corpus();
+    let rows = corpus["closed_retries"].as_array().unwrap();
+    assert_eq!(rows.len(), 36);
+    for row in rows {
+        let input = &row["input"];
+        assert_eq!(
+            closed_candidate_retried(
+                f32_hex(&input["stored_g_bits"]),
+                f32_hex(&input["current_g_bits"])
+            ),
+            row["retried"].as_bool().unwrap(),
+            "{input}"
+        );
+    }
+}
+
+fn scalar_cell(level: u8, flags: u32, walkable_hint: bool) -> PathCell {
+    PathCell {
+        ground_level: level,
+        bridge_structural: flags & 0x100 != 0,
+        bridge_walkable: walkable_hint,
+        // This derived byte is deliberately not the source of native height.
+        bridge_deck_level: level.wrapping_add(4),
+        ..DEFAULT_WALKABLE_CELL
+    }
+}
+
+#[test]
+fn original_signed_height_producer_and_blocked_goal_tail() {
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/astar_signed_height.json",
+    ))
+    .unwrap();
+    let cases = corpus["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 11);
+    for case in cases {
+        let input = &case["input"];
+        let start = scalar_cell(
+            input["source_level_raw"].as_u64().unwrap() as u8,
+            input["source_flags"].as_u64().unwrap() as u32,
+            false,
+        );
+        let goal = scalar_cell(
+            input["goal_level_raw"].as_u64().unwrap() as u8,
+            input["goal_flags"].as_u64().unwrap() as u32,
+            false,
+        );
+        let layer = if input["source_on_bridge"].as_bool().unwrap() {
+            MovementLayer::Bridge
+        } else {
+            MovementLayer::Ground
+        };
+        let (initial, goal_height) = initial_search_heights(&start, layer, &goal, [None; 2]);
+        assert_eq!(
+            i64::from(initial),
+            case["produced_initial_current_height"].as_i64().unwrap(),
+            "{input}"
+        );
+        assert_eq!(
+            i64::from(goal_height),
+            case["produced_goal_height"].as_i64().unwrap(),
+            "{input}"
+        );
+        // Two controls supply a later node height after original initial-height
+        // production. This distinguishes the tail's current node from its start.
+        let current = input["current_height_after_hops_supplied"]
+            .as_i64()
+            .map_or(initial, |height| height as i16);
+        assert_eq!(
+            blocked_goal_height_matches(current, goal_height),
+            case["branch"] == "blocked_goal_abort",
+            "{input}"
+        );
+    }
+}
+
+#[test]
+fn original_structural_node_height_and_closed_list_selection() {
+    let corpus = node_corpus();
+    let cases = corpus["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 22);
+    for case in cases {
+        let input = &case["input"];
+        let parent = scalar_cell(
+            input["parent_ground_raw"].as_u64().unwrap() as u8,
+            input["parent_flags"].as_u64().unwrap() as u32,
+            input["parent_rust_bridge_walkable"]
+                .as_bool()
+                .unwrap_or(false),
+        );
+        let candidate = scalar_cell(
+            input["candidate_ground_raw"].as_u64().unwrap() as u8,
+            input["candidate_flags"].as_u64().unwrap() as u32,
+            input["candidate_rust_bridge_walkable"]
+                .as_bool()
+                .unwrap_or(false),
+        );
+        let current = input["current_height"].as_i64().unwrap() as i16;
+        let parent = (!input["initial_node"].as_bool().unwrap_or(false)).then_some(&parent);
+        assert_eq!(
+            i64::from(compute_node_height(current, parent, &candidate, [None; 2])),
+            case["node_height"].as_i64().unwrap(),
+            "{input}"
+        );
+        assert_eq!(
+            is_at_bridge_level(current, &candidate),
+            case["selected_list"] == "deck",
+            "{input}"
+        );
+    }
+}
+
+struct SuppliedEntry {
+    answer: Result<u8, String>,
+    queries: RefCell<Vec<SearchEntryQuery>>,
+}
+
+impl SearchFootEntry for SuppliedEntry {
+    fn classify(&self, query: SearchEntryQuery) -> Result<u8, String> {
+        self.queries.borrow_mut().push(query);
+        self.answer.clone()
+    }
+}
+
+#[test]
+fn missing_astar_endpoint_refuses_the_route_before_querying_neighbors() {
+    // Original AStar_main_loop 0x00429AE3/0x00429AEB: either null map slot
+    // returns no path. The Unit's Can_Enter_Cell never runs.
+    let terrain = crate::map::resolved_terrain::test_flat_ground_grid(32);
+    let grid = PathGrid::new(32, 32);
+    let entry = SuppliedEntry {
+        answer: Ok(0),
+        queries: Default::default(),
+    };
+    let options = AStarOptions {
+        resolved_terrain: Some(&terrain),
+        ..AStarOptions::new(&entry)
+    };
+    for (start, goal) in [((9, 32), (9, 31)), ((31, 9), (32, 9))] {
+        assert_eq!(
+            astar_search(&grid, start, MovementLayer::Ground, goal, &options),
+            Err(PathSearchFailure::CellSearchExhausted)
+        );
+    }
+    assert!(entry.queries.borrow().is_empty());
+}
+
+#[test]
+fn astar_searches_the_real_cells_of_aliased_endpoints() {
+    // Original 0x00429AA1 uses signed coordinates with a 512-cell stride.
+    // The native run (512,9) -> (513,9) returned start (0,10), then East.
+    let terrain = crate::map::resolved_terrain::test_flat_ground_grid(32);
+    let grid = PathGrid::new(32, 32);
+    let entry = WalkableEntry::new(&grid);
+    let options = AStarOptions {
+        resolved_terrain: Some(&terrain),
+        ..AStarOptions::new(&entry)
+    };
+    let path = astar_search(&grid, (512, 9), MovementLayer::Ground, (513, 9), &options).unwrap();
+    assert_eq!(
+        path.iter().map(|s| (s.rx, s.ry)).collect::<Vec<_>>(),
+        [(0, 10), (1, 10)]
+    );
+}
+
+#[test]
+fn canonical_entry_reaches_blocked_goal_before_static_grid_refusal() {
+    // Production wiring check: the supplied class comes from concrete native
+    // Infantry-entry controls. This two-cell Rust route is not a native route
+    // golden; it exposes a second static-grid verdict overriding the live one.
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/astar_capture_neighbor.json",
+    ))
+    .unwrap();
+    let source = scalar_cell(10, 0, false);
+    let goal = PathCell {
+        ground_walkable: false,
+        ..source
+    };
+    let grid = PathGrid::from_cells(vec![source, goal], 2, 1);
+    for name in ["synthetic_flat_capture", "synthetic_iron_curtain_control"] {
+        let case = native["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["input"]["name"] == name)
+            .unwrap();
+        let entry = SuppliedEntry {
+            answer: Ok(case["can_enter_class"].as_u64().unwrap() as u8),
+            queries: RefCell::new(Vec::new()),
+        };
+        let result = astar_search(
+            &grid,
+            (0, 0),
+            MovementLayer::Ground,
+            (1, 0),
+            &AStarOptions::new(&entry),
+        );
+        assert_eq!(result.is_ok(), case["outcome"] == "admit_node_creation");
+        let queries = entry.queries.borrow();
+        assert_eq!(queries.len(), 1, "{name}");
+        let query = queries[0];
+        assert_eq!(
+            (query.from, query.candidate),
+            (Some((0, 0)), SearchEntryCandidate::CopiedCoord((1, 0)))
+        );
+        assert_eq!((query.direction, query.path_height), (2, 10));
+    }
+}
+
+#[test]
+fn unavailable_live_entry_is_not_an_ordinary_blocked_route() {
+    let entry = SuppliedEntry {
+        answer: Err("unavailable canonical Cell input".into()),
+        queries: RefCell::new(Vec::new()),
+    };
+    assert!(matches!(
+        astar_search(
+            &PathGrid::new(2, 1),
+            (0, 0),
+            MovementLayer::Ground,
+            (1, 0),
+            &AStarOptions::new(&entry),
+        ),
+        Err(PathSearchFailure::CellEntryUnavailable(cause))
+            if cause == "unavailable canonical Cell input"
+    ));
+    assert_eq!(entry.queries.borrow().len(), 1);
+}
+
+#[test]
+fn native_null_candidates_never_reach_entry_or_create_routes() {
+    use crate::map::tube_facts::TubeFact;
+
+    struct LiveLookupEntry<'a> {
+        terrain: &'a ResolvedTerrainGrid,
+        queries: RefCell<Vec<SearchEntryQuery>>,
+    }
+    impl SearchFootEntry for LiveLookupEntry<'_> {
+        fn classify(&self, query: SearchEntryQuery) -> Result<u8, String> {
+            self.queries.borrow_mut().push(query);
+            // The production adapter performs these same canonical lookups.
+            // Class0 is supplied here: a NULL slot must never call it at all.
+            if let Some(previous) = query.from {
+                self.terrain
+                    .native_cell_identity((previous.0 as i16, previous.1 as i16));
+            }
+            let SearchEntryCandidate::CopiedCoord(candidate) = query.candidate else {
+                panic!("A* must supply its expanded coordinate domain");
+            };
+            self.terrain
+                .native_cell_identity((candidate.0 as i16, candidate.1 as i16));
+            Ok(0)
+        }
+    }
+    let corpus = node_corpus();
+    let controls = corpus["allocation_guards"].as_array().unwrap();
+    assert_eq!(controls.len(), 4);
+    for control in controls {
+        let tube = control["direction"] == 8;
+        let allocated = control["allocated"].as_bool().unwrap();
+        let width = if tube { 4 } else { 3 };
+        let candidate = if tube { (2, 0) } else { (1, 0) };
+        let goal = (width - 1, 0);
+        let cells = (0..width)
+            .map(|x| {
+                let mut c = crate::sim::world::common_raw_test_terrain_cell(x, 0, 10, false);
+                if tube && x == 0 {
+                    c.tube_index = Some(TubeId(0));
+                }
+                c
+            })
+            .collect();
+        let mut terrain = ResolvedTerrainGrid::from_cells_with_tubes(
+            width,
+            1,
+            cells,
+            if tube {
+                vec![TubeFact::explicit((0, 0), candidate, 2, vec![2, 2])]
+            } else {
+                Vec::new()
+            },
+        );
+        let mut real = vec![(0, 0), goal];
+        if allocated {
+            real.push(candidate);
+        }
+        terrain.test_set_native_allocated_cells(&real);
+        let dummy = terrain.shared_cell_dummy();
+        dummy.stamp_coord(71, 77);
+        let before = dummy.snapshot();
+        let grid = PathGrid::from_resolved_terrain(&terrain);
+        let entry = LiveLookupEntry {
+            terrain: &terrain,
+            queries: RefCell::new(Vec::new()),
+        };
+        let result = astar_search(
+            &grid,
+            (0, 0),
+            MovementLayer::Ground,
+            goal,
+            &AStarOptions {
+                resolved_terrain: Some(&terrain),
+                ..AStarOptions::new(&entry)
+            },
+        );
+        assert_eq!(
+            result.is_err(),
+            control["skipped"].as_bool().unwrap(),
+            "{control}"
+        );
+        assert_eq!(
+            dummy.snapshot(),
+            before,
+            "{control}: search must not stamp Dummy"
+        );
+        if allocated {
+            let route: Vec<_> = result
+                .unwrap()
+                .iter()
+                .map(|step| (step.rx, step.ry))
+                .collect();
+            assert_eq!(route, vec![(0, 0), candidate, goal], "{control}");
+        } else {
+            assert!(
+                entry.queries.borrow().is_empty(),
+                "{control}: NULL candidate reached +1AC"
+            );
+        }
+    }
+}
+
+#[test]
+fn original_reconstruction_retains_each_parent_descriptor_height() {
+    // Original caller 42A3FE..42A423 executes 42AA90 against supplied native
+    // parent descriptors. These are reconstruction controls, not native A*
+    // route-selection goldens. In particular, signed_parent_heights supplies
+    // values independent of physical Cell levels; reconstruction must not
+    // derive another height from terrain or the object-list layer.
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/astar_path_finishing.json",
+    ))
+    .unwrap();
+    let cases = corpus["cases"].as_array().unwrap();
+    assert!(cases.len() >= 33);
+    // The frozen original 33 cases have unique, allocated square-grid Cells.
+    // Later Tube/wrap controls deliberately supply mismatched descriptors and
+    // fallback identities, outside this A* parent-index representation.
+    for case in cases.iter().take(33) {
+        let supplied = case["supplied_nodes"].as_array().unwrap();
+        let width = 64;
+        let mut ground = vec![PathDescriptor::UNVISITED; width * width];
+        let bridge = vec![PathDescriptor::UNVISITED; width * width];
+        let mut previous = usize::MAX;
+        for node in supplied {
+            let x = node["cell"][0].as_u64().unwrap() as usize;
+            let y = node["cell"][1].as_u64().unwrap() as usize;
+            let index = y * width + x;
+            assert_eq!(
+                ground[index].parent,
+                u32::MAX,
+                "supplied chain repeats a cell"
+            );
+            ground[index] = PathDescriptor {
+                parent: if previous == usize::MAX {
+                    u32::MAX
+                } else {
+                    encode_from(previous, false)
+                },
+                height: node["height"].as_i64().unwrap() as i16,
+                ..PathDescriptor::UNVISITED
+            };
+            previous = index;
+        }
+        let first = &supplied[0];
+        let start_index = first["cell"][1].as_u64().unwrap() as usize * width
+            + first["cell"][0].as_u64().unwrap() as usize;
+        let result = reconstruct_path_dual(
+            &SearchTable::with_all(ground),
+            &SearchTable::with_all(bridge),
+            start_index,
+            false,
+            previous,
+            false,
+            width,
+        );
+        assert_eq!(
+            result
+                .iter()
+                .map(|step| (step.rx, step.ry))
+                .collect::<Vec<_>>(),
+            supplied
+                .iter()
+                .map(|node| (
+                    node["cell"][0].as_u64().unwrap() as u16,
+                    node["cell"][1].as_u64().unwrap() as u16
+                ))
+                .collect::<Vec<_>>(),
+            "{}",
+            case["input"]["name"]
+        );
+        let native = &case["snapshots"][0];
+        assert_eq!(native["name"], "reconstructed");
+        assert_eq!(
+            result[..result.len() - 1]
+                .iter()
+                .map(|step| i64::from(step.path_height()))
+                .collect::<Vec<_>>(),
+            native["retained_heights"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_i64().unwrap())
+                .collect::<Vec<_>>(),
+            "{}",
+            case["input"]["name"]
+        );
+        assert_eq!(
+            i64::from(result.last().unwrap().path_height()),
+            supplied.last().unwrap()["height"].as_i64().unwrap()
+        );
+    }
+}
+
+#[test]
+fn accepted_descriptor_height_survives_selected_list_transition() {
+    // Production owner regression using the original scalar-height producer
+    // corpus: selected_list can remain deck even when the accepted new node's
+    // height becomes ground. Reconstruction must keep both facts separately.
+    let corpus = node_corpus();
+    for case in corpus["cases"].as_array().unwrap() {
+        let input = &case["input"];
+        if input["initial_node"].as_bool().unwrap_or(false) {
+            continue;
+        }
+        let parent = scalar_cell(
+            input["parent_ground_raw"].as_u64().unwrap() as u8,
+            input["parent_flags"].as_u64().unwrap() as u32,
+            true,
+        );
+        let candidate = scalar_cell(
+            input["candidate_ground_raw"].as_u64().unwrap() as u8,
+            input["candidate_flags"].as_u64().unwrap() as u32,
+            true,
+        );
+        let previous_height = input["current_height"].as_i64().unwrap() as i16;
+        let next_height =
+            compute_node_height(previous_height, Some(&parent), &candidate, [None; 2]);
+        let next_bridge = is_at_bridge_level(previous_height, &candidate);
+        let mut ground = vec![PathDescriptor::UNVISITED; 2];
+        let mut bridge = vec![PathDescriptor::UNVISITED; 2];
+        ground[0] = PathDescriptor {
+            parent: u32::MAX,
+            height: previous_height,
+            ..PathDescriptor::UNVISITED
+        };
+        let next = PathDescriptor {
+            parent: encode_from(0, false),
+            height: next_height,
+            ..PathDescriptor::UNVISITED
+        };
+        if next_bridge {
+            bridge[1] = next;
+        } else {
+            ground[1] = next;
+        }
+        let result = reconstruct_path_dual(
+            &SearchTable::with_all(ground),
+            &SearchTable::with_all(bridge),
+            0,
+            false,
+            1,
+            next_bridge,
+            2,
+        );
+        assert_eq!(
+            i64::from(result[1].path_height()),
+            case["node_height"].as_i64().unwrap(),
+            "{input}"
+        );
+        assert_eq!(
+            result[1].layer == MovementLayer::Bridge,
+            case["selected_list"] == "deck",
+            "{input}"
+        );
+    }
+}
+
+/// The live Foot `+0x1AC` class decides how A* crosses a wall line. Classes 4
+/// and 5 still expand (`AStar_main_loop @ 0x00429A90` refuses only 7), at 60x
+/// and 20x the step (`AStar_compute_edge_cost @ 0x00429830`, table
+/// `0x0081870C`): crossing one 20x cell beats a 32-step detour, 60x does not.
+/// An `IsTrain=` mover prices every admitted class as class 0
+/// (`0x00429F5C..0x00429F69`).
+#[test]
+fn a_wall_class_from_the_live_entry_prices_the_crossing() {
+    // Column x=3 is a wall line on a 7x17 board, open only at its foot.
+    struct WallLine(u8, bool);
+    impl SearchFootEntry for WallLine {
+        fn train_pose(&self) -> Option<TrainSearchPose> {
+            self.1.then_some(TrainSearchPose {
+                facing_octant: 2,
+                level: 0,
+            })
+        }
+
+        fn classify(&self, query: SearchEntryQuery) -> Result<u8, String> {
+            Ok(match query.candidate {
+                SearchEntryCandidate::CopiedCoord((3, y)) if y < 16 => self.0,
+                _ => 0,
+            })
+        }
+    }
+    let grid = PathGrid::new(7, 17);
+    let crosses = |class: u8, mover_is_train: bool| {
+        let entry = WallLine(class, mover_is_train);
+        let route = astar_search(
+            &grid,
+            (0, 0),
+            MovementLayer::Ground,
+            (6, 0),
+            &AStarOptions::new(&entry),
+        )
+        .unwrap();
+        assert_eq!(route.last().map(|step| (step.rx, step.ry)), Some((6, 0)));
+        route.iter().any(|step| step.rx == 3 && step.ry < 16)
+    };
+    assert!(crosses(5, false), "an enemy wall costs 20x: cross it");
+    assert!(!crosses(4, false), "an allied wall costs 60x: take the gap");
+    assert!(!crosses(7, false), "a refused wall never expands");
+    assert!(crosses(4, true), "a train prices an allied wall as clear");
+    assert!(!crosses(7, true), "a train never expands a refused wall");
+}

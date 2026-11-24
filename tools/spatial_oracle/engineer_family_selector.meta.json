@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Engineer519C07 family selector, through the repair entry boundary.\n\nSupplied already-admitted Engineer frame and sparse CellClass table. Original\nInfantry vtable7EB058 +1B8 ->41BEA0 and Map5657A0 execute unchanged. Stops\nBEFORE570050/573540; no repair, side effect receiver, constructor or entry\nadmission is supplied as though it executed. Hooks only observe instructions.\n",
+  "assumptions": [
+    "Already-admitted interior519C07 frame; ESI is Engineer and EDI is retained hut.",
+    "Physical Engineer XYZ=(2688,2688,1040), original Infantry vtable and supplied sparse CellClass table.",
+    "Wood base200 is a supplied theater input; this is not map/theater loading."
+  ],
+  "substitutions": [
+    "No native call answers or code patches; observational hooks only. Execution ends before either repair entry."
+  ],
+  "entry_points": {
+    "selector": "0x00519C07",
+    "engineer_cell": "0x0041BEA0",
+    "map_lookup": "0x005657A0",
+    "low_boundary_not_executed": "0x00570050",
+    "high_boundary_not_executed": "0x00573540"
+  },
+  "payload_sha256": "22e8ff10c3614a345aefb580a3e3e5e325a19b0816abd9dec71bd0cd870ae68e"
+}

@@ -1,0 +1,270 @@
+{
+  "schema_version": 1,
+  "source_receipts": {
+    "before_strip": {
+      "file": "native-before-strip-attempt-1.json.gz",
+      "sha256": "6de53a3e7c28d6a5e7ef734d81babaf183e7410642c0f6cd56b2524c6d9663d0"
+    },
+    "after_strip": {
+      "file": "native-after-strip-attempt-1.json.gz",
+      "sha256": "1dd1b1f0ea72378ba09f37fa02cec0d233200c69ee42a5f4950fe59e6a2feca5"
+    }
+  },
+  "inherited_parent_manifest_sha256": "2864c48044891746cf597cd0d4f4a5e8e6554b208ddccfa47313d1a22bbe68ea",
+  "cases": {
+    "before_strip": {
+      "frame": 268,
+      "rally_request": [
+        20,
+        20
+      ],
+      "incoming_factory": {
+        "balance": 0,
+        "changed": 1,
+        "pointer": 675803136,
+        "product": 675803312,
+        "stage": 54,
+        "suspended": 1
+      },
+      "incoming_producer": {
+        "archive": 0,
+        "location": [
+          3712,
+          3712,
+          0
+        ],
+        "pointer": 675792176,
+        "type": 604116576,
+        "vtable": 8273596
+      },
+      "what_action": 1,
+      "original_clicked_action_result": 1,
+      "executed_event_types": [
+        30,
+        11
+      ],
+      "placed": {
+        "pointer": 675803312,
+        "id": 10,
+        "position": [
+          3904,
+          4032,
+          0
+        ],
+        "mission": 2,
+        "queued": -1,
+        "archive": 537274368,
+        "archive_is_set": true,
+        "nav": 537206272,
+        "nav_is_set": true,
+        "producer_archive": 537274368,
+        "producer_archive_is_set": true,
+        "tether": true,
+        "contacts": [
+          675792176
+        ],
+        "walk_moving": true,
+        "walk_destination": [
+          3968,
+          4224,
+          0
+        ],
+        "walk_paid_head": [
+          0,
+          0,
+          0
+        ]
+      },
+      "after": {
+        "cursor": 11,
+        "dolist": {
+          "count": 0,
+          "events": [],
+          "head": 2,
+          "tail": 2
+        },
+        "factory": {
+          "balance": 200,
+          "changed": 1,
+          "pointer": 675803136,
+          "product": 675805504,
+          "stage": 0,
+          "suspended": 0
+        },
+        "frame": 268,
+        "house": {
+          "credits": 9800,
+          "infantry_factory": 675803136,
+          "pointer": 537526272
+        },
+        "outlist": {
+          "count": 0,
+          "events": [],
+          "head": 2,
+          "tail": 2
+        },
+        "priority": 0,
+        "producer": {
+          "archive": 537274368,
+          "location": [
+            3712,
+            3712,
+            0
+          ],
+          "pointer": 675792176,
+          "type": 604116576,
+          "vtable": 8273596
+        },
+        "product": {
+          "alive": 1,
+          "archive": 0,
+          "id": 11,
+          "limbo": 1,
+          "location": [
+            0,
+            0,
+            0
+          ],
+          "mission": -1,
+          "nav": 0,
+          "pointer": 675805504,
+          "vtable": 8302680
+        },
+        "rng": {
+          "main": "main:d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "scenario:184c5aea444399337da46602f8778efd7f8934eee362b4b1802598ded58f5463"
+        }
+      },
+      "click_rng_requests": [],
+      "click_raw_advances": []
+    },
+    "after_strip": {
+      "frame": 268,
+      "rally_request": [
+        20,
+        20
+      ],
+      "incoming_factory": {
+        "balance": 0,
+        "changed": 1,
+        "pointer": 675803136,
+        "product": 675803312,
+        "stage": 54,
+        "suspended": 1
+      },
+      "incoming_producer": {
+        "archive": 0,
+        "location": [
+          3712,
+          3712,
+          0
+        ],
+        "pointer": 675792176,
+        "type": 604116576,
+        "vtable": 8273596
+      },
+      "what_action": 1,
+      "original_clicked_action_result": 1,
+      "executed_event_types": [
+        11,
+        30
+      ],
+      "placed": {
+        "pointer": 675803312,
+        "id": 10,
+        "position": [
+          3904,
+          4032,
+          0
+        ],
+        "mission": 5,
+        "queued": -1,
+        "archive": 0,
+        "archive_is_set": false,
+        "nav": 0,
+        "nav_is_set": false,
+        "producer_archive": 537274368,
+        "producer_archive_is_set": true,
+        "tether": true,
+        "contacts": [
+          675792176
+        ],
+        "walk_moving": false,
+        "walk_destination": [
+          0,
+          0,
+          0
+        ],
+        "walk_paid_head": [
+          0,
+          0,
+          0
+        ]
+      },
+      "after": {
+        "cursor": 11,
+        "dolist": {
+          "count": 0,
+          "events": [],
+          "head": 2,
+          "tail": 2
+        },
+        "factory": {
+          "balance": 200,
+          "changed": 1,
+          "pointer": 675803136,
+          "product": 675805504,
+          "stage": 0,
+          "suspended": 0
+        },
+        "frame": 268,
+        "house": {
+          "credits": 9800,
+          "infantry_factory": 675803136,
+          "pointer": 537526272
+        },
+        "outlist": {
+          "count": 0,
+          "events": [],
+          "head": 2,
+          "tail": 2
+        },
+        "priority": 0,
+        "producer": {
+          "archive": 537274368,
+          "location": [
+            3712,
+            3712,
+            0
+          ],
+          "pointer": 675792176,
+          "type": 604116576,
+          "vtable": 8273596
+        },
+        "product": {
+          "alive": 1,
+          "archive": 0,
+          "id": 11,
+          "limbo": 1,
+          "location": [
+            0,
+            0,
+            0
+          ],
+          "mission": -1,
+          "nav": 0,
+          "pointer": 675805504,
+          "vtable": 8302680
+        },
+        "rng": {
+          "main": "main:d266f8222398737d98eb5468f43ae5f0c54a3db8bd426339cbd20a40d3076a34",
+          "mapgen": "mapgen:8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+          "scenario": "scenario:184c5aea444399337da46602f8778efd7f8934eee362b4b1802598ded58f5463"
+        }
+      },
+      "click_rng_requests": [],
+      "click_raw_advances": []
+    }
+  }
+}

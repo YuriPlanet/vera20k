@@ -1,0 +1,1723 @@
+//! `TemporalClass`: the Chrono Legionnaire's erase beam (and the IFV's chrono
+//! gunner weapon).
+//!
+//! Native owner: one `TemporalClass` (`operator new(0x50)`, vtable
+//! `0x007F5180`) per Techno whose rookie weapon 0 warhead is `Temporal=`
+//! (`TechnoClass::Init_Managers @ 0x006F4154..0x006F41BD`, `TechnoClass+0x274`
+//! TemporalImUsing). The firer's Inviso shot reaches the Temporal arm of
+//! `BulletClass::DetonateAtCoord` (`0x00469423..0x004694C6`), which calls
+//! [`Simulation::temporal_initiate_warp`] on the bullet's target. The TARGET
+//! owns the tick: each class's AI calls its chain head's `Update` (vtable
+//! `+0x5C`) first (Unit `0x00736204`, Infantry `0x0051BB6E`, Aircraft
+//! `0x00414BDB`, Building `0x0043FCF9`) and then, while warped, returns
+//! before FootClass::AI or TechnoClass::AI_Update: none of its missions,
+//! managers, repair, stance, deploy or animation work runs. VERA runs parts of
+//! that AI in their own frame phases, and each consults
+//! [`GameEntity::ai_frozen`]: idle actions, fear, deploy, building repair and
+//! the AI's low-credit sale, depot service, spawn managers, boarding and
+//! unloading, construction, facing and turrets, the sprite stage, engineer,
+//! bridge-repair and C4 orders, gates, aircraft docks and bunker installs.
+//! The head subtracts its own weapon's `Damage=` and every chained attacker's
+//! from `WarpRemaining`, which the first attacker set to the target's
+//! `Strength=` times ten; at zero the target is erased: `WarpAway=`, no
+//! death, no survivors.
+//!
+//! State: the firer holds its link ([`TemporalState`]'s `link`, `+0x274`:
+//! target `+0x28`, the chain's `+0x40` Prev and `+0x44` Next, `+0x48`
+//! WarpRemaining); the target holds only the chain head (`head`, `+0x278`),
+//! and the temporal half of `+0x270` BeingWarpedOut is exactly
+//! `head.is_some()`. Attacker entity ids stand for their TemporalClass. Only
+//! this module writes either.
+//!
+//! Releases (`TemporalClass::LetGo @ 0x0071ABC0`): the attacker retargets
+//! (`0x0071AF61`); a new warp's victim lets its own victim go (`0x0071B162`);
+//! the attacker enters a new cell (the PerCellProcess tail `0x006F5090` at
+//! `0x006F50B4`), enters idle mode (`TechnoClass::Enter_Idle_Mode @
+//! 0x00709A54`, reached from the Unit and Infantry leaves through
+//! `0x004D82D9` and from the Aircraft leaf only past its mission checks,
+//! `0x00417782`; the Attack mission's idle exit after a Stop is one such
+//! entry), expires (`0x0071AB7A`), changes house through CaptureManager
+//! (`0x004723F3`), strays beyond `OpenToppedWarpDistance=` from an open
+//! transport (`0x0071A841`), or leaves an IFV's gunner seat (`0x00746557`).
+//! Nothing heals: the victim resumes at full health and a later attacker
+//! starts again at `Strength * 10`.
+//!
+//! Scenario draws: none in the Temporal functions themselves (InitiateWarp,
+//! CanWarpTarget, Update, SumChainDamage, LetGo, ClearLinkedList and the
+//! pointer-expiry forward call no RNG). A warp's start can draw through the
+//! spawns it kills and the captives it frees, its erase through the target's
+//! UnInit and the attackers' idle selection.
+//!
+//! Evidence: control flow and ordering read from the disassembly at the
+//! addresses cited here. Native execution, compared in the `native_` tests:
+//! `tools/spatial_oracle/temporal_update.py` runs the original Update with
+//! SumChainDamage, LetGo, ClearLinkedList, Sqrt_Approx and ftol (the step, the
+//! chain sum and its depth cap, the erase test and its callees in order, the
+//! no-target erase, the corrupt-head release, the open-topped release
+//! boundary); `tools/spatial_oracle/temporal_initiate_warp.py` runs the
+//! original InitiateWarp with CanWarpTarget, LetGo and Contact_With_Whom
+//! (`Strength * 10` and its wrap, the insert after the head, the refusals, the
+//! releases, the notices). Read, not executed: the per-class prologues and
+//! the sparkle cadence, the pointer-expiry forward, the gunner hand-over and
+//! the release sites. Retail data: `[ChronoBeam]
+//! Temporal=yes` on `[NeutronRifle]` (8), `[NeutronRifleE]` (16) and the IFV's
+//! `[CRNeutronRifle]` (5), all Inviso; `[General] WarpAway=`,
+//! `ChronoSparkle1=`; `[CombatDamage] OpenToppedWarpDistance=`.
+//!
+//! RESIDUALS:
+//! - `+0x270` is one byte that TemporalClass and the Chronosphere's Teleport
+//!   states share; VERA keeps each writer's half and reads their union
+//!   ([`GameEntity::is_warped_out`]). Natively the Chronosphere's state 2
+//!   clears the byte under a live chain, and LetGo clears it under a
+//!   Chronosphere warp-out. Trigger: a Temporal weapon fired at an object in
+//!   its Chronosphere warp-out (60 frames). Effect: VERA keeps the object
+//!   frozen until the chain lets go; native thaws it once its warp-in ends,
+//!   or when the chain lets go before the warp.
+//! - `Mark(2)` at warp start and release (vtable `+0x124`) is presentation.
+//!   A building's online latch and slot-anim freeze (`0x004521C0`/`0x00452210`)
+//!   are `ObjectSubstrate::set_building_online_for_temporal`.
+//! - House `+0x1FC`, set at a building's warp start (`0x0071B13A`), release
+//!   (`0x0071AC49`, `0x0071AD17`) and erase (`0x0071AA60`), asks the House
+//!   update for the Super passes (`0x004F92F6`, `0x004F92FD`). VERA tests a
+//!   Super's online providers every frame (`superweapon`) and refreshes the
+//!   grants at the erase; for the player house it also refreshes the
+//!   building options and sidebar strips (`0x004F926C`), presentation.
+//! - The online latch's readers VERA wires are Is_Operational, power drain,
+//!   radar, the refinery's and an absorber's CanEnter (`0x0043C422`), the
+//!   depot probe (`0x0043C7FB`), the Super hold pass (`0x0050B020`,
+//!   `0x0050B04F`, in `superweapon`), and `ObjectTypeClass::FindFactory @
+//!   0x005F7900`'s online argument where the player's sidebar darkens a
+//!   cameo and a PRODUCE event looks for a factory (`production::can_build`).
+//!   Building lifecycle callbacks also run HouseUpdateFactoryQueue509140:
+//!   only-offline factories suspend a retained build with Suspend0, and a
+//!   later real callback can resume its system hold. Forced promotion uses
+//!   the shared held-start Resume owner. Temporal pause/release themselves
+//!   make no queue callback: warp alone keeps producing, while release alone
+//!   preserves a hold caused by another building's loss. Ares adds that
+//!   callback (hooks `0x004521C8`, `0x00452218`), run at the next factory
+//!   sweep (`Simulation::ares_refresh_temporal_factories`). GoOffline/GoOnline's
+//!   independent +660 owner is called by map input and trigger61/62.
+//!   Not wired:
+//!   - `HouseClass::CanBuild`'s upgrade-prerequisite scan
+//!     (`0x004F7DE6..0x004F7E4E`: an upgrade prerequisite counts only on an
+//!     online, unsold host; plain prerequisites use the house counters),
+//!     CheckDockArrayOccupancy (`0x0044E855`). Effect: an option enabled by a
+//!     warped upgrade host
+//!     stays available.
+//!   - The sensor-range circle (`0x00456750`), presentation. The separate
+//!     House4F92D2→Building4456D0 membership pass does honor the online latch:
+//!     existing cameos may stay dark while new additions wait for release.
+//!     `0x0044017E` reads660 for Tesla charging, not construction options.
+//! - `WarpPerStep` (`+0x4C`, written each step, read by no sim function) and
+//!   the `+0x2C` timer and `+0x38`/`+0x3C` fields (no writer) are not kept.
+//! - An engineer turned away from a warped building (`0x00519EF2`) is not
+//!   given `Set_Destination(0, 1)` and the scatter (`vtable+0x174`): VERA's
+//!   adjacent capture simply waits and captures on release. The Selling arm
+//!   before it (`0x00519EB2`) has no VERA state: a sale completes at once.
+//! - `UnitClass::Receive_Radio` answers WANT_RIDE (`0x24`) with 0 while
+//!   warped (`0x0073745C..0x00737473`); the message is dormant in stock YR
+//!   and not represented.
+//! - The cursor readers of `+0x270` (What_Action: Techno `0x006FFF07`,
+//!   `0x007005CD`, `0x00700731`; Infantry `0x0051E59B`; Unit `0x00740165`,
+//!   `0x007402CA`) belong to the app; the sim accepts an Attack order on a
+//!   warped target that the native cursor would not offer, and fire
+//!   admission drops it.
+//! - Voxel animation and harvest-overlay frames keep stepping for a warped
+//!   object; their native owners are not established (the sprite stage steps
+//!   in TechnoClass::AI_Update at `0x006FAC4D` and holds).
+
+use serde::{Deserialize, Serialize};
+
+use crate::map::entities::EntityCategory;
+use crate::rules::object_type::ObjectType;
+use crate::rules::ruleset::RuleSet;
+use crate::rules::warhead_type::WarheadType;
+use crate::sim::anim_class::AnimWorldCoord;
+use crate::sim::game_entity::GameEntity;
+use crate::sim::houses::Houses;
+use crate::sim::power_system::PowerStates;
+use crate::sim::world::ObjectSubstrate;
+use crate::sim::world::{FrameEffects, Simulation, UninitContext};
+
+/// `SumChainDamage @ 0x0071AB10` recurses while the depth is at most this
+/// (`0x0071AB22 CMP EAX,0x32; JG`).
+const CHAIN_DEPTH_LIMIT: i32 = 0x32;
+/// `AnimClass(type, coord, 0, 1, 0x600, 0, 0)` for WarpAway, the sparkles
+/// and KillOccupants' assault anim.
+const TEMPORAL_ANIM_DRAW_FLAGS: u32 = 0x600;
+/// The sparkle's frame phase: `frame % 24 == 0` (`0x0073622F..0x0073623E`).
+const SPARKLE_PERIOD_FRAMES: i32 = 24;
+/// A Foot's sparkle sits 0x78 leptons east and south of its Location
+/// (`0x00736274`, `0x00736280`).
+const SPARKLE_OFFSET_LEPTONS: i32 = 0x78;
+/// The ZAdjust of an anim at an occupied building's firing port
+/// (`anim+0x100 = -200`): the Temporal port sparkle (`0x004404CF`) and
+/// KillOccupants' assault anim (`0x004586C0`).
+pub(crate) const PORT_ANIM_Z_ADJUST: i32 = -200;
+
+/// One `TemporalClass`, owned by the attacker that fires it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TemporalLink {
+    /// `+0x28` the object being warped.
+    target: Option<u64>,
+    /// `+0x40` the attacker whose link precedes this one on the target.
+    prev: Option<u64>,
+    /// `+0x44` the attacker whose link follows.
+    next: Option<u64>,
+    /// `+0x48` the warp left; read on the chain head only.
+    warp_remaining: i32,
+}
+
+/// An object's Temporal state: its own link when it fires a Temporal weapon,
+/// and the head of the chain warping it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TemporalState {
+    /// `TechnoClass+0x274` TemporalImUsing.
+    link: Option<Box<TemporalLink>>,
+    /// `TechnoClass+0x278` TemporalTargetingMe: the chain head's attacker.
+    head: Option<u64>,
+}
+
+impl TemporalState {
+    /// The temporal half of `TechnoClass+0x270` BeingWarpedOut.
+    pub fn is_warped(&self) -> bool {
+        self.head.is_some()
+    }
+
+    /// `TechnoClass+0x278`: the attacker heading the chain warping this
+    /// object.
+    pub fn chain_head(&self) -> Option<u64> {
+        self.head
+    }
+
+    /// `vtable+0x1DC` (`0x0070C5D0`): a link that holds a target.
+    pub fn is_warping_someone(&self) -> bool {
+        self.warp_target().is_some()
+    }
+
+    /// The object this one is warping.
+    pub fn warp_target(&self) -> Option<u64> {
+        self.link.as_ref().and_then(|link| link.target)
+    }
+
+    /// `TechnoClass+0x274` is set.
+    pub fn has_link(&self) -> bool {
+        self.link.is_some()
+    }
+
+    /// `TemporalClass+0x48 WarpRemaining` on this object's own link.
+    pub fn warp_remaining(&self) -> Option<i32> {
+        self.link.as_ref().map(|link| link.warp_remaining)
+    }
+
+    /// Every object id this state names, for the snapshot reference check.
+    pub(crate) fn references(&self) -> impl Iterator<Item = u64> + '_ {
+        self.head.into_iter().chain(
+            self.link
+                .iter()
+                .flat_map(|link| link.target.into_iter().chain(link.prev).chain(link.next)),
+        )
+    }
+
+    /// A target warped by `head`, for fixtures outside this module.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn warped_by_for_test(head: u64) -> Self {
+        Self {
+            link: None,
+            head: Some(head),
+        }
+    }
+}
+
+impl GameEntity {
+    /// Stamp the coherent normal Temporal fixture through both state owners.
+    /// Native ClearLinkedList's exceptional still-offline state is configured
+    /// independently with the building power owner's fixture hook.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_temporal_for_test(&mut self, state: TemporalState) {
+        self.temporal = state;
+        self.set_building_online_for_test(!self.temporal.is_warped());
+    }
+
+    /// `TechnoClass+0x270` BeingWarpedOut (vtable `+0x1D4`, `0x0070C5B0`):
+    /// written by TemporalClass and by the Chronosphere's Teleport states
+    /// (state 0 sets it, state 2 clears it), and when Ares plays by the
+    /// building chronoshift. The ordinary teleport never writes it.
+    pub fn is_warped_out(&self) -> bool {
+        self.temporal.is_warped()
+            || self.chrono_warp().is_some_and(|warp| warp.warped_out())
+            || self.ares_chronoshifting()
+    }
+
+    /// The frozen branch of every class's AI while the object is warped
+    /// out: the leaf returns (Unit `0x0073635A`, Infantry `0x0051BC17`,
+    /// Aircraft `0x00414D2B`, Building `0x0043FD14` -> `0x0044057A`) before
+    /// FootClass::AI (`0x0073647B`, `0x0051BC9F`, `0x00414DA3`) or
+    /// TechnoClass::AI_Update (`0x0043FE56`), so none of its missions,
+    /// managers, repair, stance, deploy or animation work runs. VERA runs
+    /// parts of that AI in their own frame phases; each consults this. The
+    /// Unit and Aircraft test is `WarpingIn && chain head || BeingWarpedOut`
+    /// and Infantry's `BeingWarpedOut`: a chain head always comes with
+    /// BeingWarpedOut, so all three read it alone.
+    pub fn ai_frozen(&self) -> bool {
+        self.is_warped_out()
+    }
+
+    /// `TechnoClass+0x271` (vtable `+0x1D8`, `0x0070C5C0`): the teleport's
+    /// warp-in.
+    pub fn is_warping_in(&self) -> bool {
+        self.teleport_state()
+            .is_some_and(|teleport| teleport.warp_in_active())
+            || self.chrono_warp().is_some_and(|warp| warp.warping_in())
+    }
+}
+
+/// `TechnoClass::Init_Managers @ 0x006F4154..0x006F41BD`: a link for every
+/// class whose rookie `GetWeapon(0)` warhead is Temporal (the managers are
+/// built before a map reader sets veterancy, as for the CaptureManager).
+pub(crate) fn init_temporal(object_type: &ObjectType, rules: &RuleSet) -> TemporalState {
+    let temporal = crate::sim::combat::combat_weapon::weapon_for_index(object_type, 0, 0)
+        .and_then(|record| record.weapon_id)
+        .and_then(|weapon_name| rules.weapon(weapon_name))
+        .and_then(|weapon| rules.weapon_warhead(weapon))
+        .is_some_and(|warhead| warhead.temporal);
+    TemporalState {
+        link: temporal.then(Box::<TemporalLink>::default),
+        head: None,
+    }
+}
+
+/// The bullet's target as the Temporal arm reads it (`bullet+0x10C`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TemporalShotTarget {
+    /// No target: the arm ends before InitiateWarp.
+    None,
+    /// A cell: InitiateWarp runs with no Techno, which only drops the
+    /// firer's current victim.
+    Cell,
+    /// A Techno.
+    Object(u64),
+}
+
+impl Simulation {
+    fn temporal_link(substrate: &ObjectSubstrate, attacker: u64) -> Option<&TemporalLink> {
+        substrate
+            .entities
+            .get(attacker)
+            .and_then(|entity| entity.temporal.link.as_deref())
+    }
+
+    /// The Temporal arm of `BulletClass::DetonateAtCoord` (`0x00469423..
+    /// 0x004694C6`): no firer or no target ends it; a Foot outside the ground
+    /// layer is not warped (`0x0046946C`, InWhichLayer `!= 2`); a Unit in a
+    /// Tank Bunker hands the firer its bunker, which the firer retargets and
+    /// warps instead (`0x0046946B..0x004694A5`). The layer is the Foot's
+    /// locomotor answer ([`entity_layer`]): an aircraft taking off or landing
+    /// below two levels already answers Top, so it is not warped.
+    ///
+    /// RESIDUAL: `0x004694C1` calls through `+0x274` with no null test, so a
+    /// Temporal warhead on a firer without a link would crash natively; no
+    /// stock firer lacks one, and VERA does nothing.
+    ///
+    /// [`entity_layer`]: crate::sim::world::entity_layer
+    pub(crate) fn temporal_detonation(
+        &mut self,
+        firer: u64,
+        target: TemporalShotTarget,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        if !self.substrate.entities.contains(firer) {
+            return;
+        }
+        let victim = match target {
+            TemporalShotTarget::None => return,
+            TemporalShotTarget::Cell => None,
+            TemporalShotTarget::Object(id) => {
+                let Some(entity) = self.substrate.entities.get(id) else {
+                    return;
+                };
+                let foot = matches!(
+                    entity.category(),
+                    EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+                );
+                if foot {
+                    use crate::sim::world::display_layers::DisplayLayer;
+                    let layer = crate::sim::world::entity_layer(
+                        entity,
+                        self.resolved_terrain.as_ref(),
+                        Some((rules, &self.interner)),
+                    );
+                    // Ares 3.0 BulletClass_DetonateAt_CanTemporalTarget
+                    // (1005C600, hook 0x469467) also warps a Foot in the Air
+                    // or Top layer.
+                    let warpable_layer = layer == DisplayLayer::GROUND
+                        || rules.ares()
+                            && (layer == DisplayLayer::AIR || layer == DisplayLayer::TOP);
+                    if !warpable_layer {
+                        return;
+                    }
+                }
+                match entity.bunker.link().installed_in() {
+                    Some(bunker) if entity.category() == EntityCategory::Unit => {
+                        // vtable +0x3C8 Assign_Target(bunker) on the firer.
+                        let requested = Some(crate::sim::combat::TargetKind::Entity(bunker));
+                        let stored = crate::sim::mission::concrete_effects::assign_target_stored(
+                            &self.substrate.entities,
+                            self.terrain_objects.objects(),
+                            firer,
+                            requested,
+                            Some((rules, &self.interner)),
+                        );
+                        if let Some(firer_entity) = self.substrate.entities.get_mut(firer)
+                            && crate::sim::mission::concrete_effects::represented_assign_target_admitted(
+                                firer_entity,
+                                requested,
+                                stored,
+                                rules.ares_form(),
+                            )
+                        {
+                            self.assign_target_fire_teardown(firer, rules, registry);
+                        }
+                        Some(bunker)
+                    }
+                    _ => Some(id),
+                }
+            }
+        };
+        if Self::temporal_link(&self.substrate, firer).is_none() {
+            return;
+        }
+        self.temporal_initiate_warp(firer, victim, rules, registry, effects);
+    }
+
+    /// InitiateWarp's opening (`0x0071AF2F..0x0071AF48`): Kill_All_Spawns
+    /// (`0x006B7100`) and CaptureManager FreeAll on the target.
+    fn temporal_free_target(
+        &mut self,
+        target: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        if self
+            .substrate
+            .entities
+            .get(target)
+            .is_some_and(|entity| entity.spawn_manager.is_some())
+        {
+            crate::sim::spawn_manager::kill_all_spawns_with_context(
+                self,
+                target,
+                UninitContext::new(rules).with_effects(effects),
+            );
+        }
+        if self
+            .substrate
+            .entities
+            .get(target)
+            .is_some_and(|entity| entity.capture_manager.is_some())
+        {
+            self.free_all_captures(target, rules, registry, effects);
+        }
+    }
+
+    /// `TemporalClass::InitiateWarp @ 0x0071AF20`.
+    pub(crate) fn temporal_initiate_warp(
+        &mut self,
+        attacker: u64,
+        target: Option<u64>,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let ares = rules.ares_form();
+        // 0x0071AF2F..0x0071AF48: the target's spawns die and its captives
+        // go free before anything else is decided. Ares
+        // TemporalClass_Fire_UnwarpableA (hook 0x71AF2B) skips this to
+        // 0x71AF4D and does it once the target proves warpable (below).
+        if !ares && let Some(target) = target {
+            self.temporal_free_target(target, rules, registry, effects);
+        }
+        // 0x0071AF4D..0x0071AF61: the attacker drops its previous victim.
+        Self::temporal_release_if_warping(
+            &mut self.substrate,
+            &mut self.houses,
+            &mut self.power_states,
+            attacker,
+            ares,
+        );
+        let Some(target) = target else {
+            return;
+        };
+        if !self.can_warp_target(target, rules) {
+            return;
+        }
+        // Ares TemporalClass_Fire_PrismForwardAndWarpable (10016BD0, hook
+        // 0x71AF76): the warpable target's spawns die and its captives go
+        // free, and a building leaves its Prism network.
+        if ares {
+            self.temporal_free_target(target, rules, registry, effects);
+            self.substrate.ares_prism_remove_from_network(target, true);
+        }
+        // 0x0071AF76..0x0071AF81: an attacker being warped cannot start.
+        if self
+            .substrate
+            .entities
+            .get(attacker)
+            .is_none_or(|entity| entity.temporal.head.is_some())
+        {
+            return;
+        }
+        let Some((existing_head, strength)) = self.substrate.entities.get(target).map(|entity| {
+            (
+                entity.temporal.head,
+                self.object_type(entity.type_ref(), rules)
+                    .map_or(0, |object| object.strength),
+            )
+        }) else {
+            return;
+        };
+        if let Some(link) = self.substrate.temporal_link_mut(attacker) {
+            link.target = Some(target);
+        }
+        match existing_head {
+            None => {
+                // 0x0071AF98..0x0071AFB9: the first attacker heads the chain
+                // with Strength * 10 (`LEA x5; SHL 1`).
+                let warp = strength.wrapping_mul(10);
+                let warp = if ares {
+                    self.ares_health_factor_warp(attacker, target, strength, warp, rules)
+                } else {
+                    warp
+                };
+                self.substrate.set_temporal_head(target, Some(attacker));
+                if let Some(link) = self.substrate.temporal_link_mut(attacker) {
+                    link.warp_remaining = warp;
+                }
+                self.temporal_warp_start_notice(target, rules, registry, effects);
+            }
+            Some(head) => {
+                // 0x0071B0D1..0x0071B0E4: insert right after the head.
+                let head_next =
+                    Self::temporal_link(&self.substrate, head).and_then(|link| link.next);
+                if let Some(link) = self.substrate.temporal_link_mut(attacker) {
+                    link.prev = Some(head);
+                    link.next = head_next;
+                }
+                if let Some(link) = self.substrate.temporal_link_mut(head) {
+                    link.next = Some(attacker);
+                }
+                if let Some(next) = head_next
+                    && let Some(link) = self.substrate.temporal_link_mut(next)
+                {
+                    link.prev = Some(attacker);
+                }
+            }
+        }
+        // 0x0071B0EA sets `+0x270`, which the head above stands for.
+        // 0x0071B0FC..0x0071B10B: a gattling victim winds down one tick.
+        if self
+            .substrate
+            .entities
+            .get(target)
+            .and_then(|entity| self.object_type(entity.type_ref(), rules))
+            .is_some_and(|object| object.is_gattling)
+        {
+            self.gattling_update(target, rules, 1, effects);
+        }
+        // 0x0071B110..0x0071B13A: a building marks its House's power, then
+        // forces its independent online latch off and freezes its slot anims
+        // (`0x004521C0`), then marks the House's Super passes.
+        if let Some(owner) = self.substrate.entities.get(target).and_then(|entity| {
+            (entity.category() == EntityCategory::Structure).then_some(entity.owner())
+        }) {
+            Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false); //71B126, before release
+            self.substrate
+                .set_building_online_for_temporal(target, false, ares); //71B12F
+            self.houses.request_house_tech_tree_recheck(owner); //71B13A
+        }
+        // 0x0071B14E..0x0071B162: a victim that was itself warping lets go.
+        Self::temporal_release_if_warping(
+            &mut self.substrate,
+            &mut self.houses,
+            &mut self.power_states,
+            target,
+            ares,
+        );
+        // 0x0071B167..0x0071B175: with a current House (`0x00A83D4C`), the
+        // victim's Deselect (vt+0x150, `ObjectClass::Deselect`).
+        if self.session.current_house().is_some() {
+            self.object_deselect(target);
+        }
+    }
+
+    /// The first attacker's notice (`0x0071AFBC..0x0071B0CF`): a harvester
+    /// raises the ore-miner alert (`CreateRadarEvent(4)` and the EVA, both
+    /// gated on the player's own house, which the app applies); a building
+    /// that is not `Insignificant=` and not a 1x1 undeployer (`vtable+0x80`,
+    /// `0x00465D40`, as on the damage path) notifies its house it is under
+    /// attack (`0x0071B0CA`), whose call ends by raising event 6 on that
+    /// House's Tags ([`Self::raise_house_attacked_tags`]).
+    fn temporal_warp_start_notice(
+        &mut self,
+        target: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let Some(entity) = self.substrate.entities.get(target) else {
+            return;
+        };
+        let Some(object) = self.object_type(entity.type_ref(), rules) else {
+            return;
+        };
+        let notify_house = match entity.category() {
+            EntityCategory::Unit if object.harvester => false,
+            EntityCategory::Structure
+                if !object.insignificant && !object.is_1x1_with_undeploy() =>
+            {
+                // HouseNotify owns the deployed-miner subtype.
+                true
+            }
+            _ => return,
+        };
+        // The radar cell is the victim's GetCoords (vt+0x48): a building's
+        // foundation centre (`0x00447AC0`; NotifyUnderAttack `0x004F94AE`,
+        // `0x004F950E`, `0x004F956A`).
+        let Some((rx, ry, _, _)) = crate::sim::combat::resolve_target_coords(
+            &crate::sim::combat::TargetKind::Entity(target),
+            self,
+        ) else {
+            return;
+        };
+        let event = crate::sim::combat::UnderAttackEvent {
+            rx,
+            ry,
+            owner: entity.owner(),
+            victim_type: entity.type_ref(),
+            own_alert: true,
+            line: if notify_house {
+                crate::sim::combat::UnderAttackLine::House { allies: true }
+            } else {
+                crate::sim::combat::UnderAttackLine::OreMiner
+            },
+        };
+        if notify_house {
+            self.notify_house_under_attack(event, rules, registry, effects);
+            return;
+        }
+        // Temporal71B04C/71B05F's harvester branch calls radar/EVA directly, with
+        // no House Tags, and also completes before returning to the warp.
+        self.submit_under_attack_warning(event, rules, effects);
+    }
+
+    /// `TemporalClass::CanWarpTarget @ 0x0071AE50`: a `Warpable=` type, not
+    /// under the Iron Curtain or a Force Shield (vtable `+0x160`), and not a
+    /// Unit still standing in its war factory
+    /// ([`Self::unit_in_contact_war_factory`]).
+    ///
+    /// Installed Ares replaces the body (hook `0x71AE50`,
+    /// TechnoExt::CanWarpTarget `1004F300`): the target must also lack the
+    /// `UNWARPABLE` rank ability, a building must not be AboutToChronoshift
+    /// (registered with an Ares ChronoWarp), and only a Unit in a war factory
+    /// that is not Naval stays (GetWarFactoryOf `10045580`, excludeNaval).
+    fn can_warp_target(&self, target: u64, rules: &RuleSet) -> bool {
+        let Some(entity) = self.substrate.entities.get(target) else {
+            return false;
+        };
+        if !self
+            .object_type(entity.type_ref(), rules)
+            .is_some_and(|object| object.warpable)
+        {
+            return false;
+        }
+        if crate::sim::superweapon::invulnerability::is_invulnerable(
+            entity.invulnerability.as_ref(),
+            self.session.binary_frame(),
+        ) {
+            return false;
+        }
+        if rules.ares_form() {
+            let unwarpable = self
+                .object_type(entity.type_ref(), rules)
+                .and_then(|object| object.promotion_abilities())
+                .is_some_and(|abilities| abilities.unwarpable(entity.veterancy.raw()));
+            if unwarpable || self.ares_chrono_warps.about_to_chronoshift(target) {
+                return false;
+            }
+            let naval_factory = entity
+                .seldom
+                .radio_contacts
+                .slot(0)
+                .and_then(|contact| self.substrate.entities.get(contact))
+                .and_then(|factory| self.object_type(factory.type_ref(), rules))
+                .is_some_and(|factory| factory.naval);
+            if naval_factory {
+                return true;
+            }
+        }
+        !self.unit_in_contact_war_factory(target, rules)
+    }
+
+    /// `TemporalClass::Update @ 0x0071A760`, run for `head` by its target.
+    fn temporal_update_head(
+        &mut self,
+        head: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        // The head's link as this update read it: the release and warp below
+        // rewrite it through `&mut self`.
+        let Some(link) = Self::temporal_link(&self.substrate, head).copied() else {
+            return;
+        };
+        // 0x0071A76B..0x0071A790: a head with a predecessor releases everyone.
+        if let Some(target) = link.target
+            && link.prev.is_some()
+            && self
+                .substrate
+                .entities
+                .get(target)
+                .is_some_and(|entity| entity.temporal.head == Some(head))
+        {
+            self.substrate.set_temporal_head(target, None);
+            self.temporal_clear_linked_list(head, rules, effects);
+            return;
+        }
+        // 0x0071A79D..0x0071A846: from an open transport, a target beyond
+        // OpenToppedWarpDistance cells lets go (a Chrono Legionnaire riding
+        // a Battle Fortress that drives off).
+        if let Some(target) = link.target
+            && self.in_open_transport(head)
+            && let (Some(owner), Some(victim)) =
+                (self.anim_owner_coords(head), self.anim_owner_coords(target))
+        {
+            let distance = crate::util::native_x87::distance_3d_leptons(
+                [victim.x, victim.y, victim.z],
+                [owner.x, owner.y, owner.z],
+            );
+            if distance
+                > rules
+                    .combat_damage
+                    .open_topped_warp_distance
+                    .wrapping_mul(256)
+            {
+                Self::temporal_let_go(
+                    &mut self.substrate,
+                    &mut self.houses,
+                    &mut self.power_states,
+                    head,
+                    rules.ares_form(),
+                );
+                return;
+            }
+        }
+        // Ares 3.0 TemporalClass_UpdateA (1004BB60, hook 0x71A84E): the
+        // target's JammerClass unjams everything and is freed (its next
+        // TechnoClass_Update makes a new one). Its AttachEffect anim hiding
+        // (`TemporalHidesAnim`) belongs to the AttachEffect owner's residual.
+        if rules.ares_form()
+            && let Some(target) = link.target
+        {
+            self.remove_radar_jammer(target);
+        }
+        // 0x0071A84E..0x0071A88A: the chain first, then the head's own weapon.
+        let chain = link
+            .next
+            .map_or(0, |next| self.temporal_chain_damage(next, 1, rules));
+        let damage = self.temporal_owner_damage(head, rules);
+        let remaining = link.warp_remaining.wrapping_sub(damage.wrapping_add(chain));
+        if let Some(stored) = self.substrate.temporal_link_mut(head) {
+            stored.warp_remaining = remaining;
+        }
+        if remaining > 0 {
+            return;
+        }
+        self.temporal_erase(head, link.target, rules, registry, effects);
+    }
+
+    /// `SumChainDamage @ 0x0071AB10`: this attacker's damage plus the chain
+    /// below it, recursing while the depth is at most [`CHAIN_DEPTH_LIMIT`].
+    fn temporal_chain_damage(&self, attacker: u64, depth: i32, rules: &RuleSet) -> i32 {
+        let rest = match Self::temporal_link(&self.substrate, attacker).and_then(|link| link.next) {
+            Some(next) if depth <= CHAIN_DEPTH_LIMIT => {
+                self.temporal_chain_damage(next, depth.wrapping_add(1), rules)
+            }
+            _ => 0,
+        };
+        self.temporal_owner_damage(attacker, rules)
+            .wrapping_add(rest)
+    }
+
+    /// `Owner->GetWeapon(Owner->SelectWeapon(0))->Damage` (vtable `+0x2E4`
+    /// then `+0x3F8`, `0x0071A860..0x0071A87B`): the current weapon's raw
+    /// `Damage=`, the elite weapon when elite, with no firepower bonus, armor
+    /// or Verses.
+    fn temporal_owner_damage(&self, attacker: u64, rules: &RuleSet) -> i32 {
+        let Some(entity) = self.substrate.entities.get(attacker) else {
+            return 0;
+        };
+        let Some(object) = self.object_type(entity.type_ref(), rules) else {
+            return 0;
+        };
+        let facts = crate::sim::combat::combat_weapon::attacker_facts(entity, object);
+        let index = crate::sim::combat::combat_weapon::what_weapon_should_i_use(
+            rules,
+            object,
+            &facts,
+            None,
+            |index| {
+                crate::sim::combat::combat_weapon::get_weapon(
+                    entity,
+                    object,
+                    index,
+                    &self.substrate.entities,
+                    rules,
+                    &self.interner,
+                )
+            },
+        );
+        crate::sim::combat::combat_weapon::get_weapon(
+            entity,
+            object,
+            index,
+            &self.substrate.entities,
+            rules,
+            &self.interner,
+        )
+        .map_or(0, |weapon| weapon.damage)
+    }
+
+    /// `TechnoClass+0x82` InOpenTransport: inside an `OpenTopped=` transport.
+    fn in_open_transport(&self, attacker: u64) -> bool {
+        self.substrate
+            .entities
+            .get(attacker)
+            .is_some_and(|entity| entity.passenger_role().in_open_transport())
+    }
+
+    /// The erase (`0x0071A895..0x0071AB02`).
+    fn temporal_erase(
+        &mut self,
+        head: u64,
+        target: Option<u64>,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let ares = rules.ares_form();
+        let Some(target) = target.filter(|&target| self.substrate.entities.contains(target)) else {
+            // 0x0071A895..0x0071A8B5: no target — clear and idle; then the
+            // `0x0071A90E` retest jumps to the common tail, which clears and
+            // idles again (`0x0071AAE7..0x0071AB02`).
+            self.substrate.temporal_clear_fields(head);
+            self.temporal_owner_idle(head, rules, effects);
+            self.substrate.temporal_clear_fields(head);
+            self.temporal_owner_idle(head, rules, effects);
+            return;
+        };
+        // 0x0071A8BD..0x0071A909: WarpAway at the target's Location. Ares
+        // TemporalClass_Update_WarpAway (10053CE0, hook 0x71A900) takes the
+        // warp weapon's `Temporal.WarpAway=` first.
+        let warp_combat = if ares {
+            self.ares_warp_warhead(head, rules)
+                .and_then(WarheadType::ares_combat)
+        } else {
+            None
+        };
+        let warp_away = match warp_combat {
+            Some(combat) => combat.temporal_warp_away(&rules.general.warp_away.name),
+            None => Some(rules.general.warp_away.name.as_str()),
+        };
+        if let Some(entity) = self.substrate.entities.get(target)
+            && let Some(warp_away) = warp_away
+        {
+            let location = location_coord(entity);
+            self.spawn_once_anim(warp_away, location, None, rules);
+        }
+        // 0x0071A917..0x0071A978: a Trainable attacker gains
+        // `VeterancyStruct::Add(ownerCost, targetCost)` here, and again in
+        // Record_The_Kill below. Ares TemporalClass_Update_Erase (1004BBC0)
+        // replaces the whole block (to 0x71A97D): no gain here, and the
+        // warp weapon's `UnitLost.Suppress=` silences the loss below.
+        let unit_lost_suppressed = if ares {
+            warp_combat.is_some_and(|combat| combat.unit_lost_suppress())
+        } else {
+            self.temporal_veterancy(head, target, rules);
+            false
+        };
+        let Some(category) = self
+            .substrate
+            .entities
+            .get(target)
+            .map(|entity| entity.category())
+        else {
+            return;
+        };
+        if category == EntityCategory::Structure {
+            // Ares 3.0 100177B0 (hook 0x71A995): an erased last tunnel
+            // entrance kills its owner's network, credited to the eraser
+            // (`sim::ares_tunnel`).
+            if ares {
+                self.ares_kill_tunnel_feet_if_last(
+                    target,
+                    Some(head),
+                    UninitContext::new(rules).with_effects(effects),
+                );
+            }
+            // Temporal71A9A0..71A9A7: only positive true Occupants count
+            // calls KillOccupants(NULL), ahead of Cargo disposal/bunker release.
+            if self
+                .substrate
+                .entities
+                .get(target)
+                .is_some_and(|entity| entity.passenger_role().occupants().count() > 0)
+            {
+                crate::sim::passenger::garrison_eject::kill_building_occupants(
+                    self,
+                    target,
+                    None,
+                    UninitContext::new(rules).with_effects(effects),
+                );
+            }
+            // TemporalClass::Update (0x0071A9AC..0x0071A9DC) scalar-deletes Cargo
+            // before the parent's kill/UnInit. This private erase runs inside
+            // the admitted live object pass, whose active GameState is 1.
+            self.scalar_delete_building_cargo(
+                target,
+                UninitContext::new(rules).with_effects(effects),
+                1,
+            );
+            // 0x0071A9EE..0x0071AA15: a Tank Bunker releases its occupant
+            // (`0x004593A0`) after the synchronous Cargo destructors.
+            crate::sim::docking::bunker_link::release_sell_destroy(self, target, rules, effects);
+        }
+        // 0x0071AA90: the erased object's own bunker link (`+0x2E4`) names a
+        // building — `BuildingClass::ClearBunker @ 0x00459470`, ahead of
+        // FreeSlaves (`0x0071AA95`). A stock warp never holds an installed
+        // unit (the detonation's Temporal arm retargets the firer at its
+        // bunker, `0x0046946B..0x004694A5`), so this arm sleeps until a
+        // caller admits the chain.
+        if let Some(bunker) = self
+            .substrate
+            .entities
+            .get(target)
+            .and_then(|entity| entity.bunker.link().installed_in())
+            && self
+                .substrate
+                .entities
+                .get(bunker)
+                .is_some_and(|building| building.category() == EntityCategory::Structure)
+        {
+            crate::sim::docking::bunker_link::clear_bunker(self, bunker, rules, effects);
+        }
+        // 0x0071AA95..0x0071AAA7: an erased master's slaves pass to the
+        // attacker's house (FreeSlaves, no supplied house). Its UnInit and
+        // owner-change callbacks share this object turn's map inputs.
+        self.free_slaves(target, Some(head), None, rules, registry, effects);
+        // Ares TemporalClass_Update_Abductor (100564F0, hook 0x71AAAC): an
+        // `Abductor.Temporal` warp weapon abducts the erased object instead
+        // of announcing, crediting and removing it (to 0x71AAD5).
+        if ares
+            && let Some(weapon) = self.ares_warp_weapon(head, rules)
+            && weapon.ares_abductor.temporal
+            && self.ares_conduct_abduction(head, target, weapon, rules, registry, effects)
+        {
+            self.temporal_owner_idle(head, rules, effects);
+            self.substrate.temporal_clear_fields(head);
+            self.temporal_owner_idle(head, rules, effects);
+            return;
+        }
+        if category == EntityCategory::Structure {
+            // 0x0071AA3A vtable +0x3B8: `BuildingClass::Death_Announcement @
+            // 0x0044D760`, the warp's owner as its Killer.
+            self.building_death_announcement(target, true, unit_lost_suppressed, rules);
+        } else if !unit_lost_suppressed
+            && let Some(entity) = self.substrate.entities.get(target)
+            && let Some(object) = self.object_type(entity.type_ref(), rules)
+            && let Some(event) = crate::sim::combat::death_announcement_event(
+                object,
+                entity.type_ref(),
+                category,
+                entity.position.rx(),
+                entity.position.ry(),
+                entity.owner(),
+                ares,
+            )
+        {
+            // 0x0071AAB5 vtable +0x3B8: Death_Announcement. A bunkered
+            // unit's own release already ran above (`0x0071AA90`); no stock
+            // warp holds an installed unit, because the detonation redirects
+            // to the bunker.
+            self.dispatch_unit_lost_events(&[event]);
+        }
+        // vtable +0xE0 Record_The_Kill(Owner): experience, kill and score.
+        self.record_the_kill(
+            target,
+            crate::sim::combat::KillSource::Techno(Some(head)),
+            crate::sim::combat::KillCallback::Terminal,
+            UninitContext::new(rules).with_effects(effects),
+        );
+        let target_owner = self.substrate.entities.get(target).map(GameEntity::owner);
+        // vtable +0xF8 UnInit: no death effects, no survivors.
+        self.uninit_with_context(target, UninitContext::new(rules).with_effects(effects));
+        //71AA5A..71AA60 requests the owner's House tail; the actual late
+        //Building destructor separately calls hold/revoke43BEF0.
+        if category == EntityCategory::Structure
+            && let Some(owner) = target_owner
+        {
+            self.houses.request_house_tech_tree_recheck(owner);
+        }
+        // 0x0071AAD5..0x0071AB02: idle, clear, idle again (the UnInit's
+        // pointer expiry already cleared the link and idled once).
+        self.temporal_owner_idle(head, rules, effects);
+        self.substrate.temporal_clear_fields(head);
+        self.temporal_owner_idle(head, rules, effects);
+    }
+
+    /// Ares TechnoExt idxSlot_Warp (+0xA), written by the TechnoClass
+    /// constructor hook 1004A530: the first slot below `WeaponCount` (two
+    /// without `TurretCount`) whose weapon or elite weapon has a `Temporal=`
+    /// warhead. The warp hooks read `GetWeapon(idxSlot_Warp)`'s warhead for
+    /// the owner's current rank.
+    ///
+    /// RESIDUAL: native fixes the slot at construction; this reads the
+    /// owner's current type, which differs only after a type conversion
+    /// that moves its Temporal weapon to another slot.
+    fn ares_warp_warhead<'r>(&self, owner: u64, rules: &'r RuleSet) -> Option<&'r WarheadType> {
+        rules.warhead(self.ares_warp_weapon(owner, rules)?.warhead.as_deref()?)
+    }
+
+    /// Ares GetWarpWeapon: the owner's weapon in that slot for its rank.
+    fn ares_warp_weapon<'r>(
+        &self,
+        owner: u64,
+        rules: &'r RuleSet,
+    ) -> Option<&'r crate::rules::weapon_type::WeaponType> {
+        let entity = self.substrate.entities.get(owner)?;
+        let object = self.object_type(entity.type_ref(), rules)?;
+        let count = if object.turret_count > 0 {
+            object.weapon_count.max(0) as usize
+        } else {
+            2
+        };
+        let temporal = |weapon: Option<&str>| {
+            weapon
+                .and_then(|weapon| rules.weapon(weapon))
+                .and_then(|weapon| weapon.warhead.as_deref())
+                .and_then(|warhead| rules.warhead(warhead))
+                .is_some_and(|warhead| warhead.temporal)
+        };
+        let slot = (0..count)
+            .find(|&slot| {
+                temporal(object.weapon_at(slot)) || temporal(object.elite_weapon_at(slot))
+            })
+            .unwrap_or(0);
+        crate::sim::combat::combat_weapon::get_weapon(
+            entity,
+            object,
+            slot as i32,
+            &self.substrate.entities,
+            rules,
+            &self.interner,
+        )
+    }
+
+    /// Ares TemporalClass_Fire_HealthFactor (10053C20, hook 0x71AFB2): the
+    /// head's warp is `(1 - f) * Strength * 10 + f * 0.0` with
+    /// `f = (1 - Health / Strength) * Temporal.HealthFactor`, in doubles,
+    /// truncated when above 1.0 and else 1.
+    fn ares_health_factor_warp(
+        &self,
+        attacker: u64,
+        target: u64,
+        strength: i32,
+        warp: i32,
+        rules: &RuleSet,
+    ) -> i32 {
+        use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF64Bits};
+        let Some(combat) = self
+            .ares_warp_warhead(attacker, rules)
+            .and_then(WarheadType::ares_combat)
+        else {
+            return warp;
+        };
+        let health = self
+            .substrate
+            .entities
+            .get(target)
+            .map_or(0, |entity| entity.health.current());
+        let one = || X87::load_f64(NativeF64Bits::ONE);
+        let factor = X87::mul(
+            X87::sub(
+                one(),
+                X87::div(X87::load_i32(health), X87::load_i32(strength)),
+            ),
+            X87::load_f64(combat.temporal_health_factor()),
+        );
+        let value = X87::add(
+            X87::mul(factor, X87::load_f64(NativeF64Bits::from_bits(0))),
+            X87::mul(X87::sub(one(), factor), X87::load_i32(warp)),
+        );
+        if X87::compare(value, one()) == MaskedX87Ordering::Greater {
+            X87::ftol_i32_low_masked(value)
+        } else {
+            1
+        }
+    }
+
+    /// `VeterancyStruct::Add(OwnerType cost, TargetType cost)` for a
+    /// `Trainable=` attacker (`0x0071A917..0x0071A978`). Each cost is the
+    /// type's Cost_Of for its own object's house: the target's
+    /// (`0x0071A952`) and the attacker's (`0x0071A968`).
+    fn temporal_veterancy(&mut self, attacker: u64, target: u64, rules: &RuleSet) {
+        let (Some(attacker_entity), Some(target_entity)) = (
+            self.substrate.entities.get(attacker),
+            self.substrate.entities.get(target),
+        ) else {
+            return;
+        };
+        let (Some(owner_type), Some(target_type)) = (
+            self.object_type(attacker_entity.type_ref(), rules),
+            self.object_type(target_entity.type_ref(), rules),
+        ) else {
+            return;
+        };
+        if !owner_type.trainable {
+            return;
+        }
+        let (owner_cost, target_cost) = (
+            self.cost_of(attacker_entity.owner(), owner_type, rules),
+            self.cost_of(target_entity.owner(), target_type, rules),
+        );
+        if let Some(attacker_entity) = self.substrate.entities.get_mut(attacker) {
+            attacker_entity.veterancy.award_kill(
+                owner_cost,
+                target_cost,
+                true,
+                rules.general.veteran_ratio,
+                rules.general.veteran_cap,
+            );
+        }
+    }
+
+    /// `Enter_Idle_Mode(0, 1)` (vtable `+0x484`) on an attacker. Every stock
+    /// Temporal firer is a Foot; a building or aircraft firer has no VERA
+    /// idle selector.
+    fn temporal_owner_idle(
+        &mut self,
+        attacker: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        #[cfg(any(test, feature = "test-support"))]
+        IDLE_TRACE.with(|trace| trace.borrow_mut().push(attacker));
+        if self.substrate.entities.get(attacker).is_some_and(|entity| {
+            matches!(
+                entity.category(),
+                EntityCategory::Unit | EntityCategory::Infantry
+            )
+        }) {
+            crate::sim::world::enter_idle_mode(
+                self,
+                attacker,
+                rules,
+                Some(rules.overlay_registry()),
+                effects,
+            );
+        }
+    }
+
+    /// The `if (+0x274 && +0x274->Target) LetGo()` every release site
+    /// shares: retargeting, idle mode (`0x00709A43..0x00709A54`), the cell
+    /// entry tail (`0x006F50A3..0x006F50B4`) and CaptureManager's
+    /// DecideUnitFate (`0x004723E4..0x004723F3`).
+    /// Ordinary Stop only clears TarCom; the due Attack handler invokes this
+    /// before its cadence draw. Native deadline/LetGo controls are retained in
+    /// `tools/spatial_oracle/temporal_stop.json`. `ares` is the game's
+    /// `RuleSet::ares_form`, for [`Self::temporal_let_go`].
+    pub(crate) fn temporal_release_if_warping(
+        substrate: &mut ObjectSubstrate,
+        houses: &mut Houses,
+        power_states: &mut PowerStates,
+        attacker: u64,
+        ares: bool,
+    ) {
+        if substrate
+            .entities
+            .get(attacker)
+            .is_some_and(|entity| entity.temporal.is_warping_someone())
+        {
+            Self::temporal_let_go(substrate, houses, power_states, attacker, ares);
+        }
+    }
+
+    /// `TemporalClass::LetGo @ 0x0071ABC0`: a head hands the chain and its
+    /// progress to the next attacker, a lone head frees the target (a building
+    /// comes back online), a chained link unlinks. LetGo never idles its own
+    /// attacker. `ares` is the game's `RuleSet::ares_form`: the building's
+    /// return queues the Ares factory refresh
+    /// ([`ObjectSubstrate::set_building_online_for_temporal`]).
+    pub(crate) fn temporal_let_go(
+        substrate: &mut ObjectSubstrate,
+        houses: &mut Houses,
+        power_states: &mut PowerStates,
+        attacker: u64,
+        ares: bool,
+    ) {
+        // The link as the let-go read it: the walk below rewrites it and its
+        // neighbours through `substrate`.
+        let Some(link) = Self::temporal_link(substrate, attacker).copied() else {
+            return;
+        };
+        match link.prev {
+            None => {
+                if let Some(next) = link.next {
+                    if let Some(target) = link.target {
+                        substrate.set_temporal_head(target, Some(next));
+                    }
+                    if let Some(next_link) = substrate.temporal_link_mut(next) {
+                        next_link.prev = None;
+                        next_link.warp_remaining = link.warp_remaining;
+                    }
+                } else if let Some(target) = link.target {
+                    substrate.set_temporal_head(target, None);
+                    substrate.set_building_online_for_temporal(target, true, ares); //71AC3D
+                    if let Some(owner) = substrate.entities.get(target).and_then(|entity| {
+                        (entity.category() == EntityCategory::Structure).then_some(entity.owner())
+                    }) {
+                        Self::invalidate_house_power(&*houses, power_states, owner, false); //71AC36
+                        houses.request_house_tech_tree_recheck(owner); //71AC49
+                    }
+                }
+            }
+            Some(prev) => {
+                if let Some(next) = link.next
+                    && let Some(next_link) = substrate.temporal_link_mut(next)
+                {
+                    next_link.prev = Some(prev);
+                }
+                if let Some(prev_link) = substrate.temporal_link_mut(prev) {
+                    prev_link.next = link.next;
+                }
+            }
+        }
+        substrate.temporal_clear_fields(attacker);
+    }
+
+    /// `ClearLinkedList @ 0x0071ADE0`: frees the target, then walks Next and
+    /// Prev, unlinking a neighbour's back-link only where it points here
+    /// (`0x0071AE02`, `0x0071AE19`), and idles each attacker last.
+    pub(crate) fn temporal_clear_linked_list(
+        &mut self,
+        attacker: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        // A link without a target faults natively (`0x0071ADE9` writes
+        // through it); VERA stops, which also ends any walk of a cycle.
+        let Some(target) =
+            Self::temporal_link(&self.substrate, attacker).and_then(|link| link.target)
+        else {
+            return;
+        };
+        self.substrate.set_temporal_head(target, None);
+        //71ADE9..71ADF2 clears Warp/Head, without ForceOnline or House
+        //dirty writes. This is not ClearWarp71ACD0 and can leave660 false.
+        if let Some(stored) = self.substrate.temporal_link_mut(attacker) {
+            stored.target = None;
+        }
+        if let Some(next) =
+            Self::temporal_link(&self.substrate, attacker).and_then(|link| link.next)
+        {
+            if let Some(next_link) = self.substrate.temporal_link_mut(next)
+                && next_link.prev == Some(attacker)
+            {
+                next_link.prev = None;
+            }
+            self.temporal_clear_linked_list(next, rules, effects);
+        }
+        // Prev is read again after the Next walk (`0x0071AE12`).
+        if let Some(prev) =
+            Self::temporal_link(&self.substrate, attacker).and_then(|link| link.prev)
+        {
+            if let Some(prev_link) = self.substrate.temporal_link_mut(prev)
+                && prev_link.next == Some(attacker)
+            {
+                prev_link.next = None;
+            }
+            self.temporal_clear_linked_list(prev, rules, effects);
+        }
+        self.substrate.temporal_clear_fields(attacker);
+        self.temporal_owner_idle(attacker, rules, effects);
+    }
+
+    /// `0x0071AD40`, the house blow-up's release of the chain warping one of
+    /// its objects (`HouseClass::Blowup_All @ 0x004FC6D0`, at `0x004FC742`),
+    /// run on the head: frees the target, then walks Next and Prev through
+    /// ClearLinkedList, which idles those attackers, but never idles its own.
+    pub(crate) fn temporal_release_chain_no_idle(
+        &mut self,
+        attacker: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let Some(target) = Self::temporal_link(&self.substrate, attacker).map(|link| link.target)
+        else {
+            return;
+        };
+        if let Some(target) = target {
+            //71AD40 clears only +270/+278 here. Unlike ClearWarp71ACD0,
+            //it never calls ForceOnline452210 or dirties the target House.
+            self.substrate.set_temporal_head(target, None);
+            if let Some(stored) = self.substrate.temporal_link_mut(attacker) {
+                stored.target = None;
+            }
+        }
+        if let Some(next) =
+            Self::temporal_link(&self.substrate, attacker).and_then(|link| link.next)
+        {
+            if let Some(next_link) = self.substrate.temporal_link_mut(next)
+                && next_link.prev == Some(attacker)
+            {
+                next_link.prev = None;
+            }
+            self.temporal_clear_linked_list(next, rules, effects);
+        }
+        if let Some(prev) =
+            Self::temporal_link(&self.substrate, attacker).and_then(|link| link.prev)
+        {
+            if let Some(prev_link) = self.substrate.temporal_link_mut(prev)
+                && prev_link.next == Some(attacker)
+            {
+                prev_link.next = None;
+            }
+            self.temporal_clear_linked_list(prev, rules, effects);
+        }
+        self.substrate.temporal_clear_fields(attacker);
+    }
+
+    /// `TechnoClass::PointerExpired`'s forward (`0x00707B34` ->
+    /// `0x0071AB60`), outside the removal gate: the attacker's own expiry lets
+    /// go; its target's expiry clears the link and idles the attacker without
+    /// relinking the chain.
+    pub(crate) fn temporal_pointer_expired(
+        &mut self,
+        listener: u64,
+        expired: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let Some(target) = Self::temporal_link(&self.substrate, listener).map(|link| link.target)
+        else {
+            return;
+        };
+        if expired == listener {
+            Self::temporal_let_go(
+                &mut self.substrate,
+                &mut self.houses,
+                &mut self.power_states,
+                listener,
+                rules.ares_form(),
+            );
+        } else if target == Some(expired) {
+            self.substrate.temporal_clear_fields(listener);
+            self.temporal_owner_idle(listener, rules, effects);
+        }
+    }
+
+    /// `UnitClass` vtable `+0x4D8` (`0x007464E0`), when the last passenger
+    /// leaves a `Gunner=` transport (`0x004DE738..0x004DE742`): the
+    /// TemporalClass returns to the gunner, which lets go of the IFV's victim
+    /// (`0x00746557`).
+    /// Returns whether the manager moved, so the passenger owner can run
+    /// the callback's conditional burst/GetROF/rearm continuation. `ares` is
+    /// the game's `RuleSet::ares_form`, for [`Self::temporal_let_go`].
+    pub(crate) fn temporal_remove_gunner(
+        substrate: &mut ObjectSubstrate,
+        houses: &mut Houses,
+        power_states: &mut PowerStates,
+        ifv: u64,
+        gunner: u64,
+        ares: bool,
+    ) -> bool {
+        if !substrate.temporal_move_link(ifv, gunner) {
+            return false;
+        }
+        Self::temporal_release_if_warping(substrate, houses, power_states, gunner, ares);
+        true
+    }
+
+    /// `AnimClass(type, coord, 0, 1, 0x600, 0, 0)`, then the ZAdjust store
+    /// when given: WarpAway, the Temporal sparkles and KillOccupants' assault
+    /// anim (`passenger::garrison_eject::kill_building_occupants`).
+    pub(crate) fn spawn_once_anim(
+        &mut self,
+        anim_name: &str,
+        coord: AnimWorldCoord,
+        z_adjust: Option<i32>,
+        rules: &RuleSet,
+    ) {
+        if anim_name.is_empty() {
+            return;
+        }
+        let type_id = self.interner.intern(anim_name);
+        let (rx, ry, sub_x, sub_y, z) = coord.to_cell_sub_z();
+        let descriptor = crate::sim::components::AnimClassSpawnDescriptor {
+            delay: 0,
+            loop_count: 1,
+            draw_flags: TEMPORAL_ANIM_DRAW_FLAGS,
+            z_adjust: 0,
+            reverse: false,
+            ..crate::sim::components::AnimClassSpawnDescriptor::new(
+                type_id, rx, ry, sub_x, sub_y, z,
+            )
+        };
+        let anim = match self.spawn_anim_at_world(rules, descriptor, coord) {
+            Ok(anim) => anim,
+            Err(error) => {
+                log::debug!("anim [{anim_name}] did not construct: {error}");
+                return;
+            }
+        };
+        if let Some(z_adjust) = z_adjust {
+            self.substrate.set_anim_z_adjust(anim, z_adjust);
+        }
+    }
+
+    /// Every class AI's prologue (Unit `0x00736204..0x0073635A`, Infantry
+    /// `0x0051BADE..0x0051BC17`, Aircraft `0x00414BDB..0x00414D2B`, Building
+    /// `0x0043FCF9..0x0043FD26` then `0x004403D4..0x00440573`):
+    /// 1. the chain head's Update, and a Foot's sparkle while BeingWarpedOut
+    ///    or WarpingIn ([`Self::warp_foot_sparkle`]), Infantry's before the
+    ///    Update and the others' after;
+    /// 2. a Foot warping in, or warped out with the Chronosphere's latch,
+    ///    runs its locomotor's Process an extra time (Unit
+    ///    `0x007362A7..0x007362F5`, Infantry `0x0051BB7D..0x0051BBCB`,
+    ///    Aircraft `0x00414C78..0x00414CC6`) and returns if that killed it.
+    ///    The active Chronosphere warp uses `movement::teleport_chrono`
+    ///    (its residuals cover a Drive over it). Ordinary Teleport warp-in
+    ///    uses the existing Process's early TimerCheck arm (`0x00719322`),
+    ///    including a hidden open-topped passenger;
+    /// 3. a warped-out object ([`GameEntity::ai_frozen`]) drops its target
+    ///    and NavCom and returns.
+    ///
+    /// Returns true when the rest of the object's AI must not run this
+    /// frame. An erase leaves the dead target's head in place, so it still
+    /// sparkles and returns frozen, as native does.
+    pub(crate) fn temporal_ai_prologue(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        ctx: &mut crate::sim::world::ObjectAiCtx<'_>,
+        bridge_state_changed: &mut bool,
+    ) -> bool {
+        let registry = ctx.overlay_registry;
+        let Some((category, untouched)) = self.substrate.entities.get(id).map(|entity| {
+            (
+                entity.category(),
+                entity.temporal.head.is_none()
+                    && !entity.is_warped_out()
+                    && !entity.is_warping_in(),
+            )
+        }) else {
+            return true;
+        };
+        // VERA-only: with no head of its own and neither warped out nor
+        // warping in, nothing below acts (no sparkle, no head Update, no warp
+        // to process) and the object is not frozen, so one read answers it
+        // (the same results).
+        if untouched {
+            return false;
+        }
+        // Infantry sparkles before its head's Update; the others after.
+        if category == EntityCategory::Infantry {
+            self.warp_foot_sparkle(id, rules);
+        }
+        if let Some(head) = self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|entity| entity.temporal.head)
+        {
+            self.temporal_update_head(head, rules, registry, &mut ctx.effects);
+        }
+        if matches!(category, EntityCategory::Unit | EntityCategory::Aircraft) {
+            self.warp_foot_sparkle(id, rules);
+        }
+        if category != EntityCategory::Structure
+            && self.substrate.entities.get(id).is_some_and(|entity| {
+                entity.is_warping_in() || (entity.is_warped_out() && entity.chrono_warp_latch())
+            })
+        {
+            if self
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| entity.active_chrono_warp().is_some())
+            {
+                match self.process_chrono_warp(id, rules, ctx) {
+                    Ok(changed) => *bridge_state_changed |= changed,
+                    Err(error) => log::warn!("chrono warp {id} prologue Process: {}", error.cause),
+                }
+            } else {
+                // Infantry51BB81..51BBC0 runs the ordinary Teleport's extra
+                // Process even in Limbo. Its71930C..719322 early arm calls the
+                // existing TimerCheck owner; FootAI's later Limbo gate remains.
+                // Native execution: infantry_teleport_prologue.json (Steam gamemd).
+                self.process_teleport(id, rules, ctx);
+            }
+            if self
+                .substrate
+                .entities
+                .get(id)
+                .is_none_or(|entity| entity.death.is_dying() || !entity.lifecycle.object_alive())
+            {
+                return true;
+            }
+        }
+        if !self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(GameEntity::ai_frozen)
+        {
+            return false;
+        }
+        if category == EntityCategory::Structure {
+            self.temporal_building_sparkle(id, rules);
+        }
+        // Frozen: TarCom drops, and a Foot with a NavCom calls
+        // `Set_Destination(0, 1)` (Unit `0x00736321..0x0073634D`, Infantry
+        // `0x0051BBDF..0x0051BC0B`, Aircraft `0x00414CF2..0x00414D1E`; a NULL
+        // NavCom returns without the call). The setter also ends its path
+        // (`UnitClass::Set_Destination @ 0x00741970` resets the path head). For a
+        // Drive/Ship Unit that setter also reaches the locomotor Stop, which
+        // nulls +34 with no warp gate (Drive `0x004AFE00`, Ship `0x0069F510`;
+        // none in `0x00741970` or Foot `0x004D94B0` either), so a released
+        // unit only finishes its current track. The locomotor's Move_To
+        // refuses while warped (Drive `0x004AFD71`, Walk `0x0075ACD0`), and it
+        // does not process.
+        if self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| entity.attack_target.target().is_some())
+        {
+            // Each frozen class calls virtual +3C8 (Infantry51BBEF), not
+            // the Techno base write set. Its reached tail also clears a
+            // Tesla Trooper's automatic charging intent at51B33F.
+            let _ = self.assign_target_represented(id, None, rules, &mut ctx.effects);
+        }
+        let clears_destination = category != EntityCategory::Structure
+            && self
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| entity.navigation.nav_com().is_some());
+        if clears_destination {
+            self.assign_null_destination(id, rules, registry, &mut ctx.effects);
+        }
+        true
+    }
+
+    /// A Foot's `ChronoSparkle1=` every 24th frame while BeingWarpedOut or
+    /// WarpingIn (`+0x270 || +0x271`): 0x78 leptons east and south of a Unit's
+    /// or an infantryman's Location, at an Aircraft's own Location (its
+    /// constructor row copies the Location unshifted, `0x00414C38..0x00414C60`).
+    fn warp_foot_sparkle(&mut self, id: u64, rules: &RuleSet) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if !(entity.is_warped_out() || entity.is_warping_in())
+            || !sparkle_frame(self.session.binary_frame(), 0)
+        {
+            return;
+        }
+        let offset = if entity.category() == EntityCategory::Aircraft {
+            0
+        } else {
+            SPARKLE_OFFSET_LEPTONS
+        };
+        let location = location_coord(entity);
+        let coord = AnimWorldCoord {
+            x: location.x.wrapping_add(offset),
+            y: location.y.wrapping_add(offset),
+            z: location.z,
+        };
+        self.spawn_once_anim(&rules.general.chrono_sparkle1.name, coord, None, rules);
+    }
+
+    /// A frozen building's sparkle (`0x004403D4..0x0044055D`): a type with
+    /// `MaxNumberOccupants=` sparkles at each port `i` on frames where
+    /// `(frame + i) % 24 == 0`, at its `vtable+0xAC` coordinate plus
+    /// `IsometricPixelToWorld(MuzzleFlash<i>)` with ZAdjust -200; any other
+    /// building sparkles at its Location every 24th frame.
+    fn temporal_building_sparkle(&mut self, id: u64, rules: &RuleSet) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let Some(object) = self.object_type(entity.type_ref(), rules) else {
+            return;
+        };
+        let frame = self.session.binary_frame();
+        let location = location_coord(entity);
+        let name = &rules.general.chrono_sparkle1.name;
+        let ports = object.max_number_occupants;
+        if ports == 0 {
+            if sparkle_frame(frame, 0) {
+                self.spawn_once_anim(name, location, None, rules);
+            }
+            return;
+        }
+        for port in 0..ports {
+            if !sparkle_frame(frame, port) {
+                continue;
+            }
+            if let Some(coord) = self.occupant_port_coord(id, port as usize, rules) {
+                self.spawn_once_anim(name, coord, Some(PORT_ANIM_Z_ADJUST), rules);
+            }
+        }
+    }
+
+    /// An occupied building's firing port `port`: its `vtable+0xAC`
+    /// coordinate plus `IsometricPixelToWorld(MuzzleFlash<port>)` (BuildingType
+    /// `+0x1588`), at the building's Z. The Temporal port sparkle
+    /// (`0x004404D5`) and KillOccupants' assault anim (`0x00458613..0x0045866C`)
+    /// read it.
+    pub(crate) fn occupant_port_coord(
+        &self,
+        id: u64,
+        port: usize,
+        rules: &RuleSet,
+    ) -> Option<AnimWorldCoord> {
+        let entity = self.substrate.entities.get(id)?;
+        let object = self.object_type(entity.type_ref(), rules)?;
+        let location = location_coord(entity);
+        let (px, py) = rules
+            .art()
+            .get(&object.image)
+            .or_else(|| rules.art().get(&object.id))
+            .and_then(|art| art.muzzle_flash_positions.get(port).copied())
+            .unwrap_or((0, 0));
+        let (dx, dy) =
+            crate::util::pixel_conversion::PixelConversionBounds::isometric_pixel_to_leptons(
+                px, py,
+            );
+        let (base, _) = crate::sim::movement::ground_pose::building_render_order_parts(
+            crate::sim::components::DriveCoord {
+                x: location.x,
+                y: location.y,
+                z: location.z,
+            },
+            false,
+            false,
+        );
+        Some(AnimWorldCoord {
+            x: base.x.wrapping_add(dx),
+            y: base.y.wrapping_add(dy),
+            z: base.z,
+        })
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    fn temporal_link_mut(&mut self, attacker: u64) -> Option<&mut TemporalLink> {
+        self.entities
+            .get_mut(attacker)
+            .and_then(|entity| entity.temporal.link.as_deref_mut())
+    }
+    fn set_temporal_head(&mut self, target: u64, head: Option<u64>) {
+        if let Some(entity) = self.entities.get_mut(target) {
+            entity.temporal.head = head;
+        }
+    }
+    fn temporal_clear_fields(&mut self, attacker: u64) {
+        if let Some(link) = self.temporal_link_mut(attacker) {
+            link.target = None;
+            link.next = None;
+            link.prev = None;
+        }
+    }
+    /// `UnitClass` vtable `+0x4D4` (`0x00746420`): a gunner's TemporalClass
+    /// moves to the IFV, which becomes its owner.
+    pub(crate) fn temporal_receive_gunner(&mut self, ifv: u64, gunner: u64) -> bool {
+        self.temporal_move_link(gunner, ifv)
+    }
+    /// Move a TemporalClass to another owner, re-pointing the chain and the
+    /// target's head to the new owner's id. Returns false when `from` holds
+    /// none (the native null tests at `0x00746434`/`0x007464FC`).
+    fn temporal_move_link(&mut self, from: u64, to: u64) -> bool {
+        if !self.entities.contains(to) {
+            return false;
+        }
+        let Some(link) = self
+            .entities
+            .get_mut(from)
+            .and_then(|entity| entity.temporal.link.take())
+        else {
+            return false;
+        };
+        if let Some(target) = link.target
+            && self
+                .entities
+                .get(target)
+                .is_some_and(|entity| entity.temporal.head == Some(from))
+        {
+            self.set_temporal_head(target, Some(to));
+        }
+        if let Some(prev) = link.prev
+            && let Some(prev_link) = self.temporal_link_mut(prev)
+        {
+            prev_link.next = Some(to);
+        }
+        if let Some(next) = link.next
+            && let Some(next_link) = self.temporal_link_mut(next)
+        {
+            next_link.prev = Some(to);
+        }
+        if let Some(entity) = self.entities.get_mut(to) {
+            entity.temporal.link = Some(link);
+        }
+        true
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+thread_local! {
+    /// Every `Enter_Idle_Mode` this module issues, in order, for the native
+    /// corpus.
+    static IDLE_TRACE: std::cell::RefCell<Vec<u64>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Drain the idle trace (see `IDLE_TRACE`).
+#[cfg(any(test, feature = "test-support"))]
+fn take_idle_trace() -> Vec<u64> {
+    IDLE_TRACE.with(|trace| std::mem::take(&mut *trace.borrow_mut()))
+}
+
+/// `(frame + phase) % 24 == 0` under the native signed IDIV.
+fn sparkle_frame(frame: u32, phase: u32) -> bool {
+    (frame as i32).wrapping_add(phase as i32) % SPARKLE_PERIOD_FRAMES == 0
+}
+
+/// `ObjectClass+0x9C` Location, the coordinate WarpAway and the sparkle use.
+fn location_coord(entity: &GameEntity) -> AnimWorldCoord {
+    let coord = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+    AnimWorldCoord {
+        x: coord.x,
+        y: coord.y,
+        z: coord.z,
+    }
+}
+
+#[cfg(all(test, tests_sim_t_z))]
+#[path = "temporal_tests.rs"]
+mod tests;
+
+#[cfg(all(test, tests_sim_t_z))]
+#[path = "temporal_cargo_disposal_tests.rs"]
+mod cargo_disposal_tests;

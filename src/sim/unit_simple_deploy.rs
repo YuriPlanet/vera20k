@@ -1,0 +1,368 @@
+//! Unit simple deployment,739AC0/739CD0 and Mission_Unload73DE6E.
+//! The Unit Mission leaf owns6E0..6E2; Techno owns its one Stage and retained
+//! deployment Anim. Jumpjet consumes the same landing-for-deploy byte134.
+//! Evidence and executable boundary controls: tools/spatial_oracle/unit_simple_deploy.
+
+use crate::map::entities::EntityCategory;
+use crate::rules::ruleset::RuleSet;
+use crate::sim::anim_class::AnimWorldCoord;
+use crate::sim::components::{AnimClassSpawnDescriptor, NavTargetRef};
+use crate::sim::game_entity::GameEntity;
+use crate::sim::mission::authority::LiveReadyInputProvider;
+use crate::sim::mission::{MissionId, MissionType};
+use crate::sim::world::{FrameEffects, Simulation};
+
+pub(crate) fn is_simple_deployer(sim: &Simulation, entity: &GameEntity, rules: &RuleSet) -> bool {
+    entity.category() == EntityCategory::Unit
+        && sim
+            .object_type(entity.type_ref(), rules)
+            .is_some_and(|object| {
+                object.is_simple_deployer
+                    && object.passengers <= 0
+                    && !object.harvester
+                    && !object.weeder
+                    && object.deploys_into.is_none()
+            })
+}
+
+impl Simulation {
+    /// Unload73DE6E..73DEC8 observes6E0 before choosing its updater. Pending
+    /// animation/landing returns1; completed work queues/commences Guard then
+    /// FootUnload4DA2B0 returns450. Neither tail consumes scenario RNG.
+    pub(crate) fn unit_simple_mission_unload(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) -> Result<i32, String> {
+        let deployed = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("simple deploy receiver retired")?
+            .is_fully_deployed();
+        self.update_unit_simple_deploy(id, !deployed, rules, effects)?;
+        // Ares 3.0 UnitClass_Mi_Unload_SimpleDeployer (1004C070, hook
+        // 0x73DE90), past the updater: a deployed (6E0) unit whose type has
+        // `Convert.Deploy` converts in place (TechnoExt::ConvertToType
+        // 10043650) and, converted, is no longer deployed; then the Unload
+        // waits (return 1 at 0x73E5B1) while the locomotor is moving.
+        if rules.ares_form() {
+            let entity = self
+                .substrate
+                .entities
+                .get(id)
+                .ok_or("simple deploy receiver retired")?;
+            if entity.is_fully_deployed()
+                && let Some(target) = self
+                    .entity_object_type(entity, rules)
+                    .and_then(|object| object.techno_combat().convert_deploy())
+                    .cloned()
+                && self.convert_techno_type(id, &target, rules, effects)
+                && let Some(entity) = self.substrate.entities.get_mut(id)
+            {
+                entity.mission_leaf.set_unit_deployed(0);
+            }
+            let entity = self
+                .substrate
+                .entities
+                .get(id)
+                .ok_or("simple deploy receiver retired")?;
+            if crate::sim::movement::motion_query::is_moving_now(
+                entity,
+                crate::sim::movement::SpeedRules::new(rules, &self.interner, &self.houses),
+                self.session.binary_frame(),
+            ) {
+                return Ok(1);
+            }
+        }
+        let entity = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("simple deploy receiver retired")?;
+        if entity.unit_deploying() || entity.landing_for_deploy() {
+            return Ok(1);
+        }
+        self.mission_queue_exact(
+            id,
+            MissionId::from_known(MissionType::Guard),
+            0,
+            self.session.binary_frame(),
+            &LiveReadyInputProvider { rules },
+        )
+        .map_err(|error| error.to_string())?;
+        self.substrate
+            .mission_commence_exact(id, self.session.binary_frame())
+            .map_err(|error| error.to_string())?;
+        Ok(450)
+    }
+
+    /// UpdateSimpleDeployState739AC0 and Undeploy739CD0. The two native bodies
+    /// share an attachment/Stage setup but have different admission/completion
+    /// effects. AnimClass advances its own forward/reverse display clock.
+    pub(crate) fn update_unit_simple_deploy(
+        &mut self,
+        id: u64,
+        deploying: bool,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) -> Result<(), String> {
+        let entity = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("simple deploy receiver retired")?;
+        let object = self
+            .object_type(entity.type_ref(), rules)
+            .ok_or("simple deploy type missing")?;
+        let leaf = entity
+            .mission_leaf
+            .as_unit()
+            .ok_or("simple deploy requires Unit")?;
+        // GetHeight (vt+0x1C8) at `0x00739ADE` and `0x00739B22`.
+        let height = crate::sim::movement::air_movement::current_fly_height(
+            entity,
+            self.resolved_terrain.as_ref(),
+        );
+        // Ares 3.0 UnitClass_SimpleDeploy_Height (1004C380, hook 0x739ADA)
+        // drops the airborne non-DeployToLand refusal: such a deployer
+        // deploys where it is.
+        let airborne_refused = !rules.ares() && height > 0 && !object.deploy_to_land;
+        if deploying {
+            if !object.is_simple_deployer || airborne_refused || leaf.deployed() != 0 {
+                return Ok(());
+            }
+        } else if leaf.deployed() == 0 {
+            return Ok(());
+        }
+        let deploy_to_land = object.deploy_to_land;
+        let configured_anim = object.deploying_anim.as_deref();
+        let object_has_deploying_anim = configured_anim.is_some();
+        let active = if deploying {
+            leaf.deploy_begin_active()
+        } else {
+            leaf.deploy_reverse_active()
+        } != 0;
+        let retained = entity.deploy_anim();
+        // The same hook raises InAir only for a `DeployToLand=` type.
+        if deploying
+            && !entity.landing_for_deploy()
+            && height > 0
+            && (!rules.ares() || deploy_to_land)
+        {
+            self.substrate
+                .entities
+                .get_mut(id)
+                .expect("same Unit")
+                .request_landing_for_deploy();
+        }
+        if active && let Some(anim_id) = retained {
+            let anim = self
+                .anim(anim_id)
+                .ok_or("Unit retained an expired deployment animation")?;
+            let config = rules
+                .art()
+                .anim_runtime_config(self.interner.resolve(anim.type_id()))
+                .ok_or("retained deployment animation type is unbound")?;
+            // Original ADD/SUB wrap before a signed comparison. Owner Stage
+            // increments positively even for the separately reversed Anim.
+            let threshold = config
+                .start
+                .wrapping_add(config.end)
+                .wrapping_sub(if deploying { 1 } else { 2 });
+            let entity = self.substrate.entities.get_mut(id).expect("same Unit");
+            if entity.native_stage().value() >= threshold {
+                entity.mission_leaf.set_unit_deployed(u8::from(deploying));
+                if deploying {
+                    entity.mission_leaf.set_unit_deploy_begin_active(0);
+                } else {
+                    entity.mission_leaf.set_unit_deploy_reverse_active(0);
+                    //739D4F..739D62: animated completion passes even Empty
+                    //through a fresh Map lookup and the concrete Unit setter.
+                    if deploy_to_land {
+                        let (rx, ry) = self
+                            .techno_nearby_location(id, Some(id), rules)
+                            .unwrap_or((0, 0));
+                        if let Some(terrain) = self.resolved_terrain.as_ref() {
+                            terrain.native_cell_identity((rx, ry));
+                        }
+                        self.assign_destination_represented(
+                            id,
+                            Some(NavTargetRef::cell(rx as u16, ry as u16)),
+                            rules,
+                            effects,
+                        )
+                        .map_err(|error| error.to_string())?;
+                    }
+                }
+            }
+        } else if !deploying
+            || !self
+                .substrate
+                .entities
+                .get(id)
+                .expect("same Unit")
+                .landing_for_deploy()
+        {
+            if let Some(name) = configured_anim
+                && !(deploying && self.ares_simple_deploy_turning(id, rules))
+            {
+                let anim_id = if let Some(anim_id) = retained {
+                    anim_id
+                } else {
+                    self.start_unit_deploy_anim(id, name, !deploying, rules)?
+                };
+                let anim = self
+                    .anim(anim_id)
+                    .ok_or("deployment animation missing after construction")?;
+                let config = rules
+                    .art()
+                    .anim_runtime_config(self.interner.resolve(anim.type_id()))
+                    .ok_or("deployment animation type is unbound")?;
+                let (start, rate) = (config.start, i32::from(config.rate_logic_frames));
+                let entity = self.substrate.entities.get_mut(id).expect("same Unit");
+                entity.restart_native_stage(start, self.session.binary_frame() as i32, rate);
+                if deploying {
+                    entity.mission_leaf.set_unit_deploy_begin_active(1);
+                } else {
+                    entity.mission_leaf.set_unit_deploy_reverse_active(1);
+                }
+            } else if !(deploying && object_has_deploying_anim) {
+                self.substrate
+                    .entities
+                    .get_mut(id)
+                    .expect("same Unit")
+                    .mission_leaf
+                    .set_unit_deployed(u8::from(deploying));
+            }
+        }
+        // Undeploy739E56..739E6C: IsDisguised41C010 then ClearDisguise746720.
+        // The latter's radar invalidation callback changes no simulation state.
+        if !deploying
+            && let Some(disguise) = self
+                .substrate
+                .entities
+                .get_mut(id)
+                .and_then(|e| e.seldom.disguise.as_mut())
+            && disguise.is_disguised()
+        {
+            disguise.clear_unit();
+        }
+        // The native updaters request these sounds on every admitted visit,
+        // independently of whether this call finished or merely waited.
+        Self::emit_deploy_action_sound(
+            &mut self.interner,
+            &self.substrate,
+            self.resolved_terrain.as_ref(),
+            &mut self.sound_events,
+            id,
+            if deploying { 27 } else { 31 },
+            rules,
+        )
+    }
+
+    /// Ares 3.0 UnitClass_SimpleDeploy_Facing (1004C2D0, hook 0x739B8A): a
+    /// deployer with a `DeployingAnim=` first faces its type's `DeployDir`,
+    /// else `[AudioVisual] DeployDir`, in eighth turns; until it does, it
+    /// turns (Do_Turn, while its locomotor is not moving) and starts no
+    /// animation (0x739C70, the shared sound tail). True while it turns.
+    fn ares_simple_deploy_turning(&mut self, id: u64, rules: &RuleSet) -> bool {
+        if rules.ares_form() {
+            let frame = self.session.binary_frame();
+            let Some(entity) = self.substrate.entities.get(id) else {
+                return false;
+            };
+            let Some(object) = self.object_type(entity.type_ref(), rules) else {
+                return false;
+            };
+            let dir = object.techno_combat().movement().deploy_dir().map_or_else(
+                || ((((rules.general.deploy_dir as u16) >> 4) + 1) >> 1) & 7,
+                u16::from,
+            );
+            let current = entity.body_facing_current(frame);
+            if (((current >> 12) + 1) >> 1) & 7 == dir {
+                return false;
+            }
+            let moving = crate::sim::movement::motion_query::is_moving_now(
+                entity,
+                crate::sim::movement::SpeedRules::new(rules, &self.interner, &self.houses),
+                frame,
+            );
+            if !moving && let Some(entity) = self.substrate.entities.get_mut(id) {
+                crate::sim::movement::locomotor_do_turn(entity, dir << 13, frame);
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    fn start_unit_deploy_anim(
+        &mut self,
+        id: u64,
+        name: &str,
+        reverse: bool,
+        rules: &RuleSet,
+    ) -> Result<u64, String> {
+        let entity = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("deployment animation owner retired")?;
+        let position = &entity.position;
+        let coord = crate::sim::movement::ground_pose::object_location(
+            entity,
+            self.resolved_terrain.as_ref(),
+        );
+        // GetRemapColour705D70 freezes the owner's current/disguised palette
+        // at this producer, rather than following later owner/disguise changes.
+        let remap_house = entity
+            .seldom
+            .disguise
+            .as_ref()
+            .filter(|state| state.is_disguised())
+            .and_then(|state| state.house())
+            .unwrap_or(entity.owner());
+        let (rx, ry, sx, sy, z) = (
+            position.rx(),
+            position.ry(),
+            position.sub_x(),
+            position.sub_y(),
+            position.z(),
+        );
+        let type_name = self.interner.intern(name);
+        let descriptor = AnimClassSpawnDescriptor {
+            draw_flags: 0x600,
+            reverse,
+            owner: Some(id),
+            ..AnimClassSpawnDescriptor::new(type_name, rx, ry, sx, sy, z)
+        };
+        let anim = self
+            .spawn_anim_at_world(
+                rules,
+                descriptor,
+                AnimWorldCoord {
+                    x: coord.x,
+                    y: coord.y,
+                    z: coord.z,
+                },
+            )
+            .map_err(|error| error.to_string())?;
+        self.substrate
+            .entities
+            .get_mut(id)
+            .expect("same Unit")
+            .retain_deploy_anim(anim);
+        self.substrate.anims.set_anim_house_remap(anim, remap_house);
+        Ok(anim)
+    }
+}
+
+#[cfg(all(test, tests_sim_t_z))]
+#[path = "unit_simple_deploy_tests.rs"]
+mod tests;
+
+#[cfg(all(test, tests_sim_t_z))]
+#[path = "unit_simple_deploy_retail_tests.rs"]
+mod retail_tests;

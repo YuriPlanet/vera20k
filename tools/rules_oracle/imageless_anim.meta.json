@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original null-image AnimType admission and explicit/lazy bounds",
+  "assumptions": [
+    "Three fresh synthetic types with declared empty image catalogs. Full original constructor, ART reader, theater postpass and GetImage execute through the existing anim_theater_flags reader.",
+    "NULL is supplied only at the existing LoadFileFromMIX transport seam; image pointers and frame bounds are never injected. Original text and AnimType vtable bytes remain guarded by that reader.",
+    "Default/explicit/lazy End and LoopEnd results are native outputs. No full AnimClass lifetime, particle world, archive I/O, malformed SHP decoding or rendered parity is claimed."
+  ],
+  "substitutions": [
+    "Existing Lists/Reader successful heap, TLS and deallocation transport; cached INI section/index storage.",
+    "Existing LoadFileFromMIX5B40B0 resource transport returns the declared named header bytes or NULL. Original filename formation, read order, flag decisions and header-derived bounds execute unchanged."
+  ],
+  "entry_points": {
+    "factory": "0x00428B80",
+    "constructor": "0x00427530",
+    "object_reader": "0x005F92D0",
+    "anim_reader": "0x00427D00",
+    "boolean_reader": "0x005295F0",
+    "theater_postpass": "0x00427A80",
+    "image_and_bounds": "0x00427B50",
+    "get_image": "0x00428C30",
+    "anim_type_rtti": "0x00428E50"
+  },
+  "payload_sha256": "cf6e5cb7e3ae550b9fbb732d0ffdc9bd81a370a3b957c8bbb0cc6ef7a7a7ad84"
+}

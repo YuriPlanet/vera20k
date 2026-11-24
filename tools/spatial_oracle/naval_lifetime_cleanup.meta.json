@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original marked naval damage postlude and terminal lifetime research.\n\nSupplied marked actor and sparse object/map projection, not full Unlimbo.\nResident current-cell Water02.sno bytes are physical stock Shrapnel metadata.\n",
+  "assumptions": [
+    "Frozen native_occupants fixture and its original AEGIS reader outputs remain the admission/damage base. Selected repaired strip land is supplied, not recomputed by the repair controller here. Only source Water current cell uses physical stock TMP and original47D2B0.",
+    "Original actual40CB80/4A8630 static vector startup and55BAA0/4A9720 register actor in Logic and display layer2. IsOnMap1, cell membership and owner one-unit counter are supplied; full Unlimbo is not executed. Counter capacity16 avoids resize; no native return is replaced.",
+    "Foot retained cell55C is supplied physical current cell, sight counters16 are supplied to keep release arithmetic in range, Foot retained sight radius stays constructor0. Stock complete sight reveal or full House bookkeeping initialization not claimed.",
+    "Terminal stage starts at actual UnitAI7364A1 with physical Z set to ground208-396 and supplied interior ESI/stack; original RecordKill and complete concrete Foot/Unit/Techno/Object UnInit/Limbo execute through736510. Earlier whole UnitAI/FootAI and intervening sinking frames excluded. HP remains1 at final removal, owner loss counter goes1 to2, actor Alive becomes0 and deferred queue retains pointer. Final deferred destructor/free drain excluded.",
+    "Native selected MPBattle inputs are byte-identical to active MPBattleMD.ini; new resident readers use correct active MPBattleMD path. See separate audio layer identity receipt.",
+    "Main/Scenario/MapGen full states bracket damage and terminal stages. FPCW0E7F supplied."
+  ],
+  "substitutions": [
+    "Inherited setup allocation/free/CRT and measured OS Interlocked only. CRT atexit registration and Tactical wall-clock result0 are setup boundaries. No measured gameplay receiver is replaced."
+  ],
+  "entry_points": {
+    "damage": "0x00487A10",
+    "mark": "0x004D3780",
+    "remove": "0x0047EA90",
+    "recalc": "0x0047D2B0",
+    "terminal": "0x007364A1",
+    "uninit": "0x004DE5D0",
+    "logic_remove": "0x0055BAE0",
+    "display_remove": "0x004A9770"
+  },
+  "payload_sha256": "7084a4ea5cc0a491b65a6135c0b6f0980b8d50c511bcdf1eeb25434a36d32051"
+}

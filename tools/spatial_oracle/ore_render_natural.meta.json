@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Two original flat Riparius rasters at physical XMP03T4 source72,25, level4/slope0/flags0, density4 then5. Native CPU and raster are separate bounded components; no whole Tactical/frame/GPU claim.",
+  "assumptions": [
+    "Existing physical archive/OverlayType/Tiberium/ART/image/ordinary Convert/shape/surface owner, selecting XMP03T4.MAP in the existing layer loop instead of GoldSt. Actual physical map hash, source identity/data/level and effective type fields are compared to consumed ore_authored_natural native outputs. No Rust inputs or expected pixels.",
+    "Existing original47F6A0,480110,5FDCC0,4AED70,490E50,437A10 and4990E0 raster pipeline executes. Cell data4 and5 come from independently executed native growth; live map loader, normal Tactical projection and World AI are excluded.",
+    "Existing VM A plane is read back after the rows and required uniform; surface.a_value records its supplied neutral prior, not native shroud generation. Projected local cell_point66,141, clip192x160, viewport0, A127, backgroundFFFF and oldZ65535 remain explicit raster priors. Actual selected image/frame/rect/color/Z runs are native outputs. Original surface numeric comparison does not itself prove production fog/A upload."
+  ],
+  "substitutions": [
+    "Existing PaletteReader successful allocator/TLS/archive transport and supplied Cell/A/Z/surface inputs. Original caller, display selector, shape/raster and palette generation are not substituted."
+  ],
+  "entry_points": {
+    "cell_body": "0x0047F6A0",
+    "draw_offset": "0x00480110",
+    "selector": "0x005FDCC0",
+    "shape": "0x004AED70",
+    "rle_selector": "0x00490E50",
+    "rowwalker": "0x00437A10",
+    "opaque": "0x004990E0",
+    "type_reader": "0x00721A50"
+  },
+  "replay_command": "python -m tools.spatial_oracle.bridge_shadow_render --ore-natural",
+  "payload_sha256": "038ca22b3dbb726a00c250156e50ae26ebc6742b9bf4d4128ebcaefc68abb6a7"
+}

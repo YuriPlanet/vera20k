@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Startup chain of g_HeightFactor (0x0089DDB8) used by BuildingTypeClass::Dimension2 0x00464AF0.",
+  "assumptions": [
+    "FPCW 0E7F (WinMain _controlfp(0x300, 0x300) at 0x006BBFC1); static tables from the image; CRT pow 0x007C8FB0 runs natively."
+  ],
+  "substitutions": [
+    "None: the four initializers run in startup order without supplied callbacks."
+  ],
+  "entry_points": {
+    "sqrt_two_cells": "0x0045AFA0",
+    "pi_over_three": "0x0045B030",
+    "pi_over_two": "0x0045B050",
+    "height_factor_init": "0x0045B070"
+  },
+  "payload_sha256": "9aa1ed8dfbcdd54a8043c0c9852f7fa6542775c1c5a71f2ee955741352cb3772"
+}

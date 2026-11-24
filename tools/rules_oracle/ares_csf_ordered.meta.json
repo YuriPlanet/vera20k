@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Three ordered-label Ares supplemental CSF controls with actual native final lookups.",
+  "assumptions": [
+    "Synthetic initialized sorted base tables and synthetic single-value supplemental bytes are explicit inputs.",
+    "Original enumeration, parser, override/index hooks, lower-middle CRT bsearch and Ares MSVC introsort execute.",
+    "Final values execute LoadString734E60 and CRT bsearch; ordered labels are read directly without dictionary projection.",
+    "Two controls start above33 labels and exercise the ninther sort branch. Heap fallback, base duplicate parsing, multiple values, overflow and general malformed input are outside executable comparison coverage."
+  ],
+  "substitutions": [
+    "Same CCFile, heap, ASCII strcmpi, formatting and Syringe transport fixture services as ares_csf.py; no search/sort/lookup results injected."
+  ],
+  "entry_points": {
+    "extra": "0x10060DF0",
+    "override": "0x10060C80",
+    "sort": "0x10060330",
+    "search": "0x007C8E25",
+    "lookup": "0x00734E60"
+  },
+  "ares_sha256": "93ce890f387a6c1b3240a2dd7b674f25fec5a0e96f0b0d0306796b2edf7b5b83",
+  "replay_command": "python -m tools.rules_oracle.ares_csf --ares-dll <Ares.dll> --gamemd-exe <gamemd.exe> --ordered-controls --check",
+  "payload_sha256": "68781f49a7fa690f067f6969976f1d754de87de92918abbd8fd5244c53275165"
+}

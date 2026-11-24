@@ -1,0 +1,256 @@
+{
+  "$defs": {
+    "artifact": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9.:-]*$",
+          "type": "string"
+        },
+        "path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "path",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "comparison_contract": {
+      "additionalProperties": false,
+      "properties": {
+        "color_space": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "crop": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "cursor_policy": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "frame_timing": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "resolutions": {
+          "items": {
+            "pattern": "^[1-9][0-9]*x[1-9][0-9]*$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "scaling": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "surface_region": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "color_space",
+        "crop",
+        "cursor_policy",
+        "frame_timing",
+        "resolutions",
+        "scaling",
+        "surface_region"
+      ],
+      "type": "object"
+    },
+    "evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "items": {
+            "$ref": "#/$defs/artifact"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "comparison_contract": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/comparison_contract"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "pattern": "^evidence:[A-Za-z0-9][A-Za-z0-9.:-]*$",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "exhaustive-proof",
+            "native-executable-differential",
+            "production-regression",
+            "static-research"
+          ]
+        },
+        "proof_domain": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "artifacts",
+        "comparison_contract",
+        "id",
+        "kind",
+        "proof_domain"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://vera20k.local/schemas/exact-shell-ui-evidence.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "blocker_resolutions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "blocker_id": {
+            "pattern": "^catalog:[A-Za-z0-9][A-Za-z0-9.:-]*$",
+            "type": "string"
+          },
+          "evidence_id": {
+            "pattern": "^evidence:[A-Za-z0-9][A-Za-z0-9.:-]*$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "blocker_id",
+          "evidence_id"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "evidence": {
+      "items": {
+        "$ref": "#/$defs/evidence"
+      },
+      "type": "array"
+    },
+    "row_results": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "comparison_id": {
+            "anyOf": [
+              {
+                "pattern": "^evidence:[A-Za-z0-9][A-Za-z0-9.:-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "comparison_result": {
+            "enum": [
+              "DRIFT",
+              "DRIFT_FIXED_UNVERIFIED",
+              "INCOMPARABLE",
+              "MATCH",
+              "NOT_RUN"
+            ]
+          },
+          "native_ids": {
+            "items": {
+              "pattern": "^evidence:[A-Za-z0-9][A-Za-z0-9.:-]*$",
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "residuals": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "row_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "rust_ids": {
+            "items": {
+              "pattern": "^evidence:[A-Za-z0-9][A-Za-z0-9.:-]*$",
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "status": {
+            "enum": [
+              "DRIFT",
+              "DRIFT_FIXED_UNVERIFIED",
+              "UNVERIFIED",
+              "VERIFIED"
+            ]
+          }
+        },
+        "required": [
+          "comparison_id",
+          "comparison_result",
+          "native_ids",
+          "owner",
+          "residuals",
+          "row_id",
+          "rust_ids",
+          "status"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1
+    }
+  },
+  "required": [
+    "blocker_resolutions",
+    "evidence",
+    "row_results",
+    "schema_version"
+  ],
+  "type": "object"
+}

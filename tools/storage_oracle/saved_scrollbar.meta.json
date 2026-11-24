@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "450 saved-list scrollbar thumb-height samples",
+  "assumptions": [
+    "Heights 255, 304 and 343 are supplied geometry vectors, not a claim of observed runtime dimensions",
+    "Ranges 1 through 150; input track height equals client height minus 2 border pixels and 44 arrow pixels",
+    "x87 input control word 0x0E7F; original ftol helper runs; output minimum is applied by original instructions",
+    "This does not certify unsampled x87 rounding edges or pointer/timer behavior"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "thumb_arithmetic": "0x0061C818",
+    "end": "0x0061C86D"
+  },
+  "payload_sha256": "42a2a94bee129374d9c8f1ad000653bb4d454c359ae693c2374b5e9ba0aecbd2"
+}

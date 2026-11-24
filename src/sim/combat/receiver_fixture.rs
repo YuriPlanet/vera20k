@@ -1,0 +1,994 @@
+//! Compatibility inputs for phase-level tests of the production receiver.
+//! This module and its temporary world transfers do not exist in production.
+
+use super::*;
+use crate::map::houses::HouseAllianceMap;
+use crate::sim::scenario_session::ScenarioSession;
+use crate::sim::world::ObjectSubstrate;
+use crate::sim::world::Simulation;
+use std::collections::BTreeMap;
+
+thread_local! {
+    static FIRE_VISIT_TRACE: std::cell::RefCell<Option<Vec<serde_json::Value>>> = const { std::cell::RefCell::new(None) };
+    static AREA_VISIT_TRACE: std::cell::RefCell<Option<Vec<serde_json::Value>>> = const { std::cell::RefCell::new(None) };
+    static BUILDING_FIRE_STUB: std::cell::RefCell<Option<BuildingFireStub>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Observe the shared area's actual caller inputs without replacing receivers,
+/// return values, RNG or world state. Each thread retains only its own trace.
+pub(crate) fn trace_area_visits<T>(run: impl FnOnce() -> T) -> (T, Vec<serde_json::Value>) {
+    AREA_VISIT_TRACE.with_borrow_mut(|trace| {
+        assert!(trace.is_none(), "nested area damage traces");
+        *trace = Some(Vec::new());
+    });
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            AREA_VISIT_TRACE.with_borrow_mut(|trace| *trace = None);
+        }
+    }
+    let reset = Reset;
+    let result = run();
+    let trace = AREA_VISIT_TRACE.with_borrow_mut(|trace| trace.take().unwrap());
+    drop(reset);
+    (result, trace)
+}
+
+pub(crate) fn observe_area_visit(
+    world: &Simulation,
+    impact: ProjectileCoord,
+    damage: i32,
+    warhead: &WarheadType,
+    affects_tiberium: bool,
+    origin: (u64, Option<InternedId>, InternedId),
+) {
+    AREA_VISIT_TRACE.with_borrow_mut(|trace| {
+        if let Some(observations) = trace {
+            observations.push(serde_json::json!({
+                "frame": world.session.binary_frame(),
+                "coord": [impact.x, impact.y, impact.z],
+                "damage": damage,
+                "warhead": warhead.id,
+                "affects_tiberium": affects_tiberium,
+                "source_id": origin.0,
+                "no_source": origin.0 == RAD_NO_ATTACKER,
+                "no_source_house": origin.1.is_none(),
+                "rng_streams": {
+                    "main": world.main_rng.native_state_hex(),
+                    "scenario": world.scenario_rng.native_state_hex(),
+                    "mapgen": world.mapgen_rng.native_state_hex(),
+                },
+                "health_before": world.substrate.entities.values()
+                    .map(|entity| (entity.stable_id(), entity.health.current()))
+                    .collect::<Vec<_>>(),
+            }));
+        }
+    });
+}
+
+/// The older building-handler oracles replace FireAt itself. Preserve that
+/// explicit boundary in their caller-only comparisons, synchronously at the
+/// real call site. Full live-receiver tests never install this substitute.
+struct BuildingFireStub {
+    rearm: Option<i32>,
+    calls: Vec<(u64, BuildingShot, i32)>,
+}
+
+pub(crate) fn with_building_fire_stub<T>(
+    rearm: Option<i32>,
+    run: impl FnOnce() -> T,
+) -> (T, Vec<(u64, BuildingShot, i32)>) {
+    BUILDING_FIRE_STUB.with_borrow_mut(|slot| {
+        assert!(slot.is_none(), "nested building FireAt substitutes");
+        *slot = Some(BuildingFireStub {
+            rearm,
+            calls: Vec::new(),
+        });
+    });
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            BUILDING_FIRE_STUB.with_borrow_mut(|slot| *slot = None);
+        }
+    }
+    let reset = Reset;
+    let result = run();
+    let calls = BUILDING_FIRE_STUB.with_borrow_mut(|slot| slot.take().unwrap().calls);
+    drop(reset);
+    (result, calls)
+}
+
+pub(crate) fn substitute_building_fire(
+    session: &ScenarioSession,
+    substrate: &mut ObjectSubstrate,
+    id: u64,
+    shot: BuildingShot,
+    rules: &RuleSet,
+) -> bool {
+    BUILDING_FIRE_STUB.with_borrow_mut(|slot| {
+        let Some(stub) = slot else {
+            return false;
+        };
+        let multiplier = if matches!(shot, BuildingShot::Delayed { .. }) {
+            substrate.take_support_bonus(id, rules)
+        } else {
+            crate::sim::projectile::ProjectilePayload::UNSCALED
+        };
+        if let Some(rof) = stub.rearm {
+            substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .seldom
+                .rearm_timer
+                .start(session.binary_frame() as i32, rof);
+        }
+        stub.calls.push((id, shot, multiplier));
+        true
+    })
+}
+
+/// Observe the real FireAt transaction at its caller's boundaries. The trace
+/// supplies no return values, callbacks or world state, and is never saved.
+pub(crate) fn trace_fire_visits<T>(run: impl FnOnce() -> T) -> (T, Vec<serde_json::Value>) {
+    FIRE_VISIT_TRACE.with_borrow_mut(|trace| {
+        assert!(trace.is_none(), "nested FireAt traces");
+        *trace = Some(Vec::new());
+    });
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            FIRE_VISIT_TRACE.with_borrow_mut(|trace| *trace = None);
+        }
+    }
+    let reset = Reset;
+    let result = run();
+    let trace = FIRE_VISIT_TRACE.with_borrow_mut(|trace| trace.take().unwrap());
+    drop(reset);
+    (result, trace)
+}
+
+/// Snapshot only when a comparison installed the observer. Ordinary tests and
+/// the production build pay no actor-serialization or RNG-copy cost.
+pub(crate) fn observe_fire_visit(world: &Simulation, id: u64, phase: &str) {
+    FIRE_VISIT_TRACE.with_borrow_mut(|trace| {
+        if let Some(observations) = trace {
+            observations.push(serde_json::json!({
+                "phase": phase,
+                "id": id,
+                "actor": world.substrate.entities.get(id),
+                "rng_streams": {
+                    "main": world.main_rng.native_state_hex(),
+                    "scenario": world.scenario_rng.native_state_hex(),
+                    "mapgen": world.mapgen_rng.native_state_hex(),
+                },
+                "rng_states": {
+                    "main": world.main_rng,
+                    "scenario": world.scenario_rng,
+                    "mapgen": world.mapgen_rng,
+                },
+            }));
+        }
+    });
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct BaseDefenseResponseTraceEntry {
+    pub(crate) site: BaseDefenseResponseCallSite,
+    pub(crate) victim_id: u64,
+    pub(crate) health: i32,
+    pub(crate) last_attacker_house_index: i32,
+}
+
+#[derive(Default)]
+pub(crate) struct FixtureTrace {
+    pub(crate) entries: Vec<BaseDefenseResponseTraceEntry>,
+    pub(crate) constructed_anims: Vec<ConstructedAnimObservation>,
+}
+
+/// Read-only observations of objects the real inline constructor admitted.
+/// These are never deferred spawn requests and cannot construct a second anim.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ConstructedAnimObservation {
+    pub(crate) type_id: InternedId,
+    pub(crate) world_coord: crate::sim::anim_class::AnimWorldCoord,
+}
+
+fn constructed_anims(world: &Simulation) -> Vec<ConstructedAnimObservation> {
+    world
+        .substrate
+        .anims
+        .iter()
+        .map(|(_, anim)| ConstructedAnimObservation {
+            type_id: anim.type_id(),
+            world_coord: anim.world_coord(),
+        })
+        .collect()
+}
+
+/// Fixture omissions, never serialized or installed on a returned world.
+pub(crate) struct FixturePolicy {
+    pub(crate) current_tick: u64,
+    pub(crate) require_playfield_membership: bool,
+    pub(crate) fog_enabled: bool,
+    pub(crate) radiation_enabled: bool,
+    pub(crate) sound_enabled: bool,
+    pub(crate) terrain_collection: bool,
+    pub(crate) trace: FixtureTrace,
+    pub(crate) deferred_tiberium: Vec<TiberiumReductionRequest>,
+    /// Bullet detonations the same frame's tail committed, held for the
+    /// fixture's result instead of the world's consequence commit.
+    pub(crate) tail_effects: Vec<(crate::sim::combat::DeathEffects, Vec<UnderAttackEvent>)>,
+    /// Read-only launch observations from FireAt and SpawnShrapnel admission,
+    /// with stable id and whether the type is Inviso. Never a pending queue.
+    pub(crate) admitted_spawns: Vec<(u64, bool, crate::sim::projectile::ProjectileSpawn)>,
+}
+
+/// A world copy (the presentation frame, docs/sim-thread.md) never runs a
+/// fixture frame: it keeps the policy and starts with no observations.
+impl Clone for FixturePolicy {
+    fn clone(&self) -> Self {
+        Self {
+            current_tick: self.current_tick,
+            require_playfield_membership: self.require_playfield_membership,
+            fog_enabled: self.fog_enabled,
+            radiation_enabled: self.radiation_enabled,
+            sound_enabled: self.sound_enabled,
+            terrain_collection: self.terrain_collection,
+            trace: FixtureTrace::default(),
+            deferred_tiberium: Vec::new(),
+            tail_effects: Vec::new(),
+            admitted_spawns: Vec::new(),
+        }
+    }
+}
+
+/// Adapters preserve the old phase's supplied state, without bootstrapping a
+/// scenario or admitting fixture objects into the production Logic vector.
+fn with_world<R>(
+    entities: &mut EntityStore,
+    occupancy: &mut OccupancyGrid,
+    interner: &mut StringInterner,
+    mut houses: Option<&mut crate::sim::houses::Houses>,
+    main_rng: Option<&mut SimRng>,
+    scenario_rng: &mut SimRng,
+    overlay_grid: Option<&mut OverlayGrid>,
+    terrain: Option<&mut ResolvedTerrainGrid>,
+    mut terrain_area: Option<&mut TerrainAreaState>,
+    mut sound_sink: Option<&mut Vec<SimSoundEvent>>,
+    mut handled_deaths: Option<&mut Vec<u64>>,
+    trace: Option<&mut FixtureTrace>,
+    configure_and_run: impl FnOnce(&mut Simulation, &mut world_receiver::ReceiverRun) -> R,
+) -> R {
+    let mut world = Simulation::new();
+    world.substrate.entities = std::mem::take(entities);
+    // A hand-placed fixture object out of limbo stands on the map: native
+    // Unlimbo marks it (`ObjectClass::Mark 0x005F58F7`, `+0x74`), which
+    // `Apply_area_damage`'s dispatch reads. Mark such objects for the phase
+    // and hand the caller back its own flag.
+    let unmarked: Vec<u64> = world
+        .substrate
+        .entities
+        .values()
+        .filter(|entity| !entity.lifecycle.in_limbo() && !entity.lifecycle.cell_marked())
+        .map(|entity| entity.stable_id())
+        .collect();
+    for &id in &unmarked {
+        if let Some(entity) = world.substrate.entities.get_mut(id) {
+            entity.lifecycle.set_cell_marked_for_test(true);
+        }
+    }
+    world.substrate.occupancy = std::mem::take(occupancy);
+    // Bullets and anims a fixture shot creates take ids past its hand-placed
+    // objects, as `ScenarioClass::NextUniqueID` would give them.
+    let next_stable_object_id = world
+        .substrate
+        .entities
+        .keys_sorted()
+        .last()
+        .map_or(1, |&id| id + 1)
+        .max(world.next_stable_object_id());
+    world.set_next_stable_object_id_for_test(next_stable_object_id);
+    world.interner = std::mem::take(interner);
+    if let Some(houses) = houses.as_deref_mut() {
+        world.houses = std::mem::take(houses);
+    }
+    if let Some(rng) = main_rng.as_deref() {
+        world.main_rng = rng.clone();
+    }
+    world.scenario_rng = scenario_rng.clone();
+    world.overlay_grid = overlay_grid.as_deref().cloned();
+    world.resolved_terrain = terrain.as_deref().cloned();
+    if let Some(events) = sound_sink.as_deref_mut() {
+        world.sound_events.emit_all(std::mem::take(events));
+    }
+    let mut run = world_receiver::ReceiverRun::default();
+    if let Some(handled) = handled_deaths.as_deref_mut() {
+        run.handled_deaths = std::mem::take(handled);
+    }
+    if let Some(area) = terrain_area.as_deref_mut() {
+        area.swap_authority(
+            &mut world.terrain_objects,
+            &mut world.substrate.raw_cell_occupation,
+        );
+        (run.navigation_changed_cells, run.finalizing_terrain) = area.take_fixture_progress();
+    }
+    world.receiver_fixture = Some(FixturePolicy {
+        current_tick: 0,
+        require_playfield_membership: false,
+        fog_enabled: false,
+        radiation_enabled: false,
+        sound_enabled: sound_sink.is_some(),
+        terrain_collection: terrain_area.is_some(),
+        trace: FixtureTrace::default(),
+        deferred_tiberium: Vec::new(),
+        tail_effects: Vec::new(),
+        admitted_spawns: Vec::new(),
+    });
+
+    let result = configure_and_run(&mut world, &mut run);
+
+    let policy = world
+        .receiver_fixture
+        .take()
+        .expect("private fixture world");
+    assert!(
+        policy.deferred_tiberium.is_empty(),
+        "each collection owns its deferred output"
+    );
+    if let Some(trace) = trace {
+        trace.entries.extend(policy.trace.entries);
+        trace.constructed_anims.extend(constructed_anims(&world));
+    }
+    if let Some(area) = terrain_area {
+        area.swap_authority(
+            &mut world.terrain_objects,
+            &mut world.substrate.raw_cell_occupation,
+        );
+        area.restore_fixture_progress(run.navigation_changed_cells, run.finalizing_terrain);
+    }
+    if let Some(handled) = handled_deaths {
+        *handled = run.handled_deaths;
+    }
+    for id in unmarked {
+        if let Some(entity) = world.substrate.entities.get_mut(id) {
+            entity.lifecycle.set_cell_marked_for_test(false);
+        }
+    }
+    *entities = world.substrate.entities;
+    *occupancy = world.substrate.occupancy;
+    *interner = world.interner;
+    if let Some(houses) = houses {
+        *houses = world.houses;
+    }
+    if let Some(rng) = main_rng {
+        *rng = world.main_rng;
+    }
+    *scenario_rng = world.scenario_rng;
+    if let Some(grid) = overlay_grid {
+        *grid = world.overlay_grid.expect("supplied overlay retained");
+    }
+    if let Some(grid) = terrain {
+        *grid = world.resolved_terrain.expect("supplied terrain retained");
+    }
+    if let Some(events) = sound_sink {
+        *events = world.sound_events.take_for_test();
+    }
+    result
+}
+
+pub(crate) struct DeferredCellPrelude<'a> {
+    pub(crate) amount: Option<i32>,
+    pub(crate) deferred: &'a mut Vec<TiberiumReductionRequest>,
+}
+
+impl combat_aoe::AoECellPrelude for DeferredCellPrelude<'_> {
+    fn before_cell(
+        &mut self,
+        rx: u16,
+        ry: u16,
+        overlay: Option<&mut OverlayGrid>,
+        registry: Option<&OverlayTypeRegistry>,
+        _terrain: Option<&mut ResolvedTerrainGrid>,
+        _rng: Option<&mut SimRng>,
+        _occupancy: Option<&OccupancyGrid>,
+    ) {
+        if let Some(amount) = self.amount
+            && combat_aoe::tiberium_reduction_cell_admitted(overlay.as_deref(), registry, rx, ry)
+        {
+            self.deferred
+                .push(TiberiumReductionRequest { rx, ry, amount });
+        }
+    }
+}
+
+pub(crate) fn tick_combat(
+    entities: &mut EntityStore,
+    occupancy: &mut OccupancyGrid,
+    rules: &RuleSet,
+    interner: &mut StringInterner,
+    current_tick: u64,
+    tick_ms: u32,
+    binary_frame: u32,
+    scenario_rng: &mut SimRng,
+) -> CombatTickResult {
+    tick_combat_with_fog(
+        entities,
+        occupancy,
+        rules,
+        interner,
+        None,
+        &BTreeMap::new(),
+        None,
+        None,
+        None,
+        None,
+        current_tick,
+        tick_ms,
+        binary_frame,
+        // Convenience shim (tests only); empty live order falls back to the
+        // stable-id resolution order, preserving prior behavior exactly.
+        &[],
+        None,
+        scenario_rng,
+    )
+}
+
+pub(crate) fn tick_combat_with_fog(
+    entities: &mut EntityStore,
+    occupancy: &mut OccupancyGrid,
+    rules: &RuleSet,
+    interner: &mut StringInterner,
+    fog: Option<&FogState>,
+    power_states: &BTreeMap<InternedId, PowerState>,
+    sound_sink: Option<&mut Vec<SimSoundEvent>>,
+    overlay_grid: Option<&mut OverlayGrid>,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    terrain: Option<&mut crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    current_tick: u64,
+    tick_ms: u32,
+    binary_frame: u32,
+    live_order: &[u64],
+    radiation: Option<&mut crate::sim::radiation::RadiationState>,
+    scenario_rng: &mut SimRng,
+) -> CombatTickResult {
+    // Test-convenience entry: resolve rule handles the way sim init does.
+    let handles = Some(crate::sim::type_handle_table::ResolvedRuleHandles::resolve(
+        rules, interner,
+    ));
+    let mut unused_main_rng = SimRng::new(0);
+    let mut empty_houses = crate::sim::houses::Houses::default();
+    tick_combat_with_fog_and_main_rng(
+        entities,
+        occupancy,
+        rules,
+        interner,
+        handles,
+        fog,
+        power_states,
+        &mut empty_houses,
+        &HouseAllianceMap::new(),
+        sound_sink,
+        overlay_grid,
+        overlay_registry,
+        terrain,
+        current_tick,
+        tick_ms,
+        binary_frame,
+        live_order,
+        &[],
+        radiation,
+        scenario_rng,
+        &mut unused_main_rng,
+        None,
+    )
+}
+
+pub(crate) fn tick_combat_with_fog_and_main_rng(
+    entities: &mut EntityStore,
+    occupancy: &mut OccupancyGrid,
+    rules: &RuleSet,
+    interner: &mut StringInterner,
+    handles: Option<crate::sim::type_handle_table::ResolvedRuleHandles>,
+    fog: Option<&FogState>,
+    power_states: &BTreeMap<InternedId, PowerState>,
+    houses: &mut crate::sim::houses::Houses,
+    alliances: &HouseAllianceMap,
+    sound_sink: Option<&mut Vec<SimSoundEvent>>,
+    overlay_grid: Option<&mut OverlayGrid>,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    terrain: Option<&mut crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    current_tick: u64,
+    tick_ms: u32,
+    binary_frame: u32,
+    live_order: &[u64],
+    projectile_detonations: &[ProjectileDetonation],
+    radiation: Option<&mut crate::sim::radiation::RadiationState>,
+    scenario_rng: &mut SimRng,
+    main_rng: &mut SimRng,
+    inline_hooks: Option<&mut FixtureTrace>,
+) -> CombatTickResult {
+    tick_combat_with_fog_and_main_rng_with_terrain_area(
+        entities,
+        occupancy,
+        rules,
+        interner,
+        handles,
+        fog,
+        power_states,
+        houses,
+        alliances,
+        sound_sink,
+        overlay_grid,
+        overlay_registry,
+        terrain,
+        None,
+        false,
+        false,
+        current_tick,
+        tick_ms,
+        binary_frame,
+        live_order,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        projectile_detonations,
+        radiation,
+        scenario_rng,
+        main_rng,
+        inline_hooks,
+        None,
+    )
+}
+
+pub(crate) fn commit_damage_events(
+    damage_events: &[EntityDamageEvent],
+    entities: &mut EntityStore,
+    occupancy: &mut OccupancyGrid,
+    rules: &RuleSet,
+    interner: &mut StringInterner,
+    houses: &mut crate::sim::houses::Houses,
+    alliances: &HouseAllianceMap,
+    main_rng: &mut SimRng,
+    scenario_rng: &mut SimRng,
+    handled_deaths: &mut Vec<u64>,
+    overlay_grid: Option<&mut OverlayGrid>,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    terrain: Option<&mut crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    current_tick: u64,
+    inline_hooks: &mut Option<&mut FixtureTrace>,
+    sound_sink: &mut Option<&mut Vec<SimSoundEvent>>,
+) -> (DeathEffects, Vec<UnderAttackEvent>) {
+    let handles = Some(crate::sim::type_handle_table::ResolvedRuleHandles::resolve(
+        rules, interner,
+    ));
+    with_world(
+        entities,
+        occupancy,
+        interner,
+        Some(houses),
+        Some(main_rng),
+        scenario_rng,
+        overlay_grid,
+        terrain,
+        None,
+        sound_sink.as_deref_mut(),
+        Some(handled_deaths),
+        inline_hooks.as_deref_mut(),
+        |world, run| {
+            world.set_rule_handles_for_test(handles);
+            *world.house_alliances_mut_for_test() = alliances.clone();
+            world.receiver_fixture.as_mut().unwrap().current_tick = current_tick;
+            world.session.set_binary_frame_for_test(current_tick as u32);
+            let mut pings = Vec::new();
+            let effects = world_receiver::commit_entities(
+                world,
+                run,
+                damage_events,
+                None,
+                rules,
+                overlay_registry,
+                &mut pings,
+            );
+            (effects, pings)
+        },
+    )
+}
+
+pub(crate) fn commit_area_damage_receivers(
+    receivers: &[combat_aoe::AreaDamageReceiver],
+    entities: &mut EntityStore,
+    occupancy: &mut OccupancyGrid,
+    rules: &RuleSet,
+    interner: &mut StringInterner,
+    houses: &mut crate::sim::houses::Houses,
+    alliances: &HouseAllianceMap,
+    main_rng: &mut SimRng,
+    scenario_rng: &mut SimRng,
+    handled_deaths: &mut Vec<u64>,
+    overlay_grid: Option<&mut OverlayGrid>,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    terrain: Option<&mut crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    terrain_area_state: Option<&mut TerrainAreaState>,
+    current_tick: u64,
+    inline_hooks: &mut Option<&mut FixtureTrace>,
+    sound_sink: &mut Option<&mut Vec<SimSoundEvent>>,
+) -> (DeathEffects, Vec<UnderAttackEvent>) {
+    let handles = Some(crate::sim::type_handle_table::ResolvedRuleHandles::resolve(
+        rules, interner,
+    ));
+    with_world(
+        entities,
+        occupancy,
+        interner,
+        Some(houses),
+        Some(main_rng),
+        scenario_rng,
+        overlay_grid,
+        terrain,
+        terrain_area_state,
+        sound_sink.as_deref_mut(),
+        Some(handled_deaths),
+        inline_hooks.as_deref_mut(),
+        |world, run| {
+            world.set_rule_handles_for_test(handles);
+            *world.house_alliances_mut_for_test() = alliances.clone();
+            world.receiver_fixture.as_mut().unwrap().current_tick = current_tick;
+            world.session.set_binary_frame_for_test(current_tick as u32);
+            let mut pings = Vec::new();
+            let effects = world_receiver::commit_area(
+                world,
+                run,
+                receivers,
+                rules,
+                overlay_registry,
+                &mut pings,
+            );
+            (effects, pings)
+        },
+    )
+}
+
+pub(crate) fn handle_entity_deaths(
+    entities: &mut EntityStore,
+    occupancy: &mut OccupancyGrid,
+    rules: &RuleSet,
+    interner: &mut StringInterner,
+    handles: Option<crate::sim::type_handle_table::ResolvedRuleHandles>,
+    houses: &mut crate::sim::houses::Houses,
+    alliances: &HouseAllianceMap,
+    main_rng: &mut SimRng,
+    scenario_rng: &mut SimRng,
+    handled_deaths: &mut Vec<u64>,
+    dead_entities: &[u64],
+    damage_events: &[EntityDamageEvent],
+    overlay_grid: Option<&mut OverlayGrid>,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    terrain: Option<&mut crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    terrain_area_state: &mut Option<&mut TerrainAreaState>,
+    scenario_no_damage: bool,
+    current_tick: u64,
+    inline_hooks: &mut Option<&mut FixtureTrace>,
+    sound_sink: &mut Option<&mut Vec<SimSoundEvent>>,
+) -> DeathEffects {
+    with_world(
+        entities,
+        occupancy,
+        interner,
+        Some(houses),
+        Some(main_rng),
+        scenario_rng,
+        overlay_grid,
+        terrain,
+        terrain_area_state.as_deref_mut(),
+        sound_sink.as_deref_mut(),
+        Some(handled_deaths),
+        inline_hooks.as_deref_mut(),
+        |world, run| {
+            world.set_rule_handles_for_test(handles);
+            *world.house_alliances_mut_for_test() = alliances.clone();
+            world.receiver_fixture.as_mut().unwrap().current_tick = current_tick;
+            world.session.set_no_damage_for_test(scenario_no_damage);
+            world.session.set_binary_frame_for_test(current_tick as u32);
+            world_receiver::handle_death(
+                world,
+                run,
+                dead_entities,
+                damage_events,
+                rules,
+                overlay_registry,
+                None,
+            )
+        },
+    )
+}
+
+pub(crate) fn emit_projectile_detonations(
+    detonations: &[ProjectileDetonation],
+    entities: &mut EntityStore,
+    occupancy: &OccupancyGrid,
+    rules: &RuleSet,
+    interner: &mut StringInterner,
+    handles: Option<crate::sim::type_handle_table::ResolvedRuleHandles>,
+    overlay_grid: Option<&mut OverlayGrid>,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    terrain: Option<&mut crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    bridge_state: Option<&BridgeRuntimeState>,
+    terrain_objects: Option<combat_aoe::TerrainCollectionView<'_>>,
+    terrain_area_state: Option<&TerrainAreaState>,
+    scenario_no_damage: bool,
+    house_alliances: &HouseAllianceMap,
+    scenario_rng: &mut SimRng,
+    inline_hooks: &mut Option<&mut FixtureTrace>,
+    out: &mut CombatEmit,
+) {
+    let mut fixture_occupancy = occupancy.clone();
+    let mut fixture_terrain = terrain_area_state.cloned();
+    with_world(
+        entities,
+        &mut fixture_occupancy,
+        interner,
+        None,
+        None,
+        scenario_rng,
+        overlay_grid,
+        terrain,
+        fixture_terrain.as_mut(),
+        None,
+        None,
+        inline_hooks.as_deref_mut(),
+        |world, run| {
+            world.set_rule_handles_for_test(handles);
+            world.session.set_no_damage_for_test(scenario_no_damage);
+            world.receiver_fixture.as_mut().unwrap().terrain_collection = terrain_objects.is_some();
+            if let Some(view) = terrain_objects {
+                world.terrain_objects = view.store.clone();
+            }
+            *world.house_alliances_mut_for_test() = house_alliances.clone();
+            world.bridge_state = bridge_state.cloned();
+            world_receiver::commit_projectile_detonations_inline(
+                world,
+                run,
+                rules,
+                overlay_registry,
+                detonations,
+                out,
+                &mut Vec::new(),
+            )
+        },
+    )
+}
+
+pub(crate) fn resolve_attacker_fire(
+    snap: &AttackerSnapshot,
+    entities: &mut EntityStore,
+    rules: &RuleSet,
+    interner: &mut StringInterner,
+    handles: Option<crate::sim::type_handle_table::ResolvedRuleHandles>,
+    fog: Option<&FogState>,
+    occupancy: &OccupancyGrid,
+    overlay_grid: Option<&mut OverlayGrid>,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    terrain: Option<&mut crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    terrain_objects: Option<combat_aoe::TerrainCollectionView<'_>>,
+    terrain_area_state: Option<&TerrainAreaState>,
+    scenario_no_damage: bool,
+    binary_frame: u32,
+    _tick_ms: u32,
+    has_active_wave: bool,
+    scenario_rng: &mut SimRng,
+    sound_sink: Option<&mut Vec<SimSoundEvent>>,
+    inline_hooks: &mut Option<&mut FixtureTrace>,
+    out: &mut CombatEmit,
+) {
+    let mut fixture_occupancy = occupancy.clone();
+    let mut fixture_terrain = terrain_area_state.cloned();
+    with_world(
+        entities,
+        &mut fixture_occupancy,
+        interner,
+        None,
+        None,
+        scenario_rng,
+        overlay_grid,
+        terrain,
+        fixture_terrain.as_mut(),
+        sound_sink,
+        None,
+        inline_hooks.as_deref_mut(),
+        |world, _run| {
+            world.set_rule_handles_for_test(handles);
+            world.session.set_no_damage_for_test(scenario_no_damage);
+            world.receiver_fixture.as_mut().unwrap().terrain_collection = terrain_objects.is_some();
+            if let Some(view) = terrain_objects {
+                world.terrain_objects = view.store.clone();
+            }
+            world.session.set_binary_frame_for_test(binary_frame);
+            world.receiver_fixture.as_mut().unwrap().current_tick = u64::from(binary_frame);
+            if let Some(fog) = fog {
+                world.fog = fog.clone();
+            }
+            world_fire::resolve_attacker_fire(
+                world,
+                rules,
+                overlay_registry,
+                snap,
+                fog.is_some(),
+                binary_frame,
+                has_active_wave,
+                out,
+                &mut crate::sim::world::FrameEffects::default(),
+            );
+        },
+    )
+}
+
+pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
+    entities: &mut EntityStore,
+    occupancy: &mut OccupancyGrid,
+    rules: &RuleSet,
+    interner: &mut StringInterner,
+    handles: Option<crate::sim::type_handle_table::ResolvedRuleHandles>,
+    fog: Option<&FogState>,
+    power_states: &BTreeMap<InternedId, PowerState>,
+    houses: &mut crate::sim::houses::Houses,
+    alliances: &HouseAllianceMap,
+    sound_sink: Option<&mut Vec<SimSoundEvent>>,
+    overlay_grid: Option<&mut OverlayGrid>,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    terrain: Option<&mut crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    bridge_state: Option<&BridgeRuntimeState>,
+    scenario_no_damage: bool,
+    require_playfield_membership: bool,
+    current_tick: u64,
+    tick_ms: u32,
+    binary_frame: u32,
+    live_order: &[u64],
+    fire_suppressed: &BTreeSet<u64>,
+    active_wave_owners: &BTreeSet<u64>,
+    projectile_detonations: &[ProjectileDetonation],
+    radiation: Option<&mut crate::sim::radiation::RadiationState>,
+    scenario_rng: &mut SimRng,
+    main_rng: &mut SimRng,
+    inline_hooks: Option<&mut FixtureTrace>,
+    terrain_area_state: Option<&mut TerrainAreaState>,
+) -> CombatTickResult {
+    with_world(
+        entities,
+        occupancy,
+        interner,
+        Some(houses),
+        Some(main_rng),
+        scenario_rng,
+        overlay_grid,
+        terrain,
+        terrain_area_state,
+        sound_sink,
+        None,
+        inline_hooks,
+        |world, run| {
+            world.set_rule_handles_for_test(handles);
+            *world.house_alliances_mut_for_test() = alliances.clone();
+            world.receiver_fixture.as_mut().unwrap().current_tick = current_tick;
+            world.session.set_no_damage_for_test(scenario_no_damage);
+            world.session.set_binary_frame_for_test(binary_frame);
+            *world.power_states.map_mut_for_test() = power_states.clone();
+            world.bridge_state = bridge_state.cloned();
+            if let Some(fog) = fog {
+                world.fog = fog.clone();
+            }
+            world.receiver_fixture.as_mut().unwrap().fog_enabled = fog.is_some();
+            world.receiver_fixture.as_mut().unwrap().radiation_enabled = radiation.is_some();
+            world
+                .receiver_fixture
+                .as_mut()
+                .unwrap()
+                .require_playfield_membership = require_playfield_membership;
+            for &owner in active_wave_owners {
+                world.link_active_wave_for_test(owner, 0);
+            }
+            if let Some(radiation) = radiation.as_deref() {
+                world.radiation = radiation.clone();
+            }
+            // No object pass runs here: a building takes its Update's
+            // Mission_Attack and ProcessDelayedFire before the receiver.
+            let buildings: Vec<u64> = world
+                .substrate
+                .entities
+                .keys_sorted()
+                .into_iter()
+                .filter(|&id| {
+                    world.substrate.entities.get(id).is_some_and(|entity| {
+                        entity.category() == EntityCategory::Structure
+                            && entity.health.current() > 0
+                            && !entity.lifecycle.in_limbo()
+                    })
+                })
+                .collect();
+            let first_tail_id = world.next_stable_object_id();
+            for id in buildings {
+                // A hand-built object switched to Structure keeps its first
+                // category's leaf; construction gives a building its own.
+                if let Some(entity) = world.substrate.entities.get_mut(id)
+                    && entity.mission_leaf.as_building().is_none()
+                {
+                    entity.mission_leaf =
+                        crate::sim::mission::MissionLeafState::for_entity_category(
+                            EntityCategory::Structure,
+                        );
+                }
+                world.fixture_building_visit(id, rules, overlay_registry);
+            }
+            let mut result = world_fire::tick_combat(
+                world,
+                run,
+                rules,
+                overlay_registry,
+                tick_ms,
+                live_order,
+                fire_suppressed,
+                projectile_detonations,
+            );
+            result
+                .consequences
+                .prepend_live_fire_events_for_test(world.fire_events.take_for_test());
+            // The same frame's tail: the shots' bullets take their first AI
+            // (an Inviso one detonates). Bullets still in flight are handed
+            // back as their admission records.
+            world.visit_combat_tail(
+                first_tail_id,
+                rules,
+                overlay_registry,
+                &mut crate::sim::world::FrameEffects::default(),
+            );
+            for (mut effects, under_attack_events) in
+                std::mem::take(&mut world.receiver_fixture.as_mut().unwrap().tail_effects)
+            {
+                if world.receiver_fixture.as_ref().unwrap().sound_enabled {
+                    for (die_sound_id, location) in effects.death_sounds.drain(..) {
+                        world.sound_events.emit(SimSoundEvent::EntityDied {
+                            die_sound_id,
+                            world: location,
+                        });
+                    }
+                }
+                // The world's consequence commit arms the tail's radiation
+                // sites; the fixture keeps its field here.
+                if world.receiver_fixture.as_ref().unwrap().radiation_enabled {
+                    for detonation in effects.rad_detonations.drain(..) {
+                        world.radiation.apply_detonation(
+                            detonation,
+                            binary_frame,
+                            &world.session.theater(),
+                            rules,
+                            world.resolved_terrain.as_ref(),
+                            &mut world.lighting_sources,
+                        );
+                    }
+                }
+                result
+                    .consequences
+                    .append_tail_for_test(effects, under_attack_events);
+            }
+            // Every launch, less the Inviso bullets the tail already detonated.
+            let admitted =
+                std::mem::take(&mut world.receiver_fixture.as_mut().unwrap().admitted_spawns);
+            result.projectile_spawns.extend(
+                admitted
+                    .into_iter()
+                    .filter(|&(id, inviso, _)| {
+                        !inviso
+                            || world
+                                .projectiles
+                                .get(id)
+                                .is_some_and(|projectile| projectile.in_logic_vector())
+                    })
+                    .map(|(_, _, spawn)| spawn),
+            );
+            if let Some(radiation) = radiation {
+                *radiation = std::mem::take(&mut world.radiation);
+            }
+            result.fixture_anims = constructed_anims(world);
+            result
+        },
+    )
+}

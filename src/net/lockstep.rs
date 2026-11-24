@@ -1,0 +1,1390 @@
+//! Lockstep session timing and the network send policy.
+//!
+//! The LAN, WOL and co-op start blocks' timing tables, and `NetworkSendPolicy`,
+//! which `net::command_exchange` applies when SendOutList649CA0 stamps and
+//! sends the local commands. Simulation owns the OutList and DoList
+//! (`sim::command_queue`).
+
+use std::num::{NonZeroU8, NonZeroU32};
+
+use crate::sim::game_options::GAME_SPEED_90_TPS;
+
+/// Initial LAN host5DD48D / guest5DD2CD MaxAhead calculation. Native
+/// IPX response getter5424C0 is observed twice only when the first calculation
+/// exceeds its protocol floor; a changed second result is not clamped again.
+/// Original gamemd.exe controls: tools/storage_oracle/lan_lobby.py, timing.
+pub fn initial_multiplayer_max_ahead(protocol: i32, mut response_time: impl FnMut() -> u32) -> i32 {
+    if protocol == 2 {
+        let round = |response: u32| ((response >> 3) + 4) / 5 * 5;
+        if round(response_time()) <= 10 {
+            10
+        } else {
+            round(response_time()) as i32
+        }
+    } else if (response_time() as i32) / 8 <= 2 {
+        2
+    } else {
+        (response_time() as i32) / 8
+    }
+}
+
+/// Arguments of the IPX `SetTiming` call (`0x540C60`, thiscall on the IPX
+/// manager `0xA8E9C0`) issued by the WOL start-timing block: retry delta,
+/// max retries (`-1`), timeout (`retry_delta * 8`) and the bool that makes the
+/// manager forward the timing to every connection (always 1 here).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WolIpxTiming {
+    pub retry_delta: i32,
+    pub max_retries: i32,
+    pub timeout: i32,
+    pub apply_to_connections: bool,
+}
+
+/// Network timing globals written by the WOL start-timing block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WolStartTiming {
+    /// MaxAhead `0xA8B550`.
+    pub max_ahead: i32,
+    /// FrameSendRate `0xA8B554`: 10 or 5.
+    pub frame_send_rate: NonZeroU8,
+    /// PreCalcMaxAhead `0xA8B56C`.
+    pub precalc_max_ahead: i32,
+    /// PreCalcFrameRate `0xA8B570`.
+    pub precalc_frame_rate: i32,
+    /// MaxMaxAhead `0xA8B568`.
+    pub max_max_ahead: i32,
+    /// LatencyFudge `0xA8DB9C`.
+    pub latency_fudge: i32,
+    /// `None` when the highest ping is 0 or exactly 1000 (no call).
+    pub set_timing: Option<WolIpxTiming>,
+}
+
+/// WOL "Start Game Now" `0x794BA0` timing block `0x794F6F..0x79523E`, run by
+/// host and guest alike after the server's StartGame echo.
+///
+/// `game_speed` is `[0xA8B268]` (unsigned bound: anything outside 0..=5,
+/// negatives included, takes the slowest row); `pings` are the eight dwords
+/// at `0xB7790C` (all admitted peers in VERA's extended roster), reduced to a signed maximum starting from 0 so negative
+/// (unknown) pings are ignored. `channel_owner` is true when the first channel
+/// user row with flag bit 0 (`0xB77908` rows, +0) has a nickname (+0x24)
+/// equal to the local one under ASCII case-insensitive `_stricmp 0x7C8D20`;
+/// no flagged row means false. The ping-to-retry conversion uses the native
+/// signed magic divisions `0x10624DD3>>6` (/1000) and `0x51EB851F>>5` (/100)
+/// after a wrapping `ping * 60`. The command-line debug byte `0xA8E2C8`
+/// (+20 MaxAhead, doubled ping) is dormant and not ported. Not ported here:
+/// the clear of `0xA8B574[0xD0]`, current speed `0xA8EB60 = game_speed`,
+/// the `0x841F30..3C` writes and `0xA8ED84 = 0`.
+/// Original gamemd.exe controls: tools/storage_oracle/wol_shell.py, timing.
+pub fn wol_start_timing(
+    game_speed: i32,
+    pings: impl IntoIterator<Item = i32>,
+    channel_owner: bool,
+) -> WolStartTiming {
+    // Jump table 0x79561C; `ja` at 0x794F8B is unsigned.
+    let (max_ahead, owner_frame_rate) = speed_frame_budget(game_speed);
+    let frame_send_rate =
+        if matches!(game_speed, 0 | 1) || game_speed == i32::from(GAME_SPEED_90_TPS) {
+            const { NonZeroU8::new(10).unwrap() }
+        } else {
+            const { NonZeroU8::new(5).unwrap() }
+        };
+    let ping = pings.into_iter().fold(0, i32::max);
+    let mut timing = WolStartTiming {
+        max_ahead,
+        frame_send_rate,
+        precalc_max_ahead: 0,
+        precalc_frame_rate: if channel_owner { owner_frame_rate } else { 0 },
+        max_max_ahead: max_ahead,
+        latency_fudge: 1,
+        set_timing: None,
+    };
+    let round_down = |value: i32| (value as u32 / 10 * 10) as i32;
+    if ping == 0 || ping == 1000 {
+        // 0x7953BB: every player, floor 10 (unsigned `ja`).
+        timing.precalc_max_ahead = round_down(max_ahead).max(10);
+        return timing;
+    }
+    if ping > 1000 {
+        timing.latency_fudge = 2;
+    }
+    let frames = ping.wrapping_mul(60) / 1000;
+    let retry_delta = frames.wrapping_add(frames.wrapping_mul(120) / 100);
+    timing.set_timing = Some(WolIpxTiming {
+        retry_delta,
+        max_retries: -1,
+        timeout: retry_delta.wrapping_mul(8),
+        apply_to_connections: true,
+    });
+    if channel_owner {
+        // 0x79536C jump table 0x795634: fudge 0/1 -> MaxAhead, 2 -> x1.5.
+        let base = if timing.latency_fudge == 2 {
+            max_ahead + ((max_ahead as u32) >> 1) as i32
+        } else {
+            max_ahead
+        };
+        timing.precalc_max_ahead = round_down(base);
+    }
+    timing
+}
+
+/// The game-speed rows both network timing blocks share: MaxAhead
+/// `[0xA8B550]` and PreCalcFrameRate. Anything outside 0..=5, negatives
+/// included, takes the slowest row (both jumps are unsigned `ja`).
+/// VERA's 90-tick preset adds its own row, retaining the fastest native
+/// row's two-thirds of a second of lookahead (40/60, here 60/90).
+fn speed_frame_budget(game_speed: i32) -> (i32, i32) {
+    match game_speed as u32 {
+        speed if speed == u32::from(GAME_SPEED_90_TPS) => (60, 90),
+        0 => (40, 60),
+        1 => (40, 45),
+        2 => (30, 30),
+        3 => (20, 20),
+        4 => (20, 15),
+        5 => (20, 12),
+        _ => (10, 10),
+    }
+}
+
+/// The launch speed whose PreCalcFrameRate row is `frames_per_second`: the
+/// inverse of [`speed_frame_budget`] over selectable speeds. The VERA
+/// lobby signs this rate into relay ordering certificates
+/// (docs/lobby-protocol.md, retail rows plus VERA's 90-tick preset), and the
+/// relay admits only `vera20k_relay_protocol::FRAME_RATES`.
+pub fn game_speed_for_frame_rate(frames_per_second: u16) -> Option<i32> {
+    (0..=u8::MAX)
+        .filter(|&speed| crate::sim::game_options::is_selectable_game_speed(speed))
+        .map(i32::from)
+        .find(|&speed| speed_frame_budget(speed).1 == i32::from(frames_per_second))
+}
+
+/// The timing block of Cooperative `+0xAC` (`0x005C49A2..0x005C4ABC`),
+/// which every peer runs before the next co-op mission: MaxAhead from the
+/// game speed, and LatencyFudge 1, or 2 when the highest of `pings`
+/// (`0xB7790C`, over the live nodes, signed maximum from 0) exceeds 1000.
+/// Returns `(max_ahead, latency_fudge)`; the PreCalc values, FrameSendRate
+/// and the IPX retry timing are transport and not returned.
+pub fn cooperative_continuation_timing(game_speed: i32, pings: &[i32]) -> (i32, i32) {
+    let (max_ahead, _) = speed_frame_budget(game_speed);
+    let ping = pings.iter().copied().fold(0, i32::max);
+    let latency_fudge = if ping > 1000 { 2 } else { 1 };
+    (max_ahead, latency_fudge)
+}
+
+/// Transfer cadence and the execution frame assigned to local commands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetworkSendPolicy {
+    /// VERA solo online play: no other human needs a synchronization window.
+    /// Keep the shared command dispatcher, with only frame0's priming delay.
+    Local,
+    /// Send every frame and stamp `current_frame + max_ahead`.
+    EveryFrame,
+    /// Mode 2 sends only on `frame_send_rate` boundaries and rounds the
+    /// execute frame up to a boundary as well.
+    FrameSendRate2 { frame_send_rate: NonZeroU32 },
+}
+
+impl NetworkSendPolicy {
+    /// Whether the network path transfers its local queue on this frame.
+    pub fn should_send(self, current_frame: u32) -> bool {
+        match self {
+            Self::Local | Self::EveryFrame => true,
+            Self::FrameSendRate2 { frame_send_rate } => {
+                let rate = frame_send_rate.get();
+                let boundary = current_frame
+                    .wrapping_add(rate.wrapping_sub(1))
+                    .wrapping_div(rate)
+                    .wrapping_mul(rate);
+                current_frame == boundary
+            }
+        }
+    }
+
+    /// Frame written into each record at network transfer time.
+    pub fn execute_frame(self, current_frame: u32, max_ahead: u32) -> u32 {
+        match self {
+            Self::Local => current_frame.max(1),
+            Self::EveryFrame => current_frame.wrapping_add(max_ahead),
+            Self::FrameSendRate2 { frame_send_rate } => {
+                let rate = frame_send_rate.get();
+                rate.wrapping_add(current_frame)
+                    .wrapping_sub(1)
+                    .wrapping_add(max_ahead)
+                    .wrapping_div(rate)
+                    .wrapping_mul(rate)
+            }
+        }
+    }
+
+    /// FRAMEINFO reports the source frame as execute-frame minus delay.
+    /// Native policies retain MaxAhead's low byte, independent of rounding.
+    pub fn delay(self, current_frame: u32, max_ahead: u32) -> u8 {
+        match self {
+            Self::Local => self
+                .execute_frame(current_frame, max_ahead)
+                .wrapping_sub(current_frame) as u8,
+            Self::EveryFrame | Self::FrameSendRate2 { .. } => max_ahead as u8,
+        }
+    }
+}
+
+#[cfg(all(test, tests_net))]
+mod tests {
+    use std::num::{NonZeroU8, NonZeroU32};
+
+    use serde::{Deserialize, Serialize};
+
+    use super::NetworkSendPolicy;
+    use crate::sim::command::{
+        COMMAND_RECORD_LEN, CommandRecord, CommandRecordError, MEGAMISSION_STAGE_CAPACITY,
+    };
+    use crate::sim::command_queue::{
+        ChecksumMismatch, CommandDispatchClock, CommandDispatchHouse, CommandDispatchMode,
+        DispatchSummary, DoList, DoListEvent, DoListHost, DoListRetimeWindow,
+        FRAMEINFO_EVENT_OPCODE, FrameInfo, FrameInfoCompareGate, MultiplayerChecksumHistory,
+        SemanticEventHeader,
+    };
+    use crate::sim::game_options::is_selectable_game_speed;
+    use crate::sim::intern::InternedId;
+
+    #[test]
+    fn initial_network_timing_matches_original_host_and_guest_blocks() {
+        let corpus = crate::test_fixture::json("tools/storage_oracle/lan_lobby.json");
+        let cases = corpus["timing"].as_array().unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            let responses = case["responses"].as_array().unwrap();
+            let connected = case["connected"].as_bool().unwrap();
+            let mut reads = 0;
+            let result = super::initial_multiplayer_max_ahead(
+                case["protocol"].as_u64().unwrap() as i32,
+                || {
+                    let response =
+                        responses[reads.min(responses.len() - 1)].as_u64().unwrap() as u32;
+                    reads += 1;
+                    if connected { response } else { 0 }
+                },
+            );
+            assert_eq!(
+                result,
+                case["max_ahead"].as_u64().unwrap() as i32,
+                "{}",
+                case["name"]
+            );
+            assert_eq!(
+                reads as u64,
+                case["reads"].as_u64().unwrap(),
+                "{}",
+                case["name"]
+            );
+        }
+    }
+
+    #[test]
+    fn cooperative_continuation_timing_follows_the_speed_table_and_ping() {
+        let speeds: Vec<i32> = [0, 1, 2, 3, 4, 5, 6, -1]
+            .into_iter()
+            .map(|speed| super::cooperative_continuation_timing(speed, &[]).0)
+            .collect();
+        assert_eq!(speeds, [40, 40, 30, 20, 20, 20, 10, 10]);
+        assert_eq!(
+            super::cooperative_continuation_timing(2, &[0, 1000]),
+            (30, 1)
+        );
+        assert_eq!(
+            super::cooperative_continuation_timing(2, &[999, -5]),
+            (30, 1)
+        );
+        assert_eq!(
+            super::cooperative_continuation_timing(2, &[200, 1001]),
+            (30, 2)
+        );
+    }
+
+    #[test]
+    fn online_timing_includes_the_thirtieth_peer_measurement() {
+        let mut pings = vec![0; 30];
+        pings[29] = 1001;
+        let timing = super::wol_start_timing(2, pings, true);
+        assert_eq!(timing.latency_fudge, 2);
+        assert!(timing.set_timing.is_some());
+        assert_eq!(timing.max_ahead, 30);
+    }
+
+    #[test]
+    fn ninety_tick_preset_seeds_network_timing_and_keeps_existing_speed_ids() {
+        let speed = i32::from(super::GAME_SPEED_90_TPS);
+        let timing = super::wol_start_timing(speed, [0; 2], true);
+        assert_eq!(timing.precalc_frame_rate, 90);
+        assert_eq!(timing.frame_send_rate.get(), 10);
+        assert_eq!((timing.max_ahead, timing.precalc_max_ahead), (60, 60));
+        assert_eq!(super::speed_frame_budget(7), (10, 10));
+    }
+
+    /// The lobby signs the host speed's rate into the ordering certificate,
+    /// and the relay admits only `FRAME_RATES`: each selectable speed has its
+    /// own admitted rate, and each admitted rate names a speed.
+    #[test]
+    fn selectable_speeds_run_at_exactly_the_rates_the_relay_certifies() {
+        let mut rates = Vec::new();
+        for speed in (0..=u8::MAX).filter(|&speed| is_selectable_game_speed(speed)) {
+            let rate = u16::try_from(super::speed_frame_budget(i32::from(speed)).1).unwrap();
+            assert_eq!(
+                super::game_speed_for_frame_rate(rate),
+                Some(i32::from(speed))
+            );
+            rates.push(rate);
+        }
+        rates.sort_unstable_by(|a, b| b.cmp(a));
+        assert_eq!(rates, vera20k_relay_protocol::FRAME_RATES);
+    }
+
+    #[test]
+    fn wol_start_timing_matches_original_start_game_now_block() {
+        let corpus = crate::test_fixture::json("tools/storage_oracle/wol_shell.json");
+        let cases = corpus["timing"].as_array().unwrap();
+        assert!(!cases.is_empty());
+        let int = |value: &serde_json::Value| i32::try_from(value.as_i64().unwrap()).unwrap();
+        for case in cases {
+            let name = case["name"].as_str().unwrap();
+            let pings: Vec<i32> = case["pings"].as_array().unwrap().iter().map(int).collect();
+            let result = super::wol_start_timing(
+                int(&case["game_speed"]),
+                pings,
+                case["channel_owner"].as_bool().unwrap(),
+            );
+            let set_timing = case["set_timing"]
+                .as_array()
+                .map(|args| super::WolIpxTiming {
+                    retry_delta: int(&args[0]),
+                    max_retries: int(&args[1]),
+                    timeout: int(&args[2]),
+                    apply_to_connections: int(&args[3]) != 0,
+                });
+            let expected = super::WolStartTiming {
+                max_ahead: int(&case["max_ahead"]),
+                frame_send_rate: NonZeroU8::new(
+                    u8::try_from(case["frame_send_rate"].as_u64().unwrap()).unwrap(),
+                )
+                .unwrap(),
+                precalc_max_ahead: int(&case["precalc_max_ahead"]),
+                precalc_frame_rate: int(&case["precalc_frame_rate"]),
+                max_max_ahead: int(&case["max_max_ahead"]),
+                latency_fudge: int(&case["latency_fudge"]),
+                set_timing,
+            };
+            assert_eq!(result, expected, "{name}");
+        }
+    }
+
+    #[test]
+    fn frame_send_rate_two_waits_and_uses_unsigned_boundary_rounding() {
+        let policy = NetworkSendPolicy::FrameSendRate2 {
+            frame_send_rate: NonZeroU32::new(5).unwrap(),
+        };
+        assert!(!policy.should_send(11));
+        assert!(policy.should_send(15));
+        assert_eq!(policy.execute_frame(15, 7), 25);
+        assert_eq!(policy.execute_frame(15, 0), 15);
+        assert_eq!(
+            NetworkSendPolicy::EveryFrame.execute_frame(u32::MAX - 2, 5),
+            2
+        );
+    }
+
+    /// One byte-exact native record, the dispatch fixtures' DoList entry.
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    struct SynchronizedCommand {
+        record: CommandRecord,
+    }
+
+    impl DoListEvent for SynchronizedCommand {
+        fn native_record(&self) -> Option<&CommandRecord> {
+            Some(&self.record)
+        }
+
+        fn native_record_mut(&mut self) -> Option<&mut CommandRecord> {
+            Some(&mut self.record)
+        }
+
+        fn semantic_header(&self) -> Option<SemanticEventHeader> {
+            None
+        }
+
+        fn consumes_native_dolist_slot(&self) -> bool {
+            true
+        }
+
+        fn is_processed(&self) -> bool {
+            self.record.is_processed()
+        }
+
+        fn mark_processed(&mut self) {
+            self.record.mark_processed();
+        }
+
+        fn clear_processed(&mut self) {
+            self.record.clear_processed();
+        }
+    }
+
+    impl SynchronizedCommand {
+        fn opaque(record: CommandRecord) -> Self {
+            Self { record }
+        }
+
+        fn record(&self) -> &CommandRecord {
+            &self.record
+        }
+
+        fn payload_mut(&mut self) -> &mut [u8] {
+            self.record.payload_mut()
+        }
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum DispatchMode<'a> {
+        Offline,
+        Network {
+            checksum_history: &'a MultiplayerChecksumHistory,
+            frame_info_gate: FrameInfoCompareGate,
+        },
+    }
+
+    /// Raw records on the production DoList, dispatched through a host whose
+    /// hooks the test supplies.
+    #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+    struct SynchronizedCommandQueue {
+        do_list: DoList<SynchronizedCommand>,
+    }
+
+    impl SynchronizedCommandQueue {
+        fn new() -> Self {
+            Self::default()
+        }
+
+        fn do_list_len(&self) -> usize {
+            self.do_list.len()
+        }
+
+        fn synchronized_records(&self) -> impl Iterator<Item = &SynchronizedCommand> {
+            self.do_list.iter()
+        }
+
+        /// Publish the DoList retiming window of an executed timing update
+        /// (EventClass4C800C) and return the adjusted MaxAhead.
+        fn apply_timing_update(
+            &mut self,
+            event_frame: i32,
+            previous_max_ahead: u16,
+            previous_frame_send_rate: NonZeroU8,
+            proposed_max_ahead: u16,
+            proposed_frame_send_rate: NonZeroU8,
+            scenario_subtracts_ten: bool,
+        ) -> u16 {
+            let mut window = self.do_list.retime_window();
+            let adjusted = window.apply_timing_update(
+                event_frame,
+                previous_max_ahead,
+                previous_frame_send_rate,
+                proposed_max_ahead,
+                proposed_frame_send_rate,
+                scenario_subtracts_ten,
+            );
+            let (start, end) = window.bounds();
+            self.do_list.set_retime_window(start, end);
+            adjusted
+        }
+
+        fn admit(&mut self, command: SynchronizedCommand) -> bool {
+            self.do_list.admit(command)
+        }
+
+        fn admit_bytes(&mut self, bytes: &[u8]) -> Result<bool, CommandRecordError> {
+            let record = CommandRecord::admit_exact(bytes)?;
+            Ok(self.admit(SynchronizedCommand::opaque(record)))
+        }
+
+        fn dispatch_due_offline<A, F>(
+            &mut self,
+            current_frame: i32,
+            houses: &[CommandDispatchHouse],
+            adjust_megamissions: A,
+            execute: F,
+        ) -> DispatchSummary
+        where
+            A: FnMut(InternedId, &mut [SynchronizedCommand]),
+            F: FnMut(InternedId, &SynchronizedCommand, bool),
+        {
+            self.dispatch_due_inner(
+                current_frame,
+                houses,
+                DispatchMode::Offline,
+                |_, _| {},
+                adjust_megamissions,
+                execute,
+            )
+            .expect("checksum comparison is disabled")
+        }
+
+        fn dispatch_due_network<L, A, F>(
+            &mut self,
+            current_frame: i32,
+            houses: &[CommandDispatchHouse],
+            checksum_history: &MultiplayerChecksumHistory,
+            frame_info_gate: FrameInfoCompareGate,
+            handle_late_record: L,
+            adjust_megamissions: A,
+            execute: F,
+        ) -> Result<DispatchSummary, ChecksumMismatch>
+        where
+            L: FnMut(InternedId, &SynchronizedCommand),
+            A: FnMut(InternedId, &mut [SynchronizedCommand]),
+            F: FnMut(InternedId, &SynchronizedCommand, bool),
+        {
+            self.dispatch_due_inner(
+                current_frame,
+                houses,
+                DispatchMode::Network {
+                    checksum_history,
+                    frame_info_gate,
+                },
+                handle_late_record,
+                adjust_megamissions,
+                execute,
+            )
+        }
+
+        fn dispatch_due_inner<L, A, F>(
+            &mut self,
+            current_frame: i32,
+            houses: &[CommandDispatchHouse],
+            mode: DispatchMode<'_>,
+            mut handle_late_record: L,
+            mut adjust_megamissions: A,
+            mut execute: F,
+        ) -> Result<DispatchSummary, ChecksumMismatch>
+        where
+            L: FnMut(InternedId, &SynchronizedCommand),
+            A: FnMut(InternedId, &mut [SynchronizedCommand]),
+            F: FnMut(InternedId, &SynchronizedCommand, bool),
+        {
+            let dispatch_mode = match mode {
+                DispatchMode::Offline => CommandDispatchMode::Offline,
+                DispatchMode::Network { .. } => CommandDispatchMode::Network,
+            };
+            let mut host = RawDispatchHost {
+                current_frame,
+                mode,
+                handle_late_record: &mut handle_late_record,
+                adjust_megamissions: &mut adjust_megamissions,
+                execute: &mut execute,
+            };
+            self.do_list.dispatch(
+                CommandDispatchClock {
+                    native_frame: current_frame,
+                    execute_tick: 0,
+                },
+                houses,
+                dispatch_mode,
+                &mut host,
+            )
+        }
+    }
+
+    struct RawDispatchHost<'a, L, A, F> {
+        current_frame: i32,
+        mode: DispatchMode<'a>,
+        handle_late_record: &'a mut L,
+        adjust_megamissions: &'a mut A,
+        execute: &'a mut F,
+    }
+
+    impl<L, A, F> DoListHost<SynchronizedCommand> for RawDispatchHost<'_, L, A, F>
+    where
+        L: FnMut(InternedId, &SynchronizedCommand),
+        A: FnMut(InternedId, &mut [SynchronizedCommand]),
+        F: FnMut(InternedId, &SynchronizedCommand, bool),
+    {
+        type Error = ChecksumMismatch;
+
+        fn late_entry(&mut self, house: CommandDispatchHouse, entry: &SynchronizedCommand) {
+            (self.handle_late_record)(house.owner, entry);
+        }
+
+        fn frame_info(
+            &mut self,
+            _house: CommandDispatchHouse,
+            entry: &SynchronizedCommand,
+        ) -> Result<bool, Self::Error> {
+            let DispatchMode::Network {
+                checksum_history,
+                frame_info_gate,
+            } = self.mode
+            else {
+                return Ok(false);
+            };
+            if !frame_info_gate.allows_compare(self.current_frame) {
+                return Ok(false);
+            }
+            let frame_info =
+                FrameInfo::decode(&entry.record).expect("dispatch checked FRAMEINFO opcode");
+            checksum_history.compare(frame_info)?;
+            Ok(true)
+        }
+
+        fn adjust_megamissions(
+            &mut self,
+            house: CommandDispatchHouse,
+            entries: &mut [SynchronizedCommand],
+        ) {
+            (self.adjust_megamissions)(house.owner, entries);
+        }
+
+        fn execute(
+            &mut self,
+            house: CommandDispatchHouse,
+            entry: &SynchronizedCommand,
+            is_late: bool,
+            _retime_window: &mut DoListRetimeWindow,
+        ) {
+            (self.execute)(house.owner, entry, is_late);
+        }
+    }
+
+    fn opaque(opcode: u8, house: i32, frame: i32, payload: &[u8]) -> SynchronizedCommand {
+        SynchronizedCommand::opaque(CommandRecord::encode(opcode, house, frame, payload).unwrap())
+    }
+
+    fn eligible(owner: InternedId, house_id: i8) -> CommandDispatchHouse {
+        CommandDispatchHouse::new(owner, house_id, true)
+    }
+
+    fn nonzero_u8(value: u8) -> NonZeroU8 {
+        NonZeroU8::new(value).unwrap()
+    }
+
+    #[test]
+    fn gsi_16_02_retime_prepass_scans_the_complete_snapshot_and_persists() {
+        let owner = InternedId::from_index(3);
+        let mut queue = SynchronizedCommandQueue::new();
+        for (opcode, frame, payload) in [
+            (0x15, 100, 0),
+            (0x15, 101, 1),
+            (FRAMEINFO_EVENT_OPCODE, 110, 2),
+            (0x15, 119, 3),
+            (0x15, 120, 4),
+            (0x15, 130, 5),
+        ] {
+            assert!(queue.admit(opaque(opcode, 0, frame, &[payload])));
+        }
+        queue
+            .do_list
+            .iter_mut()
+            .nth(3)
+            .unwrap()
+            .record
+            .mark_processed();
+        let unchanged_parts = queue
+            .synchronized_records()
+            .map(|command| {
+                (
+                    command.record().opcode(),
+                    command.record().flags(),
+                    command.record().house_id(),
+                    command.record().payload().to_vec(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            queue.apply_timing_update(100, 10, nonzero_u8(5), 20, nonzero_u8(10), false,),
+            20
+        );
+        let encoded = crate::util::save_codec::serialize(&queue).unwrap();
+        let mut restored: SynchronizedCommandQueue =
+            crate::util::save_codec::deserialize(&encoded).unwrap();
+
+        let ineligible_house = CommandDispatchHouse::new(owner, 0, false);
+        let history = MultiplayerChecksumHistory::new();
+        restored
+            .dispatch_due_network(
+                99,
+                &[ineligible_house],
+                &history,
+                FrameInfoCompareGate::OPEN,
+                |_, _| panic!("no record is late"),
+                |_, _| panic!("no MegaMission is due"),
+                |_, _, _| panic!("house eligibility is checked after retiming"),
+            )
+            .unwrap();
+
+        assert_eq!(
+            restored
+                .synchronized_records()
+                .map(|command| command.record().frame_stamp())
+                .collect::<Vec<_>>(),
+            vec![100, 120, 110, 120, 120, 130]
+        );
+        assert_eq!(
+            restored
+                .synchronized_records()
+                .map(|command| {
+                    (
+                        command.record().opcode(),
+                        command.record().flags(),
+                        command.record().house_id(),
+                        command.record().payload().to_vec(),
+                    )
+                })
+                .collect::<Vec<_>>(),
+            unchanged_parts
+        );
+        assert!(
+            restored
+                .synchronized_records()
+                .nth(3)
+                .unwrap()
+                .record()
+                .is_processed(),
+            "processed records are retimed without clearing their flag"
+        );
+
+        assert!(restored.admit(opaque(0x15, 0, 115, &[6])));
+        restored
+            .dispatch_due_network(
+                99,
+                &[ineligible_house],
+                &history,
+                FrameInfoCompareGate::OPEN,
+                |_, _| {},
+                |_, _| {},
+                |_, _, _| {},
+            )
+            .unwrap();
+        assert_eq!(
+            restored
+                .synchronized_records()
+                .last()
+                .unwrap()
+                .record()
+                .frame_stamp(),
+            120,
+            "the retime window is not consumed by a dispatch"
+        );
+    }
+
+    #[test]
+    fn gsi_16_02_timing_update_applies_scenario_adjustment_and_clears_on_nonincrease() {
+        let mut queue = SynchronizedCommandQueue::new();
+        queue.do_list.set_retime_window(1, 2);
+
+        assert_eq!(
+            queue.apply_timing_update(100, 15, nonzero_u8(5), 20, nonzero_u8(5), true,),
+            10
+        );
+        assert_eq!(queue.do_list.retime_window().bounds(), (0, 0));
+    }
+
+    #[test]
+    fn gsi_16_02_executed_update_affects_the_next_dispatch_prepass() {
+        let owner = InternedId::from_index(3);
+        let history = MultiplayerChecksumHistory::new();
+        let mut queue = SynchronizedCommandQueue::new();
+        assert!(queue.admit(opaque(0x20, 0, 100, &[0])));
+        assert!(queue.admit(opaque(0x15, 0, 110, &[1])));
+
+        let mut saw_timing_update = false;
+        queue
+            .dispatch_due_network(
+                100,
+                &[eligible(owner, 0)],
+                &history,
+                FrameInfoCompareGate::OPEN,
+                |_, _| panic!("no record is late"),
+                |_, _| panic!("no MegaMission is due"),
+                |_, command, _| {
+                    assert_eq!(command.record().opcode(), 0x20);
+                    saw_timing_update = true;
+                },
+            )
+            .unwrap();
+        assert!(saw_timing_update);
+        assert_eq!(
+            queue
+                .synchronized_records()
+                .next()
+                .unwrap()
+                .record()
+                .frame_stamp(),
+            110,
+            "the update is published after its dispatch call's prepass"
+        );
+
+        queue.apply_timing_update(100, 10, nonzero_u8(5), 20, nonzero_u8(10), false);
+        let summary = queue
+            .dispatch_due_network(
+                110,
+                &[eligible(owner, 0)],
+                &history,
+                FrameInfoCompareGate::OPEN,
+                |_, _| panic!("the command must be retimed before lateness handling"),
+                |_, _| panic!("no MegaMission is due"),
+                |_, _, _| panic!("the command must not execute inside the widened window"),
+            )
+            .unwrap();
+        assert_eq!(summary.executed, 0);
+        assert_eq!(
+            queue
+                .synchronized_records()
+                .next()
+                .unwrap()
+                .record()
+                .frame_stamp(),
+            120
+        );
+
+        let mut executed = Vec::new();
+        let summary = queue
+            .dispatch_due_network(
+                120,
+                &[eligible(owner, 0)],
+                &history,
+                FrameInfoCompareGate::OPEN,
+                |_, _| panic!("the retimed command is not late"),
+                |_, _| {},
+                |_, command, _| executed.push(command.record().payload()[0]),
+            )
+            .unwrap();
+        assert_eq!(summary.executed, 1);
+        assert_eq!(executed, vec![1]);
+    }
+
+    #[test]
+    fn network_dispatch_skips_late_non_timing_records_and_retires_reachable_head() {
+        let owner = InternedId::from_index(7);
+        let history = MultiplayerChecksumHistory::new();
+        let mut queue = SynchronizedCommandQueue::new();
+        assert!(queue.admit(opaque(0x15, 0, 10, &[1])));
+        assert!(queue.admit(opaque(0x15, 0, 9, &[2])));
+
+        let mut observed = Vec::new();
+        let mut late_records = Vec::new();
+        let summary = queue
+            .dispatch_due_network(
+                10,
+                &[eligible(owner, 0)],
+                &history,
+                FrameInfoCompareGate::OPEN,
+                |late_owner, command| {
+                    assert!(!command.record().is_processed());
+                    late_records.push((late_owner, command.record().payload()[0]));
+                },
+                |_, _| {},
+                |_, command, late| observed.push((command.record().payload()[0], late)),
+            )
+            .unwrap();
+
+        assert_eq!(observed, vec![(1, false)]);
+        assert_eq!(late_records, vec![(owner, 2)]);
+        assert_eq!(summary.executed, 1);
+        assert_eq!(summary.late_executed, 0);
+        assert_eq!(summary.late_skipped, 1);
+        assert_eq!(summary.retired, 2);
+        assert_eq!(queue.do_list_len(), 0);
+    }
+
+    #[test]
+    fn skipped_late_network_record_stays_unmarked_behind_a_future_head() {
+        let owner = InternedId::from_index(7);
+        let history = MultiplayerChecksumHistory::new();
+        let mut queue = SynchronizedCommandQueue::new();
+        assert!(queue.admit(opaque(0x15, 0, 11, &[1])));
+        assert!(queue.admit(opaque(0x15, 0, 9, &[2])));
+
+        let summary = queue
+            .dispatch_due_network(
+                10,
+                &[eligible(owner, 0)],
+                &history,
+                FrameInfoCompareGate::OPEN,
+                |_, command| assert!(!command.record().is_processed()),
+                |_, _| {},
+                |_, _, _| panic!("late network record must not execute"),
+            )
+            .unwrap();
+
+        assert_eq!(summary.executed, 0);
+        assert_eq!(summary.late_executed, 0);
+        assert_eq!(summary.late_skipped, 1);
+        assert_eq!(summary.retired, 0);
+        assert_eq!(queue.do_list_len(), 2);
+        assert!(
+            !queue
+                .synchronized_records()
+                .nth(1)
+                .unwrap()
+                .record()
+                .is_processed()
+        );
+    }
+
+    #[test]
+    fn late_network_transport_hook_follows_house_then_fifo_order() {
+        let owner_a = InternedId::from_index(7);
+        let owner_b = InternedId::from_index(8);
+        let history = MultiplayerChecksumHistory::new();
+        let mut queue = SynchronizedCommandQueue::new();
+        assert!(queue.admit(opaque(0x15, 0, 11, &[0])));
+        assert!(queue.admit(opaque(0x15, 1, 9, &[0xb1])));
+        assert!(queue.admit(opaque(0x15, 0, 9, &[0xa1])));
+        assert!(queue.admit(opaque(0x15, 1, 9, &[0xb2])));
+        assert!(queue.admit(opaque(0x15, 0, 9, &[0xa2])));
+
+        let mut late_order = Vec::new();
+        let summary = queue
+            .dispatch_due_network(
+                10,
+                &[eligible(owner_a, 0), eligible(owner_b, 1)],
+                &history,
+                FrameInfoCompareGate::OPEN,
+                |owner, command| {
+                    assert!(!command.record().is_processed());
+                    late_order.push((owner, command.record().payload()[0]));
+                },
+                |_, _| {},
+                |_, _, _| panic!("late network record must not execute"),
+            )
+            .unwrap();
+
+        assert_eq!(
+            late_order,
+            vec![
+                (owner_a, 0xa1),
+                (owner_a, 0xa2),
+                (owner_b, 0xb1),
+                (owner_b, 0xb2),
+            ]
+        );
+        assert_eq!(summary.late_skipped, 4);
+        assert_eq!(summary.retired, 0);
+        assert!(
+            queue
+                .synchronized_records()
+                .skip(1)
+                .all(|command| !command.record().is_processed())
+        );
+    }
+
+    #[test]
+    fn due_scan_executes_late_unknown_bytes_consumes_timing_and_retains_future() {
+        let owner = InternedId::from_index(7);
+        let mut queue = SynchronizedCommandQueue::new();
+
+        let mut late_bytes = [0x7b; COMMAND_RECORD_LEN];
+        late_bytes[0] = 0xfe;
+        late_bytes[1] = 0x80;
+        late_bytes[2] = 0;
+        late_bytes[3..7].copy_from_slice(&9_i32.to_le_bytes());
+        queue.admit_bytes(&late_bytes).unwrap();
+        queue.admit(opaque(0x1c, 0, 10, &[1, 2]));
+        queue.admit(opaque(0x15, 0, 11, &[3, 4]));
+
+        let mut observed = Vec::new();
+        let summary = queue.dispatch_due_offline(
+            10,
+            &[eligible(owner, 0)],
+            |_, _| {},
+            |registered_owner, command, late| {
+                observed.push((
+                    registered_owner,
+                    command.record().clone().into_bytes(),
+                    late,
+                    command.record().is_processed(),
+                ));
+            },
+        );
+
+        assert_eq!(observed.len(), 1);
+        assert_eq!(observed[0].0, owner);
+        assert_eq!(observed[0].1[0], 0xfe);
+        assert_eq!(observed[0].1[1], 0x80);
+        assert!(observed[0].1[7..].iter().all(|byte| *byte == 0x7b));
+        assert!(observed[0].2);
+        assert!(!observed[0].3, "bit 0 is marked after execution");
+        assert_eq!(summary.executed, 1);
+        assert_eq!(summary.late_executed, 1);
+        assert_eq!(summary.timing_consumed, 1);
+        assert_eq!(summary.retired, 2);
+        assert_eq!(queue.do_list_len(), 1);
+        assert_eq!(
+            queue
+                .synchronized_records()
+                .next()
+                .unwrap()
+                .record()
+                .frame_stamp(),
+            11
+        );
+    }
+
+    #[test]
+    fn processed_records_behind_a_future_head_stay_marked_until_head_can_retire() {
+        let owner = InternedId::from_index(1);
+        let mut queue = SynchronizedCommandQueue::new();
+        queue.admit(opaque(0x15, 0, 12, &[]));
+        queue.admit(opaque(0x15, 0, 10, &[]));
+
+        let summary =
+            queue.dispatch_due_offline(10, &[eligible(owner, 0)], |_, _| {}, |_, _, _| {});
+        assert_eq!(summary.executed, 1);
+        assert_eq!(summary.retired, 0);
+        assert!(
+            !queue
+                .synchronized_records()
+                .next()
+                .unwrap()
+                .record()
+                .is_processed()
+        );
+        assert!(
+            queue
+                .synchronized_records()
+                .nth(1)
+                .unwrap()
+                .record()
+                .is_processed()
+        );
+    }
+
+    fn assert_queue_only_opcode_is_marked_without_execute(opcode: u8) {
+        let owner = InternedId::from_index(1);
+        let mut queue = SynchronizedCommandQueue::new();
+        queue.admit(opaque(0x15, 0, 11, &[]));
+        queue.admit(opaque(opcode, 0, 10, &[1]));
+
+        let summary = queue.dispatch_due_offline(
+            10,
+            &[eligible(owner, 0)],
+            |_, _| panic!("queue-only records are not MegaMissions"),
+            |_, _, _| panic!("queue-only records must not reach EventClass execute"),
+        );
+
+        assert_eq!(summary.executed, 0);
+        assert_eq!(summary.retired, 0);
+        assert!(
+            queue
+                .synchronized_records()
+                .nth(1)
+                .unwrap()
+                .record()
+                .is_processed()
+        );
+    }
+
+    #[test]
+    fn options_reaches_only_the_current_players_executor() {
+        // Execute_DoList64C8D8..64C911 dispatches local OPTIONS, while
+        // remote OPTIONS is marked without entering EventClass::Execute.
+        let local = InternedId::from_index(1);
+        let peer = InternedId::from_index(2);
+        let mut queue = SynchronizedCommandQueue::new();
+        queue.admit(opaque(0x0c, 0, 10, &[]));
+        queue.admit(opaque(0x0c, 1, 10, &[]));
+        let mut observed = Vec::new();
+        let summary = queue.dispatch_due_offline(
+            10,
+            &[
+                eligible(local, 0).with_current_player(true),
+                eligible(peer, 1),
+            ],
+            |_, _| {},
+            |owner, event, _| observed.push((owner, event.record().opcode())),
+        );
+        assert_eq!(observed, [(local, 0x0c)]);
+        assert_eq!(summary.executed, 1);
+        assert_eq!(summary.retired, 2);
+    }
+
+    #[test]
+    fn remote_opcode_0c_is_marked_without_event_execute() {
+        assert_queue_only_opcode_is_marked_without_execute(0x0c);
+    }
+
+    #[test]
+    fn opcode_22_is_marked_without_event_execute() {
+        assert_queue_only_opcode_is_marked_without_execute(0x22);
+    }
+
+    #[test]
+    fn megamission_batch_hook_sees_ordered_run_and_mutations_reach_execute() {
+        let owner = InternedId::from_index(5);
+        let mut queue = SynchronizedCommandQueue::new();
+        queue.admit(opaque(0x04, 0, 10, &[1]));
+        queue.admit(opaque(0x15, 0, 10, &[2]));
+        queue.admit(opaque(0x04, 0, 10, &[3]));
+
+        let mut order = Vec::new();
+        let mut batches = Vec::new();
+        let summary = queue.dispatch_due_offline(
+            10,
+            &[eligible(owner, 0)],
+            |batch_owner, batch| {
+                batches.push((
+                    batch_owner,
+                    batch
+                        .iter()
+                        .map(|command| command.record().payload()[0])
+                        .collect::<Vec<_>>(),
+                ));
+                batch[0].payload_mut()[0] = 10;
+                batch[1].payload_mut()[0] = 30;
+            },
+            |_, command, _| {
+                order.push((command.record().opcode(), command.record().payload()[0]));
+                assert!(
+                    !command.record().is_processed(),
+                    "the staged copy retains its pre-acknowledgement flags"
+                );
+            },
+        );
+
+        assert_eq!(batches, vec![(owner, vec![1, 3])]);
+        assert_eq!(order, vec![(0x15, 2), (0x04, 10), (0x04, 30)]);
+        assert_eq!(summary.executed, 3);
+        assert_eq!(summary.retired, 3);
+    }
+
+    #[test]
+    fn megamission_staging_drops_the_257th_due_record() {
+        let owner = InternedId::from_index(5);
+        let mut queue = SynchronizedCommandQueue::new();
+        for payload in 0..=MEGAMISSION_STAGE_CAPACITY {
+            assert!(queue.admit(opaque(0x04, 0, 10, &[payload as u8])));
+        }
+
+        let mut executed = 0;
+        let summary = queue.dispatch_due_offline(
+            10,
+            &[eligible(owner, 0)],
+            |_, batch| assert_eq!(batch.len(), MEGAMISSION_STAGE_CAPACITY),
+            |_, _, _| executed += 1,
+        );
+
+        assert_eq!(executed, MEGAMISSION_STAGE_CAPACITY);
+        assert_eq!(summary.executed, MEGAMISSION_STAGE_CAPACITY);
+        assert_eq!(summary.megamission_dropped, 1);
+        assert_eq!(summary.retired, MEGAMISSION_STAGE_CAPACITY + 1);
+    }
+
+    #[test]
+    fn ineligible_ai_house_is_skipped_without_reindexing_later_house_ids() {
+        let owner_0 = InternedId::from_index(10);
+        let owner_1 = InternedId::from_index(11);
+        let owner_2 = InternedId::from_index(12);
+        let mut queue = SynchronizedCommandQueue::new();
+        assert!(queue.admit(opaque(0x15, 1, 10, &[1])));
+        assert!(queue.admit(opaque(0x15, 2, 10, &[2])));
+
+        let houses = [
+            CommandDispatchHouse::new(owner_0, 0, true),
+            CommandDispatchHouse::new(owner_1, 1, false),
+            CommandDispatchHouse::new(owner_2, 2, true),
+        ];
+        let mut observed = Vec::new();
+        let summary = queue.dispatch_due_offline(
+            10,
+            &houses,
+            |_, _| {},
+            |owner, command, _| observed.push((owner, command.record().house_id())),
+        );
+
+        assert_eq!(observed, vec![(owner_2, 2)]);
+        assert_eq!(summary.executed, 1);
+        assert_eq!(summary.retired, 0);
+        assert!(
+            !queue
+                .synchronized_records()
+                .next()
+                .unwrap()
+                .record()
+                .is_processed()
+        );
+        assert!(
+            queue
+                .synchronized_records()
+                .nth(1)
+                .unwrap()
+                .record()
+                .is_processed()
+        );
+    }
+
+    #[test]
+    fn frame_info_overwrites_only_verified_fields() {
+        let original = [0xa4; COMMAND_RECORD_LEN];
+        let mut record = CommandRecord::decode_exact(&original).unwrap();
+        FrameInfo {
+            house_id: 3,
+            event_frame: -9,
+            checksum: 0x1234_5678,
+            timing_word: 0xabcd,
+            delay: 0xef,
+        }
+        .write_to(&mut record);
+
+        let bytes = record.as_bytes();
+        assert_eq!(bytes[0], FRAMEINFO_EVENT_OPCODE);
+        assert_eq!(bytes[1], 0xa4, "flags are not normalized");
+        assert_eq!(bytes[2], 3);
+        assert_eq!(&bytes[3..7], &(-9_i32).to_le_bytes());
+        assert_eq!(&bytes[7..11], &0x1234_5678_u32.to_le_bytes());
+        assert_eq!(&bytes[11..13], &0xabcd_u16.to_le_bytes());
+        assert_eq!(bytes[13], 0xef);
+        assert!(bytes[14..].iter().all(|&byte| byte == 0xa4));
+    }
+
+    #[test]
+    fn frame_info_compares_delayed_history_with_wrapping_index() {
+        let owner = InternedId::from_index(1);
+        let mut history = MultiplayerChecksumHistory::new();
+        history.record(u32::MAX, 0xdead_beef);
+        let mut queue = SynchronizedCommandQueue::new();
+        queue.admit(SynchronizedCommand::opaque(
+            FrameInfo {
+                house_id: 0,
+                event_frame: 1,
+                checksum: 0xdead_beef,
+                timing_word: 0,
+                delay: 2,
+            }
+            .encode(),
+        ));
+
+        let summary = queue
+            .dispatch_due_network(
+                1,
+                &[eligible(owner, 0)],
+                &history,
+                FrameInfoCompareGate::OPEN,
+                |_, _| {},
+                |_, _| {},
+                |_, _, _| panic!("FRAMEINFO must not reach command execution"),
+            )
+            .unwrap();
+
+        assert_eq!(summary.timing_consumed, 1);
+        assert_eq!(summary.frame_info_compared, 1);
+        assert_eq!(summary.retired, 1);
+    }
+
+    #[test]
+    fn closed_frame_info_gate_acknowledges_without_comparing() {
+        let owner = InternedId::from_index(1);
+        let mut history = MultiplayerChecksumHistory::new();
+        history.record(8, 0x1111_1111);
+        let mut queue = SynchronizedCommandQueue::new();
+        assert!(
+            queue.admit(SynchronizedCommand::opaque(
+                FrameInfo {
+                    house_id: 0,
+                    event_frame: 10,
+                    checksum: 0x2222_2222,
+                    timing_word: 0,
+                    delay: 2,
+                }
+                .encode(),
+            ))
+        );
+
+        let summary = queue
+            .dispatch_due_network(
+                10,
+                &[eligible(owner, 0)],
+                &history,
+                FrameInfoCompareGate::new(9, 2),
+                |_, _| {},
+                |_, _| {},
+                |_, _, _| panic!("FRAMEINFO must not reach command execution"),
+            )
+            .unwrap();
+
+        assert_eq!(summary.timing_consumed, 1);
+        assert_eq!(summary.frame_info_compared, 0);
+        assert_eq!(summary.retired, 1);
+    }
+
+    #[test]
+    fn checksum_mismatch_stops_before_acknowledging_frame_info() {
+        let owner = InternedId::from_index(1);
+        let mut history = MultiplayerChecksumHistory::new();
+        history.record(40, 0x1111_1111);
+        let mut queue = SynchronizedCommandQueue::new();
+        queue.admit(SynchronizedCommand::opaque(
+            FrameInfo {
+                house_id: 0,
+                event_frame: 45,
+                checksum: 0x2222_2222,
+                timing_word: 0,
+                delay: 5,
+            }
+            .encode(),
+        ));
+
+        let mismatch = queue
+            .dispatch_due_network(
+                45,
+                &[eligible(owner, 0)],
+                &history,
+                FrameInfoCompareGate::OPEN,
+                |_, _| {},
+                |_, _| {},
+                |_, _, _| {},
+            )
+            .unwrap_err();
+
+        assert_eq!(mismatch.history_index, 40);
+        assert_eq!(mismatch.local_checksum, 0x1111_1111);
+        assert_eq!(mismatch.remote_checksum, 0x2222_2222);
+        assert_eq!(queue.do_list_len(), 1);
+        assert!(
+            !queue
+                .synchronized_records()
+                .next()
+                .unwrap()
+                .record()
+                .is_processed()
+        );
+    }
+
+    #[test]
+    fn late_frame_info_is_consumed_without_comparison() {
+        let owner = InternedId::from_index(1);
+        let history = MultiplayerChecksumHistory::new();
+        let mut queue = SynchronizedCommandQueue::new();
+        queue.admit(SynchronizedCommand::opaque(
+            FrameInfo {
+                house_id: 0,
+                event_frame: 9,
+                checksum: 0xffff_ffff,
+                timing_word: 0,
+                delay: 0,
+            }
+            .encode(),
+        ));
+
+        let summary = queue
+            .dispatch_due_network(
+                10,
+                &[eligible(owner, 0)],
+                &history,
+                FrameInfoCompareGate::OPEN,
+                |_, _| {},
+                |_, _| {},
+                |_, _, _| {},
+            )
+            .unwrap();
+        assert_eq!(summary.timing_consumed, 1);
+        assert_eq!(summary.frame_info_compared, 0);
+        assert_eq!(summary.retired, 1);
+    }
+}

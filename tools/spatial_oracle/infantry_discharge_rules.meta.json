@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original InfantryType ART discharge-frame prefix and signed ReadInt, independent retained defaults",
+  "assumptions": [
+    "Existing fixture supplies cached section/index backing data; original ReadInt and CRT parsing execute",
+    "Constructor receipt executes original EBX zeroing and four stores, excluding allocation/base constructor",
+    "ReadINI is entered at 5246BE; preceding Crawls result in AL and ESI/EDI caller registers are supplied",
+    "Physical GI ART lexical values come from the existing retail input owner; archive/file loading is supplied",
+    "Retained four-DWORD initial values are supplied explicitly after the original constructor stores"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "constructor_zero": "0x005236A7",
+    "constructor_stores": "0x005236D7",
+    "read_art_prefix": "0x005246BE",
+    "read_int": "0x005276D0"
+  },
+  "original_slices": [
+    {
+      "start": "005236A7",
+      "end_exclusive": "005236A9",
+      "hex": "33db",
+      "sha256": "45f1dcfd70b34f4cf0bb2c8541d74e6ec286851628ace2c254fae48a382a590d"
+    },
+    {
+      "start": "005236D7",
+      "end_exclusive": "005236F9",
+      "hex": "899e400e00008dbe500e0000899e440e000053899e480e0000538bcf899e4c0e0000",
+      "sha256": "85d7c169e437280603558ae875774f94a4ff223dab80b86cd3bef800f7e9b51f"
+    },
+    {
+      "start": "005246BE",
+      "end_exclusive": "0052473A",
+      "hex": "8b96400e0000b9807188005268d8578200578886bd0e0000e8f52f00008986400e00008b86440e00005068b857820057b980718800e8d82f00008b8e480e00008986440e000051688056820057b980718800e8bb2f00008b964c0e0000b980718800526870568200578986480e0000e89e2f00008bce89864c0e0000",
+      "sha256": "3dd479586ae08fa6692e3de6631f90a3b0991753072ad901e319e388f71ddb48"
+    },
+    {
+      "start": "005276D0",
+      "end_exclusive": "005278E4",
+      "hex": "83ec0c33c053558b6c24188bd93be80f84f30100008b54241c3bd00f84e70100008b4b04563be9570f859e0000008b73083bf00f84c10100008944241089442414894424188bfa83c9ff33c0f2aef7d14951528d4c2418e8b4a6f7ff8b4e3083c62c85c9894424240f848c0100008b4e1085c974043901741b8d5424248bce52e89b3d000085c00f846d0100008946108b4424248b4e0485c90f84cc0000008b4e1085c97404390174178d4424248bce50e86a3d000085c00f84ad0000008946108b761083c604e9a40000008944241089442414894424188bfd83c9ff33c0f2aef7d14951558d4c2418e821a6f7ff8d73288bf8897c24208b460485c074568b461085c07404393874138d4424208bce50e83a3e000085c0743b8946108d4c2420897c2420518bcee8933b000084c074088b761083c604eb05be2c88b7008b3685f674118b542424897308896b0433c0e9dcfeffff33c05f5e8943048943088b4424205d5b83c40cc20c00be3088b7008b3685f60f84800000008b561085d27479803a2475218d4c24285168b85b820052e8ca2c2a008b44243483c40c5f5e5d5b83c40cc20c008bfa83c9ff33c0f2aef7d1490fbe5411ff52e866372a0083c40483f86875248b4e108d4424285068b45b820051e8872c2a008b44243483c40c5f5e5d5b83c40cc20c008b561052e83a232a0083c404894424288b4424285f5e5d5b83c40cc20c008b4424205d5b83c40cc20c00",
+      "sha256": "95dc1db12f2bc316388a374a3525e246deddf9a615d2048404188d1ebc89a11b"
+    }
+  ],
+  "preserved_default_payload_sha256": "03d8276eaee8ac553333412005bdc0602387ddbe6ded9e4fd06295c66871055f",
+  "payload_sha256": "a67115453ad775777f0e0e58ce13e0821c780f3ff2dd776504df8f5d57e26408"
+}

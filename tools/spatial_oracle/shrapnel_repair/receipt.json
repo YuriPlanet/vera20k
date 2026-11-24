@@ -1,0 +1,65 @@
+{
+  "external_inputs": {
+    "LANGRULE.INI": {
+      "absent": true
+    },
+    "MPBattleMD.ini": {
+      "bytes": 295,
+      "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963"
+    },
+    "RULESMD.INI": {
+      "bytes": 743215,
+      "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+    },
+    "SNOWMD.INI": {
+      "bytes": 24258,
+      "sha256": "8e357795fad0d6e3ad383a1044c09a7da0f710790b5992dd987a0a09cf12980f"
+    },
+    "Shore22.sno": {
+      "bytes": 11152,
+      "sha256": "e06611e13442dd3ad3b5311d144bdd63db162bc3f9517f638c8bc5417c119247"
+    },
+    "Water02.sno": {
+      "bytes": 7440,
+      "sha256": "92faafb3e4874e39d86eae3fea58ab7120b9207d819342e01d092d7e72e131f2"
+    },
+    "Water03.sno": {
+      "bytes": 7440,
+      "sha256": "799f910f007511bf083ddede9a15c70c5d75e44c87b50ce5635daef421f3975d"
+    },
+    "Water10.sno": {
+      "bytes": 1872,
+      "sha256": "357e48cdb791465e65480d934f29679e1654d6349417ddb60cafa04b27740bc3"
+    },
+    "Water11.sno": {
+      "bytes": 1872,
+      "sha256": "475969778f5b9a84f0dcc7201acacd40a05226b8150061060f86b0f1b62695d1"
+    },
+    "XShrapnel.MAP": {
+      "bytes": 148622,
+      "sha256": "c32e412e938e1b9a0b29f89ff9bc0e6f410f75bc76701fb4acef6581fd19b438"
+    }
+  },
+  "owned": {
+    "hierarchy_composition.json.gz": "2dead6db5d98f3c012a1f485be4604fdd5751b983dbba1c79051960df366c32e",
+    "hierarchy_composition.meta.json": "267db3513cdeb071e183f112d944e07cfb95db78418c70c0ce1c82b3a0878acb",
+    "production_comparison.json": "241a02ac5ece0f6c443ffc7ac610a9447a835e19e6cb18d042f94f1d358c3e71",
+    "production_comparison.meta.json": "b60054333ea79b2c8b79a6bb286c021429e419ee7a9c0d8706c0eae692e6ae39",
+    "production_inputs.json.gz": "8dd4c3e195ea17ebf5783a920869c91a11fc48a80a443e7806bcf516e1d7b6bd",
+    "promotion.json": "ebd1846edbf53b83eb9c4a7f6ccf1cd6c25be586910154e45480511ba11469d6",
+    "retail_manifest.json": "4d30c8cb43cad18dbb64a78f9848b70d9153a84ebe94d57478386e073854b395",
+    "shrapnel_repair.json.gz": "cc7367d7fd3f99540a84c43004c8e9638420249224c709f7f6e8a9c9d716c555",
+    "shrapnel_repair.meta.json": "bb4b3bac604b382af5fab06d78d528ca4d1c08ddcba85d7fe9a7caae424230a9",
+    "zone_composition.json.gz": "9e720b8740c2736074082ba4a09f26e93066204d022b28c7c85c5968d54e3ab0",
+    "zone_composition.meta.json": "405d02126f988bc685a0efea8e373693b02548512fe29618b971b9419b4ffec4"
+  },
+  "runners": [
+    "tools.spatial_oracle.shrapnel_repair.shrapnel_repair",
+    "tools.spatial_oracle.shrapnel_repair.zone_composition",
+    "tools.spatial_oracle.shrapnel_repair.hierarchy_composition",
+    "tools.spatial_oracle.shrapnel_repair.compare_production"
+  ],
+  "schema": 2,
+  "scope": "Two physical hut selectors; empty low repair, resident Recalc, native full connectivity/hierarchy from supplied production planes. No native scenario loader, Engineer prefix, or occupied repair claim.",
+  "validation": "Separate --write then --check invocations; four native/comparison outputs and exact input/artifact manifest. Check is read-only."
+}

@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original full Anytown navigation graphs, deriving Cell inputs through original readers/Recalc.",
+  "assumptions": [
+    "Physical XMP03T4.MAP diamond fields, original scalar/type readers and relocated physical TEMPERATMD primary TMP bytes; original Cell constructors and Recalc derive all class/height inputs. No VERA planes or IDs supplied.",
+    "Original Terrain constructors and direct Place_Down follow physical source order; full Unlimbo, loaded world object arrays and scenario timing are excluded. Ordinary building class gates are independently native-read false; ordinary mobile RTTIs are ignored by483C80.",
+    "Actual568BB0 final initialization,56C510 and581F90(2,1,0), then original57CCF0 twice and573540 repair execute. Graph header final-vtable/growth caller stores are supplied as in the established hierarchy harness.",
+    "Main, Scenario and MapGen begin with original seeded0 complete states; the original Unit constructor prefix advances Scenario once, recorded separately. No full native scenario load/RNG claim."
+  ],
+  "substitutions": [
+    "Successful bounded malloc/free, CRT atexit registration and TLS. Physical archive and lexical INI cache preparation remain host-side.",
+    "Waterfall Anim421EA0 returns original allocated receiver and records caller-side state; animation registration/playback/lifetime and its hidden RNG are excluded from initialization. Shroud query returns hidden; Terrain discovery does not supply graph state.",
+    "Screen/radar/dirty-rectangle sinks inherited from the frozen geometry harness. Dynamic mobiles and ordinary buildings are omitted only from class-neutral membership; this is not a full actor/world loading comparison."
+  ],
+  "entry_points": {
+    "cell_ctor": "0x0047BBF0",
+    "terrain_ctor": "0x0071BB90",
+    "terrain_place": "0x005683C0",
+    "recalc": "0x0047D2B0",
+    "zone": "0x00483C80",
+    "final_init": "0x00568BB0",
+    "connectivity": "0x0056C510",
+    "hierarchy": "0x00581F90",
+    "batch": "0x00586990",
+    "damage": "0x0057CCF0",
+    "repair": "0x00573540",
+    "unit_can_enter": "0x0073F0A0"
+  },
+  "payload_sha256": "584e7fbd46e04bfff30b58d3c0c463df80fbcca8263aa15a3868de327842d14e",
+  "packaging": "canonical JSON; gzip mtime=0; copied lexical inputs replaced by SHA256"
+}

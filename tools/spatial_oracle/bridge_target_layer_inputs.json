@@ -1,0 +1,91 @@
+{
+  "can_acquire": 1,
+  "constructor": {
+    "can_passive_aquire": true,
+    "distributed_fire": false
+  },
+  "greatest_threat_entry": {
+    "mask": 189,
+    "reference_xyz": [
+      2688,
+      5248,
+      800
+    ],
+    "supplied_initial_mask": 1,
+    "third_argument": 0
+  },
+  "layers": [
+    {
+      "can_passive_aquire": true,
+      "distributed_fire": false,
+      "file": "RULESMD.INI",
+      "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef",
+      "source_keys": {
+        "CanPassiveAquire": null,
+        "DistributedFire": null
+      }
+    },
+    {
+      "absent": true,
+      "file": "LANGRULE.INI"
+    },
+    {
+      "can_passive_aquire": true,
+      "distributed_fire": false,
+      "file": "MPBattleMD.ini",
+      "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963",
+      "source_keys": {
+        "CanPassiveAquire": null,
+        "DistributedFire": null
+      }
+    },
+    {
+      "can_passive_aquire": true,
+      "distributed_fire": false,
+      "file": "Hills.map",
+      "sha256": "780d5d6e6d3c81ac0d510a5df326848dd426b3d840ac290114f44faf8eab9e9e",
+      "source_keys": {
+        "CanPassiveAquire": null,
+        "DistributedFire": null
+      }
+    }
+  ],
+  "native_id_calls": 0,
+  "passive_gate": 1,
+  "rng_calls": 0,
+  "selected_weapon": "HoverMissile",
+  "source_type": "FV",
+  "unit_vtable_slots": {
+    "39c": "00709820",
+    "3c4": "00743190",
+    "3c8": "006fcdb0"
+  },
+  "visited": [
+    "007091d0",
+    "006f3270",
+    "0070e1a0",
+    "006f3270",
+    "0070e140",
+    "006f3270",
+    "00709290",
+    "007091d0",
+    "006f3270",
+    "0070e1a0",
+    "006f3270",
+    "0070e140",
+    "006f3270",
+    "006f3270",
+    "006f3270",
+    "0070e140",
+    "006f3270",
+    "006f3270",
+    "006f3270",
+    "00743190",
+    "006f3270",
+    "006f3270",
+    "0070e140",
+    "006f3270",
+    "00772a90",
+    "004d9920"
+  ]
+}

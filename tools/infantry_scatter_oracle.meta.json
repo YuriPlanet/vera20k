@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "64 original Infantry interior scatter gate cases and 30 Walk code2 timer/urgency cases",
+  "assumptions": [
+    "Fresh emulator per case; original Walk vtable and Is_Moving body executed",
+    "Scatter starts after human special-sequence early gates; sequence=-1 bypasses animation permissions",
+    "Both caller booleans1 matches Walk/Drive obstruction calls; first boolean also varied at the gate boundary",
+    "Original second boolean1 bypasses human-only fallback; global scatter flag varied",
+    "Fraidycat type+EBF confirmed through ReadINI52449A and string8259C8; ctor defaultfalse523795",
+    "Scatter stops before destination/RNG work; admitted does not mean full Scatter success",
+    "Code2 starts after obstruction classification and owner animation-stop virtual548; stops before FindPath",
+    "Native timer padding initialized0; frame100 and configured grace6 supplied",
+    "No complete scatter, pathfinding, scheduler, speed-calculation or gameplay parity claim"
+  ],
+  "substitutions": [
+    "GetMissionTimerEntry call51D176 supplied pointer to configured mission entry",
+    "HasWeaponAbility(3) call51D1DC supplied false; original second boolean1 still takes native proceed branch"
+  ],
+  "entry_points": {
+    "Infantry_scatter_gate": "0x0051D162",
+    "Walk_Is_Moving": "0x0075AB30",
+    "Walk_code2_timers": "0x0075B8A0"
+  },
+  "payload_sha256": "a15ad53248bde1c1254da145d364656e8906d8b768446c68e9af260926954a7b"
+}

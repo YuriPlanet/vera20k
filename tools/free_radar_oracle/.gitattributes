@@ -1,0 +1,2 @@
+# Preserve the byte-pinned original JSON fixture across Windows checkouts.
+fixtures/*.json -text whitespace=cr-at-eol

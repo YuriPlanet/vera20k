@@ -1,0 +1,260 @@
+//! Ares low-power degrading: `HouseClass_Update_DamageDelay @ 100247A0`
+//! (hook `0x004F8B08`, inside `HouseClass::Update @ 0x004F8440` after team
+//! creation and before the player's EVA block).
+//!
+//! Each time the House's `DamageDelayTimer` expires, a degrading House
+//! (`Degrades=` of its own map section, read by the House extension's
+//! `LoadFromINI` in `10021A70` from hook `0x0050114D`; else of its country;
+//! else not `MultiplayPassive=`) with
+//! `[General] Degrade.Enabled=yes` and low power damages every building in
+//! its Buildings vector (House `+0x68`) whose health ratio is above its
+//! `Degrade.Percentage` (else the RulesExt one, else `ConditionYellow=`) by
+//! its `Degrade.Amount` (else `Degrade.AmountConsumer` for a `Power=` drain,
+//! `Degrade.AmountNormal` otherwise), through `ReceiveDamage` with
+//! `C4Warhead=`, no attacker, defenses applied.
+//!
+//! The timer: the House constructor starts it at its construction frame
+//! (`0x004F5A6E..0x004F5A82`, `ftol(DamageDelay * 900)`) and the hook
+//! restarts it at each expiry with `_ftol2(DamageDelay * 900)`. Every VERA
+//! House is constructed at frame 0 and `HouseClass::Update` reaches the hook
+//! for every House on every frame, so the timer expires exactly at each
+//! positive multiple of that duration (every frame for a duration below 1).
+//! VERA derives the expiry from the frame instead of storing the timer.
+//!
+//! RESIDUAL: native walks the Buildings vector with an end pointer taken
+//! once; a building the damage destroys shifts that vector under the walk.
+//! VERA walks a copy and skips buildings that are gone.
+
+use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::ruleset::RuleSet;
+use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags};
+use crate::sim::intern::InternedId;
+use crate::sim::world::{FrameEffects, Simulation};
+use crate::util::native_x87::{NativeF64Bits, X87Chop53, X87Ordering};
+
+/// `DamageDelay * 900` truncated: the timer's duration in frames.
+fn damage_delay_frames(rules: &RuleSet) -> i32 {
+    X87Chop53::load_f64(NativeF64Bits::from_bits(
+        f64::from(rules.general.damage_delay_minutes).to_bits(),
+    ))
+    .map(|minutes| {
+        X87Chop53::mul(
+            minutes,
+            X87Chop53::load_f64(NativeF64Bits::from_bits(900.0f64.to_bits()))
+                .expect("900.0 is finite"),
+        )
+    })
+    .map_or(0, X87Chop53::ftol_i32_low_masked)
+}
+
+/// Whether the House's `DamageDelayTimer` expires on `frame` (module doc).
+fn damage_delay_expires(frame: i32, duration: i32) -> bool {
+    duration < 1 || (frame > 0 && frame % duration == 0)
+}
+
+impl Simulation {
+    /// `100247A0` for one House; see the module doc.
+    pub(crate) fn ares_degrade_buildings(
+        &mut self,
+        owner: InternedId,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
+    ) {
+        let frame = self.session.binary_frame() as i32;
+        if !damage_delay_expires(frame, damage_delay_frames(rules)) {
+            return;
+        }
+        let Some(house) = self.houses.get(&owner) else {
+            return;
+        };
+        let degrades = house
+            .ares_degrades(rules.country_degrades(self.interner.resolve(house.house_type_id())));
+        let globals = rules.ares_building_globals();
+        let low_power = self
+            .power_states
+            .get(&owner)
+            .is_some_and(|power| power.has_low_power());
+        if !degrades || !globals.degrade_enabled || !low_power {
+            return;
+        }
+        let default_percentage = globals
+            .degrade_percentage
+            .unwrap_or(NativeF64Bits::from_bits(
+                rules.general.condition_yellow.to_bits(),
+            ));
+        let c4 = self.interner.intern(&rules.bridge_warheads.c4_name);
+        // A copy: the degrade damage can destroy a listed building, which
+        // leaves the House's Building vector while it is walked.
+        let buildings = house.base_projection().buildings().to_vec();
+        for id in buildings {
+            let Some(building) = self.substrate.entities.get(id) else {
+                continue;
+            };
+            let Some(object) = self.object_type(building.type_ref(), rules) else {
+                continue;
+            };
+            let ext = object.building_type_ext();
+            // BuildingType PowerDrain (`+0xEE4`), the negated `Power=`.
+            let consumer = crate::sim::power_system::native_building_power_drain(object.power) != 0;
+            let damage = ext.degrade_amount.unwrap_or(if consumer {
+                globals.degrade_amount_consumer
+            } else {
+                globals.degrade_amount_normal
+            });
+            let percentage = ext.degrade_percentage.unwrap_or(default_percentage);
+            let ratio = X87Chop53::div(
+                X87Chop53::load_i32(building.health.current()),
+                X87Chop53::load_i32(object.strength),
+            );
+            let above = match (X87Chop53::load_f64(percentage), ratio) {
+                (Ok(percentage), Ok(ratio)) => {
+                    X87Chop53::compare(percentage, ratio) == X87Ordering::Less
+                }
+                _ => false,
+            };
+            if damage > 0 && above {
+                let event = EntityDamageEvent::direct_receiver(
+                    id,
+                    damage,
+                    0,
+                    RAD_NO_ATTACKER,
+                    None,
+                    c4,
+                    ReceiverCallFlags {
+                        ignore_defenses: false,
+                        arg6: false,
+                    },
+                );
+                self.commit_direct_damage_receiver(rules, registry, event, frame_effects);
+            }
+        }
+    }
+}
+
+#[cfg(all(test, tests_sim_a_b))]
+mod tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::house_state::HouseState;
+
+    /// On a DamageDelay expiry a low-power House's consumer above
+    /// `Degrade.Percentage` takes `Degrade.AmountConsumer`; one at the
+    /// percentage, any between expiries and a `Degrades=no` country's are
+    /// spared.
+    #[test]
+    fn low_power_degrades_consumers_above_the_percentage() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nDamageDelay=.1\nDegrade.Enabled=yes\nDegrade.AmountConsumer=10\n\
+             Degrade.Percentage=50%\n[CombatDamage]\nC4Warhead=Super\n[Warheads]\n0=Super\n\
+             [Super]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+             [BuildingTypes]\n0=LAB\n[LAB]\nStrength=1000\nPower=-50\n\
+             [Countries]\n0=Calm\n[Calm]\nDegrades=no\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::with_seed(0x4F8B08);
+        let owner = sim.interner.intern("Owner");
+        sim.houses
+            .register(HouseState::new(owner, 0, None, false, 0, 10));
+        let calm = sim.interner.intern("Calm");
+        let calm_owner = sim.interner.intern("CalmOwner");
+        sim.houses
+            .register(HouseState::new(calm_owner, 0, Some(calm), false, 0, 10));
+        let lab = sim
+            .spawn_object_at_height("LAB", "Owner", 10, 10, 0, 0, &rules)
+            .unwrap();
+        let calm_lab = sim
+            .spawn_object_at_height("LAB", "CalmOwner", 20, 10, 0, 0, &rules)
+            .unwrap();
+        let half = sim
+            .spawn_object_at_height("LAB", "Owner", 14, 10, 0, 0, &rules)
+            .unwrap();
+        sim.substrate
+            .entities
+            .get_mut(half)
+            .unwrap()
+            .health
+            .set_for_test(500);
+        assert!(
+            sim.houses[&owner]
+                .base_projection()
+                .buildings()
+                .contains(&lab)
+        );
+        for house in [owner, calm_owner] {
+            let power = sim.power_states_mut_for_test().entry(house).or_default();
+            power.set_total_output_for_test(0);
+            power.set_total_drain_for_test(100);
+        }
+        let health =
+            |sim: &Simulation, id| sim.substrate.entities.get(id).unwrap().health.current();
+        // `.1` widened from binary32, times 900: 90 frames.
+        for (frame, expected) in [(89, 1000), (90, 990), (91, 990), (180, 980)] {
+            sim.session.set_binary_frame_for_test(frame);
+            for house in [owner, calm_owner] {
+                sim.ares_degrade_buildings(house, &rules, None, &mut FrameEffects::default());
+            }
+            assert_eq!(health(&sim, lab), expected, "frame {frame}");
+            assert_eq!(health(&sim, half), 500, "frame {frame}");
+            assert_eq!(health(&sim, calm_lab), 1000, "frame {frame}");
+        }
+    }
+
+    /// Ares hook 0x0050114D (`10021A70`): a map House section's `Degrades=`
+    /// overrides its country's `Degrades=no` in `100247A0`; a House without
+    /// it keeps the country's answer.
+    #[test]
+    fn a_map_house_degrades_overrides_its_country() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nDamageDelay=.1\nDegrade.Enabled=yes\nDegrade.AmountConsumer=10\n\
+             Degrade.Percentage=50%\n[CombatDamage]\nC4Warhead=Super\n[Warheads]\n0=Super\n\
+             [Super]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+             [BuildingTypes]\n0=LAB\n[LAB]\nStrength=1000\nPower=-50\n\
+             [Countries]\n0=Calm\n[Calm]\nDegrades=no\n",
+        ))
+        .unwrap();
+        let map = IniFile::from_str(
+            "[Houses]\n0=Keen\n1=Still\n\
+             [Keen]\nCountry=Calm\nDegrades=yes\n[Still]\nCountry=Calm\n",
+        );
+        let roster = crate::map::houses::parse_house_roster(&map, &[], Some(&rules));
+        let mut sim = Simulation::with_seed(0x50114D);
+        crate::sim::scenario_bootstrap::initialize_map_roster_houses(
+            &mut sim,
+            &roster,
+            &rules,
+            Some(&map),
+        );
+        let houses = ["Keen", "Still"].map(|name| sim.interner.get(name).unwrap());
+        let labs = [("Keen", 10), ("Still", 20)].map(|(house, x)| {
+            sim.spawn_object_at_height("LAB", house, x, 10, 0, 0, &rules)
+                .unwrap()
+        });
+        for house in houses {
+            let power = sim.power_states_mut_for_test().entry(house).or_default();
+            power.set_total_output_for_test(0);
+            power.set_total_drain_for_test(100);
+        }
+        sim.session.set_binary_frame_for_test(90);
+        for house in houses {
+            sim.ares_degrade_buildings(house, &rules, None, &mut FrameEffects::default());
+        }
+        let health = labs.map(|id| sim.substrate.entities.get(id).unwrap().health.current());
+        assert_eq!(health, [990, 1000]);
+    }
+
+    /// Constructed at frame 0 and restarted at each expiry: positive
+    /// multiples of the duration, or every frame below one.
+    #[test]
+    fn the_damage_delay_expires_on_each_multiple() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        assert!(!damage_delay_expires(0, 900));
+        assert!(!damage_delay_expires(899, 900));
+        assert!(damage_delay_expires(900, 900));
+        assert!(damage_delay_expires(1800, 900));
+        assert!(damage_delay_expires(0, 0));
+        assert!(damage_delay_expires(7, -3));
+    }
+}

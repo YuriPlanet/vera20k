@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Building455D50 complete setter, Event6 admitted actor through null destination, and Stop selected-building input through enqueue admission.",
+  "assumptions": [
+    "Real vtables, prepared live actor/type/House fields, original HasRallyPoint and supplied map cell. Type keys are separately established by the rally input reader corpus.",
+    "Event6 token/house resolution is a supplied actor boundary at4C74E8; admitted execution stops before target clear4C75F3, refused execution at4C8109.",
+    "Stop input uses one selected building and human House; ends at original enqueue entry6FFE00 or speech/return, excluding queue insertion, voice and full UI lifetime.",
+    "Destination matrix covers null, unchanged/new pointer, Selling and Construction missions, every HasRallyPoint arm, ConstructionYard, mode0/1 and an EMP-positive setter control.",
+    "No native RNG call, timer write or detach is performed by the Building setter. Event prefix includes the real empty-contact radio broadcast; nonempty contact detach remains its existing owner.",
+    "EMP-positive native input refusal is recorded; Rust has no EMP504 lifecycle/producer and its active-retail creation reachability remains unestablished."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "building_destination": "0x00455D50",
+    "has_rally_point": "0x00455DA0",
+    "archive_target": "0x0070C610",
+    "techno_destination": "0x00709A30",
+    "stop_event_actor": "0x004C74E8",
+    "stop_input": "0x00730EA0"
+  },
+  "payload_sha256": "aa40c7b20ba2dfaa7aa599034f387ead2f3619a573648ff66250eaebe4941770"
+}

@@ -1,0 +1,2027 @@
+{
+  "schema_version": "vera20k.bridge-shadow-production-evidence.v1",
+  "scope": "Retail release app observations for the bridge own-shadow drawing change. Complete strict observation comparisons plus rendered-frame inspection; native framebuffer parity is bounded separately by the saved original-caller/GPU attachment oracle.",
+  "tool": {
+    "path": "tools/map_observation.py",
+    "schema": "vera20k.map-observation-profile.v2",
+    "comparison": "The existing comparator revalidates each sealed bundle and compares actual input bytes, initial/final state, exact steps, presentation clock, map source, atlas data, complete observations, camera, surface format and BGRA bytes."
+  },
+  "builds": [
+    {
+      "label": "bridge-shadow-before-20261003",
+      "manifest_sha256": "2564709d135a43a1a773f3a4c334cec53e196740d994b46a87c23cd9fe82f59d",
+      "source": {
+        "head": "c60d196d548800cec5494ab1d48f5e022719bb81",
+        "branch": "feature/bridge-shadow-depth",
+        "status": "M src/app/presentation/render/draw_passes.rs\n M src/app/presentation/render/mod.rs\n?? src/app/presentation/render/bridge_shadow_gpu_tests.rs\n?? tools/spatial_oracle/bridge_shadow_render.py"
+      },
+      "command": [
+        "cargo",
+        "build",
+        "--message-format=json-render-diagnostics",
+        "--locked",
+        "--release",
+        "-p",
+        "vera20k",
+        "--bin",
+        "vera20k"
+      ],
+      "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+      "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)\n",
+      "artifacts": [
+        {
+          "file": "0/vera20k",
+          "sha256": "e54fcfa7d3e563803582807dfe5655e513fcea709cd508df2e3cd61285962b56"
+        }
+      ]
+    },
+    {
+      "label": "bridge-shadow-after-20261003",
+      "manifest_sha256": "953a975feb0c4b0876e1566a51cd6e545da3bbe2dcfdae1b2a1436264b68c912",
+      "source": {
+        "head": "c60d196d548800cec5494ab1d48f5e022719bb81",
+        "branch": "feature/bridge-shadow-depth",
+        "status": "M src/app/frontend/skirmish.rs\n M src/app/presentation/instances/bridges.rs\n M src/app/presentation/render/build_instances.rs\n M src/app/presentation/render/draw_passes.rs\n M src/app/presentation/render/mod.rs\n M src/render/bridge_atlas.rs\n M src/render/overlay_atlas.rs\n M src/render/terrain_draw.rs\n M src/render/terrain_draw_gpu_tests.rs\n M src/sim/world/bridge_test_evidence.rs\n?? src/app/presentation/render/bridge_shadow_gpu_tests.rs\n?? tools/spatial_oracle/bridge_shadow_render.json\n?? tools/spatial_oracle/bridge_shadow_render.md\n?? tools/spatial_oracle/bridge_shadow_render.meta.json\n?? tools/spatial_oracle/bridge_shadow_render.py"
+      },
+      "command": [
+        "cargo",
+        "build",
+        "--message-format=json-render-diagnostics",
+        "--locked",
+        "--release",
+        "-p",
+        "vera20k",
+        "--bin",
+        "vera20k"
+      ],
+      "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+      "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)\n",
+      "artifacts": [
+        {
+          "file": "0/vera20k",
+          "sha256": "32f480590a982cf9540a04a05ae2d945f0b632add3514e576531cf3a5b12efb4"
+        }
+      ]
+    },
+    {
+      "label": "bridge-shadow-final-20261003",
+      "manifest_sha256": "b69ebd8dad1ca5216e03bafd14677cd81057446fd8d1f08c267d4588b0d898bd",
+      "source": {
+        "head": "c60d196d548800cec5494ab1d48f5e022719bb81",
+        "branch": "feature/bridge-shadow-depth",
+        "status": "M  README.md\nM  src/app/frontend/skirmish.rs\nM  src/app/presentation/instances/bridges.rs\nA  src/app/presentation/render/bridge_shadow_gpu_tests.rs\nM  src/app/presentation/render/build_instances.rs\nM  src/app/presentation/render/draw_passes.rs\nMM src/app/presentation/render/mod.rs\nMM src/render/bridge_atlas.rs\nM  src/render/overlay_atlas.rs\nM  src/render/terrain_draw.rs\nM  src/render/terrain_draw_gpu_tests.rs\nM  src/sim/world/bridge_test_evidence.rs\nA  tools/spatial_oracle/bridge_shadow_render.json\nA  tools/spatial_oracle/bridge_shadow_render.lifecycle.json\nA  tools/spatial_oracle/bridge_shadow_render.md\nA  tools/spatial_oracle/bridge_shadow_render.meta.json\nA  tools/spatial_oracle/bridge_shadow_render.production.json\nA  tools/spatial_oracle/bridge_shadow_render.py\nA  tools/spatial_oracle/bridge_shadow_render.timing.json\nA  tools/spatial_oracle/bridge_shadow_render.validation.json"
+      },
+      "command": [
+        "cargo",
+        "build",
+        "--message-format=json-render-diagnostics",
+        "--locked",
+        "--release",
+        "-p",
+        "vera20k",
+        "--bin",
+        "vera20k"
+      ],
+      "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: aarch64-apple-darwin\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+      "cargo": "cargo 1.98.1 (797e8a9bc 2026-08-05)\n",
+      "artifacts": [
+        {
+          "file": "0/vera20k",
+          "sha256": "6a07e15bbf01369807e4c011dd7a90095a649b20f0518dd15ac3f9ccb3bc88f7"
+        }
+      ]
+    }
+  ],
+  "shared_inputs": {
+    "contract_sha256": "dd5f6ee15f1a393130f9658862c0680300579da3d4fc9dfd8839435ba01471d0",
+    "config_sha256": "2f32357402ba856642686fc1696df51cded5ca4a3bab2f04e33dc68b9de1658a",
+    "gpu": {
+      "backend": "Metal",
+      "device": 0,
+      "device_type": "IntegratedGpu",
+      "driver": "",
+      "driver_info": "",
+      "name": "Apple M4",
+      "vendor": 0
+    }
+  },
+  "maps": [
+    {
+      "file": "Pacific.mmx",
+      "wrapper_bytes": 191432,
+      "wrapper_sha256": "dc0d0637aca768bdf361a5485a2ac547c73ae93f94148339c2da8029dde0a62c",
+      "inner_mix_entry": "A51C2A2D",
+      "inner_bytes": 191134,
+      "inner_sha256": "d0098ce710244210f0d9da41972c3fe4351dbccb266869e3c115ce19dc0eb37e"
+    },
+    {
+      "file": "Kaliforn.mmx",
+      "wrapper_bytes": 152712,
+      "wrapper_sha256": "3da7ebe513ae2e6a78ac6b8343ff3d3c6d3e33bb7f518fe4e37d3e87a1e64497",
+      "inner_mix_entry": "9AC729CC",
+      "inner_bytes": 152415,
+      "inner_sha256": "882711feea410242f55593698607f707f18d812edd7ad12ec0a4e0a9ec2b6fd3"
+    },
+    {
+      "file": "GoldSt.mmx",
+      "wrapper_bytes": 192104,
+      "wrapper_sha256": "846a51b4d2f98f751f3e1550712def3ee20de56c39f69d751f619a7add124c24",
+      "inner_mix_entry": "9069034F",
+      "inner_bytes": 191821,
+      "inner_sha256": "787af513b39f6b7ca6fb3067ba2294d8d02be8d2183d0965d0a6ee42a60856ac"
+    },
+    {
+      "file": "Deadman.mmx",
+      "wrapper_bytes": 108936,
+      "wrapper_sha256": "8d17f1937e7215ae2bd210506640172e954cc00efa2e620a64717b4da132890d",
+      "inner_mix_entry": "3D7AF9A9",
+      "inner_bytes": 108634,
+      "inner_sha256": "9b87a321903681451784720661c06e3268165c4b414847aced1137bbe0277a62"
+    },
+    {
+      "file": "Hills.mmx",
+      "wrapper_bytes": 144760,
+      "wrapper_sha256": "96de259a741f1fc4d0d4bc4de1a1582755e90a77c2404978814149113fc42f22",
+      "inner_mix_entry": "D5FE80AC",
+      "inner_bytes": 144458,
+      "inner_sha256": "780d5d6e6d3c81ac0d510a5df326848dd426b3d840ac290114f44faf8eab9e9e"
+    }
+  ],
+  "runs": [
+    {
+      "name": "pacific-state0",
+      "scope": "High concrete, overlay 24 state 0, over water; x varies.",
+      "profile": {
+        "schema_version": "vera20k.map-observation-profile.v2",
+        "launch": {
+          "mode": {
+            "id": 1,
+            "ui_name_key": "GUI:Battle",
+            "tooltip_key": "STT:ModeBattle",
+            "override_file": "MPBattleMD.ini",
+            "map_filter": "standard",
+            "random_maps_allowed": true,
+            "allies_allowed": true,
+            "must_ally": false
+          },
+          "player_name": "VERA-OBSERVER",
+          "local": {
+            "country": "America",
+            "country_random": false,
+            "color_index": 0,
+            "color_random": false,
+            "start_position": {
+              "Position": 0
+            },
+            "team": {
+              "Team": 0
+            }
+          },
+          "opponents": [
+            {
+              "country": "France",
+              "country_random": false,
+              "color_index": 1,
+              "color_random": false,
+              "start_position": {
+                "Position": 1
+              },
+              "team": {
+                "Team": 0
+              },
+              "difficulty": "Easy"
+            },
+            {
+              "country": "America",
+              "country_random": false,
+              "color_index": 2,
+              "color_random": false,
+              "start_position": {
+                "Position": 2
+              },
+              "team": {
+                "Team": 1
+              },
+              "difficulty": "Easy"
+            }
+          ],
+          "options": {
+            "starting_credits": 10000,
+            "unit_count": 6,
+            "tech_level": 2,
+            "game_speed": 1,
+            "default_ai_difficulty": 0,
+            "short_game": false,
+            "bases": true,
+            "bridges_destroyable": true,
+            "super_weapons": true,
+            "build_off_ally": true,
+            "crates": true,
+            "mcv_redeploy": true,
+            "fog_of_war": false,
+            "shroud": false,
+            "tiberium_grows": true,
+            "multi_engineer": false,
+            "harvester_truce": false,
+            "ally_change_allowed": true
+          },
+          "selected_map_file": "Pacific.mmx",
+          "pre_fill_house_roster": {
+            "human_nodes": [
+              {
+                "priority": 0,
+                "source_order": 0,
+                "observer": false
+              }
+            ],
+            "ai_slots": [
+              {
+                "slot_index": 0,
+                "valid": true
+              },
+              {
+                "slot_index": 1,
+                "valid": true
+              },
+              {
+                "slot_index": 2,
+                "valid": false
+              },
+              {
+                "slot_index": 3,
+                "valid": false
+              },
+              {
+                "slot_index": 4,
+                "valid": false
+              },
+              {
+                "slot_index": 5,
+                "valid": false
+              },
+              {
+                "slot_index": 6,
+                "valid": false
+              }
+            ],
+            "fixed_tail": [
+              "Neutral",
+              "Special"
+            ]
+          }
+        },
+        "seed": 305419896,
+        "input_delay_ticks": 2,
+        "ticks": 20,
+        "width": 800,
+        "height": 600,
+        "timeout_seconds": 180,
+        "commands": [],
+        "observe_owners": [
+          "Computer1",
+          "Computer2"
+        ],
+        "camera_cell": [
+          81,
+          95
+        ],
+        "terrain_cells": [
+          [
+            74,
+            95
+          ],
+          [
+            75,
+            95
+          ],
+          [
+            76,
+            95
+          ],
+          [
+            77,
+            95
+          ],
+          [
+            78,
+            95
+          ],
+          [
+            79,
+            95
+          ],
+          [
+            80,
+            95
+          ],
+          [
+            81,
+            95
+          ],
+          [
+            82,
+            95
+          ],
+          [
+            83,
+            95
+          ],
+          [
+            84,
+            95
+          ],
+          [
+            85,
+            95
+          ],
+          [
+            86,
+            95
+          ],
+          [
+            87,
+            95
+          ]
+        ]
+      },
+      "profile_sha256": "3259c0acf313f85fb8bd737464bd9713200cd0374de0b07403d1ada441c2f1d2",
+      "map_identity": "Pacific.mmx",
+      "camera": {
+        "requested_cell": [
+          81,
+          95
+        ],
+        "top_left": [
+          -736.0,
+          2356.0
+        ],
+        "zoom": 1.0
+      },
+      "initial": {
+        "binary_frame": 0,
+        "deterministic_state_hash": 14553702266783867468,
+        "simulation_tick": 0,
+        "total_simulation_ms": 0
+      },
+      "final": {
+        "binary_frame": 20,
+        "deterministic_state_hash": 1225003663214596281,
+        "simulation_tick": 20,
+        "total_simulation_ms": 440
+      },
+      "exact_steps": 20,
+      "format": {
+        "width": 800,
+        "height": 600,
+        "row_stride": 3200,
+        "pixel_layout": "BGRA8",
+        "surface_format": "Bgra8UnormSrgb"
+      },
+      "comparison": {
+        "file": "compare-pacific-state0-v2.json",
+        "sha256": "ae907c808b7735606e208c61639f63d8965d836c6f8ad6a1ea8acf1426c02ed6",
+        "status": "MISMATCH",
+        "differences": [
+          {
+            "after": "4215b4e415ea0cc6eb5e4af85985a203306dc23ee69be211cd1a7e3c7d3e42a2",
+            "before": "05518640c523d3cce62a2ff647f7fe718df30170a5948edfeeea938821cff274",
+            "field": "frame.bytes"
+          }
+        ],
+        "all_non_frame_fields_match": true
+      },
+      "pixel_difference": {
+        "changed_pixels": 42649,
+        "total_pixels": 480000,
+        "bounds_xyxy_exclusive": [
+          76,
+          149,
+          556,
+          388
+        ],
+        "changed_alpha_pixels": 0
+      },
+      "visual_inspection": "Candidate preview inspected: bridge bodies and scene remain visible; shadows follow the shown bridge spans. This is visual inspection, not a native full-scene image comparison.",
+      "before": {
+        "run": "before-pacific-state0",
+        "run_sha256": "7b8858c8295286a5f40bc35a36085719027ca1998172a4b2729566c96d736755",
+        "capture_sha256": "3bd896271d453157d4c8516eeb07cbd59efecef5c7a06a67cc98d5d4736d9aa6",
+        "frame_sha256": "05518640c523d3cce62a2ff647f7fe718df30170a5948edfeeea938821cff274",
+        "preview": "previews/before-pacific-state0.png",
+        "preview_sha256": "0c2aef5dda67c811af47011ab76c6146b66d0c26a87aebc7d0ab4c4452c00e99"
+      },
+      "after": {
+        "run": "after-pacific-state0",
+        "run_sha256": "bc3345a060fac62b0a502000f8b5b4e2ffb37d01f2058c6ef49aed46f526b6e0",
+        "capture_sha256": "f713baf9241685487b96e678e1aff7cbd68b03ecef4a2bf5e8bff105ddd49dbe",
+        "frame_sha256": "4215b4e415ea0cc6eb5e4af85985a203306dc23ee69be211cd1a7e3c7d3e42a2",
+        "preview": "previews/after-pacific-state0.png",
+        "preview_sha256": "df4a3598f5ca6edb9c94e3598a45caaac77af51bf9684b3deb141317b5040e8d"
+      }
+    },
+    {
+      "name": "pacific-state9",
+      "scope": "High concrete, overlay 25 state 9, over water; y varies.",
+      "profile": {
+        "schema_version": "vera20k.map-observation-profile.v2",
+        "launch": {
+          "mode": {
+            "id": 1,
+            "ui_name_key": "GUI:Battle",
+            "tooltip_key": "STT:ModeBattle",
+            "override_file": "MPBattleMD.ini",
+            "map_filter": "standard",
+            "random_maps_allowed": true,
+            "allies_allowed": true,
+            "must_ally": false
+          },
+          "player_name": "VERA-OBSERVER",
+          "local": {
+            "country": "America",
+            "country_random": false,
+            "color_index": 0,
+            "color_random": false,
+            "start_position": {
+              "Position": 0
+            },
+            "team": {
+              "Team": 0
+            }
+          },
+          "opponents": [
+            {
+              "country": "France",
+              "country_random": false,
+              "color_index": 1,
+              "color_random": false,
+              "start_position": {
+                "Position": 1
+              },
+              "team": {
+                "Team": 0
+              },
+              "difficulty": "Easy"
+            },
+            {
+              "country": "America",
+              "country_random": false,
+              "color_index": 2,
+              "color_random": false,
+              "start_position": {
+                "Position": 2
+              },
+              "team": {
+                "Team": 1
+              },
+              "difficulty": "Easy"
+            }
+          ],
+          "options": {
+            "starting_credits": 10000,
+            "unit_count": 6,
+            "tech_level": 2,
+            "game_speed": 1,
+            "default_ai_difficulty": 0,
+            "short_game": false,
+            "bases": true,
+            "bridges_destroyable": true,
+            "super_weapons": true,
+            "build_off_ally": true,
+            "crates": true,
+            "mcv_redeploy": true,
+            "fog_of_war": false,
+            "shroud": false,
+            "tiberium_grows": true,
+            "multi_engineer": false,
+            "harvester_truce": false,
+            "ally_change_allowed": true
+          },
+          "selected_map_file": "Pacific.mmx",
+          "pre_fill_house_roster": {
+            "human_nodes": [
+              {
+                "priority": 0,
+                "source_order": 0,
+                "observer": false
+              }
+            ],
+            "ai_slots": [
+              {
+                "slot_index": 0,
+                "valid": true
+              },
+              {
+                "slot_index": 1,
+                "valid": true
+              },
+              {
+                "slot_index": 2,
+                "valid": false
+              },
+              {
+                "slot_index": 3,
+                "valid": false
+              },
+              {
+                "slot_index": 4,
+                "valid": false
+              },
+              {
+                "slot_index": 5,
+                "valid": false
+              },
+              {
+                "slot_index": 6,
+                "valid": false
+              }
+            ],
+            "fixed_tail": [
+              "Neutral",
+              "Special"
+            ]
+          }
+        },
+        "seed": 305419896,
+        "input_delay_ticks": 2,
+        "ticks": 20,
+        "width": 800,
+        "height": 600,
+        "timeout_seconds": 180,
+        "commands": [],
+        "observe_owners": [
+          "Computer1",
+          "Computer2"
+        ],
+        "camera_cell": [
+          96,
+          79
+        ],
+        "terrain_cells": [
+          [
+            96,
+            73
+          ],
+          [
+            96,
+            74
+          ],
+          [
+            96,
+            75
+          ],
+          [
+            96,
+            76
+          ],
+          [
+            96,
+            77
+          ],
+          [
+            96,
+            78
+          ],
+          [
+            96,
+            79
+          ],
+          [
+            96,
+            80
+          ],
+          [
+            96,
+            81
+          ],
+          [
+            96,
+            82
+          ],
+          [
+            96,
+            83
+          ],
+          [
+            96,
+            84
+          ],
+          [
+            96,
+            85
+          ],
+          [
+            96,
+            86
+          ]
+        ]
+      },
+      "profile_sha256": "7bdedb9c2cd84d78b501dabae441c6a16e79b9983cf607a06dc6a292ef8819cd",
+      "map_identity": "Pacific.mmx",
+      "camera": {
+        "requested_cell": [
+          96,
+          79
+        ],
+        "top_left": [
+          194.0,
+          2341.0
+        ],
+        "zoom": 1.0
+      },
+      "initial": {
+        "binary_frame": 0,
+        "deterministic_state_hash": 14553702266783867468,
+        "simulation_tick": 0,
+        "total_simulation_ms": 0
+      },
+      "final": {
+        "binary_frame": 20,
+        "deterministic_state_hash": 1225003663214596281,
+        "simulation_tick": 20,
+        "total_simulation_ms": 440
+      },
+      "exact_steps": 20,
+      "format": {
+        "width": 800,
+        "height": 600,
+        "row_stride": 3200,
+        "pixel_layout": "BGRA8",
+        "surface_format": "Bgra8UnormSrgb"
+      },
+      "comparison": {
+        "file": "compare-pacific-state9.json",
+        "sha256": "cf80691a93bcb47e9ef974b18ced40b548acf20690533f60f7551fcc6d9f75ef",
+        "status": "MISMATCH",
+        "differences": [
+          {
+            "after": "c98f7dced8cc10c8601370444ac18031e22cc20a5442d80a635ed60838145ba7",
+            "before": "b923a927d5dcb07aa80868e1db291e6a5d85f61cb9079adcf79d563a40c176b5",
+            "field": "frame.bytes"
+          }
+        ],
+        "all_non_frame_fields_match": true
+      },
+      "pixel_difference": {
+        "changed_pixels": 42487,
+        "total_pixels": 480000,
+        "bounds_xyxy_exclusive": [
+          61,
+          171,
+          541,
+          410
+        ],
+        "changed_alpha_pixels": 0
+      },
+      "visual_inspection": "Candidate preview inspected: bridge bodies and scene remain visible; shadows follow the shown bridge spans. This is visual inspection, not a native full-scene image comparison.",
+      "before": {
+        "run": "before-pacific-state9",
+        "run_sha256": "ba57a25913b6f33f0ead509e6cd88dd057e22fef41dd51628ee5d436fa79eb5c",
+        "capture_sha256": "b23af8522d79399c2697b20e495f04aa0568ce994f06e57824a20a89249ff0b0",
+        "frame_sha256": "b923a927d5dcb07aa80868e1db291e6a5d85f61cb9079adcf79d563a40c176b5",
+        "preview": "previews/before-pacific-state9.png",
+        "preview_sha256": "8e1a7d5b17b7356a333549801a17c6ebef2724e633f7c77faa053b4629e35c77"
+      },
+      "after": {
+        "run": "after-pacific-state9",
+        "run_sha256": "e6ca23f61b6e1713719aeef0a5a83053829a658b89d6758a4c64042e0348eaac",
+        "capture_sha256": "ef93f692d288192e575b2e9afdbdbd20e146aef4f9c7d3a36ae328f7e6fb7929",
+        "frame_sha256": "c98f7dced8cc10c8601370444ac18031e22cc20a5442d80a635ed60838145ba7",
+        "preview": "previews/after-pacific-state9.png",
+        "preview_sha256": "05b5d8ae487338b36f78e6b9fff31567ddccc2967c518e90d53718d3d4c33661"
+      }
+    },
+    {
+      "name": "kaliforn-state0",
+      "scope": "High concrete, overlay 24 state 0, over a land road underpass; x varies.",
+      "profile": {
+        "schema_version": "vera20k.map-observation-profile.v2",
+        "launch": {
+          "mode": {
+            "id": 1,
+            "ui_name_key": "GUI:Battle",
+            "tooltip_key": "STT:ModeBattle",
+            "override_file": "MPBattleMD.ini",
+            "map_filter": "standard",
+            "random_maps_allowed": true,
+            "allies_allowed": true,
+            "must_ally": false
+          },
+          "player_name": "VERA-OBSERVER",
+          "local": {
+            "country": "America",
+            "country_random": false,
+            "color_index": 0,
+            "color_random": false,
+            "start_position": {
+              "Position": 0
+            },
+            "team": {
+              "Team": 0
+            }
+          },
+          "opponents": [
+            {
+              "country": "France",
+              "country_random": false,
+              "color_index": 1,
+              "color_random": false,
+              "start_position": {
+                "Position": 1
+              },
+              "team": {
+                "Team": 0
+              },
+              "difficulty": "Easy"
+            },
+            {
+              "country": "America",
+              "country_random": false,
+              "color_index": 2,
+              "color_random": false,
+              "start_position": {
+                "Position": 2
+              },
+              "team": {
+                "Team": 1
+              },
+              "difficulty": "Easy"
+            }
+          ],
+          "options": {
+            "starting_credits": 10000,
+            "unit_count": 6,
+            "tech_level": 2,
+            "game_speed": 1,
+            "default_ai_difficulty": 0,
+            "short_game": false,
+            "bases": true,
+            "bridges_destroyable": true,
+            "super_weapons": true,
+            "build_off_ally": true,
+            "crates": true,
+            "mcv_redeploy": true,
+            "fog_of_war": false,
+            "shroud": false,
+            "tiberium_grows": true,
+            "multi_engineer": false,
+            "harvester_truce": false,
+            "ally_change_allowed": true
+          },
+          "selected_map_file": "Kaliforn.mmx",
+          "pre_fill_house_roster": {
+            "human_nodes": [
+              {
+                "priority": 0,
+                "source_order": 0,
+                "observer": false
+              }
+            ],
+            "ai_slots": [
+              {
+                "slot_index": 0,
+                "valid": true
+              },
+              {
+                "slot_index": 1,
+                "valid": true
+              },
+              {
+                "slot_index": 2,
+                "valid": false
+              },
+              {
+                "slot_index": 3,
+                "valid": false
+              },
+              {
+                "slot_index": 4,
+                "valid": false
+              },
+              {
+                "slot_index": 5,
+                "valid": false
+              },
+              {
+                "slot_index": 6,
+                "valid": false
+              }
+            ],
+            "fixed_tail": [
+              "Neutral",
+              "Special"
+            ]
+          }
+        },
+        "seed": 305419896,
+        "input_delay_ticks": 2,
+        "ticks": 20,
+        "width": 800,
+        "height": 600,
+        "timeout_seconds": 180,
+        "commands": [],
+        "observe_owners": [
+          "Computer1",
+          "Computer2"
+        ],
+        "camera_cell": [
+          66,
+          83
+        ],
+        "terrain_cells": [
+          [
+            62,
+            83
+          ],
+          [
+            63,
+            83
+          ],
+          [
+            64,
+            83
+          ],
+          [
+            65,
+            83
+          ],
+          [
+            66,
+            83
+          ],
+          [
+            67,
+            83
+          ],
+          [
+            68,
+            83
+          ],
+          [
+            69,
+            83
+          ],
+          [
+            70,
+            83
+          ],
+          [
+            71,
+            83
+          ],
+          [
+            72,
+            83
+          ]
+        ]
+      },
+      "profile_sha256": "88fb8cce9efbf6ba26cd3aae332211842dbb8473dd9d5354a69e29dd1a842acf",
+      "map_identity": "Kaliforn.mmx",
+      "camera": {
+        "requested_cell": [
+          66,
+          83
+        ],
+        "top_left": [
+          -826.0,
+          1951.0
+        ],
+        "zoom": 1.0
+      },
+      "initial": {
+        "binary_frame": 0,
+        "deterministic_state_hash": 6425872936238940397,
+        "simulation_tick": 0,
+        "total_simulation_ms": 0
+      },
+      "final": {
+        "binary_frame": 20,
+        "deterministic_state_hash": 2717332186160117367,
+        "simulation_tick": 20,
+        "total_simulation_ms": 440
+      },
+      "exact_steps": 20,
+      "format": {
+        "width": 800,
+        "height": 600,
+        "row_stride": 3200,
+        "pixel_layout": "BGRA8",
+        "surface_format": "Bgra8UnormSrgb"
+      },
+      "comparison": {
+        "file": "compare-kaliforn-state0.json",
+        "sha256": "3c0523bd9b32311d1fc1a6d2ab099808066680a361aa24343186aeb422bda335",
+        "status": "MISMATCH",
+        "differences": [
+          {
+            "after": "1c690702c5b7997a321bbd683c897f151525cb37c02c4580dc4f7357d45cda8a",
+            "before": "24f0e2ad71b2ac13a584386b189547d0c95cfee82c16a31a1199d7bff14db16f",
+            "field": "frame.bytes"
+          }
+        ],
+        "all_non_frame_fields_match": true
+      },
+      "pixel_difference": {
+        "changed_pixels": 26427,
+        "total_pixels": 480000,
+        "bounds_xyxy_exclusive": [
+          166,
+          194,
+          526,
+          373
+        ],
+        "changed_alpha_pixels": 0
+      },
+      "visual_inspection": "Candidate preview inspected: bridge bodies and scene remain visible; shadows follow the shown bridge spans. This is visual inspection, not a native full-scene image comparison.",
+      "before": {
+        "run": "before-kaliforn-state0",
+        "run_sha256": "c3457a9883f7ded8eadcdb2b2ea886892410c1db0e817d2d6459eaf6fa005672",
+        "capture_sha256": "3de877347df391877457d95b10f84853eba3afb097ffc1c7fc65543a59857050",
+        "frame_sha256": "24f0e2ad71b2ac13a584386b189547d0c95cfee82c16a31a1199d7bff14db16f",
+        "preview": "previews/before-kaliforn-state0.png",
+        "preview_sha256": "2d5c0a5959e98578d39b540efc6a95ade31118ac4ab64412a580795f7f68b4ab"
+      },
+      "after": {
+        "run": "after-kaliforn-state0",
+        "run_sha256": "7705a973c3bca49b0cdf0b9f4b260176d8c7fa7567da1a96690b0594c4144681",
+        "capture_sha256": "c6ed4918d9fa4838606fc114360c69c4a5b78f1822855a8faf6557b6cd737c13",
+        "frame_sha256": "1c690702c5b7997a321bbd683c897f151525cb37c02c4580dc4f7357d45cda8a",
+        "preview": "previews/after-kaliforn-state0.png",
+        "preview_sha256": "d9a8029dd0e9e674e470f13a34c60f2bad420080bf1997a7f797ea1b61b76617"
+      }
+    },
+    {
+      "name": "kaliforn-state9",
+      "scope": "High concrete, overlay 25 state 9, over a land road underpass; y varies.",
+      "profile": {
+        "schema_version": "vera20k.map-observation-profile.v2",
+        "launch": {
+          "mode": {
+            "id": 1,
+            "ui_name_key": "GUI:Battle",
+            "tooltip_key": "STT:ModeBattle",
+            "override_file": "MPBattleMD.ini",
+            "map_filter": "standard",
+            "random_maps_allowed": true,
+            "allies_allowed": true,
+            "must_ally": false
+          },
+          "player_name": "VERA-OBSERVER",
+          "local": {
+            "country": "America",
+            "country_random": false,
+            "color_index": 0,
+            "color_random": false,
+            "start_position": {
+              "Position": 0
+            },
+            "team": {
+              "Team": 0
+            }
+          },
+          "opponents": [
+            {
+              "country": "France",
+              "country_random": false,
+              "color_index": 1,
+              "color_random": false,
+              "start_position": {
+                "Position": 1
+              },
+              "team": {
+                "Team": 0
+              },
+              "difficulty": "Easy"
+            },
+            {
+              "country": "America",
+              "country_random": false,
+              "color_index": 2,
+              "color_random": false,
+              "start_position": {
+                "Position": 2
+              },
+              "team": {
+                "Team": 1
+              },
+              "difficulty": "Easy"
+            }
+          ],
+          "options": {
+            "starting_credits": 10000,
+            "unit_count": 6,
+            "tech_level": 2,
+            "game_speed": 1,
+            "default_ai_difficulty": 0,
+            "short_game": false,
+            "bases": true,
+            "bridges_destroyable": true,
+            "super_weapons": true,
+            "build_off_ally": true,
+            "crates": true,
+            "mcv_redeploy": true,
+            "fog_of_war": false,
+            "shroud": false,
+            "tiberium_grows": true,
+            "multi_engineer": false,
+            "harvester_truce": false,
+            "ally_change_allowed": true
+          },
+          "selected_map_file": "Kaliforn.mmx",
+          "pre_fill_house_roster": {
+            "human_nodes": [
+              {
+                "priority": 0,
+                "source_order": 0,
+                "observer": false
+              }
+            ],
+            "ai_slots": [
+              {
+                "slot_index": 0,
+                "valid": true
+              },
+              {
+                "slot_index": 1,
+                "valid": true
+              },
+              {
+                "slot_index": 2,
+                "valid": false
+              },
+              {
+                "slot_index": 3,
+                "valid": false
+              },
+              {
+                "slot_index": 4,
+                "valid": false
+              },
+              {
+                "slot_index": 5,
+                "valid": false
+              },
+              {
+                "slot_index": 6,
+                "valid": false
+              }
+            ],
+            "fixed_tail": [
+              "Neutral",
+              "Special"
+            ]
+          }
+        },
+        "seed": 305419896,
+        "input_delay_ticks": 2,
+        "ticks": 20,
+        "width": 800,
+        "height": 600,
+        "timeout_seconds": 180,
+        "commands": [],
+        "observe_owners": [
+          "Computer1",
+          "Computer2"
+        ],
+        "camera_cell": [
+          80,
+          69
+        ],
+        "terrain_cells": [
+          [
+            80,
+            66
+          ],
+          [
+            80,
+            67
+          ],
+          [
+            80,
+            68
+          ],
+          [
+            80,
+            69
+          ],
+          [
+            80,
+            70
+          ],
+          [
+            80,
+            71
+          ],
+          [
+            80,
+            72
+          ],
+          [
+            80,
+            73
+          ]
+        ]
+      },
+      "profile_sha256": "75e08652f8e870fc28e0708f6944100142c864ab148f4fca8bc41584f48c4b3e",
+      "map_identity": "Kaliforn.mmx",
+      "camera": {
+        "requested_cell": [
+          80,
+          69
+        ],
+        "top_left": [
+          14.0,
+          1951.0
+        ],
+        "zoom": 1.0
+      },
+      "initial": {
+        "binary_frame": 0,
+        "deterministic_state_hash": 6425872936238940397,
+        "simulation_tick": 0,
+        "total_simulation_ms": 0
+      },
+      "final": {
+        "binary_frame": 20,
+        "deterministic_state_hash": 2717332186160117367,
+        "simulation_tick": 20,
+        "total_simulation_ms": 440
+      },
+      "exact_steps": 20,
+      "format": {
+        "width": 800,
+        "height": 600,
+        "row_stride": 3200,
+        "pixel_layout": "BGRA8",
+        "surface_format": "Bgra8UnormSrgb"
+      },
+      "comparison": {
+        "file": "compare-kaliforn-state9.json",
+        "sha256": "35d27bf05e6350ac8cb5f3f1f8ff600cb93ab96bf69d4afd588cdca6130714d0",
+        "status": "MISMATCH",
+        "differences": [
+          {
+            "after": "a7ab39d7ff47c2a0c22509ae1e786bf7181ccf913c6c06989d759ed2d8efeb61",
+            "before": "a787f4e4aaf90dde2449e867b601f8575772cd6153ecf74ba2f0545cb4e739c6",
+            "field": "frame.bytes"
+          }
+        ],
+        "all_non_frame_fields_match": true
+      },
+      "pixel_difference": {
+        "changed_pixels": 17800,
+        "total_pixels": 480000,
+        "bounds_xyxy_exclusive": [
+          181,
+          216,
+          451,
+          350
+        ],
+        "changed_alpha_pixels": 0
+      },
+      "visual_inspection": "Candidate preview inspected: bridge bodies and scene remain visible; shadows follow the shown bridge spans. This is visual inspection, not a native full-scene image comparison.",
+      "before": {
+        "run": "before-kaliforn-state9",
+        "run_sha256": "b9bf0117dedf879177246a8eae5f49865e5eac140f8056af99bbb73b1da15a7a",
+        "capture_sha256": "05c0172082cd1f751475d71826f208b5569686a45de35295034254f214fc73e3",
+        "frame_sha256": "a787f4e4aaf90dde2449e867b601f8575772cd6153ecf74ba2f0545cb4e739c6",
+        "preview": "previews/before-kaliforn-state9.png",
+        "preview_sha256": "509c42a6cf08fc1e313327b21ee6c9d76ae8ca48ec0e4974e8adc9e80a8f9325"
+      },
+      "after": {
+        "run": "after-kaliforn-state9",
+        "run_sha256": "c4b55818ce68306ffa261ebcd7872836de4154a0e6c7a703a3cb6aaedb4f34e6",
+        "capture_sha256": "4f9e9d09f7b20811e1fcac8bac9f10d0c7fbe1243f9158e52fb9dc3be2ea43b8",
+        "frame_sha256": "a7ab39d7ff47c2a0c22509ae1e786bf7181ccf913c6c06989d759ed2d8efeb61",
+        "preview": "previews/after-kaliforn-state9.png",
+        "preview_sha256": "cf899df0a715653b4d9e26e895401f637e15e9feda71fc443a10a08dd1b3d52f"
+      }
+    },
+    {
+      "name": "goldst-two-bridges",
+      "scope": "1600x900 view includes two high concrete spans in opposite orientations and island approach.",
+      "profile": {
+        "schema_version": "vera20k.map-observation-profile.v2",
+        "launch": {
+          "mode": {
+            "id": 1,
+            "ui_name_key": "GUI:Battle",
+            "tooltip_key": "STT:ModeBattle",
+            "override_file": "MPBattleMD.ini",
+            "map_filter": "standard",
+            "random_maps_allowed": true,
+            "allies_allowed": true,
+            "must_ally": false
+          },
+          "player_name": "VERA-OBSERVER",
+          "local": {
+            "country": "America",
+            "country_random": false,
+            "color_index": 0,
+            "color_random": false,
+            "start_position": {
+              "Position": 0
+            },
+            "team": {
+              "Team": 0
+            }
+          },
+          "opponents": [
+            {
+              "country": "France",
+              "country_random": false,
+              "color_index": 1,
+              "color_random": false,
+              "start_position": {
+                "Position": 1
+              },
+              "team": {
+                "Team": 0
+              },
+              "difficulty": "Easy"
+            },
+            {
+              "country": "America",
+              "country_random": false,
+              "color_index": 2,
+              "color_random": false,
+              "start_position": {
+                "Position": 2
+              },
+              "team": {
+                "Team": 1
+              },
+              "difficulty": "Easy"
+            }
+          ],
+          "options": {
+            "starting_credits": 10000,
+            "unit_count": 6,
+            "tech_level": 2,
+            "game_speed": 1,
+            "default_ai_difficulty": 0,
+            "short_game": false,
+            "bases": true,
+            "bridges_destroyable": true,
+            "super_weapons": true,
+            "build_off_ally": true,
+            "crates": true,
+            "mcv_redeploy": true,
+            "fog_of_war": false,
+            "shroud": false,
+            "tiberium_grows": true,
+            "multi_engineer": false,
+            "harvester_truce": false,
+            "ally_change_allowed": true
+          },
+          "selected_map_file": "GoldSt.mmx",
+          "pre_fill_house_roster": {
+            "human_nodes": [
+              {
+                "priority": 0,
+                "source_order": 0,
+                "observer": false
+              }
+            ],
+            "ai_slots": [
+              {
+                "slot_index": 0,
+                "valid": true
+              },
+              {
+                "slot_index": 1,
+                "valid": true
+              },
+              {
+                "slot_index": 2,
+                "valid": false
+              },
+              {
+                "slot_index": 3,
+                "valid": false
+              },
+              {
+                "slot_index": 4,
+                "valid": false
+              },
+              {
+                "slot_index": 5,
+                "valid": false
+              },
+              {
+                "slot_index": 6,
+                "valid": false
+              }
+            ],
+            "fixed_tail": [
+              "Neutral",
+              "Special"
+            ]
+          }
+        },
+        "seed": 305419896,
+        "input_delay_ticks": 2,
+        "ticks": 20,
+        "width": 1600,
+        "height": 900,
+        "timeout_seconds": 180,
+        "commands": [],
+        "observe_owners": [
+          "Computer1",
+          "Computer2"
+        ],
+        "camera_cell": [
+          100,
+          61
+        ],
+        "terrain_cells": [
+          [
+            108,
+            53
+          ],
+          [
+            92,
+            69
+          ],
+          [
+            117,
+            95
+          ],
+          [
+            134,
+            78
+          ]
+        ]
+      },
+      "profile_sha256": "07a8747ea4093715a8d3165c9599fb6e1b70bafa64636ed9bae46f67979fb702",
+      "map_identity": "GoldSt.mmx",
+      "camera": {
+        "requested_cell": [
+          100,
+          61
+        ],
+        "top_left": [
+          454.0,
+          1981.0
+        ],
+        "zoom": 1.0
+      },
+      "initial": {
+        "binary_frame": 0,
+        "deterministic_state_hash": 6948796556479725540,
+        "simulation_tick": 0,
+        "total_simulation_ms": 0
+      },
+      "final": {
+        "binary_frame": 20,
+        "deterministic_state_hash": 3783720781500113697,
+        "simulation_tick": 20,
+        "total_simulation_ms": 440
+      },
+      "exact_steps": 20,
+      "format": {
+        "width": 1600,
+        "height": 900,
+        "row_stride": 6400,
+        "pixel_layout": "BGRA8",
+        "surface_format": "Bgra8UnormSrgb"
+      },
+      "comparison": {
+        "file": "compare-goldst-two-bridges.json",
+        "sha256": "0497ecd6df13dfe67f754c9945a645cc2a2e2eeb730ceda2f521dbeb8abea423",
+        "status": "MISMATCH",
+        "differences": [
+          {
+            "after": "e54725f867ee0ffb2e92779adb7a0c3021b9f15aa2277067fc80a23e077dd81b",
+            "before": "8e44cd35eae61d5a2f68d32040426e3dee668cc69c86f6c4e67e712c44d58079",
+            "field": "frame.bytes"
+          }
+        ],
+        "all_non_frame_fields_match": true
+      },
+      "pixel_difference": {
+        "changed_pixels": 97868,
+        "total_pixels": 1440000,
+        "bounds_xyxy_exclusive": [
+          0,
+          284,
+          1432,
+          555
+        ],
+        "changed_alpha_pixels": 0
+      },
+      "visual_inspection": "Candidate preview inspected: bridge bodies and scene remain visible; shadows follow the shown bridge spans. This is visual inspection, not a native full-scene image comparison.",
+      "before": {
+        "run": "before-goldst-two-bridges",
+        "run_sha256": "541fb8de8341643c20c6f332da7a6bcf4dc952d16c4c891dd27837cbd6e421d7",
+        "capture_sha256": "0da1ac16d985ab6f877e0e82609fc5c17e560815325c62cf69f2c81aca05a3d5",
+        "frame_sha256": "8e44cd35eae61d5a2f68d32040426e3dee668cc69c86f6c4e67e712c44d58079",
+        "preview": "previews/before-goldst-two-bridges.png",
+        "preview_sha256": "57adf99b23ea8f80cadb02094b004e2b829075c91b6b6035ca789d773cd71999"
+      },
+      "after": {
+        "run": "after-goldst-two-bridges",
+        "run_sha256": "18f7fc0e114b3dff7f1d38a6081bf79946ebb781a6929ae423e4ba60a6f1644b",
+        "capture_sha256": "12b084ebb5407f3f94bdbc331ee33a4a101366588ac284f36c293d24dd4343cb",
+        "frame_sha256": "e54725f867ee0ffb2e92779adb7a0c3021b9f15aa2277067fc80a23e077dd81b",
+        "preview": "previews/after-goldst-two-bridges.png",
+        "preview_sha256": "9c7c26d281bcdd4ff2f37eb455732ca20d6c53dcee8238827b8cede840756787"
+      }
+    },
+    {
+      "name": "deadman-broken",
+      "scope": "Authored broken high concrete span: state 8/7 ends, missing midspan. Not a live collapse.",
+      "profile": {
+        "schema_version": "vera20k.map-observation-profile.v2",
+        "launch": {
+          "mode": {
+            "id": 1,
+            "ui_name_key": "GUI:Battle",
+            "tooltip_key": "STT:ModeBattle",
+            "override_file": "MPBattleMD.ini",
+            "map_filter": "standard",
+            "random_maps_allowed": true,
+            "allies_allowed": true,
+            "must_ally": false
+          },
+          "player_name": "VERA-OBSERVER",
+          "local": {
+            "country": "America",
+            "country_random": false,
+            "color_index": 0,
+            "color_random": false,
+            "start_position": {
+              "Position": 0
+            },
+            "team": {
+              "Team": 0
+            }
+          },
+          "opponents": [
+            {
+              "country": "France",
+              "country_random": false,
+              "color_index": 1,
+              "color_random": false,
+              "start_position": {
+                "Position": 1
+              },
+              "team": {
+                "Team": 0
+              },
+              "difficulty": "Easy"
+            }
+          ],
+          "options": {
+            "starting_credits": 10000,
+            "unit_count": 6,
+            "tech_level": 2,
+            "game_speed": 1,
+            "default_ai_difficulty": 0,
+            "short_game": false,
+            "bases": true,
+            "bridges_destroyable": true,
+            "super_weapons": true,
+            "build_off_ally": true,
+            "crates": true,
+            "mcv_redeploy": true,
+            "fog_of_war": false,
+            "shroud": false,
+            "tiberium_grows": true,
+            "multi_engineer": false,
+            "harvester_truce": false,
+            "ally_change_allowed": true
+          },
+          "selected_map_file": "Deadman.mmx",
+          "pre_fill_house_roster": {
+            "human_nodes": [
+              {
+                "priority": 0,
+                "source_order": 0,
+                "observer": false
+              }
+            ],
+            "ai_slots": [
+              {
+                "slot_index": 0,
+                "valid": true
+              },
+              {
+                "slot_index": 1,
+                "valid": false
+              },
+              {
+                "slot_index": 2,
+                "valid": false
+              },
+              {
+                "slot_index": 3,
+                "valid": false
+              },
+              {
+                "slot_index": 4,
+                "valid": false
+              },
+              {
+                "slot_index": 5,
+                "valid": false
+              },
+              {
+                "slot_index": 6,
+                "valid": false
+              }
+            ],
+            "fixed_tail": [
+              "Neutral",
+              "Special"
+            ]
+          }
+        },
+        "seed": 305419896,
+        "input_delay_ticks": 2,
+        "ticks": 20,
+        "width": 800,
+        "height": 600,
+        "timeout_seconds": 180,
+        "commands": [],
+        "observe_owners": [
+          "Computer1"
+        ],
+        "camera_cell": [
+          58,
+          41
+        ],
+        "terrain_cells": [
+          [
+            54,
+            41
+          ],
+          [
+            55,
+            41
+          ],
+          [
+            56,
+            41
+          ],
+          [
+            57,
+            41
+          ],
+          [
+            58,
+            41
+          ],
+          [
+            59,
+            41
+          ],
+          [
+            60,
+            41
+          ],
+          [
+            61,
+            41
+          ],
+          [
+            62,
+            41
+          ]
+        ]
+      },
+      "profile_sha256": "d2b6d051bf17d7bdd9bddb350a1dd456b375a36b1c34efe625fbae029aa49945",
+      "map_identity": "Deadman.mmx",
+      "camera": {
+        "requested_cell": [
+          58,
+          41
+        ],
+        "top_left": [
+          194.0,
+          1231.0
+        ],
+        "zoom": 1.0
+      },
+      "initial": {
+        "binary_frame": 0,
+        "deterministic_state_hash": 16125917205209639877,
+        "simulation_tick": 0,
+        "total_simulation_ms": 0
+      },
+      "final": {
+        "binary_frame": 20,
+        "deterministic_state_hash": 6612115315923471836,
+        "simulation_tick": 20,
+        "total_simulation_ms": 440
+      },
+      "exact_steps": 20,
+      "format": {
+        "width": 800,
+        "height": 600,
+        "row_stride": 3200,
+        "pixel_layout": "BGRA8",
+        "surface_format": "Bgra8UnormSrgb"
+      },
+      "comparison": {
+        "file": "compare-deadman-broken.json",
+        "sha256": "143ee4fb66df29daf6712d7f28aedbc2a26901ec384f1d3e6c4ce26f5d5fb67b",
+        "status": "MISMATCH",
+        "differences": [
+          {
+            "after": "d3257e29f745f68ee717af45cddba1fb9169406bcc99a683b94ad17d48e1deb3",
+            "before": "0e96f3115e659d8939ea98f14c4ba38ef6a88e53329bf9248ba947dc2635aedf",
+            "field": "frame.bytes"
+          }
+        ],
+        "all_non_frame_fields_match": true
+      },
+      "pixel_difference": {
+        "changed_pixels": 10391,
+        "total_pixels": 480000,
+        "bounds_xyxy_exclusive": [
+          166,
+          194,
+          496,
+          358
+        ],
+        "changed_alpha_pixels": 0
+      },
+      "visual_inspection": "Candidate preview inspected: both authored broken ends and the missing middle remain visible; shadows accompany the surviving ends. This is not a live-collapse capture.",
+      "before": {
+        "run": "before-deadman-broken-v2",
+        "run_sha256": "a7f427be1e9dae970f421343d1529f186489ce5ec4c8bd2f3df2cfc372f439a4",
+        "capture_sha256": "ee966af58d2e5eea45ff98e06ac220c8aac82606b6117709aeb5b5f27aa3181e",
+        "frame_sha256": "0e96f3115e659d8939ea98f14c4ba38ef6a88e53329bf9248ba947dc2635aedf",
+        "preview": "previews/before-deadman-broken-v2.png",
+        "preview_sha256": "7af3767bbb57e8806e34531131b04946f77c52d0f47fa2326d09e32b803a078c"
+      },
+      "after": {
+        "run": "after-deadman-broken",
+        "run_sha256": "30957c0ec90fc9383b9ecb8626e9e39bb7f5b67e8e6f8035923a404fb96ce76f",
+        "capture_sha256": "13938e0dd69e002a9bdf7fedc20bb92d128dbb6ead9621385e44c6e9bfa27d92",
+        "frame_sha256": "d3257e29f745f68ee717af45cddba1fb9169406bcc99a683b94ad17d48e1deb3",
+        "preview": "previews/after-deadman-broken.png",
+        "preview_sha256": "b1bafdd1cc15347f00c5f5bdc83410ff590481e6d40d633226b1613e2ad6fbfe"
+      }
+    },
+    {
+      "name": "hills-deck-ground-overlap",
+      "scope": "Existing ordinary Move schedule: high WOOD, two MTNKs at cell (78,75), one deck and one ground.",
+      "profile": {
+        "schema_version": "vera20k.map-observation-profile.v2",
+        "launch": {
+          "mode": {
+            "id": 1,
+            "ui_name_key": "GUI:Battle",
+            "tooltip_key": "STT:ModeBattle",
+            "override_file": "MPBattleMD.ini",
+            "map_filter": "standard",
+            "random_maps_allowed": true,
+            "allies_allowed": true,
+            "must_ally": false
+          },
+          "player_name": "VERA-BRIDGE-PATH",
+          "local": {
+            "country": "America",
+            "country_random": false,
+            "color_index": 0,
+            "color_random": false,
+            "start_position": {
+              "Position": 0
+            },
+            "team": "None"
+          },
+          "opponents": [
+            {
+              "country": "America",
+              "country_random": false,
+              "color_index": 1,
+              "color_random": false,
+              "start_position": {
+                "Position": 1
+              },
+              "team": "None",
+              "difficulty": "Easy"
+            }
+          ],
+          "options": {
+            "starting_credits": 10000,
+            "unit_count": 6,
+            "tech_level": 2,
+            "game_speed": 1,
+            "default_ai_difficulty": 0,
+            "short_game": false,
+            "bases": true,
+            "bridges_destroyable": true,
+            "super_weapons": true,
+            "build_off_ally": true,
+            "crates": true,
+            "mcv_redeploy": true,
+            "fog_of_war": false,
+            "shroud": false,
+            "tiberium_grows": true,
+            "multi_engineer": false,
+            "harvester_truce": false,
+            "ally_change_allowed": true
+          },
+          "selected_map_file": "Hills.mmx",
+          "pre_fill_house_roster": {
+            "human_nodes": [
+              {
+                "priority": 0,
+                "source_order": 0,
+                "observer": false
+              }
+            ],
+            "ai_slots": [
+              {
+                "slot_index": 0,
+                "valid": true
+              },
+              {
+                "slot_index": 1,
+                "valid": false
+              },
+              {
+                "slot_index": 2,
+                "valid": false
+              },
+              {
+                "slot_index": 3,
+                "valid": false
+              },
+              {
+                "slot_index": 4,
+                "valid": false
+              },
+              {
+                "slot_index": 5,
+                "valid": false
+              },
+              {
+                "slot_index": 6,
+                "valid": false
+              }
+            ],
+            "fixed_tail": [
+              "Neutral",
+              "Special"
+            ]
+          }
+        },
+        "seed": 305419896,
+        "input_delay_ticks": 2,
+        "ticks": 753,
+        "width": 800,
+        "height": 600,
+        "timeout_seconds": 240,
+        "commands": [
+          {
+            "issue_after_step": 0,
+            "owner": "VERA-BRIDGE-PATH",
+            "payload": {
+              "Move": {
+                "entity_id": 935,
+                "target_rx": 75,
+                "target_ry": 75,
+                "queue": false
+              }
+            }
+          },
+          {
+            "issue_after_step": 0,
+            "owner": "VERA-BRIDGE-PATH",
+            "payload": {
+              "Move": {
+                "entity_id": 936,
+                "target_rx": 78,
+                "target_ry": 77,
+                "queue": false
+              }
+            }
+          },
+          {
+            "issue_after_step": 700,
+            "owner": "VERA-BRIDGE-PATH",
+            "payload": {
+              "Move": {
+                "entity_id": 935,
+                "target_rx": 80,
+                "target_ry": 75,
+                "queue": false
+              }
+            }
+          },
+          {
+            "issue_after_step": 710,
+            "owner": "VERA-BRIDGE-PATH",
+            "payload": {
+              "Move": {
+                "entity_id": 936,
+                "target_rx": 78,
+                "target_ry": 72,
+                "queue": false
+              }
+            }
+          }
+        ],
+        "observe_owners": [
+          "VERA-BRIDGE-PATH"
+        ],
+        "camera_cell": [
+          75,
+          75
+        ],
+        "terrain_cells": [
+          [
+            75,
+            75
+          ],
+          [
+            76,
+            75
+          ],
+          [
+            77,
+            75
+          ],
+          [
+            78,
+            75
+          ],
+          [
+            79,
+            75
+          ],
+          [
+            80,
+            75
+          ],
+          [
+            78,
+            76
+          ],
+          [
+            78,
+            77
+          ],
+          [
+            78,
+            74
+          ],
+          [
+            78,
+            73
+          ],
+          [
+            78,
+            72
+          ]
+        ]
+      },
+      "profile_sha256": "d6b12ad126bc6ada07ead02bf8d3e2e84cbf81c21a9ee4a21bd55e04969b01c1",
+      "map_identity": "Hills.mmx",
+      "camera": {
+        "requested_cell": [
+          75,
+          75
+        ],
+        "top_left": [
+          -316.0,
+          1906.0
+        ],
+        "zoom": 1.0
+      },
+      "initial": {
+        "binary_frame": 0,
+        "deterministic_state_hash": 10295801670076662727,
+        "simulation_tick": 0,
+        "total_simulation_ms": 0
+      },
+      "final": {
+        "binary_frame": 753,
+        "deterministic_state_hash": 1770789926708034679,
+        "simulation_tick": 753,
+        "total_simulation_ms": 16566
+      },
+      "exact_steps": 753,
+      "format": {
+        "width": 800,
+        "height": 600,
+        "row_stride": 3200,
+        "pixel_layout": "BGRA8",
+        "surface_format": "Bgra8UnormSrgb"
+      },
+      "comparison": {
+        "file": "compare-hills-deck-ground-overlap.json",
+        "sha256": "a81afd1cf71c963acb99146a39e57816ce4d557ca12e505f628e120ff293a140",
+        "status": "MISMATCH",
+        "differences": [
+          {
+            "after": "9bffb0e2dc3aa283b3fa46706e8b6c7e64a07daca22a6f86bcac503429a668ea",
+            "before": "dc64ac9867d61200c070f9569378dc5aab8285a61183de8a40142cd42ce280cd",
+            "field": "frame.bytes"
+          }
+        ],
+        "all_non_frame_fields_match": true
+      },
+      "pixel_difference": {
+        "changed_pixels": 37988,
+        "total_pixels": 480000,
+        "bounds_xyxy_exclusive": [
+          88,
+          0,
+          632,
+          530
+        ],
+        "changed_alpha_pixels": 0
+      },
+      "visual_inspection": "Candidate preview inspected: one tank remains visible on the wood deck and one below it at the same cell. Other changes are confined to image bytes by the strict comparison.",
+      "before": {
+        "run": "before-hills-deck-ground-overlap",
+        "run_sha256": "e19ba7a5bc3f0a41053f31c925f8b8b9164234fd901ef89b35db64f534c4d351",
+        "capture_sha256": "224b490268de538c2aa79c161cdaa4b73c0ec5d5762e0af1bfbf4d2529fafa8e",
+        "frame_sha256": "dc64ac9867d61200c070f9569378dc5aab8285a61183de8a40142cd42ce280cd",
+        "preview": "previews/before-hills-deck-ground-overlap.png",
+        "preview_sha256": "b7606619ba468dce1fd7320500b3213a593cd525348825744b8fa9dcf02c90f5"
+      },
+      "after": {
+        "run": "after-hills-deck-ground-overlap",
+        "run_sha256": "04736bf7720697ebac04c621aefc00de9b9b2a3e8de88cb605fd8946f9a6fbe8",
+        "capture_sha256": "96d5607779cd77ea3ac054a470d7ba0d9cdd2f189d467a9b117a8b81d5aa706c",
+        "frame_sha256": "9bffb0e2dc3aa283b3fa46706e8b6c7e64a07daca22a6f86bcac503429a668ea",
+        "preview": "previews/after-hills-deck-ground-overlap.png",
+        "preview_sha256": "c563f50acf164b65800754006a5b7edec71c58c364fd854e1d469d62a9bd26e5"
+      },
+      "final_layer_witness": [
+        {
+          "stable_id": 935,
+          "type_id": "MTNK",
+          "cell": [
+            78,
+            75
+          ],
+          "physical_leptons": [
+            20048,
+            19328,
+            624
+          ],
+          "on_bridge": true
+        },
+        {
+          "stable_id": 936,
+          "type_id": "MTNK",
+          "cell": [
+            78,
+            75
+          ],
+          "physical_leptons": [
+            20096,
+            19387,
+            208
+          ],
+          "on_bridge": false
+        }
+      ]
+    }
+  ],
+  "repeat": {
+    "profile": "pacific-state9",
+    "before": "after-pacific-state9",
+    "after": "after-pacific-state9-repeat",
+    "comparison": "compare-pacific-state9-repeat.json",
+    "comparison_sha256": "d6bb909def8f2d89d7ca37dcd6c9130cd36f11826f3df51bf1900c3538873a0f",
+    "status": "MATCH",
+    "differences": [],
+    "frame_sha256": "c98f7dced8cc10c8601370444ac18031e22cc20a5442d80a635ed60838145ba7",
+    "repeat_capture_sha256": "ef93f692d288192e575b2e9afdbdbd20e146aef4f9c7d3a36ae328f7e6fb7929",
+    "repeat_run_sha256": "2ab33451f72368f5000be5a6ae9c4c58625580368a31902f3597804f28ef4000",
+    "repeat_preview": "previews/after-pacific-state9-repeat.png",
+    "repeat_preview_sha256": "05b5d8ae487338b36f78e6b9fff31567ddccc2967c518e90d53718d3d4c33661",
+    "exact_frame_and_observations": true
+  },
+  "limits": [
+    "No native full-scene frame comparator was attached; these seven Rust production observations do not certify whole-bridge parity.",
+    "Concrete scenes cover both directions over water and land, an authored broken span, and multiple visible spans. The above/below unit scene uses the shared high-wood consumer.",
+    "These release captures do not include a live collapse/repair command chain; the separate shared production HE/Engineer fixture supplies that lifecycle-to-GPU coverage.",
+    "GPU-only timings are unavailable on the measured Apple M4 Metal run (zero/zero encoder samples). Separate debug workload CPU and completed-submission measurements are not release frame/FPS estimates.",
+    "The initial Pacific comparison was invalid because a preview PNG was inside the baseline sealed bundle. Previews were moved outside all bundles with unchanged hashes, and the strict comparison then succeeded. The invalid report and relocation receipt are preserved externally.",
+    "A Deadman Engineer-production exploration stopped at exact step91 before repair. Its failed receipt is retained; no simulation fix was attempted."
+  ],
+  "external_artifacts": "Paths in this packet are relative evidence references. Run bundles and preview images remain external; retail asset bytes and executable copies are not embedded.",
+  "post_review_repeat": {
+    "profile": "hills-deck-ground-overlap",
+    "build_label": "bridge-shadow-final-20261003",
+    "change": "Allocation-free shared bridge-name classifier and test module declaration ordering; renderer arithmetic/state unchanged.",
+    "before": "after-hills-deck-ground-overlap",
+    "after": "final-hills-deck-ground-overlap",
+    "comparison": "compare-hills-final.json",
+    "comparison_sha256": "642d5b47ce669a9b1199c5cfcc61d237e6df47c1fd22294ccba973f8e1aa8f53",
+    "status": "MATCH",
+    "differences": [],
+    "frame_sha256": "9bffb0e2dc3aa283b3fa46706e8b6c7e64a07daca22a6f86bcac503429a668ea",
+    "run_sha256": "265370e3d03acefa206ffd1ddff28f459f6db84ff8477928021c3dfc9461e7e4",
+    "capture_sha256": "f61679b50d63a4e13deb9c5a59dff2de4d3b326f12389118697228b8a03ec2be",
+    "exact_frame_and_observations": true
+  }
+}

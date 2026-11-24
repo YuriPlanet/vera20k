@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Nine complete 72FC60 shell geometry fixtures plus nine complete60B7A0 ordinary BBB child placements at three resolutions",
+  "assumptions": [
+    "Fresh emulator for each geometry; ECX and A8EB84 both contain width, EDX contains height; resolutions640x480/800x600/1024x768",
+    "Original72FA10 filename-pointer slots identify the 14 SHP inputs, including side-index2's four Yuri names; raw first8 bytes and whole-file SHA256 are recorded",
+    "Explicit nested archive inputs via tools.sidebar_oracle.stock: Allied sidec01, Soviet sidec02, Yuri four Y-specific files sidec02md plus shared files sidec02; native archive mounting is not emulated",
+    "All16 B0FC30..B0FC6C rectangle pointers are read after native return; output40 and54 are initialized at the tail; allocation poison guards against unwritten fields",
+    "SIDE2 at B0FAFC determines geometry; separate SIDE2B paint selection, palette conversion, clipping and final pixels are outside this fixture",
+    "Only ordinary stock positive dimensions and successful allocations are covered; this is not an odd-size or allocation-failure contract",
+    "Child input rectangles come from original RT_DIALOG/BBB/1033 atC01B18, font8 MS Sans Serif; supplied6x13 dialog base units convert resource DLU via MulDiv rounding, not emulated Windows font metrics",
+    "Three representative ordinary BBB controls529/714/601 execute full60B7A0 with parentorigin0 and parentextent equal resolution; original7F5BE4/7F5BF0 base800/600 globals remain untouched; dispatcher and title/back helpers are outside child fixture scope"
+  ],
+  "substitutions": [
+    "7C8E17 operator-new returns distinct writable 16-byte blocks; original caller cleanup executes, no native instructions are patched",
+    "Child fixtures replace GetParent/GetWindowRect/MoveWindow IAT pointers with supplied window-state hooks, capture native MoveWindow arguments, and returntrue from69BBE0 active predicate; no placement arithmetic is substituted"
+  ],
+  "entry_points": {
+    "layout": "0x0072FC60",
+    "loader": "0x0072FA10",
+    "first_paint_layout_call": "0x0072F56A",
+    "side2_count_division": "0x0072FE77",
+    "bottom_repeat_division": "0x0072FFEB",
+    "ordinary_child_placement": "0x0060B7A0"
+  },
+  "payload_sha256": "8dd165d683e8ad6c286f93cdc4e1c76719e80f729e099aa3367ac5f403511cda"
+}

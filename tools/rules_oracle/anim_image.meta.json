@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "ObjectType Image25 native ReadString and AnimType image-loader fallback",
+  "assumptions": [
+    "Fresh type ID is supplied as current Image default. Cached INI lookup indexes are supplied for the exact type section; no physical ART parse.",
+    "Original caller 0x005F933B establishes capacity25, exact type section and current Image default; caller setup is supplied to ReadString.",
+    "No image filename formatting, theater substitution, asset IO, ART read admission or rendering execution."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "read_string": "0x00528A10",
+    "loader_selection": "0x00427B9F"
+  },
+  "payload_sha256": "c413a49c6dc9665e77f76120910739a4d34f6913bfae791c8170dc775e47985f"
+}

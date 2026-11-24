@@ -1,0 +1,1211 @@
+//! Match input owner (F12 `MatchInputState`): camera, zoom, cursor, held
+//! keys, hotkey bindings, and the TypeSelect input machine.
+//!
+//! These are the app-side input/viewport facts for the running match (and the
+//! shells that reuse the same cursor/key plumbing). Sim-authoritative input —
+//! queued commands — lives in the simulation, never here.
+
+use crate::sim::intern::InternedId;
+use crate::sim::snapshot::saved_local_view::{
+    SavedCursorModes, SavedLocalView, SavedLocalViewError, SavedTargeting,
+};
+use crate::ui::main_menu_dialogs::options::ZoomGeometry;
+use std::collections::HashSet;
+use winit::event::MouseButton;
+use winit::keyboard::{KeyCode, ModifiersState};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TacticalPointerMode<'a> {
+    Ordinary,
+    SuperWeapon(&'a str),
+    RepairSell,
+    /// Display `+0x11B2` ([`crate::app::input::power_mode`]).
+    Power,
+}
+
+/// Client-side handles installed by ManualPlace4FB840. The House factory
+/// remains the owner of the completed object; these are cursor references,
+/// not a second ready-object registry. Type is independent of product pointer
+/// lifetime in DispatchPointerExpired7258D0.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BuildingPlacementTarget {
+    type_id: String,
+    product_id: Option<u64>,
+    /// House+30 at4FB8C4 is captured as the existing command House identity.
+    owner: InternedId,
+}
+
+impl BuildingPlacementTarget {
+    pub(crate) fn type_id(&self) -> &str {
+        &self.type_id
+    }
+
+    pub(crate) fn product_id(&self) -> Option<u64> {
+        self.product_id
+    }
+
+    pub(crate) fn owner(&self) -> InternedId {
+        self.owner
+    }
+}
+
+/// Read-only current and deferred placement references at an input boundary.
+/// Diagnostics borrow the existing owner; they keep no second transaction.
+pub(crate) struct BuildingPlacementInputView<'a> {
+    pub(crate) current: Option<&'a BuildingPlacementTarget>,
+    pub(crate) saved_retry: Option<&'a BuildingPlacementTarget>,
+    pub(crate) current_preview_present: bool,
+    pub(crate) saved_preview_present: bool,
+}
+
+/// BandBoxLeftUp4ABBF5 saves current placement independently of its active
+/// cursor. A later HousePlace4FB35F failure restores this transaction, rather
+/// than inferring the target from the failing event's type.
+struct SavedBuildingPlacement {
+    target: BuildingPlacementTarget,
+    preview: Option<crate::sim::production::BuildingPlacementPreview>,
+}
+
+/// A saved view whose identities and selection timeline were checked against
+/// the prepared world. Commit performs no further admission or command work.
+#[derive(Debug)]
+pub(crate) struct PreparedSavedLocalView {
+    saved: SavedLocalView,
+    targeting: Option<crate::app::types::TargetingMode>,
+}
+
+impl PreparedSavedLocalView {
+    /// Validate before replacing either the world or its input owner. Stable
+    /// IDs are resolved only against the incoming world, never the outgoing one.
+    pub(crate) fn new(
+        saved: SavedLocalView,
+        simulation: &crate::sim::world::Simulation,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> Result<Self, SavedLocalViewError> {
+        saved.validate_structure()?;
+        let follow_target = saved.follow_target();
+        for (field, references) in [
+            ("selection", saved.selection_order()),
+            ("Follow", follow_target.as_slice()),
+        ] {
+            for &object_id in references {
+                if simulation.entities().get(object_id).is_none() {
+                    return Err(SavedLocalViewError::MissingEntityReference { field, object_id });
+                }
+            }
+        }
+        let (order, pending) = crate::app::input::dispatch::selection_order_for_world(
+            simulation,
+            Some(rules),
+            saved.selection_order(),
+            saved.selection_order_pending(),
+            &[],
+        );
+        if order != saved.selection_order() || pending != saved.selection_order_pending() {
+            return Err(SavedLocalViewError::SelectionTimelineMismatch);
+        }
+        let unknown = |field, name: &str| SavedLocalViewError::UnknownName {
+            field,
+            name: name.to_owned(),
+        };
+        let targeting = match &saved.modes().targeting {
+            None => None,
+            Some(SavedTargeting::SuperWeapon(name)) => {
+                rules
+                    .super_weapon(name)
+                    .ok_or_else(|| unknown("superweapon", name))?;
+                Some(crate::app::types::TargetingMode::SuperWeapon(name.clone()))
+            }
+            Some(SavedTargeting::BuildingPlacement {
+                type_id,
+                product_id,
+                owner,
+            }) => {
+                rules
+                    .object(type_id)
+                    .ok_or_else(|| unknown("placement type", type_id))?;
+                if let Some(object_id) = *product_id
+                    && simulation.entities().get(object_id).is_none()
+                {
+                    return Err(SavedLocalViewError::MissingEntityReference {
+                        field: "placement",
+                        object_id,
+                    });
+                }
+                let owner = simulation
+                    .interner()
+                    .get(owner)
+                    .ok_or_else(|| unknown("placement House", owner))?;
+                Some(crate::app::types::TargetingMode::BuildingPlacement(
+                    BuildingPlacementTarget {
+                        type_id: type_id.clone(),
+                        product_id: *product_id,
+                        owner,
+                    },
+                ))
+            }
+        };
+        Ok(Self { saved, targeting })
+    }
+
+    /// Restore persistent owners after navigation's world-replacement
+    /// invalidation. Active YR PlanMgr is reset, not restored. The Tactical view has its own owner,
+    /// camera::restore_tactical_view, applied once new geometry is installed.
+    pub(crate) fn commit_into(
+        self,
+        input: &mut MatchInputState,
+        sidebar: &mut crate::ui::sidebar::gadget_flash::SidebarGadgetState,
+    ) {
+        input
+            .view_bookmarks
+            .restore_saved_cells(self.saved.view_bookmarks());
+        let modes = self.saved.modes();
+        // ClearScene6370B0 clears active YR Q at AC4CF4. Mouse raw load can
+        // restore legacy Display+11B3, a different byte. Do not use the saved
+        // VERA bit to reactivate the producer or emit a new PLANCOMMIT.
+        input.planning.reset();
+        sidebar.repair_mode_on = modes.repair;
+        sidebar.sell_mode_on = modes.sell;
+        // The raw Display load restores Power (+0x11B2) too; VERA's save has
+        // no power byte (the residual in sim::snapshot::saved_local_view), so
+        // the outgoing world's mode ends here.
+        sidebar.power_mode_on = false;
+        sidebar.command_bar_closed = modes.command_bar_closed;
+        input.targeting_mode = self.targeting;
+        input.skirmish_spawn = None;
+        // The preview is derived from the cursor; the next tactical frame
+        // recomputes it. RESIDUAL: the BandBoxLeftUp retry copy (+1190..+1198)
+        // loads raw and MouseLoad 0x005BDF70 never swizzles it, so natively it
+        // keeps stale pointers after a load; VERA drops it, so no retry survives.
+        input.building_placement_preview = None;
+        input.saved_building_placement = None;
+        // The foundation latch (+0x1174/+0x1181) is in the same Display body.
+        input.foundation_latch = FoundationLatch::from_saved(modes.foundation);
+        let (order, pending, follow) = self.saved.into_local_input();
+        input.selection_order = order;
+        input.selection_order_pending = pending;
+        input.follow_target = follow;
+        // ClearScene685640 and PostLoad6851D2 call734210, which resets the
+        // last team slot to -1 and rewinds both click clocks. None has the
+        // same next-press behavior without persisting a wall-clock Instant.
+        // Original reset witnesses: saved_game_layout.json/postload_clock_reset.
+        input.last_control_group_press = None;
+        // VERA right-click orders: the double-click chain must not pair a
+        // click from before the load with one after it.
+        input.last_selection_click = None;
+        input.build_repeat = Default::default();
+        input.reset_cheer_clock();
+    }
+}
+
+pub(crate) struct MatchInputState {
+    /// Presentation display depth; ScenarioSession owns the gameplay lock.
+    pub(crate) cursor_visibility: crate::app::input::cursor::CursorVisibility,
+    /// The cursor the last drawn frame showed. Native's SetCursor writes are
+    /// retained state, and over the sidebar only a LEFTUP dispatch writes one.
+    /// A `Cell` for the reason at `software_cursor_animation`: the draw that
+    /// chooses the cursor notes it there.
+    shown_cursor: std::cell::Cell<Option<crate::app::types::CursorFeedbackKind>>,
+    /// The drawn software cursor's phase (`MouseClass` `CurrentCursor` /
+    /// `CursorFrame`). A `Cell` because the phase steps where the frame is
+    /// chosen, inside the shell and match draws (`shell_pass`,
+    /// `ui_overlays::build_software_cursor_instances`), and those hold the app
+    /// state by `&`: the sprite they build borrows the cursor's texture and
+    /// the rest of the frame's draw state from it until the frame is drawn.
+    /// Stepping it before the draw under `&mut` would choose the frame apart
+    /// from the targets and planning-node test that pick the sequence.
+    software_cursor_animation: std::cell::Cell<crate::app::input::cursor::CursorAnimation>,
+    /// The cursor's targets and feedback as last read with the world home
+    /// (`sim_host::home_answer`): both walk the live objects, which a draw
+    /// beside a lent tick may not read. Cells, like `tactical_tip_seen` and
+    /// `cursor_feedback_seen`: the asking draws hold the app state through `&`.
+    pub(crate) cursor_targets_seen: std::cell::RefCell<crate::app::input::cursor::CursorTargets>,
+    pub(crate) tactical_tip_seen: super::tooltips::TacticalTipAnswer,
+    pub(crate) cursor_feedback_seen:
+        std::cell::RefCell<Option<crate::app::types::CursorFeedbackKind>>,
+    pub(crate) camera_x: f32,
+    pub(crate) camera_y: f32,
+    /// Camera-owned requests awaiting Tactical__AI's next single commit.
+    pub(crate) pending_camera_scroll: crate::app::input::camera::PendingCameraScroll,
+    /// Current zoom level for the game viewport. 1.0 = native pixel scale,
+    /// above 1.0 = zoomed in (world appears larger), below 1.0 = zoomed out
+    /// (see more map). Animated each frame toward `zoom_target`.
+    pub(crate) zoom_level: f32,
+    /// Target zoom level — mouse wheel sets this; `zoom_level` eases toward it.
+    pub(crate) zoom_target: f32,
+    /// World-space anchor point for zoom animation. The camera adjusts each frame
+    /// so this world point stays at `zoom_anchor_screen` during the zoom ease.
+    pub(crate) zoom_anchor_world: [f32; 2],
+    /// Screen-space position of the zoom anchor (cursor position when wheel fired).
+    pub(crate) zoom_anchor_screen: [f32; 2],
+    /// Mouse edge auto-scroll ramp state (gamemd's CoastLevel and its 16 ms timer).
+    pub(crate) edge_scroll: crate::app::input::camera::EdgeScrollState,
+    /// Tactical mouse capture and right-drag pan anchor.
+    pub(crate) tactical_mouse: crate::app::input::camera::TacticalMouseState,
+    /// The four camera bookmarks (View1..4 / SetView1..4).
+    pub(crate) view_bookmarks: crate::app::input::camera::ViewBookmarks,
+    pub(crate) cursor_x: f32,
+    pub(crate) cursor_y: f32,
+    /// The match zoom `cursor_x`/`cursor_y` are in; `None` is window pixels.
+    /// `AppState::sync_cursor_space` keeps it matching the current screen.
+    pub(crate) cursor_zoom: Option<crate::ui::main_menu_dialogs::options::ZoomGeometry>,
+    /// Last physical window event, used only to measure confined cursor motion.
+    /// The source cursor above remains authoritative; this anchor is neither
+    /// saved nor simulation state and is discarded when pointer focus changes.
+    last_cursor_window: Option<(f32, f32)>,
+    pub(crate) keys_held: HashSet<KeyCode>,
+    /// Whether the last window event found the match paused, and the keys
+    /// released since then: a pause admits no held-key change, so its end
+    /// applies them ([`Self::track_pause`]).
+    paused_at_last_event: bool,
+    released_while_paused: HashSet<KeyCode>,
+    pub(crate) camera_scroll_keys: super::hotkeys::CameraScrollKeys,
+    pub(crate) hotkey_bindings: crate::app::input::hotkeys::HotkeyBindings,
+    pub(crate) hotkey_modifiers: ModifiersState,
+    /// Local AllToCheer730F30 admission scalar84555C. The simulation owns
+    /// queued events; this frame only throttles their local input producer.
+    last_cheer_frame: i32,
+    /// Hybrid held/tap state for the retail TypeSelect command.
+    pub(crate) type_select: crate::app::types::TypeSelectInputState,
+    /// VERA formation line: its held key and the line being drawn.
+    pub(crate) formation_line: super::formation_line::FormationLineState,
+    /// VERA formation lock: which units keep their places in a move.
+    pub(crate) formation_locks: super::formation_lock::FormationLocks,
+    pub(crate) planning: crate::app::input::planning_mode::PlanningInputState,
+    /// VERA ferry order: the armed drop click and the local routes.
+    pub(crate) ferry: super::ferry::FerryState,
+    /// VERA Auto Repair: the Repair orders sent and not yet seen to land.
+    pub(crate) auto_repair: super::auto_repair::AutoRepairState,
+    /// VERA primary rotation: the factory groups that take turns.
+    pub(crate) primary_rotation: super::primary_rotation::PrimaryRotationState,
+    pub(crate) category_navigation:
+        crate::app::input::dispatch::selection_navigation::CategoryNavigation,
+    /// Original CursorCheat toggle A8F7D8, consumed by tactical tooltips.
+    pub(crate) cursor_coordinates: bool,
+    /// One-shot Shift+S request, consumed at the next render submission.
+    pub(crate) retail_screenshot_requested: bool,
+    /// Button owning the pending radar press. VERA right-click controls use
+    /// Right; retail input uses Left. Other button edges cannot steal it.
+    minimap_press_button: Option<MouseButton>,
+    /// Touch gestures translated into mouse input (Windows touchscreens). Its
+    /// sticky gesture lives here, beside the other pointer bytes, so the match
+    /// teardown ladder resets it with them.
+    pub(crate) touch_mapper: crate::app::input::touch::TouchMouseMapper,
+    /// The cursor position came from a touch, not a hardware pointer. VERA
+    /// internal: edge auto-scroll needs a pointer that can leave the band, and
+    /// a lifted finger leaves the synthetic cursor parked. The next real
+    /// `CursorMoved` clears it.
+    pub(crate) cursor_from_touch: bool,
+    /// Selection drag state — tracks mouse drag for box-select.
+    pub(crate) selection_state: crate::sim::selection::SelectionState,
+    /// Player-side `g_CurrentObjects` order. Selection commands update this
+    /// immediately; the post-sim reconciliation removes lifecycle departures.
+    pub(crate) selection_order: Vec<u64>,
+    /// A queued selection command has not yet reached the simulation tick.
+    pub(crate) selection_order_pending: bool,
+    /// The ledger as the last frame's reconciliation committed it; the
+    /// per-draw read trusts it while it holds.
+    pub(crate) selection_committed: Option<crate::app::input::dispatch::CommittedSelection>,
+    /// Existing selection paths speak by default; held TypeSelect batches
+    /// temporarily suppress and restore this latch.
+    pub(crate) selection_voice_enabled: bool,
+    /// Pending order mode for the next right-click command.
+    pub(crate) queued_order_mode: crate::app::types::OrderMode,
+    /// Slot and wall-clock instant of the last plain control-group recall, for
+    /// the 800 ms double-tap that centres the camera. Wall clock, never sim
+    /// state: the original stamps `timeGetTime()` here and only a recall writes
+    /// it — assigning with Ctrl+digit never does.
+    pub(crate) last_control_group_press: Option<(usize, crate::util::time::Instant)>,
+    /// VERA right-click orders: the last ordinary tactical selection click,
+    /// for the modern-RTS double-click select-same-type-on-screen shortcut.
+    /// Wall clock, never sim state; the host's double-click time and rectangle
+    /// decide the pair. Only an admitted selection click writes it.
+    pub(crate) last_selection_click: Option<(vera20k_gui::UiMs, i32, i32)>,
+    /// Types the local player builds endlessly (Ctrl + left click on a cameo).
+    pub(crate) build_repeat: crate::app::input::build_repeat::BuildRepeat,
+    /// The object the camera is following, i.e. `DisplayClass +0x11A0` behind
+    /// its valid byte `+0x119C`. `None` is the cleared pair.
+    pub(crate) follow_target: Option<u64>,
+    /// Mutually-exclusive cursor-on-tactical-map targeting mode (building
+    /// placement OR superweapon). Right-click clears; Options preserves it. Arming one
+    /// kind clears the other.
+    pub(crate) targeting_mode: Option<crate::app::types::TargetingMode>,
+    /// An unconfirmed offline chat order temporarily owns the mouse without
+    /// disturbing selected units or a ready sidebar product.
+    pub(crate) skirmish_spawn: Option<super::chat::SpawnOrder>,
+    /// Current placement preview for the armed building, if any.
+    pub(crate) building_placement_preview: Option<crate::sim::production::BuildingPlacementPreview>,
+    pub(crate) foundation_latch: FoundationLatch,
+    saved_building_placement: Option<SavedBuildingPlacement>,
+}
+
+/// `DisplayClass +0x1174`, kept here as the foundation's top-left Cell, and `+0x1181`,
+/// whether the whole foundation was visible there, which `BandBox_LeftUp`
+/// tests (`0x004ABAB2`). `UpdateFoundationCenter @ 0x004A91B0` keeps both
+/// across placements and writes the visibility only when the Cell moves
+/// (early exit `0x004A9356..0x004A936E`, write `0x004A94DA`). `None` is the
+/// constructor's null Cell (`0x004A873D`, `0x004A875F`).
+///
+/// RESIDUAL: native `+0x1174` holds the centre Cell and the top-left is it plus
+/// the type's offset (`+0x1178`), so its compare differs from this top-left one
+/// only on the first call after the armed type changes. Native also refreshes
+/// proximity (`+0x1180`) only when the centre moves; the preview recomputes it,
+/// and the grid colour with it, every frame.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct FoundationLatch(Option<((u16, u16), bool)>);
+
+impl FoundationLatch {
+    /// The latched top-left Cell.
+    pub(crate) fn origin(self) -> Option<(u16, u16)> {
+        self.0.map(|(origin, _)| origin)
+    }
+
+    /// The latch as a save keeps it (`MouseClass::Load @ 0x005BDF70` reads
+    /// the Display body back raw).
+    pub(crate) fn saved(self) -> Option<((u16, u16), bool)> {
+        self.0
+    }
+
+    pub(crate) fn from_saved(saved: Option<((u16, u16), bool)>) -> Self {
+        Self(saved)
+    }
+
+    /// The call with no foundation armed stores the centre Cell alone
+    /// (`0x004A92B5..0x004A92D8`).
+    pub(crate) fn follow(&mut self, cell: (u16, u16)) {
+        let visible = self.0.is_some_and(|(_, visible)| visible);
+        self.0 = Some((cell, visible));
+    }
+
+    /// The armed foundation's call: `origin` is the top-left Cell it takes,
+    /// `None` where it leaves the latched one, and `preview_at` builds the
+    /// preview there. A moved foundation latches the preview's visibility; a
+    /// still one hands the preview the latched value.
+    pub(crate) fn place(
+        &mut self,
+        origin: Option<(u16, u16)>,
+        preview_at: impl FnOnce((u16, u16)) -> Option<crate::sim::production::BuildingPlacementPreview>,
+    ) -> Option<crate::sim::production::BuildingPlacementPreview> {
+        let latched = self.0;
+        let origin = origin.or(self.origin())?;
+        let mut preview = preview_at(origin)?;
+        match latched {
+            Some((at, visible)) if at == origin => preview.foundation_visible = visible,
+            _ => self.0 = Some((origin, preview.foundation_visible)),
+        }
+        Some(preview)
+    }
+}
+
+#[cfg(all(test, tests_app_input_d_z))]
+#[path = "ready_building_placement_tests.rs"]
+mod ready_building_placement_tests;
+
+impl MatchInputState {
+    /// DetermineAction692610 returns the selected object's action early.
+    /// With no selection, its armed targeted Super overrides Repair/Sell
+    /// and Power at692B06..692B24. Those three bytes are never on together
+    /// (their setters clear each other), so their arms' order is moot.
+    /// Cursor feedback and release share this decision; the existing Super
+    /// producer still owns target admission and launch.
+    /// Source: original gamemd.exe instructions.
+    pub(crate) fn tactical_pointer_mode(
+        &self,
+        sidebar: &crate::ui::sidebar::gadget_flash::SidebarGadgetState,
+        selection_empty: bool,
+    ) -> TacticalPointerMode<'_> {
+        if !selection_empty {
+            return TacticalPointerMode::Ordinary;
+        }
+        if let Some(section) = self
+            .targeting_mode
+            .as_ref()
+            .and_then(crate::app::types::TargetingMode::as_super_weapon)
+        {
+            return TacticalPointerMode::SuperWeapon(section);
+        }
+        if sidebar.repair_mode_on || sidebar.sell_mode_on {
+            return TacticalPointerMode::RepairSell;
+        }
+        if sidebar.power_mode_on {
+            return TacticalPointerMode::Power;
+        }
+        TacticalPointerMode::Ordinary
+    }
+
+    /// Display Cancel4AAD30 consumes one represented cursor rung: current
+    /// placement product, Repair/Sell, Power (4AADD0), then Super. The mode
+    /// setters still refuse a retained placement TYPE after its product
+    /// expires. The caller handles the beacon rung (4AAE47) and the final
+    /// UnselectAll rung. Waypoint remains an unrepresented Display flag.
+    /// Source: original gamemd.exe4AAD34..4AAE84.
+    pub(crate) fn cancel_pointer_mode(
+        &mut self,
+        sidebar: &mut crate::ui::sidebar::gadget_flash::SidebarGadgetState,
+    ) -> bool {
+        if self.cancel_building_placement() {
+            return true;
+        }
+        let placement_armed = self
+            .targeting_mode
+            .as_ref()
+            .and_then(crate::app::types::TargetingMode::as_building_placement)
+            .is_some();
+        if sidebar.repair_mode_on || sidebar.sell_mode_on {
+            sidebar.disable_selection_modes(placement_armed);
+            return true;
+        }
+        if sidebar.power_mode_on {
+            sidebar.set_power_mode(false, placement_armed, 0);
+            return true;
+        }
+        if self
+            .targeting_mode
+            .as_ref()
+            .and_then(crate::app::types::TargetingMode::as_super_weapon)
+            .is_some()
+        {
+            self.targeting_mode = None;
+            self.building_placement_preview = None;
+            return true;
+        }
+        false
+    }
+
+    /// Record physical window input in the current screen's coordinate space.
+    pub(crate) fn set_cursor_from_window(
+        &mut self,
+        point: (f32, f32),
+        zoom: Option<ZoomGeometry>,
+        confined: bool,
+    ) {
+        self.sync_cursor_space(zoom);
+        (self.cursor_x, self.cursor_y) = match (zoom, self.last_cursor_window) {
+            (Some(zoom), Some(previous)) if confined => {
+                // The hidden OS pointer can enter the letterbox bars even
+                // while confined to the client area. Clamp each movement so
+                // reversing it immediately moves the visible cursor. Using
+                // window events also works without a platform cursor warp.
+                let current = zoom.source_to_window(self.cursor_x, self.cursor_y);
+                zoom.window_to_source(
+                    current.0 + (point.0 - previous.0),
+                    current.1 + (point.1 - previous.1),
+                )
+            }
+            (Some(zoom), _) => zoom.window_to_source(point.0, point.1),
+            (None, _) => point,
+        };
+        self.last_cursor_window = Some(point);
+    }
+
+    /// The pointer in the pixels the current screen paints and hit-tests in:
+    /// the match frame's during a match (source pixels when zoomed), the
+    /// window's elsewhere.
+    pub(crate) fn cursor_position(&self) -> (f32, f32) {
+        (self.cursor_x, self.cursor_y)
+    }
+
+    /// The pointer in window pixels, where the status cards paint even over
+    /// a zoomed match; `zoom` is the match zoom in use.
+    pub(crate) fn window_cursor_position(&self, zoom: Option<ZoomGeometry>) -> (f32, f32) {
+        zoom.map_or((self.cursor_x, self.cursor_y), |zoom| {
+            zoom.source_to_window(self.cursor_x, self.cursor_y)
+        })
+    }
+
+    /// The building-placement section name while targeting places one.
+    pub(crate) fn armed_building_type(&self) -> Option<&str> {
+        self.targeting_mode
+            .as_ref()
+            .and_then(crate::app::types::TargetingMode::as_building_placement)
+    }
+
+    /// The super weapon section name while targeting fires one.
+    pub(crate) fn armed_super_weapon_type(&self) -> Option<&str> {
+        self.targeting_mode
+            .as_ref()
+            .and_then(crate::app::types::TargetingMode::as_super_weapon)
+    }
+
+    /// The OS pointer's last position in window pixels, while one is known.
+    pub(crate) fn pointer_in_window(&self) -> Option<(f32, f32)> {
+        self.last_cursor_window
+    }
+
+    /// Begin a fresh physical pointer history after focus or client entry changes.
+    pub(crate) fn reset_window_cursor_motion(&mut self) {
+        self.last_cursor_window = None;
+    }
+
+    /// Re-express a retained cursor after a resize or screen transition.
+    pub(crate) fn sync_cursor_space(&mut self, zoom: Option<ZoomGeometry>) {
+        if self.cursor_zoom != zoom {
+            // Tactical install already initializes source coordinates on entry.
+            // Leaving or resizing a match maps through physical window pixels.
+            if let Some(from) = self.cursor_zoom {
+                let rendered = from.source_to_window(self.cursor_x, self.cursor_y);
+                // Outside the match the OS cursor becomes visible again. Use
+                // its actual position; capture-only source input has no such
+                // anchor and keeps the existing rendered-position fallback.
+                let point = if zoom.is_none() {
+                    self.last_cursor_window.unwrap_or(rendered)
+                } else {
+                    rendered
+                };
+                (self.cursor_x, self.cursor_y) =
+                    zoom.map_or(point, |to| to.window_to_source(point.0, point.1));
+            } else {
+                self.reset_window_cursor_motion();
+            }
+            self.cursor_zoom = zoom;
+        }
+    }
+
+    /// Record one tactical selection click and answer whether it is the
+    /// second click of a double-click. The modern-RTS
+    /// select-same-type-on-screen shortcut is a VERA extension of
+    /// `RightClickOrders`: a click it does not admit (the option off, or a
+    /// click a held T, a modifier or an armed attack-move claims) discards the
+    /// chain, so it never pairs with the next plain click.
+    /// `point` is in physical window pixels, the space the host's double-click
+    /// rectangle is measured in.
+    pub(crate) fn note_tactical_selection_click(
+        &mut self,
+        admitted: bool,
+        now: vera20k_gui::UiMs,
+        point: (i32, i32),
+    ) -> bool {
+        if !admitted {
+            self.last_selection_click = None;
+            return false;
+        }
+        let (time, width, height) = crate::ui::shell::controller::host_double_click_limits();
+        vera20k_gui::shell::list::is_double_click(
+            &mut self.last_selection_click,
+            now,
+            point.0,
+            point.1,
+            (time.as_millis() as u64, width, height),
+        )
+    }
+
+    /// Record the cursor a drawn frame shows (`None` is the normal arrow).
+    pub(crate) fn note_shown_cursor(&self, kind: Option<crate::app::types::CursorFeedbackKind>) {
+        self.shown_cursor.set(kind);
+    }
+
+    /// The index of the frame of `sequence` the software cursor draws for
+    /// `id` right now, stepping its phase
+    /// ([`crate::app::input::cursor::CursorAnimation::frame_index`]).
+    pub(crate) fn software_cursor_frame_index(
+        &self,
+        id: crate::app::types::CursorId,
+        sequence: &crate::app::types::SoftwareCursorSequence,
+    ) -> Option<usize> {
+        let mut animation = self.software_cursor_animation.get();
+        let index = animation.frame_index(id, sequence);
+        self.software_cursor_animation.set(animation);
+        index
+    }
+
+    /// Whether the drawn software cursor's next frame is due.
+    pub(crate) fn software_cursor_step_due(&self) -> bool {
+        self.software_cursor_animation.get().step_due()
+    }
+
+    /// DisplayCancel4AEAD0 resets the cursor shape through its animation
+    /// owner (its `SetDefaultCursor(0, 0)`, `0x005BDA80`). The next ordinary
+    /// draw starts the default shape at frame 0.
+    pub(crate) fn reset_cursor_shape(&mut self) {
+        *self.software_cursor_animation.get_mut() =
+            crate::app::input::cursor::CursorAnimation::new();
+    }
+
+    /// The cursor the last drawn frame showed, which stays where nothing
+    /// writes one.
+    pub(crate) fn shown_cursor(&self) -> Option<crate::app::types::CursorFeedbackKind> {
+        self.shown_cursor.get()
+    }
+
+    /// The cursor over the sidebar. SBGadget::Action 6ABA40 (flags 8,
+    /// 6A4C12) and SelectClass::Action 6AAD00 (6AAD61) set the normal cursor,
+    /// but their masks take LEFTUP and no LEFTHELD: with the left button held
+    /// nothing writes one and the last cursor stays.
+    pub(crate) fn sidebar_cursor(&self) -> Option<crate::app::types::CursorFeedbackKind> {
+        if self.tactical_mouse.left_held() {
+            self.shown_cursor.get()
+        } else {
+            None
+        }
+    }
+
+    /// The cursor while a tactical button holds the capture byte (`+0x555A`),
+    /// or `None` without it. `ScrollClass::UpdateMouseScrolling` 0x00692F30
+    /// then hands the frame to `BandBox_MouseMove` 0x004AC380 (left held) or
+    /// `RightDragPan` 0x00693440 (right held) and returns
+    /// (0x00692F85..0x00692FDB) before the action cursor
+    /// (0x00692FFC..0x0069302F) and the edge-scroll block. The band sets the
+    /// normal arrow as it activates (`SetCursor(0, 0)` at 0x004AC4DA); the pan
+    /// writes only its own cursor, which the caller asks first. Otherwise
+    /// nothing writes one and the last cursor stays.
+    pub(crate) fn captured_cursor(&self) -> Option<Option<crate::app::types::CursorFeedbackKind>> {
+        if !self.tactical_mouse.captured {
+            return None;
+        }
+        Some(if self.selection_state.is_band_box_active() {
+            None
+        } else {
+            self.shown_cursor.get()
+        })
+    }
+
+    /// Construct the match input owner with the ordinary startup defaults.
+    pub(crate) fn new(hotkey_bindings: crate::app::input::hotkeys::HotkeyBindings) -> Self {
+        Self {
+            cursor_visibility: Default::default(),
+            shown_cursor: Default::default(),
+            software_cursor_animation: std::cell::Cell::new(
+                crate::app::input::cursor::CursorAnimation::new(),
+            ),
+            cursor_targets_seen: Default::default(),
+            tactical_tip_seen: Default::default(),
+            cursor_feedback_seen: Default::default(),
+            minimap_press_button: None,
+            touch_mapper: crate::app::input::touch::TouchMouseMapper::new(),
+            cursor_from_touch: false,
+            selection_state: crate::sim::selection::SelectionState::new(),
+            selection_order: Vec::new(),
+            selection_order_pending: false,
+            selection_committed: None,
+            selection_voice_enabled: true,
+            queued_order_mode: crate::app::types::OrderMode::Move,
+            last_control_group_press: None,
+            last_selection_click: None,
+            build_repeat: Default::default(),
+            follow_target: None,
+            targeting_mode: None,
+            skirmish_spawn: None,
+            building_placement_preview: None,
+            foundation_latch: FoundationLatch::default(),
+            saved_building_placement: None,
+            camera_x: 0.0,
+            camera_y: 0.0,
+            pending_camera_scroll: Default::default(),
+            zoom_level: 1.0,
+            zoom_target: 1.0,
+            zoom_anchor_world: [0.0, 0.0],
+            zoom_anchor_screen: [0.0, 0.0],
+            edge_scroll: crate::app::input::camera::EdgeScrollState::default(),
+            tactical_mouse: crate::app::input::camera::TacticalMouseState::default(),
+            view_bookmarks: crate::app::input::camera::ViewBookmarks::default(),
+            cursor_x: 0.0,
+            cursor_y: 0.0,
+            cursor_zoom: None,
+            last_cursor_window: None,
+            keys_held: HashSet::new(),
+            paused_at_last_event: false,
+            released_while_paused: HashSet::new(),
+            camera_scroll_keys: Default::default(),
+            hotkey_bindings,
+            hotkey_modifiers: ModifiersState::empty(),
+            last_cheer_frame: -100,
+            type_select: crate::app::types::TypeSelectInputState::default(),
+            formation_line: super::formation_line::FormationLineState::default(),
+            formation_locks: super::formation_lock::FormationLocks::default(),
+            planning: Default::default(),
+            ferry: Default::default(),
+            auto_repair: Default::default(),
+            primary_rotation: Default::default(),
+            category_navigation: Default::default(),
+            cursor_coordinates: false,
+            retail_screenshot_requested: false,
+        }
+    }
+
+    /// AllToCheer536C00 ->730F30 first reads Session+300/A8B538 (local
+    /// defeat), then uses wrapping ADD and a signed strict comparison
+    /// against the binary frame. Refused input retains the prior;
+    /// an admitted attempt writes the frame after issue, including a full
+    /// OutList. Source and original executed histories: input_oracle/house_cheer.
+    pub(crate) fn try_issue_cheer(
+        &mut self,
+        current_frame: i32,
+        maximum_cheer_rate: i32,
+        local_player_defeated: bool,
+        issue: impl FnOnce() -> Option<u64>,
+    ) -> Option<u64> {
+        if local_player_defeated
+            || self.last_cheer_frame.wrapping_add(maximum_cheer_rate) >= current_frame
+        {
+            return None;
+        }
+        let issued = issue();
+        self.last_cheer_frame = current_frame;
+        issued
+    }
+
+    /// ClearScene685640 and PostLoad6851D2 call734210, whose store734234
+    /// resets84555C independently of the saved world's simulation frame.
+    fn reset_cheer_clock(&mut self) {
+        self.last_cheer_frame = -100;
+    }
+
+    /// The cursor in whole window pixels, rounded to nearest: the position the
+    /// shell screens and the gadget layer hit-test with.
+    pub(crate) fn cursor_px(&self) -> (i32, i32) {
+        (self.cursor_x.round() as i32, self.cursor_y.round() as i32)
+    }
+
+    /// HouseClass::Manual_Place4FB852..4FB859 refuses every new entry while
+    /// a building placement is pending. SelectClass has already played the
+    /// click sound and queried the actual held object's builder.
+    /// Source: tools/sidebar_oracle/cameo_order.md, ready-building histories.
+    /// The caller clears selection and repair/sell only on first entry.
+    pub(crate) fn begin_building_placement(
+        &mut self,
+        type_id: &str,
+        product_id: u64,
+        owner: InternedId,
+    ) -> bool {
+        let armed = self
+            .targeting_mode
+            .as_ref()
+            .and_then(crate::app::types::TargetingMode::as_building_placement)
+            .is_some();
+        if armed {
+            false
+        } else {
+            self.targeting_mode = Some(crate::app::types::TargetingMode::BuildingPlacement(
+                BuildingPlacementTarget {
+                    type_id: type_id.to_string(),
+                    product_id: Some(product_id),
+                    owner,
+                },
+            ));
+            self.building_placement_preview = None;
+            true
+        }
+    }
+
+    /// Display4AAD30's building rung and Select6AADC9's own-factory prefix.
+    /// Neither consumes the House factory's completed object. A selected
+    /// superweapon has its own input owner and is outside this building rung.
+    pub(crate) fn cancel_building_placement(&mut self) -> bool {
+        // Both native client rungs require current product, not current type.
+        // An expired product can leave an orphan type/foundation pending.
+        if self.building_placement_issuer().is_none() {
+            return false;
+        }
+        self.clear_building_placement()
+    }
+
+    /// Explicit House placement/abandon tails clear the type/foundation even
+    /// when pointer expiry has already cleared the current product.
+    pub(crate) fn clear_building_placement(&mut self) -> bool {
+        if self
+            .targeting_mode
+            .as_ref()
+            .and_then(crate::app::types::TargetingMode::as_building_placement)
+            .is_none()
+        {
+            return false;
+        }
+        self.targeting_mode = None;
+        self.building_placement_preview = None;
+        true
+    }
+
+    /// BandBoxLeftUp4AB9B0 requires the current product, independently of
+    /// current type/foundation. Product-only expiry leaves those two intact.
+    pub(crate) fn building_placement_issuer(&self) -> Option<InternedId> {
+        let Some(crate::app::types::TargetingMode::BuildingPlacement(target)) =
+            &self.targeting_mode
+        else {
+            return None;
+        };
+        target.product_id.map(|_| target.owner)
+    }
+
+    /// DispatchPointerExpired7258D0 clears a matching current product
+    /// without dropping its type or active foundation. Alive/Health is not
+    /// this notification. Source: cameo_order.md product-only expiry history.
+    pub(crate) fn building_placement_pointer_expired(&mut self, stable_id: u64) {
+        if let Some(crate::app::types::TargetingMode::BuildingPlacement(target)) =
+            &mut self.targeting_mode
+            && target.product_id == Some(stable_id)
+        {
+            target.product_id = None;
+        }
+        // TacticalPointerExpired6DA57D..6DA5A5 drops the complete saved
+        // transaction when its product matches, independently of current.
+        if self
+            .saved_building_placement
+            .as_ref()
+            .is_some_and(|saved| saved.target.product_id == Some(stable_id))
+        {
+            self.saved_building_placement = None;
+        }
+    }
+
+    /// BandBoxLeftUp4ABBD7 clears the tab reference before4ABBF5..4ABC5D
+    /// transfers current placement to the one saved transaction and drops
+    /// the active cursor, even if OutList is full.
+    pub(crate) fn submit_building_placement(
+        &mut self,
+        sidebar: &mut crate::app::sidebar_projection::SidebarModel,
+    ) {
+        if let Some(crate::app::types::TargetingMode::BuildingPlacement(target)) =
+            &self.targeting_mode
+        {
+            sidebar.clear_ready_building(target.product_id);
+        }
+        let mode = self.targeting_mode.take();
+        match mode {
+            Some(crate::app::types::TargetingMode::BuildingPlacement(target)) => {
+                self.saved_building_placement = Some(SavedBuildingPlacement {
+                    target,
+                    preview: self.building_placement_preview.take(),
+                });
+            }
+            other => self.targeting_mode = other,
+        }
+    }
+
+    /// The pending grid's foundation: `SetPendingFoundation @ 0x004A8D50`
+    /// marks the saved transaction's cells (flag 4) at the click, and
+    /// HousePlace (`0x004FB328`, `0x004FB48F`) and PointerExpired
+    /// (`0x006DA58C`) unmark them as they drop it.
+    pub(crate) fn pending_building_placement_preview(
+        &self,
+    ) -> Option<&crate::sim::production::BuildingPlacementPreview> {
+        self.saved_building_placement
+            .as_ref()
+            .and_then(|saved| saved.preview.as_ref())
+    }
+
+    /// HousePlace4FB395..4FB49A restores the saved transaction, including an
+    /// empty one left by an earlier success, and consumes the old backup.
+    /// The caller recomputes the active preview from the actual cursor through
+    /// the existing placement-preview owner after a nonempty restoration.
+    pub(crate) fn retry_building_placement(&mut self) -> bool {
+        self.clear_building_placement();
+        let Some(saved) = self.saved_building_placement.take() else {
+            return false;
+        };
+        self.targeting_mode = Some(crate::app::types::TargetingMode::BuildingPlacement(
+            saved.target,
+        ));
+        self.building_placement_preview = saved.preview;
+        true
+    }
+
+    /// HousePlace4FB328..4FB33F clears both current and saved building
+    /// placement after successful Unlimbo and BuildingSlam.
+    pub(crate) fn finish_building_placement(&mut self) {
+        self.clear_building_placement();
+        self.saved_building_placement = None;
+    }
+
+    /// Consume the ordered native lifecycle facts through this input owner.
+    /// Returning true requests an actual-cursor preview refresh after retry.
+    pub(crate) fn apply_lifecycle_output(
+        &mut self,
+        output: &crate::sim::world::LifecycleOutput,
+        local_house: Option<InternedId>,
+    ) -> bool {
+        use crate::sim::world::LifecycleOutput;
+        match *output {
+            LifecycleOutput::BuildingPlacementRetry { owner } if local_house == Some(owner) => {
+                return self.retry_building_placement();
+            }
+            LifecycleOutput::BuildingPlacementSucceeded { owner } if local_house == Some(owner) => {
+                self.finish_building_placement();
+            }
+            LifecycleOutput::BuildingProductionAbandoned { owner }
+            | LifecycleOutput::ConstructionYardCaptured { owner }
+                if local_house == Some(owner) =>
+            {
+                self.clear_building_placement();
+            }
+            LifecycleOutput::ObjectPointerExpired { stable_id } => {
+                self.building_placement_pointer_expired(stable_id);
+            }
+            _ => {}
+        }
+        false
+    }
+
+    /// New-scenario installation discards references into the outgoing world.
+    pub(crate) fn reset_targeting_for_new_world(&mut self) {
+        self.reset_cheer_clock();
+        self.planning.reset();
+        self.formation_line = Default::default();
+        self.formation_locks.clear();
+        // Its building ids and frames belong to the world that ended.
+        self.auto_repair = Default::default();
+        // Its factory ids and counts belong to the world that ended.
+        self.primary_rotation = Default::default();
+        // These VERA orders belong to this match, even when the next world
+        // reuses the same object ids or has the same buildable types.
+        self.ferry = Default::default();
+        self.build_repeat = Default::default();
+        self.skirmish_spawn = None;
+        // The double-click chain belongs to the outgoing tactical view.
+        self.last_selection_click = None;
+        self.targeting_mode = None;
+        self.building_placement_preview = None;
+        self.saved_building_placement = None;
+    }
+
+    pub(crate) fn building_placement_view(&self) -> BuildingPlacementInputView<'_> {
+        BuildingPlacementInputView {
+            current: self.targeting_mode.as_ref().and_then(|mode| match mode {
+                crate::app::types::TargetingMode::BuildingPlacement(target) => Some(target),
+                _ => None,
+            }),
+            saved_retry: self
+                .saved_building_placement
+                .as_ref()
+                .map(|saved| &saved.target),
+            current_preview_present: self.building_placement_preview.is_some(),
+            saved_preview_present: self
+                .saved_building_placement
+                .as_ref()
+                .is_some_and(|saved| saved.preview.is_some()),
+        }
+    }
+
+    pub(crate) fn minimap_press_active(&self) -> bool {
+        self.minimap_press_button.is_some()
+    }
+
+    pub(crate) fn minimap_press_button(&self) -> Option<MouseButton> {
+        self.minimap_press_button
+    }
+
+    pub(crate) fn begin_minimap_press(&mut self, button: MouseButton) -> bool {
+        if self
+            .minimap_press_button
+            .is_some_and(|owner| owner != button)
+        {
+            return false;
+        }
+        self.minimap_press_button = Some(button);
+        self.selection_state.cancel_drag();
+        true
+    }
+
+    pub(crate) fn finish_minimap_press(&mut self, button: MouseButton) -> bool {
+        if self.minimap_press_button != Some(button) {
+            return false;
+        }
+        self.cancel_minimap_press();
+        true
+    }
+
+    pub(crate) fn cancel_minimap_press(&mut self) {
+        self.minimap_press_button = None;
+    }
+
+    /// Deactivate683EB0/4AEAD0's drag/capture teardown: the tactical capture
+    /// byte, the band rectangle and the minimap gesture. Armed cursor modes
+    /// (building placement, superweapon targeting, repair/sell) and physical
+    /// held-button state survive this call — the pause overlay cancels a drag,
+    /// never a pending placement.
+    pub(crate) fn cancel_tactical_drag(&mut self) {
+        self.cancel_minimap_press();
+        self.selection_state.cancel_drag();
+        self.formation_line.cancel();
+        self.tactical_mouse.cancel_mouse_drag();
+        // The touch gesture is the mapper's; without this a finger still down
+        // when the drag is torn down would deliver its release into the screen
+        // that replaced it.
+        self.touch_mapper.reset();
+    }
+
+    /// Follow the pause across window events. While paused (Esc menu, shared
+    /// pause, radar movie) gameplay admits no key or modifier change, so a key
+    /// let go then would stay held after the pause: scrolling by itself, or
+    /// force-fire with no Ctrl down. Nothing more is admitted while paused;
+    /// when the pause ends, the gameplay modifiers take the live ones and
+    /// each key released meanwhile leaves `keys_held`, the scroll keys and
+    /// type-select (without its tap). A key pressed again and still down
+    /// stays held. `key` is this event's physical key edge, if it is one.
+    /// VERA-only: native polls the current keys once its gates lift.
+    pub(crate) fn track_pause(
+        &mut self,
+        paused: bool,
+        live_modifiers: ModifiersState,
+        key: Option<(KeyCode, bool)>,
+    ) {
+        if self.paused_at_last_event && !paused {
+            self.hotkey_modifiers = live_modifiers;
+            for released in std::mem::take(&mut self.released_while_paused) {
+                self.camera_scroll_keys.release(released);
+                self.keys_held.remove(&released);
+                if let Some(scroll) = super::hotkeys::physical_scroll_key(released) {
+                    self.keys_held.remove(&scroll);
+                }
+                if self.type_select.owns_key(released) {
+                    self.type_select.clear_held();
+                }
+                self.formation_line.release_key(released);
+            }
+        }
+        self.paused_at_last_event = paused;
+        if paused && let Some((code, pressed)) = key {
+            if pressed {
+                self.released_while_paused.remove(&code);
+            } else {
+                self.released_while_paused.insert(code);
+            }
+        }
+    }
+
+    /// KeyboardClear 0x0054F720 empties the keyboard's queued-event ring.
+    /// Lock_User_Input 0x00684240, Unlock_User_Input 0x00684290 and the page
+    /// dialog (0x0077D861, 0x0077D895) call it; Lock and Unlock also zero the
+    /// timed unlock frame 0x00B07784 (Main_Tick 0x0055DE79). Edges are
+    /// synchronous in this app, so no ring exists; discard only app command
+    /// latches. Physical key state remains owned by ordinary press/release
+    /// delivery, not this bounded receipt.
+    ///
+    /// The held T stays: TypeSelect's latch 0x00B0FE65 is cleared only by
+    /// its release (0x00732CC0), and while input is locked no key but Esc is
+    /// queued (0x0054F212..0x0054F223), so a T let go during a lock still
+    /// holds after it and band boxes select by type until T is pressed and
+    /// released again.
+    pub(crate) fn clear_command_latches(&mut self) {
+        self.formation_line.clear_key();
+        self.ferry.disarm();
+        // A command-latch clear does not end the local planning mode. Keep
+        // its physical release owner so an input lock cannot strand paths.
+        self.queued_order_mode = crate::app::types::OrderMode::Move;
+    }
+
+    /// Capture the app-owned portion of a save at the same boundary as its
+    /// Simulation. The existing selection owner decides whether its local
+    /// order is provisional; this does not drain commands or alter selection.
+    pub(crate) fn capture_saved_local_view(
+        &self,
+        simulation: &crate::sim::world::Simulation,
+        rules: &crate::rules::ruleset::RuleSet,
+        sidebar: &crate::ui::sidebar::gadget_flash::SidebarGadgetState,
+    ) -> Result<SavedLocalView, SavedLocalViewError> {
+        let (order, pending) = crate::app::input::dispatch::selection_order_for_world(
+            simulation,
+            Some(rules),
+            &self.selection_order,
+            self.selection_order_pending,
+            &[],
+        );
+        let alive = |id: &u64| simulation.entities().get(*id).is_some();
+        let targeting = self.targeting_mode.as_ref().map(|mode| match mode {
+            crate::app::types::TargetingMode::BuildingPlacement(target) => {
+                SavedTargeting::BuildingPlacement {
+                    type_id: target.type_id.clone(),
+                    product_id: target.product_id.filter(alive),
+                    owner: simulation.interner().resolve(target.owner).to_owned(),
+                }
+            }
+            crate::app::types::TargetingMode::SuperWeapon(name) => {
+                SavedTargeting::SuperWeapon(name.clone())
+            }
+        });
+        SavedLocalView::new(
+            self.view_bookmarks.saved_cells(),
+            order,
+            pending,
+            self.follow_target.filter(alive),
+            SavedCursorModes {
+                repair: sidebar.repair_mode_on,
+                sell: sidebar.sell_mode_on,
+                // Active YR PlanMgr is outside Mouse's saved Display body.
+                planning: false,
+                targeting,
+                command_bar_closed: sidebar.command_bar_closed,
+                foundation: self.foundation_latch.saved(),
+            },
+        )
+    }
+}
+
+#[cfg(all(test, tests_app_input_d_z))]
+#[path = "pointer_resolution_tests.rs"]
+mod pointer_resolution_tests;
+
+#[cfg(all(test, tests_app_input_d_z))]
+#[path = "saved_local_view_tests.rs"]
+mod saved_local_view_tests;
+
+#[cfg(all(test, tests_app_input_d_z))]
+#[path = "house_cheer_tests.rs"]
+mod house_cheer_tests;
+
+#[cfg(all(test, tests_app_input_d_z))]
+#[path = "house_cheer_retail_tests.rs"]
+mod house_cheer_retail_tests;
+
+#[cfg(all(test, tests_app_input_d_z))]
+mod double_click_tests {
+    use super::*;
+
+    /// The modern-RTS double-click is a `RightClickOrders` extension: with the
+    /// option off, or after a click it does not admit, no chain accumulates,
+    /// and a pair ends it so the next click starts over. Times and the point are far inside any host window.
+    #[test]
+    fn right_click_orders_double_click_pairs_quick_same_spot_selection_clicks_only() {
+        let mut input = MatchInputState::new(Default::default());
+        let start: vera20k_gui::UiMs = 1_000;
+        let point = (120, 80);
+        let shortly = |millis| start + millis;
+        assert!(!input.note_tactical_selection_click(false, start, point));
+        assert!(!input.note_tactical_selection_click(false, shortly(5), point));
+        assert!(!input.note_tactical_selection_click(true, start, point));
+        assert!(input.note_tactical_selection_click(true, shortly(5), point));
+        assert!(!input.note_tactical_selection_click(true, shortly(10), point));
+        // A Shift-click between two plain clicks ends the chain.
+        assert!(!input.note_tactical_selection_click(false, shortly(15), point));
+        assert!(!input.note_tactical_selection_click(true, shortly(20), point));
+    }
+}
+
+#[cfg(all(test, tests_app_input_d_z))]
+mod pause_resync_tests {
+    use super::*;
+
+    #[test]
+    fn keys_and_modifiers_released_while_paused_are_not_held_after_the_pause() {
+        let mut input = MatchInputState::new(Default::default());
+        let now = crate::util::time::Instant::now();
+        // Held going into the pause: Ctrl, an arrow, a second arrow, T.
+        input.hotkey_modifiers = ModifiersState::CONTROL;
+        input.keys_held.insert(KeyCode::ArrowLeft);
+        input.keys_held.insert(KeyCode::ArrowUp);
+        input.type_select.press(KeyCode::KeyT, now, false);
+        input.track_pause(true, ModifiersState::CONTROL, None);
+        // Released under the Esc menu; the pause itself changes nothing.
+        input.track_pause(
+            true,
+            ModifiersState::empty(),
+            Some((KeyCode::ControlLeft, false)),
+        );
+        input.track_pause(
+            true,
+            ModifiersState::empty(),
+            Some((KeyCode::ArrowLeft, false)),
+        );
+        input.track_pause(true, ModifiersState::empty(), Some((KeyCode::KeyT, false)));
+        assert!(input.keys_held.contains(&KeyCode::ArrowLeft));
+        assert_eq!(input.hotkey_modifiers, ModifiersState::CONTROL);
+        // The first event after the pause applies the live state.
+        input.track_pause(false, ModifiersState::empty(), None);
+        assert!(input.hotkey_modifiers.is_empty());
+        assert!(!input.keys_held.contains(&KeyCode::ArrowLeft));
+        assert!(!input.type_select.held());
+        assert!(
+            input.keys_held.contains(&KeyCode::ArrowUp),
+            "a key still down keeps scrolling"
+        );
+    }
+}

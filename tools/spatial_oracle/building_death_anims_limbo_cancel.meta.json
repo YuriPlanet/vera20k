@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Constructor-complete stock GAPOWR cancellation through whole original Factory/House cancellation and Building scalar/destructor; shared limbo destructor consumer of ordinary fatal cleanup",
+  "assumptions": [
+    "Reuses joined_inputs and joined_fixture unchanged: physical selected retail Rules/ART/weapon/sound readers, whole constructors, same allocator, original flat-map connectivity/navigation and declared House/admitted target/MTNK priors. No fatal shot or live-object loop runs in this control.",
+    "Whole original4E6E60 Factory vector initializer,4C98B0 Factory ctor and4C9C70 StartProduction create a separate real GAPOWR. The product remains constructor-complete in limbo with original fields and AbstractFlags; it receives no supplied placement, Mark, Logic visit or UnInit. Final Building bytes are read from retained freed arena storage only, not from a live entity.",
+    "The whole House cancel supplies only the pre-existing House+53BC factory link: House BeginProduction/link and earlier queue/UI producer are excluded. The owner is a noncurrent human House, so client sidebar paths remain dormant. Actual BuildingType vt2C returns7; native ordinary non-Defense switch selects53BC. Full House4FAA10 cancels index-1 and deletes the now-empty Factory.",
+    "The AI control supplies House1EC0 in GameMode1; original StartProduction and Abandon execute their actual AI branches. The full BuildingFactoryAI/ExitObject/AI site-failure producer is not executed; original45022C reaches the same whole cancellation/destructor leaf.",
+    "The equal-health control executes only original440042..440072 health-sampling rung and the original dirty-gated House prefix before cancel. Limbo products normally receive no Logic visit; this is an explicit asymmetric equality guard control, not ordinary limbo scheduling evidence.",
+    "The target control uses the real MTNK ctor/Unlimbo and original SetTarget to point it at the limbo product. It bounds destructor callback/priority/timer behavior, not ordinary player acquisition of limbo objects. Target/raw180184188/full3RNG are retained at every boundary and actual Techno callback return.",
+    "Ordinary GAPOWR constructor slots21 and damage-fire8 pointers and both Building sound handles are inactive. Original slot/sound owners still execute in destructor order; this control does not create artificial active limbo animation/sound state. Loss booking, fatal effects/survivors, ObjectUnInit and deferred drain are not reached."
+  ],
+  "substitutions": [
+    "Only existing joined fixture reader-cache/physical IO/allocator/platform/COM/audio presentation transports are reused. No new decision thunk or patched original instruction is added. Every original PE code section remains byte-identical."
+  ],
+  "entry_points": {
+    "factory_vector_startup": "0x004E6E60",
+    "factory_ctor": "0x004C98B0",
+    "start_production": "0x004C9C70",
+    "building_ctor": "0x0043B740",
+    "house_abandon": "0x004FAA10",
+    "factory_abandon": "0x004C9FF0",
+    "priority_increment": "0x004CA0EB",
+    "priority_decrement": "0x004CA109",
+    "building_scalar": "0x00459F20",
+    "building_destructor": "0x0043BCF0",
+    "building_expiry": "0x0043BD67",
+    "expiry": "0x007258D0",
+    "sound_release": "0x00406060",
+    "ordinary_slot_destructor": "0x00451E40",
+    "health_mismatch_dirty": "0x0043BF11",
+    "remove_tracking": "0x004FF550",
+    "health_sampling_rung": "0x00440042",
+    "house_prefix": "0x004F8440",
+    "assign_target": "0x006FCDB0",
+    "unit_pointer_expired": "0x007446E0",
+    "techno_pointer_expired": "0x007077C0",
+    "passive_priority_guard": "0x007079F5"
+  },
+  "payload_sha256": "a873898d11ca0b719f1582b369b04aeae094f94366dca7e61511cbcff01aecf0"
+}

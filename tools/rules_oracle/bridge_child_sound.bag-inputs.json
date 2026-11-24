@@ -1,0 +1,48 @@
+{
+  "source": "asset-browser asset_sound mode=one wav=false; physical winning audio bag index/header observations only, not native decoder or playback results",
+  "reports": [
+    {
+      "bag": "AUDIOMD.MIX -> audio.idx/audio.bag",
+      "entry_count": 2285,
+      "matched": 1,
+      "shown": 1,
+      "entries": [
+        {
+          "name": "GEXP06A",
+          "offset": 7523228,
+          "size": 11008,
+          "sample_rate": 22050,
+          "channels": 1,
+          "is_16bit": true,
+          "is_ima_adpcm": true,
+          "chunk_size": 512,
+          "decoded_samples": 22374,
+          "duration_ms": 1014
+        }
+      ],
+      "warnings": [
+        "gexp06a also exists in AUDIO.MIX -> audio.idx/audio.bag — the game plays the copy from AUDIOMD.MIX -> audio.idx/audio.bag"
+      ]
+    },
+    {
+      "bag": "AUDIOMD.MIX -> audio.idx/audio.bag",
+      "entry_count": 2285,
+      "matched": 1,
+      "shown": 1,
+      "entries": [
+        {
+          "name": "GEXPSHAA",
+          "offset": 2897424,
+          "size": 9752,
+          "sample_rate": 22050,
+          "channels": 1,
+          "is_16bit": true,
+          "is_ima_adpcm": true,
+          "chunk_size": 512,
+          "decoded_samples": 20340,
+          "duration_ms": 922
+        }
+      ]
+    }
+  ]
+}

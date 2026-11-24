@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Four original Riparius slope bodies, both extra-image variants, densities0/4/11, clipping and strict-depth controls under an explicitly zeroed surrounding-memory prior; not stock heap, whole native map or game parity.",
+  "assumptions": [
+    "Existing physical RULESMD/MPBattleMD/GoldSt readers, OverlayType constructors/readers and Riparius constructor/readers select TIB01..20. All20 physical TEM art files and their URB aliases are checked by the existing archive owner. No Rust art or output is an input.",
+    "Original54530E..545458 constructs CCFiles, reads physical isotemp.mix SLOP01Z.TEM..SLOP04Z.TEM and publishes AA1060..AA106C; the initial sprintf string and OS file transport are supplied. All four loaded buffers must match physical bytes exactly. Original69E7E0, optional-shape setup, clipping4AF08C and extended raster execute unchanged.",
+    "Cell coordinates123,33, level5, slope1..4, raw density, projected point66,141, RGB565 backgroundFFFF, oldZ65535 and uniform A127 are supplied component priors. No native map-loader slope production, shroud, harvest scheduling or full Tactical traversal is claimed.",
+    "Original shape surfaces use encoded frame bytes without RLE decoding and can read beyond the physical allocation. This corpus supplies signedzero in that trailing nominal surface extent and restores prior memory after each case. Original leaf memory hooks reject reads outside file bytes or the declared zero tail. This compares the explicit Rust safety boundary, not an unknown stock heap layout.",
+    "All four physical URB slope files must be byte-identical to TEM before the shared GoldSt/URBAN production witness consumes these component rasters. The three depth priors come from the first stored native slope2/density4 output, not a Rust formula."
+  ],
+  "substitutions": [
+    "Shared PaletteReader allocation/archive services, stated Cell/surface priors and explicitly zeroed memory beyond each slope file; no body, shape, gradient, leaf or expected pixel calculation."
+  ],
+  "entry_points": {
+    "cell_body": "0x0047F6A0",
+    "slope_shape_load": "0x005452F2",
+    "shape": "0x004AED70",
+    "second_shape_clip": "0x004AF08C",
+    "rle_rowwalker": "0x00437A10",
+    "opaque": "0x004990E0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.ore_slopes",
+  "payload_sha256": "4d0999da4c64228f09e8d1c6deb9b6414e4144b86d264d9dde65af61fdcd064b"
+}

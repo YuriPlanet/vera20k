@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Physical CRATER11 through original current-Cell/type/SHP drawing.\n\nThis mode composes the existing native drawing VM, field readers, projection,\nCellConvert, SHP and A/Z surface owners. No host drawing or palette math lives\nhere. The fatal producer has a separate already-consumed lifecycle comparison.\n",
+  "assumptions": [
+    "Existing TMP/PaletteReader/physical archive/CellConvert/SHP/A/Z owners, RGB565/MMX and High detail2; no native instructions are replaced.",
+    "Physical expansion RULESMD/ARTMD/Battle/XMP03T4 exact lexical inputs and native selected constructor/whole reader. Physical declaration-order registry transport matches existing consumed stock fatal producer; integer-key registry enumeration is not executed in this drawing fixture.",
+    "Sparse four native Cell constructors and original TMP slope/land getters over physical authored flat ClearTile0/sub0/level4. Original Place6B6080 owns piece stores; existing486E70 notification sink remains a supplied dirty boundary. No natural shot, full native map/LAT/Recalc or object retirement is claimed.",
+    "Original full-view6D7560/currentCell480350/TMP/type6B55F0/shape4AED70 execute in the same VM. Smudge-only output then replays the exact captured native point/piece/Cell material arguments on a supplied RGB565 destination and unchanged A/Z, without a host pixel decoder or renderer.",
+    "Uniform127/63/0 A, clip, viewport, repeat and destination/Z priors are supplied controls; separate physical SHROUD frame15 executes original47EFE0 in this same A surface. It is not a natural source-knowledge reveal.",
+    "Drawing leaves Main RNG unchanged; no direct timer/detach. Full fatal producer/RNG/ID/expiry cleanup remains independently consumed in building_death_anims_joined_stock_smudges, not recertified here. Cell/Convert resource lifetime outside this bounded VM is open."
+  ],
+  "substitutions": [
+    "Existing allocator, CRT/TLS, physical resource and bounded Map current-Cell/admission transports. No drawing, palette, SHP, selector or pixel-store result is supplied."
+  ],
+  "entry_points": {
+    "cell_ctor": "0x0047BBF0",
+    "cell_coord": "0x00485240",
+    "type_ctor": "0x006B5260",
+    "type_reader": "0x006B56D0",
+    "place": "0x006B6080",
+    "cell_draw": "0x00480350",
+    "full_view": "0x006D7560",
+    "smudge_draw": "0x006B55F0",
+    "shape": "0x004AED70",
+    "rle_selector": "0x00490E50",
+    "rle_rowwalker": "0x00437A10",
+    "opaque_a_leaf": "0x004978C0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.bridge_shadow_render --smudge",
+  "payload_sha256": "25f46daa741e06479f6dac8a6b851dd7a34acb4dbe7459de5649487b19d3fa57"
+}

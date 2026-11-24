@@ -1,0 +1,376 @@
+//! Original Building ChangeOwner's capture-sale tail, 4492D7..449368.
+//!
+//! The joined native rows include an Engineer's event and arrival. Here their
+//! Building transition is compared through `change_owner_with_rules`; the
+//! separate retail world tests exercise the Rust Engineer command and Walk.
+//! Tail rows start with supplied current ownership and mission state and call
+//! only `sell_after_owner_change`. Selling rows execute two building visits,
+//! through the upgrade refund and the following host-sale stage-zero tail.
+
+use super::*;
+use crate::rules::ini_parser::IniFile;
+use crate::sim::c4_plant::PendingC4Detonation;
+use crate::sim::combat::Health;
+use crate::sim::house_state::HouseState;
+use crate::sim::intern::InternedId;
+use crate::sim::mission::MissionDispatchTimer;
+use crate::sim::mission::state::MissionTestFixture;
+use crate::sim::power_system::PowerState;
+use crate::sim::scenario_session::ScenarioGameMode;
+use serde_json::{Value, json};
+use std::collections::BTreeMap;
+
+const BUILDING: u64 = 1;
+const HOUSES: [&str; 3] = ["INITIAL", "PREVIOUS", "NEW"];
+
+fn corpus() -> &'static Value {
+    crate::test_fixture::json("tools/spatial_oracle/captured_building_sale.json")
+}
+
+fn signed(value: &Value) -> i32 {
+    i32::try_from(value.as_i64().expect("signed native input")).unwrap()
+}
+
+fn boolean(value: &Value) -> bool {
+    value.as_bool().expect("native boolean input")
+}
+
+fn name(value: &Value) -> &str {
+    value.as_str().expect("native name")
+}
+
+fn scene(row: &Value) -> (Simulation, RuleSet, InternedId) {
+    let input = &row["input"];
+    let before = &row["before"];
+    let native_type = &corpus()["native_type"];
+    let host = name(&native_type["name"]);
+    let initial = name(&before["initial_owner"]);
+    assert_eq!(row["constructor"]["result_is_receiver"], true);
+    assert_eq!(row["constructor"]["initial_owner"], before["initial_owner"]);
+    let mut types = BTreeMap::from([(host.to_owned(), signed(&native_type["cost"]))]);
+    for upgrade in input["upgrades"].as_array().unwrap() {
+        let kind = name(&upgrade["name"]).to_owned();
+        let cost = signed(&upgrade["cost"]);
+        if let Some(prior) = types.insert(kind, cost) {
+            assert_eq!(prior, cost, "one native type has one retained Cost");
+        }
+    }
+    let mut text = String::from("[General]\nRefundPercent=50%\n[Countries]\n");
+    for (index, owner) in HOUSES.iter().enumerate() {
+        text.push_str(&format!("{index}=C_{owner}\n"));
+    }
+    for owner in HOUSES {
+        text.push_str(&format!(
+            "[C_{owner}]\nMultiplayPassive={}\n",
+            if owner == initial && boolean(&input["initial_owner_passive"]) {
+                "yes"
+            } else {
+                "no"
+            }
+        ));
+    }
+    text.push_str("[BuildingTypes]\n");
+    for (index, kind) in types.keys().enumerate() {
+        text.push_str(&format!("{index}={kind}\n"));
+    }
+    for (kind, cost) in &types {
+        text.push_str(&format!(
+            "[{kind}]\nStrength={}\nCost={cost}\n",
+            signed(&native_type["strength"])
+        ));
+        if input["turret_types"]
+            .as_array()
+            .is_some_and(|names| names.iter().any(|name| name.as_str() == Some(kind)))
+        {
+            text.push_str("Turret=yes\n");
+        }
+    }
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(&text)).unwrap();
+    let object = rules.object(host).unwrap();
+    assert_eq!(object.strength, signed(&native_type["strength"]));
+    assert_eq!(object.cost, signed(&native_type["cost"]));
+    for upgrade in corpus()["upgrade_types"].as_array().unwrap() {
+        if let Some(object) = rules.object(name(&upgrade["name"])) {
+            assert_eq!(object.cost, signed(&upgrade["cost"]));
+            // The retained native types in this corpus carry no SuperWeapon;
+            // removing a slot therefore has no separate grant/revoke effect.
+            assert_eq!(upgrade["super_weapon"], -1);
+            assert!(object.super_weapon.is_none());
+            assert_eq!(upgrade["turret"], false);
+            assert_eq!(
+                object.has_turret,
+                input["turret_types"]
+                    .as_array()
+                    .is_some_and(|names| names.iter().any(|kind| kind == &upgrade["name"]))
+            );
+        }
+    }
+    if boolean(&before["buildup"]) {
+        rules.set_buildup_control_for_test(host, [0, 4, 1]);
+    }
+    let mut sim = Simulation::new();
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    sim.session
+        .set_game_mode(ScenarioGameMode::from_game_mode(signed(
+            &input["game_mode"],
+        )));
+    for (index, owner) in HOUSES.iter().enumerate() {
+        let id = sim.interner.intern(owner);
+        let country_name = format!("C_{owner}");
+        let country = sim.interner.intern(&country_name);
+        let mut house = HouseState::new(
+            id,
+            index as i32,
+            Some(country),
+            *owner == "NEW" && boolean(&input["new_owner_human"]),
+            signed(&before["credits"]),
+            10,
+        );
+        house.set_player_control_for_test(*owner == "NEW" && boolean(&input["new_owner_player"]));
+        house.resolve_multiplay_passive(&rules, Some(&country_name));
+        sim.houses.register(house);
+    }
+    crate::sim::production::tests::spawn_structure(
+        &mut sim, &rules, BUILDING, initial, host, 10, 10,
+    );
+    let prior = sim.interner.get(name(&before["owner"])).unwrap();
+    // This installs the supplied pre-capture history through the shared
+    // ownership writer. It has no rules, so it cannot run the capture-sale
+    // tail being tested; the constructor identity remains untouched.
+    sim.change_owner(BUILDING, prior);
+    let slots = before["upgrade_slots"].as_array().unwrap();
+    assert_eq!(slots.len(), 3);
+    let slots = std::array::from_fn(|slot| {
+        slots[slot].as_str().map(|kind| {
+            sim.interner
+                .get(kind)
+                .expect("declared native upgrade type")
+        })
+    });
+    let now = sim.session.binary_frame();
+    let building = sim.substrate.entities.get_mut(BUILDING).unwrap();
+    building.health = Health::new(signed(&native_type["strength"]));
+    building.mission.apply_test_fixture(MissionTestFixture {
+        current: MissionId::from_raw(signed(&before["mission"])),
+        suspended: MissionId::NONE,
+        queued: MissionId::from_raw(signed(&before["queued"])),
+        movement_bypass_latch: 0,
+        handler_state: u32::try_from(signed(&before["status"])).unwrap(),
+        mission_start_frame: now,
+        ai_counter: 0,
+        dispatch_timer: MissionDispatchTimer::at_frame(now),
+    });
+    building.set_building_upgrades_for_test(
+        i8::try_from(signed(&before["upgrade_count"])).unwrap(),
+        slots,
+    );
+    if boolean(&before["c4"]) {
+        building
+            .building
+            .pending_c4_detonation
+            .set_for_test(Some(PendingC4Detonation::new(
+                crate::sim::timer::CdTimer::started(now as i32, 100),
+                None,
+            )));
+    }
+    let new_owner = sim.interner.get("NEW").unwrap();
+    let power = sim.power_states.house_mut(new_owner);
+    *power = PowerState::settled_for_test();
+    if boolean(&before["power_dirty"]) {
+        power.invalidate(false);
+    }
+    if boolean(&before["radar_dirty"]) {
+        power.recheck_radar();
+    }
+    (sim, rules, new_owner)
+}
+
+fn state(sim: &Simulation, rules: &RuleSet, new_owner: InternedId) -> Value {
+    let building = sim.entities().get(BUILDING).unwrap();
+    let power = &sim.power_states[&new_owner];
+    json!({
+        "owner": sim.interner.resolve(building.owner()),
+        "initial_owner": sim.interner.resolve(building.initial_owner()),
+        "mission": building.mission.current().raw(),
+        "queued": building.mission.queued().raw(),
+        "status": building.mission.handler_state(),
+        "buildup": rules.has_buildup(sim.interner.resolve(building.type_ref())),
+        "c4": building.building.pending_c4_detonation.pending().is_some(),
+        "upgrade_count": building.building_upgrades().count(),
+        "upgrade_slots": building.building_upgrades().types().map(|kind|
+            kind.map(|kind| sim.interner.resolve(kind))),
+        "credits": sim.houses[&new_owner].economy().credits(),
+        "power_dirty": power.power_recheck_for_test(),
+        "radar_dirty": power.radar_recheck_for_test(),
+    })
+}
+
+fn compare(row: &Value, joined: bool) {
+    let label = name(&row["input"]["name"]);
+    let (mut sim, rules, new_owner) = scene(row);
+    assert_eq!(
+        state(&sim, &rules, new_owner),
+        row["before"],
+        "{label}: before"
+    );
+    let initial = sim.entities().get(BUILDING).unwrap().initial_owner();
+    let next_id = sim.next_stable_object_id();
+    let native_id = sim.native_identity_cursor();
+    let rng = sim.scenario_rng().logical_state();
+    if joined {
+        sim.change_owner_with_rules(
+            BUILDING,
+            new_owner,
+            &rules,
+            None,
+            &mut FrameEffects::default(),
+        );
+    } else {
+        sell_after_owner_change(
+            &mut sim,
+            &rules,
+            BUILDING,
+            None,
+            &mut FrameEffects::default(),
+        );
+    }
+    assert_eq!(
+        state(&sim, &rules, new_owner),
+        row["after"],
+        "{label}: after"
+    );
+    assert_eq!(
+        sim.entities().get(BUILDING).unwrap().initial_owner() == initial,
+        boolean(&row["initial_owner_unchanged"]),
+        "{label}: constructor owner lifetime"
+    );
+    assert_eq!(
+        sim.scenario_rng().logical_state() == rng,
+        boolean(&row["rng_unchanged"]),
+        "{label}: no temporary upgrade constructor draw"
+    );
+    let delta = signed(&row["object_id_counter_delta"]);
+    assert_eq!(
+        i64::try_from(sim.next_stable_object_id()).unwrap() - i64::try_from(next_id).unwrap(),
+        i64::from(delta),
+        "{label}: stable identity allocation"
+    );
+    assert_eq!(
+        sim.native_identity_cursor()
+            .unwrap()
+            .wrapping_sub(native_id.unwrap()),
+        u32::try_from(delta).unwrap(),
+        "{label}: original Abstract identity allocation"
+    );
+}
+
+#[test]
+fn captured_building_sale_matches_original_joined_owner_transitions() {
+    let rows = corpus()["joined_cases"].as_array().unwrap();
+    assert!(!rows.is_empty());
+    for row in rows {
+        compare(row, true);
+    }
+}
+
+#[test]
+fn ai_capture_sale_uses_admitted_rules_on_the_owner_transition() {
+    let row = corpus()["joined_cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["input"]["name"] == "ai_capture")
+        .unwrap();
+    let campaign = ScenarioGameMode::from_game_mode(0);
+    let skirmish = ScenarioGameMode::from_game_mode(5);
+    let campaign_rules = campaign.stock_rule_policy(None);
+    let campaign_with_sale = campaign_rules.with_uses_ai_economy(true);
+    for (mode, policy, player_control, expect_sale) in [
+        (campaign, campaign_rules, false, false),
+        (skirmish, skirmish.stock_rule_policy(None), true, true),
+        (campaign, campaign_with_sale, false, true),
+        (campaign, campaign_with_sale, true, false),
+    ] {
+        let (mut sim, rules, new_owner) = scene(row);
+        sim.install_session_admission(mode, None, policy);
+        sim.houses
+            .get_mut(&new_owner)
+            .unwrap()
+            .set_player_control_for_test(player_control);
+        sim.change_owner_with_rules(
+            BUILDING,
+            new_owner,
+            &rules,
+            None,
+            &mut FrameEffects::default(),
+        );
+        let building = sim.entities().get(BUILDING).unwrap();
+        assert_eq!(
+            building.mission.current().known() == Some(MissionType::Selling),
+            expect_sale,
+        );
+    }
+}
+
+#[test]
+fn captured_building_sale_matches_original_tail_gates_and_upgrade_refunds() {
+    let rows = corpus()["tail_cases"].as_array().unwrap();
+    assert!(!rows.is_empty());
+    for row in rows {
+        compare(row, false);
+    }
+}
+
+#[test]
+fn turret_upgrade_selling_matches_original_refund_constructor_and_rng_visits() {
+    use crate::sim::rng::SimRng;
+
+    for row in corpus()["selling_cases"].as_array().unwrap() {
+        let (mut sim, rules, owner) = scene(row);
+        let next_id = sim.next_stable_object_id();
+        let native_id = sim.native_identity_cursor().unwrap();
+        let initial = &row["rng_before"];
+        sim.scenario_rng = SimRng::from_native_state_hex_for_test(name(&initial["scenario"]));
+        sim.main_rng = SimRng::from_native_state_hex_for_test(name(&initial["main"]));
+        sim.mapgen_rng = SimRng::from_native_state_hex_for_test(name(&initial["mapgen"]));
+        let mut constructors = 0;
+        for phase in row["phases"].as_array().unwrap() {
+            let draws = phase["draws"].as_array().unwrap();
+            let mut expected_rng = sim.clone_scenario_rng();
+            for draw in draws {
+                assert_eq!(draw["entry"], 0x65C780);
+                assert_eq!(draw["site"], 0x6F3254);
+                assert_eq!(
+                    u64::from(expected_rng.next_u32()),
+                    draw["result"].as_u64().unwrap()
+                );
+            }
+            constructors += draws.len() as u64;
+            sim.session
+                .set_binary_frame_for_test(phase["frame"].as_u64().unwrap() as u32);
+            sim.visit_building_down(BUILDING, &rules, None, &mut FrameEffects::default());
+            assert_eq!(state(&sim, &rules, owner), phase["state"]);
+            for (actual, stream) in [
+                (sim.scenario_rng().logical_state(), "scenario"),
+                (sim.main_rng.logical_state(), "main"),
+                (sim.mapgen_rng.logical_state(), "mapgen"),
+            ] {
+                assert_eq!(
+                    actual,
+                    SimRng::from_native_state_hex_for_test(name(&phase["rng"][stream]))
+                        .logical_state()
+                );
+            }
+            assert_eq!(sim.next_stable_object_id(), next_id + constructors);
+            assert_eq!(
+                sim.native_identity_cursor(),
+                Some(native_id + constructors as u32)
+            );
+        }
+        assert_eq!(
+            constructors as i64,
+            row["object_id_counter_delta"].as_i64().unwrap()
+        );
+    }
+}

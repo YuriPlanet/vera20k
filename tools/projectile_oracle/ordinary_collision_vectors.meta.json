@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "134 ordinary Bullet AI admissions, 21 native startup matrices, 189 reflections, 115 geometry cases, 180 final coordinate handoffs and 7 nearest-object selections. Bounded instruction regions only; no full trajectory or damage parity.",
+  "assumptions": [
+    "collision_fixture owns fresh synthetic Bullet/type/source/object/cell/stack state and exact output observations. Query order, integer truncation and raw floating-point result bits are retained.",
+    "Admission/reflection use live FPCW0E7F without changing cached control822D80. Geometry/nearest set both live and cached control0E7F. Final handoffs inherit the homing layout and its unchanged cached control.",
+    "native_slope executes one machine from FPCW037F through7CEAAF,7CBF49(0300,0300),7C5EE4,754910,7549A0,7549C0,7549E0,754A20,754A50,754CB0; reads21x48bytes atB45188. This is the original fixture chronology, not complete Windows startup.",
+    "Geometry uses the shared observation-only cell/house fixture; nearest executes original list traversal and virtual coordinate receivers. Retail foundation dimensions are read from the checked image.",
+    "Regions stop before downstream detonation. These observations do not establish full lifecycle, RNG ordering, timer writes, detach effects or runtime scheduling."
+  ],
+  "substitutions": [
+    "Admission/reflection substitute height5F5F40, cell5657A0/565730, building47C520, nearest47C3D0 and alliance4F9A90 from the case; substituted receivers are not certified.",
+    "Final handoff substitutes floor578080 with208, target aim with(640,128,624), target location with(640,128,208), and synthetic source type when reached. Geometry/nearest have no behavioral hooks."
+  ],
+  "entry_points": {
+    "admission": "0x004677D3",
+    "admission_end": "0x00467B7A",
+    "reflection": "0x00467666",
+    "reflection_end": "0x00467778",
+    "geometry": "0x00467494",
+    "geometry_end": "0x004677D3",
+    "nearest": "0x0047C3D0",
+    "handoff": "0x00467CA9",
+    "handoff_end": "0x00467E53"
+  },
+  "payload_sha256": "2a728fe4eb351d1be4ff5add89029eb254e88b07d9253f79173313b7f81c1c9b"
+}

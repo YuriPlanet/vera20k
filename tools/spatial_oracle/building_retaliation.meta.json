@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "BuildingClass::ReceiveDamage's retaliation block 0x442942..0x442A95: the NotifyUnderAttack gate, the +0x53C write, the early exits, BuildingClass::SetTarget (0x443B90) and the Scenario-drawn +0x388 turn",
+  "assumptions": [
+    "building_guard_attack's fixture building (the slave_manager refinery with Building vtables), armed by its supplied WeaponType in Weapon[0]",
+    "the source is the fixture's Techno (refinery_dock.ACTOR) or a stand-in object with the AircraftClass vtable, owned by house index 3",
+    "ReceiveDamage's result and the direction temporary's high word are placed at [esp+0x30] and [esp+0x2E] as 0x442230 leaves them"
+  ],
+  "substitutions": [
+    "HouseClass::NotifyUnderAttack 0x4F93E0 skipped and recorded",
+    "IsOperational 0x4555D0 (except on native_operational rows), IsCloseEnough 0x6F7780, IsHumanPlayer 0x50B730, the EMP test 0x70EFD0 and TechnoClass::SetTarget 0x6FCDB0 answered from the row (building_guard_attack)"
+  ],
+  "entry_points": {
+    "block": "0x00442942",
+    "building_set_target": "0x00443B90",
+    "set_desired": "0x004C9220",
+    "is_rotating": "0x004C9480",
+    "next": "0x0065C780"
+  },
+  "payload_sha256": "ee4d5b3207cd3bf65776d9d2ea60e1f3b7a80154646e8fe62f9ef9e6da7cd318"
+}

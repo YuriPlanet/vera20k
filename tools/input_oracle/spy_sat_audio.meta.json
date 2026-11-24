@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original partial House508F60 admission, independently invoked SpySat cue tails509069/509017, layered references, uninterrupted selected audio pool/Main continuation, actual PCM and natural endpoint/service retirement.",
+  "assumptions": [
+    "Existing prepare/EngineerJoinedFixture/VoiceHistory/NativeAudioPlatform own all reader/runtime VM, allocator, registry, AudioIndex, three RNG buffers, scheduler, codecs, worker and physical file/OS transport.",
+    "The shared descriptor-driven original pair reader executes66A4EF..66A582, including the retained1B8 store and next scheduled push128. Original45DD90, Radar/SpySat and Strength blocks consume selected physical GASPYSAT layers; full resource/type/scenario loading is excluded.",
+    "Partial original508F60 executes its actual ordered provider scan and70C5B0 query, ending before509064/509012 Map CALL or at a real unchanged-state return. Neither the provider result nor the native code is replaced.",
+    "Each separate original509069/509017 tail starts at a NEW declared ESP frame containing saved EDI/ESI/EBP inputs and RET_MAGIC, with ESI=House. It executes the latch store, local-owner gate, Rules reference load and8192/1f/NULL750920 call. This is an independent interior invocation, not a return from or resume through Map.",
+    "All Main/Scenario/MapGen states, exact ranged requests and inline raw advances continue without per-phase reseeding through the selected components and actual audio service. Backend/event/serial/cached AudioIndex identity associates actual callback outputs; no clip digest identifies a source."
+  ],
+  "substitutions": [
+    "Explicit already-admitted House/member/Building vtable, marked/limbo/discovery/warp/mission priors; queued Selling changes are input controls, not native sale/construction/dirty-writer execution.",
+    "NO Map577D90/577AB0 body, Cell change, sight/gap callback, local/remote map flags, graphical refresh or intervening Map RNG is executed or certified. A reached Map entry raises. Separate tails do not supply a fake callee, return value or Map result.",
+    "Cold-unbound runtime slots copy the actual cold-missing reader outputs. Remote/unchanged controls retain the same original local-owner/latch decisions; there is no whole-House or full-frame scheduling claim.",
+    "Existing inherited Cells/House/listener, declared empty Theme catalogue and original stream reservations bound unused surrounding state. Fixed selected sound catalogue indices are fixture-relative.",
+    "Canonical immutable RawFile/Win32/DirectSound input transport supplies single-thread clocks/status/cursors; original worker/endpoint and later main service own retirement. Device mixing, hardware concurrency and audible equivalence are excluded."
+  ],
+  "entry_points": {
+    "rules_constructor": "0x00665650",
+    "reference_pair": "0x0066A4EF",
+    "reference_stop": "0x0066A582",
+    "building_type_constructor": "0x0045DD90",
+    "provider_reader": "0x0045FF53",
+    "house_admission": "0x00508F60",
+    "provider_query": "0x0070C5B0",
+    "gain_map_call_stop": "0x00509064",
+    "loss_map_call_stop": "0x00509012",
+    "independent_gain_tail": "0x00509069",
+    "independent_loss_tail": "0x00509017",
+    "sound_registry": "0x007510D0",
+    "sound_lookup": "0x007514D0",
+    "audio_index": "0x004011C0",
+    "play_sound": "0x00750920",
+    "service": "0x00406F70",
+    "worker": "0x004095B0",
+    "pcm_raw": "0x00409D90",
+    "pcm_ima": "0x00409DE0",
+    "endpoint": "0x00405A00"
+  },
+  "command": "python -m tools.input_oracle.unit_voice_playback --spy-sat-audio --check",
+  "input_environment": [
+    "VERA20K_SPY_SAT_AUDIO_INPUTS",
+    "VERA20K_SPY_SAT_AUDIO_MAP"
+  ],
+  "replay_command": "python -m tools.input_oracle.unit_voice_playback --spy-sat-audio",
+  "payload_sha256": "5f92c84de6e07755fa6802e81fb1daa33165dc5d3df37a5f26ee178b63da40a1"
+}

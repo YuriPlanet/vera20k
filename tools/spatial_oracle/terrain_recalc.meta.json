@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Ten synthetic47D2B0 cases for retained pristine metadata, conditional level override and distinct invalid/sparse overlay branches",
+  "assumptions": [
+    "Supplied single real cell at16,16 in a16x16 map; resident synthetic pristine TMP and optional Road or resource overlay",
+    "TMP geometry1x1,8x4 pixels, raw land11, template height3, slope0; file loading and pointer relocation excluded",
+    "Original vtable7ECC48 resolves544CB0; actual entry validation, slope, land and dimension getters execute",
+    "LAT globals supplied-1, except synthetic RampBase1; flat fallback changes tile1 to tile0 (Rock,slope4,pixelheight34) while attributes retain tile1 Road/flat/pixelheight4",
+    "CliffBack0, no objects, no shadow, no terrain animation, no Tube land; supplied Clear/Road Wheel1.0 and Tiberium Wheel0.0",
+    "Inputs are branch witnesses, not retail map reachability; no full Recalc, bridge, draw or navigation-connectivity claim"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "recalc": "0x0047D2B0",
+    "lat": "0x0047CA80",
+    "zone": "0x00483C80",
+    "entry": "0x00544C20",
+    "tmp": "0x00544CB0",
+    "slope": "0x005471B0",
+    "land": "0x00544BE0",
+    "dimensions": "0x00547150"
+  },
+  "payload_sha256": "0ada0c3804fbbf9656aad01707679c05562cb398f9edec42607ba5b6132232c2"
+}

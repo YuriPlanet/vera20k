@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "82 preserved ordinary Terrain render captures plus 44 animated SpawnsTiberium caller captures, and 44 original format-3 index-decode witnesses from the two unique stock TIBTRE byte variants across 18 theater/type assets. Caller rows execute placement/storage/projection/DrawIt arguments; stock rows execute frame/clip/selector/row/RLE-leaf instructions. No visibility admission, retail Convert colors, Terrain shadow pixels, GPU or complete scene parity.",
+  "assumptions": [
+    "Input enumeration comes from tracked terrain_coordinate.generate: levels -128,-1,0,2,127; slopes0,1,2,15; structural flags0/0x100; inputZ0, plus level2/inputZ999. All sourceXY2688,5248 is cell10,20 center. Original71E0D0 clamps placement to ground, then5F6940 stores it. Cell changes to level7/flat before native retained getter and rendering.",
+    "Original vtables: Terrain7F522C+48=5F65A0,+AC=41BE00,+104=71CC50,+114=71C1B0,+1D0=5F5F30; TerrainType7F5458+9C=41CFA0. Render suffix71CD22..71CD81 bypasses prior visibility and render-rectangle admission, supplies EDI=Terrain and ESI=clip. Native71CD30 calls center/getter,71CD3D projects,71CD7B invokes DrawIt.",
+    "Ordinary nonanimated, non-SpawnsTiberium Terrain with health200, death byte0; synthetic SHP frame count4 and no decoded image; supplied nonnull Cell Convert and both brightness fields1000; shadow enable byte1. No constructors, retail type/image binding or gameplay state transitions claimed here.",
+    "Animated rows supply SpawnsTiberium1 and IsAnimated1, stage0..10 and rawSHP count22; these are caller inputs, not executed AI or image-binding results. Cell top/ground brightness700/400 distinguish the native top-brightness choice; body uses supplied global Tiberium Convert2101D100, shadow supplied Cell Convert2101D000 and literal brightness1000. Draw sink also observes the EDX Convert argument. Neither pointer is dereferenced by a blitter.",
+    "stock_shapes extracts all 18 TIBTRE01/02/03 assets from ra2.mix and ra2md.mix through existing stock.mix/mix_hash. Binary-identical files share one native execution; recorded outer/inner/SHP hashes bind each alias. Original 69E7E0 supplies frame rectangles; 4AED70 executes physical format-3 frame access 69E740/69E900, clip, selector 490E50, row walker 437A10 and RLE body 497FD0 for all 22 frames of each unique file. No Python RLE decoder is present.",
+    "Stock index witnesses use prepared 128x64 RGB565 BSurface and circular A/Z buffer fields shared with bridge_render_shape: background 0, A 127, old Z 65535, baseline 32768, full clip and center 42,28; flags 2E00, Z adjustment -12, gradient 2, brightness 1000 for both body and shadow source frames. Prepared Convert+138 points to original 7E5420 leaf object with zero shade lookup and identity u16 palette. Native output low bytes are cropped by the original frame rectangle, after asserting original row destination/width/left skip and unchanged Z. Tracked witnesses retain the complete crop SHA-256 and counts, not index bytes. This deliberately isolates indices; shadow frames execute the body leaf, not their actual Terrain shadow-color path.",
+    "LevelHeight104 and startup AdjustForZ multiplier bits0x3FC25E5374344960 supplied; slope matrices produced by original initializer. Native x87 control0x0E7F. Tactical camera offsets0,0 and dimensions800,600; viewport/dirtyY pairs0/0 and37/100. Native pixels exclude VERA world-row bias15."
+  ],
+  "substitutions": [
+    "In rows and animated_rows, CC_Draw_Shape4AED70 records original caller, all14 raw stack arguments and pointed coordinate bytes; supplies return0 and callee cleanup56. No actual shape decode, blitter, surface, pixels or Z-buffer write. All other reached native calls execute unchanged.",
+    "Prepared map/cell/object/type/shape/tactical storage and caller locals are fixture inputs. Original executable code is not patched. Visibility admission and image/resource loading precede the bounded entry and are not emulated.",
+    "Stock frame witnesses supply physical SHP/archive bytes and prepared surface/Convert/A/Z data, but replace no reached shape/frame/clip/selector/row/leaf call. They bypass file-resource construction, Terrain AI/DrawIt and retail palette selection; identity Convert output is not a native scene-color claim."
+  ],
+  "entry_points": {
+    "type_coordinate": "0x0071E0D0",
+    "set_coords": "0x005F6940",
+    "get_coords": "0x005F65A0",
+    "terrain_render": "0x0071CC50",
+    "render_suffix_begin": "0x0071CD22",
+    "render_suffix_end": "0x0071CD81",
+    "projection": "0x006D2140",
+    "terrain_draw": "0x0071C1B0",
+    "get_height": "0x005F5F30",
+    "adjust_for_z": "0x006D20E0",
+    "draw_sink": "0x004AED70",
+    "stock_frame_rect": "0x0069E7E0",
+    "stock_frame_data": "0x0069E740",
+    "stock_zshape": "0x0069E900",
+    "stock_selector": "0x00490E50",
+    "stock_rowwalker": "0x00437A10",
+    "stock_index_leaf": "0x00497FD0"
+  },
+  "payload_sha256": "dbc38125aadb940d403046c8eb42c311b6ff6b47672290aebb4dbee33dcd2731"
+}

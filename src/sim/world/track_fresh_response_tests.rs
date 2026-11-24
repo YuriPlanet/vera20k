@@ -1,0 +1,653 @@
+//! Drive/Ship `Process_Movement` fresh arm against every row of
+//! tools/spatial_oracle/track_fresh_response: Unit Cell 10,10 ordered to its
+//! destination at frame 100, the route written to Foot+5E0 after the setter,
+//! the body resting on the first word's octant, then Process_Movement(&out,
+//! 1, 0) at frame 101 with every recursion it makes.
+//! - Unit `Can_Enter_Cell` and `Find_Path` answer from the row's supplied
+//!   queues; `Scatter_Objects` and `Override_Mission` are recorded and their
+//!   bodies skipped, as in the oracle (`movement::fresh_oracle_seam`).
+//! - The gate question and the Unit setter run their Rust owners; their
+//!   oracle events are not compared, their effects are (destination, NavCom,
+//!   timers).
+//! - Drive+64 compares the retained fresh-selection byte independently of
+//!   its selector. Ship's distinct +64 producer/reader remains outside this
+//!   selected Drive pre-entry wall-tilt integration.
+//! - The speed rows set flat Cell levels, the Clear and Road rows, the four
+//!   `[General]` slope keys and the Foot's health, then compare the published
+//!   target and applied fraction as exact native doubles.
+//! - The far_zone rows are not replayed: splitting the zone of Cell 13,10
+//!   needs a terrain rebuild of this fixture. The refusal they reach
+//!   (0x4B3A3E, SetDestination(NULL)) is the one the code-1/7 rows take.
+use super::tests::fixture_with_rules;
+use crate::rules::mission_data::MissionType;
+use crate::rules::ruleset::RuleSet;
+use crate::sim::combat::TargetKind;
+use crate::sim::components::{DriveCoord, NavTargetRef};
+use crate::sim::mission::MissionId;
+use crate::sim::movement::FacingClass;
+use crate::sim::movement::ProcessMovementArgs;
+use crate::sim::movement::fresh_oracle_seam::{self, FreshCallRecord, SuppliedPath};
+use crate::sim::movement::track_process::TrackFamily;
+use crate::sim::world::Simulation;
+use serde_json::{Value, json};
+
+/// The oracle's Unit type (MovementZone Normal, SpeedType Track, or Wheel
+/// for its SpeedType-2 rows) for both locomotors; O5 carries +22D Crushable
+/// and O6 +2A8 Wall, the two supplied overlay kinds. The Road row (0.75) and
+/// the four slope coefficients are the oracle's.
+const UNITS: &str = "[VehicleTypes]\n0=DRV\n1=SHP\n2=DRW\n3=SHW\n4=DRC\n5=SHC\n6=DRA\n7=SHA\n\
+    [DRV]\nStrength=300\nSpeed=6\nSpeedType=Track\nMovementZone=Normal\n\
+    Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
+    [SHP]\nStrength=300\nSpeed=6\nSpeedType=Track\nMovementZone=Normal\n\
+    Locomotor={2BEA74E1-7CCA-11D3-BE14-00104B62A16C}\n\
+    [DRW]\nStrength=300\nSpeed=6\nSpeedType=Wheel\nMovementZone=Normal\n\
+    Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
+    [SHW]\nStrength=300\nSpeed=6\nSpeedType=Wheel\nMovementZone=Normal\n\
+    Locomotor={2BEA74E1-7CCA-11D3-BE14-00104B62A16C}\n\
+    [DRC]\nStrength=300\nSpeed=6\nSpeedType=Track\nMovementZone=Normal\nCrusher=yes\n\
+    Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
+    [SHC]\nStrength=300\nSpeed=6\nSpeedType=Track\nMovementZone=Normal\nCrusher=yes\n\
+    Locomotor={2BEA74E1-7CCA-11D3-BE14-00104B62A16C}\n\
+    [DRA]\nStrength=300\nSpeed=6\nSpeedType=Track\nMovementZone=CrusherAll\n\
+    Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
+    [SHA]\nStrength=300\nSpeed=6\nSpeedType=Track\nMovementZone=CrusherAll\n\
+    Locomotor={2BEA74E1-7CCA-11D3-BE14-00104B62A16C}\n\
+    [O5]\nCrushable=yes\n[O6]\nWall=yes\n\
+    [Road]\nTrack=75%\nWheel=75%\n\
+    [General]\nTrackedUphill=0.875\nTrackedDownhill=1.25\n\
+    WheeledUphill=0.625\nWheeledDownhill=1.375\n";
+
+fn corpus() -> Vec<Value> {
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/track_fresh_response.json",
+    ))
+    .unwrap()
+}
+
+fn pair(v: &Value) -> (i64, i64) {
+    (v[0].as_i64().unwrap(), v[1].as_i64().unwrap())
+}
+
+fn words(v: &Value) -> Vec<u8> {
+    v.as_array()
+        .unwrap()
+        .iter()
+        .map(|w| w.as_u64().unwrap() as u8)
+        .collect()
+}
+
+/// The oracle's prestates: House control, Rules PathDelay 0.01 (9 frames),
+/// BlockagePathDelay 22 and CloseEnough, a Move mission, the reference cell
+/// 9,8 of `track_destination`'s fixture, flat Cell levels, the Clear row for
+/// every Cell, and the Foot's health.
+fn unit(
+    input: &Value,
+) -> (
+    Simulation,
+    RuleSet,
+    crate::rules::overlay_types::OverlayTypeRegistry,
+    u64,
+) {
+    let (mut sim, mut rules, registry) = fixture_with_rules(UNITS);
+    rules.general.path_delay = 0.01;
+    rules.general.blockage_path_delay_ticks = 22;
+    assert_eq!(rules.general.path_delay_ticks(), 9);
+    rules.general.close_enough = input["close_enough"].as_i64().unwrap_or(576) as i32;
+    let owner = sim.interner.intern("Americans");
+    let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 0);
+    house.set_player_control_for_test(true);
+    sim.houses.register(house);
+    // Map load wires the four [General] slope keys into the live config.
+    let general = &rules.general;
+    sim.terrain_speed_config =
+        crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::from_general(
+            general.tracked_uphill,
+            general.tracked_downhill,
+            general.wheeled_uphill,
+            general.wheeled_downhill,
+        );
+    let terrain = sim.resolved_terrain.as_mut().unwrap();
+    for cell in input["cells"].as_array().into_iter().flatten() {
+        let (x, y) = pair(cell);
+        let level = cell[2].as_u64().unwrap() as u8;
+        let target = terrain.cell_mut_for_test(x as u16, y as u16).unwrap();
+        target.level = level;
+        // Cell+140, the bridge bits the +68B comparison reads.
+        target.bridge_facts.raw_flags = cell[3].as_u64().unwrap() as u32;
+    }
+    for overlay in input["overlays"].as_array().into_iter().flatten() {
+        let (x, y) = pair(overlay);
+        let id = match (overlay[2] == true, overlay[3] == true, overlay[4].as_u64()) {
+            // An explicit index keeps its id (O0 carries no flags).
+            (false, false, Some(index)) => index as u8,
+            (true, false, None) => 5,
+            (false, true, None) => 6,
+            other => panic!("unmapped overlay {other:?}"),
+        };
+        // In OverlayGrid alone, as an overlay built in play stands: the
+        // track's crush, coercion and Override tests read the live Cell+0x44.
+        sim.overlay_grid
+            .as_mut()
+            .unwrap()
+            .place_overlay(x as u16, y as u16, id, 0);
+    }
+    // The oracle writes Cell+EC = Tunnel; its unconstructed UnitType leaves
+    // ObjectType+0x235 (ctor 0x5F716E: 1) clear, so its Mark skips the
+    // Recalc(-1) of Exit 0x5687F0 that a real Unit runs. A real Tunnel Cell
+    // keeps +EC through that Recalc because its tile is a Tunnel tile.
+    for tunnel in input["tunnel"].as_array().into_iter().flatten() {
+        let (x, y) = pair(tunnel);
+        crate::map::resolved_terrain::install_tunnel_repair_test_catalog(terrain);
+        let cell = terrain.cell_mut_for_test(x as u16, y as u16).unwrap();
+        cell.final_tile_index = 1;
+        cell.land_type = 10;
+        cell.base_land_type = 10;
+    }
+    // The row's Unit type: SpeedType Wheel, Crusher=yes or CrusherAll.
+    let variant = if input["movement_zone"] == 12 {
+        "A"
+    } else if input["crusher"] == true {
+        "C"
+    } else if input["speed_type"] == 2 {
+        "W"
+    } else {
+        ""
+    };
+    let kind = match (input["family"] == "drive", variant) {
+        (true, "") => "DRV".to_string(),
+        (false, "") => "SHP".to_string(),
+        (true, v) => format!("DR{v}"),
+        (false, v) => format!("SH{v}"),
+    };
+    let kind = kind.as_str();
+    sim.session.set_binary_frame_for_test(100);
+    let id = sim
+        .spawn_object(kind, "Americans", 10, 10, 0, &rules)
+        .unwrap_or_else(|| panic!("spawn {kind}: {input}"));
+    sim.substrate
+        .mission_assign_exact(id, MissionId::from_known(MissionType::Move), 100)
+        .unwrap();
+    if let Some(clear) = input["clear_speed"].as_f64() {
+        // The oracle writes the Clear row of every SpeedType; after the spawn,
+        // which would refuse a zero row.
+        let percent = Some(crate::util::native_x87::NativeF32Bits::from_bits(
+            (clear as f32).to_bits(),
+        ));
+        let terrain = sim.resolved_terrain.as_mut().unwrap();
+        for y in 0..33 {
+            for x in 0..33 {
+                let costs = &mut terrain.cell_mut_for_test(x, y).unwrap().speed_costs;
+                costs.track = percent;
+                costs.wheel = percent;
+            }
+        }
+    }
+    // Raw infantry occupation bits (+124 ground, +128 deck).
+    for raw in input["raw"].as_array().into_iter().flatten() {
+        let (x, y) = pair(raw);
+        let occupation = &mut sim.substrate.raw_cell_occupation;
+        occupation.mark_ground(x as u16, y as u16, raw[2].as_u64().unwrap() as u8);
+        occupation.mark_deck(x as u16, y as u16, raw[3].as_u64().unwrap() as u8);
+    }
+    let e = sim.substrate.entities.get_mut(id).unwrap();
+    e.health
+        .set_for_test(input["health"].as_i64().unwrap_or(300) as i32);
+    let z = crate::sim::movement::ground_pose::position_world_coord(&e.position).z;
+    assert_eq!(z, input["z"].as_i64().unwrap_or(0) as i32, "Foot z");
+    (sim, rules, registry, id)
+}
+
+/// Unit 0x741970(cell, 1) through the ordinary command owner at frame 100.
+fn order(sim: &mut Simulation, rules: &RuleSet, id: u64, target: (u16, u16)) {
+    assert!(sim.set_unit_destination(
+        id,
+        crate::sim::components::NavTargetRef::cell(target.0, target.1),
+        rules,
+        true,
+        &mut crate::sim::world::FrameEffects::default(),
+    ));
+}
+
+/// The row's supplied answers, in call order.
+fn supplied(input: &Value) -> (Vec<u8>, Vec<SuppliedPath>) {
+    let codes = input["codes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|code| code.as_u64().unwrap() as u8)
+        .collect();
+    let paths = input["find_path"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|path| match path {
+            Value::String(failed) if failed == "failed" => SuppliedPath::Failed,
+            Value::String(core) if core == "core_null" => SuppliedPath::CoreNull,
+            words_value => SuppliedPath::Found(words(words_value)),
+        })
+        .collect();
+    (codes, paths)
+}
+
+/// The oracle's substituted calls with the caller's arguments. The gate
+/// question and the Unit setter are original bytes there, not calls here.
+fn expected_records(events: &Value) -> Vec<FreshCallRecord> {
+    events
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|event| {
+            let kind = event[0].as_str()?;
+            Some(match kind {
+                "can_enter" => {
+                    // Unit+1AC(cell, dir, height, 0, 1).
+                    assert_eq!((event[4].as_i64(), event[5].as_i64()), (Some(0), Some(1)));
+                    let (x, y) = pair(&event[1]);
+                    FreshCallRecord::CanEnter {
+                        cell: (x as i16, y as i16),
+                        direction: event[2].as_i64().unwrap() as i32,
+                        height: event[3].as_i64().unwrap() as i32,
+                        code: event[6].as_u64().unwrap() as u8,
+                    }
+                }
+                "find_path" => {
+                    // Find_Path(cell, IsTrain = 0, urgency).
+                    assert_eq!(event[3].as_i64(), Some(0));
+                    FreshCallRecord::FindPath {
+                        cell: (
+                            event[1].as_i64().unwrap() as i32,
+                            event[2].as_i64().unwrap() as i32,
+                        ),
+                        urgency: event[4].as_u64().unwrap() as u8,
+                    }
+                }
+                "scatter" => {
+                    // Scatter_Objects(Null, 1, no_kidding, deck).
+                    assert_eq!(event[2].as_i64(), Some(1));
+                    let (x, y) = pair(&event[1]);
+                    FreshCallRecord::Scatter {
+                        cell: (x as i16, y as i16),
+                        no_kidding: event[3] != 0,
+                        deck: event[4] != 0,
+                    }
+                }
+                "override" => {
+                    // Override_Mission(Attack, cell, NULL).
+                    assert_eq!((event[1].as_i64(), event[3].as_i64()), (Some(1), Some(0)));
+                    let (x, y) = pair(&event[2]);
+                    FreshCallRecord::Override {
+                        target: TargetKind::Cell(x as u16, y as u16),
+                    }
+                }
+                "unit_destination" => return None,
+                other => panic!("unmapped oracle event {other}"),
+            })
+        })
+        .collect()
+}
+
+fn compare(sim: &Simulation, id: u64, row: &Value, out: bool) {
+    let e = sim.substrate.entities.get(id).unwrap();
+    let state = &row["state"];
+    let family = if row["input"]["family"] == "drive" {
+        TrackFamily::Drive
+    } else {
+        TrackFamily::Ship
+    };
+    let target = e
+        .locomotor
+        .as_ref()
+        .unwrap()
+        .track_target_fraction_native(family)
+        .unwrap();
+    let (destination, head, valid, selector) = if family == TrackFamily::Drive {
+        let d = e
+            .locomotor
+            .as_ref()
+            .and_then(|l| l.selected_drive_runtime())
+            .and_then(|r| r.retained())
+            .unwrap();
+        assert_eq!(
+            d.straight(),
+            state["straight"] == 1,
+            "native Drive+64: {row}"
+        );
+        (
+            d.destination(),
+            d.head_to(),
+            d.track_valid(),
+            d.track().turn_index(),
+        )
+    } else {
+        let s = e
+            .locomotor
+            .as_ref()
+            .and_then(|l| l.selected_ship_runtime())
+            .and_then(|r| r.retained())
+            .unwrap();
+        (
+            s.destination(),
+            s.head_to(),
+            s.track_valid(),
+            s.track().turn_index(),
+        )
+    };
+    let coord = |c: Option<DriveCoord>| {
+        let c = c.unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
+        json!([c.x, c.y, c.z])
+    };
+    let nav = e.navigation.nav_com().map(|n| match n {
+        NavTargetRef::Cell { rx, ry } => json!([rx, ry]),
+        other => panic!("cell fixture, got {other:?}"),
+    });
+    // Native shifts consumed words out of Foot+5E0; the Rust queue advances
+    // a cursor over the same words.
+    let queue = e.navigation.path_replay();
+    let path: Vec<i32> = (0..6)
+        .map(|i| {
+            queue
+                .directions()
+                .get(usize::from(queue.cursor()) + i)
+                .map_or(-1, |&w| if w == u8::MAX { -1 } else { i32::from(w) })
+        })
+        .collect();
+    let reference = queue.reference_cell().unwrap_or((0, 0));
+    let p = e.navigation.path_runtime();
+    let fields = [
+        ("destination", coord(destination)),
+        ("head", coord(head)),
+        ("valid", json!(u8::from(valid))),
+        ("selector", json!(selector)),
+        ("nav", json!(nav)),
+        ("path", json!(path)),
+        ("reference", json!([reference.0, reference.1])),
+        (
+            "movement_timer",
+            json!([
+                p.movement_timer().start_frame(),
+                p.movement_timer().duration()
+            ]),
+        ),
+        (
+            "blocked_timer",
+            json!([
+                p.blocked_timer().start_frame(),
+                p.blocked_timer().duration()
+            ]),
+        ),
+        ("latched", json!(u8::from(p.path_blocked()))),
+        ("retries", json!(p.retries_left())),
+        ("facing", json!(e.body_facing.destination())),
+        ("mission", json!(e.mission.current().raw())),
+        (
+            "foot_68b",
+            json!(u8::from(
+                e.seldom.runtime_bridge_transition.pending_mismatch()
+            )),
+        ),
+        ("out", json!(u8::from(out))),
+    ];
+    for (key, actual) in fields {
+        assert_eq!(actual, state[key], "{key}: {row}");
+    }
+    // Both authoritative owners retain the original doubles, without a
+    // fixed projection between the fresh producer and this observation.
+    for (key, actual) in [
+        ("target_speed", target),
+        ("applied_speed", e.foot_speed.native_applied_fraction()),
+    ] {
+        let expected = state[key].as_f64().unwrap();
+        assert_eq!(actual.bits(), expected.to_bits(), "{key}: {row}");
+    }
+}
+
+#[test]
+fn fresh_arm_rows_match_the_original_responses() {
+    let mut checked = 0;
+    for row in corpus() {
+        let input = &row["input"];
+        if input.get("far_zone").is_some() {
+            continue;
+        }
+        let (mut sim, rules, _registry, id) = unit(input);
+        let destination = input.get("destination").map_or((13, 10), pair);
+        order(
+            &mut sim,
+            &rules,
+            id,
+            (destination.0 as u16, destination.1 as u16),
+        );
+        let family = if input["family"] == "drive" {
+            TrackFamily::Drive
+        } else {
+            TrackFamily::Ship
+        };
+        let route = words(&input["route"]);
+        let rest = input["facing"]
+            .as_u64()
+            .map_or(u16::from(route[0] & 7) << 13, |facing| facing as u16);
+        let frame = |v: &Value, key: &str, default: [i64; 3]| {
+            v.get(key).map_or(default, |t| {
+                [
+                    t[0].as_i64().unwrap(),
+                    t[1].as_i64().unwrap(),
+                    t[2].as_i64().unwrap(),
+                ]
+            })
+        };
+        let movement = frame(input, "movement_timer", [100, 0, 0]);
+        let blocked = frame(input, "blocked_timer", [100, 0, 22]);
+        let e = sim.substrate.entities.get_mut(id).unwrap();
+        e.navigation
+            .path_replay_mut()
+            .set_directions_for_test(route);
+        e.navigation.path_replay_mut().set_cursor_for_test(0);
+        e.navigation
+            .path_replay_mut()
+            .set_reference_cell_for_test(Some((9, 8)));
+        e.body_facing = FacingClass::with_rate_of(rest, &e.body_facing);
+        let runtime = e.navigation.path_runtime_mut();
+        runtime.start_movement(movement[0] as u32, movement[2] as i32);
+        runtime.start_blocked(blocked[0] as u32, blocked[2] as i32);
+        runtime.set_path_blocked_for_test(input["latched"] == true);
+        runtime.set_retries_left_for_test(input["retries"].as_u64().unwrap_or(10) as u32);
+        // FootClass ParalysisTimer (+6A0).
+        if let Some(paralysis) = input["paralysis"].as_array() {
+            e.parasite
+                .set_paralysis_for_test(crate::sim::timer::CdTimer::started(
+                    paralysis[0].as_i64().unwrap() as i32,
+                    paralysis[1].as_i64().unwrap() as i32,
+                ));
+        }
+        // A retained selector with the valid byte clear.
+        if let Some(selector) = input["selector"].as_i64() {
+            if let Some(drive) = e.locomotor.as_mut().filter(|l| {
+                l.has_track_state(crate::sim::movement::track_process::TrackFamily::Drive)
+            }) {
+                {
+                    let mut progress = drive
+                        .track_progress(crate::sim::movement::track_process::TrackFamily::Drive)
+                        .unwrap();
+                    progress.set_turn_index(selector as i32);
+                    assert!(drive.store_track_progress(
+                        crate::sim::movement::track_process::TrackFamily::Drive,
+                        progress
+                    ));
+                };
+            }
+            if let Some(ship) = e.locomotor.as_mut().filter(|l| {
+                l.has_track_state(crate::sim::movement::track_process::TrackFamily::Ship)
+            }) {
+                {
+                    let mut progress = ship
+                        .track_progress(crate::sim::movement::track_process::TrackFamily::Ship)
+                        .unwrap();
+                    progress.set_turn_index(selector as i32);
+                    assert!(ship.store_track_progress(
+                        crate::sim::movement::track_process::TrackFamily::Ship,
+                        progress
+                    ));
+                };
+            }
+        }
+        sim.session.set_binary_frame_for_test(101);
+        let (codes, paths) = supplied(input);
+        fresh_oracle_seam::install(codes, paths);
+        let out = sim.run_track_process_movement(
+            id,
+            family,
+            ProcessMovementArgs::OUTER,
+            &rules,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
+        let (records, unused) = fresh_oracle_seam::finish();
+        let out = out.unwrap();
+        assert_eq!(records, expected_records(&row["events"]), "{row}");
+        assert_eq!(unused, 0, "unused answers: {row}");
+        compare(&sim, id, &row, out);
+        checked += 1;
+    }
+    assert_eq!(checked, 104);
+}
+
+#[test]
+fn crusher_all_non_wall_overlay_uses_ground_unit_for_straight_latch() {
+    // Original 4B3FF9 asks GetUnit(false) only after the noncrushable/non-wall
+    // overlay gates. 4B400C/4B4012 then store Drive+64 independently of whether
+    // the route already looks straight. The retained native zone12 rows use a
+    // wall and skip this query; this is instruction-derived caller integration,
+    // with the existing clear CanEnter seam, not a new native timing golden or
+    // coverage of the separate pre-entry Foot+6B5 producer.
+    let input = json!({
+        "family": "drive", "movement_zone": 12,
+        "overlays": [[12, 10, false, false, 0]], "route": [2, 2, 2],
+    });
+    for (blocker, expected) in [
+        (None, false),
+        (Some("ENGINEER"), false),
+        (Some("DRV"), true),
+    ] {
+        let (mut sim, rules, registry, id) = unit(&input);
+        if let Some(kind) = blocker {
+            sim.spawn_object_with_overlay_registry(kind, "Americans", 12, 10, 0, &rules, &registry)
+                .unwrap_or_else(|| panic!("ordinary Ground registration of {kind}"));
+        }
+        order(&mut sim, &rules, id, (13, 10));
+        let actor = sim.substrate.entities.get_mut(id).unwrap();
+        actor
+            .navigation
+            .path_replay_mut()
+            .set_directions_for_test(vec![2, 2, 2]);
+        actor.navigation.path_replay_mut().set_cursor_for_test(0);
+        actor
+            .navigation
+            .path_replay_mut()
+            .set_reference_cell_for_test(Some((9, 8)));
+        actor.body_facing = FacingClass::with_rate_of(2 << 13, &actor.body_facing);
+        actor.navigation.path_runtime_mut().start_movement(100, 0);
+        actor.navigation.path_runtime_mut().start_blocked(100, 22);
+        sim.session.set_binary_frame_for_test(101);
+        fresh_oracle_seam::install(vec![0], vec![]);
+        let result = sim.run_track_process_movement(
+            id,
+            TrackFamily::Drive,
+            ProcessMovementArgs::OUTER,
+            &rules,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
+        let (_, unused) = fresh_oracle_seam::finish();
+        result.unwrap();
+        assert_eq!(unused, 0, "{blocker:?}");
+        let drive = sim
+            .substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .locomotor
+            .as_ref()
+            .and_then(|loco| loco.selected_drive_runtime())
+            .and_then(|runtime| runtime.retained())
+            .unwrap();
+        assert_eq!(drive.straight(), expected, "{blocker:?}");
+    }
+}
+
+#[test]
+fn first_code7_scold_request_retains_the_native_byte() {
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/foot_scold_latch.json",
+    ))
+    .unwrap();
+    for row in native["track_guards"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| row["branch"] == "first_rejection")
+    {
+        let (mut sim, mut rules, _registry, id) = unit(row);
+        let sound = native["sound"]["resolved_name"].as_str().unwrap();
+        rules.general.scold_sound = Some(sound.into());
+        order(&mut sim, &rules, id, (13, 10));
+        let e = sim.substrate.entities.get_mut(id).unwrap();
+        e.navigation
+            .path_replay_mut()
+            .set_directions_for_test(vec![2, 2, 2]);
+        e.navigation.path_replay_mut().set_cursor_for_test(0);
+        e.navigation
+            .path_replay_mut()
+            .set_reference_cell_for_test(Some((9, 8)));
+        e.body_facing = FacingClass::with_rate_of(2 << 13, &e.body_facing);
+        e.navigation.path_runtime_mut().start_movement(100, 0);
+        e.navigation
+            .path_runtime_mut()
+            .set_scold_latch_for_test(row["supplied_byte"].as_u64().unwrap() as u8);
+        sim.session.set_binary_frame_for_test(101);
+        fresh_oracle_seam::install(vec![7], vec![]);
+        // The native sound fragment stops at the code7 retry ladder. This
+        // production call takes its nonrecursive Stop path; the byte remains
+        // live there too. Clearing on sound delivery would fail this check.
+        let result = sim.run_track_process_movement(
+            id,
+            if row["family"] == "drive" {
+                TrackFamily::Drive
+            } else {
+                TrackFamily::Ship
+            },
+            ProcessMovementArgs {
+                allow_retry: false,
+                force_single: false,
+            },
+            &rules,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
+        let (_, unused) = fresh_oracle_seam::finish();
+        result.unwrap();
+        assert_eq!(unused, 0);
+        assert_eq!(
+            json!(
+                sim.substrate
+                    .entities
+                    .get(id)
+                    .unwrap()
+                    .navigation
+                    .path_runtime()
+                    .scold_latch_raw()
+            ),
+            row["final_byte"]
+        );
+        let sounds: Vec<&str> = sim
+            .sound_events
+            .iter()
+            .filter_map(|event| match event {
+                crate::sim::world::SimSoundEvent::VocCentered { sound_id } => {
+                    Some(sound_id.name_in(&rules))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            sounds,
+            vec![sound; row["sound_entry_calls"].as_array().unwrap().len()]
+        );
+    }
+}

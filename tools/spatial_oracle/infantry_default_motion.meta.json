@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Infantry DoTypeSequencer default arm on original Teleport ordinary MoveTo/Stop controls with physical ClegSequence. Not Teleport Process, Chronosphere, the full Infantry AI or a whole match.",
+  "assumptions": [
+    "Existing Actions/States setup executes before original Teleport718000 and Link55A710 replace the Jumpjet. Original ILocomotion7F5000 binds Infantry+674; request is class+34/interface+30, armed destination class+1C, resolved coordinate class+28. Physical ClegSequence uses original constructor loop and ReadSequenceData523D00; complete ART/type loaders excluded. The exact ARTMD/RULESMD file identities and lexical inputs are recorded in the payload.",
+    "Physical CLEG facts JumpJet=false, MovementZone=Infantry7 and Crawls=true are supplied, with marked-layer true, health125, speed fractions, prone and Doing/stage per row. Game speed1, frame1000, old Stage timer17/91/rate92. Ambient FPCW0E7F is inherited fixture input, not live-retail process proof.",
+    "Three native RNGs seed31, complete1012-byte states before/after producer and sequencer. MoveTo subcell selection consumes a separate Scenario draw; the sequencer consumes none. Selected original code remains unchanged."
+  ],
+  "substitutions": [
+    "Inherited Actions/States RTTI15, type/cell getter, CanEnter result0, corridor, ground/raw/subcell inputs and unrelated Mark/visibility/OS Interlocked boundaries. Original Infantry clone slots F0/F4/1D4/1D8/1EC/200/37C/380 are restored from original7EB058. Original Link is allowed to execute; dummy cell uses original7E4EEC vtable. Full Infantry/House/Scenario construction, unrestricted admission and full Teleport lifetime excluded."
+  ],
+  "entry_points": {
+    "teleport_constructor": "0x00718000",
+    "link": "0x0055A710",
+    "teleport_move_to": "0x00718100",
+    "teleport_stop": "0x00718230",
+    "teleport_is_moving": "0x00718080",
+    "teleport_infantry_destination": "0x00718B70",
+    "cell_placement": "0x00481180",
+    "infantry_do_action": "0x0051D6F0",
+    "infantry_sequencer": "0x00520AE0",
+    "moving_query_call": "0x00520D38",
+    "sequence_reader": "0x00523D00"
+  },
+  "payload_sha256": "0d2e3d037164ce397bf427c09bf7136a202e193de68d9d22c8e83984c9e73cf2",
+  "replay_command": "python -m tools.spatial_oracle.jumpjet_infantry_actions --default-motion"
+}

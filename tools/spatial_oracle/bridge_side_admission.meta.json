@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original overlay25 side-cell topology through Walk/Infantry and radar gates.\n\nRun from the repository with PYTHONPATH=. and the shared native environment.\nThe native constructor produces topology. Actor/terrain/list/occupancy state is\nexplicitly supplied; original land readers, Walk query and admission execute.\n",
+  "assumptions": [
+    "Original Overlay constructor5FC380 and reached bridge setters produce overlay25 topology in the existing native constructor fixture. Its resulting flags/anchor/state/overlay/level/slope/land fields are projected into separate admission and radar machines; full constructor-to-mover lifetime is not executed.",
+    "Ordinary Infantry uses original vtable7EB058, supplied Foot SpeedType0, source14,16, candidate15,16, east direction2, Move mission2, no Team/slave/objects, empty owner indices-1, no tubes. Physical on-deck pose uses Z1040 versus ground624, both from level6. Actual applicable land-speed INI reader674000 runs during setup.",
+    "Original Walk75B59C query producer, physical height5F5F00, Infantry51BF90 and Foot height gate4D9C60 execute. Native CanEnter return is never supplied or replaced. Stop before head selection or refusal response. No full movement, map/INI loader, repair/collapse lifecycle or persistence proof.",
+    "Raw100-clear controls change only candidate flags and retain native state9/overlay-1/anchor; they isolate structural-bit consumption and do not execute bridge destruction. Ground/deck raw occupation0x20 inputs distinguish the selected plane, with empty lists as explicitly supplied state.",
+    "Radar47C060 runs through actual empty-ground Building lookup47C4D0 and raw100 gate. Supplied OverlayTypes[24] identity and tile-table storage allow observing the chosen native branch. Stop at real overlay color entry5FED00 or ground TMP branch47C24A; no color-return substitution, color value, pixel rendering or palette proof."
+  ],
+  "substitutions": [
+    "Inherited INI setup allocator/free/TLS/file seams only; none is reached in the measured admission corridor. No measured gameplay return value or code is patched."
+  ],
+  "entry_points": {
+    "overlay_constructor": "0x005FC380",
+    "cell_direction_initializer": "0x0049F2F0",
+    "lepton_direction_initializer": "0x0049F3A0",
+    "land_speed_reader": "0x00674000",
+    "walk_constructor": "0x0075AA90",
+    "walk_query": "0x0075B59C",
+    "physical_height": "0x005F5F00",
+    "infantry_can_enter": "0x0051BF90",
+    "foot_height_gate": "0x004D9C60",
+    "radar": "0x0047C060",
+    "radar_structural_gate": "0x0047C0AE",
+    "overlay_color_boundary": "0x005FED00",
+    "ground_color_boundary": "0x0047C24A"
+  },
+  "payload_sha256": "1cd1a816908f017e1de7e761f16ec330401408ad1b0a15bb2ad7bd5493d5987c"
+}

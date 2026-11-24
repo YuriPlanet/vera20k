@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Full original Country constructor and twelve retained full ReadINI controls, and twenty-eight selected original rank-initialization regions; synthetic identities and object priors only",
+  "assumptions": [
+    "BulletReader owns supplied exact-case cached INI entries, CRT TLS and allocation. Physical INI/MIX loading is excluded. Full Country511850 executes its admission and list logic; no parser or list result is supplied.",
+    "Fresh type-family registries have spare capacity. Original FindOrAllocate524CB0/7480D0/41CEF0 and complete type constructors bind synthetic names, preserving duplicates, case-insensitive identity and the24-byte stored ID. Color uses the existing unrelated initialized scheme prior; graphics and asset loading are excluded.",
+    "Each selected rank region receives a supplied actor, ownerHouse, native-constructed Country/type, prior rank and Trainable/Naval/infiltration flags. These are exact region controls, not whole Unit/Infantry/Aircraft construction, COM/Unlimbo or spy lifecycle. Aircraft region413F98..413FD2 retains the actual PUSH EBX, whose POP lies later in unrelated type setup.",
+    "Every reader and rank control is asserted to leave all three complete RNG states byte-identical, write no action-timer byte and keep the sentinel[995,0,25]. No reached selected rank code makes an RNG or detach call. Constructor and reader allocation effects are separate from object-creation RNG chronology.",
+    "FPCW0E7F is the declared fixture environment. Rank SetVeteran750090 writes integer bits3F800000 directly and makes no floating arithmetic. Existing selection_navigation map-percent goldens own map overrides and their numeric rounding; this fixture does not replace them."
+  ],
+  "substitutions": [
+    "Existing BulletReader: operator_new7C8E17 returns bump storage; operator_delete7C8B3D is inert; CRT TLS7D140B returns thread storage. Cached exact-case INI indexes replace physical file/archive loading, while original ReadString528A10, strtok7C9CC2, factories, constructors, vector copies and rank setter execute unchanged."
+  ],
+  "entry_points": {
+    "country_constructor": "0x005113F0",
+    "country_read": "0x00511850",
+    "infantry_list": "0x00511D16",
+    "unit_list": "0x00511E20",
+    "aircraft_list": "0x00511F56",
+    "infantry_init_rank": "0x00517CE7",
+    "unit_ctor_rank": "0x00735604",
+    "unit_init_rank": "0x00746827",
+    "aircraft_init_rank": "0x00413F98",
+    "set_veteran": "0x00750090"
+  },
+  "replay_command": "python -m tools.rules_oracle.country_veterancy",
+  "payload_sha256": "6fe09fea4d4ac08ce2a56272f0cbb39c8cc85551c5458fc92498e6decf6048c8"
+}

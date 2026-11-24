@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Forced NULL Scatter front gates, coordinate-before-alive/nav, actual RNG ordering, FNPC literal arguments, synchronous destination-before-Process; not DoAction31, failed-FNPC fallback, mutable registry, full FNPC or movement.",
+  "assumptions": [
+    "Single Infantry registry entry; active object-list lookup globalA8E9A0=true; original Walk getter and current mission Guard table flag; seed31; real center cells10,10 and11,10; supplied retained head for pending-Uninit case; supplied active Foot684 and TubeClass exit in one query row."
+  ],
+  "substitutions": [
+    "House50B730 returnsfalse (no deploy Doing cases); PlayerScattertrue avoids pure ability leaf; Building RTTI returns6; FNPC successful11,10 supplied; SetDestination records pointer; Process observes call only."
+  ],
+  "entry_points": {
+    "hut": "0x004576F0",
+    "scatter": "0x0051D0D0",
+    "coordinate": "0x004DBDF0",
+    "walk_constructor": "0x0075AA90",
+    "random_seed": "0x0065C6D0",
+    "random_ranged": "0x0065C7E0"
+  },
+  "payload_sha256": "d38b98bf7369950ba29693e1a9b41628b152e72e65c7ddc25e2a0fc4a2faa12d"
+}

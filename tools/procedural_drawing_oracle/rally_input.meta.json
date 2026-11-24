@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Whole original Building443860 rally preparation, GetZone56D230, FNPC56DC20, passability/projection and event1E construction/enqueue on supplied native grid; bounded direct4834A0 real/Dummy prerequisites",
+  "assumptions": [
+    "Shared walk_move_admission.prepare_fixture owns native map, Cell, zone, bridge and direction-table preparation. Map Size8,8/LocalSize0,0,8,8; 16x16 Cell slots; raw group labels2/3; cells/zone flood-fill and bridge-record production are supplied, not established here. Shared Dummy receives the original Cell table7E4EEC for NetID packing; its other prepared fields remain unchanged.",
+    "Original Building vtable7E3EBC; supplied physical Location+9C, Type+520 Factory+EB8/Naval+CCE, owner+21C and previous ArchiveTarget+218. Factory40 defaults to Foot0/Normal0; Factory3 and Naval controls establish caller options, not input-action admission.",
+    "Whole-caller cases use land speed multiplier1.0 except the explicit zero-speed control; land is Clear0 with no overlay, zero raw occupation unless specified. Direct passability controls supply the separate tables recorded per row. These synthetic tables isolate code behavior, not retail terrain balancing.",
+    "Original direction initializer49F2F0; FPCW0E7F, height104/bridge416 startup constants supplied as in the existing map fixture. Binary frame is explicit. Native56E6AF/CDQ and56E6B2/56E6D1 signed IDIV select a signed remainder. General comparisons use frames0..7FFFFFFF; frame80000000 is only a separately observed remainder-zero control. FrameFFFFFFFF is a negative pool-index boundary, not a portable native gameplay golden.",
+    "Final selector metadata observes the pending native load at56E6BF/56E6DE. Boundary controls demonstrate that a negative index reads the prior local array: eight-candidate zeroed/poisoned stack results differ; a24-candidate control reads initialized raw slot23. No general native parity is claimed for high-bit frame values, and native stack underflow is not prescribed as VERA behavior.",
+    "announce=false; whole443860 reaches original event packing/constructor and outgoing queue. ConYard=false; redeploy fallback, EVA, input action selection, event dispatch, gameplay-side ArchiveTarget assignment and rendered output are outside this corpus.",
+    "Actor/type/House and click bytes remain unchanged, original code ranges remain unchanged, and original Random/RandomRanged and SetArchive entry counts stay zero. Event output records only initialized header/NetID fields; unused event payload is not asserted.",
+    "The separate28 passability_cases execute original4834A0 directly through the same map fixture. Both real and Dummy Cell+EC select opposite supplied Clear0/Water2 speed rows. Foot0/Normal0 and Amphibious6/AmphibiousCrusher4 use zero/nonzero table controls; Winged4/Fly9 controls bypass zero speed, occupied planes, mismatched height and zone before any table/zone access.",
+    "Direct bridge controls use flag0x100 and base level0: no requested level selects the deck and permits zero land cost; deck occupation rejects; requested base height0 with bridge_aware=true selects ground and rejects zero cost; requested height4 selects the deck. Cell bytes, seven literal dword arguments, float-table bytes, actual loaded table indices/values and output AL are recorded. This28-row matrix is representative, not exhaustive; no native TerrainRules parser or map/dummy lifecycle execution is added."
+  ],
+  "substitutions": [
+    "Only imported timeGetTime at4439FD/443B4B returns0 for the outgoing command wall timestamp. No gameplay, zone, passability, projection or event callable is replaced."
+  ],
+  "entry_points": {
+    "set_rally": "0x00443860",
+    "direction_initializer": "0x0049F2F0",
+    "get_zone": "0x0056D230",
+    "fnpc": "0x0056DC20",
+    "rectangle": "0x0056E7C0",
+    "passability": "0x004834A0",
+    "projection": "0x006D6410",
+    "net_id_pack": "0x006E6AB0",
+    "event_constructor": "0x004C6780"
+  },
+  "payload_sha256": "bdd0618de5ebc1e7ff94a1d77ab3a6046dd393e50fca1a4a795bbcf1273ae189",
+  "replay_command": "python -m tools.procedural_drawing_oracle.rally_input"
+}

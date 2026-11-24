@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "87 ordinary registered command objects and their original metadata operands;73 admitted keyboard assignment cases",
+  "assumptions": [
+    "Debug registration flag A8B8B4 is zero; registry capacity128 and writable storage supplied",
+    "Assignment selected command is supplied at original stack+10; EDI is the admitted encoded key",
+    "Supplied key table is sorted, unique by encoded key, has capacity128 and ordinary u16 key values",
+    "Catalog metadata reads original getter operands; CSF parsing is input preparation, not emulated string loading",
+    "No GUI event admission/capture, full dialog, disk INI write/reset, non-English collation or allocation-failure claims"
+  ],
+  "substitutions": [
+    "Malloc7C8E17 returns bounded zero-filled scratch storage during original registration",
+    "Registration stops before533D20 file I/O; assignment starts after HWND/list/capture lookup",
+    "Modifier rejection stops before GUI error-label calls; successful mutation executes original lookup/removal/insertion"
+  ],
+  "entry_points": {
+    "registry": "0x00532150",
+    "registry_end": "0x00533D20",
+    "assignment_checks": "0x005FBB38",
+    "assignment_mutation": "0x005FBBAC",
+    "selected_modifier_check": "0x0048BB40",
+    "base_modifier_check": "0x0048BB60"
+  },
+  "payload_sha256": "e7a1570294a3a30d136e297d0dbeabf0445742286d3e13d4c37d7bf75e603953"
+}

@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original selected RulesClass constructor stores, Warhead factory/constructor, native section admission and complete selected scalar/reference/list reader blocks. Active retail lexical inputs plus five retention controls; full TerrainType ctor and selected inherited/type readers, TreeStrength and original ART Foundation lookup/occupy initialization. No whole reader/physical file load claim.",
+  "assumptions": [
+    "Seventeen independent fresh-Warhead Verses rows execute the complete original ReadString128/strtok/atoi-or-atof sequence. Empty physical values are omitted from cache; long strings test the original128-byte read boundary. Malformed/decimal/exponent/overflow strings are bounded characterization beyond selected retail HE.",
+    "Damage sensitivity executes original489180 on the native-read HE values and an explicit one-ULP-higher perturbation at indices3,4,5,7,8,9. 198 armor/damage/distance pairs use damage10/20 and distances0,11,49,50,79,80,127,128,129. Perturbed inputs are characterization, not a Rust/native parser equivalence claim.",
+    "Full TerrainType ctor71DA80 executes; selected Armor/Strength/Immune reader5F94B3..5F9516 and successful-read fallback71DEC8, SpawnsTiberium71DF27..71DF56, occupation71E079..71E0A6 execute. Full base-reader success is supplied after original section admission. Adjacent stores retain pre-existing fields; unused trailing pops are bounded stack locals. Original71D580 initializes occupy lists and71DF61..71DF9C reads lexical ART Foundation using actual type Image. No image pixel or fullTerrain reader claim.",
+    "Raw RULESMD from expandmd01.mix entry8218F9F4 (743215 bytes); MPBattleMD from production asset source; Hills.map is the exact decompressed inner Hills.mmx payload. Companion rows pin byte hashes and exact lexical source lines. LANGRULE absent in selected installation.",
+    "Lexical unique ordinary keys form supplied INI section/entry indexes using original CRC. Original526810 section admission, ReadString128, ReadInt, ReadBool, ReadDouble and Verses strtok/atoi/atof execute. No VERA scalar value initializes fields.",
+    "Selected readers run in their original within-owner order; unrelated fields and original whole scenario load sequence are outside scope. Warhead absent sections skip reads; present sections with missing Verses use native default string. Rules reads retain prior values on missing selected keys.",
+    "OriginalCRT floating scanner initialization7C8F5E executes. FPCW0E7F supplies native PC53/chop. Rules constructor register EBX0/EDI10, originalECX3FE00000 instruction667190 supplies both threshold defaults0.5.",
+    "OriginalAnimType and Warhead factories/constructors run against spare-capacity registries. ART reads, SHP binding, gameplay, sound and full game scheduling are outside this reader corpus.",
+    "Wake/C4 reader endpoints have ESP-4 because the next key push80 precedes the selected pointer store; the next invocation resets the local stack."
+  ],
+  "substitutions": [
+    "Inherited Lists allocator returns fresh bump storage; operator delete no-op; CRT TLS accessor returns supplied per-thread storage for original strtok. No executable instruction patches or native reader replacements."
+  ],
+  "entry_points": {
+    "rules_ctor": "0x006653C0",
+    "warhead_factory": "0x0075E3B0",
+    "warhead_ctor": "0x0075CEC0",
+    "warhead_reader": "0x0075D3A0",
+    "read_verses": "0x0075DDCC",
+    "read_splash": "0x0066C184",
+    "read_c4": "0x0066C304",
+    "read_bridge_strength": "0x0066CD66",
+    "read_max_damage": "0x0066CE2C",
+    "read_wake": "0x0066D847",
+    "read_condition_red": "0x0066B337",
+    "read_condition_yellow": "0x0066B35E",
+    "read_double": "0x005283D0",
+    "crt_float_init": "0x007C8F5E",
+    "terrain_ctor": "0x0071DA80",
+    "tree_strength": "0x00671DD2",
+    "terrain_fields": "0x005F94B3",
+    "terrain_occupation": "0x0071E079",
+    "terrain_foundation": "0x0071DF61",
+    "terrain_occupy_init": "0x0071D580",
+    "damage_sensitivity": "0x00489180"
+  },
+  "payload_sha256": "76451fd024bb53015e936275570ab5594852f92cd4137ec3510e9e87dc0174e3"
+}

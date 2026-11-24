@@ -1,0 +1,353 @@
+//! Persistent MapClass crate-slot authority and native timer words.
+//!
+//! Active `gamemd.exe` owns 256 consecutive 16-byte slots. The coordinate
+//! pair is the sole emptiness discriminator; accepted ghosts retain the same
+//! coordinate/timer state as visible crates.
+
+use crate::sim::rng::SimRng;
+use crate::sim::timer::CdTimer;
+use crate::util::native_random::minutes_timer_frames;
+use crate::util::native_x87::NativeF64Bits;
+
+pub(crate) const CRATE_SLOT_CAPACITY: usize = 256;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct CrateSlot {
+    pub start_frame: i32,
+    pub aux: u32,
+    pub duration: i32,
+    pub cell_x: i16,
+    pub cell_y: i16,
+}
+
+impl Default for CrateSlot {
+    fn default() -> Self {
+        Self {
+            start_frame: -1,
+            aux: 0,
+            duration: 0,
+            cell_x: 0,
+            cell_y: 0,
+        }
+    }
+}
+
+impl CrateSlot {
+    pub fn is_empty(self) -> bool {
+        self.cell_x == 0 && self.cell_y == 0
+    }
+
+    /// The slot's timer: its start and duration words. The `aux` word between
+    /// them sits where a native timer keeps its unused pointer dword.
+    pub(crate) const fn timer(self) -> CdTimer {
+        CdTimer::from_raw(self.start_frame, self.duration)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CrateAuthority {
+    #[serde(with = "crate_slot_array_serde")]
+    slots: [CrateSlot; CRATE_SLOT_CAPACITY],
+}
+
+impl Default for CrateAuthority {
+    fn default() -> Self {
+        Self {
+            slots: [CrateSlot::default(); CRATE_SLOT_CAPACITY],
+        }
+    }
+}
+
+impl CrateAuthority {
+    /// Map no-init565190 follows MouseLoad's raw read and empties every slot,
+    /// including ghosts, without pausing/rebasing any of its three timer words.
+    pub(in crate::sim) fn reset_coordinates_after_user_load(&mut self) {
+        for slot in &mut self.slots {
+            slot.cell_x = 0;
+            slot.cell_y = 0;
+        }
+    }
+
+    pub(super) fn first_empty_index(&self) -> Option<usize> {
+        self.slots.iter().position(|slot| slot.is_empty())
+    }
+
+    pub fn slots(&self) -> &[CrateSlot; CRATE_SLOT_CAPACITY] {
+        &self.slots
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn slot_mut_for_test(&mut self, index: usize) -> &mut CrateSlot {
+        &mut self.slots[index]
+    }
+
+    /// Accepted coordinates in native ascending slot order. Negative packed
+    /// values are malformed snapshot state and cannot name a Rust grid cell.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn occupied_cells(&self) -> impl Iterator<Item = (u16, u16)> + '_ {
+        self.slots.iter().filter_map(|slot| {
+            if slot.is_empty() {
+                return None;
+            }
+            Some((
+                u16::try_from(slot.cell_x).ok()?,
+                u16::try_from(slot.cell_y).ok()?,
+            ))
+        })
+    }
+}
+
+/// The live slot table and Scenario RNG borrowed together for crate placement or removal.
+pub(crate) struct CrateSlotUpdates<'a> {
+    authority: &'a mut CrateAuthority,
+    scenario_rng: &'a mut SimRng,
+}
+
+impl<'a> CrateSlotUpdates<'a> {
+    pub(crate) fn new(authority: &'a mut CrateAuthority, scenario_rng: &'a mut SimRng) -> Self {
+        Self {
+            authority,
+            scenario_rng,
+        }
+    }
+
+    /// `CrateSlot__PlaceOverlayAndInitTimer @ 0x004A17C0`: an accepted visible
+    /// or ghost crate stores its coordinate before drawing and installing its timer.
+    pub(super) fn accept_placement(
+        self,
+        index: usize,
+        cell: (u16, u16),
+        regen: NativeF64Bits,
+        current_frame: i32,
+    ) {
+        let slot = &mut self.authority.slots[index];
+        slot.cell_x = cell.0 as i16;
+        slot.cell_y = cell.1 as i16;
+        let draw = self.scenario_rng.next_range_u32_inclusive(0, 0x7fff_fffe);
+        (slot.start_frame, slot.aux, slot.duration) = crate_timer_words(regen, draw, current_frame);
+    }
+
+    /// `CrateSlot__ClearAndPreserveTimer @ 0x004A1750` frees the coordinate
+    /// after overlay removal and pauses a running timer at its remaining time.
+    pub(super) fn clear_and_preserve_timer(self, index: usize, current_frame: i32) {
+        let slot = &mut self.authority.slots[index];
+        slot.cell_x = 0;
+        slot.cell_y = 0;
+        let mut timer = slot.timer();
+        timer.pause(current_frame);
+        slot.start_frame = timer.start_frame();
+        slot.duration = timer.duration();
+    }
+}
+
+/// Compute the accepted-slot timer words of
+/// `CrateSlot__PlaceOverlayAndInitTimer @ 0x004A17C0`: the duration
+/// [`minutes_timer_frames`] draws from `CrateRegen=`, then
+/// `0x004A18BA..0x004A18C5` store the start frame, the high dword of the
+/// stored upper bound and that duration.
+pub(super) fn crate_timer_words(
+    regen: NativeF64Bits,
+    draw: u32,
+    current_frame: i32,
+) -> (i32, u32, i32) {
+    debug_assert!(draw <= 0x7fff_fffe);
+    let (duration, upper) = minutes_timer_frames(regen, draw);
+    (current_frame, (upper.bits() >> 32) as u32, duration)
+}
+
+mod crate_slot_array_serde {
+    use super::{CRATE_SLOT_CAPACITY, CrateSlot};
+    use serde::de::{self, SeqAccess, Visitor};
+    use serde::ser::SerializeTuple;
+    use serde::{Deserializer, Serializer};
+    use std::fmt;
+
+    pub fn serialize<S>(
+        slots: &[CrateSlot; CRATE_SLOT_CAPACITY],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut tuple = serializer.serialize_tuple(CRATE_SLOT_CAPACITY)?;
+        for slot in slots {
+            tuple.serialize_element(slot)?;
+        }
+        tuple.end()
+    }
+
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<[CrateSlot; CRATE_SLOT_CAPACITY], D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct SlotsVisitor;
+
+        impl<'de> Visitor<'de> for SlotsVisitor {
+            type Value = [CrateSlot; CRATE_SLOT_CAPACITY];
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(formatter, "exactly {CRATE_SLOT_CAPACITY} crate slots")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let mut slots = [CrateSlot::default(); CRATE_SLOT_CAPACITY];
+                for (index, slot) in slots.iter_mut().enumerate() {
+                    *slot = seq.next_element()?.ok_or_else(|| {
+                        de::Error::invalid_length(index, &"exactly 256 crate slots")
+                    })?;
+                }
+                Ok(slots)
+            }
+        }
+
+        deserializer.deserialize_tuple(CRATE_SLOT_CAPACITY, SlotsVisitor)
+    }
+}
+
+#[cfg(all(test, tests_sim_c_g))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn crate_authority_fresh_slots_and_first_empty_are_exact() {
+        let mut authority = CrateAuthority::default();
+        assert!(authority.slots().iter().all(|slot| {
+            *slot
+                == CrateSlot {
+                    start_frame: -1,
+                    aux: 0,
+                    duration: 0,
+                    cell_x: 0,
+                    cell_y: 0,
+                }
+        }));
+        assert_eq!(authority.first_empty_index(), Some(0));
+
+        authority.slot_mut_for_test(0).cell_x = 7;
+        assert_eq!(authority.first_empty_index(), Some(1));
+        authority.slot_mut_for_test(0).cell_x = 0;
+        authority.slot_mut_for_test(0).cell_y = -2;
+        assert_eq!(authority.first_empty_index(), Some(1));
+        authority.slot_mut_for_test(0).cell_y = 0;
+        authority.slot_mut_for_test(0).duration = 99;
+        assert_eq!(
+            authority.first_empty_index(),
+            Some(0),
+            "timer words do not make a zero-coordinate slot occupied"
+        );
+
+        for (index, slot) in authority.slots.iter_mut().enumerate() {
+            slot.cell_x = i16::try_from(index + 1).expect("slot index fits i16");
+        }
+        assert_eq!(authority.first_empty_index(), None);
+        assert_eq!(
+            authority.occupied_cells().take(3).collect::<Vec<_>>(),
+            vec![(1, 0), (2, 0), (3, 0)]
+        );
+    }
+
+    /// The words original PlaceOverlayAndInitTimer stores for six CrateRegen
+    /// values and eight draws: the top draw ends one frame short of
+    /// `regen * 1800`, a chopped `7.3 * 450` floors below 3285, and an
+    /// out-of-range FISTP keeps the integer indefinite's low dword 0.
+    #[test]
+    fn crate_timer_words_match_the_native_rows() {
+        let corpus = crate::test_fixture::json("tools/unit_draw_oracle.json");
+        let rows = corpus["crate_timer"].as_array().expect("native rows");
+        assert_eq!(rows.len(), 48);
+        let int = |row: &serde_json::Value, key: &str| row[key].as_i64().expect(key);
+        for row in rows {
+            let regen = row["regen"].as_f64().expect("regen");
+            let draw = int(row, "draw") as u32;
+            assert_eq!(
+                crate_timer_words(
+                    NativeF64Bits::from_bits(regen.to_bits()),
+                    draw,
+                    int(row, "frame") as i32
+                ),
+                (
+                    int(row, "start_frame") as i32,
+                    int(row, "aux") as u32,
+                    int(row, "duration") as i32
+                ),
+                "CrateRegen {regen}, draw {draw:#x}"
+            );
+        }
+    }
+
+    #[test]
+    fn crate_authority_tuple_codec_rejects_truncated_storage() {
+        let authority = CrateAuthority::default();
+        let mut value = serde_json::to_value(&authority).expect("authority serializes");
+        let slots = value
+            .get_mut("slots")
+            .and_then(serde_json::Value::as_array_mut)
+            .expect("slots serialize as a tuple sequence");
+        assert_eq!(slots.len(), CRATE_SLOT_CAPACITY);
+        slots.pop();
+        let error = serde_json::from_value::<CrateAuthority>(value)
+            .expect_err("255 slots must not deserialize");
+        assert!(error.to_string().contains("256 crate slots"));
+    }
+
+    #[test]
+    fn crate_authority_every_raw_word_changes_the_hash() {
+        use crate::sim::world::Simulation;
+
+        let baseline_current = Simulation::new().state_hash();
+        for slot in [
+            CrateSlot {
+                start_frame: 8,
+                ..CrateSlot::default()
+            },
+            CrateSlot {
+                aux: 9,
+                ..CrateSlot::default()
+            },
+            CrateSlot {
+                duration: -10,
+                ..CrateSlot::default()
+            },
+            CrateSlot {
+                cell_x: -11,
+                ..CrateSlot::default()
+            },
+            CrateSlot {
+                cell_y: 12,
+                ..CrateSlot::default()
+            },
+        ] {
+            let mut changed = Simulation::new();
+            *changed.crate_authority_mut_for_test().slot_mut_for_test(73) = slot;
+            assert_ne!(baseline_current, changed.state_hash());
+        }
+    }
+
+    #[test]
+    fn crate_authority_is_excluded_from_retail_multiplayer_checksum() {
+        use crate::sim::world::Simulation;
+
+        let mut baseline = Simulation::with_seed(0x1414);
+        let mut changed = Simulation::with_seed(0x1414);
+        *changed.crate_authority_mut_for_test().slot_mut_for_test(4) = CrateSlot {
+            start_frame: i32::MAX,
+            aux: u32::MAX,
+            duration: i32::MIN,
+            cell_x: -7,
+            cell_y: 31,
+        };
+        assert_eq!(
+            baseline
+                .compute_retail_multiplayer_checksum()
+                .expect("baseline checksum"),
+            changed
+                .compute_retail_multiplayer_checksum()
+                .expect("changed checksum")
+        );
+    }
+}

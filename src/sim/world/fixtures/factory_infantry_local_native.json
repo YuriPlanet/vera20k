@@ -1,0 +1,655 @@
+{
+  "schema_version": 2,
+  "kind": "Initialized native local human barracks Infantry output",
+  "source_receipts": {
+    "no_rally": {
+      "projection": "tools/spatial_oracle/_factory_infantry_output/fixtures/initialized-no_rally.json.gz",
+      "gzip_bytes": 128613,
+      "gzip_sha256": "5bf6444d0cba31e6ba8ecac8d466a5354151259d1e39659b6fae6e11307dd7d4",
+      "complete_primary_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
+      "complete_private_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a"
+    },
+    "rally": {
+      "projection": "tools/spatial_oracle/_factory_infantry_output/fixtures/initialized-rally.json.gz",
+      "gzip_bytes": 137263,
+      "gzip_sha256": "5ac30a5c19e0bb8d7f9cbf60118f63a9430283943a3088dfd9651320580117ad",
+      "complete_primary_sha256": "3f0b957ee2a950dfa1077931e003261c5ecbedbe7435c514e154aef81c3e240c",
+      "complete_private_sha256": "688368abfa62e1d09fb5c61e848c5a9634640e2a5bc0182c14d80e1f24d7db61"
+    }
+  },
+  "producer_prior": {
+    "location": [
+      3712,
+      3712,
+      0
+    ],
+    "health": 500,
+    "cash": 10000,
+    "power": 0,
+    "drain": 10
+  },
+  "products": [
+    {
+      "native_frames": {
+        "place": 268,
+        "scatter": 269,
+        "arrival": 306
+      },
+      "unlimbo_facing": 128,
+      "placed": {
+        "location": [
+          3904,
+          4032,
+          0
+        ],
+        "health": 125,
+        "mission": 5,
+        "queued": -1,
+        "nav_is_set": false,
+        "archive_is_set": false,
+        "tether": true,
+        "contact_count": 1,
+        "doing": -1,
+        "idle_entry_latch": 1
+      },
+      "first_live": {
+        "location": [
+          3904,
+          4032,
+          0
+        ],
+        "health": 125,
+        "mission": 5,
+        "queued": -1,
+        "nav_is_set": true,
+        "archive_is_set": false,
+        "tether": true,
+        "contact_count": 1,
+        "doing": 3,
+        "idle_entry_latch": 0,
+        "paid_head_is_set": true,
+        "walk_is_moving": true
+      },
+      "delivery_radio": [
+        [
+          "producer",
+          "product",
+          2,
+          1
+        ],
+        [
+          "producer",
+          "product",
+          9,
+          1
+        ],
+        [
+          "product",
+          "producer",
+          24,
+          1
+        ],
+        [
+          "producer",
+          "product",
+          24,
+          1
+        ],
+        [
+          "product",
+          "producer",
+          24,
+          0
+        ]
+      ],
+      "arrival_radio": [
+        [
+          "product",
+          "producer",
+          8,
+          1
+        ],
+        [
+          "producer",
+          "product",
+          25,
+          1
+        ],
+        [
+          "product",
+          "producer",
+          25,
+          1
+        ],
+        [
+          "producer",
+          "product",
+          25,
+          0
+        ],
+        [
+          "producer",
+          "product",
+          3,
+          1
+        ]
+      ],
+      "released": {
+        "mission": 5,
+        "queued": -1,
+        "nav_is_set": false,
+        "archive_is_set": false,
+        "tether": false,
+        "contact_count": 0
+      },
+      "terminal": {
+        "health": 125,
+        "mission": 5,
+        "queued": -1,
+        "nav_is_set": false,
+        "archive_is_set": false,
+        "tether": false,
+        "contact_count": 0,
+        "paid_head_is_set": false,
+        "walk_is_moving": false,
+        "walk_destination_is_set": false
+      },
+      "terminal_cell": [
+        16,
+        16
+      ],
+      "released_location_provenance": [
+        4160,
+        4288,
+        0
+      ]
+    },
+    {
+      "native_frames": {
+        "place": 485,
+        "scatter": 486,
+        "arrival": 522
+      },
+      "unlimbo_facing": 128,
+      "placed": {
+        "location": [
+          3904,
+          4032,
+          0
+        ],
+        "health": 125,
+        "mission": 5,
+        "queued": -1,
+        "nav_is_set": false,
+        "archive_is_set": false,
+        "tether": true,
+        "contact_count": 1,
+        "doing": -1,
+        "idle_entry_latch": 1
+      },
+      "first_live": {
+        "location": [
+          3904,
+          4032,
+          0
+        ],
+        "health": 125,
+        "mission": 5,
+        "queued": -1,
+        "nav_is_set": true,
+        "archive_is_set": false,
+        "tether": true,
+        "contact_count": 1,
+        "doing": 3,
+        "idle_entry_latch": 0,
+        "paid_head_is_set": true,
+        "walk_is_moving": true
+      },
+      "delivery_radio": [
+        [
+          "producer",
+          "product",
+          2,
+          1
+        ],
+        [
+          "producer",
+          "product",
+          9,
+          1
+        ],
+        [
+          "product",
+          "producer",
+          24,
+          1
+        ],
+        [
+          "producer",
+          "product",
+          24,
+          1
+        ],
+        [
+          "product",
+          "producer",
+          24,
+          0
+        ]
+      ],
+      "arrival_radio": [
+        [
+          "product",
+          "producer",
+          8,
+          1
+        ],
+        [
+          "producer",
+          "product",
+          25,
+          1
+        ],
+        [
+          "product",
+          "producer",
+          25,
+          1
+        ],
+        [
+          "producer",
+          "product",
+          25,
+          0
+        ],
+        [
+          "producer",
+          "product",
+          3,
+          1
+        ]
+      ],
+      "released": {
+        "mission": 5,
+        "queued": -1,
+        "nav_is_set": false,
+        "archive_is_set": false,
+        "tether": false,
+        "contact_count": 0
+      },
+      "terminal": {
+        "health": 125,
+        "mission": 5,
+        "queued": -1,
+        "nav_is_set": false,
+        "archive_is_set": false,
+        "tether": false,
+        "contact_count": 0,
+        "paid_head_is_set": false,
+        "walk_is_moving": false,
+        "walk_destination_is_set": false
+      },
+      "terminal_cell": [
+        14,
+        16
+      ],
+      "released_location_provenance": [
+        3648,
+        4288,
+        0
+      ]
+    }
+  ],
+  "final_wallet": {
+    "credits": 9600,
+    "spent": 400
+  },
+  "rally": {
+    "source_receipts": {
+      "projection": "tools/spatial_oracle/_factory_infantry_output/fixtures/initialized-rally.json.gz",
+      "gzip_bytes": 137263,
+      "gzip_sha256": "5ac30a5c19e0bb8d7f9cbf60118f63a9430283943a3088dfd9651320580117ad",
+      "complete_primary_sha256": "3f0b957ee2a950dfa1077931e003261c5ecbedbe7435c514e154aef81c3e240c",
+      "complete_private_sha256": "688368abfa62e1d09fb5c61e848c5a9634640e2a5bc0182c14d80e1f24d7db61"
+    },
+    "products": [
+      {
+        "native_frames": {
+          "place": 268,
+          "first_live": 269,
+          "contact_release": 297,
+          "archive_handoff": 297
+        },
+        "unlimbo_facing": 128,
+        "placed": {
+          "location": [
+            3904,
+            4032,
+            0
+          ],
+          "health": 125,
+          "mission": 2,
+          "queued": -1,
+          "nav_is_set": true,
+          "archive_is_set": true,
+          "tether": true,
+          "contact_count": 1,
+          "doing": -1,
+          "idle_entry_latch": 1
+        },
+        "first_live": {
+          "location": [
+            3904,
+            4032,
+            0
+          ],
+          "health": 125,
+          "mission": 2,
+          "queued": -1,
+          "nav_is_set": true,
+          "archive_is_set": true,
+          "tether": true,
+          "contact_count": 1,
+          "doing": 3,
+          "idle_entry_latch": 0,
+          "paid_head_is_set": true,
+          "walk_is_moving": true
+        },
+        "delivery_radio": [
+          [
+            "producer",
+            "product",
+            2,
+            1
+          ],
+          [
+            "producer",
+            "product",
+            9,
+            1
+          ],
+          [
+            "product",
+            "producer",
+            24,
+            1
+          ],
+          [
+            "producer",
+            "product",
+            24,
+            1
+          ],
+          [
+            "product",
+            "producer",
+            24,
+            0
+          ]
+        ],
+        "arrival_radio": [
+          [
+            "product",
+            "producer",
+            8,
+            1
+          ],
+          [
+            "producer",
+            "product",
+            25,
+            1
+          ],
+          [
+            "product",
+            "producer",
+            25,
+            1
+          ],
+          [
+            "producer",
+            "product",
+            25,
+            0
+          ],
+          [
+            "producer",
+            "product",
+            3,
+            1
+          ]
+        ],
+        "released": {
+          "location": [
+            3904,
+            4288,
+            0
+          ],
+          "mission": 2,
+          "queued": -1,
+          "nav_is_set": true,
+          "archive_is_set": false,
+          "tether": false,
+          "contact_count": 0
+        },
+        "terminal": {
+          "health": 125,
+          "mission": 5,
+          "queued": -1,
+          "nav_is_set": false,
+          "archive_is_set": false,
+          "tether": false,
+          "contact_count": 0,
+          "paid_head_is_set": false,
+          "walk_is_moving": false,
+          "walk_destination_is_set": false
+        },
+        "terminal_cell": [
+          20,
+          20
+        ],
+        "archive_handoff": {
+          "location": [
+            3904,
+            4288,
+            0
+          ],
+          "health": 125,
+          "mission": 2,
+          "queued": -1,
+          "nav_is_set": true,
+          "archive_is_set": false,
+          "tether": false,
+          "contact_count": 0,
+          "doing": 0,
+          "idle_entry_latch": 1
+        },
+        "rally_walk_destination": [
+          5248,
+          5248,
+          0
+        ]
+      },
+      {
+        "native_frames": {
+          "place": 485,
+          "first_live": 486,
+          "contact_release": 514,
+          "archive_handoff": 514
+        },
+        "unlimbo_facing": 128,
+        "placed": {
+          "location": [
+            3904,
+            4032,
+            0
+          ],
+          "health": 125,
+          "mission": 2,
+          "queued": -1,
+          "nav_is_set": true,
+          "archive_is_set": true,
+          "tether": true,
+          "contact_count": 1,
+          "doing": -1,
+          "idle_entry_latch": 1
+        },
+        "first_live": {
+          "location": [
+            3904,
+            4032,
+            0
+          ],
+          "health": 125,
+          "mission": 2,
+          "queued": -1,
+          "nav_is_set": true,
+          "archive_is_set": true,
+          "tether": true,
+          "contact_count": 1,
+          "doing": 3,
+          "idle_entry_latch": 0,
+          "paid_head_is_set": true,
+          "walk_is_moving": true
+        },
+        "delivery_radio": [
+          [
+            "producer",
+            "product",
+            2,
+            1
+          ],
+          [
+            "producer",
+            "product",
+            9,
+            1
+          ],
+          [
+            "product",
+            "producer",
+            24,
+            1
+          ],
+          [
+            "producer",
+            "product",
+            24,
+            1
+          ],
+          [
+            "product",
+            "producer",
+            24,
+            0
+          ]
+        ],
+        "arrival_radio": [
+          [
+            "product",
+            "producer",
+            8,
+            1
+          ],
+          [
+            "producer",
+            "product",
+            25,
+            1
+          ],
+          [
+            "product",
+            "producer",
+            25,
+            1
+          ],
+          [
+            "producer",
+            "product",
+            25,
+            0
+          ],
+          [
+            "producer",
+            "product",
+            3,
+            1
+          ]
+        ],
+        "released": {
+          "location": [
+            3904,
+            4288,
+            0
+          ],
+          "mission": 2,
+          "queued": -1,
+          "nav_is_set": true,
+          "archive_is_set": false,
+          "tether": false,
+          "contact_count": 0
+        },
+        "terminal": {
+          "health": 125,
+          "mission": 5,
+          "queued": -1,
+          "nav_is_set": false,
+          "archive_is_set": false,
+          "tether": false,
+          "contact_count": 0,
+          "paid_head_is_set": false,
+          "walk_is_moving": false,
+          "walk_destination_is_set": false
+        },
+        "terminal_cell": [
+          20,
+          20
+        ],
+        "archive_handoff": {
+          "location": [
+            3904,
+            4288,
+            0
+          ],
+          "health": 125,
+          "mission": 2,
+          "queued": -1,
+          "nav_is_set": true,
+          "archive_is_set": false,
+          "tether": false,
+          "contact_count": 0,
+          "doing": 0,
+          "idle_entry_latch": 1
+        },
+        "rally_walk_destination": [
+          5248,
+          5248,
+          0
+        ]
+      }
+    ],
+    "request": {
+      "cell": [
+        20,
+        20
+      ],
+      "entry": "0x00443860",
+      "input_owner": "tools/spatial_oracle/_factory_infantry_output/exit.py"
+    },
+    "exit_cell": [
+      15,
+      16
+    ],
+    "limits": [
+      "Both terminal Guard/Nav/Archive/private Walk/contact states are measured from original registered-startup execution.",
+      "Native local frames identify source rows; absolute canonical frame/RNG parity is excluded."
+    ]
+  },
+  "limits": [
+    "Local snapshots/transmit order are mechanically selected from original initialized controls, not computed by VERA.",
+    "Selected Foot EMPTY and whole Walk CRT execute; inherited FPCW/options/House/map/prior-actor inputs and omitted full startup remain explicit.",
+    "Canonical advance_tick visits more phases/actors than the restricted native caller; absolute frames, no-rally Scatter destination and all-stream RNG parity are excluded.",
+    "HouseTechLevel10 and the already-ready producer are structural Rust test priors, not a whole House/startup/construction equivalence proof.",
+    "EVA registry is empty in the original joined fixture; stock UnitReady voice queue/cleanup is not established by this local fixture."
+  ]
+}

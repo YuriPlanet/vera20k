@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original extended body4990E0 and shadow497390 over raw destination pixels, using native-generated palette and A lookup tables.",
+  "assumptions": [
+    "Pinned active-retail image, RGB565/MMX and x87 CW0E7F as established by the palette owner runtime capture.",
+    "Synthetic palette RGB200,100,50; native mask83E1AC; N1/N27/N53, plain/LightConvert/ColorScheme producers, brightness1000/1500, indices1/240.",
+    "Prepared raw destinationF940, A words0/1/2/63/126/127/128/254/255, row candidate4096, signed shape zero, old Z[65535,65535,0], actual compressed source skip.",
+    "The raw destination models an earlier DSurface store. Rally producer execution and its pass admission/order remain in rally.json; this corpus does not execute a whole native frame or derive shroud cells.",
+    "Mask7BEF is supplied from the existing original RGB565 mask-constructor corpus. No timer, RNG or detach is involved."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "extended_body": "0x004990E0",
+    "shadow": "0x00497390",
+    "light_convert": "0x00556090",
+    "plain_convert": "0x004BBB00",
+    "intensity": "0x00420196"
+  },
+  "payload_sha256": "1b9e472980cd3ae39187004fc48acfb1202bb4a58f061510817301c2bfe5eb2a",
+  "replay_command": "python -m tools.procedural_drawing_oracle.blitter_a"
+}

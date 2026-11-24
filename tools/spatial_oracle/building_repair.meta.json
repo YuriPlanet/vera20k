@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "BuildingTypeClass repair step cost 0x7120D0 with GetCost 0x45ED50; BuildingClass::ToggleRepair 0x446FF0; BuildingClass::UpdateRepairAndPower 0x450630 from entry to return (admission, the computer's auto-repair start and latch timer, the repair tick), alone and after BuildingClass::Update's construction pieces through a build-up; HouseClass::Update's latch release 0x4F9302..0x4F9338; TechnoClass::DrawExtras' repair wrench frame 0x6F52D8..0x6F532D",
+  "assumptions": [
+    "the slave_manager fixture refinery (Building vtables over a BuildingType-vtable type, 2x2 at NW (12, 12)) owned by the fixture House; multiplayer game mode unless `game_mode` is 0; PlayerPtr the owner only when `player`; the Scenario RNG seeded through the original seeder",
+    "Rules: RepairStep 8, RepairPercent 15% (0x3FC3333333333333) unless the row sets it, RepairRate .016f widened, ConditionYellow .5, ConditionRed .25, [IQ] RepairSell 1 and SellBack 2, [AI] CreditReserve 100 unless the row sets it; the PadAircraft= vector holds two AircraftType-vtable types (Cost 1000/1200 unless the row sets them) whose first's first Dock= is this type only when `pad_dock`; SeparateAircraft= set unless the row clears it; a FreeUnit= is a UnitType-vtable type",
+    "update rows: the owner's money interface House+0x24 holds the constructor's vtable 0x7EA834, its storage empty (Available_Money = Balance); authored IQ 2, TechLevel 10; the latch timer's unread +0x284 word preset; damage-state slots 0..3 as SLOT_OCCUPANTS/SLOT_NAMES name them; the smoke (+0x310) a ParticleSystemClass-vtable object",
+    "build rows: the update rows' state with no mission, then building_construction's route creation (the control at Type+0xF04, the TechnoClass constructor stage state, BState and queued BState -1, +0x90 and +0x6E9 set) at the row's start frame"
+  ],
+  "substitutions": [
+    "toggle and update rows: the flash (vt+0x148 = 0x456E00), EVA 0x752700 and VocClass::PlayAt 0x7509E0 observed and answered",
+    "update rows: BuildingClass::GetCurrentFrame 0x43EF90 answered 0 (only the redraw byte +0x80 reads it), the damage-state slot anim 0x451890 observed and answered (ToggleRepair, Health_Ratio, Spend_Money, Available_Money and the smoke's vt+0xF8 native), Sell_Back 0x447110 observed and answered",
+    "build rows: UpdateRepairAndPower invoked after the queued-BState block (0x440042), the rest of BuildingClass::Update before 0x4401B6 and of TechnoClass::AI not run; the route rows' substitutions (UpdateAnimation presentation callees, the radio broadcasts 0x65ACB0/0x65ACE0, Grand_Opening 0x445F80, the loop update 0x750D40, SoundEvent::Release 0x406060, TechnoClass::Receive_Radio 0x6F4AB0 answered 1); GetCurrentFrame answered only inside UpdateRepairAndPower",
+    "release rows: the block run alone with ESI = the House",
+    "wrench rows: the block run alone (SpeedNormalize 0x5FB2E0 native)"
+  ],
+  "entry_points": {
+    "repair_step_cost": "0x007120D0",
+    "toggle_repair": "0x00446FF0",
+    "update_repair_and_power": "0x00450630",
+    "house_release": "0x004F9302",
+    "enter_construction": "0x0044D6A0",
+    "commence": "0x005B3570",
+    "queue_mission": "0x005B35E0",
+    "receive_radio": "0x0043C2D0",
+    "update_animation": "0x004509D0",
+    "mission_ai": "0x005B3060",
+    "update_ready_commence_unless_building": "0x0043FE27",
+    "update_ready_commence": "0x0043FF91",
+    "update_queued_bstate": "0x0043FFB4",
+    "draw_extras_wrench_frame": "0x006F52D8"
+  },
+  "payload_sha256": "07b01589eca93cf34df7c7f4527459aba0500408cc6a5a0d7fcaf13525252c92"
+}

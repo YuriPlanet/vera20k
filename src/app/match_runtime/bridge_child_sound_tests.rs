@@ -1,0 +1,203 @@
+//! Selected bridge landing child Report reader and destruction composition.
+
+use super::*;
+use crate::audio::arbiter::{
+    ArbiterAction, EntryFacts, HandleOwner, PlayRequest, PlayoutEnd, SoundArbiter, TestPlayback,
+};
+use crate::rules::{
+    native_processing::RulesLayerStack,
+    retail_ini_fixture::{art_registry, retail_ini, retail_rules_and_art},
+    sound_ini::SoundRegistry,
+};
+use crate::util::fixed_math::SimFixed;
+
+#[test]
+fn retail_landing_child_reports_release_instead_of_cutting_samples() {
+    let (Some((ini, art)), Some(sound)) = (retail_rules_and_art(), retail_ini("soundmd.ini"))
+    else {
+        return;
+    };
+    let registry = SoundRegistry::from_ini(&sound);
+    let mut rules = RuleSet::from_processed_rules(
+        &RulesLayerStack::new(ini)
+            .process_with_fixed_art_and_sounds(&art, &registry)
+            .unwrap(),
+    )
+    .unwrap();
+    rules.install_art_data(art_registry(&art));
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/rules_oracle/bridge_child_sound.json",
+    ))
+    .unwrap();
+    let art_native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/rules_oracle/bridge_anim_inputs.json",
+    ))
+    .unwrap();
+    for report in native["anim_reports"].as_array().unwrap() {
+        let name = report["name"].as_str().unwrap();
+        let config = rules.art().anim_runtime_config(name).unwrap();
+        // None of these sets StartSound=, so the start slot holds Report=,
+        // resolved with case-insensitive Voc FindByName; ArtRegistry stores
+        // the same identity in uppercase.
+        assert_eq!(
+            config.start_sound,
+            report["report_name"].as_str().map(str::to_ascii_uppercase)
+        );
+        assert!(config.stop_sound.is_none());
+        let Some(sound_name) = report["report_name"].as_str() else {
+            continue; // SMOKEY2 has no Report in the original reader either.
+        };
+        let row = native["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["name"] == sound_name)
+            .unwrap();
+        let entry = registry.get(sound_name).unwrap();
+        assert_eq!(
+            serde_json::json!({
+                "control": entry.control,
+                "type_flags": entry.type_flags,
+                "volume_linear": entry.volume_linear,
+                "priority": entry.priority,
+                "limit": entry.limit,
+                "loop_count": entry.loop_count,
+                "range": entry.range,
+                "delay_min": entry.delay_ms.0,
+                "delay_max": entry.delay_ms.1,
+                "fshift_min": entry.fshift.0,
+                "fshift_max": entry.fshift.1,
+                "vshift": entry.vshift,
+                "samples": entry.sounds,
+                "sample_count": entry.sounds.len(),
+            }),
+            serde_json::Value::Object(
+                [
+                    "control",
+                    "type_flags",
+                    "volume_linear",
+                    "priority",
+                    "limit",
+                    "loop_count",
+                    "range",
+                    "delay_min",
+                    "delay_max",
+                    "fshift_min",
+                    "fshift_max",
+                    "vshift",
+                    "samples",
+                    "sample_count"
+                ]
+                .into_iter()
+                .map(|key| (key.to_string(), row[key].clone()))
+                .collect()
+            ),
+            "physical SOUNDMD original reader: {sound_name}"
+        );
+        let frames = art_native["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["name"] == name)
+            .unwrap()["raw_shp_frame_count"]
+            .as_i64()
+            .unwrap();
+        rules.bind_anim_frame_count_for_test(name, frames as i32);
+        let mut sim = Simulation::new();
+        let type_id = sim.intern(name);
+        let id = sim
+            .spawn_combat_explosion_anim(
+                &rules,
+                type_id,
+                4,
+                4,
+                SimFixed::from_num(128),
+                SimFixed::from_num(128),
+                0,
+                416,
+            )
+            .unwrap();
+        // Exercise natural expiry; this test does not certify the native
+        // child's entire timer/Middle/Scenario RNG trajectory.
+        for frame in 0..100 {
+            sim.session_mut_for_test().set_binary_frame_for_test(frame);
+            sim.visit_anim(
+                id,
+                &rules,
+                None,
+                &mut crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap();
+            if sim.pending_delete().contains_object(&id) {
+                break;
+            }
+        }
+        assert!(sim.pending_delete().contains_object(&id), "{name}");
+        assert!(!sim.anim(id).unwrap().in_logic_vector(), "{name}");
+        let events = sim.take_sound_events_for_test();
+        let mut output = SoundEventQueue::default();
+        dispatch_sim_sound_events(events, &sim, &rules, None, &mut |_| true, &mut output, None);
+        let events = output.drain();
+        assert!(
+            matches!(events.as_slice(), [
+            GameSoundEvent::AnimationStarted { anim_id, sound_id, .. },
+            GameSoundEvent::AnimationReleased { anim_id: released },
+        ] if *anim_id == id && *released == id && sound_id.name_in(&rules).eq_ignore_ascii_case(sound_name)),
+            "{name}: {events:?}"
+        );
+        // Original406060 leaves every byte of the selected playing event
+        // unchanged. 405D40 instead moves it to stopped state and clears its
+        // serial: the two operations are observably different.
+        assert_eq!(row["release"]["event_unchanged"], true);
+        assert_eq!(row["hard_stop"]["event_unchanged"], false);
+
+        // The actual SfxPlayer release operation delegates to this same
+        // device-free owner. Retain an admitted, playing one-shot through
+        // release and the next pump; only sample completion ends it.
+        let mut arbiter = SoundArbiter::new(0);
+        let playing = arbiter
+            .submit(
+                &PlayRequest {
+                    key: sound_name.to_ascii_uppercase(),
+                    facts: EntryFacts::from(entry),
+                    volume_linear: entry.volume_linear,
+                    pan: 0x2000,
+                },
+                0,
+            )
+            .unwrap();
+        arbiter.set_loop_handle(
+            HandleOwner::Positional(id),
+            Some(playing),
+            &sound_name.to_ascii_uppercase(),
+        );
+        assert!(
+            arbiter
+                .update_tick(100, &mut TestPlayback::default())
+                .iter()
+                .any(|action| matches!(
+                    action, ArbiterAction::Start { event, .. } if *event == playing
+                ))
+        );
+        let GameSoundEvent::AnimationReleased { anim_id } = events[1] else {
+            unreachable!("ordered app event checked above")
+        };
+        arbiter.release_owner(HandleOwner::Positional(anim_id));
+        assert!(arbiter.loop_handle_owners().is_empty());
+        assert!(
+            arbiter
+                .update_tick(200, &mut TestPlayback::default())
+                .iter()
+                .all(|action| !matches!(
+                    action, ArbiterAction::Stop { event } if *event == playing
+                ))
+        );
+        assert_eq!(arbiter.live_event_count(), 1);
+        assert_eq!(arbiter.busy_channel_count(), 1);
+        let token = arbiter.event_token(playing).unwrap();
+        arbiter.notify_playout_ended(token, PlayoutEnd::default(), 200);
+        arbiter.update_tick(240, &mut TestPlayback::default());
+        assert_eq!(arbiter.live_event_count(), 0);
+        assert_eq!(arbiter.busy_channel_count(), 0);
+    }
+}

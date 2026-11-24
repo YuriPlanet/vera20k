@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "SpawnManagerClass::AI 0x006B7230 (the UpdateTimer gate, every node status 0..7 with its owner and target gates, launch, regeneration and rearm, and the manager status 0..2), SetTarget 0x006B7B90, PointerExpired 0x006B7C60 (all four arms), ClearAllTargets 0x006B7BB0 and Kill_All_Spawns 0x006B7100, over V3, DMisl, CMisl and aircraft pools. Not the constructor, CountAliveSpawns/CountDockedSpawns, Save/Load, or the seams' bodies (Unlimbo, Limbo, Assign_Destination, the tracker, AnimClass).",
+  "assumptions": [
+    "FPCW 0E7F; the cell-delta table initializer 0x0049F2F0 runs first; MapClass+0x13C/+0x140 name a 0x40000-entry cell array whose cells (0..127, 0..127) exist; the owner's PrimaryFacing is built at frame 0 (ROT 8) and snapped to the row facing; the manager, its nodes, the owner and children fields are the row's; Rules +0x4B0/+0x4B4 and +0x4E4/+0x4E8 hold the V3 and DMisl frame pairs, +0x4E0/+0x514/+0x548 the V3, DMisl and CMisl types (the pool type in the row's family slot)."
+  ],
+  "substitutions": [
+    "Owner GetTechnoType/GetWeapon/GetFLH/GetMapCoords/CanFireAtTarget/Owner, its locomotor's Is_Moving/Is_Moving_Now, the children's Unlimbo/Assign_Destination/Queue_Mission/Assign_Target/Limbo/GetMapCoords/UnInit and the type's CreateObject are recorded INT3 stubs answering the row; Push/Remove of the kamikaze tracker, operator new, FindIndexByName and the AnimClass constructor are recorded entry hooks."
+  ],
+  "entry_points": {
+    "ai": "0x006B7230",
+    "set_target": "0x006B7B90",
+    "pointer_expired": "0x006B7C60",
+    "clear_all_targets": "0x006B7BB0",
+    "kill_all_spawns": "0x006B7100",
+    "ion_offline": "0x0053A130",
+    "facing_current": "0x004C93D0",
+    "map_cell": "0x005657A0",
+    "adjacent_cell": "0x00481810"
+  },
+  "payload_sha256": "cf79658b9f2f06e7bef2fd735b843e5c8e3e2ae9a4e8f4b1d8432f0e2dd066b4"
+}

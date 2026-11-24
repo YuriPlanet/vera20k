@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original 581F50 post-load hierarchy rebuild on physical Anytown bridge states.",
+  "assumptions": [
+    "A fresh original full-map Navigation machine is created independently for each boundary. Its initial state and selected original damage/collapse/repair state and trace must equal the frozen Navigation packet exactly before rebuild.",
+    "The existing Navigation.run driver executes preparations; the observer stops only after the chosen complete native57CCF0 or573540 returns. No bridge or graph algorithm is reproduced in this driver.",
+    "Original LoadContent67E730 calls581F50 at67E8CD after MouseLoad and object restoration. This witness executes that complete581F50 wrapper on the frozen live source facts; it does not emulate SaveGame, MouseLoad or pointer swizzling.",
+    "Original Mouse Save5BE727..767 writes retained Map+68 four-byte records and13 raw movement rows; Load5BE355..3A7 reads the emitted bytes after their receiver storage is overwritten. Native pointers/counts/iteration/allocation/order execute, with explicit host IStream byte transport. Raw Mouse object, full Cell load and pointer swizzling remain outside this block witness. The hierarchy record vectors, ID planes and adjacency buckets are rebuilt.",
+    "The selected stock span has no structural bridge/Tube records. Full post-load bridge record/dummy reconstruction and actor path invalidation are outside this bounded witness."
+  ],
+  "substitutions": [
+    "Reuse all physical reader, cell/TMP/Terrain preparation, bounded allocation/free, display, shroud and waterfall animation seams declared by frozen Navigation. No new native gameplay seam is introduced during581F50.",
+    "The successful LoadContent callsite is instruction-established and byte-checked against the loaded binary. This is a hierarchy-rebuild execution comparison, not a full native save/load run."
+  ],
+  "entry_points": {
+    "load_content": "0x0067E730",
+    "load_hierarchy_call": "0x0067E8CD",
+    "retained_save_block": "0x005BE727",
+    "retained_load_block": "0x005BE355",
+    "rebuild_all": "0x00581F50",
+    "clear_vector": "0x00588D60",
+    "build_level": "0x00581F90",
+    "refresh_scratch": "0x0042C1C0"
+  },
+  "payload_sha256": "226a13e5d89a196a611bdc6e23483cba259fe7e3398264b1b1ec045c02db298e"
+}

@@ -1,0 +1,360 @@
+//! The computer's superweapon script actions (jump table `0x006E9F74`):
+//! action 55 (`0x006EFC70`, case `0x006E9D95`) fires the house's Iron
+//! Curtain at the team, action 56 (`0x006EFE60`, case `0x006E9DAE`)
+//! chronoshifts to a BuildingWithProperty target, and action 57 (`0x006F0130`,
+//! case `0x006E9DC7`) chronoshifts onto its leader's quarry. Retail AIMD runs 55 in
+//! the "Soviet Iron Curtain" scripts after action 53 and 57 in "Allied
+//! Chronosphere" after action 54.
+//!
+//! Evidence: `tools/superweapon_oracle.py` section `team_super_actions` runs
+//! handlers 55 and 57 natively (the leader loop, the Supers search, the power
+//! ratio, the RechargeTimer read, `GetRechargeTime` and `Quarry_To_Threat`;
+//! the threat scan and Fire_SW are recorded stubs); `super_actions_tests.rs`
+//! replays it.
+//! Action 56 adapts the author's ra2-mono QueryTeamSuperweaponProgress and
+//! primary-House/building-selector regression under VERA's GPLv3, reusing the
+//! existing shared owners. See `docs/script-action-56.md` for source mapping;
+//! the added authored regressions are not native-execution goldens.
+//!
+//! RESIDUALS:
+//! - A team without a centre (`+0x34` NULL: no live joined member in the
+//!   playfield) faults natively once its action fires, reading the centre's
+//!   vtable (`0x006EFD6D`, `0x006EFFBE`, `0x006F026F`). VERA fires nothing and finishes
+//!   the action. A team with members always holds a joined one (`+0x689`):
+//!   Add_Member joins the first recruit and only it
+//!   (`0x006EA554..0x006EA55C`), Remove_Member joins the head once no joined
+//!   member is left (`0x006EAA69`), and no other writer clears the flag. So
+//!   the centre is missing only while every joined member is dead, in limbo
+//!   or outside the playfield. Trigger: a charged Super with full power
+//!   then. Retail AIMD's four scripts with 55 or 57 hold besides only
+//!   gather, guard, success and attack actions: none loads, enters or
+//!   deploys its members.
+//! - Fire_SW takes the Super's `Type=` value as its Supers index (see
+//!   [`Simulation::team_fire_super`]). A `[SuperWeaponTypes]` list shorter
+//!   than that value makes Fire_SW read past the Supers vector natively;
+//!   VERA fires nothing. Dormant: retail lists all twelve types in `Type=`
+//!   order.
+//!
+//! Ledger: none of the three handlers draws a random number, writes a timer or detaches
+//! anything itself. Greatest_Threat's empty-scan latch is the shared scan's
+//! (`world/techno_ai/target_scan.rs`), Assign_Mission_Target's writes are
+//! [`Simulation::team_assign_mission_target`]'s, and the recharge restarts
+//! and launch effects are Fire_SW's (`superweapon/fire.rs`).
+
+use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::ruleset::RuleSet;
+use crate::rules::superweapon_type::SuperWeaponKind;
+use crate::sim::intern::InternedId;
+use crate::sim::superweapon::{super_nearly_ready, super_types_with_type};
+use crate::sim::world::FrameEffects;
+use crate::sim::world::Simulation;
+
+use super::TeamTarget;
+
+/// What an action does with the Super it checks this frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SuperStep {
+    /// Charged with full power: fire.
+    Fire,
+    /// Nearly charged: the team stays on the action.
+    Wait,
+    /// The action finishes.
+    Finish,
+}
+
+/// Only destination selection differs between the two native Chronosphere
+/// actions. The common path owns readiness, paired firing and completion.
+pub(super) enum ChronoshiftTarget {
+    Building(i32),
+    Quarry(i32),
+}
+
+impl Simulation {
+    /// Script action 55 (`0x006EFC70`): the leader's house fires its first
+    /// Iron Curtain (`Type=` 1) at the cell of the team's centre once
+    /// [`Self::team_super_step`] allows, then the action finishes. It also
+    /// finishes without members or such a Super, and waits while the Super
+    /// nearly has its charge.
+    pub(super) fn team_action_iron_curtain(
+        &mut self,
+        team_id: u64,
+        argument: i32,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
+    ) {
+        if rules.ares_form() {
+            self.team_action_ares_iron_curtain(team_id, argument, rules, registry, frame_effects);
+        } else {
+            let checked = self.team_leader(team_id, rules).and_then(|leader| {
+                // The leader's house (`+0x21C`).
+                let owner = self.substrate.entities.get(leader)?.owner();
+                let curtain =
+                    super_types_with_type(rules, SuperWeaponKind::IronCurtain.native_index())
+                        .next()?;
+                Some((owner, self.team_super_step(owner, curtain, rules)))
+            });
+            match checked {
+                Some((_, SuperStep::Wait)) => return,
+                Some((owner, SuperStep::Fire)) => {
+                    if let Some(centre) = self.team_centre_cell(team_id) {
+                        self.team_fire_super(
+                            owner,
+                            SuperWeaponKind::IronCurtain,
+                            centre,
+                            rules,
+                            registry,
+                            frame_effects,
+                        );
+                    }
+                }
+                Some((_, SuperStep::Finish)) | None => {}
+            }
+            if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                team.advance_pending = true;
+            }
+        }
+    }
+
+    /// Script actions 56 (`0x006EFE60`) and 57 (`0x006F0130`): with the
+    /// leader's house's last Chronosphere (`Type=` 3) passing
+    /// [`Self::team_super_step`], action 56 selects a BuildingWithProperty
+    /// target as action 47 does, while 57 asks for its quarry as action 0
+    /// does ([`Self::team_quarry_threat`]). Finding one, the house fires the
+    /// Chronosphere at the cell of the team's centre and its last Chrono Warp
+    /// (`Type=` 4, whose charge is not read) at the target's cell, and the
+    /// target becomes the team's mission target (`Assign_Mission_Target @
+    /// 0x006E9050`). The action then finishes, target or not. It also
+    /// finishes without members, a Chronosphere or a Chrono Warp, and waits
+    /// while the Chronosphere nearly has its charge.
+    pub(super) fn team_action_chronoshift(
+        &mut self,
+        team_id: u64,
+        destination: ChronoshiftTarget,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
+    ) {
+        let checked = self.team_leader(team_id, rules).and_then(|leader| {
+            let owner = self.substrate.entities.get(leader)?.owner();
+            let sphere = super_types_with_type(rules, SuperWeaponKind::ChronoSphere.native_index())
+                .last()?;
+            super_types_with_type(rules, SuperWeaponKind::ChronoWarp.native_index()).last()?;
+            Some((leader, owner, self.team_super_step(owner, sphere, rules)))
+        });
+        match checked {
+            Some((_, _, SuperStep::Wait)) => return,
+            Some((leader, owner, SuperStep::Fire)) => {
+                // 56 at 6EFF5D..6EFFAF calls 6EEBD0 directly, with the selected
+                // leader (not the member-list head), its House's enemy and the
+                // TeamType's OnlyTargetHouseEnemy. No quarry/weapon/fog gate.
+                // A quarry scan may answer a wall Cell (the ring walk's
+                // fallback); 6F0271 reads its coordinates like an object's.
+                let target = match destination {
+                    ChronoshiftTarget::Building(argument) => self
+                        .team_find_target_building(team_id, leader, argument)
+                        .map(TeamTarget::Object),
+                    ChronoshiftTarget::Quarry(quarry) => self
+                        .team_quarry_threat(team_id, leader, quarry, rules, registry)
+                        .map(TeamTarget::from),
+                };
+                if let Some(target) = target
+                    && let Some(centre) = self.team_centre_cell(team_id)
+                    && let Some(TeamTarget::Cell { x, y }) = self.team_target_cell_of_coord(target)
+                {
+                    self.team_fire_super(
+                        owner,
+                        SuperWeaponKind::ChronoSphere,
+                        centre,
+                        rules,
+                        registry,
+                        frame_effects,
+                    );
+                    self.team_fire_super(
+                        owner,
+                        SuperWeaponKind::ChronoWarp,
+                        (x, y),
+                        rules,
+                        registry,
+                        frame_effects,
+                    );
+                    self.team_assign_mission_target(team_id, Some(target), rules, frame_effects);
+                }
+            }
+            Some((_, _, SuperStep::Finish)) | None => {}
+        }
+        if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+            team.advance_pending = true;
+        }
+    }
+
+    /// The test all three actions put to the Super they check
+    /// (`0x006EFD46..0x006EFE4F`, `0x006EFF3A..0x006F011B`, `0x006F01ED..0x006F020A` and
+    /// `0x006F032B..0x006F039C`): charged (`+0x6F`) with the house's power
+    /// ratio (`GetPowerRatio @ 0x004FCE30`, `FCOMP` with 1.0) not below one
+    /// fires; otherwise a Super that is [`super_nearly_ready`] waits.
+    fn team_super_step(&self, owner: InternedId, type_name: &str, rules: &RuleSet) -> SuperStep {
+        let charged = self
+            .interner
+            .get(type_name)
+            .and_then(|type_id| self.super_weapons.get(&owner)?.get(&type_id))
+            .is_some_and(|instance| instance.is_ready());
+        // A house without a power state has produced 0 of 0 drained: ratio 1.
+        let full_power = self
+            .power_states
+            .get(&owner)
+            .is_none_or(|power| power.has_full_power());
+        if charged && full_power {
+            SuperStep::Fire
+        } else if super_nearly_ready(self, rules, owner, type_name) {
+            SuperStep::Wait
+        } else {
+            SuperStep::Finish
+        }
+    }
+
+    /// Ares's action 55 (hook 6EFC70, Ares.dll 1003A2F0 -> 10039EF0): the
+    /// leader's House walks every SuperWeaponType whose `SW.AITargeting` is
+    /// IronCurtain and whose `SW.Group` equals the argument. The first one
+    /// charged, with House power (drain 0 or not above output) unless the type
+    /// is not `IsPowered`, fires (Fire_SW by its own index) at the team's
+    /// centre cell and the step completes. Before that, the first granted one
+    /// whose elapsed charge reaches `AIMinorSuperReadyPercent` (x87: both
+    /// counts stored as binary32, `jb` skips an unordered compare) makes the
+    /// step wait; with neither, it completes, as it does without a leader.
+    fn team_action_ares_iron_curtain(
+        &mut self,
+        team_id: u64,
+        argument: i32,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
+    ) {
+        use crate::rules::superweapon_targeting::AiTargetingMode;
+        use crate::util::native_x87::{MaskedX87Chop53 as F, MaskedX87Ordering as O};
+        let mut found = None;
+        let mut fire = false;
+        let owner = self
+            .team_leader(team_id, rules)
+            .and_then(|leader| self.substrate.entities.get(leader))
+            .map(|leader| leader.owner());
+        if let Some(owner) = owner {
+            let power = self.power_states.get(&owner);
+            let (output, drain) =
+                power.map_or((0, 0), |power| (power.total_output(), power.total_drain()));
+            let has_power = drain == 0 || drain <= output;
+            let frame = self.session.binary_frame() as i32;
+            for name in &rules.super_weapon_order {
+                if fire {
+                    break;
+                }
+                let (Some(sw), Some(metadata)) =
+                    (rules.super_weapon(name), rules.super_weapon_metadata(name))
+                else {
+                    continue;
+                };
+                if metadata.targeting().mode() != AiTargetingMode::IronCurtain
+                    || metadata.launch().group() != argument
+                {
+                    continue;
+                }
+                let Some(instance) = self
+                    .interner
+                    .get(name)
+                    .and_then(|id| self.super_weapons.get(&owner)?.get(&id))
+                else {
+                    continue;
+                };
+                if instance.is_ready() && (has_power || !sw.is_powered) {
+                    found = Some(name.as_str());
+                    fire = true;
+                } else if found.is_none() && instance.is_active() {
+                    let recharge = instance.recharge_time(sw);
+                    let elapsed = recharge.wrapping_sub(instance.charge_remaining(frame));
+                    let as_float =
+                        |value: i32| F::load_f32(F::store_f32_masked_chop(F::load_i32(value)));
+                    let threshold = F::mul(
+                        F::load_f32(rules.general.ai_minor_super_ready_percent),
+                        as_float(recharge),
+                    );
+                    if matches!(
+                        F::compare(as_float(elapsed), threshold),
+                        O::Greater | O::Equal
+                    ) {
+                        found = Some(name.as_str());
+                    }
+                }
+            }
+            if fire && let Some((name, centre)) = found.zip(self.team_centre_cell(team_id)) {
+                let sw_type_id = self.interner.intern(name);
+                self.fire_super_weapon_selected(
+                    rules,
+                    owner,
+                    sw_type_id,
+                    (centre.0 as u16, centre.1 as u16),
+                    registry,
+                    frame_effects,
+                    crate::sim::superweapon::SuperWeaponTargetSource::Manual,
+                    None,
+                );
+            }
+        }
+        if (fire || found.is_none())
+            && let Some(team) = self.team_script_vm.teams.get_mut(&team_id)
+        {
+            team.advance_pending = true;
+        }
+    }
+
+    /// The cell of the team's centre (`+0x34`, its GetCoords over 256 toward
+    /// zero), `None` without one (module residual).
+    fn team_centre_cell(&self, team_id: u64) -> Option<(i16, i16)> {
+        let zone = self.team_script_vm.teams.get(&team_id)?.zone?;
+        match self.team_target_cell_of_coord(zone)? {
+            TeamTarget::Cell { x, y } => Some((x, y)),
+            TeamTarget::Object(_) => None,
+        }
+    }
+
+    /// `Fire_SW(Type=, &cell)` (`0x006EFDB4`, `0x006F02B6`, `0x006F030D`):
+    /// the actions pass the Super's `Type=` value where Fire_SW takes an
+    /// index into the house's Supers, the `[SuperWeaponTypes]` entry at that
+    /// position. That is the Super itself when the list puts each type at
+    /// the index of its `Type=`, as retail does.
+    fn team_fire_super(
+        &mut self,
+        owner: InternedId,
+        kind: SuperWeaponKind,
+        (x, y): (i16, i16),
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
+    ) {
+        let Some(name) = usize::try_from(kind.native_index())
+            .ok()
+            .and_then(|index| rules.super_weapon_order.get(index))
+        else {
+            return;
+        };
+        let sw_type_id = self.interner.intern(name);
+        // Script actions are synchronous authoritative producers. Capture the
+        // current ticket now; the shared finalizer still consumes it once.
+        let selection = self
+            .paid_super_weapon_selection(owner)
+            .filter(|selection| selection.destination == sw_type_id);
+        self.fire_super_weapon_selected(
+            rules,
+            owner,
+            sw_type_id,
+            (x as u16, y as u16),
+            registry,
+            frame_effects,
+            crate::sim::superweapon::SuperWeaponTargetSource::Manual,
+            selection,
+        );
+    }
+}
+
+#[cfg(all(test, tests_sim_t_z))]
+#[path = "super_actions_tests.rs"]
+mod tests;

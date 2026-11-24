@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Extract original Approach observations for production Rust comparisons.\n\nThis projection executes no game code and computes no expected gameplay result.\nIt copies fields from the independently executed native packets and preserves\nboth complete RNG states and the numeric candidate-geometry observations.\n",
+  "assumptions": [
+    "Projection only: inputs, state, timers, full RNG states, callback arguments and geometry outputs are copied from separately executed original packets. No Rust output or calculated gameplay outcome contributes. The source packet limitations remain applicable.",
+    "candidates contains full MissionDispatch controls; admission and queued contain complete UnitApproach controls at their declared input boundary. entry_returned_eax belongs to that declared entry point; approach_returned_eax is copied from the unique original UnitApproach flow record. The candidate entry return is MissionDispatch delay, not a returned Cell pointer.",
+    "Mission, rearm and target pointer observations come from the original before/after snapshots. Target presence and pointer equality are projections only. Candidate rows did not capture target Cell coordinates; no coordinates are inferred from their input or chosen destination. Direct Approach can be compared with complete dispatch rows only for Approach-owned outputs: the mission cadence timer and Scenario RNG suffix occur later.",
+    "Numeric candidate geometry is copied without recomputation from the original instruction-fragment controls; it does not claim source placement, map admission or complete Approach for those poses."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "projected_original_approach": "0x004D5690"
+  },
+  "sources": {
+    "candidates.json.gz": "5f48c65a695f40d2d589b5f24edcbfff21ee81d1701e1fb48f1c019e6a957fd2",
+    "admission.json.gz": "a9b6c557771c8eef2efb21ab615a6fa0b491772b14999632c444e058004bfc82",
+    "queued.json.gz": "b08d80f814be869bc096e2fccc05bb6032592dca024fe10006330cd4b20be02a"
+  },
+  "payload_sha256": "cab5ac0e79e38060d9403d894579ee58093e843f5a7ab48620aaee98dfa788fb"
+}

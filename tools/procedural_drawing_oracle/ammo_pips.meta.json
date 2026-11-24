@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Ordinary selected ORCA ammo through whole Extras, shared708C30 arithmetic and existing status consumers",
+  "assumptions": [
+    "Additive ammo mode extends the existing selected-health generator, mobile constructor-prefix helper, _HealthRecorder, PaletteReader/cache/palette/shape Surface owners. No copied VM, native loader, INI/parser, numeric emulator, cargo/manager/storage owner or rasterizer produces outputs. All historical modes retain their defaults and output payloads.",
+    "Whole Rules665650/AircraftType41C8B0/UnitType7470D0/InfantryType5236A0 constructors execute in one VM. Selected original Strength/PipScale/delta/Size/SizeLimit/Passengers/Gunner/Storage and ORCA PipWrap/InitialAmmo/Ammo reader/store blocks consume physical RULESMD, absent LANGRULE, MPBattleMD and XMP03T4. Full type readers, unrelated keys and fixed ART/body inputs are excluded; these status keys are RULES inputs and ART is not layered. ORCA ctor PipWrap0/InitialAmmo-1/Ammo-1 becomes stock0/-1/1; nonzero PipWrap remains a dormant configuration branch, not unreachable.",
+    "Existing mobile prefix uses original Aircraft413D20..413DB1 before COM followed by real Fly4CC9A0, or the unchanged Unit/Foot/Drive and Infantry/Walk prefixes for numeric dependencies. Supplied interface owner/link/active, selection/hover/sinking, raw Location, owner/observer, health and rank priors are render inputs. Original constructor Scenario RNG requests/passive timer initialization are recorded separately; no whole construction, Unlimbo, selection generation, flight/body or scenario lifecycle is claimed.",
+    "ORCA41403A..414051 initializes actual signed current Ammo. Depleted/rearmed rows enter the original admitted-release pending writer41840E..418415 then next-entry consume418031..418056; actual whole Aircraft radio4190B0 reaches Foot4D8FB0/Techno6F4C9C for rearm1F. Successful release admission is supplied at its original pending boundary; no shot, burst, mission scheduler, dock search/landing or Building service executes in this oracle. Production Commands/captures cover those separate owners.",
+    "Every raster row executes whole6F5190, original observer/Fly gates,6F64A0 and709A90/70AA60. Actual708C30/716290 choose filled-only PIPS2frame13 for stock Ammo/PipWrap0 at projected GetCoords point[-15,+7],step4. Actual4AED70/picker/4912B0 leaves use flags600 and bypass A/Z. PIPBRD keeps its independent E00 A-consuming material. A127/2/0, oldZ0, viewport clip, supplied airborne height and positive ordered overlap are bounded consumer controls, not a complete native world frame.",
+    "fill_controls run complete original708C30 on small signed ORCA counts and existing physical HARV storage, MIND manager count and FV Cargo receivers. MIND4717D0/counter vectors and four float storage slots are explicit retained consumer priors; FV4733A0 uses original constructor-Limbo E1. Explicit zero/negative Storage, zero Ammo and Power/None configuration boundaries execute actual native ReadInt/ReadPipScale blocks, then restore through those readers. They do not claim stock reachability. Native53/chop division/multiplication/addition, ftol EDX:EAX and positive-total minimum1 execute without a host arithmetic substitute.",
+    "PIPS/PIPBRD/PALETTE and YR PIPS2 ra2md.mix/conqmd.mix bytes match independently confirmed normal STOCK_DIGITAL AssetManager winners with no loose overrides. Original5F76B0 asks for literal PIPS2.SHP through normal lookup and709AEF consumesAC1480. Immutable archive/cache transport remains supplied. Original palette/Convert, projection, shape access, pickers and stores execute; no Rust values supply a golden.",
+    "Original instructions/vtables, actor bytes and A/Z remain unchanged across measured draws and numeric queries. Drawing/query RNG is empty and no timer write or detach occurs in those intervals. This excludes setup constructor RNG/timer effects and the separate combat/flight/reload scheduler side effects; whole709A90/DrawExtras across other status families remains open."
+  ],
+  "substitutions": [
+    "Inherited allocation/delete/CRT TLS, immutable physical file/archive transport and BSurface/circular A/Z backing replace platform services. Actor/interface/count/storage/manager/cargo priors are declared inputs; no reached gameplay/predicate/Fly/palette/shape function return or original instruction is replaced."
+  ],
+  "entry_points": {
+    "aircraft_type_ctor": "0x0041C8B0",
+    "unit_type_ctor": "0x007470D0",
+    "aircraft_ctor_begin": "0x00413D20",
+    "aircraft_ctor_stop": "0x00413DB1",
+    "foot_ctor": "0x004D31E0",
+    "fly_ctor": "0x004CC9A0",
+    "visual_character": "0x004DA4E0",
+    "locomotor_visual": "0x0055ABC0",
+    "ammo_init_begin": "0x0041403A",
+    "ammo_init_end": "0x00414051",
+    "pending": "0x0041840E",
+    "consume_begin": "0x00418031",
+    "consume_end": "0x00418056",
+    "aircraft_radio": "0x004190B0",
+    "techno_reload": "0x006F4C9C",
+    "fill_count": "0x00708C30",
+    "pip_max": "0x00716290",
+    "extras": "0x006F5190",
+    "health": "0x006F64A0",
+    "pip_tail": "0x00709A90",
+    "status_tail": "0x0070AA60",
+    "shape": "0x004AED70",
+    "picker": "0x00490B90",
+    "plain_leaf": "0x004912B0"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.shroud --ammo-pips",
+  "payload_sha256": "a3c540386b99e580af44bb73dbbeb1b794a0189327897b2394afaca7ac0ed613"
+}

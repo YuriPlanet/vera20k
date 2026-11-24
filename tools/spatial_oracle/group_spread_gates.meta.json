@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "524 target/candidate Cell pairs: signed levels, flag 0x100 on either Cell, reservation 0x8000, and all other flag bits set. Excludes the zone compare, Can_Enter_Cell and the distributor.",
+  "assumptions": [
+    "Original MapClass lookups on the shared 128x128 fixture map; supplied Cell+0x11B levels and Cell+0x140 flags.",
+    "Slices start mid-function with only ESP, EBX and ESI supplied; registers the slices do not read are left as the fixture sets them."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "target_height": "0x0064D296",
+    "candidate_gates": "0x0064D53D"
+  },
+  "payload_sha256": "1a9f6d2f37041c3846415fe816ab531474faf661a5dc69b7b353ae72c18e457d"
+}

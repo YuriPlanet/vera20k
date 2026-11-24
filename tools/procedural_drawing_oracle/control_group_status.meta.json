@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Ordinary MTNK assigned group digit through whole Extras/health/tail and physical GAME.FNT fill/outline/glyph pixels",
+  "assumptions": [
+    "One existing selected-health PaletteReader/INI/palette/Surface runtime owns MTNK Rules/UnitType constructors, physical RULESMD/LANGRULE/MPBattleMD/XMP03T4 selected reader blocks and original Unit/Foot/Drive prefix. Constructor RNG/passive timer initialization is separate from measured draw/assignment zero-RNG intervals. Whole Unit construction/COM, Unlimbo, selection/ownership lifecycle and VXL body are excluded.",
+    "The existing control_group_text_oracle font-loader owner accepts the same VM; original434AD0/433880/433990/434700 load unchanged GAME.FNT bytes. Normal STOCK_DIGITAL AssetManager resolves ra2.mix/local.mix without loose override; original House50B840/500DF7 Gold scalar output from consumed house_color.json supplies House+56F9, then original70A8xx RGB565 packing executes. Shared PIPS/PIPBRD/PALETTE use their established physical winners.",
+    "Original731060/7310D0 mutate signed Techno+214 after supplied current-house, mode, selected and Techno-array enrollment priors. Commands assign parameters1/10 and clear through actual code; visual selected/hover/sinking and raw XYZ are subsequent supplied render priors. Assignment controls exercise mode0 PlayerControl and mode1 current-house identity including latent ineligible membership; actor timer bytes stay unchanged and no RNG/detach executes.",
+    "Affected self-heal controls use the same House counters/prior offsets from existing selfheal_oracle and execute original50D9C0/50D9D0 queries and whole709A90. Actual General66E6E2/66E715 ReadInt blocks consume physical SelfHealInfantryFrames50/UnitFrames75. Stock MTNK/E1 type/Unit-or-Infantry/Drive-or-Walk owners are reused. Explicit MTNK Organic=yes and PixelSelectionBracketDelta11 scenario boundaries execute actual715024 ReadBool/71415F ReadInt caller blocks, then restore via those same readers. Healthy frame20 Unit and frame13 Infantry/Organic Unit draw600 without A/Z; the damaged601 pulse, house grant/revoke lifecycle and arbitrary affected types remain separate residuals.",
+    "Whole6F5190->6F64A0->709A90/70AA60->70A6FD->4A66D0->4A5EB0->434B90->434500->434120 executes. Original7BB020/7BB050 black fill,7BAD90/7BADC0 outline and glyph bitmap stores use original BSurface bounds/locks/pitch. They bypass A/Z; these rectangles do not use4BFD30. Clip/A127/63/2/0, oldZ0 and two positive opaque/group-health parent overlaps are component controls, not collision-valid placement or a complete native frame.",
+    "Native constructor field-1 and assigned0..9 map to no digit/1..9,0. Ordinary MTNK PipScale0 reaches the text tail. Building Type PipScale2 means Tiberium and709B61 suppresses the complete tail; this is not an Ammo1 claim. Existing Building/Infantry/Aircraft legacy tail submission cases are preserved separately; whole other-type callers remain open.",
+    "Original .text/vtables, measured draw actor bytes and A/Z remain unchanged; drawing RNG is empty and no timer write/detach occurs. Full Display scheduling, body/shroud/AlphaShapes, non-allied+210 admission, deploy/undeploy/bunker/scripted groups and other status branches remain separate residuals."
+  ],
+  "substitutions": [
+    "Inherited native allocation/delete/CRT TLS, immutable physical file/archive transport and BSurface/circular A/Z memory replace platform services. Existing font owner supplies virtual file reads, bounded CRT %d formatting and Win32 SetRect; no reached health/group decision, font lookup/measure, fill/outline, shape/glyph raster return or native instruction is replaced."
+  ],
+  "entry_points": {
+    "unit_ctor_begin": "0x007353C0",
+    "unit_ctor_stop": "0x007354CE",
+    "drive_ctor": "0x004AF540",
+    "assign": "0x00731060",
+    "clear": "0x007310D0",
+    "extras": "0x006F5190",
+    "health": "0x006F64A0",
+    "pip_tail": "0x00709A90",
+    "status_tail": "0x0070AA60",
+    "group_tail": "0x0070A6FD",
+    "font_ctor": "0x00434AD0",
+    "font_load": "0x00433990",
+    "measure": "0x004A59E0",
+    "fill": "0x007BB020",
+    "outline": "0x007BAD90",
+    "text": "0x004A66D0",
+    "glyph": "0x00434120",
+    "has_infantry_self_heal": "0x0050D9C0",
+    "has_unit_self_heal": "0x0050D9D0",
+    "self_heal_shape": "0x0070A6BB",
+    "self_heal_plain_leaf": "0x004960A0"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.shroud --control-group-status",
+  "payload_sha256": "302396975b3a8f208d2da2cdb4f244896e2be4fa87fdb87c703a2c32dfcd5280"
+}

@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Two native-executed Ares Firepower aggregate and live damage histories.",
+  "assumptions": [
+    "Reuses AttachEffectProbe/EmpProbe/Probe images, CRT, lexical INI, heap and declared collector/world services. Synthetic Unit/UnitType, House1.25, rawDamage101, neutral defenses and VeteranCombat1.5 are inputs, not retail tuning.",
+    "Actual AE reader, collector/attach, aggregate100460A0, update and Remove-vector execute. Firepower crate hooks1005F940/1005F970 use permanent Ext80; accepted recipients aggregate immediately.",
+    "FireAt damage region6FE302..6FE460 and complete EstimateDamage6FDB80 read the same live actor160 without copying or injecting a computed aggregate. Original getters/house/rank/ftol/warhead execute. Whole FireAt, Bullet emission, HP commit and scan scheduler are excluded.",
+    "Native10046180 records each ordered binary64 intermediate;10046124 writes actor160. Duration-only refresh and duplicate crates do not aggregate; Remove conditionally aggregates as native1004B197, excluding full boarding/extension lookup.",
+    "Actual parsed factors0.2/1.1, durations4/2, null animations and cumulative/discard flags; visits are admitted actor visits, not frames. Numeric outputs are native little-endian bytes, never host gameplay calculations.",
+    "Code spans and all three seeded RNG states are byte-guarded after calls; before/after full-state SHA256 recorded. No guarded RNG/detach entry reached; supplied animation services retain their existing boundary."
+  ],
+  "substitutions": [
+    "Existing attachment services only; no numeric/aggregate result injection."
+  ],
+  "entry_points": {
+    "reader": "0x10058A50",
+    "attach": "0x10052700",
+    "aggregate": "0x100460A0",
+    "update": "0x10058E00",
+    "remove": "0x100588E0",
+    "picker": "0x1005F940",
+    "recipient": "0x1005F970",
+    "fire_begin": "0x006FE302",
+    "fire_end": "0x006FE460",
+    "estimate": "0x006FDB80"
+  },
+  "ares_sha256": "93ce890f387a6c1b3240a2dd7b674f25fec5a0e96f0b0d0306796b2edf7b5b83",
+  "control_count": 2,
+  "actual_execution": true,
+  "execution_batches": "Two histories already executed once. Generic corpus is a lossless asserted transfer without replaying these or previous neutral/speed controls.",
+  "command": "python -m tools.rules_oracle.ares_attach_firepower --ares-dll <Ares.dll> --gamemd-exe <gamemd.exe> --check",
+  "payload_sha256": "66ea301a7de18a9a65575534f0e28e421534ad82f51c2c42e1d4901e0d3bda97"
+}

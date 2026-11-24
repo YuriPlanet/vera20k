@@ -1,0 +1,118 @@
+{
+  "schema_version": "vera20k.map-observation-expectations.v1",
+  "assertions": [
+    {
+      "name": "interior D resolves to the deploy hotkey",
+      "subject": {"gesture": 0},
+      "at_step": 7380,
+      "field": "keyboard.binding_command",
+      "op": "eq",
+      "value": "DeployObject"
+    },
+    {
+      "name": "interior deploy has a scheduled command",
+      "subject": {"gesture": 0},
+      "at_step": 7380,
+      "field": "queued_commands",
+      "op": "ne",
+      "value": []
+    },
+    {
+      "name": "interior deploy starts on the factory footprint",
+      "subject": {"actor": {"owner": "VERA-OBSERVER", "type_id": "AMCV", "bind_step": 7380}},
+      "at_step": 7380,
+      "field": "cell",
+      "op": "eq",
+      "value": [29, 92]
+    },
+    {
+      "name": "factory gate keeps moving",
+      "subject": {
+        "actor": {
+          "owner": "VERA-OBSERVER",
+          "type_id": "AMCV",
+          "bind_step": 7380
+        }
+      },
+      "at_step": 7381,
+      "field": "mission.current",
+      "op": "eq",
+      "value": 2
+    },
+    {
+      "name": "factory gate does not queue deploy",
+      "subject": {
+        "actor": {
+          "owner": "VERA-OBSERVER",
+          "type_id": "AMCV",
+          "bind_step": 7380
+        }
+      },
+      "at_step": 7381,
+      "field": "mission.queued",
+      "op": "eq",
+      "value": -1
+    },
+    {
+      "name": "factory gate retains destination",
+      "subject": {
+        "actor": {
+          "owner": "VERA-OBSERVER",
+          "type_id": "AMCV",
+          "bind_step": 7380
+        }
+      },
+      "at_step": 7381,
+      "field": "nav",
+      "op": "eq",
+      "value": {
+        "Cell": {
+          "rx": 30,
+          "ry": 92
+        }
+      }
+    },
+    {
+      "name": "outside factory admits deployment",
+      "subject": {
+        "actor": {
+          "owner": "VERA-OBSERVER",
+          "type_id": "AMCV",
+          "bind_step": 7380
+        }
+      },
+      "at_step": 8401,
+      "field": "mission.queued",
+      "op": "eq",
+      "value": 16
+    },
+    {
+      "name": "converted yard owns new site",
+      "subject": {
+        "actor": {
+          "owner": "VERA-OBSERVER",
+          "type_id": "GACNST",
+          "cell": [40, 96],
+          "bind_step": 8450
+        }
+      },
+      "at_step": 8700,
+      "field": "cell",
+      "op": "eq",
+      "value": [
+        40,
+        96
+      ]
+    },
+    {
+      "name": "whole route paid",
+      "subject": {
+        "house": "VERA-OBSERVER"
+      },
+      "at_step": 8700,
+      "field": "economy.spent_credits",
+      "op": "eq",
+      "value": 9100
+    }
+  ]
+}

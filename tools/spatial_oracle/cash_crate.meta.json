@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Bounded original weighted/fixed Money pickup through removal, optional replacement, amount/AddCredits, separate sound/tail center sampling and MONEY Anim lifecycle. No free-MCV, attached trigger, other reward, full skirmish bootstrap, audio device or rendering parity.",
+  "assumptions": [
+    "Prepared local neutral-income Unit/House, House owns a building; no attached Tag. ExistingAnimationFixture supplies storedGameOptions speed4; eachrowreadsbacktheactualvalue.",
+    "Shared32x32 flat allocated-cell map; Size(0,0,16,16) and rawLocalSize(0,0,16,16) priors; originalResize5662AC..56633E establishes MapRect and full567230 normalizesLocalSize. Synthetic1x1 resident TMP metadata and empty registries. Slot storage starts zeroed; emptiness uses only coordinates. Native lookup/height/placement remain original.",
+    "Original initial crate placement; seed reset is an explicit independent pickup input. Physical stock RULESMD/ARTMD/SOUNDMD bindings; no mode/map overrides are claimed."
+  ],
+  "substitutions": [
+    "Cached INI/retail asset IO, allocator/TLS and Windows pointer validation use the existing AnimationFixture transport.",
+    "ObjectMark5F5850 admission and marked/redraw mutations execute original code for Overlay and Anim; historical AnimationFixture Mark substitution is disabled for cash. Screen rectangles/dirty sinks remain supplied. DisplaySubmit4A9720 returns1; the reachedObjectUnlimbo caller ignores this return. Sound sample lookup uses declared fixture-local ubonus slot0; native Voc lookup bindsCrateMoney. Playback stops at7509E0; no audio scheduler RNG parity."
+  ],
+  "entry_points": {
+    "pickup": "0x00481A00",
+    "remove": "0x0056C020",
+    "replacement": "0x0056BD40",
+    "place": "0x0056BEC0",
+    "credits": "0x004F9950",
+    "powerups_reader": "0x00673E80",
+    "crate_rules_reader": "0x0066B900",
+    "anim_ctor": "0x00421EA0",
+    "anim_ai": "0x00423AC0",
+    "deferred_drain": "0x00725C70",
+    "resize_field_stores": "0x005662AC",
+    "normalize_local_size": "0x00567230",
+    "object_mark": "0x005F5850",
+    "mark_redraw": "0x005F4D10"
+  },
+  "replay_command": "python -m tools.spatial_oracle.crate_pickup --cash",
+  "payload_sha256": "0913791bb3513e531462503f2860e8c96cb019b5a6200250eba044a2bd27d32f"
+}

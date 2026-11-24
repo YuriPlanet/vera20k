@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original B8 resource and33 complete ordinary child placements",
+  "assumptions": [
+    "Supplied6x13 DLU base units; not font-selection emulation",
+    "60C0C0 active B8 enrollment established from original instructions",
+    "Special title/Back/footer excluded; type3 button paint not emulated"
+  ],
+  "substitutions": [
+    "Shared native_child_case Win32 geometry hooks and true69BBE0"
+  ],
+  "entry_points": {
+    "modal": "0x006B6230",
+    "callback": "0x006B6300",
+    "ordinary_child": "0x0060B7A0"
+  },
+  "payload_sha256": "279a6723577ed1e4baf0ec8cd66821ba92e5ee9b143d2541bce84dc112ab2f35"
+}

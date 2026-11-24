@@ -1,0 +1,13 @@
+name: Linux ARM
+
+# Linux on ARM64 (Raspberry Pi 5, ARM servers, Asahi Linux).
+# Manual only: run it from the Actions tab or with
+# `gh workflow run linux-arm.yml --ref <branch>`.
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+    with:
+      os: ubuntu-24.04-arm

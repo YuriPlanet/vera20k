@@ -1,0 +1,1110 @@
+//! Deterministic integer implementation of the finite x87 subset used by gamemd.
+//!
+//! The active process uses 53-bit precision and truncate-toward-zero rounding.
+//! Callers name every operation and memory store so evaluation order stays visible.
+
+use std::cmp::Ordering;
+
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+mod masked;
+pub use masked::{MaskedX87Chop53, MaskedX87Ordering, MaskedX87Value};
+
+const SIGNIFICAND_TOP: u64 = 1_u64 << 52;
+const EXTENDED_TOP: u64 = 1_u64 << 55;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct NativeF32Bits(u32);
+
+impl NativeF32Bits {
+    pub const POSITIVE_ZERO: Self = Self(0x0000_0000);
+    #[cfg(test)]
+    pub const NEGATIVE_ZERO: Self = Self(0x8000_0000);
+    pub const ONE: Self = Self(0x3f80_0000);
+
+    pub const fn from_bits(bits: u32) -> Self {
+        Self(bits)
+    }
+
+    pub const fn bits(self) -> u32 {
+        self.0
+    }
+
+    /// IEEE binary32 zero, independent of its sign bit.
+    pub const fn is_zero(self) -> bool {
+        self.0 & 0x7fff_ffff == 0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct NativeF64Bits(u64);
+
+impl NativeF64Bits {
+    pub const POSITIVE_ZERO: Self = Self(0x0000_0000_0000_0000);
+    #[cfg(test)]
+    pub const NEGATIVE_ZERO: Self = Self(0x8000_0000_0000_0000);
+    pub const HALF: Self = Self(0x3fe0_0000_0000_0000);
+    pub const ONE: Self = Self(0x3ff0_0000_0000_0000);
+
+    pub const fn from_bits(bits: u64) -> Self {
+        Self(bits)
+    }
+
+    pub const fn bits(self) -> u64 {
+        self.0
+    }
+}
+
+const ADJUST_FOR_Z_THRESHOLD_LEPTONS: i32 = 728;
+
+/// Standard-session height-to-screen multiplier initialized by active YR.
+///
+/// Startup writer `0x006D1BDD` stores exactly `0x3FC25E5374344960`.
+pub const STANDARD_ADJUST_FOR_Z_MULTIPLIER: NativeF64Bits =
+    NativeF64Bits::from_bits(0x3fc2_5e53_7434_4960);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum X87Ordering {
+    Less,
+    Equal,
+    Greater,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum NativeX87Error {
+    #[error("{format} NaN or infinity is outside the verified x87 domain")]
+    NonFiniteInput { format: &'static str },
+    #[error("{format} overflow is outside the verified x87 domain")]
+    StoreOverflow { format: &'static str },
+    #[error("x87 division by zero is outside the verified finite domain")]
+    DivisionByZero,
+    #[error("x87 integer conversion is outside the verified signed 64-bit domain")]
+    IntegerConversion,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct X87Value {
+    sign: bool,
+    exponent: i32,
+    significand: u64,
+}
+
+impl X87Value {
+    const fn zero(sign: bool) -> Self {
+        Self {
+            sign,
+            exponent: 0,
+            significand: 0,
+        }
+    }
+
+    const fn is_zero(self) -> bool {
+        self.significand == 0
+    }
+
+    /// FLD normalizes a finite memory subnormal in the wider x87 exponent range.
+    /// `least_exponent` names the value of the fraction's least significant bit.
+    fn from_subnormal(sign: bool, fraction: u64, least_exponent: i32) -> Self {
+        debug_assert_ne!(fraction, 0);
+        let top = 63 - fraction.leading_zeros();
+        Self {
+            sign,
+            exponent: least_exponent + top as i32,
+            significand: fraction << (52 - top),
+        }
+    }
+
+    fn magnitude_cmp(self, rhs: Self) -> Ordering {
+        self.exponent
+            .cmp(&rhs.exponent)
+            .then_with(|| self.significand.cmp(&rhs.significand))
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct X87Chop53;
+
+impl X87Chop53 {
+    pub fn load_i32(value: i32) -> X87Value {
+        if value == 0 {
+            return X87Value::zero(false);
+        }
+        let sign = value.is_negative();
+        let magnitude = value.unsigned_abs() as u64;
+        let top = 63 - magnitude.leading_zeros();
+        X87Value {
+            sign,
+            exponent: top as i32,
+            significand: magnitude << (52 - top),
+        }
+    }
+
+    pub fn load_f32(bits: NativeF32Bits) -> Result<X87Value, NativeX87Error> {
+        let raw = bits.bits();
+        let sign = raw >> 31 != 0;
+        let exponent = (raw >> 23) & 0xff;
+        let fraction = raw & 0x007f_ffff;
+        if exponent == 0xff {
+            return Err(NativeX87Error::NonFiniteInput { format: "f32" });
+        }
+        if exponent == 0 {
+            if fraction == 0 {
+                return Ok(X87Value::zero(sign));
+            }
+            return Ok(X87Value::from_subnormal(sign, u64::from(fraction), -149));
+        }
+        Ok(X87Value {
+            sign,
+            exponent: exponent as i32 - 127,
+            significand: ((1_u64 << 23) | fraction as u64) << 29,
+        })
+    }
+
+    pub fn load_f64(bits: NativeF64Bits) -> Result<X87Value, NativeX87Error> {
+        let raw = bits.bits();
+        let sign = raw >> 63 != 0;
+        let exponent = (raw >> 52) & 0x7ff;
+        let fraction = raw & 0x000f_ffff_ffff_ffff;
+        if exponent == 0x7ff {
+            return Err(NativeX87Error::NonFiniteInput { format: "f64" });
+        }
+        if exponent == 0 {
+            if fraction == 0 {
+                return Ok(X87Value::zero(sign));
+            }
+            return Ok(X87Value::from_subnormal(sign, fraction, -1074));
+        }
+        Ok(X87Value {
+            sign,
+            exponent: exponent as i32 - 1023,
+            significand: (1_u64 << 52) | fraction,
+        })
+    }
+
+    pub fn neg(value: X87Value) -> X87Value {
+        X87Value {
+            sign: !value.sign,
+            ..value
+        }
+    }
+
+    pub fn add(lhs: X87Value, rhs: X87Value) -> X87Value {
+        if lhs.is_zero() && rhs.is_zero() {
+            return X87Value::zero(lhs.sign && rhs.sign);
+        }
+        if lhs.is_zero() {
+            return rhs;
+        }
+        if rhs.is_zero() {
+            return lhs;
+        }
+
+        let mut high = lhs;
+        let mut low = rhs;
+        if high.exponent < low.exponent {
+            std::mem::swap(&mut high, &mut low);
+        }
+        let exponent_gap = (high.exponent - low.exponent) as u32;
+        let high_extended = high.significand << 3;
+        let low_extended = shift_right_jam_u64(low.significand << 3, exponent_gap);
+
+        if high.sign == low.sign {
+            let mut sum = high_extended + low_extended;
+            let mut exponent = high.exponent;
+            if sum & (EXTENDED_TOP << 1) != 0 {
+                sum = shift_right_jam_u64(sum, 1);
+                exponent += 1;
+            }
+            return chop_extended(high.sign, exponent, sum);
+        }
+
+        if high_extended == low_extended {
+            return X87Value::zero(false);
+        }
+        let (sign, mut difference) = if high_extended > low_extended {
+            (high.sign, high_extended - low_extended)
+        } else {
+            (low.sign, low_extended - high_extended)
+        };
+        let top = 63 - difference.leading_zeros();
+        let normalize = 55 - top;
+        difference <<= normalize;
+        chop_extended(sign, high.exponent - normalize as i32, difference)
+    }
+
+    pub fn sub(lhs: X87Value, rhs: X87Value) -> X87Value {
+        Self::add(lhs, Self::neg(rhs))
+    }
+
+    pub fn mul(lhs: X87Value, rhs: X87Value) -> X87Value {
+        if lhs.is_zero() || rhs.is_zero() {
+            return X87Value::zero(lhs.sign ^ rhs.sign);
+        }
+        let product = lhs.significand as u128 * rhs.significand as u128;
+        let top = 127 - product.leading_zeros();
+        let shift = top - 55;
+        let extended = shift_right_jam_u128(product, shift);
+        let exponent = lhs.exponent + rhs.exponent + (top as i32 - 104);
+        chop_extended(lhs.sign ^ rhs.sign, exponent, extended)
+    }
+
+    pub fn div(lhs: X87Value, rhs: X87Value) -> Result<X87Value, NativeX87Error> {
+        if rhs.is_zero() {
+            return Err(NativeX87Error::DivisionByZero);
+        }
+        if lhs.is_zero() {
+            return Ok(X87Value::zero(lhs.sign ^ rhs.sign));
+        }
+
+        let quotient = ((lhs.significand as u128) << 64) / rhs.significand as u128;
+        let top = 127 - quotient.leading_zeros();
+        let shift = top - 52;
+        Ok(X87Value {
+            sign: lhs.sign ^ rhs.sign,
+            exponent: lhs.exponent - rhs.exponent + (top as i32 - 64),
+            significand: (quotient >> shift) as u64,
+        })
+    }
+
+    pub fn compare(lhs: X87Value, rhs: X87Value) -> X87Ordering {
+        // Zero has to be settled before `magnitude_cmp`, which orders on the
+        // exponent first. A zero carries exponent 0, so comparing it against a
+        // value below 1 — whose exponent is negative — would otherwise report
+        // that value as the SMALLER one. `FCOM` against `+0.0` is exactly the
+        // shape every unit-interval probability gate uses, so this is not a
+        // corner case.
+        match (lhs.is_zero(), rhs.is_zero()) {
+            (true, true) => return X87Ordering::Equal,
+            (true, false) => {
+                return if rhs.sign {
+                    X87Ordering::Greater
+                } else {
+                    X87Ordering::Less
+                };
+            }
+            (false, true) => {
+                return if lhs.sign {
+                    X87Ordering::Less
+                } else {
+                    X87Ordering::Greater
+                };
+            }
+            (false, false) => {}
+        }
+        let ordering = if lhs.sign != rhs.sign {
+            if lhs.sign {
+                Ordering::Less
+            } else {
+                Ordering::Greater
+            }
+        } else {
+            let magnitude = lhs.magnitude_cmp(rhs);
+            if lhs.sign {
+                magnitude.reverse()
+            } else {
+                magnitude
+            }
+        };
+        match ordering {
+            Ordering::Less => X87Ordering::Less,
+            Ordering::Equal => X87Ordering::Equal,
+            Ordering::Greater => X87Ordering::Greater,
+        }
+    }
+
+    /// A positive integer as `FSTP m32real` stores it under the chop control
+    /// word: 24 significant bits, truncated toward zero.
+    ///
+    /// The rounding is the store's, not this method's: the integer's exact
+    /// extended value goes through [`Self::store_f32`], so one owner decides
+    /// what a store chops.
+    pub fn store_positive_u32_as_f32_bits(magnitude: u32) -> u32 {
+        if magnitude == 0 {
+            return NativeF32Bits::POSITIVE_ZERO.bits();
+        }
+        let top = 31 - magnitude.leading_zeros();
+        let value = X87Value {
+            sign: false,
+            exponent: top as i32,
+            significand: u64::from(magnitude) << (52 - top),
+        };
+        // A magnitude below 2^32 has an exponent below 32, so the store
+        // neither overflows nor goes subnormal.
+        Self::store_f32_masked_chop(value).bits()
+    }
+
+    pub fn store_f32(value: X87Value) -> Result<NativeF32Bits, NativeX87Error> {
+        let sign = u32::from(value.sign) << 31;
+        if value.is_zero() {
+            return Ok(NativeF32Bits::from_bits(sign));
+        }
+        if value.exponent > 127 {
+            return Err(NativeX87Error::StoreOverflow { format: "f32" });
+        }
+        if value.exponent < -126 {
+            // Original FSTP m32real (70B812), masked PC53/chop: discard all
+            // bits below 2^-149, preserving the sign even when none remain.
+            // Native comparison: tools/spatial_oracle/x87_subnormal_primitives.
+            let fraction = if value.exponent < -149 {
+                0
+            } else {
+                (value.significand >> (29 + (-126 - value.exponent) as u32)) as u32
+            };
+            return Ok(NativeF32Bits::from_bits(sign | fraction));
+        }
+        let exponent = ((value.exponent + 127) as u32) << 23;
+        let fraction = ((value.significand >> 29) as u32) & 0x007f_ffff;
+        Ok(NativeF32Bits::from_bits(sign | exponent | fraction))
+    }
+
+    /// Masked `FST[P] m32real` under the native chop control word `0x0E7F`.
+    /// Finite overflow stores signed maximum finite, rather than infinity.
+    /// Original `4891D4` spills in `tools/spatial_oracle/estimated_damage`
+    /// cover both overflow signs. The fallible storage API remains separate.
+    pub fn store_f32_masked_chop(value: X87Value) -> NativeF32Bits {
+        match Self::store_f32(value) {
+            Ok(bits) => bits,
+            Err(NativeX87Error::StoreOverflow { format: "f32" }) => {
+                NativeF32Bits::from_bits((u32::from(value.sign) << 31) | 0x7f7f_ffff)
+            }
+            Err(error) => unreachable!("unexpected finite f32 store error: {error}"),
+        }
+    }
+
+    pub fn store_f64(value: X87Value) -> Result<NativeF64Bits, NativeX87Error> {
+        let sign = u64::from(value.sign) << 63;
+        if value.is_zero() {
+            return Ok(NativeF64Bits::from_bits(sign));
+        }
+        if value.exponent > 1023 {
+            return Err(NativeX87Error::StoreOverflow { format: "f64" });
+        }
+        if value.exponent < -1022 {
+            // Original FSTP m64real (4B10F6) has the same chop policy at 2^-1074.
+            let fraction = if value.exponent < -1074 {
+                0
+            } else {
+                value.significand >> (-1022 - value.exponent) as u32
+            };
+            return Ok(NativeF64Bits::from_bits(sign | fraction));
+        }
+        let exponent = ((value.exponent + 1023) as u64) << 52;
+        let fraction = value.significand & 0x000f_ffff_ffff_ffff;
+        Ok(NativeF64Bits::from_bits(sign | exponent | fraction))
+    }
+
+    pub fn ftol_i64(value: X87Value) -> Result<i64, NativeX87Error> {
+        if value.is_zero() || value.exponent < 0 {
+            return Ok(0);
+        }
+        if value.exponent > 63 {
+            return Err(NativeX87Error::IntegerConversion);
+        }
+        let magnitude = if value.exponent <= 52 {
+            (value.significand >> (52 - value.exponent)) as u128
+        } else {
+            let shift = (value.exponent - 52) as u32;
+            (value.significand as u128) << shift
+        };
+        if value.sign {
+            if magnitude > (1_u128 << 63) {
+                return Err(NativeX87Error::IntegerConversion);
+            }
+            if magnitude == 1_u128 << 63 {
+                return Ok(i64::MIN);
+            }
+            Ok(-(magnitude as i64))
+        } else {
+            if magnitude > i64::MAX as u128 {
+                return Err(NativeX87Error::IntegerConversion);
+            }
+            Ok(magnitude as i64)
+        }
+    }
+
+    /// Native `Math::ftol 7C5F00` when its caller consumes only EAX.
+    /// `FISTP qword` first converts toward zero to signed64; narrowing keeps
+    /// its low32 bits. Masked invalid conversion stores `i64::MIN`, whose low
+    /// dword is zero. Only that finite conversion error takes this path.
+    /// Original conversion/output pairs: `tools/spatial_oracle/estimated_damage`.
+    pub fn ftol_i32_low_masked(value: X87Value) -> i32 {
+        match Self::ftol_i64(value) {
+            Ok(integer) => integer as i32,
+            Err(NativeX87Error::IntegerConversion) => 0,
+            Err(error) => unreachable!("unexpected finite integer conversion error: {error}"),
+        }
+    }
+
+    /// [`Self::ftol_i32_low_masked`] of a binary64 operand. A NaN or infinity
+    /// converts to the integer indefinite, whose low dword is zero.
+    pub fn ftol_f64_low_masked(value: f64) -> i32 {
+        Self::load_f64(NativeF64Bits::from_bits(value.to_bits()))
+            .map_or(0, Self::ftol_i32_low_masked)
+    }
+}
+
+/// `FLD m32` of one binary32 operand, `FADD m32` of the other and `FSTP m32`,
+/// for two non-negative finite operands: their exact sum truncated to binary32,
+/// computed on the host for path-search hot loops.
+///
+/// Truncating the exact sum to 53 bits and then to binary32 truncates it to
+/// binary32 once. The host's binary64 sum is exact unless the operands'
+/// exponents differ by more than 29. Then neither operand has a bit 24 to 29
+/// places below the sum's leading bit, so the rounding of the binary64 sum
+/// cannot carry into the 24 bits binary32 keeps, and truncating that sum
+/// gives the same result. A sum past binary32's range stores the largest
+/// finite value, as the masked store does. Debug builds check every result
+/// against [`X87Chop53`].
+pub(crate) fn chop_sum_f32(lhs: f32, rhs: f32) -> f32 {
+    debug_assert!(lhs >= 0.0 && rhs >= 0.0 && lhs.is_finite() && rhs.is_finite());
+    let sum = f64::from(lhs) + f64::from(rhs);
+    let nearest = sum as f32;
+    let sum32 = if f64::from(nearest) > sum {
+        f32::from_bits(nearest.to_bits() - 1)
+    } else {
+        nearest
+    };
+    debug_assert_eq!(
+        sum32.to_bits(),
+        X87Chop53::store_f32_masked_chop(X87Chop53::add(
+            X87Chop53::load_f32(NativeF32Bits::from_bits(lhs.to_bits())).expect("finite"),
+            X87Chop53::load_f32(NativeF32Bits::from_bits(rhs.to_bits())).expect("finite"),
+        ))
+        .bits(),
+        "{lhs:e} + {rhs:e}"
+    );
+    sum32
+}
+
+/// Active `gamemd.exe` `Sqrt_Approx` (`0x004CAC40`).
+///
+/// The helper first stores its finite positive input as an x87-chopped `f32`,
+/// then indexes the retail 16,384-entry mantissa table ([`sqrt_approx_bits`]).
+pub fn sqrt_approx_f32(value: X87Value) -> Result<NativeF32Bits, NativeX87Error> {
+    let magnitude = X87Chop53::store_f32(value)?.bits() & 0x7fff_ffff;
+    if magnitude == 0 {
+        return Ok(NativeF32Bits::POSITIVE_ZERO);
+    }
+    Ok(NativeF32Bits::from_bits(sqrt_approx_bits(magnitude)))
+}
+
+/// The table step of `Sqrt_Approx` (`0x004CAC40`) on the bits of a nonzero
+/// `f32`, whose sign it ignores: an odd exponent borrows a factor of two into
+/// the significand, the top 14 bits of that index the mantissa table, and the
+/// exponent is halved arithmetically. Callers answer a zero input themselves.
+/// The random-map generator calls it under its own float model too.
+pub(crate) fn sqrt_approx_bits(bits: u32) -> u32 {
+    let mut mantissa = bits & 0x007f_ffff;
+    let unbiased = ((bits >> 23) & 0xff) as i32 - 127;
+    if unbiased & 1 != 0 {
+        mantissa |= 0x0080_0000;
+    }
+    let half_exponent = unbiased >> 1;
+    sqrt_approx_table()[(mantissa >> 10) as usize]
+        .wrapping_add(((half_exponent + 127) as u32) << 23)
+}
+
+/// One entry of `Sqrt_Approx`'s 16,384-entry mantissa table (`0x008650BC`).
+///
+/// The table is pure arithmetic, so it is computed rather than shipped: index
+/// `i` encodes a significand, and the entry is the truncated mantissa of its
+/// square root. Not shipping it also keeps the retail bytes out of this repo.
+/// `map::rmg::sqrt_table` checks all 16,384 entries against the player's own
+/// `gamemd.exe` (`#[ignore]`d, it needs `RA2_DIR`).
+pub(crate) fn sqrt_approx_table_entry(index: u32) -> u32 {
+    let significand = if index < 8192 {
+        // Even exponent: the significand lies in [1, 2).
+        1.0 + f64::from(index) / 8192.0
+    } else {
+        // Odd exponent: the implicit bit is set, so it lies in [2, 4).
+        2.0 * (1.0 + f64::from(index - 8192) / 8192.0)
+    };
+    // The root always lands in [1, 2), so the exponent field is zero and only
+    // the mantissa varies.
+    ((significand.sqrt() - 1.0) * 8_388_608.0) as u32
+}
+
+/// The number of entries in `Sqrt_Approx`'s mantissa table.
+const SQRT_TABLE_LEN: usize = 16_384;
+
+/// The mantissa table, computed once and read by every root.
+///
+/// The source of truth is [`sqrt_approx_table_entry`]; the entries are pure
+/// arithmetic, so the table never changes and needs no invalidation.
+fn sqrt_approx_table() -> &'static [u32] {
+    static TABLE: crate::util::sync::OnceLock<Box<[u32]>> = crate::util::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        (0..SQRT_TABLE_LEN as u32)
+            .map(sqrt_approx_table_entry)
+            .collect::<Vec<u32>>()
+            .into()
+    })
+}
+
+/// `Sqrt_Approx` (`0x004CAC40`) on a squared distance, without the x87 round
+/// trip.
+///
+/// The native helper stores its argument as a binary32 — `FSTP m32real` under
+/// the chop control word, 24 significant bits, truncated toward zero — and
+/// reads the mantissa table with the top 14 of those bits. An integer square
+/// is exact in binary64, so the store keeps its top 24 bits and drops the rest,
+/// and the table index reads none of the dropped bits: the same root comes out
+/// of the integer alone. The sign is ignored, as the native helper ignores it.
+pub(crate) fn sqrt_approx_square_bits(squares: i32) -> u32 {
+    let bits = X87Chop53::store_positive_u32_as_f32_bits(squares.unsigned_abs());
+    if bits == 0 {
+        return NativeF32Bits::POSITIVE_ZERO.bits();
+    }
+    sqrt_approx_bits(bits)
+}
+
+/// Evaluate the native height-to-screen conversion with an injected multiplier.
+///
+/// gamemd-derived: active YR `Tactical__AdjustForZ` at `0x006D20E0` multiplies
+/// signed world Z by the startup-owned factor, adds one at Z >= 728, adds 0.5,
+/// then converts with x87 `ftol` under 53-bit/truncate-toward-zero control.
+pub fn adjust_for_z_with_multiplier(
+    world_z: i32,
+    multiplier: NativeF64Bits,
+) -> Result<i32, NativeX87Error> {
+    let product = X87Chop53::mul(
+        X87Chop53::load_i32(world_z),
+        X87Chop53::load_f64(multiplier)?,
+    );
+    let correction = X87Chop53::load_i32(i32::from(world_z >= ADJUST_FOR_Z_THRESHOLD_LEPTONS));
+    let corrected = X87Chop53::add(product, correction);
+    let biased = X87Chop53::add(corrected, X87Chop53::load_f64(NativeF64Bits::HALF)?);
+    Ok(X87Chop53::ftol_i64(biased)? as i32)
+}
+
+/// Evaluate active YR's standard-session height-to-screen conversion.
+///
+/// The evaluation runs on the x87 evaluator, which every placed object's
+/// screen point asks for each frame, so the Z values below
+/// [`ADJUST_FOR_Z_TABLE_LEN`] (terrain up to level 127 and every flight
+/// height) are looked up in a table of the same evaluations.
+pub fn adjust_for_z_standard(world_z: i32) -> i32 {
+    static TABLE: crate::util::sync::OnceLock<Box<[i32]>> = crate::util::sync::OnceLock::new();
+    let Ok(index) = usize::try_from(world_z) else {
+        return adjust_for_z_standard_evaluated(world_z);
+    };
+    if index >= ADJUST_FOR_Z_TABLE_LEN {
+        return adjust_for_z_standard_evaluated(world_z);
+    }
+    TABLE.get_or_init(|| {
+        (0..ADJUST_FOR_Z_TABLE_LEN as i32)
+            .map(adjust_for_z_standard_evaluated)
+            .collect()
+    })[index]
+}
+
+/// The Z values [`adjust_for_z_standard`] looks up instead of evaluating.
+const ADJUST_FOR_Z_TABLE_LEN: usize = 16_384;
+
+fn adjust_for_z_standard_evaluated(world_z: i32) -> i32 {
+    adjust_for_z_with_multiplier(world_z, STANDARD_ADJUST_FOR_Z_MULTIPLIER)
+        .expect("the verified finite standard multiplier maps every i32 Z into i32")
+}
+
+/// `CoordStruct__Distance3D` 0x0041C380 — the 3D lepton distance every native
+/// coordinate comparison goes through.
+///
+/// The body squares and sums the three deltas on the x87 stack, stores the sum
+/// to **f32**, runs [`sqrt_approx_f32`] (the 14-bit table lookup at
+/// 0x004CAC40), then truncates through `Math__ftol`. The approximation and the
+/// truncation both matter: callers compare the whole-lepton result, so two
+/// objects whose true distances differ in the fraction tie, and the
+/// approximation's ~3e-5 relative error can move that tie by one lepton.
+/// Substituting an exact integer square root silently changes which object wins
+/// those comparisons.
+pub fn distance_3d_leptons(lhs: [i32; 3], rhs: [i32; 3]) -> i32 {
+    sqrt_approx_length([0, 1, 2].map(|axis| lhs[axis].wrapping_sub(rhs[axis])))
+}
+
+/// The x87 length native distances take: each component `FILD`ed, squared and
+/// added in `components` order (`(c0*c0 + c1*c1) + c2*c2`), the sum through
+/// [`sqrt_approx_f32`] and the root through `Math::ftol @ 0x007C5F00` as a
+/// caller reading EAX ([`X87Chop53::ftol_i32_low_masked`]). Callers narrow
+/// the result as their native site does. Squares of i32 components sum below
+/// 2^66, so the f32 store never overflows.
+pub fn sqrt_approx_length(components: impl IntoIterator<Item = i32>) -> i32 {
+    let mut components = components.into_iter().map(X87Chop53::load_i32);
+    let first = components
+        .next()
+        .expect("a length has at least one component");
+    let squared = components.fold(X87Chop53::mul(first, first), |sum, component| {
+        X87Chop53::add(sum, X87Chop53::mul(component, component))
+    });
+    let root_bits = sqrt_approx_f32(squared).expect("a sum of i32 squares is a finite f32");
+    let root =
+        X87Chop53::load_f32(root_bits).expect("Sqrt_Approx always returns a finite normal or zero");
+    X87Chop53::ftol_i32_low_masked(root)
+}
+
+/// `ObjectClass::Distance @ 0x005F6360` from an object at `from` to one at
+/// `to` (both their `vt+0x48` coordinates): `(dx²+dz²)+dy²` through
+/// `Sqrt_Approx` and ftol, as [`distance_3d_leptons`], less `(Width + Height)
+/// * 64` and not below 0 when the target is a building of that foundation
+/// (`0x0045ECA0(0)`, `0x0045EC90`). Native execution:
+/// `tools/team_recruit_oracle.py`'s `distance` rows, replayed in
+/// `sim::team_script_vm::recruit_oracle_tests`.
+pub fn object_distance(
+    from: [i32; 3],
+    to: [i32; 3],
+    building_foundation: Option<(i32, i32)>,
+) -> i32 {
+    let distance = distance_3d_leptons([from[0], from[2], from[1]], [to[0], to[2], to[1]]);
+    less_target_foundation(distance, building_foundation)
+}
+
+/// `ObjectClass::Distance_To @ 0x005F6440` between two GetCoords XYs: the
+/// planar distance through [`distance_3d_leptons`] with Z zeroed, less the
+/// target building's foundation as in [`object_distance`]. The foundation
+/// height query (`0x0045ECA0`) receives false, so a Bib never adds to it.
+pub fn object_planar_distance(
+    from: [i32; 2],
+    to: [i32; 2],
+    building_foundation: Option<(i32, i32)>,
+) -> i32 {
+    let distance = distance_3d_leptons([from[0], from[1], 0], [to[0], to[1], 0]);
+    less_target_foundation(distance, building_foundation)
+}
+
+/// `(Width + Height) * 64` off a distance whose target is a building of that
+/// foundation, not below 0.
+fn less_target_foundation(distance: i32, building_foundation: Option<(i32, i32)>) -> i32 {
+    match building_foundation {
+        Some((width, height)) => distance.wrapping_sub((width + height) * 64).max(0),
+        None => distance,
+    }
+}
+
+fn chop_extended(sign: bool, exponent: i32, extended: u64) -> X87Value {
+    let significand = extended >> 3;
+    debug_assert!(significand == 0 || significand & SIGNIFICAND_TOP != 0);
+    X87Value {
+        sign,
+        exponent,
+        significand,
+    }
+}
+
+fn shift_right_jam_u64(value: u64, distance: u32) -> u64 {
+    if distance == 0 {
+        value
+    } else if distance < 64 {
+        (value >> distance) | u64::from(value << (64 - distance) != 0)
+    } else {
+        u64::from(value != 0)
+    }
+}
+
+fn shift_right_jam_u128(value: u128, distance: u32) -> u64 {
+    if distance == 0 {
+        value as u64
+    } else if distance < 128 {
+        ((value >> distance) as u64) | u64::from(value << (128 - distance) != 0)
+    } else {
+        u64::from(value != 0)
+    }
+}
+
+#[cfg(all(test, tests_util))]
+mod tests {
+    #[test]
+    fn compare_orders_against_zero_by_sign_not_exponent() {
+        use super::{NativeF64Bits, X87Chop53, X87Ordering};
+
+        // `FCOM` against `+0.0` is the shape every unit-interval probability
+        // gate uses. `magnitude_cmp` orders on the exponent first, and a zero
+        // carries exponent 0, so before the fix a value in `(0, 1)` — whose
+        // exponent is negative — compared as the SMALLER one.
+        let zero = X87Chop53::load_f64(NativeF64Bits::POSITIVE_ZERO).expect("zero loads");
+        let negative_zero = X87Chop53::load_f64(NativeF64Bits::NEGATIVE_ZERO).expect("zero loads");
+        let half = X87Chop53::load_f64(NativeF64Bits::HALF).expect("0.5 loads");
+        let minus_half = X87Chop53::neg(half);
+
+        assert_eq!(X87Chop53::compare(half, zero), X87Ordering::Greater);
+        assert_eq!(X87Chop53::compare(zero, half), X87Ordering::Less);
+        assert_eq!(X87Chop53::compare(minus_half, zero), X87Ordering::Less);
+        assert_eq!(X87Chop53::compare(zero, minus_half), X87Ordering::Greater);
+        // x87 treats the two zeroes as equal.
+        assert_eq!(X87Chop53::compare(zero, negative_zero), X87Ordering::Equal);
+        // A value at or above 1 was already ordered correctly; keep it pinned.
+        let one = X87Chop53::load_f64(NativeF64Bits::ONE).expect("1.0 loads");
+        assert_eq!(X87Chop53::compare(one, zero), X87Ordering::Greater);
+    }
+
+    #[test]
+    fn host_binary32_sum_truncates_as_the_x87_does() {
+        // Every exponent gap up to and past the binary64 limit, with full,
+        // empty and pseudo-random significands; `chop_sum_f32` asserts each
+        // result against `X87Chop53` itself.
+        let mut seed = 0x9E37_79B9_u32;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed & 0x007f_ffff
+        };
+        for exponent in [1_u32, 100, 127, 150, 200, 253] {
+            for gap in 0..=40_u32 {
+                // Down to zero exponents: subnormal operands.
+                let low_exponent = exponent.saturating_sub(gap);
+                for (high, low) in [
+                    (0x007f_ffff, 0x007f_ffff),
+                    (0, 0),
+                    (0x007f_ffff, 0),
+                    (next(), next()),
+                    (next(), next()),
+                ] {
+                    let a = f32::from_bits(exponent << 23 | high);
+                    let b = f32::from_bits(low_exponent << 23 | low);
+                    super::chop_sum_f32(a, b);
+                    super::chop_sum_f32(b, a);
+                }
+            }
+        }
+        assert_eq!(super::chop_sum_f32(0.0, 0.0).to_bits(), 0);
+        assert_eq!(super::chop_sum_f32(0.0, 1.5), 1.5);
+        assert_eq!(super::chop_sum_f32(f32::from_bits(1), 0.0).to_bits(), 1);
+        assert_eq!(super::chop_sum_f32(f32::MAX, f32::MAX), f32::MAX);
+        // Round to nearest would give 0x3F8020C5 here.
+        assert_eq!(
+            super::chop_sum_f32(1.0, f32::from_bits(0x3a83_126f)).to_bits(),
+            0x3f80_20c4
+        );
+    }
+    use super::*;
+
+    fn f32_value(bits: u32) -> X87Value {
+        X87Chop53::load_f32(NativeF32Bits::from_bits(bits)).unwrap()
+    }
+
+    fn f64_value(bits: u64) -> X87Value {
+        X87Chop53::load_f64(NativeF64Bits::from_bits(bits)).unwrap()
+    }
+
+    #[test]
+    fn signed_zero_round_trips_without_canonicalization() {
+        let positive = X87Chop53::load_f32(NativeF32Bits::POSITIVE_ZERO).unwrap();
+        let negative = X87Chop53::load_f32(NativeF32Bits::NEGATIVE_ZERO).unwrap();
+        assert_eq!(X87Chop53::store_f32(positive).unwrap().bits(), 0x0000_0000);
+        assert_eq!(X87Chop53::store_f32(negative).unwrap().bits(), 0x8000_0000);
+        assert_eq!(X87Chop53::compare(positive, negative), X87Ordering::Equal);
+        assert_eq!(
+            X87Chop53::store_f32(X87Chop53::sub(positive, positive))
+                .unwrap()
+                .bits(),
+            0x0000_0000,
+        );
+    }
+
+    #[test]
+    fn i32_to_f32_store_chops_at_the_24_bit_boundary() {
+        let positive = X87Chop53::load_i32(16_777_217);
+        let negative = X87Chop53::load_i32(-16_777_217);
+        assert_eq!(X87Chop53::store_f32(positive).unwrap().bits(), 0x4b80_0000);
+        assert_eq!(X87Chop53::store_f32(negative).unwrap().bits(), 0xcb80_0000);
+    }
+
+    #[test]
+    fn pc53_addition_chops_half_ulp_and_keeps_full_ulp() {
+        let one = f64_value(0x3ff0_0000_0000_0000);
+        let half_ulp = f64_value(0x3ca0_0000_0000_0000);
+        let full_ulp = f64_value(0x3cb0_0000_0000_0000);
+        assert_eq!(
+            X87Chop53::store_f64(X87Chop53::add(one, half_ulp))
+                .unwrap()
+                .bits(),
+            0x3ff0_0000_0000_0000,
+        );
+        assert_eq!(
+            X87Chop53::store_f64(X87Chop53::add(one, full_ulp))
+                .unwrap()
+                .bits(),
+            0x3ff0_0000_0000_0001,
+        );
+    }
+
+    #[test]
+    fn subtraction_and_double_gravity_have_explicit_f32_boundaries() {
+        let zero = f32_value(0x0000_0000);
+        let gravity = f32_value(0x40c0_0000);
+        let persistent = X87Chop53::sub(zero, gravity);
+        let persistent_bits = X87Chop53::store_f32(persistent).unwrap();
+        let probe = X87Chop53::sub(X87Chop53::load_f32(persistent_bits).unwrap(), gravity);
+        assert_eq!(persistent_bits.bits(), 0xc0c0_0000);
+        assert_eq!(X87Chop53::store_f32(probe).unwrap().bits(), 0xc140_0000);
+    }
+
+    #[test]
+    fn multiplication_and_compare_use_chopped_53_bit_values() {
+        let half = f64_value(0x3fe0_0000_0000_0000);
+        let quarter = X87Chop53::mul(half, half);
+        assert_eq!(
+            X87Chop53::store_f64(quarter).unwrap().bits(),
+            0x3fd0_0000_0000_0000,
+        );
+        assert_eq!(X87Chop53::compare(quarter, half), X87Ordering::Less);
+    }
+
+    #[test]
+    fn division_uses_chopped_53_bit_values() {
+        let one = f64_value(0x3ff0_0000_0000_0000);
+        let three = f64_value(0x4008_0000_0000_0000);
+        let third = X87Chop53::div(one, three).unwrap();
+        assert_eq!(
+            X87Chop53::store_f64(third).unwrap().bits(),
+            0x3fd5_5555_5555_5555,
+        );
+        assert_eq!(
+            X87Chop53::store_f64(X87Chop53::neg(third)).unwrap().bits(),
+            0xbfd5_5555_5555_5555,
+        );
+        assert_eq!(
+            X87Chop53::div(one, f64_value(0x0000_0000_0000_0000)),
+            Err(NativeX87Error::DivisionByZero),
+        );
+    }
+
+    #[test]
+    fn ftol_chops_positive_and_negative_values_toward_zero() {
+        assert_eq!(
+            X87Chop53::ftol_i64(f64_value(0x400e_0000_0000_0000)).unwrap(),
+            3
+        );
+        assert_eq!(
+            X87Chop53::ftol_i64(f64_value(0xc00e_0000_0000_0000)).unwrap(),
+            -3
+        );
+    }
+
+    #[test]
+    fn unverified_exceptional_domains_return_typed_errors() {
+        assert_eq!(
+            X87Chop53::load_f32(NativeF32Bits::from_bits(0x7f80_0000)),
+            Err(NativeX87Error::NonFiniteInput { format: "f32" }),
+        );
+        assert_eq!(
+            X87Chop53::load_f64(NativeF64Bits::from_bits(0x7ff0_0000_0000_0000)),
+            Err(NativeX87Error::NonFiniteInput { format: "f64" }),
+        );
+    }
+
+    #[test]
+    fn finite_subnormal_primitives_match_original_x87_instructions() {
+        let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/x87_subnormal_primitives.json",
+        ))
+        .unwrap();
+        let rows = rows.as_array().unwrap();
+        assert_eq!(rows.len(), 1780);
+        let mut subnormal_inputs = 0;
+        let mut subnormal_outputs = 0;
+        let mut signed_zero_outputs = 0;
+        for row in rows {
+            let input = &row["input"];
+            let name = input["name"].as_str().unwrap();
+            let format = input["format"].as_str().unwrap();
+            let mut load = |key: &str| {
+                let bits = u64::from_str_radix(input[key].as_str().unwrap(), 16).unwrap();
+                if format == "f32" {
+                    subnormal_inputs +=
+                        usize::from(bits & 0x7f80_0000 == 0 && bits & 0x007f_ffff != 0);
+                    X87Chop53::load_f32(NativeF32Bits::from_bits(bits as u32)).unwrap()
+                } else {
+                    assert_eq!(format, "f64");
+                    subnormal_inputs += usize::from(
+                        bits & 0x7ff0_0000_0000_0000 == 0 && bits & 0x000f_ffff_ffff_ffff != 0,
+                    );
+                    X87Chop53::load_f64(NativeF64Bits::from_bits(bits)).unwrap()
+                }
+            };
+            let lhs = load("lhs_bits");
+            let actual = match input["operation"].as_str().unwrap() {
+                "load" => lhs,
+                "add" => X87Chop53::add(lhs, load("rhs_bits")),
+                "sub" => X87Chop53::sub(lhs, load("rhs_bits")),
+                "mul" => X87Chop53::mul(lhs, load("rhs_bits")),
+                operation => panic!("unknown operation {operation}: {name}"),
+            };
+            let expected = u64::from_str_radix(row["output_bits"].as_str().unwrap(), 16).unwrap();
+            if input["store"].as_str().unwrap() == "f32" {
+                let actual = X87Chop53::store_f32(actual).unwrap().bits();
+                assert_eq!(u64::from(actual), expected, "{name}");
+                subnormal_outputs +=
+                    usize::from(actual & 0x7f80_0000 == 0 && actual & 0x007f_ffff != 0);
+                signed_zero_outputs += usize::from(actual == 0x8000_0000);
+            } else {
+                let actual = X87Chop53::store_f64(actual).unwrap().bits();
+                assert_eq!(actual, expected, "{name}");
+                subnormal_outputs += usize::from(
+                    actual & 0x7ff0_0000_0000_0000 == 0 && actual & 0x000f_ffff_ffff_ffff != 0,
+                );
+                signed_zero_outputs += usize::from(actual == 0x8000_0000_0000_0000);
+            }
+        }
+        assert!(subnormal_inputs > 1000);
+        assert!(subnormal_outputs > 100);
+        assert!(signed_zero_outputs > 100);
+    }
+
+    #[test]
+    fn finite_overlay_velocity_addition_matches_original_common_tail() {
+        let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/unit_per_cell_overlay.json",
+        ))
+        .unwrap();
+        let rows = rows.as_array().unwrap();
+        assert_eq!(rows.len(), 296);
+        let addend = f32_value(0x3ca3_d70a);
+        let mut additions = 0;
+        for row in rows {
+            let input = &row["input"];
+            let output = &row["output"];
+            let bits = u32::from_str_radix(input["velocity_bits"].as_str().unwrap(), 16).unwrap();
+            let loaded = X87Chop53::load_f32(NativeF32Bits::from_bits(bits)).unwrap();
+            assert_eq!(X87Chop53::store_f32(loaded).unwrap().bits(), bits);
+            let actual = if output["applied"].as_bool().unwrap() {
+                additions += 1;
+                X87Chop53::add(loaded, addend)
+            } else {
+                loaded
+            };
+            let expected =
+                u32::from_str_radix(output["velocity_bits"].as_str().unwrap(), 16).unwrap();
+            assert_eq!(
+                X87Chop53::store_f32(actual).unwrap().bits(),
+                expected,
+                "{}",
+                input["name"].as_str().unwrap(),
+            );
+        }
+        assert_eq!(additions, 144);
+    }
+
+    #[test]
+    fn retail_sqrt_approx_uses_the_quantized_mantissa_table() {
+        let two = X87Chop53::load_i32(2);
+        assert_eq!(sqrt_approx_f32(two).unwrap().bits(), 0x3fb5_04f3);
+
+        let lower_half_last = X87Chop53::load_f32(NativeF32Bits::from_bits(0x3fff_fc00)).unwrap();
+        assert_eq!(
+            sqrt_approx_f32(lower_half_last).unwrap().bits(),
+            0x3fb5_0389
+        );
+        let upper_half_last = X87Chop53::load_f32(NativeF32Bits::from_bits(0x407f_fc00)).unwrap();
+        assert_eq!(
+            sqrt_approx_f32(upper_half_last).unwrap().bits(),
+            0x3fff_fdff
+        );
+
+        let value = X87Chop53::load_i32(1_234_567);
+        let approximate = sqrt_approx_f32(value).unwrap().bits();
+        assert_ne!(approximate, (1_234_567.0f32.sqrt()).to_bits());
+    }
+
+    #[test]
+    fn adjust_for_z_standard_matches_retail_fixtures_and_signed_edges() {
+        assert_eq!(
+            STANDARD_ADJUST_FOR_Z_MULTIPLIER.bits(),
+            0x3fc2_5e53_7434_4960
+        );
+        assert_eq!(adjust_for_z_standard(0), 0);
+        assert_eq!(adjust_for_z_standard(104), 15);
+        assert_eq!(adjust_for_z_standard(208), 30);
+        assert_eq!(adjust_for_z_standard(256), 37);
+        assert_eq!(adjust_for_z_standard(727), 104);
+        assert_eq!(adjust_for_z_standard(728), 105);
+        assert_eq!(adjust_for_z_standard(1_500), 216);
+        assert_eq!(adjust_for_z_standard(-104), -14);
+        assert_eq!(adjust_for_z_standard(-400), -56);
+    }
+
+    #[test]
+    fn adjust_for_z_standard_table_matches_the_evaluation_at_its_edges() {
+        let last = ADJUST_FOR_Z_TABLE_LEN as i32 - 1;
+        for z in [0, 727, 728, last, last + 1, -1] {
+            assert_eq!(
+                adjust_for_z_standard(z),
+                adjust_for_z_standard_evaluated(z),
+                "Z {z}"
+            );
+        }
+    }
+
+    /// The integer root and the x87-stored root agree bit for bit, at the
+    /// binary32 chopping boundary and around it.
+    #[test]
+    fn an_integer_square_root_matches_the_x87_stored_root() {
+        for squares in [
+            0,
+            1,
+            2,
+            3,
+            15,
+            16,
+            17,
+            255,
+            256,
+            1_000_000,
+            16_777_215,
+            16_777_216,
+            16_777_217,
+            1 << 30,
+            i32::MAX,
+            i32::MIN,
+            -1,
+            -3,
+            -16_777_217,
+        ] {
+            let expected = sqrt_approx_f32(X87Chop53::load_i32(squares))
+                .expect("finite")
+                .bits();
+            assert_eq!(sqrt_approx_square_bits(squares), expected, "{squares}");
+        }
+    }
+
+    /// The integer root and the x87-stored root agree bit for bit over the
+    /// whole range a search can ask of, not only at the listed boundaries.
+    ///
+    /// A search asks of a squared distance up to `i32::MAX`, and the store
+    /// chops at 24 significant bits, so every power of two and its
+    /// neighbours are the places where the two paths could part.
+    #[test]
+    fn the_integer_root_matches_the_x87_stored_root_over_its_range() {
+        for exponent in 0..31 {
+            let power = 1_i32 << exponent;
+            for squares in [power - 1, power, power + 1, power + (power >> 1)] {
+                let expected = sqrt_approx_f32(X87Chop53::load_i32(squares))
+                    .expect("finite")
+                    .bits();
+                assert_eq!(sqrt_approx_square_bits(squares), expected, "{squares}");
+            }
+        }
+        // A strided sweep over the whole range a search can ask of, including
+        // the values a 16-bit coordinate difference produces.
+        for squares in (0..=i32::MAX).step_by(65_537) {
+            let expected = sqrt_approx_f32(X87Chop53::load_i32(squares))
+                .expect("finite")
+                .bits();
+            assert_eq!(sqrt_approx_square_bits(squares), expected, "{squares}");
+        }
+    }
+
+    /// The memoized mantissa table is the computed table, entry for entry.
+    #[test]
+    fn the_memoized_mantissa_table_is_the_computed_one() {
+        let table = sqrt_approx_table();
+        assert_eq!(table.len(), SQRT_TABLE_LEN);
+        for (index, entry) in table.iter().enumerate() {
+            assert_eq!(
+                *entry,
+                sqrt_approx_table_entry(index as u32),
+                "entry {index}"
+            );
+        }
+    }
+}

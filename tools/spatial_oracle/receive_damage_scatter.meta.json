@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original TechnoClass::ReceiveDamage scatter-tail gates (0x702B47..0x702D0B) on the accepted and refused retaliation arms: Foot flag, MissionControl Scatter, tether, Walk Is_Moving, Target, NavCom, WhatAmI, house control, PlayerScatter and rank abilities, with the Scatter call arguments. No Scatter body, RNG, destination or full damage parity claim.",
+  "assumptions": [
+    "Supplied Infantry/Unit/Aircraft/Building buffers with original vtables, AbstractFlags, type, house, rank float and Walk interface state; current Guard uses an explicit MissionControl Scatter byte.",
+    "Target/NavCom nonnull sentinels are compared only, never dereferenced.",
+    "The ShouldRetaliate answer selects the entry; the Scatter call is observed at 0x702D0B and not executed."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "refused_gates": "0x00702BFE",
+    "accepted_gates": "0x00702B47",
+    "scatter_call": "0x00702D0B",
+    "return": "0x00702D11",
+    "com_error": "0x00702C3F",
+    "mission_control": "0x005B3A00",
+    "house_control": "0x0050B730",
+    "is_veteran": "0x0074FF90",
+    "is_elite": "0x00750010",
+    "walk_is_moving": "0x0075AB30"
+  },
+  "replay_command": "python -m tools.spatial_oracle.receive_damage_scatter",
+  "payload_sha256": "feb7788fc62922c560b89321e8e9a26189537d128374e019168e11b9b0b1f54c"
+}

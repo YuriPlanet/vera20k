@@ -1,0 +1,34 @@
+name: Bug report
+description: Something crashed, stopped working or feels wrong.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A short description is enough, in any language. Only the first box is required.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Tell us what you noticed and what you expected to happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Anything else that might help? (optional)
+      description: For example, what you were doing, the map or game mode, and whether it happened more than once.
+
+  - type: input
+    id: version-and-device
+    attributes:
+      label: Game version and device (optional)
+      description: A release number and a device name or operating system are enough, if you know them.
+
+  - type: textarea
+    id: attachments
+    attributes:
+      label: Screenshots, videos or logs (optional)
+      description: Drag files or paste links here. Remove personal details before posting.

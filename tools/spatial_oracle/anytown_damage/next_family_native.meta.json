@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Research ahead: actual low-family readers and pristine Anytown repair selector.\nNo damage, repair mutation, production map load, Engineer admission, or live\noccupant outcome is claimed. Already-admitted interior519C07 frame is supplied.\n",
+  "assumptions": [
+    "Exact physical stock MAP crop and native rules/type/theater readers; lexical INI caches and ordinal iteration are supplied as in the accepted Shrapnel helper.",
+    "Already-admitted Engineer frame at either authored untagged hut; intact original519C07->573540->57F440->580600 then stop519D17. Common suffix and full map loading excluded."
+  ],
+  "substitutions": [
+    "Generic SHP requests see the declared sparse asset cache; no runtime theater art binding is claimed.",
+    "Unused native Cell flags/land/zone/slope supplied zero; object heads empty; original seed0 logical states supplied. Any RNG or repair mutation callback reached during pristine selector control fails closed."
+  ],
+  "entry_points": {
+    "overlay_reader": "0x005FE770",
+    "object_reader": "0x005F92D0",
+    "abstract_reader": "0x00410A60",
+    "engineer_selector": "0x00519C07",
+    "controller": "0x00573540",
+    "selector": "0x0057F440",
+    "walker": "0x00580600"
+  },
+  "payload_sha256": "f450622324604253812702e7f4b7d6dc133ac3553a0fd9634c1f1283f0c1c85b",
+  "packaging": "canonical JSON; gzip mtime=0; copied lexical inputs replaced by SHA256"
+}

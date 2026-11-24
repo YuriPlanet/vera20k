@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Building pixel-coordinate constructor inputs, tactical bounds, and Anim damage-coordinate forwarding",
+  "assumptions": [
+    "Original matrix initialization; supplied admitted Building/Anim receivers and tactical bounds. No allocation, damage callee, or complete lifecycle execution. Detailed limits and code hashes are in the payload."
+  ],
+  "substitutions": [
+    "None; unchanged native corridors and callees execute."
+  ],
+  "entry_points": {
+    "matrix": "0x006D1DC5",
+    "building_coordinate": "0x004518E3",
+    "bounds": "0x0072AD20",
+    "damage_argument": "0x00424507"
+  },
+  "payload_sha256": "2d78f914054d92ce8f4cbbe3b89ffa0f1f6c8c34dd4f36d4698bd407ae9449b4"
+}

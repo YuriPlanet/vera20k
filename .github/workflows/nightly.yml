@@ -1,0 +1,47 @@
+name: Nightly
+
+# A dev build of main every day, through the Release workflow (release.yml): it
+# builds and tests every platform, publishes the installers as a pre-release
+# with the changes since the previous build, and prunes old dev builds. This
+# workflow only starts it, and skips the day when main has not changed since the
+# newest dev build. First version by HaoJun0823 (#2663).
+on:
+  schedule:
+    # 18:00 UTC. GitHub may start scheduled runs late when it is busy.
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  start:
+    name: start the dev build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # To dispatch release.yml: a dispatch is the one event that GITHUB_TOKEN
+      # can still use to start another workflow.
+      actions: write
+    steps:
+      - name: Start a dev build unless main is unchanged
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          head="$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)"
+          # The newest published dev build, by the tag release.yml gives them.
+          newest="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 100 \
+            --json tagName,isPrerelease,createdAt \
+            --jq '[.[] | select(.isPrerelease
+                     and (.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+-[0-9]{8}-[0-9]{6}$")))]
+                  | sort_by(.createdAt) | last | .tagName // empty')"
+          if [ -n "$newest" ] \
+            && [ "$(gh api "repos/$GITHUB_REPOSITORY/commits/$newest" --jq .sha)" = "$head" ]; then
+            echo "main (${head:0:7}) is unchanged since dev build $newest."
+            exit 0
+          fi
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref main -f publish=prerelease
+          echo "Started a dev build of main at ${head:0:7}."

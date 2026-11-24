@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Raw-function execution of Foot Z composition and its original helpers; not full-game, loader or rendered-pixel parity.",
+  "assumptions": [
+    "Supplied Unit using its original vtable and supplied UnitType storage, ordinary mapped 8x8 cells with a 512-wide native lookup stride, and relocated one-cell TMP headers; original constructors, INI readers and map loading do not execute.",
+    "Original direction initializer 0x0049F2F0 executes first with live x87 control 0x0E7F; the cached control word at 0x00822D80 is written afterward. Every call resets the live control word to 0x0E7F.",
+    "The fixture supplies startup AdjustForZ multiplier bits 0x3FC25E5374344960, current world XY 640/640, runtime type coefficients, clear-tile index and bridge tile base zero.",
+    "Actual Unit vtable with a null locomotor, no transporter, harvester alternative, overlays, low bridges or active tubes; ramp and cell flag 0x10000 remain zero. SHP/voxel caller admission, dummy/alias coordinates and active-game lifecycle are outside coverage.",
+    "Each complete Foot call must execute the original cliff, column, tunnel and base-Z helpers in that same run. Code hooks observe execution and stop only at the declared return boundary; no native instruction or result is replaced."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "direction_initializer": "0x0049F2F0",
+    "cliff_multiplier": "0x00704240",
+    "column_multiplier": "0x00703E70",
+    "tunnel_multiplier": "0x00704000",
+    "near_bridge": "0x00703B10",
+    "base_z_adjust": "0x00704350",
+    "foot_z_adjust": "0x004DAFC0",
+    "tmp_dimensions": "0x00547150"
+  },
+  "payload_sha256": "1709859bafa6fa1ecabc01f69a77f34721df234d20aa6a63c96269ddf514719a",
+  "replay_command": "python -m tools.render_depth_oracle"
+}

@@ -1,0 +1,176 @@
+{
+  "cases": [
+    {
+      "death_weapon_receiver_matches": true,
+      "die_sound_count": 0,
+      "endpoint": "0070D690",
+      "entry": "00517FA0",
+      "final_alive": false,
+      "final_health": 0,
+      "initial_alive": false,
+      "initial_health": 0,
+      "rng_draws": 0,
+      "rng_indices_after": [
+        0,
+        103
+      ],
+      "rng_indices_before": [
+        0,
+        103
+      ],
+      "rng_state_changed": false,
+      "sound_id": null,
+      "visited": [
+        "00517FA0",
+        "004D7330",
+        "00701900",
+        "005F5390",
+        "00702035",
+        "00702603"
+      ]
+    },
+    {
+      "death_weapon_receiver_matches": true,
+      "die_sound_count": 0,
+      "endpoint": "0070D690",
+      "entry": "00517FA0",
+      "final_alive": true,
+      "final_health": 0,
+      "initial_alive": true,
+      "initial_health": 0,
+      "rng_draws": 0,
+      "rng_indices_after": [
+        0,
+        103
+      ],
+      "rng_indices_before": [
+        0,
+        103
+      ],
+      "rng_state_changed": false,
+      "sound_id": null,
+      "visited": [
+        "00517FA0",
+        "004D7330",
+        "00701900",
+        "005F5390",
+        "00702035",
+        "00702603"
+      ]
+    },
+    {
+      "death_weapon_receiver_matches": true,
+      "die_sound_count": 0,
+      "endpoint": "0070D690",
+      "entry": "00737C90",
+      "final_alive": false,
+      "final_health": 0,
+      "initial_alive": false,
+      "initial_health": 0,
+      "rng_draws": 0,
+      "rng_indices_after": [
+        0,
+        103
+      ],
+      "rng_indices_before": [
+        0,
+        103
+      ],
+      "rng_state_changed": false,
+      "sound_id": null,
+      "visited": [
+        "00737C90",
+        "004D7330",
+        "00701900",
+        "005F5390",
+        "00702035",
+        "00702603"
+      ]
+    },
+    {
+      "death_weapon_receiver_matches": true,
+      "die_sound_count": 0,
+      "endpoint": "0070D690",
+      "entry": "00737C90",
+      "final_alive": true,
+      "final_health": 0,
+      "initial_alive": true,
+      "initial_health": 0,
+      "rng_draws": 0,
+      "rng_indices_after": [
+        0,
+        103
+      ],
+      "rng_indices_before": [
+        0,
+        103
+      ],
+      "rng_state_changed": false,
+      "sound_id": null,
+      "visited": [
+        "00737C90",
+        "004D7330",
+        "00701900",
+        "005F5390",
+        "00702035",
+        "00702603"
+      ]
+    },
+    {
+      "death_weapon_receiver_matches": true,
+      "die_sound_count": 0,
+      "endpoint": "0070D690",
+      "entry": "004165C0",
+      "final_alive": false,
+      "final_health": 0,
+      "initial_alive": false,
+      "initial_health": 0,
+      "rng_draws": 0,
+      "rng_indices_after": [
+        0,
+        103
+      ],
+      "rng_indices_before": [
+        0,
+        103
+      ],
+      "rng_state_changed": false,
+      "sound_id": null,
+      "visited": [
+        "004D7330",
+        "00701900",
+        "005F5390",
+        "00702035",
+        "00702603"
+      ]
+    },
+    {
+      "death_weapon_receiver_matches": true,
+      "die_sound_count": 0,
+      "endpoint": "0070D690",
+      "entry": "004165C0",
+      "final_alive": true,
+      "final_health": 0,
+      "initial_alive": true,
+      "initial_health": 0,
+      "rng_draws": 0,
+      "rng_indices_after": [
+        0,
+        103
+      ],
+      "rng_indices_before": [
+        0,
+        103
+      ],
+      "rng_state_changed": false,
+      "sound_id": null,
+      "visited": [
+        "004D7330",
+        "00701900",
+        "005F5390",
+        "00702035",
+        "00702603"
+      ]
+    }
+  ]
+}

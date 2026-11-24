@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original439B00 full function with bounded terrain fixtures",
+  "assumptions": [
+    "Supplied initialized Cell scalar104; original439610 derives Bounce deck416",
+    "Flat contacts and airborne slope queries only; zero quaternion spin; no cliff rollback fixtures",
+    "No OS, scheduler, debris constructor, renderer or host effects emulated"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "update": "0x00439B00",
+    "deck_init": "0x00439610"
+  },
+  "payload_sha256": "0a85e90fa500a042211db1519456d0b58cb8f86dde28cf05eb2c699fa543ee26"
+}

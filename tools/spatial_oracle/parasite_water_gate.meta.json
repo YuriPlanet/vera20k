@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original ParasiteClass CanInfect water gate for a Naval owner.\n\nCanInfect @ 0x0062A8E0 runs whole, with the victim and owner as UnitClass\nobjects on the original vtable (0x007F5C70): GetTechnoType (vt+0x84 ->\n0x006F3270 -> 0x00741490) reads +0x6C4, and GetCell (vt+0x1BC -> 0x005F6960)\nlooks the victim's Location up through MapClass @ 0x00565730, which answers\nthe shared dummy (0x00ABDC50) for an index past the cell count or a NULL slot.\nThe WaterSet test 0x00485060 reads the cell's tile (+0x38) against the theater\nbase at 0x00AA0738. Every other CanInfect gate is supplied passing.\n",
+  "assumptions": [
+    "Victim and owner are UnitClass objects on the original vtable; the parasite object supplies only its Owner (+0x24).",
+    "Victim gates other than the water test are supplied passing: not in limbo (+0x81 = 0), alive (+0x90 = 1), Health (+0x6C) = 100, no parasite (+0x694 = 0), Parasiteable type (+0xD38 = 1), no bunker link (+0x2E4 = 0).",
+    "The shared dummy cell holds the tile 0xFFFF its constructor (0x0047BC11) stores."
+  ],
+  "substitutions": [
+    "None: CanInfect, the vtable getters, GetCell, the map lookup and the WaterSet test all run original code."
+  ],
+  "entry_points": {
+    "can_infect": "0x0062A8E0",
+    "get_cell": "0x005F6960",
+    "map_cell": "0x00565730",
+    "water_set_test": "0x00485060"
+  },
+  "payload_sha256": "3a2c14b89510763eaa6cbba30ce3b19b6bd6fefe0589a1f158c2fc9aa355216c"
+}

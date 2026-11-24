@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Rules two vector constructors and complete MetallicDebris/BridgeExplosions ReadGeneral blocks",
+  "assumptions": [
+    "Supplied cached INI indexes. Retail input strings exported by production AssetManager and IniFile from RULESMD.INI, optional LANGRULE.INI, MPBattleMD.ini and Hills.mmx; no native physical INI load.",
+    "Fresh AnimType registry with spare capacity, full original FindOrAllocate and constructors, original vector storage/copy routines. No AnimType ART read or game production claim.",
+    "Rows execute sequentially in one RulesClass and AnimType registry; missing/empty/whitespace reads retain vectors while comma-only input replaces with empty."
+  ],
+  "substitutions": [
+    "operator_new returns bump storage; operator_delete is a no-op; CRT TLS accessor returns supplied per-thread storage for original strtok"
+  ],
+  "entry_points": {
+    "constructor": "0x00665827",
+    "metallic_list": "0x0066DA90",
+    "explosion_list": "0x0066DB93",
+    "read_string": "0x00528A10",
+    "strtok": "0x007C9CC2",
+    "find_or_allocate": "0x00428B80",
+    "anim_type_ctor": "0x00427530"
+  },
+  "payload_sha256": "b6b8700e135e8fe157d7e9d52af835b5b37ca46a9e5ec1106d129768bc4e1140"
+}

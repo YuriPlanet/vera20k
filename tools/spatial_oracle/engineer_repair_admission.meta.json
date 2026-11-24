@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original519948 effective-mission and ground-building target admission.\n\nThis is a supplied INTERIOR PerCellProcess frame, not full PerCell2 entry.\nThe upstream reason, spy/thief/transporter/zone/path/Walk admission and cached\nphysical-cell producer have NOT executed. Original Infantry Mission5B3040,\nBuilding457620/465D40 and Cell47C520 execute unchanged; hooks only observe.\nStops before519B58 (Engineer/type/BridgeRepairHut and effects not executed),\nor before the original rejection continuations51A071/51A0D4.\n",
+  "assumptions": [
+    "ESI Infantry and ESP local frame already established; ESP+14 supplied cached physical CellClass.",
+    "Original Infantry/Building vtables; Techno RTTI bit1 set on Building objects; null UndeploysInto and attached Tags.",
+    "Supplied linked ground/upper objects and active-object lookup global; constructors and map loader omitted.",
+    "Mission current+AC, queued+B4, NavCom+5A4 and attack target+2B4 supplied independently."
+  ],
+  "substitutions": [
+    "No instruction patches or native call answers. Observation-only hooks. All paths stop before suffix side effects.",
+    "This does not validate full519630 PerCell2 admission, Walk entry, Engineer/type flags, notification, repair or consumption."
+  ],
+  "entry_points": {
+    "supplied_interior_mission_gate": "0x00519948",
+    "effective_mission": "0x005B3040",
+    "building_undeploy_predicate": "0x00457620",
+    "type_undeploy_predicate": "0x00465D40",
+    "first_ground_building": "0x0047C520",
+    "engineer_type_gate_not_executed": "0x00519B58",
+    "target_rejection_continuation_not_executed": "0x0051A071",
+    "mission_rejection_continuation_not_executed": "0x0051A0D4"
+  },
+  "payload_sha256": "0a8f93a71fceea6e79858224b8baaf6d15aba105e87bca48e086c3aa0cb1207f"
+}

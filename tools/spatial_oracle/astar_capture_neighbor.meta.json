@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original AStar neighbor-call/admission corridor with concrete Infantry entry.\n\nThe interior AStar frame is supplied. Original51BF90 and429830 execute, then\n429FEA selects node creation versus blocked-goal abort. No full route claim.\n",
+  "assumptions": [
+    "Supplied interior AStar frame after zone/closed-list candidate admission; sparse native map, actor/type and hut storage come from each explicitly labelled input case. No full42C900/429A90 or route reconstruction executes.",
+    "Original Pathfinder scalar constructor prefix42A6D0..42A718 supplies cost scale1 and flag1. Search current/goal heights, generation stamp, selected list, raw table pointers and re-based single closed index supplied.",
+    "Physical applicable rules layers are processed by original674000 using lexical INI caches; all selected land-speed bytes come from native reading, not Rust scalar conversion.",
+    "Original unmodified Infantry/Building vtables, original51BF90+4D9C60, mission, warping and IronCurtain readers, original429830 and CMP7 branch execute.",
+    "ScenarioInit false, no team/slave and ordinary Infantry receiver explicitly supplied. Counterfactuals are labelled separately."
+  ],
+  "substitutions": [
+    "Setup INI reader inherits allocator/free/TLS/file seams; none is reached during measured AStar neighbor corridor."
+  ],
+  "entry_points": {
+    "astar_neighbor": "0x00429F37",
+    "can_enter": "0x0051BF90",
+    "height_gate": "0x004D9C60",
+    "edge_cost": "0x00429830",
+    "cost_class_cmp": "0x00429FEA",
+    "admitted_before_create_node": "0x0042A01E",
+    "blocked_goal_tail": "0x0042A3DE"
+  },
+  "payload_sha256": "23e2fd8727579b39cb6053705156b959c70386d9cca83a52bf6936e5d2dc8bca"
+}

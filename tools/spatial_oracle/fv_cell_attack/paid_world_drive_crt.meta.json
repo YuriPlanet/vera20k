@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original FV placement, paid pursuit, firing and physical bridge impact continuation.\n\nReuse Navigation for physical TMP/type/Cell/Terrain/graph initialization and\nMission for actual FV constructor, Unlimbo, command and live object pass.\n",
+  "assumptions": [
+    "Four physical Anytown states are produced by the existing complete native Navigation owner: healthy, one original57CCF0 damage, second57CCF0 collapse, and original573540 repair. Original TMP/Cell/Terrain/Recalc and full graph initialization run; raw whole-world heaps and selected globals are composed unchanged into the existing FV Mission VM. Frozen native full cells/planes/graphs compare exactly at every state. Physical worlds are rebuilt on every replay; raw world-region digests are also protected by the original paid packet canonical guard. No retail heap cache is committed or required.",
+    "The original Mission setup executes Unit/Foot/Techno constructors, country/side constructor lists and original Americans reader, actual Drive COM factory, and full Unit/Techno/Object Unlimbo and Cell/Display/Logic membership. Explicit coordinate input is[22400,12414,416], two leptons north of87,48 center, facing128. This is a supplied spawn position, not native center adjustment. The original Event attack command targets Cell87,54 at frame1.",
+    "The existing single-human-House fixture is retained: supplied storage binds native Americans country, combat multipliers1, human/current-player flags and selected valid counters. Full House construction, Scenario load chronology, startup native ID prefix, mouse/UI admission and multiplayer command queue are not claimed. Full RNG and NextID are captured before and after the measured Unit constructor/Unlimbo. Each case retains original Scenario Seed31 from the shared composed reader owner; original65C6D0 explicitly initializes Main and MapGen with seed0. No donor mutation RNG continuation is imported. All three controlled native structs are retained in full.",
+    "Original UnitAI/FootAI/TechnoAI, native Attack dispatch gate/cadence, full radial candidate/graph/path admission, Drive points, per-object firing/facing, original Bullet/Anim constructors and live append order execute. Newly admitted Bullets and Anims can receive AI in the same original pass. Original frame commit and deferred destructor drain execute. Other Scenario/House/Terrain/global logic phases are excluded.",
+    "Physical FV, HoverMissile, AAHeatSeeker2, HE, DRAGON, impact HE and parsed SplashList ART/SHP inputs run through existing original readers. GameOptions constructor default speed3/detail2 and LineTrail registry initialization run. Complete Bullet Unlimbo chooses LineTrail creation; Bullet retirement detaches it. Tactical drawing/global trail presentation cadence is excluded, so detached trails may remain in that separate presentation registry.",
+    "The measured original object loop runs until the first burst Bullets and Anims have drained, with a declared80-frame upper bound. Full source/Drive bytes, full three RNG streams, memberships, all passed original event addresses and impacted physical span snapshots are preserved. Sound registry/binding is omitted; sound playback uses the inherited explicit boundary. No full audio/Main RNG claim."
+  ],
+  "substitutions": [
+    "Existing bounded native fixture owners provide OS string/CLSID/COM transport, bump allocation and deallocation, selected native INI cache entries and physical SHP transport. Actual Drive/Bullet COM factories execute. Existing setup-only wall-clock and type-visual sinks, radar and sound boundaries are retained and reported as events.",
+    "Whole physical-world native heap/global snapshots are supplied inputs; source constructor clock is reset to frame0 before the new lifetime. The existing Mission setup then runs original base connectivity again; the packet distinguishes unchanged native live base labels from exact native post-load rebuilt labels, while retaining the donor live hierarchy.",
+    "No original gameplay code or native return values are patched. VM wall-clock allowance for the unchanged Mission-owned loop is60seconds with the original instruction-count guard, to accommodate tracing and concurrent independent replay."
+  ],
+  "entry_points": {
+    "unit_ctor": "0x007353C0",
+    "unit_unlimbo": "0x00737BA0",
+    "command": "0x004C6CB0",
+    "live_logic": "0x0055B5FF",
+    "unit_ai": "0x007360C0",
+    "foot_ai": "0x004DA530",
+    "mission_attack": "0x004D4DC0",
+    "approach": "0x004D5690",
+    "drive_process": "0x004B0500",
+    "drive_paid_points": "0x004B0F20",
+    "firing_update": "0x00736DF0",
+    "facing_update": "0x00736990",
+    "bullet_ai": "0x004666E0",
+    "area_damage": "0x00489280",
+    "concrete_damage": "0x0057CCF0",
+    "retirement": "0x00725C70"
+  },
+  "frozen_source_sha256": "f1c8f1bce6cda31ac6e763634e1f3b4846b5cab8acb07de55e416de58f5d5222",
+  "supersedes": "paid_world.json.gz",
+  "publication_changes": [
+    "The imported-source census and the external pickle transport hash are omitted. The original Drive CRT table now executes before construction; the previous image-zero packet is preserved as superseded evidence.",
+    "The shared publisher replaces copied lexical INI entries with hashes. The portable native generator must match the original frozen canonical projection even under --write."
+  ],
+  "payload_sha256": "fa9c2d528d488aea90f63a53ecd5e365ea5e885d7db1148a50b17395016536b4",
+  "packaging": "canonical JSON; gzip mtime=0; copied lexical inputs replaced by SHA256"
+}

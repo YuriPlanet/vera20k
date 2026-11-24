@@ -1,0 +1,626 @@
+//! Full original LightConvert556090 RGB565 controls and live trigger consumers.
+//! Steam gamemd.exe.
+//! Native controls use tools.palette_oracle's machine/call at556090 with
+//! declared N27/N53 objects, RGB(i,i*73 mod256,255-i), MMX and liveCW0E7F.
+//! Rows0/middle/last, indices64/128/200. No scene/GPU parity claim.
+use super::*;
+use crate::map::map_file::MapFile;
+use crate::render::palette_light::PaletteLight;
+use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile};
+use crate::sim::scenario_session::ScenarioLightingProfile;
+use crate::sim::world::FrameEffects;
+
+fn global(palette: PaletteUpdate, state: ScenarioLightingState) -> LightingEvent {
+    LightingEvent::Global {
+        state,
+        cell_profile: ScenarioLightingProfile::Normal,
+        palette,
+        constructor_rgb: None,
+    }
+}
+
+#[test]
+fn twenty_original_palette_histories_keep_mutable_normal_rgb_and_native_pixels() {
+    // Literal native output. Stage names describe explicit RGB operations;
+    // effect flags and the palette registries are outside these controls.
+    let records: [(usize, &str, [i32; 3], [u16; 9]); 20] = [
+        (
+            0,
+            "birth_a",
+            [512, 640, 768],
+            [0, 0, 0, 8530, 17036, 24613, 17055, 34072, 51274],
+        ),
+        (
+            1,
+            "birth_neutral",
+            [1000, 1000, 1000],
+            [0, 0, 0, 14839, 31727, 49190, 31743, 65535, 63597],
+        ),
+        (
+            0,
+            "normal_tint",
+            [1230, 870, 650],
+            [0, 0, 0, 18863, 39786, 61476, 39807, 65268, 63592],
+        ),
+        (
+            1,
+            "normal_tint",
+            [1230, 870, 650],
+            [0, 0, 0, 18863, 39786, 61476, 39807, 65268, 63592],
+        ),
+        (
+            2,
+            "birth_after_tint",
+            [960, 640, 512],
+            [0, 0, 0, 14668, 31368, 47139, 31384, 62736, 63559],
+        ),
+        (
+            0,
+            "ion",
+            [300, 400, 750],
+            [0, 0, 0, 4305, 8587, 14341, 8607, 19255, 28714],
+        ),
+        (
+            1,
+            "ion",
+            [300, 400, 750],
+            [0, 0, 0, 4305, 8587, 14341, 8607, 19255, 28714],
+        ),
+        (
+            2,
+            "ion",
+            [300, 400, 750],
+            [0, 0, 0, 4305, 8587, 14341, 8607, 19255, 28714],
+        ),
+        (
+            0,
+            "restore_normal",
+            [1230, 870, 650],
+            [0, 0, 0, 18863, 39786, 61476, 39807, 65268, 63592],
+        ),
+        (
+            1,
+            "restore_normal",
+            [1230, 870, 650],
+            [0, 0, 0, 18863, 39786, 61476, 39807, 65268, 63592],
+        ),
+        (
+            2,
+            "restore_normal",
+            [960, 640, 512],
+            [0, 0, 0, 14668, 31368, 47139, 31384, 62736, 63559],
+        ),
+        (
+            0,
+            "nuke",
+            [1750, 1500, 1250],
+            [0, 0, 0, 27389, 56819, 63560, 56831, 65535, 63665],
+        ),
+        (
+            1,
+            "nuke",
+            [1750, 1500, 1250],
+            [0, 0, 0, 27389, 56819, 63560, 56831, 65535, 63665],
+        ),
+        (
+            2,
+            "nuke",
+            [1750, 1500, 1250],
+            [0, 0, 0, 27389, 56819, 63560, 56831, 65535, 63665],
+        ),
+        (
+            0,
+            "normal_during_alternate",
+            [0, 2000, 800],
+            [0, 0, 0, 1011, 2028, 101, 2047, 2041, 234],
+        ),
+        (
+            1,
+            "normal_during_alternate",
+            [0, 2000, 800],
+            [0, 0, 0, 1011, 2028, 101, 2047, 2041, 234],
+        ),
+        (
+            2,
+            "normal_during_alternate",
+            [0, 2000, 800],
+            [0, 0, 0, 1011, 2028, 101, 2047, 2041, 234],
+        ),
+        (
+            0,
+            "restore_normal_again",
+            [0, 2000, 800],
+            [0, 0, 0, 1011, 2028, 101, 2047, 2041, 234],
+        ),
+        (
+            1,
+            "restore_normal_again",
+            [0, 2000, 800],
+            [0, 0, 0, 1011, 2028, 101, 2047, 2041, 234],
+        ),
+        (
+            2,
+            "restore_normal_again",
+            [0, 2000, 800],
+            [0, 0, 0, 1011, 2028, 101, 2047, 2041, 234],
+        ),
+    ];
+    let terrain =
+        crate::map::resolved_terrain::test_grid(3, 1, crate::map::resolved_terrain::test_flat_cell);
+    let mut lights = MatchLighting::default();
+    let mut previous_stage = "";
+    let keys: [[i32; 3]; 3] = [[512, 640, 768], [1000; 3], [960, 640, 512]];
+    for (object, stage, expected_rgb, expected_pixels) in records {
+        if stage.starts_with("birth") {
+            lights.grid.insert_profiled_light(
+                (object as u16, 0),
+                keys[object].map(|v| v as f32 / 1000.0),
+                1.0,
+            );
+        } else if stage != previous_stage {
+            let palette = match stage {
+                "normal_tint" => PaletteUpdate::Normal([1230, 870, 650]),
+                "ion" => PaletteUpdate::Alternate([300, 400, 750]),
+                "nuke" => PaletteUpdate::Alternate([1750, 1500, 1250]),
+                "normal_during_alternate" => PaletteUpdate::Normal([-10, 3000, 800]),
+                "restore_normal" | "restore_normal_again" => PaletteUpdate::RestoreNormal,
+                _ => panic!("unexpected native stage"),
+            };
+            lights.apply_events(
+                &terrain,
+                &[global(palette, ScenarioLightingState::default())],
+            );
+        }
+        previous_stage = stage;
+        let cell = (object as u16, 0);
+        let retained = lights.grid.cell_light_at(cell).unwrap();
+        assert_eq!(retained.rgb_key, keys[object], "{stage}/{object}");
+        assert_eq!(
+            lights.grid.palette_rgb(retained.profile_id),
+            expected_rgb,
+            "{stage}/{object}"
+        );
+        let rows = if object == 0 { 27 } else { 53 };
+        let packet = PaletteLight::cell(&lights.grid, cell, false);
+        assert_eq!(packet.rows(), rows);
+        let mut pixels = Vec::new();
+        for brightness in [0, 1000, 2000] {
+            let packet = packet.with_brightness(brightness);
+            for index in [64u8, 128, 200] {
+                pixels.push(packet.rgb565(
+                    [index, index.wrapping_mul(73), 255 - index],
+                    index,
+                    127,
+                ));
+            }
+        }
+        assert_eq!(pixels, expected_pixels, "{stage}/{object}");
+    }
+}
+
+/// TechnoClass_DrawSHP's TerrainPalette arm (`0x00705ED5..0x00705F52`) lights
+/// a building from the cell of its GetCoords (`0x00447AC0`, the foundation
+/// centre: (12, 12) for retail CITY06's 4x4 at (10, 10)); the house-scheme arm
+/// keeps the Location cell's top scalar.
+#[test]
+fn terrain_palette_building_takes_its_foundation_centre_cell() {
+    let mut grid = crate::map::lighting::CellLightGrid::new();
+    grid.insert_profiled_light((10, 10), [0.5, 0.5, 0.5], 0.5);
+    grid.insert_profiled_light((12, 12), [1.5, 1.0, 0.5], 1.5);
+    let art = ArtRegistry::from_ini(&IniFile::from_str("[CITY06]\nTerrainPalette=yes\n"));
+    assert_eq!(
+        building_palette_light(&grid, (10, 10), (12, 12), art.get("CITY06"), false),
+        PaletteLight::cell(&grid, (12, 12), false)
+    );
+    assert_eq!(
+        building_palette_light(&grid, (10, 10), (12, 12), None, false),
+        body_palette_light(&grid, (10, 10), 0)
+    );
+}
+
+#[test]
+fn mutable_lookup_keeps_old_cell_pointers_and_row_counts_while_new_samples_get_new_converts() {
+    //544E94 returns neutral index0;544EF8 compares normal cache from
+    // index1, returning the first matching Convert with its existing N.
+    let mut grid = CellLightGrid::new();
+    grid.insert_profiled_light((0, 0), [0.512, 0.640, 0.768], 1.0);
+    let old = grid.cell_light_at((0, 0)).unwrap().profile_id;
+    grid.retint_normal_rgb([960, 640, 512]);
+    grid.insert_profiled_light((1, 0), [0.960, 0.640, 0.512], 1.0);
+    assert_eq!(grid.cell_light_at((1, 0)).unwrap().profile_id, old);
+    assert_eq!(PaletteLight::cell(&grid, (1, 0), false).rows(), 27);
+    grid.insert_profiled_light((2, 0), [0.512, 0.640, 0.768], 1.0);
+    let new = grid.cell_light_at((2, 0)).unwrap().profile_id;
+    assert_ne!(new, old);
+    assert_eq!(grid.palette_rgb(old), [960, 640, 512]);
+    assert_eq!(grid.palette_rgb(new), [512, 640, 768]);
+    grid.insert_profiled_light((3, 0), [1.0; 3], 1.0);
+    assert_eq!(
+        grid.cell_light_at((3, 0)).unwrap().profile_id,
+        grid.profiles().default_profile_id()
+    );
+    assert_eq!(PaletteLight::cell(&grid, (3, 0), false).rows(), 53);
+}
+
+#[test]
+fn live_tag_rgb_overrides_reach_packets_and_survive_ambient_writes_during_storm() {
+    let map = MapFile::from_bytes(b"[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n[IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n[Basic]\nNewINIFormat=4\n[Triggers]\nRGB=Neutral,<none>,RGB,0,1,1,1,0\n[Events]\nRGB=1,13,0,0\n[Actions]\nRGB=4,142,0,120,0,0,0,0,A,143,0,80,0,0,0,0,A,144,0,60,0,0,0,0,A,73,0,80,0,0,0,0,A\n[Tags]\nRGBTAG=0,RGB,RGB\n").unwrap();
+    let mut sim = Simulation::with_seed(0);
+    sim.initialize_trigger_definitions(
+        &map,
+        &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
+        None,
+        None,
+        None,
+    );
+    sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
+    sim.publish_scenario_started();
+    // Declared raging-storm fixture; its lifecycle has separate tests.
+    let owner = sim.intern("Americans");
+    *sim.lightning_storm_mut_for_test() =
+        crate::sim::superweapon::lightning_storm::LightningStorm::raging_for_test(owner, (0, 0));
+    sim.session_mut_for_test()
+        .lighting_mut()
+        .select(ScenarioLightingProfile::Ion);
+    let terrain =
+        crate::map::resolved_terrain::test_grid(3, 1, crate::map::resolved_terrain::test_flat_cell);
+    let mut lights = MatchLighting::default();
+    lights
+        .grid
+        .insert_profiled_light((0, 0), [0.512, 0.640, 0.768], 1.0);
+    sim.publish_global_lighting(PaletteUpdate::from_scenario(&sim.session().lighting()));
+    lights.apply_events(&terrain, sim.lighting_sources().pending());
+    sim.lighting_sources_mut_for_test().discard_pending();
+    sim.advance_triggers(
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        None,
+        &mut FrameEffects::default(),
+    );
+    assert_eq!(sim.lighting_sources().pending().len(), 3);
+    lights.apply_events(&terrain, sim.lighting_sources().pending());
+    sim.lighting_sources_mut_for_test().discard_pending();
+    //73 changes normal Ambient after the final RGB publication. Reconciling
+    // that state must not infer a new Ion palette operation.
+    lights.refresh(&terrain, &sim, 2);
+    let before = lights.grid.cell_light_at((0, 0)).unwrap().profile_id;
+    assert_eq!(lights.grid.palette_rgb(before), [1200, 800, 600]);
+    let brightness = lights.grid.cell_light_at((0, 0)).unwrap().top_scalar;
+    let expected = PaletteLight::color_scheme([1200, 800, 600], brightness);
+    assert_eq!(body_palette_light(&lights.grid, (0, 0), 0), expected);
+    assert_eq!(
+        building_palette_light(&lights.grid, (0, 0), (0, 0), None, false),
+        expected
+    );
+    let art = ArtRegistry::from_ini(&IniFile::from_str("[ALT]\nAltPalette=yes\n"));
+    // Default N1 schemes are skipped by53AD4D, independently of N53 and
+    // cell caches (68C710 RGB1000;4232E2 selects B054D4[0]+30C).
+    assert_eq!(
+        anim_palette_light(
+            &lights.grid,
+            (0, 0),
+            art.anim_runtime_config("ALT"),
+            false,
+            None,
+            brightness,
+        ),
+        PaletteLight::new([1000; 3], 1, brightness, true)
+    );
+    // The same AltPalette type with an instance Convert at+0xD4 draws before
+    //4232E2 swaps that one-row scheme in, so it keeps the 53-row selection
+    // Paradrop5F5AFE stored: the shroud's A still selects a row.
+    assert_eq!(
+        anim_palette_light(
+            &lights.grid,
+            (0, 0),
+            art.anim_runtime_config("ALT"),
+            false,
+            Some(&crate::sim::anim_class::AnimRemap::House(
+                crate::sim::intern::InternedId::default()
+            )),
+            brightness,
+        ),
+        expected
+    );
+    assert_eq!(
+        anim_palette_light(&lights.grid, (0, 0), None, false, None, brightness),
+        PaletteLight::plain(53, brightness)
+    );
+    //555E50 constructs a new Convert with Storm RGB even though the
+    // preceding normal operation switched existing Converts out of Ion.
+    lights
+        .grid
+        .insert_profiled_light((1, 0), [0.960, 0.640, 0.512], 1.0);
+    let after = lights.grid.cell_light_at((1, 0)).unwrap().profile_id;
+    assert_eq!(lights.grid.palette_rgb(after), [300, 400, 750]);
+    assert_eq!(lights.grid.palette_rgb(before), [1200, 800, 600]);
+    lights.apply_events(
+        &terrain,
+        &[global(
+            PaletteUpdate::RestoreNormal,
+            ScenarioLightingState::default(),
+        )],
+    );
+    assert_eq!(lights.grid.palette_rgb(before), [1200, 800, 600]);
+    assert_eq!(lights.grid.palette_rgb(after), [960, 640, 512]);
+}
+
+/// Execute73 (`0x006DF292`) writes the ordinary ambient and the fade target
+/// and refreshes no cell, so the pass after it leaves every cell's scalars as
+/// the last relight gave them: a cell whose height changed since keeps its
+/// old light until a relight, such as the fade's next step, reaches it.
+#[test]
+fn ambient_action_relights_no_cell_before_the_fade() {
+    let map = MapFile::from_bytes(b"[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n[IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n[Basic]\nNewINIFormat=4\n[Triggers]\nAMB=Neutral,<none>,AMB,0,1,1,1,0\n[Events]\nAMB=1,13,0,0\n[Actions]\nAMB=1,73,0,40,0,0,0,0,A\n[Tags]\nAMBTAG=0,AMB,AMB\n").unwrap();
+    let rules = crate::rules::ruleset::RuleSet::empty_for_test();
+    let mut sim = Simulation::with_seed(0);
+    sim.initialize_trigger_definitions(
+        &map,
+        &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
+        None,
+        None,
+        None,
+    );
+    sim.classify_map_triggers(rules);
+    sim.publish_scenario_started();
+    let terrain =
+        crate::map::resolved_terrain::test_grid(3, 1, crate::map::resolved_terrain::test_flat_cell);
+    let mut lights = MatchLighting::default();
+    lights.install(
+        CellLightGrid::new(),
+        LightingConfig::default(),
+        2,
+        Some((&terrain, &sim)),
+        None,
+    );
+    // A bridge's raw Cell+11B write changes only later sampling.
+    lights.apply_events(
+        &terrain,
+        &[LightingEvent::CellLevels {
+            cells: vec![((1, 0), 4)],
+        }],
+    );
+    let top = |lights: &MatchLighting| lights.grid.cell_light_at((1, 0)).unwrap().top_scalar;
+    let before = top(&lights);
+    sim.advance_triggers(rules, None, &mut FrameEffects::default());
+    assert_eq!(sim.session().lighting().target_ambient(), 40);
+    lights.apply_events(&terrain, &sim.take_lighting_events());
+    lights.after_pass(&terrain, &sim, 2);
+    assert_eq!(top(&lights), before, "73 relights no cell");
+    // The fade's step (Logic55B4C6) relights the cell at its new height.
+    sim.publish_global_lighting(PaletteUpdate::Preserve);
+    lights.apply_events(&terrain, &sim.take_lighting_events());
+    assert_ne!(top(&lights), before);
+}
+
+/// A radiation site's bound type drives the field's cell light: the same
+/// scene lights purple for a `255,0,255` type and green for the default one.
+/// Phobos builds only: other builds never read `[RadiationTypes]`.
+#[cfg(feature = "phobos")]
+#[test]
+fn a_bound_radiation_type_tints_the_field_with_its_own_color() {
+    let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+        "[Radiation]\n\
+         RadDurationMultiple=1\nRadApplicationDelay=16\nRadLevelMax=500\n\
+         RadLevelDelay=90\nRadLevelFactor=.2\nRadSiteWarhead=RadSite\n\
+         [RadiationTypes]\n0=Violet\n\
+         [Violet]\nRadColor=255,0,255\nRadLightFactor=1.0\nRadTintFactor=1.0\n",
+    ))
+    .expect("rules with a violet radiation type");
+    let terrain = crate::map::resolved_terrain::test_grid(
+        20,
+        20,
+        crate::map::resolved_terrain::test_flat_cell,
+    );
+    let sample = |bound: Option<&str>| {
+        let mut sim = Simulation::with_seed(0);
+        let mut lights = MatchLighting::default();
+        lights.install(
+            CellLightGrid::new(),
+            LightingConfig::default(),
+            2,
+            Some((&terrain, &sim)),
+            None,
+        );
+        let mut sources = std::mem::take(sim.lighting_sources_mut_for_test());
+        sim.radiation_mut_for_test().apply_detonation(
+            crate::sim::radiation::RadDetonation {
+                rx: 10,
+                ry: 10,
+                rad_level: 500,
+                spread: 2,
+                rad_type: bound.map(str::to_owned),
+                firing_house: None,
+                invoker: None,
+            },
+            0,
+            "TEMPERATE",
+            &rules,
+            Some(&terrain),
+            &mut sources,
+        );
+        *sim.lighting_sources_mut_for_test() = sources;
+        lights.apply_events(&terrain, sim.lighting_sources().pending());
+        let cell = lights.grid.cell_light_at((10, 10)).expect("lit cell");
+        lights.grid.palette_rgb(cell.profile_id)
+    };
+    let retail = sample(None);
+    let violet = sample(Some("Violet"));
+    assert_eq!(violet[0], violet[2], "red and blue match: {violet:?}");
+    assert!(
+        violet[1] * 2 < violet[0],
+        "green stays far under red/blue for a violet field: {violet:?}"
+    );
+    assert!(
+        retail[1] > violet[1],
+        "the default green field keeps more green: {retail:?} vs {violet:?}"
+    );
+}
+
+/// Phobos `TechnoExt::UpdateTintValues`'s AttachEffect arm: every active
+/// effect with a tint ORs its `Tint.Color` word and sums
+/// `Tint.Intensity * 1000`, filtered by `Tint.VisibleToHouses` against the
+/// current player's Owner/Allies/Enemies bucket.
+#[cfg(feature = "phobos")]
+#[test]
+fn attach_effect_tint_ors_colours_and_sums_intensities_by_viewer() {
+    let ini = IniFile::from_str(
+        "[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+         [VehicleTypes]\n0=TARGET\n\
+         [TARGET]\nStrength=1000\nSpeed=6\n\
+         AttachEffect.AttachTypes=RED,BLUE,HIDDEN\n\
+         [AttachEffectTypes]\n0=RED\n1=BLUE\n2=HIDDEN\n\
+         [RED]\nDuration=100\nTint.Color=255,0,0\nTint.Intensity=1.0\n\
+         [BLUE]\nDuration=100\nTint.Color=0,0,255\nTint.Intensity=0.5\n\
+         Tint.VisibleToHouses=enemies\n\
+         [HIDDEN]\nDuration=100\nTint.Color=0,255,0\nTint.Intensity=2.0\n\
+         Tint.VisibleToHouses=none\n",
+    );
+    let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).expect("rules");
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 3);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let target = sim
+        .spawn_object("TARGET", "Americans", 20, 20, 0, &rules)
+        .expect("spawn");
+    sim.advance_tick(&[], Some(&rules), None, Some(rules.overlay_registry()), 22);
+    let americans = sim.interner().get("Americans").expect("owner");
+    let russians = sim.interner().get("Russians").expect("rival");
+
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(americans));
+    assert_eq!(
+        attach_effect_tint(
+            &crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, target),
+            &sim,
+            &rules
+        ),
+        (0xF800, 1000),
+        "the owner sees RED only; enem-only and none stay out"
+    );
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(russians));
+    assert_eq!(
+        attach_effect_tint(
+            &crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, target),
+            &sim,
+            &rules
+        ),
+        (0xF800 | 0x001F, 1500),
+        "an enemy also sees BLUE; HIDDEN never applies"
+    );
+}
+
+/// `Tint.Cumulative`: stacked instances of one cumulative effect sum their
+/// colour channels and intensities before a single tint; without it the type
+/// tints once with its own colour.
+#[cfg(feature = "phobos")]
+#[test]
+fn cumulative_effect_tint_stacks_by_type_or_once() {
+    let scene = |extra: &str| {
+        let ini = IniFile::from_str(&format!(
+            "[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+             [VehicleTypes]\n0=TARGET\n\
+             [TARGET]\nStrength=1000\nSpeed=6\n\
+             AttachEffect.AttachTypes=SAME,SAME\n\
+             [AttachEffectTypes]\n0=SAME\n\
+             [SAME]\nDuration=100\nCumulative=yes\nCumulative.MaxCount=3\n\
+             Tint.Color=10,20,30\nTint.Intensity=0.5\n{extra}"
+        ));
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).expect("rules");
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 3);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let target = sim
+            .spawn_object("TARGET", "Americans", 20, 20, 0, &rules)
+            .expect("spawn");
+        sim.advance_tick(&[], Some(&rules), None, Some(rules.overlay_registry()), 22);
+        (sim, rules, target)
+    };
+
+    // Base (10,20,30)/(0.5) stacked twice sums to (20,40,60)/1.0.
+    let (sim, rules, target) = scene("");
+    assert_eq!(
+        attach_effect_tint(
+            &crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, target),
+            &sim,
+            &rules
+        ),
+        (0x1147, 1000),
+        "the two instances of one type sum their tint"
+    );
+
+    let (sim, rules, target) = scene("Tint.Cumulative=no\n");
+    assert_eq!(
+        attach_effect_tint(
+            &crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, target),
+            &sim,
+            &rules
+        ),
+        (0x08A3, 500),
+        "without Tint.Cumulative the type tints once"
+    );
+}
+
+/// Phobos `ApplyCustomTintValues` selects the viewer's shield-tint bucket and
+/// `Drawing::RGB_To_Int` packs `Tint.Color` as RGB565.
+#[cfg(feature = "phobos")]
+#[test]
+fn shield_tint_uses_the_viewers_bucket_and_rgb565_word() {
+    use crate::rules::phobos_shields::AffectedHouse;
+    use crate::sim::intern::InternedId;
+    let owner = InternedId::from_index(0);
+    let other = InternedId::from_index(1);
+    assert_eq!(
+        tint_bucket(owner, Some(owner), || panic!(
+            "the owner needs no alliance query"
+        )),
+        AffectedHouse::OWNER
+    );
+    assert_eq!(
+        tint_bucket(owner, Some(other), || true),
+        AffectedHouse::ALLIES
+    );
+    assert_eq!(
+        tint_bucket(owner, Some(other), || false),
+        AffectedHouse::ENEMIES
+    );
+    assert_eq!(
+        tint_bucket(owner, None, || panic!("no viewer to ask")),
+        AffectedHouse::ENEMIES
+    );
+    // RGB_To_Int: (B >> 3) | ((G >> 2) << 5) | ((R >> 3) << 11).
+    assert_eq!(rgb565_word([255, 0, 0]), 0xF800);
+    assert_eq!(rgb565_word([0, 255, 0]), 0x07E0);
+    assert_eq!(rgb565_word([0, 0, 255]), 0x001F);
+    // Tint.VisibleToHouses gates each bucket independently.
+    assert!(AffectedHouse::OWNER.contains(AffectedHouse::OWNER));
+    assert!(!AffectedHouse::ENEMIES.contains(AffectedHouse::OWNER));
+    assert!(AffectedHouse::ALL.contains(AffectedHouse::ENEMIES));
+}
+
+/// Phobos `TechnoClass_InvulnerabilityIntensity_Adjust` (`0x70E475`): the
+/// configured extra intensity scales by 1000 and is added by kind.
+#[cfg(feature = "phobos")]
+#[test]
+fn curtain_extra_tint_reads_the_audio_visual_globals() {
+    use crate::sim::superweapon::invulnerability::InvulnKind;
+    let rules =
+        crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+            "[AudioVisual]\nIronCurtain.ExtraTintIntensity=0.4\n\
+             ForceShield.ExtraTintIntensity=-0.25\n",
+        ))
+        .expect("rules");
+    assert_eq!(
+        super::curtain_extra_tint(Some(&rules), Some(InvulnKind::IronCurtain)),
+        400
+    );
+    assert_eq!(
+        super::curtain_extra_tint(Some(&rules), Some(InvulnKind::ForceShield)),
+        -250
+    );
+    assert_eq!(
+        super::curtain_extra_tint(None, Some(InvulnKind::IronCurtain)),
+        0
+    );
+    assert_eq!(super::curtain_extra_tint(Some(&rules), None), 0);
+}

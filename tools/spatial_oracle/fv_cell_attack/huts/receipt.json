@@ -1,0 +1,149 @@
+{
+  "files": {
+    "hut_joined.json.gz": "977eed2e733b6a94712401b93bf6c890628905b52df4cb03042074fbbe895ac5",
+    "hut_joined.meta.json": "c2fc8158bb650ab03ac959dbc0f1e25c9f8ab5ee4c3f3461c43b56f5b3b7f2ee",
+    "hut_vectors.json": "90c2c65d3f8784c8d96d565cdb4ed47906b7b28bb4b882366e0b3eb61a0e2c97",
+    "hut_vectors.meta.json": "94bea9ed366f8d43a585972c85e7829cdde470ae54a9aaab9e867574bce8232d",
+    "original_execution.meta.json": "52742177f69f4cd77308d66ffee2c5ae3e23fd55b6d14de1f42920cc6b3bd566",
+    "promotion.json": "68a6b28d0bebe8a72eaf0abb341b78813406181282ef569bbf5d9fec8b6b4e0e"
+  },
+  "integration_validation": [
+    {
+      "base_commit": "d4aaba7172506137bb2a08008e43ece3e67d17fa",
+      "native_payloads_unchanged": true,
+      "native_replay": {
+        "command": "python -B -u -m tools.spatial_oracle.fv_cell_attack.huts.probe --check --fresh-world",
+        "exit_code": 0,
+        "log_sha256": "72ed01cdcbafd62387cc3a4a91079db74a836d0832a8be20b6805bcd1b84779d",
+        "result": "PASS hut_joined.json.gz: native outputs match; no files written"
+      },
+      "original_execution_metadata_preserved": true,
+      "physical_worlds": [
+        "healthy",
+        "damaged",
+        "collapsed",
+        "repaired"
+      ],
+      "projection_check": {
+        "command": "python -B -u -m tools.spatial_oracle.fv_cell_attack.huts.projection --check",
+        "exit_code": 0,
+        "log_sha256": "5f4d94803fc8e87b3e21ae9782fa7fcbcf19669bb9809ac88ca404a798df412c",
+        "result": "PASS tools/spatial_oracle/fv_cell_attack/huts/hut_vectors.json: native outputs match; no files written"
+      }
+    }
+  ],
+  "original_execution": {
+    "metadata_sha256": "52742177f69f4cd77308d66ffee2c5ae3e23fd55b6d14de1f42920cc6b3bd566",
+    "native_file_sha256": "7ade8a7af905c3343a924ec39bc7abf135de59ba495c0060670734fd970baf65",
+    "native_payload_sha256": "978dd539e84fad3cef4dd2fbe7af5a10956060e775e5aedbe294378986d325c0",
+    "validation": [
+      {
+        "command": "probe.py --write --fresh-world",
+        "exit_code": 0,
+        "log_sha256": "6d7a3ebab410a42252d0066e75dc1e888225bf48b461f0fb3dc0d8c1fff44ef3"
+      },
+      {
+        "command": "probe.py --check --fresh-world",
+        "exit_code": 0,
+        "log_sha256": "0899478ba7c34c0e38a3b047799a5cd2840dfb11502890c5c2d813363294f015"
+      }
+    ]
+  },
+  "outcomes": {
+    "admission_draw": [
+      1,
+      1500,
+      13
+    ],
+    "bullet_ids": [
+      236,
+      237
+    ],
+    "completed_frames": 52,
+    "detach_receiver_ids": [
+      231
+    ],
+    "detach_scan_ids": [
+      235,
+      234,
+      231
+    ],
+    "effect_ids": [
+      238,
+      239
+    ],
+    "hut_ai_visits": 104,
+    "hut_bytes_unchanged_across": [
+      "NotifyBridgeSpanCollapse575EE0",
+      "Techno target detach70D4A0",
+      "admitted repair573540"
+    ],
+    "hut_health": [
+      2000,
+      2000
+    ],
+    "hut_ids": [
+      234,
+      235
+    ],
+    "hut_live_rng_draws": 0,
+    "impact_effects": [
+      "H2O_EXP3",
+      "H2O_EXP3"
+    ],
+    "impact_frames": [
+      32,
+      35
+    ],
+    "repair_mapgen_next": [
+      1229352179,
+      1781224790,
+      2424954917
+    ],
+    "repair_overlay": [
+      232,
+      215
+    ],
+    "shot_frames": [
+      1,
+      5
+    ]
+  },
+  "physical_asset_sha256": {
+    "CTBHUT.SHP": "945216ab1eba7e34e6785fd54e916d096a6df4dee1df1052094e0b68f02630ff",
+    "RA2MD.CSF": "f3382231d7eb3bd713bf3908ecdba175a1b2e20d9d80fa2702e9ab84c3a79deb"
+  },
+  "relocation": {
+    "fast_checks": [
+      "Python syntax and CLI help",
+      "Shared native packet publication --check against preserved original output",
+      "Literal projection --write and independent --check",
+      "Projection file byte-identical to original",
+      "Original execution metadata byte-identical",
+      "Explicit asset environment resolves exact physical CTBHUT.SHP",
+      "No committed assets, caches or local paths"
+    ],
+    "gameplay_class_ast": "identical except CTBHUT.SHP asset transport",
+    "native_replay": {
+      "command": "python -m tools.spatial_oracle.fv_cell_attack.huts.probe --check --fresh-world",
+      "exit_code": 0,
+      "log_sha256": "72ed01cdcbafd62387cc3a4a91079db74a836d0832a8be20b6805bcd1b84779d",
+      "physical_worlds": [
+        "healthy",
+        "damaged",
+        "collapsed",
+        "repaired"
+      ],
+      "result": "PASS hut_joined.json.gz: native outputs match; no files written"
+    },
+    "projection_ast": "identical",
+    "projection_check": {
+      "command": "python -m tools.spatial_oracle.fv_cell_attack.huts.projection --check",
+      "exit_code": 0,
+      "result": "Native literal projection and metadata match; no files written"
+    },
+    "publication": "Shared lexical-input SHA256 projection only; native values and traces unchanged."
+  },
+  "schema": 1,
+  "status": "Post-integration fresh native-world replay and independent literal projection checks passed on d4aaba7172506137bb2a08008e43ece3e67d17fa; frozen native values, original execution metadata and prior relocation receipts preserved."
+}

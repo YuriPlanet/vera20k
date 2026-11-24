@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original per-Techno discovery producers plus actual Infantry Mark/Cell PUT/REMOVE/recalculation and initial Jumpjet Process; bounded same-position phase0-to1 corridor, not full constructor/Unlimbo/ChangeOwner, later flight or Tag delivery.",
+  "assumptions": [
+    "Pinned original Infantry vtable7EB058 except footprint; original RTTI15, type/height/high-flying/coordinate/layer/Mark/discovery/selection receivers execute. No direct41A/B/C seeding: original ctor XOR6F2B4B and stores6F2FB5/BB/C1, InitManagers prefix6F3F40..65, Foot entry4D7221..35 and Sight51E0DF..F6 execute as declared interior blocks, not whole allocation/Unlimbo.",
+    "Two supplied House allocations: currentA83D4C human/control true, other flags false; GameMode5, ScenarioInit0, mission0, active owner alive/nonlimbo, no swap/abort. Nonnull Tag on initial-current-owner rows is skipped by produced41A or41B; foreign-constructor row has null Tag and observes House1F4. No Tag runtime substitution or delivery claim.",
+    "Optional original owner-change assignment/classification block701735..757 preserves prior41B/C; it is not full ChangeOwner. Conceal row executes complete6F4A40 on current human owner. Noncurrent repeat entry demonstrates aggregate41C, not per-house storage.",
+    "Sparse real Cells9,10 and10,10, blank TMP/overlay metadata, projection buffers with stride81/capacity6561, map span40x40. Current XY2496,2624 and nonnegative ground-relative Z: flat0, level2, or structural deck416 with OnBridge false. Cell47D2B0 executes; arbitrary sparse maps and all projection metadata excluded.",
+    "Current raw bitmap prestate ground0x1c/deck0x14 and owner indices41/42 are supplied. This does not execute the later InfantryUnlimbo raw-entry gate51E0F6..114 or establish its startup height bound; it establishes that these prestates survive the declared initial Process unchanged.",
+    "Original Jumpjet constructor54AC40 and Link54AD30 copy declared ROT/speed/height/climb/acceleration/crash/no-wobble defaults; motion starts with constructor zero target altitude and velocity. Original CRT54AA30..54AB00 in table81373C..813754 order computes ABC5E8 under captured startup FPCW0E7F; ground/bridge globals104/416 otherwise supplied. Later ascent54D42F may clear raw Infantry bits and is excluded; only these initial Process rows assert no raw receiver.",
+    "AirTracker has400 supplied capacity4 vectors. Foot560 constructor-null value starts absent; declared prior-registration rows execute original4134A0 before Process. List layer and registration are independent. No allocator or whole FootUnlimbo registration claim.",
+    "Selection rows supply one existing selected owner and matching Map selection pointer; original Process/5F44A0 compaction/count/flag/map-pointer clear execute. No selection acquisition/UI claim. Events are selected instruction-entry observations; state dumps capture actual writes."
+  ],
+  "substitutions": [
+    "Only Infantry+108 footprint returns declared one-cell (0,0), terminating(7fff,7fff); original48DEE0 footprint copy and full Mark/map/Cell list/recalculation/discovery run. Mark is never replaced and raw occupation callbacks are never injected.",
+    "586360/5865E0 shroud answers are declared booleans; original callers/coordinate producers run. GameMode5 forces CellPUT discovery even in the false-shroud selection contrast. No arbitrary visibility computation claim.",
+    "MoveTo FNPC56DC20 returns declared10,10; original caller54B1C0/54D6D0/4ACA10/481180 and Scenario RNG execute. Whole Infantry51AA40 setter/search admission remains outside this corpus.",
+    "Selected vector virtual index lookup returns0 after checking supplied one-member list and requested owner; actual5F44A0 and4AEB10/4AEB30 execute. No dynamic allocator or generic vector search proof."
+  ],
+  "entry_points": {
+    "constructor_zero": "0x006F2FB5",
+    "initial_owner": "0x006F3F40",
+    "foot_entry_block": "0x004D7221",
+    "sight_gate": "0x0051E0DF",
+    "owner_change_block": "0x00701735",
+    "conceal": "0x006F4A40",
+    "discovery": "0x006F4960",
+    "mark": "0x004D3780",
+    "put": "0x0047E8A0",
+    "remove": "0x0047EA90",
+    "recalculate": "0x0047D2B0",
+    "jumpjet_ctor": "0x0054AC40",
+    "link": "0x0054AD30",
+    "move_to": "0x0054B1C0",
+    "process": "0x0054AEC0",
+    "layer": "0x0054B8D0",
+    "air_add": "0x004134A0",
+    "deselect": "0x005F44A0",
+    "startup_level": "0x0054AB00"
+  },
+  "payload_sha256": "c49ab6ff00df523dc026fed494d358a04a65ee077ae62233297571ace580f0de"
+}

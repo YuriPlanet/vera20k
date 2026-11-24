@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original LOBRDB damage propagation then repair on physical Anytown topology.\nDirect already-admitted damage-driver calls; no projectile/admission or native\nscenario load. Recalc/graph work remains explicit callbacks in geometry stage.\n",
+  "assumptions": [
+    "Physical XMP03T4.MAP and original TEMPERATMD scalar/ordinal readers reused from frozen family identity packet.",
+    "Two direct calls to actual57CCF0 at87,54 then actual573540 repair from85,58; original propagation and untagged span notification execute.",
+    "Empty occupants and supplied native-seeded0 Main/Scenario/MapGen; full native .text checked unchanged."
+  ],
+  "substitutions": [
+    "Recalc47D2B0, connectivity56C510 and hierarchy586990 record calls and return.",
+    "Successful bounded heap, zero display extents, radar/screen sinks.",
+    "No area-damage admission, projectile, Engineer prefix/suffix, native scenario loader or production validation."
+  ],
+  "entry_points": {
+    "damage": "0x0057CCF0",
+    "walker": "0x0057D530",
+    "propagation": "0x0057ED00",
+    "neighbors": "0x0057CBE0",
+    "endpoints": "0x0057DAF0",
+    "notification": "0x00575EE0",
+    "repair": "0x00573540",
+    "repair_walker": "0x00580600"
+  },
+  "payload_sha256": "e86df51f1ad34c7d80d60a7076976e689664b0ed316deecb85b21aa4c21bb164",
+  "packaging": "canonical JSON; gzip mtime=0; copied lexical inputs replaced by SHA256"
+}

@@ -1,0 +1,252 @@
+{
+  "schema_version": "vera20k.map-observation-expectations.v1",
+  "assertions": [
+    {
+      "name": "actual refinery anchor",
+      "subject": {
+        "actor": {
+          "type_id": "GAREFN",
+          "owner": "VERA-OBSERVER",
+          "bind_step": 5500
+        }
+      },
+      "at_step": 5500,
+      "field": "cell",
+      "op": "eq",
+      "value": [
+        31,
+        85
+      ]
+    },
+    {
+      "name": "paid tank reaches pad",
+      "subject": {
+        "actor": {
+          "type_id": "MTNK",
+          "owner": "VERA-OBSERVER",
+          "bind_step": 5500
+        }
+      },
+      "at_step": 6000,
+      "field": "cell",
+      "op": "eq",
+      "value": [
+        34,
+        86
+      ]
+    },
+    {
+      "name": "tank remains marked at blocked decision",
+      "subject": {
+        "actor": {
+          "type_id": "MTNK",
+          "owner": "VERA-OBSERVER",
+          "bind_step": 5500
+        }
+      },
+      "at_step": 6415,
+      "field": "cell_marked",
+      "op": "eq",
+      "value": true
+    },
+    {
+      "name": "tank occupies pad at blocked decision",
+      "subject": {
+        "actor": {
+          "type_id": "MTNK",
+          "owner": "VERA-OBSERVER",
+          "bind_step": 5500
+        }
+      },
+      "at_step": 6415,
+      "field": "cell",
+      "op": "eq",
+      "value": [
+        34,
+        86
+      ]
+    },
+    {
+      "name": "loaded miner retains its dock contact",
+      "subject": {
+        "actor": {
+          "type_id": "CMIN",
+          "owner": "VERA-OBSERVER",
+          "bind_step": 5500
+        }
+      },
+      "at_step": 6415,
+      "field": "radio.contacts",
+      "op": "ne",
+      "value": [
+        null
+      ]
+    },
+    {
+      "name": "occupied pad selects Drive",
+      "subject": {
+        "actor": {
+          "type_id": "CMIN",
+          "owner": "VERA-OBSERVER",
+          "bind_step": 5500
+        }
+      },
+      "at_step": 6415,
+      "field": "action_line_inputs.locomotor",
+      "op": "eq",
+      "value": "Drive"
+    },
+    {
+      "name": "blocked miner targets actual pad",
+      "subject": {
+        "actor": {
+          "type_id": "CMIN",
+          "owner": "VERA-OBSERVER",
+          "bind_step": 5500
+        }
+      },
+      "at_step": 6415,
+      "field": "nav",
+      "op": "eq",
+      "value": {
+        "Cell": {
+          "rx": 34,
+          "ry": 86
+        }
+      }
+    },
+    {
+      "name": "blocked miner retains full cargo",
+      "subject": {
+        "actor": {
+          "type_id": "CMIN",
+          "owner": "VERA-OBSERVER",
+          "bind_step": 5500
+        }
+      },
+      "at_step": 6415,
+      "field": "miner.cargo_bales",
+      "op": "eq",
+      "value": 20
+    },
+    {
+      "name": "cleared pad permits Teleport",
+      "subject": {
+        "actor": {
+          "type_id": "CMIN",
+          "owner": "VERA-OBSERVER",
+          "bind_step": 5500
+        }
+      },
+      "at_step": 6612,
+      "field": "action_line_inputs.locomotor",
+      "op": "eq",
+      "value": "Teleport"
+    },
+    {
+      "name": "miner arrives on cleared pad",
+      "subject": {
+        "actor": {
+          "type_id": "CMIN",
+          "owner": "VERA-OBSERVER",
+          "bind_step": 5500
+        }
+      },
+      "at_step": 6612,
+      "field": "cell",
+      "op": "eq",
+      "value": [
+        34,
+        86
+      ]
+    },
+    {
+      "name": "normal unload is active",
+      "subject": {
+        "actor": {
+          "type_id": "CMIN",
+          "owner": "VERA-OBSERVER",
+          "bind_step": 5500
+        }
+      },
+      "eventually": {
+        "from_step": 6500,
+        "through_step": 6674
+      },
+      "field": "miner.unload_active",
+      "op": "eq",
+      "value": true
+    },
+    {
+      "name": "natural cargo paid out",
+      "subject": {
+        "actor": {
+          "type_id": "CMIN",
+          "owner": "VERA-OBSERVER",
+          "bind_step": 5500
+        }
+      },
+      "at_step": 6658,
+      "field": "miner.cargo_bales",
+      "op": "eq",
+      "value": 0
+    },
+    {
+      "name": "normal dock contact released",
+      "subject": {
+        "actor": {
+          "type_id": "CMIN",
+          "owner": "VERA-OBSERVER",
+          "bind_step": 5500
+        }
+      },
+      "at_step": 6674,
+      "field": "radio.contacts",
+      "op": "eq",
+      "value": [
+        null
+      ]
+    },
+    {
+      "name": "mining resumes",
+      "subject": {
+        "actor": {
+          "type_id": "CMIN",
+          "owner": "VERA-OBSERVER",
+          "bind_step": 5500
+        }
+      },
+      "at_step": 7200,
+      "field": "miner.harvesting",
+      "op": "eq",
+      "value": true
+    },
+    {
+      "name": "tank parks clear again",
+      "subject": {
+        "actor": {
+          "type_id": "MTNK",
+          "owner": "VERA-OBSERVER",
+          "bind_step": 5500
+        }
+      },
+      "at_step": 7200,
+      "field": "cell",
+      "op": "eq",
+      "value": [
+        30,
+        93
+      ]
+    },
+    {
+      "name": "all production paid",
+      "subject": {
+        "house": "VERA-OBSERVER"
+      },
+      "at_step": 7200,
+      "field": "economy.spent_credits",
+      "op": "eq",
+      "value": 6000
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original retail MTNK inputs and the Foot threat coefficient lifecycle.\n\nCompanion to astar_structural_height's --mtnk-inputs mode. The existing Inputs\nowner reads physical Hills rules layers and constructs MTNK's type; original\nUnit/Foot constructor prefix, Drive construction and the admitted Unlimbo coefficient\ncopy execute. This does not execute whole ReadINI, Unlimbo, Scenario loading,\nplacement, high-bridge Cell production, A* search or path finishing.\n",
+  "assumptions": [
+    "Uses the existing navigation_inputs.Inputs owner on physical Hills.map and retained retail RULESMD/LANGRULE/MPBattleMD lexical caches. Host section presence supplies reached type-reader bodies; full INI parsing, discovery and parent ReadINI admission are excluded.",
+    "Inputs also executes its existing Unit Speed postpass for layers without MTNK. The receipt records those calls and preserved state explicitly; it does not claim full UnitType ReadINI reachability on an absent section.",
+    "Original MTNK type constructor, selected scalar readers, complete Unit/Foot constructor prefix and Drive constructor execute. Supplied zero backing storage, owner=NULL, native registry capacity and three original seed0 RNGs are fixture boundaries.",
+    "Original CRT precision and WinMain rounding tail execute through mapgen_range. The admitted Unlimbo copy executes only its original type getter and coefficient load/store; preceding placement and later Unlimbo effects are excluded.",
+    "No high-bridge flags, loaded Cells, actor placement, ordinary Move, A* or path finishing is established by this prerequisite witness."
+  ],
+  "substitutions": [
+    "Inherited successful bounded malloc/free and CRT TLS seams; physical archive/file loading and INI cache preparation are host supplied. No gameplay, scalar-reader, coefficient, RNG or constructor return is supplied."
+  ],
+  "entry_points": {
+    "unit_type_ctor": "0x007470D0",
+    "speed_reader": "0x007121D1",
+    "coefficient_reader": "0x00712452",
+    "crusher_reader": "0x00714CC8",
+    "movement_zone_reader": "0x0071605E",
+    "unit_speed_postpass": "0x007476D3",
+    "unit_ctor_prefix": "0x007353C0",
+    "unit_ctor_stop": "0x007354CE",
+    "drive_ctor": "0x004AF540",
+    "unlimbo_copy_begin": "0x004D72E0",
+    "unlimbo_copy_stop": "0x004D72FA",
+    "type_getter": "0x006F3270"
+  },
+  "payload_sha256": "c84b7d475446e3df7c1abb1ecf1cc8efab8e6cc5d23d8dcab6793b09707242ca"
+}

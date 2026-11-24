@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "BuildingType45FA90 loader names/slots/failure retention; Building43DA80 turret and barrel submissions, facing order, HVA frames, cache keys and original matrices",
+  "assumptions": [
+    "C locale CRT globals zero; original makepath, strupr, strstr and strncpy execute.",
+    "Facing timers finished, rotation rate3; native startup camera from shared lighting owner.",
+    "Draw entry begins after stock TurretAnimIsVoxel/construction/selling gates; GTGCAN active reach established by static callers and retail production reader.",
+    "Model, motion frame counts and cell top are supplied boundaries, not derived from Rust.",
+    "The fixture does not execute VXL/HVA decoding, cache storage, rasterization, or whole-game lifecycle."
+  ],
+  "substitutions": [
+    "Loader file constructors and availability are supplied fixture files; allocation and asset constructors/destructors are bounded hooks, successful MotLib starts with scale-ready byte1.",
+    "Draw Map GetCell returns supplied cell; Techno DrawVoxel records ten arguments and returns without rendering."
+  ],
+  "entry_points": {
+    "building_loader": "0x0045FA90",
+    "building_draw_arm": "0x0043DFC1",
+    "facing_current": "0x004C93D0",
+    "rotate_y": "0x005AF080",
+    "rotate_z": "0x005AF1A0",
+    "translate": "0x005AE8F0",
+    "translate_x": "0x005AE980",
+    "camera_copy": "0x00754BE0",
+    "matrix_product": "0x005AF980"
+  },
+  "payload_sha256": "b54caa78f664939d925cf41b66d5202356f5eada8b56a1ae58d2b11a278b3a5e"
+}

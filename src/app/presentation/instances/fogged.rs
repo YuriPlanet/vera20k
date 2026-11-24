@@ -1,0 +1,598 @@
+//! FoggedObjectClass's immutable building draw, separate from live Display.
+//!
+//! Original constructor4D0EF0 and DrawAll4D1890 retain only type/frame records,
+//! house, and XYZ. Neither a source entity nor its current art state is read.
+
+use crate::app::AppState;
+use crate::app::presentation::render::draw_plan_lowering::{
+    ObjectLayerPass, ObjectPieceInstance, ObjectTexture, lower_fogged_object_pieces,
+};
+use crate::map::houses::HouseColorMap;
+use crate::map::lighting::CellLightGrid;
+use crate::render::batch::{DepthAxis, SpriteInstance};
+use crate::render::native_z::{self, ZGradient, pack_z_gradient};
+use crate::render::palette_light::PaletteLight;
+use crate::render::sprite_atlas::{ShpPaletteContext, ShpSpriteEntry, ShpSpriteKey, SpriteAtlas};
+use crate::render::tactical_draw_plan::RenderZPolicy;
+use crate::rules::house_colors::{HouseColorIndex, NO_REMAP};
+use crate::rules::ruleset::RuleSet;
+use crate::sim::intern::{InternedId, StringInterner};
+use crate::sim::vision::{
+    FoggedDrawKind, FoggedObjectFootprintRecord, FoggedObjectId, FrozenBuilding,
+};
+use smol_str::StrExt;
+
+pub(crate) fn build_fogged_instances(state: &AppState) -> ObjectLayerPass {
+    let (Some(runtime), Some(atlas)) = (
+        state.match_state.sim_runtime.presentation(),
+        state.match_state.match_presentation.sprite_atlas.as_ref(),
+    ) else {
+        return ObjectLayerPass::default();
+    };
+    if state.match_state.sandbox_full_visibility {
+        return ObjectLayerPass::default();
+    }
+    let sim = &runtime.simulation;
+    let Some(viewer) = crate::app::input::commands::preferred_local_owner_name(state)
+        .and_then(|owner| sim.interner().get(&owner))
+    else {
+        return ObjectLayerPass::default();
+    };
+    let presentation = &state.match_state.match_presentation;
+    let input = FrozenDrawInputs {
+        interner: sim.interner(),
+        rules: &runtime.resources.rules,
+        atlas,
+        lighting: presentation.lighting.grid(),
+        house_colors: presentation.effective_house_color_map(),
+        axis: super::depth_axis(state),
+        building_zshape: presentation
+            .building_zshape
+            .as_ref()
+            .map(|zshape| zshape.frame_offset),
+        view_left: crate::app::presentation::render::tactical_world_view(state).camera[0],
+        zshape_skips: &presentation.zshape_skips,
+        detail_level: presentation.in_game_options.detail_level as i32,
+    };
+    // A saved picture far off the view puts no pixel on it: its cell passes
+    // it by before its pieces are built and uploaded. DrawAll4D1890's order
+    // among the rest stands.
+    let zoom = state.match_state.input.zoom_level;
+    let camera = [
+        state.match_state.input.camera_x,
+        state.match_state.input.camera_y,
+    ];
+    let viewport = [
+        state.render_width() as f32 / zoom,
+        state.render_height() as f32 / zoom,
+    ];
+    let window = frozen_building_window(sim.resolved_terrain(), camera, viewport);
+    let near_view = |draw: &FrozenBuilding| {
+        let near = frozen_building_in_window(draw, window);
+        debug_assert!(
+            near || frozen_building_pieces(&input, draw).iter().all(|piece| {
+                let [x, y] = piece.instance.position;
+                let [width, height] = piece.instance.size;
+                x >= camera[0] + viewport[0]
+                    || y >= camera[1] + viewport[1]
+                    || x + width <= camera[0]
+                    || y + height <= camera[1]
+            }),
+            "the frozen building window left out a picture in view"
+        );
+        near
+    };
+    let snapshots = fogged_draw_order(sim.fog().fogged_objects().values(), viewer, near_view);
+    lower_fogged_object_pieces(
+        snapshots
+            .into_iter()
+            .map(|(id, draw)| (id, frozen_building_pieces(&input, draw))),
+    )
+}
+
+/// The cells whose saved building picture can reach `camera`/`viewport`: the
+/// view widened by [`super::shp::BUILDING_SLOT_WINDOW_SLACK`].
+fn frozen_building_window(
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    camera: [f32; 2],
+    viewport: [f32; 2],
+) -> crate::render::cell_window::CellWindow {
+    let slack = super::shp::BUILDING_SLOT_WINDOW_SLACK;
+    crate::render::cell_window::CellWindow::covering(
+        crate::render::cell_window::AnchorBounds {
+            left: camera[0] - slack,
+            top: camera[1] - slack,
+            right: camera[0] + viewport[0] + slack,
+            bottom: camera[1] + viewport[1] + slack,
+        },
+        terrain.map_or_else(Default::default, |terrain| terrain.level_span()),
+    )
+}
+
+/// Whether `draw`'s cell lies in `window`; a location off the cell grid
+/// stays in, so only a known far cell is passed by.
+fn frozen_building_in_window(
+    draw: &FrozenBuilding,
+    window: crate::render::cell_window::CellWindow,
+) -> bool {
+    match (
+        u16::try_from(draw.location.x >> 8),
+        u16::try_from(draw.location.y >> 8),
+    ) {
+        (Ok(rx), Ok(ry)) => window.contains(rx, ry),
+        _ => true,
+    }
+}
+
+/// FoggedObjectClass::DrawAll @ 0x004D1890 gates each saved picture on its
+/// retained visible byte at4D18F7, not current sight or a live source object.
+/// Constructor4D0EF0 supplies the signed sort key;4D18C6 sorts with4D2ED0.
+/// Only `viewer`'s pictures `near_view` keeps are drawn; the cheap tests go
+/// first, and every test only reads.
+fn fogged_draw_order<'a>(
+    records: impl Iterator<Item = &'a FoggedObjectFootprintRecord>,
+    viewer: InternedId,
+    near_view: impl Fn(&FrozenBuilding) -> bool,
+) -> Vec<(FoggedObjectId, &'a FrozenBuilding)> {
+    let mut snapshots: Vec<_> = records
+        .filter(|record| record.viewer == viewer)
+        .filter_map(|record| record.drawing.as_ref().map(|draw| (record.id, draw)))
+        .filter(|(_, draw)| draw.visible && near_view(draw))
+        .collect();
+    snapshots.sort_by_key(|(_, draw)| {
+        i32::MAX
+            .wrapping_sub(i32::from((draw.location.x / 256) as i16).wrapping_mul(0x944a))
+            .wrapping_sub(i32::from((draw.location.y / 256) as i16).wrapping_mul(0x93b6))
+            .wrapping_sub(6)
+    });
+    snapshots
+}
+
+struct FrozenDrawInputs<'a> {
+    interner: &'a StringInterner,
+    rules: &'a RuleSet,
+    atlas: &'a SpriteAtlas,
+    lighting: &'a CellLightGrid,
+    house_colors: &'a HouseColorMap,
+    axis: DepthAxis,
+    /// The loaded BUILDNGZ frame's offset in its canvas.
+    building_zshape: Option<(i32, i32)>,
+    /// The world column of the tactical view's left edge.
+    view_left: i32,
+    /// The skip table the left-edge building bodies of this picture fill
+    /// (`MatchPresentationState::zshape_skips`).
+    zshape_skips: &'a std::cell::RefCell<crate::render::zshape_skips::ZShapeSkips>,
+    detail_level: i32,
+}
+
+/// FoggedObjectClass::DrawAll4D1890: body, shadow, bib, then saved anims.
+/// Its fixed selectors carry no live tint, buildup, turret, health or pips.
+fn frozen_building_pieces(
+    input: &FrozenDrawInputs<'_>,
+    frozen: &FrozenBuilding,
+) -> Vec<ObjectPieceInstance> {
+    let mut pieces = Vec::new();
+    let Some(body) = frozen.records.first() else {
+        return pieces;
+    };
+    if !frozen.visible || body.kind != FoggedDrawKind::Building {
+        return pieces;
+    }
+    let name = input.interner.resolve(body.type_ref);
+    let Some(object) = input.rules.object(name) else {
+        return pieces;
+    };
+    //4D1D49..4D1D5F skips the entire building record list.
+    if object.invisible_in_game {
+        return pieces;
+    }
+    let art = input
+        .rules
+        .art()
+        .resolve_metadata_entry(name, &object.image);
+    let location = frozen.location;
+    let cell = ((location.x / 256) as u16, (location.y / 256) as u16);
+    //DrawAll4D1890 projects (Location.X-128, Location.Y-128, Location.Z).
+    let (x, y) = crate::util::lepton::absolute_leptons_to_screen(
+        location.x.wrapping_sub(128),
+        location.y.wrapping_sub(128),
+        location.z,
+    );
+    let correction = crate::render::locomotor_visual::building_terrain_correction(frozen.level);
+    let y = y - correction as f32;
+    let lift = crate::util::native_x87::adjust_for_z_standard(location.z) + correction;
+    let depth = super::compute_sprite_depth_params_lifted(
+        input.axis.origin_y,
+        input.axis.world_height,
+        y,
+        lift,
+    );
+    let house_color = input
+        .house_colors
+        .get(input.interner.resolve(frozen.owner))
+        .copied()
+        .unwrap_or(NO_REMAP);
+    let brightness = input
+        .lighting
+        .cell_light_at(cell)
+        .map_or(1000, |light| light.top_scalar)
+        .wrapping_add(art.map_or(0, |art| i32::from(art.extra_light as i16)));
+    //4D1E96..4D1EE9 selects cell Convert for TerrainPalette, but keeps the
+    // same top-plus-ExtraLight intensity as the house-Convert arm. The owner's
+    // ColorScheme Convert (`0x004D1C8A..0x004D1CA4`) carries the scheme RGB,
+    // which a cell Convert reset or a load can leave apart from the cells'.
+    let palette = if art.is_some_and(|art| art.terrain_palette) {
+        PaletteLight::cell(input.lighting, cell, false).with_brightness(brightness)
+    } else {
+        PaletteLight::color_scheme(input.lighting.color_scheme_rgb(), brightness)
+    };
+    let Ok(frame) = u16::try_from(body.frame) else {
+        return pieces;
+    };
+    let body_key = ShpSpriteKey {
+        palette_context: art.map_or(ShpPaletteContext::SelectedScheme, |art| {
+            crate::render::sprite_atlas::building_art_palette_context(art)
+        }),
+        type_id: name.into(),
+        facing: 0,
+        frame,
+        house_color,
+    };
+    if let Some(entry) = input.atlas.get(&body_key) {
+        let mut instance = sprite(entry, [x, y], depth, palette);
+        let zshape = input.building_zshape.is_some() && !body.no_zshape;
+        let normal_z = if body.no_zshape {
+            0
+        } else {
+            art.map_or(0, |art| art.normal_z_adjust)
+        };
+        instance.z_adjust = super::lifted_z_adjust(lift, normal_z.wrapping_sub(2));
+        instance.z_gradient = if body.no_zshape {
+            pack_z_gradient(ZGradient::Flat, false)
+        } else {
+            native_z::pack_building_z_gradient(zshape, entry.extended)
+                | native_z::shp_frame_flag(entry.extended)
+        };
+        if zshape {
+            let origin = native_z::zshape_origin(
+                native_z::FOGGED_ZSHAPE_ANCHOR,
+                (x as i32, y as i32),
+                object.foundation.dimensions(),
+                art.map_or((0, 0), |art| art.z_shape_point_move),
+                input.building_zshape.unwrap_or_default(),
+            );
+            instance.zshape_origin = [origin.0 as f32, origin.1 as f32];
+        }
+        if instance.z_gradient & native_z::Z_GRADIENT_ZSHAPE_FLAG != 0 {
+            let skip = native_z::zshape_lead_skip(input.view_left, instance.position[0]);
+            instance.draw_state.fx_params[3] =
+                input
+                    .zshape_skips
+                    .borrow_mut()
+                    .slot(input.atlas, &body_key, entry, skip);
+        }
+        pieces.push(piece(entry, instance, RenderZPolicy::ReadWrite));
+    }
+    //4D1FCB..4D200A always attempts frame + image-frame-count/2. It does
+    // not ask the live Techno shadow/visual-state predicate (705E00).
+    if let Some(shadow_frame) = input
+        .atlas
+        .object_shp_frame_count(name)
+        .and_then(|count| frame.checked_add(count / 2))
+    {
+        let shadow_key = ShpSpriteKey {
+            frame: shadow_frame,
+            ..body_key
+        };
+        if let Some(entry) = input.atlas.get(&shadow_key) {
+            let mut instance = sprite(entry, [x, y], depth, palette.with_brightness(1000));
+            instance.z_adjust = super::lifted_z_adjust(lift, -2);
+            instance.z_gradient = pack_z_gradient(ZGradient::Flat, false);
+            pieces.push(ObjectPieceInstance {
+                target: ObjectTexture::SpriteAtlasEdit(
+                    entry.page as usize,
+                    crate::render::terrain_draw::TerrainPiece::Shadow,
+                ),
+                render_z: RenderZPolicy::ReadWrite,
+                instance,
+            });
+        }
+    }
+    if let Some(art) = art
+        && let Some(bib) = art.bib_shape.as_deref()
+    {
+        let key = ShpSpriteKey {
+            palette_context: crate::render::sprite_atlas::building_art_palette_context(art),
+            type_id: bib.to_ascii_uppercase_smolstr(),
+            facing: 0,
+            frame,
+            house_color,
+        };
+        if let Some(entry) = input.atlas.get(&key) {
+            let mut instance = sprite(entry, [x, y], depth, palette);
+            instance.z_adjust = super::lifted_z_adjust(lift, -3);
+            instance.z_gradient = pack_z_gradient(ZGradient::Flat, false);
+            pieces.push(piece(entry, instance, RenderZPolicy::ReadWrite));
+        }
+    }
+    for record in &frozen.records[1..] {
+        if record.kind != FoggedDrawKind::Animation {
+            continue;
+        }
+        let name = input.interner.resolve(record.type_ref);
+        let config = input.rules.art().anim_runtime_config(name);
+        if config.is_some_and(|config| config.detail_level > input.detail_level) {
+            continue;
+        }
+        let Ok(frame) = u16::try_from(record.frame) else {
+            continue;
+        };
+        let context = crate::render::sprite_atlas::frozen_anim_palette_context(config);
+        let key = ShpSpriteKey {
+            palette_context: context,
+            type_id: name.into(),
+            facing: 0,
+            frame,
+            house_color: if context == ShpPaletteContext::AnimPalette {
+                HouseColorIndex(0)
+            } else {
+                house_color
+            },
+        };
+        let Some(entry) = input.atlas.get(&key) else {
+            continue;
+        };
+        let brightness = if config.is_some_and(|config| config.use_normal_light) {
+            1000
+        } else {
+            input
+                .lighting
+                .cell_light_at(cell)
+                .map_or(1000, |light| light.top_scalar)
+        };
+        let palette = if context == ShpPaletteContext::AnimPalette {
+            PaletteLight::plain(53, brightness)
+        } else {
+            PaletteLight::color_scheme(input.lighting.color_scheme_rgb(), brightness)
+        };
+        let mut instance = sprite(entry, [x, y], depth, palette);
+        instance.z_adjust = super::lifted_z_adjust(lift, record.z_adjust.wrapping_sub(2));
+        instance.z_gradient = pack_z_gradient(
+            if config.is_some_and(|config| config.flat) {
+                ZGradient::Flat
+            } else {
+                ZGradient::Vertical
+            },
+            false,
+        ) | native_z::shp_frame_flag(entry.extended);
+        pieces.push(piece(entry, instance, RenderZPolicy::ReadOnly));
+    }
+    pieces
+}
+
+fn sprite(
+    entry: &ShpSpriteEntry,
+    anchor: [f32; 2],
+    depth: f32,
+    palette_light: PaletteLight,
+) -> SpriteInstance {
+    SpriteInstance {
+        position: [anchor[0] + entry.offset_x, anchor[1] + entry.offset_y],
+        size: entry.pixel_size,
+        uv_origin: entry.uv_origin,
+        uv_size: entry.uv_size,
+        source_palette: entry.source_palette,
+        depth,
+        palette_light,
+        tint: [1.0; 3],
+        alpha: 1.0,
+        ..Default::default()
+    }
+}
+
+#[cfg(all(test, tests_app_presentation_instances))]
+mod tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::components::DriveCoord;
+    use crate::sim::vision::FoggedDrawRecord;
+
+    #[test]
+    fn saved_draw_records_keep_body_shadow_bib_and_anim_without_a_live_building() {
+        let mut interner = StringInterner::new();
+        let owner = interner.intern("A");
+        let building = interner.intern("TEST");
+        let anim = interner.intern("FLAME");
+        let art = IniFile::from_str(
+            "[TEST]\nFoundation=1x1\nBibShape=PAD\nNormalZAdjust=9\n[FLAME]\nStart=4\nYDrawOffset=42\nShadow=yes\nTranslucency=50\nAltPalette=yes\n",
+        );
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str("[BuildingTypes]\n0=TEST\n[TEST]\nStrength=100\nNoShadow=yes\n[Animations]\n0=FLAME\n"),
+            &art,
+        )
+        .unwrap();
+        // Processing the rules establishes read order; production then binds
+        // the immutable ART registry before presentation builds its sprites.
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+        assert_eq!(
+            rules.art().get("TEST").unwrap().bib_shape.as_deref(),
+            Some("PAD")
+        );
+        let frozen = FrozenBuilding {
+            owner,
+            location: DriveCoord::cell(7, 8, 104),
+            level: 1,
+            visible: true,
+            records: vec![
+                FoggedDrawRecord {
+                    kind: FoggedDrawKind::Building,
+                    type_ref: building,
+                    frame: 2,
+                    no_zshape: false,
+                    z_adjust: 0,
+                },
+                FoggedDrawRecord {
+                    kind: FoggedDrawKind::Animation,
+                    type_ref: anim,
+                    frame: 7,
+                    no_zshape: false,
+                    z_adjust: 13,
+                },
+            ],
+        };
+        let mut entries = std::collections::HashMap::new();
+        for (type_id, frame, palette_context, page) in [
+            ("TEST", 2, ShpPaletteContext::SelectedScheme, 0),
+            ("TEST", 6, ShpPaletteContext::SelectedScheme, 1),
+            ("PAD", 2, ShpPaletteContext::SelectedScheme, 2),
+            ("FLAME", 7, ShpPaletteContext::AnimScheme, 3),
+            // The snapshot never switches to a buildup image or re-adds Start.
+            ("TEST_MAKE", 2, ShpPaletteContext::Legacy, 4),
+            ("FLAME", 11, ShpPaletteContext::AnimScheme, 5),
+        ] {
+            entries.insert(
+                ShpSpriteKey {
+                    palette_context,
+                    type_id: type_id.into(),
+                    facing: 0,
+                    frame,
+                    house_color: HouseColorIndex(1),
+                },
+                ShpSpriteEntry {
+                    uv_origin: [0.0; 2],
+                    uv_size: [1.0; 2],
+                    pixel_size: [8.0; 2],
+                    offset_x: 3.0,
+                    offset_y: -4.0,
+                    canvas_rect: [0.0, 0.0, 8.0, 8.0],
+                    extended: true,
+                    page,
+                    source_palette: 1,
+                },
+            );
+        }
+        let mut atlas = SpriteAtlas::from_test_entries(entries);
+        atlas.set_object_shp_frame_count_for_test("TEST", 8);
+        // A trigger retint (`0x0053AD00`), then an in-game detail change
+        // (`0x00545000`) that rebuilds only the cell Converts as neutral: the
+        // house schemes keep the retint.
+        let mut lighting = CellLightGrid::new();
+        lighting.retint_normal_rgb([1200, 800, 600]);
+        lighting.reset_cell_converts(None);
+        let colors = [("A".into(), HouseColorIndex(1))].into_iter().collect();
+        let zshape_skips = std::cell::RefCell::default();
+        let input = FrozenDrawInputs {
+            interner: &interner,
+            rules: &rules,
+            atlas: &atlas,
+            lighting: &lighting,
+            house_colors: &colors,
+            axis: DepthAxis {
+                origin_y: 0.0,
+                world_height: 1000.0,
+            },
+            building_zshape: Some((0, 0)),
+            view_left: 0,
+            zshape_skips: &zshape_skips,
+            detail_level: 2,
+        };
+        let record = FoggedObjectFootprintRecord {
+            id: 1,
+            viewer: owner,
+            source_entity_id: 9999,
+            occupied_cells: vec![(7, 8)],
+            drawing: Some(frozen),
+        };
+        // The production selector has only immutable records: current sight
+        // and the former live building cannot veto this remembered picture.
+        let selected = fogged_draw_order(std::iter::once(&record), owner, |_| true);
+        assert_eq!(selected.len(), 1);
+        assert!(fogged_draw_order(std::iter::once(&record), building, |_| true).is_empty());
+        let pieces = frozen_building_pieces(&input, selected[0].1);
+        assert_eq!(
+            pieces.iter().map(|piece| piece.target).collect::<Vec<_>>(),
+            vec![
+                ObjectTexture::ShpPage(0),
+                ObjectTexture::SpriteAtlasEdit(
+                    1,
+                    crate::render::terrain_draw::TerrainPiece::Shadow
+                ),
+                ObjectTexture::ShpPage(2),
+                ObjectTexture::ShpPage(3),
+            ]
+        );
+        let (x, y) = crate::util::lepton::absolute_leptons_to_screen(7 * 256, 8 * 256, 104);
+        assert!(
+            pieces
+                .iter()
+                .all(|piece| piece.instance.position == [x + 3.0, y - 4.0])
+        );
+        // The remembered body places BUILDNGZ from (0x90, 0xAC), not the
+        // live (0xC6, 0x1BE) (0x004D1DBD, 0x004D1DCE).
+        assert_eq!(pieces[0].instance.zshape_origin, [x - 144.0, y - 172.0]);
+        assert!(pieces.iter().all(|piece| piece.instance.alpha == 1.0
+            && piece.instance.draw_state.native_selector_bits() == 0
+            && piece.instance.palette_light.colour_word() == 0));
+        let scheme = PaletteLight::color_scheme([1200, 800, 600], 1000);
+        assert_eq!(pieces[0].instance.palette_light, scheme, "body");
+        assert_eq!(pieces[3].instance.palette_light, scheme, "anim");
+        assert_eq!(pieces[3].render_z, RenderZPolicy::ReadOnly);
+        assert_eq!(
+            pieces[3].instance.z_adjust,
+            11.0 - crate::util::native_x87::adjust_for_z_standard(104) as f32
+        );
+
+        let mut raised = selected[0].1.clone();
+        raised.level = 36;
+        raised.location.z = 3744;
+        let raised = frozen_building_pieces(&input, &raised);
+        assert_eq!(raised.len(), pieces.len());
+        // FoggedObject 0x004D1E5B lifts by AdjustForZ alone.
+        let lift = (crate::util::native_x87::adjust_for_z_standard(3744)
+            - crate::util::native_x87::adjust_for_z_standard(104)) as f32;
+        for (low, high) in pieces.iter().zip(&raised) {
+            assert_eq!(high.instance.position[1], low.instance.position[1] - lift);
+            assert_eq!(high.instance.z_adjust, low.instance.z_adjust - lift);
+            assert_eq!(high.instance.depth, low.instance.depth);
+        }
+    }
+}
+
+fn piece(
+    entry: &ShpSpriteEntry,
+    instance: SpriteInstance,
+    render_z: RenderZPolicy,
+) -> ObjectPieceInstance {
+    ObjectPieceInstance {
+        target: ObjectTexture::ShpPage(entry.page as usize),
+        render_z,
+        instance,
+    }
+}
+
+#[cfg(all(test, tests_app_presentation_instances))]
+mod window_tests {
+    use super::*;
+    use crate::sim::components::DriveCoord;
+
+    /// A saved picture is passed by only on a known cell far off the view:
+    /// one in the view stays, and so does a location off the cell grid.
+    #[test]
+    fn a_frozen_building_far_off_the_view_is_passed_by() {
+        let frozen = |rx, ry| FrozenBuilding {
+            owner: Default::default(),
+            location: DriveCoord::cell(rx, ry, 0),
+            level: 0,
+            visible: true,
+            records: Vec::new(),
+        };
+        let window = frozen_building_window(None, [0.0, 0.0], [600.0, 400.0]);
+        // Anchor (-30, 315): in the view.
+        assert!(frozen_building_in_window(&frozen(10, 10), window));
+        // Anchor x = -2,430: far left of the view and its slack.
+        assert!(!frozen_building_in_window(&frozen(10, 90), window));
+        let mut off_grid = frozen(10, 90);
+        off_grid.location.x = -300;
+        assert!(frozen_building_in_window(&off_grid, window));
+    }
+}

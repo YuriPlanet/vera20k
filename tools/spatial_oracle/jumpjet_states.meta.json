@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Schema2 retains the ten exact legacy rows and adds sixteen same-VM composed controls. Composed stock SHAD Cell order runs actual Unit741970->Foot4D94B0->Jumpjet54B1C0, FNPC56DC20/56E7C0, Process54AEC0 through trueRET54B199 and following Translate; occupied/free State1 callback/claim, post-operation Mark0/+74 restore/phase suffix, State3 live post-setter LandType tail, State4, Stop/arrival, distinct Foot560/564 caches, slot refusal/replacement/release and active-game UnInit. One arrival control executes original Scenario Random Seed(0) at a declared post-process50 load handoff, then continues to touchdown; this is not whole Scenario Save/Load. The later destructor slot clear is an original interior block, not whole destructor/deferred drain. Legacy scope: Jumpjet Process 0x0054AEC0 per frame - its Is_Moving/Is_Moving_Now Update gate and the state jump table - over States 0, 1, 2, 3 and 4 on a declared flat-or-sloped cell block x=6..20 by y=9..11, entered through the original Move_To 0x0054B1C0. Covers takeoff, cruise, arrival, hold, scatter from a taken air slot, a water hold, a blocked landing and touchdown. Not State5 crash, bridges, building tops, cell objects in the reference height, the radio-contact voice or multi-owner cells.",
+  "assumptions": [
+    "Legacy rows only: FPCW 0E7F, the process control word WinMain installs with _controlfp(0x300, 0x300) at 0x006BBFC1; level height 104 at 0xABC5E8 and deck 416 at 0xABC5DC; direction deltas from the original initializer; frame counter from 1001; owner RTTI 1 (Unit); owner +0x83 clear and +0x41B set so both Process visibility probes are skipped, +0x90 set (airborne layer), +0x425 and +0x427 clear so the crash latch is off, +0x8C/+0x8D/+0x81 clear; per row: the cell corridor level/slope, LandType +0xEC, raw occupation +0x124 and AltObject +0xE0, the type block, BalloonHover +0xD6A, IsSimpleDeployer +0xE13, DeployToLand +0x6AD, the owner piggyback byte +0x6AD and the Can_Enter_Cell answer; TarCom is a non-null marker only.",
+    "Composed controls: FPCW0E7F; original Rules/UnitType/Country/Jumpjet constructors, selected original physical RULESMD/LANGRULE(absent)/MPBattleMD/AnyTown reader blocks, original Land and BlockagePathDelay readers and Link. Recorded stock production report is a comparison receipt, never a native initializer. Full type/ART/scenario loading is outside coverage; physical INI bytes and admitted reader regions are recorded.",
+    "Composed controls: existing supplied Unit raw fixture, House human/current/Country, 32x32 flat Cell storage; BSS IsoTileArrayA8ED2C/countA8ED38 remain0, Cell+38=0 and overlay+44=-1. Per-control LandType overrides write cached Cell+EC only; original Recalc47D58D invalidates the unregistered tile toFFFF, then47DB48 writes Clear and47DB52 slope0. Original Object14CRT table8141D8 executes before any Mark, producing distinct AC13C8=104/AC13BC=416 rather than borrowing Map/Jumpjet values or supplying a layer. Map metadata, empty nearby zone plane, 40x40 tracker extent with 400 original vector headers, display headers and live foreign Unit/air-slot premises are recorded. All three complete RNG states start seed31; stock_taken_state1_arrival_scenario_seed0 executes original65C6D0 on Scenario+218 with argument0 after process50. This bounded handoff follows original683564..683571 reached by Load689470 via6894C5, but excludes whole native Save/Load and its other work. ordinary histories start frame100. GameActive remains supplied0 for ordinary Process; the UnInit control supplies1 with original House counter/deferred-vector startup. Supplemental handler/gate controls declare all retained writes. Native +520=-1 and distinct +560/+564 NullCell inputs come from original constructor/data owners.",
+    "The full raw archive retains every composed Foot700/Jumpjet98 boundary, all three RNG states, timers, navigation queues and lossless deltas over whole cell/world/map/House/vector storage. Whole .text/vtables, padding guards, FPCW and actual composed PC/ESP/cleanup returns are checked. Destructor control executes only XOR4D3595 and cache4D3632..4D366E with ESI=retired Foot, not whole destructor or deferred drain."
+  ],
+  "substitutions": [
+    "Legacy rows only: Owner SetLocation(+0x1B4) writes the coordinate only; Mark(+0x124) records the bracket and does NOT touch the cached cell (0x004D3780 only marks cell lists); the cached-cell setter +0x2F8 is the original 0x0041C160 body, but its only callers are the no-op air-bucket helpers, so +0x560 keeps its supplied value and the State 1 and 3 cell-change probes fire every frame; GetCell(+0x1BC) and the cell-coordinate getter (+0x2F4) answer from the owner coordinate over the declared corridor; SetSpeedFraction(+0x544) records its argument; Can_Enter_Cell (+0x1AC) answers per row; Set_Destination (+0x480) records its argument; the marked predicate (+0x54) answers true; +0xF0, +0xF4, +0x150, +0x18C, +0x198, +0x3DC, +0x488, +0x48C and +0x558 are no-ops carrying their call-site stack cleanup; air-bucket bookkeeping 0x004134A0/0x004135D0/0x004138C0, base link 0x0055A710, radio contact 0x0065AD30, fog 0x00567DA0, crate pickup 0x00481A00, 0x006385C0 and Submit_Object 0x004A9720 are no-ops; the air-slot query 0x004135A0 and set/clear 0x00487D70 are reimplemented over the corridor cells and their calls recorded; the FNPC search 0x0056DC20 answers a declared cell sequence, which feeds both Move_To and the Stop_Moving re-target.",
+    "Composed controls: existing physical-text lexical transport into original INI caches; Windows ASCII-to-UTF16/CLSIDFromString transport, empty FS SEH chain and checked IsBadReadPtr transport; CRT atexit registration. Reached gameplay bodies, including FNPC, SetDestination, Mark, cell lists/Recalc, occupation, air tracker and fog, execute original instructions with no supplied gameplay result."
+  ],
+  "entry_points": {
+    "direction_delta_init": "0x0049F3A0",
+    "adjacent_cell_init": "0x0049F2F0",
+    "cached_cell_setter": "0x0041C160",
+    "link_to_object": "0x0054AD30",
+    "move_to": "0x0054B1C0",
+    "process": "0x0054AEC0",
+    "update": "0x0054D0F0",
+    "state0": "0x0054B980",
+    "state1": "0x0054BA30",
+    "state2": "0x0054BD30",
+    "state3": "0x0054BFF0",
+    "state4": "0x0054C550",
+    "facing_current": "0x004C93D0",
+    "facing_snap": "0x004C9300",
+    "unit_type_constructor": "0x007470D0",
+    "rules_constructor": "0x00665650",
+    "jumpjet_constructor": "0x0054AC40",
+    "country_constructor": "0x005113F0",
+    "unit_set_destination": "0x00741970",
+    "foot_set_destination": "0x004D94B0",
+    "stop": "0x0054B4D0",
+    "fnpc": "0x0056DC20",
+    "fnpc_rectangle": "0x0056E7C0",
+    "foot_mark": "0x004D3780",
+    "cell_recalculate": "0x0047D2B0",
+    "cell_air_slot": "0x00487D70",
+    "foot_remember_slot": "0x004E00B0",
+    "air_add": "0x004134A0",
+    "air_remove": "0x004135D0",
+    "air_update": "0x004138C0",
+    "unit_occupation_set": "0x007441B0",
+    "unit_occupation_clear": "0x00744210",
+    "object_set_z": "0x005F6060",
+    "foot_uninit": "0x004DE5D0",
+    "object_crt_table": "0x008141D8",
+    "object_level_height_init": "0x005F37C0",
+    "object_bridge_height_init": "0x005F3860",
+    "scenario_seed": "0x0065C6D0",
+    "foot_destructor_slot_begin": "0x004D3632",
+    "foot_destructor_slot_end": "0x004D366E"
+  },
+  "payload_sha256": "984726ba95d3729c1a9a5328976ab2b5314332d03ccc58d5c110914c2324692f",
+  "raw_archive": {
+    "file": "jumpjet_states.raw.json.gz",
+    "sha256": "621d86d63ace8e1b75d96e2bfbde6a4376b396624026cee19cdb875c56f5821a",
+    "bytes": 1257498,
+    "uncompressed_sha256": "352f5ed2e6f039e7cdc6b9f21a22dd98c7dd20a56b279b4eba06b25a92a57c07",
+    "uncompressed_bytes": 116664109,
+    "canonical_payload_sha256": "7bfc7d5438949f0ed9686ad40fc239cf5fc940b2c3ffedcf1b2e4de72383dacf",
+    "compression": {
+      "format": "gzip",
+      "level": 9,
+      "mtime": 0,
+      "filename": "",
+      "os_byte": 255,
+      "zlib_runtime": "1.2.12"
+    }
+  }
+}

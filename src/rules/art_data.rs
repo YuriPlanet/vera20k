@@ -1,0 +1,3790 @@
+//! art.ini parsing and art-resolution helpers.
+//!
+//! This module is intentionally split into three layers:
+//! - explicit rules/art data resolution
+//! - original-engine filename conventions we intentionally keep
+//! - repo-only fallback hooks that stay outside this module
+//!
+//! `ArtRegistry` owns only parsed metadata and exact ID/section lookups.
+//! Filename candidate generation lives in free functions below so render code can
+//! use convention helpers without re-mixing them into metadata resolution.
+
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+
+use crate::rules::flh::Flh;
+use crate::rules::ini_parser::{IniFile, IniSection};
+use crate::rules::native_processing::anim_type_runtime_keys;
+use crate::rules::object_type::{BuildingHiddenOccupancyProfile, HIDDEN_OCCUPY_SLOT_COUNT};
+use crate::util::lookup_hash::{LookupMap, LookupSet};
+use crate::util::native_string::with_ascii_uppercase;
+use crate::util::native_x87::NativeF64Bits;
+use crate::util::pixel_conversion::PixelConversionBounds;
+
+/// A war factory's unload art, read by `BuildingTypeClass::LoadVisualAssets
+/// @ 0x0045F230` from the image section of the art INI: each a 0x40-byte
+/// ReadString, empty by default, plus `.SHP`, looked up like `Buildup=`
+/// (theater letter, then `G`; [`theater_shp_names`]). Names are kept without
+/// the extension. Stock: `[GAWEAP]`, `[NAWEAP]`, `[YAWEAP]`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FactoryDoorArt {
+    /// `DeployingAnim=` (`+0x14E4`, `0x0045F31D`): the body while the factory
+    /// unloads.
+    pub deploying: Option<String>,
+    /// `RoofDeployingAnim=` (`+0x14FC`, `0x0045F3FA`): the body while a
+    /// JumpJet or BalloonHover product leaves.
+    pub roof_deploying: Option<String>,
+    /// `UnderDoorAnim=` (`+0x14EC`, `0x0045F55A`): drawn after the bib while
+    /// the factory unloads.
+    pub under_door: Option<String>,
+    /// `UnderRoofDoorAnim=` (`+0x1504`, `0x0045F706`): the roof variant of
+    /// `under_door`.
+    pub under_roof_door: Option<String>,
+}
+
+impl FactoryDoorArt {
+    fn read(section: &IniSection) -> Self {
+        let name = |key| section.read_name(key, 0x40).map(str::to_owned);
+        Self {
+            deploying: name("DeployingAnim"),
+            roof_deploying: name("RoofDeployingAnim"),
+            under_door: name("UnderDoorAnim"),
+            under_roof_door: name("UnderRoofDoorAnim"),
+        }
+    }
+
+    /// Every name, for atlas loading.
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        [
+            &self.deploying,
+            &self.roof_deploying,
+            &self.under_door,
+            &self.under_roof_door,
+        ]
+        .into_iter()
+        .flatten()
+        .map(String::as_str)
+    }
+}
+
+/// Per-object art configuration parsed from an art.ini section.
+#[derive(Debug, Clone)]
+pub struct ArtEntry {
+    /// Image filename override (from art.ini `Image=` key).
+    /// None means use the section name as the filename base.
+    pub image: Option<String>,
+    /// Sidebar cameo/image override from `Cameo=`.
+    pub cameo: Option<String>,
+    /// Alternate sidebar cameo/image override from `AltCameo=`.
+    pub alt_cameo: Option<String>,
+    /// Ares 3.0 TechnoType art read1003E81F..1003E856, from ImageFile. Read
+    /// in every Rules mode; only Ares' sidebar draws it.
+    pub(crate) cameo_pcx: Option<String>,
+    pub(crate) alt_cameo_pcx: Option<String>,
+    /// Ares TechnoTypeExt+0x11C `CameoPalette` (CustomPalette, read from
+    /// ImageFile by 1003DFB0 after InitialPayload.Nums): the palette file a
+    /// nonempty read names, `~~~` standing for the theater extension.
+    /// StripClass_Draw_Main (Ares.dll 1005E390, hook 0x6A9A2A) draws the SHP
+    /// cameo with it when it loads, else CAMEO.PAL.
+    pub(crate) cameo_palette: Option<String>,
+    /// Replace 2nd char of filename with theater-specific letter.
+    pub new_theater: bool,
+    /// Use theater file extension (e.g., `.tem`) instead of `.shp`.
+    /// Set by `Theater=yes` in art.ini. Distinct from `NewTheater=`.
+    pub theater: bool,
+    pub scorch: bool,
+    pub crater: bool,
+    pub force_big_craters: bool,
+    /// The middle frame's width, `AnimTypeClass+0x29C`: `AnimClass::Middle @
+    /// 0x00424F00` sizes its scorch or crater from the frame at `+0x298`,
+    /// the raw SHP frame count halved (`Load_Image 0x00427B50`), through
+    /// `0x0069E7E0`. 30 with no image (`0x00424F57`). Bound by
+    /// `populate_anim_frame_dims` for anims with a Scorch/Crater flag.
+    pub frame_width: u16,
+    /// The middle frame's height, `AnimTypeClass+0x2A0`. See `frame_width`.
+    pub frame_height: u16,
+    /// Render as VXL+HVA model (true) or SHP sprite (false).
+    pub voxel: bool,
+    /// Optional voxel turret/barrel forward/backward alignment tweak.
+    pub turret_offset: i32,
+    /// Extra Y pixel offset for sprite rendering.
+    pub y_draw_offset: i32,
+    /// Extra X pixel offset for sprite rendering.
+    pub x_draw_offset: i32,
+    /// Building animation overlays (ActiveAnim, IdleAnim, etc.).
+    pub building_anims: Vec<BuildingAnimConfig>,
+    /// All21 native records exist even when their selected names are empty.
+    pub building_anim_power: [BuildingAnimPowerFlags; 21],
+    /// Signed GateStages (BuildingType+16F8): constructor45E1F0 defaults to9;
+    /// art ReadInt4612D1 preserves signed32 values used by body frame43EF90.
+    pub building_gate_stages: i32,
+    /// Signed start/count/rate triples for AnimIdle, AnimActive, AnimAux1,
+    /// AnimAux2. Native4615CA..4617B8 partially assigns each scanf triple.
+    pub building_body_ranges: [[i32; 3]; 4],
+    /// `Buildup=` (BuildingType `+0xE5C`, a 16-byte ReadString, empty by
+    /// default): the build-up SHP's name without its extension
+    /// (`rules::buildup_asset_catalog`).
+    pub buildup: Option<String>,
+    /// Present ART Foundation resolved by native474DA0's fixed table.
+    /// Missing retains the caller's current index; a present unknown is0.
+    pub foundation: Option<u8>,
+    /// BibShape: separate SHP for the ground-level pad/bib under a building.
+    pub bib_shape: Option<String>,
+    /// A war factory's unload art ([`FactoryDoorArt`]).
+    pub factory_door: FactoryDoorArt,
+    /// Custom palette override from art.ini `Palette=`.
+    /// Stored as a palette base name without `.pal`.
+    pub palette: Option<String>,
+    /// Infantry animation sequence definition name (e.g., "ConSequence").
+    /// Points to a `[ConSequence]`-style section in art.ini with frame layouts.
+    pub sequence: Option<String>,
+    /// `SecondSpawnOffset=` (`TechnoTypeClass+0xDB0`): the same art read's
+    /// coordinate read of the image section (`0x0071602E..0x00716058`,
+    /// `Read3Int @ 0x00529CA0`), default the constructor's zeros
+    /// (`0x0071175F..0x00711773`). A spawn launch hands it to GetFLH as the
+    /// base while the owner's burst index is nonzero (`0x006B7448`). Stock:
+    /// only `[BSUB]`, `-70,0,0`.
+    pub second_spawn_offset: Flh,
+    /// Fixed building primary fire screen-pixel offset.
+    /// Used by non-turret buildings before converting the pixel delta to world leptons.
+    pub primary_fire_pixel_offset: Option<(i32, i32)>,
+    /// Fixed building secondary fire screen-pixel offset.
+    pub secondary_fire_pixel_offset: Option<(i32, i32)>,
+    /// Building GetFLH adds the selected base Techno FLH to the unmirrored
+    /// primary pixel offset (PrimaryFireDualOffset +1764, 4538ED..45395A).
+    pub primary_fire_dual_offset: bool,
+    /// Building fire is held behind the SpecialAnim before weapon emission.
+    pub is_anim_delayed_fire: bool,
+    /// BuildingType+16A8, ART ReadBool461169, constructor45E0BA false.
+    pub silo_damage: bool,
+    /// Signed number of Building AI visits used by the delayed-fire latch.
+    pub delayed_fire_delay: i32,
+    /// SHP vehicle: walk animation frame count per facing (from `WalkFrames=`).
+    pub walk_frames: Option<u16>,
+    /// SHP vehicle: firing animation frame count per facing (from `FiringFrames=`).
+    pub firing_frames: Option<u16>,
+    /// SHP vehicle: standing animation frame count per facing (from `StandingFrames=`).
+    pub standing_frames: Option<u16>,
+    /// SHP vehicle: number of facing directions (from `Facings=`, default 8).
+    pub shp_facings: u8,
+    /// Signed building brightness addition (ExtraLight= in art.ini).
+    /// DrawBody 0043D824 adds signed BuildingType+1548 to top-cell brightness
+    /// for the body and Buildup alike; the gate branch 0043D644 omits it. It
+    /// is separate from NormalZAdjust.
+    /// Retail values: GADPSA=350, GAICBM=-100.
+    pub extra_light: i32,
+    /// BuildingType +0x1702, art parser 004612B4: use the cell ISO Convert.
+    pub terrain_palette: bool,
+    /// `UseBuffer=` (TechnoType `+0xDAC`): constructor `0x00710AF0` writes
+    /// false; `TechnoTypeClass::ReadINI` (`0x0071576F..0x0071578D`) reads it
+    /// with ReadBool (`0x005295F0`) from the ART INI under the type's own ID,
+    /// not its `Image=`, the current byte as default. Read through
+    /// [`ArtRegistry::use_buffer`]; it selects the depth-tested voxel raster.
+    pub use_buffer: bool,
+    /// `DisableVoxelCache=` (TechnoType `+0xDBE`) and `DisableShadowCache=`
+    /// (`+0xDBF`): the constructor writes false to both (`0x00711658`,
+    /// `0x0071165E`); ReadINI reads them like `UseBuffer=`, with ReadBool
+    /// under the type's own ID, the current byte as default (`0x00715967`,
+    /// `0x0071598B`). Read through [`ArtRegistry::disable_voxel_cache`] and
+    /// [`ArtRegistry::disable_shadow_cache`]: they key a part or shadow draw
+    /// -1 (`0x00706806`, `0x00706C33`).
+    pub disable_voxel_cache: bool,
+    pub disable_shadow_cache: bool,
+    /// `CanBeHidden=` (TechnoType `+0x724`): constructor `0x00711229` writes
+    /// true; ReadINI (`0x007121EB..0x00712202`) reads it the same way as
+    /// `UseBuffer=`, with ReadBool from the ART INI under the type's own ID.
+    /// Projected onto `ObjectType::can_be_hidden`.
+    pub can_be_hidden: bool,
+    /// `QueueingCell=` (BuildingType+0x1618/+0x161C): `ReadMinMax @ 0x00529880`
+    /// on the ARTMD section at `0x00461506`, default `(0, 0)`. Mission_Harvest
+    /// adds the low words to the dock's NW cell for the waiting miner's staging
+    /// search (`0x0073ED25..0x0073ED3B`). GAREFN/NAREFN: `4,1`.
+    pub queueing_cell: [i32; 2],
+    /// `DockingOffset%d` pads by slot index, up to the last one present in
+    /// this art.ini section (at most 8; retail uses up to 4); an absent slot
+    /// before it is a zero pad. The art→rules merge in
+    /// [`crate::rules::ruleset`] is what applies `NumberOfDocks`-aware sizing —
+    /// see `ObjectType::pads` for the merged shape.
+    pub pads: Vec<crate::rules::object_type::DockPad>,
+    /// Pixel offsets where fire/smoke overlays appear when building health < ConditionYellow.
+    /// Parsed from DamageFireOffset0=X,Y .. DamageFireOffset7=X,Y in art.ini. Max 8.
+    pub damage_fire_offsets: Vec<DamageFireOffset>,
+    /// Building height in cell-height units (from `Height=` in art.ini).
+    /// BuildingType Dimension2 (464AF0) uses Height * 104 world leptons for Z;
+    /// its X/Y dimensions independently use the foundation's 256-lepton cells.
+    pub height: i32,
+    /// Fire port pixel offsets for garrison muzzle flashes.
+    /// Parsed from `MuzzleFlash0=X,Y` through `MuzzleFlash9=X,Y` in art.ini.
+    /// Each entry is a screen-space offset from the building's center.
+    pub muzzle_flash_positions: Vec<(i32, i32)>,
+    /// Valid cells from art.ini AddOccupy1..8, scanned by slot number.
+    /// Signed offsets from the building's origin (rx, ry) — negative = west/north.
+    pub add_occupy: [Option<(i16, i16)>; HIDDEN_OCCUPY_SLOT_COUNT],
+    /// Valid cells from art.ini RemoveOccupy1..8, scanned by slot number.
+    pub remove_occupy: [Option<(i16, i16)>; HIDDEN_OCCUPY_SLOT_COUNT],
+    /// Middle integer of `Deploy=<start>,<frames>,<rate>` in the infantry
+    /// sequence section referenced by `sequence`. `None` when the sequence
+    /// is undefined or doesn't have a `Deploy` entry. Drives the per-type
+    /// Deploying-phase duration via `sim::deploy::compute_anim_ticks`.
+    pub deploy_frames: Option<u16>,
+    /// Middle integer of `Undeploy=<start>,<frames>,<rate>` in the sequence.
+    pub undeploy_frames: Option<u16>,
+    /// Middle integer of `DeployedFire=<start>,<frames>,<rate>` in the sequence.
+    pub deployed_fire_frames: Option<u16>,
+    /// `ZShapePointMove=X,Y` (`BuildingTypeClass +0x1530/+0x1534`): pixel
+    /// shift of the BUILDNGZ z-shape a building body writes its depth through
+    /// (`BuildingClass_DrawBody 0x0043D6EF..0x0043D77A`). Retail sets it on
+    /// ten tall structures; default 0,0.
+    pub z_shape_point_move: (i32, i32),
+    /// `NormalZAdjust=` (`BuildingTypeClass +0x1520`, read at `0x004613A6`):
+    /// the building body's own Z term before the height lift is cancelled.
+    /// Retail sets it only on GAFSDF (-10); default 0.
+    pub normal_z_adjust: i32,
+    /// `DoubleThick=` (`BuildingTypeClass +0x16B1`): the constructor
+    /// (`0x0045E0F0`) writes false and `BuildingTypeClass::ReadINI`
+    /// (`0x0046112F..0x00461146`) reads it with ReadBool from this ART
+    /// section, the current byte as default. The AnimType key of the same
+    /// name is [`AnimTypeRuntimeConfig::double_thick`]. A warping building of
+    /// such a type draws at 75% translucency, not 50%.
+    pub building_double_thick: bool,
+}
+
+/// One native building-damage-fire art offset.
+///
+/// The source pair remains available for z-adjust. The world delta is bound once
+/// during rules initialization so authoritative simulation never performs float
+/// coordinate conversion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DamageFireOffset {
+    pub pixel_x: i32,
+    pub pixel_y: i32,
+    pub world_dx: i32,
+    pub world_dy: i32,
+}
+
+/// Which category of building animation this is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BuildingAnimKind {
+    Active,
+    Idle,
+    Super,
+    Special,
+    Production,
+}
+
+/// Animation name plus the frame-timing metadata from that animation section.
+#[derive(Debug, Clone, Hash)]
+pub struct BuildingAnimVariantConfig {
+    pub anim_type: String,
+    pub loop_start: u16,
+    pub loop_end: u16,
+    pub loop_count: i32,
+    pub rate: u16,
+    pub start_frame: u16,
+    pub ping_pong: bool,
+}
+
+/// Native-like metadata used by app-side `AnimClass` runtime slices.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnimTypeRuntimeConfig {
+    /// False means the allocated native type has never completed ART ReadINI.
+    /// It retains constructor bounds. Only a reached saved type load can
+    /// supply an image without this ART read.
+    pub art_body_read: bool,
+    /// ObjectType::ReadINI @ 0x005F933B reads Image from the exact AnimType
+    /// section with a 25-byte buffer and the constructor's type ID default.
+    /// Keep this animation value separate from generic object-art resolution.
+    image: String,
+    /// Inherited ObjectType::ReadINI AlphaImage value (`+0x213`, 25 bytes),
+    /// distinct from Image and present only for a type whose ART body was read.
+    pub(crate) alpha_image: String,
+    pub start: i32,
+    pub loop_start: i32,
+    pub loop_end: i32,
+    pub end: i32,
+    /// Whether `End=` was explicitly present. Explicit zero differs from omission.
+    pub explicit_end: Option<i32>,
+    /// Whether `LoopEnd=` was explicitly present.
+    pub explicit_loop_end: Option<i32>,
+    /// Signed SHP frame count read from header offset +6 during asset binding.
+    pub raw_shp_frame_count: Option<i32>,
+    /// Resolver427C62's raw-count/2; InitTheater427940 can replace Shape
+    /// without replacing this numeric value. None precedes asset binding.
+    pub middle_frame: Option<i32>,
+    /// Signed SHP height read from header offset +4 during asset binding:
+    /// `MOVSX [image+4]`, as `LightningStorm::CreateCloudBolt` reads its first
+    /// bolt's image (`0x0053A16B`).
+    pub raw_shp_height: Option<i32>,
+    pub loop_count: i32,
+    pub rate_logic_frames: u16,
+    pub normalized: bool,
+    pub tiberium_chain_reaction: bool,
+    pub is_tiberium: bool,
+    pub hide_if_no_ore: bool,
+    /// Phobos `AnimTypeExt::HideIfNoOre_Threshold` (`src/Ext/AnimType/Body.h`,
+    /// read as a `Valueable<int>` with constructor default 0): the smallest
+    /// contained tiberium value at which a `HideIfNoOre=` anim still draws.
+    #[cfg(feature = "phobos")]
+    pub hide_if_no_ore_threshold: i32,
+    /// Fixed ARTMD `IsAnimatedTiberium=`, AnimType+0x360: constructor427530
+    /// defaults false; ReadINI427D00 retains the prior bool on absent input.
+    /// AnimAI4243BC checks the shifted virtual cell's CellAnim identity and
+    /// marks a mismatch inactive. After user load, the separate refresh4261D0
+    /// uses every flagged Anim's stored Location to select the resource's
+    /// ColorScheme Convert, including inactive and attached entries.
+    pub is_animated_tiberium: bool,
+    pub tiberium_spread_radius: i32,
+    /// The Type references (`TiberiumSpawnType=`, `Spawns=`, `Warhead=`,
+    /// `SpawnsParticle=`, `Next=`, `BounceAnim=`, `ExpireAnim=`,
+    /// `TrailerAnim=`) are the upper-cased stored IDs the ordered Rules
+    /// processor's factories answered (`AnimTypeReferences`).
+    pub tiberium_spawn_type: Option<String>,
+    /// Raw `MakeInfantry=` index. Native defaults to -1 and treats every
+    /// other value as enabling the AnimClass cell-occupation lifecycle.
+    pub make_infantry: i32,
+    /// Phobos `AnimTypeExt::MakeInfantryOwner` (`OwnerHouseKind`, default
+    /// `Victim`): the House a `MakeInfantry=` animation takes.
+    #[cfg(feature = "phobos")]
+    pub(crate) phobos_make_infantry_owner: crate::rules::ares_warhead::HouseSelector,
+    /// Ares AnimTypeExt+8 `MakeInfantryOwner` (Valueable<OwnerHouseKind>,
+    /// constructor Invoker; LoadFromINI 1000A4B0), the House
+    /// AnimTypeExt::SetMakeInfOwner (1000A5F0) gives the anim.
+    pub(crate) ares_make_infantry_owner: crate::rules::ares_warhead::HouseSelector,
+    /// Ares AnimTypeExt+0xC `CustomPalette` (CustomPalette, Temperate
+    /// mode): the palette file a nonempty read names, `~~~` standing for
+    /// the theater extension (`CustomPalette::LoadFromINI`, 1000A4B0 after
+    /// MakeInfantryOwner). AnimClass_Draw_SetPalette (Ares.dll 1000ACE0,
+    /// hook 0x4232CE) draws the anim with it, and
+    /// BulletClass_Draw_SetAnimPalette (1001A7B0, hook 0x468379) a bullet
+    /// whose Image names this AnimType; `AresCustomPalettes` in the sprite
+    /// atlas loads it for both.
+    pub(crate) ares_custom_palette: Option<String>,
+    /// Phobos `CreateUnit=` + `CreateUnit.Owner` (default `Victim`) +
+    /// `CreateUnit.RemapAnim` (default no): `Some` when the animation names a
+    /// unit type, which overrides the owner kind and permits remap.
+    #[cfg(feature = "phobos")]
+    pub(crate) phobos_create_unit: Option<(crate::rules::ares_warhead::HouseSelector, bool)>,
+    pub bouncer: bool,
+    pub spawns: Option<String>,
+    pub spawn_count: i32,
+    pub running_frames: i32,
+    /// art.ini `Damage=`, `AnimTypeClass+0x2A8`.
+    ///
+    /// gamemd-derived: `AnimTypeClass::ReadINI @ 0x00427D00` reads it through
+    /// `CCINIClass::ReadDouble` into `param_1[0xaa]` (= byte offset `0x2A8`), so
+    /// this is a **double**, not an integer — the stock population is dominated
+    /// by fractional values such as `.003`. The constructor
+    /// (`AnimTypeClass::AnimTypeClass @ 0x00427530`, `param_1[0xaa]/[0xab] = 0`)
+    /// leaves it `0.0` when the key is absent, and the read passes the current
+    /// value back as its own default.
+    ///
+    /// The per-frame damage arm at
+    /// `AnimClass::AI 0x00424507..0x0042464C` accumulates this into
+    /// `AnimClass+0x188`, which the constructor seeds to **`1.0`**
+    /// (`0x00421FA4` zeroes the low dword, `0x00421FC8` writes `0x3FF00000` to
+    /// the high dword), so the first armed frame always emits at least one
+    /// point. `Simulation::visit_anim` consumes it after a due frame advance.
+    pub damage: NativeF64Bits,
+    /// art.ini `Warhead=`, `AnimTypeClass+0x330`, resolved by
+    /// `WarheadTypeClass::FindOrAllocate`. Stock per-frame damage selects
+    /// `[CombatDamage] C4Warhead`/`FlameDamage2`, leaving this to Bouncer
+    /// landings. Ares AnimClass_Update_DamageDelay1000B179 also uses it for
+    /// ordinary damage, before falling back to the stock selection.
+    pub warhead: Option<String>,
+    /// art.ini `DamageRadius=`, `AnimTypeClass+0x334`. Bouncer-landing only.
+    pub damage_radius: i32,
+    /// art.ini `Elasticity=`, `AnimTypeClass+0x310`, a `ReadDouble`.
+    /// Constructor default `0x3FE99999_A0000000` — the single-precision `0.8f`
+    /// widened, **not** the nearest double to 0.8.
+    pub elasticity: NativeF64Bits,
+    /// art.ini `MinZVel=`, `AnimTypeClass+0x318`, a `ReadDouble`.
+    /// Constructor default `0x400C0000_00000000` = **3.5**.
+    pub min_z_vel: NativeF64Bits,
+    /// art.ini `MaxXYVel=`, `AnimTypeClass+0x328`, a `ReadDouble`.
+    /// Constructor default `0x402E0000_00000000` = **15.0**.
+    pub max_xy_vel: NativeF64Bits,
+    /// art.ini `IsMeteor=`, `AnimTypeClass+0x356`. Shares the constructor's
+    /// `BounceClass` fork with `Bouncer=`, launched as a meteor
+    /// (`sim::anim_class::anim_constructor_draws`).
+    pub is_meteor: bool,
+    /// art.ini `IsVeins=`, `AnimTypeClass+0x355`. Zero stock sections author it.
+    pub is_veins: bool,
+    /// art.ini `IsFlamingGuy=`, `AnimTypeClass+0x354`. Gates
+    /// `AnimClass::BounceAI @ 0x00425670` — the flaming-infantry runner — from
+    /// `AnimClass::AI`'s third statement. One stock section (`FLAMEGUY`).
+    pub is_flaming_guy: bool,
+    /// art.ini `Scorch=`, `AnimTypeClass+0x36B`, read by
+    /// `AnimClass::Middle @ 0x00424F00`.
+    pub scorch: bool,
+    /// art.ini `Crater=`, `AnimTypeClass+0x36D`, read by
+    /// `AnimClass::Middle @ 0x00424F00`.
+    pub crater: bool,
+    /// art.ini `ForceBigCraters=`, `AnimTypeClass+0x36E`, read by
+    /// `AnimClass::Middle @ 0x00424F00`.
+    pub force_big_craters: bool,
+    /// art.ini `Sticky=`, `AnimTypeClass+0x36F`.
+    pub sticky: bool,
+    /// art.ini `PsiWarning=`, `AnimTypeClass+0x373`, read by `AnimClass::AI`.
+    pub psi_warning: bool,
+    /// art.ini `DoubleThick=`, `AnimTypeClass+0x368`.
+    pub double_thick: bool,
+    /// art.ini `Flamer=`, `AnimTypeClass+0x36C`. Zero stock sections author it.
+    pub flamer: bool,
+    /// art.ini `SpawnsParticle=`, `AnimTypeClass+0x2CC`, resolved by
+    /// `ParticleTypeClass::FindOrCreate`. Read by
+    /// `AnimClass::Middle @ 0x00424F00`, `NumParticles` times.
+    ///
+    /// Unlike every other key in this parser, `ReadINI` writes the field
+    /// **only when the key is present** (`0x00427D00`: the store sits inside
+    /// the `if (ReadString != 0)` arm), so an absent key keeps the
+    /// constructor's `-1`. `None` here is that `-1`, or the factory's `-1`
+    /// for `<none>`.
+    pub spawns_particle: Option<String>,
+    /// art.ini `NumParticles=`, `AnimTypeClass+0x2D0`.
+    pub num_particles: i32,
+    /// Ares AnimTypeExt+0x18/+0x1C `SpawnsParticle.RangeMinimum` and
+    /// `SpawnsParticle.RangeMaximum` (Valueable<Leptons>, constructor 0;
+    /// LoadFromINI 1000A4B0 through 1000A5D0): either nonzero spreads the
+    /// SpawnsParticle particles around the anim (`Simulation::anim_middle`).
+    pub(crate) ares_spawns_particle_range: [i32; 2],
+    /// Ares AnimTypeExt+0x24 `Damage.Delay` (Valueable<int>, constructor 0):
+    /// above zero, an anim whose `Damage=` is at least 1 delivers its whole
+    /// Damage once every this many frames.
+    pub(crate) ares_damage_delay: i32,
+    /// Ares AnimTypeExt+0x20 `Weapon` (Valueable<WeaponTypeClass*>, Find
+    /// only, constructor null): the weapon whose bullet the anim's damage
+    /// detonates instead of the area damage. The ordered Rules processor
+    /// resolves it with the ART body (`AnimTypeReferences`).
+    pub(crate) ares_weapon: Option<String>,
+    /// art.ini `ShouldFogRemove=`, `AnimTypeClass+0x374`.
+    /// Constructor default **true**.
+    pub should_fog_remove: bool,
+    /// art.ini `ShouldUseCellDrawer=`, `AnimTypeClass+0x35C`.
+    /// Constructor default **true**.
+    pub should_use_cell_drawer: bool,
+    pub detail_level: i32,
+    pub next: Option<String>,
+    pub bounce_anim: Option<String>,
+    pub expire_anim: Option<String>,
+    pub trailer_anim: Option<String>,
+    pub trailer_seperation: i32,
+    pub random_loop_delay: Option<(i32, i32)>,
+    pub random_rate_logic_frames: Option<(u16, u16)>,
+    pub y_draw_offset: i32,
+    pub z_adjust: i32,
+    pub y_sort_adjust: i32,
+    pub layer: AnimLayer,
+    pub flat: bool,
+    pub tiled: bool,
+    /// Raw art.ini `Translucency=` value; zero when omitted.
+    pub translucency: i32,
+    /// Raw art.ini `TranslucencyDetailLevel=` value; zero when omitted.
+    pub translucency_detail_level: i32,
+    pub translucent: bool,
+    /// art.ini `AltPalette=`. gamemd's animation draw path picks the palette in a
+    /// cascade: an explicit per-instance palette wins, otherwise the global
+    /// ANIM.PAL conversion is used — except when this flag is set, which swaps in
+    /// the first colour scheme's converted unit palette instead. **31** stock
+    /// art.ini sections set it — every one of them `yes` — including the Battle
+    /// Bunker, the `CABUNK0x` bunkers, the Weather Storm clouds and the squid
+    /// grapple; 23 of the 31 are also declared in `[Animations]`. (Derived by
+    /// section-scanning `artmd.ini` with the exact spelling `AltPalette`;
+    /// gamemd's `CCINIClass` key lookup is case-sensitive, so only that spelling
+    /// counts. The doc previously said 41, which no scan of the retail file
+    /// reproduces.)
+    pub alt_palette: bool,
+    /// art.ini `UseNormalLight=`. The retail art.ini documents this as "does this
+    /// anim always draw at 100% brightness? (def=no)", and gamemd's animation draw
+    /// matches: it initialises the shape's brightness argument to full
+    /// (1000 = 1.0) and, in each of that function's branches, only replaces it
+    /// with a scalar read off the animation's cell when this flag is clear. So a
+    /// set flag makes the animation ignore map lighting entirely rather than
+    /// merely brightening it. At least one further native site reads the same
+    /// gate outside that function and was not traced, and the branch taken when
+    /// an animation instance carries its own palette convert takes brightness
+    /// from an instance field rather than a cell scalar — its stock reachability
+    /// is UNCHECKED.
+    /// 43 stock sections set it, all the explosion/fire/flash families —
+    /// `TWLT*`, `S_BANG*`, `S_BRNL*`, `S_CLSN*`, `S_TUMU*`, `BURN-S/M/L`, `FIRE3`,
+    /// `EXPLOSML/MED/LRG/LB`, `BRRLEXP*`, `CRIVEXP*`, `APOCEXP`, `VTEXPLOD`,
+    /// `KTSTLEXP`, `PULSEFX1/2`, `EMP_FX01`, `BEHIND`.
+    pub use_normal_light: bool,
+    pub shadow: bool,
+    pub ping_pong: bool,
+    pub reverse: bool,
+    /// The sound `AnimClass::Start @ 0x00424CE0` plays (AnimType +2F8),
+    /// and the one `AnimClass::UnInit @ 0x004255B0` plays (+2FC). Only the
+    /// rules processor sets them (`AnimTypeReferences`), from `StartSound=`
+    /// else `Report=`, and `StopSound=`, resolved against SOUNDMD.
+    pub start_sound: Option<String>,
+    pub stop_sound: Option<String>,
+    /// Tiberian Sun's `BounceSound=` and `ExpireSound=` (Firestorm 2.0
+    /// AnimType +180/+184), which a `Bouncer=` chunk plays where it bounces
+    /// and where it comes down on dry ground. gamemd reads neither, so only
+    /// an ART section that sets one plays it; the rules processor resolves
+    /// them as it does `StopSound=`. See docs/ts-anim-sounds.md.
+    pub bounce_sound: Option<String>,
+    pub expire_sound: Option<String>,
+}
+
+/// Every field folds in declaration order, as the derive did, and the Ares
+/// fields follow only when one is set. Only a read the Ares way sets them, so
+/// a stock game's configuration hash is unchanged.
+impl std::hash::Hash for AnimTypeRuntimeConfig {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let Self {
+            art_body_read,
+            image,
+            alpha_image,
+            start,
+            loop_start,
+            loop_end,
+            end,
+            explicit_end,
+            explicit_loop_end,
+            raw_shp_frame_count,
+            middle_frame,
+            raw_shp_height,
+            loop_count,
+            rate_logic_frames,
+            normalized,
+            tiberium_chain_reaction,
+            is_tiberium,
+            hide_if_no_ore,
+            #[cfg(feature = "phobos")]
+            hide_if_no_ore_threshold,
+            is_animated_tiberium,
+            tiberium_spread_radius,
+            tiberium_spawn_type,
+            make_infantry,
+            #[cfg(feature = "phobos")]
+            phobos_make_infantry_owner,
+            ares_make_infantry_owner,
+            ares_custom_palette,
+            #[cfg(feature = "phobos")]
+            phobos_create_unit,
+            bouncer,
+            spawns,
+            spawn_count,
+            running_frames,
+            damage,
+            warhead,
+            damage_radius,
+            elasticity,
+            min_z_vel,
+            max_xy_vel,
+            is_meteor,
+            is_veins,
+            is_flaming_guy,
+            scorch,
+            crater,
+            force_big_craters,
+            sticky,
+            psi_warning,
+            double_thick,
+            flamer,
+            spawns_particle,
+            num_particles,
+            ares_spawns_particle_range,
+            ares_damage_delay,
+            ares_weapon,
+            should_fog_remove,
+            should_use_cell_drawer,
+            detail_level,
+            next,
+            bounce_anim,
+            expire_anim,
+            trailer_anim,
+            trailer_seperation,
+            random_loop_delay,
+            random_rate_logic_frames,
+            y_draw_offset,
+            z_adjust,
+            y_sort_adjust,
+            layer,
+            flat,
+            tiled,
+            translucency,
+            translucency_detail_level,
+            translucent,
+            alt_palette,
+            use_normal_light,
+            shadow,
+            ping_pong,
+            reverse,
+            start_sound,
+            stop_sound,
+            bounce_sound,
+            expire_sound,
+        } = self;
+        art_body_read.hash(state);
+        image.hash(state);
+        alpha_image.hash(state);
+        start.hash(state);
+        loop_start.hash(state);
+        loop_end.hash(state);
+        end.hash(state);
+        explicit_end.hash(state);
+        explicit_loop_end.hash(state);
+        raw_shp_frame_count.hash(state);
+        middle_frame.hash(state);
+        raw_shp_height.hash(state);
+        loop_count.hash(state);
+        rate_logic_frames.hash(state);
+        normalized.hash(state);
+        tiberium_chain_reaction.hash(state);
+        is_tiberium.hash(state);
+        hide_if_no_ore.hash(state);
+        #[cfg(feature = "phobos")]
+        hide_if_no_ore_threshold.hash(state);
+        is_animated_tiberium.hash(state);
+        tiberium_spread_radius.hash(state);
+        tiberium_spawn_type.hash(state);
+        make_infantry.hash(state);
+        #[cfg(feature = "phobos")]
+        phobos_make_infantry_owner.hash(state);
+        #[cfg(feature = "phobos")]
+        phobos_create_unit.hash(state);
+        bouncer.hash(state);
+        spawns.hash(state);
+        spawn_count.hash(state);
+        running_frames.hash(state);
+        damage.hash(state);
+        warhead.hash(state);
+        damage_radius.hash(state);
+        elasticity.hash(state);
+        min_z_vel.hash(state);
+        max_xy_vel.hash(state);
+        is_meteor.hash(state);
+        is_veins.hash(state);
+        is_flaming_guy.hash(state);
+        scorch.hash(state);
+        crater.hash(state);
+        force_big_craters.hash(state);
+        sticky.hash(state);
+        psi_warning.hash(state);
+        double_thick.hash(state);
+        flamer.hash(state);
+        spawns_particle.hash(state);
+        num_particles.hash(state);
+        should_fog_remove.hash(state);
+        should_use_cell_drawer.hash(state);
+        detail_level.hash(state);
+        next.hash(state);
+        bounce_anim.hash(state);
+        expire_anim.hash(state);
+        trailer_anim.hash(state);
+        trailer_seperation.hash(state);
+        random_loop_delay.hash(state);
+        random_rate_logic_frames.hash(state);
+        y_draw_offset.hash(state);
+        z_adjust.hash(state);
+        y_sort_adjust.hash(state);
+        layer.hash(state);
+        flat.hash(state);
+        tiled.hash(state);
+        translucency.hash(state);
+        translucency_detail_level.hash(state);
+        translucent.hash(state);
+        alt_palette.hash(state);
+        use_normal_light.hash(state);
+        shadow.hash(state);
+        ping_pong.hash(state);
+        reverse.hash(state);
+        start_sound.hash(state);
+        stop_sound.hash(state);
+        // No retail ART sets the Tiberian Sun sounds.
+        if bounce_sound.is_some() || expire_sound.is_some() {
+            bounce_sound.hash(state);
+            expire_sound.hash(state);
+        }
+        if *ares_make_infantry_owner != crate::rules::ares_warhead::HouseSelector::Invoker
+            || ares_custom_palette.is_some()
+            || *ares_spawns_particle_range != [0, 0]
+            || *ares_damage_delay != 0
+            || ares_weapon.is_some()
+        {
+            ares_make_infantry_owner.hash(state);
+            ares_custom_palette.hash(state);
+            ares_spawns_particle_range.hash(state);
+            ares_damage_delay.hash(state);
+            ares_weapon.hash(state);
+        }
+    }
+}
+
+/// Display layer used by native object submission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AnimLayer {
+    Ground,
+    Top,
+    Other(i32),
+}
+
+impl AnimLayer {
+    fn from_ini(section: &IniSection) -> Self {
+        // AnimType ctor4276D4 defaults Air3. Reader427DF2 ->477050 uses
+        // ReadString(capacity128), then the five-name table81DA78 at48E050.
+        // Numeric and unknown tokens resolve to -1, not a numeric layer.
+        match section
+            .read_string("Layer", "Air", 0x80)
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "underground" => Self::Other(0),
+            "surface" => Self::Other(1),
+            "ground" => Self::Ground,
+            "air" => Self::Other(3),
+            "top" => Self::Top,
+            _ => Self::Other(-1),
+        }
+    }
+}
+
+/// Configuration for a building animation overlay (ActiveAnim, IdleAnim, etc.).
+#[derive(Debug, Clone, Hash)]
+pub struct BuildingAnimConfig {
+    /// BuildingType native slot at F4C + 44 * slot (ReadINI4617C4..464727).
+    pub native_slot: u8,
+    pub anim_type: String,
+    /// Animation for this slot when the building is damaged: `<Key>Damaged`,
+    /// or the normal name when that is empty (`parse_building_anims`). `None`
+    /// when both are empty, and for a PowerUp slot without its own damaged name.
+    pub damaged_variant: Option<BuildingAnimVariantConfig>,
+    /// Animation for this slot when a garrisoned building is healthy:
+    /// `<Key>Garrisoned`, or the normal name when that is empty. Always `None`
+    /// for PowerUp slots.
+    pub garrisoned_variant: Option<BuildingAnimVariantConfig>,
+    pub kind: BuildingAnimKind,
+    /// True for the base key (e.g., `ActiveAnim`), false for suffixed variants
+    /// (`ActiveAnimTwo`, `Three`, `Four`).  Used to gate the primary active anim
+    /// on building ownership while letting secondary anims (flags) play always.
+    pub is_primary: bool,
+    pub x: i32,
+    pub y: i32,
+    pub y_sort: i32,
+    pub z_adjust: i32,
+    pub loop_start: u16,
+    pub loop_end: u16,
+    pub loop_count: i32,
+    pub rate: u16,
+    pub start_frame: u16,
+    pub ping_pong: bool,
+}
+
+/// BuildingType F8C..F8F, stride44. Constructor45E3BE..45E416 seeds
+/// Powered=true and the other three flags false; ReadINI has60 authored stores.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct BuildingAnimPowerFlags {
+    pub powered: bool,
+    pub powered_light: bool,
+    pub powered_effect: bool,
+    pub powered_special: bool,
+}
+
+impl Default for BuildingAnimPowerFlags {
+    fn default() -> Self {
+        Self {
+            powered: true,
+            powered_light: false,
+            powered_effect: false,
+            powered_special: false,
+        }
+    }
+}
+
+fn read_building_anim_power(section: &IniSection, records: &mut [BuildingAnimPowerFlags; 21]) {
+    for &(base, suffixes, first_slot) in BUILDING_ANIM_KEYS {
+        for (ordinal, suffix) in suffixes.iter().enumerate() {
+            let slot = usize::from(first_slot) + ordinal;
+            // No power ReadINI stores exist for PowerUps, Pre/Production or Turret.
+            if !matches!(slot, 3..=6 | 10..=20) {
+                continue;
+            }
+            let key = format!("{base}{suffix}");
+            let record = &mut records[slot];
+            for (suffix, field) in [
+                ("Powered", &mut record.powered),
+                ("PoweredLight", &mut record.powered_light),
+                ("PoweredEffect", &mut record.powered_effect),
+                ("PoweredSpecial", &mut record.powered_special),
+            ] {
+                *field = section.read_bool(&format!("{key}{suffix}"), *field);
+            }
+        }
+    }
+}
+
+/// Convert art.ini `Rate=` value to native game-logic frame delay.
+///
+/// gamemd stores `900 / INI_Rate` as the AnimType frame delay when
+/// `Rate > 0`; `Rate <= 0` stores zero.
+pub fn art_rate_to_logic_frames(ini_rate: i32) -> u16 {
+    if ini_rate < 1 {
+        return 0;
+    }
+    (900 / ini_rate as u32) as u16
+}
+
+/// AnimType `Rate=` (`AnimTypeClass::ReadINI`, `0x00427F66..0x00427F92`):
+/// `ReadInt` with a -1 default. `None` (absent, or `-1`) keeps the current
+/// frame delay; any other value replaces it with [`art_rate_to_logic_frames`].
+pub fn read_anim_rate(section: &IniSection) -> Option<i32> {
+    Some(section.read_int("Rate", -1)).filter(|&rate| rate != -1)
+}
+
+/// Convert art.ini `Rate=` value to milliseconds per frame.
+///
+/// This is an app/render convenience wrapper over the native logic-frame delay.
+/// Garrison `OccupantAnim` playback uses `art_rate_to_logic_frames` directly so
+/// the default remains one sim logic tick rather than a rounded wall-clock value.
+pub fn art_rate_to_delay_ms(ini_rate: i32) -> u32 {
+    let delay_frames: u32 = u32::from(art_rate_to_logic_frames(ini_rate));
+    if delay_frames == 0 {
+        return 0;
+    }
+    (delay_frames * 1000 / 15).max(1)
+}
+
+/// Draw-flag bits for an animation's translucency stage.
+///
+/// These are the low bits of the draw-flag word gamemd's shape drawer hands to
+/// its blitter table. The table maps them to three fixed integer blends of the
+/// 16-bit source and destination pixels — read out of the blitter scanline
+/// routines themselves, not inferred from the key names:
+///
+/// | bits | blend                       | source weight |
+/// |------|-----------------------------|---------------|
+/// | 0x2  | `3*(src>>2) + (dst>>2)`      | 3/4           |
+/// | 0x4  | `(src>>1)   + (dst>>1)`      | 1/2           |
+/// | 0x6  | `(src>>2)   + 3*(dst>>2)`    | 1/4           |
+///
+/// **`Translucency=N` therefore reads as "N percent *transparent*".** The source
+/// weight is `1 - N/100`, so `Translucency=25` is the *most* opaque of the three
+/// and `Translucency=75` the faintest. Reading the key as "N percent opaque"
+/// inverts every explosion, fire and wake in the game. `AnimClass::DrawIt`
+/// picks the stage per draw ([`crate::sim::anim_class::anim_translucency_selection`]).
+pub const ANIM_DRAW_BITS_OPAQUE: u32 = 0x0;
+/// `Translucency=25` — source contributes three quarters.
+pub const ANIM_DRAW_BITS_TRANSLUCENT_25: u32 = 0x2;
+/// `Translucency=50` — source and destination contribute equally.
+pub const ANIM_DRAW_BITS_TRANSLUCENT_50: u32 = 0x4;
+/// `Translucency=75` — source contributes one quarter.
+pub const ANIM_DRAW_BITS_TRANSLUCENT_75: u32 = 0x6;
+
+/// Which palette an animation type's frames are baked/sampled against.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnimDrawPalette {
+    /// The global ANIM.PAL conversion — the default for animation draws.
+    Anim,
+    /// The first colour scheme's converted unit palette, selected by
+    /// `AltPalette=yes`.
+    Unit,
+}
+
+/// Palette an animation type draws through, per gamemd's draw-time cascade.
+///
+/// The native cascade tries, in order: a Tiberian Sun veins branch, a per-instance
+/// cell-owned palette, an explicit per-instance palette override, and finally the
+/// global ANIM.PAL conversion — with `AltPalette=yes` swapping the unit palette in
+/// at that last step. Only the last step is decidable from the art type alone, and
+/// it is the only one a stock skirmish reaches: the veins branch is Tiberian Sun
+/// legacy with no stock YR trigger, and no stock art section sets the per-instance
+/// flags the other two key on. Those are recorded as unmodelled rather than
+/// approximated here.
+pub const fn anim_draw_palette(config: &AnimTypeRuntimeConfig) -> AnimDrawPalette {
+    if config.alt_palette {
+        AnimDrawPalette::Unit
+    } else {
+        AnimDrawPalette::Anim
+    }
+}
+
+/// Bits of a `CC_Draw_Shape` flag word that name the translucency family.
+///
+/// gamemd-derived: `AnimClass::DrawIt` loads the producer's whole flag word out
+/// of `AnimClass+0x190` (`0x0042304B MOV EBX,[ESI+0x190]`) and then ORs the
+/// selector INTO it — `0x00423075 OR EBX,0x6`, `0x0042307A OR EBX,0x4`, and the
+/// same pattern for the `Translucency=`/`Translucent=` arms further down. So a
+/// flag word carries the producer's bits (`0x600` for a trailer, `0x2600` for a
+/// combat explosion) alongside the family, and the family must be read as a
+/// masked field, never by matching the whole word.
+pub const ANIM_DRAW_BITS_TRANSLUCENCY_MASK: u32 = 0x6;
+
+/// Source-pixel weight implied by a set of translucency draw bits.
+///
+/// This is the renderer-facing form of the blitter table above: the weight the
+/// native blend gives the incoming sprite pixel. Only
+/// [`ANIM_DRAW_BITS_TRANSLUCENCY_MASK`] is consulted, so a caller may pass the
+/// complete flag word; an unset family draws opaque. Float is correct here — it
+/// is a colour-target blend factor consumed only by the render layer, never by
+/// simulation math.
+pub const fn anim_translucency_source_alpha(draw_bits: u32) -> f32 {
+    match draw_bits & ANIM_DRAW_BITS_TRANSLUCENCY_MASK {
+        ANIM_DRAW_BITS_TRANSLUCENT_25 => 0.75,
+        ANIM_DRAW_BITS_TRANSLUCENT_50 => 0.5,
+        ANIM_DRAW_BITS_TRANSLUCENT_75 => 0.25,
+        _ => 1.0,
+    }
+}
+
+fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
+    // The Ares AnimTypeExt keys are read only for Rules read the Ares way.
+    let ares_way = crate::rules::ares_switch::ares_way();
+    // `End=`/`LoopEnd=` stay unresolved until the image loads; `None` marks an
+    // absent key.
+    let explicit_end = section
+        .is_present("End")
+        .then(|| section.read_int("End", 0));
+    let explicit_loop_end = section
+        .is_present("LoopEnd")
+        .then(|| section.read_int("LoopEnd", 0));
+    AnimTypeRuntimeConfig {
+        art_body_read: true,
+        image: section.read_string("Image", &section.name, 0x19),
+        alpha_image: section.read_object_alpha_image(""),
+        start: section.read_int("Start", 0),
+        loop_start: section.read_int("LoopStart", 0),
+        loop_end: explicit_loop_end.unwrap_or(0),
+        end: explicit_end.unwrap_or(0),
+        explicit_end,
+        explicit_loop_end,
+        raw_shp_frame_count: None,
+        middle_frame: None,
+        raw_shp_height: None,
+        loop_count: section.read_int("LoopCount", 0),
+        rate_logic_frames: read_anim_rate(section)
+            .map_or(DEFAULT_ART_RATE_LOGIC_FRAMES, art_rate_to_logic_frames),
+        normalized: section.read_bool("Normalized", false),
+        tiberium_chain_reaction: section.read_bool("TiberiumChainReaction", false),
+        is_tiberium: section.read_bool("IsTiberium", false),
+        hide_if_no_ore: section.read_bool("HideIfNoOre", false),
+        #[cfg(feature = "phobos")]
+        hide_if_no_ore_threshold: crate::rules::ares_switch::not_ares_read(|| {
+            section.read_ares_int("HideIfNoOre.Threshold", 0)
+        }),
+        is_animated_tiberium: section.read_bool("IsAnimatedTiberium", false),
+        tiberium_spread_radius: section.read_int("TiberiumSpreadRadius", 0),
+        // The Type references (`TiberiumSpawnType=`, `Spawns=`, `Warhead=`,
+        // `SpawnsParticle=`, `Next=`, `BounceAnim=`, `ExpireAnim=`,
+        // `TrailerAnim=`) start null: the ordered Rules processor reads them
+        // with the AnimType's ART body, and `RuleSet` hands them over through
+        // [`ArtRegistry::apply_anim_type_references`].
+        tiberium_spawn_type: None,
+        make_infantry: section.read_int("MakeInfantry", -1),
+        #[cfg(feature = "phobos")]
+        phobos_make_infantry_owner: crate::rules::ares_switch::not_ares_read(|| {
+            crate::rules::ares_warhead::HouseSelector::Victim.read(section, "MakeInfantryOwner")
+        }),
+        ares_make_infantry_owner: if ares_way {
+            crate::rules::ares_warhead::HouseSelector::Invoker.read(section, "MakeInfantryOwner")
+        } else {
+            crate::rules::ares_warhead::HouseSelector::Invoker
+        },
+        ares_custom_palette: if ares_way {
+            crate::rules::ares_switch::ares_read(|| {
+                section.read_name("CustomPalette", 2048).map(str::to_owned)
+            })
+        } else {
+            None
+        },
+        // `CreateUnit` is a `Nullable<TechnoTypeClass*>`: `none` clears it and
+        // an authored name is a presence signal here. A name no factory
+        // resolves is treated as present (the type itself is not modeled).
+        #[cfg(feature = "phobos")]
+        phobos_create_unit: crate::rules::ares_switch::not_ares_read(|| {
+            section
+                .read_name("CreateUnit", 0x80)
+                .filter(|name| !crate::rules::ini_parser::is_native_none_type_name(name))
+                .map(|_| {
+                    (
+                        crate::rules::ares_warhead::HouseSelector::Victim
+                            .read(section, "CreateUnit.Owner"),
+                        section.read_ares_bool("CreateUnit.RemapAnim", false),
+                    )
+                })
+        }),
+        bouncer: section.read_bool("Bouncer", false),
+        spawns: None,
+        spawn_count: section.read_int("SpawnCount", 0).min(SPAWN_COUNT_LIMIT),
+        running_frames: section.read_int("RunningFrames", 0),
+        // gamemd-derived: `AnimTypeClass::ReadINI @ 0x00427D00` reads these
+        // through `CCINIClass::ReadDouble` and each defaults to the value the
+        // constructor (`AnimTypeClass::AnimTypeClass @ 0x00427530`) left.
+        damage: section.read_double_bits("Damage", ANIM_DAMAGE_DEFAULT),
+        warhead: None,
+        damage_radius: section.read_int("DamageRadius", 0),
+        elasticity: section.read_double_bits("Elasticity", ANIM_ELASTICITY_DEFAULT),
+        min_z_vel: section.read_double_bits("MinZVel", ANIM_MIN_Z_VEL_DEFAULT),
+        max_xy_vel: section.read_double_bits("MaxXYVel", ANIM_MAX_XY_VEL_DEFAULT),
+        is_meteor: section.read_bool("IsMeteor", false),
+        is_veins: section.read_bool("IsVeins", false),
+        is_flaming_guy: section.read_bool("IsFlamingGuy", false),
+        scorch: section.read_bool("Scorch", false),
+        crater: section.read_bool("Crater", false),
+        force_big_craters: section.read_bool("ForceBigCraters", false),
+        sticky: section.read_bool("Sticky", false),
+        psi_warning: section.read_bool("PsiWarning", false),
+        double_thick: section.read_bool("DoubleThick", false),
+        flamer: section.read_bool("Flamer", false),
+        spawns_particle: None,
+        num_particles: section.read_int("NumParticles", 0).min(NUM_PARTICLES_LIMIT),
+        // AnimTypeExt::LoadFromINIFile (1000A4B0) reads both Leptons through
+        // INI_EX's double (1000A6D0: cells * 256), then Damage.Delay.
+        ares_spawns_particle_range: if ares_way {
+            [
+                section.read_ares_leptons("SpawnsParticle.RangeMinimum", 0),
+                section.read_ares_leptons("SpawnsParticle.RangeMaximum", 0),
+            ]
+        } else {
+            [0, 0]
+        },
+        ares_damage_delay: if ares_way {
+            section.read_ares_int("Damage.Delay", 0)
+        } else {
+            0
+        },
+        ares_weapon: None,
+        // Both constructor defaults are 1, not 0.
+        should_fog_remove: section.read_bool("ShouldFogRemove", true),
+        should_use_cell_drawer: section.read_bool("ShouldUseCellDrawer", true),
+        detail_level: section.read_int("DetailLevel", 0),
+        next: None,
+        bounce_anim: None,
+        expire_anim: None,
+        trailer_anim: None,
+        trailer_seperation: section.read_int("TrailerSeperation", 0),
+        // ReadMinMax (`0x004280D4`) stores both ints as written
+        // (+2DC/+2E0); `None` marks an absent key.
+        random_loop_delay: section.is_present("RandomLoopDelay").then(|| {
+            let [low, high] = section.read_minmax("RandomLoopDelay", [0, 0]);
+            (low, high)
+        }),
+        random_rate_logic_frames: read_random_rate(section),
+        y_draw_offset: section.read_int("YDrawOffset", 0),
+        z_adjust: section.read_int("ZAdjust", 0),
+        // AnimType ctor42765B initializes0; ReadINI428147 uses ReadInt5276D0.
+        y_sort_adjust: section.read_int("YSortAdjust", 0),
+        layer: AnimLayer::from_ini(section),
+        flat: section.read_bool("Flat", false),
+        tiled: section.read_bool("Tiled", false),
+        translucency: section.read_int("Translucency", 0),
+        translucency_detail_level: section.read_int("TranslucencyDetailLevel", 0),
+        translucent: section.read_bool("Translucent", false),
+        alt_palette: section.read_bool("AltPalette", false),
+        // AnimTypeClass's constructor zeroes this field before the INI read and
+        // the read passes the current field back as its own default, so an
+        // omitted key leaves it false.
+        use_normal_light: section.read_bool("UseNormalLight", false),
+        shadow: section.read_bool("Shadow", false),
+        ping_pong: section.read_bool("PingPong", false),
+        reverse: section.read_bool("Reverse", false),
+        start_sound: None,
+        stop_sound: None,
+        bounce_sound: None,
+        expire_sound: None,
+    }
+}
+
+/// VERA's bound on an AnimType's or VoxelAnimType's `SpawnCount=`. Each
+/// bounce or expiry draws twice in `0..=SpawnCount` and spawns their sum of
+/// child anims one at a time, so a value near `i32::MAX` freezes the match the
+/// first time it fires; retail spawns at most 7 (`METSMALL`).
+pub(crate) const SPAWN_COUNT_LIMIT: i32 = 256;
+
+/// VERA's bound on `NumParticles=`: an anim with `SpawnsParticle=` births
+/// that many particles at once, so a value near `i32::MAX` freezes the match
+/// or exhausts memory the first time it plays; retail births at most 3
+/// (`VIRUSD`).
+pub(crate) const NUM_PARTICLES_LIMIT: i32 = 256;
+
+/// `AnimTypeClass::AnimTypeClass @ 0x00427530` constructor defaults for the four
+/// `ReadDouble` animation keys, taken from the literal dword pairs the
+/// constructor stores.
+///
+/// - `Damage`   `param_1[0xaa] = 0; param_1[0xab] = 0`            -> `0.0`
+/// - `Elasticity` `[0xc4] = 0xA0000000; [0xc5] = 0x3FE99999`      -> `0.8f` as f64
+/// - `MinZVel`  `[0xc6] = 0; [0xc7] = 0x400C0000`                 -> `3.5`
+/// - `MaxXYVel` `[0xca] = 0; [0xcb] = 0x402E0000`                 -> `15.0`
+///
+/// `Elasticity` is worth spelling out: `0x3FE99999_A0000000` is the **single**
+/// precision `0.8f` (`0x3F4CCCCD`) widened, i.e. `0.800000011920929`, not the
+/// nearest double to 0.8 (`0x3FE99999_99999999A`). That is consistent with the
+/// authored path — `CCINIClass::ReadDouble` also parses `%f` and widens — so a
+/// port that writes `0.8_f64` here starts every unauthored bouncer from a
+/// different bit pattern than gamemd.
+const ANIM_DAMAGE_DEFAULT: NativeF64Bits = NativeF64Bits::POSITIVE_ZERO;
+const ANIM_ELASTICITY_DEFAULT: NativeF64Bits = NativeF64Bits::from_bits(0x3fe9_9999_a000_0000);
+const ANIM_MIN_Z_VEL_DEFAULT: NativeF64Bits = NativeF64Bits::from_bits(0x400c_0000_0000_0000);
+const ANIM_MAX_XY_VEL_DEFAULT: NativeF64Bits = NativeF64Bits::from_bits(0x402e_0000_0000_0000);
+
+/// `RandomRate=` as `AnimTypeClass::ReadINI` stores it
+/// (`0x00428772..0x004287DC`): `ReadMinMax` with `-1,-1` defaults, each
+/// field that read something other than -1 becomes `900 / value` (0 when not
+/// positive) over the constructor's 0 (`0x004275C0`), the max is floored at
+/// 0 and the min clamped down to it. The constructor picks only when the max
+/// is non-zero (`0x004221D5`), so `None` stands for a zero max.
+fn read_random_rate(section: &IniSection) -> Option<(u16, u16)> {
+    let [low, high] = section.read_minmax("RandomRate", [-1, -1]);
+    let stored = |value: i32| match value {
+        -1 => 0,
+        value if value > 0 => 900 / value,
+        _ => 0,
+    };
+    let high = stored(high).max(0);
+    let low = stored(low).min(high);
+    (high != 0).then_some((low as u16, high as u16))
+}
+
+/// Default native frame delay when art.ini section has no `Rate=` key.
+pub const DEFAULT_ART_RATE_LOGIC_FRAMES: u16 = 1;
+
+/// A `Turret=yes` SHP Unit's turret frames in its body SHP: one per 32-step
+/// turret heading (`and eax, 0x1f` at `0x0073CCED`/`0x0073CCFE`).
+pub const SHP_TURRET_FACING_FRAMES: u16 = 32;
+
+/// Default ms-per-frame when art.ini section has no `Rate=` key.
+/// Matches gamemd constructor default of 1 game frame at ~15fps.
+pub const DEFAULT_ART_RATE_MS: u16 = 67;
+
+/// Exact object-art resolution from rules + art metadata.
+///
+/// This is the data-driven layer only. It does not generate filenames.
+#[derive(Debug, Clone)]
+pub struct ResolvedObjectArt<'a> {
+    /// Base art identity from rules `Image=` or the object type id.
+    pub base_art_id: String,
+    /// Final image id after art.ini `Image=` override.
+    pub image_id: String,
+    /// Section id whose metadata should be used for overlays/bibs/anims.
+    #[cfg(test)]
+    pub metadata_section_id: String,
+    /// Parsed art entry for the metadata section, if present.
+    pub entry: Option<&'a ArtEntry>,
+}
+
+/// Lookup table for art.ini rendering data.
+#[derive(Debug, Clone)]
+pub struct ArtRegistry {
+    /// Exact ART section -> its sole metadata entry. Both maps are only
+    /// looked up, and draws look art up for every object each frame, so they
+    /// take the lookup hasher.
+    entries: LookupMap<String, ArtEntry>,
+    /// Derived uppercase lookup -> exact entry key for legacy visual consumers.
+    /// Rebuilt with entries; preserves their former last-wins folded lookup.
+    entry_names: LookupMap<String, String>,
+    /// section ID (uppercase) -> `CanHideThings=`. Missing sections default true.
+    can_hide_things: HashMap<String, bool>,
+    /// section ID (uppercase) -> `OccupyHeight=`, defaulting to art `Height=`.
+    occupy_heights: HashMap<String, i32>,
+    /// section ID (uppercase) -> generic AnimType runtime metadata. Every
+    /// anim reads its type's here each frame, through an
+    /// [`AnimConfigHandle`] the simulation keeps per interned name.
+    anim_runtime_configs: AnimConfigs,
+    /// Each native Anim slot's immutable image projection. Unlike orphan
+    /// ART metadata, these requests came from the retained ProcessedType.
+    anim_type_images: HashMap<String, crate::rules::object_image::ObjectImageState>,
+    /// Fresh AnimType `(Theater, NewTheater)` after the Image and own ART reads.
+    anim_theater_flags: HashMap<String, (bool, bool)>,
+    /// Full deterministic Next/Trailer closure reachable from scheduler-owned roots.
+    scheduler_anim_types: BTreeSet<String>,
+    /// Derived from `anim_runtime_configs`: the keys whose anim, or an anim
+    /// it can become or make, affects play
+    /// ([`ArtRegistry::anim_presentation_only`]). Every writer of a config's
+    /// play keys or `Next=`/`TrailerAnim=`/`ExpireAnim=`/`BounceAnim=`, and
+    /// every insert, rebuilds it with
+    /// [`ArtRegistry::refresh_anim_types_affecting_play`].
+    anim_types_affecting_play: LookupSet<String>,
+    /// VERA: by AnimType key, the game-folder files whose SHP has another
+    /// frame count than the copy a retail install reads
+    /// (`retail_sources::FolderFiles`), and the ones whose image has another
+    /// height: what its bound frame count, bounds and height came from.
+    anim_folder_files: BTreeMap<String, AnimFolderFiles>,
+    /// VERA: the game-folder files whose middle frame puts a smudging
+    /// animation on the other side of [`smudge_frame_is_large`] than the
+    /// retail copy's ([`Self::populate_anim_frame_dims`]).
+    smudge_folder_files: BTreeSet<String>,
+}
+
+/// An AnimType runtime config's place in its [`ArtRegistry`]: an index, so a
+/// holder reads the config without hashing the name. Valid for every
+/// registry with the [`ArtRegistry::anim_configs_serial`] of the one that
+/// gave it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AnimConfigHandle(u32);
+
+/// VERA: the game-folder files that change what one AnimType's bound SHPs
+/// give ([`ArtRegistry::anim_folder_files`]).
+#[derive(Debug, Clone, Default)]
+struct AnimFolderFiles {
+    /// Another frame count than the retail copy's.
+    frames: BTreeSet<String>,
+    /// Another image height than the retail copy's.
+    height: BTreeSet<String>,
+}
+
+/// The one test the smudge pick makes of a scorching or cratering
+/// animation's middle frame (`AnimClass::Middle`, as
+/// `sim::smudge_grid::pick_smudge_candidate` ports it): wider than `0x3C` and
+/// taller than `0x32` takes any smudge, else a 1x1 one.
+pub(crate) const fn smudge_frame_is_large(width: i32, height: i32) -> bool {
+    0x3C < width && 0x32 < height
+}
+
+/// The AnimType runtime configs, in the order their keys first arrived, and
+/// each key's index. A config is never removed, so a key keeps its handle
+/// while the registry lives; overwriting a key's config keeps it too.
+#[derive(Debug, Clone)]
+struct AnimConfigs {
+    configs: Vec<AnimTypeRuntimeConfig>,
+    /// Uppercase key -> its config's index. Only looked up.
+    by_key: LookupMap<String, AnimConfigHandle>,
+    /// Distinct for every key -> handle layout the process makes: taken anew
+    /// when a registry is made and whenever a key is added, so a cache of
+    /// handles (and of a name's absence) knows when it is stale. A clone
+    /// keeps it, as its layout is the same.
+    serial: u64,
+}
+
+fn next_anim_configs_serial() -> u64 {
+    static SERIALS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    SERIALS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
+}
+
+impl Default for AnimConfigs {
+    fn default() -> Self {
+        Self {
+            configs: Vec::new(),
+            by_key: LookupMap::default(),
+            serial: next_anim_configs_serial(),
+        }
+    }
+}
+
+impl AnimConfigs {
+    fn handle(&self, key: &str) -> Option<AnimConfigHandle> {
+        self.by_key.get(key).copied()
+    }
+
+    fn get(&self, key: &str) -> Option<&AnimTypeRuntimeConfig> {
+        self.handle(key).map(|handle| self.by_handle(handle))
+    }
+
+    fn get_mut(&mut self, key: &str) -> Option<&mut AnimTypeRuntimeConfig> {
+        let handle = self.handle(key)?;
+        Some(&mut self.configs[handle.0 as usize])
+    }
+
+    /// A handle is valid only for the layout it came from ([`Self::serial`]):
+    /// against another layout it reads another type's config, or panics past
+    /// the end.
+    fn by_handle(&self, handle: AnimConfigHandle) -> &AnimTypeRuntimeConfig {
+        &self.configs[handle.0 as usize]
+    }
+
+    /// Store `config` under `key`, in the slot `key` already has.
+    fn insert(&mut self, key: String, config: AnimTypeRuntimeConfig) {
+        if let Some(slot) = self.get_mut(&key) {
+            *slot = config;
+        } else {
+            self.add(key, config);
+        }
+    }
+
+    /// `key`'s config, made by `make` when it has none.
+    fn get_or_insert_with(
+        &mut self,
+        key: String,
+        make: impl FnOnce() -> AnimTypeRuntimeConfig,
+    ) -> &mut AnimTypeRuntimeConfig {
+        let handle = match self.handle(&key) {
+            Some(handle) => handle,
+            None => self.add(key, make()),
+        };
+        &mut self.configs[handle.0 as usize]
+    }
+
+    /// Give `key`, which has no config, the next slot: a new layout.
+    fn add(&mut self, key: String, config: AnimTypeRuntimeConfig) -> AnimConfigHandle {
+        // An AnimType per ART section: an ART file of 2^32 sections cannot
+        // be read into memory.
+        let handle =
+            AnimConfigHandle(u32::try_from(self.configs.len()).expect("fewer than 2^32 AnimTypes"));
+        self.configs.push(config);
+        self.by_key.insert(key, handle);
+        self.serial = next_anim_configs_serial();
+        handle
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (&String, &AnimTypeRuntimeConfig)> {
+        self.by_key
+            .iter()
+            .map(|(key, &handle)| (key, self.by_handle(handle)))
+    }
+
+    #[cfg(test)]
+    fn values(&self) -> impl Iterator<Item = &AnimTypeRuntimeConfig> {
+        self.configs.iter()
+    }
+}
+
+/// An AnimType whose ART body was never read: the constructor's values, with
+/// its own name as Image.
+fn unread_anim_type_config(name: &str) -> AnimTypeRuntimeConfig {
+    let mut config = parse_anim_runtime_config(&IniSection::new(name.to_owned()));
+    config.art_body_read = false;
+    config.image = name.to_owned();
+    config
+}
+
+fn resolve_loaded_bounds(
+    raw_count: i32,
+    shadow: bool,
+    explicit_end: Option<i32>,
+    explicit_loop_end: Option<i32>,
+) -> (i32, i32) {
+    // The loader reads the header word signed (`MOVSX`, `0x00427C2D`) and
+    // stores what it gets: a count of 0 gives End, LoopEnd and Middle 0, and
+    // a word of 0x8000 and up a negative End. AnimClass::AI's frame tests are
+    // signed (`JGE`, `0x004246A7..0x00424738`), so such an anim ends at its
+    // first frame boundary.
+    let header_end = header_end(raw_count, shadow);
+    // Native copies the loader-derived End into LoopEnd before applying the
+    // explicit INI End and LoopEnd keys. ReadINI stores both as written
+    // (`0x00427FE8`, `0x0042801C`) and nothing checks them against the frame
+    // count (`0x00427C1C..0x00427C5C`, AnimClass::AI `0x0042468C`): a frame
+    // past the SHP draws nothing (`CC_Draw_Shape`, `0x0069E7F3`), as the
+    // atlas holds no key for it.
+    let loaded_end = explicit_end.unwrap_or(header_end);
+    let loaded_loop_end = explicit_loop_end.unwrap_or(header_end);
+    (loaded_end, loaded_loop_end)
+}
+
+/// The End the loader takes from a SHP header of `raw_count` frames: the back
+/// half of a `Shadow=yes` SHP holds the shadow frames.
+const fn header_end(raw_count: i32, shadow: bool) -> i32 {
+    if shadow { raw_count / 2 } else { raw_count }
+}
+
+impl AnimTypeRuntimeConfig {
+    /// AnimType `End` (`+0x2C0`), which `AnimClass::DrawIt`'s `Translucent=`
+    /// ladder divides (`0x004230AC`). A bound type carries the loaded value;
+    /// for one not yet bound, it is what binding would load from a SHP of
+    /// `shp_frame_count` frames ([`resolve_loaded_bounds`]): an explicit `End=`,
+    /// else the header count, halved for `Shadow=yes`.
+    pub fn loaded_end(&self, shp_frame_count: i32) -> i32 {
+        if self.raw_shp_frame_count.is_some() {
+            return self.end;
+        }
+        self.explicit_end
+            .unwrap_or(header_end(shp_frame_count, self.shadow))
+    }
+
+    /// The Ares `CustomPalette=` file an animation draws through, if it
+    /// authored one. Ares resolves `~~~` against the active theater; the atlas
+    /// loads the file itself, so this is the unresolved name.
+    pub fn custom_palette(&self) -> Option<&str> {
+        self.ares_custom_palette.as_deref()
+    }
+
+    /// Whether this type itself reads a key whose AnimClass effect reaches
+    /// the simulation, or keeps unread constructor state; the keys are
+    /// listed at [`ArtRegistry::anim_presentation_only`], which also follows
+    /// its chain.
+    fn affects_play(&self) -> bool {
+        let damage = self.damage.bits() & !(1 << 63) != 0;
+        #[cfg(feature = "phobos")]
+        let creates_unit = self.phobos_create_unit.is_some();
+        #[cfg(not(feature = "phobos"))]
+        let creates_unit = false;
+        !self.art_body_read
+            || damage
+            || self.ares_damage_delay != 0
+            || self.ares_weapon.is_some()
+            || self.warhead.is_some()
+            || self.spawns.is_some()
+            || self.spawns_particle.is_some()
+            || self.make_infantry != -1
+            || creates_unit
+            || self.scorch
+            || self.crater
+            || self.bouncer
+            || self.is_meteor
+            || self.is_tiberium
+            || self.is_animated_tiberium
+            || self.tiberium_chain_reaction
+            || self.tiberium_spawn_type.is_some()
+            || self.is_veins
+            || self.hide_if_no_ore
+            || self.flamer
+            || self.sticky
+            || self.psi_warning
+            || self.is_flaming_guy
+            || self.random_rate_logic_frames.is_some()
+            || self.random_loop_delay.is_some()
+    }
+}
+
+/// Hardcoded filename prefixes that always receive `NewTheater` treatment
+/// regardless of the `NewTheater=` INI key.
+const NEW_THEATER_PREFIXES: &[&str] = &["GA", "GT", "NA", "NT", "CA", "CT"];
+
+/// `repo-derived`: generic fallback letter used by original-style building art.
+const NEW_THEATER_GENERIC_LETTER: char = 'G';
+
+/// InfantryType ART prefix5246BE..52473A: four independent signed DWORDs
+/// (`FireUp=`, `FireProne=`, `SecondaryFire=`, `SecondaryProne=`; not the
+/// infantry sequences' `FireUp` action). Each ReadInt5276D0 receives its own
+/// current field, with no clamp or cast; every reached pass reads them
+/// ([`crate::rules::object_type::InfantryArt`]).
+/// Original execution: tools/spatial_oracle/infantry_discharge_rules.json.
+pub(crate) fn read_infantry_discharge_frames(section: &IniSection, frames: &mut [i32; 4]) {
+    frames[0] = section.read_int("FireUp", frames[0]);
+    frames[1] = section.read_int("FireProne", frames[1]);
+    frames[2] = section.read_int("SecondaryFire", frames[2]);
+    frames[3] = section.read_int("SecondaryProne", frames[3]);
+}
+
+impl ArtRegistry {
+    /// Parse all sections from an art.ini IniFile into the registry.
+    pub fn from_ini(ini: &IniFile) -> Self {
+        let mut entries: LookupMap<String, ArtEntry> = LookupMap::default();
+        let mut entry_names: LookupMap<String, String> = LookupMap::default();
+        let mut can_hide_things: HashMap<String, bool> = HashMap::new();
+        let mut occupy_heights: HashMap<String, i32> = HashMap::new();
+        let mut anim_runtime_configs = AnimConfigs::default();
+        let mut anim_theater_flags = HashMap::new();
+
+        for section_name in ini.section_names() {
+            let section = match ini.section(section_name) {
+                Some(s) => s,
+                None => continue,
+            };
+
+            // Text keys at their native buffers: BuildingType art `Image=`
+            // (`0x0045F945`, `char[64]`), TechnoType art `Cameo=`/`AltCameo=`
+            // (`0x00716C9C`, `0x00716D3F`, `char[256]`).
+            let image: Option<String> = section.read_name("Image", 0x40).map(str::to_owned);
+            let cameo: Option<String> = section.read_name("Cameo", 0x100).map(str::to_owned);
+            let alt_cameo: Option<String> = section.read_name("AltCameo", 0x100).map(str::to_owned);
+            let cameo_pcx = section.read_ares_pcx_filename("CameoPCX");
+            let alt_cameo_pcx = section.read_ares_pcx_filename("AltCameoPCX");
+            let cameo_palette = crate::rules::ares_switch::ares_read(|| {
+                section.read_name("CameoPalette", 2048).map(str::to_owned)
+            });
+            let new_theater: bool = section.read_bool("NewTheater", false);
+            let theater: bool = section.read_bool("Theater", false);
+            let scorch: bool = section.read_bool("Scorch", false);
+            let crater: bool = section.read_bool("Crater", false);
+            let force_big_craters: bool = section.read_bool("ForceBigCraters", false);
+            let voxel: bool = section.read_bool("Voxel", false);
+            let turret_offset: i32 = section.read_int("TurretOffset", 0);
+            let y_draw_offset: i32 = section.read_int("YDrawOffset", 0);
+            let x_draw_offset: i32 = section.read_int("XDrawOffset", 0);
+            let building_anims: Vec<BuildingAnimConfig> = parse_building_anims(section, ini);
+            let foundation = section
+                .is_present("Foundation")
+                .then(|| crate::rules::foundation::read_foundation(section, 0));
+            let bib_shape: Option<String> = section.read_name("BibShape", 0x40).map(str::to_owned);
+            let palette: Option<String> = section
+                .read_name("Palette", 0x20)
+                .map(str::to_ascii_lowercase);
+            let sequence: Option<String> = section.read_name("Sequence", 0x20).map(str::to_owned);
+            // Pull per-phase frame counts from the referenced sequence section
+            // (e.g. GuardianGISequence::Deploy=300,15,0 -> deploy_frames=15).
+            let sequence_frames = |key: &str| {
+                let seq_section = ini.section(sequence.as_deref()?)?;
+                if !seq_section.is_present(key) {
+                    return None;
+                }
+                let entry = crate::rules::infantry_sequence::read_sequence(
+                    seq_section,
+                    key,
+                    crate::rules::infantry_sequence::InfantrySequenceEntry::default(),
+                );
+                u16::try_from(entry.frames_per_facing).ok()
+            };
+            let (deploy_frames, undeploy_frames, deployed_fire_frames) = (
+                sequence_frames("Deploy"),
+                sequence_frames("Undeploy"),
+                sequence_frames("DeployedFire"),
+            );
+            let second_spawn_offset = Flh::from(section.read_coord3("SecondSpawnOffset", [0; 3]));
+            // ReadMinMax (`0x00461305`, `0x00461332`); `None` marks an absent key.
+            let present_pair = |key: &str| {
+                section.is_present(key).then(|| {
+                    let [x, y] = section.read_minmax(key, [0, 0]);
+                    (x, y)
+                })
+            };
+            let primary_fire_pixel_offset = present_pair("PrimaryFirePixelOffset");
+            let secondary_fire_pixel_offset = present_pair("SecondaryFirePixelOffset");
+            let primary_fire_dual_offset = section.read_bool("PrimaryFireDualOffset", false);
+            // BuildingTypeClass's constructor supplies false/0 and ReadINI
+            // preserves the signed delay verbatim. The runtime consumer is
+            // BuildingClass::Mission_Attack @ 0x0044ACF0.
+            let is_anim_delayed_fire = section.read_bool("IsAnimDelayedFire", false);
+            let delayed_fire_delay = section.read_int("DelayedFireDelay", 0);
+
+            // SHP vehicle frame tags (only meaningful when Voxel=no for vehicles).
+            let present_frames = |key: &str| {
+                section
+                    .is_present(key)
+                    .then(|| section.read_int(key, 0).max(0) as u16)
+            };
+            let walk_frames: Option<u16> = present_frames("WalkFrames");
+            let firing_frames: Option<u16> = present_frames("FiringFrames");
+            let standing_frames: Option<u16> = present_frames("StandingFrames");
+            let shp_facings: u8 = section.read_int("Facings", 8).clamp(1, 32) as u8;
+            let anim_runtime_config = parse_anim_runtime_config(section);
+            // ObjectType::ReadINI5F92D0 selects the one-hop Image25 ART.
+            // This is a fresh AnimType: its base reader skips LoadSHP for
+            // RTTI5 (428E50), and427D00 can read its own theater flags before
+            // any shape resolves. Later Process reads depend on actual shape
+            // success and remain outside this fresh metadata projection.
+            let mut anim_image = crate::rules::object_image::ObjectImageState::new(&section.name);
+            anim_image.read_ini(
+                section,
+                ini,
+                crate::rules::object_image::ObjectImageKind::Animation,
+                crate::rules::object_image::ImageTheater::Uninitialized,
+            );
+            anim_image.read_anim_theater_flags(section);
+            let (anim_theater, anim_new_theater) = (anim_image.theater(), anim_image.new_theater());
+            let extra_light: i32 = section.read_int("ExtraLight", 0);
+            let queueing_cell = section.read_minmax("QueueingCell", [0, 0]);
+            // Native sizes the pad array by NumberOfDocks, zero-fills new slots
+            // (0x0046496F..0x0046499B), then reads each `DockingOffset%d=` by
+            // its slot index with the slot as default (Read3Int at 0x00464A02,
+            // loop 0x004649AF..0x00464A41), so an absent key keeps a zero pad
+            // at its index. NumberOfDocks is a rules key, so this reads slots
+            // 0..7 up to the last present one and the art→rules merge in
+            // ruleset.rs truncates or zero-pads to NumberOfDocks. RESIDUAL: a
+            // mod with NumberOfDocks > 8 loses DockingOffset8+ (retail uses 4).
+            let offsets: [Option<[i32; 3]>; 8] =
+                std::array::from_fn(|i| section.read_coord3_value(&format!("DockingOffset{i}")));
+            let present = offsets
+                .iter()
+                .rposition(Option::is_some)
+                .map_or(0, |last| last + 1);
+            let pads: Vec<crate::rules::object_type::DockPad> = offsets[..present]
+                .iter()
+                .map(|offset| {
+                    let [x, y, z] = offset.unwrap_or([0, 0, 0]);
+                    crate::rules::object_type::DockPad {
+                        lepton_offset: (x, y, z),
+                    }
+                })
+                .collect();
+            // `DamageFireOffset%d=` (`0x0046039D..0x0046046B`): ReadMinMax over
+            // a `0xFFFF,0xFFFF` sentinel, stopping at the first slot that
+            // keeps it.
+            let damage_fire_offsets: Vec<DamageFireOffset> = {
+                const UNSET: [i32; 2] = [0xFFFF, 0xFFFF];
+                let mut offsets = Vec::new();
+                for i in 0..8 {
+                    let [x, y] = section.read_minmax(&format!("DamageFireOffset{i}"), UNSET);
+                    if [x, y] == UNSET {
+                        break;
+                    }
+                    // Building damage fires convert it with
+                    // `TacticalClass::IsometricPixelToWorld` (`0x0043C152` calls
+                    // `0x006D2070`), whose one port takes every signed value.
+                    let (world_dx, world_dy) =
+                        PixelConversionBounds::isometric_pixel_to_leptons(x, y);
+                    offsets.push(DamageFireOffset {
+                        pixel_x: x,
+                        pixel_y: y,
+                        world_dx,
+                        world_dy,
+                    });
+                }
+                offsets
+            };
+            // An absent `Height=` leaves the BuildingTypeClass constructor's own
+            // value, which is 2 — the ctor stores a literal 2 into the height
+            // field, and ReadINI passes the current field as the INI default, so
+            // a section that omits the key keeps it. 187 of the 568 stock art
+            // sections carrying a `Foundation=` omit `Height=`, including every
+            // garrisonable city building, so defaulting to 0 collapsed their
+            // selection bracket box onto the ground plane and put their health
+            // bar and pips at ground level instead of roof level.
+            //
+            // No stock art section authors `Height=0`, so this changes only the
+            // absent case.
+            let height: i32 = section.read_int("Height", 2);
+            let can_hide: bool = section.read_bool("CanHideThings", true);
+            // BuildingTypeClass reads Height first, then passes that resolved
+            // field value as the default for OccupyHeight.
+            let occupy_height: i32 = section.read_int("OccupyHeight", height);
+            // `MuzzleFlash%d=` is ReadMinMax (`0x0046033F`) for every index
+            // below MaxNumberOccupants (`0x00460285..0x00460382`): it reads
+            // past a missing index, and (0xFFFF, 0xFFFF), the default, becomes
+            // (0, 0). The type holds ten. Residual: a MaxNumberOccupants above
+            // ten overruns that array natively; no retail type sets one.
+            let muzzle_flash_positions: Vec<(i32, i32)> = (0..10)
+                .map(
+                    |i| match section.read_minmax(&format!("MuzzleFlash{i}"), [0xFFFF, 0xFFFF]) {
+                        [0xFFFF, 0xFFFF] => (0, 0),
+                        [x, y] => (x, y),
+                    },
+                )
+                .collect();
+            let add_occupy = parse_numbered_cell_offsets(section, "AddOccupy");
+            let remove_occupy = parse_numbered_cell_offsets(section, "RemoveOccupy");
+            let [z_shape_x, z_shape_y] = section.read_minmax("ZShapePointMove", [0, 0]);
+            let z_shape_point_move: (i32, i32) = (z_shape_x, z_shape_y);
+            let normal_z_adjust: i32 = section.read_int("NormalZAdjust", 0);
+
+            let section_key = section_name.to_uppercase();
+            can_hide_things.insert(section_key.clone(), can_hide);
+            occupy_heights.insert(section_key.clone(), occupy_height);
+            anim_runtime_configs.insert(section_name.to_ascii_uppercase(), anim_runtime_config);
+            anim_theater_flags.insert(section_key.clone(), (anim_theater, anim_new_theater));
+            entry_names.insert(section_key, section_name.to_owned());
+            entries.insert(
+                section_name.to_owned(),
+                ArtEntry {
+                    image,
+                    cameo,
+                    alt_cameo,
+                    cameo_pcx,
+                    alt_cameo_pcx,
+                    cameo_palette,
+                    new_theater,
+                    theater,
+                    scorch,
+                    crater,
+                    force_big_craters,
+                    frame_width: 30,
+                    frame_height: 30,
+                    voxel,
+                    turret_offset,
+                    y_draw_offset,
+                    x_draw_offset,
+                    building_anims,
+                    building_anim_power: {
+                        let mut records = [BuildingAnimPowerFlags::default(); 21];
+                        read_building_anim_power(section, &mut records);
+                        records
+                    },
+                    building_gate_stages: section.read_int("GateStages", 9),
+                    building_body_ranges: ["AnimIdle", "AnimActive", "AnimAux1", "AnimAux2"]
+                        .map(|key| read_building_body_range(section, key)),
+                    buildup: Some(section.read_string("Buildup", "", 16))
+                        .filter(|name| !name.is_empty()),
+                    foundation,
+                    bib_shape,
+                    factory_door: FactoryDoorArt::read(section),
+                    palette,
+                    sequence,
+                    second_spawn_offset,
+                    primary_fire_pixel_offset,
+                    secondary_fire_pixel_offset,
+                    primary_fire_dual_offset,
+                    is_anim_delayed_fire,
+                    silo_damage: section.read_bool("SiloDamage", false),
+                    delayed_fire_delay,
+                    walk_frames,
+                    firing_frames,
+                    standing_frames,
+                    shp_facings,
+                    extra_light,
+                    terrain_palette: section.read_bool("TerrainPalette", false),
+                    use_buffer: section.read_bool("UseBuffer", false),
+                    disable_voxel_cache: section.read_bool("DisableVoxelCache", false),
+                    disable_shadow_cache: section.read_bool("DisableShadowCache", false),
+                    can_be_hidden: section.read_bool("CanBeHidden", true),
+                    queueing_cell,
+                    pads,
+                    damage_fire_offsets,
+                    height,
+                    muzzle_flash_positions,
+                    add_occupy,
+                    remove_occupy,
+                    deploy_frames,
+                    undeploy_frames,
+                    deployed_fire_frames,
+                    z_shape_point_move,
+                    normal_z_adjust,
+                    building_double_thick: section.read_bool("DoubleThick", false),
+                },
+            );
+        }
+
+        log::info!("ArtRegistry: {} entries loaded from art.ini", entries.len());
+        let mut registry = ArtRegistry {
+            entries,
+            entry_names,
+            can_hide_things,
+            occupy_heights,
+            anim_runtime_configs,
+            anim_type_images: HashMap::new(),
+            anim_theater_flags,
+            scheduler_anim_types: BTreeSet::new(),
+            anim_types_affecting_play: LookupSet::default(),
+            anim_folder_files: BTreeMap::new(),
+            smudge_folder_files: BTreeSet::new(),
+        };
+        registry.refresh_anim_types_affecting_play();
+        registry
+    }
+
+    /// Create an empty registry (used when art.ini is unavailable).
+    pub fn empty() -> Self {
+        ArtRegistry {
+            entries: LookupMap::default(),
+            entry_names: LookupMap::default(),
+            can_hide_things: HashMap::new(),
+            occupy_heights: HashMap::new(),
+            anim_runtime_configs: AnimConfigs::default(),
+            anim_type_images: HashMap::new(),
+            anim_theater_flags: HashMap::new(),
+            scheduler_anim_types: BTreeSet::new(),
+            anim_types_affecting_play: LookupSet::default(),
+            anim_folder_files: BTreeMap::new(),
+            smudge_folder_files: BTreeSet::new(),
+        }
+    }
+
+    /// Look up art entry for an image ID (case-insensitive).
+    pub fn get(&self, image_id: &str) -> Option<&ArtEntry> {
+        folded_entry_name(&self.entry_names, image_id).and_then(|name| self.entries.get(name))
+    }
+
+    /// Native Foundation474DA0 uses exact section/key identity. The cached
+    /// present value came from that shared reader during construction; missing
+    /// retains its supplied current index. No visual case folding participates.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn read_foundation(&self, section: &str, current: u8) -> u8 {
+        self.entries
+            .get(section)
+            .and_then(|entry| entry.foundation)
+            .unwrap_or(current)
+    }
+
+    /// Generic native-like AnimType runtime metadata for an art section.
+    /// AnimType names match as `AnimTypeClass::FindOrAllocate` compares them
+    /// (`_strcmpi`, `0x007C8D20`, whose C-locale path folds ASCII letters
+    /// only), so the map is keyed and read with the ASCII uppercase, as the
+    /// binders and the processing receipt write it.
+    pub fn anim_runtime_config(&self, image_id: &str) -> Option<&AnimTypeRuntimeConfig> {
+        with_ascii_uppercase(image_id, |key| self.anim_runtime_configs.get(key))
+    }
+
+    /// VERA: what an AnimType's SHP decides for the simulation once bound:
+    /// its frame count and the End, LoopEnd and middle frame taken from it,
+    /// for every type that affects play ([`Self::anim_presentation_only`]
+    /// refuses it) and every type in `paced`, which a simulation owner
+    /// waits on though it changes nothing but its picture; in name order.
+    /// A type with no bound image folds as unbound. The other types' frames
+    /// stay out, as a match presents them outside the simulation
+    /// (`Simulation::effect_anim_constructor`), and so do the image's name,
+    /// its size and every other field of a config: what
+    /// `RuleSet::file_inputs_hash` folds of the animations.
+    pub(crate) fn fold_anim_frame_bounds<'a>(
+        &self,
+        paced: impl IntoIterator<Item = &'a str>,
+        state: &mut impl std::hash::Hasher,
+    ) {
+        use std::hash::Hash;
+        let names = self.anims_read_for_play(paced);
+        names.len().hash(state);
+        for name in names {
+            let bounds = self.anim_runtime_configs.get(&name).map(|config| {
+                (
+                    config.raw_shp_frame_count,
+                    config.middle_frame,
+                    config.end,
+                    config.loop_end,
+                )
+            });
+            (name, bounds).hash(state);
+        }
+    }
+
+    /// The keys of the AnimTypes whose frames the simulation reads: every
+    /// type that affects play and every one in `paced`.
+    fn anims_read_for_play<'a>(
+        &self,
+        paced: impl IntoIterator<Item = &'a str>,
+    ) -> BTreeSet<String> {
+        let mut names: BTreeSet<String> = self.anim_types_affecting_play.iter().cloned().collect();
+        names.extend(
+            paced
+                .into_iter()
+                .filter(|name| !name.is_empty())
+                .map(str::to_ascii_uppercase),
+        );
+        names
+    }
+
+    /// VERA: the game-folder files that change what the simulation reads of
+    /// the animations: another frame count for an AnimType whose frames it
+    /// reads ([`Self::fold_anim_frame_bounds`]'s types, with `paced` as
+    /// there), another image height for `measured` (the weather bolt), and
+    /// a smudging frame on the other side of the size test
+    /// ([`Self::fold_smudge_frame_classes`]).
+    pub(crate) fn anim_folder_files<'a>(
+        &self,
+        paced: impl IntoIterator<Item = &'a str>,
+        measured: Option<&str>,
+    ) -> BTreeSet<&str> {
+        let mut files: BTreeSet<&str> = self
+            .anims_read_for_play(paced)
+            .iter()
+            .filter_map(|name| self.anim_folder_files.get(name))
+            .flat_map(|files| &files.frames)
+            .map(String::as_str)
+            .collect();
+        files.extend(
+            measured
+                .and_then(|name| self.anim_folder_files.get(&name.to_ascii_uppercase()))
+                .into_iter()
+                .flat_map(|files| &files.height)
+                .map(String::as_str),
+        );
+        files.extend(self.smudge_folder_files.iter().map(String::as_str));
+        files
+    }
+
+    /// VERA: for each animation whose middle frame leaves a smudge picked by
+    /// its frame size, whether that frame is large
+    /// ([`smudge_frame_is_large`]), the one thing the pick reads of it; in
+    /// name order. `ForceBigCraters=` picks by the smudge's own size. What
+    /// `RuleSet::file_inputs_hash` folds of the smudges.
+    pub(crate) fn fold_smudge_frame_classes(&self, state: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        self.iter_entries()
+            .filter(|(_, entry)| (entry.scorch || entry.crater) && !entry.force_big_craters)
+            .map(|(name, entry)| {
+                (
+                    name,
+                    smudge_frame_is_large(
+                        i32::from(entry.frame_width),
+                        i32::from(entry.frame_height),
+                    ),
+                )
+            })
+            .collect::<std::collections::BTreeMap<_, _>>()
+            .hash(state);
+    }
+
+    /// The frame size each scorching or cratering animation took from its
+    /// SHP's middle frame, which selects the smudge it leaves, with the keys
+    /// that make it one, in name order.
+    pub(crate) fn fold_smudge_anim_dims(&self, state: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        self.iter_entries()
+            .filter(|(_, entry)| entry.scorch || entry.crater || entry.force_big_craters)
+            .map(|(name, entry)| {
+                (
+                    name.to_string(),
+                    (
+                        entry.scorch,
+                        entry.crater,
+                        entry.force_big_craters,
+                        entry.frame_width,
+                        entry.frame_height,
+                    ),
+                )
+            })
+            .collect::<std::collections::BTreeMap<_, _>>()
+            .hash(state);
+    }
+
+    /// The handle of the config [`Self::anim_runtime_config`] answers for
+    /// `image_id`, matched the same way.
+    pub fn anim_config_handle(&self, image_id: &str) -> Option<AnimConfigHandle> {
+        with_ascii_uppercase(image_id, |key| self.anim_runtime_configs.handle(key))
+    }
+
+    /// The config `handle` names.
+    ///
+    /// A handle is valid only under the `&RuleSet` borrow it was read from:
+    /// against a registry of another [`Self::anim_configs_serial`] it reads
+    /// another type's config, or panics past the end. Callers that keep
+    /// handles check that serial (`TypeHandleTable`).
+    #[inline]
+    pub fn anim_config(&self, handle: AnimConfigHandle) -> &AnimTypeRuntimeConfig {
+        self.anim_runtime_configs.by_handle(handle)
+    }
+
+    /// The identity of this registry's name -> [`AnimConfigHandle`] layout:
+    /// it changes when a registry is made and whenever an AnimType gains a
+    /// config, so a cache of handles, and of names that have none, is current
+    /// exactly while it matches. Editing a config keeps it, as handles still
+    /// read the edited config.
+    pub fn anim_configs_serial(&self) -> u64 {
+        self.anim_runtime_configs.serial
+    }
+
+    /// Whether an anim of type `image_id` changes nothing but its own picture,
+    /// so it may run as a presentation anim
+    /// (`sim::anim_class::AnimConstructorInput::Presentation`). VERA-only.
+    ///
+    /// Such a type reads none of the keys whose AnimClass effects reach the
+    /// simulation: `Damage=` and Ares `Damage.Delay`/`Weapon=`, `Warhead=`,
+    /// `Spawns=`, `SpawnsParticle=`, `MakeInfantry=` and Phobos `CreateUnit=`,
+    /// `Scorch=`/`Crater=`, `Bouncer=`, `IsMeteor=`, the tiberium and vein
+    /// keys, `HideIfNoOre=`, `Flamer=`, `Sticky=`, `PsiWarning=` and the flaming
+    /// guy; nor `RandomRate=` or `RandomLoopDelay=`, whose draws take the
+    /// Scenario stream. Every anim it can become or make (`Next=`,
+    /// `TrailerAnim=`, `ExpireAnim=`, `BounceAnim=`) must be one too. A type
+    /// whose ART body was never read keeps constructor state and is refused.
+    /// A name with no AnimType constructs nothing, in the simulation or out of
+    /// it, so it counts as presentation only; so does a type that reaches
+    /// itself again down its chain without meeting one that affects play.
+    pub fn anim_presentation_only(&self, image_id: &str) -> bool {
+        with_ascii_uppercase(image_id, |key| {
+            !self.anim_types_affecting_play.contains(key)
+        })
+    }
+
+    /// Rebuild [`Self::anim_types_affecting_play`]: the types that affect
+    /// play themselves, then, walking `Next=`/`TrailerAnim=`/`ExpireAnim=`/
+    /// `BounceAnim=` backwards, every type that can become or make one. A
+    /// link to a name with no AnimType leads nowhere. One pass over the
+    /// configs and their links, whatever their chains or cycles.
+    fn refresh_anim_types_affecting_play(&mut self) {
+        // Child key (looked up as its ASCII uppercase, as the configs are
+        // keyed) -> the types that name it.
+        let mut parents: LookupMap<String, Vec<&str>> = LookupMap::default();
+        let mut pending = Vec::new();
+        for (key, config) in self.anim_runtime_configs.iter() {
+            if config.affects_play() {
+                pending.push(key.as_str());
+            }
+            for child in [
+                &config.next,
+                &config.trailer_anim,
+                &config.expire_anim,
+                &config.bounce_anim,
+            ]
+            .into_iter()
+            .flatten()
+            {
+                parents
+                    .entry(child.to_ascii_uppercase())
+                    .or_default()
+                    .push(key.as_str());
+            }
+        }
+        let mut affecting: LookupSet<String> = pending.iter().map(|&key| key.to_owned()).collect();
+        while let Some(key) = pending.pop() {
+            for &parent in parents.get(key).into_iter().flatten() {
+                if affecting.insert(parent.to_owned()) {
+                    pending.push(parent);
+                }
+            }
+        }
+        self.anim_types_affecting_play = affecting;
+    }
+
+    /// Apply the canonical RulesClass processing receipt before asset binding.
+    /// Building/weapon references allocated after the AnimType sweep retain
+    /// constructor state even when a same-named ART section exists.
+    pub fn apply_anim_type_read_states(&mut self, states: &[(String, bool)]) {
+        // Read every ART template before publishing any constructor-only
+        // slot, which must not overwrite a later twin's reached ART body.
+        let configs: Vec<_> = states
+            .iter()
+            .map(|(name, read)| {
+                if *read {
+                    self.anim_runtime_config(name).cloned()
+                } else {
+                    Some(unread_anim_type_config(name))
+                }
+            })
+            .collect();
+        let keys = anim_type_runtime_keys(states.iter().map(|(name, _)| name.as_str()));
+        for (key, config) in keys.zip(configs) {
+            if let Some(config) = config {
+                self.anim_runtime_configs
+                    .insert(key.to_ascii_uppercase(), config);
+            }
+        }
+        self.refresh_anim_types_affecting_play();
+    }
+
+    /// Install the process owner's image projection after the separate ART
+    /// receipt. AnimTypeLoad428855 may supply requests while that receipt is
+    /// still false; neither projection executes another reader or factory.
+    pub(crate) fn apply_anim_type_image_states(
+        &mut self,
+        states: &[(String, crate::rules::object_image::ObjectImageState)],
+    ) {
+        self.anim_type_images.clear();
+        let keys = anim_type_runtime_keys(states.iter().map(|(name, _)| name.as_str()));
+        for (key, (_, image)) in keys.zip(states) {
+            let key = key.to_ascii_uppercase();
+            if let Some(config) = self.anim_runtime_configs.get_mut(&key) {
+                config.image = image.image().to_owned();
+            }
+            self.anim_type_images.insert(key, image.clone());
+        }
+    }
+
+    /// None is an unregistered resource consumer; Some(empty) is a real
+    /// native AnimType whose image loader has not been reached.
+    pub(crate) fn anim_image_loads(
+        &self,
+        name: &str,
+    ) -> Option<&[crate::rules::object_image::ObjectImageLoad]> {
+        self.anim_type_images
+            .get(&name.to_ascii_uppercase())
+            .map(|image| image.shp_loads())
+    }
+
+    /// Apply the canonical RulesClass processing receipt's AnimType references
+    /// ([`AnimTypeReferences`]), in AnimType registry order. Each slot has the
+    /// same identity as [`Self::apply_anim_type_read_states`]; a type whose
+    /// ART body was never read carries the constructor's nulls.
+    ///
+    /// [`AnimTypeReferences`]: crate::rules::native_processing::AnimTypeReferences
+    pub(crate) fn apply_anim_type_references(
+        &mut self,
+        states: &[(String, crate::rules::native_processing::AnimTypeReferences)],
+    ) {
+        let keys = anim_type_runtime_keys(states.iter().map(|(name, _)| name.as_str()));
+        for (key, (_, references)) in keys.zip(states) {
+            if let Some(config) = self.anim_runtime_configs.get_mut(&key.to_ascii_uppercase()) {
+                references.apply_to(config);
+            }
+        }
+        self.refresh_anim_types_affecting_play();
+    }
+
+    /// Animation types whose complete raw SHP ranges must be available to the
+    /// scheduler-owned runtime.
+    pub fn scheduler_anim_types(&self) -> &BTreeSet<String> {
+        &self.scheduler_anim_types
+    }
+
+    /// The start (+2F8) and stop (+2FC) sound slots the rules processor
+    /// would publish, for a raw fixture that skips it.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_anim_sounds_for_test(
+        &mut self,
+        name: &str,
+        start: Option<&str>,
+        stop: Option<&str>,
+    ) {
+        let config = self
+            .anim_runtime_configs
+            .get_mut(&name.to_ascii_uppercase())
+            .expect("test animation section must exist");
+        config.start_sound = start.map(str::to_ascii_uppercase);
+        config.stop_sound = stop.map(str::to_ascii_uppercase);
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn bind_anim_frame_count_for_test(&mut self, name: &str, raw_count: i32) {
+        let key = name.to_ascii_uppercase();
+        let config = self
+            .anim_runtime_configs
+            .get_mut(&key)
+            .expect("test animation section must exist");
+        let (loaded_end, loaded_loop_end) = resolve_loaded_bounds(
+            raw_count,
+            config.shadow,
+            config.explicit_end,
+            config.explicit_loop_end,
+        );
+        config.raw_shp_frame_count = Some(raw_count);
+        config.middle_frame = Some(raw_count / 2);
+        config.end = loaded_end;
+        config.loop_end = loaded_loop_end;
+        self.scheduler_anim_types.insert(key);
+    }
+
+    /// The SHP header height `+4` asset binding would read for `name`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn bind_anim_shp_height_for_test(&mut self, name: &str, raw_height: i32) {
+        self.anim_runtime_configs
+            .get_mut(&name.to_ascii_uppercase())
+            .expect("test animation section must exist")
+            .raw_shp_height = Some(raw_height);
+    }
+
+    /// Bind registered combat-explosion roots to the common animation runtime.
+    /// Canonical processing records whether each AnimType reached fixed-ART
+    /// ReadINI. Unread types retain constructor End0/LoopEnd0/Rate1:427D22 exits
+    /// before427DDD's image loader, and the lazy bounds gates require End=-1.
+    /// They still construct real AnimClass identities and enter Logic; the
+    /// first-AI guard runs before their later expiration. Orphan SHP files do
+    /// not authorize asset loading or drawing for these types.
+    ///
+    /// Missing registered ART is therefore handled by the canonical receipt,
+    /// not this loader. A name with no AnimType stays unbound and is counted
+    /// for the caller; this pass does not create a second AnimType registry.
+    ///
+    /// Follows each bound type's `Next=`/`TrailerAnim=` like the strict binder,
+    /// so a chained type has loader-derived bounds when the store switches to
+    /// it. A name with no AnimType ends its chain here.
+    pub fn bind_anim_class_assets(
+        &mut self,
+        roots: &[String],
+        asset_manager: &crate::assets::asset_manager::AssetManager,
+        theater_ext: &str,
+        theater_name: &str,
+    ) -> usize {
+        let mut skipped = 0;
+        let mut pending: VecDeque<String> = roots
+            .iter()
+            .map(|root| root.to_ascii_uppercase())
+            .filter(|name| !name.is_empty())
+            .collect();
+        let mut visited = BTreeSet::new();
+        while let Some(name) = pending.pop_front() {
+            if !visited.insert(name.clone()) || self.scheduler_anim_types.contains(&name) {
+                continue;
+            }
+            let Some(config) = self.anim_runtime_configs.get(&name).cloned() else {
+                skipped += 1;
+                log::warn!("AnimClass animation [{name}] has no AnimType and will draw nothing");
+                continue;
+            };
+            self.bind_one_anim_asset(&name, &config, asset_manager, theater_ext, theater_name);
+            pending.extend(config.next.iter().cloned());
+            pending.extend(config.trailer_anim.iter().cloned());
+            pending.extend(config.bounce_anim.iter().cloned());
+            pending.extend(config.expire_anim.iter().cloned());
+            pending.extend(config.spawns.iter().cloned());
+            self.scheduler_anim_types.insert(name);
+        }
+        skipped
+    }
+
+    /// Resolve one animation's SHP and write the loader-derived bounds back into
+    /// its runtime config, `config`, which the map holds under `name`. Shared
+    /// by the strict and tolerant binders.
+    fn bind_one_anim_asset(
+        &mut self,
+        name: &str,
+        config: &AnimTypeRuntimeConfig,
+        asset_manager: &crate::assets::asset_manager::AssetManager,
+        theater_ext: &str,
+        theater_name: &str,
+    ) {
+        let image_id = self.resolve_anim_image_id(name);
+        let candidates = effect_shp_candidates(
+            crate::rules::art_data::EffectImageKind::Animation,
+            Some(self),
+            name,
+            &image_id,
+            theater_ext,
+            theater_name,
+        );
+        let folder = crate::rules::retail_sources::FolderFiles::new(asset_manager);
+        let word = |bytes: &[u8], offset: usize| {
+            bytes
+                .get(offset..offset + 2)
+                .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]))
+        };
+        let mut folder_files = AnimFolderFiles::default();
+        let data = candidates.iter().find_map(|candidate| {
+            let (bytes, file) = folder.read(candidate)?;
+            if let Some(file) = file {
+                let shipped = folder.shipped(candidate);
+                if shipped.map(|shipped| word(shipped, 6)) != Some(word(bytes, 6)) {
+                    folder_files.frames.insert(file.clone());
+                }
+                if shipped.map(|shipped| word(shipped, 4)) != Some(word(bytes, 4)) {
+                    folder_files.height.insert(file);
+                }
+            }
+            Some(bytes)
+        });
+        if !config.art_body_read && data.is_none() {
+            // Fresh unread types and saved own-name misses are valid null
+            // images (AnimRead427D22 / AnimTypeLoad428955).
+            self.anim_folder_files.remove(name);
+            return;
+        }
+        let header_word = |data: Option<&[u8]>, offset: usize| {
+            data.and_then(|data| data.get(offset..offset + 2))
+                .map(|bytes| i32::from(i16::from_le_bytes([bytes[0], bytes[1]])))
+                .unwrap_or(0)
+        };
+        let raw_count = header_word(data, 6);
+        if !config.art_body_read {
+            // AnimTypeLoad428855 binds physical bytes without427B50: keep
+            // constructor End/LoopEnd/Middle0, including after resave/load.
+            let bound = self.anim_runtime_configs.get_mut(name).unwrap();
+            bound.raw_shp_frame_count = Some(raw_count);
+            bound.raw_shp_height = Some(header_word(data, 4));
+            bound.middle_frame = Some(0);
+            self.note_anim_folder_files(name, folder_files);
+            return;
+        }
+        // Read_Map4AD092 / MouseLoad5BE689 -> InitTheater427940 can replace
+        // Shape after427B50 wrote End/LoopEnd/Middle. Bind that earlier image
+        // for those numbers; drawing and image dimensions use the final one.
+        let bounds_data = match self
+            .anim_type_images
+            .get(name)
+            .and_then(|image| image.anim_bounds_loads())
+        {
+            Some(loads) => loads
+                .iter()
+                .flat_map(|load| load.shp_names(theater_ext, theater_name))
+                .find_map(|candidate| {
+                    folder.read_noting(&candidate, |bytes| word(bytes, 6), &mut folder_files.frames)
+                }),
+            None => data,
+        };
+        let bounds_count = header_word(bounds_data, 6);
+        let (mut loaded_end, mut loaded_loop_end) = if bounds_data.is_some() {
+            resolve_loaded_bounds(
+                bounds_count,
+                config.shadow,
+                config.explicit_end,
+                config.explicit_loop_end,
+            )
+        } else {
+            //427C1A skips numeric writes on a null resolver image. Explicit
+            // ART reads still occur, and Start/Middle can spawn particles.
+            (
+                config.explicit_end.unwrap_or(0),
+                config.explicit_loop_end.unwrap_or(0),
+            )
+        };
+        let mut middle = bounds_count / 2;
+        if let Some(loads) = self
+            .anim_type_images
+            .get(name)
+            .and_then(|image| image.anim_theater_bounds_loads())
+            && let Some(post_data) = loads
+                .iter()
+                .flat_map(|load| load.shp_names(theater_ext, theater_name))
+                .find_map(|candidate| {
+                    folder.read_noting(&candidate, |bytes| word(bytes, 6), &mut folder_files.frames)
+                })
+        {
+            // The NewTheater arm427A1E calls427B50 again after the explicit
+            // ART bounds reads: fill only zero End/LoopEnd, always write
+            // Middle. Earlier successful generic bounds survive this call.
+            let post_count = header_word(Some(post_data), 6);
+            let (post_end, _) = resolve_loaded_bounds(post_count, config.shadow, None, None);
+            if loaded_end == 0 {
+                loaded_end = post_end;
+            }
+            if loaded_loop_end == 0 {
+                loaded_loop_end = loaded_end;
+            }
+            middle = post_count / 2;
+        }
+        let bound = self.anim_runtime_configs.get_mut(name).unwrap();
+        bound.raw_shp_frame_count = Some(raw_count);
+        bound.raw_shp_height = Some(header_word(data, 4));
+        bound.middle_frame = Some(middle);
+        bound.end = loaded_end;
+        bound.loop_end = loaded_loop_end;
+        self.note_anim_folder_files(name, folder_files);
+    }
+
+    /// Replace what [`Self::anim_folder_files`] holds for `name`.
+    fn note_anim_folder_files(&mut self, name: &str, folder_files: AnimFolderFiles) {
+        if folder_files.frames.is_empty() && folder_files.height.is_empty() {
+            self.anim_folder_files.remove(name);
+        } else {
+            self.anim_folder_files.insert(name.to_owned(), folder_files);
+        }
+    }
+
+    /// Bind native loader-derived End/LoopEnd values for the transitive
+    /// Next/Trailer closure rooted at the supplied animation names.
+    ///
+    /// A root no AnimType holds is a theater `Tile%02dAnim=` name that nothing
+    /// else names. `Read_Theater_TileSets_INI` passes it to
+    /// `AnimTypeClass::FindOrAllocate` (`0x00546538`), which builds a new
+    /// type (`0x00428BD6..0x00428BEA`). The map read that does this
+    /// (`0x006879FF`) comes after `RulesClass::Process` read the ART
+    /// (`0x0068774F`), so the type keeps its constructor values, like any
+    /// unread type, and draws nothing. Residual: such a name with an ART
+    /// section of its own binds with that section read. gamemd reads it only
+    /// in game mode 5, whose `RulesClass::Process(TMCJ4F.INI)` runs after the
+    /// map read (`0x00687B18..0x00687B76`), and keeps the constructor values
+    /// otherwise. Only mod data does this: every retail `Tile%02dAnim=` name
+    /// is in `[Animations]`.
+    pub fn bind_scheduler_anim_assets(
+        &mut self,
+        roots: &[String],
+        asset_manager: &crate::assets::asset_manager::AssetManager,
+        theater_ext: &str,
+        theater_name: &str,
+    ) {
+        let mut pending: VecDeque<String> = roots
+            .iter()
+            .map(|name| name.to_ascii_uppercase())
+            .filter(|name| !name.is_empty())
+            .collect();
+        let mut resolved = BTreeSet::new();
+        let mut gained_config = false;
+
+        while let Some(name) = pending.pop_front() {
+            if !resolved.insert(name.clone()) {
+                continue;
+            }
+            let config = self
+                .anim_runtime_configs
+                .get_or_insert_with(name.clone(), || {
+                    gained_config = true;
+                    unread_anim_type_config(&name)
+                })
+                .clone();
+            self.bind_one_anim_asset(&name, &config, asset_manager, theater_ext, theater_name);
+
+            if let Some(next) = config.next {
+                pending.push_back(next);
+            }
+            if let Some(trailer) = config.trailer_anim {
+                pending.push_back(trailer);
+            }
+            // A bouncing chunk's `BounceAnim=` and `ExpireAnim=`
+            // (`AnimClass::ProcessBounceResult 0x004239CE`, `AnimClass::AI
+            // 0x00423E70`).
+            if let Some(bounce) = config.bounce_anim {
+                pending.push_back(bounce);
+            }
+            if let Some(expire) = config.expire_anim {
+                pending.push_back(expire);
+            }
+            //AnimAI423F37..423FC4 constructs landing children as AnimClass.
+            if let Some(child) = config.spawns {
+                pending.push_back(child);
+            }
+        }
+
+        self.scheduler_anim_types = resolved;
+        // Only a new config can change the set, and map load binds one
+        // authored anim at a time.
+        if gained_config {
+            self.refresh_anim_types_affecting_play();
+        }
+    }
+
+    /// Hidden-occupancy gate from the art.ini object-type-ID section.
+    /// The building type constructor defaults this to true.
+    pub fn can_hide_things(&self, type_id: &str) -> bool {
+        self.can_hide_things
+            .get(&type_id.to_uppercase())
+            .copied()
+            .unwrap_or(true)
+    }
+
+    /// A TechnoType's `UseBuffer=`, from the ART section named by its exact
+    /// type ID ([`ArtEntry::use_buffer`]); false without that section.
+    pub fn use_buffer(&self, type_id: &str) -> bool {
+        self.exact_entry(type_id)
+            .is_some_and(|entry| entry.use_buffer)
+    }
+
+    /// A TechnoType's `DisableVoxelCache=`, from the ART section named by its
+    /// exact type ID; false without that section.
+    pub fn disable_voxel_cache(&self, type_id: &str) -> bool {
+        self.exact_entry(type_id)
+            .is_some_and(|entry| entry.disable_voxel_cache)
+    }
+
+    /// A TechnoType's `DisableShadowCache=`, read the same way.
+    pub fn disable_shadow_cache(&self, type_id: &str) -> bool {
+        self.exact_entry(type_id)
+            .is_some_and(|entry| entry.disable_shadow_cache)
+    }
+
+    /// The ART section named by `type_id` exactly, with no case folding or
+    /// Image redirect: the section the flags above read.
+    pub fn exact_entry(&self, type_id: &str) -> Option<&ArtEntry> {
+        self.entries.get(type_id)
+    }
+
+    /// A TechnoType's `CanBeHidden=`, from the ART section named by its exact
+    /// type ID ([`ArtEntry::can_be_hidden`]); the constructor's true without
+    /// that section.
+    pub fn can_be_hidden(&self, type_id: &str) -> bool {
+        self.entries
+            .get(type_id)
+            .is_none_or(|entry| entry.can_be_hidden)
+    }
+
+    /// A TechnoType's custom palette name (`Palette=`, `+0xDD0`) from the ART
+    /// section its ImageFile names (`+0x1F8`: the rules `Image=`, else the type
+    /// ID). `TechnoTypeClass::ReadINI` reads it with ReadString, capacity
+    /// 0x20, on `0x00887180` under `ESI = this+0x1F8` (`0x007157B5`,
+    /// `0x0071582B..0x0071584B`); the constructor clears it (`0x007116A7`).
+    pub fn techno_palette(&self, image: &str) -> Option<&str> {
+        self.entries
+            .get(image)
+            .and_then(|entry| entry.palette.as_deref())
+    }
+
+    /// Hidden-occupancy height from art.ini `OccupyHeight=`.
+    /// art.ini comments define the absent-key fallback as the section `Height=`;
+    /// missing sections fall back to 2, the documented building-art default.
+    pub fn occupy_height(&self, image_id: &str) -> i32 {
+        self.occupy_heights
+            .get(&image_id.to_uppercase())
+            .copied()
+            .unwrap_or(2)
+    }
+
+    /// Resolve the hidden-counter profile from its two distinct ART sections:
+    /// `CanHideThings` belongs to the object type ID, while height and numbered
+    /// offsets belong to the effective rules `Image=` section.
+    pub fn building_hidden_occupancy_profile(
+        &self,
+        type_id: &str,
+        image_id: &str,
+    ) -> BuildingHiddenOccupancyProfile {
+        let image_entry = self.get(image_id);
+        BuildingHiddenOccupancyProfile {
+            can_hide_things: self.can_hide_things(type_id),
+            occupy_height: self.occupy_height(image_id),
+            add_occupy: image_entry
+                .map(|entry| entry.add_occupy)
+                .unwrap_or([None; HIDDEN_OCCUPY_SLOT_COUNT]),
+            remove_occupy: image_entry
+                .map(|entry| entry.remove_occupy)
+                .unwrap_or([None; HIDDEN_OCCUPY_SLOT_COUNT]),
+        }
+    }
+
+    /// Number of entries in the registry.
+    pub fn len(&self) -> usize {
+        self.entry_names.len()
+    }
+
+    /// Whether the registry is empty.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Get (x_draw_offset, y_draw_offset) for an object type. Returns (0, 0) if unknown.
+    pub fn draw_offsets(&self, type_id: &str) -> (i32, i32) {
+        self.get(type_id)
+            .map(|e| (e.x_draw_offset, e.y_draw_offset))
+            .unwrap_or((0, 0))
+    }
+
+    /// Resolve exact object-art identities from rules/art data only.
+    pub fn resolve_object_art<'a>(
+        &'a self,
+        type_id: &str,
+        rules_image: &str,
+    ) -> ResolvedObjectArt<'a> {
+        let type_upper: String = type_id.to_uppercase();
+        let base_art_id: String = normalize_id(rules_image).unwrap_or_else(|| type_upper.clone());
+        let image_id: String = self
+            .get(&base_art_id)
+            .and_then(|entry| normalize_id(entry.image.as_deref().unwrap_or_default()))
+            .unwrap_or_else(|| base_art_id.clone());
+
+        let metadata_section_id: String = if self.get(&base_art_id).is_some() {
+            base_art_id.clone()
+        } else if self.get(&type_upper).is_some() {
+            type_upper.clone()
+        } else {
+            image_id.clone()
+        };
+        let entry: Option<&ArtEntry> = self.get(&metadata_section_id);
+
+        ResolvedObjectArt {
+            base_art_id,
+            image_id,
+            #[cfg(test)]
+            metadata_section_id,
+            entry,
+        }
+    }
+
+    /// Resolve the art metadata section for an object.
+    pub fn resolve_metadata_entry<'a>(
+        &'a self,
+        type_id: &str,
+        rules_image: &str,
+    ) -> Option<&'a ArtEntry> {
+        // `resolve_object_art`'s entry without building its owned ids: the
+        // rules Image's section, else the type's own. Draws ask this for
+        // every object each frame. Uppercasing an ASCII id twice changes
+        // nothing; other ids take the full path.
+        let image = rules_image.trim();
+        if !(type_id.is_ascii() && image.is_ascii()) {
+            return self.resolve_object_art(type_id, rules_image).entry;
+        }
+        let base = if image.is_empty() { type_id } else { image };
+        self.get(base).or_else(|| self.get(type_id))
+    }
+
+    /// Resolve the effective image id for an object.
+    pub fn resolve_effective_image_id(&self, type_id: &str, rules_image: &str) -> String {
+        self.resolve_object_art(type_id, rules_image).image_id
+    }
+
+    /// Animation image identity from its own exact ART body, never an Image
+    /// redirect's metadata or a whitespace-normalized type section. The native
+    /// loader @ 0x00427BA5 falls back to the literal type ID when Image is empty.
+    /// An unread type keeps its constructor image name, including after a
+    /// saved load supplies that own-name SHP without reading an ART alias.
+    pub fn resolve_anim_image_id(&self, anim_type: &str) -> String {
+        self.anim_runtime_config(anim_type)
+            .map(|config| config.image.as_str())
+            .filter(|image| !image.is_empty())
+            .unwrap_or(anim_type)
+            .to_ascii_uppercase()
+    }
+
+    /// Resolve the declared cameo id for an object.
+    ///
+    /// gamemd-derived: `TechnoTypeClass::ReadINI @ 0x00712170` reads art
+    /// `Cameo=` from the section named by `ImageFile` (`+0x1F8`), which
+    /// `ObjectTypeClass::ReadINI` reads from the rules `Image=` key with the
+    /// retained Image as default, initially the type ID (`0x005F9335`).
+    /// The read at `0x0071599F` takes the
+    /// section from `LEA ESI,[EBP+0x1F8]` (`0x007157B5`); the art section's
+    /// own `Image=` redirect is never the cameo section. Building's later
+    /// `InitTheater @ 0x0045F230` reads that redirect at `0x0045F945` into a
+    /// separate filename without changing ImageFile. Stock: `[MTNK]`
+    /// (`Image=GTNK`) shows `GTNKICON`, not `[MTNK]`'s `MTNKICON`, and
+    /// `[YENGINEER]` (`Image=ENGINEER`) shows `ENGNICON`.
+    ///
+    /// The savegame reload (`0x007162F0`, `Cameo` reads `0x00716C9C` and
+    /// `0x00716CD4`) retries the type-ID section when the image section
+    /// has no `Cameo=`; that fallback is kept as the second lookup. Neither
+    /// path substitutes `AltCameo=` (a separate field, `+0x710`). A type that
+    /// declares no `Cameo=` has none (`None`): the first read's default is
+    /// empty (`0x0071599A`) and an empty name skips the file load
+    /// (`0x007159CD`) for the stock `XXICON.SHP` (`0x00715A4F`); the reload's
+    /// default is `XXICON` itself (`0x00716C86`).
+    pub fn resolve_declared_cameo_id(&self, type_id: &str, rules_image: &str) -> Option<String> {
+        let resolved: ResolvedObjectArt<'_> = self.resolve_object_art(type_id, rules_image);
+        let type_upper: String = type_id.to_uppercase();
+
+        for key in [resolved.base_art_id.as_str(), type_upper.as_str()] {
+            if let Some(cameo) = self
+                .get(key)
+                .and_then(|entry| normalize_id(entry.cameo.as_deref().unwrap_or_default()))
+            {
+                return Some(cameo);
+            }
+        }
+
+        None
+    }
+
+    /// A type's `AltCameo=` image (`+0x710`), if declared. Both of gamemd's
+    /// reads take it from the image section (`+0x1F8`):
+    /// `TechnoTypeClass::ReadINI` (`0x00715A73`) and the savegame reload
+    /// (`0x00716D3F`), which, unlike its `Cameo=` read, retries no type-ID
+    /// section.
+    pub fn resolve_declared_alt_cameo_id(
+        &self,
+        type_id: &str,
+        rules_image: &str,
+    ) -> Option<String> {
+        let resolved: ResolvedObjectArt<'_> = self.resolve_object_art(type_id, rules_image);
+        self.get(&resolved.base_art_id)
+            .and_then(|entry| normalize_id(entry.alt_cameo.as_deref().unwrap_or_default()))
+    }
+
+    /// Normal and promoted Ares PCX filenames, including their extensions.
+    /// Ares3.0 reads the rules ImageFile section1003E81F..1003E856, without
+    /// following the art section's own Image redirect or retrying the type ID.
+    pub fn resolve_declared_pcx_cameos(
+        &self,
+        type_id: &str,
+        rules_image: &str,
+    ) -> [Option<&str>; 2] {
+        let resolved = self.resolve_object_art(type_id, rules_image);
+        let entry = self.get(&resolved.base_art_id);
+        [
+            entry.and_then(|entry| entry.cameo_pcx.as_deref()),
+            entry.and_then(|entry| entry.alt_cameo_pcx.as_deref()),
+        ]
+    }
+
+    /// The type's Ares `CameoPalette`, from the same ImageFile section as its
+    /// PCX cameos.
+    pub fn resolve_declared_cameo_palette(&self, type_id: &str, rules_image: &str) -> Option<&str> {
+        let resolved = self.resolve_object_art(type_id, rules_image);
+        self.get(&resolved.base_art_id)
+            .and_then(|entry| entry.cameo_palette.as_deref())
+    }
+
+    /// Resolve the declared palette id for an asset, if any.
+    pub fn resolve_declared_palette_id(&self, type_id: &str, rules_image: &str) -> Option<String> {
+        let resolved: ResolvedObjectArt<'_> = self.resolve_object_art(type_id, rules_image);
+        let type_upper: String = type_id.to_uppercase();
+
+        for key in [type_upper.as_str(), resolved.image_id.as_str()] {
+            if let Some(entry) = self.get(key)
+                && let Some(ref pal) = entry.palette
+            {
+                return Some(pal.clone());
+            }
+        }
+
+        None
+    }
+
+    /// Check whether `NewTheater` substitution should be applied.
+    fn should_use_new_theater(&self, upper_image: &str) -> bool {
+        if has_hardcoded_new_theater_prefix(upper_image) {
+            return true;
+        }
+        self.get(upper_image)
+            .map(|e| e.new_theater)
+            .unwrap_or(false)
+    }
+
+    /// Iterate all entries with their canonical (uppercase) name keys.
+    pub fn iter_entries(&self) -> impl Iterator<Item = (&str, &ArtEntry)> {
+        self.entry_names
+            .iter()
+            .map(|(key, name)| (key.as_str(), &self.entries[name]))
+    }
+
+    /// Every normal/damaged/garrisoned name reachable from an instantiated
+    /// Building+55C slot. Bind these through the ordinary AnimClass asset owner.
+    pub fn building_anim_roots(&self) -> Vec<String> {
+        let mut roots = BTreeSet::new();
+        for (_, entry) in self.iter_entries() {
+            for config in &entry.building_anims {
+                for name in [
+                    Some(config.anim_type.as_str()),
+                    config
+                        .damaged_variant
+                        .as_ref()
+                        .map(|v| v.anim_type.as_str()),
+                    config
+                        .garrisoned_variant
+                        .as_ref()
+                        .map(|v| v.anim_type.as_str()),
+                ]
+                .into_iter()
+                .flatten()
+                .filter(|name| !name.is_empty())
+                {
+                    roots.insert(name.to_ascii_uppercase());
+                }
+            }
+        }
+        roots.into_iter().collect()
+    }
+
+    /// Project the retained BuildingType record, even when its current Image
+    /// has no ART section. Names/offsets never come from a second flat read.
+    /// Legacy frame fields use their existing defaults: actual AnimClass
+    /// timing comes from its registered AnimType runtime owner on allocation.
+    pub fn building_power_up_config(
+        &self,
+        slot: u8,
+        record: &crate::rules::building_upgrade::BuildingPowerUpArt,
+    ) -> BuildingAnimConfig {
+        let empty = IniFile::empty();
+        power_up_config(slot, record, |name| {
+            parse_building_anim_variant(name.to_owned(), &empty)
+        })
+    }
+
+    /// Mutable lookup; case-insensitive on the key.
+    pub fn get_mut(&mut self, image_id: &str) -> Option<&mut ArtEntry> {
+        let name = folded_entry_name(&self.entry_names, image_id)?;
+        self.entries.get_mut(name)
+    }
+
+    /// Eagerly populate `frame_width`/`frame_height` on entries whose anim has
+    /// a smudge-spawn flag (Crater/Burn/ForceBigCraters). Reads the middle
+    /// frame (the raw frame count halved) of each anim's SHP via the shared
+    /// `effect_shp_candidates` filename pipeline. Anims without a loadable SHP
+    /// keep the (30, 30) defaults from their initial parse.
+    ///
+    /// Returns `(populated, fallback)` for diagnostic logging:
+    ///   `populated` = anims whose SHP was found and dims were stored
+    ///   `fallback`  = smudge-flagged anims whose SHP failed to load
+    pub fn populate_anim_frame_dims(
+        &mut self,
+        asset_manager: &crate::assets::asset_manager::AssetManager,
+        theater_ext: &str,
+        theater_name: &str,
+    ) -> (u32, u32) {
+        // Two-pass: collect (name, image_id) under &self, then mutate via
+        // get_mut. Direct iter_mut would conflict with the &self call to
+        // resolve_anim_image_id.
+        let pending: Vec<(String, String, bool)> = self
+            .iter_entries()
+            .filter(|(_name, entry)| entry.crater || entry.scorch || entry.force_big_craters)
+            .map(|(name, entry)| {
+                let image_id: String = self.resolve_anim_image_id(name);
+                // The smudge pick reads this frame's size
+                // ([`Self::fold_smudge_frame_classes`]).
+                let sized = (entry.scorch || entry.crater) && !entry.force_big_craters;
+                (name.to_string(), image_id, sized)
+            })
+            .collect();
+
+        let mut populated: u32 = 0;
+        let mut fallback: u32 = 0;
+        let mut folder_files = BTreeSet::new();
+        let folder = crate::rules::retail_sources::FolderFiles::new(asset_manager);
+        let middle_frame_is_large = |bytes: &[u8]| {
+            let shp = crate::assets::shp_file::ShpFile::from_bytes(bytes).ok()?;
+            let frame = shp.frames.get(shp.frames.len() / 2)?;
+            Some(smudge_frame_is_large(
+                i32::from(frame.frame_width),
+                i32::from(frame.frame_height),
+            ))
+        };
+        for (name, image_id, sized) in pending {
+            let candidates: Vec<String> = effect_shp_candidates(
+                crate::rules::art_data::EffectImageKind::Animation,
+                Some(self),
+                &name,
+                &image_id,
+                theater_ext,
+                theater_name,
+            );
+            let shp_bytes: Option<&[u8]> = candidates.iter().find_map(|c| {
+                if sized {
+                    folder.read_noting(c, middle_frame_is_large, &mut folder_files)
+                } else {
+                    asset_manager.get_ref(c)
+                }
+            });
+            let Some(data) = shp_bytes else {
+                fallback += 1;
+                continue;
+            };
+            let Ok(shp) = crate::assets::shp_file::ShpFile::from_bytes(data) else {
+                fallback += 1;
+                continue;
+            };
+            let Some(frame) = shp.frames.get(shp.frames.len() / 2) else {
+                fallback += 1;
+                continue;
+            };
+            let fw = frame.frame_width;
+            let fh = frame.frame_height;
+            if let Some(entry) = self.get_mut(&name) {
+                entry.frame_width = fw;
+                entry.frame_height = fh;
+                populated += 1;
+            } else {
+                fallback += 1;
+            }
+        }
+        self.smudge_folder_files = folder_files;
+        (populated, fallback)
+    }
+}
+
+/// Generate filename candidates for standard SHP objects.
+///
+/// `repo-derived`: candidate ordering mirrors the original-style behavior already
+/// used by the repo. Inputs must already be exact resolved ids.
+pub fn object_shp_candidates(
+    art: Option<&ArtRegistry>,
+    image_id: &str,
+    theater_ext: &str,
+    theater_name: &str,
+) -> Vec<String> {
+    let upper: String = image_id.to_uppercase();
+    let mut candidates: Vec<String> = Vec::with_capacity(6);
+    let use_new_theater: bool = art
+        .map(|registry| registry.should_use_new_theater(&upper))
+        .unwrap_or_else(|| has_hardcoded_new_theater_prefix(&upper));
+
+    if use_new_theater {
+        let subbed: String = apply_theater_letter(&upper, theater_name);
+        push_shp_pair(&mut candidates, &subbed, theater_ext);
+
+        let generic: String = apply_generic_letter(&upper);
+        if generic != subbed && generic != upper {
+            push_shp_pair(&mut candidates, &generic, theater_ext);
+        }
+    }
+
+    push_shp_pair(&mut candidates, &upper, theater_ext);
+    candidates
+}
+
+/// Generate filename candidates for animation SHPs.
+///
+/// gamemd-derived. `AnimTypeClass::LoadImageAndResolveFrameBounds @
+/// 0x00427B50` builds `<Image or ID>.SHP` for a `Theater=no` type, passes it to
+/// `FUN_005F96B0` (which replaces the second letter with the theater's, only
+/// for names matching `[GNCY][AT]`, and does nothing for theater `-1`, the
+/// value `ReadINI` passes), loads it, and on a miss lets `FUN_005F9710` force
+/// the second letter to `G` unconditionally and retries. The theater pass at
+/// `0x00427940` (map load, `MouseClass::Load`, the random map generator)
+/// reloads a `NewTheater` image through the type's vt+0xA0 and a `Theater=yes`
+/// one as `<ID>.<theater extension>`, else `.SHP`. `0x00427A80` has no caller.
+/// Fresh types inherit `Theater`/`NewTheater` from the one-hop Image section
+/// in ObjectType::ReadINI5F92D0, then AnimType::ReadINI427D00 applies recognized
+/// own-section values. Missing, empty or invalid bools preserve the inherited
+/// value. Thus CAMOV02_AD inherits CAMOV02_A's NewTheater flag while retaining
+/// its own animation bounds. Original controls: rules_oracle/anim_theater_flags.
+/// This registry models fresh reads, not rereads with an already resident image.
+///
+/// Particle images are a separate native family (ParticleType WhatAmI645920).
+/// Registering a same-named Anim cannot replace their resource requests.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum EffectImageKind {
+    Animation,
+    Particle,
+}
+
+/// Registered AnimTypes use only their retained native read/load/postpass
+/// requests. Unregistered ART/resource callers retain the compatibility
+/// filename policy below, including its existing loose-asset leniency.
+pub fn effect_shp_candidates(
+    kind: EffectImageKind,
+    art: Option<&ArtRegistry>,
+    anim_type: &str,
+    image_id: &str,
+    theater_ext: &str,
+    theater_name: &str,
+) -> Vec<String> {
+    if kind == EffectImageKind::Animation
+        && let Some(registry) = art
+    {
+        if let Some(loads) = registry.anim_image_loads(anim_type) {
+            return loads
+                .iter()
+                .flat_map(|load| load.shp_names(theater_ext, theater_name))
+                .collect();
+        }
+        if registry
+            .anim_runtime_config(anim_type)
+            .is_some_and(|config| !config.art_body_read)
+        {
+            return Vec::new();
+        }
+    }
+    // Unregistered ART/resource consumers retain their compatibility naming.
+    // Actual AnimTypes above use only the sole native owner's reached plan.
+    let upper_anim: String = anim_type.to_uppercase();
+    let upper_image: String = image_id.to_uppercase();
+    let (uses_theater, uses_new_theater) = art
+        .and_then(|registry| registry.anim_theater_flags.get(&upper_anim))
+        .copied()
+        .unwrap_or_default();
+    let mut candidates: Vec<String> = Vec::with_capacity(6);
+
+    if !uses_theater {
+        let [substituted, generic] = theater_shp_names(&upper_image, theater_name);
+        let first: String = if uses_new_theater {
+            substituted
+        } else {
+            upper_image.clone()
+        };
+        push_candidate(&mut candidates, format!("{}.SHP", first));
+        push_candidate(&mut candidates, format!("{}.SHP", generic));
+        if uses_new_theater {
+            push_candidate(
+                &mut candidates,
+                format!("{}.{}", first, theater_ext.to_ascii_uppercase()),
+            );
+        }
+    }
+
+    if uses_theater {
+        push_candidate(
+            &mut candidates,
+            format!("{}.{}", upper_image, theater_ext.to_ascii_uppercase()),
+        );
+    }
+    push_candidate(&mut candidates, format!("{}.SHP", upper_image));
+    if !uses_theater {
+        push_candidate(
+            &mut candidates,
+            format!("{}.{}", upper_image, theater_ext.to_ascii_uppercase()),
+        );
+    }
+
+    candidates
+}
+
+/// Generate VXL/HVA filenames for a voxel model.
+pub fn voxel_asset_names(image_id: &str) -> (String, String) {
+    let upper: String = image_id.to_uppercase();
+    (format!("{}.VXL", upper), format!("{}.HVA", upper))
+}
+
+/// Building animation key names and their suffixes.
+const BUILDING_ANIM_KEYS: &[(&str, &[&str], u8)] = &[
+    ("PowerUp1Anim", &[""], 0),
+    ("PowerUp2Anim", &[""], 1),
+    ("PowerUp3Anim", &[""], 2),
+    ("ActiveAnim", &["", "Two", "Three", "Four"], 3),
+    ("PreProductionAnim", &[""], 7),
+    ("ProductionAnim", &[""], 8),
+    ("SpecialAnim", &["", "Two", "Three", "Four"], 10),
+    ("SuperAnim", &["", "Two", "Three", "Four"], 14),
+    ("IdleAnim", &[""], 18),
+    ("LowPower", &[""], 19),
+    ("SuperLowPower", &[""], 20),
+];
+
+/// `BuildingTypeClass::ReadINI @ 0x0045FE50` stores each slot's normal,
+/// `<Key>Damaged` and `<Key>Garrisoned` names in `char[16]` fields at
+/// `Type+0xF4C + 0x44*slot` (`+0x00`, `+0x10`, `+0x20`), copying a ReadString
+/// result only when it is non-empty. After the damaged read, and again after the
+/// garrisoned read, a field that is still empty takes a copy of the normal name
+/// (`strlen(field) == 0` → `strcpy(field, normal)`), so every consumer of the
+/// damaged or garrisoned name sees the normal animation when the art declares no
+/// variant. The copies, damaged then garrisoned, per slot:
+///
+/// - 3–6 `ActiveAnim`, `…Two`, `…Three`, `…Four`: `0x0046186E`/`0x00461908`,
+///   `0x00461B1C`/`0x00461BB6`, `0x00461DCA`/`0x00461E64`, `0x00462078`/`0x00462112`
+/// - 7 `PreProductionAnim`: `0x004642D6`/`0x00464370`
+/// - 8 `ProductionAnim`: `0x00463DF2`/`0x00463E8C`
+/// - 9 `TurretAnim`: `0x004644FD`/`0x00464594`
+/// - 10–13 `SpecialAnim`, `…Two`, `…Three`, `…Four`: `0x00462DDE`/`0x00462E78`,
+///   `0x0046308C`/`0x00463126`, `0x0046333A`/`0x004633D4`, `0x004635E8`/`0x00463682`
+/// - 14–17 `SuperAnim`, `…Two`, `…Three`, `…Four`: `0x00462326`/`0x004623C0`,
+///   `0x004625D4`/`0x0046266E`, `0x00462882`/`0x0046291C`, `0x00462B30`/`0x00462BCA`
+/// - 18 `IdleAnim`: `0x00464028`/`0x004640C2`
+/// - 19 `LowPower`: `0x00463896`/`0x00463930`
+/// - 20 `SuperLowPower`: `0x00463B44`/`0x00463BDE`
+///
+/// The PowerUp1..3 loop (`0x00464758..0x00464928`) has no such copy.
+///
+/// Slot 9 has no ART key and no row here: ReadINI fills its record from the
+/// rules INI (`0x00464450..0x00464632`), which [`building_turret_anim_config`]
+/// ports, and it has no power-flag reads.
+/// Retail ART declares no `TurretAnim`, and the eight `Turret=yes` types in
+/// RULESMD and the MP mode INIs all set `TurretAnimIsVoxel=true`, so stock
+/// play builds no slot-9 animation by name.
+fn parse_building_anims(section: &IniSection, ini: &IniFile) -> Vec<BuildingAnimConfig> {
+    let mut anims: Vec<BuildingAnimConfig> = Vec::new();
+
+    for &(base, suffixes, first_slot) in BUILDING_ANIM_KEYS {
+        if first_slot < 3 {
+            // Immutable declarations serve asset-root discovery only. Reuse
+            // the native reader; runtime consumers use the retained Type row.
+            let mut record = crate::rules::building_upgrade::BuildingPowerUpArt::default();
+            record.read_pass(section, usize::from(first_slot));
+            anims.push(power_up_config(first_slot, &record, |name| {
+                parse_building_anim_variant(name.to_owned(), ini)
+            }));
+            continue;
+        }
+        let kind: BuildingAnimKind = match base {
+            "ActiveAnim" => BuildingAnimKind::Active,
+            "IdleAnim" => BuildingAnimKind::Idle,
+            "SuperAnim" => BuildingAnimKind::Super,
+            "SpecialAnim" => BuildingAnimKind::Special,
+            "ProductionAnim" => BuildingAnimKind::Production,
+            _ => BuildingAnimKind::Special,
+        };
+        for (ordinal, &suffix) in suffixes.iter().enumerate() {
+            let key: String = format!("{}{}", base, suffix);
+            // Each anim name reads into `char[16]` (`0x004617CF` and its 56
+            // siblings); an empty variant takes the normal name.
+            let anim_type = section.read_string(&key, "", 0x10);
+            let damaged = section
+                .read_name(&format!("{key}Damaged"), 0x10)
+                .unwrap_or(anim_type.as_str());
+            let garrisoned = section
+                .read_name(&format!("{key}Garrisoned"), 0x10)
+                .unwrap_or(anim_type.as_str());
+            if anim_type.is_empty() && damaged.is_empty() && garrisoned.is_empty() {
+                continue;
+            }
+
+            let x_key = format!("{key}X");
+            let y_key = format!("{key}Y");
+            let z_key = format!("{key}ZAdjust");
+            let sort_key = format!("{key}YSort");
+            let x: i32 = section.read_int(&x_key, 0);
+            let y: i32 = section.read_int(&y_key, 0);
+            let y_sort: i32 = section.read_int(&sort_key, 0);
+            let z_adjust: i32 = section.read_int(&z_key, 0);
+
+            let base_variant = parse_building_anim_variant(anim_type.clone(), ini);
+            let variant = |name: &str| {
+                (!name.is_empty()).then(|| parse_building_anim_variant(name.to_owned(), ini))
+            };
+
+            anims.push(BuildingAnimConfig {
+                native_slot: first_slot + ordinal as u8,
+                anim_type: base_variant.anim_type,
+                damaged_variant: variant(damaged),
+                garrisoned_variant: variant(garrisoned),
+                kind,
+                is_primary: suffix.is_empty(),
+                x,
+                y,
+                y_sort,
+                z_adjust,
+                loop_start: base_variant.loop_start,
+                loop_end: base_variant.loop_end,
+                loop_count: base_variant.loop_count,
+                rate: base_variant.rate,
+                start_frame: base_variant.start_frame,
+                ping_pong: base_variant.ping_pong,
+            });
+        }
+    }
+
+    anims
+}
+
+fn parse_building_anim_variant(anim_type: String, ini: &IniFile) -> BuildingAnimVariantConfig {
+    let anim_section = ini.section_or_empty(&anim_type);
+    BuildingAnimVariantConfig {
+        loop_start: anim_section.read_int("LoopStart", 0) as u16,
+        loop_end: anim_section.read_int("LoopEnd", 0) as u16,
+        loop_count: anim_section.read_int("LoopCount", 0),
+        rate: read_anim_rate(anim_section).map_or(DEFAULT_ART_RATE_MS, |rate| {
+            art_rate_to_delay_ms(rate) as u16
+        }),
+        start_frame: anim_section.read_int("Start", 0) as u16,
+        ping_pong: anim_section.read_bool("PingPong", false),
+        anim_type,
+    }
+}
+
+fn power_up_config(
+    slot: u8,
+    record: &crate::rules::building_upgrade::BuildingPowerUpArt,
+    variant: impl Fn(&str) -> BuildingAnimVariantConfig,
+) -> BuildingAnimConfig {
+    let normal = variant(record.normal_name());
+    let [x, y, z_adjust] = record.location();
+    BuildingAnimConfig {
+        native_slot: slot,
+        anim_type: normal.anim_type,
+        damaged_variant: record.damaged_name().map(variant),
+        garrisoned_variant: None,
+        kind: BuildingAnimKind::Special,
+        is_primary: true,
+        x,
+        y,
+        y_sort: record.y_sort(),
+        z_adjust,
+        loop_start: normal.loop_start,
+        loop_end: normal.loop_end,
+        loop_count: normal.loop_count,
+        rate: normal.rate,
+        start_frame: normal.start_frame,
+        ping_pong: normal.ping_pong,
+    }
+}
+
+/// Slot 9's record, which `BuildingTypeClass::ReadINI` fills from the type's
+/// own rules section, not from ART (`0x00464450..0x00464632`): `TurretAnim`
+/// and `TurretAnimDamaged` into `char[16]` (`+0x11B0`, `+0x11C0`), an empty
+/// damaged name taking the normal one (`0x004644FD`), then `TurretAnimX`, `Y`,
+/// `ZAdjust` and `YSort` (`+0x11E0..+0x11EC`). The loop and rate fields keep
+/// their defaults, as for a PowerUp slot: `AnimClass` reads its own type.
+///
+/// RESIDUAL: `TurretAnimGarrisoned` (`0x00464553`, read from the rules section
+/// the type's image names) is not read, so the garrisoned name is the normal
+/// one, as natively without the key (`0x00464594`). Trigger: a garrisonable
+/// building with an SHP turret and that key; effect: an occupied one keeps its
+/// normal turret. No retail type sets it and nothing asks slot 9 for it yet.
+pub fn building_turret_anim_config(
+    object: &crate::rules::object_type::ObjectType,
+) -> BuildingAnimConfig {
+    let empty = IniFile::empty();
+    let variant = |name: &str| parse_building_anim_variant(name.to_owned(), &empty);
+    let named = |name: &str| (!name.is_empty()).then(|| variant(name));
+    let name = object.turret_anim.as_deref().unwrap_or("");
+    let normal = variant(name);
+    BuildingAnimConfig {
+        native_slot: 9,
+        anim_type: normal.anim_type,
+        damaged_variant: object.turret_anim_damaged.as_deref().and_then(named),
+        garrisoned_variant: named(name),
+        kind: BuildingAnimKind::Special,
+        is_primary: true,
+        x: object.turret_anim_x,
+        y: object.turret_anim_y,
+        y_sort: object.turret_anim_y_sort,
+        z_adjust: object.turret_anim_z_adjust,
+        loop_start: normal.loop_start,
+        loop_end: normal.loop_end,
+        loop_count: normal.loop_count,
+        rate: normal.rate,
+        start_frame: normal.start_frame,
+        ping_pong: normal.ping_pong,
+    }
+}
+
+/// The slot-9 row of a building whose turret Grand_Opening can build by name
+/// (`0x00446599..0x0044667B`): a `TurretAnim` without `TurretAnimIsVoxel`.
+/// Asset discovery reads it. `Turret=` is not asked, because HasTurret
+/// (`0x004527D0`) also counts an installed upgrade's turret; a name bound for
+/// a building that never builds it costs one lookup.
+pub fn shp_turret_anim_config(
+    object: &crate::rules::object_type::ObjectType,
+) -> Option<BuildingAnimConfig> {
+    (object.category == crate::rules::object_type::ObjectCategory::Building
+        && !object.turret_anim_is_voxel
+        && object.turret_anim.is_some())
+    .then(|| building_turret_anim_config(object))
+}
+
+/// `AddOccupy%d=`/`RemoveOccupy%d=` (`0x0046143C..0x004614C9`): ReadMinMax
+/// per slot over the `(0xFFFF, 0xFFFF)` default pushed at `0x00461448`. An
+/// absent or unscannable value leaves that default, which VERA keeps as no
+/// cell (`None`).
+fn parse_numbered_cell_offsets(
+    section: &IniSection,
+    prefix: &str,
+) -> [Option<(i16, i16)>; HIDDEN_OCCUPY_SLOT_COUNT] {
+    const NO_CELL: [i32; 2] = [0xFFFF, 0xFFFF];
+    std::array::from_fn(|slot| {
+        let [x, y] = section.read_minmax(&format!("{prefix}{}", slot + 1), NO_CELL);
+        ([x, y] != NO_CELL).then_some((x as i16, y as i16))
+    })
+}
+
+/// BuildingType art reader4615CA..4617B8; original executable comparison in
+/// tools/spatial_oracle/building_body_rules.{py,json,meta.json}.
+fn read_building_body_range(section: &IniSection, key: &str) -> [i32; 3] {
+    section.read_int_fields(key, 64, [0, 1, 0])
+}
+
+/// Replace the 2nd character of a filename with the theater's letter
+/// ([`ImageTheater::letter`](crate::rules::object_image::ImageTheater::letter)).
+fn apply_theater_letter(name: &str, theater_name: &str) -> String {
+    if name.len() < 2 {
+        return name.to_string();
+    }
+
+    let Some(letter) = crate::rules::object_image::ImageTheater::from_name(theater_name).letter()
+    else {
+        return name.to_string();
+    };
+    let mut chars: Vec<char> = name.chars().collect();
+    chars[1] = letter;
+    chars.into_iter().collect()
+}
+
+/// The two names gamemd's theater lookup tries for an SHP (uppercase, without
+/// extension): `FUN_005F96B0` puts the theater's letter second in a
+/// `[GNCY][AT]` name, then `FUN_005F9710` puts `G` second on the same buffer.
+pub fn theater_shp_names(upper_name: &str, theater_name: &str) -> [String; 2] {
+    let first = if takes_theater_letter(upper_name) {
+        apply_theater_letter(upper_name, theater_name)
+    } else {
+        upper_name.to_string()
+    };
+    [first, apply_generic_letter(upper_name)]
+}
+
+/// The two files `BuildingTypeClass::LoadVisualAssets @ 0x0045F230` tries for
+/// a building SHP, both for its `Buildup=` (`0x0045F24A..`) and for a
+/// Theater=no body (`0x0045F934..0x0045FA70`): the name plus `.SHP` through
+/// the theater lookup ([`theater_shp_names`]).
+pub fn building_shp_names(name: &str, theater_name: &str) -> [String; 2] {
+    theater_shp_names(&name.to_ascii_uppercase(), theater_name).map(|name| format!("{name}.SHP"))
+}
+
+/// The files a building type's body image (`vt+0x9C`) loads from, shared by
+/// every consumer of that image (the sprite atlas and the rubble catalog).
+/// ObjectType reads `Theater=` from the rules `Image=`'s ART section
+/// (`0x005F95E9`), before BuildingType's ART `Image=` redirect selects
+/// `image_id`. A Theater=no body takes `0x0045F230`'s final pass
+/// ([`building_shp_names`]); NewTheater does not gate it. A Theater=yes body is
+/// reloaded later by `InitTheater @ 0x0045E970`, which is not ported: it keeps
+/// the object naming path ([`object_shp_candidates`]).
+pub fn building_body_shp_candidates(
+    art: Option<&ArtRegistry>,
+    rules_image: &str,
+    image_id: &str,
+    theater_ext: &str,
+    theater_name: &str,
+) -> Vec<String> {
+    if art
+        .and_then(|art| art.get(rules_image))
+        .is_some_and(|entry| entry.theater)
+    {
+        return object_shp_candidates(art, image_id, theater_ext, theater_name);
+    }
+    let mut candidates = building_shp_names(image_id, theater_name).to_vec();
+    candidates.dedup();
+    candidates
+}
+
+/// Replace the 2nd character of a filename with the generic letter `G`.
+fn apply_generic_letter(name: &str) -> String {
+    if name.len() < 2 {
+        return name.to_string();
+    }
+
+    let mut chars: Vec<char> = name.chars().collect();
+    chars[1] = NEW_THEATER_GENERIC_LETTER;
+    chars.into_iter().collect()
+}
+
+/// The exact section `image_id` folds to (`str::to_uppercase`). An ASCII id,
+/// whose Unicode uppercase is its ASCII one, is folded on the stack.
+fn folded_entry_name<'a>(
+    names: &'a LookupMap<String, String>,
+    image_id: &str,
+) -> Option<&'a String> {
+    if image_id.is_ascii() {
+        with_ascii_uppercase(image_id, |key| names.get(key))
+    } else {
+        names.get(&image_id.to_uppercase())
+    }
+}
+
+fn normalize_id(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_uppercase())
+    }
+}
+
+/// Compares the first two bytes, so a name whose second character is not
+/// ASCII never matches and never splits a character.
+fn has_hardcoded_new_theater_prefix(upper_image: &str) -> bool {
+    upper_image.as_bytes().get(..2).is_some_and(|head| {
+        NEW_THEATER_PREFIXES
+            .iter()
+            .any(|prefix| prefix.as_bytes() == head)
+    })
+}
+
+fn push_shp_pair(candidates: &mut Vec<String>, base_name: &str, theater_ext: &str) {
+    push_candidate(candidates, format!("{}.SHP", base_name));
+    push_candidate(
+        candidates,
+        format!("{}.{}", base_name, theater_ext.to_ascii_uppercase()),
+    );
+}
+
+/// `FUN_005F96B0`: the theater letter replaces the second character only when
+/// the first is `G`, `N`, `C` or `Y` and the second is `A` or `T`.
+fn takes_theater_letter(upper_name: &str) -> bool {
+    let mut chars = upper_name.chars();
+    matches!(chars.next(), Some('G' | 'N' | 'C' | 'Y')) && matches!(chars.next(), Some('A' | 'T'))
+}
+
+fn push_candidate(candidates: &mut Vec<String>, candidate: String) {
+    if !candidates.contains(&candidate) {
+        candidates.push(candidate);
+    }
+}
+
+#[cfg(all(test, tests_rules_a_n))]
+mod anim_runtime_metadata_tests {
+    use super::*;
+    use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
+
+    /// `art` installed the production way: the ordered Rules processor reads
+    /// the fixed-ART Type references of every section `art` holds, each listed
+    /// as an AnimType, and `RuleSet` hands them to the registry.
+    fn installed(art: &str) -> crate::rules::ruleset::RuleSet {
+        let art = IniFile::from_str(art);
+        let animations: String = art
+            .section_names()
+            .iter()
+            .enumerate()
+            .map(|(index, name)| format!("{index}={name}\n"))
+            .collect();
+        let mut rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(&format!("[Animations]\n{animations}")),
+            &art,
+        )
+        .unwrap();
+        rules.install_art_data(ArtRegistry::from_ini(&art));
+        rules
+    }
+
+    /// Retail RULESMD over ARTMD from the archives, installed as the loader
+    /// installs it: the AnimTypes' references come from the ordered Rules
+    /// processor.
+    fn installed_retail(assets: &AssetManager) -> crate::rules::ruleset::RuleSet {
+        let read = |name: &str| {
+            IniFile::from_bytes(assets.get_ref(name).expect("retail INI"))
+                .expect("parse retail INI")
+        };
+        let artmd = read("ARTMD.INI");
+        let mut rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+            &read("RULESMD.INI"),
+            &artmd,
+        )
+        .expect("retail rules");
+        rules.install_art_data(ArtRegistry::from_ini(&artmd));
+        rules
+    }
+
+    #[test]
+    fn building_body_fields_match_original_native_readers() {
+        #[derive(serde::Deserialize)]
+        struct Triple {
+            raw: Option<String>,
+            initial: [i32; 3],
+            output: [i32; 3],
+        }
+        #[derive(serde::Deserialize)]
+        struct Scalar {
+            raw: Option<String>,
+            output: i32,
+        }
+        #[derive(serde::Deserialize)]
+        struct Fixture {
+            triples: Vec<Triple>,
+            gate_stages: Vec<Scalar>,
+        }
+        let fixture: Fixture = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/building_body_rules.json",
+        ))
+        .unwrap();
+        let keys = ["AnimIdle", "AnimActive", "AnimAux1", "AnimAux2"];
+        for row in fixture.triples {
+            let mut ini = IniFile::from_str("[TEST]\nFixtureOnly=1\n");
+            let section = ini.projection_section_mut("TEST");
+            let mut previous = IniSection::new("TEST".to_string());
+            for key in keys {
+                previous.set(
+                    key,
+                    &format!("{},{},{}", row.initial[0], row.initial[1], row.initial[2]),
+                );
+            }
+            section.overlay_rules_pass(&previous);
+            if let Some(raw) = &row.raw {
+                let mut patch = IniSection::new("TEST".to_string());
+                for key in keys {
+                    patch.set(key, raw);
+                }
+                section.overlay_rules_pass(&patch);
+            }
+            let registry = ArtRegistry::from_ini(&ini);
+            assert_eq!(
+                registry.get("TEST").unwrap().building_body_ranges,
+                [row.output; 4],
+                "raw={:?} previous={:?}",
+                row.raw,
+                row.initial
+            );
+        }
+        for row in fixture.gate_stages {
+            let mut ini = IniFile::from_str("[TEST]\nFixtureOnly=1\n");
+            if let Some(raw) = &row.raw {
+                ini.projection_section_mut("TEST").set("GateStages", raw);
+            }
+            let registry = ArtRegistry::from_ini(&ini);
+            assert_eq!(
+                registry.get("TEST").unwrap().building_gate_stages,
+                row.output,
+                "{:?}",
+                row.raw
+            );
+        }
+        let ini = IniFile::from_str("[TEST]\nFixtureOnly=1\n");
+        let registry = ArtRegistry::from_ini(&ini);
+        assert_eq!(
+            registry.get("TEST").unwrap().building_body_ranges,
+            [[0, 1, 0]; 4]
+        );
+    }
+
+    #[test]
+    fn normalizes_anim_spawn_metadata_refs_to_uppercase() {
+        let rules = installed(
+            "[DBRIS1LG]\n\
+             TrailerAnim=smokey2\n\
+             BounceAnim=twlt026\n\
+             ExpireAnim=twlt036\n",
+        );
+
+        let config = rules
+            .art()
+            .anim_runtime_config("DBRIS1LG")
+            .expect("DBRIS1LG runtime metadata");
+        assert_eq!(config.trailer_anim.as_deref(), Some("SMOKEY2"));
+        assert_eq!(config.bounce_anim.as_deref(), Some("TWLT026"));
+        assert_eq!(config.expire_anim.as_deref(), Some("TWLT036"));
+    }
+
+    #[test]
+    fn anim_spawn_metadata_preserves_existing_next_random_and_rate_fields() {
+        let rules = installed(
+            "[METSTRAL]\n\
+             Rate=300\n\
+             Normalized=yes\n\
+             Next=smokey\n\
+             RandomLoopDelay=2,5\n\
+             RandomRate=300,900\n",
+        );
+
+        let config = rules
+            .art()
+            .anim_runtime_config("METSTRAL")
+            .expect("METSTRAL runtime metadata");
+        assert_eq!(config.rate_logic_frames, 3);
+        assert!(config.normalized);
+        assert_eq!(config.next.as_deref(), Some("SMOKEY"));
+        assert_eq!(config.random_loop_delay, Some((2, 5)));
+        assert_eq!(config.random_rate_logic_frames, Some((1, 1)));
+        assert_eq!(config.trailer_anim, None);
+        assert_eq!(config.trailer_seperation, 0);
+        assert_eq!(config.bounce_anim, None);
+        assert_eq!(config.expire_anim, None);
+    }
+
+    /// ReadINI `0x00464450..0x00464632` fills slot 9's record from the type's
+    /// rules section; ART `TurretAnim` is never read for it.
+    #[test]
+    fn slot_9_row_comes_from_the_rules_section_not_art() {
+        let art_ini = IniFile::from_str("[GUN]\nTurretAnim=ARTTUR\nActiveAnim=GUN_A\n");
+        let rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[BuildingTypes]\n0=GUN\n1=VOX\n\
+                 [GUN]\nStrength=400\nTurretAnim=guntur\nTurretAnimX=5\nTurretAnimY=-12\n\
+                 TurretAnimZAdjust=-30\nTurretAnimYSort=7\n\
+                 [VOX]\nStrength=400\nTurretAnim=SAM\nTurretAnimIsVoxel=yes\n",
+            ),
+            &art_ini,
+        )
+        .unwrap();
+        let gun = rules.object("GUN").unwrap();
+        let row = shp_turret_anim_config(gun).expect("slot 9");
+        assert_eq!((row.native_slot, row.anim_type.as_str()), (9, "GUNTUR"));
+        assert_eq!(
+            row.damaged_variant.as_ref().unwrap().anim_type,
+            "GUNTUR",
+            "an empty TurretAnimDamaged takes the normal name"
+        );
+        assert_eq!((row.x, row.y, row.z_adjust, row.y_sort), (5, -12, -30, 7));
+        assert!(
+            shp_turret_anim_config(rules.object("VOX").unwrap()).is_none(),
+            "a voxel turret has no slot animation to build"
+        );
+        let art = ArtRegistry::from_ini(&art_ini);
+        let rows = &art.get("GUN").unwrap().building_anims;
+        assert!(rows.iter().any(|row| row.native_slot == 3));
+        assert!(rows.iter().all(|row| row.native_slot != 9));
+    }
+
+    #[test]
+    fn reversed_random_rate_conversion_collapses_to_the_second_endpoint() {
+        let ini = IniFile::from_str("[DBRIS1LG]\nRandomRate=220,600\n");
+        let reg = ArtRegistry::from_ini(&ini);
+
+        assert_eq!(
+            reg.anim_runtime_config("DBRIS1LG")
+                .unwrap()
+                .random_rate_logic_frames,
+            Some((1, 1))
+        );
+    }
+
+    #[test]
+    fn alt_palette_selects_the_unit_palette_and_everything_else_the_anim_palette() {
+        let ini = IniFile::from_str(
+            "[NABNKR]\n\
+             AltPalette=yes\n\
+             [FBALL1]\n\
+             Layer=ground\n",
+        );
+        let reg = ArtRegistry::from_ini(&ini);
+
+        assert_eq!(
+            anim_draw_palette(reg.anim_runtime_config("NABNKR").unwrap()),
+            AnimDrawPalette::Unit
+        );
+        assert_eq!(
+            anim_draw_palette(reg.anim_runtime_config("FBALL1").unwrap()),
+            AnimDrawPalette::Anim
+        );
+    }
+
+    #[test]
+    fn translucency_draw_bits_invert_the_ini_percentage_into_source_weight() {
+        // Translucency=N is N percent TRANSPARENT: 25 is the most opaque stage.
+        assert_eq!(
+            anim_translucency_source_alpha(ANIM_DRAW_BITS_TRANSLUCENT_25),
+            0.75
+        );
+        assert_eq!(
+            anim_translucency_source_alpha(ANIM_DRAW_BITS_TRANSLUCENT_50),
+            0.5
+        );
+        assert_eq!(
+            anim_translucency_source_alpha(ANIM_DRAW_BITS_TRANSLUCENT_75),
+            0.25
+        );
+        assert_eq!(anim_translucency_source_alpha(ANIM_DRAW_BITS_OPAQUE), 1.0);
+        // Bits outside the family mask are not a translucency stage.
+        assert_eq!(anim_translucency_source_alpha(0x800), 1.0);
+
+        // `AnimClass::DrawIt` ORs the family into the producer's own flag word
+        // (`0x0042304B` loads `Anim+0x190`, `0x00423075`/`0x0042307A` OR into
+        // it), so the carried producer bits must not hide the stage. `0x600` is
+        // the trailer/damage-fire word and `0x2600` the combat-explosion word.
+        for carried in [0x0, 0x600, 0x2600] {
+            assert_eq!(
+                anim_translucency_source_alpha(carried | ANIM_DRAW_BITS_TRANSLUCENT_25),
+                0.75
+            );
+            assert_eq!(
+                anim_translucency_source_alpha(carried | ANIM_DRAW_BITS_TRANSLUCENT_50),
+                0.5
+            );
+            assert_eq!(
+                anim_translucency_source_alpha(carried | ANIM_DRAW_BITS_TRANSLUCENT_75),
+                0.25
+            );
+            assert_eq!(anim_translucency_source_alpha(carried), 1.0);
+        }
+    }
+
+    #[test]
+    fn loaded_end_is_the_bound_end_or_what_binding_would_load() {
+        let ini = IniFile::from_str(
+            "[WAKE]\nTranslucent=yes\n\
+             [SHADOWED]\nTranslucent=yes\nShadow=yes\n\
+             [CAPPED]\nTranslucent=yes\nEnd=10\n",
+        );
+        let mut reg = ArtRegistry::from_ini(&ini);
+        // Unbound: the caller's SHP count, halved for Shadow=yes, unless End=
+        // is explicit.
+        assert_eq!(reg.anim_runtime_config("WAKE").unwrap().loaded_end(10), 10);
+        assert_eq!(
+            reg.anim_runtime_config("SHADOWED").unwrap().loaded_end(20),
+            10
+        );
+        assert_eq!(
+            reg.anim_runtime_config("CAPPED").unwrap().loaded_end(100),
+            10
+        );
+        // Bound: the loaded End, whatever count the caller passes.
+        reg.bind_anim_frame_count_for_test("SHADOWED", 30);
+        assert_eq!(
+            reg.anim_runtime_config("SHADOWED").unwrap().loaded_end(20),
+            15
+        );
+    }
+
+    #[test]
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+    fn retail_artmd_tiberium_declarations_match_active_yr() {
+        let ra2_dir = std::path::PathBuf::from(
+            std::env::var_os("RA2_DIR")
+                .expect("set RA2_DIR to the installed retail RA2/YR directory"),
+        );
+        let assets = AssetManager::new(&ra2_dir, MediaArchiveMode::STOCK_DIGITAL)
+            .expect("load retail RA2/YR archive stack");
+        let rules = installed_retail(&assets);
+        let registry = rules.art();
+
+        assert!(
+            registry
+                .anim_runtime_config("TWNK1")
+                .expect("stock TWNK1 declaration")
+                .hide_if_no_ore
+        );
+
+        let crystal1 = registry
+            .anim_runtime_config("CRYSTAL1")
+            .expect("stock CRYSTAL1 declaration");
+        assert!(crystal1.is_tiberium);
+        assert_eq!(crystal1.tiberium_spread_radius, 0);
+        assert_eq!(crystal1.tiberium_spawn_type.as_deref(), Some("TIB2_01"));
+
+        assert!(
+            registry
+                .anim_runtime_config("TWLT070T")
+                .expect("stock TWLT070T declaration")
+                .tiberium_chain_reaction
+        );
+        assert!(
+            registry
+                .anim_runtime_config("BIGBLUE")
+                .expect("stock BIGBLUE declaration")
+                .is_animated_tiberium
+        );
+    }
+
+    /// The retail values behind the four `ReadDouble` keys and the
+    /// `AltPalette=`/`UseNormalLight=` counts this module documents.
+    #[test]
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+    fn retail_artmd_anim_damage_cluster_matches_active_yr() {
+        let ra2_dir = std::path::PathBuf::from(
+            std::env::var_os("RA2_DIR")
+                .expect("set RA2_DIR to the installed retail RA2/YR directory"),
+        );
+        let assets = AssetManager::new(&ra2_dir, MediaArchiveMode::STOCK_DIGITAL)
+            .expect("load retail RA2/YR archive stack");
+        let rules = installed_retail(&assets);
+        let registry = rules.art();
+
+        let debris = registry
+            .anim_runtime_config("DBRIS1LG")
+            .expect("stock DBRIS1LG declaration");
+        assert_eq!(f64::from_bits(debris.damage.bits()), 20.0);
+        assert_eq!(debris.warhead.as_deref(), Some("HE"));
+        assert_eq!(debris.damage_radius, 80);
+        assert_eq!(f64::from_bits(debris.elasticity.bits()), 0.0);
+        assert_eq!(f64::from_bits(debris.min_z_vel.bits()), 25.0);
+        assert_eq!(f64::from_bits(debris.max_xy_vel.bits()), 25.0);
+        assert!(debris.bouncer);
+
+        // Positive fixed-ART input. Registration and an ordinary live
+        // producer are separate gates, exercised by authored CellAnim tests.
+        let fire3 = registry
+            .anim_runtime_config("FIRE3")
+            .expect("stock FIRE3 declaration");
+        let fire3_damage = f64::from_bits(fire3.damage.bits());
+        assert!(
+            fire3_damage > 0.0 && fire3_damage < 0.01,
+            "[FIRE3] Damage= is `.003`, read back as {fire3_damage}"
+        );
+
+        // A section with neither key keeps the constructor's non-zero doubles.
+        let twlt036 = registry
+            .anim_runtime_config("TWLT036")
+            .expect("stock TWLT036 declaration");
+        assert_eq!(f64::from_bits(twlt036.damage.bits()), 0.0);
+        assert_eq!(twlt036.elasticity.bits(), 0x3fe9_9999_a000_0000);
+        assert_eq!(f64::from_bits(twlt036.min_z_vel.bits()), 3.5);
+        assert_eq!(f64::from_bits(twlt036.max_xy_vel.bits()), 15.0);
+
+        // The counts this module's `alt_palette` / `use_normal_light` docs
+        // claim, derived rather than asserted from memory. gamemd's INI key
+        // lookup is case-sensitive, so only the exact spellings count. They
+        // count artmd.ini sections, so they read the raw ART parse.
+        let artmd_bytes = assets.get_ref("ARTMD.INI").expect("load retail ARTMD.INI");
+        let artmd = IniFile::from_bytes(artmd_bytes).expect("parse retail ARTMD.INI");
+        let raw = ArtRegistry::from_ini(&artmd);
+        let alt_palette = raw
+            .anim_runtime_configs
+            .values()
+            .filter(|config| config.alt_palette)
+            .count();
+        let use_normal_light = raw
+            .anim_runtime_configs
+            .values()
+            .filter(|config| config.use_normal_light)
+            .count();
+        assert_eq!(alt_palette, 31, "stock artmd.ini AltPalette= sections");
+        assert_eq!(
+            use_normal_light, 43,
+            "stock artmd.ini UseNormalLight= sections"
+        );
+    }
+
+    /// `AnimTypeClass::ReadINI @ 0x00427D00` reads `Damage=`, `Elasticity=`,
+    /// `MinZVel=` and `MaxXYVel=` through `CCINIClass::ReadDouble`, so each of
+    /// them keeps a fraction. `Damage` in particular is a double at `+0x2A8`,
+    /// never an integer: the stock population is `.003`-scale.
+    #[test]
+    fn anim_double_keys_keep_their_fraction() {
+        let rules = installed(
+            "[DEBRIS]\n\
+             Damage=20\n\
+             Warhead=he\n\
+             DamageRadius=80\n\
+             Elasticity=0.0\n\
+             MinZVel=25.0\n\
+             MaxXYVel=25.0\n\
+             [BURNER]\n\
+             Damage=.003\n",
+        );
+        let reg = rules.art();
+
+        let debris = reg.anim_runtime_config("DEBRIS").unwrap();
+        assert_eq!(f64::from_bits(debris.damage.bits()), 20.0);
+        assert_eq!(debris.warhead.as_deref(), Some("HE"));
+        assert_eq!(debris.damage_radius, 80);
+        assert_eq!(f64::from_bits(debris.elasticity.bits()), 0.0);
+        assert_eq!(f64::from_bits(debris.min_z_vel.bits()), 25.0);
+        assert_eq!(f64::from_bits(debris.max_xy_vel.bits()), 25.0);
+
+        // The fraction survives; an i32 read would have produced 0.
+        let burner = reg.anim_runtime_config("BURNER").unwrap();
+        let damage = f64::from_bits(burner.damage.bits());
+        assert!(
+            damage > 0.0 && damage < 0.01,
+            "{damage} is not `.003`-scale"
+        );
+    }
+
+    /// Constructor defaults from `AnimTypeClass::AnimTypeClass @ 0x00427530`.
+    /// Three of them are NOT the zero/false a naive port would pick:
+    /// `Elasticity` 0.8, `MinZVel` 3.5, `MaxXYVel` 15.0, and both
+    /// `ShouldUseCellDrawer` and `ShouldFogRemove` start true.
+    #[test]
+    fn huge_anim_spawn_and_particle_counts_stop_at_their_bounds() {
+        let ini = IniFile::from_str("[HUGE]\nSpawnCount=2147483647\nNumParticles=2147483647\n");
+        let registry = ArtRegistry::from_ini(&ini);
+        let huge = registry.anim_runtime_config("HUGE").unwrap();
+        assert_eq!(huge.spawn_count, SPAWN_COUNT_LIMIT);
+        assert_eq!(huge.num_particles, NUM_PARTICLES_LIMIT);
+    }
+
+    #[test]
+    fn anim_constructor_defaults_are_not_all_zero() {
+        let ini = IniFile::from_str("[BARE]\nFixtureOnly=1\n");
+        let reg = ArtRegistry::from_ini(&ini);
+        let bare = reg.anim_runtime_config("BARE").unwrap();
+
+        assert_eq!(f64::from_bits(bare.damage.bits()), 0.0);
+        // The literal dword pair the constructor stores is the SINGLE-precision
+        // 0.8f widened, not the nearest double to 0.8.
+        assert_eq!(bare.elasticity.bits(), 0x3fe9_9999_a000_0000);
+        assert_eq!(f64::from_bits(bare.elasticity.bits()), f64::from(0.8_f32));
+        assert_ne!(f64::from_bits(bare.elasticity.bits()), 0.8_f64);
+        assert_eq!(f64::from_bits(bare.min_z_vel.bits()), 3.5);
+        assert_eq!(f64::from_bits(bare.max_xy_vel.bits()), 15.0);
+        assert!(bare.should_use_cell_drawer);
+        assert!(bare.should_fog_remove);
+
+        assert_eq!(bare.warhead, None);
+        assert_eq!(bare.damage_radius, 0);
+        assert_eq!(bare.spawns_particle, None);
+        assert_eq!(bare.num_particles, 0);
+        assert!(!bare.is_meteor);
+        assert!(!bare.is_veins);
+        assert!(!bare.is_flaming_guy);
+        assert!(!bare.scorch);
+        assert!(!bare.crater);
+        assert!(!bare.force_big_craters);
+        assert!(!bare.sticky);
+        assert!(!bare.psi_warning);
+        assert!(!bare.double_thick);
+        assert!(!bare.flamer);
+    }
+
+    #[test]
+    fn anim_bounds_preserve_omission_explicit_zero_and_negative_one() {
+        let ini = IniFile::from_str(
+            "[OMITTED]\n\
+             FixtureOnly=1\n\
+             [ZERO]\nEnd=0\nLoopEnd=0\n\
+             [LAST]\nEnd=-1\nLoopEnd=-1\n",
+        );
+        let reg = ArtRegistry::from_ini(&ini);
+        let omitted = reg.anim_runtime_config("OMITTED").unwrap();
+        assert_eq!(omitted.explicit_end, None);
+        assert_eq!(omitted.explicit_loop_end, None);
+        let zero = reg.anim_runtime_config("ZERO").unwrap();
+        assert_eq!(zero.explicit_end, Some(0));
+        assert_eq!(zero.explicit_loop_end, Some(0));
+        let last = reg.anim_runtime_config("LAST").unwrap();
+        assert_eq!(last.explicit_end, Some(-1));
+        assert_eq!(last.explicit_loop_end, Some(-1));
+    }
+
+    #[test]
+    fn loaded_bounds_apply_shadow_before_explicit_native_overrides() {
+        assert_eq!(resolve_loaded_bounds(64, true, None, None), (32, 32),);
+        assert_eq!(resolve_loaded_bounds(64, true, Some(7), None), (7, 32),);
+        assert_eq!(resolve_loaded_bounds(64, true, Some(0), Some(-1)), (0, -1),);
+    }
+}
+
+#[cfg(all(test, tests_rules_a_n))]
+#[path = "art_data_tests.rs"]
+mod tests;

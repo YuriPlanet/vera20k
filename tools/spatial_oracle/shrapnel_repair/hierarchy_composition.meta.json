@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original full low repair suffix with native-built initial hierarchy on supplied live-cell planes.",
+  "assumptions": [
+    "Frozen production class/height and live Cell allocation/level/slope planes supply inputs; physical MAP pack fields supply affected cells and unused far-cell metadata. Original56C510 and581F90(2,1,0) build initial graph; no supplied Rust graph IDs or edges.",
+    "No bridge/tube records in selected map. Both586990 reverse passes, resident47D2B0, incremental584550 and actual42C1C0 scratch refresh execute. Recalc outside physical nine-cellrepairregion fails closed.",
+    "Untouched x117,y56 hut selector; repeat repair on same machine. No admitted Engineer, full scenario loader or runtime Windows process claimed."
+  ],
+  "substitutions": [
+    "Successful bounded allocation/free and declared display/radar sinks only during reached repair; vector constructor caller stores are supplied per565800/567110."
+  ],
+  "entry_points": {
+    "repair": "0x00570050",
+    "connectivity": "0x0056C510",
+    "build": "0x00581F90",
+    "batch": "0x00586990",
+    "patch": "0x00584550",
+    "scratch": "0x0042C1C0"
+  },
+  "payload_sha256": "df407f7b2babdf2b083a79e5fdf6c657c74c938919095b5f2dc4ff41f00a34b9",
+  "packaging": "canonical JSON; gzip mtime=0; copied lexical inputs replaced by SHA256"
+}

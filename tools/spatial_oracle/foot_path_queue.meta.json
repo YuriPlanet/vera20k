@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Foot+5E0 replay and signed Foot+558 reference across fresh acceptance, chain, tube, FootStop and Drive END",
+  "assumptions": [
+    "Supplied accepted fresh/chain/tube frames; branch admission and Find_Path are not executed",
+    "Queues cover a short route with tube direction8, full24 entries, and empty preservation cases",
+    "Fresh endpoints include negative division toward zero and signed16 wrapping"
+  ],
+  "substitutions": [
+    "Original code is unpatched; stack, owner and locomotor memory are supplied directly",
+    "FootStop and Drive END execute complete helper bodies; constructors, caller release and callback dispatch are excluded"
+  ],
+  "entry_points": {
+    "drive_fresh_one": "0x004B45F6",
+    "drive_fresh_two": "0x004B45CB",
+    "ship_fresh_one": "0x006A3C22",
+    "ship_fresh_two": "0x006A3BF7",
+    "drive_chain": "0x004B1DF7",
+    "ship_chain": "0x006A143A",
+    "drive_tube": "0x004B1362",
+    "foot_stop": "0x004DF0D0",
+    "drive_end": "0x004AF930"
+  },
+  "payload_sha256": "1f3fd56fbc9be2b21a7f7371833cad633bb7355c9235f8c3a6cbd477f45316b1"
+}

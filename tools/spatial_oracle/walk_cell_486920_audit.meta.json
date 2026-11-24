@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Bounded original Cell486920 retail gates and Infantry +37C defaults.\n\nRun from the VERA20k repo with PYTHONPATH=. and VERA20K_GAMEMD_EXE;\nVERA20K_PROJECTILE_RENDER_ASSETS selects extracted RULESMD/MPBattleMD/Hills.\nDefault --check reproduces the saved evidence; --write records it.\nNo original instructions are patched. See the adjacent Markdown for limits.\n",
+  "assumptions": [
+    "Physical unique lexical section/key strings prepare native CRC INI caches; the full archive/file loader is outside this boundary. OverlayTypes additionally preserves original entry links and runs all250 registry allocations in physical declaration order. Numeric INI keys are not registry indices.",
+    "Full original InfantryType constructor executes; C91 field reader blocks run with supplied original reader registers. Other type reads and the full scenario load are excluded. Rules ctor and Techno ctor execute only the declared original prefixes, starting Techno after its Radio base constructor.",
+    "Cell controls execute the actual early gates only. Object height/category/type/ability tests and successful animation construction are established by original instruction reading, not emulated by these rows. No gameplay effect or audio/render output is certified.",
+    "The EMP controls supply signed +504 values directly. Zero is natively initialized; positive controls do not establish active-retail EMP arming or serialized-state reachability."
+  ],
+  "substitutions": [
+    "Inherited bounded allocator, inert free and CRT TLS fixture seams. No original code patches or replacement native readers. Prepared INI caches substitute archive/file loading.",
+    "Nonmatching Cell gate cases deliberately supply an invalid ground-list pointer; successful early return proves it is not dereferenced. The empty-list case supplies null."
+  ],
+  "entry_points": {
+    "overlay_rules_loop": "0x00668CE3",
+    "overlay_find_or_create": "0x005FEC70",
+    "overlay_constructor": "0x005FE250",
+    "infantry_type_constructor": "0x005236A0",
+    "immune_to_veins_reader": "0x00714C23",
+    "rules_ctor_prefix": "0x00665650",
+    "vein_attack_reader": "0x006692E4",
+    "techno_ctor_prefix": "0x006F2B4B",
+    "infantry_emp_predicate": "0x0070EFD0",
+    "cell_effect": "0x00486920"
+  },
+  "payload_sha256": "8c773ac05df6ee49e26d83eebe097591c57c09af406357f442949a3c4b2282a2"
+}

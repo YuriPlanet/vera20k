@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Walk75B696 decoder through caller return or recursive75AEC0 boundary, plus explicit continued-recursion controls including failed no-queue continuation75AFEE..75B2DC. Supplied admission classes0..7; no claim that51BF90 produces a class or that an AStar/FindPath supplied answer is native.",
+  "assumptions": [
+    "Interior frame models original ready path2,3,4,5 and candidateCell10,10 from currentCell9,10. EAX is supplied class. The input key restart is the original ProcessMovement argument: true is the active virtualProcess75AC80 first pass, false is the internal recursive pass. Stack+40 contains prospectiveY2624 as in the real caller, copied into unused timer pause word.",
+    "Original Infantry vtable, Walk and Facing constructors, ordinary alive ENGINEER-shaped mission8/typeMovementZone7, no aircraft/JumpJet flags, default zero target/Team/radio. NavCom is candidate Cell. Cells are level2/slope1; synthetic one-row paths and map raw-zone data are supplied. Candidate lists are empty except explicit one-Unit ground/deck obstacle or cloak rows.",
+    "Frame100, supplied Rules CloseEnough128, BlockagePathDelay22, PathDelay0.01; explicit boundary contrasts. Random seed31 and complete1012-byte state preserved before/after. Native placement, map queries, height, timers and every reached decoder callback execute.",
+    "Obstacle/cloak rows supply one real Unit vtable receiver with Abstract flags7, health100, owner house index1 versus mover0 (same-house ally contrast), type at+6C4 and exact candidateXYZ. Actual Cell47C5A0/47C3D0 ground picking, House4F9A90, Foot4D8F40/Techno7013A0/Mission5B3650 override and original Infantry setters execute. Explicit wall rows supply overlay0 and OverlayType+2A8 flag; actual Cell-target Override executes. No surrounding combat, weapon firing or restoration claim.",
+    "Cloak rows execute original ground-list483480,703850 and7036C0 with supplied cloak state0..3,Rules+CloakingStages offset628=10,type+CloakingSpeed offset310=4,Rules+CloakSound6A0=-1. Original7509E0 sound entry and no-sound return execute; this does not validate audible output. Dead-object and upper-list contrasts expose absent alive/type filtering and ground-only dispatch.",
+    "Failed-retry probes append21 controls to the original101. They supply full32-bit retries+64C, radio tether+418, in_playfield+3D5, ScoldSound latch+68A, optional Cell attack target11,10 and connected/disconnected raw-zone row. Original distance41C380, retry arithmetic, callbacks, Map56D100 and original750920 quiet return with Rules+700=-1 execute. Zone events retain raw32-bit stack arguments; boolean arguments use only their low byte. Default Type+D94=false, Type+C94=false, mission_only+3D4=false and Team=NULL bound Infantry/allow-fringe callbacks. These rows do not execute Unlimbo or radio flag writers, audible output, arbitrary target classes or FindPath side effects.",
+    "Two current_missing controls append to the first122 unchanged rows. Class6/ProcessMovement(false)/CloseEnough1000 uses physicalXYZ2496,2624,260 and destination2688,2688,260, with sourceMap slot9,10=NULL, retained candidateCell10,10 allocated, and supplied DummyABDC50+EC land0 versus10. Original candidate lookup5657A0 and current-coordinate lookup565730 execute; the latter mutates only Dummy coordinates. Events capture actual candidate and stop-band Cell receivers, and before/after state captures retained Dummy land. This remains an interior supplied-class boundary, not proof that original CanEnter would produce class6 on a missing source cell.",
+    "Head fixture owner-index/false-predicate/Stop-event and absent-gate lookup seams retained and declared. No full object constructor, retail rules loader, map loader, dynamic gate/scatter recipient or nonempty scatter proof. Ordinary rows stop before recursive Process. continue_recursive rows execute the original recursive caller with supplied FindPath and admission answers, octant lepton-vector table89F6D8, full coordinate/map/height/query-argument producers and decoder consequences."
+  ],
+  "substitutions": [
+    "CanEnter return EAX is supplied at interior75B696, not executed; this is a result-decoder comparison.",
+    "FindPath4D3920 return is supplied with original12-byte argument cleanup and no state effects EXCEPT continue_recursive/path_found rows also supply ready path2,3,4,5,-1..-1. Its wrappers/AStar are not part of this comparison. Actual next caller timer and+4F4/+4F8/zone/null-setter callbacks execute. In continue_recursive rows51BF90 records the actual five arguments and returns supplied recursive_code (default same class), with original20-byte cleanup;51BF90 itself is not executed.",
+    "Inherited head fixture +38 owner index41, +1D4/+1D8/+37C false, +54C Stop callback observed no-op,47C4D0 absent gate. OS Interlocked increment/decrement update their supplied counter. No other reached gameplay callback is replaced."
+  ],
+  "entry_points": {
+    "decoder": "0x0075B696",
+    "constructor": "0x0075AA90",
+    "infantry_stop_anim": "0x00521B20",
+    "path_result_seam": "0x004D3920",
+    "path_failure": "0x00521DD0",
+    "foot_failure": "0x004DC030",
+    "path_success": "0x00521EB0",
+    "head": "0x0075C240",
+    "gate": "0x00578AD0",
+    "scatter": "0x00481670",
+    "null_destination": "0x0051AA40",
+    "stop": "0x0075ADA0",
+    "failed_retry": "0x0075AFEE",
+    "distance": "0x0041C380",
+    "zone": "0x0056D100",
+    "allow_destination_fringe": "0x004DA1D0",
+    "should_be_on_bridge": "0x004DDC40",
+    "scold_sound": "0x00750920",
+    "recursive_endpoint": "0x0075AEC0"
+  },
+  "payload_sha256": "a33d873bff26c7c32ee337d39ec4791eec771369763c2bd2931ccfd9c6672c07"
+}

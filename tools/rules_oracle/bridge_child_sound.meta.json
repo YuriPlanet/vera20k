@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Selected retail Explosion06/ExplosionShard original sound registry/readers, SMOKEY2/TWLT026/TWLT036 original ART Report binding, original handle release versus hard-stop",
+  "assumptions": [
+    "Original7510D0 executes with supplied source-order linked/CRC INI indexes from physical SOUNDMD Defaults and actual SoundList keys280/291; other registry entries are excluded. Numeric defaults/parsers/control tokenization/factory and full750440 bodies execute unchanged.",
+    "Original427530/427D00 ART readers resolve the three selected Anim reports against the native-created sound registry. Registry indices0/1 are fixture-relative; output identities are the original native retained names, not claims of full retail absolute sound indices.",
+    "Release and hard-stop each receive a prepared valid tagged handle and a playing event with serial41, flags8, no attached device channel/sample buffers. Full406060/405D40 bodies execute; outputs record lifecycle state, not rendered audio.",
+    "Physical winning bag metadata independently confirms gexp06a and gexpshaa exist; the archive lookup callback maps these to fixture-local indices0/1. Sound sample decoding, pool admission, device mixing and audio RNG execution are outside this run.",
+    "Original4055C0 and4047B0 instructions route pitch/volume/playlist draws to MainRng886B88, not Scenario; this corpus does not execute those playback draws."
+  ],
+  "substitutions": [
+    "Original allocator uses inherited bump allocation; deletion is inert; CRT TLS is supplied. No original instructions are patched.",
+    "AudioIndex::FindSample4015C0 accepts the exact selected physical bag names and returns fixture-local indices. Native AddSample stores/duplicates those indices itself.",
+    "Anim image archive IO returns unchanged physical SHP bytes; physical INI loading and MIX traversal are outside the prepared-cache boundary."
+  ],
+  "entry_points": {
+    "sound_list": "0x007510D0",
+    "sound_factory": "0x004063B0",
+    "voc_read": "0x00750440",
+    "anim_read": "0x00427D00",
+    "release": "0x00406060",
+    "hard_stop": "0x00405D40"
+  },
+  "payload_sha256": "fe85da59c04c1a4d895ff79f7501fb55c72807257c07d8a43d262fa9e2e7f824"
+}

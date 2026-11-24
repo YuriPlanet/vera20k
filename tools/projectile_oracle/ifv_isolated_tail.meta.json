@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Six full native Bullet detonation controls joining AreaDamage0/1/2, EMEffect selector RNG and ordinary versus WeaponNullifyAnim construction",
+  "assumptions": [
+    "Full original4690B0 runs from entry to return, including full AreaDamage489280, original IC timer/admission/receipt, Bullet selection caller, full SelectAnim48A4F0 and full AnimCtor421EA0/Start/Unlimbo/Display submission. AreaDamage return is observed, never supplied.",
+    "Physical HoverMissile/AAHeatSeeker2 and HE reader setup is inherited from ifv_select_anim. Full original HE reader consumes explicit EMEffect=no/yes controls; ordinary physical HE has EMEffect=false. General WeaponNullifyAnim reads physical ordered RULESMD, optional LANGRULE, MPBattleMD and Hills layers through original66E2AF block. This is not full Rules Process chronology.",
+    "Full physical IRONFX ART and unchanged10-frame SHP load through native reader427D00; the eight ordinary HE animation types/assets come from ifv_impact.prepare. Sound registry is empty, so Report remains-1 and audio binding/playback is outside this witness.",
+    "Prepared flat level6 mapped cells have no bridge/tile/overlay damage effects. Live BulletXYZ and detonation placement are both2688,5248,624. Supplied GameActive1 permits native animation admission; binary frame100, seed31, receiver health100, alive/marked/nonlimbo membership and IC start100/duration0or10/kind0 are explicit inputs. No source/receiver gameplay lifecycle or full Unit damage mutation is claimed.",
+    "Bullet constructor CombatLight+E0 remains false. These controls establish selection/animation order and do not exercise the ordinary CombatLight body.",
+    "Native partial construction cursor before/after is recorded, not a whole-scenario prefix. Detonate alone does not schedule Bullet retirement or subsequent AnimAI; retained Bullet alive and one newly admitted animation are bounded outputs. Existing joined impact fixtures cover their ordinary lifecycle."
+  ],
+  "substitutions": [
+    "Inherited lexical CRC INI caches, exact archive byte transport, allocator/delete/CRT/TLS boundaries. Unit ReceiveDamage737C90 returns explicit0 with28bytecleanup and no health mutation; native AreaDamage independently produces its receipt. No detonation/AreaDamage/selector/RNG/animation instruction is replaced."
+  ],
+  "entry_points": {
+    "detonate": "0x004690B0",
+    "area_damage": "0x00489280",
+    "receiver_boundary": "0x00737C90",
+    "select_anim": "0x0048A4F0",
+    "random_ranged": "0x0065C7E0",
+    "nullify_branch": "0x0046A2A1",
+    "anim_ctor": "0x00421EA0",
+    "anim_start": "0x00424CE0",
+    "object_unlimbo": "0x005F4EC0",
+    "nullify_anim_reader": "0x0066E2AF",
+    "anim_type_reader": "0x00427D00"
+  },
+  "payload_sha256": "43fffbe039e2a0e9bdd06fa123c6ec836d5f8a17304c6e4aeab72ec334caf420"
+}

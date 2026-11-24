@@ -1,0 +1,772 @@
+//! The connection dialog, RT_DIALOG 0xEA: `Wait_For_Players` 0x00648710
+//! creates it over the active game (0x00648C40) when a peer's frames stop
+//! arriving; proc 0x0064AE50.
+//!
+//! Geometry: `ResizeShellChildControl` 0x0060C0C0 sends Quit Game 2 to the
+//! bottom button (0x0060B350, matched at 0x00609979) and status line 0x695 to
+//! 0x0060B550; every other child goes to 0x0060B7A0 (0x0060C3EE). The
+//! template, those placements and the 0x006040B0 help keys are pinned by
+//! `tools/storage_oracle/connection_shell_layout.py`.
+//!
+//! The app's wait model owns the rows, the list and the countdown; this
+//! module owns control identity, geometry, the list's line rules and the
+//! per-player bar paint.
+
+use vera20k_gui::shell::bar;
+use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Rgba, Value};
+
+use super::descriptor::DialogResourceId;
+use super::geom::{self, RectPx};
+use super::in_game_shell::{self, InGameShellLayout};
+use crate::ui::lan_shell::LanChatLine;
+
+pub const DIALOG: DialogResourceId = DialogResourceId(0xEA);
+
+/// Physical row slots. VERA pages the complete local-first node snapshot.
+pub const CONNECTION_ROWS: usize = 8;
+
+/// Row button ids by row (table 0x00837300). The template swaps 0x641 and
+/// 0x642, so the rows still run top to bottom.
+const PLAYER_IDS: [u16; CONNECTION_ROWS] = [0x640, 0x642, 0x641, 0x643, 0x644, 0x645, 0x646, 0x647];
+/// Progress bar ids by row (table 0x00837320): hidden group boxes 0x40000007.
+const BAR_IDS: [u16; CONNECTION_ROWS] = [0x648, 0x649, 0x64A, 0x64B, 0x64C, 0x64D, 0x64E, 0x64F];
+/// VERA's painted bars by row, on the progress bars' rects: a `Bar` takes
+/// no pointer, so the hidden statics above keep the status help.
+const BAR_FILL_IDS: [u16; CONNECTION_ROWS] = [
+    0xF210, 0xF211, 0xF212, 0xF213, 0xF214, 0xF215, 0xF216, 0xF217,
+];
+const COUNTDOWN_ID: u16 = 0x650;
+const LIST_ID: u16 = 0x651;
+
+/// The nodes 0xEA paints, in WM_PAINT's order: the row buttons, the bars
+/// (0x0064A7B0, after the buttons), the countdown, then the list.
+pub const PAINT_ORDER: [u16; 2 * CONNECTION_ROWS + 2] = {
+    let mut ids = [0; 2 * CONNECTION_ROWS + 2];
+    let mut row = 0;
+    while row < CONNECTION_ROWS {
+        ids[row] = PLAYER_IDS[row];
+        ids[CONNECTION_ROWS + row] = BAR_FILL_IDS[row];
+        row += 1;
+    }
+    ids[2 * CONNECTION_ROWS] = COUNTDOWN_ID;
+    ids[2 * CONNECTION_ROWS + 1] = LIST_ID;
+    ids
+};
+
+const fn player_dlu(row: usize) -> RectPx {
+    RectPx::new(74, 49 + 20 * row as i32, 83, 15)
+}
+
+const fn bar_dlu(row: usize) -> RectPx {
+    RectPx::new(197, 49 + 20 * row as i32, 155, 14)
+}
+
+const COUNTDOWN_DLU: RectPx = RectPx::new(74, 219, 278, 10);
+const LIST_DLU: RectPx = RectPx::new(74, 234, 278, 70);
+
+pub const QUIT_LABEL: (&str, &str) = ("GUI:LeaveGame", "Quit Game");
+
+/// The dialog's push buttons.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectionButton {
+    /// Quit Game 2: the result cell becomes 2 (Leave).
+    Quit,
+    /// Row button `0x640..0x647`: propose removing that player
+    /// (0x0064AAE0).
+    Player(usize),
+    PreviousPage,
+    NextPage,
+}
+
+/// A child the pointer can rest on, for the status-line help.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectionControl {
+    Quit,
+    PreviousPage,
+    NextPage,
+    Player(usize),
+    Bar(usize),
+    Countdown,
+    List,
+}
+
+impl ConnectionControl {
+    /// The status-line help key: the 0x006040B0 table for dialog 0xEA.
+    pub fn help_key(self) -> &'static str {
+        match self {
+            Self::Quit => "STT:ReconnectButtonLeaveGame",
+            Self::PreviousPage | Self::NextPage => "",
+            Self::Player(_) => "STT:ReconnectButtonPlayer",
+            Self::Bar(_) => "STT:ReconnectProgressPlayer",
+            Self::Countdown => "STT:ReconnectLabelTime",
+            Self::List => "STT:ReconnectEditInfo",
+        }
+    }
+
+    /// Native control id.
+    pub fn id(self) -> u16 {
+        match self {
+            Self::Quit => 0x2,
+            Self::PreviousPage => super::paging::PREVIOUS,
+            Self::NextPage => super::paging::NEXT,
+            Self::Player(row) => PLAYER_IDS[row],
+            Self::Bar(row) => BAR_IDS[row],
+            Self::Countdown => COUNTDOWN_ID,
+            Self::List => LIST_ID,
+        }
+    }
+
+    /// The children in template (Z) order (Quit, list, VERA's paging,
+    /// row buttons, bars, countdown), as `ChildWindowFromPointEx` finds them.
+    fn all() -> impl Iterator<Item = Self> {
+        [Self::Quit, Self::List, Self::PreviousPage, Self::NextPage]
+            .into_iter()
+            .chain(TEMPLATE_PLAYER_ORDER.iter().filter_map(|id| {
+                PLAYER_IDS
+                    .iter()
+                    .position(|row_id| row_id == id)
+                    .map(Self::Player)
+            }))
+            .chain((0..CONNECTION_ROWS).map(Self::Bar))
+            .chain([Self::Countdown])
+    }
+
+    pub fn from_id(id: u16) -> Option<Self> {
+        Self::all().find(|control| control.id() == id)
+    }
+}
+
+/// Every child, each with its status help: the buttons, the list (rows the
+/// wait counts, each 2 px in from both ends; presses pass through it), the
+/// statics (the countdown unaligned); then the painted bars, VERA's page
+/// counter and the status line (0xEA has no title).
+pub fn spec() -> NodeSpec {
+    let align = crate::ui::shell::geom::ShellAlign::NONE;
+    NodeSpec::new(NodeKind::Dialog)
+        .children(ConnectionControl::all().map(move |control| {
+            let kind = match control {
+                ConnectionControl::Quit
+                | ConnectionControl::PreviousPage
+                | ConnectionControl::NextPage
+                | ConnectionControl::Player(_) => NodeKind::Button,
+                ConnectionControl::List => NodeKind::List,
+                _ => NodeKind::Text,
+            };
+            let node = NodeSpec::new(kind)
+                .id(control.id().into())
+                .tooltip(control.help_key());
+            match control {
+                ConnectionControl::List => node
+                    .with(Prop::RowCount, Value::Int(0))
+                    .with(Prop::TextInset, Value::Rect(RectPx::new(2, 0, 2, 0)))
+                    .with(Prop::PressThrough, Value::Bool(true)),
+                ConnectionControl::Countdown => {
+                    node.with(Prop::Align, Value::Int(i32::from(align.0)))
+                }
+                ConnectionControl::PreviousPage => node.label(super::paging::PREVIOUS_LABEL),
+                ConnectionControl::NextPage => node.label(super::paging::NEXT_LABEL),
+                _ => node,
+            }
+        }))
+        .children(BAR_FILL_IDS.map(|id| NodeSpec::new(NodeKind::Bar).id(id.into())))
+        .child(super::paging::counter_node())
+        .children(in_game_shell::panel_statics())
+}
+
+/// Puts the wait's values on 0xEA's nodes: each shown row's bar as
+/// 0x0064A7B0 paints it (`timing` is the wait's lag and age for a source;
+/// row 0, the local node, has none) and the list's line count and top.
+/// Sets integers and colours only: nothing allocates.
+pub(crate) fn sync_nodes(
+    gui: &mut Gui,
+    root: NodeId,
+    page: &ConnectionPage,
+    timing: impl Fn(usize) -> (u32, u32),
+) {
+    let visible = page.visible_range();
+    for (slot, row) in visible.enumerate() {
+        let Some(source) = page.row_source(row) else {
+            continue;
+        };
+        let (lag, age) = if row == 0 { (0, 0) } else { timing(source) };
+        let bar = bar_paint(RectPx::default(), lag, age);
+        let [r, g, b] = bar.fill_rgb;
+        let id = BAR_FILL_IDS[slot];
+        super::page::set(gui, root, id, Prop::Fill, Value::Int(bar.percent));
+        super::page::set(gui, root, id, Prop::Color, Value::Rgba(Rgba(r, g, b, 255)));
+    }
+    let rows = i32::try_from(page.lines.len()).unwrap_or(i32::MAX);
+    let top = i32::try_from(page.top).unwrap_or(i32::MAX);
+    super::page::set(gui, root, LIST_ID, Prop::RowCount, Value::Int(rows));
+    super::page::set(gui, root, LIST_ID, Prop::Top, Value::Int(top));
+}
+
+/// Physical rectangles of every control in the active-game shell's pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConnectionLayout {
+    pub quit: RectPx,
+    pub paging: [RectPx; 2],
+    pub status_line: RectPx,
+    pub players: [RectPx; CONNECTION_ROWS],
+    pub bars: [RectPx; CONNECTION_ROWS],
+    pub countdown: RectPx,
+    pub list: RectPx,
+}
+
+pub fn connection_layout(
+    width: i32,
+    height: i32,
+    shell: InGameShellLayout,
+    button_size: [i32; 2],
+) -> ConnectionLayout {
+    let ordinary = |dlu: RectPx| {
+        in_game_shell::ordinary_child_rect(
+            geom::dlu_rect(dlu.x, dlu.y, dlu.w, dlu.h),
+            width,
+            height,
+        )
+    };
+    ConnectionLayout {
+        quit: shell.lower_button_rect(width, button_size),
+        paging: super::paging::button_rects(shell.lower_button_rect(width, button_size)),
+        status_line: in_game_shell::status_line_rect(height),
+        players: std::array::from_fn(|row| ordinary(player_dlu(row))),
+        bars: std::array::from_fn(|row| ordinary(bar_dlu(row))),
+        countdown: ordinary(COUNTDOWN_DLU),
+        list: list_rect(width, height),
+    }
+}
+
+/// List 0x651 alone, for the wait's line wrapping.
+pub fn list_rect(width: i32, height: i32) -> RectPx {
+    in_game_shell::ordinary_child_rect(
+        geom::dlu_rect(LIST_DLU.x, LIST_DLU.y, LIST_DLU.w, LIST_DLU.h),
+        width,
+        height,
+    )
+}
+
+impl ConnectionLayout {
+    pub fn control_rect(&self, control: ConnectionControl) -> RectPx {
+        match control {
+            ConnectionControl::Quit => self.quit,
+            ConnectionControl::PreviousPage => self.paging[0],
+            ConnectionControl::NextPage => self.paging[1],
+            ConnectionControl::Player(row) => self.players[row],
+            ConnectionControl::Bar(row) => self.bars[row],
+            ConnectionControl::Countdown => self.countdown,
+            ConnectionControl::List => self.list,
+        }
+    }
+}
+
+/// One row's bar as 0x0064A7B0 paints it on the dialog surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BarPaint {
+    pub outline: RectPx,
+    pub fill: RectPx,
+    pub fill_rgb: [u8; 3],
+    /// The fill's share of the width, 0..=100 ([`bar::fill_rect`]).
+    pub percent: i32,
+}
+
+/// 0x0064A7B0 for one row. `lag` is the record's age in 16 ms buckets
+/// (`[0x00AFA418]` less peer+C, the elapsed bucket at its latest FrameSync;
+/// row 0 is 0). `age_ticks` is the raw millisecond difference from peer+14,
+/// multiplied by 60 with u32 wrapping before division by 1000. Green up to 240,
+/// yellow up to 480, then red, or blue (with the age as the lag) while the
+/// age is under 420. The fill keeps `100 − lag·100/1200` percent of the
+/// width, at least 6 pixels, inset by 2.
+pub fn bar_paint(rect: RectPx, lag: u32, age_ticks: u32) -> BarPaint {
+    let mut lag = lag;
+    let mut rgb = [0, 200, 0];
+    if lag > 240 {
+        rgb = [200, 200, 0];
+        if lag > 480 {
+            rgb = [200, 0, 0];
+            if age_ticks < 420 {
+                rgb = [0, 0, 200];
+                lag = age_ticks;
+            }
+        }
+    }
+    // Unsigned arithmetic, then the signed `< 1` clamp to zero.
+    let percent = 100u32.wrapping_sub(lag.wrapping_mul(100) / 1200) as i32;
+    let percent = percent.max(0);
+    BarPaint {
+        outline: rect,
+        fill: bar::fill_rect(rect, percent),
+        fill_rgb: rgb,
+        percent,
+    }
+}
+
+/// A named node bound at dialog creation. VERA keeps its stable source index
+/// with the retail name snapshot so disconnects cannot retarget a row button.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ConnectionRow {
+    pub(crate) source_index: usize,
+    pub(crate) name: String,
+}
+
+/// Pointer state and the list while 0xEA is open. The row names are fixed
+/// at the init arm (0x497): row `i < nodeCount` shows node `i`'s name, the
+/// rest are destroyed.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ConnectionPage {
+    pub(crate) rows: Vec<ConnectionRow>,
+    /// VERA's viewport; rows remain the wait owner's complete snapshot.
+    pub(crate) page: super::paging::RowPage,
+    /// Static 0x650 after its first `TXT_TIME_ALLOWED` write.
+    pub(crate) countdown: Option<String>,
+    /// List 0x651.
+    pub(crate) lines: Vec<LanChatLine>,
+    /// List 0x651's first shown row.
+    pub(crate) top: usize,
+    /// The wait's elapsed buckets at the last full repaint: the bars are
+    /// drawn by WM_PAINT, which the wait posts on even countdown seconds.
+    pub(crate) painted_elapsed: u64,
+    /// The dialog's controls are built: a new 0xEA starts them afresh.
+    pub(crate) controls_built: bool,
+}
+
+impl ConnectionPage {
+    pub fn row_source(&self, row: usize) -> Option<usize> {
+        self.rows.get(row).map(|row| row.source_index)
+    }
+
+    pub fn visible_range(&self) -> std::ops::Range<usize> {
+        self.page.range(self.rows.len(), CONNECTION_ROWS)
+    }
+    pub fn page_count(&self) -> usize {
+        super::paging::RowPage::count(self.rows.len(), CONNECTION_ROWS)
+    }
+    pub fn change_page(&mut self, next: bool) -> bool {
+        self.page.change(next, self.rows.len(), CONNECTION_ROWS)
+    }
+
+    /// Control `id`'s rect; `None` while it is hidden (an absent row, the
+    /// paging buttons of a single page).
+    pub fn rect(&self, layout: &ConnectionLayout, id: u16) -> Option<RectPx> {
+        match id {
+            super::paging::COUNTER => {
+                return (self.page_count() > 1).then(|| super::paging::counter_rect(layout.paging));
+            }
+            in_game_shell::FOOTER => return Some(layout.status_line),
+            _ => {}
+        }
+        if let Some(row) = BAR_FILL_IDS.iter().position(|fill| *fill == id) {
+            return self.rect(layout, BAR_IDS[row]);
+        }
+        let control = ConnectionControl::from_id(id)?;
+        let shown = match control {
+            ConnectionControl::PreviousPage | ConnectionControl::NextPage => self.page_count() > 1,
+            ConnectionControl::Player(row) | ConnectionControl::Bar(row) => {
+                row < self.visible_range().len()
+            }
+            _ => true,
+        };
+        shown.then(|| layout.control_rect(control))
+    }
+
+    /// The button control `id` is, a row button naming its row on the page.
+    pub fn button(&self, id: u16) -> Option<ConnectionButton> {
+        match ConnectionControl::from_id(id)? {
+            ConnectionControl::Quit => Some(ConnectionButton::Quit),
+            ConnectionControl::PreviousPage => Some(ConnectionButton::PreviousPage),
+            ConnectionControl::NextPage => Some(ConnectionButton::NextPage),
+            ConnectionControl::Player(visible) => Some(ConnectionButton::Player(
+                self.visible_range().start + visible,
+            )),
+            _ => None,
+        }
+    }
+
+    /// The tail of 0x0064AAE0 / 0x0064AD10 after their line: keep at most
+    /// 50 lines (delete line 0) and show the last one.
+    pub fn trim_and_show_last(&mut self, visible_rows: usize) {
+        if self.lines.len() > 50 {
+            self.lines.remove(0);
+        }
+        let last = self.lines.len().saturating_sub(1);
+        self.top = last.min(self.lines.len().saturating_sub(visible_rows));
+    }
+}
+
+/// The template's row-button order (DLGTEMPLATEEX), which sets Z order.
+const TEMPLATE_PLAYER_ORDER: [u16; CONNECTION_ROWS] =
+    [0x640, 0x641, 0x642, 0x643, 0x644, 0x645, 0x646, 0x647];
+
+#[cfg(all(test, tests_ui))]
+mod tests {
+    use super::*;
+    use crate::ui::shell::in_game_shell::allied_fixture_layout as shell;
+
+    fn corpus() -> serde_json::Value {
+        serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/connection_shell_layout.json",
+        ))
+        .unwrap()
+    }
+
+    fn all_controls() -> Vec<ConnectionControl> {
+        let mut out = vec![ConnectionControl::Quit, ConnectionControl::List];
+        out.extend((0..CONNECTION_ROWS).map(ConnectionControl::Player));
+        out.extend((0..CONNECTION_ROWS).map(ConnectionControl::Bar));
+        out.push(ConnectionControl::Countdown);
+        out
+    }
+
+    /// Every ordinary child lands where original 0x0060B7A0 put it at
+    /// 640x480, 800x600 and 1024x768, row buttons through table 0x00837300.
+    #[test]
+    fn ordinary_children_match_the_executed_native_placement() {
+        let corpus = corpus();
+        let cases = corpus["cases"].as_array().unwrap();
+        let mut checked = 0;
+        for control in all_controls() {
+            if control == ConnectionControl::Quit {
+                continue;
+            }
+            let id = u64::from(control.id());
+            for case in cases.iter().filter(|case| case["control_id"] == id) {
+                let (width, height) = (
+                    case["width"].as_i64().unwrap() as i32,
+                    case["height"].as_i64().unwrap() as i32,
+                );
+                let layout = connection_layout(width, height, shell(width, height), [125, 25]);
+                let rect = layout.control_rect(control);
+                assert_eq!(
+                    serde_json::json!([rect.x, rect.y, rect.w, rect.h]),
+                    case["rect"],
+                    "{control:?} {id:#x} at {width}x{height}"
+                );
+                checked += 1;
+            }
+        }
+        assert_eq!(checked, (1 + 8 + 8 + 1) * 3);
+    }
+
+    /// Quit Game 2 and the status line take B5's Resume and footer places,
+    /// like Diplomacy's Return (0x0060B350, 0x0060B550).
+    #[test]
+    fn quit_and_status_line_share_the_pause_menu_placements() {
+        use crate::ui::shell::pause_menu::{PauseMenuButton, PauseMenuTemplate, pause_menu_layout};
+        for (width, height) in [(640, 480), (800, 600), (1024, 768)] {
+            let shell = shell(width, height);
+            let layout = connection_layout(width, height, shell, [125, 25]);
+            let pause =
+                pause_menu_layout(width, height, shell, [125, 25], PauseMenuTemplate::Offline);
+            assert_eq!(layout.quit, pause.button(PauseMenuButton::Resume).unwrap());
+            assert_eq!(layout.status_line, pause.footer);
+        }
+    }
+
+    /// The help keys are the executed 0x006040B0 answers for dialog 0xEA.
+    #[test]
+    fn help_keys_match_the_native_help_table() {
+        let corpus = corpus();
+        for control in all_controls() {
+            let native = corpus["controls"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|c| c["control_id"] == u64::from(control.id()))
+                .unwrap_or_else(|| panic!("{control:?} is in the template"));
+            assert_eq!(
+                native["help"].as_str(),
+                Some(control.help_key()),
+                "{control:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn row_buttons_follow_the_swapped_id_table_and_absent_rows_take_no_pointer() {
+        let layout = connection_layout(800, 600, shell(800, 600), [125, 25]);
+        let page = ConnectionPage {
+            rows: vec![
+                ConnectionRow {
+                    source_index: 4,
+                    name: "a".into(),
+                },
+                ConnectionRow {
+                    source_index: 7,
+                    name: "b".into(),
+                },
+            ],
+            ..Default::default()
+        };
+        let id_at = |page: &ConnectionPage, x, y| {
+            let mut gui = vera20k_gui::Gui::new(64);
+            let root = gui.create(NodeKind::Dialog, None).unwrap();
+            crate::ui::shell::page::ensure_built(&mut gui, root, spec);
+            crate::ui::shell::page::sync_rects(&mut gui, root, |id| page.rect(&layout, id));
+            let node = gui.hit_at(root, x, y, false)?;
+            Some(gui.id_of(node)? as u16)
+        };
+        let control_at =
+            |page: &ConnectionPage, x, y| ConnectionControl::from_id(id_at(page, x, y)?);
+        let row1 = layout.players[1];
+        assert_eq!(
+            control_at(&page, row1.x + 1, row1.y + 1),
+            Some(ConnectionControl::Player(1))
+        );
+        assert_eq!(ConnectionControl::Player(1).id(), 0x642);
+        assert_eq!(page.row_source(1), Some(7));
+        let row2 = layout.players[2];
+        assert_eq!(control_at(&page, row2.x + 1, row2.y + 1), None);
+        let bar2 = layout.bars[2];
+        assert_eq!(control_at(&page, bar2.x + 1, bar2.y + 1), None);
+        let mut page = ConnectionPage {
+            rows: (0..30)
+                .map(|row| ConnectionRow {
+                    source_index: 29 - row,
+                    name: row.to_string(),
+                })
+                .collect(),
+            ..Default::default()
+        };
+        assert!(page.change_page(true));
+        let first = layout.players[0];
+        assert_eq!(
+            id_at(&page, first.x + 1, first.y + 1).and_then(|id| page.button(id)),
+            Some(ConnectionButton::Player(8))
+        );
+        assert_eq!(page.row_source(8), Some(21));
+        assert!(page.change_page(true));
+        assert!(page.change_page(true));
+        assert_eq!(page.visible_range(), 24..30);
+    }
+
+    /// Complete64A7B0 supplied both rows' original fill geometry and RGB565
+    /// colors. Cases cover timing bands, the blue threshold and wrapping
+    /// products; the format owner converts our RGB output for comparison.
+    #[test]
+    fn bars_match_executed_native_timing_and_paint() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/lan_wait_bars.json",
+        ))
+        .unwrap();
+        let cases = corpus["cases"].as_array().unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            let paint = case["paint"].as_array().unwrap();
+            for row_index in 0..2_u64 {
+                let row_key = row_index.to_string();
+                let native = &case["rows"][row_key.as_str()];
+                let outline = paint
+                    .iter()
+                    .find(|entry| {
+                        entry["row"].as_u64() == Some(row_index) && entry["operation"] == "outline"
+                    })
+                    .unwrap();
+                let fill = paint
+                    .iter()
+                    .find(|entry| {
+                        entry["row"].as_u64() == Some(row_index) && entry["operation"] == "fill"
+                    })
+                    .unwrap();
+                let rect = &outline["rect"];
+                let rect = RectPx::new(
+                    rect[0].as_i64().unwrap() as i32,
+                    rect[1].as_i64().unwrap() as i32,
+                    rect[2].as_i64().unwrap() as i32,
+                    rect[3].as_i64().unwrap() as i32,
+                );
+                // Native does not sample raw time for green/yellow bands;
+                // age is unused there, so zero is an arbitrary input only.
+                let age_ticks = native["age_ticks"].as_u64().unwrap_or(0) as u32;
+                let actual = bar_paint(rect, native["lag"].as_u64().unwrap() as u32, age_ticks);
+                assert_eq!(
+                    actual.outline, rect,
+                    "{} row {row_index}",
+                    case["input"]["name"]
+                );
+                assert_eq!(
+                    serde_json::json!([actual.fill.x, actual.fill.y, actual.fill.w, actual.fill.h]),
+                    fill["rect"],
+                    "{} row {row_index}",
+                    case["input"]["name"]
+                );
+                assert_eq!(
+                    u64::from(
+                        crate::render::native_surface_format::RGB565.pack_rgb8(actual.fill_rgb)
+                    ),
+                    fill["color"].as_u64().unwrap(),
+                    "{} row {row_index}",
+                    case["input"]["name"]
+                );
+            }
+        }
+    }
+
+    /// Rows the old renderer drew: eleven players over two pages, bars in
+    /// every timing band, a scrolled log.
+    fn fixture_page(visible_rows: usize) -> ConnectionPage {
+        let mut page = ConnectionPage {
+            rows: (0..11)
+                .map(|row| ConnectionRow {
+                    source_index: 10 - row,
+                    name: format!("player {row}"),
+                })
+                .collect(),
+            ..Default::default()
+        };
+        for n in 0..20 {
+            page.lines.push(LanChatLine {
+                text: format!("line {n}").encode_utf16().collect(),
+                color: u32::MAX,
+            });
+            page.trim_and_show_last(visible_rows);
+        }
+        page
+    }
+
+    /// Lag and age by source, across 0x0064A7B0's bands and the blue age.
+    fn fixture_timing(source: usize) -> (u32, u32) {
+        const TIMINGS: [(u32, u32); 11] = [
+            (0, 0),
+            (100, 0),
+            (241, 0),
+            (300, 0),
+            (480, 0),
+            (481, 419),
+            (600, 100),
+            (600, 900),
+            (1200, 0),
+            (2000, 9000),
+            (10, 0),
+        ];
+        TIMINGS[source]
+    }
+
+    /// The bars, row buttons and list the nodes carry are what the hand
+    /// painter computed from the page: same rects, fill, colours, list
+    /// geometry and row inset, on both pages.
+    #[test]
+    fn the_nodes_carry_what_the_hand_painter_drew() {
+        use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
+        let layout = connection_layout(800, 600, shell(800, 600), [125, 25]);
+        let visible_rows =
+            ShellListGeometry::new(layout.list, 0, 0, ListMetrics::RETAIL).visible_rows;
+        let mut page = fixture_page(visible_rows);
+        assert!(page.top > 0);
+        for next in [false, true] {
+            if next {
+                assert!(page.change_page(true));
+            }
+            let mut gui = Gui::new(64);
+            let root = gui.create(NodeKind::Dialog, None).unwrap();
+            crate::ui::shell::page::ensure_built(&mut gui, root, spec);
+            crate::ui::shell::page::sync_rects(&mut gui, root, |id| page.rect(&layout, id));
+            sync_nodes(&mut gui, root, &page, fixture_timing);
+            let node = |id: u16| gui.find_id(root, id.into()).unwrap();
+            let shown =
+                |id: u16| gui.get(node(id), Prop::Visible).unwrap() == Some(&Value::Bool(true));
+            let visible = page.visible_range();
+            assert_eq!(visible.len(), if next { 3 } else { CONNECTION_ROWS });
+            for slot in 0..CONNECTION_ROWS {
+                let fill = BAR_FILL_IDS[slot];
+                assert_eq!(shown(fill), slot < visible.len(), "slot {slot}");
+                assert_eq!(shown(PLAYER_IDS[slot]), slot < visible.len(), "slot {slot}");
+                if slot >= visible.len() {
+                    continue;
+                }
+                let row = visible.start + slot;
+                let (lag, age) = match row {
+                    0 => (0, 0),
+                    _ => fixture_timing(page.row_source(row).unwrap()),
+                };
+                let hand = bar_paint(layout.bars[slot], lag, age);
+                let rect = gui.tree().screen_rect(node(fill)).unwrap();
+                assert_eq!(rect, hand.outline, "slot {slot}");
+                let Ok(Some(Value::Int(percent))) = gui.get(node(fill), Prop::Fill) else {
+                    panic!("slot {slot} has no fill");
+                };
+                assert_eq!(bar::fill_rect(rect, *percent), hand.fill, "slot {slot}");
+                let [r, g, b] = hand.fill_rgb;
+                assert_eq!(
+                    gui.get(node(fill), Prop::Color).unwrap(),
+                    Some(&Value::Rgba(Rgba(r, g, b, 255))),
+                    "slot {slot}"
+                );
+                let player = gui.tree().screen_rect(node(PLAYER_IDS[slot])).unwrap();
+                assert_eq!(player, layout.players[slot]);
+            }
+            // List 0x651: the old geometry, top and unselected rows.
+            let list = node(LIST_ID);
+            let view = gui.list_view(list).unwrap();
+            assert_eq!(
+                (view.top, view.selected, view.pressed),
+                (page.top, None, None)
+            );
+            let new = gui.list_geometry(list).unwrap();
+            let old = ShellListGeometry::new(
+                layout.list,
+                page.lines.len(),
+                page.top,
+                ListMetrics::RETAIL,
+            );
+            assert_eq!(
+                (
+                    new.outer,
+                    new.content,
+                    new.scrollbar,
+                    new.thumb,
+                    new.visible_rows
+                ),
+                (
+                    old.outer,
+                    old.content,
+                    old.scrollbar,
+                    old.thumb,
+                    old.visible_rows
+                )
+            );
+            let Ok(Some(Value::Rect(inset))) = gui.get(list, Prop::TextInset) else {
+                panic!("the list rows have no inset");
+            };
+            for visible in 0..old.visible_rows {
+                let r = old.row(visible);
+                let at = RectPx::new(
+                    r.x + inset.x,
+                    r.y + inset.y,
+                    r.w - inset.x - inset.w,
+                    r.h - inset.y - inset.h,
+                );
+                assert_eq!(at, RectPx::new(r.x + 2, r.y, r.w - 4, r.h));
+            }
+            // The countdown is unaligned, as `paint.text(.., NONE)` drew it.
+            let none = i32::from(crate::ui::shell::geom::ShellAlign::NONE.0);
+            assert_eq!(
+                gui.get(node(COUNTDOWN_ID), Prop::Align).unwrap(),
+                Some(&Value::Int(none))
+            );
+            // The bars' statics still hover for their help; a press passes
+            // through the list as it did through the static.
+            let bar = layout.bars[0];
+            let hit = gui.hit_at(root, bar.x + 1, bar.y + 1, false);
+            assert_eq!(hit.and_then(|n| gui.id_of(n)), Some(i32::from(BAR_IDS[0])));
+            let (x, y) = (layout.list.x + 4, layout.list.y + 4);
+            let hovered = gui.hit_at(root, x, y, false).and_then(|n| gui.id_of(n));
+            assert_eq!(hovered, Some(i32::from(LIST_ID)));
+            assert_eq!(gui.hit_at(root, x, y, true), None);
+        }
+    }
+
+    #[test]
+    fn appended_lines_keep_fifty_and_show_the_last() {
+        let mut page = ConnectionPage::default();
+        for n in 0..51 {
+            page.lines.push(LanChatLine {
+                text: format!("{n}").encode_utf16().collect(),
+                color: u32::MAX,
+            });
+            page.trim_and_show_last(7);
+        }
+        assert_eq!(page.lines.len(), 50);
+        assert_eq!(String::from_utf16_lossy(&page.lines[0].text), "1");
+        assert_eq!(page.top, 43);
+    }
+}

@@ -1,0 +1,34 @@
+name: Platform report
+description: Tell us how VERA20k runs on your device, good or bad.
+labels: ["area:platform"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A short description is enough, in any language. Only the first box is required.
+
+  - type: textarea
+    id: result
+    attributes:
+      label: How did it go?
+      description: Did the game run well, fail to start or have a problem? Downloaded builds and source builds are both welcome.
+    validations:
+      required: true
+
+  - type: input
+    id: system
+    attributes:
+      label: Your device (optional)
+      description: A device name or operating system is enough, such as Windows 11, MacBook or Ubuntu.
+
+  - type: input
+    id: version
+    attributes:
+      label: Game version (optional)
+      description: A release number or build name, if you know it.
+
+  - type: textarea
+    id: attachments
+    attributes:
+      label: Screenshots, videos or logs (optional)
+      description: Drag files or paste links here. Remove personal details before posting.

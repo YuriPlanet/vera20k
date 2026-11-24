@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Lossless Rust-facing projection of the executed FV Cell range observations.",
+  "assumptions": [
+    "This projection executes no game code. Every expected outcome is copied from the separately replayed native range packet; no Rust output or hand-calculated expected value contributes to the vectors."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "projected_original_in_range": "0x006F7220"
+  },
+  "source_sha256": "33f5883644b2caa4d3ecdcb606af38f030fd0deab981d2d509e19f85bb020e02",
+  "payload_sha256": "7fc0578afd657fe515e714cef6c940a47f69008c3a23fa5f5e026f3c612d9b61"
+}

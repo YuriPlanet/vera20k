@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original guided ramp, HomingTrack, phase and strict live bridge crossing before world commit",
+  "assumptions": [
+    "Nineteen supplied incoming-flight rows execute original4668BD..467B7A, full HomingTrack5B20F0 and bridge467032. No arithmetic/steering/contact result is computed by Python. ProximityDetector4E1130/4E11F0 additionally executes the still-armed contact check.",
+    "The selected physical HoverMissile/AAHeatSeeker2 and ART reader components execute; source input files are hashed. Type discovery, full Rules Process chronology, FireAt launch, world commit, damage, collapse/repair, retirement and rendering are outside this fixture.",
+    "Original CRT initializers establish Bullet/Cell/Homing helper globals. Supplied mapped flat level6 cells use native Cell virtual getters, Map lookups and ground-height calculation. Live bit100 flags are fixture inputs, not native collapse/repair outputs.",
+    "Phase controls execute signed32 ID plus binary-frame wrap and signed remainder through the original trig table and ftol; negative IDs and binary frames are supplied explicitly.",
+    "Native x87 fixture uses53-bit precision and truncation0E7F."
+  ],
+  "substitutions": [
+    "Inherited BulletReader supplies signed-CRC INI caches, allocator/CRT/TLS/archive boundaries. Map cells, initial XYZ/velocity/IDs/frame, no-source state and structural flags are supplied. Hooks only observe and reject unexpected RNG."
+  ],
+  "entry_points": {
+    "bullet_ctor": "0x00466380",
+    "guided_ai": "0x004668BD",
+    "homing_track": "0x005B20F0",
+    "bridge_contact": "0x00467032",
+    "proximity_setup": "0x004E1130",
+    "proximity_check": "0x004E11F0"
+  },
+  "payload_sha256": "2f8321f07317b08ebd3464874250f54749a2e367c8d70b8e8cb15ca941584277"
+}

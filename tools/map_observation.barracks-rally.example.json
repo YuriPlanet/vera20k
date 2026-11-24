@@ -1,0 +1,356 @@
+{
+  "schema_version": "vera20k.map-observation-profile.v2",
+  "launch": {
+    "mode": {
+      "class": "Battle",
+      "id": 1,
+      "ui_name_key": "GUI:Battle",
+      "tooltip_key": "STT:ModeBattle",
+      "override_file": "MPBattleMD.ini",
+      "map_filter": "standard",
+      "random_maps_allowed": true,
+      "allies_allowed": true,
+      "must_ally": false
+    },
+    "selected_map_file": "XMP03T4.MAP",
+    "humans": [
+      {
+        "raw_slot_index": 0,
+        "name": "VERA-OBSERVER",
+        "slot": {
+          "country": 0,
+          "country_random": false,
+          "color_index": 0,
+          "color_random": false,
+          "start_position": {
+            "Position": 0
+          },
+          "team": {
+            "Team": 0
+          }
+        },
+        "role": {
+          "Player": {
+            "group": 0
+          }
+        }
+      }
+    ],
+    "local_player_index": 0,
+    "ai_player_count": 2,
+    "opponents": [
+      {
+        "country": 2,
+        "country_random": false,
+        "color_index": 1,
+        "color_random": false,
+        "start_position": {
+          "Position": 1
+        },
+        "team": {
+          "Team": 0
+        },
+        "difficulty": "Easy",
+        "raw_slot_index": 1
+      },
+      {
+        "country": 0,
+        "country_random": false,
+        "color_index": 2,
+        "color_random": false,
+        "start_position": {
+          "Position": 2
+        },
+        "team": {
+          "Team": 1
+        },
+        "difficulty": "Easy",
+        "raw_slot_index": 2
+      }
+    ],
+    "pre_fill_house_roster": {
+      "human_nodes": [
+        {
+          "priority": 0,
+          "source_order": 0,
+          "observer": false
+        }
+      ],
+      "ai_slots": [
+        {
+          "slot_index": 0,
+          "valid": false
+        },
+        {
+          "slot_index": 1,
+          "valid": true
+        },
+        {
+          "slot_index": 2,
+          "valid": true
+        },
+        {
+          "slot_index": 3,
+          "valid": false
+        },
+        {
+          "slot_index": 4,
+          "valid": false
+        },
+        {
+          "slot_index": 5,
+          "valid": false
+        },
+        {
+          "slot_index": 6,
+          "valid": false
+        },
+        {
+          "slot_index": 7,
+          "valid": false
+        }
+      ],
+      "fixed_tail": [
+        "Neutral",
+        "Special"
+      ]
+    },
+    "options": {
+      "starting_credits": 10000,
+      "unit_count": 6,
+      "tech_level": 2,
+      "game_speed": 1,
+      "default_ai_difficulty": 0,
+      "short_game": false,
+      "bases": true,
+      "bridges_destroyable": true,
+      "super_weapons": true,
+      "build_off_ally": true,
+      "crates": true,
+      "mcv_redeploy": true,
+      "fog_of_war": false,
+      "shroud": false,
+      "tiberium_grows": true,
+      "multi_engineer": false,
+      "harvester_truce": false,
+      "ally_change_allowed": true
+    }
+  },
+  "seed": 305419896,
+  "input_delay_ticks": 2,
+  "ticks": 2200,
+  "width": 800,
+  "height": 600,
+  "timeout_seconds": 600,
+  "commands": [
+    {
+      "issue_after_step": 0,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "DeployMcv": {
+          "entity_id": 1371
+        }
+      }
+    },
+    {
+      "issue_after_step": 70,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "QueueProduction": {
+          "type_id": 272
+        }
+      }
+    },
+    {
+      "issue_after_step": 650,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "PlaceReadyBuilding": {
+          "type_id": 272,
+          "rx": 31,
+          "ry": 89
+        }
+      }
+    },
+    {
+      "issue_after_step": 720,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "QueueProduction": {
+          "type_id": 275
+        }
+      }
+    },
+    {
+      "issue_after_step": 1100,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "PlaceReadyBuilding": {
+          "type_id": 275,
+          "rx": 31,
+          "ry": 85
+        }
+      }
+    },
+    {
+      "issue_after_step": 1159,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "SetRally": {
+          "rx": 35,
+          "ry": 89,
+          "producer_ids": [
+            1477
+          ]
+        }
+      }
+    },
+    {
+      "issue_after_step": 1160,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "QueueProduction": {
+          "type_id": 127
+        }
+      }
+    },
+    {
+      "issue_after_step": 1160,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "QueueProduction": {
+          "type_id": 127
+        }
+      }
+    }
+  ],
+  "observe_owners": [
+    "VERA-OBSERVER"
+  ],
+  "camera_cell": [
+    28,
+    88
+  ],
+  "terrain_cells": [
+    [
+      27,
+      87
+    ],
+    [
+      28,
+      87
+    ],
+    [
+      29,
+      87
+    ],
+    [
+      30,
+      87
+    ],
+    [
+      27,
+      88
+    ],
+    [
+      28,
+      88
+    ],
+    [
+      29,
+      88
+    ],
+    [
+      30,
+      88
+    ],
+    [
+      27,
+      89
+    ],
+    [
+      28,
+      89
+    ],
+    [
+      29,
+      89
+    ],
+    [
+      30,
+      89
+    ],
+    [
+      27,
+      90
+    ],
+    [
+      28,
+      90
+    ],
+    [
+      29,
+      90
+    ],
+    [
+      30,
+      90
+    ],
+    [
+      31,
+      89
+    ],
+    [
+      32,
+      89
+    ],
+    [
+      31,
+      90
+    ],
+    [
+      32,
+      90
+    ],
+    [
+      31,
+      85
+    ],
+    [
+      32,
+      85
+    ],
+    [
+      31,
+      86
+    ],
+    [
+      32,
+      86
+    ],
+    [
+      31,
+      87
+    ],
+    [
+      32,
+      87
+    ],
+    [
+      35,
+      89
+    ],
+    [
+      35,
+      88
+    ],
+    [
+      34,
+      87
+    ],
+    [
+      36,
+      89
+    ]
+  ]
+}

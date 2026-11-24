@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original581F50 hierarchy reconstruction at four Shrapnel wooden-bridge states.\n\nThe shared restore owner executes the complete native rebuild. This module\nsupplies the frozen full-map Shrapnel input factory and stage identities only.\n",
+  "assumptions": [
+    "A fresh original full-map Navigation machine is created independently for each boundary. Its initial state and selected original damage/collapse/repair state and trace must equal the frozen Navigation packet exactly before rebuild.",
+    "The existing Navigation.run driver executes preparation; the observer stops after selected original570050 repair or57BAA0 damage returns. Four independent VMs match the frozen Shrapnel initial/state/trace exactly before581F50.",
+    "Original LoadContent67E730 calls581F50 at67E8CD after MouseLoad and object restoration. This witness executes that complete581F50 wrapper on the frozen live source facts; it does not emulate SaveGame, MouseLoad or pointer swizzling.",
+    "Native MouseLoad preserves Map+68 class/height/base-ID values and all13 movement-row arrays; this selected bridge boundary has identical saved-source facts in production. The hierarchy record vectors, ID planes and adjacency buckets are rebuilt.",
+    "The selected stock span has no structural bridge/Tube records. Full post-load bridge record/dummy reconstruction and actor path invalidation are outside this bounded witness."
+  ],
+  "substitutions": [
+    "Reuse all physical reader, cell/TMP/Terrain preparation, bounded allocation/free, display, shroud and waterfall animation seams declared by frozen Navigation. No new native gameplay seam is introduced during581F50.",
+    "The successful LoadContent callsite is instruction-established and byte-checked against the loaded binary. This is a hierarchy-rebuild execution comparison, not a full native save/load run."
+  ],
+  "entry_points": {
+    "load_content": "0x0067E730",
+    "load_hierarchy_call": "0x0067E8CD",
+    "rebuild_all": "0x00581F50",
+    "clear_vector": "0x00588D60",
+    "build_level": "0x00581F90",
+    "refresh_scratch": "0x0042C1C0"
+  },
+  "rebuild_owner": "tools/spatial_oracle/anytown_navigation_restore.py",
+  "navigation_owner": "tools/spatial_oracle/anytown_damage/navigation.py",
+  "payload_sha256": "09128cf7c8aac9c4e685126bf66d24d916ed01f98a9d8f3223603457d739caec",
+  "packaging": "canonical JSON; gzip mtime=0; copied lexical inputs replaced by SHA256"
+}

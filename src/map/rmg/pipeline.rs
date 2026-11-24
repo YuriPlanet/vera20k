@@ -1,0 +1,1032 @@
+//! The deterministic generation pipeline: every terrain phase in `STAGE_ORDER`,
+//! wired together with the shared grid / scratch / rng / gauss and the per-phase
+//! state threaded between them.
+//!
+//! Inputs are **pre-resolved** — `TileIds`, a `TileBlocks` provider, the cliff
+//! ranges, the `Morphable=` predicate, the wheel-impassable table, the neutral
+//! tech-building list, and the MapSeed-derived scalars. This layer never touches
+//! `TheaterData` or the rules directly; the app layer builds the inputs and
+//! hands them in, which keeps the pipeline unit-testable with the same synthetic
+//! `TileBlocks` the individual phases use.
+//!
+//! The order is the native temperate driver's (see `STAGE_ORDER`): water →
+//! finalize → regions → green spread → recalc → starts → tech → tiberium →
+//! region reset → recalc → hills → patches → recalc → trees → rocks → recalc.
+//! Emit is the caller's step. The three `RecalcAfter*`/`RecalcFinal` passes are
+//! `lat_fixup` calls; they are RNG-free, so the one that matters observably is
+//! the post-patch pass that produces the sand-LAT tiles the rock pass needs.
+
+use super::grid::RmgGrid;
+use super::phases::blob::BlobCtx;
+use super::phases::carve::CarveCtx;
+use super::phases::carve_driver;
+use super::phases::hills::{HillsArgs, HillsCtx};
+use super::phases::island_passes;
+use super::phases::lat_patches::PatchCtx;
+use super::phases::regions::{RegionCtx, Regions};
+use super::phases::rocks::{RockArgs, RockCtx};
+use super::phases::shore::TileBlocks;
+use super::phases::starts::{StartsArgs, StartsCtx};
+use super::phases::tech_buildings::{TechArgs, TechCtx, TechType};
+use super::phases::tiberium::{TiberiumArgs, TiberiumCtx};
+use super::phases::trees::{TreeArgs, TreeCtx};
+use super::phases::urban_areas;
+use super::phases::water::{PlayableRect, WaterArgs};
+use super::phases::zones::{self, ZoneKind, ZoneParams};
+use super::phases::{
+    cliff_materialization, cliff_variants, green_spread, hills, lat_fixup, lat_patches, regions,
+    rocks, starts, tech_buildings, tiberium, trees, water, water_finalize,
+};
+use super::rng::RmgRng;
+use super::scratch::RmgScratch;
+use super::tiles::TileIds;
+use super::x87::Gaussian;
+use super::{MapGeometry, RmgConstructionTrace, Stage};
+use crate::map::playfield::PlayfieldBounds;
+
+/// The land-type count of the wheel-impassable table (`zones::LAND_TYPES`).
+pub const LAND_TYPES: usize = super::phases::zones::LAND_TYPES;
+
+/// The generator's default ground level (`MapSeed+0x30C` = 4).
+const DEFAULT_LEVEL: u8 = 4;
+
+/// Mixed into the map seed for an ore or town variant's own stream.
+const ORE_VARIANT_SALT: u16 = 0x0E57;
+const TOWN_VARIANT_SALT: u16 = 0x70A1;
+
+/// The seed of variant `variant` (1 and up) of a stage: the map seed with a
+/// multiple of the stage's salt, so each variant draws its own stream.
+fn variant_seed(seed: u16, salt: u16, variant: u8) -> u16 {
+    seed ^ salt.wrapping_mul(u16::from(variant))
+}
+
+/// Pre-resolved inputs for one generation run.
+pub struct PipelineInputs<'a> {
+    pub ids: &'a TileIds,
+    pub blocks: &'a dyn TileBlocks,
+    /// The `[TileSet] Morphable=` predicate for the corner engine.
+    pub morphable: &'a dyn Fn(i32) -> bool,
+    /// Per-land-type "wheel speed <= 1%" flags for the zone classifier.
+    pub wheel_impassable: [bool; LAND_TYPES],
+    /// Low byte of `[General] CliffBackImpassability=`, for the Recalc land
+    /// type the zone classifier and tech foundation gate read.
+    pub cliff_back_impassability: u8,
+    /// What the start-zone classifier reads from each overlay type, by id.
+    pub overlay_zones: &'a [super::phases::zones::OverlayZoneFacts],
+    /// The resolved `NeutralTechBuildings` list.
+    pub tech_types: &'a [TechType],
+    /// The generator's sine table, for the river's heading.
+    pub trig: Option<&'a crate::util::retail_trig::TrigTable>,
+
+    // Scalars from the `.SED` options / MapSeed / RMGMD settings.
+    pub map_type: i32,
+    /// How freely plateaus get linked by ramps. Zero does not disable the
+    /// pass — it gives every adjacent pair exactly one ramp.
+    pub accessibility: i32,
+    /// `RegionSize` option: the region split threshold for map types 3/4.
+    pub region_size: i32,
+    pub theater: i32,
+    pub num_players: i32,
+    /// `WaterAmount` option.
+    pub water_percent: i32,
+    /// `Resources` option (gems appear only when 3).
+    pub resources: i32,
+    /// `Tiberium` percent option.
+    pub tib_option: i32,
+    /// `RMGMinimumTiberium` / `RMGMaximumTiberium`.
+    pub min_tib: i32,
+    pub max_tib: i32,
+    /// `TiberiumLayout` option (start-selector slot target).
+    pub tiberium_layout: i32,
+    /// `Ruggedness` option (hill height-walk scale).
+    pub ruggedness: i32,
+    /// `Vegetation` option (patch probability + tree-count scale).
+    pub vegetation: i32,
+    /// The tree-count width term (`MapSeed+0x64`).
+    pub width: i32,
+    /// `MaxTrees` (`MapSeed+0x2FC`; 0 disables trees).
+    pub max_trees: i32,
+    /// VERA extension: Fair Starts evens the ore near each start after the
+    /// last stage and measures the result; `seed` starts its own stream.
+    pub fair_starts: bool,
+    pub seed: u16,
+    /// VERA extension (`Extra::OreVariant`, `Extra::TownVariant`): not 0
+    /// draws the ore fields, or VERA's towns, from a stream of their own.
+    /// The stage first runs on copies with the map's stream, which leaves
+    /// that stream where the seed's own ore or towns would, so every other
+    /// stage draws what it drew before.
+    pub ore_variant: u8,
+    pub town_variant: u8,
+    /// VERA extension: the Extras that add to the finished map
+    /// (`embellish`), VERA's catalogue for their buildings, and the two the
+    /// fairness report's score follows (`Extra::SeaAccess`,
+    /// `Extra::BaseRoom`).
+    pub embellish: super::embellish::EmbellishArgs<'a>,
+    pub vera_catalog: &'a urban_areas::UrbanCatalog,
+    pub sea_access: bool,
+    /// The presence the urban pass reads (`MapSeed+0x60`).
+    pub urban_presence: i32,
+    /// VERA extension: the opted-in Buildings value the urban pass fills the
+    /// map by (`UrbanArgs::vera_fill`).
+    pub urban_fill: Option<i32>,
+    /// Whether a river may attempt waterfall terrain, decided by the
+    /// generation's very first draw. Only the river carver reads the value;
+    /// the draw that produces it is stream-relevant to every map type.
+    pub bridge_enabled: bool,
+    /// The urban pass (Ares hook 0x598FB8, or VERA's opted-in Urban
+    /// Presence), present when it runs; it reads `urban_presence` too.
+    pub urban_areas: Option<&'a urban_areas::UrbanInputs<'a>>,
+    /// Ares.dll is loaded for this generation: the game is read the Ares way
+    /// (`GenerationObjects::ares`). The low-bridge decks follow it.
+    pub ares: bool,
+}
+
+/// Watches the grid between stages, for callers that draw the map as it builds.
+///
+/// Observation only: the grid arrives shared and the RNG, scratch and per-phase
+/// state are not passed at all, so an observer cannot change what a run
+/// generates. It fires at the boundary *named* by the stage whether or not that
+/// stage did any work — a stage this configuration skips leaves the grid
+/// untouched, so its boundary looks exactly like the one before it.
+///
+/// Waypoints are empty until Starts. Terrain is the same chronological
+/// accumulator later moved into PipelineOutput: TIBTRE precedes ordinary TREE.
+pub type StageObserver<'a> =
+    &'a mut dyn FnMut(Stage, &RmgGrid, &[(u8, u16, u16)], &[(String, i16, i16)]);
+
+/// What the pipeline collects for the emitter.
+#[derive(Debug, Default)]
+pub struct PipelineOutput {
+    /// `(slot, x, y)` per generated start position.
+    pub waypoints: Vec<(u8, u16, u16)>,
+    /// Placed `(name, x, y)` terrain objects — trees and TIBTRE.
+    pub terrain: Vec<(String, i16, i16)>,
+    /// Placed `(name, x, y)` neutral tech buildings.
+    pub structures: Vec<(String, i16, i16)>,
+    /// Scenario-consuming generated Building constructors in exact order.
+    pub(crate) construction_trace: RmgConstructionTrace,
+    /// Start slots no region could fill. See `StartsOutcome`.
+    pub unfilled_start_slots: usize,
+    /// Urban buildings and foots, emitted after `structures`.
+    pub urban_areas: Vec<urban_areas::UrbanObject>,
+    /// VERA extension: what the map offers each start, under Fair Starts.
+    pub fairness: Option<super::fairness::FairnessReport>,
+}
+
+/// Run the whole deterministic pipeline in place over `grid`/`scratch`, drawing
+/// from `rng`/`gauss`. Returns the waypoints, terrain objects and structures the
+/// emitter projects into the `MapFile`.
+pub(super) fn run_pipeline(
+    grid: &mut RmgGrid,
+    scratch: &mut RmgScratch,
+    rng: &mut RmgRng,
+    gauss: &mut Gaussian,
+    geometry: &MapGeometry,
+    inputs: &PipelineInputs<'_>,
+    observe: StageObserver<'_>,
+) -> PipelineOutput {
+    let (map_w, map_h) = geometry.map_size();
+    let local_rect = geometry.local_size();
+    let [_, _, gen_w, gen_h] = local_rect;
+    let stride = geometry.stride();
+    let playfield = PlayfieldBounds::from_normalized_local_size(
+        map_w,
+        local_rect[0],
+        local_rect[1],
+        gen_w,
+        gen_h,
+    );
+    // Emit-form start positions, filled in once `Starts` has produced them so
+    // every later boundary can hand them to the observer.
+    let mut waypoints: Vec<(u8, u16, u16)> = Vec::new();
+    // Native RMG constructs TIBTRE at5A2C05 before ordinary TREE at5A48AA.
+    // Borrow this one chronology for progress; final emission moves it intact.
+    let mut terrain: Vec<(String, i16, i16)> = Vec::new();
+    let mut structures: Vec<(String, i16, i16)> = Vec::new();
+    let mut construction_trace = RmgConstructionTrace::default();
+
+    // ---- Water + finalize (map types 0-2 shape the base terrain) ----------
+    // Struct-literal fields move a `&mut`, so every context reborrows the shared
+    // owners (`&mut *grid` …); each context is scoped so the reborrow releases
+    // before the next stage.
+    {
+        let mut ctx = BlobCtx {
+            grid: &mut *grid,
+            scratch: &mut *scratch,
+            ids: inputs.ids,
+            blocks: inputs.blocks,
+            rng: &mut *rng,
+            gauss: &mut *gauss,
+            trig: inputs.trig,
+            map_w,
+            map_h,
+            rollback_level: DEFAULT_LEVEL,
+        };
+        let args = WaterArgs {
+            map_type: inputs.map_type,
+            water_percent: inputs.water_percent,
+            num_players: inputs.num_players,
+            bridge_enabled: inputs.bridge_enabled,
+            playable: PlayableRect {
+                x: local_rect[0],
+                y: local_rect[1],
+                w: gen_w,
+                h: gen_h,
+            },
+        };
+        water::run(&mut ctx, &args);
+    }
+    observe(Stage::Water, grid, &waypoints, &terrain);
+    water_finalize::run(grid, scratch, inputs.ids, inputs.blocks, rng);
+    observe(Stage::WaterFinalize, grid, &waypoints, &terrain);
+
+    // ---- Regions -----------------------------------------------------------
+    let mut regions: Regions = {
+        let mut ctx = RegionCtx {
+            grid: &mut *grid,
+            scratch: &mut *scratch,
+            ids: inputs.ids,
+            rng: &mut *rng,
+            map_type: inputs.map_type,
+            default_level: DEFAULT_LEVEL,
+        };
+        let mut regions = regions::run(&mut ctx);
+        // `SplitOversizedRegions` (0x0058EBC0) runs only for map types 3/4,
+        // between the partition and the island passes (0x00598D55..62).
+        if matches!(inputs.map_type, 3 | 4) {
+            regions::split_oversized(
+                &mut ctx,
+                &mut *gauss,
+                &mut regions,
+                inputs.region_size,
+                gen_w,
+                gen_h,
+            );
+        }
+        regions
+    };
+    observe(Stage::Regions, grid, &waypoints, &terrain);
+
+    // ---- Island passes (map types 3 and 4 only) ---------------------------
+    // The cliff repair stamps region tags as a side effect, so the pass hands
+    // back a rebuilt partition that replaces the one above wholesale. Every
+    // later stage reads the rebuilt ids.
+    if matches!(inputs.map_type, 3 | 4) {
+        let mut ctx = RegionCtx {
+            grid: &mut *grid,
+            scratch: &mut *scratch,
+            ids: inputs.ids,
+            rng: &mut *rng,
+            map_type: inputs.map_type,
+            default_level: DEFAULT_LEVEL,
+        };
+        regions = island_passes::run(&mut ctx);
+
+        // Then the ramps and low-bridge decks (step 6 of 0x0058EF10).
+        let mut ctx = CarveCtx {
+            grid: &mut *grid,
+            scratch: &mut *scratch,
+            ids: inputs.ids,
+            blocks: inputs.blocks,
+            rng: &mut *rng,
+            playfield: &playfield,
+            ares: inputs.ares,
+        };
+        carve_driver::connect_regions(
+            &mut ctx,
+            &regions,
+            inputs.accessibility,
+            &mut structures,
+            &mut construction_trace,
+        );
+        // Original Generate598D6E..598D82: after connectors, jitter the
+        // ridge edges, repair/materialize faces, then restamp registered
+        // cliff variants. Generate ignores the materializer's refusal result
+        // and still performs the variant pass; partial writes remain live.
+        cliff_materialization::jitter(grid, scratch, inputs.ids, rng);
+        let _ =
+            cliff_materialization::materialize(grid, scratch, inputs.ids, inputs.blocks, rng, -1);
+        cliff_variants::run(
+            grid,
+            scratch,
+            inputs.blocks,
+            rng,
+            inputs.ids.cliffs.cliff_set.map_or(-1, i32::from),
+        );
+    }
+    observe(Stage::IslandPasses, grid, &waypoints, &terrain);
+
+    // ---- Green spread + first recalc --------------------------------------
+    green_spread::run(grid, inputs.ids, rng);
+    observe(Stage::GreenSpread, grid, &waypoints, &terrain);
+    lat_fixup::run(grid, inputs.ids);
+    observe(Stage::RecalcAfterTerrain, grid, &waypoints, &terrain);
+    // This recalc's land types are the ones the urban building gate reads:
+    // no full recalc runs again before the urban pass.
+    let urban_rock = inputs
+        .urban_areas
+        .map(|_| trees::RecalcRock::snapshot(grid, inputs.blocks, inputs.cliff_back_impassability));
+
+    // ---- Starts (needs the zone field) ------------------------------------
+    let (outcome, start_tech_placements) = {
+        let zone_params = ZoneParams {
+            playfield,
+            wheel_impassable: inputs.wheel_impassable,
+            cliff_back_impassability: inputs.cliff_back_impassability,
+            overlays: inputs.overlay_zones,
+        };
+        let zones = zones::compute(
+            grid,
+            inputs.blocks,
+            &zone_params,
+            ZoneKind::for_map_type(inputs.map_type),
+        );
+        let args = StartsArgs {
+            // SyncOptionsFromControls596C70 writes NumPlayers to global
+            // MapSeed+50 (ABE028) at596DE9. Generate598960 uses that same
+            // record (596644..59664C); CreateStartingPoints594B50 reads its
+            // quota at594DF0, and SelectStartCandidates594F40 divides by it
+            // at594F7D. Native's explicit4 stores (7A2494/596018) belong to
+            // separate WOL territory setup, not ordinary dialog generation.
+            start_quota: inputs.num_players,
+            num_players: inputs.num_players,
+            tiberium_layout: inputs.tiberium_layout,
+            gen_w,
+            gen_h,
+            map_w,
+        };
+        let outcome = {
+            let mut ctx = StartsCtx {
+                grid: &mut *grid,
+                scratch: &mut *scratch,
+                ids: inputs.ids,
+                rng: &mut *rng,
+                regions: &mut regions,
+            };
+            starts::run(&mut ctx, &args, &zones)
+        };
+        // Map type 0's tech buildings: CreateStartingPoints' coin-flip tail,
+        // before Generate's MarkStartAreas clearings.
+        let start_tech_placements = {
+            let tech_args = TechArgs {
+                map_type: inputs.map_type,
+                playfield,
+                stride: stride as i32,
+                cliff_back_impassability: inputs.cliff_back_impassability,
+            };
+            let mut ctx = TechCtx {
+                grid: &mut *grid,
+                scratch: &mut *scratch,
+                ids: inputs.ids,
+                blocks: inputs.blocks,
+                rng: &mut *rng,
+                regions: &regions,
+                types: inputs.tech_types,
+            };
+            tech_buildings::run_start_flips_traced(
+                &mut ctx,
+                &tech_args,
+                &outcome.region_order,
+                &mut construction_trace,
+                structures.len(),
+            )
+        };
+        let mut ctx = StartsCtx {
+            grid: &mut *grid,
+            scratch: &mut *scratch,
+            ids: inputs.ids,
+            rng: &mut *rng,
+            regions: &mut regions,
+        };
+        starts::mark_start_areas(&mut ctx, &args, &outcome);
+        (outcome, start_tech_placements)
+    };
+    // Captured before `outcome` moves into the tiberium phase, which is also
+    // the phase that turns each unfilled slot into a field seeded at the map
+    // origin.
+    let unfilled_start_slots = outcome.unfilled_start_slots;
+    waypoints = outcome
+        .waypoints
+        .iter()
+        .enumerate()
+        .filter_map(|(slot, spot)| spot.map(|(x, y)| (slot as u8, x as u16, y as u16)))
+        .collect();
+    observe(Stage::Starts, grid, &waypoints, &terrain);
+
+    // ---- Tech buildings (map types 1-4; map type 0's came with the starts) -
+    let mut tech_placements = start_tech_placements;
+    let driver_placements = {
+        let args = TechArgs {
+            map_type: inputs.map_type,
+            playfield,
+            stride: stride as i32,
+            cliff_back_impassability: inputs.cliff_back_impassability,
+        };
+        let mut ctx = TechCtx {
+            grid: &mut *grid,
+            scratch: &mut *scratch,
+            ids: inputs.ids,
+            blocks: inputs.blocks,
+            rng: &mut *rng,
+            regions: &regions,
+            types: inputs.tech_types,
+        };
+        let base = structures.len() + tech_placements.len();
+        tech_buildings::run_traced(&mut ctx, &args, &mut construction_trace, base)
+    };
+    tech_placements.extend(driver_placements);
+    observe(Stage::TechBuildings, grid, &waypoints, &terrain);
+
+    // ---- Tiberium ----------------------------------------------------------
+    let tiberium = {
+        let args = TiberiumArgs {
+            map_type: inputs.map_type,
+            resources: inputs.resources,
+            tib_option: inputs.tib_option,
+            min_tib: inputs.min_tib,
+            max_tib: inputs.max_tib,
+            playfield,
+        };
+        let run = |grid: &mut RmgGrid,
+                   scratch: &mut RmgScratch,
+                   rng: &mut RmgRng,
+                   gauss: &mut Gaussian| {
+            let mut ctx = TiberiumCtx {
+                grid,
+                scratch,
+                ids: inputs.ids,
+                rng,
+                gauss,
+                regions: &regions,
+                waypoints: &outcome.waypoints,
+            };
+            tiberium::run(&mut ctx, &args)
+        };
+        match inputs.ore_variant {
+            0 => run(grid, scratch, rng, gauss),
+            variant => {
+                let (mut dry_grid, mut dry_scratch) = (grid.clone(), scratch.clone());
+                run(&mut dry_grid, &mut dry_scratch, rng, gauss);
+                let mut own_rng = RmgRng::new(variant_seed(inputs.seed, ORE_VARIANT_SALT, variant));
+                run(grid, scratch, &mut own_rng, &mut Gaussian::default())
+            }
+        }
+    };
+    terrain.extend(tiberium.trees);
+    observe(Stage::Tiberium, grid, &waypoints, &terrain);
+
+    // ---- Region reset + second recalc -------------------------------------
+    scratch.reset_region_ids();
+    observe(Stage::RegionReset, grid, &waypoints, &terrain);
+
+    // ---- Urban areas (Ares hook 0x598FB8 / VERA opt-in, before the recalc) -
+    let mut urban_area_objects = Vec::new();
+    if let (Some(urban_inputs), Some(recalc_rock)) = (inputs.urban_areas, urban_rock.as_ref()) {
+        let args = urban_areas::UrbanArgs {
+            urban_presence: inputs.urban_presence,
+            map_w,
+            map_h,
+            stride: stride as i32,
+            vera_fill: inputs.urban_fill,
+            civilian_amount: inputs.embellish.civilian_amount,
+        };
+        let entity_base = structures.len() + tech_placements.len();
+        let run = |grid: &mut RmgGrid,
+                   scratch: &mut RmgScratch,
+                   rng: &mut RmgRng,
+                   gauss: &mut Gaussian,
+                   objects: &mut Vec<urban_areas::UrbanObject>,
+                   trace: &mut RmgConstructionTrace,
+                   trees: &mut Vec<(String, i16, i16)>| {
+            let mut ctx = urban_areas::UrbanCtx {
+                grid,
+                scratch,
+                ids: inputs.ids,
+                blocks: inputs.blocks,
+                rng,
+                gauss,
+                playfield: &playfield,
+                recalc_rock,
+                inputs: urban_inputs,
+            };
+            let mut output = urban_areas::UrbanOutput {
+                objects,
+                trace,
+                entity_base,
+                trees,
+            };
+            urban_areas::run(&mut ctx, &args, &mut output);
+        };
+        // The variant is VERA's towns only: Ares' pass keeps the map's stream.
+        match inputs.town_variant {
+            variant if variant != 0 && inputs.urban_fill.is_some() => {
+                let (mut dry_grid, mut dry_scratch) = (grid.clone(), scratch.clone());
+                run(
+                    &mut dry_grid,
+                    &mut dry_scratch,
+                    rng,
+                    gauss,
+                    &mut Vec::new(),
+                    &mut construction_trace.clone(),
+                    &mut Vec::new(),
+                );
+                let mut own_rng =
+                    RmgRng::new(variant_seed(inputs.seed, TOWN_VARIANT_SALT, variant));
+                run(
+                    grid,
+                    scratch,
+                    &mut own_rng,
+                    &mut Gaussian::default(),
+                    &mut urban_area_objects,
+                    &mut construction_trace,
+                    &mut terrain,
+                );
+            }
+            _ => run(
+                grid,
+                scratch,
+                rng,
+                gauss,
+                &mut urban_area_objects,
+                &mut construction_trace,
+                &mut terrain,
+            ),
+        }
+    }
+    observe(Stage::UrbanAreas, grid, &waypoints, &terrain);
+    lat_fixup::run(grid, inputs.ids);
+    observe(Stage::RecalcAfterTiberium, grid, &waypoints, &terrain);
+    // This recalc (Generate 0x00598960, just before CreateHills) is the last
+    // to set the land type PlaceTreeRegion (0x005A45E0) reads: neither the
+    // hills nor the LAT patches recompute it, so its Rock cells are kept.
+    let recalc_rock =
+        trees::RecalcRock::snapshot(grid, inputs.blocks, inputs.cliff_back_impassability);
+
+    // ---- Hills -------------------------------------------------------------
+    {
+        let args = HillsArgs {
+            ruggedness: inputs.ruggedness,
+            map_w,
+            map_h,
+        };
+        let mut ctx = HillsCtx {
+            grid: &mut *grid,
+            scratch: &mut *scratch,
+            ids: inputs.ids,
+            gauss: &mut *gauss,
+            rng: &mut *rng,
+        };
+        hills::run(&mut ctx, &args, inputs.morphable);
+    }
+    observe(Stage::Hills, grid, &waypoints, &terrain);
+
+    // ---- LAT patches → recalc (creates sand-LAT) → trees → rocks ----------
+    {
+        let mut ctx = PatchCtx {
+            grid: &mut *grid,
+            scratch: &mut *scratch,
+            ids: inputs.ids,
+            rng: &mut *rng,
+            gauss: &mut *gauss,
+        };
+        lat_patches::run(&mut ctx, inputs.theater, inputs.vegetation);
+    }
+    observe(Stage::LatPatches, grid, &waypoints, &terrain);
+    lat_fixup::run(grid, inputs.ids);
+    observe(Stage::RecalcAfterPatches, grid, &waypoints, &terrain);
+
+    let trees = {
+        let args = TreeArgs {
+            width: inputs.width,
+            vegetation: inputs.vegetation,
+            max_trees: inputs.max_trees,
+            stride: stride as i32,
+        };
+        let mut ctx = TreeCtx {
+            grid: &mut *grid,
+            scratch: &mut *scratch,
+            ids: inputs.ids,
+            rng: &mut *rng,
+            gauss: &mut *gauss,
+            recalc_rock: &recalc_rock,
+        };
+        trees::run(&mut ctx, &args)
+    };
+    terrain.extend(trees);
+    observe(Stage::Trees, grid, &waypoints, &terrain);
+
+    // Rocks — temperate theater only.
+    if inputs.theater == 0 {
+        let args = RockArgs {
+            map_w,
+            map_h,
+            stride: stride as i32,
+        };
+        let mut ctx = RockCtx {
+            grid: &mut *grid,
+            scratch: &mut *scratch,
+            ids: inputs.ids,
+            rng: &mut *rng,
+        };
+        rocks::run(&mut ctx, &args);
+    }
+    observe(Stage::Rocks, grid, &waypoints, &terrain);
+
+    // ---- Final recalc ------------------------------------------------------
+    lat_fixup::run(grid, inputs.ids);
+    observe(Stage::RecalcFinal, grid, &waypoints, &terrain);
+
+    // ---- VERA: Extras and fairness, after every native stage and draw -----
+    // The Extras that add to the map come first, each from its own stream.
+    // Then every map is measured (the dialog shows the report; measuring
+    // draws nothing and changes nothing); only Fair Starts evens the ore
+    // before that.
+    let starts: Vec<(i32, i32)> = waypoints
+        .iter()
+        .map(|&(_, x, y)| (i32::from(x), i32::from(y)))
+        .collect();
+    let mut ctx = super::fairness::FairCtx {
+        grid,
+        scratch,
+        ids: inputs.ids,
+        playfield,
+    };
+    let mut out = super::embellish::EmbellishOutput {
+        objects: &mut urban_area_objects,
+        trace: &mut construction_trace,
+        entity_base: structures.len() + tech_placements.len(),
+        terrain: &mut terrain,
+    };
+    if inputs.embellish.any() {
+        let paved = super::embellish::run(
+            &mut ctx,
+            &inputs.embellish,
+            &starts,
+            inputs.vera_catalog,
+            inputs.tech_types,
+            &mut out,
+        );
+        if paved {
+            lat_fixup::run(ctx.grid, inputs.ids);
+        }
+    }
+    if inputs.fair_starts {
+        super::fairness::equalize_ore(&mut ctx, &starts, inputs.seed);
+    }
+    let fairness = Some(super::fairness::measure(
+        &ctx,
+        &starts,
+        inputs.num_players,
+        unfilled_start_slots,
+        (inputs.sea_access, inputs.embellish.base_room != 0),
+    ));
+    // The sliders fill unoccupied sites after native generation, the Extras
+    // and Fair Starts. Their buildings cannot displace ore or pick another seed.
+    super::embellish::place_slider_objects(
+        &mut ctx,
+        &inputs.embellish,
+        &starts,
+        inputs.vera_catalog,
+        inputs.tech_types,
+        tech_placements.len(),
+        &mut out,
+    );
+
+    // ---- Collect outputs for the emitter ----------------------------------
+    structures.extend(
+        tech_placements
+            .into_iter()
+            .map(|placement| (placement.name, placement.x, placement.y)),
+    );
+
+    PipelineOutput {
+        waypoints,
+        terrain,
+        structures,
+        construction_trace,
+        unfilled_start_slots,
+        urban_areas: urban_area_objects,
+        fairness,
+    }
+}
+
+// A stock oracle: Ares' bridge end hooks (0x58FBDD..0x5900F7) skip the end
+// coins and shift every later draw, so it runs without Ares.dll.
+#[cfg(all(test, tests_map))]
+mod tests {
+    use super::*;
+    use crate::map::rmg::options::RmgOptions;
+    use crate::map::rmg::phases::carve_driver::ConnectorRegion;
+    use crate::map::rmg::phases::shore::{SubTile, TileBlock};
+    use crate::map::rmg::{RmgConstructionOutcome, RmgConstructionPhase};
+    use crate::map::theater::TheaterCliffRanges;
+
+    /// A `TileBlocks` provider that returns a 1x1 block for every tile — the
+    /// same synthetic the water/shore phase tests use.
+    struct OneByOne(TileBlock);
+    impl TileBlocks for OneByOne {
+        fn block(&self, _tile: i32) -> Option<&TileBlock> {
+            Some(&self.0)
+        }
+    }
+
+    fn one_by_one() -> OneByOne {
+        OneByOne(TileBlock {
+            width: 1,
+            height: 1,
+            subtiles: vec![Some(SubTile::default())],
+        })
+    }
+
+    fn ids() -> TileIds {
+        // Distinct, resolvable bases per ground/LAT group; realistic spans.
+        TileIds {
+            clear: 0,
+            ramp_base: 600,
+            ramp_smooth: 620,
+            slope_set_pieces: -1,
+            rough: 700,
+            sand: 800,
+            green: 100,
+            rough_lat: 710,
+            sand_lat: 810,
+            green_lat: 110,
+            pave_lat: -1,
+            pave: -1,
+            water_base: 500,
+            shore: 400,
+            water_bridge: -1,
+            misc_pave: -1,
+            paved_roads: -1,
+            paved_road_ends: -1,
+            medians: -1,
+            cliffs: TheaterCliffRanges::default(),
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct ConstructionSnapshot {
+        trace: RmgConstructionTrace,
+        structures: Vec<(String, i16, i16)>,
+        entities: Vec<(String, u16, u16)>,
+        continuation: [u32; 4],
+    }
+
+    /// Run the actual active owners in their native phase order on a small,
+    /// controlled map: the flood-region connector driver, neutral-tech driver,
+    /// final structure append, and MapFile emitter.
+    fn controlled_mixed_construction(seed: u16) -> ConstructionSnapshot {
+        const STRIDE: usize = 77;
+        const DIAMOND_MIN: i32 = 34;
+        const DIAMOND_MAX: i32 = 118;
+
+        let mut grid = RmgGrid::new(STRIDE, DIAMOND_MIN, DIAMOND_MAX);
+        let mut scratch = RmgScratch::new(STRIDE, DIAMOND_MIN, DIAMOND_MAX);
+        for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+            let cell = grid.get_mut(x, y).expect("native construction cell");
+            cell.tile = 0;
+            cell.level = 4;
+            cell.overlay = -1;
+        }
+        for cell in scratch.cells_mut() {
+            cell.region = -1;
+        }
+
+        // A six-cell EW water span commits on the first accepted seed. Only
+        // (50,50) belongs to the flood, so the real rejection picker and its
+        // exact draw ownership remain in the path without a costly full-map
+        // generation search.
+        for y in 49..=51 {
+            for x in 48..=52 {
+                grid.get_mut(x, y).expect("water corridor").tile = 500;
+            }
+        }
+        scratch.get_mut(50, 50).region = 0;
+        scratch.get_mut(47, 49).region = 1;
+        scratch.get_mut(53, 49).region = 2;
+
+        let flood = ConnectorRegion {
+            id: 0,
+            level: 4,
+            waterish: true,
+            cell_count: 90,
+            neighbours: vec![1, 2],
+        };
+        let connector_regions = vec![
+            flood.clone(),
+            ConnectorRegion {
+                id: 1,
+                level: 4,
+                waterish: false,
+                cell_count: 90,
+                neighbours: vec![0, 9],
+            },
+            ConnectorRegion {
+                id: 2,
+                level: 4,
+                waterish: false,
+                cell_count: 90,
+                neighbours: vec![0, 9],
+            },
+        ];
+
+        let mut identity = ids();
+        identity.pave = 600;
+        identity.misc_pave = 620;
+        identity.paved_roads = 640;
+        identity.paved_road_ends = 660;
+        let blocks = one_by_one();
+        let playfield = PlayfieldBounds::from_normalized_local_size(74, 2, 5, 70, 70);
+        let mut rng = RmgRng::new(seed);
+        let mut structures = Vec::new();
+        let mut trace = RmgConstructionTrace::default();
+        {
+            let mut ctx = CarveCtx {
+                grid: &mut grid,
+                scratch: &mut scratch,
+                ids: &identity,
+                blocks: &blocks,
+                rng: &mut rng,
+                playfield: &playfield,
+                ares: false,
+            };
+            assert!(carve_driver::carve_connectors_for_region(
+                &mut ctx,
+                &connector_regions,
+                &flood,
+                0,
+                &mut structures,
+                &mut trace,
+            ));
+        }
+
+        let types = [
+            TechType {
+                name: "CAEMIT".to_string(),
+                footprint: vec![(0, 0)],
+            },
+            TechType {
+                name: "CADROP".to_string(),
+                footprint: vec![(0, 0), (1000, 1000)],
+            },
+        ];
+        let empty_regions = Regions::default();
+        let args = TechArgs {
+            map_type: 3,
+            playfield,
+            stride: STRIDE as i32,
+            cliff_back_impassability: 2,
+        };
+        let tech_placements = {
+            let mut ctx = TechCtx {
+                grid: &mut grid,
+                scratch: &mut scratch,
+                ids: &identity,
+                blocks: &blocks,
+                rng: &mut rng,
+                regions: &empty_regions,
+                types: &types,
+            };
+            tech_buildings::run_traced(&mut ctx, &args, &mut trace, structures.len())
+        };
+        structures.extend(
+            tech_placements
+                .into_iter()
+                .map(|placement| (placement.name, placement.x, placement.y)),
+        );
+
+        let options = RmgOptions {
+            map_type: 3,
+            seed: i32::from(seed),
+            ..Default::default()
+        };
+        let mut map_file = super::super::emit::empty_map_file(&options, 70, 70);
+        super::super::emit::populate(&mut map_file, &grid, &[], &structures, &[]);
+        let entities = map_file
+            .entities
+            .into_iter()
+            .map(|entity| (entity.type_id, entity.cell_x, entity.cell_y))
+            .collect();
+        let continuation = [
+            rng.next_u32(),
+            rng.next_u32(),
+            rng.next_u32(),
+            rng.next_u32(),
+        ];
+
+        ConstructionSnapshot {
+            trace,
+            structures,
+            entities,
+            continuation,
+        }
+    }
+
+    #[test]
+    fn production_trace_orders_huts_before_mixed_tech_and_binds_final_entities() {
+        let expected = ConstructionSnapshot {
+            trace: RmgConstructionTrace {
+                lighting: None,
+                events: vec![
+                    crate::map::rmg::RmgConstructionEvent {
+                        ordinal: 0,
+                        phase: RmgConstructionPhase::BridgeRepairHut,
+                        techno_type: "CABHUT".to_string(),
+                        outcome: RmgConstructionOutcome::Emitted {
+                            entity_index: 0,
+                            cell: (47, 48),
+                        },
+                    },
+                    crate::map::rmg::RmgConstructionEvent {
+                        ordinal: 1,
+                        phase: RmgConstructionPhase::BridgeRepairHut,
+                        techno_type: "CABHUT".to_string(),
+                        outcome: RmgConstructionOutcome::Emitted {
+                            entity_index: 1,
+                            cell: (52, 48),
+                        },
+                    },
+                    crate::map::rmg::RmgConstructionEvent {
+                        ordinal: 2,
+                        phase: RmgConstructionPhase::NeutralTech,
+                        techno_type: "CAEMIT".to_string(),
+                        outcome: RmgConstructionOutcome::Emitted {
+                            entity_index: 2,
+                            cell: (57, 52),
+                        },
+                    },
+                    crate::map::rmg::RmgConstructionEvent {
+                        ordinal: 3,
+                        phase: RmgConstructionPhase::NeutralTech,
+                        techno_type: "CAEMIT".to_string(),
+                        outcome: RmgConstructionOutcome::Emitted {
+                            entity_index: 3,
+                            cell: (57, 38),
+                        },
+                    },
+                    crate::map::rmg::RmgConstructionEvent {
+                        ordinal: 4,
+                        phase: RmgConstructionPhase::NeutralTech,
+                        techno_type: "CADROP".to_string(),
+                        outcome: RmgConstructionOutcome::Discarded,
+                    },
+                ],
+            },
+            structures: vec![
+                ("CABHUT".to_string(), 47, 48),
+                ("CABHUT".to_string(), 52, 48),
+                ("CAEMIT".to_string(), 57, 52),
+                ("CAEMIT".to_string(), 57, 38),
+            ],
+            entities: vec![
+                ("CABHUT".to_string(), 47, 48),
+                ("CABHUT".to_string(), 52, 48),
+                ("CAEMIT".to_string(), 57, 52),
+                ("CAEMIT".to_string(), 57, 38),
+            ],
+            continuation: [1_708_357_426, 3_341_608_727, 3_980_574_297, 3_095_648_970],
+        };
+
+        let first = controlled_mixed_construction(4);
+        let repeat = controlled_mixed_construction(4);
+        assert_eq!(first, expected, "fixed native-order production oracle");
+        assert_eq!(repeat, expected, "the full owner sequence is deterministic");
+
+        let emitted_structures = first
+            .structures
+            .iter()
+            .map(|(name, x, y)| (name.clone(), *x as u16, *y as u16))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            emitted_structures, first.entities,
+            "emission preserves order"
+        );
+        for (ordinal, event) in first.trace.events.iter().enumerate() {
+            assert_eq!(event.ordinal, ordinal);
+            match &event.outcome {
+                RmgConstructionOutcome::Emitted { entity_index, cell } => {
+                    let entity = &first.entities[*entity_index];
+                    assert_eq!(entity.0, event.techno_type);
+                    assert_eq!((entity.1, entity.2), *cell);
+                }
+                RmgConstructionOutcome::Discarded => {
+                    assert_eq!(event.techno_type, "CADROP");
+                    assert!(
+                        !first.entities.iter().any(|entity| entity.0 == "CADROP"),
+                        "discarded construction has no fabricated MapEntity binding"
+                    );
+                }
+            }
+        }
+        assert!(
+            first.trace.events[..2]
+                .iter()
+                .all(|event| event.phase == RmgConstructionPhase::BridgeRepairHut)
+        );
+        assert!(
+            first.trace.events[2..]
+                .iter()
+                .all(|event| event.phase == RmgConstructionPhase::NeutralTech)
+        );
+    }
+}

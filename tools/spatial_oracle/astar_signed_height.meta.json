@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original AStar source/goal height producer joined to class7 goal-height tail.\n\nThe class7 verdict and post-hop current height (where specified) are supplied.\nNo full path/actor/rules or map-loading reachability claim for raw-byte controls.\n",
+  "assumptions": [
+    "Supplied ordinary Infantry vtable and source OnBridge; two real Cells with raw unsigned storage bytes and source/goal flags. Original initial AStar instructions sign-extend ground bytes and add4 for deck heights into dword fields.",
+    "Stop before type getter/train handling, node creation and full main loop. These raw storage-domain controls do not prove map-loader or legal gameplay reachability.",
+    "Class7 admission has already occurred in the separate native neighbor corpus. Here a supplied goal-matching/non-amphibious local frame enters original class7 goal tail directly.",
+    "Two post-hop current heights are supplied after original initial-height production solely to distinguish consumed current height from initial source height."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "height_producer_begin": "0x00429A90",
+    "height_producer_stop": "0x00429B5A",
+    "class7_goal_tail": "0x0042A17D",
+    "signed_absolute_difference": "0x0042A18B",
+    "blocked_goal_abort": "0x0042A3DE",
+    "skip": "0x0042A1A1"
+  },
+  "payload_sha256": "dd5b9c13c8eb6c1aedeab45a5ba6fbce59b0253a03559a8f129d2bb5000a48b8"
+}

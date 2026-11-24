@@ -1,0 +1,691 @@
+//! Robot Tanks and their Robot Control Center: while a house has an
+//! operational `PowersUnit=` building, its vehicles of that type work; when
+//! it has none, its `PoweredUnit=` vehicles go offline (Techno `+0x1C8`,
+//! [`Deactivation`]).
+//!
+//! gamemd-derived (instruction reading; YR 1.001):
+//! - the house's count of powered centers (House `+0x2D8`) and each
+//!   building's share in it (`+0x662`): the `PowersUnit=` arms of
+//!   BuildingClass's operational-edge dispatcher (`0x004549B0`: on at
+//!   `0x004549D1..0x004549F3`, off at `0x00454B16..0x00454B38`, both ahead of
+//!   its other work), and Removed_From_Game's copy of LostPoweredCenter
+//!   (`0x0050263B..0x00502776`). Added_To_Game never counts, so a center
+//!   taken over while working counts for its new house only after its next
+//!   off and on edge;
+//! - `HouseClass::RobotTanksBackOnline @ 0x0050E010` and `LostPoweredCenter
+//!   @ 0x0050E0E0`: the count's first and last center walk the TechnoClass
+//!   array from its last entry and Reactivate or Deactivate each object the
+//!   house owns whose type is the building's `PowersUnit=` and that is not in
+//!   limbo. Any match speaks `EVA_RobotTanksBackOnline` /
+//!   `EVA_RobotTanksOffline` for the player;
+//! - `TechnoClass::Deactivate @ 0x0070FC90` and `Reactivate @ 0x0070FBE0`;
+//! - the Unit's cell arrival (`UnitClass::Per_Cell_Process`
+//!   `0x00739F21..0x00739F59`): a `PoweredUnit=` vehicle whose house has no
+//!   powered center (`HouseClass @ 0x0050E1B0`) goes offline when no building
+//!   stands in its cell. Hover runs it at each step before it leaves the
+//!   cell (`TryAdvancePathStep`, `0x00515A1C`) and then claims the next
+//!   cell; Stop_Moving (`0x00516320`) keeps the head, and its height keeps
+//!   it powered (`0x00516C70`) as it settles, so it drifts toward that head
+//!   until it touches down (from a standing start, inside its own cell).
+//!   Arrival never brings one back;
+//! - the sparks an offline Unit throws (`UnitClass::AI`
+//!   `0x007360C9..0x007361A4`).
+//!
+//! Readers of the latch: control (`TechnoClass::IsControllable`,
+//! `0x00700CBC`), the band, type and N/M selection prefix
+//! (`CanBeSelectedNow`, `0x006FC041`; a click still selects it), the fire
+//! error (`0x006FC117`, ILLEGAL), the select voice (`0x00708EFD`) and the
+//! voxel draw (`0x0073C143`, half intensity). Deactivate's Power_Off spins a
+//! Hover down (`movement::hover`) and a moving Fly (`world::fly_orders`),
+//! and a warp ends the hover of a
+//! `PoweredUnit=` type whose house has no powered center (`0x00718864`,
+//! `movement::teleport_chrono`).
+//!
+//! Ledger: Deactivate draws twice from the Scenario stream through Hover's
+//! Power_Off when its Is_Powered holds (`0x00516C70`: the powered byte,
+//! which a working tank keeps, or any height) and it is neither sleeping
+//! nor entering, and twice through Fly's (`0x004CFD20`) for a moving Fly,
+//! whose second Stop_Moving may draw again (Find_Attack_Cell) and writes a
+//! new destination; an offline Unit draws twice on each of its spark frames. Timers: the
+//! mission and destination timers ResetOrdersToGuard writes. Detaches: none.
+//! `tools/robot_offline_oracle.py` executes Hover's Power_Off and the spark
+//! arm (`powered_unit_tests`).
+//!
+//! RESIDUALS:
+//! - TechnoClass::Array order stands on stable-id order (construction order),
+//!   as in `world::house_defeat`.
+//! - The EVA gate's campaign arm (GameMode 0: `IsHumanPlayer` or
+//!   `PlayerControl`, `0x0050E098..0x0050E0AC`) is the app's local-player
+//!   test, which is the multiplayer arm (`0x0050E0B0`). Trigger: a campaign
+//!   house the player controls loses its center. Effect: no line.
+//! - The three EVA sites also require the game to be active (`0x00A8E9A0`)
+//!   and no scenario initialization under way (`0x00A8E7AC`,
+//!   `0x0050E088..0x0050E0C4`); the walks push the line without them.
+//!   Retail `evamd.ini` has both lines, but no retail campaign gives such a
+//!   house a center (`app::match_runtime::sound_dispatch`).
+
+use crate::map::entities::EntityCategory;
+use crate::rules::ruleset::RuleSet;
+use crate::sim::entity_store::EntityStore;
+use crate::sim::intern::InternedId;
+use crate::sim::intern::StringInterner;
+use crate::sim::movement::ground_pose::object_location;
+use crate::sim::movement::locomotor::MovementLayer;
+use crate::sim::world::FrameChannel;
+use crate::sim::world::ObjectSubstrate;
+use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
+
+/// String `0x00824E4C`.
+pub(crate) const EVA_ROBOT_TANKS_OFFLINE: &str = "EVA_RobotTanksOffline";
+/// String `0x00824FE4`.
+pub(crate) const EVA_ROBOT_TANKS_BACK_ONLINE: &str = "EVA_RobotTanksBackOnline";
+
+/// A `PowersUnit=` building's share in its house's powered centers,
+/// `BuildingClass+0x662`: the operational edge counts it on and off
+/// (`0x004549D1..0x004549F3`, `0x00454B16..0x00454B38`) and
+/// Removed_From_Game stops it counting (`0x0050269F`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub(crate) struct PoweredCenter {
+    counted: bool,
+}
+
+impl PoweredCenter {
+    /// The building counts among its house's powered centers.
+    pub(crate) const fn is_counted(self) -> bool {
+        self.counted
+    }
+
+    /// Install a fixture's share.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_for_test(&mut self, counted: bool) {
+        self.counted = counted;
+    }
+}
+
+/// `TechnoClass+0x1C8`: offline for want of a powering building (a Robot
+/// Tank). `TechnoClass::Deactivate @ 0x0070FC90` raises it and `Reactivate @
+/// 0x0070FBE0` clears it; selection, orders, fire, the select voice and the
+/// voxel draw read it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct Deactivation {
+    offline: bool,
+}
+
+impl Deactivation {
+    /// The object is offline.
+    pub const fn is_offline(self) -> bool {
+        self.offline
+    }
+
+    /// Install a fixture's state.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_for_test(&mut self, offline: bool) {
+        self.offline = offline;
+    }
+}
+
+impl Simulation {
+    /// The `PowersUnit=` arms of the operational-edge dispatcher
+    /// (`0x004549B0`), which run before the rest of it: coming online, an
+    /// uncounted building counts and calls RobotTanksBackOnline
+    /// (`0x004549D1..0x004549F3`); going offline, a counted one stops
+    /// counting and calls LostPoweredCenter (`0x00454B16..0x00454B38`).
+    pub(crate) fn powered_center_edge(
+        &mut self,
+        id: u64,
+        operational: bool,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let Some(building) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let Some(powers_unit) = self
+            .object_type(building.type_ref(), rules)
+            .and_then(|object| object.powers_unit.as_deref())
+        else {
+            return;
+        };
+        if building.building.building_powered_center.is_counted() == operational {
+            return;
+        }
+        let owner = building.owner();
+        self.substrate
+            .entities
+            .get_mut(id)
+            .expect("same building")
+            .building
+            .building_powered_center
+            .counted = operational;
+        if operational {
+            self.house_gained_powered_center(owner, powers_unit, rules, effects);
+        } else {
+            self.house_lost_powered_center(owner, Some(powers_unit), rules, effects);
+        }
+    }
+
+    /// Removed_From_Game's arm (`0x0050263B..0x00502776`): a counted
+    /// `PowersUnit=` Building stops counting (`0x0050269F`), then
+    /// LostPoweredCenter's body runs inline.
+    pub(super) fn powered_center_removed(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let Some(building) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if building.category() != EntityCategory::Structure
+            || !building.building.building_powered_center.is_counted()
+        {
+            return;
+        }
+        let owner = building.owner();
+        let unit_type = self
+            .object_type(building.type_ref(), rules)
+            .and_then(|object| object.powers_unit.as_deref());
+        self.substrate
+            .entities
+            .get_mut(id)
+            .expect("same building")
+            .building
+            .building_powered_center
+            .counted = false;
+        self.house_lost_powered_center(owner, unit_type, rules, effects);
+    }
+
+    /// `HouseClass::RobotTanksBackOnline @ 0x0050E010`: the first powered
+    /// center Reactivates the house's `unit_type` objects.
+    fn house_gained_powered_center(
+        &mut self,
+        owner: InternedId,
+        unit_type: &str,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let Some(house) = self.houses.get_mut(&owner) else {
+            return;
+        };
+        if house.gain_powered_center() != 1 {
+            return;
+        }
+        if self.for_each_powered_unit(owner, unit_type, |sim, id| {
+            sim.techno_reactivate(id, rules, effects);
+        }) {
+            self.sound_events.emit(SimSoundEvent::HouseEva {
+                owner,
+                event: EVA_ROBOT_TANKS_BACK_ONLINE,
+            });
+        }
+    }
+
+    /// `HouseClass::LostPoweredCenter @ 0x0050E0E0`: losing the last
+    /// powered center Deactivates the house's `unit_type` objects.
+    fn house_lost_powered_center(
+        &mut self,
+        owner: InternedId,
+        unit_type: Option<&str>,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let Some(house) = self.houses.get_mut(&owner) else {
+            return;
+        };
+        if house.lose_powered_center() != 0 {
+            return;
+        }
+        let Some(unit_type) = unit_type else {
+            return;
+        };
+        if self.for_each_powered_unit(owner, unit_type, |sim, id| {
+            sim.techno_deactivate(id, rules, effects);
+        }) {
+            self.sound_events.emit(SimSoundEvent::HouseEva {
+                owner,
+                event: EVA_ROBOT_TANKS_OFFLINE,
+            });
+        }
+    }
+
+    /// The walk both edges share (`0x0050E039..0x0050E081`,
+    /// `0x0050E104..0x0050E14C`): the TechnoClass array from its last entry,
+    /// its count read once, visiting each object `owner` owns whose type is
+    /// the UnitType `unit_type` names (`FindOrAllocate` matches names without
+    /// case) and that is not in limbo. Returns whether any matched; the line
+    /// plays only then.
+    fn for_each_powered_unit(
+        &mut self,
+        owner: InternedId,
+        unit_type: &str,
+        mut visit: impl FnMut(&mut Self, u64),
+    ) -> bool {
+        let mut matched = false;
+        let mut units = EntityStore::descending_ids(|category| category == EntityCategory::Unit);
+        while let Some(id) = units.next(&self.substrate.entities) {
+            let Some(entity) = self.substrate.entities.get(id) else {
+                continue;
+            };
+            if entity.owner() != owner
+                || !self
+                    .interner
+                    .resolve(entity.type_ref())
+                    .eq_ignore_ascii_case(unit_type)
+                || entity.lifecycle.in_limbo()
+            {
+                continue;
+            }
+            visit(self, id);
+            matched = true;
+        }
+        matched
+    }
+
+    /// `HouseClass @ 0x0050E1B0`: the house counts a powered center.
+    pub(crate) fn has_powered_center(&self, owner: InternedId) -> bool {
+        self.houses
+            .get(&owner)
+            .is_some_and(|house| house.has_powered_center())
+    }
+
+    /// `TechnoClass::Deactivate @ 0x0070FC90`. A tethered object (`+0x418`)
+    /// whose radio contact is the building in its cell stays as it is
+    /// (`0x0070FC97..0x0070FCCA`). Otherwise: ResetOrdersToGuard (vt+0x3D0),
+    /// Deselect (vt+0x150), a Foot's ILocomotion Power_Off, its type's
+    /// `DeactivateSound=` where it stands unless it was already offline
+    /// (`0x0070FD0E..0x0070FD5D`), and the latch (`0x0070FD62`).
+    ///
+    /// Ares replaces the body (`1004CDC0`, hook `0x70FC90`, resuming at the
+    /// return `0x70FD6E`): the same steps, but no sound while the
+    /// IKnowWhatImDoing mutex (`0xA8E7AC`, the object placement scope) is
+    /// raised, and on the transition the light goes and a Building refreshes
+    /// its factory queues (`10013250`).
+    pub(crate) fn techno_deactivate(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let ares = rules.ares_form();
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if entity.seldom.tether.partner().is_some()
+            && let Some(contact) = entity.seldom.radio_contacts.slot(0)
+            && self.substrate.occupancy.first_building_on_layer(
+                entity.position.rx(),
+                entity.position.ry(),
+                MovementLayer::Ground,
+            ) == Some(contact)
+        {
+            return;
+        }
+        let foot = entity.category().is_foot();
+        let was_offline = entity.deactivated.is_offline();
+        self.reset_orders_to_guard(id, rules, effects);
+        self.object_deselect(id);
+        if foot {
+            self.locomotor_power_off(id, rules, Some(rules.overlay_registry()), effects);
+        }
+        let quiet = self.ares_activation_sound_mutex(rules);
+        Self::latch_deactivated(
+            &self.interner,
+            &mut self.substrate,
+            &mut self.sound_events,
+            id,
+            true,
+            quiet,
+            rules,
+        );
+        if ares && !was_offline {
+            // Ares Deactivate1004CE21..1004CE72 removes the owned light
+            // only on the transition. The parent and its cargo survive.
+            self.destroy_spotlight_for_parent(
+                id,
+                crate::sim::world::UninitContext::new(rules).with_effects(effects),
+            );
+            // Then a Building's factory queues (`10013250`): an offline
+            // factory no longer serves its production.
+            self.ares_update_factory_queues(id, rules, effects);
+        }
+    }
+
+    /// Both Ares power loss (EnableEMPEffect2 10062980, Select at 10062A92) and the
+    /// first EMP hit (enableEMPEffect 10062B40, Select at 10062C46) save a Building's
+    /// Focus across Deactivate. A previously selected victim receives a full
+    /// TechnoClass::Select with the voice latch off before Focus is restored.
+    pub(crate) fn ares_deactivate_with_reselection(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let selected = entity.seldom.selection.is_selected();
+        let focus =
+            (entity.category() == EntityCategory::Structure).then(|| entity.archive_target());
+        self.techno_deactivate(id, rules, effects);
+        if selected {
+            let mut silent = effects.without_selection_voice();
+            let context = crate::sim::world::UninitContext::new(rules).with_effects(&mut silent);
+            self.techno_select(id, context);
+        }
+        if let Some(focus) = focus
+            && let Some(entity) = self.substrate.entities.get_mut(id)
+        {
+            entity.set_archive_target(focus);
+        }
+    }
+
+    /// Ares Activate `1004CCB0` and Deactivate `1004CDC0` play the type's
+    /// sound only while IKnowWhatImDoing (`0xA8E7AC`) is clear; stock
+    /// `0x0070FBE0`/`0x0070FC90` have no such test.
+    fn ares_activation_sound_mutex(&self, rules: &RuleSet) -> bool {
+        rules.ares() && self.object_placement_scope_active()
+    }
+
+    /// Ares TechnoUpdate1004B439..1004B526, ordinary Foot branch. Operator
+    /// membership is derived by its existing owner; transitions use the same
+    /// Deactivate/Reactivate owners as power and EMP recovery.
+    pub(crate) fn update_ares_operator_operability(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let (offline, powered, operated) = {
+            let Some(actor) = self.substrate.entities.get(id) else {
+                return;
+            };
+            if !actor.category().is_foot()
+                || self.entity_object_type(actor, rules).is_none_or(|kind| {
+                    matches!(
+                        kind.driver_rules().operator(),
+                        crate::rules::ares_driver::OperatorRequirement::None
+                    )
+                })
+            {
+                return;
+            }
+            let Some(terrain) = self.resolved_terrain.as_ref() else {
+                return;
+            };
+            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+            let cell = crate::sim::movement::ground_pose::query_object_cell(
+                &cells,
+                crate::sim::movement::ground_pose::object_location(actor, Some(terrain)),
+            );
+            let (rx, ry) = cells.coord(cell);
+            //1004B459/468: a Foot inside a building skips this update.
+            if u16::try_from(rx)
+                .ok()
+                .zip(u16::try_from(ry).ok())
+                .is_some_and(|(rx, ry)| {
+                    self.substrate
+                        .occupancy
+                        .first_building_on_layer(rx, ry, MovementLayer::Ground)
+                        .is_some()
+                })
+            {
+                return;
+            }
+            let Some(powered) = crate::sim::movement::motion_query::is_powered(actor, Some(&cells))
+            else {
+                return;
+            };
+            (
+                actor.deactivated.is_offline(),
+                powered,
+                self.ares_is_operated(id, rules),
+            )
+        };
+        if !operated {
+            if !offline {
+                self.techno_deactivate(id, rules, effects);
+            }
+        } else if powered == offline || offline {
+            //1004B4ED..1004B526 also repairs a mismatched locomotor power bit.
+            // Reactivate itself owns the EMP, power-source and Operator vetoes.
+            self.techno_reactivate(id, rules, effects);
+        }
+    }
+
+    /// Ares TechnoClass_Update1004B320's Deactivated Unit block, after the
+    /// operator update: a Unit with a NavCom, held by no Magnetron (+2B0),
+    /// whose locomotor still moves (ILocomotion+10) drops the destination
+    /// (vt+0x480(0, 1)) and stops its driver (vt+0x500).
+    pub(crate) fn stop_ares_deactivated_unit_driving(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if !entity.deactivated.is_offline()
+            || entity.category() != EntityCategory::Unit
+            || entity.navigation.nav_com().is_none()
+            || entity.lift.source().is_some()
+            || crate::sim::movement::motion_query::is_moving(entity) != Some(true)
+        {
+            return;
+        }
+        if let Err(cause) = self.assign_destination_represented(id, None, rules, effects) {
+            log::warn!("Deactivated unit {id} destination: {cause}");
+        }
+        if let Err(cause) = self.foot_stop_driver(id, rules, registry, effects) {
+            log::warn!("Deactivated unit {id} driver: {cause}");
+        }
+    }
+
+    /// `TechnoClass::Reactivate @ 0x0070FBE0`: ResetOrdersToGuard
+    /// (vt+0x3D0), a Foot's ILocomotion Power_On (the base `0x0055A8F0` in
+    /// every family), its type's `ActivateSound=` where it stands if it was
+    /// offline (`0x0070FC18..0x0070FC68`), and the latch cleared
+    /// (`0x0070FC6D`, `0x0070FC7A`).
+    ///
+    /// Ares replaces the body (`1004CCB0`, hook `0x70FBE0`, resuming at the
+    /// return `0x70FC85`): its vetoes below, then the same steps, no sound
+    /// under the IKnowWhatImDoing mutex, and on the transition the light
+    /// and a Building's factory queue refresh (`10013250`).
+    pub(crate) fn techno_reactivate(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let ares = rules.ares_form();
+        let Some(foot) = self
+            .substrate
+            .entities
+            .get(id)
+            .map(|entity| entity.category().is_foot())
+        else {
+            return;
+        };
+        // Installed Ares Activate1004CCB0 replaces70FBE0 and vetoes before
+        // ResetOrders/Power_On/sound. Keep this admission in the shared owner:
+        // House50E010's power-center recovery also calls this function.
+        if ares {
+            let entity = self.substrate.entities.get(id).expect("same receiver");
+            // vt+0x37C: Techno70EFD0 tests signed +504 > 0, Unit746C90 also
+            // a running DeathFrames= counter.
+            if entity.is_under_emp() {
+                return;
+            }
+            //100454F0: a PoweredUnit= center or the PoweredBy source.
+            if !self.ares_is_powered(id, rules) {
+                return;
+            }
+            // Activate1004CCE2..1004CCF4 applies this after power admission.
+            if !self.ares_is_operated(id, rules) {
+                return;
+            }
+        }
+        let was_offline = self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| entity.deactivated.is_offline());
+        self.reset_orders_to_guard(id, rules, effects);
+        if foot
+            && let Some(locomotor) = self
+                .substrate
+                .entities
+                .get_mut(id)
+                .and_then(|entity| entity.locomotor.as_mut())
+        {
+            locomotor.power_on();
+        }
+        let quiet = self.ares_activation_sound_mutex(rules);
+        Self::latch_deactivated(
+            &self.interner,
+            &mut self.substrate,
+            &mut self.sound_events,
+            id,
+            false,
+            quiet,
+            rules,
+        );
+        if ares && was_offline {
+            // Ares Activate1004CD1E..1004CD85 recreates the light after
+            // clearing Deactivated, through the same construction owner.
+            self.construct_spotlight(id, rules);
+            // Then a Building's factory queues (`10013250`): a factory back
+            // online resumes a system hold.
+            self.ares_update_factory_queues(id, rules, effects);
+        }
+    }
+
+    /// The two bodies' tails: the type's sound for a change of state, at the
+    /// object's Location, unless `quiet` (the Ares mutex), then the latch.
+    /// `TechnoClass::Deactivate @ 0x0070FC90` (`0x0070FD0E..0x0070FD62`) and
+    /// `TechnoClass::Reactivate @ 0x0070FBE0` (`0x0070FC18..0x0070FC7A`).
+    fn latch_deactivated(
+        interner: &StringInterner,
+        substrate: &mut ObjectSubstrate,
+        sound_events: &mut FrameChannel<SimSoundEvent>,
+        id: u64,
+        deactivated: bool,
+        quiet: bool,
+        rules: &RuleSet,
+    ) {
+        let Some(entity) = substrate.entities.get(id) else {
+            return;
+        };
+        if entity.deactivated.is_offline() != deactivated
+            && !quiet
+            && let Some(object) = interner.object_type(entity.type_ref(), rules)
+            && let Some(sound) = if deactivated {
+                object.deactivate_sound.as_deref()
+            } else {
+                object.activate_sound.as_deref()
+            }
+        {
+            sound_events.emit(SimSoundEvent::voc_at(
+                rules.sound_name(sound),
+                &entity.position,
+            ));
+        }
+        substrate
+            .entities
+            .get_mut(id)
+            .expect("same object")
+            .deactivated
+            .offline = deactivated;
+    }
+
+    /// `UnitClass::Per_Cell_Process`'s arm for a cell arrival
+    /// (`0x00739F21..0x00739F59`): a `PoweredUnit=` type whose house has no
+    /// powered center Deactivates when no building stands in its cell
+    /// (`Look_up_building_in_cell @ 0x0047C520` on its cell's ground list).
+    pub(crate) fn powered_unit_arrival(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if !self
+            .object_type(entity.type_ref(), rules)
+            .is_some_and(|object| object.powered_unit)
+            || self.has_powered_center(entity.owner())
+            || self
+                .substrate
+                .occupancy
+                .first_building_on_layer(
+                    entity.position.rx(),
+                    entity.position.ry(),
+                    MovementLayer::Ground,
+                )
+                .is_some()
+        {
+            return;
+        }
+        self.techno_deactivate(id, rules, effects);
+    }
+
+    /// `UnitClass::AI @ 0x007360C9..0x007361A4`, its first block: an offline
+    /// Unit throws a `DefaultSparkSystem=` system on the frames where
+    /// `x / 10 + (y / 10 << 16) + Frame + its ID` (Location, signed
+    /// divisions, wrapping sums; `Fetch_ID` through `+4`, vt+0x10) is a
+    /// multiple of 30. Two Scenario draws in `[-100, 100]` offset it, the
+    /// first in Y and the second in X, at the Location's Z.
+    pub(crate) fn deactivated_unit_sparks(&mut self, id: u64, rules: &RuleSet) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if !entity.deactivated.is_offline() {
+            return;
+        }
+        let location = object_location(entity, self.resolved_terrain.as_ref());
+        let phase = (location.x / 10)
+            .wrapping_add((location.y / 10) << 16)
+            .wrapping_add(self.session.binary_frame() as i32)
+            .wrapping_add(entity.native_unique_id());
+        if phase % 30 != 0 {
+            return;
+        }
+        // Ares UnitClass_Update_Deactivated1004CFD0 (hook736135) skips the
+        // draws and the sparks while IsPowered100454F0 holds: EMP and
+        // Operator victims do not sparkle.
+        if rules.ares_form() && self.ares_is_powered(id, rules) {
+            return;
+        }
+        let dy = self.scenario_rng.next_range_i32_inclusive(-100, 100);
+        let dx = self.scenario_rng.next_range_i32_inclusive(-100, 100);
+        let Some(system) = rules
+            .combat_damage
+            .default_spark_system
+            .as_deref()
+            .and_then(|name| rules.ps_type_id_by_name(name))
+        else {
+            return;
+        };
+        self.spawn_particle_system(
+            system,
+            glam::IVec3::new(
+                location.x.wrapping_add(dx),
+                location.y.wrapping_add(dy),
+                location.z,
+            ),
+            None,
+            None,
+            glam::IVec3::ZERO,
+            None,
+            rules,
+        );
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+#[path = "powered_unit_tests.rs"]
+mod tests;

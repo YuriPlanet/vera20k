@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "One original Logic pass from an explicit production command boundary.\n\nThe supplied production snapshot is a continuation input, not proof of native\nScenarioLoad or whole-world RNG order. This reproduces the frozen native v7\ncounter comparison and records original instruction/vtable bytes separately.\n",
+  "assumptions": [
+    "Frozen v1 mtnk_attack prepares physical Anytown XMP03T4.MAP crop and actual MTNK/105mm/Cannon/AP/ART/selected SOUND native readers. This extension preserves v1 files and adds original full UnitType and selected complete common Rules readers, native MissionControl registry/readers, country/side registry constructors and original Americans country reader. The original full ObjectType Image reader corrects the shot-only v1 MTNK image boundary: actual RULESMD[MTNK]Image=GTNK selects ART[GTNK]PrimaryFireFLH=150,0,100; v1 omitted Image and used constructor MTNK art190,25,120. The measured final native fields are recorded per layer.",
+    "Original complete Unit/Foot/Techno constructors execute, including Scenario Next6F3254 and raw AX store+3C8. Actual Drive COM factory/constructor, Unit/Techno/Object Unlimbo, CanEnter, Mark, Cell/Recalc, sight, Logic and Display registration run at frame0 on physical bank87,50. Facing0x80 is a supplied placement argument. The source begins Guard with HP300 at[22400,12928,416].",
+    "Original Event4C6860/4C6CB0 command uses human House index0, the constructor-registered native Unit ID/tag0x34, Attack mission1 and Cell target token54087/tag0xB. It actually queues Attack and assigns the physical Cell. It does not execute mouse/UI force-fire admission or a multiplayer event queue.",
+    "The original live Logic object walk55B5FF..55B61B runs once per supplied tick, allowing actual append/remove effects and callbacks through native vtables. Original UnitAI/FootAI/TechnoAI/MissionAI, mission and per-frame firing decisions execute without result substitutions. Original frame increment55DE73..55DE87 follows each pass, then complete original725C70 deferred drain. All current Bullet/Anim callbacks and source target release execute.",
+    "Seed0 complete Main/Scenario/MapGen states are supplied by the frozen physical fixture before constructor execution. No reseeding occurs by default. Optional --continuation deliberately imports recorded full RNG states, command frame and optional source random-phase word after native construction/placement, before command execution; original constructor draws are not re-consumed after import. Input provenance and before/after values are recorded.",
+    "Original56C510 builds connectivity from supplied physical crop classes/levels. Outside-crop classes remain blocked7. Real physical TMP bodies and native overlay/theater readers remain inherited; this is not a whole-map native load. Original .text must retain its binary hash. FPCW and bounded host runtime follow existing BulletReader owner.",
+    "The complete comparison field is byte-equivalent after canonicalization to boundary/first_tick from the independently frozen external v7 native continuation. Its original payload/projection hashes are recorded in mission_promotion.json.",
+    "Production command-applied input supplies complete recorded RNG states, source constructor phase word54697 and the preceding Guard counter1/dispatch(0,28). Original native constructors, Unlimbo and Event execute; no firing timer/result is transplanted. This retained-state experiment does not establish whole-native ScenarioLoad or preceding full-world Guard parity.",
+    "Native first-tick counter1 is an executed golden. Production-v7 counter0 is a historical comparison observation, not an expected native value. First tick frame2 is the committed global frame; actual Logic/firing frame is1.",
+    "Original code/vtable readback corroborates Unit and Infantry ordering. The actual executed source is MTNK; no new Infantry counter golden is claimed."
+  ],
+  "substitutions": [
+    "Full Scenario, House and map load are excluded. Single human House storage is supplied with Americans country pointer, combat multipliers1, human/current-player flags and valid selected counters. Source constructor uses null House, then the supplied House binds before Unlimbo; full House ctor/AddTracking/bookkeeping are excluded. Physical country/side constructors and selected country reads do not establish complete native Rules load chronology.",
+    "Logic global prefix/suffix, other units/Houses/Factories, tactical/map updates, multiplayer event scheduling, rendering and frame-pause gates are excluded. A supplied monotonic tick invokes only the original live object pass and original frame-commit/deferred-drain slices. This establishes the isolated selected live-owner continuation, not ordinary full-match shot count or production ScenarioLoad alignment.",
+    "Native full UnitType reader has explicit VXL/turret-shape file-loader boundaries5F8110/5F8CE0 returning no loaded visual data. Selected native ART/FLH and animation SHP inputs remain real. Full type Voice/MoveSound indexes outside the selected sound registry are unresolved; playback7509E0 is recorded, excluding device work and Main audio RNG. Radar tracker655560/655740 are presentation sinks; inherited screen/radar callbacks remain.",
+    "Inherited physical source-order INI caches, successful heap/file mappings and CPU bootstrap remain. COM OS activation routes to actual original Drive/Bullet factories; imported ASCII/CLSID conversion, OleRun, Interlocked, IsBadReadPtr, empty Windows SEH, atexit and setup wall-clock services are supplied. No gameplay return is replaced.",
+    "Native hierarchy586990 remains an inherited callback; whole-map hierarchy and movement after collapse are not shown. Engineer approach/hut admission/repair are outside this extension and remain separate frozen witnesses. CliffBack ctor0 versus production missing-key default2 remains a separate follow-up.",
+    "Other actors/global phases after the imported boundary remain excluded. Native rearm61 versus full-production62 uses different RNG caller histories and is not an established arithmetic defect."
+  ],
+  "entry_points": {
+    "mission_control_ctor": "0x005B3700",
+    "mission_control_reader": "0x005B3760",
+    "rules_general": "0x0066D530",
+    "rules_radiation": "0x0066CF70",
+    "unit_type_reader": "0x00747620",
+    "country_ctor": "0x005113F0",
+    "country_reader": "0x00511850",
+    "unit_ctor": "0x007353C0",
+    "drive_factory": "0x006C4010",
+    "unit_unlimbo": "0x00737BA0",
+    "command_ctor": "0x004C6860",
+    "command_dispatch": "0x004C6CB0",
+    "logic_object_loop": "0x0055B5FF",
+    "unit_ai": "0x007360C0",
+    "foot_ai": "0x004DA530",
+    "techno_ai": "0x006F9E50",
+    "mission_dispatch": "0x005B3060",
+    "attack_mission": "0x004D4DC0",
+    "attack_rng_call": "0x004D4EA6",
+    "firing_update": "0x00736DF0",
+    "unit_fire": "0x00741340",
+    "bullet_ai": "0x004666E0",
+    "anim_ai": "0x00423AC0",
+    "area_damage": "0x00489280",
+    "concrete_damage": "0x0057CCF0",
+    "detach": "0x0070D4A0",
+    "frame_increment": "0x0055DE73",
+    "retirement_drain": "0x00725C70",
+    "connectivity": "0x0056C510"
+  },
+  "payload_sha256": "da53b0160990c8cbc0d7c2e100c476eddcd4f27dcffc602141a9d9ffcf4ec4a1"
+}

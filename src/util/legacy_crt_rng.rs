@@ -1,0 +1,74 @@
+//! The retail executable's thread-local C runtime random stream.
+//!
+//! This is separate from Main and Scenario RNG. The app owns the UI thread's
+//! lifetime; opening another file dialog must not reset the stream.
+//!
+//! `_srand` at0x007CB49D replaces this thread's retained state. LAN setup
+//! init5DEC4D seeds it from a Main draw before taking the transmitted rand15.
+
+#[derive(Debug, Clone)]
+pub struct LegacyCrtRng {
+    state: u32,
+}
+
+impl Default for LegacyCrtRng {
+    fn default() -> Self {
+        // CRT thread-context initializer 0x007D13F8, called by startup and by
+        // lazy context allocation. This does not prove the first Save sees 1:
+        // other active consumers can have drawn or reseeded before it.
+        Self::with_seed(1)
+    }
+}
+
+impl LegacyCrtRng {
+    pub const fn with_seed(state: u32) -> Self {
+        Self { state }
+    }
+
+    /// `_srand`7CB49D writes the supplied DWORD to the same CRT thread cell.
+    pub fn reseed(&mut self, seed: u32) {
+        self.state = seed;
+    }
+
+    /// `_rand` 0x007CB4AA, arithmetic at 0x007CB4AF..0x007CB4CB.
+    pub fn draw15(&mut self) -> u16 {
+        self.state = self.state.wrapping_mul(0x343fd).wrapping_add(0x269ec3);
+        ((self.state >> 16) & 0x7fff) as u16
+    }
+}
+
+#[cfg(all(test, tests_util))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn supplied_seeds_match_original_crt_instructions() {
+        let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/crt_random.json",
+        ))
+        .unwrap();
+        let cases = vectors["cases"].as_array().unwrap();
+        assert_eq!(cases.len(), 7);
+        for (case, seed) in
+            cases
+                .iter()
+                .zip([0, 1, 0x7fff, 0x8000, 0x7fff_ffff, 0x8000_0000, 0xffff_ffff])
+        {
+            assert_eq!(case["seed"].as_u64().unwrap(), u64::from(seed));
+            let mut rng = LegacyCrtRng::with_seed(seed);
+            let mut reseeded = LegacyCrtRng::with_seed(73);
+            let _ = reseeded.draw15();
+            reseeded.reseed(seed);
+            assert_eq!(
+                reseeded.draw15(),
+                case["draws"][0]["value"].as_u64().unwrap() as u16
+            );
+            let draws = case["draws"].as_array().unwrap();
+            assert_eq!(draws.len(), 32);
+            for draw in draws {
+                assert_eq!(u64::from(rng.draw15()), draw["value"].as_u64().unwrap());
+                assert_eq!(u64::from(rng.state), draw["state"].as_u64().unwrap());
+            }
+        }
+    }
+}

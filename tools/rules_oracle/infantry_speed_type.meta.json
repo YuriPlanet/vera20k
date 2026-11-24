@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original InfantryType SpeedType constructor and bounded layered reader.\n\nFull5236A0 constructor executes. Original410A60 section admission prefix and\n7121D1..7121EB SpeedType read/store execute per supplied lexical INI layer;\nthe unrelated intervening Object/Techno type reads and full loader do not.\n",
+  "assumptions": [
+    "Full original InfantryType constructor and its Object/Techno base constructors execute against a supplied runtime fixture. Original allocation uses bounded bump storage; registry participation outside selected SpeedType field is not certified.",
+    "Physical layered files are supplied as signed-CRC INI caches from exact-case lexical section/key/value strings; original INI file/archive loading is not executed. Physical ENGINEER lacks SpeedType; LANGRULE is absent.",
+    "Original AbstractType section-admission prefix executes and skips absent sections. The later SpeedType field block executes with supplied TechnoType reader frame; unrelated intervening Name/UIName/Object/Techno reads and full reader suffix do not execute.",
+    "Native ReadSpeedType uses the current field value as default, original128-byte ReadString, original trimming and case-insensitive whole-name parser; native output and exact field stores are retained.",
+    "Synthetic controls are direct supplied INI cache strings, separate from physical-layer evidence. They cover explicit enum names, wrong-case section/key, empty/whitespace, malformed/numeric values and retained defaults."
+  ],
+  "substitutions": [
+    "Constructor/setup inherits bounded operator_new7C8E17, operator_delete7C8B3D and CRT TLS accessor7D140B seams. The measured section/SpeedType reader phases assert none is reached."
+  ],
+  "entry_points": {
+    "infantry_type_constructor": "0x005236A0",
+    "techno_type_constructor": "0x00710AF0",
+    "constructor_speed_write": "0x007110E0",
+    "abstract_section_admission": "0x00410A60",
+    "speed_reader_begin": "0x007121D1",
+    "speed_reader_stop": "0x007121EB",
+    "read_speed_type": "0x00476FC0",
+    "read_string": "0x00528A10",
+    "speed_from_name": "0x0048DFF0"
+  },
+  "payload_sha256": "a8418e84da625662bd8a60db488fa141d95e3f804de50bfd8b107313ad76f8c8"
+}

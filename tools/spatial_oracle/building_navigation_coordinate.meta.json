@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Building447E90 virtual navigation query, original447B20 approach dispatch,447AC0 foundation center and65AD90 sparse contacts. Supplied typed state, not parser/producer/docking mission parity.",
+  "assumptions": [
+    "Original Building/BuildingType and Unit, Building, Anim requester vtables; attached Anim calls original owner Building+48. Immutable native foundation dimension arrays retained. Supplied physical XYZ, signed dock count, declared offset array and sparse radio slots.",
+    "Original x87 atan2/ftol path for bunker directional approach, FPCW0E7F. Current/requester do not move during read. Refineries and weeders only reach approach special branches when one of Helipad/UnitRepair/Bunker dispatch flags is also present."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "navigation": "0x00447E90",
+    "approach": "0x00447B20",
+    "center": "0x00447AC0",
+    "contact_index": "0x0065AD90"
+  },
+  "payload_sha256": "8ad67aff83953c56154bfefb4250f1c263f50d492bc527560433c332d32e1209"
+}

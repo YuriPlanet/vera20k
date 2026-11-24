@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Bounded physical Anytown MTNK firing, concrete low bridge damage and repair.\n\nOriginal layered selected readers, full Unit/Techno FireAt, Bullet/Anim AI,\nDetonate/AreaDamage, damage/Recalc/empty occupants and admitted repair execute.\nSource lifecycle, inter-frame schedule and world/display/audio admission are\nexplicit supplied boundaries. This is not an ordinary mission shot-count oracle.\n",
+  "assumptions": [
+    "Unmodified physical XMP03T4.MAP crop, native overlay/theater readers and original Recalc reused from frozen Resident owner. The selected MTNK/105mm/Cannon/AP physical rules layers and original ART/selected SOUND readers execute in the existing BulletReader VM.",
+    "Original SpecialFlags initialization6B8AE0 and complete physical map reader6B8CA0 execute with supplied GameMode5. This preserves constructor DestroyableBridges bit0x8000; map reader skips that group outside campaign/map editor.",
+    "Stationary unmodified MTNK at physical87,50, target Cell87,54, normal facing and firepower/ROF multipliers1. Actual Cell target coordinates, FLH, weapon selection, FireError, whole Unit/Techno FireAt, original Bullet/Anim AI and retirement execute.",
+    "Original-seeded0 full Main/Scenario/MapGen states are supplied after setup. Actual native RNG requests, raw draws and complete retained states are recorded; event caller is the return PC, not the call opcode address.",
+    "Original .text is unchanged and protected against writes. Any uncovered execution fault fails the replay; --check independently executes and compares payload and metadata."
+  ],
+  "substitutions": [
+    "Source Unit/House fields and placement are supplied, not created/admitted by ordinary Unit constructor/Unlimbo or registered in the global Techno list. No live damage recipients or other occupants. Actual Detach executes but cannot establish ordinary source target release in these empty registries.",
+    "Host fires at frame0 and each prior native ROF deadline, visits the bullet once per subsequent frame, then each current native Anim once and native deferred drain. Unit/Foot/Mission/Logic scheduling and other world activity are excluded. In particular Foot MissionAttack4D4DC0 range(0,2) at4D4EA6 is not in this schedule; recorded FireAt count is not a native match shot count.",
+    "Original object Unlimbo5F4EC0 and Display admission4A9770/4A9720 are successful recording boundaries with position/alive stores. COM activation maps to original Bullet factory; OS Interlocked and CRT exit-registration services are supplied. Existing bounded heap/file/INI-cache/CPU bootstrap boundaries remain inherited.",
+    "Selected physical SOUND records use local sample/type indexes. Playback7509E0 records name/position and returns; audio-device work and Main-stream audio RNG are excluded, so unchanged Main is a consequence of this boundary.",
+    "Native raw map fields/physical TMP bodies are bound to supplied pristine heads and initial zone planes; not a native whole-map load. Recalc and empty487A10 run, while connectivity56C510 and hierarchy586990, radar/screen output remain recording sinks.",
+    "Repair starts at already-admitted573540 after animations retire; no Engineer order, approach, hut entry, ownership or Engineer destruction. No production/Rust/runtime parity claim. CliffBack constructor0 versus default2 remains a separate retained follow-up."
+  ],
+  "entry_points": {
+    "rules_ctor": "0x00665650",
+    "unit_type_ctor": "0x007470D0",
+    "weapon_reader": "0x00772080",
+    "projectile_reader": "0x0046BEE0",
+    "warhead_reader": "0x0075D3A0",
+    "ballistic_speed_postpass": "0x007729F0",
+    "special_flags_ctor": "0x006B8AE0",
+    "special_flags_map_reader": "0x006B8CA0",
+    "select_weapon": "0x00746CD0",
+    "fire_error": "0x00740FD0",
+    "unit_fire_at": "0x00741340",
+    "techno_fire_at": "0x006FDD50",
+    "bullet_factory": "0x006C5090",
+    "bullet_ai": "0x004666E0",
+    "detonate": "0x004690B0",
+    "area_damage": "0x00489280",
+    "concrete_damage": "0x0057CCF0",
+    "detach": "0x0070D4A0",
+    "recalc": "0x0047D2B0",
+    "occupants": "0x00487A10",
+    "anim_ai": "0x00423AC0",
+    "retirement_drain": "0x00725C70",
+    "repair": "0x00573540",
+    "mapgen_range": "0x00598030",
+    "scenario_range": "0x0065C7E0"
+  },
+  "payload_sha256": "d0467012cb3892212c1936128bc207478246d4ca636d06f51e560a948b4bf996",
+  "packaging": "canonical JSON; gzip mtime=0; copied lexical inputs replaced by SHA256"
+}

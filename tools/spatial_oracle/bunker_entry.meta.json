@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original joined Unit destination, bunker radio, Enter cadence, bounded PerCell DOCK_NOW, cancellation and AI seek histories",
+  "assumptions": [
+    "Synthetic mapped32x32 flat scene from make_dock_fixture; declared map bounds and supplied original Cell/Unit/Building/Type tables. Two live ordinary Units and two2x2 bunker buildings share one House. Building Cell lists are supplied, not Mark/Unlimbo outputs. Units are absent from Cell object lists; the declared arrival changes raw XYZ only. No physical scenario, INI reader or full object constructor claim.",
+    "PreparedTank uses supplied health/strength150, Turret=yes, Bunkerable=yes, Track1, Normal0, one nonnull current WeaponType. Weapon contents are irrelevant to CanEnterBunker, which checks existence only. PreparedBunker uses Bunker=yes, Foundation2x2/index3, NumberOfDocks1, health/strength900. These are explicit kernel inputs, not complete retail LTNK/NATBNK type bindings or original INI-reader outputs.",
+    "Original Drive/Facing constructors, ROT5, ScenarioRandom seed1 and direction/height startup execute. Original Foot constructor4D32EC..4D3308 establishes saved MegaMission=-1 and empty payload. Other unused object storage starts zero; actor alive, abstract flags7, Building flags3, queued/suspended mission-1 and selected Unit/Foot sentinels are supplied explicitly. Inherited NavAux/path are explicitly replaced by null/[-1,0,0,0]; snapshots retain these and Drive selector/cursor.",
+    "Rates are supplied binary64 .016 Enter/.030 Guard table fields, not original INI binary32-to-binary64 parsing. Full original Enter handler and ScenarioRandomRanged execute. The frame stays200; this is callback cadence output, not scheduler timing.",
+    "Busy is produced by the second Unit original setter; no contact or admission answer is fabricated. AI uses a supplied owned-bunker vector but original4DFF40 computes distance and eligibility and issues setter/HELLO/forcedEnter. Cancellation starts at admitted Idle-event calls4C75DA with ESI=Unit and EDI=0; event lookup, mission/tether admission and the later event tail are excluded. Bare NULL setter is a separate control.",
+    "Far-to-near case supplies only Unit XYZ equal to the original GetDockCoord return, preserving all other state. Original PerCell Enter arm gets EBP=Unit, stack+14=retained Contact0 and stack+1C=current cell as its omitted prologue would produce, and stops at73A540 before epilogue or73A5EA before unrelated Unit tail. No Drive Process, pathfinding, physical arrival, full bunker installation, animation, parked position or installed destination retirement is claimed.",
+    "Prepared state3 control retains the original setter/NULL-setter radio history but explicitly supplies bunker state3 and Unit XYZ/Drive destination at the original Building center. It has no owner NavCom/head and constructor selector-1. Full UpdateBunker must reach original IsMoving4AFB80 and branch459210, without StopMoving or Unit setter; this proves only the prepared state3 waiting gate, not reachability after ForceTrack completion.",
+    "Every native invocation uses bounded run_checked completion. Nested calls are matched by return PC plus callee-cleaned stack. Required callees and positive/negative DOCK_NOW reachability are asserted, writes must stay in declared mutable state/stack/output regions, original text and four class vtables remain unchanged."
+  ],
+  "substitutions": [
+    "Inherited platform InterlockedIncrement/Decrement imports implement their integer operation. No gameplay callable, radio reply, admission predicate, destination setter, coordinate getter, RNG or mission handler is substituted."
+  ],
+  "entry_points": {
+    "unit_destination": "0x00741970",
+    "foot_destination": "0x004D94B0",
+    "radio_transmit": "0x0065A970",
+    "building_receive": "0x0043C2D0",
+    "mission_enter": "0x004D9290",
+    "dock_coordinate": "0x00447B20",
+    "per_cell_begin": "0x0073A31F",
+    "per_cell_return": "0x0073A540",
+    "idle_event_calls": "0x004C75DA",
+    "idle_event_stop": "0x004C762A",
+    "update_bunker": "0x00458E50",
+    "seek_bunker": "0x004DFF40"
+  },
+  "replay_command": "python -m tools.spatial_oracle.bunker_entry",
+  "payload_sha256": "d78895acb3569845ebbfd93ef18873fe9abb0d9365060ed69cd722211057dcd9"
+}

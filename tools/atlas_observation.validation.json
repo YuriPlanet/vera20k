@@ -1,0 +1,415 @@
+{
+  "schema": "vera20k.atlas-observation-validation.v1",
+  "source_base": "28bf8adccb559f7880e18fa2aeb1a536a5f1689a",
+  "host": "aarch64-apple-darwin / Apple M4 / Metal",
+  "builds": {
+    "before": {
+      "source": {
+        "head": "148b97431597661997c50082af16c5bd45b60406",
+        "branch": "feature/checked-ramp-height",
+        "status": ""
+      },
+      "command": [
+        "cargo",
+        "build",
+        "--message-format=json-render-diagnostics",
+        "--locked",
+        "--release",
+        "-p",
+        "vera20k",
+        "--bin",
+        "vera20k"
+      ],
+      "executable_sha256": "479c4bd56203657a1e35b7eff27ce5e5b5bbf55e931e3e2961a5bb390561ec55"
+    },
+    "after": {
+      "source": {
+        "head": "28bf8adccb559f7880e18fa2aeb1a536a5f1689a",
+        "branch": "feature/atlas-observation-owner",
+        "status": "M Cargo.toml\n M src/app/diagnostics/tactical_capture/map_observation.rs\n D src/bin/bridge-oracle-compare.rs\n D src/bin/measure-atlas.rs\n M src/render/atlas_refresh_retail_tests.rs\n M src/render/unit_atlas.rs\n M tools/README.md\n M tools/map_observation.md\n M tools/map_observation.py\n M tools/tests/test_map_observation.py"
+      },
+      "command": [
+        "cargo",
+        "build",
+        "--message-format=json-render-diagnostics",
+        "--locked",
+        "--release",
+        "-p",
+        "vera20k",
+        "--bin",
+        "vera20k"
+      ],
+      "executable_sha256": "03147bcae30e7386ddbb64630038803aae7ad799e105c887ed54b0057bef3f05"
+    }
+  },
+  "retired_tools": {
+    "measure-atlas": {
+      "reason": "Hardcoded roster/cardinality/tile-size estimate, never constructed an atlas. Replaced by actual UnitAtlas descriptors and counts in production capture."
+    },
+    "bridge-oracle-compare": {
+      "reason": "No repository producer/caller for required astar_steps/runtime_ticks/scenario.activation_proof schema; returned success even with FAIL/UNCHECKED verdicts. Five bin-local synthetic schema tests retired with it; no active bridge library regressions or native packets removed."
+    }
+  },
+  "rust_validation": [
+    {
+      "command": "python -m tools.cargo_run -- test -p vera20k --lib render::unit_atlas::tests::",
+      "passed": 16,
+      "ignored": 1,
+      "failed": 0
+    },
+    {
+      "command": "python -m tools.cargo_run -- test -p vera20k --lib --release render::atlas_refresh_retail_tests::retail_atlas_refresh_costs -- --ignored --nocapture",
+      "passed": 1,
+      "failed": 0,
+      "statistics": {
+        "initial": {
+          "resident_sprite_count": 7808,
+          "last_build_rasterized_sprite_count": 7808,
+          "pages": [
+            {
+              "extent": [
+                4500,
+                4578,
+                1
+              ],
+              "format": "R8Uint",
+              "dimension": "D2",
+              "mip_level_count": 1,
+              "sample_count": 1,
+              "texel_payload_bytes": 20601000
+            }
+          ],
+          "total_texel_payload_bytes": 20601000
+        },
+        "grown": {
+          "resident_sprite_count": 10016,
+          "last_build_rasterized_sprite_count": 2208,
+          "pages": [
+            {
+              "extent": [
+                4500,
+                4578,
+                1
+              ],
+              "format": "R8Uint",
+              "dimension": "D2",
+              "mip_level_count": 1,
+              "sample_count": 1,
+              "texel_payload_bytes": 20601000
+            },
+            {
+              "extent": [
+                8192,
+                8192,
+                1
+              ],
+              "format": "R8Uint",
+              "dimension": "D2",
+              "mip_level_count": 1,
+              "sample_count": 1,
+              "texel_payload_bytes": 67108864
+            }
+          ],
+          "total_texel_payload_bytes": 87709864
+        },
+        "fresh": {
+          "resident_sprite_count": 10016,
+          "last_build_rasterized_sprite_count": 10016,
+          "pages": [
+            {
+              "extent": [
+                5083,
+                5160,
+                1
+              ],
+              "format": "R8Uint",
+              "dimension": "D2",
+              "mip_level_count": 1,
+              "sample_count": 1,
+              "texel_payload_bytes": 26228280
+            }
+          ],
+          "total_texel_payload_bytes": 26228280
+        }
+      },
+      "no_op_statistics_unchanged": true
+    },
+    {
+      "command": "VERA20K_REQUIRE_RETAIL_INI=1 python -m tools.cargo_run -- test -p vera20k --lib",
+      "passed": 9570,
+      "ignored": 212,
+      "failed": 0
+    },
+    {
+      "command": "VERA20K_REQUIRE_RETAIL_INI=1 python -m tools.cargo_run -- clippy -p vera20k --lib",
+      "exit_status": 0
+    }
+  ],
+  "python_validation": {
+    "command": "python -m tools.run_tests",
+    "total": 262,
+    "passed": 260,
+    "skipped": 2,
+    "skip_reason": "Unchanged optional sealed Windows/retail checks."
+  },
+  "capture_reproduction": {
+    "command": "env -u RA2_DIR python -m tools.map_observation --profile <repo>/tools/map_observation.example.json --contract <repo>/src/app/diagnostics/tactical_capture/contract.v2.json --cwd <repo> --executable <preserved-release-binary> --output <new-output-directory>",
+    "profile": "tools/map_observation.example.json (same parsed profile as the saved MIX runs)",
+    "zero_override": {
+      "ticks": 0
+    },
+    "missing_override": {
+      "launch.selected_map_file": "deliberately-absent-observation.map"
+    }
+  },
+  "captures": {
+    "atlas-before-capture": {
+      "status": "VALID",
+      "started_at_utc": "2026-09-28T00:07:46.342515Z",
+      "errors": [],
+      "child_schema": "vera20k.map-observation.v1",
+      "capture": {
+        "exact_step_count": 30,
+        "final": {
+          "binary_frame": 30,
+          "deterministic_state_hash": 11854557809103330951,
+          "simulation_tick": 30,
+          "total_simulation_ms": 660
+        },
+        "frame": {
+          "byte_length": 1920000,
+          "sha256": "a3a1c989ccc273b9c7a3ac8e21a79cadeb6d1eebaef22688c3ae36753acfa9bd"
+        },
+        "initial": {
+          "binary_frame": 0,
+          "deterministic_state_hash": 17975855442756925998,
+          "simulation_tick": 0,
+          "total_simulation_ms": 0
+        },
+        "manifest": {
+          "byte_length": 7016,
+          "sha256": "308a1224ded39fc8b35ba9094b72e37ed1b278c1612d10eb2e13d7f5e3c2cb9c"
+        },
+        "map_source": {
+          "entry_id": -1828261808,
+          "kind": "mix",
+          "logical_name": "Fight.MAP",
+          "payload_len": 91254,
+          "source_archive": "multimd.mix",
+          "source_sha256": "d751dce7cd3611077e9228c33235f39c71681fff6ac08ca1f716d963ad6ce070"
+        }
+      }
+    },
+    "atlas-after-capture-1": {
+      "status": "VALID",
+      "started_at_utc": "2026-09-28T00:21:18.000851Z",
+      "errors": [],
+      "child_schema": "vera20k.map-observation.v2",
+      "capture": {
+        "exact_step_count": 30,
+        "final": {
+          "binary_frame": 30,
+          "deterministic_state_hash": 11854557809103330951,
+          "simulation_tick": 30,
+          "total_simulation_ms": 660
+        },
+        "frame": {
+          "byte_length": 1920000,
+          "sha256": "a3a1c989ccc273b9c7a3ac8e21a79cadeb6d1eebaef22688c3ae36753acfa9bd"
+        },
+        "initial": {
+          "binary_frame": 0,
+          "deterministic_state_hash": 17975855442756925998,
+          "simulation_tick": 0,
+          "total_simulation_ms": 0
+        },
+        "manifest": {
+          "byte_length": 7466,
+          "sha256": "ceb9a2d103b2a6c00095bd2b961dbcf98e7692f78bfc23d8f5ec220c8066683d"
+        },
+        "map_source": {
+          "entry_id": -1828261808,
+          "kind": "mix",
+          "logical_name": "Fight.MAP",
+          "payload_len": 91254,
+          "source_archive": "multimd.mix",
+          "source_sha256": "d751dce7cd3611077e9228c33235f39c71681fff6ac08ca1f716d963ad6ce070"
+        },
+        "unit_atlas": {
+          "last_build_rasterized_sprite_count": 4480,
+          "pages": [
+            {
+              "dimension": "D2",
+              "extent": [
+                4259,
+                4364,
+                1
+              ],
+              "format": "R8Uint",
+              "mip_level_count": 1,
+              "sample_count": 1,
+              "texel_payload_bytes": 18586276
+            }
+          ],
+          "resident_sprite_count": 4480,
+          "total_texel_payload_bytes": 18586276
+        }
+      }
+    },
+    "atlas-after-capture-2": {
+      "status": "VALID",
+      "started_at_utc": "2026-09-28T00:21:27.002704Z",
+      "errors": [],
+      "child_schema": "vera20k.map-observation.v2",
+      "capture": {
+        "exact_step_count": 30,
+        "final": {
+          "binary_frame": 30,
+          "deterministic_state_hash": 11854557809103330951,
+          "simulation_tick": 30,
+          "total_simulation_ms": 660
+        },
+        "frame": {
+          "byte_length": 1920000,
+          "sha256": "a3a1c989ccc273b9c7a3ac8e21a79cadeb6d1eebaef22688c3ae36753acfa9bd"
+        },
+        "initial": {
+          "binary_frame": 0,
+          "deterministic_state_hash": 17975855442756925998,
+          "simulation_tick": 0,
+          "total_simulation_ms": 0
+        },
+        "manifest": {
+          "byte_length": 7466,
+          "sha256": "ceb9a2d103b2a6c00095bd2b961dbcf98e7692f78bfc23d8f5ec220c8066683d"
+        },
+        "map_source": {
+          "entry_id": -1828261808,
+          "kind": "mix",
+          "logical_name": "Fight.MAP",
+          "payload_len": 91254,
+          "source_archive": "multimd.mix",
+          "source_sha256": "d751dce7cd3611077e9228c33235f39c71681fff6ac08ca1f716d963ad6ce070"
+        },
+        "unit_atlas": {
+          "last_build_rasterized_sprite_count": 4480,
+          "pages": [
+            {
+              "dimension": "D2",
+              "extent": [
+                4259,
+                4364,
+                1
+              ],
+              "format": "R8Uint",
+              "mip_level_count": 1,
+              "sample_count": 1,
+              "texel_payload_bytes": 18586276
+            }
+          ],
+          "resident_sprite_count": 4480,
+          "total_texel_payload_bytes": 18586276
+        }
+      }
+    },
+    "atlas-after-zero": {
+      "status": "VALID",
+      "started_at_utc": "2026-09-28T00:21:33.286773Z",
+      "errors": [],
+      "child_schema": "vera20k.map-observation.v2",
+      "capture": {
+        "exact_step_count": 0,
+        "final": {
+          "binary_frame": 0,
+          "deterministic_state_hash": 17975855442756925998,
+          "simulation_tick": 0,
+          "total_simulation_ms": 0
+        },
+        "frame": {
+          "byte_length": 1920000,
+          "sha256": "a7aff0f8e3f44663c369e1e75a981b90b66949586d71035771921871d67e334e"
+        },
+        "initial": {
+          "binary_frame": 0,
+          "deterministic_state_hash": 17975855442756925998,
+          "simulation_tick": 0,
+          "total_simulation_ms": 0
+        },
+        "manifest": {
+          "byte_length": 7252,
+          "sha256": "17b8ad5693fe027ae8246cf096adc70d294c1f03fef19eab9e1bb565bcf06672"
+        },
+        "map_source": {
+          "entry_id": -1828261808,
+          "kind": "mix",
+          "logical_name": "Fight.MAP",
+          "payload_len": 91254,
+          "source_archive": "multimd.mix",
+          "source_sha256": "d751dce7cd3611077e9228c33235f39c71681fff6ac08ca1f716d963ad6ce070"
+        },
+        "unit_atlas": {
+          "last_build_rasterized_sprite_count": 4480,
+          "pages": [
+            {
+              "dimension": "D2",
+              "extent": [
+                4259,
+                4364,
+                1
+              ],
+              "format": "R8Uint",
+              "mip_level_count": 1,
+              "sample_count": 1,
+              "texel_payload_bytes": 18586276
+            }
+          ],
+          "resident_sprite_count": 4480,
+          "total_texel_payload_bytes": 18586276
+        }
+      }
+    },
+    "atlas-after-missing": {
+      "status": "INVALID",
+      "started_at_utc": "2026-09-28T00:22:11.569613Z",
+      "errors": [
+        "observation child exit status: 1",
+        "child did not complete: {'message': \"tactical capture render failed: Loading Failed: Map 'deliberately-absent-observation.map' not found (checked the retail root and .mmx/.yro/.map/.mpr/.yrm variants)\", 'stage': 'loading'}"
+      ],
+      "child_schema": "vera20k.map-observation.v2",
+      "capture": null,
+      "failure": {
+        "message": "tactical capture render failed: Loading Failed: Map 'deliberately-absent-observation.map' not found (checked the retail root and .mmx/.yro/.map/.mpr/.yrm variants)",
+        "stage": "loading"
+      },
+      "frame_absent": true
+    }
+  },
+  "before_after_and_repeat": {
+    "initial_fingerprint_equal": true,
+    "final_fingerprint_equal": true,
+    "map_source_equal": true,
+    "frame_sha256_equal": true,
+    "after_statistics_equal": true
+  },
+  "historical_v1_validation_unchanged_sha256": "5de36cf5712d30815780577a29051237ab0ad59ee5fe24eb43babc0ff821c8f3",
+  "limits": [
+    "Resident UnitAtlas texel payload, including unused page space; excludes CPU caches, separate pose/slope caches, other atlases, palettes and driver overhead. Not total GPU/CPU/peak allocation or 30-player saturation.",
+    "Fresh and incrementally grown atlases may have different page allocation for the same resident keys. Last build count includes rasterized shadow sprites and persists on no-op refresh.",
+    "A/B production capture establishes unchanged fingerprints and BGRA bytes only for the selected Fight.MAP profile/30-step scenario on this adapter; it is not native gameplay/pixel parity.",
+    "No simulation behavior, RNG, timers, detach logic, native golden bytes or active bridge comparison owners changed."
+  ],
+  "independent_review": {
+    "passes": 1,
+    "actionable_findings": 0,
+    "python_tests": "18 focused receipt tests passed normally and under -O.",
+    "production_replay": {
+      "status": "VALID",
+      "started_at_utc": "2026-09-28T00:25:42.910622Z",
+      "same_initial_final_map_frame_statistics": true,
+      "run_json_sha256": "a074559f3e8d4ff10db241457b8ab450262f223f0ce0129cb391bc72a7498c61",
+      "manifest_sha256": "ceb9a2d103b2a6c00095bd2b961dbcf98e7692f78bfc23d8f5ec220c8066683d",
+      "frame_sha256": "a3a1c989ccc273b9c7a3ac8e21a79cadeb6d1eebaef22688c3ae36753acfa9bd"
+    },
+    "scope": "Traced authoritative atlas descriptors/state, pre-readback capture, fingerprint isolation, removed binary/schema callers, executable/build identities and saved full validation logs. No whole-codebase or native parity claim."
+  }
+}

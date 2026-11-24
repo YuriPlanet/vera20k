@@ -1,0 +1,37 @@
+name: Clippy
+
+# Lints both libraries and the binaries on the three main platforms (clippy also
+# checks that they compile, so there is no separate `cargo check`, and no binary
+# can stop compiling unnoticed). The libraries' unit tests compile in each change's
+# local focused test runs and in the per-platform library tests.
+# Like the per-platform library tests, this is manual only. Run it from the
+# Actions tab or with `gh workflow run rust.yml --ref <branch>`.
+# Cross-platform checks are maintainer-run and do not block pull-request merges.
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: rust-lld
+
+jobs:
+  lint:
+    name: clippy (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+          components: clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      # Reports warnings without failing.
+      - name: Clippy (libraries and binaries)
+        run: cargo clippy --workspace --lib --bins

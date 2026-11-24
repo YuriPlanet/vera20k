@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original active-YR locomotor Head_To and Is_At_Coord with original Drive/Ship transforms",
+  "assumptions": [
+    "Supplied live interface/Foot/raw-head/turn/cursor states; no movement producers or lifecycle",
+    "NullCoord=(0,0,0) and per-family height step104 explicitly supplied; startup is not executed",
+    "Original vtable slots, TurnTrack descriptors, RawTrack metadata and point arrays are retained",
+    "Drive72 and ordinary Ship64 TurnTrack descriptors; inputs are bounded branch witnesses",
+    "Mech, Tunnel and DropPod dormant TS behavior is excluded; active false families use original leaf",
+    "Signed/overflow cases describe native scalar behavior, not reachability on stock maps",
+    "Three marker controls execute original42B080 signed-cell center/height prefix through stop-before42B0F8, then original slot40; no Map lookup or full nearby-list scan executes. Requested height is zero, with original level-step global bytes recorded; no startup claim for that global."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "drive_head": "0x004AFCC0",
+    "ship_head": "0x0069F3D0",
+    "walk_head": "0x0075AC00",
+    "hover_head": "0x00514D10",
+    "drive_query": "0x004B4920",
+    "ship_query": "0x006A3F50",
+    "walk_query": "0x0075CA80",
+    "hover_query": "0x00517210",
+    "nearby_probe_prefix": "0x0042B080",
+    "nearby_probe_stop": "0x0042B0F8",
+    "drive_transform": "0x004B4780",
+    "ship_transform": "0x006A3DB0",
+    "false_query": "0x004B6630"
+  },
+  "payload_sha256": "4c346212830fea644f467c9ef4d5871732d164f3873671927b411e20a44868aa"
+}

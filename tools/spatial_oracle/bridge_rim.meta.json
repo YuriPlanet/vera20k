@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original concrete bridge selector576770, edge cleanup576200, complete setter47E040; wooden twins571050/570AE0/47E470; untagged575EE0 notification traversal",
+  "assumptions": [
+    "Stock xbayopigs.map SHA25615b761afdc3403cac20f32ad65b60cc158b385900a73f46f78cadf021160dd15; no CellTags/Tags/Events",
+    "225 supplied scalar cells from the current Rust production loader; native loader is not executed",
+    "Two-break sequence on the225-cell crop matches the full37940-cell input outputs exactly",
+    "Non-self anchor pointers reconstructed from supplied relationships; self anchor+2C starts0 and is unused by admitted selector paths",
+    "Native49F2F0 initializes direction deltas; all ten theater keys are signed values from the supplied stock INI",
+    "Break inputs execute complete native47E040, followed by supplied overlay=-1/state0 writes; outer damage, RNG and ramp walkers excluded",
+    "No CellTags or objects supplied; actual575EE0 executes without gameplay callbacks",
+    "Only the stock vertical high span and named break sequences covered; no repair, malformed map, or pixel equivalence claim",
+    "Wooden twins run over the same concrete-span cells with the stock BridgeSet base in 0xABAD1C; no stock wooden span is loaded",
+    "Wooden search rectangles: the Resize-derived (1,1,275,275), top edge on the start tile (1,135,275,140), and one row past it (1,136,275,139); the last two run isolated_three_rows only"
+  ],
+  "substitutions": [
+    "47DD70 records ordered receiver fields then returns; actual object damage/drop/debris excluded",
+    "6551C0 records radar coordinate then returns; radar queue excluded",
+    "6D2140 writes screen point0,0; projection and rectangle values excluded from equivalence",
+    "6D2790 records dirty-screen call then returns; display work excluded"
+  ],
+  "entry_points": {
+    "selector": "0x00576770",
+    "edge": "0x00576200",
+    "setter": "0x0047E040",
+    "low_selector": "0x00571050",
+    "low_edge": "0x00570AE0",
+    "low_setter": "0x0047E470",
+    "notification": "0x00575EE0",
+    "lookup": "0x005657A0",
+    "directions": "0x0049F2F0"
+  },
+  "payload_sha256": "934069b5311370e15c3178395b42ca5da12671777a172e182cbf176862950355"
+}

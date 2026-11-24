@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Ares EVA catalog/extra columns, retained Side tag/default/SetSide filename selection, and four bounded signed SideExt EVA scalar save/load roundtrips.",
+  "assumptions": [
+    "Fixed EVAMD input is supplied as synthetic source-order cached INI through ActionFixture.ordered_ini. Original ReadString executes. EVATypes capacity200, DialogList40 and extra sample16 are observed before actual8-byte filename storage. Physical file ingestion/full startup are excluded.",
+    "Original stock event reader runs before the explicitly invoked Ares extra-column hook. Hook frames declare the original register inputs; complete installed hook dispatch is excluded. Actual SideExt constructor/default initializer, container insert/Find, scalar tag reader and SetSide execute on valid supplied Side shells. One Side_LoadAll hook control executes its actual outer traversal/Find with the full extension dispatcher as a recorded sink, independently of the absent Sides section. Five separate controls execute actual phase/default decisions with the unrelated full Side reader as a recorded sink.",
+    "SideExt+90 retains resolved signed voice index; actual Side.ID supplies defaults. Field rereads do not rebind processB1D4C8. Negative SetSide clears to-1, null in-bounds Side retains, and invalid extra filename index yields empty. Unallocated positive Side index is excluded.",
+    "Four scalar controls execute1002D516..1002D526/1002D2EE..1002D2FE with actual ByteBuffer helpers and emitted IStream bytes. Outer magic, pointer/swizzle, phase, neighboring fields, whole Side/OLE save/load, failed transport and savefile parity are excluded.",
+    "Read/bind RNG streams are seeded31 by native65C6D0 and their original-layout state hashes and draw entries are observed. Scalar controls observe draw entries only. Playback timers, queue/decoder/audio device, whole-match startup and audible output are excluded. No selected-chain detach call is introduced."
+  ],
+  "substitutions": [
+    "Existing ActionFixture owns VM/heap/CRT/TLS/INI transport, preallocated registry and stream shell. Its explicit stack_base avoids Ares preferred base; module STACK/SP globals are unchanged. Shared map_pe32_image loads DLL bytes.",
+    "Existing Probe services supply Ares new/delete backing and diagnostics in the ActionFixture VM, with allocation delegated to ActionFixture.allocate. Native malloc7C9430/Ares allocation10001B50 use that same backing; actual strdup/strcpy, stricmp, ReadString, vectors and secure copy execute.",
+    "Scalar experiment reuses Probe as its VM owner and ScenarioFixture.hook as IStream byte transport attached via__new__ to that VM. Callback dispatch avoids Probe virtual-category addresses without replacing its transport or changing module globals. Probe constructor string-copy/allocator services remain inherited boundaries."
+  ],
+  "entry_points": {
+    "registration": "0x10063660",
+    "column_read": "0x100639C0",
+    "filename": "0x10063920",
+    "side_constructor": "0x1002D9F0",
+    "side_default": "0x1002E190",
+    "side_load_all": "0x1002EFC0",
+    "side_phase_dispatch": "0x1002B450",
+    "side_tag_read": "0x1002EC00",
+    "side_ext_find": "0x10057C70",
+    "set_side": "0x1002FB00",
+    "scalar_save": "0x1002D516",
+    "scalar_load": "0x1002D2EE",
+    "buffer_write": "0x1006B7B0",
+    "buffer_read": "0x1006B6F0",
+    "stream_write": "0x1006B7D0",
+    "stream_read": "0x1006B5C0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.ares_eva",
+  "payload_sha256": "b51147f1e55ab5ab13ba6790baffb734215cb60445b1564e2b5044a3746ae96b"
+}

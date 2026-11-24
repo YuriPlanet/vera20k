@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original SoundEvent LoadSamples/SelectNextSample, PreparePlayout/AdvancePlaylist, OnChannelSampleEnd and OnChannelDone over one event's start passes and playouts",
+  "assumptions": [
+    "AudioEventClass fields as SetControlFlags 0x00406570 leaves them; sample i is audio index id 100 + i",
+    "The event enters state 1 zeroed with a channel; +0x158 suspension is clear in lifecycles",
+    "Main RNG 0x00886B88 holds Random::Seed 0x0065C6D0's state for the case seed",
+    "A declared eviction count stands in for FindLowestRanked 0x00404E20 finding victims"
+  ],
+  "substitutions": [
+    "SampleTracker::LoadSample 0x00401C00 returns a stub CachedSample, NULL for a declared failed load",
+    "CachedSample AddRef 0x00401F80 / Release 0x00401F90 return without running",
+    "CachedSample::GetBuffer 0x00402030 returns a stub buffer per sample",
+    "DSoundChannel::SetNext 0x00402790 is recorded and returns without running",
+    "0x004093B0 returns a fixed timestamp",
+    "StartPlayback 0x004054A0 is replaced by its event writes: flags |= 0xA, state 3, +0x148 = 0",
+    "The pre-delay expiry writes state = resume as UpdateState 0x00405626 does once the timestamp passes"
+  ],
+  "entry_points": {
+    "load_samples": "0x004048B0",
+    "prepare_playout": "0x00404700",
+    "sample_end": "0x00405AC0",
+    "channel_done": "0x00405A00"
+  },
+  "replay_command": "python -m tools.spatial_oracle.ambient_playout",
+  "payload_sha256": "ad342654df84ac43065e91bd57391d235283c86ce6bb971c137d2d9b305fd3f4"
+}

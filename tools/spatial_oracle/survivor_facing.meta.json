@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "42 rows: settled headings across byte and rounding boundaries (including the 0xFF80 wrap), stack-slot garbage, a ROT=5 turn sampled over its arc, and ROT 1, 127, -1 and 0. Covers only the direction SpawnSurvivors passes; not the survivor spawn, cell search or RNG.",
+  "assumptions": [
+    "EDI is the building; its FacingClass at +0x388 is built by the original constructor, Set_ROT, Set_Current and Set at supplied global frames.",
+    "ESI is a survivor whose vtable pointer is read but not followed; execution stops at the Unlimbo call 0x00442F63 and reads the pushed direction.",
+    "The stack DirStruct slot starts with a supplied upper-word value, which the 32-bit load at 0x00442F4C reads."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "constructor": "0x004C91C0",
+    "set_rot": "0x004C9680",
+    "snap": "0x004C9300",
+    "set": "0x004C9220",
+    "current": "0x004C93D0",
+    "survivor_direction": "0x00442F3C"
+  },
+  "payload_sha256": "6897dff9d2e9a66c1ae3368c350ff031dcc5323b8af13d07a4c186316a34ea29"
+}

@@ -1,0 +1,309 @@
+//! `[CombatDamage]` section parser — global default particle systems used
+//! by various combat effects (smoke plumes, sparks, fire streams, debris).
+//!
+//! The Type references (the default particle systems, `DrainAnimationType=`,
+//! `IvanWarhead=`, `DeathWeapon=`, `SplashList=`) are the stored IDs the
+//! ordered Rules processor's factories answered (`native_processing`), which
+//! `RuleSet` publishes; ID resolution against the registries is deferred.
+//!
+//! The particle fields below mirror the fixed RulesClass slots at +0x1018..+0x1038;
+//! retail rulesmd.ini ships a 10th key (`DefaultFirestormExplosionSystem=`)
+//! that is not present in the verified RulesClass::ReadCombatDamage layout,
+//! so we don't parse it. The independent global DeathWeapon pointer is at
+//! RulesClass +0xFDC.
+//!
+//! ## Dependency rules
+//! - Part of rules/ — no dependencies on sim/, render/, ui/, etc.
+
+use crate::rules::ini_parser::IniSection;
+
+/// VERA's `DeformLowestLevel=` default. Firestorm's floor is Level 0
+/// (Firestorm 2.0 0x5F9AB0 keeps corners within `0..=0x90`), where most YR
+/// ground lies, so VERA's default lets a dent sink below it.
+const DEFORM_LOWEST_LEVEL: i32 = -4;
+
+/// Default particle-system fallbacks read from `[CombatDamage]`.
+///
+/// Each reference is the stored ID of a Type (a `ParticleSystemType` resolved
+/// later against `RuleSet::ps_type_id_by_name`, and so on). `None` is the
+/// constructor's null, which an absent key or a `none` keeps — consumers
+/// must supply their own fallback in that case.
+#[derive(Debug, Clone)]
+pub struct CombatDamageDefaults {
+    /// RulesCtor665675=100; ReadCombatDamage66BBDE..66BBF5 reads signed
+    /// AmmoCrateDamage with its current default, without clamping.
+    pub ammo_crate_damage: i32,
+    /// RulesClass::Constructor @ 0x00665650 (665CE8/665D5C)=100;
+    /// ReadCombatDamage @ 0x0066BBB0 (66BC37..66BC51)
+    /// retains the signed Rules+568 value without a clamp. AnimStart424E9B
+    /// passes it to AreaDamage after removing the selected resource cell.
+    pub tiberium_explosion_damage: i32,
+    /// Signed post-Verses cap used by ApplyWarheadDamage. The executable's
+    /// constructor default is 1000; stock rulesmd.ini overrides it to 10000.
+    pub max_damage: i32,
+    /// Signed, unclamped destroyable-cliff chance compared against one
+    /// Scenario RandomRanged(0,99) draw. Native constructor default is 100.
+    pub collapse_chance: i32,
+    /// VERA's `TerrainDeformation=`: warheads with `Deform=` may lower the
+    /// ground they explode on (see `docs/terrain-deformation.md`). gamemd
+    /// still reads `Deform=` and `DeformThreshhold=` but nothing uses them,
+    /// so retail warheads that set them stay inert unless this is on.
+    /// Default no; the skirmish Game Options' Terrain Deformation box switches it on
+    /// in each new scenario's root (`PersonalRules::scenario_root`).
+    pub terrain_deformation: bool,
+    /// VERA's `DeformLowestLevel=`: the lowest Level deformation lowers a
+    /// corner to, a signed int clamped to a cell Level's `-128..=127`.
+    /// Default -4; 0 is Firestorm's floor.
+    pub deform_lowest_level: i32,
+    /// `RailgunDamageRadius=`: the most a Techno may sit from a railgun line
+    /// and still be hit. `RulesClass::Constructor` writes 0x80
+    /// (`0x00665CDE`); `ReadCombatDamage` (`0x0066BC18..0x0066BC31`) reads a
+    /// plain signed int with that default, and
+    /// `TechnoClass::ApplyRailgunLineDamage @ 0x0070C690` compares it at
+    /// `0x0070C9DD`. Stock rulesmd.ini does not author it.
+    pub railgun_damage_radius: i32,
+    /// `BallisticScatter=` in LEPTONS. `RulesClass::ReadCombatDamage
+    /// @ 0x0066CD5B` reads it through `CCINIClass::ReadRange @ 0x00474620`
+    /// into `RulesClass+0x1734`, so the authored cell count is multiplied by
+    /// 256; the constructor default written at `0x006675C4` is `0x100`, and
+    /// stock `rulesmd.ini:815` authors `1.0` for the same 256.
+    pub ballistic_scatter: i32,
+    /// `Crush=` in LEPTONS (`RulesClass+0x1728`), read through `ReadRange` at
+    /// `0x0066CDC1`; the constructor default written at `0x006675A6` is
+    /// `0x180`, and stock `rulesmd.ini` authors `1.8` for 460. How near a
+    /// computer unit charges a crushable attacker
+    /// (`UnitClass::Should_Crush_It @ 0x007438F0`).
+    pub crush: i32,
+    /// `FireSupress=` in LEPTONS (`RulesClass+0x1430`), read through
+    /// `ReadRange` at `0x0066CE07` with the current value as its default; the
+    /// constructor writes `0x100` (`0x006671A6`). Stock `1` reads as 256. A
+    /// `Supress=` weapon's target scan halves a candidate's score for each
+    /// allied building cell in the rings within it
+    /// (`TechnoClass::ThreatAvoidance_Modifier @ 0x006F79A0`).
+    pub fire_supress: i32,
+    /// `Incoming=` (`RulesClass+0x16C0`), read through `ReadSpeed @
+    /// 0x00474810` at `0x0066CF24` with the current value as its default; the
+    /// constructor writes 0 (`0x006674EA`). Stock `10` reads as 25. An
+    /// infantryman whose weapon 0 is slower (`+0xA8`) makes the objects in
+    /// its target's cell scatter away from it as it fires
+    /// (`InfantryClass::Fire_At_Target @ 0x00520A61..0x00520AC7`).
+    pub incoming: i32,
+    /// `OpenToppedWarpDistance=` in CELLS (`RulesClass+0xF60`, ReadInt at
+    /// `0x0066C79C`; constructor default 5 at `0x00666AB1`/`0x00666AE5`;
+    /// stock 7). `TemporalClass::Update` multiplies it by 256 at its use.
+    pub open_topped_warp_distance: i32,
+    /// Global `DeathWeapon=` (Rules+FDC) used only when a dying type has
+    /// neither an explicit death weapon nor a live current-weapon fallback,
+    /// as the ordered Rules processor resolved it.
+    pub death_weapon: Option<String>,
+    /// Rules+F84, constructor666B1C null; ReadCombatDamage66C2A1..66C2CF
+    /// retains the ordered Warhead factory result. Retail `FlameDamage=Fire`;
+    /// the crate Napalm arm's per-object `ReceiveDamage` and its
+    /// `Apply_area_damage` both take this warhead (the Rules+0xF84 loads at
+    /// `0x00482803` and `0x00482827`). Null keeps every arm's damage inert.
+    flame_damage: Option<String>,
+    /// Rules+F88, constructor666B22 null; ReadCombatDamage66C2D4..66C2FE
+    /// retains the ordered Warhead factory result for ordinary AnimAI424630.
+    flame_damage2: Option<String>,
+    /// `DrainAnimationType=` (`RulesClass+0x31C`): the AnimType a drain link
+    /// attaches to its drainer (`TechnoClass::Install_Drain_Link @
+    /// 0x0070FD70`). Read right after `DeathWeapon=`; the constructor leaves
+    /// it null. Retail: `DISKRAY`.
+    pub drain_animation_type: Option<String>,
+    /// `FallingDamageMultiplier=` (`RulesClass+0xF64`, ReadDouble at
+    /// `0x0066C9CB` stored as a float; constructor 1.0): scales the damage a
+    /// Unit dropped by a Magnetron deals where it lands
+    /// (`UnitClass` notice `0x0074623E`).
+    pub falling_damage_multiplier: f32,
+    /// `CurrentStrengthDamage=` (`RulesClass+0xF68`, ReadBool at `0x0066C9EB`;
+    /// constructor 1): that damage starts from the dropped Unit's current
+    /// Health rather than its type's `Strength=` (`0x0074621D`).
+    pub current_strength_damage: bool,
+    /// `TiberiumExplosive=` (`RulesClass+0x17E5`, ReadBool over the current
+    /// value at `0x0066CE7E`; constructor false). Stock UnitClass::
+    /// Death_Explosion only sums a dead local with it; Ares 1004BD90 (hook
+    /// `0x738749`) turns it into the harvester's blast, so only a read the
+    /// Ares way reads it.
+    pub tiberium_explosive: bool,
+    /// `IvanWarhead=` (`RulesClass+0xFC8`, ReadINI `0x0066C52A`; constructor
+    /// null): the warhead of an Ivan bomb's blast (`BombClass::Detonate @
+    /// 0x00438720`). Stock `IvanWH`.
+    pub ivan_warhead: Option<String>,
+    /// `IvanDamage=` (`RulesClass+0xFCC`, ReadINI `0x0066C5C8`; constructor
+    /// 100 at `0x00666B88`): the blast's damage. Stock 450.
+    pub ivan_damage: i32,
+    /// `IvanTimedDelay=` in frames (`RulesClass+0xFD0`, ReadINI `0x0066C5EE`;
+    /// constructor 450 at `0x00666B92`): the fuse, added to the attach frame.
+    pub ivan_timed_delay: i32,
+    /// `IvanIconFlickerRate=` in frames (`RulesClass+0xFD8`, ReadINI
+    /// `0x0066C62B`; constructor 8 at `0x00666BA8`): the bomb clock's blink.
+    pub ivan_icon_flicker_rate: i32,
+    /// `CanDetonateTimeBomb=` and `CanDetonateDeathBomb=` (`RulesClass+0xFD4`,
+    /// `+0xFD5`, ReadBool over the current value at `0x0066C545` and
+    /// `0x0066C564`; constructor false at `0x00666B9C`): the lone selected
+    /// carrier of a player's timed or death bomb over itself answers Detonate
+    /// (`TechnoClass::What_Action_OnObject` `0x006FFF8D..0x00700003`;
+    /// `Simulation::bomb_detonate_action`). Retail sets both to no.
+    pub can_detonate_time_bomb: bool,
+    pub can_detonate_death_bomb: bool,
+    /// `SplashList=` (`RulesClass+0xBC4`, count `+0xBD0`; constructor empty):
+    /// the water explosions. A bouncing debris chunk landing in water below
+    /// the deck plays the first (`AnimClass::AI 0x00423DD2`).
+    pub splash_list: Vec<String>,
+    /// Large grey smoke plume — buildings under heavy damage.
+    pub default_large_grey_smoke_system: Option<String>,
+    /// Small grey smoke plume.
+    pub default_small_grey_smoke_system: Option<String>,
+    /// Spark shower — used by capture / warp-attach / electric bolt impact.
+    pub default_spark_system: Option<String>,
+    /// Large red smoke plume.
+    pub default_large_red_smoke_system: Option<String>,
+    /// Small red smoke plume.
+    pub default_small_red_smoke_system: Option<String>,
+    /// Debris dust kicked up when wreckage hits the ground.
+    pub default_debris_smoke_system: Option<String>,
+    /// Flamethrower fire stream particle system.
+    pub default_fire_stream_system: Option<String>,
+    /// Hidden test particle system — never used in retail YR.
+    pub default_test_particle_system: Option<String>,
+    /// Sparks emitted when a unit gets repaired by a service depot.
+    pub default_repair_particle_system: Option<String>,
+}
+
+impl CombatDamageDefaults {
+    pub(crate) fn bind_flame_damage(&mut self, name: Option<String>) {
+        self.flame_damage = name;
+    }
+
+    pub(crate) fn flame_damage(&self) -> Option<&str> {
+        self.flame_damage.as_deref()
+    }
+
+    pub(crate) fn bind_flame_damage2(&mut self, name: Option<String>) {
+        self.flame_damage2 = name;
+    }
+
+    pub(crate) fn flame_damage2(&self) -> Option<&str> {
+        self.flame_damage2.as_deref()
+    }
+
+    /// Parse the scalars from a `[CombatDamage]` `IniSection`. The Type
+    /// references and the two crate/resource explosion damages keep the
+    /// constructor's values: only the ordered Process owner reads them.
+    pub fn from_ini_section(section: &IniSection) -> Self {
+        Self {
+            ammo_crate_damage: 100,
+            tiberium_explosion_damage: 100,
+            max_damage: section.read_int("MaxDamage", 1000),
+            collapse_chance: section.read_int("CollapseChance", 100),
+            terrain_deformation: section.read_bool("TerrainDeformation", false),
+            deform_lowest_level: section
+                .read_int("DeformLowestLevel", DEFORM_LOWEST_LEVEL)
+                .clamp(i32::from(i8::MIN), i32::from(i8::MAX)),
+            railgun_damage_radius: section.read_int("RailgunDamageRadius", 0x80),
+            ballistic_scatter: section.read_range("BallisticScatter", 0x100),
+            crush: section.read_range("Crush", 0x180),
+            fire_supress: section.read_range("FireSupress", 0x100),
+            incoming: section.read_speed("Incoming", 0),
+            open_topped_warp_distance: section.read_int("OpenToppedWarpDistance", 5),
+            death_weapon: None,
+            flame_damage: None,
+            flame_damage2: None,
+            drain_animation_type: None,
+            falling_damage_multiplier: section.read_float("FallingDamageMultiplier", 1.0),
+            current_strength_damage: section.read_bool("CurrentStrengthDamage", true),
+            tiberium_explosive: crate::rules::ares_switch::ares_way()
+                && section.read_bool("TiberiumExplosive", false),
+            ivan_warhead: None,
+            ivan_damage: section.read_int("IvanDamage", 100),
+            ivan_timed_delay: section.read_int("IvanTimedDelay", 450),
+            ivan_icon_flicker_rate: section.read_int("IvanIconFlickerRate", 8),
+            can_detonate_time_bomb: section.read_bool("CanDetonateTimeBomb", false),
+            can_detonate_death_bomb: section.read_bool("CanDetonateDeathBomb", false),
+            splash_list: Vec::new(),
+            default_large_grey_smoke_system: None,
+            default_small_grey_smoke_system: None,
+            default_spark_system: None,
+            default_large_red_smoke_system: None,
+            default_small_red_smoke_system: None,
+            default_debris_smoke_system: None,
+            default_fire_stream_system: None,
+            default_test_particle_system: None,
+            default_repair_particle_system: None,
+        }
+    }
+}
+
+impl Default for CombatDamageDefaults {
+    fn default() -> Self {
+        Self {
+            ammo_crate_damage: 100,
+            tiberium_explosion_damage: 100,
+            max_damage: 1000,
+            collapse_chance: 100,
+            terrain_deformation: false,
+            deform_lowest_level: DEFORM_LOWEST_LEVEL,
+            railgun_damage_radius: 0x80,
+            ballistic_scatter: 0x100,
+            crush: 0x180,
+            fire_supress: 0x100,
+            incoming: 0,
+            open_topped_warp_distance: 5,
+            death_weapon: None,
+            flame_damage: None,
+            flame_damage2: None,
+            drain_animation_type: None,
+            falling_damage_multiplier: 1.0,
+            current_strength_damage: true,
+            tiberium_explosive: false,
+            ivan_warhead: None,
+            ivan_damage: 100,
+            ivan_timed_delay: 450,
+            ivan_icon_flicker_rate: 8,
+            can_detonate_time_bomb: false,
+            can_detonate_death_bomb: false,
+            splash_list: Vec::new(),
+            default_large_grey_smoke_system: None,
+            default_small_grey_smoke_system: None,
+            default_spark_system: None,
+            default_large_red_smoke_system: None,
+            default_small_red_smoke_system: None,
+            default_debris_smoke_system: None,
+            default_fire_stream_system: None,
+            default_test_particle_system: None,
+            default_repair_particle_system: None,
+        }
+    }
+}
+
+#[cfg(all(test, tests_rules_a_n))]
+mod tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+
+    /// `Crush=` is cells read as leptons and chopped: stock `1.8` is 460, and
+    /// a missing key keeps the constructor's `0x180`.
+    #[test]
+    fn crush_reads_cells_as_chopped_leptons() {
+        let read = |text: &str| {
+            let ini = IniFile::from_str(text);
+            CombatDamageDefaults::from_ini_section(ini.section("CombatDamage").unwrap()).crush
+        };
+        assert_eq!(read("[CombatDamage]\nCrush=1.8\n"), 460);
+        assert_eq!(read("[CombatDamage]\nFixtureOnly=1\n"), 0x180);
+        assert_eq!(CombatDamageDefaults::default().crush, 0x180);
+    }
+
+    /// `Incoming=` is a percent read as a speed: stock `10` is 25, and a
+    /// missing key keeps the constructor's 0.
+    #[test]
+    fn incoming_reads_through_read_speed() {
+        let read = |text: &str| {
+            let ini = IniFile::from_str(text);
+            CombatDamageDefaults::from_ini_section(ini.section("CombatDamage").unwrap()).incoming
+        };
+        assert_eq!(read("[CombatDamage]\nIncoming=10\n"), 25);
+        assert_eq!(read("[CombatDamage]\nFixtureOnly=1\n"), 0);
+        assert_eq!(CombatDamageDefaults::default().incoming, 0);
+    }
+}

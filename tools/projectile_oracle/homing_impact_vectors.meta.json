@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "288 homing Bullet admission cases, 72 impact clamp/final-handoff observations, and 12 source fuse-mode cases. Not homing trajectory, target-coordinate production or downstream warhead parity.",
+  "assumptions": [
+    "collision_fixture supplies fresh synthetic Bullet/type/target/source/stack state. Live FPCW is0E7F; cached control822D80 remains the verified image value, as in the original fixture.",
+    "The clamp runs before the mode handoff on the same machine. Near-object stack flag remains zero in these handoffs. Coordinate writes and floor query order are observed.",
+    "The72handoff rows are retained native observations without a direct Rust test consumer; admission and source-mode tables have Rust regression consumers.",
+    "Regions stop before downstream detonation. No full lifecycle, RNG ordering, timer, detach or frame-scheduling equivalence is established."
+  ],
+  "substitutions": [
+    "Floor578080 returns208 and records the input coordinate; synthetic target virtual+58 returns(640,128,624), virtual+48 returns(640,128,208); source virtual+84 returns the supplied type. These coordinate/type producers are not certified."
+  ],
+  "entry_points": {
+    "admission": "0x00466DB1",
+    "admission_end": "0x00466E6B",
+    "clamp": "0x00467BF0",
+    "clamp_end": "0x00467C0C",
+    "handoff": "0x00467CA9",
+    "handoff_end": "0x00467E53",
+    "source_mode": "0x00467C3C",
+    "source_mode_end": "0x00467C6A"
+  },
+  "payload_sha256": "c5bb92b652f72af7f9ec55919dca82642c7eef035fdb09f874c6754f4929eb7e"
+}

@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Stock MTNK/105mm/AP ordinary damage to genuine CAMISC03, per-type retained-coordinate DamageSound requests",
+  "assumptions": [
+    "Existing joined_inputs owns original selected full constructors/readers and lexical RULESMD/optional LANGRULE/Battle/Hills layers. Complete scenario/House/factory admission and physical cache loading are fixture boundaries.",
+    "Distinct genuine CAMISC03 retains original43B740 health100/sample0/UID/flags. Original440580 owns Unlimbo/Mark/Logic admission against supplied clear Cells/House. Whole43FB20 owns the first sample100; no post-constructor health or sampled-health value is supplied.",
+    "Selected joined-fixture startup invokes whole original561910 via the existing invocation owner, recording CRT813AA4/thunk561900, all369 signed CellSpread pairs and full RNG/draw readbacks. This prerequisite is separate from full CRT/process/Scenario admission. Historical default fixtures keep their cold uninitialized CellSpread premise and cannot establish ordinary AreaDamage parity.",
+    "Direct receiver and original ready/faced MTNK FireAt/Bullet/AreaDamage are separate routes on the same existing fixture implementation. Earlier target acquisition/input/approach/turning and subsequent weapon cadence remain outside the native fixture.",
+    "VoiceHistory attaches to the same Unicorn world, existing NativeAudioPlatform, invocation/worker and observer. It does not create a second world, listener, registry, platform or audio service.",
+    "Viewport/camera/surface values are declared consumer inputs. Native projection readbacks/constants/outputs are observed; no native camera producer or rendered/audible hardware parity is claimed.",
+    "Full Scenario/Main/MapGen states and original RNG requests, native request/event readbacks and scoped memory writes are retained. Opaque CdTimer middle words are not numeric timer assertions."
+  ],
+  "substitutions": [
+    "Existing joined lexical cache/file/allocator/COM/CRT/platform boundaries only; original gameplay/audio/projection instructions are unchanged."
+  ],
+  "entry_points": {
+    "building_ctor": "0x0043B740",
+    "building_unlimbo": "0x00440580",
+    "cell_spread_startup": "0x00561910",
+    "building_ai": "0x0043FB20",
+    "health_sample_store": "0x0044006C",
+    "building_receiver": "0x00442230",
+    "techno_receiver": "0x00701900",
+    "object_receiver": "0x005F5390",
+    "unit_fire": "0x00741340",
+    "coordinate_request": "0x00750E20",
+    "positional_play": "0x007509E0",
+    "coordinate_service": "0x00750EC0",
+    "positional_redrive": "0x00750D40",
+    "spatial_gain": "0x00750AC0",
+    "coords_to_client": "0x006D2140"
+  },
+  "selected_profile": "all",
+  "projection_limits": "Existing finish_vectors retains the complete raw archive. Projection selects named original controls/receiver steps/24projection outputs and referenced full RNG states/PCM bytes; no derived answers. Selected original CellSpread startup/ready-faced FireAt/impact and full receiver are executed on declared fixture inputs; the Fire routes are archived, not projected. Full scenario admission and input/approach/turning/rearm cadence are outside this comparison.",
+  "replay_command": "python -m tools.spatial_oracle.building_death_anims --damage-sound-joined",
+  "payload_sha256": "caf3afcac64a6fea7a9dcce7ae8787d7bfca61b34e73d0fd7202fc6890564808",
+  "raw_archive": {
+    "file": "building_damage_sound_joined.raw.json.gz",
+    "sha256": "84c6bfdebb8c50ba6ba7b8624cc1fd5cfe22ece497437ee66dd3bb7701546097",
+    "bytes": 4709985,
+    "uncompressed_sha256": "33cd619e3aa294b5495021f34029a502877c8654c353f3966a2460137161c2be",
+    "uncompressed_bytes": 80549697,
+    "canonical_payload_sha256": "62a720301c9c95cd4d9fe176398985d8947a5f1898cd38337c0813f8bdfd0a7c",
+    "compression": {
+      "format": "gzip",
+      "level": 9,
+      "mtime": 0,
+      "filename": "",
+      "os_byte": 255,
+      "zlib_runtime": "1.2.12"
+    }
+  }
+}

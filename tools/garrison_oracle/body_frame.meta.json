@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "54 completed CanBeOccupied body-frame cases, strength 2000; not all inputs or GPU pixels",
+  "assumptions": [
+    "Building state 1 from native Guard/GrandOpening 0x44995D/0x447780",
+    "Original BuildingClass vtable and type/health/occupant accessors",
+    "Supplied object/type/rules data; stock ConditionYellow=.5 and ConditionRed=.25",
+    "No laser fence, firestorm or gate flags; fresh emulator per case"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "GetCurrentFrame": "0x0043EF90"
+  },
+  "payload_sha256": "c95e0087ebdc5438b707cad909dbb86ba420b3b0002ca80b2b1cfc73655ddf67"
+}

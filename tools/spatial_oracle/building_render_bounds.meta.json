@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Whole BuildingType465570 bounds on supplied loaded image metadata, with original CRT initializers, constructor slices and image getters",
+  "assumptions": [
+    "CRT slots8127E8 and814A40 run original45B190 and69E070 through7CBED3. Constructor slices45DF99..45DFCC,45E248..45E260 and45E2CD..45E2D3 establish the cache, flags and vtable with supplied Type storage and EBX0; full type construction is excluded.",
+    "Three synthetic controls supply signed canvas words and frame rectangles, varying main-frame order and a loaded empty main image. Main and buildup enumerate every frame while the bib uses frame0. Whole465570 and original45F040,465960,69E7E0 own interpretation, integer centering, ordered rectangle unions and cache publication/reuse.",
+    "The retail control supplies raw CNNEWY06.SHP from ra2md.mix/isoubn.mix using the existing MIX reader, with no buildup or bib supplied. Its source hash identifies asset bytes only. No full type/file/theater binding, physical SHP loader, Building455C20, Object43CEA0, pixel decoding or rendered parity is claimed.",
+    "Harness guards require unchanged executable bytes, reject RNG entry and check the warm-cache path without serializing traces. Selected bounds calculations have no gameplay timer write or detach."
+  ],
+  "substitutions": [
+    "Declared loaded SHP pointers/header tables and writable Type/output storage only; no original body, numeric result, getter or rectangle operation is substituted."
+  ],
+  "entry_points": {
+    "bounds": "0x00465570",
+    "image": "0x0045F040",
+    "buildup": "0x00465960",
+    "frame_bounds": "0x0069E7E0",
+    "crt_loop": "0x007CBED3",
+    "rectangle_initializer": "0x0045B190",
+    "shp_initializer": "0x0069E070",
+    "constructor_cache": "0x0045DF99",
+    "constructor_flags": "0x0045E248",
+    "constructor_vtable": "0x0045E2CD"
+  },
+  "replay_command": "python -m tools.spatial_oracle.building_body_rules --render-bounds",
+  "payload_sha256": "594f3d852aa68df8161bcf2610dc654c1be1a8bc49a230aef7e6d48cfcf719c0"
+}

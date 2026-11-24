@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Stock DESO overlapping radiation field arithmetic, merge/first decay, Foot packet, and populated DOG concrete receiver",
+  "assumptions": [
+    "Selected lexical keys are read from physical RULESMD, optional LANGRULE, Battle and Hills files; native scalar readers execute. No whole physical native INI/scenario load.",
+    "Original RadSite constructors append to supplied empty vector storage; the Logic55B5CD reverse-vector traversal selects numeric update order. Original48x48 flat CellClass table. Source RadLevel and CellSpread are native-read. Twelve small histories sample seven cells each; zero-step direct-kernel controls explicitly override RadLevelDelay600 and do not claim site lifetime reachability; no Python field arithmetic supplies results.",
+    "Activation65B580..65B74C initializes real timers/steps then original spread65B9C0 executes. Independent LightSource creation/output is excluded. Tick prefix65B800..65B858 executes every frame through90; light-timer and lifetime-deletion suffix excluded.",
+    "The large-level control explicitly overrides RadLevel50000. Per-site current_level executes signed getter65B510; it is distinct from same-center merge65B530..65B570, which executes its float effective-level and Decrease65BB50 before activation; original Decay65BD00 and CellSubtract487D00 execute. Memory-store boundaries are retained.",
+    "Field rows use the historical original Foot4DA554 boundary, neutral300HP Object receiver control. The separate populated DOG control uses existing FootMissions native type/actor/Walk/House/map construction and full517FA0 receiver with the captured three-site packet.",
+    "DOG concrete control uses physical Battle/Anytown reader context; selected DOG/RadSite values match the field Battle/Hills context. Independent source-layer identities are retained. No three-DESO live native match or rendering claim."
+  ],
+  "substitutions": [
+    "Existing Landing allocator/delete/CRT TLS and cached lexical INI transport. Supplied flat map cell table and bounded object state for field rows.",
+    "Populated DOG control inherits FootMissions OS/COM, map crop, one human House and sound transport boundaries. Original class/receiver code executes. No unknown receiver state is replaced with zeroes."
+  ],
+  "entry_points": {
+    "radiation_reader": "0x0066CF70",
+    "spread": "0x0065B9C0",
+    "merge": "0x0065B530",
+    "decrease": "0x0065BB50",
+    "decay": "0x0065BD00",
+    "cell_add": "0x00487CE0",
+    "cell_subtract": "0x00487D00",
+    "foot": "0x004DA554",
+    "factor": "0x004DA5FA",
+    "infantry_receiver": "0x00517FA0",
+    "foot_receiver": "0x004D7330",
+    "techno_receiver": "0x00701900",
+    "object_receiver": "0x005F5390"
+  },
+  "replay_command": "python -m tools.spatial_oracle.radiation_damage_boundary --overlap",
+  "payload_sha256": "01cb37c79aba277005edc221e029113bb6760f9c2c53db7a66f8162fb638ad86"
+}

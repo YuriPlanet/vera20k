@@ -1,0 +1,223 @@
+//! Row-framed RLE-Zero decompression for SHP(TS) sprite frames.
+//!
+//! Frame-header byte 8 is a bitfield. When bit 1 is set, the active YR draw
+//! path uses this row-framed RLE-Zero grammar; when it is clear, the frame is
+//! contiguous raw pixels and is handled by `shp_file`.
+//!
+//! Each row starts with a self-inclusive little-endian `u16` byte count. The
+//! payload is width-driven: a nonzero byte emits that palette index, while
+//! `0, count` advances by `count` transparent pixels. Payload tail remaining
+//! after the visible width is ignored before advancing to the next row.
+//!
+//! ## Dependency rules
+//! - Part of assets/ - no dependencies on game modules.
+
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
+use crate::assets::error::AssetError;
+
+/// VERA's per-frame expansion limit for RLE sprites, in palette indices.
+const MAX_DECODED_FRAME_PIXELS: usize = 16 * 1024 * 1024;
+/// Larger frames grow only as their rows are read.
+const INITIAL_FRAME_PIXELS: usize = 4 * 1024 * 1024;
+
+fn parse_error(detail: impl Into<String>) -> AssetError {
+    AssetError::ParseError {
+        format: "SHP".to_string(),
+        detail: detail.into(),
+    }
+}
+
+/// Decode a bit-1-set SHP frame using the active row/RLE-Zero mechanism.
+///
+/// Returns exactly `width * height` palette indices for well-formed data.
+pub fn decode_rle_frame(data: &[u8], width: usize, height: usize) -> Result<Vec<u8>, AssetError> {
+    let pixel_count = width
+        .checked_mul(height)
+        .ok_or_else(|| parse_error("RLE frame dimensions overflow addressable memory"))?;
+    if pixel_count > MAX_DECODED_FRAME_PIXELS {
+        return Err(parse_error(format!(
+            "RLE frame rectangle {width}x{height} is {pixel_count} pixels, past the \
+             {MAX_DECODED_FRAME_PIXELS}-pixel frame budget"
+        )));
+    }
+    // Every produced pixel costs input: a nonzero literal one byte, a zero run
+    // two bytes for up to 255 pixels. A frame claiming more pixels than
+    // `255 * data.len()/2` has no payload behind its header: reject before the
+    // capacity reflects the claim.
+    let max_pixels = (data.len() / 2).saturating_mul(255);
+    if pixel_count > max_pixels {
+        return Err(parse_error(format!(
+            "RLE frame needs {pixel_count} pixels but {} frame bytes cannot produce past {max_pixels}",
+            data.len()
+        )));
+    }
+    let mut pixels = Vec::new();
+    let reserve_error = |_| {
+        parse_error(format!(
+            "RLE frame could not allocate its pixels for {width}x{height}"
+        ))
+    };
+    pixels
+        .try_reserve_exact(pixel_count.min(INITIAL_FRAME_PIXELS))
+        .map_err(reserve_error)?;
+    let mut offset = 0usize;
+
+    for row in 0..height {
+        let row_start = offset;
+        let prefix_end = row_start
+            .checked_add(2)
+            .ok_or_else(|| parse_error(format!("RLE scanline {row} prefix offset overflow")))?;
+        if prefix_end > data.len() {
+            return Err(parse_error(format!(
+                "RLE data truncated at scanline {row} (offset {row_start})"
+            )));
+        }
+
+        let raw_length = u16::from_le_bytes([data[row_start], data[row_start + 1]]) as usize;
+        if raw_length < 2 {
+            return Err(parse_error(format!(
+                "RLE scanline {row} length {raw_length} is smaller than its 2-byte prefix"
+            )));
+        }
+
+        let line_end = row_start.checked_add(raw_length).ok_or_else(|| {
+            parse_error(format!(
+                "RLE scanline {row} declared end overflows address space"
+            ))
+        })?;
+        if line_end > data.len() {
+            return Err(parse_error(format!(
+                "RLE scanline {row} extends past frame data ({line_end} > {})",
+                data.len()
+            )));
+        }
+
+        if pixels.capacity() - pixels.len() < width {
+            pixels
+                .try_reserve_exact(pixel_count - pixels.len())
+                .map_err(reserve_error)?;
+        }
+        offset = prefix_end;
+        let mut row_pixels = 0usize;
+
+        // The native row consumer is width-driven. The prefix still owns the
+        // next-row address, so declared payload tail is ignored.
+        while row_pixels < width {
+            if offset >= line_end {
+                return Err(parse_error(format!(
+                    "RLE scanline {row} under-runs: produced {row_pixels} of {width} pixels"
+                )));
+            }
+
+            let byte = data[offset];
+            offset += 1;
+            if byte != 0 {
+                pixels.push(byte);
+                row_pixels += 1;
+                continue;
+            }
+
+            if offset >= line_end {
+                return Err(parse_error(format!(
+                    "RLE scanline {row} ends inside a zero run"
+                )));
+            }
+            let count = data[offset] as usize;
+            offset += 1;
+            let visible_count = count.min(width - row_pixels);
+            pixels.extend(std::iter::repeat_n(0u8, visible_count));
+            row_pixels += visible_count;
+        }
+
+        offset = line_end;
+    }
+
+    Ok(pixels)
+}
+
+#[cfg(all(test, tests_assets))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rle_decode_basic() {
+        let data = [6, 0, 0, 1, 5, 3];
+        let pixels = decode_rle_frame(&data, 3, 1).expect("decode");
+        assert_eq!(pixels, vec![0, 5, 3]);
+    }
+
+    #[test]
+    fn a_frame_rectangle_past_the_absolute_budget_is_refused_before_decoding() {
+        // 4096x4097 is one row past the frame budget, while the payload bound
+        // alone would still allow it: the rectangle, not the byte count, is
+        // what has to be refused. A zero-filled tail is only padding here; the
+        // test asserts which rule answers, not what a decoder would produce.
+        let data = vec![0u8; 140_000];
+        let err = decode_rle_frame(&data, 4096, 4097)
+            .expect_err("a rectangle past the frame budget is refused");
+        let AssetError::ParseError { detail, .. } = err else {
+            panic!("expected a SHP parse error: {err:?}");
+        };
+        assert!(
+            detail.contains("frame budget"),
+            "unexpected detail: {detail}"
+        );
+    }
+
+    #[test]
+    fn a_huge_header_pixel_count_cannot_reserve_past_the_frame_payload() {
+        // 4096x4096 sits exactly on the frame budget, so the payload bound is
+        // the rule that answers: four frame bytes cannot produce 16M pixels.
+        let data = [8u8, 0, 0, 0];
+        let err =
+            decode_rle_frame(&data, 4096, 4096).expect_err("no payload behind the pixel count");
+        let AssetError::ParseError { detail, .. } = err else {
+            panic!("expected a SHP parse error: {err:?}");
+        };
+        assert!(
+            detail.contains("cannot produce past"),
+            "unexpected detail: {detail}"
+        );
+    }
+
+    #[test]
+    fn truncated_prefix_errors() {
+        assert!(decode_rle_frame(&[], 2, 1).is_err());
+    }
+
+    #[test]
+    fn zero_opcode_without_count_errors() {
+        assert!(decode_rle_frame(&[3, 0, 0], 1, 1).is_err());
+    }
+
+    #[test]
+    fn declared_row_under_run_errors_instead_of_padding() {
+        assert!(decode_rle_frame(&[3, 0, 7], 2, 1).is_err());
+    }
+
+    #[test]
+    fn final_zero_run_overshoot_is_clamped_to_visible_width() {
+        let pixels = decode_rle_frame(&[4, 0, 0, 8], 3, 1).expect("overshoot is safe");
+        assert_eq!(pixels, vec![0, 0, 0]);
+    }
+
+    #[test]
+    fn payload_tail_is_ignored_before_the_next_declared_row() {
+        let data = [
+            6, 0, 9, 8, 0xAA, 0xBB, // row 0: two literals plus ignored tail
+            4, 0, 0, 2, // row 1: two transparent pixels
+        ];
+        let pixels = decode_rle_frame(&data, 2, 2).expect("tail stays inside its row");
+        assert_eq!(pixels, vec![9, 8, 0, 0]);
+    }
+}

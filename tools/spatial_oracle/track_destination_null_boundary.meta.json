@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "84 original NULL calls: Foot4D94B0 over Unit vtables and Aircraft41AA80 over Aircraft vtables, each with constructed original Drive/Ship locomotors. Complete current/queued Attack and retained-target gate combinations, NULL bypass of nonnull admission gates, setter flags, already-null NavCom, one-shot skip latch, power, frame/duration edges; ordered pre-Stop and timer boundaries, retained destinations/heads and Scenario RNG continuation. This is Foot/class NULL control and timer evidence, not native Fly Stop or a legal stock Aircraft locomotor combination.",
+  "assumptions": [
+    "Inherited track_destination map/House/constructor fixture, original class vtables and original constructed Drive/Ship COM entries. Unit class Set_Destination is intentionally not called: Foot NULL is tested directly.",
+    "Aircraft vtable +480=41AA80 and Infantry vtable +480=51AA40 are asserted from retail bytes. Aircraft NULL prelude executes unchanged; its Drive/Ship locomotor is a supplied boundary probe, not a stock Aircraft definition and not Fly Stop evidence.",
+    "Live or empty NavCom, auxiliary sentinel, destination700/800/900, head2816/2688/123, retries7, old timer middle words777/888, path2/3/4/5 and skip latch are supplied. Timer comparisons observe start/duration only; native middle words are not claimed as zero or modeled timer state.",
+    "No linked lift partner, retained fire particles, radio contacts, docking selection, death or locomotor Process. The swap probe supplies6AD but no2B0 link. These are prerequisite/lifecycle limits.",
+    "Seeded original ScenarioRandom, unchanged gameplay bytes and no substituted gameplay callable. No random entry is reached by these NULL calls; the subsequent original Random continuation is recorded separately."
+  ],
+  "substitutions": [
+    "Only inherited OS Interlocked import operations. No gameplay replacement."
+  ],
+  "entry_points": {
+    "foot": "0x004D94B0",
+    "aircraft": "0x0041AA80",
+    "drive_stop": "0x004AFE00",
+    "ship_stop": "0x0069F510",
+    "timer_tail": "0x004D96C2"
+  },
+  "payload_sha256": "68ca9da37d17d2239f9b137a860c717812e161192f9c75b10eaccf4f2fd72c69",
+  "replay_command": "python -m tools.spatial_oracle.track_destination --null-boundary"
+}

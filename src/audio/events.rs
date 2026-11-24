@@ -1,0 +1,802 @@
+//! Game sound events — the bridge between sim and audio.
+//!
+//! The app adapts ordered simulation facts and input requests into these
+//! events, then feeds them to SfxPlayer for playback.
+//!
+//! Events carry the sound ID (from rules.ini / sound.ini) rather than a
+//! filename, as a [`SoundName`] of the rules' sound-name table: the consumer
+//! reads the name back from that table and the SfxPlayer resolves it to
+//! files via SoundRegistry.
+//!
+//! ## Design
+//! Events are plain data — no audio library handles, no asset references. This keeps
+//! sim/ free from audio dependencies. The event queue is a simple Vec that
+//! gets drained each frame.
+//!
+//! ## Dependency rules
+//! - Part of audio/ — but contains no rodio code, only data types.
+//! - sim/ has its own neutral event transport and never imports audio/.
+
+use crate::rules::ruleset::{SoundName, SoundNames};
+use std::sync::Once;
+
+/// Where a positional sound plays: the world-pixel point the presentation
+/// frame draws it at, and the cell it occupies.
+///
+/// gamemd-derived: `VocClass::PlayAt @ 0x007509E0` receives the object's
+/// coordinate; `VocClass::CalcVolumeAndPan @ 0x00750AC0` projects it to the
+/// tactical client point for volume and pan and derives the cell as
+/// `coord >> 8` (`0x00750B32..0x00750B4E`) for the `Type=SHROUD` gate. VERA
+/// carries both halves so the app never has to invert a projection.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SoundSource {
+    pub screen_x: f32,
+    pub screen_y: f32,
+    pub rx: u16,
+    pub ry: u16,
+}
+
+impl SoundSource {
+    pub fn new(screen: (f32, f32), cell: (u16, u16)) -> Self {
+        Self {
+            screen_x: screen.0,
+            screen_y: screen.1,
+            rx: cell.0,
+            ry: cell.1,
+        }
+    }
+
+    /// The spatial-audio projection of a native Coord in leptons.
+    /// `VocClass::CalcVolumeAndPan` (`0x00750B32`) takes the shroud cell by
+    /// arithmetic `coord >> 8`; the XYZ is projected as it is, not recentred.
+    pub fn from_coordinate(coordinate: [i32; 3]) -> Self {
+        let [x, y, z] = coordinate;
+        Self::new(
+            crate::util::lepton::absolute_leptons_to_screen(x, y, z),
+            ((x >> 8) as u16, (y >> 8) as u16),
+        )
+    }
+
+    pub fn screen_pos(&self) -> (f32, f32) {
+        (self.screen_x, self.screen_y)
+    }
+
+    pub fn cell(&self) -> (u16, u16) {
+        (self.rx, self.ry)
+    }
+}
+
+/// A sound event produced by the game simulation or UI.
+#[derive(Debug, Clone)]
+pub enum GameSoundEvent {
+    /// A network trigger's authored operand, resolved only by local playback.
+    TriggerAudio {
+        reference: crate::rules::sound_ini::SoundReference,
+        target: crate::sim::world::TriggerSoundTarget,
+    },
+    /// One `VoxClass::PlayEVA @ 0x00752700` call: the `[DialogList]` event
+    /// name and the call site's type override (`-1` = the entry's own
+    /// `Type=`). `SelectClass::Action` passes `-1` at all eight of its sites
+    /// (`0x006AAE39..0x006AB6C9`); `GameExit::BattleControlTerminated
+    /// 0x00686616` is the only site that passes `2`. The side
+    /// column, `Type=`/`Priority=` routing, duplicate rule and the 500 ms gap
+    /// are the consumer's (`SfxPlayer::play_eva` → `audio::vox`). Producers
+    /// gate on the local player before pushing this.
+    Eva {
+        event: String,
+        type_override: Option<crate::rules::sound_ini::EvaType>,
+    },
+    /// TAction21 calls QueueVoice752480 with its Read6DD5B0-resolved
+    /// EVAMD ordinal, type2 (Interrupt) and priority-1. It shares the EVA
+    /// queue owner with named calls, without repeating the name lookup.
+    TriggerEva { index: i32 },
+    /// A centred, full-volume Voc by SOUNDMD ordinal (team script action 25,
+    /// `0x006E9901` -> `0x00750920`), resolved against the process catalog.
+    VocIndex { index: i32 },
+    /// `VoxClass::RemoveFromQueues @ 0x00752A40` for a `[DialogList]` event:
+    /// its queued lines are dropped (`SfxPlayer::remove_eva`).
+    EvaRemove { event: String },
+
+    /// Start/report sound owned by one authoritative animation object.
+    AnimationStarted {
+        anim_id: u64,
+        sound_id: SoundName,
+        source: Option<SoundSource>,
+    },
+
+    /// Hard-stop one owner's handle, then optionally play StopSound.
+    AnimationStopped {
+        anim_id: u64,
+        stop_sound_id: Option<SoundName>,
+        source: Option<SoundSource>,
+    },
+    /// `SoundEvent::Release @ 0x00406060` on one owner's handle: its loop
+    /// stops repeating and plays out; one-shots continue unchanged.
+    AnimationReleased { anim_id: u64 },
+    /// FootLimbo405FD0 stops repetition even for counted loops, then detaches
+    /// the owner's handle while the current audio finishes.
+    AnimationDetached { anim_id: u64 },
+    /// A unit was selected by the player — play VoiceSelect.
+    ///
+    /// `speaker_id` is the object that speaks: `TechnoClass::Queue_Voice @
+    /// 0x00708D90` latches the line on the techno itself (`+0x4F0`), so the
+    /// repeat guard in [`crate::audio::voice_queue`] needs to know whose line
+    /// this is.
+    UnitSelected {
+        /// Stable id of the speaking object.
+        speaker_id: u64,
+        /// sound.ini ID from the unit's VoiceSelect= field.
+        sound_id: SoundName,
+    },
+
+    /// A unit was ordered to move — play VoiceMove.
+    UnitMoveOrder {
+        /// Stable id of the speaking object.
+        speaker_id: u64,
+        /// sound.ini ID from the unit's VoiceMove= field.
+        sound_id: SoundName,
+    },
+
+    /// A unit was ordered to attack — play VoiceAttack.
+    UnitAttackOrder {
+        /// Stable id of the speaking object.
+        speaker_id: u64,
+        /// sound.ini ID from the unit's VoiceAttack= field.
+        sound_id: SoundName,
+    },
+
+    /// An already-admitted scalar voice from the simulation's reached
+    /// gameplay caller. Shares the same per-object pending/playing owner.
+    UnitVoiceRequested {
+        speaker_id: u64,
+        sound_id: SoundName,
+    },
+
+    /// The live Logic cursor reached Techno6F9EBB for an interested owner.
+    /// This visit drains only that owner's pending acknowledgement.
+    UnitVoiceVisit { owner: u64 },
+
+    /// Techno destructor6F4607 destroys its distinct voice handle. Keep this
+    /// ordered with visits; final-world membership cannot recover the order.
+    UnitVoiceDestroyed { owner: u64 },
+
+    /// A deploy conversion moved the speaker's voice handle and latch to the
+    /// object replacing it (`UnitClass::Deploy @ 0x00739971`,
+    /// `BuildingClass::Mission_Selling @ 0x0044A0D4`), ahead of the old
+    /// object's `UnitVoiceDestroyed`.
+    UnitVoiceMoved { from: u64, to: u64 },
+
+    /// An entity was destroyed — play DieSound.
+    EntityDestroyed {
+        /// sound.ini ID from the entity's DieSound= field.
+        sound_id: SoundName,
+        /// Screen position of the sound source (for spatial audio).
+        source: Option<SoundSource>,
+    },
+
+    /// An entity was crushed by a vehicle — play CrushSound (the squish).
+    EntityCrushed {
+        /// sound.ini ID from the entity's CrushSound= field.
+        sound_id: SoundName,
+        /// Screen position of the sound source (for spatial audio).
+        source: Option<SoundSource>,
+    },
+
+    /// Fly BeginTakeoff AuxSound1 or the one-shot landing AuxSound2.
+    AircraftPhase {
+        sound_id: SoundName,
+        source: Option<SoundSource>,
+    },
+    /// DeploySound on infantry stance entry or successful unit-to-building conversion.
+    EntityDeployed {
+        /// sound.ini ID from the entity's DeploySound= field.
+        sound_id: SoundName,
+        /// Screen position of the sound source (for spatial audio).
+        source: Option<SoundSource>,
+    },
+
+    /// An infantry entity entered the Undeploying phase — play UndeploySound.
+    EntityUndeployed {
+        /// sound.ini ID from the entity's UndeploySound= field.
+        sound_id: SoundName,
+        /// Screen position of the sound source (for spatial audio).
+        source: Option<SoundSource>,
+    },
+
+    /// A chrono teleport happened — play the resolved warp sound at this position.
+    /// Emitted twice per warp (source = ChronoOutSound, destination = ChronoInSound).
+    ChronoTeleport {
+        /// sound.ini ID — already resolved to the per-unit ChronoIn/OutSound by sim.
+        sound_id: SoundName,
+        /// Screen position of the sound source (for spatial audio).
+        source: Option<SoundSource>,
+    },
+
+    /// A local-player object crossed a veterancy rank — the positional
+    /// `[AudioVisual] UpgradeVeteranSound=`/`UpgradeEliteSound=` cue
+    /// (`VocClass::PlayAt` from `TechnoClass::AI_Update @ 0x006FA0BC`).
+    UnitPromoted {
+        sound_id: SoundName,
+        source: Option<SoundSource>,
+    },
+
+    /// One-shot positional `[AudioVisual] CloakSound` requested by an accepted
+    /// native StartUncloaking arg-zero transition.
+    CloakSound {
+        sound_id: SoundName,
+        source: Option<SoundSource>,
+    },
+
+    /// One-shot positional overlay `CrushSound=` played by
+    /// `UnitClass::PerCellProcess @ 0x0073B04D` when a crusher flattens a wall.
+    WallCrushed {
+        sound_id: SoundName,
+        source: Option<SoundSource>,
+    },
+
+    /// One-shot rules-named sound: positional `VocClass::PlayAt`, or centred
+    /// full-volume `VocClass::PlayAtPos` when `source` is absent. Both resolve
+    /// only registered Voc entries, never raw audio-bag filenames.
+    VocAt {
+        sound_id: SoundName,
+        source: Option<SoundSource>,
+    },
+    /// One independent `VocClass::PlayAtCoord750E20` request. Unlike
+    /// direct7509E0, it retains its source and re-drives/reaps at750EC0.
+    /// Selected damage callers702760/7027A9/442706 use this route.
+    VocAtCoord {
+        sound_id: SoundName,
+        /// Immutable signed native XYZ in leptons, retained by750E20.
+        /// The projected `source` is only a derived spatial-audio cache.
+        coordinate: [i32; 3],
+        /// Native request-node +2C, tested as a bit mask by750F40.
+        flags: u32,
+        source: SoundSource,
+    },
+    /// `VocClass::StopAtCoord750F40`: detach matching retained requests.
+    /// This is not an actor Stop or a hard stop of a device buffer.
+    VocStopAtCoord { coordinate: [i32; 3], flags: u32 },
+
+    /// Positional SFX from [AudioVisual] BuildingGarrisonedSound — plays at
+    /// the building's screen position when the first occupant enters.
+    BuildingGarrisonedSfx {
+        /// sound.ini ID for the SFX (resolves "BuildingGarrisoned" → file).
+        sound_id: SoundName,
+        /// Screen position for spatial audio.
+        source: Option<SoundSource>,
+    },
+
+    /// Positional SFX for tank-bunker walls raising (install) or falling
+    /// (exit/teardown). The up/down choice — and thus which rules key resolves
+    /// `sound_id` — is made when the event is built; plays at the bunker's
+    /// screen position. Skipped upstream when the rules key is empty.
+    BunkerWalls {
+        /// sound.ini ID (BunkerWallsUpSound or BunkerWallsDownSound).
+        sound_id: SoundName,
+        /// Screen position for spatial audio.
+        source: Option<SoundSource>,
+    },
+
+    /// Positional SFX played when a paradropped passenger successfully opens
+    /// a parachute. Resolved from [AudioVisual] ChuteSound.
+    ChuteSound {
+        /// sound.ini ID for the SFX.
+        sound_id: SoundName,
+        /// Screen position for spatial audio.
+        source: Option<SoundSource>,
+    },
+
+    /// Positional SFX + EVA cue from a bridge repair triggered by an engineer
+    /// entering a `BridgeRepairHut`. Plays the spatial `[BridgeRepaired]`
+    /// sound (resolved from `rules.bridge_rules.repair_sound`) at the hut's
+    /// screen position when `sound_id` is non-empty. When `eva_event` is
+    /// `Some`, the EVA arm plays it as a non-positional cue (gated upstream
+    /// on local-human owner).
+    BridgeRepaired {
+        /// Spatial `[BridgeRepaired]` SFX id. Empty when
+        /// `RepairBridgeSound=` is unset in rules.
+        sound_id: SoundName,
+        /// Screen position for spatial audio.
+        source: Option<SoundSource>,
+        /// `Some("EVA_BridgeRepaired")` when the engineer's owner is the
+        /// local human and the radar dedupe allowed it; `None` otherwise.
+        eva_event: Option<String>,
+    },
+
+    /// The `[AudioVisual] BaseUnderAttackSound` siren that rides with the
+    /// under-attack EVA line.
+    ///
+    /// `HouseClass::NotifyUnderAttack @ 0x004F95B8..0x004F95CF` plays
+    /// `Rules+0x184` through `VocClass::PlayAtPos @ 0x00750920` with pan
+    /// `0x2000` and volume `1.0f` — non-positional — immediately after the EVA
+    /// call at `0x004F95B3`, and only when `CreateRadarEvent @ 0x0065FA70`
+    /// accepted the ping (`0x004F95A5 TEST AL,AL ; JZ`).
+    BaseUnderAttackSfx {
+        /// sound.ini ID from `[AudioVisual] BaseUnderAttackSound=`.
+        sound_id: SoundName,
+    },
+
+    /// A superweapon fired: its `[AudioVisual]` cue and/or its EVA warning.
+    ///
+    /// `SuperClass::Launch @ 0x006CC390` decides both per `Type=` case; see
+    /// [`crate::app::match_runtime::sound_dispatch::superweapon_launch_cue`] for the
+    /// case-by-case table and its addresses. Every cue in that table is played
+    /// by `VocClass::PlayAtCoord @ 0x00750E20` (or `PlayAt @ 0x007509E0` for
+    /// `ForceShield`) at the target coordinate, hence `source`.
+    ///
+    /// The one `source: None` producer is `StormSound`, and it is not a launch
+    /// cue: `LightningStorm::Start @ 0x00539EB0` returns early on a deferred
+    /// launch, so the cue is played only when the deferment expires
+    /// (`0x0053A044`, `VocClass::PlayAtPos @ 0x00750920`, pan `0x2000`, volume
+    /// `1.0f` — centred and full-volume). See
+    /// [`crate::sim::world::SimSoundEvent::LightningStormBegan`].
+    ///
+    /// The EVA line is not gated on the launching house: native calls
+    /// `VoxClass::PlayEVA` behind `[0x00A8B538]` only, a client-side flag that
+    /// `HouseClass::MPlayer_Defeated @ 0x004FC205` sets to 1 — i.e. an
+    /// enemy's launch announces itself on your client until you are defeated.
+    SuperWeaponActivated {
+        /// `[AudioVisual]`/`StartSound=` cue; empty when the case plays none.
+        sound_id: SoundName,
+        /// Target-cell position, or `None` for a non-positional cue.
+        source: Option<SoundSource>,
+        /// `evamd.ini` event name for the `VoxClass::PlayEVA` call, or `None`
+        /// when the case plays no EVA line. Routing comes from the entry.
+        eva_event: Option<String>,
+    },
+
+    /// Generic UI sound (button click, error beep, etc.).
+    UiSound {
+        /// sound.ini ID for the UI sound.
+        sound_id: SoundName,
+    },
+
+    /// One displayed-credits counter step: `[AudioVisual] CreditTicks[0]`
+    /// while counting up, `[1]` while counting down. `CreditsClass::Draw @
+    /// 0x004A2510..0x004A2533` plays it through `VocClass::PlayAtPos @
+    /// 0x00750920` at volume `0.5f` (`PUSH 0x3f000000`), pan `0x2000`
+    /// (centre), no handle — so, unlike [`Self::UiSound`], at HALF volume.
+    CreditTick {
+        /// sound.ini ID from the `CreditTicks=` list.
+        sound_id: SoundName,
+    },
+}
+
+impl GameSoundEvent {
+    /// Resolve without changing the simulation or consuming RNG. Missing local
+    /// audio is silent; the authored request still lives in the shared world.
+    pub(crate) fn resolve_trigger_audio(
+        &self,
+        sounds: &crate::rules::sound_ini::SoundRegistry,
+        eva: &crate::rules::sound_ini::EvaRegistry,
+    ) -> Option<Self> {
+        let Self::TriggerAudio { reference, target } = self else {
+            return None;
+        };
+        use crate::sim::world::TriggerSoundTarget;
+        if matches!(target, TriggerSoundTarget::Eva) {
+            return Some(Self::TriggerEva {
+                index: reference.eva_index(eva)?,
+            });
+        }
+        let Some(sound_id) = reference
+            .sound(sounds)
+            .map(|name| SoundName::Unlisted(name.into()))
+        else {
+            // VocClass::PlayAt7509E0 leaves the requested Voc null for an
+            // invalid index (7509F5..750A0F), stops a different live handle
+            // (750A24..750A36), then rewrites that handle (750AA5..750AAE).
+            // Keep this local stop even though the shared request is retained.
+            return match target {
+                TriggerSoundTarget::Object { owner, .. } => Some(Self::AnimationStopped {
+                    anim_id: *owner,
+                    stop_sound_id: None,
+                    source: None,
+                }),
+                _ => None,
+            };
+        };
+        Some(match target {
+            TriggerSoundTarget::Centered => Self::VocAt {
+                sound_id,
+                source: None,
+            },
+            TriggerSoundTarget::Coordinate { coordinate, flags } => {
+                let coordinate = [coordinate.x, coordinate.y, coordinate.z];
+                Self::VocAtCoord {
+                    sound_id,
+                    coordinate,
+                    flags: *flags,
+                    source: SoundSource::from_coordinate(coordinate),
+                }
+            }
+            TriggerSoundTarget::Object { owner, world } => Self::AnimationStarted {
+                anim_id: *owner,
+                sound_id,
+                source: Some(SoundSource::from_coordinate([world.x, world.y, world.z])),
+            },
+            TriggerSoundTarget::Eva => return None,
+        })
+    }
+
+    /// The sound this event names, read against the rules' sound-name
+    /// table `names` (`""` when it names none). A listed name that does not
+    /// read against `names` is a fault ([`report_unread_sound`]) and plays
+    /// nothing.
+    pub fn sound_id<'a>(&'a self, names: Option<&'a SoundNames>) -> &'a str {
+        let sound = match self {
+            Self::AnimationStarted { sound_id, .. }
+            | Self::UnitSelected { sound_id, .. }
+            | Self::UnitMoveOrder { sound_id, .. }
+            | Self::UnitAttackOrder { sound_id, .. }
+            | Self::UnitVoiceRequested { sound_id, .. }
+            | Self::EntityDestroyed { sound_id, .. }
+            | Self::EntityCrushed { sound_id, .. }
+            | Self::AircraftPhase { sound_id, .. }
+            | Self::EntityDeployed { sound_id, .. }
+            | Self::EntityUndeployed { sound_id, .. }
+            | Self::ChronoTeleport { sound_id, .. }
+            | Self::UnitPromoted { sound_id, .. }
+            | Self::CloakSound { sound_id, .. }
+            | Self::WallCrushed { sound_id, .. }
+            | Self::VocAt { sound_id, .. }
+            | Self::VocAtCoord { sound_id, .. }
+            | Self::UiSound { sound_id }
+            | Self::CreditTick { sound_id }
+            | Self::BaseUnderAttackSfx { sound_id }
+            | Self::BuildingGarrisonedSfx { sound_id, .. }
+            | Self::BunkerWalls { sound_id, .. }
+            | Self::ChuteSound { sound_id, .. }
+            | Self::BridgeRepaired { sound_id, .. }
+            | Self::SuperWeaponActivated { sound_id, .. } => sound_id,
+            Self::AnimationStopped { stop_sound_id, .. } => match stop_sound_id {
+                Some(sound_id) => sound_id,
+                None => return "",
+            },
+            Self::AnimationReleased { .. }
+            | Self::AnimationDetached { .. }
+            | Self::VocStopAtCoord { .. }
+            | Self::UnitVoiceVisit { .. }
+            | Self::UnitVoiceDestroyed { .. }
+            | Self::UnitVoiceMoved { .. }
+            | Self::TriggerEva { .. }
+            | Self::VocIndex { .. }
+            | Self::TriggerAudio { .. } => return "",
+            // The event name, not a sample: the sample is a per-side column
+            // the `VoxClass` consumer resolves.
+            Self::Eva { event, .. } | Self::EvaRemove { event } => return event,
+        };
+        match sound.resolve(names) {
+            Some(name) => name,
+            None => {
+                report_unread_sound(sound, names);
+                ""
+            }
+        }
+    }
+
+    /// Get the positional source for spatial audio, if this event has one.
+    pub fn source(&self) -> Option<SoundSource> {
+        match self {
+            Self::AnimationStarted { source, .. }
+            | Self::AnimationStopped { source, .. }
+            | Self::EntityDestroyed { source, .. }
+            | Self::EntityCrushed { source, .. }
+            | Self::AircraftPhase { source, .. }
+            | Self::EntityDeployed { source, .. }
+            | Self::EntityUndeployed { source, .. }
+            | Self::ChronoTeleport { source, .. }
+            | Self::UnitPromoted { source, .. }
+            | Self::CloakSound { source, .. }
+            | Self::WallCrushed { source, .. }
+            | Self::VocAt { source, .. }
+            | Self::BuildingGarrisonedSfx { source, .. }
+            | Self::BunkerWalls { source, .. }
+            | Self::ChuteSound { source, .. }
+            | Self::BridgeRepaired { source, .. }
+            | Self::SuperWeaponActivated { source, .. } => *source,
+            Self::VocAtCoord { source, .. } => Some(*source),
+            _ => None,
+        }
+    }
+
+    /// Get the screen position for spatial audio, if this event has one.
+    pub fn screen_pos(&self) -> Option<(f32, f32)> {
+        self.source().map(|source| source.screen_pos())
+    }
+}
+
+/// Collects sound events during a simulation tick for later playback.
+///
+/// Drained by the app layer each frame after sim ticking.
+///
+/// RESIDUAL (GSI-15.05/15.08) — pass 2 split this into what is closed, what is
+/// landable and what is genuinely blocked.
+///
+/// **NO-DIFF, retired from the list.** `DownReport=` needs no consumer: all 15
+/// stock occurrences are commented out. The eight-facing report selection is
+/// `Report[facing_u16 % Report.Count]` (`0x006FF349`..`0x006FF393`), and no
+/// stock weapon authors a comma-separated `Report=` — 0 of 223 — so a single
+/// report is observationally identical. Two of the three voice guards native
+/// carries are already here: re-selecting an already-selected object emits
+/// nothing (`ObjectClass::Select @ 0x005F4520` returns false), and the
+/// one-voice-per-batch latch matches `g_SelectionVoice_Enable @ 0x00822CF2`.
+///
+/// **The repeat guard follows reached object visits.** It is not a timer: each techno owns a
+/// pending-voice index (`+0x4F0`, sentinel -1), a live handle (`+0x4DC`) and
+/// the playing index (`+0x4F4`); `TechnoClass::Queue_Voice @ 0x00708D90` only
+/// latches and `TechnoClass::AI_Update @ 0x006F9EBB` drains — handle free
+/// plays, handle live with the SAME index drops, handle live with a different
+/// index holds and retries next pass. Voices are non-positional (volume 1.0f,
+/// pan 0x2000, `0x006F9EE0`/`0x006F9EE5`). App input owns the requests and
+/// [`crate::audio::voice_queue`] owns their pending/playing identities.
+/// Sparse reached-Techno and destructor facts arrive through the existing
+/// ordered simulation sound channel; the shared arbiter owns the distinct
+/// voice handles, including queued events without device output. A global
+/// presentation update cannot substitute for a reached Techno voice slot.
+///
+/// **Building pack-up is connected.** Selling stage0 queues the registered
+/// `VoiceDeploy=` slot, or the resource-Archive `VoiceHarvest=` override,
+/// before its positional DeploySound. Automatic relocation suppresses the
+/// ordinary line. Deploy/unload input acknowledgement for other categories
+/// remains separate, despite the bound Deploy/Undeploy slots; taunts reach an
+/// empty match arm. `VoiceFalling=` is a positional [`GameSoundEvent::VocAt`]
+/// from Foot AI's falling edge (4DAB3C).
+///
+/// `VoiceSinking=`/`SinkingSound=` are resolved against fixed SOUNDMD by the
+/// Rules process owner. Foot's +3CD/+3CE edge (4DABC7) emits the positional
+/// voice then the object's held sound, with the AudioVisual fallback. The
+/// retained hull updates that handle's coordinate while it descends.
+///
+/// `VoiceCrashing=` and `CrashingSound=` are landed: `FootClass::AI`'s crash
+/// edge (`0x004DACDD`) plays the voice as a [`GameSoundEvent::VocAt`] for a
+/// human player's object and the sound on the object's own handle, keyed by
+/// its id ([`GameSoundEvent::AnimationStarted`]), released as the object goes
+/// ([`GameSoundEvent::AnimationReleased`]); the Fly impact plays `ImpactLandSound=` /
+/// `ImpactWaterSound=` with their `[AudioVisual]` fallbacks
+/// (`sim::world::crash`).
+///
+/// `VoiceFeedback=` uses the ordinary [`GameSoundEvent::VocAt`] consumer.
+/// ReceiveDamage702695 resolves its list and both Main draws before enqueueing.
+///
+/// **Partly closed.** `MoveSound=` now has both halves: the sim's
+/// post-locomotor tail (`Simulation::tick_move_sound_after_process`) emits
+/// [`Self::AnimationStarted`]/[`Self::AnimationStopped`] keyed on the object,
+/// and `audio::arbiter` gives that key a real `VocHandle` — so a
+/// `Control=loop` entry such as `RocketeerMoveLoop` sustains for the whole
+/// move and a `Control= random predelay` entry such as
+/// `GrizzlyTankMoveStart` plays one start-up sample, which is what gamemd
+/// does.
+///
+/// **Also landed.** `VoiceCapture=` is routed (`0x00708DC0` reads
+/// `TechnoTypeClass+0x55C` and only falls through to the Enter slot at
+/// `0x00709020` when it is absent), so an engineer capture speaks the capture
+/// line instead of the move line. `[AudioVisual] BuildingDieSound=` is emitted
+/// when a dying building's type carries no `DieSound=` of its own
+/// (`BuildingClass::DestructionEffects`, `0x0044173F`..`0x00441779`),
+/// `[AudioVisual] LightningSounds=` is played at each bolt strike
+/// (`LightningStorm::GroundStrike @ 0x0053A45F..0x0053A4A2`, the entry drawn
+/// in the simulation), and
+/// `[AudioVisual] BaseUnderAttackSound=` now rides with the under-attack EVA
+/// line (`HouseClass::NotifyUnderAttack @ 0x004F95B8..0x004F95CF`), on the
+/// building branch only.
+///
+/// `[AudioVisual] BuildingDamageSound=` (`Rules+0x714`) is landed too. It is a
+/// **damage-state** cue, not a per-hit one: `BuildingClass::ReceiveDamage @
+/// 0x00442230` only enters the arm through
+/// `0x00442476 JMP [EAX*4 + 0x00442C18]` with `EAX = result - 2`, so results 2
+/// (the hit crossed HP from `>= Strength >> 1` to below it) and 3 (it crossed
+/// below `Strength * Rules+0x1708`, ConditionRed) reach
+/// `0x004426D2 CMP [type+0x538],-1` while an ordinary non-crossing hit
+/// (result 1) plays nothing. A dead building is skipped earlier still by
+/// `0x0044242C MOV AL,[ESI+0x90]` (`ObjectClass::IsAlive`). Frequency: twice
+/// per building on the way down in a sustained base attack, plus every
+/// repair-and-re-damage cycle across a threshold — not the every-shot cadence
+/// an earlier pass assumed. Stock `BuildingDamageSound=BuildingDamaged` is a
+/// five-sample `[SoundList]`, and only 34 of all stock types author a
+/// `DamageSound=` of their own (30 `BuildingMetalDamaged`, 4 `Dummy`), so the
+/// global covers nearly every structure.
+///
+/// TechnoType VoiceFeedback uses the same registered positional Voc path.
+/// ReceiveDamage702695 owns its result-2 admission and ordered Main draws;
+/// it never enters the per-Techno acknowledgement latch.
+///
+/// Per-type `DamageSound=` uses two distinct retained750E20 requests on an
+/// ordinary result1 hit (Techno702760/7027A9), with full direct Location.
+/// The global442706 path uses the same transport after the Techno tail.
+/// Private rules references bind against the fixed process SoundRegistry:
+/// cold invalid is absent; later absent/empty/unregistered reads retain the
+/// prior valid reference (45FE50/6691E0). No raw audio-bag fallback applies.
+/// Stock authors are civilian props: 30 Metal and4 Dummy, so the per-hit
+/// effect is common when shooting scenery. These requests survive actor
+/// Stop/destruction, use the common audio pump, and retire via750EC0/750FA0.
+///
+/// The other750E20 callers use the same retained request: BuildingDie
+/// (441779), the passenger sounds (7106D0, Unit Mission_Unload 73DC67), the
+/// trigger actions (6DE831, 6DE8A3) and the SuperClass::Launch cues (6CCE28,
+/// 6CD7BF, 6CD8D3, 6CDCAE, 6CDDE9).
+///
+/// Residual: `CreateUnitSound=` (Factory_AI 450198, Place_Production
+/// 4FB50D) is not ported; see `sim::production::factory_ai`.
+///
+/// **Partly closed.** `TurretRotateSound=` is landed: the building update's
+/// rotation sample and the `TechnoClass::AI_Update` block drive the type's own
+/// `VocClass` index on the object's `+0x488` handle through the same
+/// owner-keyed path (`sim::world::turret_rotate_sound`), so a stock Grand
+/// Cannon or Yuri Bust sustains its rotate loop while the turret turns and
+/// decays it when it stops.
+///
+/// `WorkingSound=`/`NotWorkingSound=` are landed the same way on the
+/// building's `+0x6B4` handle (`sim::world::building_working_sound`).
+///
+/// The other ambient families are landed as one-shot positional `Voc`s:
+/// - `AuxSound1=` (8 stock) at a Fly takeoff
+///   (`sim::world::fly_landing::finish_fly_takeoff_entry`, as
+///   [`GameSoundEvent::AircraftPhase`]) and in the rocket locomotor's tilt
+///   and climb states (`sim::movement::rocket_movement`,
+///   `VocClass::PlayAt @ 0x007509E0`);
+///   `AuxSound2=` (5) at the Fly landing callback
+///   (`sim::world::fly_landing::apply_fly_landing_callback`).
+/// - `EnterWaterSound=`/`LeaveWaterSound=` on an infantry water-state change
+///   (`0x0051D842..0x0051D8B3`, `sim::movement::infantry_action`).
+///
+/// Bio Reactor entry (`+0x270`) and successful InfantryAbsorb unload
+/// (`+0x274`) are wired through `VocAt`; their native callers are
+/// `InfantryClass::Per_Cell_Process @ 0x00519630` and
+/// `BuildingClass::Mission_Unload @ 0x0044D880`, respectively.
+///
+/// **`[AudioVisual]` keys with a verified native consumer but no VERA producer
+/// yet**, all read by `RulesClass::ReadAudioVisual @ 0x006691E0`:
+/// - `LeaveGrinderSound` (`+0x26C`) has no VERA producer. Infantry Eaten
+///   arrival (`0x005198AD..0x005198C9`) emits `EnterGrinderSound` via `VocAt`.
+/// - (`PlaceBeaconSound` (`+0x1CC`) is landed as [`GameSoundEvent::UiSound`]
+///   from `app::match_runtime::beacons` — `BeaconManagerClass::PlaceBeacon
+///   @ 0x00430D7D..0x00430D94`. `MindClearedSound`,
+///   `MasterMindOverloadDeathSound` and `YuriMindControlSound` are landed as
+///   [`GameSoundEvent::VocAt`] from `sim/capture_manager.rs`.)
+/// - (The seven `Crate*Sound` keys (`+0x1E4`..`+0x1FC`) are landed as `VocAt`
+///   from the crate pickup, `sim/crates/pickup.rs`, one per powerup arm.)
+/// - (`CreditTicks` (`+0x6D0`, count `+0x6DC`) is landed as
+///   [`GameSoundEvent::CreditTick`] — reader `CreditsClass::Draw @ 0x004A24F4`;
+///   `ImpactWaterSound`/`ImpactLandSound` (`+0x200`/`+0x204`) are the crash
+///   impact's fallbacks, see above.)
+/// - **Other silent stock-default leads:** `IceCrackSounds` (`+0x648`) is
+///   **empty** in stock `rulesmd.ini`; the Firestorm ice chain plays it
+///   when a map runs ice (`sim/world/ice.rs`);
+///   `GateUp`/`GateDown` (`+0x404`/`+0x408`) and `Construction` (`+0x6C8`) are
+///   `Dummy`; `LeaveGrinderSound` is empty. `Dummy` is one of
+///   the eight `[SoundList]` ids with no usable `Sounds=`, so it registers
+///   silently.
+/// - Rules `CreateUnitSound`/`CreateInfantrySound`/`CreateAircraftSound`
+///   (`+0x178`..`+0x180`) and type CreateSound are fixed-catalog references
+///   consumed by the shared production RecordLastBuilt4FB6B0 owner. Stock
+///   class defaults are unset, while types such as BORIS author an active cue;
+///   the existing VocAt event carries that cue without a new audio dispatcher.
+///
+/// **Superweapon launch cues are landed** — see
+/// [`GameSoundEvent::SuperWeaponActivated`] and
+/// [`crate::app::match_runtime::sound_dispatch::superweapon_launch_cue`]. Their
+/// EVA suppression flag `[0x00A8B538]` is the current house's defeat
+/// ([`crate::sim::world::Simulation::local_player_defeated`]).
+#[derive(Debug, Default)]
+pub struct SoundEventQueue {
+    events: Vec<GameSoundEvent>,
+}
+
+impl SoundEventQueue {
+    pub fn new() -> Self {
+        Self { events: Vec::new() }
+    }
+
+    /// Push a sound event into the queue.
+    pub fn push(&mut self, event: GameSoundEvent) {
+        self.events.push(event);
+    }
+
+    /// Inspect pending requests in producer order without consuming them.
+    pub fn iter(&self) -> impl Iterator<Item = &GameSoundEvent> {
+        self.events.iter()
+    }
+
+    /// Drain all pending events for playback.
+    pub fn drain(&mut self) -> Vec<GameSoundEvent> {
+        std::mem::take(&mut self.events)
+    }
+
+    /// Whether there are pending events.
+    pub fn is_empty(&self) -> bool {
+        self.events.is_empty()
+    }
+}
+
+/// A listed sound name read against a table other than the one that made it:
+/// every table rebuild finishes before a Simulation is staged, so this is a
+/// programming error. Debug builds stop on it; a release build logs the first
+/// one and plays nothing, so the game carries on. A stale queue holds many
+/// such events, and a warning for each would flood the log.
+fn report_unread_sound(sound: &SoundName, names: Option<&SoundNames>) {
+    static WARNED: Once = Once::new();
+    let SoundName::Listed(id) = sound else {
+        return;
+    };
+    let (made, read) = (id.generation(), names.map_or(0, SoundNames::generation));
+    WARNED.call_once(|| {
+        log::warn!(
+            "a sound name of table {made} was read against table {read}: those sounds play nothing"
+        );
+    });
+    debug_assert!(
+        false,
+        "sound name of table {made} read against table {read}"
+    );
+}
+
+#[cfg(all(test, tests_audio))]
+mod trigger_audio_tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::sound_ini::{EvaRegistry, SoundReference, SoundRegistry};
+    use crate::sim::world::TriggerSoundTarget;
+
+    #[test]
+    fn trigger_references_resolve_only_against_the_listeners_catalog() {
+        let sounds = SoundRegistry::from_ini(&IniFile::from_str("[SoundList]\n0=Other\n1=Alert\n"));
+        let eva = EvaRegistry::from_ini(&IniFile::from_str("[DialogList]\n0=Other\n1=Alert\n"));
+        let named = GameSoundEvent::TriggerAudio {
+            reference: SoundReference::Name("ALERT".into()),
+            target: TriggerSoundTarget::Eva,
+        };
+        assert!(matches!(
+            named.resolve_trigger_audio(&sounds, &eva),
+            Some(GameSoundEvent::TriggerEva { index: 1 })
+        ));
+        assert!(
+            named
+                .resolve_trigger_audio(&sounds, &EvaRegistry::default())
+                .is_none()
+        );
+        let indexed = GameSoundEvent::TriggerAudio {
+            reference: SoundReference::Index(1),
+            target: TriggerSoundTarget::Coordinate {
+                coordinate: crate::sim::components::DriveCoord {
+                    x: 256,
+                    y: 512,
+                    z: 0,
+                },
+                flags: 1,
+            },
+        };
+        assert!(
+            matches!(indexed.resolve_trigger_audio(&sounds, &eva), Some(GameSoundEvent::VocAtCoord { sound_id, coordinate: [256, 512, 0], flags: 1, .. }) if sound_id.resolve(None) == Some("Alert"))
+        );
+        assert!(
+            indexed
+                .resolve_trigger_audio(&SoundRegistry::default(), &eva)
+                .is_none()
+        );
+
+        // A valid custom cue followed by an unavailable slot must reach the
+        // existing stop owner, rather than leave the old loop playing.
+        let custom = |index| GameSoundEvent::TriggerAudio {
+            reference: SoundReference::Index(index),
+            target: TriggerSoundTarget::Object {
+                owner: 44,
+                world: crate::sim::anim_class::AnimWorldCoord {
+                    x: 256,
+                    y: 512,
+                    z: 0,
+                },
+            },
+        };
+        assert!(matches!(custom(1).resolve_trigger_audio(&sounds, &eva),
+            Some(GameSoundEvent::AnimationStarted { anim_id: 44, sound_id, .. }) if sound_id.resolve(None) == Some("Alert")));
+        assert!(matches!(
+            custom(99).resolve_trigger_audio(&sounds, &eva),
+            Some(GameSoundEvent::AnimationStopped {
+                anim_id: 44,
+                stop_sound_id: None,
+                source: None
+            })
+        ));
+    }
+}

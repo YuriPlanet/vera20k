@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Techno recoil retained readers, InitManagers copies, HasTurret/FireAt gating and ordered recoil AI updates",
+  "assumptions": [
+    "Original type/object constructor slices with their established zero, one and two input registers; unused constructor words normalized to zero and excluded from inactive semantic claims.",
+    "Original cached INI admission, ReadBool/ReadInt and duration-clamping setters execute. Physical lexical strings supply caches; archive/INI file IO and full pass scheduling are outside this corpus.",
+    "Original Building vtable and type pointer provide GetType/HasTurret; no upgrades. FireAt prefix is supplied as an already successful bullet launch; AI prefix as an admitted Techno visit.",
+    "Original full recoil arithmetic executes under native FPCW0x0E7F. The explicitly labelled rounding_comparison also executes the same original blocks with alternate0x027F to bound a presentation precision residual; it is not retail behavior.",
+    "No random calls, clock timers, object detach or rendering execute in these selected state blocks. Each AI visit updates turret then barrel; physical rows include60visits and the inactive tail."
+  ],
+  "substitutions": [
+    "Existing Reader bump allocator, CRT/TLS and cached section/key preparation only."
+  ],
+  "entry_points": {
+    "reader": "0x00715269",
+    "type_constructor": "0x00711412",
+    "object_constructor": "0x006F2F61",
+    "init_managers": "0x006F4277",
+    "fire_at": "0x006FF0B7",
+    "techno_ai": "0x006FA4D1",
+    "arm": "0x0070ECE0",
+    "update": "0x0070ED10"
+  },
+  "payload_sha256": "cd100b4c63ee80f0605f756b89410ec6c3da0b4e2c7cc6528c28f90d85706859"
+}

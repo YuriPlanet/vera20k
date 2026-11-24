@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Bounded original Building sample440042, paid repair450630, global Factory55B66A/AI4C9B20 and House4F8440 prefix through4F8511; full power508C30, Factory rate4CA6E0/Time_To_Build6F47A0, radar508DF0, whole blackout setter50BC90 and separately later advice4F8B08..4F8DB1. Selected timers/order/consumers, not whole House/object/startup equivalence.",
+  "assumptions": [
+    "Strength750/Power200/HP374 admitted generator with sample374; drain100 admitted consumer, zero-power Radar provider; House/country/type vectors and registered mode inputs supplied through existing building_repair and Time_To_Build owners. Factory starts already live; original4C9EA0 refuses restart and retains initial timer duration0. Native FactoryAI produces the frame195 joined prior.",
+    "Rules scalars supplied through existing fixture owners: BuildSpeed.7 widened from f32, MultipleFactory.8f32, Country/BuildTimeMultiplier1f32, low-power factors1/.5/.8f32, RepairStep8, RepairPercent15percent, RepairRate.016f32 widened; SpeakDelay2 and MessageDelay.6f32 widened. These are explicit scalar bindings, not new reader/default claims.",
+    "Ambient x87FPCW0E7F supplied by the reused native owner. Each control checks unchanged original executable sections, all visited PE instructions and complete Main/Scenario RNG buffers. Numeric and status controls do not establish all combinations are reachable in retail.",
+    "Global Factory loop executes before House power/radar prefix, stopped before anger4F8511. Later advice4F8B08..4F8DB1 executes separately with the interposed House prior supplied. Full House/Logic AI, startup, production delivery, SW/Spy/ForceShield and presentation are excluded.",
+    "Radar local output is Tactical+14D8, not House-persisted state. Nonlocal, EMP, independent online1/warp1 and active radar-outage controls remain native bounds; the ordinary per-owner Rust derived projection is compared only for represented local inputs.",
+    "Whole blackout setter50BC90 receives supplied frame196, prior timer/cached totals/dirty bytes and duration30/4/80/0. It writes timer+2A8 from supplied entrySP-8 opaque residue0, for which no represented reader is established. ForceShield/Spy producer lifecycle and caller numeric conversion are excluded."
+  ],
+  "substitutions": [
+    "Existing repair fixture GetCurrentFrame/flash/active-slot allocation and voice-device boundaries are retained. The synthetic374-to382 N00/N02 requests exclude real Anim allocation/lifecycle/IDs and its RNG footprint; unchanged RNG here is not full stock repair parity.",
+    "Debug log4068E0, sample/device750920, localized text734E60 and MessageList5D3BA0 are presentation-only interfaces with original calling conventions. Health, timer, Factory rate/cadence, radar and advice decisions are never answered."
+  ],
+  "entry_points": {
+    "building_health_sample": "0x00440042",
+    "paid_repair": "0x00450630",
+    "global_factory_loop": "0x0055B66A",
+    "house_prefix": "0x004F8440",
+    "house_power": "0x00508C30",
+    "factory_rate": "0x004CA6E0",
+    "time_to_build": "0x006F47A0",
+    "factory_start": "0x004C9EA0",
+    "factory_ai": "0x004C9B20",
+    "radar": "0x00508DF0",
+    "later_advice": "0x004F8B08",
+    "blackout_setter": "0x0050BC90",
+    "game_options_ctor": "0x005FA350",
+    "speed_normalize": "0x005FB2E0"
+  },
+  "payload_sha256": "313fba3044de31e281f961adebb87149e4fbdf0632cf5355fcc7a3aa3a30a019",
+  "replay_command": "python -m tools.spatial_oracle.house_power_consumers"
+}

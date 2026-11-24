@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Map583820 bridge exit controls through the shared FV continuation.",
+  "assumptions": [
+    "FV shared full native setup and constructors; supplied Cell flags, bridge-set indices, land, level and hierarchy IDs are focused synthetic inputs."
+  ],
+  "substitutions": [
+    "Only supplied input state; no native return or instruction substitution."
+  ],
+  "entry_points": {
+    "bridge_exit": "0x00583820"
+  },
+  "payload_sha256": "1935146a9081cdc586759022b4841ede26b9f661d6997154588b609419e5d3bd"
+}

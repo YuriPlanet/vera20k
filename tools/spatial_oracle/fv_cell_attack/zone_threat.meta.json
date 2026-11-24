@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original585F40 sampling and42C290 positive-threat costs on supplied graphs.\n\nCompanion to the existing zone_cost --threat CLI. Reuses its original FV,\nphysical map, graph constructors and heap owner. House grid and coefficient\ncontrols are supplied prestates, not lifecycle or full-AStar evidence.\n",
+  "assumptions": [
+    "Original constructed FV/House, full hierarchy constructors, native heap and PC53/chop startup come from zone_cost/pursuit. Graph/index/coefficient and padded House grid values are explicit inputs.",
+    "585EE0 is original CRT slot813AB8. All8 direction samples, level0/1, signed average/add wrap, coefficient threshold and integer truncation controls execute original instructions.",
+    "Query/read order, original return values, heap-pop float stores and all3 RNG/actor/text guards are captured. No full-AStar, House lifecycle or stock route equivalence is claimed."
+  ],
+  "substitutions": [
+    "Existing pursuit OS/allocation seams only; no threat,cost,route,heap,float or RNG return is substituted."
+  ],
+  "entry_points": {
+    "precheck": "0x0042C290",
+    "estimate": "0x00585F40",
+    "corner_startup": "0x00585EE0"
+  },
+  "payload_sha256": "9f95102f95f06c862d5ffba86794680cf8cb6b11f803c1cb4da53fc0a34e3b69"
+}

@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original ColorAdd/current-default colour-selector rules and prepared Image-resolved stock MTNK/GTNK indexed hull with DarkRed composite RGB565 cue; not a world, whole vehicle assembly or CAOS-shot replay.",
+  "assumptions": [
+    "Original665650 executes after selected fields are prefilled; all16 ColorAdd triples and four selectors are observed after constructor writes.",
+    "Physical RULESMD, optional loose LANGRULE, MPBattleMD and XMP03T4 selected strings feed the existing Reader/Sound source-order INI cache. Existing cold/Process/reset_root rows remain individual reader slices: reset_root alone does not clear the table or establish reset chronology. Whole native Reset6686C0 through RET668BE5 executes separately in reset_history with native-Process-prefilled16-slot state and selected cached root/mode input; unrelated type discovery/full scenario loading and archive lookup remain outside these prepared records.",
+    "Whole Reset runs its root Process668A27, zeroes48 ColorAdd bytes668A34..668A56, optionally runs accepted LANGRULE Process668B05, then rereads only root ColorAdd668B13..668B8E and optionally mode Process668BAA. Selectors are not zeroed and the final root loop does not reread AudioVisual. Short root sections keep LANG tail after the zeroing; absent/empty root leaves that LANG prefix. Present LANG files execute original ReadCCFile4741F0/INI525A60/Digest verification over immutable raw OS file bytes. Empty file status0 reaches LANG Process; missing Digest status2 skips LANG Process, final root and mode. A valid Digest control reaches all selected phases. Cached mode+38 feeds original5D67B0 existing-cache arm; GameMode0 gates it off.",
+    "Malformed RGB controls explicitly seed first sscanf output locals and record original scanner counts/locals. Later per-entry locals carry through the same native loop. First malformed values without these priors are uninitialized-stack dependent, not a native black default. Explicit cached empty entries are parser-bypass controls: physical INI loading drops empty entries and sections.",
+    "Native ColorAdd loops enumerate the section count without a16-entry clamp. A bounded17-entry control records overwrite of the first selector low3 bytes. More than16 custom entries are memory-overflow behavior, not a safe native table size guarantee.",
+    "The existing Unit arm owner supplies retained retail ColorAdd bytes; all16 entries are checked against the independently executed physical native table before drawing. Ordinary IronCurtainColor/BerserkColor arm inputs come from that native physical reader state; the Iron6 case is an explicit selector override.",
+    "Full native UnitType7470D0 constructs Image=MTNK. Original ObjectType5F92F9..5F9340 reads exact-case Image with current string default and25-byte capacity in each admitted selected physical rules layer; RULESMD resolves GTNK and later layers retain it. Fixed ARTMD[GTNK] Voxel=yes runs through original5F961C..5F963A over ctorfalse, then actual TechnoType716090/71609C gate calls ObjectType5F8110..5F8219 to submit GTNK.VXL/HVA filenames through the existing loader IO seam.",
+    "Physical GTNK.VXL/HVA and active-YR VOXELS.VPL run through the existing complete native VXL/HVA/VPL loaders, ordinary normal lighting and raster owner at native camera/facing5. This is stock MTNK Image-resolved hull evidence; turret/barrel assembly, native Unit cache production/admission and world pose are excluded.",
+    "Existing physical palette startup/whole DarkRed ColorScheme owner initializes the53-row table from UNITTEM.PAL and physical Colors=0,230,255. Only the selected1/53 pair is constructed, so its local index1 is not the full world or lobby index. RGB565 format2, CMOV1/MMX1 and x87 0E7F are supplied active-mode priors documented by the palette oracle; no VERA table or framebuffer supplies native expected output.",
+    "Original Unit colour/intensity block73BF7B..73C166 outputs are passed to real Unit composite73B140. Prepared Unit/type/House records supply the Unit real vtable, native local DarkRed53 scheme index, flat Cell/visible state and no cloak/refinery effects. Native Cell visibility, flags, picker, clip, rowwalker and selected leaf pixels execute.",
+    "Prepared64x96 RGB565 destination,256x256 indexed native hull source, point32,48, circular A/Z, oldZ2000 or0, A127 or63 and background39E7. Original global887314 is the composite source during73B140. Z/A/source immutability is checked. These surface priors are not a rendered whole-world background.",
+    "Native Unit+270 is supplied only in the two conditional translucency policy controls; no producer reachability or whole cloak/warp lifecycle is claimed."
+  ],
+  "substitutions": [
+    "Existing successful native allocation/CRT/immutable file-buffer and INI source-order cache transports replace platform IO; native body bytes and scalar/table readers are unchanged.",
+    "Whole Reset reuses select_anim_reset.fresh_reset and existing NativeAudioPlatform RawFile Win32 transport. LANGRULE is an explicit absent file or supplied immutable ASCII; allocation/free/TLS use the same established Reader boundary. Native file constructor/Exists/load/Digest/SHA/destructors, full Process calls and Reset bytes run unchanged. Root and positive mode use prepared ordered caches; mode object+38 is a declared already-loaded cache prior, not mode-file discovery.",
+    "Existing building_barrel Machine observes native ObjectType filename submissions with available files and loaded-object sentinel seams, then stops before tailer scaling. Actual GTNK payload loaders and raster execute separately in their established owner.",
+    "Foot GetZAdjust4DAFC0 returns explicit flat prior0. Its terrain producer is excluded; actual GetGradient4DB0A0 and all later depth tests run. No color, light, palette, clip or blitter result is supplied."
+  ],
+  "entry_points": {
+    "rules_ctor": "0x00665650",
+    "cold_colour_call": "0x0052D111",
+    "colour_add_reader": "0x0066D480",
+    "process_colour_prefix": "0x00668BF0",
+    "reset": "0x006686C0",
+    "reset_root_process": "0x00668A27",
+    "reset_color_add_zero": "0x00668A34",
+    "reset_lang_process": "0x00668B05",
+    "reset_root_colour_loop": "0x00668B13",
+    "reset_mode_process": "0x00668BAA",
+    "lang_file_reader": "0x004741F0",
+    "ini_loader": "0x00525A60",
+    "ini_save_to_pipe": "0x00526470",
+    "sha_result": "0x0069E9E0",
+    "mode_cached_ini": "0x005D67B0",
+    "audio_visual": "0x006691E0",
+    "rgb_reader": "0x00474B50",
+    "rgb_scanf": "0x007CA530",
+    "unit_type_ctor": "0x007470D0",
+    "image_block": "0x005F92F9",
+    "art_voxel": "0x005F961C",
+    "voxel_loader_caller": "0x0071609C",
+    "voxel_filename_loader": "0x005F8110",
+    "unit_colour": "0x0073BF7B",
+    "unit_composite": "0x0073B140",
+    "palette_picker": "0x00490B90",
+    "rowwalker": "0x004373B0",
+    "ordinary_leaf": "0x00494B60",
+    "colour_leaf": "0x00494C40"
+  },
+  "replay_command": "python -m tools.superweapon_oracle --berserk-color",
+  "payload_sha256": "207c7b6442cb20e0b4b51583dc03f3225e86b5e208f6d7aefce852b5f1b9a3d3"
+}

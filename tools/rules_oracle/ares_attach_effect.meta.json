@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Six native-executed Ares 3.0 ordinary ground-warhead AttachEffect histories; not whole-game parity.",
+  "assumptions": [
+    "Synthetic AE_TEST warhead and VISUAL AnimType use actual constructors, native registration/Find and AttachEffect reader. Duration5, verse3%, CellSpread0.7 and DiscardOnEntry are explicit inputs; no mod names, assets, extraction or physical INI loader.",
+    "Original collector10076660, house gate10051B70, warhead attach10052700/10058520, update10058E00, pointer expiry10046F20/10058770, Remove-vector100588E0 and vector destructor10042C30/10059130 execute unchanged. Static active hook callers are Techno Remove6F6AC9 and DTOR6F4500; full hook/container lookup is excluded.",
+    "Victim is an ordinary live independent ground Building with no Team/Temporal/transport manager, explicit deactivated input and identity stat modifiers. Existing world virtual queries and linked-cell/type/category/house backing are fixture inputs. Actual native floating-baseline initialization executes.",
+    "AnimClass constructor, SetOwnerObject and virtual UnInit are supplied world services. Constructor retains allocated this/type/coordinate/vtable; it does not supply iteration255, attached source, counter or admission. Their internal RNG, rendering, lifetime and detach/callback cascades are excluded.",
+    "ctor_count/uninit_count count calls at the supplied AnimConstructor/virtual UnInit service boundaries, not complete animation construction/destruction or memory retirement.",
+    "Limbo byte changes and an externally expiring animation notification are explicit inputs. Only the Remove histories execute the actual Remove-vector callee. No whole boarding, unloading, death scheduler, parent Bullet/EMP or full campaign/mod parity is claimed.",
+    "The two replacement controls add actual native AnimResetOnReapply reading and explicit Techno+220 cloak-state inputs1/0. Create100586E0 publishes a new pointer before old UnInit, then initializes its owner/iterations/source. Full StartCloaking/Uncloaking, cloak capability admission and their lifecycle/RNG producers are excluded.",
+    "Actual Anim allocation wrapper executes; pure heap new/delete use existing Probe arena/services. FPCW0E7F and three exact native-seeded RNG states are inherited from EmpProbe; unchanged code/RNG states checked after every call, guarded RNG/Detach entry calls fail. No-draw claims exclude supplied animation services."
+  ],
+  "substitutions": [
+    "Existing EmpProbe/Probe PE mapping, arena, call runner, CRT thread, lexical INI transport and declared world services; no new VM, parser or gameplay implementation."
+  ],
+  "entry_points": {
+    "warhead_constructor": "0x10051890",
+    "reader": "0x10058A50",
+    "animation_type_constructor": "0x00427530",
+    "create": "0x10052700",
+    "attach": "0x10058520",
+    "update": "0x10058E00",
+    "pointer_expiry": "0x10046F20",
+    "remove_vector": "0x100588E0",
+    "destructor_vector": "0x10042C30",
+    "animation_uninit": "0x10059130"
+  },
+  "ares_sha256": "93ce890f387a6c1b3240a2dd7b674f25fec5a0e96f0b0d0306796b2edf7b5b83",
+  "control_count": 6,
+  "executable": "Yuri Revenge gamemd.exe preferred image base0x00400000",
+  "actual_execution": true,
+  "execution_batches": "Four baseline histories originally executed; two replacement histories executed separately and appended without rerunning retained baselines. The full generator replays all six for subsequent --check.",
+  "command": "python -m tools.rules_oracle.ares_attach_effect --ares-dll <Ares.dll> --gamemd-exe <gamemd.exe> --check",
+  "payload_sha256": "464126ee5f6e196e305d4d73b84a2a29b7391bf5e49b7f0966353147f91e1ce3"
+}

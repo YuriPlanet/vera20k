@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Cell/Lepton compass initializer controls and Drive/Ship fresh, second-node and chain coordinate-producing expressions",
+  "assumptions": [
+    "All six interior blocks use supplied live register/stack frames; movement admission and final head/selector stores are excluded",
+    "Original 49F3A0 initializer writes the direction table before each case; no direction deltas are supplied",
+    "Original first-node expressions call XYZ copy constructor41C230; no code or calls are substituted",
+    "Second-node source is supplied at the post-PUSH1/PUSH0 frame offsets; no intervening first-node admission is executed",
+    "Chain source is the prior retained head, with distinct supplied current Foot XYZ; callbacks and complete chaining are excluded",
+    "Signed/overflow/NullCoord inputs bound scalar behavior, not active stock-map reachability",
+    "288 cases cover two active-retail families, three expressions, six supplied poses and all eight initialized directions",
+    "Four controls compose fresh OriginalCoordinates fixtures; original Lepton startup precedes each selected Cell49F2F0 or Lepton49F3A0 initializer",
+    "Only the selected eight-pair table is A5-poisoned; all decoded original instructions including true RET49F39B or RET49F413 are required",
+    "Inherited0000 and supplied0E7F FPCW are retained; ESP advances exactly4 within the existing 100-instruction/10-second bound",
+    "Initializer controls preserve original .text, the mapped image outside the selected table, and 16-byte table guards",
+    "Index8 is observed as an unwritten memory boundary, not a ninth direction or an executed native accessor",
+    "Initializer controls establish table bytes and boundaries; full CRT startup, consumer arithmetic and complete movement are outside their coverage"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "direction_initializer": "0x0049F3A0",
+    "cell_initializer": "0x0049F2F0",
+    "cell_true_ret": "0x0049F39B",
+    "lepton_true_ret": "0x0049F413",
+    "coordinate_copy_constructor": "0x0041C230",
+    "drive_fresh": "0x004B32AF",
+    "ship_fresh": "0x006A28FF",
+    "drive_second_node": "0x004B40B0",
+    "ship_second_node": "0x006A36E0",
+    "drive_chain": "0x004B1BC4",
+    "ship_chain": "0x006A120A"
+  },
+  "capstone_version": "5.0.7",
+  "payload_sha256": "4726136f38f3cb621e8715ac9f2304586468b6fed8cbecc77b5d1ca0ee5a648c",
+  "replay_command": "python -m tools.spatial_oracle.locomotor_head_coordinates"
+}

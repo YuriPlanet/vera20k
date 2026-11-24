@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Eight complete original Unit73F0A0 repeat-call controls separating A8E7AC nested scope from A8B238 actual GameMode: retained-playfield boundary and nonhuman CrateType arms, with three complete RNG objects.",
+  "assumptions": [
+    "Existing query owns the Unit/Drive/map/type/House fixture and runs an initial original class call before the measured repeat. Explicit scenario_init_counter writes A8E7AC; actual_game_mode writes A8B238. Legacy game_mode_nonzero remains an A8E7AC compatibility alias only.",
+    "Both independent globals are supplied0/1. Boundary controls supply retained+3D5 and LocalSize; crate controls supply overlay CrateType+2AA and a nonhuman House. Main/Scenario/MapGen are seeded31 through native 65C6D0 before the measured call and saved as full1012-byte objects.",
+    "Complete original Unit/Foot admission and actual Drive execute. The scratch owner bytes and original .text stay unchanged. fixture_initial_result.calls retains the existing observer list, including second-call entries, as in the preserved scratch receipt."
+  ],
+  "substitutions": [
+    "Supplied actor/type/House/map/overlay prestates exclude their full construction, readers and factory production. This is a branch control, not a native lifecycle producer or full movement mechanism.",
+    "Existing source fixture clones the Unit vtable into scratch; class +1AC remains original73F0A0, while scatter-only Queue/Set observer slots are never reached. Original executable/vtable tables are unchanged. Only inherited OS Interlocked imports are substituted."
+  ],
+  "entry_points": {
+    "unit_entry": "0x0073F0A0",
+    "unit_scope_gate": "0x0073F34C",
+    "unit_crate_mode_gate": "0x0073F405",
+    "retained_cell_bounds": "0x00578540",
+    "foot_edge": "0x004DA1D0",
+    "foot_entry": "0x004D9C10",
+    "rng_seed": "0x0065C6D0"
+  },
+  "promotion_sources": {
+    "scratch_recipe_sha256": "14d1f0f80d41875fb9cd920ef94054441223926cc92cb423cb45314ce6375cc9",
+    "scratch_results_sha256": "8c8972ab4074282e3c7eead8a904c80146f9ca99f42608fa3e2344790eca6023"
+  },
+  "native_spans": {
+    "unit_scope_and_mode": {
+      "address": "0x0073F34C",
+      "file_offset": 3404620,
+      "length": 212,
+      "sha256": "6d0daea1bd2bb84b0ff7f6c31faeb6e3e1a276a4c7a02a15daf401d829b00229",
+      "hex": "a1ace7a80085c075498b8424940000006a0150b9e8f78700e8d791e3ff84c0752a8b138bcbff922003000084c0751c8a83d503000084c074125f5e5db8070000005b81c480000000c214008b8c249c0000008b8424a40000005056518b8c24a000000057518bcbe858a8d9ff8be883fd07896c2418750d5f5e5d5b81c480000000c214008bbc24940000008b474483f8ff0f84160100008b15843da8008b34828a86aa02000084c0742a8b8b1c020000e82fc3dcff84c0751ba138b2a80085c075125f5e5db8070000005b81c480000000c21400"
+    },
+    "infantry_scope": {
+      "address": "0x0051C13A",
+      "file_offset": 1163578,
+      "length": 160,
+      "sha256": "4cf0afa62df2d988d1b59a3f1e71a3e84c063c222f97c78b8920e7a53613020d",
+      "hex": "8a85d503000084c07438a1ace7a80085c0752f6a0156b9e8f78700e8e6c3050084c0751e8b55008bcdff922003000084c0750f5f5e5db8070000005b83c424c214008b464433db83f8ff0f849b0000008b0d843da8008b34818a86aa02000084c0741e8b8d1c020000e888f5feff84c0750f5f5e5db8070000005b83c424c214008a86a802000084c074608b7c24388b86a002000033d28a971e010000c1ea04"
+    }
+  },
+  "payload_sha256": "8d9565c644d7a2591bdadd856313fc18cba55ba14ec5c02497844907385fef81",
+  "replay_command": "python -m tools.spatial_oracle.unit_entry --counter-mode"
+}

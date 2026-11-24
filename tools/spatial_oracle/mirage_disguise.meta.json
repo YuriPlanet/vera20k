@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original stationary MGTK disguise on the existing constructed Foot fixture.\n\nFootMissions owns the native VM, physical map/type prerequisites, placement,\nRNG and receiver transport. This producer adds observations and original calls;\nit does not implement the disguise decisions in Python.\n",
+  "assumptions": [
+    "Existing FootMissions physical Anytown crop, supplied House/startup setup and native constructors/placement; not full scenario startup.",
+    "Original Rules665650 and TechnoType710AF0 constructors establish defaults; exact bool714404..71446C and General671D3E..671D92 reader blocks retain native parser/list allocation behavior across physical RULESMD, optional LANGRULE, MPBattleMD and XMP03T4 layers. Authored controls remain explicit. Full UnitType747620 plus actual referenced weapon/projectile/warhead and Terrain71DEA0 readers initialize the measured actor. ARTMD is fixed, with physical MGTK Image=RTNK.",
+    "Unit ART controls reuse the same VM and execute7477D8..747820 plus7478B6..747AAE, including original signed-byte storage, retained-default reads and sentinel frame-start postpass. Constructor field bytes or recorded retail fields plus declared authored priors are inputs; no frame arithmetic or parser result is supplied. Actual initial actor roles/registries/current Cell come from existing FootMissions readback owners before the first whole UnitAI.",
+    "Full poisoned Unit7353C0 construction, actual737BA0 placement and complete first/repeated UnitAI execute. Only declared direct Update controls supply radio, Drive destination, timer, linked-cell or caller-flag priors. Movement Process/pathfinding is not ported or certified by these controls.",
+    "The eight initialized neighbor offsets, original first-Infantry traversal, bridge selector and signed timer/RNG execute. Physical adjacency history uses original Infantry ctor/Unlimbo/Limbo under the complete supplied owner, with hostile House pointers supplied between placement and removal; not native ownership transfer or full hostile-House startup.",
+    "Complete original Unit/Foot/Techno/Object damage executes with physical AP warhead and observed armor/veterancy inputs, including admitted lethal result4. Selected damage/disguise observations do not certify every downstream death effect.",
+    "Raw reveal middle word+1E4 is an unnamed observation, not a cell coordinate or deterministic state contract. Constructor leaves its poisoned bytes unchanged. Body controls record actual reads/writes; whole raw load transports the opaque word without establishing a behavioral meaning.",
+    "Category clear controls execute original Unit746720, Infantry522780 and base41C030. Building/Aircraft receivers are supplied buffers with actual vtables; authored permanent Infantry side defaults are controls, not a full Spy lifecycle.",
+    "Attached-ring controls provide an unconstructed Anim-sized buffer and execute only the reached hidden-byte tail. Ownership/capture/Anim lifecycle beyond that tail is excluded.",
+    "Observer controls execute original disguise getters/draw gate/GetImage/flag helper and admitted DrawIt selector. Direct flags_arg256 includes cases outside the actual caller gate and must not be treated as already-admitted draw flags.",
+    "Original Terrain InitTheater71DCA0 forms filenames and reads complete physical TREE01..04.TEM through the canonical RawFile transport. Original projection initializers6D1830/6D18C0/6D1BB0 produce the nonzero startup scale; drawing records original UnitSHP and TechnoDraw arguments against these loaded images, not TerrainClass drawing.",
+    "Radar starts at admitted655F48 with inactive flash, actual disguise getter/LightGrey lookup and original BSurface pixel write into a supplied4x4 RGB565 surface. Original ColorScheme constructor slice68C769..68C7DC receives ordinary index53 and produces+330. This is the final stored pixel for the admitted branch, not full radar visibility or renderer scheduling.",
+    "Raw-load controls reuse naval_lifetime_controls.raw_load_sound_reset: original AbstractLoad410380, FootLoad sound-reset suffix, Foot no-init constructor and Unit vtable reconstruction. Saved raw bytes and retained external identity are supplied. The existing original Drive interface is explicitly reattached for subsequent Update; full COM/vector/swizzle/scenario Save/Load is excluded.",
+    "Full Foot UnInit and deferred Unit/Foot/Techno destructors execute with no attached Anim, target, bomb or planning group. Original633900 initializes the previously unused global token vector. Registry observations qualify removal; raw freed-object bytes are not live state.",
+    "Independent controls restore mapped bytes/CPU/allocator to their prior experiment checkpoint; this is harness isolation, not a simulated native save operation. Original text and inherited vtables are checked unchanged after all controls."
+  ],
+  "substitutions": [
+    "Inherited allocation, Windows COM transport, visual asset setup and radar tracker boundaries are retained explicitly from FootMissions/Mission.",
+    "Prepared physical INI section caches and extracted theater archive winners replace file/archive startup. Native selected readers, tree filename selection, CCFile/RawFile reads and SHP allocation execute. Actual file lengths/hashes and IO are retained.",
+    "CC_Draw_Shape4AED70 records its14 original arguments, pointed position/clip, Convert and surface, then returns with56-byte callee cleanup. Current Cell Convert identity and light are supplied inputs; no shape pixels or palette-constructor parity claim.",
+    "Existing raw-load helper supplies exact IStreamRead bytes. No gameplay, timer, RNG, target, disguise or projection arithmetic result is supplied."
+  ],
+  "entry_points": {
+    "update_disguise": "0x007468C0",
+    "unit_ai": "0x007360C0",
+    "clear_disguise": "0x00746720",
+    "first_infantry": "0x0047EC40",
+    "type_constructor": "0x00710AF0",
+    "unit_type_reader": "0x00747620",
+    "general_reader": "0x00671D3E",
+    "unit_constructor": "0x007353C0",
+    "unit_damage": "0x00737C90",
+    "draw_gate": "0x0070EE30",
+    "unit_shp_draw": "0x0073C5F0",
+    "techno_draw": "0x00705E00",
+    "terrain_init_theater": "0x0071DCA0",
+    "projection_init": "0x006D1BB0",
+    "radar_pixel_suffix": "0x00655F48",
+    "raw_load": "0x00410380",
+    "foot_uninit": "0x004DE5D0",
+    "retirement_drain": "0x00725C70"
+  },
+  "command": "python -m tools.spatial_oracle.mirage_disguise --check",
+  "payload_sha256": "eec6b57ba26d2b4577a19ce9571d43840a3172a91e276d5f25feaaa9ec4a76bd"
+}

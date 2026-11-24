@@ -1,0 +1,4493 @@
+//! Authoritative in-flight projectile state.
+//!
+//! This module deliberately owns only delayed flight, target expiry, collision,
+//! and detonation admission. Combat remains the authority for turning a returned
+//! [`ProjectileDetonation`] into damage, warhead effects, and terrain changes.
+//! Keeping that handoff narrow lets the world phase place this system at the
+//! verified native frame rung without duplicating combat arithmetic here.
+//!
+//! ## `BulletClass::AI @ 0x004666E0` — the three flight arms
+//!
+//! Native selects an arm exactly twice, at `0x004668D1` on `ROT < 1` and then
+//! at `0x004671D0` on `Vertical` (`BulletTypeClass+0x2C0`). Nothing else takes
+//! part: `Arcing`, `SubjectToCliffs`, `SubjectToElevation`, `Proximity`,
+//! `FlakScatter`, `Inviso` and `Cluster` are launch-time or detonation-time
+//! keys. [`ProjectileTrajectory`] carries the same three arms.
+//!
+//! Detonation admission at `0x00467C70` is `impact || (!Dropping && fuse != 0)`
+//! and contains NO `Arm=` test — `Arm=` is written once into the bullet's
+//! embedded `ProximityDetector` at `BulletClass::Fire 0x00468A5D` and gates
+//! that one fuse result. A collision, a ground or bridge contact, a
+//! `DetonationAltitude` crossing, or a target reach all detonate an unarmed
+//! bullet.
+//!
+//! Homing termination reads the OLD ObjectClass height, before committing the
+//! new coordinate (`0x00466DF6`). Ground admission suppresses the arm's target
+//! snap; the common tail then clamps a negative committed height and may snap
+//! a mode-1 fuse to the target's location (`+0x48`, not its aim point `+0x58`).
+//!
+//! Ordinary admission (467494..467B7A) and the common probe (468BB0/4CC360)
+//! read production world state through world::projectile_collision. Final
+//! target adjustment (467CEC) runs only after admission. There is no separate
+//! distance-to-target expiry rule for ordinary shots.
+//!
+//! ## The `NUKE` warhead's impact (`0x00467E53..0x00467F99`)
+//!
+//! A bullet whose warhead ID is `NUKE` (strcmpi, `0x00467E5E`) does not
+//! detonate at its impact. The AI clamps a negative height to the ground,
+//! flashes the screen, raises a radar event, constructs the `NUKEBALL` anim
+//! and waits for it ([`ProjectileNukeImpact`]; the world runs the middle
+//! steps). While the anim lives each AI returns at its head
+//! (`0x00466705..0x00466717`); the first one after detonates where the
+//! bullet stands with the impact flag clear (`0x0046671D..0x00466771`). The
+//! draw skips a waiting bullet (`0x004680F6`).
+//!
+//! All flight arms retain one binary64 velocity authority.
+//! `launch` owns the native scalar FireAt math; combat resolves its receivers.
+//! RESIDUAL (GSI-08.06/07): FLH/pivot slope translation and directed Building
+//! heading remain open. Those producers can still change the inputs delivered
+//! to this exact motion/collision consumer; the complete projectile row
+//! remains open.
+
+mod homing;
+pub mod launch;
+pub(crate) mod native_math;
+
+use std::collections::BTreeMap;
+
+use crate::map::resolved_terrain::{ResolvedTerrainGrid, SharedCellDummy};
+use crate::sim::anim_class::AnimId;
+use crate::sim::intern::{InternedId, StringInterner};
+use crate::sim::rng::SimRng;
+use crate::sim::touch_log::{TouchLogs, Touched};
+
+/// The warhead ID the AI's impact compares against (`0x0081AF98`).
+const NUKE_WARHEAD: &str = "NUKE";
+
+/// Lepton-space position for an in-flight projectile.
+///
+/// Cells contain 256 leptons. Keeping the flight state in signed integer
+/// leptons avoids float math and makes the serialized state independent of
+/// render coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct ProjectileCoord {
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+}
+
+/// Native Bullet +E8/+F0/+F8 binary64 velocity, in leptons per frame.
+///
+/// Fire 468691 copies all six DWORDs, ordinary AI 467AB2 copies its scratch
+/// doubles back, and Vertical 4672A3 scales this same persistent vector.
+/// Integer coordinates are projections of this authority, never a second state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct ProjectileVelocity {
+    pub x: crate::util::native_x87::NativeF64Bits,
+    pub y: crate::util::native_x87::NativeF64Bits,
+    pub z: crate::util::native_x87::NativeF64Bits,
+}
+
+impl ProjectileVelocity {
+    pub const fn new(x: i32, y: i32, z: i32) -> Self {
+        use crate::util::native_x87::NativeF64Bits;
+        // Every signed i32 is exactly representable as binary64.
+        Self {
+            x: NativeF64Bits::from_bits((x as f64).to_bits()),
+            y: NativeF64Bits::from_bits((y as f64).to_bits()),
+            z: NativeF64Bits::from_bits((z as f64).to_bits()),
+        }
+    }
+
+    pub const fn from_native(components: [crate::util::native_x87::NativeF64Bits; 3]) -> Self {
+        Self {
+            x: components[0],
+            y: components[1],
+            z: components[2],
+        }
+    }
+
+    pub const fn native(self) -> [crate::util::native_x87::NativeF64Bits; 3] {
+        [self.x, self.y, self.z]
+    }
+
+    pub fn integer_projection(self) -> ProjectileCoord {
+        let [x, y, z] = ProjectileCollisionMotion::quantized(self.native());
+        ProjectileCoord::new(x, y, z)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum ProjectileTrajectory {
+    Straight,
+    Ballistic,
+    /// gamemd-derived: `BulletClass::AI @ 0x004666E0`, the `ROT < 1 &&
+    /// Vertical` arm entered at `0x004671E0`. No gravity is applied there and
+    /// the launch direction is never changed — only the magnitude ramps by
+    /// `Acceleration=` (`BulletTypeClass+0x2D0`) toward `MaxSpeed`
+    /// (`Bullet+0x110`), and flight ends on `z > DetonationAltitude`
+    /// (`+0x2BC`, read at `0x00467334`), a negative altitude, or a bridge-deck
+    /// crossing.
+    ///
+    /// Direction lives only in the persistent binary64 velocity. The native
+    /// ramp normalizes and scales that vector in place at 4672A3..4672B4.
+    Vertical {
+        detonation_altitude: i32,
+        acceleration: i32,
+        max_speed: i32,
+    },
+}
+
+/// Native guided-flight controls. Velocity alone owns direction and magnitude.
+/// Bullet AI 4668D9..467032 reads the signed constructor identity and global
+/// binary frame; a bullet age or a stable Rust handle is not its phase.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct ProjectileGuidance {
+    pub rot: i32,
+    pub missile_rot_var: crate::util::native_x87::NativeF64Bits,
+    /// BulletType+2E0; Bullet+108 counts and +105 latches independently.
+    pub course_lock_duration: i32,
+    pub course_frames: i32,
+    pub course_locked: bool,
+    pub very_high: bool,
+    /// Bullet+110, retained converted Weapon Speed, not current magnitude.
+    pub max_speed: i32,
+    pub acceleration: i32,
+    /// Bullet+118/+120, independent of the CourseLock counter.
+    pub closing_frames: i32,
+    pub closing_accumulator_bits: u64,
+}
+
+/// Serialized `BulletClass` SHP animation bytes (`this+0x12c/+0x12d`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct ProjectileVisualState {
+    pub anim_low: u8,
+    pub anim_high: u8,
+    pub anim_rate: u8,
+    pub runtime_frame: u8,
+    pub runtime_countdown: u8,
+}
+
+impl ProjectileVisualState {
+    pub const fn new(anim_low: u8, anim_high: u8, anim_rate: u8) -> Self {
+        Self {
+            anim_low,
+            anim_high,
+            anim_rate,
+            runtime_frame: 0,
+            runtime_countdown: anim_rate,
+        }
+    }
+
+    pub fn advance(&mut self) {
+        if self.anim_low == 0 && self.anim_high == 0 {
+            return;
+        }
+        self.runtime_countdown = self.runtime_countdown.wrapping_sub(1);
+        if self.runtime_countdown != 0 {
+            return;
+        }
+        self.runtime_countdown = self.anim_rate;
+        self.runtime_frame = self.runtime_frame.wrapping_add(1);
+        if self.runtime_frame > self.anim_high {
+            self.runtime_frame = self.anim_low;
+        }
+    }
+}
+
+impl ProjectileCoord {
+    pub const fn new(x: i32, y: i32, z: i32) -> Self {
+        Self { x, y, z }
+    }
+
+    /// YRpp's `CoordStruct::DistanceFromSquared`, the distance Phobos
+    /// compares: each component's int difference as a double, then the sum of
+    /// their squares. Phobos is built for SSE2, so Rust's f64 gives the same
+    /// result on every platform.
+    pub(crate) fn distance_from_squared(self, other: Self) -> f64 {
+        let dx = f64::from(self.x.wrapping_sub(other.x));
+        let dy = f64::from(self.y.wrapping_sub(other.y));
+        let dz = f64::from(self.z.wrapping_sub(other.z));
+        dx * dx + dy * dy + dz * dz
+    }
+}
+
+/// CellClass virtual +0x48 @ 0x00486840 of the cell `MapClass::Get_CellClass`
+/// (`0x005657A0`) gives for `(rx, ry)`, through the simulation's lookup
+/// ([`crate::sim::movement::target_cell_coord`]): a cell off the map is the
+/// shared fallback CellClass, which the lookup stamps with the coordinate.
+pub(crate) fn cell_ground_coord(
+    terrain: Option<&ResolvedTerrainGrid>,
+    rx: u16,
+    ry: u16,
+) -> ProjectileCoord {
+    let cells = terrain.map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+    let point = crate::sim::movement::target_cell_coord(rx, ry, cells.as_ref());
+    ProjectileCoord::new(point.x, point.y, point.z)
+}
+
+/// CellClass virtual +0x58 @ 0x00486890 of the cell `MapClass::Get_CellClass`
+/// gives for `(rx, ry)`, as [`cell_ground_coord`] looks it up. FireAt,
+/// Bullet::Fire and the final impact ladder all read this aim,
+/// independently of walkability.
+pub(crate) fn cell_target_coord(
+    terrain: Option<&ResolvedTerrainGrid>,
+    rx: u16,
+    ry: u16,
+) -> ProjectileCoord {
+    let cell = crate::sim::cell_rect::get_cellclass_fallback(terrain, i32::from(rx), i32::from(ry));
+    cell_ref_target_coord(terrain, &cell)
+}
+
+/// CellClass virtual +0x58 @ 0x00486890 of a cell already looked up.
+/// Its structural bit selects the deck, with the native +416 rise as fallback.
+pub(crate) fn cell_ref_target_coord(
+    terrain: Option<&ResolvedTerrainGrid>,
+    cell: &crate::sim::cell_rect::CellRef<'_>,
+) -> ProjectileCoord {
+    let ground = cell.get_coords();
+    let mut coord = ProjectileCoord::new(ground.x, ground.y, ground.z);
+    if is_structural_bridge_cell(cell) {
+        coord.z = fixed_deck_z_for_cell_ref(terrain, cell)
+            .unwrap_or_else(|| crate::sim::movement::ground_pose::z_at_height(ground.z, 0, true));
+    }
+    coord
+}
+
+/// Resolve a retained real CellClass's deck without making another Map
+/// lookup. The shared Dummy may have the same XY as a real cell.
+pub(crate) fn fixed_deck_z_for_cell_ref(
+    terrain: Option<&ResolvedTerrainGrid>,
+    cell: &crate::sim::cell_rect::CellRef<'_>,
+) -> Option<i32> {
+    let crate::sim::cell_rect::CellRef::Real(cell) = cell else {
+        return None;
+    };
+    let terrain = terrain?;
+    let index = terrain.native_fixed_cell_index(cell.rx as i16, cell.ry as i16)?;
+    crate::sim::movement::ground_pose::corrected_deck_z(
+        terrain,
+        crate::map::cell_index::NativeCellIdentity::Real(index),
+    )
+}
+
+/// The shared fallback CellClass's +0x48 coordinate. Read the retained dummy
+/// at the receiver boundary; later map misses can change this same identity.
+pub(crate) fn dummy_cell_ground_coord(dummy: &SharedCellDummy) -> ProjectileCoord {
+    let point = crate::sim::cell_rect::CellRef::Dummy {
+        cell: dummy.clone(),
+    }
+    .get_coords();
+    ProjectileCoord::new(point.x, point.y, point.z)
+}
+
+/// Resolve the current virtual `CellClass::GetTargetCoords` value for the one
+/// shared fallback CellClass. Unlike a stable allocated cell, every later miss
+/// can change the coordinate observed through this retained identity.
+pub(crate) fn dummy_cell_target_coord(dummy: &SharedCellDummy) -> ProjectileCoord {
+    cell_ref_target_coord(
+        None,
+        &crate::sim::cell_rect::CellRef::Dummy {
+            cell: dummy.clone(),
+        },
+    )
+}
+
+/// The original target retained by a projectile after weapon fire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum ProjectileTarget {
+    Entity(u64),
+    /// Stable MapClass CellClass identity, always a real cell; one off the
+    /// map is [`Self::DummyCell`]. Its target coordinate is resolved from live
+    /// terrain state instead of freezing the cleanup-time Vec3.
+    Cell {
+        rx: u16,
+        ry: u16,
+    },
+    /// Native null AbstractClass target. This is distinct from an expired
+    /// entity lookup: BulletClass pointer cleanup has already handled the
+    /// reference synchronously, so `TargetExpiryPolicy` must not run.
+    None,
+    /// MapClass's one process-global fallback CellClass at `0x00ABDC50`.
+    /// The enum stores the pointer kind, not a coordinate snapshot; Simulation
+    /// owns the live identity and BulletClass AI resolves it every visit.
+    DummyCell,
+    /// TerrainClass is an Object target with its own retained coordinate and
+    /// lifetime, not a Techno or a cell. SpawnShrapnel46A59B retains this pointer.
+    Terrain(u64),
+}
+
+impl ProjectileTarget {
+    /// The cell `MapClass::Get_CellClass` (`0x005657A0`) gives for `(rx, ry)`
+    /// as a target ([`Self::of_cell`]); the lookup stamps a miss with the
+    /// coordinate. A map-less fixture keeps the cell.
+    pub(crate) fn looked_up_cell(terrain: Option<&ResolvedTerrainGrid>, rx: u16, ry: u16) -> Self {
+        if terrain.is_none() {
+            return Self::Cell { rx, ry };
+        }
+        Self::of_cell(&crate::sim::cell_rect::get_cellclass_fallback(
+            terrain,
+            i32::from(rx),
+            i32::from(ry),
+        ))
+    }
+
+    /// A looked-up cell as a target: a real cell, or [`Self::DummyCell`] for
+    /// the shared fallback CellClass.
+    pub(crate) fn of_cell(cell: &crate::sim::cell_rect::CellRef<'_>) -> Self {
+        match cell {
+            crate::sim::cell_rect::CellRef::Real(cell) => Self::Cell {
+                rx: cell.rx,
+                ry: cell.ry,
+            },
+            crate::sim::cell_rect::CellRef::Dummy { .. } => Self::DummyCell,
+        }
+    }
+
+    /// Stable identity of a represented Object pointer. IDs are unique across
+    /// stores; retaining the enum kind still controls coordinate dispatch.
+    pub(crate) fn object_id(self) -> Option<u64> {
+        match self {
+            Self::Entity(id) | Self::Terrain(id) => Some(id),
+            Self::Cell { .. } | Self::None | Self::DummyCell => None,
+        }
+    }
+}
+
+/// What to do when an entity target no longer exists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum TargetExpiryPolicy {
+    /// Remove the projectile without a damage handoff.
+    Expire,
+    /// Detonate at the last target coordinate observed by the projectile.
+    DetonateAtLastKnown,
+}
+
+/// Terrain checks admitted for one `BulletClass` flight.
+///
+/// `native_cell_collision` models the ground-height / bridge-deck / building
+/// block at `BulletClass::AI 0x004674AE`..`0x00467778`. That block lives inside
+/// the `ROT < 1, Vertical = no` arm: `0x004671D0 MOV CL,[EAX+0x2C0] /
+/// 0x004671D6 TEST CL,CL / 0x004671D8 JZ 0x00467402` reaches it only when
+/// `Vertical == 0`, and a `Vertical` bullet takes the `0x004671DE`..`0x00467390`
+/// arm instead, which runs its own `DetonationAltitude` / floor / bridge probe.
+/// That is why the flag is narrowed on `!vertical` — not because a `Vertical`
+/// bullet skips every terrain test.
+///
+/// Shared probe 468BB0 runs for every trajectory when its impact flag remains
+/// clear. Production resolves cliff/wall cells, live Flak target aim, the
+/// theater WaterSet tile interval, and the target's actual +54/+48 receivers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectileCollisionPolicy {
+    /// `BulletTypeClass::Level`: an unguided bullet detonates after entering
+    /// a non-water cell; a guided one holds level flight (HomingTrack).
+    pub level: bool,
+    /// `BulletTypeClass::SubjectToWalls`: detonate after entering a live wall.
+    pub subject_to_walls: bool,
+    /// Ordinary non-guided `BulletClass::Update` floor/bridge/content probe.
+    pub native_cell_collision: bool,
+    /// Dropping suppresses detector-only admission, after Check runs and may update its watermark.
+    pub dropping: bool,
+    pub subject_to_cliffs: bool,
+    pub flak_scatter: bool,
+    pub anti_air: bool,
+    /// `BulletType+294 Airburst=`: the Bullet AI homing/closing/fuse arms.
+    pub airburst: bool,
+    /// `BulletClass::Explodes`'s airburst gate: native `Airburst=`, or
+    /// `Airburst || Splits` in a Phobos build. A manually constructed policy
+    /// that leaves it `None` falls back to [`Self::airburst`].
+    #[serde(default)]
+    pub explodes_airburst: Option<bool>,
+    pub inaccurate: bool,
+    /// BulletType +295: 48ACF0 multiplies live Rules gravity by binary64 0.5.
+    pub floater: bool,
+    /// Phobos `[Projectile] Gravity=` (`BulletTypeExt::GetAdjustedGravity`):
+    /// the type's gravity bits, or `None` for the live Rules value.
+    #[cfg(feature = "phobos")]
+    #[serde(default)]
+    pub gravity: Option<crate::util::native_x87::NativeF64Bits>,
+    /// BulletType +2C8, retained as exact binary64 bits for Eq/hash/save.
+    pub elasticity_bits: u64,
+    /// `BulletTypeClass::Arcing` (`+0x29B`): impact resolution
+    /// (`0x00468ECF`) skips the detector-reference arm for it.
+    #[serde(default)]
+    pub arcing: bool,
+    /// Ares BulletTypeExt `SubjectToBuildings` (`+0x8`): the shared probe's
+    /// GetObstacle also stops at a solid building (`0x468BE2`).
+    #[serde(default)]
+    pub subject_to_solid: bool,
+}
+
+impl ProjectileCollisionPolicy {
+    pub const NONE: Self = Self {
+        level: false,
+        subject_to_walls: false,
+        native_cell_collision: false,
+        dropping: false,
+        subject_to_cliffs: false,
+        flak_scatter: false,
+        anti_air: false,
+        airburst: false,
+        explodes_airburst: None,
+        inaccurate: false,
+        floater: false,
+        #[cfg(feature = "phobos")]
+        gravity: None,
+        elasticity_bits: 0x3fe8_0000_0000_0000,
+        arcing: false,
+        subject_to_solid: false,
+    };
+
+    /// `0x468D80`'s airburst gate, with the pre-feature fallback.
+    pub const fn explodes_airburst(&self) -> bool {
+        match self.explodes_airburst {
+            Some(value) => value,
+            None => self.airburst,
+        }
+    }
+
+    /// Phobos `[Projectile] Gravity=` bits, or `None` on the stock path.
+    #[cfg(feature = "phobos")]
+    pub(crate) const fn gravity(&self) -> Option<crate::util::native_x87::NativeF64Bits> {
+        self.gravity
+    }
+
+    #[cfg(not(feature = "phobos"))]
+    pub(crate) const fn gravity(&self) -> Option<crate::util::native_x87::NativeF64Bits> {
+        None
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectileBridgeCrossing {
+    None,
+    Up,
+    Down,
+}
+
+pub fn projectile_bridge_crossing(
+    previous_z: i32,
+    candidate_z: i32,
+    surface_z: i32,
+) -> ProjectileBridgeCrossing {
+    if previous_z < surface_z && candidate_z >= surface_z {
+        ProjectileBridgeCrossing::Up
+    } else if previous_z >= surface_z && candidate_z < surface_z {
+        ProjectileBridgeCrossing::Down
+    } else {
+        ProjectileBridgeCrossing::None
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectileCollisionResponse {
+    TargetZClamp(ProjectileCoord),
+    /// Ordinary pre-commit AI 467494..467B7A, including its early returns.
+    Ordinary {
+        candidate: ProjectileCoord,
+        velocity: ProjectileVelocity,
+        impact: bool,
+        near_target: bool,
+        left_map: bool,
+    },
+    /// The world's answer to [`ProjectileCollisionPhase::ImpactLadder`].
+    ImpactLadder(ImpactLadderWorld),
+    /// The world's answer to [`ProjectileCollisionPhase::AresFirestorm`]:
+    /// the bullet burns.
+    AresFirestorm,
+}
+
+/// The target virtual requested at a Bullet AI boundary. Object410540
+/// forwards+58 to GetCoords; Cell+58 includes its deck. Guided AI466B5D..466BAB then
+/// substitutes Object+A4, whereas final fuse snapping467CA9..467E4D uses+48.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProjectileTargetQuery {
+    GetCoords,
+    TargetAim,
+    GuidanceAim,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ProjectileCollisionPhase {
+    Ordinary {
+        /// Native Bullet+E8 at tail entry: pre-scratch for ordinary, post-ramp for Vertical.
+        persistent_velocity: ProjectileVelocity,
+        motion: ProjectileCollisionMotion,
+    },
+    Shared,
+    /// `0x00468D80` asks the target and the warhead for
+    /// [`resolve_impact_coord`]; the candidate is the bullet's Location.
+    ImpactLadder,
+    /// Ares BulletClass_Update_Ranged (`1001AC90`, hook `0x467B94`) asks,
+    /// after the commit, whether the candidate cell holds an active
+    /// firestorm wall that burns the bullet.
+    AresFirestorm,
+}
+
+/// The Target facts `BulletClass` impact resolution (`0x00468D80`) reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImpactLadderTarget {
+    /// vt+0x48: a Building's centre (`0x00447AC0`), a Cell's coordinate
+    /// (`0x00486840`), everything else its Location (`0x005F65A0`).
+    pub coords: ProjectileCoord,
+    /// vt+0x58: every Object forwards to vt+0x48 (`0x00410540`); a Cell
+    /// answers `0x00486890`.
+    pub aim: ProjectileCoord,
+    /// vt+0xA4: vt+0x48 (`0x0041BDD0`) for all but a Building
+    /// (`0x004500A0`, its TargetCoordOffset).
+    pub offset_coords: ProjectileCoord,
+    /// vt+0x54, ObjectClass::IsInAir `0x005F6B90`: on the map and at least
+    /// two levels up (Aircraft `0x0041B920` asks the V3/Dreadnought rocket
+    /// locomotor); a Cell never is (`0x00410530`).
+    pub in_air: bool,
+    /// vt+0x78 answers layer 2 (Ground).
+    pub ground_layer: bool,
+    /// `ObjectClass::DistanceTo 0x005F6360` from the bullet's Location:
+    /// vt+0x48 to vt+0x48, less a Building's `(Width + Height) * 64`,
+    /// clamped at 0.
+    pub distance: i32,
+    /// A Building whose type has a nonzero TargetCoordOffset (`+0xEBC`).
+    pub building_offset: bool,
+}
+
+/// What the world contributes to [`resolve_impact_coord`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ImpactLadderWorld {
+    /// The live Target (`+0x10C`), or none once PointerExpired cleared it.
+    pub target: Option<ImpactLadderTarget>,
+    /// The warhead's `EMEffect=` (`+0x154`).
+    pub em_effect: bool,
+}
+
+/// The bullet facts [`resolve_impact_coord`] reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImpactLadderBullet {
+    /// Location (`+0x9C`), where the AI committed the impact.
+    pub location: ProjectileCoord,
+    /// The ProximityDetector reference (`+0xB8 + 0x18` = `+0xD0`).
+    pub reference: ProjectileCoord,
+    /// The AI's impact flag, the ladder's argument (`0x00467FA2`).
+    pub impact_flag: bool,
+    pub inaccurate: bool,
+    pub airburst: bool,
+    pub arcing: bool,
+    /// ROT > 0 (`+0x2DC`).
+    pub homing: bool,
+}
+
+/// `BulletClass` impact resolution `0x00468D80` up to its first
+/// `DetonateAtCoord`: the coordinate the (first) cluster detonates at.
+/// - An `Inaccurate=` bullet keeps its Location.
+/// - A Target within `0x20` of its vt+0x48 (3-D, Sqrt_Approx, ftol) takes
+///   vt+0x48 unless the bullet is `Airburst=`.
+/// - `EMEffect=` or `Airburst=` stops there.
+/// - A fuse detonation (impact flag clear) of a bullet that is neither
+///   `Arcing=` nor ROT > 0 takes the ProximityDetector reference when it is
+///   not Empty.
+/// - An in-air Target off the Ground layer takes vt+0xA4 within `0x80`;
+///   otherwise a Target within `0x2A` (DistanceTo) takes vt+0x58, or vt+0xA4
+///   for a Building with a TargetCoordOffset.
+///
+/// Native execution: `tools/projectile_oracle/impact_ladder.py`.
+pub fn resolve_impact_coord(
+    bullet: &ImpactLadderBullet,
+    world: &ImpactLadderWorld,
+) -> ProjectileCoord {
+    let mut coord = bullet.location;
+    if bullet.inaccurate {
+        return coord;
+    }
+    if let Some(target) = world.target
+        && coord_distance(bullet.location, target.coords) < 0x20
+        && !bullet.airburst
+    {
+        coord = target.coords;
+    }
+    if world.em_effect || bullet.airburst {
+        return coord;
+    }
+    if !bullet.impact_flag
+        && !bullet.arcing
+        && !bullet.homing
+        && bullet.reference != ProjectileCoord::new(0, 0, 0)
+    {
+        coord = bullet.reference;
+    }
+    let Some(target) = world.target else {
+        return coord;
+    };
+    if target.in_air && !target.ground_layer {
+        if target.distance < 0x80 {
+            coord = target.offset_coords;
+        }
+    } else if target.distance < 0x2A {
+        coord = if target.building_offset {
+            target.offset_coords
+        } else {
+            target.aim
+        };
+    }
+    coord
+}
+
+/// Ordinary AI compares its binary64 candidate before ftol; the bridge and
+/// cell lookups separately consume the integer coordinate (467494..4677D3).
+#[derive(Debug, Clone, Copy)]
+pub struct ProjectileCollisionMotion {
+    pub candidate: [crate::util::native_x87::NativeF64Bits; 3],
+    pub velocity: [crate::util::native_x87::NativeF64Bits; 3],
+}
+
+impl ProjectileCollisionMotion {
+    pub fn from_coordinate(candidate: ProjectileCoord, velocity: ProjectileVelocity) -> Self {
+        use crate::util::native_x87::NativeF64Bits;
+        Self {
+            candidate: [candidate.x, candidate.y, candidate.z]
+                .map(|value| NativeF64Bits::from_bits(f64::from(value).to_bits())),
+            velocity: velocity.native(),
+        }
+    }
+
+    pub fn candidate_coord(&self) -> ProjectileCoord {
+        let [x, y, z] = Self::quantized(self.candidate);
+        ProjectileCoord::new(x, y, z)
+    }
+
+    pub fn quantized(values: [crate::util::native_x87::NativeF64Bits; 3]) -> [i32; 3] {
+        use crate::util::native_x87::X87Chop53;
+        values.map(|value| {
+            X87Chop53::ftol_i64(X87Chop53::load_f64(value).expect("finite collision input"))
+                .expect("representable collision coordinate") as i32
+        })
+    }
+}
+
+/// Original Bullet AI467666..467778: inverse slope, Elasticity scalar,
+/// negate LOCAL Z, forward slope, negate world Y. Native stores every matrix
+/// intermediate as chopped f32 and retains resulting doubles until copyback.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn projectile_slope_reflect_with_elasticity(
+    velocity: ProjectileVelocity,
+    slope_type: u8,
+    elasticity_bits: u64,
+) -> Option<ProjectileVelocity> {
+    let input = ProjectileCollisionMotion::from_coordinate(ProjectileCoord::new(0, 0, 0), velocity)
+        .velocity;
+    let reflected = projectile_slope_reflect_double(input, slope_type, elasticity_bits)?;
+    Some(ProjectileVelocity::from_native(reflected))
+}
+
+pub(crate) fn projectile_slope_reflect_double(
+    velocity: [crate::util::native_x87::NativeF64Bits; 3],
+    slope_type: u8,
+    elasticity_bits: u64,
+) -> Option<[crate::util::native_x87::NativeF64Bits; 3]> {
+    use crate::util::native_x87::{NativeF64Bits, X87Chop53};
+    let matrix = crate::map::voxel_slope::slope_matrix(slope_type)?;
+    let mut vector = [crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO; 3];
+    for (out, input) in vector.iter_mut().zip(velocity) {
+        *out = X87Chop53::store_f32(X87Chop53::load_f64(input).ok()?).ok()?;
+    }
+    let elasticity =
+        X87Chop53::store_f32(X87Chop53::load_f64(NativeF64Bits::from_bits(elasticity_bits)).ok()?)
+            .ok()?;
+    let reflected = crate::sim::particles::spark::reflect_slope_vector_with_elasticity(
+        vector, matrix, elasticity,
+    )
+    .ok()?;
+    Some(
+        reflected.map(|value| {
+            NativeF64Bits::from_bits(f64::from(f32::from_bits(value.bits())).to_bits())
+        }),
+    )
+}
+
+/// The next cluster coordinate of
+/// `BulletClass::ResolveImpactCoordAndDetonate @ 0x00468D80`. The impact is
+/// copied once before the loop (`0x00469008..0x0046901C`); after each cluster
+/// detonation the loop draws `RandomRanged(0x100, 0x200)` (`0x00469057`) and
+/// moves that copy that far in a random direction (`0x0049F420`, no cell
+/// snap, `in` = the copy at `0x0046905F`: one raw Scenario draw, the table
+/// direction of its low byte, truncated; the impact itself when either axis
+/// leaves the 512-cell map). So every cluster after the first lands around
+/// the impact, never around the previous cluster.
+pub fn projectile_next_cluster_coord(
+    grid: crate::map::cell_index::CellGrid,
+    impact: ProjectileCoord,
+    scenario_rng: &mut SimRng,
+) -> ProjectileCoord {
+    let distance = scenario_rng.next_range_i32_inclusive(0x100, 0x200);
+    let (x, y) = crate::sim::combat::inviso_scatter::random_direction_coord(
+        grid,
+        scenario_rng,
+        impact.x,
+        impact.y,
+        distance,
+        crate::sim::combat::inviso_scatter::RandomDirectionSnap::Preserve,
+    );
+    ProjectileCoord::new(x, y, impact.z)
+}
+
+/// Native two-draw random-cell fallback used after hostile shrapnel targets.
+pub fn projectile_random_shrapnel_cell(
+    center_rx: i32,
+    center_ry: i32,
+    scenario_rng: &mut SimRng,
+) -> (i32, i32) {
+    let dx = scenario_rng.next_range_u32_inclusive(0, 4) as i32 - 2;
+    let dy = scenario_rng.next_range_u32_inclusive(0, 4) as i32 - 2;
+    (center_rx + dx, center_ry + dy)
+}
+
+/// `0x0046A322..0x0046A3D2`: the fragments SpawnShrapnel throws, or `None`
+/// when it returns at once. A `ShrapnelCount=` of zero or more is the count
+/// (`JGE` at `0x0046A330`); a negative one is 3 without a firer, else its
+/// magnitude less the whole cells to the firer, and returns at zero or below
+/// (`0x0046A3CA`).
+pub fn projectile_shrapnel_count(
+    configured_count: i32,
+    has_firer: bool,
+    distance_to_firer_cells: i32,
+) -> Option<u32> {
+    if configured_count >= 0 {
+        return Some(configured_count as u32);
+    }
+    if !has_firer {
+        return Some(3);
+    }
+    let count = configured_count
+        .saturating_neg()
+        .saturating_sub(distance_to_firer_cells);
+    (count > 0).then_some(count as u32)
+}
+
+/// Which arm of the native special-detonation chain claims one impact.
+///
+/// gamemd-derived: `BulletClass::DetonateAtCoord @ 0x004690b0` is a strict
+/// twelve-arm `else if` chain over `WarheadTypeClass` flag bytes. Each test's
+/// fall-through `JZ` targets the *next* test, so the arms are mutually
+/// exclusive and the order below is the native order, read from the flag tests
+/// at `0x00469211`, `0x00469343`, `0x0046937a`, `0x004693d3`, `0x00469423`,
+/// `0x004694cb`, `0x00469705`, `0x0046978e`, `0x004699ca`, `0x00469a03` and
+/// `0x00469a2c`.
+///
+/// Only the final else at `0x00469a3f` reaches
+/// `BulletClass::SpawnShrapnel @ 0x0046a310` and
+/// `Apply_area_damage @ 0x00489280`, so any special arm suppresses both. What a
+/// special arm does **not** suppress is the shared tail: every arm, including
+/// its internal bail-outs (e.g. MindControl with no CaptureManager at
+/// `0x00469235`), leaves through `JMP LAB_00469AA4`, and `LAB_00469AA4`
+/// (`0x00469aa4 MOV EAX,[EBP+0x8]`) is not the epilogue — the epilogue is
+/// `0x0046a290`. Unconditionally the tail is the `Inviso` visual re-scatter
+/// (`0x00469ad7`), the explosion-anim *selection*
+/// (`Warhead::SelectExplosionAnim` called at `0x00469bcf`), the `AnimList=`
+/// `AnimClass` itself (built from `0x00469c46`), the debris loop and the
+/// `Airburst=` sub-munition fan (`BulletClass::Init` at `0x00469f7f` /
+/// `0x0046a150`). The ordinary arm reaches that same tail only behind the
+/// `bullet+0x90` gate at `0x00469a94`; special arms bypass the gate.
+///
+/// **The combat-light / `CLDisable*` block is NOT part of that unconditional
+/// tail.** `0x00469bf0..0x00469c45`, ending in the light spawn
+/// `0x00469c41 CALL 0x0048a620`, runs only when `bullet+0xe0 != 0` **and**
+/// `[ESP+0xf] == 0` — `0x00469bdc TEST AL,AL` / `0x00469be2 JZ 0x0046a299`
+/// then `0x00469be8 TEST AL,AL` / `0x00469bea JNZ 0x0046a2a1` — and
+/// `0x0046a29b JZ 0x00469c46` rejoins *past* it, so the `AnimList=` anim is
+/// reached either way. `bullet+0xe0` is the per-**weapon** `Bright=` flag, not
+/// a warhead key: `BulletClass::Init` stores its last stack argument there
+/// (`0x004664e6 MOV byte ptr [ECX+0xe0], DL` from `[ESP+0x1c]`), fed from
+/// `TechnoClass::FireAt` (`0x006fe53f MOV CL, byte ptr [EBX+0x12f]`) =
+/// `WeaponTypeClass+0x12f`, written by `WeaponTypeClass::ReadINI` at
+/// `0x00772817` from the key string at `0x00847dd0` = `"Bright"`. Whoever
+/// ports `0x0048a620` must carry that gate, or every non-`Bright=` impact
+/// flashes. The block itself folds warhead `+0x151`/`+0x152`/`+0x153`
+/// (`CLDisableRed=`/`Green=`/`Blue=`, read at `0x00469bf8`/`0x00469c07`/
+/// `0x00469c13`) into a 2/4/8 bit mask and passes it with the impact coord and
+/// `bullet+0x6c`; the exact visual `0x0048a620` produces is UNCHECKED here.
+///
+/// Both deliveries dispatch the chain through one owner,
+/// `combat::world_receiver::run_special_detonation_arm`: a visible bullet at
+/// its detonation, and an `Inviso=` bullet once its AI admits detonation.
+/// Inviso placement does not bypass the common Arm-gated proximity fuse.
+///
+/// Special effects dispatch through their shared state owners, including
+/// Airstrike (`airstrike`): a flare starts or retargets its firer's aircraft.
+/// DirectRocker remains unimplemented; no stock weapon reaches that body.
+/// Its admitted arm still claims the impact and runs the shared tail.
+///
+/// The ordinary-arm AreaDamage return2 means near-center Iron Curtain
+/// isolation (489968/489B3B), covered by ifv_area_receipt.json. The shared
+/// receiver now skips bridge continuation, executes SelectAnim including its
+/// RNG, then substitutes WeaponNullifyAnim (+350) for normal animation/light
+/// at469BEA..46A301. Entry4690C1 initializes the ordinary result to1, so none
+/// of these special arms applies the result0 water-unit gate. The shared
+/// debris/Airburst tail preserves this early return; the original Airburst
+/// consumer is separately gated from Ares's installed replacement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpecialDetonationAction {
+    /// `MindControl=` (`WarheadTypeClass+0x155`), test `0x00469211` ->
+    /// `CaptureManagerClass::CaptureUnit @ 0x00471d40`, ported in
+    /// `capture_manager` (the Inviso delivery dispatches it too).
+    MindControl,
+    /// `IvanBomb=` (`+0x157`), test `0x00469343` ->
+    /// `BombListClass::Attach @ 0x00438e70`, ported in `bomb`.
+    IvanBomb,
+    /// `ElectricAssault=` (`+0x158`), test `0x0046937a`: a Building target
+    /// hit by an Infantry owner -> the Tesla-Coil charger-vector move-to-back
+    /// at `0x00452820`, owned by `tesla_charging`.
+    ElectricAssault,
+    /// `Parasite=` (`+0x159`), test `0x004693d3` ->
+    /// `ParasiteClass::AttachTo @ 0x0062a980`, ported in `combat/parasite.rs`
+    /// (including the Naval+Organic grapple in its child module).
+    Parasite,
+    /// `Temporal=` (`+0x15a`), test `0x00469423` ->
+    /// `TemporalClass::InitiateWarp @ 0x0071af20`, ported in `temporal` (the
+    /// Inviso delivery dispatches it too).
+    Temporal,
+    /// `IsLocomotor=` (`+0x15b`), test `0x004694cb` -> the Magnetron's lift,
+    /// `TechnoClass::ImbueLocomotor @ 0x00710000` with the warhead's
+    /// `Locomotor=` CLSID (`sim::locomotor_lift`).
+    Locomotor,
+    /// `Airstrike=` (`+0x16c`), test `0x00469705` ->
+    /// `AirstrikeClass::SetTarget @ 0x0041d830`, owned by `airstrike`.
+    ///
+    /// The decompile shows this arm as conditional; the disassembly does not.
+    /// `0x0046970d JZ 0x0046978e` is its only fall-through and fires on the
+    /// flag alone — every sub-condition failure (`0x00469717`, `0x00469725`,
+    /// `0x0046972f`, `0x0046973d`, `0x0046975b`) jumps to `0x00469aa4`
+    /// instead. So Airstrike is flag-gated like the other ten.
+    Airstrike,
+    /// `DirectRocker=` (`+0x14f`), test `0x0046978e` ->
+    /// `TechnoClass::ApplyRocker` through vtable `+0x3d8` at `0x004699a1`,
+    /// plus the mutual `+0x2a8` link.
+    ///
+    /// The **only** conditional arm in the chain: `0x00469796` (flag),
+    /// `0x004697a4` (`Target != 0`) and `0x004697b2`
+    /// (`Target->What_Am_I() == 1`, `UnitClass`) all fall through to
+    /// `0x004699c4`, the *next* test, so a `DirectRocker=yes` warhead that hits
+    /// infantry, a building or a bare cell still takes ordinary damage.
+    /// Failures *after* those three (`0x004697dc`, `0x004697e4`, `0x004697f6`)
+    /// jump to the tail like every other arm.
+    ///
+    /// Dead in stock YR: `rulesmd.ini` carries no live `DirectRocker=` line
+    /// (its one textual occurrence is inside a `;` comment), so the arm never
+    /// fires in stock play. Kept correct anyway; the impulse body is
+    /// deliberately NOT implemented, nor the link it sets, which
+    /// RockingUpdate (`0x0070B76C`), FootClass::AI (`0x004DA832`),
+    /// ClickedAction (`0x004D74FA`), What_Action (`0x006FFED7`) and
+    /// `UnitClass::GetFireError` (`0x00741014`) read.
+    DirectRocker,
+    /// `BombDisarm=` (`+0x16e`), test `0x004699ca` ->
+    /// `BombClass::Defuse @ 0x004389b0`, ported in `bomb`.
+    BombDisarm,
+    /// `MakesDisguise=` (`+0x175`), test `0x00469a03` -> the firer disguises as
+    /// the target through owner vtable `+0x46c` at `0x00469a24`.
+    /// UNIMPLEMENTED.
+    MakesDisguise,
+    /// `NukeMaker=` (`+0x176`), test `0x00469a2c` ->
+    /// `BulletClass::NukeMaker @ 0x0046b310` (Ghidra `SpawnDownwardNuke`),
+    /// ported in `combat::world_receiver`; its only stock weapon,
+    /// `[NukeCarrier]`, is the nuclear missile's.
+    NukeMaker,
+    /// The final else at `0x00469a3f`: shrapnel plus `Apply_area_damage`.
+    OrdinaryDamage,
+}
+
+impl SpecialDetonationAction {
+    /// True for every arm that claims the detonation away from
+    /// `Apply_area_damage @ 0x00489280` and
+    /// `BulletClass::SpawnShrapnel @ 0x0046a310`.
+    #[cfg(test)]
+    pub fn suppresses_ordinary_damage(self) -> bool {
+        self != SpecialDetonationAction::OrdinaryDamage
+    }
+}
+
+/// The eleven `WarheadTypeClass` flag bytes the native chain tests, in native
+/// order. Offsets verified from `WarheadTypeClass::ReadINI` string->offset
+/// writes (`0x0075d5d8`, `0x0075d7e0`, `0x0075d823`, `0x0075d82e`,
+/// `0x0075d84e`, `0x0075d871`, `0x0075d87c`, `0x0075d8f0`, `0x0075d91b`,
+/// `0x0075d969`, `0x0075d983`) and cross-checked against the reads in
+/// `BulletClass::DetonateAtCoord @ 0x004690b0`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SpecialDetonationFlags {
+    pub mind_control: bool,
+    pub ivan_bomb: bool,
+    pub electric_assault: bool,
+    pub parasite: bool,
+    pub temporal: bool,
+    pub is_locomotor: bool,
+    pub airstrike: bool,
+    pub direct_rocker: bool,
+    pub bomb_disarm: bool,
+    pub makes_disguise: bool,
+    pub nuke_maker: bool,
+}
+
+impl SpecialDetonationFlags {
+    /// The eleven flags of one warhead.
+    pub fn of(warhead: &crate::rules::warhead_type::WarheadType) -> Self {
+        Self {
+            mind_control: warhead.mind_control,
+            ivan_bomb: warhead.ivan_bomb,
+            electric_assault: warhead.electric_assault,
+            parasite: warhead.parasite,
+            temporal: warhead.temporal,
+            is_locomotor: warhead.is_locomotor,
+            airstrike: warhead.airstrike,
+            direct_rocker: warhead.direct_rocker,
+            bomb_disarm: warhead.bomb_disarm,
+            makes_disguise: warhead.makes_disguise,
+            nuke_maker: warhead.nuke_maker,
+        }
+    }
+}
+
+/// Target-side context the native chain consults *inside* an arm predicate.
+///
+/// Only `DirectRocker` reads it. `0x0046979c`/`0x004697aa` load the bullet's
+/// raw `+0x10c` target and call `What_Am_I` through vtable `+0x2c`; a null
+/// target or any RTTI id other than 1 (`UnitClass::What_Am_I @ 0x00746e20`)
+/// falls through to the BombDisarm test instead of claiming the detonation.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SpecialDetonationTarget {
+    /// `Target != 0 && Target->What_Am_I() == 1`.
+    pub is_unit: bool,
+}
+
+/// Resolve the one arm of `BulletClass::DetonateAtCoord @ 0x004690b0` that owns
+/// this impact. The `else if` order is native; see [`SpecialDetonationAction`].
+pub fn projectile_special_detonation_action(
+    flags: SpecialDetonationFlags,
+    target: SpecialDetonationTarget,
+) -> SpecialDetonationAction {
+    if flags.mind_control {
+        SpecialDetonationAction::MindControl
+    } else if flags.ivan_bomb {
+        SpecialDetonationAction::IvanBomb
+    } else if flags.electric_assault {
+        SpecialDetonationAction::ElectricAssault
+    } else if flags.parasite {
+        SpecialDetonationAction::Parasite
+    } else if flags.temporal {
+        SpecialDetonationAction::Temporal
+    } else if flags.is_locomotor {
+        SpecialDetonationAction::Locomotor
+    } else if flags.airstrike {
+        // Flag-gated, not conditional — see the `Airstrike` variant doc.
+        SpecialDetonationAction::Airstrike
+    } else if flags.direct_rocker && target.is_unit {
+        // The chain's only conditional arm: `0x004697a4` / `0x004697b2` fall
+        // through to the BombDisarm test at `0x004699c4`, not to the tail.
+        SpecialDetonationAction::DirectRocker
+    } else if flags.bomb_disarm {
+        SpecialDetonationAction::BombDisarm
+    } else if flags.makes_disguise {
+        SpecialDetonationAction::MakesDisguise
+    } else if flags.nuke_maker {
+        SpecialDetonationAction::NukeMaker
+    } else {
+        SpecialDetonationAction::OrdinaryDamage
+    }
+}
+
+/// Stable projectile payload transferred to combat only at detonation.
+/// Built by [`Self::new`]; the private multiplier keeps struct literals out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectilePayload {
+    /// Damage after firing-side modifiers, before target/warhead resolution.
+    pub base_damage: i32,
+    pub warhead: InternedId,
+    /// Construct4664C0's independent BulletType pointer (+AC).
+    projectile_type: Option<InternedId>,
+    /// Constructor466401 clears +130. Only SetWeaponType installs it;
+    /// shrapnel and direct falling-damage bullets leave it null.
+    installed_weapon: Option<InternedId>,
+    /// Construct4664E6's byte argument, independent of installed Weapon.
+    bright: bool,
+    /// Phobos `BulletExt::FirepowerMult`, the firer's firepower multiplier at
+    /// construction. `AirburstWeapon.ApplyFirepowerMult` scales child damage
+    /// with it, and airburst children carry it onward.
+    #[cfg(feature = "phobos")]
+    #[serde(default = "default_firepower_multiplier")]
+    firepower_multiplier: crate::util::native_x87::NativeF64Bits,
+    /// Phobos `BulletExt::Detonate`'s `pFiringHouse`: the House a simulated
+    /// detonation keeps when the shot's invoker Techno is already gone
+    /// (`WarheadTypeExt::DetonateAt`). Real bullets leave it unset and keep
+    /// [`crate::sim::projectile::Projectile::phobos_firer_house`].
+    #[cfg(feature = "phobos")]
+    #[serde(default)]
+    source_house: Option<InternedId>,
+    /// `BulletClass+0x150`, 1/256 units: `BulletClass::Construct` writes
+    /// [`Self::UNSCALED`] (`0x00466546`) and only a Prism master's supported
+    /// shot writes another value (`BuildingClass::ProcessDelayedFire`,
+    /// `0x004504C7`). It scales only the damage handed to `Apply_area_damage`
+    /// ([`Self::area_damage`]) and the DirectRocker arm's damage
+    /// (`0x004697FC..0x0046980C`, not ported: dormant in retail, see
+    /// [`SpecialDetonationAction::DirectRocker`]).
+    damage_multiplier: i32,
+    /// Ares BulletClass Range: the leptons left to a FireAt bullet of a
+    /// `Ranged=` type, from its weapon's `ProjectileRange=`
+    /// (TechnoClass_Fire_CreateBullet 1001ADE0, hook 0x6FE53F). `None` for
+    /// every other bullet, whose Range starts at INT_MAX
+    /// (BulletClass_Initialize_Ranged 1001A920, hook 0x4664FB) and never runs
+    /// out. Not part of the world hash.
+    #[serde(default)]
+    ares_range: Option<i32>,
+}
+
+#[cfg(feature = "phobos")]
+fn default_firepower_multiplier() -> crate::util::native_x87::NativeF64Bits {
+    crate::util::native_x87::NativeF64Bits::ONE
+}
+
+impl ProjectilePayload {
+    /// `BulletClass::Construct @ 0x004664C0` writes 256 (`0x00466546`).
+    pub const UNSCALED: i32 = 256;
+
+    /// A payload as `BulletClass::Construct` leaves it: unscaled damage.
+    pub fn new(
+        base_damage: i32,
+        warhead: InternedId,
+        projectile_type: Option<InternedId>,
+        bright: bool,
+    ) -> Self {
+        Self {
+            base_damage,
+            warhead,
+            projectile_type,
+            installed_weapon: None,
+            bright,
+            damage_multiplier: Self::UNSCALED,
+            #[cfg(feature = "phobos")]
+            firepower_multiplier: crate::util::native_x87::NativeF64Bits::ONE,
+            #[cfg(feature = "phobos")]
+            source_house: None,
+            ares_range: None,
+        }
+    }
+
+    pub fn projectile_type(&self) -> Option<InternedId> {
+        self.projectile_type
+    }
+
+    pub fn installed_weapon(&self) -> Option<InternedId> {
+        self.installed_weapon
+    }
+
+    pub fn bright(&self) -> bool {
+        self.bright
+    }
+
+    /// The FireAt bullet's Ares Range ([`Self::ares_range`]).
+    pub(crate) fn with_ares_range(self, ares_range: Option<i32>) -> Self {
+        Self { ares_range, ..self }
+    }
+
+    /// The sole +130 mutation, corresponding to SetWeaponType46B260.
+    /// Constructing another payload does not infer this reference from type.
+    pub fn with_installed_weapon(mut self, weapon: Option<InternedId>) -> Self {
+        self.installed_weapon = weapon;
+        self
+    }
+
+    /// The same payload carrying another `+0x150` multiplier, as a Prism
+    /// master's supported shot does.
+    pub fn with_damage_multiplier(self, damage_multiplier: i32) -> Self {
+        Self {
+            damage_multiplier,
+            ..self
+        }
+    }
+
+    pub fn damage_multiplier(&self) -> i32 {
+        self.damage_multiplier
+    }
+
+    /// The firer's firepower multiplier captured at construction.
+    #[cfg(feature = "phobos")]
+    pub const fn firepower_multiplier(&self) -> crate::util::native_x87::NativeF64Bits {
+        self.firepower_multiplier
+    }
+
+    /// Carry another bullet's captured firepower multiplier, as Phobos's
+    /// airburst children do.
+    #[cfg(feature = "phobos")]
+    pub fn with_firepower_multiplier(
+        mut self,
+        firepower_multiplier: crate::util::native_x87::NativeF64Bits,
+    ) -> Self {
+        self.firepower_multiplier = firepower_multiplier;
+        self
+    }
+
+    /// The House a simulated detonation retains for its source-House
+    /// fallback (`BulletExt::Detonate`'s `pFiringHouse`).
+    #[cfg(feature = "phobos")]
+    pub fn source_house(&self) -> Option<InternedId> {
+        self.source_house
+    }
+
+    #[cfg(feature = "phobos")]
+    pub fn with_source_house(mut self, house: Option<InternedId>) -> Self {
+        self.source_house = house;
+        self
+    }
+
+    /// `BulletClass::DetonateAtCoord @ 0x004690B0` hands
+    /// `(+0x150 * +0x6C) >> 8` to `Apply_area_damage` (`0x00469A56..0x00469A66`:
+    /// `imul` wraps in 32 bits, then `sar 8`). The unported DirectRocker arm
+    /// scales its own damage the same way (`0x004697FC..0x0046980C`); every
+    /// other consumer, such as the explosion anim choice (`0x00469BBA`), reads
+    /// the raw damage.
+    pub fn area_damage(&self) -> i32 {
+        self.damage_multiplier.wrapping_mul(self.base_damage) >> 8
+    }
+}
+
+/// Presentation constructor receipt from ObjectType ART. This is emitted once
+/// by Object Unlimbo and is not persistent flight state or a simulation input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectileLineTrail {
+    pub color: [u8; 3],
+    pub decrement: i32,
+}
+
+impl ProjectileLineTrail {
+    pub(crate) fn from_type(
+        kind: &crate::rules::projectile_type::ProjectileType,
+        override_color: [u8; 3],
+    ) -> Option<Self> {
+        kind.use_line_trail.then_some(Self {
+            color: if override_color.iter().any(|&c| c != 0) {
+                override_color
+            } else {
+                kind.line_trail_color
+            },
+            decrement: kind.line_trail_color_decrement,
+        })
+    }
+}
+
+/// Immutable admission data for an ordinary, non-vertical projectile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectileSpawn {
+    /// Abstract constructor receipt, consumed before launch math.
+    pub native_unique_id: i32,
+    pub line_trail: Option<ProjectileLineTrail>,
+    /// BulletType+2F7 (`Flat`): Fire468B6D submits through GetLayer468B90,
+    /// selecting Surface when true and Air otherwise. The display owner retains
+    /// membership; this admission input is not a second live layer authority.
+    pub flat: bool,
+    pub source_id: u64,
+    /// Raw Bullet::Fire coordinate, retained as FireCoord even when the
+    /// BulletType Unlimbo fixup raises the initial Object.Location.
+    pub origin: ProjectileCoord,
+    pub target: ProjectileTarget,
+    /// Target coordinate captured when the weapon fires. Non-homing shots keep
+    /// this destination; homing shots replace it from the live target table.
+    pub initial_target_position: ProjectileCoord,
+    pub payload: ProjectilePayload,
+    /// The bullet's CURRENT speed in leptons per frame — native's
+    /// `ftol(|velocity|)`, not the weapon's `Speed=`. `TechnoClass::FireAt
+    /// @ 0x006FEA3A` uses scalar1 for `ROT > 0` or `Vertical` only when
+    /// `RadialFireSegments=0`; a nonzero value retains its clamped scalar.
+    /// `BulletClass::Fire @ 0x00468B2C` renormalises a `ROT > 0` bullet's
+    /// vector to magnitude 1.0 regardless; `Speed=` only becomes the ceiling
+    /// stored at `Bullet+0x110`. Non-homing, non-vertical bullets do keep the
+    /// launch speed here, clamped to `dist/2` at `0x006FE9FE`.
+    pub speed_leptons_per_frame: u16,
+    pub velocity: ProjectileVelocity,
+    pub trajectory: ProjectileTrajectory,
+    /// Present only for a `BulletTypeClass::ROT` guided flight.
+    pub guidance: Option<ProjectileGuidance>,
+    pub visual: ProjectileVisualState,
+    /// Signed proximity-only delay supplied to Fire; impacts bypass this gate.
+    pub arm_frames: i32,
+    /// Optional fuse duration; zero means the fuse detonates on this advance.
+    pub fuse_frames: Option<u16>,
+    /// `ROT > 0 || Ranged` admits the native closest-approach fuse helper.
+    pub ranged_fuse: bool,
+    /// Only homing projectiles update their destination from a live target.
+    pub tracks_target: bool,
+    pub target_expiry: TargetExpiryPolicy,
+    pub collision: ProjectileCollisionPolicy,
+}
+
+/// Persistent state corresponding to one native `BulletClass` instance.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Projectile {
+    id: u64,
+    native_unique_id: i32,
+    /// LogicClass membership is reconstructed from the serialized mixed order.
+    #[serde(skip)]
+    in_logic_vector: bool,
+    source_id: u64,
+    position: ProjectileCoord,
+    /// Bullet +134 and +140 are captured by Fire 4686A5/468722 and never
+    /// replaced by the live homing target or proximity detector reference.
+    launch_origin: ProjectileCoord,
+    launch_target: ProjectileCoord,
+    /// Bullet+14C: packed committed cell from Fire or the preceding AI tail.
+    previous_cell: (i16, i16),
+    target: ProjectileTarget,
+    last_target_position: ProjectileCoord,
+    payload: ProjectilePayload,
+    speed_leptons_per_frame: u16,
+    velocity: ProjectileVelocity,
+    trajectory: ProjectileTrajectory,
+    guidance: Option<ProjectileGuidance>,
+    visual: ProjectileVisualState,
+    /// Bullet+C4/CC: global frame anchor and signed proximity delay.
+    arm_timer: crate::sim::timer::CdTimer,
+    fuse_frames_remaining: Option<u16>,
+    ranged_fuse: bool,
+    /// The ProximityDetector's reference (`+0xB8 + 0x18` = `+0xD0`), which
+    /// Fire's `Setup` (`0x00468A80..0x00468A93`, `0x004E1130`) takes from the
+    /// target coordinate Fire kept, as a `FlakScatter=` Inviso bullet's
+    /// placement moved it ([`ProjectileStore::fire_inviso`]). Check measures
+    /// to it and the impact ladder reads it; nothing moves it after Fire.
+    proximity_reference: ProjectileCoord,
+    last_distance_half: i32,
+    tracks_target: bool,
+    target_expiry: TargetExpiryPolicy,
+    collision: ProjectileCollisionPolicy,
+    /// Bullet `+0x8C`: FireAt copies the target's OnBridge onto an `Inviso=`
+    /// bullet (`0x006FF08B..0x006FF0B0`); every other bullet keeps the
+    /// constructor's false. `ObjectClass::GetHeight @ 0x005F5F40` then
+    /// measures from the bridge deck.
+    #[serde(default)]
+    on_bridge: bool,
+    /// Bullet `+0x114`: `BulletClass::Construct @ 0x004664C0` keeps its
+    /// Owner's House colour scheme for a `FirersPalette=` type
+    /// (`0x00466519..0x0046653B`; -1 otherwise), which the draw selects
+    /// (`0x004683A1`). VERA keeps that House; the presentation maps it to its
+    /// scheme. Written by [`Simulation::construct_bullet_scheme`].
+    ///
+    /// [`Simulation::construct_bullet_scheme`]: crate::sim::world::Simulation::construct_bullet_scheme
+    #[serde(default)]
+    firer_house: Option<InternedId>,
+    /// Phobos `BulletExt::FirerHouse`, set by `BulletExt::InitializeState`
+    /// (`0x466556`): the Owner Techno's House at construction, kept after the
+    /// owner expires. Independent of the palette-only `firer_house` above.
+    /// Written by [`Simulation::construct_bullet_scheme`].
+    ///
+    /// [`Simulation::construct_bullet_scheme`]: crate::sim::world::Simulation::construct_bullet_scheme
+    #[cfg(feature = "phobos")]
+    #[serde(default)]
+    phobos_firer_house: Option<InternedId>,
+    /// Ares BulletExt `+0x8` NukeSW: the superweapon type whose nuke this
+    /// bullet is, set by SW_NuclearMissile::Activate (10072FF0), the silo's
+    /// take-off hook (44CB4C, 10036660) and NukeMaker's propagation (46B423,
+    /// 10036930); read by NukeMaker (46B371) and the impact hook (467E59).
+    #[serde(default)]
+    ares_nuke_sw: Option<InternedId>,
+    /// Bullet `+0x158`: set at a `NUKE` impact (`0x00467F3C`), cleared when
+    /// the wait ends (`0x0046676A`).
+    #[serde(default)]
+    awaiting_anim: bool,
+    /// Bullet `+0x154`: the anim the impact constructed (`0x00467F36`).
+    #[serde(default)]
+    awaited_anim: Option<AnimId>,
+}
+
+impl Projectile {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_arm_timer_for_test(&mut self, value: crate::sim::timer::CdTimer) {
+        self.arm_timer = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_in_logic_vector_for_test(&mut self, value: bool) {
+        self.in_logic_vector = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_last_distance_half_for_test(&mut self, value: i32) {
+        self.last_distance_half = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_on_bridge_for_test(&mut self, value: bool) {
+        self.on_bridge = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_payload_for_test(&mut self, value: ProjectilePayload) {
+        self.payload = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_position_for_test(&mut self, value: ProjectileCoord) {
+        self.position = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_previous_cell_for_test(&mut self, value: (i16, i16)) {
+        self.previous_cell = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_proximity_reference_for_test(&mut self, value: ProjectileCoord) {
+        self.proximity_reference = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_source_id_for_test(&mut self, value: u64) {
+        self.source_id = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_speed_leptons_per_frame_for_test(&mut self, value: u16) {
+        self.speed_leptons_per_frame = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_target_for_test(&mut self, value: ProjectileTarget) {
+        self.target = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_velocity_for_test(&mut self, value: ProjectileVelocity) {
+        self.velocity = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn collision_mut_for_test(&mut self) -> &mut ProjectileCollisionPolicy {
+        &mut self.collision
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn guidance_mut_for_test(&mut self) -> &mut Option<ProjectileGuidance> {
+        &mut self.guidance
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn velocity_mut_for_test(&mut self) -> &mut ProjectileVelocity {
+        &mut self.velocity
+    }
+
+    /// LogicClass membership: RegisterObject sets it (`0x0055BAC6`),
+    /// UnregisterObject clears it (`0x0055BB27`). Only the logic vector's
+    /// owner writes it, and a load rebuilds it from the saved vector.
+    pub(crate) fn mark_logic_membership(&mut self, member: bool) {
+        self.in_logic_vector = member;
+    }
+
+    pub const fn id(&self) -> u64 {
+        self.id
+    }
+
+    pub const fn native_unique_id(&self) -> i32 {
+        self.native_unique_id
+    }
+
+    pub const fn in_logic_vector(&self) -> bool {
+        self.in_logic_vector
+    }
+
+    pub const fn source_id(&self) -> u64 {
+        self.source_id
+    }
+
+    pub const fn position(&self) -> ProjectileCoord {
+        self.position
+    }
+
+    pub const fn launch_origin(&self) -> ProjectileCoord {
+        self.launch_origin
+    }
+
+    pub const fn launch_target(&self) -> ProjectileCoord {
+        self.launch_target
+    }
+
+    pub const fn previous_cell(&self) -> (i16, i16) {
+        self.previous_cell
+    }
+
+    pub const fn target(&self) -> ProjectileTarget {
+        self.target
+    }
+
+    pub const fn last_target_position(&self) -> ProjectileCoord {
+        self.last_target_position
+    }
+
+    pub const fn payload(&self) -> ProjectilePayload {
+        self.payload
+    }
+
+    pub const fn speed_leptons_per_frame(&self) -> u16 {
+        self.speed_leptons_per_frame
+    }
+
+    pub const fn velocity(&self) -> ProjectileVelocity {
+        self.velocity
+    }
+
+    pub const fn trajectory(&self) -> ProjectileTrajectory {
+        self.trajectory
+    }
+
+    pub const fn guidance(&self) -> Option<ProjectileGuidance> {
+        self.guidance
+    }
+
+    pub const fn visual(&self) -> &ProjectileVisualState {
+        &self.visual
+    }
+
+    pub const fn arm_timer(&self) -> &crate::sim::timer::CdTimer {
+        &self.arm_timer
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn arm_timer_mut_for_test(&mut self) -> &mut crate::sim::timer::CdTimer {
+        &mut self.arm_timer
+    }
+
+    pub const fn fuse_frames_remaining(&self) -> Option<u16> {
+        self.fuse_frames_remaining
+    }
+
+    pub const fn ranged_fuse(&self) -> bool {
+        self.ranged_fuse
+    }
+
+    pub const fn proximity_reference(&self) -> ProjectileCoord {
+        self.proximity_reference
+    }
+
+    pub const fn last_distance_half(&self) -> i32 {
+        self.last_distance_half
+    }
+
+    pub const fn tracks_target(&self) -> bool {
+        self.tracks_target
+    }
+
+    pub const fn target_expiry(&self) -> TargetExpiryPolicy {
+        self.target_expiry
+    }
+
+    pub const fn collision(&self) -> ProjectileCollisionPolicy {
+        self.collision
+    }
+
+    pub const fn on_bridge(&self) -> bool {
+        self.on_bridge
+    }
+
+    /// The ids [`ProjectileStore::pointer_expired`] compares: the source
+    /// (Owner `+0xB0`), target object (`+0x10C`) and awaited Anim (`+0x154`). A source already
+    /// `RAD_NO_ATTACKER` stays so, which changes nothing. VERA-only: feeds the
+    /// pointer-expiry listener index (`ExpiryListeners`); a field that
+    /// callback compares must be named here too.
+    pub(crate) fn expiry_names(&self) -> [Option<u64>; 3] {
+        [
+            (self.source_id != crate::sim::combat::RAD_NO_ATTACKER).then_some(self.source_id),
+            self.target.object_id(),
+            self.awaited_anim,
+        ]
+    }
+
+    /// The House whose colour scheme draws a `FirersPalette=` bullet
+    /// (`+0x114`); `None` is native's -1.
+    pub fn firer_house(&self) -> Option<InternedId> {
+        self.firer_house
+    }
+
+    /// Phobos `BulletExt::FirerHouse`: the owner's House retained at
+    /// construction, independent of the palette-only `firer_house`.
+    #[cfg(feature = "phobos")]
+    pub fn phobos_firer_house(&self) -> Option<InternedId> {
+        self.phobos_firer_house
+    }
+
+    /// Ares BulletExt NukeSW.
+    pub(crate) fn ares_nuke_sw(&self) -> Option<InternedId> {
+        self.ares_nuke_sw
+    }
+
+    /// Waiting on its anim after a `NUKE` impact (`+0x158`); the draw skips
+    /// such a bullet (`BulletClass::DrawSHPOrVoxel`, `0x004680F6`).
+    pub fn awaiting_anim(&self) -> bool {
+        self.awaiting_anim
+    }
+
+    /// The anim a waiting bullet holds (`+0x154`).
+    pub fn awaited_anim(&self) -> Option<AnimId> {
+        self.awaited_anim
+    }
+
+    /// `BulletClass::AI`'s `NUKE` block (`0x00467E53..0x00467F99`) for the
+    /// bullet at its impact Location, `candidate` the coordinate its flight
+    /// step committed. Another warhead (strcmpi, `0x00467E5E`) answers none.
+    /// A `NUKE` bullet below the ground rises to it (`0x00467E6B..0x00467E81`)
+    /// and, when the `NUKEBALL` type exists, waits (`+0x158`,
+    /// `0x00467F3C`) with the tail's cell (`0x00467FBA`) committed; the world
+    /// takes the middle steps (`0x00467E87..0x00467F2D`).
+    pub(crate) fn nuke_impact(
+        &mut self,
+        nuke: &NukeImpactContext<'_>,
+        terrain: Option<&ResolvedTerrainGrid>,
+        shared_cell_dummy: &SharedCellDummy,
+        candidate: ProjectileCoord,
+    ) -> Option<ProjectileNukeImpact> {
+        // Ares hook 467E59 (10036960) replaces the `NUKE` test for every
+        // bullet: a superweapon's bullet whose warhead is no NukeMaker rises
+        // to the ground; a flash or a PreImpactAnim makes the impact.
+        if let Some(ares) = nuke.ares {
+            let ball = ares(self.payload.warhead, self.ares_nuke_sw);
+            if !ball.sw_bullet && ball.flash.is_none() && !ball.pre_impact_anim {
+                return None;
+            }
+            if ball.sw_bullet {
+                self.position =
+                    raise_to_ground(self.position, terrain, shared_cell_dummy, self.on_bridge);
+            }
+            let waits = ball.pre_impact_anim;
+            if waits {
+                self.awaiting_anim = true;
+                self.awaited_anim = None;
+                self.previous_cell = ((candidate.x / 256) as i16, (candidate.y / 256) as i16);
+            }
+            return Some(ProjectileNukeImpact {
+                projectile_id: self.id,
+                waits,
+                ares: Some(ball),
+            });
+        }
+        if !nuke
+            .interner
+            .resolve(self.payload.warhead)
+            .eq_ignore_ascii_case(NUKE_WARHEAD)
+        {
+            return None;
+        }
+        self.position = raise_to_ground(self.position, terrain, shared_cell_dummy, self.on_bridge);
+        let waits = (nuke.nuke_ball_type)();
+        if waits {
+            self.awaiting_anim = true;
+            self.awaited_anim = None;
+            self.previous_cell = ((candidate.x / 256) as i16, (candidate.y / 256) as i16);
+        }
+        Some(ProjectileNukeImpact {
+            projectile_id: self.id,
+            waits,
+            ares: None,
+        })
+    }
+
+    /// The facts [`resolve_impact_coord`] reads, with the bullet at its
+    /// committed Location.
+    pub(crate) fn impact_ladder_bullet(&self, impact_flag: bool) -> ImpactLadderBullet {
+        ImpactLadderBullet {
+            location: self.position,
+            reference: self.proximity_reference,
+            impact_flag,
+            inaccurate: self.collision.inaccurate,
+            airburst: self.collision.explodes_airburst(),
+            arcing: self.collision.arcing,
+            homing: self.tracks_target,
+        }
+    }
+}
+
+/// Why a projectile reached its combat detonation handoff.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ProjectileDetonationReason {
+    ReachedTarget,
+    Fuse,
+    Collision,
+    TargetExpired,
+    /// `TechnoClass::Fire_Death_Weapon @ 0x0070D690` hands its bullet
+    /// straight to `DetonateAtCoord` (`0x0070D782`): one detonation, without
+    /// the BulletClass cluster loop and its draws.
+    DeathWeapon,
+    /// Phobos `BulletExt::Detonate` (an AttachEffect `ExpireWeapon`,
+    /// `RevengeWeapon` or `ReflectDamage` shot): the bullet is created at the
+    /// shot's coordinates and exploded at once, so it takes no cluster loop
+    /// but keeps its real impact coordinate.
+    AttachEffectShot,
+    /// A `NUKE` impact's wait ended: its anim is gone (`0x00466771`).
+    AnimEnded,
+    /// Phobos `ApplyCrit`'s `Crit.Warhead_FullDetonation` arm:
+    /// `WarheadTypeExt::DetonateAt` builds a bullet with no weapon type and
+    /// explodes it at the target (`Ext/WarheadType/Body.cpp:102..110`).
+    CritWarhead,
+}
+
+/// One deferred `BulletClass::Detonate` handoff for combat to apply.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectileDetonation {
+    pub projectile_id: u64,
+    pub source_id: u64,
+    pub target: ProjectileTarget,
+    pub impact: ProjectileCoord,
+    pub payload: ProjectilePayload,
+    pub reason: ProjectileDetonationReason,
+}
+
+/// A `NUKE` warhead's impact (`BulletClass::AI 0x00467E53`), the bullet on
+/// its clamped Location. The world flashes the screen and raises the radar
+/// event; when the bullet waits it constructs the anim and hands it to
+/// [`ProjectileStore::await_anim`]. Otherwise the bullet's detonation is in
+/// the same pass's result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ProjectileNukeImpact {
+    projectile_id: u64,
+    waits: bool,
+    /// The Ares impact hook's decision, when it made this impact.
+    ares: Option<AresNukeBall>,
+}
+
+/// What Ares's BulletClass impact hook (467E59, 10036960) decides for one
+/// bullet: `sw_bullet` for a superweapon's nuke (BulletExt NukeSW) whose
+/// warhead is no `NukeMaker=` (rise to the ground, the type's radar event
+/// while `SW.CreateRadarEvent`), the flash's frames (the warhead's
+/// `NukeFlash.Duration`, else 30 for a superweapon's bullet and none for
+/// another, kept only above 0 and while the type's `Light.Enabled`), and the
+/// warhead's `PreImpactAnim` to wait on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AresNukeBall {
+    pub(crate) sw_bullet: bool,
+    pub(crate) radar: bool,
+    pub(crate) flash: Option<i32>,
+    pub(crate) pre_impact_anim: bool,
+    pub(crate) nuke_sw: Option<InternedId>,
+}
+
+impl ProjectileNukeImpact {
+    pub(crate) fn projectile_id(self) -> u64 {
+        self.projectile_id
+    }
+
+    /// The `NUKEBALL` type exists (`0x00467EB6..0x00467ECA`): the bullet
+    /// waits on its anim.
+    pub(crate) fn waits(self) -> bool {
+        self.waits
+    }
+
+    /// The Ares impact hook's decision.
+    pub(crate) fn ares(self) -> Option<AresNukeBall> {
+        self.ares
+    }
+}
+
+/// What `BulletClass::AI`'s `NUKE` block and the wait it starts read
+/// outside the store.
+pub struct NukeImpactContext<'a> {
+    interner: &'a StringInterner,
+    nuke_ball_type: &'a dyn Fn() -> bool,
+    ares: Option<&'a dyn Fn(InternedId, Option<InternedId>) -> AresNukeBall>,
+}
+
+impl<'a> NukeImpactContext<'a> {
+    /// `interner` resolves the warhead IDs for the `NUKE` test;
+    /// `nuke_ball_type` answers whether `AnimTypeClass::FindIndex("NUKEBALL")
+    /// @ 0x00427CB0` finds a type (`0x00467EB1`), asked only at a `NUKE`
+    /// impact.
+    pub(crate) fn new(interner: &'a StringInterner, nuke_ball_type: &'a dyn Fn() -> bool) -> Self {
+        Self {
+            interner,
+            nuke_ball_type,
+            ares: None,
+        }
+    }
+
+    /// The Ares impact hook's decision for (warhead, BulletExt NukeSW).
+    pub(crate) fn with_ares(
+        self,
+        ares: &'a dyn Fn(InternedId, Option<InternedId>) -> AresNukeBall,
+    ) -> Self {
+        Self {
+            ares: Some(ares),
+            ..self
+        }
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+#[path = "projectile/trailer_tests.rs"]
+mod trailer_tests;
+
+/// A single Bullet AI visit paused after its waiting/visual prefix.
+///
+/// The world may construct the ordinary Trailer here while the Bullet remains
+/// in its registry and Logic slot. The continuation consumes this receipt once;
+/// neither phase is persistent state or a second scheduler.
+pub(crate) struct ProjectileAiHead {
+    id: u64,
+    phase: ProjectileAiPhase,
+}
+
+enum ProjectileAiPhase {
+    Waiting,
+    AnimEnded,
+    Flight(ProjectileCoord),
+}
+
+impl ProjectileStore {
+    /// Original Bullet466826..4668B8: a type's Trailer is constructed at the
+    /// pre-flight Object Location on a global signed-frame cadence. The Anim
+    /// constructor, not this producer, owns any identity/RNG consumption.
+    /// Native executable comparisons: tools/projectile_oracle/projectile_trailer.json.
+    pub(crate) fn trailer<'a>(
+        &self,
+        head: &ProjectileAiHead,
+        kind: &'a crate::rules::projectile_type::ProjectileType,
+        binary_frame: u32,
+    ) -> Option<(&'a str, ProjectileCoord)> {
+        let ProjectileAiPhase::Flight(position) = head.phase else {
+            return None;
+        };
+        let name = kind.trailer.as_deref()?;
+        // Original466826 checks Trailer before466834 reads the retained
+        // type's scaled delay. Its current Scalable flag does not gate this
+        // read; an override survives removal of the last enrolled Bullet.
+        let scaled = self
+            .get(head.id)
+            .and_then(|bullet| bullet.payload.projectile_type())
+            .map_or(0, |kind| self.scaled_spawn_delay(kind));
+        let delay = if scaled != 0 {
+            scaled
+        } else {
+            kind.spawn_delay
+        };
+        // gamemd's signed IDIVs of the frame (0x00466844 by the scaled
+        // delay, 0x0046687C by the type's) trap on `SpawnDelay=0` and on
+        // frame i32::MIN with a delay of -1, values only a map or mod can
+        // set. VERA carries on without a trailer for that visit.
+        let Some(remainder) = (binary_frame as i32).checked_rem(delay) else {
+            log::warn!("Bullet Trailer [{name}] not spawned: SpawnDelay={delay} cannot divide");
+            return None;
+        };
+        (remainder == 0).then_some((name, position))
+    }
+}
+
+/// Results from one stable-order projectile pass.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct ProjectileAdvanceResult {
+    pub detonations: Vec<ProjectileDetonation>,
+    pub expired: Vec<u64>,
+    nuke_impacts: Vec<ProjectileNukeImpact>,
+    /// A firestorm wall burnt the bullet (Ares hook `0x467B94`); it is in
+    /// `expired` too.
+    pub(crate) ares_firestormed: bool,
+}
+
+impl ProjectileAdvanceResult {
+    /// The `NUKE` impacts the pass reached, in order. The world takes their
+    /// middle steps before the pass's detonations
+    /// (`crate::sim::superweapon::nuke::impact`).
+    pub(crate) fn nuke_impacts(&self) -> &[ProjectileNukeImpact] {
+        &self.nuke_impacts
+    }
+}
+
+/// Serialized, stable-id ordered projectile collection.
+///
+/// Storage order is distinct from the world's live Logic vector. The world
+/// visits one registered Bullet at a time, including a newly appended shot
+/// later in the same object pass. Every `&mut Projectile` goes through the
+/// store, which notes it in a touch log.
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectileStore {
+    projectiles: BTreeMap<u64, Projectile>,
+    /// Original process vector89DE18: enrollment order, independently of
+    /// Bullet storage/Logic order. Duplicate InitScalable calls append twice.
+    scalable_members: Vec<u64>,
+    /// BulletType+2E8 runtime values, keyed by the retained type identity.
+    /// Missing is constructor zero; zero writes remove the redundant entry.
+    scaled_spawn_delays: BTreeMap<InternedId, i32>,
+    /// Which bullets may have changed since [`Self::take_touched`]. One
+    /// reader: the pointer-expiry listener index. Transient: never saved,
+    /// compared or hashed.
+    #[serde(skip)]
+    touched: TouchLogs<1>,
+}
+
+impl ProjectileStore {
+    /// Unit741439 calls InitScalable46B280 only for its non-null returned
+    /// Bullet whose CURRENT retained type is Scalable. Generic construction
+    /// and Fire do not enroll. No RNG/timer or per-Bullet cadence is added.
+    pub(crate) fn init_scalable(
+        &mut self,
+        id: u64,
+        kind: &crate::rules::projectile_type::ProjectileType,
+    ) {
+        let Some(type_id) = self
+            .get(id)
+            .and_then(|bullet| bullet.payload.projectile_type())
+        else {
+            return;
+        };
+        if !kind.scalable {
+            return;
+        }
+        self.scalable_members.push(id);
+        //46B2D6..46B302: signed count-5/clamp, signed IMUL division by3,
+        // then wrapping base addition. Consumed native threshold/overflow
+        // controls: projectile_trailer.json::scalable_controls.
+        let count =
+            i32::try_from(self.scalable_members.len()).expect("native scalable vector count");
+        let delay = kind
+            .spawn_delay
+            .wrapping_add(count.wrapping_sub(5).max(0) / 3);
+        self.set_scaled_spawn_delay(type_id, delay);
+    }
+
+    fn set_scaled_spawn_delay(&mut self, type_id: InternedId, delay: i32) {
+        if delay == 0 {
+            self.scaled_spawn_delays.remove(&type_id);
+        } else {
+            self.scaled_spawn_delays.insert(type_id, delay);
+        }
+    }
+
+    pub(crate) fn scaled_spawn_delay(&self, type_id: InternedId) -> i32 {
+        self.scaled_spawn_delays.get(&type_id).copied().unwrap_or(0)
+    }
+
+    /// Whether the scalable process vector (`0x0089DE18`) holds `id`.
+    pub(crate) fn scalable_enrolled(&self, id: u64) -> bool {
+        self.scalable_members.contains(&id)
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn scalable_members(&self) -> &[u64] {
+        &self.scalable_members
+    }
+
+    pub(crate) fn hash_scalable_runtime(&self, hasher: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        if !self.scalable_members.is_empty() || !self.scaled_spawn_delays.is_empty() {
+            b"bullet-scalable-runtime-v1".hash(hasher);
+            self.scalable_members.hash(hasher);
+            self.scaled_spawn_delays.hash(hasher);
+        }
+    }
+
+    pub(crate) fn validate_scalable_runtime(
+        &self,
+        interner: &crate::sim::intern::StringInterner,
+    ) -> Result<(), &'static str> {
+        for id in &self.scalable_members {
+            let Some(type_id) = self
+                .get(*id)
+                .and_then(|bullet| bullet.payload.projectile_type())
+            else {
+                return Err("scalable member must reference a stored typed Bullet");
+            };
+            if interner.try_resolve(type_id).is_none() {
+                return Err("scalable member type must resolve in the interner");
+            }
+        }
+        for (&type_id, &delay) in &self.scaled_spawn_delays {
+            if interner.try_resolve(type_id).is_none() {
+                return Err("scaled delay type must resolve in the interner");
+            }
+            if delay == 0 {
+                return Err("zero scaled delay must use the constructor default");
+            }
+        }
+        Ok(())
+    }
+
+    /// Normal native LoadContent67E739 clears the old scene; BulletLoad
+    /// 46AE70 does not reenroll loaded Bullets. BulletTypeSave46C730/Load
+    /// 46C6A0 preserve raw+2E8. Mechanical serde/Clone retain both states;
+    /// only the world's existing native-load boundary calls this method.
+    pub(crate) fn restore_scalable_after_load(&mut self) {
+        self.scalable_members.clear();
+    }
+
+    /// Bullet Load 46AE9C..46AEB0 starts both embedded timers at the
+    /// already-restored global frame with duration zero. Only C4/CC gates AI
+    /// through Check (4E11F0); the saved reference and watermark are kept.
+    pub(crate) fn restart_arm_timers_after_load(&mut self, frame: i32) {
+        for projectile in self.projectiles.values_mut() {
+            projectile.arm_timer.start(frame, 0);
+        }
+    }
+
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn len(&self) -> usize {
+        self.projectiles.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.projectiles.is_empty()
+    }
+
+    pub fn get(&self, id: u64) -> Option<&Projectile> {
+        self.projectiles.get(&id)
+    }
+
+    /// Re-read the authoritative fields at a DetonateAtCoord callback
+    /// boundary. The explicit impact and reason belong to the caller;
+    /// source/target may have changed during synchronous receiver callbacks.
+    /// Ares BulletClass_Detonate's neutering of an abducting bullet
+    /// (100536E0, hook 0x46920B): Health (`+0x6C`) and DamageMultiplier
+    /// (`+0x150`) zeroed, so the vanilla arms that follow deal nothing.
+    pub(crate) fn neuter(&mut self, id: u64) {
+        if let Some(bullet) = self.get_mut(id) {
+            bullet.payload.base_damage = 0;
+            bullet.payload.damage_multiplier = 0;
+        }
+    }
+
+    pub(crate) fn current_detonation(&self, request: ProjectileDetonation) -> ProjectileDetonation {
+        self.get(request.projectile_id).map_or(request, |bullet| {
+            detonation(bullet, request.impact, request.reason)
+        })
+    }
+
+    pub fn get_mut(&mut self, id: u64) -> Option<&mut Projectile> {
+        let stored = self.projectiles.len();
+        let projectile = self.projectiles.get_mut(&id)?;
+        self.touched.note(id, stored);
+        Some(projectile)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&u64, &Projectile)> {
+        self.projectiles.iter()
+    }
+
+    pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = (&u64, &mut Projectile)> {
+        self.touched.note_all();
+        self.projectiles.iter_mut()
+    }
+
+    pub(crate) fn remove(&mut self, id: u64) -> Option<Projectile> {
+        let removed = self.projectiles.remove(&id);
+        if removed.is_some() {
+            self.touched.note(id, self.projectiles.len());
+        }
+        removed
+    }
+
+    /// Take the touch log, leaving it empty.
+    pub(crate) fn take_touched(&mut self) -> Touched {
+        self.touched.take(0)
+    }
+
+    /// BulletClass::LoseTarget468430 changes only +10C. Its world query is
+    /// shared with PointerExpired468517..46859C; neither resets flight state.
+    pub(crate) fn lose_targets(&mut self, target_id: u64, replacement: ProjectileTarget) {
+        let stored = self.projectiles.len();
+        for (&id, projectile) in self.projectiles.iter_mut().rev() {
+            if projectile.target.object_id() == Some(target_id) {
+                projectile.target = replacement;
+                self.touched.note(id, stored);
+            }
+        }
+    }
+
+    /// Apply `BulletClass::PointerExpired @ 0x004684E0` to one stored Bullet,
+    /// or `None` when it is not stored: whether any retained reference changed,
+    /// and whether another scalable-list match remains after this callback's
+    /// first removal, when that arm was enabled. Once false, the same
+    /// broadcast can skip further scans; a disabled arm reports false
+    /// without scanning.
+    ///
+    /// Source, target and awaited Anim are independent arms: all matching
+    /// references change in the same synchronous callback. The projectile
+    /// itself remains stored and registered; repeated callbacks are no-ops.
+    pub(crate) fn pointer_expired(
+        &mut self,
+        projectile_id: u64,
+        expired_id: u64,
+        replacement_target: ProjectileTarget,
+        expired_scalable_bullet_uninit: bool,
+    ) -> Option<(bool, bool)> {
+        let projectile = self.get_mut(projectile_id)?;
+        let mut changed = false;
+        if projectile.source_id == expired_id {
+            changed |= expired_id != crate::sim::combat::RAD_NO_ATTACKER;
+            projectile.source_id = crate::sim::combat::RAD_NO_ATTACKER;
+        }
+        if projectile.target.object_id() == Some(expired_id) {
+            projectile.target = replacement_target;
+            changed = true;
+        }
+        // Original4685BE..4685C6, before the control gate: expiry clears
+        // +154 synchronously, but only the next AI clears wait byte+158.
+        if projectile.awaited_anim == Some(expired_id) {
+            projectile.awaited_anim = None;
+            changed = true;
+        }
+        //4685CC..46865D: only a PRESENT Bullet subscriber, control!=0,
+        // expired RTTI8/current type.Scalable removes its FIRST matching
+        // process-vector entry. Each subscriber can remove another duplicate;
+        // no remove-all/death scan or cadence recomputation belongs here.
+        if expired_scalable_bullet_uninit
+            && let Some(index) = self
+                .scalable_members
+                .iter()
+                .position(|&id| id == expired_id)
+        {
+            self.scalable_members.remove(index);
+            // The removed entry was the first match, so only its surviving
+            // suffix can hold another. Avoid rescanning known misses at the
+            // remaining Bullet subscribers in the same common broadcast.
+            return Some((
+                changed,
+                self.scalable_members[index..].contains(&expired_id),
+            ));
+        }
+        Some((changed, false))
+    }
+
+    /// Supply a constructed/in-flight Bullet boundary for a focused fixture.
+    /// Production launch goes through Simulation::admit_projectile, including
+    /// the BulletType's initial coordinate fixup.
+    // AbstractClass::Create_ID @ 0x00410230 obtains this identity from
+    // ScenarioClass::NextUniqueID @ 0x0068BCB0; the store never owns a second
+    // allocator.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn spawn(&mut self, id: u64, spawn: ProjectileSpawn) -> u64 {
+        self.spawn_at(id, 0, spawn, spawn.origin)
+    }
+
+    /// Constructor466380/Construct4664C0 before Fire: registered as an
+    /// Object/Bullet observer, still in Limbo with zero Location. Velocity is
+    /// unused until Fire; initialize its Rust representation to zero.
+    pub(crate) fn construct(
+        &mut self,
+        id: u64,
+        native_unique_id: i32,
+        binary_frame: u32,
+        source_id: u64,
+        target: ProjectileTarget,
+        payload: ProjectilePayload,
+    ) -> u64 {
+        let zero = ProjectileCoord::new(0, 0, 0);
+        assert!(
+            !self.projectiles.contains_key(&id),
+            "duplicate Bullet identity {id}"
+        );
+        self.touched.note(id, self.projectiles.len());
+        self.projectiles.insert(
+            id,
+            Projectile {
+                id,
+                native_unique_id,
+                in_logic_vector: false,
+                source_id,
+                position: zero,
+                launch_origin: zero,
+                launch_target: zero,
+                previous_cell: (-1, -1),
+                target,
+                last_target_position: zero,
+                payload,
+                speed_leptons_per_frame: 0,
+                velocity: ProjectileVelocity::new(0, 0, 0),
+                trajectory: ProjectileTrajectory::Straight,
+                guidance: None,
+                visual: ProjectileVisualState::new(0, 0, 0),
+                arm_timer: crate::sim::timer::CdTimer::started(binary_frame as i32, 0),
+                fuse_frames_remaining: None,
+                ranged_fuse: false,
+                proximity_reference: zero,
+                last_distance_half: 0,
+                tracks_target: false,
+                target_expiry: TargetExpiryPolicy::DetonateAtLastKnown,
+                collision: ProjectileCollisionPolicy::NONE,
+                on_bridge: false,
+                firer_house: None,
+                #[cfg(feature = "phobos")]
+                phobos_firer_house: None,
+                ares_nuke_sw: None,
+                awaiting_anim: false,
+                awaited_anim: None,
+            },
+        );
+        id
+    }
+
+    pub(crate) fn spawn_at(
+        &mut self,
+        id: u64,
+        binary_frame: u32,
+        spawn: ProjectileSpawn,
+        location: ProjectileCoord,
+    ) -> u64 {
+        self.construct(
+            id,
+            spawn.native_unique_id,
+            binary_frame,
+            spawn.source_id,
+            spawn.target,
+            spawn.payload,
+        );
+        // Fire468670 owns placement, motion and proximity initialization;
+        // direct detonations never execute this part of the lifetime.
+        let projectile = self.get_mut(id).expect("constructed Bullet");
+        projectile.position = location;
+        projectile.launch_origin = spawn.origin;
+        projectile.launch_target = spawn.initial_target_position;
+        projectile.previous_cell = ((spawn.origin.x / 256) as i16, (spawn.origin.y / 256) as i16);
+        projectile.last_target_position = spawn.initial_target_position;
+        projectile.speed_leptons_per_frame = spawn.speed_leptons_per_frame;
+        projectile.velocity = spawn.velocity;
+        projectile.trajectory = spawn.trajectory;
+        projectile.guidance = spawn.guidance;
+        projectile.visual = spawn.visual;
+        projectile.arm_timer =
+            crate::sim::timer::CdTimer::started(binary_frame as i32, spawn.arm_frames);
+        projectile.fuse_frames_remaining = spawn.fuse_frames;
+        projectile.ranged_fuse = spawn.ranged_fuse;
+        projectile.proximity_reference = spawn.initial_target_position;
+        // ProximitySetup4E1130 measures placed Location, not FireCoord.
+        projectile.last_distance_half =
+            proximity_initial_distance(location, spawn.initial_target_position);
+        projectile.tracks_target = spawn.tracks_target;
+        projectile.target_expiry = spawn.target_expiry;
+        projectile.collision = spawn.collision;
+        id
+    }
+
+    /// `0x00467F36`: the anim a waiting bullet holds (`+0x154`), or none
+    /// when none was constructed, which ends the wait at its next AI.
+    pub(crate) fn await_anim(&mut self, id: u64, anim: Option<AnimId>) {
+        if let Some(projectile) = self.get_mut(id) {
+            projectile.awaited_anim = anim;
+        }
+    }
+
+    /// Bullet `+0x114` as `BulletClass::Construct` leaves it.
+    pub(crate) fn set_firer_house(&mut self, id: u64, house: Option<InternedId>) {
+        if let Some(projectile) = self.get_mut(id) {
+            projectile.firer_house = house;
+        }
+    }
+
+    /// Ares hook 46670F (1001AC10): while a bullet waits on its anim, a
+    /// `PreImpactAnim.Moves` warhead's bullet takes the anim's coordinates as
+    /// its Location (written directly) and the cell there as its target.
+    pub(crate) fn follow_awaited_anim(
+        &mut self,
+        id: u64,
+        at: ProjectileCoord,
+        target: ProjectileTarget,
+    ) {
+        if let Some(projectile) = self.get_mut(id)
+            && projectile.awaiting_anim
+            && projectile.awaited_anim.is_some()
+        {
+            projectile.position = at;
+            projectile.target = target;
+        }
+    }
+
+    /// Ares BulletExt NukeSW's writers.
+    pub(crate) fn set_ares_nuke_sw(&mut self, id: u64, sw_type: Option<InternedId>) {
+        if let Some(projectile) = self.get_mut(id) {
+            projectile.ares_nuke_sw = sw_type;
+        }
+    }
+
+    /// Phobos `BulletExt::FirerHouse` at bullet initialization.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn set_phobos_firer_house(&mut self, id: u64, house: Option<InternedId>) {
+        if let Some(projectile) = self.get_mut(id) {
+            projectile.phobos_firer_house = house;
+        }
+    }
+
+    /// Phobos `BulletExt::InitializeState`'s `FirepowerMult`. A payload value
+    /// other than 1.0 came from FireAt's launch capture and is kept.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn set_phobos_firepower_multiplier_if_default(
+        &mut self,
+        id: u64,
+        value: crate::util::native_x87::NativeF64Bits,
+    ) {
+        if let Some(projectile) = self.get_mut(id)
+            && projectile.payload.firepower_multiplier
+                == crate::util::native_x87::NativeF64Bits::ONE
+        {
+            projectile.payload.firepower_multiplier = value;
+        }
+    }
+
+    /// Ares TechnoClass_Fire_FSW (`10024C00`) replaces only the Target
+    /// (`+0x10C`) of a bullet whose path crosses a firestorm wall.
+    pub(crate) fn ares_firestorm_retarget(&mut self, id: u64, target: ProjectileTarget) {
+        if let Some(projectile) = self.get_mut(id) {
+            projectile.target = target;
+        }
+    }
+
+    /// `BulletClass::Construct @ 0x004664C0`'s Owner (`+0xB0`) on a re-fired
+    /// bullet.
+    pub(crate) fn set_owner(&mut self, id: u64, owner: u64) {
+        if let Some(projectile) = self.get_mut(id) {
+            projectile.source_id = owner;
+        }
+    }
+
+    /// `AircraftClass::Fire_At @ 0x00415EE0`'s course for the bullet
+    /// TechnoClass::FireAt answered: its velocity (`+0xE8`)
+    /// ([`launch::aircraft_bullet_velocity`]), and the speed it implies.
+    pub fn redirect(&mut self, id: u64, velocity: ProjectileVelocity) {
+        if let Some(projectile) = self.get_mut(id) {
+            projectile.velocity = velocity;
+            projectile.speed_leptons_per_frame =
+                projectile_velocity_magnitude(velocity).clamp(0.0, f64::from(u16::MAX)) as u16;
+        }
+    }
+
+    /// `BulletClass::Fire @ 0x00468670` for an `Inviso=` BulletType
+    /// (`+0x29E`, `0x004688B7..0x00468A39`), after the common Unlimbo at the
+    /// launch source: the bullet stands on `placement`, the target coordinate
+    /// Fire kept, as a `FlakScatter=` bullet's placement moved it
+    /// (`0x0046897D`; the firestorm and cliff walks are dormant or
+    /// overwritten), its speed `+0x110` is 0, and its velocity is scaled by
+    /// `0.0 / |v|` (an all-zero vector first becoming `(100, 0, 0)`), which a
+    /// `ROT > 0` type then renormalises to `(1, 0, 0)` (`0x00468A98..0x00468B57`).
+    /// Setup takes the same coordinate as the proximity detector's reference
+    /// (`0x00468A80..0x00468A93`, `ProximityDetector::Setup @ 0x004E1130`), so
+    /// its starting distance is 0. FireAt then copies the target's OnBridge
+    /// (`0x006FF08B`).
+    pub(crate) fn fire_inviso(&mut self, id: u64, placement: ProjectileCoord, on_bridge: bool) {
+        let Some(projectile) = self.get_mut(id) else {
+            return;
+        };
+        projectile.position = placement;
+        projectile.speed_leptons_per_frame = 0;
+        projectile.velocity = if projectile.guidance.is_some() {
+            ProjectileVelocity::new(1, 0, 0)
+        } else {
+            ProjectileVelocity::new(0, 0, 0)
+        };
+        if let Some(guidance) = projectile.guidance.as_mut() {
+            guidance.max_speed = 0;
+        }
+        projectile.proximity_reference = placement;
+        projectile.last_distance_half = proximity_initial_distance(placement, placement);
+        projectile.on_bridge = on_bridge;
+    }
+
+    /// Test adapter for a supplied projectile-store boundary in stable-id order.
+    ///
+    /// `target_positions` must contain live entity targets in lepton space.
+    /// `terrain` supplies the current CellClass ground surface and live
+    /// structural bit for stable cell targets; omitted terrain supplies a flat
+    /// test surface. This adapter omits world Trailer construction, live Logic
+    /// ordering and the world's retirement transaction.
+    /// `collides_at` is a world-owned terrain/wall admission predicate for the
+    /// candidate next coordinate; ordinary object collision is not supplied.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn advance(
+        &mut self,
+        binary_frame: u32,
+        target_positions: &BTreeMap<u64, ProjectileCoord>,
+        terrain: Option<&ResolvedTerrainGrid>,
+        shared_cell_dummy: &SharedCellDummy,
+        mut collides_at: impl FnMut(&Projectile, ProjectileCoord) -> Option<ProjectileCollisionResponse>,
+    ) -> ProjectileAdvanceResult {
+        let ids: Vec<u64> = self.projectiles.keys().copied().collect();
+        let mut result = ProjectileAdvanceResult::default();
+        for id in ids {
+            let Some(mut advanced) = self.advance_one(
+                id,
+                binary_frame,
+                |id| target_positions.get(&id).copied(),
+                terrain,
+                shared_cell_dummy,
+                crate::rules::ruleset::GeneralRules::default().gravity,
+                false,
+                false,
+                crate::rules::ruleset::GeneralRules::default().safety_altitude,
+                |projectile, candidate, phase| match phase {
+                    ProjectileCollisionPhase::Ordinary { .. } => None,
+                    ProjectileCollisionPhase::Shared => collides_at(projectile, candidate),
+                    ProjectileCollisionPhase::ImpactLadder => None,
+                    ProjectileCollisionPhase::AresFirestorm => None,
+                },
+                None,
+            ) else {
+                continue;
+            };
+            result.detonations.append(&mut advanced.detonations);
+            result.expired.append(&mut advanced.expired);
+            result.nuke_impacts.append(&mut advanced.nuke_impacts);
+        }
+        for id in result.expired.iter().chain(
+            result
+                .detonations
+                .iter()
+                .map(|detonation| &detonation.projectile_id),
+        ) {
+            self.remove(*id);
+        }
+        result
+    }
+
+    /// Original Bullet466705..466822. No target or Cell query precedes the
+    /// optional Trailer constructor at the resulting Flight boundary.
+    /// Original46670F tests the retained pointer, without querying Anim
+    /// liveness. PointerExpired4685BE clears it at the Anim's retirement.
+    pub(crate) fn begin_ai_visit(&mut self, id: u64) -> Option<ProjectileAiHead> {
+        let projectile = self.get_mut(id)?;
+        let phase = if projectile.awaiting_anim {
+            if projectile.awaited_anim.is_some() {
+                ProjectileAiPhase::Waiting
+            } else {
+                projectile.awaiting_anim = false;
+                ProjectileAiPhase::AnimEnded
+            }
+        } else {
+            projectile.visual.advance();
+            ProjectileAiPhase::Flight(projectile.position)
+        };
+        Some(ProjectileAiHead { id, phase })
+    }
+
+    /// Test adapter joining the shared AI head and continuation without the
+    /// world's intervening Trailer constructor or retirement transaction. An
+    /// awaited pointer obeys [`Self::begin_ai_visit`]. Supplied coordinates serve every query;
+    /// world integration tests cover the separate target virtuals.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn advance_one(
+        &mut self,
+        id: u64,
+        binary_frame: u32,
+        mut target_position: impl FnMut(u64) -> Option<ProjectileCoord>,
+        terrain: Option<&ResolvedTerrainGrid>,
+        shared_cell_dummy: &SharedCellDummy,
+        rules_gravity: i32,
+        source_is_jumpjet: bool,
+        target_is_aircraft: bool,
+        safety_altitude: i32,
+        collides_at: impl FnMut(
+            &Projectile,
+            ProjectileCoord,
+            ProjectileCollisionPhase,
+        ) -> Option<ProjectileCollisionResponse>,
+        nuke: Option<&NukeImpactContext<'_>>,
+    ) -> Option<ProjectileAdvanceResult> {
+        let head = self.begin_ai_visit(id)?;
+        self.advance_after_head(
+            head,
+            binary_frame,
+            |target, _query| target.object_id().and_then(&mut target_position),
+            terrain,
+            shared_cell_dummy,
+            rules_gravity,
+            source_is_jumpjet,
+            target_is_aircraft,
+            safety_altitude,
+            false,
+            collides_at,
+            nuke,
+        )
+    }
+
+    pub(crate) fn advance_after_head(
+        &mut self,
+        head: ProjectileAiHead,
+        binary_frame: u32,
+        mut resolve_target_position: impl FnMut(
+            ProjectileTarget,
+            ProjectileTargetQuery,
+        ) -> Option<ProjectileCoord>,
+        terrain: Option<&ResolvedTerrainGrid>,
+        shared_cell_dummy: &SharedCellDummy,
+        rules_gravity: i32,
+        source_is_jumpjet: bool,
+        target_is_aircraft: bool,
+        safety_altitude: i32,
+        degenerates: bool,
+        mut collides_at: impl FnMut(
+            &Projectile,
+            ProjectileCoord,
+            ProjectileCollisionPhase,
+        ) -> Option<ProjectileCollisionResponse>,
+        nuke: Option<&NukeImpactContext<'_>>,
+    ) -> Option<ProjectileAdvanceResult> {
+        let mut result = ProjectileAdvanceResult::default();
+
+        let id = head.id;
+        let projectile = self.get_mut(id)?;
+        match head.phase {
+            ProjectileAiPhase::Waiting => return Some(result),
+            ProjectileAiPhase::AnimEnded => {
+                result.detonations.push(ladder_detonation(
+                    projectile,
+                    false,
+                    ProjectileDetonationReason::AnimEnded,
+                    &mut collides_at,
+                ));
+                return Some(result);
+            }
+            ProjectileAiPhase::Flight(_) => {}
+        }
+
+        let target_position = match projectile.target {
+            ProjectileTarget::Cell { rx, ry } => cell_target_coord(terrain, rx, ry),
+            // BulletClass::AI resolves a null AbstractClass target through
+            // the process-global zero CoordStruct before steering, fuse,
+            // collision, and reached-target decisions.
+            ProjectileTarget::None => ProjectileCoord::new(0, 0, 0),
+            ProjectileTarget::DummyCell => dummy_cell_target_coord(shared_cell_dummy),
+            // AI466B5D..466BAB feeds+A4 to guided steering. Fire's frozen
+            // reference and the later +48 fuse snap remain separate queries.
+            target @ (ProjectileTarget::Entity(_) | ProjectileTarget::Terrain(_)) => {
+                match resolve_target_position(
+                    target,
+                    if projectile.tracks_target {
+                        ProjectileTargetQuery::GuidanceAim
+                    } else {
+                        ProjectileTargetQuery::TargetAim
+                    },
+                ) {
+                    Some(position) => {
+                        if projectile.tracks_target {
+                            projectile.last_target_position = position;
+                        }
+                        projectile.last_target_position
+                    }
+                    None => match projectile.target_expiry {
+                        TargetExpiryPolicy::Expire => {
+                            result.expired.push(id);
+                            return Some(result);
+                        }
+                        // `Arm=` is NOT consulted here. The detonation
+                        // admission at `BulletClass::AI 0x00467C70` tests only
+                        // the impact flag and the proximity-fuse result; the
+                        // Arm counter lives inside `ProximityDetector::Check`
+                        // and gates that one result alone.
+                        TargetExpiryPolicy::DetonateAtLastKnown => {
+                            result.detonations.push(detonation(
+                                projectile,
+                                projectile.last_target_position,
+                                ProjectileDetonationReason::TargetExpired,
+                            ));
+                            return Some(result);
+                        }
+                    },
+                }
+            }
+        };
+
+        if let Some(fuse) = projectile.fuse_frames_remaining.as_mut() {
+            if *fuse == 0 {
+                result.detonations.push(detonation(
+                    projectile,
+                    projectile.position,
+                    ProjectileDetonationReason::Fuse,
+                ));
+                return Some(result);
+            }
+            *fuse -= 1;
+        }
+
+        let previous_position = projectile.position;
+        let previous_velocity = projectile.velocity;
+        // Native `local_198` — set by any arm that hits something. It is
+        // the only value besides the fuse that admits a detonation.
+        let mut impact_flag = false;
+        // Native carries one impact flag; VERA keeps the reason beside it
+        // purely as diagnostic provenance for the combat handoff.
+        let mut impact_reason = ProjectileDetonationReason::Collision;
+        // Native `local_190 == 2`: `FUN_00568350` says the new coordinate
+        // left the map, and `LAB_00467B7A` removes the bullet through
+        // `vtable+0x124(2)` and `ObjectClass::UnInit` with NO detonation.
+        let mut left_the_map = false;
+        let mut snap_impact: Option<ProjectileCoord> = None;
+        let mut near_target = false;
+
+        let mut ordinary_motion = None;
+        let mut candidate = if projectile.guidance.is_some() {
+            let step = homing::step(
+                projectile,
+                target_position,
+                binary_frame as i32,
+                target_is_aircraft,
+                safety_altitude,
+                terrain,
+                shared_cell_dummy,
+            );
+            impact_flag = step.impact;
+            impact_reason = step.reason;
+            step.candidate
+        } else {
+            match projectile.trajectory {
+                ProjectileTrajectory::Straight => {
+                    let candidate = step_toward(
+                        projectile.position,
+                        target_position,
+                        i32::from(projectile.speed_leptons_per_frame),
+                    );
+                    projectile.velocity = ProjectileVelocity::new(
+                        candidate.x - projectile.position.x,
+                        candidate.y - projectile.position.y,
+                        candidate.z - projectile.position.z,
+                    );
+                    candidate
+                }
+                ProjectileTrajectory::Ballistic => {
+                    let motion = ordinary_motion_candidate(
+                        projectile.position,
+                        projectile.velocity,
+                        rules_gravity,
+                        projectile.collision.floater,
+                        projectile.collision.gravity(),
+                    );
+                    let candidate = motion.candidate_coord();
+                    ordinary_motion = Some(motion);
+                    candidate
+                }
+                // ---- ARM A, `BulletClass::AI 0x004671E0`..`0x00467390` ----
+                ProjectileTrajectory::Vertical {
+                    detonation_altitude,
+                    acceleration,
+                    max_speed,
+                } => {
+                    projectile.velocity =
+                        vertical_velocity_ramp(projectile.velocity, acceleration, max_speed);
+                    // This legacy display/cache field is not the ramp's authority.
+                    projectile.speed_leptons_per_frame =
+                        projectile_velocity_magnitude(projectile.velocity)
+                            .clamp(0.0, f64::from(u16::MAX)) as u16;
+                    let step = projectile.velocity.integer_projection();
+                    let candidate = ProjectileCoord::new(
+                        projectile.position.x.wrapping_add(step.x),
+                        projectile.position.y.wrapping_add(step.y),
+                        projectile.position.z.wrapping_add(step.z),
+                    );
+                    // `0x00467334`: `DetonationAltitude` is compared
+                    // against the new WORLD z, not against an altitude
+                    // above ground. Then a negative altitude, then the
+                    // bridge-deck crossing test. No gravity is applied on
+                    // this arm at all.
+                    if candidate.z > detonation_altitude
+                        || previous_position.z.wrapping_sub(projectile_ground_z(
+                            terrain,
+                            shared_cell_dummy,
+                            previous_position,
+                        )) < 0
+                    {
+                        impact_flag = true;
+                    } else if let Some(surface) =
+                        bridge_surface_z(terrain, shared_cell_dummy, previous_position, candidate)
+                        && projectile_bridge_crossing(previous_position.z, candidate.z, surface)
+                            != ProjectileBridgeCrossing::None
+                    {
+                        impact_flag = true;
+                    }
+                    candidate
+                }
+            }
+        };
+
+        // Both ROT<1 arms enter the ordinary cell/nearest/map/slow tail.
+        // Early returns preserve Bullet+E8 at tail entry. Ordinary scratch
+        // gravity/reflection commits only at 467AB2; Vertical already
+        // committed its ramp at 4672A3..4672B4 and skips that copyback.
+        if projectile.guidance.is_none()
+            && let Some(ProjectileCollisionResponse::Ordinary {
+                candidate: selected,
+                velocity,
+                impact,
+                near_target: near,
+                left_map,
+            }) = collides_at(
+                projectile,
+                candidate,
+                ProjectileCollisionPhase::Ordinary {
+                    persistent_velocity: if matches!(
+                        projectile.trajectory,
+                        ProjectileTrajectory::Vertical { .. }
+                    ) {
+                        projectile.velocity
+                    } else {
+                        previous_velocity
+                    },
+                    motion: ordinary_motion.unwrap_or_else(|| {
+                        ProjectileCollisionMotion::from_coordinate(candidate, projectile.velocity)
+                    }),
+                },
+            )
+        {
+            candidate = selected;
+            projectile.velocity = velocity;
+            impact_flag |= impact;
+            near_target = near;
+            left_the_map = left_map;
+        } else if projectile.guidance.is_none()
+            && let Some(motion) = ordinary_motion
+        {
+            // Mapless store callbacks can omit the world tail; its normal
+            // fallthrough commits the scratch here without a second owner.
+            projectile.velocity = ProjectileVelocity::from_native(motion.velocity);
+        }
+
+        if left_the_map {
+            result.expired.push(id);
+            return Some(result);
+        }
+
+        // 467B9E commits the selected candidate before the shared probe.
+        // Every admitted impact bypasses 468BB0, irrespective of ROT.
+        let selected_candidate = snap_impact.unwrap_or(candidate);
+        // Ares BulletClass_Update_Ranged (1001AC90, hook 0x467B94), before
+        // that commit: a `Ranged=` bullet spends `F2I(DistanceFrom)` from its
+        // Location to the new one, and impacts once none is left. Only a
+        // game read the Ares way gives a bullet a Range, so no other asks.
+        if let Some(range) = projectile.payload.ares_range.as_mut() {
+            let square = |a: i32, b: i32| {
+                let delta = f64::from(a.wrapping_sub(b));
+                delta * delta
+            };
+            let distance = (square(selected_candidate.x, projectile.position.x)
+                + square(selected_candidate.y, projectile.position.y)
+                + square(selected_candidate.z, projectile.position.z))
+            .sqrt();
+            *range = range.wrapping_sub(crate::util::native_x87::X87Chop53::ftol_f64_low_masked(
+                distance,
+            ));
+            if *range <= 0 {
+                impact_flag = true;
+            }
+        }
+        projectile.position = selected_candidate;
+        // Ares BulletClass_Update_Ranged (1001AC90, hook 0x467B94), after
+        // the replicated SetLocation: a bullet the world burns in a firestorm
+        // wall's cell is UnInit'ed there, before any impact (0x467FBA). Only
+        // Ares code raises a firestorm, so the world answers no without one.
+        if collides_at(
+            projectile,
+            selected_candidate,
+            ProjectileCollisionPhase::AresFirestorm,
+        )
+        .is_some()
+        {
+            result.ares_firestormed = true;
+            result.expired.push(id);
+            return Some(result);
+        }
+        let collision_impact = (!impact_flag)
+            .then(|| {
+                collides_at(
+                    projectile,
+                    selected_candidate,
+                    ProjectileCollisionPhase::Shared,
+                )
+            })
+            .flatten()
+            .map(|response| match response {
+                ProjectileCollisionResponse::TargetZClamp(impact) => impact,
+                ProjectileCollisionResponse::AresFirestorm => {
+                    unreachable!("only the shared probe answers here")
+                }
+                ProjectileCollisionResponse::Ordinary { .. }
+                | ProjectileCollisionResponse::ImpactLadder(_) => {
+                    unreachable!("only the shared probe answers here")
+                }
+            });
+        if let Some(impact) = collision_impact {
+            impact_flag = true;
+            impact_reason = ProjectileDetonationReason::Collision;
+            snap_impact = Some(impact);
+        }
+
+        let mut impact = snap_impact.unwrap_or(candidate);
+        if impact_flag {
+            // `0x00467BF0..0x00467C06`, before the fuse. The setter does
+            // not rewrite the stack coordinate used below.
+            impact = raise_to_ground(impact, terrain, shared_cell_dummy, projectile.on_bridge);
+        }
+
+        // `ProximityDetector::Check @ 0x004E11F0`. The reference is the
+        // coordinate Fire's Setup froze, the Arm counter gates this result
+        // and nothing else. Dropping suppresses only detector-driven admission
+        // after Check, preserving its watermark and collision-side result.
+        let mut fuse_mode = 0;
+        if projectile.ranged_fuse && projectile.arm_timer.expired(binary_frame as i32) {
+            let distance =
+                proximity_check_distance(selected_candidate, projectile.proximity_reference);
+            let (mode, next_distance) =
+                ranged_fuse_distance_step(distance, projectile.last_distance_half);
+            projectile.last_distance_half = next_distance;
+            fuse_mode = mode;
+        }
+        // `0x00467C3C..0x00467C66`: Bullet+0xB0 is the live firer,
+        // whose type +0xD94 (JumpJet) changes overshoot mode 2 into 1.
+        // Pointer cleanup can clear the source between flight visits.
+        fuse_mode = projectile_fuse_mode(fuse_mode, source_is_jumpjet);
+
+        if !projectile_impact_admitted(impact_flag, fuse_mode, projectile.collision.dropping) {
+            // BulletClass::AI467C86..467CA4, gamemd: only the continuing
+            // flight reads current BulletType+2A6 and decrements Health+6C.
+            // Damage is the existing saved/hashed payload authority; impacts,
+            // early retirement and NUKE waits never enter this branch.
+            if degenerates && projectile.payload.base_damage > 5 {
+                projectile.payload.base_damage -= 1;
+            }
+            projectile.position = candidate;
+            projectile.previous_cell = ((candidate.x / 256) as i16, (candidate.y / 256) as i16);
+            return Some(result);
+        }
+
+        {
+            // `0x00467CA9..0x00467E4D`: a mode-1 fuse unconditionally
+            // selects target +0x48 after the Airburst/Inaccurate gates.
+            // Re-read a shared dummy here: earlier ground lookups may
+            // have stamped a different coordinate into that same target.
+            if (fuse_mode == 1 || near_target)
+                && !projectile.collision.airburst
+                && !projectile.collision.inaccurate
+            {
+                // +58 is fetched even in the unconditional mode-one arm.
+                let aim = match projectile.target {
+                    target @ (ProjectileTarget::Entity(_) | ProjectileTarget::Terrain(_)) => {
+                        resolve_target_position(target, ProjectileTargetQuery::TargetAim)
+                    }
+                    ProjectileTarget::Cell { rx, ry } => Some(cell_target_coord(terrain, rx, ry)),
+                    ProjectileTarget::DummyCell => Some(dummy_cell_target_coord(shared_cell_dummy)),
+                    ProjectileTarget::None => None,
+                };
+                let snap = aim.is_some_and(|aim| {
+                    projectile_final_snap_admitted(
+                        selected_candidate,
+                        aim,
+                        projectile.velocity,
+                        fuse_mode,
+                        near_target,
+                    )
+                });
+                let location = match projectile.target {
+                    _ if !snap => None,
+                    target @ (ProjectileTarget::Entity(_) | ProjectileTarget::Terrain(_)) => {
+                        resolve_target_position(target, ProjectileTargetQuery::GetCoords)
+                    }
+                    ProjectileTarget::Cell { rx, ry } => Some(cell_ground_coord(terrain, rx, ry)),
+                    ProjectileTarget::DummyCell => Some(dummy_cell_ground_coord(shared_cell_dummy)),
+                    ProjectileTarget::None => None,
+                };
+                if let Some(location) = location {
+                    impact = location;
+                }
+            }
+        }
+        let reason = if impact_flag {
+            impact_reason
+        } else {
+            ProjectileDetonationReason::Fuse
+        };
+        projectile.position = impact;
+        if let Some(nuke) = nuke
+            && let Some(nuke_impact) =
+                projectile.nuke_impact(nuke, terrain, shared_cell_dummy, candidate)
+        {
+            result.nuke_impacts.push(nuke_impact);
+            if nuke_impact.waits {
+                return Some(result);
+            }
+        }
+        // `0x00467FA2`: the AI hands its impact flag to the resolution
+        // ladder, which picks where the detonation lands.
+        result.detonations.push(ladder_detonation(
+            projectile,
+            impact_flag,
+            reason,
+            &mut collides_at,
+        ));
+        Some(result)
+    }
+}
+
+/// AI 467C70..467C84 preserves Check state even when Dropping suppresses admission.
+fn projectile_impact_admitted(impact: bool, detector_mode: i32, dropping: bool) -> bool {
+    impact || (!dropping && detector_mode != 0)
+}
+
+/// Detector result: 0 continues, 1 is within 0x20 half-distance, 2 passed nearby.
+pub fn ranged_fuse_distance_step(distance_fistp: i32, last_distance: i32) -> (i32, i32) {
+    let distance_half = (distance_fistp - (distance_fistp >> 31)) >> 1;
+    if distance_half < 0x20 {
+        (1, last_distance)
+    } else if distance_half < 0x100 && distance_half > last_distance {
+        (2, last_distance)
+    } else {
+        (0, distance_half)
+    }
+}
+
+/// `Math__ftol(sqrt(dx*dx + dy*dy + dz*dz))` — the truncating straight-line
+/// lepton distance native uses for the proximity fuse, the homing reach test
+/// and the closing-rate accumulator.
+pub(crate) fn coord_distance(a: ProjectileCoord, b: ProjectileCoord) -> i32 {
+    native_vector_magnitude([
+        a.x.wrapping_sub(b.x),
+        a.z.wrapping_sub(b.z),
+        a.y.wrapping_sub(b.y),
+    ]) as i32
+}
+
+/// Detector Init 4E11A9 evaluates (dx²+dz²)+dy², then returns ftol's low DWORD.
+fn proximity_initial_distance(a: ProjectileCoord, b: ProjectileCoord) -> i32 {
+    crate::util::native_x87::distance_3d_leptons([a.x, a.z, a.y], [b.x, b.z, b.y])
+}
+
+/// Detector Check 4E1241 instead evaluates (dx²+dy²)+dz².
+fn proximity_check_distance(a: ProjectileCoord, b: ProjectileCoord) -> i32 {
+    crate::util::native_x87::distance_3d_leptons([a.x, a.y, a.z], [b.x, b.y, b.z])
+}
+
+/// `CellClass::GetGroundHeight @ 0x00578080` at the original lepton XY,
+/// through [`query_ground_height`](crate::sim::movement::ground_pose::query_ground_height)
+/// on the canonical query: its shared-dummy fallback stamp is observable by a
+/// retained DummyCell target. Mapless fixtures read the shared dummy directly.
+pub(crate) fn projectile_ground_z(
+    terrain: Option<&ResolvedTerrainGrid>,
+    shared_cell_dummy: &SharedCellDummy,
+    coord: ProjectileCoord,
+) -> i32 {
+    let ground = if let Some(terrain) = terrain {
+        crate::sim::movement::ground_pose::query_ground_height(
+            &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
+            crate::sim::components::DriveCoord {
+                x: coord.x,
+                y: coord.y,
+                z: coord.z,
+            },
+        )
+    } else {
+        shared_cell_dummy.stamp_coord(coord.x / 256, coord.y / 256);
+        let snapshot = shared_cell_dummy.snapshot();
+        crate::util::lepton::ground_height_leptons(
+            snapshot.level as u8,
+            snapshot.slope_type,
+            coord.x,
+            coord.y,
+        )
+        .map_err(|error| format!("{error:?}"))
+    };
+    ground.expect("projectile ground probe requires a supported CellClass slope")
+}
+
+/// Object::GetHeight (0x005F5F40) and SetHeight (0x005F5FA0) use the bullet's
+/// retained OnBridge byte to select the surface. Mapless probes retain the
+/// same dummy as the ground-only query.
+pub(crate) fn projectile_surface_z(
+    terrain: Option<&ResolvedTerrainGrid>,
+    shared_cell_dummy: &SharedCellDummy,
+    coord: ProjectileCoord,
+    on_bridge: bool,
+) -> i32 {
+    if on_bridge && let Some(terrain) = terrain {
+        return crate::sim::movement::ground_pose::query_surface_z(
+            &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
+            crate::sim::components::DriveCoord {
+                x: coord.x,
+                y: coord.y,
+                z: coord.z,
+            },
+            true,
+        )
+        .expect("projectile surface probe requires a supported CellClass slope");
+    }
+    crate::sim::movement::ground_pose::z_at_height(
+        projectile_ground_z(terrain, shared_cell_dummy, coord),
+        0,
+        on_bridge,
+    )
+}
+
+/// BulletType virtual +6C @ 0x0046C4F0, called by ObjectUnlimbo5F4F88
+/// before SetLocation: a coordinate at/below ground is placed one lepton
+/// above it. The strict signed comparison has no Level or bridge-deck gate.
+/// Fire4686A2 separately retains the original coordinate in FireCoord+134.
+/// Native executable comparisons: projectile_trailer.json placement_controls.
+pub(crate) fn bullet_unlimbo_coord(
+    terrain: Option<&ResolvedTerrainGrid>,
+    shared_cell_dummy: &SharedCellDummy,
+    mut origin: ProjectileCoord,
+) -> ProjectileCoord {
+    let floor = projectile_ground_z(terrain, shared_cell_dummy, origin);
+    if origin.z <= floor {
+        origin.z = floor.wrapping_add(1);
+    }
+    origin
+}
+
+/// `BulletClass::AI 0x00466DB1..0x00466E6B`, with its already-computed
+/// distance, represented velocity and OLD ObjectClass height as inputs.
+/// The persistent velocity comes from the executed native-shaped guided
+/// step in homing.rs; this predicate reads its represented components.
+fn homing_impact_admission(
+    distance: i32,
+    velocity: ProjectileVelocity,
+    old_height: i32,
+    airburst: bool,
+    nonzero_target: bool,
+) -> (bool, bool) {
+    let half_speed = projectile_velocity_magnitude(velocity) * 0.5;
+    let impact = f64::from(distance) <= half_speed || old_height <= 0;
+    (
+        impact,
+        impact && old_height > 0 && !airburst && nonzero_target,
+    )
+}
+
+fn projectile_fuse_mode(detector_mode: i32, source_is_jumpjet: bool) -> i32 {
+    if source_is_jumpjet && detector_mode == 2 {
+        1
+    } else {
+        detector_mode
+    }
+}
+
+/// Common Bullet AI 467CEC..467E35. The midpoint's signed division occurs
+/// before subtracting target Z; replacing it with `(candidate-target)/2`
+/// differs on odd signed coordinates. The near-target bit divides the
+/// integer distance by three, and only then compares with max(128, 2|v|).
+pub(crate) fn projectile_final_snap_admitted(
+    candidate: ProjectileCoord,
+    target_aim: ProjectileCoord,
+    velocity: ProjectileVelocity,
+    fuse_mode: i32,
+    near_target: bool,
+) -> bool {
+    let midpoint = target_aim.z.wrapping_add(candidate.z) / 2;
+    let distance = coord_distance(
+        ProjectileCoord::new(candidate.x, candidate.y, midpoint),
+        target_aim,
+    );
+    let distance = if near_target { distance / 3 } else { distance };
+    fuse_mode == 1
+        || f64::from(distance) <= (projectile_velocity_magnitude(velocity) * 2.0).max(128.0)
+}
+
+/// Live Rules +16B8 or the Phobos `[Projectile] Gravity=` bits, with the Type
+/// +295 Floater override (4671B9/48ACF0).
+pub fn projectile_gravity(
+    rules_gravity: i32,
+    type_gravity: Option<crate::util::native_x87::NativeF64Bits>,
+    floater: bool,
+) -> crate::util::native_x87::NativeF64Bits {
+    use crate::util::native_x87::{NativeF64Bits, X87Chop53};
+    let gravity = match type_gravity {
+        Some(bits) => {
+            X87Chop53::load_f64(bits).expect("the Phobos Gravity= reader drops a non-finite value")
+        }
+        None => X87Chop53::load_i32(rules_gravity),
+    };
+    let gravity = if floater {
+        X87Chop53::mul(gravity, X87Chop53::load_f64(NativeF64Bits::HALF).unwrap())
+    } else {
+        gravity
+    };
+    X87Chop53::store_f64(gravity).expect("finite projectile gravity")
+}
+
+/// Ordinary 46718F..467494: live gravity scratch, double coordinate sums,
+/// then a separate integer projection. Persistent velocity commits in the tail.
+fn ordinary_motion_candidate(
+    position: ProjectileCoord,
+    velocity: ProjectileVelocity,
+    rules_gravity: i32,
+    floater: bool,
+    type_gravity: Option<crate::util::native_x87::NativeF64Bits>,
+) -> ProjectileCollisionMotion {
+    use crate::util::native_x87::X87Chop53;
+    let mut motion = ProjectileCollisionMotion::from_coordinate(position, velocity);
+    // 4671B9/48ACF0 select live gravity, then 467415/467429 store the
+    // subtraction only in the ordinary scratch. Phobos
+    // `BulletClass_AI_ApplyGravity` replaces only the 4671B9 FILD: a Floater
+    // shell still drops that value at 4671C3 and calls 48ACF0 (Rules x 0.5),
+    // so its type `Gravity=` never reaches the flight step.
+    let type_gravity = type_gravity.filter(|_| !floater);
+    let gravity = projectile_gravity(rules_gravity, type_gravity, floater);
+    motion.velocity[2] = X87Chop53::store_f64(X87Chop53::sub(
+        X87Chop53::load_f64(motion.velocity[2]).expect("finite velocity"),
+        X87Chop53::load_f64(gravity).expect("finite gravity"),
+    ))
+    .expect("finite gravity-adjusted velocity");
+    for (position, velocity) in motion.candidate.iter_mut().zip(motion.velocity) {
+        *position = X87Chop53::store_f64(X87Chop53::add(
+            X87Chop53::load_f64(*position).expect("finite position"),
+            X87Chop53::load_f64(velocity).expect("finite velocity"),
+        ))
+        .expect("finite ordinary candidate");
+    }
+    motion
+}
+
+#[cfg(any(test, feature = "test-support"))]
+#[test]
+fn original_ordinary_repeated_live_gravity_preserves_both_coordinate_versions() {
+    use crate::util::native_x87::NativeF64Bits;
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/ordinary_motion.json",
+    ))
+    .unwrap();
+    for (index, row) in rows.iter().enumerate() {
+        let mut velocity = ProjectileVelocity::from_native(std::array::from_fn(|i| {
+            NativeF64Bits::from_bits(
+                u64::from_str_radix(row["input_bits"][i].as_str().unwrap(), 16).unwrap(),
+            )
+        }));
+        let o = &row["origin"];
+        let mut position = ProjectileCoord::new(
+            o[0].as_i64().unwrap() as i32,
+            o[1].as_i64().unwrap() as i32,
+            o[2].as_i64().unwrap() as i32,
+        );
+        for (frame, expected) in row["frames"].as_array().unwrap().iter().enumerate() {
+            let motion = ordinary_motion_candidate(
+                position,
+                velocity,
+                row["gravity_sequence"][frame].as_i64().unwrap() as i32,
+                row["floater"].as_bool().unwrap(),
+                None,
+            );
+            for (name, values) in [
+                ("bits", motion.velocity),
+                ("candidate_bits", motion.candidate),
+            ] {
+                let actual = values.map(|v| format!("{:016x}", v.bits()));
+                let expected_bits: Vec<_> = expected[name]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| v.as_str().unwrap())
+                    .collect();
+                assert_eq!(
+                    actual.as_slice(),
+                    expected_bits.as_slice(),
+                    "native ordinary row{index} frame{frame} {name}"
+                );
+            }
+            let expected_position: [i32; 3] =
+                std::array::from_fn(|i| expected["candidate"][i].as_i64().unwrap() as i32);
+            position = motion.candidate_coord();
+            assert_eq!(
+                [position.x, position.y, position.z],
+                expected_position,
+                "native ordinary row{index} frame{frame}"
+            );
+            velocity = ProjectileVelocity::from_native(motion.velocity);
+        }
+    }
+}
+
+/// Vertical AI 4671E0..4672B4 scales Bullet+E8 in place. The first magnitude
+/// uses (x*x+y*y)+z*z; the denominator uses (z*z+y*y)+x*x. Each native store
+/// and the approximate sqrt's f32 return are retained explicitly.
+fn vertical_velocity_ramp(
+    velocity: ProjectileVelocity,
+    acceleration: i32,
+    max_speed: i32,
+) -> ProjectileVelocity {
+    use crate::util::native_x87::{NativeF64Bits, X87Chop53};
+    let speed = X87Chop53::ftol_i64(
+        X87Chop53::load_f64(NativeF64Bits::from_bits(
+            projectile_velocity_magnitude(velocity).to_bits(),
+        ))
+        .unwrap(),
+    )
+    .expect("finite native Vertical speed conversion") as i32;
+    if speed >= max_speed {
+        return velocity;
+    }
+    let next_speed = speed.wrapping_add(acceleration);
+    let mut components = velocity.native();
+    if components
+        .iter()
+        .all(|component| component.bits() & 0x7fff_ffff_ffff_ffff == 0)
+    {
+        components[0] = NativeF64Bits::from_bits(100.0f64.to_bits());
+    }
+    let denominator =
+        projectile_velocity_magnitude_double([components[2], components[1], components[0]]);
+    let scale = X87Chop53::div(
+        X87Chop53::load_i32(next_speed),
+        X87Chop53::load_f64(NativeF64Bits::from_bits(denominator.to_bits())).unwrap(),
+    )
+    .expect("nonzero native Vertical denominator");
+    ProjectileVelocity::from_native(components.map(|component| {
+        X87Chop53::store_f64(X87Chop53::mul(
+            scale,
+            X87Chop53::load_f64(component).expect("finite Vertical velocity"),
+        ))
+        .expect("finite ramped Vertical velocity")
+    }))
+}
+
+#[cfg(any(test, feature = "test-support"))]
+#[test]
+fn original_vertical_repeated_motion_preserves_binary64_and_integer_add_order() {
+    use crate::util::native_x87::NativeF64Bits;
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/vertical_motion.json",
+    ))
+    .unwrap();
+    for (index, row) in rows.iter().enumerate() {
+        let mut velocity = ProjectileVelocity::from_native(std::array::from_fn(|i| {
+            NativeF64Bits::from_bits(
+                u64::from_str_radix(row["input_bits"][i].as_str().unwrap(), 16).unwrap(),
+            )
+        }));
+        let mut position: [i32; 3] =
+            std::array::from_fn(|i| row["origin"][i].as_i64().unwrap() as i32);
+        for (frame, expected) in row["frames"].as_array().unwrap().iter().enumerate() {
+            velocity = vertical_velocity_ramp(
+                velocity,
+                row["acceleration"].as_i64().unwrap() as i32,
+                row["maximum"].as_i64().unwrap() as i32,
+            );
+            let step = velocity.integer_projection();
+            for (position, step) in position.iter_mut().zip([step.x, step.y, step.z]) {
+                *position = position.wrapping_add(step);
+            }
+            let actual_bits = velocity.native().map(|v| format!("{:016x}", v.bits()));
+            let expected_bits: Vec<_> = expected["bits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap())
+                .collect();
+            assert_eq!(
+                actual_bits.as_slice(),
+                expected_bits.as_slice(),
+                "native Vertical row{index} frame{frame}"
+            );
+            let expected_position: [i32; 3] =
+                std::array::from_fn(|i| expected["candidate"][i].as_i64().unwrap() as i32);
+            assert_eq!(
+                position, expected_position,
+                "native Vertical row{index} frame{frame}"
+            );
+        }
+    }
+}
+
+pub(crate) fn projectile_velocity_magnitude(velocity: ProjectileVelocity) -> f64 {
+    projectile_velocity_magnitude_double(velocity.native())
+}
+
+fn native_vector_magnitude(ordered_components: [i32; 3]) -> f64 {
+    use crate::util::native_x87::NativeF64Bits;
+    projectile_velocity_magnitude_double(
+        ordered_components.map(|value| NativeF64Bits::from_bits(f64::from(value).to_bits())),
+    )
+}
+
+pub(crate) fn projectile_velocity_magnitude_double(
+    components: [crate::util::native_x87::NativeF64Bits; 3],
+) -> f64 {
+    use crate::util::native_x87::{X87Chop53, sqrt_approx_f32};
+    let terms = components.map(|component| {
+        let value = X87Chop53::load_f64(component).expect("finite velocity");
+        X87Chop53::mul(value, value)
+    });
+    let squared = X87Chop53::add(X87Chop53::add(terms[0], terms[1]), terms[2]);
+    let bits = sqrt_approx_f32(squared).expect("finite represented projectile vector");
+    f64::from(f32::from_bits(bits.bits()))
+}
+
+pub(crate) fn projectile_cell_at<'a>(
+    terrain: Option<&'a ResolvedTerrainGrid>,
+    shared_cell_dummy: &SharedCellDummy,
+    coord: ProjectileCoord,
+) -> crate::sim::cell_rect::CellRef<'a> {
+    use crate::sim::cell_rect::{CellRef, get_cellclass_fallback_leptons};
+    if terrain.is_some() {
+        get_cellclass_fallback_leptons(terrain, coord.x, coord.y)
+    } else {
+        shared_cell_dummy.stamp_coord(coord.x / 256, coord.y / 256);
+        CellRef::Dummy {
+            cell: shared_cell_dummy.clone(),
+        }
+    }
+}
+
+pub(crate) fn is_structural_bridge_cell(cell: &crate::sim::cell_rect::CellRef<'_>) -> bool {
+    cell.bridge_flags_0x1180() & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0
+}
+
+/// Vertical AI 467371..4673C2 queries candidate floor first, then candidate
+/// Cell, then old Cell only if needed. The native fallback always uses the
+/// candidate's ground, even when the old cell supplies the structural bit.
+fn bridge_surface_z(
+    terrain: Option<&ResolvedTerrainGrid>,
+    shared_cell_dummy: &SharedCellDummy,
+    previous: ProjectileCoord,
+    candidate: ProjectileCoord,
+) -> Option<i32> {
+    let floor = projectile_ground_z(terrain, shared_cell_dummy, candidate);
+    let cell = projectile_cell_at(terrain, shared_cell_dummy, candidate);
+    let bridge = if is_structural_bridge_cell(&cell) {
+        cell
+    } else {
+        let previous = projectile_cell_at(terrain, shared_cell_dummy, previous);
+        if !is_structural_bridge_cell(&previous) {
+            return None;
+        }
+        previous
+    };
+    Some(
+        fixed_deck_z_for_cell_ref(terrain, &bridge)
+            .unwrap_or_else(|| crate::sim::movement::ground_pose::z_at_height(floor, 0, true)),
+    )
+}
+
+/// YR `BulletClass_GetAnimFrame` @ 0x00468000; `frame` is the frame counter
+/// (`Unsorted::CurrentFrame`), `ares` whether the Rules were read the Ares
+/// way (`RuleSet::ares_form`).
+pub fn projectile_shp_frame(
+    projectile: &Projectile,
+    projectile_type: &crate::rules::projectile_type::ProjectileType,
+    frame: u32,
+    ares: bool,
+) -> u16 {
+    let velocity = projectile.velocity;
+    if projectile.visual.anim_low != 0 || projectile.visual.anim_high != 0 {
+        return u16::from(projectile.visual.runtime_frame);
+    }
+    // 46800C..468014 uses the retained inverse ART Rotates byte. The
+    // animation override above wins even when the shape does not rotate.
+    if projectile_type.rotates {
+        return 0;
+    }
+    use crate::util::direction_tables::DRAGON_FRAME_TABLE;
+    use crate::util::direction_tables::{facing16_from_angle, step32_from_facing16};
+    use crate::util::native_x87::X87Chop53 as X;
+    use native_math::{atan, d};
+    // FCHS of the velocity Y, `Math::atan2 @ 0x004CAE30`.
+    let angle = atan(X::neg(d(velocity.y)), d(velocity.x));
+    let facing = if ares {
+        // Ares BulletClass_GetAnimFrame (1001A840, hook 0x468000) replaces
+        // the body with its own word, 0x3FFF less the truncated angle times
+        // 65535/2pi (1001A894..1001A8BB, constant 10097DB8), whose bucket can
+        // differ at the edges; then AnimLength gives each facing its frames.
+        const ARES_FACING_SCALE: crate::util::native_x87::NativeF64Bits =
+            crate::util::native_x87::NativeF64Bits::from_bits(0x40c4_5f1c_0e99_5ab9);
+        let scaled = X::mul(
+            angle,
+            X::load_f64(ARES_FACING_SCALE).expect("finite Ares facing scale"),
+        );
+        let word = 0x3fff_i32.wrapping_sub(X::ftol_i32_low_masked(scaled)) as u16;
+        let bucket = ((usize::from(word >> 10) + 1) >> 1) & 0x1f;
+        projectile_type.bullet_type_ext.rotating_frame(
+            DRAGON_FRAME_TABLE[bucket],
+            frame as i32,
+            projectile_type.anim_rate,
+        )
+    } else {
+        // The DirStruct word conversion (FSUB pi/2, FMUL, ftol); 46805D: its
+        // 32-step bucket indexes the 0x007F4890 table.
+        DRAGON_FRAME_TABLE[usize::from(step32_from_facing16(facing16_from_angle(angle)))]
+    };
+    facing as u16
+}
+
+// YR BulletClass::AI linkage: this is the bounded ordinary-flight rung; exact trajectory kernels remain separate.
+fn step_toward(from: ProjectileCoord, target: ProjectileCoord, speed: i32) -> ProjectileCoord {
+    if speed <= 0 || from == target {
+        return from;
+    }
+    let dx = target.x - from.x;
+    let dy = target.y - from.y;
+    let dz = target.z - from.z;
+    let max_delta = dx.abs().max(dy.abs()).max(dz.abs());
+    if max_delta <= speed {
+        return target;
+    }
+    ProjectileCoord::new(
+        from.x + ((i64::from(dx) * i64::from(speed)) / i64::from(max_delta)) as i32,
+        from.y + ((i64::from(dy) * i64::from(speed)) / i64::from(max_delta)) as i32,
+        from.z + ((i64::from(dz) * i64::from(speed)) / i64::from(max_delta)) as i32,
+    )
+}
+
+/// `ObjectClass::GetHeight @ 0x005F5F40` and, when negative,
+/// `ObjectClass::SetHeight(0) @ 0x005F5FA0` on a bullet at `location`: each
+/// queries the ground there and counts the deck for an OnBridge bullet.
+fn raise_to_ground(
+    mut location: ProjectileCoord,
+    terrain: Option<&ResolvedTerrainGrid>,
+    shared_cell_dummy: &SharedCellDummy,
+    on_bridge: bool,
+) -> ProjectileCoord {
+    let surface = projectile_surface_z(terrain, shared_cell_dummy, location, on_bridge);
+    if location.z.wrapping_sub(surface) < 0 {
+        location.z = projectile_surface_z(terrain, shared_cell_dummy, location, on_bridge);
+    }
+    location
+}
+
+/// `BulletClass::ResolveImpactCoordAndDetonate @ 0x00468D80` for a bullet at
+/// its Location: the ladder picks the coordinate and combat detonates there.
+fn ladder_detonation(
+    projectile: &Projectile,
+    impact_flag: bool,
+    reason: ProjectileDetonationReason,
+    collides_at: &mut impl FnMut(
+        &Projectile,
+        ProjectileCoord,
+        ProjectileCollisionPhase,
+    ) -> Option<ProjectileCollisionResponse>,
+) -> ProjectileDetonation {
+    let world = match collides_at(
+        projectile,
+        projectile.position,
+        ProjectileCollisionPhase::ImpactLadder,
+    ) {
+        Some(ProjectileCollisionResponse::ImpactLadder(world)) => world,
+        _ => ImpactLadderWorld::default(),
+    };
+    let resolved = resolve_impact_coord(&projectile.impact_ladder_bullet(impact_flag), &world);
+    detonation(projectile, resolved, reason)
+}
+
+// YR BulletClass::Detonate linkage: only this handoff permits combat damage/effects.
+fn detonation(
+    projectile: &Projectile,
+    impact: ProjectileCoord,
+    reason: ProjectileDetonationReason,
+) -> ProjectileDetonation {
+    ProjectileDetonation {
+        projectile_id: projectile.id,
+        source_id: projectile.source_id,
+        target: projectile.target,
+        impact,
+        payload: projectile.payload,
+        reason,
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod tests {
+    use super::*;
+
+    /// Phobos `BulletClass_AI_ApplyGravity` (0x4671B9): a type `Gravity`
+    /// replaces the Rules integer in flight, but a Floater shell still takes
+    /// Rules x 0.5 from 0x48ACF0.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn phobos_type_gravity_drives_flight_except_for_a_floater() {
+        use crate::util::native_x87::NativeF64Bits;
+        let type_gravity = Some(NativeF64Bits::from_bits(12.0f64.to_bits()));
+        let fall = |floater| {
+            let velocity = ProjectileVelocity::from_native([NativeF64Bits::from_bits(0); 3]);
+            let motion = ordinary_motion_candidate(
+                ProjectileCoord::new(0, 0, 0),
+                velocity,
+                6,
+                floater,
+                type_gravity,
+            );
+            f64::from_bits(motion.velocity[2].bits())
+        };
+        assert_eq!(fall(false), -12.0);
+        assert_eq!(fall(true), -3.0);
+    }
+
+    fn flat_32_by_32() -> ResolvedTerrainGrid {
+        ResolvedTerrainGrid::from_cells(
+            32,
+            32,
+            (0..32)
+                .flat_map(|y| {
+                    (0..32).map(move |x| crate::map::resolved_terrain::test_flat_cell(x, y))
+                })
+                .collect(),
+        )
+    }
+
+    /// A cell off the map is the shared fallback CellClass that
+    /// `MapClass::Get_CellClass` (`0x005657A0`) stamps with the coordinate:
+    /// GetCoords takes its ground, GetTargetCoords its structural rise, and a
+    /// target names it as [`ProjectileTarget::DummyCell`].
+    #[test]
+    fn an_off_map_cell_is_the_shared_fallback_cellclass() {
+        let terrain = flat_32_by_32();
+        let dummy = terrain.shared_cell_dummy();
+        dummy.set_level_slope(2, 0);
+        dummy.test_set_retained_bridge_flags(crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL);
+        let level_z = crate::util::lepton::ground_height_leptons(2, 0, 0, 0).unwrap();
+        assert_ne!(level_z, 0);
+
+        assert_eq!(
+            cell_ground_coord(Some(&terrain), 40, 41),
+            ProjectileCoord::new(40 * 256 + 128, 41 * 256 + 128, level_z)
+        );
+        assert_eq!(dummy.snapshot().coord, (40, 41));
+        assert_eq!(cell_target_coord(Some(&terrain), 40, 41).z, level_z + 416);
+        assert_eq!(
+            ProjectileTarget::looked_up_cell(Some(&terrain), 40, 41),
+            ProjectileTarget::DummyCell
+        );
+        assert_eq!(
+            ProjectileTarget::looked_up_cell(Some(&terrain), 3, 4),
+            ProjectileTarget::Cell { rx: 3, ry: 4 }
+        );
+        // A real cell is read without touching the fallback.
+        assert_eq!(cell_ground_coord(Some(&terrain), 3, 4).z, 0);
+        assert_eq!(dummy.snapshot().coord, (40, 41));
+    }
+
+    #[test]
+    fn resolve_impact_coord_matches_the_original() {
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/impact_ladder.json",
+        ))
+        .unwrap();
+        const TARGET: [i32; 3] = [5000, 6000, 416];
+        let coord = |value: &serde_json::Value| {
+            ProjectileCoord::new(
+                value[0].as_i64().unwrap() as i32,
+                value[1].as_i64().unwrap() as i32,
+                value[2].as_i64().unwrap() as i32,
+            )
+        };
+        let shifted = |offset: [i32; 3]| {
+            ProjectileCoord::new(
+                TARGET[0] + offset[0],
+                TARGET[1] + offset[1],
+                TARGET[2] + offset[2],
+            )
+        };
+        let mut compared = 0;
+        for row in &rows {
+            let input = &row["input"];
+            let flag = |key: &str| input[key].as_i64().unwrap() != 0;
+            let location = coord(&input["location"]);
+            // Cluster <= 0 never reaches DetonateAtCoord; VERA's cluster loop
+            // (`world_receiver`) runs no iteration for it.
+            if input["cluster"].as_i64().unwrap() <= 0 {
+                assert!(row["detonation"].is_null());
+                continue;
+            }
+            let target = input["target"].as_object().map(|target| {
+                let field = |key: &str| target[key].as_i64().unwrap() as i32;
+                let building = field("what_am_i") == 6;
+                let foundation = &target["foundation"];
+                let adjust = if building {
+                    (foundation[0].as_i64().unwrap() + foundation[1].as_i64().unwrap()) as i32 * 64
+                } else {
+                    0
+                };
+                ImpactLadderTarget {
+                    coords: shifted([0, 0, 0]),
+                    aim: shifted([3, 5, 7]),
+                    offset_coords: shifted([11, 13, 17]),
+                    in_air: field("in_air") != 0,
+                    ground_layer: field("layer") == 2,
+                    distance: (coord_distance(location, shifted([0, 0, 0])) - adjust).max(0),
+                    building_offset: building
+                        && target["target_coord_offset"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .any(|axis| axis.as_i64().unwrap() != 0),
+                }
+            });
+            let bullet = ImpactLadderBullet {
+                location,
+                reference: coord(&input["reference"]),
+                impact_flag: flag("impact_flag"),
+                inaccurate: flag("inaccurate"),
+                airburst: flag("airburst"),
+                arcing: flag("arcing"),
+                homing: input["rot"].as_i64().unwrap() > 0,
+            };
+            let world = ImpactLadderWorld {
+                target,
+                em_effect: flag("em_effect"),
+            };
+            assert_eq!(
+                resolve_impact_coord(&bullet, &world),
+                coord(&row["detonation"]),
+                "{input}"
+            );
+            compared += 1;
+        }
+        assert_eq!(compared, 378);
+    }
+
+    #[test]
+    fn homing_impact_admission_matches_executed_retail_vectors() {
+        let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/homing_impact_vectors.json",
+        ))
+        .unwrap();
+        for row in vectors["admissions"].as_array().unwrap() {
+            let (admit, snap) = homing_impact_admission(
+                row["distance"].as_i64().unwrap() as i32,
+                ProjectileVelocity::new(
+                    row["velocity"][0].as_i64().unwrap() as i32,
+                    row["velocity"][1].as_i64().unwrap() as i32,
+                    row["velocity"][2].as_i64().unwrap() as i32,
+                ),
+                row["height"].as_i64().unwrap() as i32,
+                row["airburst"].as_bool().unwrap(),
+                !row["empty_target"].as_bool().unwrap(),
+            );
+            assert_eq!(admit, row["impact"].as_bool().unwrap(), "{row}");
+            let candidate = if snap {
+                [640, 128, 624]
+            } else {
+                [504, 128, 207]
+            };
+            assert_eq!(serde_json::json!(candidate), row["candidate"], "{row}");
+        }
+    }
+
+    #[test]
+    fn homing_source_fuse_mode_matches_executed_retail_vectors() {
+        let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/homing_impact_vectors.json",
+        ))
+        .unwrap();
+        for row in vectors["source_modes"].as_array().unwrap() {
+            let mode = projectile_fuse_mode(
+                row["detector_mode"].as_i64().unwrap() as i32,
+                row["source_present"].as_bool().unwrap()
+                    && row["source_jumpjet"].as_bool().unwrap(),
+            );
+            assert_eq!(
+                i64::from(mode),
+                row["admitted_mode"].as_i64().unwrap(),
+                "{row}"
+            );
+        }
+    }
+
+    pub(super) fn spawn(target: ProjectileTarget) -> ProjectileSpawn {
+        ProjectileSpawn {
+            native_unique_id: 0,
+            line_trail: None,
+            flat: false,
+            source_id: 7,
+            origin: ProjectileCoord::new(0, 0, 0),
+            target,
+            initial_target_position: match target {
+                ProjectileTarget::Entity(_) | ProjectileTarget::Terrain(_) => {
+                    ProjectileCoord::new(128, 0, 0)
+                }
+                ProjectileTarget::Cell { rx, ry } => cell_target_coord(None, rx, ry),
+                ProjectileTarget::None => ProjectileCoord::new(0, 0, 0),
+                ProjectileTarget::DummyCell => ProjectileCoord::new(0, 0, 0),
+            },
+            payload: ProjectilePayload::new(40, InternedId::from_index(3), None, false)
+                .with_installed_weapon(Some(InternedId::from_index(4))),
+            speed_leptons_per_frame: 64,
+            velocity: ProjectileVelocity::new(64, 0, 0),
+            trajectory: ProjectileTrajectory::Straight,
+            guidance: None,
+            visual: ProjectileVisualState::new(0, 0, 0),
+            arm_frames: 0,
+            fuse_frames: None,
+            ranged_fuse: false,
+            tracks_target: true,
+            target_expiry: TargetExpiryPolicy::DetonateAtLastKnown,
+            collision: ProjectileCollisionPolicy::NONE,
+        }
+    }
+
+    /// Ares BulletClass_Update_Ranged (1001AC90, hook 0x467B94): a FireAt
+    /// bullet of a `Ranged=` type spends its ProjectileRange along its
+    /// flight and impacts once none is left, short of its target.
+    #[test]
+    fn ares_a_ranged_bullet_impacts_when_its_projectile_range_runs_out() {
+        let mut store = ProjectileStore::new();
+        let mut shot = spawn(ProjectileTarget::Cell { rx: 20, ry: 0 });
+        shot.payload = shot.payload.with_ares_range(Some(100));
+        store.spawn(1, shot);
+        let advance = |store: &mut ProjectileStore, frame| {
+            store.advance(
+                frame,
+                &BTreeMap::new(),
+                None,
+                &SharedCellDummy::fresh(),
+                |_, _| None,
+            )
+        };
+        assert!(advance(&mut store, 0).detonations.is_empty(), "64 spent");
+        let result = advance(&mut store, 1);
+        assert_eq!(result.detonations.len(), 1, "128 spent of 100");
+        assert!(result.detonations[0].impact.x < 256);
+    }
+
+    #[test]
+    fn degenerates_obeys_collision_and_dropping_fuse_admission() {
+        // Original467C70..467CA4: Dropping suppresses a detector-only
+        // detonation, making that visit eligible for degeneration. A real
+        // collision still detonates without decrementing the impact damage.
+        for (dropping, collision, continues) in [
+            (false, false, false),
+            (true, false, true),
+            (true, true, false),
+        ] {
+            let mut store = ProjectileStore::new();
+            let mut shot = spawn(ProjectileTarget::Entity(99));
+            shot.origin = ProjectileCoord::new(0, 0, 100);
+            shot.speed_leptons_per_frame = 128;
+            shot.payload.base_damage = 6;
+            shot.ranged_fuse = true;
+            shot.collision.dropping = dropping;
+            let id = store.spawn(1, shot);
+            let head = store.begin_ai_visit(id).unwrap();
+            let result = store
+                .advance_after_head(
+                    head,
+                    1,
+                    |_, _| Some(ProjectileCoord::new(128, 0, 0)),
+                    None,
+                    &SharedCellDummy::fresh(),
+                    6,
+                    false,
+                    false,
+                    0,
+                    true,
+                    |_, candidate, phase| {
+                        (collision && matches!(phase, ProjectileCollisionPhase::Shared))
+                            .then_some(ProjectileCollisionResponse::TargetZClamp(candidate))
+                    },
+                    None,
+                )
+                .unwrap();
+            assert_eq!(result.detonations.is_empty(), continues);
+            assert_eq!(
+                store.get(id).unwrap().payload.base_damage,
+                if continues { 5 } else { 6 }
+            );
+            if let Some(impact) = result.detonations.first() {
+                assert_eq!(impact.payload.base_damage, 6);
+            }
+        }
+    }
+
+    /// Bullet AI's admitted-impact clamp (`0x00467BF0..0x00467C06`) is
+    /// GetHeight below 0, then SetHeight(0), and both count the deck for an
+    /// OnBridge bullet (`0x005F5F40`, `0x005F5FA0`). FireAt copies an Inviso
+    /// shot's OnBridge from its target (`0x006FF08B`); an impact below the
+    /// deck lands on it.
+    #[test]
+    fn an_on_bridge_impact_below_the_deck_is_raised_to_the_deck() {
+        let mut store = ProjectileStore::new();
+        let mut shot = spawn(ProjectileTarget::Cell { rx: 4, ry: 0 });
+        shot.origin = ProjectileCoord::new(0, 0, 100);
+        let id = store.spawn(1, shot);
+        store.projectiles.get_mut(&id).unwrap().on_bridge = true;
+        let result = store.advance(
+            0,
+            &BTreeMap::new(),
+            None,
+            &SharedCellDummy::fresh(),
+            |_, coord| Some(ProjectileCollisionResponse::TargetZClamp(coord)),
+        );
+        assert_eq!(result.detonations.len(), 1);
+        assert_eq!(
+            result.detonations[0].impact.z,
+            crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
+        );
+    }
+
+    #[test]
+    fn gsi_04_01_dummy_target_reads_live_coord_level_and_slope() {
+        let dummy = SharedCellDummy::fresh();
+        dummy.set_level_slope(-1, 0);
+        dummy.stamp_coord(0, 0);
+        let flat = dummy_cell_target_coord(&dummy);
+        assert_eq!(
+            flat,
+            ProjectileCoord::new(128, 128, -103),
+            "CellClass::GetGroundHeight uses the verified 104-lepton domain"
+        );
+
+        dummy.set_level_slope(-1, 1);
+        dummy.stamp_coord(4, 5);
+        let target = dummy_cell_target_coord(&dummy);
+        assert_eq!((target.x, target.y), (4 * 256 + 128, 5 * 256 + 128));
+        assert_eq!(
+            target.z,
+            crate::util::lepton::ground_height_leptons(0xff, 1, target.x, target.y).unwrap()
+        );
+        assert_ne!(
+            target.z, flat.z,
+            "the live slope byte participates in dummy floor resolution"
+        );
+
+        dummy.stamp_coord(-2, 7);
+        let moved = dummy_cell_target_coord(&dummy);
+        assert_eq!((moved.x, moved.y), (-2 * 256 + 128, 7 * 256 + 128));
+        assert_eq!(
+            moved.z,
+            crate::util::lepton::ground_height_leptons(0xff, 1, moved.x, moved.y).unwrap(),
+            "coord stamps preserve and reuse the level/slope bytes"
+        );
+    }
+
+    #[test]
+    fn gsi_04_01_dummy_target_adds_native_high_bridge_height() {
+        let dummy = SharedCellDummy::fresh();
+        dummy.set_level_slope(2, 0);
+        dummy.stamp_coord(4, 5);
+        let ground = dummy_cell_target_coord(&dummy);
+
+        dummy.apply_bridge_flag_slot(crate::map::bridge_facts::BridgeStampSlot::Anchor, true);
+        let bridge = dummy_cell_target_coord(&dummy);
+
+        assert_eq!(bridge.x, ground.x);
+        assert_eq!(bridge.y, ground.y);
+        assert_eq!(
+            bridge.z - ground.z,
+            crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
+        );
+    }
+
+    #[test]
+    fn target_expiry_detonates_at_last_known_position() {
+        let mut store = ProjectileStore::new();
+        let id = store.spawn(1, spawn(ProjectileTarget::Entity(42)));
+        let targets = BTreeMap::from([(42, ProjectileCoord::new(128, 0, 0))]);
+        store.advance(0, &targets, None, &SharedCellDummy::fresh(), |_, _| None);
+
+        let result = store.advance(
+            0,
+            &BTreeMap::new(),
+            None,
+            &SharedCellDummy::fresh(),
+            |_, _| None,
+        );
+
+        assert_eq!(result.detonations.len(), 1);
+        assert_eq!(result.detonations[0].projectile_id, id);
+        assert_eq!(
+            result.detonations[0].impact,
+            ProjectileCoord::new(128, 0, 0)
+        );
+        assert_eq!(
+            result.detonations[0].reason,
+            ProjectileDetonationReason::TargetExpired
+        );
+    }
+
+    #[test]
+    fn fuse_and_collision_are_deferred_detonations() {
+        let mut store = ProjectileStore::new();
+        let mut fused = spawn(ProjectileTarget::Cell { rx: 1, ry: 0 });
+        fused.fuse_frames = Some(0);
+        let fuse_id = store.spawn(1, fused);
+        let collision_id = store.spawn(2, spawn(ProjectileTarget::Cell { rx: 1, ry: 0 }));
+
+        let result = store.advance(
+            0,
+            &BTreeMap::new(),
+            None,
+            &SharedCellDummy::fresh(),
+            |projectile, coord| {
+                (projectile.id == collision_id)
+                    .then_some(ProjectileCollisionResponse::TargetZClamp(coord))
+            },
+        );
+
+        assert_eq!(result.detonations.len(), 2);
+        assert_eq!(result.detonations[0].projectile_id, fuse_id);
+        assert_eq!(
+            result.detonations[0].reason,
+            ProjectileDetonationReason::Fuse
+        );
+        assert_eq!(result.detonations[1].projectile_id, collision_id);
+        assert_eq!(
+            result.detonations[1].reason,
+            ProjectileDetonationReason::Collision
+        );
+    }
+
+    #[test]
+    fn simulation_hash_and_save_preserve_pending_projectile() {
+        let mut empty = crate::sim::world::Simulation::new();
+        let mut sim = crate::sim::world::Simulation::new();
+        let stable_id = sim.substrate.allocate_stable_id();
+        sim.admit_projectile(stable_id, spawn(ProjectileTarget::Cell { rx: 1, ry: 0 }));
+        // Native in-scenario load restarts Scenario RNG from Seed0. Normalize
+        // both controls so this fixture isolates projectile persistence/hash.
+        empty.scenario_rng = crate::sim::rng::SimRng::new(0);
+        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        let expected_hash = sim.state_hash();
+
+        assert_ne!(empty.state_hash(), expected_hash);
+        let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "projectile", 0);
+        let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+            .expect("projectile snapshot should load")
+            .sim;
+
+        assert_eq!(restored.state_hash(), expected_hash);
+        assert_eq!(restored.projectiles.len(), 1);
+    }
+
+    #[test]
+    fn shp_facing_and_animation_match_yr_vectors() {
+        let mut store = ProjectileStore::new();
+        let id = store.spawn(1, spawn(ProjectileTarget::Cell { rx: 0, ry: 0 }));
+        let ini = crate::rules::ini_parser::IniFile::from_str("[P]\nImage=P\nRotates=yes\n");
+        let kind = crate::rules::projectile_type::ProjectileType::from_ini_section(
+            "P",
+            ini.section("P").unwrap(),
+            ini.section("P"),
+        );
+        assert_eq!(
+            projectile_shp_frame(store.get(id).unwrap(), &kind, 0, false),
+            20
+        );
+
+        let projectile = store.projectiles.get_mut(&id).unwrap();
+        projectile.visual = ProjectileVisualState {
+            anim_low: 2,
+            anim_high: 4,
+            anim_rate: 3,
+            runtime_frame: 4,
+            runtime_countdown: 1,
+        };
+        projectile.visual.advance();
+        assert_eq!(projectile.visual.runtime_frame, 2);
+        assert_eq!(projectile.visual.runtime_countdown, 3);
+    }
+
+    /// Ares BulletClass_GetAnimFrame (1001A840, hook 0x468000): with
+    /// `AnimLength=3` facing 20 owns frames 60..62, stepped every `AnimRate`
+    /// frames of the frame counter.
+    #[test]
+    fn ares_anim_length_steps_each_facing_through_its_frames() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let mut store = ProjectileStore::new();
+        let id = store.spawn(1, spawn(ProjectileTarget::Cell { rx: 0, ry: 0 }));
+        let ini = crate::rules::ini_parser::IniFile::from_str(
+            "[P]\nImage=P\nRotates=yes\nAnimRate=2\nAnimLength=3\n",
+        );
+        let kind = crate::rules::projectile_type::ProjectileType::from_ini_section(
+            "P",
+            ini.section("P").unwrap(),
+            ini.section("P"),
+        );
+        let frame = |counter| projectile_shp_frame(store.get(id).unwrap(), &kind, counter, true);
+        assert_eq!([frame(0), frame(3), frame(5), frame(6)], [60, 61, 62, 60]);
+    }
+
+    #[test]
+    fn frame_inverse_rotates_and_animation_precedence_match_original_draws() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/bridge_render.json",
+        ))
+        .unwrap();
+        let ini = crate::rules::ini_parser::IniFile::from_str("[P]\nImage=P\n");
+        let mut kind = crate::rules::projectile_type::ProjectileType::from_ini_section(
+            "P",
+            ini.section("P").unwrap(),
+            None,
+        );
+        let mut compared = 0;
+        for row in corpus["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|row| row["input"]["name"].as_str().unwrap().starts_with("frame_"))
+        {
+            let input = &row["input"];
+            kind.rotates = input["inverse_rotates"] == 1;
+            let mut store = ProjectileStore::new();
+            let id = store.spawn(1, spawn(ProjectileTarget::None));
+            let projectile = store.get_mut(id).unwrap();
+            if let Some(v) = input["velocity"].as_array() {
+                projectile.velocity = ProjectileVelocity::new(
+                    v[0].as_f64().unwrap() as i32,
+                    v[1].as_f64().unwrap() as i32,
+                    v[2].as_f64().unwrap() as i32,
+                );
+            }
+            projectile.visual.anim_low = input["anim_low"].as_u64().unwrap_or(0) as u8;
+            projectile.visual.anim_high = input["anim_high"].as_u64().unwrap_or(0) as u8;
+            projectile.visual.runtime_frame = input["runtime_frame"].as_u64().unwrap_or(0) as u8;
+            let frame = projectile_shp_frame(projectile, &kind, 0, false);
+            for draw in row["draws"].as_array().unwrap() {
+                assert_eq!(u64::from(frame), draw["frame"].as_u64().unwrap(), "{input}");
+            }
+            compared += 1;
+        }
+        assert_eq!(compared, 4);
+    }
+
+    #[test]
+    fn projectile_load_timers_match_original_fire_save_load_and_check() {
+        use crate::sim::timer::CdTimer;
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/load_timers.json",
+        ))
+        .unwrap();
+        assert_eq!(rows.len(), 877);
+        for row in rows {
+            let produced = &row["produced"]["arm"];
+            let mut timer = CdTimer::from_raw(
+                produced[0].as_i64().unwrap() as i32,
+                produced[1].as_i64().unwrap() as i32,
+            );
+            let now = row["saved_frame"].as_u64().unwrap() as i32;
+            let point = |name: &str| {
+                let xyz = &row[name];
+                ProjectileCoord::new(
+                    xyz[0].as_i64().unwrap() as i32,
+                    xyz[1].as_i64().unwrap() as i32,
+                    xyz[2].as_i64().unwrap() as i32,
+                )
+            };
+            let distance = proximity_check_distance(point("candidate"), point("reference"));
+            let initial_watermark = proximity_initial_distance(point("origin"), point("reference"));
+            assert_eq!(
+                i64::from(initial_watermark),
+                row["produced"]["watermark"].as_i64().unwrap()
+            );
+            let (mode, watermark) = if timer.expired(now) {
+                ranged_fuse_distance_step(distance, initial_watermark)
+            } else {
+                (0, initial_watermark)
+            };
+            assert_eq!(
+                i64::from(mode),
+                row["before_mode"].as_i64().unwrap(),
+                "{row}"
+            );
+            assert_eq!(
+                i64::from(watermark),
+                row["before"]["watermark"].as_i64().unwrap(),
+                "{row}"
+            );
+            if !row["failed_load"].as_bool().unwrap() {
+                timer.start(now, 0);
+            }
+            assert_eq!(
+                i64::from(timer.start_frame()),
+                row["loaded"]["arm"][0].as_i64().unwrap()
+            );
+            assert_eq!(
+                i64::from(timer.duration()),
+                row["loaded"]["arm"][1].as_i64().unwrap()
+            );
+            let (mode, watermark) = if timer.expired(now) {
+                ranged_fuse_distance_step(distance, watermark)
+            } else {
+                (0, watermark)
+            };
+            assert_eq!(
+                i64::from(mode),
+                row["after_mode"].as_i64().unwrap(),
+                "{row}"
+            );
+            assert_eq!(
+                i64::from(watermark),
+                row["after"]["watermark"].as_i64().unwrap(),
+                "{row}"
+            );
+            for admission in row["admission"].as_array().unwrap() {
+                let mut mode = 0;
+                let mut distance_mark = row["loaded"]["watermark"].as_i64().unwrap() as i32;
+                if (admission["rot"].as_i64().unwrap() > 0 || admission["ranged"] == true)
+                    && timer.expired(now)
+                {
+                    (mode, distance_mark) = ranged_fuse_distance_step(distance, distance_mark);
+                }
+                assert_eq!(
+                    i64::from(mode),
+                    admission["mode"].as_i64().unwrap(),
+                    "{row}"
+                );
+                assert_eq!(
+                    i64::from(distance_mark),
+                    admission["watermark"].as_i64().unwrap(),
+                    "{row}"
+                );
+                assert_eq!(
+                    projectile_impact_admitted(
+                        admission["impact"] == true,
+                        mode,
+                        admission["dropping"] == true
+                    ),
+                    admission["detonate"] == true,
+                    "{row}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ranged_fuse_thresholds_match_executable_spec() {
+        assert_eq!(ranged_fuse_distance_step(63, 999), (1, 999));
+        assert_eq!(ranged_fuse_distance_step(64, 999), (0, 32));
+        assert_eq!(ranged_fuse_distance_step(80, 10), (2, 10));
+        assert_eq!(ranged_fuse_distance_step(80, 50), (0, 40));
+    }
+
+    #[test]
+    fn closed_collision_predicate_vectors_match_yr() {
+        assert_eq!(
+            projectile_bridge_crossing(99, 100, 100),
+            ProjectileBridgeCrossing::Up
+        );
+        assert_eq!(
+            projectile_bridge_crossing(100, 99, 100),
+            ProjectileBridgeCrossing::Down
+        );
+        assert_eq!(
+            projectile_bridge_crossing(100, 100, 100),
+            ProjectileBridgeCrossing::None
+        );
+    }
+
+    #[test]
+    fn shrapnel_and_special_priority_match_closed_vectors() {
+        assert_eq!(projectile_shrapnel_count(-8, true, 3), Some(5));
+        assert_eq!(projectile_shrapnel_count(-8, true, 8), None);
+        assert_eq!(projectile_shrapnel_count(-8, false, 99), Some(3));
+        assert_eq!(projectile_shrapnel_count(0, true, 99), Some(0));
+        assert_eq!(
+            projectile_special_detonation_action(
+                SpecialDetonationFlags {
+                    mind_control: true,
+                    nuke_maker: true,
+                    ..SpecialDetonationFlags::default()
+                },
+                SpecialDetonationTarget::default()
+            ),
+            SpecialDetonationAction::MindControl
+        );
+    }
+
+    /// `BulletClass::DetonateAtCoord @ 0x0046978e` is the chain's only
+    /// conditional arm: `0x00469796` (flag), `0x004697a4` (`Target != 0`) and
+    /// `0x004697b2` (`Target->What_Am_I() == 1`) all fall through to the
+    /// BombDisarm test at `0x004699c4`, so a `DirectRocker=yes` warhead that
+    /// misses a vehicle still runs ordinary damage. Airstrike only *looks*
+    /// conditional in the decompile — `0x0046970d` is its sole fall-through
+    /// and fires on the flag alone.
+    #[test]
+    fn direct_rocker_is_the_only_conditional_arm() {
+        let rocker = SpecialDetonationFlags {
+            direct_rocker: true,
+            ..SpecialDetonationFlags::default()
+        };
+        assert_eq!(
+            projectile_special_detonation_action(rocker, SpecialDetonationTarget { is_unit: true }),
+            SpecialDetonationAction::DirectRocker
+        );
+        assert_eq!(
+            projectile_special_detonation_action(
+                rocker,
+                SpecialDetonationTarget { is_unit: false }
+            ),
+            SpecialDetonationAction::OrdinaryDamage
+        );
+
+        // A non-vehicle target falls through to the NEXT test, not to the
+        // tail: BombDisarm still claims the impact.
+        assert_eq!(
+            projectile_special_detonation_action(
+                SpecialDetonationFlags {
+                    direct_rocker: true,
+                    bomb_disarm: true,
+                    ..SpecialDetonationFlags::default()
+                },
+                SpecialDetonationTarget { is_unit: false }
+            ),
+            SpecialDetonationAction::BombDisarm
+        );
+
+        // Airstrike is entered on the flag alone, whatever the target is.
+        for is_unit in [false, true] {
+            assert_eq!(
+                projectile_special_detonation_action(
+                    SpecialDetonationFlags {
+                        airstrike: true,
+                        ..SpecialDetonationFlags::default()
+                    },
+                    SpecialDetonationTarget { is_unit }
+                ),
+                SpecialDetonationAction::Airstrike
+            );
+        }
+    }
+
+    /// `tools/projectile_oracle/launch_scatter.json`'s cluster-loop rows: the
+    /// original loop (`0x00469008..0x00469091`) hands the first detonation the
+    /// impact and every later one `0x0049F420(impact, distance, draw)`.
+    #[test]
+    fn native_cluster_loop_scatters_around_the_impact() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/launch_scatter.json",
+        ))
+        .unwrap();
+        let rows = corpus["cluster_loop"].as_array().unwrap();
+        assert_eq!(rows.len(), 6);
+        let coord = |value: &serde_json::Value| {
+            let axis = |index: usize| value[index].as_i64().unwrap() as i32;
+            ProjectileCoord::new(axis(0), axis(1), axis(2))
+        };
+        for (index, row) in rows.iter().enumerate() {
+            let input = &row["input"];
+            let impact = coord(&input["impact"]);
+            let draws = input["distances"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .zip(input["raws"].as_array().unwrap());
+            let expected: Vec<ProjectileCoord> = std::iter::once(impact)
+                .chain(draws.map(|(distance, raw)| {
+                    let (x, y) =
+                        crate::sim::combat::inviso_scatter::random_direction_coord_for_byte(
+                            crate::map::cell_index::CellGrid::Retail,
+                            (raw.as_u64().unwrap() & 0xff) as u8,
+                            impact.x,
+                            impact.y,
+                            distance.as_i64().unwrap() as i32,
+                            crate::sim::combat::inviso_scatter::RandomDirectionSnap::Preserve,
+                        );
+                    ProjectileCoord::new(x, y, impact.z)
+                }))
+                .take(input["cluster"].as_u64().unwrap() as usize)
+                .collect();
+            let native: Vec<ProjectileCoord> = row["detonations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(coord)
+                .collect();
+            assert_eq!(expected, native, "row {index}");
+        }
+    }
+
+    #[test]
+    fn cluster_and_random_shrapnel_consume_native_draw_counts() {
+        let mut cluster_rng = SimRng::new(0x46_8d80);
+        let mut cluster_reference = cluster_rng.clone();
+        let _ = cluster_reference.next_range_u32_inclusive(256, 512);
+        let _ = cluster_reference.next_u32();
+        let coordinate = projectile_next_cluster_coord(
+            crate::map::cell_index::CellGrid::Retail,
+            ProjectileCoord::new(20 * 256 + 128, 20 * 256 + 128, 77),
+            &mut cluster_rng,
+        );
+        assert_eq!(
+            cluster_rng.logical_state(),
+            cluster_reference.logical_state()
+        );
+        assert_eq!(coordinate.z, 77);
+
+        let mut shrapnel_rng = SimRng::new(0x46_a310);
+        let mut shrapnel_reference = shrapnel_rng.clone();
+        let expected_x = shrapnel_reference.next_range_u32_inclusive(0, 4) as i32 - 2;
+        let expected_y = shrapnel_reference.next_range_u32_inclusive(0, 4) as i32 - 2;
+        assert_eq!(
+            projectile_random_shrapnel_cell(10, 20, &mut shrapnel_rng),
+            (10 + expected_x, 20 + expected_y)
+        );
+        assert_eq!(
+            shrapnel_rng.logical_state(),
+            shrapnel_reference.logical_state()
+        );
+    }
+
+    fn guided_spawn(max_speed: i32, acceleration: i32) -> ProjectileSpawn {
+        let mut spawn = spawn(ProjectileTarget::Entity(42));
+        spawn.origin.z = 1; // Flight/fuse fixtures must not start in ground contact.
+        spawn.speed_leptons_per_frame = 1;
+        spawn.velocity = ProjectileVelocity::new(1, 0, 0);
+        spawn.guidance = Some(ProjectileGuidance {
+            rot: 4,
+            missile_rot_var: crate::util::native_x87::NativeF64Bits::from_bits(0),
+            course_lock_duration: 0,
+            course_frames: 0,
+            course_locked: true,
+            very_high: false,
+            max_speed,
+            acceleration,
+            closing_frames: 0,
+            closing_accumulator_bits: 0,
+        });
+        spawn
+    }
+
+    /// `BulletClass::AI 0x004671E0`: the `Vertical` arm applies no gravity,
+    /// preserves the launch direction, ramps the magnitude by `Acceleration=`
+    /// with no clamp on the crossing frame, and ends when the new world z
+    /// passes `DetonationAltitude` (`0x00467334`).
+    #[test]
+    fn gsi_08_08_vertical_projectile_climbs_and_ends_at_detonation_altitude() {
+        let mut store = ProjectileStore::new();
+        let mut vertical = spawn(ProjectileTarget::Cell { rx: 0, ry: 0 });
+        vertical.speed_leptons_per_frame = 1;
+        vertical.velocity = ProjectileVelocity::new(0, 0, 1);
+        vertical.origin = ProjectileCoord::new(0, 0, 0);
+        vertical.trajectory = ProjectileTrajectory::Vertical {
+            detonation_altitude: 10,
+            acceleration: 1,
+            max_speed: 50,
+        };
+        let id = store.spawn(1, vertical);
+
+        let mut heights = Vec::new();
+        for frame in 0..8u32 {
+            let result = store.advance(
+                frame,
+                &BTreeMap::new(),
+                None,
+                &SharedCellDummy::fresh(),
+                |_, _| None,
+            );
+            if let Some(detonation) = result.detonations.first() {
+                assert_eq!(detonation.projectile_id, id);
+                assert!(
+                    detonation.impact.z > 10,
+                    "the arm ends only once z passes DetonationAltitude"
+                );
+                assert_eq!(detonation.impact.x, 0, "no horizontal drift straight up");
+                let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+                    "tools/projectile_oracle/vertical_motion.json",
+                ))
+                .unwrap();
+                let row = rows
+                    .iter()
+                    .find(|row| {
+                        row["origin"] == serde_json::json!([0, 0, 0]) && row["maximum"] == 50
+                    })
+                    .unwrap();
+                let expected: Vec<i32> = row["frames"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|frame| frame["candidate"][2].as_i64().unwrap() as i32)
+                    .take_while(|&z| z <= 10)
+                    .collect();
+                assert_eq!(
+                    heights, expected,
+                    "native successive ramp and integer projections"
+                );
+                return;
+            }
+            heights.push(store.get(id).expect("still climbing").position.z);
+        }
+        panic!("the vertical arm never reached DetonationAltitude");
+    }
+
+    /// `BulletClass::AI 0x00467C70` detonates on ANY impact flag with no `Arm`
+    /// test at all — `Arm=` is written once into the ProximityDetector at
+    /// `BulletClass::Fire 0x00468A5D` and gates only that fuse. An unarmed
+    /// shot that hits a wall must explode, not vanish.
+    #[test]
+    fn gsi_08_07_unarmed_collision_detonates_instead_of_vanishing() {
+        let mut store = ProjectileStore::new();
+        let mut unarmed = spawn(ProjectileTarget::Cell { rx: 4, ry: 0 });
+        unarmed.arm_frames = 5;
+        let id = store.spawn(1, unarmed);
+
+        let result = store.advance(
+            0,
+            &BTreeMap::new(),
+            None,
+            &SharedCellDummy::fresh(),
+            |_, coord| Some(ProjectileCollisionResponse::TargetZClamp(coord)),
+        );
+
+        assert!(result.expired.is_empty(), "an unarmed hit is not a vanish");
+        assert_eq!(result.detonations.len(), 1);
+        assert_eq!(result.detonations[0].projectile_id, id);
+        assert_eq!(
+            result.detonations[0].reason,
+            ProjectileDetonationReason::Collision
+        );
+    }
+
+    /// `ProximityDetector::Check @ 0x004E11F0` measures against the coordinate
+    /// `ProximityDetector::Setup @ 0x004E1130` froze at launch, never against
+    /// the live target.
+    #[test]
+    fn gsi_08_07_proximity_fuse_measures_the_frozen_launch_reference() {
+        let targets = BTreeMap::from([(42, ProjectileCoord::new(10_000, 0, 0))]);
+
+        let mut frozen_near = ProjectileStore::new();
+        let mut spawn_near = guided_spawn(1, 3);
+        spawn_near.ranged_fuse = true;
+        frozen_near.spawn(1, spawn_near);
+        frozen_near.get_mut(1).unwrap().proximity_reference = ProjectileCoord::new(1, 0, 0);
+        let near = frozen_near.advance(0, &targets, None, &SharedCellDummy::fresh(), |_, _| None);
+        assert_eq!(near.detonations.len(), 1, "the frozen reference is reached");
+        assert_eq!(near.detonations[0].reason, ProjectileDetonationReason::Fuse);
+
+        let mut frozen_far = ProjectileStore::new();
+        let mut spawn_far = guided_spawn(1, 3);
+        spawn_far.ranged_fuse = true;
+        frozen_far.spawn(1, spawn_far);
+        frozen_far.get_mut(1).unwrap().proximity_reference = ProjectileCoord::new(10_000, 0, 0);
+        let far = frozen_far.advance(0, &targets, None, &SharedCellDummy::fresh(), |_, _| None);
+        assert!(
+            far.detonations.is_empty(),
+            "a distant frozen reference keeps the shot flying even though the \
+             bullet is one lepton from where it started"
+        );
+    }
+
+    /// Both `TechnoClass::FireAt` scatter arms consume exactly two Scenario
+    /// draws — magnitude then angle — and both OFFSET the target delta,
+    /// leaving z untouched.
+    #[test]
+    fn gsi_08_07_launch_scatter_consumes_two_draws_and_offsets_the_delta() {
+        let mut rng = SimRng::new(0x6f_e7fe);
+        let mut reference = rng.clone();
+        let _ = reference.next_range_u32_inclusive(128, 256);
+        let _ = reference.next_range_u32_inclusive(0, 0x7fff_fffe);
+
+        let scattered = launch::fireat_launch_scatter(
+            ProjectileCoord::new(1024, 0, 77),
+            launch::fireat_scatter_bounds(false, 256),
+            1280,
+            false,
+            &mut rng,
+        );
+        assert_eq!(rng.logical_state(), reference.logical_state());
+        assert_eq!(scattered.z, 77, "z is carried through unchanged");
+        let offset_x = scattered.x - 1024;
+        let offset_y = scattered.y;
+        let magnitude = ((offset_x * offset_x + offset_y * offset_y) as f64).sqrt();
+        assert!(
+            (128.0..=257.0).contains(&magnitude),
+            "the plain arm draws its magnitude in [BallisticScatter/2, BallisticScatter], got {magnitude}"
+        );
+
+        // The flak arm scales by distance over weapon range, so a target at
+        // exactly the weapon's range can be displaced by the full scatter.
+        let mut flak_rng = SimRng::new(0x6f_e6ad);
+        let mut flak_reference = flak_rng.clone();
+        let _ = flak_reference.next_range_u32_inclusive(0, 256);
+        let _ = flak_reference.next_range_u32_inclusive(0, 0x7fff_fffe);
+        let flak = launch::fireat_launch_scatter(
+            ProjectileCoord::new(1280, 0, 0),
+            launch::fireat_scatter_bounds(true, 256),
+            1280,
+            true,
+            &mut flak_rng,
+        );
+        assert_eq!(flak_rng.logical_state(), flak_reference.logical_state());
+        let flak_magnitude = (((flak.x - 1280) * (flak.x - 1280) + flak.y * flak.y) as f64).sqrt();
+        assert!(
+            flak_magnitude <= 257.0,
+            "at exactly one weapon range the flak arm cannot exceed BallisticScatter, got {flak_magnitude}"
+        );
+    }
+
+    #[test]
+    fn native_common_final_handoff_near_target_vectors() {
+        let oracle: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/ordinary_collision_vectors.json",
+        ))
+        .unwrap();
+        for row in oracle["final_handoffs"].as_array().unwrap() {
+            let coord = |key: &str| {
+                ProjectileCoord::new(
+                    row[key][0].as_i64().unwrap() as i32,
+                    row[key][1].as_i64().unwrap() as i32,
+                    row[key][2].as_i64().unwrap() as i32,
+                )
+            };
+            let v = coord("velocity");
+            let mode = row["mode"].as_i64().unwrap() as i32;
+            let near = row["near_target"].as_bool().unwrap();
+            let actual = (mode == 1 || near)
+                && !row["airburst"].as_bool().unwrap()
+                && !row["inaccurate"].as_bool().unwrap()
+                && row["target_present"].as_bool().unwrap()
+                && projectile_final_snap_admitted(
+                    coord("candidate"),
+                    coord("target_aim"),
+                    ProjectileVelocity::new(v.x, v.y, v.z),
+                    mode,
+                    near,
+                );
+            assert_eq!(
+                actual,
+                row["result"] == row["target_location"],
+                "native finalhandoff: {row}"
+            );
+        }
+    }
+
+    #[test]
+    fn native_slope_matrix_and_elastic_reflection_vectors() {
+        let oracle: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/ordinary_collision_vectors.json",
+        ))
+        .unwrap();
+        for (slope, row) in oracle["slope_matrices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .enumerate()
+        {
+            let actual = crate::map::voxel_slope::slope_matrix(slope as u8).unwrap();
+            for (actual, expected) in actual.into_iter().zip(row.as_array().unwrap()) {
+                assert_eq!(
+                    u64::from(actual.bits()),
+                    expected.as_u64().unwrap(),
+                    "slope {slope}"
+                );
+            }
+        }
+        for row in oracle["reflections"].as_array().unwrap() {
+            let components: Vec<i32> = row["velocity"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_i64().unwrap() as i32)
+                .collect();
+            use crate::util::native_x87::{NativeF64Bits, X87Chop53};
+            let matrix =
+                crate::map::voxel_slope::slope_matrix(row["slope"].as_u64().unwrap() as u8)
+                    .unwrap();
+            let vector = std::array::from_fn(|i| {
+                X87Chop53::store_f32(X87Chop53::load_i32(components[i])).unwrap()
+            });
+            let elasticity = X87Chop53::store_f32(
+                X87Chop53::load_f64(NativeF64Bits::from_bits(
+                    row["elasticity"].as_f64().unwrap().to_bits(),
+                ))
+                .unwrap(),
+            )
+            .unwrap();
+            let reflected = crate::sim::particles::spark::reflect_slope_vector_with_elasticity(
+                vector, matrix, elasticity,
+            )
+            .unwrap();
+            assert_eq!(
+                serde_json::json!(reflected.map(|value| value.bits())),
+                row["result_f32_bits"],
+                "native f32 reflection: {row}"
+            );
+            let actual = projectile_slope_reflect_with_elasticity(
+                ProjectileVelocity::new(components[0], components[1], components[2]),
+                row["slope"].as_u64().unwrap() as u8,
+                row["elasticity"].as_f64().unwrap().to_bits(),
+            )
+            .unwrap();
+            assert_eq!(
+                actual.native().map(|value| value.bits()),
+                std::array::from_fn::<_, 3, _>(|i| f64::from(f32::from_bits(
+                    row["result_f32_bits"][i].as_u64().unwrap() as u32
+                ))
+                .to_bits()),
+                "{row}"
+            );
+        }
+    }
+}

@@ -1,0 +1,479 @@
+//! Release-body regression checks derived from4593A0/4595C0 instructions.
+//! Saved independent reads: .local/bunker-release-native.txt. These are Rust
+//! integration tests, not native executable comparisons or exit-search parity.
+use super::*;
+use crate::sim::components::{DriveCoord, NavTargetRef};
+use crate::sim::docking::bunker_install::BunkerState;
+use crate::sim::game_entity::GameEntity;
+use crate::sim::movement::ground_pose::position_world_coord;
+use crate::sim::radio::{Contacts, RadioTestEvent};
+use crate::util::fixed_math::SimFixed;
+use std::cell::RefCell;
+
+#[derive(Debug)]
+struct Boundary {
+    name: &'static str,
+    unit_link: Option<BunkerLink>,
+    building_link: Option<u64>,
+    powered: bool,
+    speed: Option<SimFixed>,
+    head: Option<DriveCoord>,
+    destination: Option<DriveCoord>,
+}
+
+thread_local! {
+    static TRACE: RefCell<Vec<Boundary>> = const { RefCell::new(Vec::new()) };
+}
+
+pub(super) fn record(sim: &Simulation, building: u64, unit: u64, name: &'static str) {
+    let unit = sim.substrate.entities.get(unit);
+    TRACE.with(|trace| {
+        trace.borrow_mut().push(Boundary {
+            name,
+            unit_link: unit.map(|unit| unit.bunker.link()),
+            building_link: sim
+                .substrate
+                .entities
+                .get(building)
+                .and_then(|b| b.bunker.occupant()),
+            powered: unit
+                .and_then(|unit| unit.locomotor.as_ref())
+                .is_some_and(|loco| loco.is_powered()),
+            speed: unit.map(|unit| unit.foot_speed.applied_fraction()),
+            head: unit
+                .and_then(|unit| {
+                    unit.locomotor
+                        .as_ref()
+                        .and_then(|l| l.selected_drive_runtime())
+                        .and_then(|r| r.retained())
+                })
+                .and_then(|drive| drive.head_to()),
+            destination: unit
+                .and_then(|unit| {
+                    unit.locomotor
+                        .as_ref()
+                        .and_then(|l| l.selected_drive_runtime())
+                        .and_then(|r| r.retained())
+                })
+                .and_then(|drive| drive.destination()),
+        })
+    });
+}
+
+fn take_trace() -> Vec<Boundary> {
+    TRACE.with(|trace| std::mem::take(&mut *trace.borrow_mut()))
+}
+
+fn release_fixture() -> Simulation {
+    let mut sim = super::tests::installed_sim();
+    let building = sim.substrate.entities.get_mut(2).unwrap();
+    building
+        .seldom
+        .type_facts
+        .set_foundation_for_test("2x3".to_owned().into());
+    building.position.set_sub_x_for_test(SimFixed::from_num(64));
+    building
+        .position
+        .set_sub_y_for_test(SimFixed::from_num(192));
+    building.position.set_exact_z_leptons_for_test(Some(731));
+    building.seldom.radio_contacts.insert(1);
+    let unit = sim.substrate.entities.get_mut(1).unwrap();
+    unit.seldom.radio_contacts.insert(2);
+    unit.locomotor.as_mut().unwrap().power_off();
+    unit.foot_speed.set_speed_fraction(SimFixed::lit("0.25"));
+    let drive = unit.locomotor.as_mut().unwrap();
+    {
+        let mut progress = drive
+            .track_progress(crate::sim::movement::track_process::TrackFamily::Drive)
+            .unwrap();
+        progress.set_residual(971);
+        assert!(drive.store_track_progress(
+            crate::sim::movement::track_process::TrackFamily::Drive,
+            progress
+        ));
+    };
+    {
+        let mut progress = drive
+            .track_progress(crate::sim::movement::track_process::TrackFamily::Drive)
+            .unwrap();
+        progress.set_reversed(true);
+        assert!(drive.store_track_progress(
+            crate::sim::movement::track_process::TrackFamily::Drive,
+            progress
+        ));
+    };
+    assert!(drive.store_track_destination(
+        crate::sim::movement::track_process::TrackFamily::Drive,
+        Some(DriveCoord::cell(7, 8, 417))
+    ));
+    take_trace();
+    crate::sim::radio::clear_test_trace();
+    sim
+}
+
+fn release_head() -> DriveCoord {
+    //447AC0 foundation-center addition, then459401/407 (or459726/72C).
+    DriveCoord {
+        x: 2624,
+        y: 3136,
+        z: 731,
+    }
+}
+
+#[test]
+fn sell_release_uses_building_center_preserves_pose_and_orders_links_after_speed() {
+    let mut sim = release_fixture();
+    let pose = position_world_coord(&sim.substrate.entities.get(1).unwrap().position);
+    release_sell_destroy(
+        &mut sim,
+        2,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    let trace = take_trace();
+    assert_eq!(
+        trace.iter().map(|b| b.name).collect::<Vec<_>>(),
+        [
+            "power",
+            "force",
+            "speed",
+            "unit-link",
+            "building-link",
+            "break"
+        ]
+    );
+    assert!(trace[0].powered);
+    assert_eq!(trace[0].speed, Some(SimFixed::lit("0.25")));
+    assert_eq!(trace[1].head, Some(release_head()));
+    assert_eq!(trace[1].destination, Some(release_head()));
+    assert_eq!(trace[1].speed, Some(SimFixed::lit("0.25")));
+    assert_eq!(trace[2].speed, Some(SIM_ONE));
+    assert_eq!(trace[2].unit_link, Some(BunkerLink::Installed(2)));
+    assert_eq!(trace[2].building_link, Some(1));
+    assert_eq!(trace[3].unit_link, Some(BunkerLink::None));
+    assert_eq!(trace[3].building_link, Some(1));
+    assert_eq!(trace[4].building_link, None);
+    let unit = sim.substrate.entities.get(1).unwrap();
+    assert_eq!(position_world_coord(&unit.position), pose);
+    assert_eq!(unit.body_facing.destination(), 0);
+    let drive = unit
+        .locomotor
+        .as_ref()
+        .and_then(|l| l.selected_drive_runtime())
+        .and_then(|r| r.retained())
+        .unwrap();
+    assert_eq!(
+        (
+            drive.track().turn_index(),
+            drive.track().cursor(),
+            drive.track().residual()
+        ),
+        (0x47, 0, 971)
+    );
+    assert!(drive.track().reversed());
+    assert!(!unit.lifecycle.in_limbo() && unit.seldom.in_logic_vector.is_member());
+    assert!(!unit.seldom.radio_contacts.contains(2));
+    assert!(
+        !sim.substrate
+            .entities
+            .get(2)
+            .unwrap()
+            .seldom
+            .radio_contacts
+            .contains(1)
+    );
+    assert_eq!(
+        crate::sim::radio::take_test_trace(),
+        vec![
+            RadioTestEvent::SenderBreakCleared {
+                sender_sid: 2,
+                target_sid: 1
+            },
+            RadioTestEvent::ReceiverClassEffect {
+                receiver_sid: 1,
+                sender_sid: 2
+            },
+            RadioTestEvent::ReceiverCommonCleared {
+                receiver_sid: 1,
+                sender_sid: 2
+            },
+        ]
+    );
+}
+
+/// The forced head reaches `CellClass::PickupCrate` through `Force_Track`
+/// (`0x004B0D1B`) with the frame's OverlayType table, so a crate on the
+/// bunker's exit cell is picked up there.
+#[test]
+fn sell_release_picks_up_a_crate_on_the_forced_head_cell() {
+    let mut sim = release_fixture();
+    let rules = crate::sim::crates::tests::crate_ruleset("");
+    let registry = rules.overlay_registry();
+    let wood = registry.id_for_name("WOOD").unwrap();
+    let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(64, 64);
+    overlays.place_overlay(10, 12, wood, 0);
+    sim.overlay_grid = Some(overlays);
+    release_sell_destroy(
+        &mut sim,
+        2,
+        &rules,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    let trace = take_trace();
+    assert_eq!(trace[1].name, "force");
+    assert_eq!(
+        trace[1].head,
+        Some(release_head()),
+        "a money crate keeps the head"
+    );
+    assert_eq!(
+        sim.overlay_grid.as_ref().unwrap().cell(10, 12).overlay_id,
+        None,
+        "the crate is picked up"
+    );
+}
+
+/// `EmptyBunker`'s destination (`0x004597FA`) is the Unit setter, so the Foot
+/// setter's tail (`0x004D96C2..0x004D9707`) restarts both path timers.
+#[test]
+fn normal_release_runs_the_foot_setters_timer_tail() {
+    let mut sim = release_fixture();
+    let rules = super::tests::rules();
+    let frame = sim.session.binary_frame();
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .navigation
+        .path_runtime_mut()
+        .start_movement(frame, 99);
+
+    release_normal(
+        &mut sim,
+        2,
+        &rules,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    let _ = take_trace();
+
+    let path = sim
+        .substrate
+        .entities
+        .get(1)
+        .unwrap()
+        .navigation
+        .path_runtime();
+    assert_eq!(path.movement_timer().remaining(frame as i32), 0);
+    assert_eq!(
+        path.blocked_timer().remaining(frame as i32),
+        rules.general.blockage_path_delay_ticks
+    );
+}
+
+#[test]
+fn normal_release_clears_unit_first_and_assigns_destination_without_teleport() {
+    let mut sim = release_fixture();
+    let pose = position_world_coord(&sim.substrate.entities.get(1).unwrap().position);
+    release_normal(
+        &mut sim,
+        2,
+        &super::tests::rules(),
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    let trace = take_trace();
+    assert_eq!(
+        trace.iter().map(|b| b.name).collect::<Vec<_>>(),
+        [
+            "unit-link",
+            "power",
+            "force",
+            "speed",
+            "destination",
+            "move",
+            "building-link",
+            "break"
+        ]
+    );
+    assert_eq!(trace[0].unit_link, Some(BunkerLink::None));
+    assert!(!trace[0].powered);
+    assert_eq!(trace[2].head, Some(release_head()));
+    assert_eq!(trace[2].destination, Some(release_head()));
+    assert_eq!(trace[4].head, Some(release_head()));
+    assert_eq!(trace[4].destination, Some(DriveCoord::cell(9, 11, 0)));
+    assert_eq!(trace[5].building_link, Some(1));
+    let unit = sim.substrate.entities.get(1).unwrap();
+    assert_eq!(position_world_coord(&unit.position), pose);
+    assert_eq!(unit.navigation.nav_com(), Some(NavTargetRef::cell(9, 11)));
+    assert_eq!(
+        unit.mission.queued(),
+        MissionId::from_known(MissionType::Move)
+    );
+    let building = sim.substrate.entities.get(2).unwrap();
+    assert_eq!(
+        building.mission.queued(),
+        MissionId::from_known(MissionType::Guard)
+    );
+    assert_eq!(
+        building.building.bunker_runtime.unwrap().state(),
+        BunkerState::Idle
+    );
+}
+
+#[test]
+fn force_limbo_early_return_does_not_skip_caller_speed_links_or_break() {
+    let mut sim = release_fixture();
+    // A supplied lifecycle edge into Force is separate from ordinary install,
+    // which never conceals. Force's callback-specific tests live with its host.
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .lifecycle
+        .set_in_limbo_for_test(true);
+    release_sell_destroy(
+        &mut sim,
+        2,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    let unit = sim.substrate.entities.get(1).unwrap();
+    assert!(
+        unit.lifecycle.in_limbo(),
+        "release must not resurrect/reveal"
+    );
+    assert_eq!(unit.foot_speed.applied_fraction(), SIM_ONE);
+    assert_eq!(unit.bunker.link(), BunkerLink::None);
+    assert!(!unit.seldom.radio_contacts.contains(2));
+    let drive = unit
+        .locomotor
+        .as_ref()
+        .and_then(|l| l.selected_drive_runtime())
+        .and_then(|r| r.retained())
+        .unwrap();
+    assert_eq!(drive.head_to(), None);
+    assert!(!drive.track_valid());
+    assert_eq!(drive.track().turn_index(), 0x47);
+    assert_eq!(drive.destination(), Some(DriveCoord::cell(7, 8, 417)));
+    assert_eq!(
+        sim.substrate.entities.get(2).unwrap().bunker.occupant(),
+        None
+    );
+}
+
+#[test]
+fn break_targets_slot_zero_even_when_it_is_not_the_released_unit() {
+    let mut sim = release_fixture();
+    let mut contact = GameEntity::test_default(3, "TANK", "Americans", 14, 14);
+    contact.seldom.radio_contacts.insert(2);
+    sim.substrate.entities.insert(contact);
+    let building = sim.substrate.entities.get_mut(2).unwrap();
+    building.seldom.radio_contacts = Contacts::with_capacity(2);
+    building.seldom.radio_contacts.insert(3);
+    building.seldom.radio_contacts.insert(1);
+    release_sell_destroy(
+        &mut sim,
+        2,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    assert!(
+        !sim.substrate
+            .entities
+            .get(3)
+            .unwrap()
+            .seldom
+            .radio_contacts
+            .contains(2)
+    );
+    assert!(
+        sim.substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .seldom
+            .radio_contacts
+            .contains(2)
+    );
+    assert!(
+        sim.substrate
+            .entities
+            .get(2)
+            .unwrap()
+            .seldom
+            .radio_contacts
+            .contains(1)
+    );
+}
+
+#[test]
+fn empty_slot_zero_does_not_scan_later_contacts() {
+    let mut sim = release_fixture();
+    let building = sim.substrate.entities.get_mut(2).unwrap();
+    building.seldom.radio_contacts = Contacts::with_capacity(2);
+    building.seldom.radio_contacts.insert(3);
+    building.seldom.radio_contacts.insert(1);
+    building.seldom.radio_contacts.remove(3);
+    release_sell_destroy(
+        &mut sim,
+        2,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    assert!(
+        sim.substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .seldom
+            .radio_contacts
+            .contains(2)
+    );
+    assert!(
+        sim.substrate
+            .entities
+            .get(2)
+            .unwrap()
+            .seldom
+            .radio_contacts
+            .contains(1)
+    );
+    assert!(crate::sim::radio::take_test_trace().is_empty());
+}
+
+#[test]
+fn nonunit_link_does_not_release_or_reset_bunker() {
+    for normal in [false, true] {
+        let mut sim = release_fixture();
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .set_category_for_test(EntityCategory::Infantry);
+        if normal {
+            release_normal(
+                &mut sim,
+                2,
+                &super::tests::rules(),
+                &mut crate::sim::world::FrameEffects::default(),
+            );
+        } else {
+            release_sell_destroy(
+                &mut sim,
+                2,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
+                &mut crate::sim::world::FrameEffects::default(),
+            );
+        }
+        assert!(take_trace().is_empty());
+        let unit = sim.substrate.entities.get(1).unwrap();
+        assert_eq!(unit.bunker.link(), BunkerLink::Installed(2));
+        assert!(!unit.locomotor.as_ref().unwrap().is_powered());
+        assert_eq!(unit.foot_speed.applied_fraction(), SimFixed::lit("0.25"));
+        let building = sim.substrate.entities.get(2).unwrap();
+        assert_eq!(building.bunker.occupant(), Some(1));
+        assert_eq!(
+            building.building.bunker_runtime.unwrap().state(),
+            BunkerState::Occupied
+        );
+    }
+}

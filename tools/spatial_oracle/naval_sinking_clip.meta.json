@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original sinking waterline rectangle and draw-gate evidence.\n\nUnit draw admission executes original projection before the body boundary.\nInterior raster locals remain supplied, with the camera sequence consuming the\nseparate physical AEGIS raster packet. This is not a captured live-process frame\nand does not establish the ambient native x87 control word.\n",
+  "assumptions": [
+    "Original renderer frame locals are supplied: caller clip, draw anchor Y, raster bounds Y/height, Tactical+B4 world camera Y, view width and current/offscreen surface identity. No values derive from Rust.",
+    "Original Unit73BEA4..73BF7B cached composite and Techno70709E..70716D generic piece rectangles run through native421B60. Unit capture includes -128 because its cached raster uses a128px center; generic inputs use corresponding shifted raster bounds. First capture leaves the caller clip unchanged.",
+    "Constructor field stores6F2F1E..6F2F37 execute with the enclosing constructor zero-register invariant supplied. Raw-load/no-init persistence is separately executed in naval_lifetime_controls.",
+    "Shadow gate73C1D2..73C202/73C5C9 and full early DrawExtras6F5190 return for nonzero sinking execute. Sinking0 stops before the remaining ordinary tails. Raw255 is a supplied legacy-byte control, not an active producer claim.",
+    "The original clip/gate slices are integer-only. Added Unit73B0B0->Object5F4B10->CoordsToClient2 6D2140 executes native projection and ftol under supplied FPCW0E7F and startup scalar bits3FC25E5374344960; supplied XYZ/camera and redraw-ready Unit with original vtable7F5C70. No RNG, timer or detach calls occur in these measured draw boundaries.",
+    "Native viewport store6D5F60..6D5F8D executes with supplied tactical rect886FA0, matching original caller4A89B8 and Scenario687620. Full camera clamping/window creation excluded. The retained camera sequence consumes facing-zero cached_dirty from the separately executable physical AEGIS raster packet; no Rust raster inputs."
+  ],
+  "substitutions": [
+    "No calls or executable instructions are replaced. Unit body entry73CEC0 is a stop boundary; the separately measured clip slice consumes its anchor/caller rectangle plus the physical raster bounds. Full Display iteration, intervening sink ticks, whole Unit raster dispatch and surface blits are outside this packet."
+  ],
+  "entry_points": {
+    "unit_clip": "0x0073BEA4",
+    "techno_clip": "0x0070709E",
+    "shadow_gate": "0x0073C1D2",
+    "extras_gate": "0x006F5190",
+    "ctor": "0x006F2F1E",
+    "unit_draw_entry": "0x0073B0B0",
+    "projection": "0x006D2140",
+    "viewport_store": "0x006D5F60",
+    "intersection": "0x00421B60"
+  },
+  "original_slices": {
+    "unit_clip": {
+      "start": "0x73bea4",
+      "end": "0x73bf7b",
+      "bytes": "8b8424d40100008b8c24d80100008b9424d001000089442454668b85ca030000894c2458895424508b9424dc01000033c98954245c663bc17e678b1524738800510fbfc08bbab40000008b15a86f88002bc7898c24800000008984248c0000008d842480000000898c24840000008994248800000051508d54245c8d4c2448e8385cceff8b08894c24508b5004895424548b4808894c24588b500c8954245ceb368a85cd03000084c0742ca1247388008b15c4cfb100668b88b4000000a1cccfb10066038c24cc01000003c88d441180668985ca030000"
+    },
+    "techno_clip": {
+      "start": "0x70709e",
+      "end": "0x70716d",
+      "bytes": "8b8c24500100008bbc244c0100008b11895424208b4104894424248b5108895424288b410c8b0d147388008944242ca13cd1b1003bc80f8493000000668b85ca03000033c9663bc17e588b1524738800510fbfc08bb2b40000008b15a86f88002bc6894c2414894424208d442414894c24188954241c51508d54242c8d4c2458e83daad1ff8b08894c24208b5004895424248b4808894c24288b500c8954242ceb2d8a85cd03000084c07423a1247388008b542438668b88b40000008b44244866034f0403ca03c866898dca030000"
+    },
+    "shadow_gate": {
+      "start": "0x73c1d2",
+      "end": "0x73c202",
+      "bytes": "8a85cd030000899424c40000008b15cccfb10084c0898c24cc000000899424d0000000c685d3060000000f85c7030000"
+    },
+    "extras_gate": {
+      "start": "0x6f5190",
+      "end": "0x6f51b0",
+      "bytes": "81ec8c000000558be956578a85cd03000089ac249400000084c00f85330d0000"
+    },
+    "ctor": {
+      "start": "0x6f2f1e",
+      "end": "0x6f2f37",
+      "bytes": "66899eca030000889ecc030000889ecd030000889ece030000"
+    },
+    "unit_draw_entry": {
+      "start": "0x73b0b0",
+      "end": "0x73b13c",
+      "bytes": "56578bf98a871804000084c074666a00e87bfcf1ff8bf08bce8b06ff502c83f80675518b168bceff928401000083f810740983beb400000010753981c6500300008bcee818a0d6ff84c075218bcee82da0d6ff84c075168bcee8a2a0d6ff84c0750b8bcee8b7a0d6ff84c074075f32c05ec20c008b4424108b4c240c6a0050518bcfe8d999ebff5f5ec20c00"
+    },
+    "projection": {
+      "start": "0x6d2140",
+      "end": "0x6d2272",
+      "bytes": "83ec08538b5c241055568b338b4304894424108be98d0476578b7c24148b5b088d0480c744241c00000000c1e002992bc28bc88d0476d1f98d0480d1e0992bc28bf08bc7c1e0042bc7f7d8c1e002992bc2d1f803c88d047fd1fe8d0480894c2410d1e0992bc2895c2410d1f803f08bc19981e2ff00000003c28bf88bc69981e2ff00000003c28bf0c1ff08c1fe0881fbd80200007c08c744241c01000000db442410dc0d48cdb000da44241cdc0538177e00e8093d0f002bf08b44242089388970048b8db00000008badb40000008b388b70042bf92bf589388bcf8970048bc65f5e5d81f998feffff5b7d0832c083c408c208008b1530ceb00081c2680100003bca7e0832c083c408c208003d4cffffff7d0832c083c408c208008b0d34ceb00081c1b40000003bc10f9ec083c408c20800"
+    },
+    "viewport_store": {
+      "start": "0x6d5f60",
+      "end": "0x6d5f8d",
+      "bytes": "83ec088b44240c568bf18b08890d28ceb0008b500489152cceb0008b4808890d30ceb0008b500c891534ceb000"
+    }
+  },
+  "aegis_raster_packet_sha256": "46384d9d714c808e51b38fb1fc27c89d5902b55417ec7402348e69ad756a086a",
+  "payload_sha256": "7aa901603268bb241beb154162d368ef4a89b83ca0a43bae9a2b9dc5ace55c90"
+}

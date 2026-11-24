@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original63FB20 command loop:1215 staged count/flash/side/height cases plus8 dirty/visible/force cases.",
+  "assumptions": [
+    "Explicit staged counters; no target or timing producer equivalence claimed.",
+    "Sidebar surface bounds supplied as0,0,168,600; sidebar bodyY158."
+  ],
+  "substitutions": [
+    "Surface virtual+78 returns declared bounds;4AED70 records actual commands and returns with original stack cleanup, poisoning volatile outputs."
+  ],
+  "entry_points": {
+    "power_draw": "0x0063FB20",
+    "draw_boundary": "0x004AED70"
+  },
+  "payload_sha256": "495a6edcdc02fcd765e5e25feda8ac81564cfcac5614e06bc96e20ee8c6c6fb9"
+}

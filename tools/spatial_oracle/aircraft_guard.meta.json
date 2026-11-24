@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "AircraftClass::Mission_Guard 0x0041A5C0 and Mission_AreaGuard 0x0041A940 as vt+0x21C and vt+0x220, one call per row. Mission_Guard at the type's flight level over team (+0x5D4) x NavCom (+0x5A4) x a slot-0 weapon, the rest quiet or busy; below it, Ammo (+0x2FC) against the type's Ammo= (+0x684) for -1, 0, both sides of the stock and half thresholds, odd and negative types, over Is_Armed x radio contact (none, a UnitReload pad, a pad without UnitReload, a Unit) x dock found, with a Target; without a Target, over Is_Armed x GetHeight 300/0 x radio contact x IsControlledByHuman x a bridge vehicle found x vt+0x54, short of Ammo or not; heights 900, -50 and 1, flight levels 0 and 1500, Rate and RandomRanged answers. Mission_AreaGuard at the flight level over team, quiet or busy; below it over Ammo -1/0/1 x Is_Armed x radio contact x Target x GetHeight 300/0. Returned value, ordered call log in GuardHost vocabulary with arguments, the writes to Mission+0xBC, +0x6CC and +0x6D4 in order, and both bytes afterwards. Not the dock search's, the house search's, the Foot bodies' or Enter_Idle_Mode's own work, and not the rearm thresholds of the globals 0x00889ECC/0x00889ECD set.",
+  "assumptions": [
+    "One emulator; per row the scratch region (0x10000 bytes) and the stack frame are rewritten. The owner holds a clone of the Aircraft vtable 0x007E22A4 with only the stubbed slots replaced, House +0x21C, the Location +0x9C, the radio vector +0xE4/+0xE8 and its type +0x6C4 on the real AircraftTypeClass vtable 0x007E2868 with the row's FlightLevel (+0x618) and Ammo= (+0x684).",
+    "Mission+0xBC is preset 3 and +0x6D4 is preset 2 so a write shows; neither function reads either.",
+    "The x87 control word is the game's 0x0E7F (the value ftol 0x007C5F00 compares with 0x00822D80).",
+    "The globals 0x00889ECC and 0x00889ECD stay 0 as mapped: the code sections hold no absolute reference to either address but the reads at 0x0041A6B7 and 0x0041A758.",
+    "RadioClass::Contact 0x0065AD30 and the contact's What_Am_I (Building 0x00459EC0, Unit 0x00746E20) run natively; the pad's type is a scratch BuildingTypeClass with the row's UnitReload (+0x16AA).",
+    "Per row: RET to the caller with ESP + 4 and EBX/EBP/ESI/EDI preserved; no write outside the stack but the logged owner fields; every read of scratch bytes falls on bytes the row supplied."
+  ],
+  "substitutions": [
+    "GetHeight vt+0x1C8, Is_Armed vt+0x2AC and vt+0x54 answer the row's values; GetWeapon vt+0x3F8 (slot 0 asserted) answers a WeaponStruct holding the row's WeaponType or NULL; Queue_Mission vt+0x1E8, Assign_Destination vt+0x480, Enter_Idle_Mode vt+0x484 and Assign_Target vt+0x3C8 record their arguments; the dock search vt+0x528 records its arguments and answers the row's dock or NULL.",
+    "Entry hooks: IsControlledByHuman 0x0050B730 (on the owner's house) and In_Radio_Contact 0x0065AE30 answer the row's values; Get_CellClass_At_Coord 0x00565730 (asserted on the Location) answers a scratch cell; HouseClass 0x00500300 (asserted on the owner's house and Location) answers the row's bridge vehicle or NULL; 0x005B3A00 answers a scratch MissionControlClass whose Rate makes the native ftol produce the row's frames; RandomRanged 0x0065C7E0 (on Scenario+0x218) answers the row's value; FootClass::Mission_Guard 0x004D5070 and Mission_AreaGuard 0x004D6AA0 answer the row's value."
+  ],
+  "entry_points": {
+    "mission_guard": "0x0041A5C0",
+    "mission_area_guard": "0x0041A940",
+    "get_flight_level": "0x00717800",
+    "radio_contact": "0x0065AD30",
+    "building_what_am_i": "0x00459EC0",
+    "unit_what_am_i": "0x00746E20",
+    "ftol": "0x007C5F00"
+  },
+  "payload_sha256": "170f92871cad82e5d62b57a6a97a6559205a32ae783b270386c73f545cd2b66b"
+}

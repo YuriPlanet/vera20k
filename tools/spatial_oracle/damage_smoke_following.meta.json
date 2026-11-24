@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Smoke system constructor offset and complete AI following, trail and tube suppression.",
+  "assumptions": [
+    "Existing DamageSmoke/SparkBirth runtime, physical retail particle readers and original RNG bodies.",
+    "Bounded Object construction with actual Unit, Infantry, Aircraft or Building vtables; supplied raw coordinates, flags, alive and tube prior state. No whole Foot constructor or movement/receive-damage proof.",
+    "Existing smoke remains alive; supplied frame zero admits emission. Owner location and tube state change between visits. No renderer, save/load or whole-match execution."
+  ],
+  "substitutions": [
+    "Only inherited OS/archive/INI transport; no smoke, getter, RNG, timer or detach result substitution."
+  ],
+  "entry_points": {
+    "constructor": "0x0062DC50",
+    "system_ai": "0x0062FD60",
+    "smoke_ai": "0x0062ED40",
+    "offset": "0x0062DE6D",
+    "follow": "0x0062ED49",
+    "tube_gate": "0x0062F080"
+  },
+  "replay_command": "python -m tools.spatial_oracle.damage_smoke --following",
+  "payload_sha256": "f1ca71a8b2ea0d01efd5b45e2e007d4e8ab6d601d2f8d4129c73e667068d9740"
+}

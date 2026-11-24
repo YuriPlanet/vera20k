@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original UnitClass::Should_Crush_It 0x007438F0 for a computer-owned unit, and the crush arms of UnitClass::Approach_Target 0x007414E0, on scratch objects: the crusher, crushable, Crush= distance (Sqrt_Approx and ftol executed natively, ObjectClass::Distance 0x005F6360 natively in the approach), Easy, AutoCrush= IQ, disguise, owner, NavCom, Target class, OmniCrusher= and passive-target gates.",
+  "assumptions": [
+    "Unit +0x6C4 type (+0xD28 Crusher, +0xD29 OmniCrusher, +0xD2D AutoCrush, +0xD6A BalloonHover clear), +0x21C house (+0x184 difficulty, +0x1EC IsHuman, +0x24C CurrentIQ), +0x2B4 Target, +0x50C passive target, +0x5A4 NavCom; Target +0x14 AbstractFlags; Rules at 0x008871E0 (+0x1728 Crush, +0x1448 IQ AutoCrush); the native FPU control word 0x0E7F.",
+    "Should_Crush_It rows are a computer's; its human arm is not exercised."
+  ],
+  "substitutions": [
+    "HasWeaponAbility 0x0070D0D0, Is_Crushable_By 0x005F6CD0, IsControlledByHuman 0x0050B730 and FootClass::Approach_Target 0x004D5690 are entry-hooked returns; both GetCoords (vt+0x48), the source's IsDisguisedTo (vt+0xC8), the target's WhatAmI (vt+0x2C, Infantry) and the unit's SetDestination (vt+0x480) are scratch stubs."
+  ],
+  "entry_points": {
+    "should_crush_it": "0x007438F0",
+    "approach": "0x007414E0"
+  },
+  "replay_command": "python -m tools.unit_crush_oracle",
+  "payload_sha256": "1b766ef015e5373c8e3ba5c01d739b68f297660612d42ae90947eebc988bad41"
+}

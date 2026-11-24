@@ -1,0 +1,34 @@
+name: Differs from the original game
+description: Something plays, looks or sounds different from Yuri's Revenge.
+labels: ["parity"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A short description is enough, in any language. Only the first box is required.
+
+  - type: textarea
+    id: difference
+    attributes:
+      label: What seems different?
+      description: Describe what you noticed and what you expected from Yuri's Revenge.
+    validations:
+      required: true
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Where did you notice it? (optional)
+      description: A map, unit, game mode or a few steps can help. A comparison with the original is welcome if you have one.
+
+  - type: input
+    id: version-and-device
+    attributes:
+      label: Game version and device (optional)
+      description: A release number and a device name or operating system are enough, if you know them.
+
+  - type: textarea
+    id: attachments
+    attributes:
+      label: Screenshots, videos or logs (optional)
+      description: Drag files or paste links here. Remove personal details before posting.

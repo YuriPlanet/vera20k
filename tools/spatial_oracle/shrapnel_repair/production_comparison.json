@@ -1,0 +1,284 @@
+{
+  "connectivity": {
+    "final": {
+      "all_raw_rows_exact": true,
+      "base_ids_exact": true,
+      "cells": 26896,
+      "classes_exact": true,
+      "heights_exact": true,
+      "movement_rows": 13,
+      "zone_count": 388
+    },
+    "initial": {
+      "all_raw_rows_exact": true,
+      "base_ids_exact": true,
+      "cells": 26896,
+      "classes_exact": true,
+      "heights_exact": true,
+      "movement_rows": 13,
+      "zone_count": 388
+    },
+    "repair": {
+      "main_full_state_exact": true,
+      "mapgen_full_state_exact": true,
+      "repeat_no_changes": true,
+      "scenario_limit": "The production approach includes30 ordinary frames; this bounded native570050 call does not execute their unrelated Scenario draws.",
+      "scenario_production_after_equals_bounded_native": false,
+      "scenario_unchanged_inside_native_repair": true,
+      "strip": {
+        "cells": 33,
+        "exact": true,
+        "fields": [
+          "coord",
+          "flags",
+          "overlay",
+          "state",
+          "tile",
+          "subtile",
+          "level",
+          "slope",
+          "land",
+          "zone_type"
+        ]
+      }
+    }
+  },
+  "controller_and_resident": [
+    {
+      "hut": [
+        117,
+        56
+      ],
+      "repair": {
+        "main_full_state_exact": true,
+        "mapgen_full_state_exact": true,
+        "repeat_no_changes": true,
+        "scenario_limit": "The production approach includes30 ordinary frames; this bounded native570050 call does not execute their unrelated Scenario draws.",
+        "scenario_production_after_equals_bounded_native": false,
+        "scenario_unchanged_inside_native_repair": true,
+        "strip": {
+          "cells": 33,
+          "exact": true,
+          "fields": [
+            "coord",
+            "flags",
+            "overlay",
+            "state",
+            "tile",
+            "subtile",
+            "level",
+            "slope"
+          ]
+        }
+      },
+      "stage": "controller"
+    },
+    {
+      "hut": [
+        117,
+        56
+      ],
+      "initial_resident_cells": {
+        "cells": 9,
+        "exact": true,
+        "fields": [
+          "coord",
+          "flags",
+          "overlay",
+          "state",
+          "tile",
+          "subtile",
+          "level",
+          "slope",
+          "land",
+          "zone_type"
+        ]
+      },
+      "repair": {
+        "main_full_state_exact": true,
+        "mapgen_full_state_exact": true,
+        "repeat_no_changes": true,
+        "scenario_limit": "The production approach includes30 ordinary frames; this bounded native570050 call does not execute their unrelated Scenario draws.",
+        "scenario_production_after_equals_bounded_native": false,
+        "scenario_unchanged_inside_native_repair": true,
+        "strip": {
+          "cells": 33,
+          "exact": true,
+          "fields": [
+            "coord",
+            "flags",
+            "overlay",
+            "state",
+            "tile",
+            "subtile",
+            "level",
+            "slope",
+            "land",
+            "zone_type"
+          ]
+        }
+      },
+      "stage": "resident_recalc"
+    },
+    {
+      "hut": [
+        113,
+        62
+      ],
+      "repair": {
+        "main_full_state_exact": true,
+        "mapgen_full_state_exact": true,
+        "repeat_no_changes": true,
+        "scenario_limit": "The production approach includes30 ordinary frames; this bounded native570050 call does not execute their unrelated Scenario draws.",
+        "scenario_production_after_equals_bounded_native": false,
+        "scenario_unchanged_inside_native_repair": true,
+        "strip": {
+          "cells": 33,
+          "exact": true,
+          "fields": [
+            "coord",
+            "flags",
+            "overlay",
+            "state",
+            "tile",
+            "subtile",
+            "level",
+            "slope"
+          ]
+        }
+      },
+      "stage": "controller"
+    },
+    {
+      "hut": [
+        113,
+        62
+      ],
+      "initial_resident_cells": {
+        "cells": 9,
+        "exact": true,
+        "fields": [
+          "coord",
+          "flags",
+          "overlay",
+          "state",
+          "tile",
+          "subtile",
+          "level",
+          "slope",
+          "land",
+          "zone_type"
+        ]
+      },
+      "repair": {
+        "main_full_state_exact": true,
+        "mapgen_full_state_exact": true,
+        "repeat_no_changes": true,
+        "scenario_limit": "The production approach includes30 ordinary frames; this bounded native570050 call does not execute their unrelated Scenario draws.",
+        "scenario_production_after_equals_bounded_native": false,
+        "scenario_unchanged_inside_native_repair": true,
+        "strip": {
+          "cells": 33,
+          "exact": true,
+          "fields": [
+            "coord",
+            "flags",
+            "overlay",
+            "state",
+            "tile",
+            "subtile",
+            "level",
+            "slope",
+            "land",
+            "zone_type"
+          ]
+        }
+      },
+      "stage": "resident_recalc"
+    }
+  ],
+  "hierarchy": {
+    "final": {
+      "all_raw_rows_exact": true,
+      "base_ids_exact": true,
+      "cells": 26896,
+      "classes_exact": true,
+      "heights_exact": true,
+      "movement_rows": 13,
+      "zone_count": 388
+    },
+    "graph_comparison": {
+      "all_ordered_edges_exact": true,
+      "all_parents_exact": true,
+      "all_types_exact": true,
+      "ids_each": 26896,
+      "initial_and_final_exact": true,
+      "levels": 3,
+      "padding_ids_each": 329,
+      "shared_dummy_exact": true
+    },
+    "initial": {
+      "all_raw_rows_exact": true,
+      "base_ids_exact": true,
+      "cells": 26896,
+      "classes_exact": true,
+      "heights_exact": true,
+      "movement_rows": 13,
+      "zone_count": 388
+    },
+    "native_final_graph_counts": [
+      3595,
+      1556,
+      885
+    ],
+    "native_initial_graph_counts": [
+      3587,
+      1545,
+      857
+    ],
+    "physical_live_check": {
+      "all_cell_levels_exact": true,
+      "allocated_membership_exact": true,
+      "physical_cells": 13366
+    },
+    "repair": {
+      "main_full_state_exact": true,
+      "mapgen_full_state_exact": true,
+      "repeat_no_changes": true,
+      "scenario_limit": "The production approach includes30 ordinary frames; this bounded native570050 call does not execute their unrelated Scenario draws.",
+      "scenario_production_after_equals_bounded_native": false,
+      "scenario_unchanged_inside_native_repair": true,
+      "strip": {
+        "cells": 33,
+        "exact": true,
+        "fields": [
+          "coord",
+          "flags",
+          "overlay",
+          "state",
+          "tile",
+          "subtile",
+          "level",
+          "slope",
+          "land",
+          "zone_type"
+        ]
+      }
+    }
+  },
+  "mode_file": {
+    "active": "MPBattleMD.ini",
+    "byte_identical": true,
+    "entry_id": "0xAF084179",
+    "previous_extract_sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963",
+    "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963",
+    "source": "ra2md.mix/localmd.mix"
+  },
+  "physical_map_sha256": "c32e412e938e1b9a0b29f89ff9bc0e6f410f75bc76701fb4acef6581fd19b438",
+  "production_inputs": {
+    "after_approach": "8823a3923bedf676e7c0ce5a585e4bd8bd3cc6fbfe0ad1b8f6eadf95b6d44ad3",
+    "before_command": "9071409769a6601b0e08cf0d28a87dbad2f38911bf7f0f9e5aae7c241448bfce",
+    "loaded": "d32621f4bb72a2d7dbebdc4165cfa0bca991917eb625b6b1e1f91821b9b5817c"
+  },
+  "scope": "Compare saved original-execution outputs with frozen production boundary captures."
+}

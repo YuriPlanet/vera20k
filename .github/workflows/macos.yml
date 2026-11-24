@@ -1,0 +1,13 @@
+name: macOS
+
+# macOS on Apple Silicon (ARM64): the pinned golden values here also check cross-architecture determinism.
+# Manual only: run it from the Actions tab or with
+# `gh workflow run macos.yml --ref <branch>`.
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+    with:
+      os: macos-latest

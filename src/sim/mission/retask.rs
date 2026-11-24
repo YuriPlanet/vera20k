@@ -1,0 +1,263 @@
+//! Verb-driven retasking on [`Simulation`] — the single funnel the player-command
+//! sites use to queue a fresh mission.
+//!
+//! The mission write is the native event-execute shape: synchronized command
+//! execution queues the selected mission with `commence_now = 0`
+//! (`EventClass` execute, Queue callsite `0x004C73B9=dynamic/0`); the
+//! per-object AI host promotes it via Ready→Commence on its next update. The
+//! legacy `Option<T>` machines stay the behavior drivers; the per-site target
+//! and destination writes stay inline at the call site — the sites cancel
+//! different field subsets, so they cannot be folded into a fixed teardown
+//! without diverging.
+
+use crate::sim::mission::authority::LiveReadyInputProvider;
+use crate::sim::mission::{MissionId, MissionType};
+use crate::sim::radio::{self, RadioMessage};
+use crate::sim::world::FrameEffects;
+use crate::sim::world::Simulation;
+
+impl Simulation {
+    /// Accepted MEGAMISSION's shared prefix, EventClass4C72E8..4C7380.
+    /// Untethered actors break slot zero (vt27465ACB0 at4C72F8). Tethered
+    /// actors do so only for a natively alive DockUnload Building, then clear
+    /// tether+418 at4C7342. Health is not part of that contact test.
+    /// Pending entry+500 clears at4C7353, before Team removal and Queue.
+    /// Original executable controls: building_repair.depot_service.json,
+    /// pending_entry_lifecycle (declared Event slices, full Scenario RNG).
+    ///
+    /// Then `Assign_Target_Command` (vt+0x4A4, `0x004C73AA`) answers the
+    /// mission to queue ([`Self::foot_assign_target_command`]). `target` and
+    /// `destination` are the event's tokens, which it stores for an
+    /// attack-move; no other mission reads them.
+    pub(crate) fn begin_megamission_retask(
+        &mut self,
+        id: u64,
+        mission: MissionType,
+        target: Option<crate::sim::combat::TargetKind>,
+        destination: Option<crate::sim::combat::TargetKind>,
+        rules: &crate::rules::ruleset::RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> MissionType {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return mission;
+        };
+        let tethered = entity.seldom.tether.partner().is_some();
+        let foot = matches!(
+            entity.category(),
+            crate::map::entities::EntityCategory::Unit
+                | crate::map::entities::EntityCategory::Infantry
+                | crate::map::entities::EntityCategory::Aircraft
+        );
+        let break_tether = tethered
+            && entity
+                .seldom
+                .radio_contacts
+                .slot(0)
+                .and_then(|contact| self.substrate.entities.get(contact))
+                .filter(|contact| {
+                    contact.is_object_alive()
+                        && contact.category() == crate::map::entities::EntityCategory::Structure
+                })
+                .and_then(|contact| self.object_type(contact.type_ref(), rules))
+                .is_some_and(|object| object.dock_unload);
+        if !tethered || break_tether {
+            radio::transmit_to_contact(self, id, RadioMessage::Break, rules, frame_effects);
+        }
+        if let Some(entity) = self.substrate.entities.get_mut(id) {
+            if break_tether {
+                // `0x004C7342`.
+                entity.seldom.tether.release();
+            }
+            // `0x004C7353`.
+            entity.pending_entry.clear();
+        }
+        // Native4C735D..4C7380: Foot membership removal without an idle
+        // order, except Unload. The existing Team owner checks membership.
+        if foot && mission != MissionType::Unload {
+            self.leave_team(id, true, rules, frame_effects);
+        }
+        self.foot_assign_target_command(id, mission, target, destination, rules)
+    }
+
+    /// `TechnoClass::ResetOrdersToGuard` (`vt+0x3D0` = `0x0070F850`, no
+    /// class override): the class setter `vt+0x480(0, 1)` (`0x0070F859`),
+    /// class `vt+0x3C8(0)` (`0x0070F865`), ArchiveTarget (`+0x218`)
+    /// cleared (`0x0070F871`), then `Assign_Mission(Guard)` (`0x0070F87B`).
+    /// Callers include the capture reset (`0x00471EA5`), the slave manager
+    /// (the deploy hand-off `0x006B0D10` and the release `0x006B0BC5`) and
+    /// SetInOpenTransport (`0x00710484`, [`Self::enter_open_topped`]).
+    pub(crate) fn reset_orders_to_guard(
+        &mut self,
+        id: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+    ) {
+        let now = self.session.binary_frame();
+        self.assign_null_destination(id, rules, Some(rules.overlay_registry()), frame_effects);
+        let _ = self.assign_target_represented(id, None, rules, frame_effects);
+        if let Some(entity) = self.substrate.entities.get_mut(id) {
+            entity.set_archive_target(None);
+        }
+        let _ =
+            self.substrate
+                .mission_assign_exact(id, MissionId::from_known(MissionType::Guard), now);
+    }
+
+    /// Retask `id` onto a fresh `mission`: queue the mission through the
+    /// exact authority with `commence_now = 0` — the
+    /// native event-execute shape (Queue `0x004C73B9=dynamic/0`). Promotion to
+    /// `current` happens at the per-object AI host's Ready→Commence. Used by
+    /// the MEGAMISSION event arm (`Simulation::apply_megamission_command`,
+    /// through [`Self::queue_megamission`]) and the transport unload's
+    /// passenger moves. Stop has its own no-queue Event6 route above.
+    pub fn queue_order_mission(
+        &mut self,
+        id: u64,
+        mission: MissionType,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) {
+        let now = self.session.binary_frame();
+        // A missing receiver performs no write (same as the native event path
+        // skipping a dead target); Queue's own guards decide the rest.
+        let _ = self.mission_queue_exact(
+            id,
+            MissionId::from_known(mission),
+            0,
+            now,
+            &LiveReadyInputProvider { rules },
+        );
+    }
+
+    /// The same retask, plus the archive clears that belong to the
+    /// MEGAMISSION event specifically.
+    ///
+    /// Immediately after its `Queue_Mission` at 0x004C73B9,
+    /// `EventClass::Execute`'s MEGAMISSION arm empties the archives:
+    /// `MOV [EDI+0x5A8],0` (SuspendedNavCom) at 0x004C73C7 on the Foot arm the
+    /// `TEST byte [EDI+0x14],0x4` at 0x004C73BF selects, and
+    /// `MOV [EDI+0x2B8],0` (SuspendedTarCom) at 0x004C73D7 on the join — which
+    /// the non-Foot arm also reaches, via `0x004C7440: XOR EBP,EBP;
+    /// JMP 0x004C73D1`. `SuspendedMission` itself is deliberately left alone, so
+    /// a later Restore reinstates the old selector with a NULL target and NULL
+    /// destination.
+    /// After the Slave Manager reset, the ordinary Foot arm clears
+    /// ArchiveTarget through TechnoClass70C610 (`0x004C7448..0x004C7451`)
+    /// and empties the navigation list (`0x004C7453`), before the class
+    /// target and destination setters. The executed GI `archive_A_B` control
+    /// in `walk_first_path.json` records that order. Raw event mission 11
+    /// takes the earlier AreaGuard arm instead, which clears neither.
+    ///
+    /// This is NOT the shared funnel's business, because not every player order
+    /// is a MEGAMISSION. Stop is its own opcode — `StopCommandClass::Execute`
+    /// pushes 6 at 0x00730EE7, and the table at 0x004C8114 routes 6 to
+    /// 0x004C74CB. That arm DOES queue a mission in one case, the ore miner on
+    /// Harvest or Return: `PUSH EDI; PUSH 5; CALL [EDX+0x1E8]` at 0x004C7685
+    /// (EDI is the function's zero register there) then Commence at 0x004C7696,
+    /// which `commit_stop_miner_guard` below implements. What it does not do,
+    /// anywhere in 0x004C74CB-0x004C76BB, is
+    /// store to `+0x2B8` or `+0x5A8`. Clearing there would leave a unit parked
+    /// after a Stop where retail resumes its archived move on the next Restore.
+    ///
+    /// A Harvest order also uses this funnel, retaining its unload-latch reset
+    /// after radio Break. Event9 DEPLOY orders (including the VERA-only
+    /// bunker-eject record, #3675) and dormant aircraft passenger Unload
+    /// still bypass the prefix. These pre-existing command routes can Restore
+    /// a cancelled archive; their complete DTO/mission migration is separate
+    /// from ordinary Unit depot servicing.
+    ///
+    /// Without the clear on the sites that DO need it, a unit Overridden by a
+    /// blocked step or by the retaliation at 0x00702B41, then retasked, then
+    /// losing its new target, marched back to the destination the player had
+    /// cancelled or re-latched the cancelled target.
+    pub(crate) fn queue_megamission(
+        &mut self,
+        id: u64,
+        mission: MissionType,
+        target: Option<crate::sim::combat::TargetKind>,
+        destination: Option<crate::sim::combat::TargetKind>,
+        rules: &crate::rules::ruleset::RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+    ) {
+        let queued =
+            self.begin_megamission_retask(id, mission, target, destination, rules, frame_effects);
+        // Retain the existing miner adapter after radio Break, before Queue.
+        // Both ordinary and planned Harvest use this same event prefix.
+        if mission == MissionType::Harvest {
+            crate::sim::miner::clear_unload_latch(&mut self.substrate, id);
+        }
+        self.queue_order_mission(id, queued, rules);
+        if let Some(entity) = self.substrate.entities.get_mut(id) {
+            entity.seldom.suspended_attack_target.clear();
+            if entity.category() != crate::map::entities::EntityCategory::Structure {
+                entity.navigation.clear_suspended_nav_com();
+            }
+        }
+        // `0x004C73E1..0x004C73EA`: any queued mission but Attack takes a
+        // Slave Miner off its hunt (`sim::slave_manager`).
+        if queued != MissionType::Attack {
+            self.reset_slave_manager(id, rules, frame_effects);
+        }
+        self.substrate.megamission_foot_clears(id, mission);
+    }
+
+    /// The ore-miner arm of the Stop command.
+    ///
+    /// Retail's IDLE event handler ends with, for a `UnitClass` carrying the
+    /// ore-miner type flag whose committed mission is `Harvest` or `Return`:
+    /// `Queue_Mission(Guard, 0); Commence();` — an unconditional promotion, not
+    /// the readiness-gated one the per-object AI host performs. So the miner is
+    /// on Guard with a zero dispatch delay on the same tick, and the Harvest
+    /// handler stops being dispatched for it.
+    ///
+    /// Everything else Stop touches is left alone; this is the only mission
+    /// write retail's Stop performs on any object.
+    ///
+    /// The flag is the type's `Harvester=` (`+0xE0E`, `0x004C766B`): every
+    /// VERA miner but the Slave Miner, whose Miner component is only an
+    /// order marker (`sim::slave_manager`). The Stop arm calls this only for
+    /// a Unit (`0x004C7655..0x004C765F`).
+    pub fn commit_stop_miner_guard(&mut self, id: u64, rules: &crate::rules::ruleset::RuleSet) {
+        let is_stoppable_miner = self.substrate.entities.get(id).is_some_and(|entity| {
+            entity.is_harvester()
+                && matches!(
+                    entity.mission.current().known(),
+                    Some(MissionType::Harvest) | Some(MissionType::Return)
+                )
+        });
+        if !is_stoppable_miner {
+            return;
+        }
+        let now = self.session.binary_frame();
+        let _ = self.mission_queue_exact(
+            id,
+            MissionId::from_known(MissionType::Guard),
+            0,
+            now,
+            &LiveReadyInputProvider { rules },
+        );
+        let _ = self.substrate.mission_commence_exact(id, now);
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// The MEGAMISSION event's Foot arm after its Slave Manager reset: the
+    /// ArchiveTarget clears through TechnoClass70C610 (`0x004C7448..
+    /// 0x004C7451`) and the navigation list empties (`0x004C7453`).
+    /// Event4C7446 tests the Foot receiver; non-Foot actors skip these
+    /// calls. Raw mission11 (`0x004C73EF` reads the event's own byte) uses
+    /// AreaGuard's separate Archive assignment at4C7430.
+    pub(crate) fn megamission_foot_clears(&mut self, id: u64, mission: MissionType) {
+        if mission != MissionType::AreaGuard
+            && let Some(entity) = self.entities.get_mut(id)
+            && matches!(
+                entity.category(),
+                crate::map::entities::EntityCategory::Unit
+                    | crate::map::entities::EntityCategory::Infantry
+                    | crate::map::entities::EntityCategory::Aircraft
+            )
+        {
+            entity.set_archive_target(None);
+            entity.navigation.clear_nav_list();
+        }
+    }
+}

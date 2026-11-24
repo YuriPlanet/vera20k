@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "The Sqrt_Approx distance blocks of Teleport Process, Walk ProcessMovement, RadSiteClass::GetRadLevelAt and PlaceInfantryInCell, and the particle constructor velocity normalization and Normalized= state-AI advance, and Find_Nearby_Passable_Cell's pick nearest a target, on synthetic coordinates.",
+  "assumptions": [
+    "Registers and scratch memory hold the coordinates the callers read just before each block (GetCoords results, the destination or step head, the particle source and target); no objects, cells or map are built",
+    "A scratch particle type record holds only Normalized= and FinalDamageState=; the particle only its type pointer and speed",
+    "The nearest pick starts from its frame as the candidate collection leaves it: counts, packed candidate arrays and the target pointer",
+    "Startup x87 chop53 control 0E7F"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "teleport": "0x00719454",
+    "walk": "0x0075BD33",
+    "radiation": "0x0065B93E",
+    "infantry": "0x00481180",
+    "particle_delta": "0x0062B6C6",
+    "particle_normalize": "0x0062B8D7",
+    "particle_advance": "0x0062B956",
+    "nearest": "0x0056E6F0",
+    "sqrt_approx": "0x004CAC40",
+    "ftol": "0x007C5F00"
+  },
+  "replay_command": "python -m tools.spatial_oracle.sqrt_approx_distances",
+  "payload_sha256": "1fda92b90f7e207e8d4049ad9b6240c698565ce769c5f2f3ca4f07fd2c39671b"
+}

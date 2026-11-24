@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Unchanged Tactical6DA380 weighted nearest-object metric, strict threshold and encounter-order ties; supplied registrations.",
+  "assumptions": [
+    "DiscoveryFixture owns both original Infantry constructor-prefix shells, Cell transport and seeded RNG streams. Alive, non-limbo and non-cloaked fields are supplied. These are not concrete Building/Jumpjet instances or a whole UI.",
+    "Two pointer/XY entries at B0CEC8 and Tactical+DB0=2 are declared inputs; camera is zero. Original40DD20 casts, lifecycle/cloak gates, 0.5 coefficient, x87 arithmetic/conversion and strict comparisons execute. No Python formula supplies a picked identity.",
+    "The final two controls use declared screen points from the separately executed Building registration/projection witness for issue2235. They test this kernel only; flight, registration producers, ProcessClickCoords, DetermineAction and release are outside this corpus.",
+    "All three seeded RNG states and selected native code bytes remain unchanged. This selected pick path has no timer write or detach."
+  ],
+  "substitutions": [
+    "Only inherited DiscoveryFixture platform/constructor boundaries; no TacticalPick instruction, cast or metric answer is replaced."
+  ],
+  "entry_points": {
+    "pick": "0x006DA380",
+    "techno_cast": "0x0040DD20",
+    "weighted_distance": "0x006DA444"
+  },
+  "replay_command": "python -m tools.spatial_oracle.pointer_pick",
+  "payload_sha256": "7fa592afeb917ee85887f24a0f8f4b5a0335b61390a7889cf727dd59ac05c4ab"
+}

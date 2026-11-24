@@ -1,0 +1,1037 @@
+use super::*;
+use crate::sim::components::{DriveCoord, NavTargetRef};
+use crate::sim::house_state::HouseState;
+use crate::sim::mission::{MissionId, MissionType};
+use crate::sim::movement::{FacingClass, locomotor::LocomotorState};
+
+fn no_rules() -> RuleSet {
+    RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str("")).unwrap()
+}
+
+fn with_mission(actor: &GameEntity, mission: MissionType) -> GameEntity {
+    let mut actor = actor.clone();
+    actor
+        .mission
+        .apply_test_fixture(crate::sim::mission::state::MissionTestFixture {
+            current: MissionId::from_known(mission),
+            queued: MissionId::NONE,
+            suspended: MissionId::NONE,
+            movement_bypass_latch: 0,
+            handler_state: 0,
+            mission_start_frame: 0,
+            ai_counter: 0,
+            dispatch_timer: crate::sim::mission::MissionDispatchTimer::at_frame(0),
+        });
+    actor
+}
+
+/// The Unit receiver's refusals before its coordinate, with both flags set so
+/// neither the mission's `Scatter=` nor a NavCom decides (the corpus leaves
+/// them to the flags). A refusal draws no RNG and writes nothing.
+#[test]
+fn unit_refusals_match_native_and_leave_orders_and_rng_untouched() {
+    let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/unit_scatter_state.json",
+    ))
+    .unwrap();
+    let rules = no_rules();
+    let flags = ScatterFlags::new(true, true);
+    let mut checked = 0;
+    for row in rows.as_array().unwrap() {
+        let input = &row["input"];
+        let flag = |key: &str| input[key].as_bool().unwrap_or(false);
+        let mission =
+            |key: &str, default| MissionId::from_raw(input[key].as_i64().unwrap_or(default) as i32);
+        let frame = input["frame"].as_u64().unwrap_or(100) as u32;
+        let now = frame.wrapping_add(input["elapsed"].as_u64().unwrap_or(0) as u32);
+        let mut actor = GameEntity::test_default(1, "MTNK", "Allies", 5, 5);
+        actor.set_category_for_test(EntityCategory::Unit);
+        actor
+            .mission
+            .apply_test_fixture(crate::sim::mission::state::MissionTestFixture {
+                current: mission("mission", 5),
+                queued: mission("queued", -1),
+                suspended: MissionId::NONE,
+                movement_bypass_latch: 0,
+                handler_state: 0,
+                mission_start_frame: 0,
+                ai_counter: 0,
+                dispatch_timer: crate::sim::mission::MissionDispatchTimer::at_frame(0),
+            });
+        actor.locomotor = Some(LocomotorState::for_test_kind(if flag("teleport") {
+            LocomotorKind::Teleport
+        } else {
+            LocomotorKind::Drive
+        }));
+        actor
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .set_powered_for_test(!flag("power_off"));
+        actor.set_unit_simple_deploy_for_test(
+            flag("deployed"),
+            flag("deploying"),
+            flag("undeploying"),
+        );
+        if flag("nav") {
+            actor
+                .navigation
+                .set_nav_com_for_test(Some(NavTargetRef::cell(8, 8)));
+        }
+        let mut facing = FacingClass::new(0, input["rot"].as_i64().unwrap_or(5) as i32);
+        if flag("turn") {
+            facing.set(0x4000, frame);
+        }
+        actor.body_facing = facing;
+        let admitted = unit_scatter_admitted(&StringInterner::new(), &actor, flags, &rules, now);
+        assert_eq!(admitted, row["admitted"].as_bool().unwrap(), "{input}");
+        if !admitted {
+            // The production receiver, not only the predicate: a refusal
+            // precedes the search, the setter and every write.
+            let before = serde_json::to_value(&actor).unwrap();
+            let mut sim = Simulation::new();
+            sim.session.set_binary_frame_for_test(now);
+            sim.substrate.entities.insert(actor);
+            let rng = sim.scenario_rng.state();
+            assert!(
+                !sim.scatter(
+                    1,
+                    None,
+                    flags,
+                    &rules,
+                    None,
+                    &mut crate::sim::world::FrameEffects::default()
+                )
+                .unwrap()
+            );
+            assert_eq!(
+                serde_json::to_value(sim.substrate.entities.get(1).unwrap()).unwrap(),
+                before,
+                "{input}"
+            );
+            assert_eq!(sim.scenario_rng.state(), rng, "{input}");
+        }
+        checked += 1;
+    }
+    assert_eq!(checked, 69);
+}
+
+/// TechnoClass::CanScatter (0x006F32B7) refuses trains before either
+/// coordinate arm can draw its scatter direction or assign a destination.
+#[test]
+fn forced_scatter_leaves_a_train_in_place() {
+    let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+        "[VehicleTypes]\n0=LOCO\n[LOCO]\nIsTrain=yes\nStrength=200\nSpeed=6\n\
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::new();
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    let id = sim
+        .spawn_object("LOCO", "Americans", 10, 10, 0, &rules)
+        .unwrap();
+    let rng = sim.scenario_rng.state();
+    sim.scatter(
+        id,
+        Some(DriveCoord::cell(9, 10, 0)),
+        ScatterFlags::new(true, true),
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
+    assert_eq!(sim.scenario_rng.state(), rng);
+    assert_eq!(sim.entities().get(id).unwrap().navigation.nav_com(), None);
+}
+
+/// Without the flags the mission's `Scatter=` (`0x00743AD8..0x00743AEA`) and
+/// a NavCom (`0x00743B1D..0x00743B2D`) refuse.
+#[test]
+fn unit_flags_override_mission_scatter_and_nav_com() {
+    let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+        "[Guard]\nScatter=no\n",
+    ))
+    .unwrap();
+    let mut actor = GameEntity::test_default(1, "MTNK", "Allies", 5, 5);
+    actor.set_category_for_test(EntityCategory::Unit);
+    actor.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
+    let guard = with_mission(&actor, MissionType::Guard);
+    let hunt = with_mission(&actor, MissionType::Hunt);
+    assert!(!unit_scatter_admitted(
+        &StringInterner::new(),
+        &guard,
+        ScatterFlags::new(false, false),
+        &rules,
+        100
+    ));
+    assert!(unit_scatter_admitted(
+        &StringInterner::new(),
+        &guard,
+        ScatterFlags::new(true, false),
+        &rules,
+        100
+    ));
+    assert!(unit_scatter_admitted(
+        &StringInterner::new(),
+        &hunt,
+        ScatterFlags::new(false, false),
+        &rules,
+        100
+    ));
+    let mut nav = hunt.clone();
+    nav.navigation
+        .set_nav_com_for_test(Some(NavTargetRef::cell(8, 8)));
+    assert!(!unit_scatter_admitted(
+        &StringInterner::new(),
+        &nav,
+        ScatterFlags::new(true, false),
+        &rules,
+        100
+    ));
+    assert!(unit_scatter_admitted(
+        &StringInterner::new(),
+        &nav,
+        ScatterFlags::new(false, true),
+        &rules,
+        100
+    ));
+}
+
+#[test]
+fn unit_checks_active_locomotor_and_body_rotation_not_stashed_slot_or_turret() {
+    let rules = no_rules();
+    let flags = ScatterFlags::new(true, true);
+    let mut actor = GameEntity::test_default(1, "CMIN", "Allies", 5, 5);
+    actor.set_category_for_test(EntityCategory::Unit);
+    let mut actor = with_mission(&actor, MissionType::Move);
+    actor.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Teleport));
+    assert!(!unit_scatter_admitted(
+        &StringInterner::new(),
+        &actor,
+        flags,
+        &rules,
+        100
+    ));
+    assert!(crate::sim::movement::locomotor_owner::begin_drive_for_teleporter(&mut actor, 100));
+    actor.turret_rotation_latch.set_for_test(true);
+    actor
+        .navigation
+        .set_nav_com_for_test(Some(NavTargetRef::cell(8, 8)));
+    assert!(
+        actor
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .install_drive_state_for_test(Some(
+                crate::sim::movement::DriveLocomotionRuntime::default()
+                    .with_head_to_for_test(Some(DriveCoord::cell(6, 5, 0)))
+            ))
+    );
+    assert!(
+        unit_scatter_admitted(&StringInterner::new(), &actor, flags, &rules, 100),
+        "no moving or turret gate, and no-kidding passes the NavCom"
+    );
+}
+
+/// `UnitClass::Scatter` never asks its locomotor whether it moves, so a
+/// driving vehicle is admitted like a parked one.
+#[test]
+fn unit_receiver_does_not_read_its_own_motion() {
+    let mut actor = GameEntity::test_default(1, "MTNK", "Allies", 5, 5);
+    actor.set_category_for_test(EntityCategory::Unit);
+    let mut actor = with_mission(&actor, MissionType::Move);
+    actor.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
+    let head = DriveCoord::cell(6, 5, 0);
+    actor
+        .foot_speed
+        .set_speed_fraction(crate::util::fixed_math::SIM_ONE);
+    assert!(
+        actor
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .install_drive_state_for_test(Some(
+                crate::sim::movement::DriveLocomotionRuntime::default()
+                    .with_destination_for_test(Some(head))
+                    .with_head_to_for_test(Some(head))
+            ))
+    );
+    assert_eq!(super::super::motion_query::is_moving(&actor), Some(true));
+    assert!(unit_scatter_admitted(
+        &StringInterner::new(),
+        &actor,
+        ScatterFlags::new(true, true),
+        &no_rules(),
+        100
+    ));
+}
+
+/// Every class without its own receiver inherits `ObjectClass::Scatter`
+/// (`0x005F43A0`, `RET 0xC`): a building takes the call and nothing happens.
+#[test]
+fn building_receiver_is_the_object_no_op() {
+    let building = GameEntity::test_default_of_category(
+        1,
+        "GAREFN",
+        "Allies",
+        5,
+        5,
+        EntityCategory::Structure,
+    );
+    let before = serde_json::to_value(&building).unwrap();
+    let mut sim = Simulation::new();
+    sim.substrate.entities.insert(building);
+    let rng = sim.scenario_rng.state();
+    assert!(
+        !sim.scatter(
+            1,
+            None,
+            ScatterFlags::new(true, true),
+            &no_rules(),
+            None,
+            &mut crate::sim::world::FrameEffects::default()
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(sim.substrate.entities.get(1).unwrap()).unwrap(),
+        before
+    );
+    assert_eq!(sim.scenario_rng.state(), rng);
+}
+
+/// Stock skirmish gate values: `[CombatDamage] PlayerScatter=no`,
+/// `[IQ] Scatter=2`.
+fn stock_eligibility() -> ScatterEligibility {
+    ScatterEligibility {
+        player_scatter: false,
+        iq_scatter: 2,
+    }
+}
+
+#[test]
+fn scatter_dispatch_gate_matches_the_native_disjunction() {
+    let stock = stock_eligibility();
+    let techno = |house_iq| {
+        Some(ScatterTechno {
+            has_scatter_ability: false,
+            house_iq,
+        })
+    };
+    // Nothing set: no dispatch.
+    assert!(!scatter_dispatch_allowed(stock, false, false, techno(0)));
+    // No-kidding (every locomotor blocked-cell caller) always dispatches.
+    assert!(scatter_dispatch_allowed(stock, true, false, techno(0)));
+    // An elite in the cell releases it.
+    assert!(scatter_dispatch_allowed(stock, false, true, techno(0)));
+    // An AI house at MaxIQLevels=5 clears [IQ] Scatter=2.
+    assert!(scatter_dispatch_allowed(stock, false, false, techno(5)));
+    // Exactly at the threshold: `IQ.Scatter <= house.IQ`.
+    assert!(scatter_dispatch_allowed(stock, false, false, techno(2)));
+    assert!(!scatter_dispatch_allowed(stock, false, false, techno(1)));
+}
+
+/// The original `Scatter_Objects` dispatch (tools/spatial_oracle/cell_scatter):
+/// each row's Techno list through the production walk; a non-Techno, which VERA
+/// never lists, through the gate's cell-wide terms alone.
+#[test]
+fn cell_scatter_dispatch_matches_original_execution() {
+    use crate::rules::ini_parser::IniFile;
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/cell_scatter.json",
+    ))
+    .unwrap();
+    let mut checked = 0;
+    for row in corpus.as_array().unwrap() {
+        let input = &row["input"];
+        let objects = input["objects"].as_array().unwrap();
+        let flag = |value: &serde_json::Value, key: &str, default: bool| {
+            value[key].as_bool().unwrap_or(default)
+        };
+        let mut ini = format!(
+            "[General]\nFixtureOnly=1\n[IQ]\nScatter={}\n[CombatDamage]\nPlayerScatter={}\n[VehicleTypes]\n",
+            input["threshold"].as_i64().unwrap_or(2),
+            flag(input, "player_scatter", false),
+        );
+        for (n, object) in objects.iter().enumerate() {
+            ini.push_str(&format!("{n}=T{}\n", object["id"]));
+        }
+        for object in objects {
+            let ability = |key| {
+                if flag(object, key, false) {
+                    "SCATTER"
+                } else {
+                    ""
+                }
+            };
+            ini.push_str(&format!(
+                "[T{}]\nVeteranAbilities={}\nEliteAbilities={}\n",
+                object["id"],
+                ability("veteran_scatter"),
+                ability("elite_scatter"),
+            ));
+        }
+        let rules = RuleSet::from_ini(&IniFile::from_str(&ini)).unwrap();
+        let mut interner = StringInterner::new();
+        let mut entities = EntityStore::new();
+        let mut houses = crate::sim::houses::Houses::default();
+        let bridge = flag(input, "bridge", false);
+        let mut technos = Vec::new();
+        let mut others = Vec::new();
+        for object in objects
+            .iter()
+            .filter(|object| flag(object, "bridge", false) == bridge)
+        {
+            let id = object["id"].as_u64().unwrap();
+            if !flag(object, "techno", true) {
+                others.push(id);
+                continue;
+            }
+            let owner = interner.intern(&format!("H{id}"));
+            let kind = interner.intern(&format!("T{id}"));
+            let mut entity = GameEntity::new_at_frame_zero_for_test(
+                id,
+                5,
+                5,
+                0,
+                0,
+                owner,
+                crate::sim::combat::Health::new(100),
+                kind,
+                EntityCategory::Unit,
+                0,
+                5,
+                true,
+            );
+            entity
+                .veterancy
+                .set_rank_for_test(object["rank"].as_u64().unwrap_or(0) as u16 * 100);
+            let mut house = HouseState::new(owner, 0, None, true, 0, 10);
+            house.set_current_iq_for_test(object["iq"].as_i64().unwrap_or(0) as i32);
+            houses.register(house);
+            entities.insert(entity);
+            technos.push(id);
+        }
+        let expected: Vec<u64> = row["dispatch"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|id| id.as_u64().unwrap())
+            .collect();
+        let no_kidding = flag(input, "dispatch_all", false);
+        let mut dispatched = technos.clone();
+        retain_scatter_admitted(
+            &mut dispatched,
+            no_kidding,
+            &rules,
+            &entities,
+            &houses,
+            &interner,
+        );
+        let expected_technos: Vec<u64> = expected
+            .iter()
+            .copied()
+            .filter(|id| technos.contains(id))
+            .collect();
+        assert_eq!(dispatched, expected_technos, "{}", input["name"]);
+        let elite = technos
+            .iter()
+            .any(|&id| entities.get(id).unwrap().veterancy.rank() >= RANK_ELITE_U16);
+        for id in others {
+            assert_eq!(
+                scatter_dispatch_allowed(
+                    ScatterEligibility::from_rules(&rules),
+                    no_kidding,
+                    elite,
+                    None
+                ),
+                expected.contains(&id),
+                "{}",
+                input["name"]
+            );
+        }
+        checked += 1;
+    }
+    assert_eq!(checked, 62);
+}
+
+/// `Scatter_Objects`' unforced walk (0x00481670) on live houses and parsed
+/// abilities: a house under `[IQ] Scatter=` keeps its man standing, a
+/// SCATTER veteran ability or an elite occupant releases the cell, and so
+/// does `PlayerScatter=`. The walk draws no RNG: it takes no generator.
+#[test]
+fn unforced_walk_reads_house_iq_ability_elite_and_player_scatter() {
+    use crate::rules::ini_parser::IniFile;
+    let rules = |player_scatter: bool| {
+        RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[General]\nFixtureOnly=1\n[IQ]\nScatter=2\n[CombatDamage]\nPlayerScatter={player_scatter}\n\
+             [InfantryTypes]\n0=E1\n[E1]\nVeteranAbilities=SCATTER\n"
+        )))
+        .unwrap()
+    };
+    let stock = rules(false);
+    let mut entities = EntityStore::new();
+    let mut man = GameEntity::test_default(2, "E1", "Soviet", 5, 5);
+    man.set_category_for_test(EntityCategory::Infantry);
+    let owner = man.owner();
+    entities.insert(man);
+    let mut houses = crate::sim::houses::Houses::default();
+    houses.register(HouseState::new(owner, 0, None, true, 0, 10));
+    let interner = crate::sim::intern::test_interner();
+    let walk = |entities: &EntityStore,
+                houses: &crate::sim::houses::Houses,
+                rules: &RuleSet,
+                cell: &[u64]| {
+        let mut admitted = cell.to_vec();
+        retain_scatter_admitted(&mut admitted, false, rules, entities, houses, &interner);
+        admitted
+    };
+    for (iq, rank, expected) in [(1, 0, false), (2, 0, true), (1, 100, true)] {
+        houses.get_mut(&owner).unwrap().set_current_iq_for_test(iq);
+        entities
+            .get_mut(2)
+            .unwrap()
+            .veterancy
+            .set_rank_for_test(rank);
+        assert_eq!(
+            walk(&entities, &houses, &stock, &[2]),
+            if expected { vec![2] } else { vec![] },
+            "IQ={iq} rank={rank}"
+        );
+    }
+    houses.get_mut(&owner).unwrap().set_current_iq_for_test(0);
+    entities.get_mut(2).unwrap().veterancy.set_rank_for_test(0);
+    assert_eq!(walk(&entities, &houses, &rules(true), &[2]), vec![2]);
+    let mut elite = GameEntity::test_default(3, "E1", "Soviet", 5, 5);
+    elite.set_category_for_test(EntityCategory::Infantry);
+    elite.veterancy.set_rank_for_test(200);
+    entities.insert(elite);
+    assert_eq!(walk(&entities, &houses, &stock, &[3, 2]), vec![3, 2]);
+    assert!(walk(&entities, &houses, &stock, &[2]).is_empty());
+}
+
+/// A Hover Unit's null arm reaches its Hover route, and a Jumpjet
+/// Unit's reaches its air destination: the Unit setter sends every retail
+/// Unit locomotor to the nearby passable cell, which may be its own cell,
+/// and neither arm draws.
+#[test]
+fn unit_null_arm_moves_hover_and_jumpjet_units() {
+    use crate::rules::ini_parser::IniFile;
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=ROBO\n1=DISK\n\
+         [ROBO]\nStrength=200\nSpeed=6\nSpeedType=Hover\nMovementZone=AmphibiousDestroyer\n\
+         Locomotor={4A582742-9839-11d1-B709-00A024DDAFD1}\n\
+         [DISK]\nStrength=200\nSpeed=6\nSpeedType=Hover\nMovementZone=Fly\n\
+         Locomotor={92612C46-F71F-11d1-AC9F-006008055BB5}\nJumpjetHeight=500\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::new();
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    let hover = sim
+        .spawn_object("ROBO", "Americans", 10, 10, 0, &rules)
+        .unwrap();
+    let jumpjet = sim
+        .spawn_object("DISK", "Americans", 20, 20, 0, &rules)
+        .unwrap();
+    for (id, kind) in [
+        (hover, LocomotorKind::Hover),
+        (jumpjet, LocomotorKind::Jumpjet),
+    ] {
+        let actor = sim.substrate.entities.get(id).unwrap();
+        assert_eq!(actor.locomotor.as_ref().unwrap().active_kind(), kind);
+        assert!(
+            crate::sim::movement::motion_query::is_moving(&actor) != Some(true)
+                && actor.navigation.nav_com().is_none()
+        );
+    }
+    let rng = sim.scenario_rng.state();
+    let flags = ScatterFlags::new(true, true);
+    let cell = sim.scatter_nearby_cell(hover, &rules).unwrap();
+    assert!(
+        !sim.scatter(
+            hover,
+            None,
+            flags,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default()
+        )
+        .unwrap()
+    );
+    let unit = sim.substrate.entities.get(hover).unwrap();
+    assert!(
+        crate::sim::movement::motion_query::is_moving(&unit) == Some(true),
+        "the Hover route"
+    );
+    assert_eq!(
+        unit.navigation.nav_com(),
+        Some(crate::sim::components::NavTargetRef::cell(cell.0, cell.1))
+    );
+    assert_eq!((unit.position.rx(), unit.position.ry()), (10, 10));
+    let cell = sim.scatter_nearby_cell(jumpjet, &rules).unwrap();
+    assert!(
+        !sim.scatter(
+            jumpjet,
+            None,
+            flags,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default()
+        )
+        .unwrap()
+    );
+    let unit = sim.substrate.entities.get(jumpjet).unwrap();
+    assert_eq!(
+        unit.navigation.nav_com(),
+        Some(NavTargetRef::cell(cell.0, cell.1)),
+        "the Jumpjet's setter writes its NavCom"
+    );
+    assert!(crate::sim::movement::motion_query::is_moving(&unit) == Some(true));
+    assert_eq!(sim.scenario_rng.state(), rng);
+}
+
+/// The Unit null arm (tools/spatial_oracle/unit_null_scatter) executes
+/// Foot+4C, the nearby-cell search from its cell and `SetDestination(cell,
+/// 1)` for any answer but NullCell, with no draw, no queued mission and no
+/// Process, whatever the flags that passed its gates. The production
+/// receiver on a Drive unit spawned on land finds a cell; for the NullCell
+/// row it stands on a map without a native Size, where the search answers
+/// nothing, and nothing about it changes.
+#[test]
+fn unit_null_arm_matches_original_execution() {
+    use crate::rules::ini_parser::IniFile;
+    let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/unit_null_scatter.json",
+    ))
+    .unwrap();
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=200\nSpeed=6\nSpeedType=Track\n\
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+    ))
+    .unwrap();
+    let mut checked = 0;
+    for row in rows.as_array().unwrap() {
+        let input = &row["input"];
+        let found = !row["destination"].is_null();
+        let calls = ["coordinate", "fnpc", "destination"];
+        let calls = if found { &calls[..] } else { &calls[..2] };
+        assert_eq!(row["events"], serde_json::json!(calls), "{input}");
+        if found {
+            assert_eq!(row["destination"], serde_json::json!([input["answer"], 1]));
+        }
+        assert_eq!(
+            row["random_indices"][0], row["random_indices"][1],
+            "{input}"
+        );
+        let flag = |i: usize| input["flags"][i].as_i64().unwrap_or(1) == 1;
+        let flags = ScatterFlags::new(flag(0), flag(1));
+        let mut sim = Simulation::new();
+        let unit = if found {
+            crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+            let at = |i: usize| input["actor"][i].as_i64().unwrap_or(2688) as u16 / 256;
+            sim.spawn_object("MTNK", "Americans", at(0), at(1), 0, &rules)
+                .unwrap()
+        } else {
+            let mut actor = GameEntity::test_default(1, "MTNK", "Allies", 10, 10);
+            actor.set_category_for_test(EntityCategory::Unit);
+            actor.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
+            sim.substrate
+                .entities
+                .insert(with_mission(&actor, MissionType::Guard));
+            sim.interner = crate::sim::intern::test_interner();
+            1
+        };
+        let nav = sim.foot_navigation_coordinate(unit).unwrap();
+        assert_eq!(
+            serde_json::json!([nav.x / 256, nav.y / 256]),
+            row["fnpc_seed"]
+        );
+        let cell = sim.scatter_nearby_cell(unit, &rules);
+        assert_eq!(cell.is_some(), found, "{input}");
+        let before = serde_json::to_value(sim.substrate.entities.get(unit).unwrap()).unwrap();
+        let rng = sim.scenario_rng.state();
+        assert!(
+            !sim.scatter(
+                unit,
+                None,
+                flags,
+                &rules,
+                None,
+                &mut crate::sim::world::FrameEffects::default()
+            )
+            .unwrap()
+        );
+        let unit = sim.substrate.entities.get(unit).unwrap();
+        match cell {
+            Some((x, y)) => {
+                assert_eq!(unit.navigation.nav_com(), Some(NavTargetRef::cell(x, y)));
+                assert_eq!(unit.mission.queued(), MissionId::NONE, "{input}");
+            }
+            None => assert_eq!(serde_json::to_value(unit).unwrap(), before, "{input}"),
+        }
+        assert_eq!(sim.scenario_rng.state(), rng, "{input}");
+        checked += 1;
+    }
+    assert_eq!(checked, 4);
+}
+
+/// `TechnoClass::ReceiveDamage`'s scatter tail on both retaliation arms
+/// (tools/spatial_oracle/receive_damage_scatter): every executed row through
+/// the production gate with the same class, owner, rank and Foot facts. An
+/// admitted row is native's `Scatter(null, 1, 0)` call; a null locomotor
+/// past the mission and tether gates is its E_POINTER call. Infantry rows
+/// also take the production call: a refusal leaves the man and the Scenario
+/// stream untouched, and an admitted stationary man's null arm spends its
+/// draw (headless, it finds no cell).
+#[test]
+fn receive_damage_scatter_gates_match_original_execution() {
+    let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/receive_damage_scatter.json",
+    ))
+    .unwrap();
+    let mut checked = 0;
+    for row in rows.as_array().unwrap() {
+        let input = &row["input"];
+        let flag = |key: &str| input[key].as_bool().unwrap_or(false);
+        let ability = |key: &str| if flag(key) { "SCATTER" } else { "" };
+        let type_keys = format!(
+            "VeteranAbilities={}\nEliteAbilities={}\n",
+            ability("veteran_scatter"),
+            ability("elite_scatter"),
+        );
+        let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(&format!(
+            "[General]\nFixture=1\n[InfantryTypes]\n0=E1\n[VehicleTypes]\n0=MTNK\n\
+             [AircraftTypes]\n0=ORCA\n\
+             [BuildingTypes]\n0=GAPOWR\n[E1]\n{type_keys}[MTNK]\n{type_keys}[ORCA]\n{type_keys}\
+             [GAPOWR]\n[Guard]\nScatter={}\n[CombatDamage]\nPlayerScatter={}\n",
+            input["mission_scatter"].as_bool().unwrap_or(true),
+            flag("player_scatter"),
+        )))
+        .unwrap();
+        let (type_name, category) = match input["kind"].as_str().unwrap_or("infantry") {
+            "infantry" => ("E1", EntityCategory::Infantry),
+            "unit" => ("MTNK", EntityCategory::Unit),
+            "aircraft" => ("ORCA", EntityCategory::Aircraft),
+            "building" => ("GAPOWR", EntityCategory::Structure),
+            other => panic!("unknown receiver {other}"),
+        };
+        let actor = GameEntity::test_default_of_category(1, type_name, "Allies", 5, 5, category);
+        let mut actor = with_mission(&actor, MissionType::Guard);
+        actor
+            .veterancy
+            .set_rank_for_test(input["rank"].as_u64().unwrap_or(0) as u16 * 100);
+        if !flag("null_locomotor") {
+            let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Walk);
+            locomotor.set_walk_destination(flag("moving").then(|| DriveCoord::cell(6, 5, 0)));
+            actor.locomotor = Some(locomotor);
+        }
+        if flag("tether") {
+            actor.seldom.tether.set_for_test(Some(9));
+        }
+        if flag("target") {
+            actor
+                .attack_target
+                .set_for_test(Some(crate::sim::combat::TargetKind::Entity(9)));
+        }
+        if flag("nav") {
+            actor
+                .navigation
+                .set_nav_com_for_test(Some(NavTargetRef::cell(9, 9)));
+        }
+        let owner = actor.owner();
+        let mut sim = Simulation::new();
+        sim.interner = crate::sim::intern::test_interner();
+        let mut house = HouseState::new(owner, 0, None, flag("human"), 0, 10);
+        house.set_player_control_for_test(flag("player_control"));
+        sim.houses.register(house);
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                input["game_mode_nonzero"].as_bool().unwrap_or(true),
+            ),
+        );
+        sim.substrate.entities.insert(actor);
+        let retaliation = match input["retaliation"].as_str().unwrap() {
+            "accepted" => DamageRetaliation::Accepted,
+            "refused" => DamageRetaliation::Refused,
+            other => panic!("unknown retaliation {other}"),
+        };
+        let human = sim.owner_is_human(owner);
+        let admitted = receive_damage_scatter_admitted(
+            sim.substrate.entities.get(1).unwrap(),
+            retaliation,
+            human,
+            &rules,
+            &sim.interner,
+        );
+        let scatter = row["scatter"].as_bool().unwrap();
+        match row["stop"].as_str().unwrap() {
+            "0x702c3f" => assert!(admitted.is_err(), "{input}"),
+            _ => assert_eq!(admitted, Ok(scatter), "{input}"),
+        }
+        if scatter {
+            let arguments = &row["arguments"];
+            assert_eq!(arguments["coordinate_xyz"], serde_json::json!([0, 0, 0]));
+            assert_eq!(
+                (arguments["forced"] == 1, arguments["no_kidding"] == 1),
+                (
+                    RECEIVE_DAMAGE_SCATTER_FLAGS.forced,
+                    RECEIVE_DAMAGE_SCATTER_FLAGS.no_kidding
+                ),
+            );
+        }
+        if category == EntityCategory::Infantry && admitted.is_ok() {
+            let before = serde_json::to_value(sim.substrate.entities.get(1).unwrap()).unwrap();
+            let rng = sim.scenario_rng.state();
+            sim.receive_damage_scatter(
+                1,
+                retaliation,
+                &rules,
+                None,
+                &mut crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap();
+            if !scatter {
+                let after = serde_json::to_value(sim.substrate.entities.get(1).unwrap()).unwrap();
+                assert_eq!(after, before, "{input}");
+                assert_eq!(sim.scenario_rng.state(), rng, "{input}");
+            } else if !flag("moving") {
+                assert_ne!(sim.scenario_rng.state(), rng, "{input}");
+            }
+        }
+        checked += 1;
+    }
+    assert_eq!(checked, 263);
+}
+
+/// The Unit coordinate arm (tools/spatial_oracle/unit_source_scatter): every
+/// executed row through the production receiver on a Drive tank at (10, 10)
+/// of a flat 32x32 map. Each candidate's `Can_Enter_Cell` answers the code
+/// the original recorded for it (the live rows' codes come from the original
+/// Unit73F0A0, which the unit_entry corpora pin); the gates, both Scenario
+/// draws, the heading, the navigation seed, the walk and the queued Move with
+/// its destination are VERA's own.
+#[test]
+fn unit_source_arm_matches_original_execution() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::combat::TargetKind;
+    use crate::sim::movement::fresh_oracle_seam::{self, FreshCallRecord};
+    let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/unit_source_scatter.json",
+    ))
+    .unwrap();
+    let mut checked = 0;
+    for row in rows.as_array().unwrap() {
+        let input = &row["input"];
+        let flag = |key: &str| input[key].as_bool().unwrap_or(false);
+        let coord = |key: &str, default: [i32; 3]| {
+            input[key].as_array().map_or(default, |v| {
+                std::array::from_fn(|i| v[i].as_i64().unwrap() as i32)
+            })
+        };
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=200\nSpeed=6\nSpeedType=Track\n\
+             Locomotor={{4A582741-9839-11d1-B709-00A024DDAFD1}}\n\
+             [Guard]\nScatter={}\nParalyzed={}\n",
+            input["mission_scatter"].as_bool().unwrap_or(true),
+            flag("paralyzed"),
+        )))
+        .unwrap();
+        let mut sim = Simulation::new();
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        for cell in input["cells"].as_array().into_iter().flatten() {
+            let at = |i: usize| cell[i].as_u64().unwrap();
+            let out = sim
+                .resolved_terrain
+                .as_mut()
+                .unwrap()
+                .cell_mut_for_test(at(0) as u16, at(1) as u16)
+                .unwrap();
+            out.level = at(2) as u8;
+            out.bridge_facts.raw_flags = at(3) as u32;
+        }
+        assert_eq!(coord("actor", [2688, 2688, 0]), [2688, 2688, 0]);
+        let unit = sim
+            .spawn_object("MTNK", "Americans", 10, 10, 0, &rules)
+            .unwrap();
+        let actor = with_mission(
+            sim.substrate.entities.get(unit).unwrap(),
+            MissionType::Guard,
+        );
+        *sim.substrate.entities.get_mut(unit).unwrap() = actor;
+        let actor = sim.substrate.entities.get_mut(unit).unwrap();
+        if flag("nav") {
+            actor
+                .navigation
+                .set_nav_com_for_test(Some(NavTargetRef::cell(8, 8)));
+        }
+        if flag("target") {
+            actor
+                .attack_target
+                .set_for_test(Some(TargetKind::Cell(5, 5)));
+        }
+        actor
+            .turret_rotation_latch
+            .set_for_test(flag("turret_latch"));
+        if flag("unload_active") {
+            let mut miner = crate::sim::miner::Miner::new(
+                crate::sim::miner::MinerKind::War,
+                &crate::sim::miner::MinerConfig::default(),
+                0,
+            );
+            miner.set_unload_active_for_test(true);
+            actor.miner = Some(Box::new(miner));
+        }
+        let head = coord("head", [0, 0, 0]);
+        if head != [0, 0, 0] {
+            let head = DriveCoord {
+                x: head[0],
+                y: head[1],
+                z: head[2],
+            };
+            assert!(
+                actor
+                    .locomotor
+                    .as_mut()
+                    .unwrap()
+                    .install_drive_state_for_test(Some(
+                        crate::sim::movement::DriveLocomotionRuntime::default()
+                            .with_head_to_for_test(Some(head))
+                    ))
+            );
+        }
+        let nav_before = actor.navigation.nav_com();
+        sim.scenario_rng = crate::sim::rng::SimRng::new(input["seed"].as_u64().unwrap_or(1));
+        let checks = row["checks"].as_array().unwrap();
+        fresh_oracle_seam::install(
+            checks
+                .iter()
+                .map(|c| c[3].as_u64().unwrap() as u8)
+                .collect(),
+            Vec::new(),
+        );
+        let [x, y, z] = coord("source", [1000, 2688, 0]);
+        let flags = ScatterFlags::new(input["force"].as_bool().unwrap_or(true), flag("second"));
+        assert!(
+            !sim.scatter(
+                unit,
+                Some(DriveCoord { x, y, z }),
+                flags,
+                &rules,
+                None,
+                &mut crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap()
+        );
+        let (records, unused) = fresh_oracle_seam::finish();
+        assert_eq!(unused, 0, "{input}");
+        let expected: Vec<_> = checks
+            .iter()
+            .map(|c| FreshCallRecord::CanEnter {
+                cell: (
+                    c[0][0].as_i64().unwrap() as i16,
+                    c[0][1].as_i64().unwrap() as i16,
+                ),
+                direction: c[1].as_i64().unwrap() as i32,
+                height: c[2].as_i64().unwrap() as i32,
+                code: c[3].as_u64().unwrap() as u8,
+            })
+            .collect();
+        assert_eq!(records, expected, "candidate order: {input}");
+        let unit = sim.substrate.entities.get(unit).unwrap();
+        match row["destination"].as_array() {
+            Some(cell) => {
+                let at = |i: usize| cell[i].as_u64().unwrap() as u16;
+                assert_eq!(
+                    unit.navigation.nav_com(),
+                    Some(NavTargetRef::cell(at(0), at(1))),
+                    "{input}"
+                );
+                assert_eq!(
+                    unit.mission.queued(),
+                    MissionId::from_known(MissionType::Move),
+                    "{input}"
+                );
+            }
+            None => {
+                assert_eq!(unit.navigation.nav_com(), nav_before, "{input}");
+                assert_eq!(unit.mission.queued(), MissionId::NONE, "{input}");
+            }
+        }
+        let state = sim.scenario_rng.logical_state();
+        assert_eq!(
+            serde_json::json!([state.index_a, state.index_b]),
+            row["random_indices"],
+            "{input}"
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, 58);
+}
+
+/// FootClass::AI's idle scatter (`0x004DADF5..0x004DAE59`): a grounded tank
+/// with no NavCom on a flat cell whose south-east neighbour stands four
+/// levels higher, so that the terrain projection (`0x0070C620`) names the
+/// neighbour, scatters on a frame whose low six bits are set, and only then.
+/// Without the cliff the projection names its own cell and it stays; with a
+/// NavCom it stays too.
+#[test]
+fn an_idle_tank_behind_a_cliff_scatters_every_sixty_four_frames() {
+    use crate::rules::ini_parser::IniFile;
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\nSpeed=6\nSpeedType=Track\n\
+         MovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::new();
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    let tank = sim
+        .spawn_object("MTNK", "Americans", 10, 10, 0, &rules)
+        .unwrap();
+    let idle_scatter = |sim: &mut Simulation, frame: u32| {
+        sim.session.set_binary_frame_for_test(frame);
+        sim.foot_idle_scatter(
+            tank,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
+        sim.substrate
+            .entities
+            .get(tank)
+            .unwrap()
+            .navigation
+            .nav_com()
+    };
+    assert_eq!(idle_scatter(&mut sim, 127), None, "no cliff");
+
+    sim.resolved_terrain
+        .as_mut()
+        .unwrap()
+        .cell_mut_for_test(11, 11)
+        .unwrap()
+        .level = 4;
+    assert_eq!(idle_scatter(&mut sim, 126), None, "off the cadence");
+    let held = Some(NavTargetRef::cell(20, 20));
+    sim.substrate
+        .entities
+        .get_mut(tank)
+        .unwrap()
+        .navigation
+        .set_nav_com_for_test(held);
+    assert_eq!(idle_scatter(&mut sim, 127), held, "a NavCom refuses");
+    sim.substrate
+        .entities
+        .get_mut(tank)
+        .unwrap()
+        .navigation
+        .set_nav_com_for_test(None);
+    let rng = sim.scenario_rng.state();
+    sim.session.set_binary_frame_for_test(127);
+    let cell = sim.scatter_nearby_cell(tank, &rules).unwrap();
+    assert_eq!(
+        idle_scatter(&mut sim, 127),
+        Some(NavTargetRef::cell(cell.0, cell.1))
+    );
+    assert_eq!(sim.scenario_rng.state(), rng);
+}

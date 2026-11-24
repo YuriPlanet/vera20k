@@ -1,0 +1,462 @@
+//! World effects of `AircraftClass::Mission_Move @ 0x004166E0`
+//! (`aircraft::move_mission`), run in the aircraft's own dispatch, and of its
+//! state 0 search `AircraftClass::Find_Attack_Cell @ 0x00418E20`. Both read
+//! live objects and NavCom reservations; the search and the Rate epilogue
+//! draw Scenario RNG. Executable witnesses: tools/spatial_oracle/aircraft_move.*.
+use super::{FrameEffects, Simulation};
+use crate::rules::ruleset::RuleSet;
+use crate::sim::aircraft::{enter_idle_mode_for, move_mission};
+use crate::sim::components::NavTargetRef;
+use crate::sim::mission::MissionType;
+use crate::sim::movement::{ground_pose, motion_query, nav_target_coordinate};
+
+#[cfg(test)] // shared by test groups
+#[path = "aircraft_move_tests.rs"]
+pub(crate) mod tests;
+
+/// `Rules+0x1478`, the leptons Find_Attack_Cell searches out to: the
+/// RulesClass constructor's 0x2000 (`0x00667235`), which no INI reader
+/// writes, so 32 rings.
+const ATTACK_CELL_SEARCH_LEPTONS: i32 = 0x2000;
+
+impl Simulation {
+    /// One Mission_Move visit of aircraft `id` from `state`: Mission+0xBC and
+    /// the frames it returns.
+    pub(crate) fn aircraft_move(
+        &mut self,
+        id: u64,
+        state: u8,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) -> (u8, i32) {
+        move_mission::move_visit(
+            state,
+            &mut WorldMove {
+                sim: self,
+                id,
+                rules,
+                effects: effects.reborrow(),
+            },
+        )
+    }
+
+    /// One `Mission_Move_Carryall @ 0x00416D50` visit of the Carryall `id`
+    /// from `state` (`aircraft::carryall`): Mission+0xBC and the frames it
+    /// returns.
+    pub(crate) fn aircraft_move_carryall(
+        &mut self,
+        id: u64,
+        state: u8,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) -> (u8, i32) {
+        crate::sim::aircraft::carryall::move_visit(
+            state,
+            &mut WorldMove {
+                sim: self,
+                id,
+                rules,
+                effects: effects.reborrow(),
+            },
+        )
+    }
+
+    /// `AircraftClass::Find_Attack_Cell @ 0x00418E20`: `target` itself when
+    /// it is NULL, or when its landing zone is clear (`IsLandZoneClear`,
+    /// vt+0x550) and the cell of its `vt+0x4C` coordinate (no requester) is
+    /// free for landing apart from this aircraft (`0x00419B00(.., 0)`).
+    /// Otherwise the first cell both admit on rings 0..31 around the cell of
+    /// its center (vt+0x48): each ring draws a Scenario `RandomRanged(0, 7)`
+    /// start (`0x00418F4F`) and steps its eight directions (`(start + i) <<
+    /// 13`, the Walk/Fly polar step), skipping cells outside the playfield
+    /// and repeats of the last cell it tried. `target` again when none is.
+    ///
+    /// Before searching, native preserves `target` during the shared
+    /// placement scope or when the shared Team6EC300 predicate finds a
+    /// formed action3 waypoint outside the height-aware playfield.
+    pub(crate) fn aircraft_find_attack_cell(
+        &mut self,
+        id: u64,
+        target: Option<NavTargetRef>,
+        rules: &RuleSet,
+    ) -> Option<NavTargetRef> {
+        let target = target?;
+        if self.object_placement_scope_active() || self.member_team_is_moving_outside_playfield(id)
+        {
+            return Some(target);
+        }
+        let mut claims = None;
+        // The search asks the land zone about every candidate cell, and the
+        // live aircraft hold the same reservations throughout it: the search
+        // changes nothing, so the set it reads once answers them all.
+        let aircraft_claims = self
+            .resolved_terrain
+            .as_ref()
+            .map(|terrain| self.aircraft_nav_claims(id, terrain));
+        if self.foot_land_zone_clear(id, target, rules, aircraft_claims.as_ref()) {
+            let coord = nav_target_coordinate(
+                target,
+                None,
+                self,
+                self.resolved_terrain.as_ref(),
+                Some((rules, &self.interner)),
+            )
+            .expect("live Find_Attack_Cell target");
+            let cell = ((coord.x / 256) as i16, (coord.y / 256) as i16);
+            if self.aircraft_cell_free_for_landing(id, cell, false, rules, &mut claims) {
+                return Some(target);
+            }
+        }
+        let center = self
+            .fire_location_center(target)
+            .expect("live Find_Attack_Cell target");
+        let center = [
+            i32::from((center.x / 256) as i16),
+            i32::from((center.y / 256) as i16),
+        ];
+        for ring in 0..ATTACK_CELL_SEARCH_LEPTONS / 256 {
+            let start = self.scenario_rng.next_range_i32_inclusive(0, 7);
+            let mut previous = (0, 0);
+            for step in 0..8 {
+                let [x, y] = crate::util::native_trig::facing_step_world_xy(
+                    center,
+                    (start.wrapping_add(step) << 13) as u16,
+                    ring,
+                );
+                let candidate = (x as i16, y as i16);
+                if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
+                    (i32::from(candidate.0), i32::from(candidate.1)),
+                    self.playfield_bounds,
+                    self.resolved_terrain.as_ref(),
+                ) {
+                    continue;
+                }
+                if candidate != previous {
+                    let cell = self.resolved_terrain.as_ref().map_or(candidate, |t| {
+                        t.native_cell_coord(t.native_cell_identity(candidate))
+                    });
+                    let cell = NavTargetRef::cell(cell.0 as u16, cell.1 as u16);
+                    if self.foot_land_zone_clear(id, cell, rules, aircraft_claims.as_ref())
+                        && self.aircraft_cell_free_for_landing(
+                            id,
+                            candidate,
+                            false,
+                            rules,
+                            &mut claims,
+                        )
+                    {
+                        return Some(cell);
+                    }
+                }
+                previous = candidate;
+            }
+        }
+        Some(target)
+    }
+
+    /// The cell of the NavCom's `vt+0x4C` coordinate (this aircraft asking),
+    /// over 256 toward zero, as Mission_Move states 2 and 4 read it.
+    /// `Mission_Move @ 0x004166E0`'s NavCom (`+0x5A4`) in state 2 (`0x004167CE`) and
+    /// state 4 (`0x004169CD`).
+    fn aircraft_nav_cell(&self, id: u64, rules: &RuleSet) -> Option<(i16, i16)> {
+        let nav = self.substrate.entities.get(id)?.navigation.nav_com()?;
+        let coord = nav_target_coordinate(
+            nav,
+            Some(id),
+            self,
+            self.resolved_terrain.as_ref(),
+            Some((rules, &self.interner)),
+        )
+        .expect("live aircraft NavCom coordinate");
+        Some(((coord.x / 256) as i16, (coord.y / 256) as i16))
+    }
+
+    /// Mission_Move's own-cell test: the NavCom's cell is the aircraft's
+    /// (`vt+0x1B8`, `0x0041BEA0`: its coordinate over 256 toward zero).
+    pub(crate) fn aircraft_nav_cell_is_own(&self, id: u64, rules: &RuleSet) -> bool {
+        let coord =
+            ground_pose::position_world_coord(&self.substrate.entities.get(id).unwrap().position);
+        self.aircraft_nav_cell(id, rules) == Some(((coord.x / 256) as i16, (coord.y / 256) as i16))
+    }
+
+    /// Mission_Move's `Is_Cell_Free_For_Landing(NavCom cell, 1)`.
+    pub(crate) fn aircraft_nav_cell_free(&self, id: u64, rules: &RuleSet) -> bool {
+        let cell = self
+            .aircraft_nav_cell(id, rules)
+            .expect("Mission_Move asks with a NavCom");
+        self.aircraft_cell_free_for_landing(id, cell, true, rules, &mut None)
+    }
+}
+
+/// A Mission_Move visit's world.
+struct WorldMove<'a> {
+    sim: &'a mut Simulation,
+    id: u64,
+    rules: &'a RuleSet,
+    effects: FrameEffects<'a>,
+}
+
+impl WorldMove<'_> {
+    /// The NavCom (`+0x5A4`) that `Mission_Move @ 0x004166E0` reads (`0x004166FB`,
+    /// `0x00416769`).
+    fn nav(&self) -> Option<NavTargetRef> {
+        self.sim
+            .substrate
+            .entities
+            .get(self.id)
+            .expect("aircraft dispatch")
+            .navigation
+            .nav_com()
+    }
+}
+
+impl move_mission::MoveHost for WorldMove<'_> {
+    fn nav_com(&self) -> bool {
+        self.nav().is_some()
+    }
+
+    fn enter_idle_mode(&mut self) {
+        enter_idle_mode_for(self.sim, self.id, self.rules, &mut self.effects);
+    }
+
+    fn assign_attack_cell(&mut self) {
+        let cell = self
+            .sim
+            .aircraft_find_attack_cell(self.id, self.nav(), self.rules);
+        self.sim
+            .assign_aircraft_destination(self.id, cell, self.rules, &mut self.effects);
+    }
+
+    fn move_to_nav_com(&mut self) {
+        let coord = nav_target_coordinate(
+            self.nav().expect("state 1 moves with a NavCom"),
+            Some(self.id),
+            self.sim,
+            self.sim.resolved_terrain.as_ref(),
+            Some((self.rules, &self.sim.interner)),
+        )
+        .expect("live aircraft NavCom coordinate");
+        self.sim
+            .aircraft_locomotor_move_to(self.id, coord, self.rules);
+    }
+
+    fn is_moving(&mut self) -> bool {
+        motion_query::is_moving(self.sim.substrate.entities.get(self.id).unwrap()) == Some(true)
+    }
+
+    fn nav_cell_is_own(&mut self) -> bool {
+        self.sim.aircraft_nav_cell_is_own(self.id, self.rules)
+    }
+
+    fn nav_cell_free(&mut self) -> bool {
+        self.sim.aircraft_nav_cell_free(self.id, self.rules)
+    }
+
+    fn epilogue(&mut self) -> i32 {
+        Simulation::mission_rate_epilogue_for(
+            &mut self.sim.scenario_rng,
+            &self.sim.substrate,
+            self.rules,
+            self.id,
+            MissionType::Move,
+        )
+    }
+}
+
+impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
+    fn nav_com(&mut self) -> Option<NavTargetRef> {
+        self.nav()
+    }
+
+    fn nav_is_unit(&mut self, id: u64) -> bool {
+        self.sim
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| entity.category() == crate::map::entities::EntityCategory::Unit)
+    }
+
+    fn enter_idle_mode(&mut self) {
+        enter_idle_mode_for(self.sim, self.id, self.rules, &mut self.effects);
+    }
+
+    fn tote_target(&mut self) -> Option<u64> {
+        self.sim.carryall_tote_target(self.id, self.rules)
+    }
+
+    fn contact(&mut self) -> Option<u64> {
+        self.sim
+            .substrate
+            .entities
+            .get(self.id)
+            .and_then(|entity| entity.seldom.radio_contacts.slot(0))
+    }
+
+    fn transmit_to_contact(
+        &mut self,
+        message: crate::sim::radio::RadioMessage,
+    ) -> crate::sim::radio::RadioResponse {
+        crate::sim::radio::transmit_to_contact(
+            self.sim,
+            self.id,
+            message,
+            self.rules,
+            &mut self.effects,
+        )
+    }
+
+    fn transmit(
+        &mut self,
+        message: crate::sim::radio::RadioMessage,
+        to: u64,
+    ) -> crate::sim::radio::RadioResponse {
+        crate::sim::radio::transmit(
+            self.sim,
+            self.id,
+            to,
+            message,
+            crate::sim::radio::RadioPayload::default(),
+            self.rules,
+            &mut self.effects,
+        )
+    }
+
+    fn clear_destination(&mut self) {
+        self.sim
+            .assign_aircraft_destination(self.id, None, self.rules, &mut self.effects);
+    }
+
+    fn assign_attack_cell(&mut self) {
+        move_mission::MoveHost::assign_attack_cell(self);
+        // `0x00416EE4..0x00416EF5` rereads the team and the NavCom after the
+        // destination setter.
+        if let Some(team) = self.sim.team_script_vm.team_of(self.id) {
+            let target = self
+                .nav()
+                .map(|nav| crate::sim::combat::TargetKind::from(nav).into());
+            self.sim
+                .team_assign_mission_target(team, target, self.rules, &mut self.effects);
+        }
+    }
+
+    fn move_to_nav_center(&mut self) {
+        let nav = self.nav().expect("state 1 moves with a NavCom");
+        let coord = self
+            .sim
+            .fire_location_center(nav)
+            .expect("live aircraft NavCom coordinate");
+        self.sim
+            .aircraft_locomotor_move_to(self.id, coord, self.rules);
+    }
+
+    fn land_zone_clear(&mut self) -> bool {
+        let nav = self.nav().expect("asked with a Cell NavCom");
+        self.sim
+            .foot_land_zone_clear(self.id, nav, self.rules, None)
+    }
+
+    fn descending(&mut self) -> bool {
+        crate::sim::movement::air_movement::fly_status(
+            self.sim.substrate.entities.get(self.id).unwrap(),
+        ) == Some(1)
+    }
+
+    fn nav_in_own_cell(&mut self) -> bool {
+        let Some(NavTargetRef::Object { id }) = self.nav() else {
+            return false;
+        };
+        let entities = &self.sim.substrate.entities;
+        let cell = |id| {
+            entities.get(id).map(|entity| {
+                let at = ground_pose::position_world_coord(&entity.position);
+                ((at.x / 256) as i16, (at.y / 256) as i16)
+            })
+        };
+        cell(id) == cell(self.id)
+    }
+
+    fn set_transition_ready(&mut self, ready: bool) {
+        if let Some(entity) = self.sim.substrate.entities.get_mut(self.id) {
+            entity
+                .mission_leaf
+                .set_aircraft_transition_ready(u8::from(ready));
+        }
+    }
+
+    fn is_moving(&mut self) -> bool {
+        motion_query::is_moving(self.sim.substrate.entities.get(self.id).unwrap()) == Some(true)
+    }
+
+    fn loaded(&mut self) -> bool {
+        self.sim
+            .substrate
+            .entities
+            .get(self.id)
+            .is_some_and(|entity| entity.passenger_role().passenger_count() != 0)
+    }
+
+    fn pending_entry(&mut self) -> bool {
+        self.sim
+            .substrate
+            .entities
+            .get(self.id)
+            .is_some_and(|entity| entity.pending_entry.get().is_some())
+    }
+
+    fn mark(&mut self, down: bool) {
+        if down {
+            self.sim.foot_mark_put(
+                self.id,
+                self.rules,
+                Some(self.rules.overlay_registry()),
+                &mut self.effects,
+            );
+        } else {
+            self.sim.foot_mark_remove(
+                self.id,
+                self.rules,
+                Some(self.rules.overlay_registry()),
+                &mut self.effects,
+            );
+        }
+    }
+
+    fn unload(&mut self) {
+        self.sim.carryall_unload(
+            self.id,
+            self.rules,
+            Some(self.rules.overlay_registry()),
+            &mut self.effects,
+        );
+    }
+
+    fn unit_below(&mut self) -> Option<u64> {
+        let entity = self.sim.substrate.entities.get(self.id)?;
+        let at = ground_pose::position_world_coord(&entity.position);
+        let cell = ((at.x / 256) as i16, (at.y / 256) as i16);
+        let bridge = self.sim.resolved_terrain.as_ref().is_some_and(|terrain| {
+            terrain.native_cell_flags(terrain.native_cell_identity(cell)) & 0x100 != 0
+        });
+        let layer = if bridge {
+            crate::sim::movement::locomotor::MovementLayer::Bridge
+        } else {
+            crate::sim::movement::locomotor::MovementLayer::Ground
+        };
+        self.sim.substrate.occupancy.first_category_on_layer(
+            cell.0 as u16,
+            cell.1 as u16,
+            layer,
+            crate::map::entities::EntityCategory::Unit,
+            &self.sim.substrate.entities,
+        )
+    }
+
+    fn pick_up(&mut self, unit: u64) {
+        self.sim
+            .carryall_pick_up(self.id, unit, self.rules, &mut self.effects);
+    }
+
+    fn epilogue(&mut self) -> i32 {
+        move_mission::MoveHost::epilogue(self)
+    }
+}

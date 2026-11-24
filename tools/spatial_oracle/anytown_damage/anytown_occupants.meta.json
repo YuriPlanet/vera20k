@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original concrete-low damage occupants and actual Cell-target Detach continuation.\n\nBounded physical Anytown projection; initialized MTNK/Drive, supplied world\nmembership and retained head. No full scenario/order/flight or animation/audio\nengine claim. Original path admission, receiver and class cleanup execute.\n",
+  "assumptions": [
+    "Physical XMP03T4 projection and original all23 selected Recalc from frozen anytown_resident. Measured original admitted area continuation48A2B4..48A2C4 calls real57CCF0 and conditionally real70D4A0; no Scenario damage roll, firing or projectile is composed here.",
+    "Actual Cell487A10, Unit73F0A0, Drive4B4920, Unit/Foot/Techno/Object damage and marked removal execute. Heap objects, House, mission, cell/Techno membership, frame1000 and retained heads are supplied active-state projections, not native Unlimbo/order/head production.",
+    "MTNK original UnitType7470D0 constructor, selected shared readers and actual UnitType7476D3..747711 postpass execute. +D28 is exact Crusher, not Wheeled; physical Crusher=yes derives SpeedType1 Track. Native inputs include full Super reader, land rows, physical DieSound, Explosion, DestroyAnim, Max/MinDebris, MetallicDebris, JumpJet, Crashable and AudioVisual ShakeScreen. The inherited base-reader map layer is physical XShrapnel with no relevant MTNK/land override; Anytown has no selected override. Actual three layer sources/hashes remain explicit; no fresh full native Rules or scenario loader claim.",
+    "GenVehicleDie is loaded by original7510D0/7514D0 from physical SOUNDMD Defaults/SoundList/section strings into a one-entry relative registry0. Sample resolution is an explicit IO boundary; its native class/audio flags still execute. Index0 identifies GenVehicleDie in this reduced registry, not its full retail ordinal.",
+    "Full original InfantryType5236A0 and Infantry/base ctor prefix517A50..517B44 establish the separate JUMPJET control. Selected actual Strength/Armor/Immune/SpeedType/JumpJet readers execute. Resident-only query needs no active locomotor. mode0/256 return through Cell; mode1/257 stop BEFORE actual517FA0 and record its packet. JumpJet lifetime and physical flight/landing reachability excluded.",
+    "Original two-stage MTNK rows include no suspended mission, replacement restoration, same-target restoration and two-member resident versus neighboring-list controls. Actual original constructors initialize both tank objects; world list insertion and retained heads are supplied. The second tank has no suspended mission or target.",
+    "All three complete0x3F4-byte RNG states come from original65C6D0 seed0 after setup and bracket every measured visit. Next requests65C780, ranged requests65C7E0, raw ranged draws65C84B and results are separately recorded. Ambient x87 FPCW0E7F is supplied, not established as an active-game invariant. Raw padding writes such as Timer+178 are recorded mechanically; meaningful RadarCombatFlash timer fields are+174/+17C.",
+    "calls and events have common instruction-visit numbers, allowing exact interleaving. Inherited call health fields are explicitly primary_health for the main fixture tank; receiver identity and packet remain separate. reads are first-access raw bytes, writes preserve original PCs. No .text byte is patched; full mapped text has the expected original checksum before and after each case."
+  ],
+  "substitutions": [
+    "Setup INI signed-CRC caches replace physical file parsing; allocation/free/CRT/OS Interlocked use inherited bounded seams. No CanEnter, AtCoord, damage, Mark, list removal, Restore, AssignTarget or Detach callback returns are supplied.",
+    "Animation421EA0 and positional sound7509E0 stop at observed request boundaries, with constructor storage returned to the original caller. Their playback/lifetime and additional RNG are excluded; this is not a complete spawned-effect world trace.",
+    "Connectivity56C510 and hierarchy586990 remain recorded return boundaries. Renderer/radar/dirty-rectangle extents are presentation sinks. Untagged span575EE0 executes; no live trigger/Team/Aircraft-patrol/airstrike exception is supplied."
+  ],
+  "entry_points": {
+    "area_continuation": "0x0048A2B4",
+    "driver": "0x0057CCF0",
+    "span_notify": "0x00575EE0",
+    "occupants": "0x00487A10",
+    "can_enter": "0x0073F0A0",
+    "drive_at_coord": "0x004B4920",
+    "unit_damage": "0x00737C90",
+    "detach": "0x0070D4A0",
+    "foot_restore": "0x004D8F80",
+    "unit_speed_postpass": "0x007476D3",
+    "jumpjet_reader": "0x007151E5",
+    "infantry_ctor_prefix": "0x00517A50",
+    "infantry_can_enter": "0x0051BF90",
+    "infantry_damage_boundary": "0x00517FA0"
+  },
+  "original_slices": [
+    {
+      "start": "0x48a2b4",
+      "end_exclusive": "0x48a2c4",
+      "sha256": "c5cd9d9aae53382e4276d0a84751d39ab185724840f81775a20bb6b8daccf69d",
+      "hex": "e8372a0f0084c074078bcfe8dc312800"
+    },
+    {
+      "start": "0x487a10",
+      "end_exclusive": "0x487c15",
+      "sha256": "8dc084bf95ebe57a8d15cb8dbf437b349610425c36f3bd1533dc2781a2736f9e",
+      "hex": "83ec1c535556578bf98bb7e400000085f60f84830000008a5c24308b068b6e306a016a006aff6aff578bceff90ac01000083f807743284db741e85f67456f646140174148b168bceff92840000008a88940d000084c9751085f674388b068bceff502c83f802752c8b4e6ca1e07188008b166a00894c24348b88a80f00006a016a016a00518d4424446a00508bceff926c01000085ed8bf575818b4724be80000000894424306a000fbf4c24360fbfd0c1e108c1e20803ce03d651528d4c242ce85b47f9ff8d4424188bcf508974241c89742420e8b738ffff8bd8c7442410feffffffbdfeffffff896c2418668b4f24668b572666034c24106603d5668954241666894c24148b4424148d4c24308944243051b9e8f78700e873dc0d003bc70f84b00000008bb0e400000085f60f84a20000008a5614c0ea0280e201885424300f84800000008b867406000085c0750a6803400080e8b64b35008b6c24208b867406000083ec0c8b088bd450892a8b6c2434896a04895a08ff91a000000084c074448b066a016a006aff6aff578bceff90ac01000083f807752c8b4e6ca1e07188008b166a00894c24348b88a80f00006a016a016a00518d4424446a00508bceff926c0100008b763085f60f8562ffffff8b6c24184583fd03896c24180f8c09ffffff8b4424104083f803894424100f8ceefeffff5f5e5d5b83c41cc204009056578bf98a"
+    },
+    {
+      "start": "0x70d4a0",
+      "end_exclusive": "0x70d581",
+      "sha256": "d85abbf59dfb2a733534e5858551d7f57f0851ff354d8cf982d3153eebbf9de3",
+      "hex": "558be9565785ed750433ffeb0d8a45142401f6d81bc023c58bf88b0d88eca800538d59ff85db0f8c880000008b157ceca800b10185ff8b349a74228b869402000085c0741839685075138b476c85c07e0c8a879000000084c0740232c939aeb4020000754884c974448b068bceff90f80100008b168bceff522c83f802751a83beac000000197511c786bc00000000000000c686d20600000039aeb4020000750c8b066a008bceff90c80300004b0f8978ffffff8b0df8408b0033d2495b3bca7c1ba1ec408b008b048839683c750389503c39684075038950404979e55f5e5dc3"
+    },
+    {
+      "start": "0x4d8f80",
+      "end_exclusive": "0x4d8fa7",
+      "sha256": "dde801463459e49395f6b5cd92a4dd6446f636116393656a3640593201b3b6d6",
+      "hex": "568bf1e85884220084c074178b8ea80500008b066a01518bceff9080040000b0015ec332c05ec3"
+    },
+    {
+      "start": "0x7013e0",
+      "end_exclusive": "0x701405",
+      "sha256": "f20a889b247ddba38181907c485621aaa4b9561c37863767cc95ae879cd5ee73",
+      "hex": "568bf1e8c822ebff84c074158b8eb80200008b06518bceff90c8030000b0015ec332c05ec3"
+    },
+    {
+      "start": "0x7476d3",
+      "end_exclusive": "0x747711",
+      "sha256": "820d224220bdc4aee0f6b17ebe39ba772fa1552047e4856bbd675c093c60dd4e",
+      "hex": "8b877c06000083f8ff75138a97280d0000f6da1bd283c20289977c0600008b877c0600008bcb50680445840055e8bbf8d2ff8a8f140e000089877c060000"
+    },
+    {
+      "start": "0x714cc8",
+      "end_exclusive": "0x714ce9",
+      "sha256": "e4d0819d94a7d5b8022cda5d75a66f391c2a7c0a4a4e697bdde52ff66b082c3d",
+      "hex": "8a85280d0000506858bb81008bcbe8e501e1ff508bcfe80d49e1ff8885280d0000"
+    },
+    {
+      "start": "0x7151e5",
+      "end_exclusive": "0x715227",
+      "sha256": "afa9196237294c9caf1065c6f8e999be4a7e6c5a2089fedc5a92f9c54586ed3e",
+      "hex": "8a95940d00005268403684008bcbe8c8fce0ff508bcfe8f043e1ff8885940d00008a85950d00005068343684008bcbe8a7fce0ff508bcfe8cf43e1ff8885950d0000"
+    },
+    {
+      "start": "0x517a50",
+      "end_exclusive": "0x517b44",
+      "sha256": "a81cc0d1b5b0b739d15a0a4278629cd8b9cef04ba91f797bee02be1a527b483b",
+      "hex": "8b442408535556578bf150e880b7fbff8b4c2414c786c4060000ffffffff898ec00600008b1584eda80033db8d46048996c8060000899ed006000050899ed4060000889ed8060000889ed9060000889eda060000889edb060000889edc060000889edd060000899ee0060000889ee4060000c786e806000002000000c70658b07e00c7003cb07e00c7460834b07e00c7460c2cb07e00e84587efffa1f03da8008b0df83da8003bc87c2b381df53da80075043bc375378b0dfc3da8003bcb7e2d03c8a1e83da8005351b9e83da800ff500884c074188b0df83da8008bc141890df83da8008b0dec3da8008934818bcee87c010000"
+    }
+  ],
+  "payload_sha256": "eb5622802a02672f3508bbdc959b7b27a904b65092cf694f5e4a25f9ec1cc0fb",
+  "packaging": "canonical JSON; gzip mtime=0; copied lexical inputs replaced by SHA256"
+}

@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "computer base building: EconomyStateMachine mode steps and draws, AI_Choose_Building node handling and draws with the walls, AI_BuildWalls, Factory_AI retry wait, the ordinary site key, qsort order, away direction, reserved-near bounds and whole FindBaseBuildingSite searches on synthetic 64x64 maps",
+  "assumptions": [
+    "fresh emulator per case; fixture House/Rules/Type layouts from live disassembly",
+    "x87 control word 0x0E7F (53-bit chop), the process word ftol callers assume",
+    "skirmish unless a row says game_mode 0"
+  ],
+  "substitutions": [
+    "money interface vt+0x18, GetItemCount 0x49FAE0 and RandomRanged 0x65C7E0 answer from the row",
+    "Find_Node 0x42EB20 answers the first unfilled node",
+    "Get_Node_Building 0x42E820 answers the building object a row places for a node index",
+    "ChooseNextProduction 0x506EF0 fails; the perimeter scan 0x5082C0 does nothing",
+    "operator new/delete and atexit are fixture stubs",
+    "MapClass::operator[] 0x5657A0 answers synthetic cells; CheckOccupancy 0x586780 and CanPlaceAt vt+0xA8 answer a blocked-cell/unplaceable-site model"
+  ],
+  "entry_points": {
+    "EconomyStateMachine": "0x00509700",
+    "AI_Choose_Building": "0x004FE3E0",
+    "AI_BuildWalls": "0x0050C340",
+    "Factory_AI_retry_wait": "0x004501CB",
+    "ordinary_key": "0x00505F80",
+    "qsort": "0x007C8B48",
+    "site_comparator": "0x005108F0",
+    "away_direction": "0x005065E6",
+    "reserved_near": "0x0050B760",
+    "FindBaseBuildingSite": "0x005060B0"
+  },
+  "payload_sha256": "0f9ba2fb8eec17266d7b7ce1349bfcd1538efa16749b78a9a1474eab91f7bd86"
+}

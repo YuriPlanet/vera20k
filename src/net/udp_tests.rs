@@ -1,0 +1,2260 @@
+use super::*;
+use crate::net::global::GlobalDestination;
+use crate::net::reliable::{Delivery, LanConnectionConfig, RetryTiming};
+use std::time::{Duration, Instant};
+
+fn loopback_config() -> UdpBindConfig {
+    UdpBindConfig {
+        primary: SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0),
+        alternate: SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0),
+    }
+}
+
+fn connections() -> LanConnections {
+    LanConnections::new(
+        LanConnectionConfig::default(),
+        RetryTiming {
+            retry_delta: 0,
+            max_retries: u32::MAX,
+            timeout: u32::MAX,
+        },
+    )
+}
+
+fn transport() -> LanUdpTransport {
+    LanUdpTransport::bind(loopback_config(), connections()).unwrap()
+}
+
+fn received(transport: &mut LanUdpTransport) -> ReceivedMessage {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let report = transport.service(1);
+        assert!(report.first_io_error.is_none(), "{report:?}");
+        if let Some(message) = transport.pop_received() {
+            return message;
+        }
+        assert!(Instant::now() < deadline, "UDP message did not arrive");
+        std::thread::yield_now();
+    }
+}
+
+fn raw_peer() -> UdpSocket {
+    let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    socket
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    socket
+}
+
+fn connection_frame(kind: u8, sequence: u32, payload: &[u8]) -> Vec<u8> {
+    let mut bytes = vec![0x04, 0xaa, kind, 0];
+    bytes.extend(sequence.to_le_bytes());
+    bytes.extend([0; 6]);
+    bytes.extend(payload);
+    bytes
+}
+
+fn datagram(frame: &[u8]) -> Vec<u8> {
+    let mut bytes = udp_checksum(frame).to_le_bytes().to_vec();
+    bytes.extend(frame);
+    bytes
+}
+
+#[test]
+fn relay_uses_existing_reliable_owner_across_a_lost_and_duplicated_datagram() {
+    use vera20k_relay_protocol::{MAX_DATAGRAM, RelayServer, SecretKey, Ticket, derive_packet_key};
+
+    let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    socket.set_nonblocking(true).unwrap();
+    let SocketAddr::V4(address) = socket.local_addr().unwrap() else {
+        unreachable!()
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let key = SecretKey::new([42; 32]);
+    let mut server = RelayServer::new(key.clone(), 1);
+    let mut first = transport();
+    let mut second = transport();
+    for (client, source) in [(&mut first, 0), (&mut second, 29)] {
+        let ticket = Ticket {
+            room: [11; 16],
+            source,
+            expires: now + 120,
+            nonce: [source + 1; 16],
+            player: [source + 1; 16],
+            generation: 1,
+        }
+        .sign(&key)
+        .unwrap();
+        let packet_key = derive_packet_key(&key, &ticket);
+        client
+            .enable_relay(address, &ticket, *packet_key.expose_for_https(), [17; 32])
+            .unwrap();
+    }
+    first
+        .connections_mut()
+        .add_peer(29, relay_peer_endpoint(29).unwrap())
+        .unwrap();
+    second
+        .connections_mut()
+        .add_peer(0, relay_peer_endpoint(0).unwrap())
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let mut tick = 0;
+    let relay = |server: &mut RelayServer| {
+        let mut buffer = [0; MAX_DATAGRAM + 1];
+        loop {
+            let (length, source) = match socket.recv_from(&mut buffer) {
+                Ok(packet) => packet,
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
+                Err(error) => panic!("relay read failed: {error}"),
+            };
+            let SocketAddr::V4(source) = source else {
+                unreachable!()
+            };
+            for output in server.process(source, &buffer[..length], now).unwrap() {
+                socket.send_to(&output.bytes, output.endpoint).unwrap();
+            }
+        }
+    };
+    while !first.relay_ready() || !second.relay_ready() {
+        first.service(tick);
+        second.service(tick);
+        relay(&mut server);
+        tick += 1;
+        assert!(
+            Instant::now() < deadline,
+            "authenticated relay probe did not complete"
+        );
+    }
+    first.begin_relay_peer_probes(&[29]).unwrap();
+    second.begin_relay_peer_probes(&[0]).unwrap();
+    while first.relay_peer_round_trips().is_none() || second.relay_peer_round_trips().is_none() {
+        first.service(tick);
+        second.service(tick);
+        relay(&mut server);
+        tick += 1;
+        assert!(
+            Instant::now() < deadline,
+            "peer round trips did not complete"
+        );
+    }
+    let first_sample = first.relay_peer_round_trips().unwrap();
+    let second_sample = second.relay_peer_round_trips().unwrap();
+    assert_eq!(first_sample[0].0, 29);
+    assert_eq!(second_sample[0].0, 0);
+    assert!(first_sample[0].1 > 0 && second_sample[0].1 > 0);
+    let mut drop_next = true;
+    assert!(
+        first
+            .connections_mut()
+            .broadcast(b"real player command", Delivery::Reliable)
+    );
+    loop {
+        first.service(tick);
+        second.service(tick);
+        let mut buffer = [0; MAX_DATAGRAM + 1];
+        while let Ok((length, SocketAddr::V4(source))) = socket.recv_from(&mut buffer) {
+            for output in server.process(source, &buffer[..length], now).unwrap() {
+                if drop_next {
+                    drop_next = false;
+                    continue;
+                }
+                socket.send_to(&output.bytes, output.endpoint).unwrap();
+                socket.send_to(&output.bytes, output.endpoint).unwrap();
+            }
+        }
+        if let Some(message) = second.pop_received() {
+            assert_eq!(message.peer_id, 0);
+            assert_eq!(message.payload, b"real player command");
+            break;
+        }
+        tick += 1;
+        assert!(
+            Instant::now() < deadline,
+            "reliable command did not survive relay loss"
+        );
+    }
+    second.service(tick + 1);
+    assert!(
+        second.pop_received().is_none(),
+        "duplicate relay packet dispatched twice"
+    );
+    let renewed = Ticket {
+        room: [11; 16],
+        source: 0,
+        expires: now + 240,
+        nonce: [99; 16],
+        player: [1; 16],
+        generation: 1,
+    }
+    .sign(&key)
+    .unwrap();
+    let renewed_key = derive_packet_key(&key, &renewed);
+    assert!(
+        first
+            .connections_mut()
+            .broadcast(b"command through renewal", Delivery::Reliable)
+    );
+    assert!(first.global_mut().send(
+        b"global through renewal",
+        GlobalDestination::direct(relay_peer_endpoint(29).unwrap()),
+        Delivery::Reliable,
+        0
+    ));
+    let counts = {
+        let io = first.lock();
+        (
+            io.connections.queued_send_count(29),
+            io.global.queued_send_count(),
+        )
+    };
+    let endpoint = first.primary_addr().unwrap();
+    first
+        .renew_relay(address, &renewed, *renewed_key.expose_for_https(), [17; 32])
+        .unwrap();
+    assert_eq!(
+        first.relay_expires(),
+        Some(now + 120),
+        "candidate must not replace an unconfirmed route"
+    );
+    assert_eq!(
+        {
+            let io = first.lock();
+            (
+                io.connections.queued_send_count(29),
+                io.global.queued_send_count(),
+            )
+        },
+        counts
+    );
+    assert_eq!(first.relay_peer_round_trips(), Some(first_sample.clone()));
+    let mut lost_ready = false;
+    let mut got_private = false;
+    let mut got_global = false;
+    while first.relay_expires() != Some(now + 240) || !got_private || !got_global {
+        tick += 1;
+        first.service(tick);
+        second.service(tick);
+        let mut buffer = [0; MAX_DATAGRAM + 1];
+        while let Ok((length, SocketAddr::V4(source))) = socket.recv_from(&mut buffer) {
+            let Ok(outputs) = server.process(source, &buffer[..length], now) else {
+                continue;
+            };
+            for output in outputs {
+                if !lost_ready
+                    && output.endpoint == endpoint
+                    // A READY with the relay's first sequence answers the
+                    // renewal's CONFIRM (compaction spec §6.1).
+                    && output.bytes[0] & 0x1F == 1
+                    && output.bytes[5..9] == 1u32.to_le_bytes()
+                {
+                    lost_ready = true;
+                    continue;
+                }
+                socket.send_to(&output.bytes, output.endpoint).unwrap();
+            }
+        }
+        while let Some(message) = second.pop_received() {
+            got_private |= message.payload == b"command through renewal";
+        }
+        while let Some(message) = second.pop_global_received() {
+            got_global |= message.payload == b"global through renewal";
+        }
+        assert!(
+            Instant::now() < deadline,
+            "renewal must survive a lost READY without resetting reliable traffic"
+        );
+    }
+    assert!(lost_ready);
+    assert_eq!(first.primary_addr().unwrap(), endpoint);
+    assert_eq!(first.relay_peer_round_trips(), Some(first_sample));
+    assert!(
+        first
+            .renew_relay(address, &renewed, *renewed_key.expose_for_https(), [17; 32])
+            .is_ok(),
+        "duplicate grant is idempotent"
+    );
+    let stale = Ticket {
+        room: [11; 16],
+        source: 0,
+        expires: now + 120,
+        nonce: [1; 16],
+        player: [1; 16],
+        generation: 1,
+    }
+    .sign(&key)
+    .unwrap();
+    assert!(
+        first
+            .renew_relay(
+                address,
+                &stale,
+                *derive_packet_key(&key, &stale).expose_for_https(),
+                [17; 32]
+            )
+            .is_err()
+    );
+    let foreign = Ticket {
+        room: [11; 16],
+        source: 1,
+        expires: now + 300,
+        nonce: [100; 16],
+        player: [2; 16],
+        generation: 1,
+    }
+    .sign(&key)
+    .unwrap();
+    assert!(
+        first
+            .renew_relay(
+                address,
+                &foreign,
+                *derive_packet_key(&key, &foreign).expose_for_https(),
+                [17; 32]
+            )
+            .is_err()
+    );
+    first.retire_relay();
+    assert_eq!(first.primary_addr().unwrap(), endpoint);
+    assert_eq!(first.relay_expires(), None);
+    assert_eq!(first.connections().queued_send_count(29), None);
+    assert_eq!(first.global().queued_send_count(), 0);
+}
+
+/// An admitted relay route whose startup agreement the relay accepted, so
+/// retirement retains it for an explicit Leave.
+fn ordered_relay() -> (
+    UdpSocket,
+    vera20k_relay_protocol::RelayServer,
+    LanUdpTransport,
+    [u8; vera20k_relay_protocol::TICKET_LEN],
+    [u8; 32],
+) {
+    use vera20k_relay_protocol::{MAX_DATAGRAM, RelayServer, SecretKey, Ticket, derive_packet_key};
+
+    let socket = raw_peer();
+    socket.set_nonblocking(true).unwrap();
+    let address = ipv4_addr(&socket).unwrap();
+    let key = SecretKey::new([42; 32]);
+    let mut server = RelayServer::new(key.clone(), 1);
+    let mut wire = transport();
+    let ticket = Ticket {
+        room: [11; 16],
+        source: 0,
+        expires: 1200,
+        nonce: [1; 16],
+        player: [1; 16],
+        generation: 1,
+    }
+    .sign(&key)
+    .unwrap();
+    let packet_key = *derive_packet_key(&key, &ticket).expose_for_https();
+    wire.enable_relay(address, &ticket, packet_key, [17; 32])
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut bytes = [0; MAX_DATAGRAM + 1];
+    while !wire.relay_ready() {
+        wire.service(0);
+        while let Ok((length, SocketAddr::V4(source))) = socket.recv_from(&mut bytes) {
+            for output in server
+                .process_at(source, &bytes[..length], 1000, 0)
+                .unwrap()
+            {
+                socket.send_to(&output.bytes, output.endpoint).unwrap();
+            }
+        }
+        assert!(Instant::now() < deadline, "relay handshake did not finish");
+        std::thread::yield_now();
+    }
+    socket.set_nonblocking(false).unwrap();
+    let cert = OrderingCertificate {
+        room: [11; 16],
+        sources_mask: 3,
+        tick_hz: 45,
+        expires: 2000,
+        pacing: Default::default(),
+        ordered_alone: false,
+    }
+    .sign(&key)
+    .unwrap();
+    wire.set_ordering_certificate(cert.to_vec()).unwrap();
+    wire.configure_ordering([7; 32]).unwrap();
+    let (length, SocketAddr::V4(source)) = socket.recv_from(&mut bytes).unwrap() else {
+        panic!("IPv4");
+    };
+    for output in server
+        .process_at(source, &bytes[..length], 1000, 0)
+        .unwrap()
+    {
+        socket.send_to(&output.bytes, output.endpoint).unwrap();
+    }
+    (socket, server, wire, ticket, packet_key)
+}
+
+#[test]
+fn relay_retirement_keeps_the_original_route_until_a_retried_leave_is_acknowledged() {
+    let (socket, mut server, mut wire, ticket, packet_key) = ordered_relay();
+    let address = ipv4_addr(&socket).unwrap();
+    let primary = wire.primary_addr().unwrap();
+    let mut bytes = [0; vera20k_relay_protocol::MAX_DATAGRAM + 1];
+    wire.retire_relay();
+    assert!(wire.relay_retirement_pending());
+    assert_eq!(
+        wire.enable_relay(address, &ticket, packet_key, [17; 32])
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::WouldBlock
+    );
+    wire.service(0);
+    let (length, _) = socket.recv_from(&mut bytes).unwrap();
+    let lost_leave = bytes[..length].to_vec();
+    wire.service(16);
+    let (length, SocketAddr::V4(source)) = socket.recv_from(&mut bytes).unwrap() else {
+        panic!("IPv4");
+    };
+    assert_eq!(&bytes[..length], lost_leave.as_slice());
+    // The first request was lost; lose this retry's ACK after hop expiry too.
+    let lost_ack = server
+        .process_at(source, &bytes[..length], 1350, 350_000)
+        .unwrap();
+    assert_eq!(lost_ack.len(), 1);
+    assert!(wire.relay_retirement_pending());
+    wire.service(32);
+    let (length, SocketAddr::V4(source)) = socket.recv_from(&mut bytes).unwrap() else {
+        panic!("IPv4");
+    };
+    assert_eq!(&bytes[..length], lost_leave.as_slice());
+    let ack = server
+        .process_at(source, &bytes[..length], 1351, 351_000)
+        .unwrap();
+    let mut forged = ack[0].bytes.clone();
+    *forged.last_mut().unwrap() ^= 1;
+    socket.send_to(&forged, ack[0].endpoint).unwrap();
+    wire.service(32);
+    assert!(
+        wire.relay_retirement_pending(),
+        "forged ACK cannot retire the route"
+    );
+    socket.send_to(&ack[0].bytes, ack[0].endpoint).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while wire.relay_retirement_pending() {
+        wire.service(32);
+        assert!(
+            Instant::now() < deadline,
+            "terminal ACK did not retire the route"
+        );
+        std::thread::yield_now();
+    }
+    assert_eq!(wire.relay_source(), None);
+    assert_eq!(wire.primary_addr().unwrap(), primary);
+}
+
+#[test]
+fn unacknowledged_relay_leave_releases_the_route_after_bounded_attempts() {
+    // The relay went down: no Leave attempt is acknowledged.
+    let (socket, _server, mut wire, ticket, packet_key) = ordered_relay();
+    let mut bytes = [0; vera20k_relay_protocol::MAX_DATAGRAM + 1];
+    wire.retire_relay();
+    let attempts = u32::from(LEAVE_ATTEMPTS);
+    for attempt in 0..attempts {
+        assert!(wire.relay_retirement_pending());
+        wire.service(attempt * RELAY_LEAVE_TICKS);
+        socket.recv_from(&mut bytes).unwrap();
+    }
+    wire.service(attempts * RELAY_LEAVE_TICKS - 1);
+    assert!(
+        wire.relay_retirement_pending(),
+        "the last attempt keeps its full retry interval"
+    );
+    wire.service(attempts * RELAY_LEAVE_TICKS);
+    assert!(!wire.relay_retirement_pending());
+    assert_eq!(wire.relay_source(), None);
+    let address = ipv4_addr(&socket).unwrap();
+    wire.enable_relay(address, &ticket, packet_key, [17; 32])
+        .unwrap();
+}
+
+/// The relay drops a lapsed ticket unanswered and retires a silent player after
+/// ABSENT_MS, so nothing tells a game that its place is gone. A route that has
+/// heard nothing for that long and 15 seconds more is released and stops
+/// knocking, whatever holds the transport: a one-human match and the score
+/// screen have no ordered session to end.
+#[test]
+fn a_relay_route_silent_past_the_relays_own_limit_is_released() {
+    use vera20k_relay_protocol::{SecretKey, Ticket, derive_packet_key};
+
+    let sink = raw_peer();
+    let address = ipv4_addr(&sink).unwrap();
+    let key = SecretKey::new([31; 32]);
+    let ticket = Ticket {
+        room: [27; 16],
+        player: [1; 16],
+        source: 0,
+        generation: 1,
+        expires: 300,
+        nonce: [3; 16],
+    }
+    .sign(&key)
+    .unwrap();
+    let packet_key = *derive_packet_key(&key, &ticket).expose_for_https();
+    let mut wire = transport();
+    wire.enable_relay(address, &ticket, packet_key, [29; 32])
+        .unwrap();
+    let limit = ((ABSENT_MS + 15_000) / 16) as u32;
+    wire.service(100);
+    assert!(relay_datagrams(&sink) > 0);
+    // A sample older than the last one is not 49 days of silence.
+    wire.service(99);
+    wire.service(100 + limit);
+    assert!(!wire.relay_absent() && wire.relay_expires().is_some());
+    assert!(relay_datagrams(&sink) > 0);
+    wire.service(100 + limit + 1);
+    assert!(wire.relay_absent() && wire.relay_expires().is_none());
+    relay_datagrams(&sink);
+    wire.service(100 + limit + 1_000);
+    assert_eq!(relay_datagrams(&sink), 0);
+    // The lobby's reply to a renewal asked before the release is not an error.
+    wire.renew_relay(address, &ticket, packet_key, [29; 32])
+        .unwrap();
+}
+
+/// The route keeps only a certificate its session admits: one for the
+/// ticket's room that names its source.
+#[test]
+fn a_relay_route_refuses_an_ordering_certificate_for_another_room() {
+    use vera20k_relay_protocol::{SecretKey, Ticket, derive_packet_key};
+
+    let key = SecretKey::new([31; 32]);
+    let ticket = Ticket {
+        room: [27; 16],
+        player: [1; 16],
+        source: 0,
+        generation: 1,
+        expires: 300,
+        nonce: [3; 16],
+    }
+    .sign(&key)
+    .unwrap();
+    let mut wire = transport();
+    wire.enable_relay(
+        SocketAddrV4::new(Ipv4Addr::LOCALHOST, 9),
+        &ticket,
+        *derive_packet_key(&key, &ticket).expose_for_https(),
+        [29; 32],
+    )
+    .unwrap();
+    let certificate = |room| {
+        OrderingCertificate {
+            room,
+            sources_mask: 0b11,
+            tick_hz: 30,
+            expires: 2000,
+            pacing: Default::default(),
+            ordered_alone: false,
+        }
+        .sign(&key)
+        .unwrap()
+    };
+    assert!(
+        wire.set_ordering_certificate(certificate([28; 16]))
+            .is_err()
+    );
+    assert_eq!(wire.ordering_certificate(), None);
+    wire.set_ordering_certificate(certificate([27; 16]))
+        .unwrap();
+}
+
+/// `ordered_relay` once a second source's Ready has started its match and the
+/// game has sent its first UPLINK at bucket 20, so the I/O worker owes the
+/// relay a heartbeat 250 ms later (spec §6.6). The relay has read nothing
+/// since the start.
+fn started_relay() -> (
+    UdpSocket,
+    vera20k_relay_protocol::RelayServer,
+    LanUdpTransport,
+) {
+    use vera20k_relay_protocol::{
+        ClientSession, MAX_DATAGRAM, SecretKey, ServerEvent, Ticket, derive_packet_key,
+    };
+
+    let (socket, mut server, mut wire, _, _) = ordered_relay();
+    let key = SecretKey::new([42; 32]);
+    let ticket = Ticket {
+        room: [11; 16],
+        source: 1,
+        expires: 1200,
+        nonce: [2; 16],
+        player: [2; 16],
+        generation: 1,
+    }
+    .sign(&key)
+    .unwrap();
+    let packet_key = *derive_packet_key(&key, &ticket).expose_for_https();
+    let mut other = ClientSession::new(&ticket, packet_key, [17; 32]).unwrap();
+    let other_address = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 9);
+    let certificate = wire.ordering_certificate().unwrap();
+    let mut bytes = Vec::new();
+    other.probe_at(0, &mut bytes).unwrap();
+    let challenge = server.process_at(other_address, &bytes, 1000, 0).unwrap();
+    let ServerEvent::Challenge(cookie) = other.receive_at(&challenge[0].bytes, 0).unwrap() else {
+        panic!("challenge");
+    };
+    other.confirm_at(cookie, 0, &mut bytes).unwrap();
+    for reply in server.process_at(other_address, &bytes, 1000, 0).unwrap() {
+        other.receive_at(&reply.bytes, 0).unwrap();
+    }
+    other
+        .configure_ordering_at(&certificate, [7; 32], 0, &mut bytes)
+        .unwrap();
+    server.process_at(other_address, &bytes, 1000, 0).unwrap();
+    // The start is due 200 ms after both were ready; the STATUS answering
+    // the next Ready reports it.
+    wire.service(19);
+    relay_datagrams(&socket);
+    wire.configure_ordering([7; 32]).unwrap();
+    let mut datagram = [0; MAX_DATAGRAM + 1];
+    let (length, SocketAddr::V4(source)) = socket.recv_from(&mut datagram).unwrap() else {
+        panic!("IPv4");
+    };
+    for output in server
+        .process_at(source, &datagram[..length], 1000, 304)
+        .unwrap()
+    {
+        if output.endpoint == source {
+            socket.send_to(&output.bytes, output.endpoint).unwrap();
+        }
+    }
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !wire.poll_uplink().unwrap() {
+        wire.service(20);
+        assert!(Instant::now() < deadline, "the match did not start");
+        std::thread::yield_now();
+    }
+    relay_datagrams(&socket);
+    (socket, server, wire)
+}
+
+/// What reached the relay, waiting 100 ms for the last of it.
+fn relay_received(socket: &UdpSocket) -> Vec<Vec<u8>> {
+    let mut datagram = [0; vera20k_relay_protocol::MAX_DATAGRAM + 1];
+    socket
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .unwrap();
+    let mut received = Vec::new();
+    while let Ok((length, _)) = socket.recv_from(&mut datagram) {
+        received.push(datagram[..length].to_vec());
+    }
+    socket
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    received
+}
+
+fn relay_datagrams(socket: &UdpSocket) -> usize {
+    relay_received(socket).len()
+}
+
+/// A route busy both ways sends no keepalive PING: its UPLINKs and the
+/// relay's pushes keep each end hearing the other. At the keepalive interval
+/// that finds the relay two seconds silent the PING is back, whatever the
+/// game still sends.
+#[test]
+fn a_relay_route_busy_both_ways_skips_its_keepalive_until_the_relay_falls_silent() {
+    use vera20k_relay_protocol::envelope::{Direction, PING, peek};
+
+    let (socket, mut server, mut wire) = started_relay();
+    let game = wire.primary_addr().unwrap();
+    let pings = |sent: &[Vec<u8>]| {
+        sent.iter()
+            .filter(|bytes| peek(Direction::Up, bytes).unwrap().kind == PING)
+            .count()
+    };
+    // Every 256 ms the game services, which sends the UPLINK heartbeat it
+    // owes, and the relay answers with the pushes due by then. The route's
+    // last probe was its HELLO at bucket 0, so bucket 132 is the first
+    // service past the two-second interval.
+    for tick in (36..=132).step_by(16) {
+        wire.service(tick);
+        let sent = relay_received(&socket);
+        assert!(!sent.is_empty(), "the game sends at bucket {tick}");
+        assert_eq!(pings(&sent), 0, "no keepalive at bucket {tick}");
+        let now_ms = u64::from(tick) * 16;
+        let mut answers = Vec::new();
+        for bytes in &sent {
+            answers.extend(server.process_at(game, bytes, 1000, now_ms).unwrap());
+        }
+        answers.extend(server.drain_ordering_push(now_ms, 1000));
+        answers.retain(|answer| answer.endpoint == game);
+        assert!(!answers.is_empty(), "the relay answers at bucket {tick}");
+        let heard = wire.relay_link_stats().unwrap().datagrams_received + answers.len() as u64;
+        for answer in &answers {
+            socket.send_to(&answer.bytes, answer.endpoint).unwrap();
+        }
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while wire.relay_link_stats().unwrap().datagrams_received < heard {
+            wire.service(tick);
+            assert!(Instant::now() < deadline, "the relay's answers arrived");
+            std::thread::yield_now();
+        }
+    }
+    // The relay falls silent after bucket 132, where the last interval began.
+    wire.service(132 + RELAY_PING_TICKS - 1);
+    assert_eq!(pings(&relay_received(&socket)), 0);
+    wire.service(132 + RELAY_PING_TICKS);
+    assert_eq!(
+        pings(&relay_received(&socket)),
+        1,
+        "nothing heard for two seconds"
+    );
+}
+
+#[test]
+fn io_worker_answers_for_a_long_frame_but_not_a_stalled_or_crashed_game() {
+    let (socket, _, mut wire) = started_relay();
+    // The game thread last serviced at bucket 20. A one-second frame later
+    // the worker heartbeats (the 2-second keepalive is not due).
+    wire.lock().background_pass(80, false);
+    assert_eq!(relay_datagrams(&socket), 1, "the UPLINK heartbeat");
+    // A bucket past 60 seconds the game counts as gone: the keepalive the
+    // unanswered route now owes goes unsent too.
+    let stalled = 21 + GAME_STALL_TICKS as u32;
+    wire.lock().background_pass(stalled, false);
+    assert_eq!(relay_datagrams(&socket), 0);
+    // The game services again (its own pass probes): the worker's next
+    // keepalive, a second later, goes out.
+    wire.service(stalled);
+    relay_datagrams(&socket);
+    wire.lock().background_pass(stalled + 62, false);
+    assert_eq!(relay_datagrams(&socket), 1, "heard again");
+    // A crash silences the next one.
+    wire.lock().background_pass(stalled + 124, true);
+    assert_eq!(relay_datagrams(&socket), 0);
+}
+
+#[test]
+fn raw_send_errors_preserve_owned_bytes_destination_and_fifo_order() {
+    let mut queue = UdpSendQueue::default();
+    let mut report = UdpServiceReport::default();
+    let first = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0);
+    let second = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 4321);
+    let mut frame = connection_frame(1, 4, b"unreliable");
+    let original = datagram(&frame);
+    let ack = connection_frame(2, 8, &[]);
+    let mut attempts = Vec::new();
+    queue.send(
+        first,
+        &frame,
+        None,
+        UdpChannel::Primary,
+        &mut report,
+        &mut |bytes, endpoint| {
+            attempts.push((endpoint, bytes.to_vec()));
+            Err(io::ErrorKind::PermissionDenied.into())
+        },
+    );
+    frame.fill(0xff);
+    queue.send(
+        second,
+        &ack,
+        None,
+        UdpChannel::Primary,
+        &mut report,
+        &mut |bytes, endpoint| {
+            attempts.push((endpoint, bytes.to_vec()));
+            Err(io::ErrorKind::Interrupted.into())
+        },
+    );
+    assert_eq!(queue.pending.len(), 2);
+    assert_eq!(report.sent_datagrams, 0);
+    assert_eq!(report.send_would_block, 0);
+    assert_eq!(
+        report.first_io_error.as_ref().unwrap().error.kind(),
+        io::ErrorKind::PermissionDenied
+    );
+    queue.service(UdpChannel::Primary, &mut report, &mut |bytes, endpoint| {
+        attempts.push((endpoint, bytes.to_vec()));
+        Ok(0) // Native retires every non--1 return, including a short result.
+    });
+    assert_eq!(queue.pending.len(), 1);
+    queue.service(UdpChannel::Primary, &mut report, &mut |bytes, endpoint| {
+        attempts.push((endpoint, bytes.to_vec()));
+        Ok(bytes.len())
+    });
+    assert_eq!(report.sent_datagrams, 2);
+    assert!(queue.pending.is_empty());
+    let normalized = SocketAddrV4::new(Ipv4Addr::LOCALHOST, DEFAULT_LAN_PORT);
+    assert_eq!(attempts[..3], vec![(normalized, original); 3]);
+    assert_eq!(attempts[3], (second, datagram(&ack)));
+}
+
+#[test]
+fn would_block_retires_raw_attempt_while_reliable_owner_can_retry() {
+    let mut connections = connections();
+    let endpoint = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 4321);
+    connections.add_peer(1, endpoint).unwrap();
+    assert!(connections.send_to(1, b"retry", Delivery::Reliable));
+    let mut queue = UdpSendQueue::default();
+    let mut report = UdpServiceReport::default();
+    let mut attempted = Vec::new();
+    connections.service(1, &mut |endpoint, frame| {
+        queue.send(
+            endpoint,
+            frame,
+            None,
+            UdpChannel::Primary,
+            &mut report,
+            &mut |bytes, _| {
+                attempted.push(bytes.to_vec());
+                Err(io::ErrorKind::WouldBlock.into())
+            },
+        );
+    });
+    assert_eq!(report.send_would_block, 1);
+    assert!(report.first_io_error.is_none());
+    assert!(queue.pending.is_empty());
+    assert_eq!(connections.queued_send_count(1), Some(1));
+    queue.service(UdpChannel::Primary, &mut report, &mut |_, _| {
+        panic!("a retired raw attempt cannot be serviced again")
+    });
+    connections.service(2, &mut |endpoint, frame| {
+        queue.send(
+            endpoint,
+            frame,
+            None,
+            UdpChannel::Primary,
+            &mut report,
+            &mut |bytes, _| {
+                attempted.push(bytes.to_vec());
+                Ok(bytes.len())
+            },
+        );
+    });
+    assert_eq!(attempted.len(), 2);
+    assert_eq!(attempted[0], attempted[1]);
+    assert!(queue.pending.is_empty());
+    assert_eq!(connections.queued_send_count(1), Some(1));
+}
+
+/// A destination that always fails (a dead peer, or a forged source an ACK
+/// answers) loses its head after a bounded number of attempts instead of
+/// stalling every later send, and failing sends cannot grow the FIFO forever.
+#[test]
+fn failing_destination_cannot_jam_or_grow_the_send_fifo() {
+    let mut queue = UdpSendQueue::default();
+    let mut report = UdpServiceReport::default();
+    let dead = SocketAddrV4::new(Ipv4Addr::new(203, 0, 113, 9), 4321);
+    let peer = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 4321);
+    let delivered = std::cell::Cell::new(0);
+    let mut send = |_: &[u8], endpoint: SocketAddrV4| {
+        if endpoint == dead {
+            Err(io::ErrorKind::HostUnreachable.into())
+        } else {
+            delivered.set(delivered.get() + 1);
+            Ok(0)
+        }
+    };
+    queue.send(
+        dead,
+        b"ack",
+        None,
+        UdpChannel::Primary,
+        &mut report,
+        &mut send,
+    );
+    for _ in 0..MAX_HEAD_ATTEMPTS {
+        queue.send(
+            peer,
+            b"frame",
+            None,
+            UdpChannel::Primary,
+            &mut report,
+            &mut send,
+        );
+    }
+    assert_eq!(
+        delivered.get(),
+        1,
+        "the peer's datagrams follow the retired head"
+    );
+    for _ in 0..2 * MAX_PENDING_DATAGRAMS {
+        queue.service(UdpChannel::Primary, &mut report, &mut send);
+    }
+    assert!(queue.pending.is_empty());
+    assert_eq!(delivered.get(), usize::from(MAX_HEAD_ATTEMPTS));
+    for _ in 0..2 * MAX_PENDING_DATAGRAMS {
+        queue.send(
+            dead,
+            b"ack",
+            None,
+            UdpChannel::Primary,
+            &mut report,
+            &mut send,
+        );
+    }
+    assert!(queue.pending.len() <= MAX_PENDING_DATAGRAMS);
+}
+
+#[test]
+fn raw_fifos_retire_failing_heads_and_clear_independently_of_reliability() {
+    let mut transport = transport();
+    let endpoint = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 4321);
+    transport.connections_mut().add_peer(1, endpoint).unwrap();
+    assert!(
+        transport
+            .connections_mut()
+            .send_to(1, b"retained", Delivery::Reliable)
+    );
+    let mut report = UdpServiceReport::default();
+    for sequence in 0..130 {
+        transport.lock().primary_send.send(
+            endpoint,
+            &connection_frame(1, sequence, b"pooled or heap"),
+            None,
+            UdpChannel::Primary,
+            &mut report,
+            &mut |_, _| Err(io::ErrorKind::PermissionDenied.into()),
+        );
+    }
+    transport.lock().alternate_send.send(
+        endpoint,
+        b"alternate",
+        None,
+        UdpChannel::Alternate,
+        &mut report,
+        &mut |_, _| Err(io::ErrorKind::PermissionDenied.into()),
+    );
+    // Each send attempts the head once; every eighth failure retires one.
+    let retained = 130 - 130 / usize::from(MAX_HEAD_ATTEMPTS);
+    assert_eq!(transport.lock().primary_send.pending.len(), retained);
+    assert_eq!(transport.lock().alternate_send.pending.len(), 1);
+    let mut alternate = Vec::new();
+    transport
+        .lock()
+        .alternate_send
+        .service(UdpChannel::Alternate, &mut report, &mut |bytes, _| {
+            alternate.extend_from_slice(bytes);
+            Ok(bytes.len())
+        });
+    assert_eq!(alternate, datagram(b"alternate"));
+    assert_eq!(transport.lock().primary_send.pending.len(), retained);
+    transport.lock().alternate_send.send(
+        endpoint,
+        b"discard",
+        None,
+        UdpChannel::Alternate,
+        &mut report,
+        &mut |_, _| Err(io::ErrorKind::PermissionDenied.into()),
+    );
+    transport.clear_pending_sends();
+    assert!(transport.lock().primary_send.pending.is_empty());
+    assert!(transport.lock().alternate_send.pending.is_empty());
+    assert_eq!(transport.connections().queued_send_count(1), Some(1));
+}
+
+#[test]
+fn portable_service_retries_one_retained_head_without_new_protocol_send() {
+    let mut transport = transport();
+    let sink = raw_peer();
+    let endpoint = ipv4_addr(&sink).unwrap();
+    let mut report = UdpServiceReport::default();
+    for frame in [b"first".as_slice(), b"second".as_slice()] {
+        transport.lock().primary_send.send(
+            endpoint,
+            frame,
+            None,
+            UdpChannel::Primary,
+            &mut report,
+            &mut |_, _| Err(io::ErrorKind::PermissionDenied.into()),
+        );
+    }
+    let mut bytes = [0; 64];
+    for (remaining, frame) in [(1, b"first".as_slice()), (0, b"second".as_slice())] {
+        let report = transport.service(1);
+        assert_eq!(report.sent_datagrams, 1);
+        assert!(report.first_io_error.is_none());
+        assert_eq!(transport.lock().primary_send.pending.len(), remaining);
+        let (length, source) = sink.recv_from(&mut bytes).unwrap();
+        assert_eq!(source, SocketAddr::V4(transport.primary_addr().unwrap()));
+        assert_eq!(&bytes[..length], datagram(frame));
+    }
+    assert_eq!(transport.service(1).sent_datagrams, 0);
+}
+
+#[test]
+fn generated_ack_joins_the_same_fifo_behind_retained_raw_datagrams() {
+    let mut receiver = transport();
+    let sink = raw_peer();
+    let sender = raw_peer();
+    receiver
+        .connections_mut()
+        .add_peer(7, ipv4_addr(&sender).unwrap())
+        .unwrap();
+    let mut report = UdpServiceReport::default();
+    for frame in [b"first".as_slice(), b"second".as_slice()] {
+        receiver.lock().primary_send.send(
+            ipv4_addr(&sink).unwrap(),
+            frame,
+            None,
+            UdpChannel::Primary,
+            &mut report,
+            &mut |_, _| Err(io::ErrorKind::PermissionDenied.into()),
+        );
+    }
+    sender
+        .send_to(
+            &datagram(&connection_frame(0, 0, b"command")),
+            receiver.alternate_addr().unwrap(),
+        )
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut bytes = [0; 64];
+    loop {
+        match receiver.lock().alternate.peek_from(&mut bytes) {
+            Ok(_) => break,
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                assert!(Instant::now() < deadline);
+                std::thread::yield_now();
+            }
+            Err(error) => panic!("UDP peek failed: {error}"),
+        }
+    }
+    let report = receiver.service(1);
+    assert_eq!(report.received_datagrams, 1);
+    assert_eq!(report.sent_datagrams, 2);
+    for frame in [b"first".as_slice(), b"second".as_slice()] {
+        let (length, _) = sink.recv_from(&mut bytes).unwrap();
+        assert_eq!(&bytes[..length], datagram(frame));
+    }
+    // The received command queues its ACK behind the second old datagram.
+    assert_eq!(receiver.pop_received().unwrap().payload, b"command");
+    assert_eq!(receiver.lock().primary_send.pending.len(), 1);
+    assert_eq!(receiver.service(1).sent_datagrams, 1);
+    let (length, source) = sender.recv_from(&mut bytes).unwrap();
+    assert_eq!(source, SocketAddr::V4(receiver.primary_addr().unwrap()));
+    assert_eq!(&bytes[..length], datagram(&connection_frame(2, 0, &[])));
+}
+
+#[test]
+fn independent_udp_owners_deliver_reliable_data_and_retire_the_acknowledged_send() {
+    let mut left = transport();
+    let mut right = transport();
+    left.connections_mut()
+        .add_peer(42, right.primary_addr().unwrap())
+        .unwrap();
+    right
+        .connections_mut()
+        .add_peer(7, left.primary_addr().unwrap())
+        .unwrap();
+    let payload = b"opaque Event packet bytes";
+    assert!(
+        left.connections_mut()
+            .broadcast(payload, Delivery::Reliable)
+    );
+    let sent = left.service(1);
+    assert_eq!(sent.sent_datagrams, 1);
+    assert!(sent.first_io_error.is_none());
+    let message = received(&mut right);
+    assert_eq!(message.peer_id, 7);
+    assert_eq!(message.payload, payload);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while left.connections().queued_send_count(42) != Some(0) {
+        let report = left.service(2);
+        assert!(report.first_io_error.is_none(), "{report:?}");
+        assert!(Instant::now() < deadline, "UDP ACK did not arrive");
+        std::thread::yield_now();
+    }
+    assert_eq!(left.service(3).sent_datagrams, 0);
+}
+
+#[test]
+fn unknown_source_global_admission_and_private_gameplay_share_the_same_udp_owner() {
+    let mut left = transport();
+    let mut right = transport();
+    let left_address = left.primary_addr().unwrap();
+    let right_address = right.primary_addr().unwrap();
+    assert!(left.global_mut().send(
+        b"join",
+        GlobalDestination::direct(right_address),
+        Delivery::Reliable,
+        0
+    ));
+    assert_eq!(left.service(1).sent_datagrams, 1);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let joined = loop {
+        let report = right.service(1);
+        assert!(report.first_io_error.is_none(), "{report:?}");
+        assert_eq!(report.rejected_connections, 0);
+        if let Some(message) = right.pop_global_received() {
+            break message;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    };
+    assert_eq!(joined.source, left_address);
+    assert_eq!(joined.product_id, 0xaa04);
+    assert_eq!(joined.payload, b"join");
+    while left.global().queued_send_count() != 0 {
+        left.service(2);
+        assert!(Instant::now() < deadline, "global ACK did not arrive");
+        std::thread::yield_now();
+    }
+    assert_eq!(left.global().mean_response_time(), 1);
+    assert_eq!(left.response_time(), 0);
+    // Admission hands the same physical endpoint to the private channel;
+    // neither side rebinds or opens a second independent socket transport.
+    left.connections_mut().add_peer(1, right_address).unwrap();
+    right.connections_mut().add_peer(0, joined.source).unwrap();
+    assert!(
+        left.connections_mut()
+            .broadcast(b"command", Delivery::Reliable)
+    );
+    left.service(3);
+    let message = received(&mut right);
+    assert_eq!(message.peer_id, 0);
+    assert_eq!(message.payload, b"command");
+    assert_eq!(left.primary_addr().unwrap(), left_address);
+    assert_eq!(right.primary_addr().unwrap(), right_address);
+}
+
+#[test]
+fn manager_response_reset_keeps_sockets_raw_queues_and_pending_channel_traffic() {
+    let mut wire = transport();
+    let peer = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 4321);
+    wire.connections_mut().add_peer(1, peer).unwrap();
+    assert!(
+        wire.connections_mut()
+            .send_to(1, b"private history", Delivery::Reliable)
+    );
+    wire.connections_mut().service(100, &mut |_, _| {});
+    wire.connections_mut()
+        .receive(peer, &connection_frame(2, 0, &[]), &mut |_, _| {})
+        .unwrap();
+    wire.connections_mut().service(111, &mut |_, _| {});
+    assert!(wire.global_mut().send(
+        b"global history",
+        GlobalDestination::direct(peer),
+        Delivery::Reliable,
+        0
+    ));
+    let mut global_frame = Vec::new();
+    wire.global_mut()
+        .service(100, &mut |_, frame| global_frame = frame.to_vec());
+    let mut global_ack = global_frame.clone();
+    global_ack[2] = 2;
+    wire.global_mut()
+        .receive(peer, 0, &global_ack, &mut |_, _| {})
+        .unwrap();
+    wire.global_mut().service(122, &mut |_, _| {});
+    assert_eq!(wire.connections().mean_response_time(1), Some(11));
+    assert_eq!(wire.global().mean_response_time(), 22);
+    assert!(
+        wire.connections_mut()
+            .send_to(1, b"private pending", Delivery::Reliable)
+    );
+    assert!(wire.global_mut().send(
+        b"global pending",
+        GlobalDestination::direct(peer),
+        Delivery::Reliable,
+        0
+    ));
+    wire.connections_mut()
+        .receive(
+            peer,
+            &connection_frame(0, 0, b"private receive"),
+            &mut |_, _| {},
+        )
+        .unwrap();
+    wire.global_mut()
+        .receive(peer, 0, &global_frame, &mut |_, _| {})
+        .unwrap();
+    wire.lock().primary_send.send(
+        peer,
+        &connection_frame(2, 9, &[]),
+        None,
+        UdpChannel::Primary,
+        &mut UdpServiceReport::default(),
+        &mut |_, _| Err(io::ErrorKind::PermissionDenied.into()),
+    );
+    wire.lock().alternate_send.send(
+        peer,
+        &connection_frame(2, 10, &[]),
+        None,
+        UdpChannel::Alternate,
+        &mut UdpServiceReport::default(),
+        &mut |_, _| Err(io::ErrorKind::PermissionDenied.into()),
+    );
+    wire.set_broadcast_targets(&[peer]).unwrap();
+    let sockets = (wire.primary_addr().unwrap(), wire.alternate_addr().unwrap());
+    let raw = {
+        let io = wire.lock();
+        (
+            format!("{:?}", io.primary_send),
+            format!("{:?}", io.alternate_send),
+        )
+    };
+    wire.reset_response_time(false);
+    assert_eq!(wire.connections().mean_response_time(1), Some(11));
+    assert_eq!(
+        wire.global().mean_response_time(),
+        0,
+        "manager always clears primary-global"
+    );
+    wire.reset_response_time(true);
+    assert_eq!(wire.response_time(), 0);
+    assert_eq!(wire.connections().queued_send_count(1), Some(1));
+    assert_eq!(wire.global().queued_send_count(), 1);
+    assert_eq!(
+        (wire.primary_addr().unwrap(), wire.alternate_addr().unwrap()),
+        sockets
+    );
+    assert_eq!(
+        {
+            let io = wire.lock();
+            (
+                format!("{:?}", io.primary_send),
+                format!("{:?}", io.alternate_send),
+            )
+        },
+        raw
+    );
+    assert_eq!(wire.lock().broadcast_targets, [peer]);
+    assert_eq!(wire.pop_received().unwrap().payload, b"private receive");
+    assert_eq!(
+        wire.pop_global_received().unwrap().payload,
+        b"global history"
+    );
+}
+
+#[test]
+fn response_time_matches_native_private_maximum_excluding_primary_global() {
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/storage_oracle/lan_manager_timing.json",
+    ))
+    .unwrap();
+    for case in corpus["response_maximum"].as_array().unwrap() {
+        let mut wire = transport();
+        for (index, mean) in case["private"].as_array().unwrap().iter().enumerate() {
+            let id = index as i32;
+            let peer = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 10000 + index as u16);
+            let mean = mean.as_u64().unwrap() as u32;
+            wire.connections_mut().add_peer(id, peer).unwrap();
+            assert!(
+                wire.connections_mut()
+                    .send_to(id, b"sample", Delivery::Reliable)
+            );
+            wire.connections_mut().service(1, &mut |_, _| {});
+            wire.connections_mut()
+                .receive(peer, &connection_frame(2, 0, &[]), &mut |_, _| {})
+                .unwrap();
+            wire.connections_mut()
+                .service(1_u32.wrapping_add(mean), &mut |_, _| {});
+            assert_eq!(wire.connections().mean_response_time(id), Some(mean));
+        }
+        let primary = case["primary"].as_u64().unwrap() as u32;
+        let endpoint = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 20000);
+        assert!(wire.global_mut().send(
+            b"primary sample",
+            GlobalDestination::direct(endpoint),
+            Delivery::Reliable,
+            0
+        ));
+        let mut ack = Vec::new();
+        wire.global_mut()
+            .service(1, &mut |_, frame| ack = frame.to_vec());
+        ack[2] = 2;
+        wire.global_mut()
+            .receive(endpoint, 0, &ack, &mut |_, _| {})
+            .unwrap();
+        wire.global_mut()
+            .service(1_u32.wrapping_add(primary), &mut |_, _| {});
+        assert_eq!(wire.global().mean_response_time(), primary);
+        assert_eq!(
+            u64::from(wire.response_time()),
+            case["result"].as_u64().unwrap(),
+            "{}",
+            case["name"]
+        );
+    }
+}
+
+#[test]
+fn explicit_global_broadcast_targets_are_deduplicated_and_need_no_private_connections() {
+    let mut sender = transport();
+    let mut first = transport();
+    let mut second = transport();
+    let first_address = first.primary_addr().unwrap();
+    let second_address = second.primary_addr().unwrap();
+    sender
+        .set_broadcast_targets(&[first_address, second_address, first_address])
+        .unwrap();
+    assert!(sender.global_mut().send(
+        b"discover",
+        GlobalDestination::BROADCAST,
+        Delivery::Reliable,
+        0
+    ));
+    assert_eq!(sender.service(1).sent_datagrams, 2);
+    for receiver in [&mut first, &mut second] {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let message = loop {
+            let report = receiver.service(1);
+            assert_eq!(report.sent_datagrams, 0, "broadcast must not request ACK");
+            if let Some(message) = receiver.pop_global_received() {
+                break message;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::yield_now();
+        };
+        assert_eq!(message.payload, b"discover");
+    }
+    sender.service(2);
+    assert_eq!(sender.global().queued_send_count(), 0);
+}
+
+#[test]
+fn alternate_socket_receives_but_ordinary_ack_uses_primary_without_redelivery() {
+    let mut receiver = transport();
+    let sender = raw_peer();
+    receiver
+        .connections_mut()
+        .add_peer(9, ipv4_addr(&sender).unwrap())
+        .unwrap();
+    let bytes = datagram(&connection_frame(0, 0, b"alternate"));
+    sender
+        .send_to(&bytes, receiver.alternate_addr().unwrap())
+        .unwrap();
+    assert_eq!(received(&mut receiver).payload, b"alternate");
+    let mut reply = [0; 64];
+    let (length, source) = sender.recv_from(&mut reply).unwrap();
+    assert_eq!(source, SocketAddr::V4(receiver.primary_addr().unwrap()));
+    assert_eq!(&reply[..length], datagram(&connection_frame(2, 0, &[])));
+    sender
+        .send_to(&bytes, receiver.alternate_addr().unwrap())
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let report = receiver.service(1);
+        if report.received_datagrams != 0 {
+            assert_eq!(report.sent_datagrams, 1);
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    assert!(receiver.pop_received().is_none());
+}
+
+#[test]
+fn alternate_global_receive_also_sends_ack_from_primary() {
+    let mut receiver = transport();
+    let sender = raw_peer();
+    let mut frame = vec![0x36, 0x12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0xaa];
+    frame.extend(b"global");
+    sender
+        .send_to(&datagram(&frame), receiver.alternate_addr().unwrap())
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        receiver.service(1);
+        if let Some(message) = receiver.pop_global_received() {
+            assert_eq!(message.payload, b"global");
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    let mut reply = [0; 64];
+    let (length, source) = sender.recv_from(&mut reply).unwrap();
+    assert_eq!(source, SocketAddr::V4(receiver.primary_addr().unwrap()));
+    frame.truncate(16);
+    frame[2] = 2;
+    assert_eq!(&reply[..length], datagram(&frame));
+}
+
+/// Winsock reports the ICMP port-unreachable an earlier send drew as
+/// WSAECONNRESET on a later read; the datagram behind it arrives in the same
+/// pass. Other platforms report nothing on an unconnected socket.
+#[cfg(windows)]
+#[test]
+fn port_unreachable_from_an_earlier_send_does_not_end_the_receive_pass() {
+    let mut receiver = transport();
+    let closed = ipv4_addr(&raw_peer()).unwrap();
+    receiver.lock().primary.send_to(b"gone", closed).unwrap();
+    std::thread::sleep(Duration::from_millis(50));
+    let mut frame = vec![0x36, 0x12, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0xaa];
+    frame.extend(b"after reset");
+    raw_peer()
+        .send_to(&datagram(&frame), receiver.primary_addr().unwrap())
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(50));
+    let report = receiver.service(1);
+    let failure = report.first_io_error.as_ref().expect("WSAECONNRESET");
+    assert_eq!(failure.error.raw_os_error(), Some(10054));
+    assert_eq!(
+        receiver.pop_global_received().unwrap().payload,
+        b"after reset"
+    );
+}
+
+#[test]
+fn malformed_checksum_unknown_source_and_oversize_never_enter_reliable_delivery() {
+    let mut receiver = transport();
+    let sender = raw_peer();
+    receiver
+        .connections_mut()
+        .add_peer(3, ipv4_addr(&sender).unwrap())
+        .unwrap();
+    let destination = receiver.primary_addr().unwrap();
+    sender.send_to(&[1, 2, 3], destination).unwrap();
+    let mut corrupt = datagram(&connection_frame(0, 0, b"corrupted"));
+    *corrupt.last_mut().unwrap() ^= 1;
+    sender.send_to(&corrupt, destination).unwrap();
+    sender
+        .send_to(&vec![0; UDP_DATAGRAM_CAPACITY + 5], destination)
+        .unwrap();
+    sender.send_to(&datagram(&[0xaa]), destination).unwrap();
+    let stranger = raw_peer();
+    stranger
+        .send_to(&datagram(&connection_frame(0, 0, b"unknown")), destination)
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut count = 0;
+    let mut malformed = 0;
+    let mut rejected = 0;
+    while count < 5 {
+        let report = receiver.service(1);
+        assert!(report.first_io_error.is_none(), "{report:?}");
+        count += report.received_datagrams;
+        malformed += report.malformed_datagrams;
+        rejected += report.rejected_connections;
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    assert_eq!(malformed, 3);
+    assert_eq!(rejected, 2);
+    assert!(receiver.pop_received().is_none());
+}
+
+#[test]
+fn connection_failure_retains_the_native_peer_identity() {
+    let mut transport = LanUdpTransport::bind(
+        loopback_config(),
+        LanConnections::new(
+            LanConnectionConfig::default(),
+            RetryTiming {
+                retry_delta: 0,
+                max_retries: 1,
+                timeout: u32::MAX,
+            },
+        ),
+    )
+    .unwrap();
+    let sink = raw_peer();
+    transport
+        .connections_mut()
+        .add_peer(71, ipv4_addr(&sink).unwrap())
+        .unwrap();
+    assert!(
+        transport
+            .connections_mut()
+            .send_to(71, b"no ACK", Delivery::Reliable)
+    );
+    assert_eq!(transport.service(1).failed_peer, None);
+    assert_eq!(transport.service(2).failed_peer, Some(71));
+}
+
+#[test]
+fn dropping_transport_closes_both_bound_sockets_and_all_connection_state() {
+    let mut first = transport();
+    let config = UdpBindConfig {
+        primary: first.primary_addr().unwrap(),
+        alternate: first.alternate_addr().unwrap(),
+    };
+    first
+        .connections_mut()
+        .add_peer(10, SocketAddrV4::new(Ipv4Addr::LOCALHOST, 1234))
+        .unwrap();
+    assert!(
+        first
+            .connections_mut()
+            .send_to(10, b"queued", Delivery::Reliable)
+    );
+    let mut report = UdpServiceReport::default();
+    let mut io = first.lock();
+    let UdpIo {
+        primary_send,
+        alternate_send,
+        ..
+    } = &mut *io;
+    for (queue, channel) in [
+        (primary_send, UdpChannel::Primary),
+        (alternate_send, UdpChannel::Alternate),
+    ] {
+        queue.send(
+            SocketAddrV4::new(Ipv4Addr::LOCALHOST, 1234),
+            b"old raw attempt",
+            None,
+            channel,
+            &mut report,
+            &mut |_, _| Err(io::ErrorKind::PermissionDenied.into()),
+        );
+        assert_eq!(queue.pending.len(), 1);
+    }
+    drop(io);
+    drop(first);
+    let fresh = LanUdpTransport::bind(config, connections()).unwrap();
+    assert_eq!(fresh.connections().peers().len(), 0);
+    assert!(fresh.lock().primary_send.pending.is_empty());
+    assert!(fresh.lock().alternate_send.pending.is_empty());
+    assert_eq!(fresh.primary_addr().unwrap(), config.primary);
+    assert_eq!(fresh.alternate_addr().unwrap(), config.alternate);
+}
+
+#[test]
+fn fresh_session_clears_raw_private_and_global_traffic_without_rebinding() {
+    let mut wire = transport();
+    let primary = wire.primary_addr().unwrap();
+    let alternate = wire.alternate_addr().unwrap();
+    let sink = raw_peer();
+    let destination = ipv4_addr(&sink).unwrap();
+    wire.connections_mut().add_peer(4, destination).unwrap();
+    assert!(
+        wire.connections_mut()
+            .broadcast(b"old private", Delivery::Reliable)
+    );
+    assert!(wire.global_mut().send(
+        b"old global",
+        GlobalDestination::direct(destination),
+        Delivery::Reliable,
+        0
+    ));
+    wire.lock().primary_send.send(
+        destination,
+        b"old raw",
+        None,
+        UdpChannel::Primary,
+        &mut UdpServiceReport::default(),
+        &mut |_, _| Err(io::ErrorKind::PermissionDenied.into()),
+    );
+
+    wire.reset_session();
+    assert_eq!(wire.primary_addr().unwrap(), primary);
+    assert_eq!(wire.alternate_addr().unwrap(), alternate);
+    assert_eq!(wire.global().queued_send_count(), 0);
+    assert!(wire.connections().peers().next().is_none());
+    assert_eq!(wire.service(10).sent_datagrams, 0);
+
+    assert!(wire.global_mut().send(
+        b"new visit",
+        GlobalDestination::direct(destination),
+        Delivery::Reliable,
+        0
+    ));
+    assert_eq!(wire.service(11).sent_datagrams, 1);
+    let mut bytes = [0; UDP_DATAGRAM_CAPACITY];
+    let (length, source) = sink.recv_from(&mut bytes).unwrap();
+    assert_eq!(source, SocketAddr::V4(primary));
+    assert_eq!(
+        &bytes[CHECKSUM_LEN + 4..CHECKSUM_LEN + 8],
+        &0_u32.to_le_bytes()
+    );
+    assert_eq!(
+        &bytes[CHECKSUM_LEN + super::super::global::GLOBAL_HEADER_LEN..length],
+        b"new visit"
+    );
+}
+
+fn take_wire_datagrams(wire: &LanUdpTransport, count: usize) -> Vec<Vec<u8>> {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut packets = Vec::new();
+    let mut bytes = [0; UDP_DATAGRAM_CAPACITY + 1];
+    while packets.len() < count {
+        match wire.lock().primary.recv_from(&mut bytes) {
+            Ok((length, _)) => packets.push(bytes[..length].to_vec()),
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                assert!(
+                    Instant::now() < deadline,
+                    "scoped UDP datagram did not arrive"
+                );
+                std::thread::yield_now();
+            }
+            Err(error) => panic!("scoped UDP receive failed: {error}"),
+        }
+    }
+    packets
+}
+
+// A successful send_to does not guarantee that a following nonblocking
+// recv_from can already see the loopback datagram on every platform. Hold the
+// existing clock bucket so reliable retries cannot manufacture extra input.
+fn malformed_after_receipt(wire: &mut LanUdpTransport, now: u32, expected: usize) -> usize {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut received = 0;
+    let mut malformed = 0;
+    while received < expected {
+        let report = wire.service(now);
+        assert!(report.first_io_error.is_none(), "{report:?}");
+        received += report.received_datagrams;
+        malformed += report.malformed_datagrams;
+        assert!(
+            Instant::now() < deadline,
+            "expected {expected} datagrams, received {received}; last report {report:?}"
+        );
+        std::thread::yield_now();
+    }
+    assert_eq!(received, expected);
+    malformed
+}
+
+#[test]
+fn scoped_lan_keeps_full_private_payload_and_retires_to_plain_discovery() {
+    let mut left = transport();
+    let mut right = transport();
+    let left_address = left.primary_addr().unwrap();
+    let right_address = right.primary_addr().unwrap();
+    let scope = SessionScope {
+        epoch: [23; 16],
+        revision: (1_u64 << 32) + 7,
+    };
+    for (wire, peer, address) in [(&mut left, 1, right_address), (&mut right, 0, left_address)] {
+        wire.set_lan_scope(scope).unwrap();
+        wire.set_lan_scope(scope).unwrap();
+        assert_eq!(wire.lan_scope(), Some(scope));
+        wire.connections_mut().add_peer(peer, address).unwrap();
+    }
+    assert_eq!(
+        left.enable_relay(right_address, &[], [0; 32], [0; 32])
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::AlreadyExists
+    );
+    let payload = vec![71; LanConnectionConfig::default().max_payload_bytes];
+    assert!(
+        left.connections_mut()
+            .send_to(1, &payload, Delivery::Reliable)
+    );
+    assert!(left.global_mut().send(
+        b"match side channel",
+        GlobalDestination::direct(right_address),
+        Delivery::Reliable,
+        0
+    ));
+    assert_eq!(left.service(1).sent_datagrams, 2);
+    let packets = take_wire_datagrams(&right, 2);
+    assert!(
+        packets
+            .iter()
+            .all(|packet| packet.len() <= UDP_DATAGRAM_CAPACITY
+                && packet.starts_with(LAN_SCOPE_MAGIC))
+    );
+    for packet in &packets {
+        left.lock().primary.send_to(packet, right_address).unwrap();
+    }
+    assert_eq!(received(&mut right).payload, payload);
+    assert_eq!(
+        right.pop_global_received().unwrap().payload,
+        b"match side channel"
+    );
+    // send_to can finish before the loopback ACK is visible to recv_from.
+    // Keep the original send bucket while waiting for both real receipts;
+    // advancing it would admit a retry before a delayed loopback ACK arrives.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let report = left.service(1);
+        assert!(report.first_io_error.is_none(), "{report:?}");
+        let private_retired = left.connections().queued_send_count(1) == Some(0);
+        let global_retired = left.global().queued_send_count() == 0;
+        if private_retired && global_retired {
+            break;
+        }
+        assert!(Instant::now() < deadline, "scoped UDP ACKs did not arrive");
+        std::thread::yield_now();
+    }
+    assert_eq!(left.connections().queued_send_count(1), Some(0));
+    assert_eq!(left.global().queued_send_count(), 0);
+
+    // The same physical sockets return to ordinary unscoped LAN discovery.
+    // In-flight packets from the retired match cannot enter either owner.
+    left.clear_lan_scope();
+    right.clear_lan_scope();
+    assert_eq!(left.lan_scope(), None);
+    assert_eq!(right.lan_scope(), None);
+    assert!(left.connections().peers().next().is_none());
+    for packet in &packets {
+        left.lock().primary.send_to(packet, right_address).unwrap();
+    }
+    assert_eq!(malformed_after_receipt(&mut right, 3, 2), 2);
+    assert!(right.pop_received().is_none());
+    assert!(right.pop_global_received().is_none());
+    assert!(left.global_mut().send(
+        b"new lobby",
+        GlobalDestination::direct(right_address),
+        Delivery::Reliable,
+        0
+    ));
+    left.service(4);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        right.service(4);
+        if let Some(message) = right.pop_global_received() {
+            assert_eq!(message.payload, b"new lobby");
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    assert_eq!(
+        (left.primary_addr().unwrap(), right.primary_addr().unwrap()),
+        (left_address, right_address)
+    );
+}
+
+#[test]
+fn loading_scope_bridge_survives_lost_progress_before_both_peers_activate() {
+    let mut host = transport();
+    let mut guest = transport();
+    let host_address = host.primary_addr().unwrap();
+    let guest_address = guest.primary_addr().unwrap();
+    let scope = SessionScope {
+        epoch: [91; 16],
+        revision: 7,
+    };
+    for (wire, peer, address) in [(&mut host, 1, guest_address), (&mut guest, 0, host_address)] {
+        wire.prepare_lan_scope(scope).unwrap();
+        wire.connections_mut().add_peer(peer, address).unwrap();
+    }
+    let host_progress = LoadingProgressMessage::new("Host", 100)
+        .unwrap()
+        .scoped_bytes(scope);
+    let guest_progress = LoadingProgressMessage::new("Guest", 100)
+        .unwrap()
+        .scoped_bytes(scope);
+    // Host has completed first, while guest missed its last ordinary loading
+    // publication. The same reliable entry retries under host's active route.
+    host.set_lan_scope(scope).unwrap();
+    assert!(host.global_mut().send(
+        &host_progress,
+        GlobalDestination::direct(guest_address),
+        Delivery::Reliable,
+        0,
+    ));
+    assert!(
+        host.connections_mut()
+            .send_to(1, b"first order", Delivery::Reliable)
+    );
+    host.service(1);
+    let first = take_wire_datagrams(&guest, 2);
+    let private = first
+        .iter()
+        .find(|packet| packet.ends_with(b"first order"))
+        .unwrap();
+    host.lock().primary.send_to(private, guest_address).unwrap();
+    assert_eq!(malformed_after_receipt(&mut guest, 1, 1), 1);
+    assert!(
+        guest.pop_received().is_none(),
+        "loading cannot admit private gameplay"
+    );
+    assert!(guest.global_mut().send(
+        &guest_progress,
+        GlobalDestination::direct(host_address),
+        Delivery::Reliable,
+        0,
+    ));
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut tick = 2;
+    let mut got_host = false;
+    let mut got_guest = false;
+    loop {
+        guest.service(tick);
+        host.service(tick);
+        if let Some(message) = host.pop_global_received() {
+            assert_eq!(message.payload, guest_progress);
+            got_guest = true;
+        }
+        if let Some(message) = guest.pop_global_received() {
+            assert_eq!(message.payload, host_progress);
+            got_host = true;
+        }
+        assert!(guest.pop_received().is_none());
+        if got_host
+            && got_guest
+            && host.global().queued_send_count() == 0
+            && guest.global().queued_send_count() == 0
+        {
+            break;
+        }
+        tick += 1;
+        assert!(
+            Instant::now() < deadline,
+            "mixed loading scopes did not drain"
+        );
+        std::thread::yield_now();
+    }
+    guest.set_lan_scope(scope).unwrap();
+    host.service(tick + 1);
+    assert_eq!(received(&mut guest).payload, b"first order");
+    // The guest's send_to can finish before the ACK is readable by the host.
+    // Keep the clock fixed while servicing its actual arrival.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let report = host.service(tick + 2);
+        assert!(report.first_io_error.is_none(), "{report:?}");
+        if host.connections().queued_send_count(1) == Some(0) {
+            break;
+        }
+        assert!(Instant::now() < deadline, "private ACK did not arrive");
+        std::thread::yield_now();
+    }
+}
+
+#[test]
+fn rematch_rejects_old_ack_data_and_frame_sync_before_reliable_state() {
+    use crate::net::event_packet::encode_live_frame_sync;
+    use crate::sim::command_queue::FrameInfo;
+
+    let mut left = transport();
+    let mut right = transport();
+    let left_address = left.primary_addr().unwrap();
+    let right_address = right.primary_addr().unwrap();
+    let former = SessionScope {
+        epoch: [37; 16],
+        revision: (1_u64 << 32) + 9,
+    };
+    for (wire, peer, address) in [(&mut left, 1, right_address), (&mut right, 0, left_address)] {
+        wire.set_lan_scope(former).unwrap();
+        wire.connections_mut().add_peer(peer, address).unwrap();
+    }
+    let old_sync = encode_live_frame_sync(
+        FrameInfo {
+            house_id: 0,
+            event_frame: 10,
+            checksum: 19,
+            timing_word: 0,
+            delay: 10,
+        },
+        0,
+    )
+    .unwrap();
+    assert!(
+        left.connections_mut()
+            .send_to(1, b"former orders", Delivery::Reliable)
+    );
+    assert!(
+        left.connections_mut()
+            .send_to(1, &old_sync, Delivery::Unreliable)
+    );
+    assert!(left.global_mut().send(
+        b"former match side channel",
+        GlobalDestination::direct(right_address),
+        Delivery::Reliable,
+        0
+    ));
+    assert_eq!(left.service(1).sent_datagrams, 3);
+    let old_packets = take_wire_datagrams(&right, 3);
+    for packet in &old_packets {
+        left.lock().primary.send_to(packet, right_address).unwrap();
+    }
+    assert_eq!(malformed_after_receipt(&mut right, 1, 3), 0);
+    let old_acks = take_wire_datagrams(&left, 2);
+
+    // Same host epoch, different final configuration. The low32 revision is
+    // deliberately equal, so truncating the full agreed u64 is observable.
+    let current = SessionScope {
+        revision: 9,
+        ..former
+    };
+    for (wire, peer, address) in [(&mut left, 1, right_address), (&mut right, 0, left_address)] {
+        wire.reset_session();
+        wire.set_lan_scope(current).unwrap();
+        wire.connections_mut().add_peer(peer, address).unwrap();
+    }
+    assert!(
+        left.connections_mut()
+            .send_to(1, b"current orders", Delivery::Reliable)
+    );
+    assert!(left.global_mut().send(
+        b"current match side channel",
+        GlobalDestination::direct(right_address),
+        Delivery::Reliable,
+        0
+    ));
+    assert_eq!(left.service(1).sent_datagrams, 2);
+    let current_packets = take_wire_datagrams(&right, 2);
+    for ack in &old_acks {
+        right.lock().primary.send_to(ack, left_address).unwrap();
+    }
+    assert_eq!(malformed_after_receipt(&mut left, 1, 2), 2);
+    assert_eq!(
+        left.connections().queued_send_count(1),
+        Some(1),
+        "old ACK retired the new reliable sequence0"
+    );
+    assert_eq!(
+        left.global().queued_send_count(),
+        1,
+        "old ACK retired the new global sequence0"
+    );
+    for packet in &old_packets {
+        left.lock().primary.send_to(packet, right_address).unwrap();
+    }
+    assert_eq!(malformed_after_receipt(&mut right, 1, 3), 3);
+    assert!(right.pop_received().is_none());
+    assert!(right.pop_global_received().is_none());
+    for packet in &current_packets {
+        left.lock().primary.send_to(packet, right_address).unwrap();
+    }
+    assert_eq!(received(&mut right).payload, b"current orders");
+    assert_eq!(
+        right.pop_global_received().unwrap().payload,
+        b"current match side channel"
+    );
+    assert_eq!(malformed_after_receipt(&mut left, 1, 2), 0);
+    assert_eq!(left.connections().queued_send_count(1), Some(0));
+    assert_eq!(left.global().queued_send_count(), 0);
+
+    // A fresh host visit can reuse the old revision; all128 epoch bits still
+    // separate its FRAMESYNC from the former match's seed/progress path.
+    right.reset_session();
+    right
+        .set_lan_scope(SessionScope {
+            epoch: [41; 16],
+            ..former
+        })
+        .unwrap();
+    right.connections_mut().add_peer(0, left_address).unwrap();
+    let packet = old_packets
+        .iter()
+        .find(|packet| packet.ends_with(&old_sync))
+        .unwrap();
+    left.lock().primary.send_to(packet, right_address).unwrap();
+    assert_eq!(malformed_after_receipt(&mut right, 4, 1), 1);
+    assert!(right.pop_received().is_none());
+}
+
+fn live_for_campaign_delivery(
+    wire: LanUdpTransport,
+    houses: u8,
+) -> crate::net::live_commands::LiveCommandSession {
+    use crate::net::live_commands::{LiveCommandMode, LiveCommandSession, StartupAgreement};
+    use std::num::NonZeroU32;
+
+    let rate = NonZeroU32::new(1).unwrap();
+    let agreement = StartupAgreement::new(
+        (0..houses).map(|row| (row, row as i8)),
+        0..houses,
+        1,
+        10,
+        30,
+        rate,
+        0,
+        0,
+        "",
+        "",
+    )
+    .unwrap();
+    LiveCommandSession::new(agreement, wire, 0, 1, rate, LiveCommandMode::Lan, None).unwrap()
+}
+
+fn acknowledge_campaign_delivery(
+    live: &mut crate::net::live_commands::LiveCommandSession,
+    signal: crate::net::lan_messages::extended_setup::campaign::Signal,
+    now: u32,
+) {
+    use crate::net::lan_messages::extended_setup::campaign::Record;
+
+    let mut peer = transport();
+    let record = Record {
+        scope: None,
+        attempt: 1,
+        signal,
+    };
+    let batch = live
+        .global_mut()
+        .send_reliable_batch(&record.encode(), &[peer.primary_addr().unwrap()])
+        .unwrap();
+    assert!(!live.global().batch_delivered(batch));
+    live.service_transport(now);
+    malformed_after_receipt(&mut peer, now, 1);
+    assert_eq!(
+        Record::decode(&peer.pop_global_received().unwrap().payload),
+        Some(record)
+    );
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while live.global().queued_send_count() != 0 {
+        live.service_transport(now);
+        assert!(
+            Instant::now() < deadline,
+            "campaign control ACK did not arrive"
+        );
+        std::thread::yield_now();
+    }
+    assert!(live.global().batch_delivered(batch));
+}
+
+#[test]
+fn an_old_private_failure_does_not_block_an_acknowledged_stage_receipt() {
+    use crate::net::lan_messages::extended_setup::campaign::{Signal, StageChoice};
+
+    let mut wire = transport();
+    let absent = raw_peer();
+    wire.connections_mut()
+        .add_peer(1, ipv4_addr(&absent).unwrap())
+        .unwrap();
+    wire.connections_mut().set_timing(RetryTiming {
+        retry_delta: 0,
+        max_retries: 1,
+        timeout: u32::MAX,
+    });
+    assert!(
+        wire.connections_mut()
+            .send_to(1, b"no ACK", Delivery::Reliable)
+    );
+    let mut live = live_for_campaign_delivery(wire, 2);
+    live.service_transport(1);
+    live.service_transport(2);
+    assert_eq!(live.service_report().unwrap().failed_peer, Some(1));
+    acknowledge_campaign_delivery(&mut live, Signal::StageBegun(StageChoice::Retry), 3);
+}
+
+#[test]
+fn an_old_global_timeout_does_not_block_an_acknowledged_narrative_release() {
+    use crate::net::lan_messages::extended_setup::campaign::Signal;
+
+    let mut live = live_for_campaign_delivery(transport(), 1);
+    let absent = raw_peer();
+    live.global_mut().set_timing(RetryTiming {
+        retry_delta: 0,
+        max_retries: u32::MAX,
+        timeout: 1,
+    });
+    assert!(
+        live.global_mut()
+            .send_reliable_batch(b"no ACK", &[ipv4_addr(&absent).unwrap()])
+            .is_some()
+    );
+    live.service_transport(1);
+    live.service_transport(3);
+    assert_eq!(live.service_report().unwrap().discarded_global_sends, 1);
+    live.global_mut()
+        .set_timing(RetryTiming::LAN_GUEST_COMPLETED_GLOBAL);
+    acknowledge_campaign_delivery(
+        &mut live,
+        Signal::NarrativeRelease {
+            boundary: 1,
+            tick: 9,
+        },
+        64,
+    );
+}
+
+#[test]
+fn a_later_unrelated_global_timeout_does_not_block_an_acknowledged_stage_receipt() {
+    use crate::net::lan_messages::extended_setup::campaign::{Signal, StageChoice};
+
+    let mut live = live_for_campaign_delivery(transport(), 1);
+    let absent = raw_peer();
+    live.global_mut().set_timing(RetryTiming {
+        retry_delta: 0,
+        max_retries: u32::MAX,
+        timeout: 1,
+    });
+    // A chat to a peer that stops answering is in flight before the receipt
+    // and times out after the receipt is queued.
+    assert!(live.send_global(
+        b"no ACK",
+        true,
+        GlobalDestination::direct(ipv4_addr(&absent).unwrap())
+    ));
+    live.service_transport(1);
+    assert_eq!(live.global().queued_send_count(), 1);
+    acknowledge_campaign_delivery(&mut live, Signal::StageBegun(StageChoice::Retry), 3);
+}
+
+#[test]
+fn a_worker_discard_cannot_settle_a_terminal_global_send() {
+    let mut wire = transport();
+    let peer = raw_peer();
+    let SocketAddr::V4(endpoint) = peer.local_addr().unwrap() else {
+        panic!("IPv4 peer");
+    };
+    wire.global_mut().set_timing(RetryTiming {
+        retry_delta: 0,
+        max_retries: u32::MAX,
+        timeout: 1,
+    });
+    let batch = wire
+        .global_mut()
+        .send_reliable_batch(b"terminal receipt", &[endpoint])
+        .unwrap();
+    // The worker sends the receipt, then times it out before the app polls.
+    wire.lock().background_pass(1, false);
+    wire.lock().background_pass(3, false);
+
+    let live = live_for_campaign_delivery(wire, 1);
+    assert_eq!(live.global().queued_send_count(), 0);
+    assert!(live.service_report().is_none());
+    assert!(
+        !live.global().batch_delivered(batch),
+        "retry expiry is not an ACK"
+    );
+}
+
+#[test]
+fn terminal_campaign_aborts_leave_the_scoped_socket_before_reset() {
+    use crate::net::lan_messages::extended_setup::campaign::{Record, Signal};
+
+    for signal in [
+        Signal::StageAbort,
+        Signal::NarrativeAbort {
+            boundary: 2,
+            tick: 11,
+        },
+    ] {
+        let mut sender = transport();
+        let mut peer = transport();
+        let scope = SessionScope {
+            epoch: [37; 16],
+            revision: 4,
+        };
+        sender.set_lan_scope(scope).unwrap();
+        peer.set_lan_scope(scope).unwrap();
+        let record = Record {
+            scope: Some(scope),
+            attempt: 3,
+            signal,
+        };
+        let source = sender.primary_addr().unwrap();
+        sender
+            .send_terminal_global(&record.encode(), &[peer.primary_addr().unwrap()])
+            .unwrap();
+        // The app leaves synchronously. No worker or service tick can see the
+        // sending scope after this call.
+        sender.clear_lan_scope();
+        assert_eq!(malformed_after_receipt(&mut peer, 1, 1), 0);
+        let incoming = peer.pop_global_received().unwrap();
+        assert_eq!(incoming.source, source);
+        assert_eq!(Record::decode(&incoming.payload), Some(record));
+    }
+}
+
+#[test]
+fn authored_stage_rollover_reacks_the_registered_receipt_until_new_gameplay() {
+    use crate::net::lan_messages::extended_setup::campaign::{Record, Signal, StageChoice};
+    use crate::net::lan_messages::ingame::LoadingProgressMessage;
+
+    let mut guest = transport();
+    let mut host = transport();
+    let guest_addr = guest.primary_addr().unwrap();
+    let host_addr = host.primary_addr().unwrap();
+    let former = SessionScope {
+        epoch: [37; 16],
+        revision: 4,
+    };
+    for (wire, peer, address) in [(&mut guest, 0, host_addr), (&mut host, 1, guest_addr)] {
+        wire.set_lan_scope(former).unwrap();
+        wire.connections_mut().add_peer(peer, address).unwrap();
+    }
+    let begun = Record {
+        scope: Some(former),
+        attempt: 1,
+        signal: Signal::StageBegun(StageChoice::Retry),
+    }
+    .encode();
+    assert!(guest.global_mut().send(
+        &begun,
+        GlobalDestination::direct(host_addr),
+        Delivery::Reliable,
+        0
+    ));
+    assert!(
+        guest
+            .connections_mut()
+            .send_to(0, b"old orders", Delivery::Reliable)
+    );
+    assert_eq!(guest.service(1).sent_datagrams, 2);
+    let old = take_wire_datagrams(&host, 2);
+    for datagram in &old {
+        guest.lock().primary.send_to(datagram, host_addr).unwrap();
+    }
+    assert_eq!(malformed_after_receipt(&mut host, 1, 2), 0);
+    let receipt = host.pop_global_received().unwrap();
+    assert_eq!(receipt.payload, begun);
+    let original_acks = take_wire_datagrams(&guest, 2);
+
+    let next = host.advance_lan_stage_scope(former, vec![receipt]).unwrap();
+    assert_eq!(
+        next,
+        SessionScope {
+            revision: former.revision + 1,
+            ..former
+        }
+    );
+    for datagram in &old {
+        guest.lock().primary.send_to(datagram, host_addr).unwrap();
+    }
+    assert_eq!(malformed_after_receipt(&mut host, 2, 2), 1);
+    assert!(host.pop_received().is_none());
+    assert!(host.pop_global_received().is_none());
+    assert_eq!(malformed_after_receipt(&mut guest, 1, 1), 0);
+    assert_eq!(
+        guest.global().queued_send_count(),
+        0,
+        "old receipt survives a lost ACK"
+    );
+    // Keep the clock on the original bucket until the recovered ACK arrives.
+    // The next bucket retries only the old private send whose ACK was lost.
+    assert_eq!(guest.service(2).sent_datagrams, 1);
+    let former_retry = take_wire_datagrams(&host, 1).pop().unwrap();
+    assert_eq!(
+        Some(&former_retry),
+        old.iter().find(|packet| packet.ends_with(b"old orders"))
+    );
+
+    assert_eq!(
+        guest.advance_lan_stage_scope(former, Vec::new()).unwrap(),
+        next
+    );
+    let report = LoadingProgressMessage::new("Guest", 100)
+        .unwrap()
+        .scoped_bytes(next);
+    assert!(guest.global_mut().send(
+        &report,
+        GlobalDestination::direct(host_addr),
+        Delivery::Reliable,
+        0
+    ));
+    assert_eq!(guest.service(3).sent_datagrams, 1);
+    let current = take_wire_datagrams(&host, 1);
+    for ack in &original_acks {
+        host.lock().primary.send_to(ack, guest_addr).unwrap();
+        host.lock()
+            .primary
+            .send_to(&ack[LAN_SCOPE_HEADER_LEN..], guest_addr)
+            .unwrap();
+    }
+    assert_eq!(malformed_after_receipt(&mut guest, 3, 4), 4);
+    assert_eq!(
+        guest.global().queued_send_count(),
+        1,
+        "a stale ACK cannot clear next stage's 100"
+    );
+    guest
+        .lock()
+        .primary
+        .send_to(&current[0], host_addr)
+        .unwrap();
+    assert_eq!(malformed_after_receipt(&mut host, 3, 1), 0);
+    assert_eq!(host.pop_global_received().unwrap().payload, report);
+    assert_eq!(malformed_after_receipt(&mut guest, 3, 1), 0);
+    assert_eq!(guest.global().queued_send_count(), 0);
+
+    host.set_lan_scope(next).unwrap();
+    for datagram in &old {
+        guest.lock().primary.send_to(datagram, host_addr).unwrap();
+    }
+    assert_eq!(malformed_after_receipt(&mut host, 4, 2), 2);
+    assert!(host.pop_global_received().is_none());
+}

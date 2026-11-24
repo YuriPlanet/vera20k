@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original wooden hut destruction joined to live residents and Anim constructors.\n\nBoth authored Shrapnel huts enter original574C20 directly. The shared Joined\nowner supplies original actor/Drive/receiver/cleanup and Anim construction in\none VM. No Bomb/Building prefix, animation AI or whole Logic tick is simulated.\n",
+  "assumptions": [
+    "Physical XShrapnel MAP and SNOW Recalc/overlay/land data, original repair570050 and supplied resident MTNK/Drive/House/list state use the unchanged shared Shrapnel repair and Joined occupants owners.",
+    "Both authored hut coordinates117,56 and113,62 enter original574C20 after the external hut-death decision. Original574780,575540 and57BAA0 execute. Native active Bomb438720 and Building update call sites43896A/440301 are retained as original instruction bytes; the prefix bodies are not executed.",
+    "Native BridgeExplosions constructor/read blocks run over RULESMD, absentLANGRULE, MPBattleMD and XShrapnel before ART reads in this same VM and registry. The shared joined owner executes full original Anim constructor421EA0, Unlimbo, Start and Bouncer initialization, original resident admission/receiver and death cleanup.",
+    "Original65C6D0 seed0 initializes all three RNG streams after actor setup. ART/general setup consumes none. Complete Main,Scenario,MapGen states bracket each entire hut call, and instruction visits order constructors, native receivers, list changes and draws.",
+    "Supplied game speed4 and frame1000 are fixed. Native type initialization determines the initial Scenario identity cursor; ordered identity deltas are usable, but this is not whole ScenarioLoad identity parity."
+  ],
+  "substitutions": [
+    "Inherited bounded allocation/free/CRT/OS seams, signed-CRC lexical INI caches and unchanged physical SHP IO. No hut selector/walker, animation constructor, admission, receiver or cleanup algorithm is copied or replaced.",
+    "Native map/actor world admission and Bomb/Building destruction prefix are excluded. Connectivity/hierarchy and presentation extents remain declared request boundaries. All original text bytes remain unchanged.",
+    "Sound7509E0 stops at its named request. No audio playback, AnimAI, subsequent debris flight/contact/damage/expiry, deferred-delete drain or complete Logic scheduler runs."
+  ],
+  "entry_points": {
+    "wood_hut": "0x00574C20",
+    "selector": "0x00574780",
+    "physical_y_walker": "0x00575540",
+    "instruction_only_x_walker": "0x00575220",
+    "driver": "0x0057BAA0",
+    "occupants": "0x00487A10",
+    "unit_damage": "0x00737C90",
+    "anim_constructor": "0x00421EA0",
+    "bridge_explosion_reader": "0x0066DB93"
+  },
+  "payload_sha256": "a57b600561869559460327b061015d13376a375a063f973dfc16847a3c16c32a",
+  "packaging": "canonical JSON; gzip mtime=0; copied lexical inputs replaced by SHA256"
+}

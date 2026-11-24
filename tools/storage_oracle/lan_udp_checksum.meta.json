@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Whole UDP packet checksum7B1FD0/64DE80, response update48BA10 and zero-peer private send5414C0",
+  "assumptions": [
+    "Explicit payload byte vectors are placed in packet+20, length at+10. Packet storage and bytes after each payload startA5; output is read at+1C. Empty input, all four byte remainders, high bits, carry and558-byte input are bounded numerical controls, not live UDP or reliability observations.",
+    "Only checksum storage may change. Full native return and, for nonempty input, execution of64DE80 are required. There is no Python checksum model.",
+    "Response controls supply CommBuffer sum/count/mean at+14/+18/+1C and one elapsed wall-clock value; original48BA10 produces all retained outputs. Samples255/256, remainder7F/80, unsigned high bits and wrapping sums are bounded arithmetic inputs. Diagnostic peak+20 is allowed to change but is outside the Rust response consumer; other storage must remain unchanged.",
+    "Private-send control supplies initialized flags+4/+5, peer count+44=0, zero payload length and destinationFFFFFFFF. Required instructions5414E1 and5415DF establish the early rejection; no connection callbacks run."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "checksum": "0x007B1FD0",
+    "fold": "0x0064DE80",
+    "response_time": "0x0048BA10",
+    "private_send": "0x005414C0"
+  },
+  "replay_command": "python -m tools.storage_oracle.lan_udp_checksum",
+  "payload_sha256": "87d821d420b0c7223db87275d84d32010dc1bdc3d7c71bd832c9b35de744df77"
+}

@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "AircraftClass::Mission_Enter 0x00419C80 as vt+0x240, one call per row. Before the state switch (from state 1): GetHeight 0/200/-1 x AirportBound (+0xE0D), without a NavCom over the layer (2, 3) x the DOCKING answer (ROGER or not) x a pending entry, and with a cell, Unit or Building NavCom over the cell's first Building (none, the NavCom, another) x the dock +0x6CC (none, the NavCom, another). Mission+0xBC 0..5, 8, 9 and -1 with each Get_Status 0..3, and once with every other read flipped. State 6 over Get_Status 0..3 x In_Radio_Contact x a pending entry x the queued mission (none or Move) x AirportBound x GetHeight 0/200 x the DOCKING answer. State 7 over Get_Status 0..3 x the DOCK_NOW answer (1, 5, 0, 10) x AirportBound x GetHeight 0/200. The descending step toward a cell, Unit or Building NavCom at offsets within and beyond 5 leptons, and without a NavCom. States 0, 6 and 7 without a NavCom. Returned value, ordered call log in EnterHost vocabulary, the writes to Mission+0xBC, +0x6CC and +0x6D4 in order, Mission+0xBC, +0x6D4 and the dock afterwards, and the step's coordinate query and SetLocation argument. Not a Carryall type's hand-over, a missing locomotor, the radio exchanges' or the pending entry's own work.",
+  "assumptions": [
+    "One emulator; per row the scratch region (0x10000 bytes) and the stack frame are rewritten, as aircraft_guard.py's ScratchAircraft does. The owner holds a clone of the Aircraft vtable 0x007E22A4 with only the stubbed slots replaced, the NavCom +0x5A4, the dock +0x6CC, the queued mission +0xB4, a scratch ILocomotion +0x674, the Location +0x9C, the radio vector +0xE4/+0xE8 (the contact present when the row's In_Radio_Contact is) and its type +0x6C4 with the row's AirportBound (+0xE0D) and Carryall (+0xDFC) 0.",
+    "Mission+0xBC holds the row's state and +0x6D4 is preset 2 so a write shows.",
+    "Per row: RET to the caller with ESP + 4 and EBX/EBP/ESI/EDI preserved; no write outside the stack but the logged owner fields; every read of scratch bytes falls on bytes the row supplied."
+  ],
+  "substitutions": [
+    "GetHeight vt+0x1C8, the layer vt+0x78 and Get_Status (ILocomotion +0x90) answer the row's values; GetCell vt+0x1BC answers a scratch cell whose first Building (0x0047C520 hook) is the row's; Transmit_Message vt+0x274 answers the row's DOCKING and DOCK_NOW answers and 0 to OVER_OUT; Queue_Mission vt+0x1E8, Enter_Idle_Mode vt+0x484, Assign_Destination vt+0x480, SetLocation vt+0x1B4 and vt+0xD4 record their arguments; the NavCom's vt+0xA8 and vt+0x48 record theirs and write the row's coordinate.",
+    "Entry hooks: TechnoClass 0x0070D8F0 and In_Radio_Contact 0x0065AE30 answer the row's values; PassengerClass 0x004733A0 records its container and passenger."
+  ],
+  "entry_points": {
+    "mission_enter": "0x00419C80",
+    "radio_contact": "0x0065AD30",
+    "building_what_am_i": "0x00459EC0",
+    "unit_what_am_i": "0x00746E20",
+    "cell_what_am_i": "0x00487E60"
+  },
+  "payload_sha256": "5d8cb5507f1be175239378543e94bf3e35af995bee4b84eb2d37ed993e68ef8d"
+}

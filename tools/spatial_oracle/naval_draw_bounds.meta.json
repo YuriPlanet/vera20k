@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Physical AEGIS native reader, flat Ship draw matrix, raster and clip composition.\n\nThe selected-type draw dispatch frame and file IO are explicit boundaries.\nNo whole Windows renderer, full Unit draw or GPU parity claim is made.\n",
+  "assumptions": [
+    "Original UnitType7470D0 constructor; supplied lexical INI indexes over physical RULESMD, MPBattleMD, map; original Image ReadString528A10 caller arguments (ObjectType5F933B) and original ART Voxel block5F961C..5F963A. Missing LANGRULE has no layer. Active MPBattleMD is byte-identical to original packet MPBattle.INI.",
+    "Original selected-type dispatch73D30E..73D359 reaches actual Unit+55473B470 when native Voxel and supplied resident VXL pointer presence are true; a missing-pointer control bypasses. Preceding disguise/type selection and actual asset pointer installation into this UnitType are excluded.",
+    "Actual original Cell487A10\u2192Unit damage produces sinking on retained ordinary AEGIS; full ShipDrawMatrix69F670 runs for explicit stable facing0/8/16/24, constructor flat slope, no rocking and completed timer. Native startup camera and native matrix multiply compose output.",
+    "Existing repository render_native executes full original VXL/HVA/VPL loads, HVA scaling, box transformation, native rectangle production, sorting and raster. Original code consumes all physical file bytes. Source crop offsets and destination-relative bounds stay separate. FPCW0E7F supplied; ambient original process setting not inferred from this fixture.",
+    "Native cold and cached dirty-rectangle blocks7068EE..7069F6 and70755D..707678 execute with empty accumulator and original raster-derived destination bounds placed at128,128 cached-surface anchor. These outputs feed the unchanged original Unit clip slice twice. No full composited Unit draw dispatch, RGB palette, surface blit or GPU claim."
+  ],
+  "substitutions": [
+    "Inherited object setup and original receiver boundaries from naval_occupants; INI lexical cache boundaries.",
+    "File vtable open/read/seek/close expose immutable retail VXL/HVA/VPL bytes; operator new returns distinct mapped storage in repository raster helper. No raster gameplay/math result substituted.",
+    "Selected-type frame, VXL-pointer presence and retained renderer locals are supplied interior composition inputs."
+  ],
+  "entry_points": {
+    "art_voxel_reader": "0x005F961C",
+    "selected_draw_route": "0x0073D30E",
+    "unit_body": "0x0073B470",
+    "ship_matrix": "0x0069F670",
+    "vxl_load": "0x00755DB0",
+    "hva_load": "0x005BD5C0",
+    "raster": "0x00754510",
+    "cold_dirty": "0x007068EE",
+    "cached_dirty": "0x0070755D",
+    "unit_clip": "0x0073BEA4"
+  },
+  "payload_sha256": "82389028654987d939e082cbc665395f841f4cf676915eb5c35a3aa6d2f54d06"
+}

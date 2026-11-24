@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "computer strategy tick: the HouseClass::Update Strategy block, whole AI_Building_Strategy runs, IHouse Fire_Sale and IHouse All_To_Hunt",
+  "assumptions": [
+    "fresh emulator per case; fixture House/Rules/Type layouts from live disassembly",
+    "x87 control word 0x0E7F (53-bit chop), the process word ftol callers assume",
+    "every anger node belongs to another house, in HouseClass::Array order"
+  ],
+  "substitutions": [
+    "AI_Building_Strategy 0x4FD500 answers a delay in the schedule section",
+    "RandomRanged 0x65C7E0 answers the row draw",
+    "MapClass::operator[] 0x5657A0 answers one cell whose vt+0x48 coordinate is (x*256+128, y*256+128, 0)",
+    "AI_TryFireSW 0x5098F0, Check_Build_Need 0x4FD9A0 and Manage_Build_Queue 0x4FDD10 are recorded stubs",
+    "IHouse Available_Money, Fire_Sale and All_To_Hunt are recorded stubs in the strategy section",
+    "Sell_Back, the object type query, WhatAmI, the occupant count, ReceiveDamage, Queue_Mission, Team remove 0x6EA870 and the garrison release 0x457DE0 are recorded stubs",
+    "operator new/delete and atexit are fixture stubs"
+  ],
+  "entry_points": {
+    "HouseClass_Update_strategy_block": "0x004F8FBE",
+    "AI_Building_Strategy": "0x004FD500",
+    "UpdateAngerNodes": "0x00504790",
+    "IHouse_Fire_Sale": "0x005013A0",
+    "IHouse_All_To_Hunt": "0x00501400"
+  },
+  "payload_sha256": "87f90fc49995af5bed5c0fc91a6aa2f6d3576db12b82204901be68ddd6749ee9"
+}

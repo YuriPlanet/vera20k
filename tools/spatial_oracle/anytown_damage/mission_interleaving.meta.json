@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Native selected MTNK Logic replay with recorded production-v8 RNG interleaving.\n\nRecorded Terrain calls execute original Next, not original Terrain AI. Original\nUnit/Foot/Mission/Fire/Bullet code produces every selected-owner call and result.\nNo firing state or bridge result is imported from the production snapshots.\n",
+  "assumptions": [
+    "Frozen v1 mtnk_attack prepares physical Anytown XMP03T4.MAP crop and actual MTNK/105mm/Cannon/AP/ART/selected SOUND native readers. This extension preserves v1 files and adds original full UnitType and selected complete common Rules readers, native MissionControl registry/readers, country/side registry constructors and original Americans country reader. The original full ObjectType Image reader corrects the shot-only v1 MTNK image boundary: actual RULESMD[MTNK]Image=GTNK selects ART[GTNK]PrimaryFireFLH=150,0,100; v1 omitted Image and used constructor MTNK art190,25,120. The measured final native fields are recorded per layer.",
+    "Original complete Unit/Foot/Techno constructors execute, including Scenario Next6F3254 and raw AX store+3C8. Actual Drive COM factory/constructor, Unit/Techno/Object Unlimbo, CanEnter, Mark, Cell/Recalc, sight, Logic and Display registration run at frame0 on physical bank87,50. Facing0x80 is a supplied placement argument. The source begins Guard with HP300 at[22400,12928,416].",
+    "Original Event4C6860/4C6CB0 command uses human House index0, the constructor-registered native Unit ID/tag0x34, Attack mission1 and Cell target token54087/tag0xB. It actually queues Attack and assigns the physical Cell. It does not execute mouse/UI force-fire admission or a multiplayer event queue.",
+    "The original live Logic object walk55B5FF..55B61B runs once per supplied tick, allowing actual append/remove effects and callbacks through native vtables. Original UnitAI/FootAI/TechnoAI/MissionAI, mission and per-frame firing decisions execute without result substitutions. Original frame increment55DE73..55DE87 follows each pass, then complete original725C70 deferred drain. All current Bullet/Anim callbacks and source target release execute.",
+    "Seed0 complete Main/Scenario/MapGen states are supplied by the frozen physical fixture before constructor execution. No reseeding occurs by default. Optional --continuation deliberately imports recorded full RNG states, command frame and optional source random-phase word after native construction/placement, before command execution; original constructor draws are not re-consumed after import. Input provenance and before/after values are recorded.",
+    "Original56C510 builds connectivity from supplied physical crop classes/levels. Outside-crop classes remain blocked7. Real physical TMP bodies and native overlay/theater readers remain inherited; this is not a whole-map native load. Original .text must retain its binary hash. FPCW and bounded host runtime follow existing BulletReader owner.",
+    "Input records selected actor fields, full three-stream RNG states, and compact true-Next receipts from five SHA256-pinned production-v8 files. Each receipt retains original caller function/source location, pre-draw indices and raw value; full backtraces and unrelated world exports stay external.",
+    "Original command/native source construction and placement execute before importing recorded retained RNG and constructor phase. The prior Guard counter1/dispatch(0,28) is supplied. No firing timer, launched projectile, collision or bridge result is supplied.",
+    "Every native raw word is observed before its state-word store, at65C79D or65C84B, including native range retries. Matching includes all raw words/indices in Logic1..11 and full three-stream states plus selected actor fields at committed frames2/12."
+  ],
+  "substitutions": [
+    "Full Scenario, House and map load are excluded. Single human House storage is supplied with Americans country pointer, combat multipliers1, human/current-player flags and valid selected counters. Source constructor uses null House, then the supplied House binds before Unlimbo; full House ctor/AddTracking/bookkeeping are excluded. Physical country/side constructors and selected country reads do not establish complete native Rules load chronology.",
+    "Logic global prefix/suffix, other units/Houses/Factories, tactical/map updates, multiplayer event scheduling, rendering and frame-pause gates are excluded. A supplied monotonic tick invokes only the original live object pass and original frame-commit/deferred-drain slices. This establishes the isolated selected live-owner continuation, not ordinary full-match shot count or production ScenarioLoad alignment.",
+    "Native full UnitType reader has explicit VXL/turret-shape file-loader boundaries5F8110/5F8CE0 returning no loaded visual data. Selected native ART/FLH and animation SHP inputs remain real. Full type Voice/MoveSound indexes outside the selected sound registry are unresolved; playback7509E0 is recorded, excluding device work and Main audio RNG. Radar tracker655560/655740 are presentation sinks; inherited screen/radar callbacks remain.",
+    "Inherited physical source-order INI caches, successful heap/file mappings and CPU bootstrap remain. COM OS activation routes to actual original Drive/Bullet factories; imported ASCII/CLSID conversion, OleRun, Interlocked, IsBadReadPtr, empty Windows SEH, atexit and setup wall-clock services are supplied. No gameplay return is replaced.",
+    "Native hierarchy586990 remains an inherited callback; whole-map hierarchy and movement after collapse are not shown. Engineer approach/hut admission/repair are outside this extension and remain separate frozen witnesses. CliffBack ctor0 versus production missing-key default2 remains a separate follow-up.",
+    "Each production Terrain prefix executes original65C780 directly in recorded order. Terrain AI bodies, their admission/cadence, other world actors and whole ScenarioLoad are not executed. This proves selected-owner agreement conditional on recorded global interleaving, not whole-world RNG scheduling parity."
+  ],
+  "entry_points": {
+    "mission_control_ctor": "0x005B3700",
+    "mission_control_reader": "0x005B3760",
+    "rules_general": "0x0066D530",
+    "rules_radiation": "0x0066CF70",
+    "unit_type_reader": "0x00747620",
+    "country_ctor": "0x005113F0",
+    "country_reader": "0x00511850",
+    "unit_ctor": "0x007353C0",
+    "drive_factory": "0x006C4010",
+    "unit_unlimbo": "0x00737BA0",
+    "command_ctor": "0x004C6860",
+    "command_dispatch": "0x004C6CB0",
+    "logic_object_loop": "0x0055B5FF",
+    "unit_ai": "0x007360C0",
+    "foot_ai": "0x004DA530",
+    "techno_ai": "0x006F9E50",
+    "mission_dispatch": "0x005B3060",
+    "attack_mission": "0x004D4DC0",
+    "attack_rng_call": "0x004D4EA6",
+    "firing_update": "0x00736DF0",
+    "unit_fire": "0x00741340",
+    "bullet_ai": "0x004666E0",
+    "anim_ai": "0x00423AC0",
+    "area_damage": "0x00489280",
+    "concrete_damage": "0x0057CCF0",
+    "detach": "0x0070D4A0",
+    "frame_increment": "0x0055DE73",
+    "retirement_drain": "0x00725C70",
+    "connectivity": "0x0056C510"
+  },
+  "payload_sha256": "b7b865bba7b340ce9466eec97f3eb6bd45b23baf295534095dcf51e7aed1441e"
+}

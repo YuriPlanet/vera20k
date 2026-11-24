@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "12 original4CC100 XYZ line walks through reached4CC360 and Cell/House receivers. Samples establish signed32 delta subtraction, signed IDIV and wrapping accumulators under supplied inputs; not retail trajectory or full InRange parity.",
+  "assumptions": [
+    "Uses collision_fixture.prepare_shared synthetic 8x8 allocation, retained shared DummyCell, BulletType flags, wall types/houses and Rules fields. Source and target XYZ are supplied signed32 lepton coordinates; unmentioned state is zero-filled.",
+    "The INT32 boundary cases are synthetic arithmetic controls admitted by4CC100 itself, not coordinates demonstrated in stock gameplay. NegativeXY and missing endpoints exercise native signed16 CellCoord narrowing and shared DummyCell stamping.",
+    "Full original4CC100 and reached4CC360/Cell/House receivers execute. Hooks read each4CC360 candidateXYZ before its prologue and query order without changing native state. No RNG/timer/detach or upstream FireAt/GetFireError scheduling is modeled.",
+    "FPCW and cached822D80 are both0E7F. Original Cell+48 coordinates, level/slope evaluation and distance/major-axis/requery control flow execute."
+  ],
+  "substitutions": [
+    "None; observation hooks do not change registers, memory or control flow."
+  ],
+  "entry_points": {
+    "line_walk": "0x004CC100",
+    "sample": "0x004CC360",
+    "cell_by_index": "0x005657A0",
+    "level": "0x00487D50",
+    "alliance": "0x004F9A50"
+  },
+  "replay_command": "python -m tools.projectile_oracle.shared_collision --line-walk",
+  "payload_sha256": "63e4a1c999f5b4c726cc867885ff9b06cb7eba43f238874e52e4bdaee8e3b169"
+}

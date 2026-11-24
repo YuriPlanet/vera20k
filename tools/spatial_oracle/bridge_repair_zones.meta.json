@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original5851B0 direct hierarchy append and56DB70 matching-record activation",
+  "assumptions": [
+    "Pinned original retail image; original direction initializers and captured startup constants",
+    "Supplied concretebase100/woodbase200, all32 raw tile offsets; adequately sized edge vectors retain seed flag1",
+    "Graph IDs0..31; native signed-negative graph pointers and allocation failure are outside this fixture",
+    "Endpoint A has a high tile; nonhigh endpoint stack reads are not claimed",
+    "Supplied16x16 cells, Size8,8 and movement-row labels; not a native map-loader/fullgame proof"
+  ],
+  "substitutions": [
+    "Only recompute_miss and recompute_kind1 substitute56D6E0 with explicit supplied records; record_scan corpus covers its separate original body"
+  ],
+  "entry_points": {
+    "add_edges": "0x005851B0",
+    "validate": "0x0056DB70",
+    "reach": "0x0056D100",
+    "get_zone": "0x0056D230",
+    "playfield": "0x00578460"
+  },
+  "payload_sha256": "900c74120011a5c6d456da45eba0c7e183bee05b2d8e294d6217bedd0b98a9ac"
+}

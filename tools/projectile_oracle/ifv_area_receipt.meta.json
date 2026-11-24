@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original AreaDamage returns0/1/2 and receiver dispatch versus IronCurtain isolation controls",
+  "assumptions": [
+    "Physical HE full reader, prepared flat level6 cells and original Unit vtable/getters. Original CellSpread reader consumes0.5/0.5001. Incoming health/flags/occupancy/XYZ/IC timer/kind are supplied; no Unit lifecycle claim.",
+    "Full AreaDamage489280 executes; original IC timer41BF40 and collector gates execute. No bridge overlay or damageable structural state. Seed31 remains unchanged. Result records receipt semantics, not actual receiver damage/kill behavior."
+  ],
+  "substitutions": [
+    "Inherited reader archive/allocation/TLS boundaries. Unit ReceiveDamage737C90 is an explicit result boundary returning supplied0/1/2/4 with28bytecleanup; it does not mutate health. No AreaDamage, getter, timer, collection or receipt instruction replaced."
+  ],
+  "entry_points": {
+    "area_damage": "0x00489280",
+    "unit_receiver_boundary": "0x00737C90",
+    "ic_timer": "0x0041BF40",
+    "ground_isolation": "0x00489968",
+    "air_isolation": "0x004894A4",
+    "return_isolated": "0x00489B3B",
+    "return_receipt": "0x0048A47E"
+  },
+  "payload_sha256": "f961ae9474d29523fb7f6ac0ffed4eabb1f86998a3ed55f1df592c48bc1b1e8b"
+}

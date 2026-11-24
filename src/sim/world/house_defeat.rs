@@ -1,0 +1,1309 @@
+//! A defeated house's end: `HouseClass::Update`'s multiplayer defeat gate,
+//! `HouseClass::Blowup_All` and `MPlayer_Defeated`.
+//!
+//! Native owner: `HouseClass`. In every non-campaign game, once per house per
+//! frame in HouseClass::Array order (`0x004F8E86..0x004F8F82`): a house that
+//! is not defeated, not `MultiplayPassive=` and past frame zero, and whose
+//! counts (`house_tracking`) say it holds nothing, has every object it
+//! originally owns blown up (`Blowup_All @ 0x004FC6D0`) and is then marked
+//! defeated (`MPlayer_Defeated @ 0x004FC0B0`, its only caller). With the retail
+//! `ShortGame=yes`, losing the last counted building while no `BaseUnit=` is
+//! tracked destroys the whole remaining army in that one call.
+//! Optional Ares4F8EBD ->10024990 replaces only the admission predicate with
+//! HouseTracking's retained KeepAlive/full BaseUnit/Foot-presence decision.
+//! Executed controls: tools/spatial_oracle/ares_house_survival.md. The existing
+//! Blowup_All and MPlayer_Defeated downstream owners remain shared.
+//!
+//! Blowup_All walks TechnoClass::Array, limbo objects included, re-reading the
+//! count each step. An object whose original owner
+//! (`TechnoClass::GetOriginalOwner @ 0x0070F820`) is the house dies, including
+//! a trigger-transferred building another house owns. A unit-controlled
+//! captive owned by another house is instead handed to
+//! the Civilian-side house when its controller's CaptureManager finds one
+//! (`SetOriginalOwnerToCivilian @ 0x00472330`), and dies only when none
+//! exists. An object being erased first has its Temporal chain released
+//! (`0x0071AD40`). Each dies through its own ReceiveDamage with its Health as
+//! `C4Warhead=` damage, no attacker, ignoring defenses and passenger escape
+//! (vtable `+0x16C`, called at `0x004FC766`): no kill credit, no survivors.
+//!
+//! Scenario draws (read, not executed): none in the gate or the sweep's own
+//! code; each death draws in its own receiver (death sounds, debris, death
+//! anims), in array order. The Temporal release idles the released attackers
+//! (ClearLinkedList); VERA queues those idles, so any draw they make comes at
+//! the idle's turn.
+//!
+//! Evidence: `tools/spatial_oracle/house_blowup_all.py` runs the original
+//! Blowup_All with GetOriginalOwner, CaptureManager GetOriginalOwner and
+//! SetOriginalOwnerToCivilian (10 cases; the Civilian side lookup is
+//! supplied); `house_defeat_gate.py` the gate (21 cases). Control flow and
+//! ordering read from the disassembly.
+//!
+//! RESIDUALS:
+//! - TechnoClass::Array order stands on stable-id order (construction order),
+//!   which matches for every source VERA constructs in native order.
+//! - Slave release: a Slave Miner killed with no attacker hands its slaves on
+//!   the map to the Civilian-side house and UnInits those in limbo (the
+//!   ReceiveDamage death arm's `0x006B0AE0` call at `0x00702065`,
+//!   `sim::slave_manager`). A master constructed before its slaves (its own
+//!   constructor builds them) is reached first, and the sweep then skips
+//!   them, as they no longer belong to the defeated house; a refinery
+//!   deployed from a Slave Miner comes after the slaves it took over, so the
+//!   sweep kills those first as the defeated house's own, in the same
+//!   TechnoClass::Array order.
+//! - Flag_To_Die4FC980 and its early Update4F87C2 consumer share the
+//!   existing Blowup_All receiver and House+298 timer. LAN loading timeout
+//!   reaches this producer through5DA750; wider DESTRUCT/REMOVEPLAYER/EXIT
+//!   producers remain separate caller coverage.
+//! - MPlayer_Defeated's capture-the-flag cleanup (Flag_Remove `0x004FBE40` at
+//!   `0x004FC112..0x004FC15E`, Scenario flag `0x10`) and the Harvester-Truce
+//!   UnInit loop (`0x004FC163`, Scenario flag `0x800`) are not ported.
+//!   Skirmish never sets `0x10` (trace in `movement::foot_speed`). The truce
+//!   loop removes the house's remaining Units (`0x008B410C`), but Blowup_All
+//!   has already destroyed them: the truce immunity guards only area damage
+//!   (`0x00489710`), not Blowup_All's direct damage.
+//! - Invisible, not ported: the WOL stats byte `0xA8B8C1` (set at
+//!   `0x004FC556`, read only by the stats sender `0x006C6FA0`), and the
+//!   local defeat's mouse call (`0x004FC22A`) and repaint flags.
+//! - The local-player branch (`0x004FC1B0..0x004FC307`) is ported for the
+//!   whole-map reveal, the radar and Session `+0x300` (see `mplayer_defeated`;
+//!   `local_player_defeated` names the ported readers). The borrowed client
+//!   boundary leaves planning (`0x00637A10`), supplies its2B event to the same
+//!   frame's dispatcher and rejects re-entry (`0x00731A50`). The app runs
+//!   the rest from `LifecycleOutput::MultiplayerHouseDefeated`, observers
+//!   included: the beacons' deletion (`0x00431410`) and beacon mode's exit
+//!   (`0x004AC960`) in `match_runtime::beacons`, the chat-mask set
+//!   (`0x00A8D108..0x00A8D10F`, `0x004FC23E`) in `input::chat`, which dialog
+//!   0x73 reads whenever it draws (`0x004FC239..0x004FC25D` refresh), and the
+//!   command bar's close (6D1660) and its reopening when the match is over
+//!   (4FC591→6D1610) in `ui::sidebar::gadget_flash`. Session+300 already guards
+//!   band-box/type/navigation selection, Cheer input and the command-bar
+//!   opener (`0x006D08F5`). Its F0 close remains allowed. Remaining UI readers
+//!   include taunt (`0x0053636C`),
+//!   `RadarClass::SetRadarMode` (`0x00656CCC`), MakeAlly's
+//!   alliance line (`0x004F9E49`) and the dialog and session readers
+//!   (`0x004F1534`, `0x00657F4A`, `0x0078D52A`, `0x004E20BA`, `0x004F10FD`,
+//!   `0x0055EE60` and others). Trigger: the local player is defeated. Effect:
+//!   for the savour delay (retail `SavourDelay=.1`) those UI states and
+//!   commands may stay as they were. Frequency: once on a local loss; dialog
+//!   and multiplayer consequences need their own connected mechanisms.
+
+use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::ruleset::RuleSet;
+use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags};
+use crate::sim::house_state::HouseOutcomeKind;
+use crate::sim::intern::InternedId;
+use crate::sim::world::FrameEffects;
+use crate::sim::world::{SimSoundEvent, Simulation, UninitContext};
+
+/// Native House cleanup leaves4FC6D0/4FC790/4FC820/4FC8D0 share the
+/// registry walk and receiver; only their admission differs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HouseBlowupSubset {
+    All,
+    Buildings,
+    Land,
+    Naval,
+}
+
+/// Requests targeting native PlayerPtr, represented for each network human.
+/// House flags, the shared +298 timer and local effects remain owned below.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum PlayerOutcomeRequest {
+    Country {
+        country_index: i32,
+        win_on_match: bool,
+    },
+    Flag {
+        kind: HouseOutcomeKind,
+        skip_timer: bool,
+    },
+    EndScenario,
+}
+
+/// The paused House's result head has already run its assessment prefix.
+/// Generated events are still unadmitted until the complete House pass.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub(super) struct HouseOutcomeCursor {
+    pub(super) index: usize,
+    pub(super) kind: crate::sim::house_state::HouseOutcomeKind,
+    pub(super) generated: Vec<crate::sim::command::CommandEnvelope>,
+}
+
+/// VERA-only: [`Simulation::civilian_side_house`]'s answer, remembered from
+/// [`Self::begin`] to [`Self::end`], which bracket the object pass. The answer
+/// depends on the House order, each House's type and the rules' sides. A
+/// House's type never changes and the House array only grows, so inside the
+/// bracket the rules set and the House count key the answer; outside it every
+/// ask walks the Houses, so nothing written between passes needs forgetting.
+/// Debug builds check a remembered answer against the walk. Never saved or
+/// hashed.
+#[derive(Debug, Default)]
+pub(crate) struct CivilianSideHouse {
+    remembering: bool,
+    /// The rules' serial and House count the answer was walked at, and the
+    /// answer.
+    answer: Option<((u64, usize), Option<InternedId>)>,
+    /// Walks made for [`Simulation::civilian_side_house_in_pass`] (test
+    /// builds only).
+    #[cfg(any(test, feature = "test-support"))]
+    walks: u32,
+}
+
+/// A presentation frame's copy (docs/sim-thread.md) never runs a pass, so
+/// it starts with nothing remembered.
+impl Clone for CivilianSideHouse {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl CivilianSideHouse {
+    /// Start remembering, from no answer.
+    pub(crate) fn begin(&mut self) {
+        debug_assert!(!self.remembering, "one pass remembers at a time");
+        self.remembering = true;
+        self.answer = None;
+    }
+
+    /// Stop remembering, and drop the answer.
+    pub(crate) fn end(&mut self) {
+        self.remembering = false;
+        self.answer = None;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn walks(&self) -> u32 {
+        self.walks
+    }
+}
+
+impl Simulation {
+    /// HouseClass::Flag_To_Die4FC980, reached at frame zero by LAN
+    /// loading timeout684596 ->5DA750 ->5DA86A. Returns the current latch,
+    /// including repeated requests; destruction waits for the House rung.
+    /// This producer consumes no RNG and does not flag a match outcome.
+    pub fn flag_house_to_die(&mut self, owner: InternedId) -> bool {
+        self.houses
+            .get_mut(&owner)
+            .is_some_and(|house| house.flag_to_die(self.session.binary_frame() as i32))
+    }
+
+    /// `0x005E2BA0`: the human (`+0x1EC`), undefeated (`+0x1F5`) Houses other
+    /// than `owner`.
+    pub(crate) fn other_undefeated_humans(&self, owner: InternedId) -> usize {
+        self.houses
+            .iter()
+            .filter(|(id, house)| **id != owner && house.is_human() && !house.is_defeated())
+            .count()
+    }
+
+    /// The house rung with its defeat pass: see [`Self::house_rung`].
+    #[cfg(any(test, feature = "test-support"))]
+    pub(super) fn check_defeat(
+        &mut self,
+        rules: Option<&RuleSet>,
+        registry: Option<&OverlayTypeRegistry>,
+    ) {
+        let generated = self
+            .house_rung(
+                rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
+                registry,
+                true,
+                &mut crate::sim::world::FrameEffects::default(),
+                None,
+            )
+            .expect("headless House wait completes immediately");
+        self.queue_commands(generated);
+    }
+
+    /// House4F9265..4F9302 consumes the private tech-tree request after
+    /// this House's production choices. Keep this suffix distinct from the
+    /// earlier power/rate assessment: a Temporal release requests both, and
+    /// neither supplies UpdateFactoryQueue509140 or resumes a system hold.
+    pub(in crate::sim) fn recheck_house_tech_tree(
+        &mut self,
+        owner: InternedId,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) -> Vec<crate::sim::command::CommandEnvelope> {
+        let mut generated = Vec::new();
+        // House4F927C/4F92ED clears1FC before either pass; a status
+        // change inside50AF10 can retain a request for the next frame.
+        if self
+            .houses
+            .get_mut(&owner)
+            .is_some_and(|house| house.take_tech_recheck())
+        {
+            if self.control_projection().local_command_house() == Some(owner) {
+                for type_id in
+                    crate::sim::production::construction_options_for_owner(self, rules, owner)
+                {
+                    self.lifecycle_outputs
+                        .emit(super::LifecycleOutput::SidebarConstructionOption { owner, type_id });
+                }
+                self.lifecycle_outputs
+                    .emit(super::LifecycleOutput::SidebarRecalculated { owner });
+                // HouseClass::Update004F8440 (4F9265..4F92E2) calls the sidebar
+                // only for PlayerPtr. Other humans receive its ABANDON records;
+                // they must not publish their own copy of that player's strip.
+                // Source: original gamemd.exe instructions.
+                generated.extend(crate::sim::production::recalculate_strips(
+                    self, rules, owner,
+                ));
+            }
+            crate::sim::superweapon::update_owned_supers(self, rules, owner, effects);
+            crate::sim::superweapon::grant_provided_supers(self, rules, owner);
+        }
+        generated
+    }
+
+    /// The house rung's per-house steps in HouseClass::Array order: each
+    /// house's team creation (`0x004F8A00..0x004F8B08`,
+    /// `sim::ai_team_creation`), its defeat gate (see the module doc), its
+    /// Tags' event-8 raise (`sim::trigger_runtime`), then its strategy tick (`0x004F8FBE..0x004F9032`, `sim::house_strategy`) and
+    /// production choices (`0x004F9038..0x004F9265`, `sim::ai_base_building`)
+    /// and tech recheck (`0x004F9265..0x004F9302`, `sim::production`);
+    /// then the game-over scan. The native result head4F85BE precedes teams.
+    /// Returned events join the post-Logic dispatcher without executing during
+    /// a House visit. Without `defeat_pass`
+    /// (VERA's first tick) the defeat gates and the game-over scan are
+    /// skipped. RESIDUAL (invisible): the online map-edge probe
+    /// (`0x004F882B..0x004F890D`) is not ported; it draws Scenario RNG only
+    /// on a cell state honest play never reaches.
+    pub(super) fn house_rung(
+        &mut self,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        defeat_pass: bool,
+        frame_effects: &mut FrameEffects<'_>,
+        cursor: Option<HouseOutcomeCursor>,
+    ) -> Result<Vec<crate::sim::command::CommandEnvelope>, HouseOutcomeCursor> {
+        let (mut index, mut generated, mut resumed_kind) = match cursor {
+            Some(cursor) => (cursor.index, cursor.generated, Some(cursor.kind)),
+            None => (0, Vec::new(), None),
+        };
+        let outcome_policy = self.session.rule_policy();
+        // HouseClass::Update 0x004F8E86..0x004F8EB7 gates defeat past frame zero.
+        let defeat_gate = defeat_pass
+            && outcome_policy.uses_elimination_results()
+            && (self.session.binary_frame() as i32) > 0;
+        // Logic55B68D reloads the live House count after each complete body.
+        // A House's power/radar and activation must precede its own teams,
+        // EVA, defeat and production; no global half-body sweeps intervene.
+        while index < self.houses.order().len() {
+            let owner = self.houses.order()[index];
+            let kind = if let Some(kind) = resumed_kind.take() {
+                Some(kind)
+            } else {
+                // Ares 3.0 10024B40 (hook 0x004F8440): UpdateTogglePower
+                // 100228A0 at the head of HouseClass::Update.
+                if rules.ares() {
+                    self.ares_update_toggle_power(owner, rules, frame_effects);
+                }
+                self.assess_house_derived_state(owner, rules, frame_effects);
+                self.update_house_anger_and_activation(owner, rules);
+                self.houses.get(&owner).and_then(|house| {
+                    house.pending_outcome(self.session.binary_frame() as i32, outcome_policy)
+                })
+            };
+            if let Some(kind) = kind {
+                // HouseClass::Update4F860F/4F8736 pumps all preceding Vox
+                // before publishing the request and visiting later Houses.
+                // VERA's network state represents every human viewpoint;
+                // only this process's PlayerPtr owns its audio/exit wait.
+                if self.handles_house_outcome_locally(owner) {
+                    frame_effects.consume_prefix_effects(&mut self.trigger_effects);
+                    frame_effects.flush_sound(self, rules);
+                    if !frame_effects.outcome_wait_complete(owner, kind) {
+                        return Err(HouseOutcomeCursor {
+                            index,
+                            kind,
+                            generated,
+                        });
+                    }
+                }
+                self.houses.get_mut(&owner).unwrap().complete_outcome(kind);
+                self.admit_house_outcome(owner, kind);
+            }
+            // Original4F87C2..4F87FA runs even on frame zero and before
+            // team/EVA/defeat work. Clear1F6 before entering ReceiveDamage.
+            let to_die = self
+                .houses
+                .get_mut(&owner)
+                .is_some_and(|house| house.take_due_to_die(self.session.binary_frame() as i32));
+            if to_die {
+                self.house_blowup(
+                    owner,
+                    HouseBlowupSubset::All,
+                    rules,
+                    registry,
+                    frame_effects,
+                );
+            }
+            if let Some(power) = self.power_states.get_mut(&owner) {
+                power.clamp_negative_totals();
+            }
+            crate::sim::ai_team_creation::update_team_creation(self, rules, owner, frame_effects);
+            // Ares 3.0 100247A0 (hook 0x004F8B08), ahead of the player block.
+            if rules.ares() {
+                self.ares_degrade_buildings(owner, rules, registry, frame_effects);
+            }
+            crate::sim::house_eva::update_house_eva(self, rules, owner);
+            crate::sim::superweapon::tick_house_superweapon_instances(
+                self,
+                rules,
+                owner,
+                frame_effects,
+            );
+            if defeat_gate && self.house_holds_nothing(owner, rules) {
+                self.house_blowup(
+                    owner,
+                    HouseBlowupSubset::All,
+                    rules,
+                    registry,
+                    frame_effects,
+                );
+                generated.extend(self.mplayer_defeated(
+                    owner,
+                    UninitContext::new(rules).with_effects(frame_effects),
+                ));
+            }
+            self.raise_house_tags(owner, rules, registry, frame_effects);
+            crate::sim::house_strategy::update_strategy(
+                self,
+                rules,
+                owner,
+                registry,
+                frame_effects,
+            );
+            crate::sim::ai_base_building::update_production_choices(self, rules, owner, registry);
+            generated.extend(self.recheck_house_tech_tree(owner, rules, frame_effects));
+            if let Some(house) = self.houses.get_mut(&owner) {
+                house.release_repair_latch(self.session.binary_frame());
+            }
+            self.update_initial_house_sight(
+                owner,
+                UninitContext::new(rules).with_effects(frame_effects),
+            );
+            index += 1;
+        }
+        Ok(generated)
+    }
+
+    /// House4F865E..4F87BB publishes independent session requests. A later
+    /// House callback may replace PlayerPtr's pending flags, never this fact.
+    fn admit_house_outcome(
+        &mut self,
+        owner: InternedId,
+        kind: crate::sim::house_state::HouseOutcomeKind,
+    ) {
+        use crate::sim::house_state::HouseOutcomeKind;
+        let viewed_house = self.session.current_house();
+        if self.session.watcher() {
+            // Elimination can end the watch when another House's victory
+            // timer matures. Use the shared verdict, including the
+            // Cooperative victory of an eliminated human (4FC5CF..4FC5F1).
+            // A script can finish the followed viewpoint with foes still
+            // alive or under a policy that leaves elimination disabled.
+            let decision = self
+                .session
+                .rule_policy()
+                .uses_elimination_results()
+                .then(|| self.multiplayer_decision())
+                .flatten();
+            let routed = match decision {
+                Some(decision)
+                    if kind == HouseOutcomeKind::Victory || viewed_house == Some(owner) =>
+                {
+                    decision.into_iter().find_map(|(house, won)| {
+                        (Some(house) == viewed_house).then_some(if won {
+                            HouseOutcomeKind::Victory
+                        } else {
+                            HouseOutcomeKind::Defeat
+                        })
+                    })
+                }
+                None if viewed_house == Some(owner) => Some(kind),
+                Some(_) | None => None,
+            };
+            if let Some(outcome) = routed {
+                self.session.admit_outcome(outcome);
+            }
+            return;
+        }
+        if !self.handles_house_outcome_locally(owner) {
+            return;
+        }
+        let house = &self.houses[&owner];
+        let local = if self.outcomes_follow_player_control() {
+            house.is_human() || house.player_control()
+        } else {
+            viewed_house == Some(owner)
+        };
+        let routed = if local {
+            kind
+        } else {
+            match kind {
+                HouseOutcomeKind::Victory => HouseOutcomeKind::Defeat,
+                HouseOutcomeKind::Defeat => HouseOutcomeKind::Victory,
+            }
+        };
+        self.session.admit_outcome(routed);
+    }
+
+    /// The PlayerControl route and its input lock at 0x00684240 apply
+    /// to local outcomes. Lockstep announcements follow the current viewpoint.
+    fn outcomes_follow_player_control(&self) -> bool {
+        !self.session.rule_policy().uses_elimination_results()
+            && !self.session.execution_topology().is_lockstep()
+    }
+
+    /// Native House4F8685/4F87A5 compares PlayerPtr before choosing this
+    /// process's result. Canonical remote network results never choose its
+    /// app route or restart its local Vox timer. Offline routing is unchanged.
+    fn handles_house_outcome_locally(&self, owner: InternedId) -> bool {
+        !self.session.watcher()
+            && (!self.session.execution_topology().is_lockstep()
+                || self.session.current_house() == Some(owner))
+    }
+
+    /// MPlayer_Defeated4FC680/4FC6AC and TAction6DDD77/6DEA37 target
+    /// PlayerPtr in each process. VERA represents all admitted human
+    /// viewpoints in one lockstep world, through the same House flags and
+    /// shared +298 timer; nonhuman House behavior is not broadened.
+    fn outcome_viewpoints(&self) -> Vec<InternedId> {
+        if self.session.execution_topology().is_lockstep() {
+            self.houses
+                .order()
+                .iter()
+                .copied()
+                .filter(|owner| self.houses[owner].is_human())
+                .collect()
+        } else {
+            self.session
+                .current_house()
+                .filter(|owner| self.houses.contains_key(owner))
+                .into_iter()
+                .collect()
+        }
+    }
+    /// The defeat gate's test (`0x004F8E92..0x004F8F77`): a house neither
+    /// defeated nor `MultiplayPassive=` whose counts say it holds nothing.
+    fn house_holds_nothing(&self, owner: InternedId, rules: &RuleSet) -> bool {
+        let Some(house) = self.houses.get(&owner) else {
+            return false;
+        };
+        if house.is_defeated() || house.multiplay_passive() {
+            return false;
+        }
+        // Pure lazy type lookups: retail consumes exactly three entries;
+        // Ares100249B7 consumes the full ordered BaseUnit vector, no allocation.
+        let base_units = rules
+            .general
+            .base_unit_types
+            .iter()
+            .map(|name| self.interner.get(name));
+        let build_refinery_2 = rules
+            .build_refinery_types
+            .get(2)
+            .and_then(|name| self.interner.get(name));
+        !house.tracking().game_alive(
+            rules.ares_form(),
+            self.session.game_options().short_game,
+            base_units,
+            build_refinery_2,
+            |category| {
+                // Native scans Unit/Infantry/Aircraft arrays without mutations.
+                // The existing Foot registry has the same candidate set; its
+                // different inter-class order cannot change this pure boolean.
+                (0..self.substrate.entities.foot_registry_len()).any(|index| {
+                    self.substrate
+                        .entities
+                        .foot_registry_at(index)
+                        .and_then(|id| self.substrate.entities.get(id))
+                        .is_some_and(|entity| {
+                            entity.category() == category
+                                && entity.owner() == owner
+                                && (!entity.in_limbo() || entity.parasite.class().is_some())
+                        })
+                })
+            },
+        )
+    }
+
+    /// `HouseClass::MPlayer_Defeated @ 0x004FC0B0`, the represented part:
+    /// - the Defeated flag (`+0x1F5`, `0x004FC0C2`);
+    /// - for a computer house at `[IQ] MaxIQLevels` under `[AI] Paranoid`,
+    ///   Computer_Paranoid (`0x004FC10D`, `sim::house_diplomacy`);
+    /// - for the current house (`PlayerPtr`, `0x004FC1B0..0x004FC1B7`), the
+    ///   local planning exit (`0x004FC1EE`) through its existing client owner,
+    ///   whole-map reveal ([`Self::reveal_entire_map`] at `0x004FC20F`, which
+    ///   also writes the map-clear byte `+0x241`) and the radar switched on
+    ///   (`RadarClass::SetTacticalMapAvailable(1)` at `0x004FC21B`), which
+    ///   Session `+0x300` keeps on ([`Self::local_player_defeated`]);
+    /// - for any other house, the map-clear byte alone (`0x004FC328`), behind
+    ///   a `MultiplayPassive=` test (`0x004FC30F`) that the defeat gate's own
+    ///   ([`Self::house_holds_nothing`]) already passed;
+    /// - the announcement (`0x004FC262..0x004FC2EA` for the current house,
+    ///   `0x004FC343..0x004FC3BC` for another; the app decides which) and the
+    ///   loss.
+    fn mplayer_defeated(
+        &mut self,
+        owner: InternedId,
+        mut context: UninitContext<'_>,
+    ) -> Option<crate::sim::command::CommandEnvelope> {
+        if let Some(house) = self.houses.get_mut(&owner) {
+            house.mark_defeated();
+        }
+        // 0x004FC0BC..0x004FC10D: a computer house at the skirmish IQ, defeated
+        // under `[AI] Paranoid` in a nonzero game mode, turns the computers
+        // left paranoid.
+        let rules = context.rules();
+        if self.session.rule_policy().permits_paranoid_reactions()
+            && rules.general.paranoid
+            && self.houses.get(&owner).is_some_and(|house| {
+                house.current_iq() == rules.general.max_iq_levels && !house.is_human()
+            })
+        {
+            self.computer_paranoid(rules, context.registry(), context.effects());
+        }
+        // The sidebar part is the app's: PlayerPtr's beacons, command bar and
+        // chat mask (0x004FC1BD..0x004FC23E, an observer's too), and the bar's
+        // reopening by any defeat that ends the match (0x004FC591..0x004FC59F).
+        self.lifecycle_outputs
+            .emit(super::LifecycleOutput::MultiplayerHouseDefeated {
+                owner,
+                match_decided: self.multiplayer_decision().is_some(),
+            });
+        let planning_commit = if self.session.current_house() == Some(owner) {
+            // Original gamemd:4FC1EE ->637A10, before Session+300/reveal
+            // and the loss announcement. Input owns the exit and2B event;
+            // House returns it to MainTick's existing post-Logic dispatcher.
+            // Earlier death cues precede EndPlanningModeSound; the reached
+            // Radar setter then delivers it before RadarOn and the local EVA.
+            // Executable controls: spatial_oracle/planning_local_defeat.
+            let rules = context.rules();
+            context.effects().flush_sound(self, rules);
+            let commit = context.effects().leave_local_planning(self, rules);
+            commit
+        } else {
+            None
+        };
+        // MPlayer_Defeated4FC205/20F/21B reveals PlayerPtr's map and keeps
+        // its tactical radar on. VERA represents every human's view: update
+        // the defeated human's own plane/radar on all network peers while
+        // local planning/input above remains tied to the actual client.
+        // Source: original gamemd.exe4FC1B0..4FC328.
+        let represented_view = if self.session.execution_topology().is_lockstep() {
+            self.houses
+                .get(&owner)
+                .is_some_and(|house| house.is_human())
+        } else {
+            self.session.current_house() == Some(owner)
+        };
+        if represented_view {
+            self.reveal_entire_map(Some(owner), context.reborrow());
+            self.power_states
+                .house_mut(owner)
+                .set_tactical_map_available();
+            // Local MPlayerDefeated4FC21B reaches Radar656DF0 immediately,
+            // including an Off -> On reversal within this same House visit.
+            // Other network viewers retain their own canonical radar state;
+            // this presentation receiver belongs to the actual local client.
+            if self.session.current_house() == Some(owner) {
+                context
+                    .effects()
+                    .set_tactical_radar_available(self, rules, true);
+            }
+        } else if let Some(house) = self.houses.get_mut(&owner) {
+            house.mark_map_clear();
+        }
+        if !self.session.is_observer_house(owner) {
+            self.sound_events
+                .emit(SimSoundEvent::PlayerDefeated { house: owner });
+        }
+        self.complete_multiplayer_after_defeat(context.rules(), context.effects());
+        planning_commit
+    }
+
+    /// MPlayer_Defeated4FC3DE..6B7 completes the match at this House's defeat,
+    /// before later House visits. A defeated human (including an observer)
+    /// continues watching while hostile survivors and a human remain. Only
+    /// this process's PlayerPtr receives native's final Win/Lose flags.
+    /// VERA network worlds retain the same per-human result on every client.
+    fn complete_multiplayer_after_defeat(
+        &mut self,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let Some(decision) = self.multiplayer_decision() else {
+            return;
+        };
+        for (owner, won) in decision {
+            if won {
+                self.flag_house_to_win(owner, rules, false, effects);
+            } else {
+                self.flag_house_to_lose(owner, rules, false, effects);
+            }
+        }
+    }
+
+    /// VERA: the human Houses a finished network match's completion
+    /// (MPlayer_Defeated4FC3DE..6B7) flags to win, for the online lobby's
+    /// ladder; `None` while the match runs.
+    pub fn network_match_winners(&self) -> Option<Vec<InternedId>> {
+        if !self.session.execution_topology().is_lockstep() {
+            return None;
+        }
+        let decision = self.multiplayer_decision()?;
+        Some(
+            decision
+                .into_iter()
+                .filter_map(|(owner, won)| won.then_some(owner))
+                .collect(),
+        )
+    }
+
+    /// VERA: a network match in which every human watches, as VERA's room
+    /// starts while two or more AI play: no House is a human's but an
+    /// observer's. gamemd's rooms never start one.
+    pub(crate) fn network_ai_alone(&self) -> bool {
+        self.session.execution_topology().is_lockstep()
+            && !self.houses.order().iter().any(|owner| {
+                !self.session.is_observer_house(*owner)
+                    && self.houses.get(owner).is_some_and(|house| house.is_human())
+            })
+    }
+
+    /// MPlayer_Defeated4FC3DE..6B7's decision: `None` while hostile
+    /// survivors and a human remain, else each outcome viewpoint and whether
+    /// it wins.
+    fn multiplayer_decision(&self) -> Option<Vec<(InternedId, bool)>> {
+        let alive: Vec<_> = self
+            .houses
+            .order()
+            .iter()
+            .copied()
+            .filter(|owner| {
+                self.houses
+                    .get(owner)
+                    .is_some_and(|house| !house.is_defeated() && !house.multiplay_passive())
+            })
+            .collect();
+        // 0x004FC62C's final human scan checks only Defeated (+0x1F5) before
+        // IsHumanPlayer (+0x1EC) or PlayerControl (+0x1ED), so a living passive
+        // human House counts: VERA's observer keeps a match going while the
+        // person behind it watches. Counted from `alive`, which drops passive
+        // Houses, a watched match ended at the first defeated computer.
+        let living_humans = self
+            .houses
+            .order()
+            .iter()
+            .filter(|owner| {
+                self.houses
+                    .get(owner)
+                    .is_some_and(|house| !house.is_defeated())
+            })
+            .filter(|owner| self.houses[owner].is_controlled_by_human(self.session.rule_policy()))
+            .count();
+        let all_allied = alive.iter().all(|left| {
+            alive.iter().all(|right| {
+                left == right
+                    || (self
+                        .house_alliances
+                        .is_allied(&self.interner, *left, *right)
+                        && self
+                            .house_alliances
+                            .is_allied(&self.interner, *right, *left))
+            })
+        });
+        // VERA: in a match only AI play, no human's defeat ends it; it ends
+        // when one side is left.
+        if !all_allied && alive.len() != 1 && (living_humans != 0 || self.network_ai_alone()) {
+            return None;
+        }
+        // 0x004FC5DD/5EC: both class virtuals return true only for Cooperative
+        // (0x005C4EE0/0x005C4EF0); ordinary 0x005C0E40 returns false. 0x004FC62C's
+        // final human scan intentionally does not filter passive Houses. VERA
+        // projects the factory's shared victory rule through the session.
+        let cooperative_shared_win = self.session.execution_topology().is_lockstep()
+            && self.session.rule_policy().shared_allied_victory()
+            && (all_allied || alive.len() == 1)
+            && self
+                .houses
+                .values()
+                .any(|house| !house.is_defeated() && house.is_human());
+        Some(
+            self.outcome_viewpoints()
+                .into_iter()
+                .map(|owner| {
+                    let won = !self.houses[&owner].is_defeated() || cooperative_shared_win;
+                    (owner, won)
+                })
+                .collect(),
+        )
+    }
+
+    /// FlagWin4FCA5C..E7 /FlagLose4FCC45..D0 apply MaxAhead and then align
+    /// the signed wrapping absolute expiry to ten frames. CdTimer owns the
+    /// paused-sentinel and negative-duration semantics used by both bodies.
+    fn outcome_savour_frames(&self, rules: &RuleSet) -> i32 {
+        let duration =
+            crate::rules::ruleset::native_minutes_to_frames(rules.general.savour_delay_minutes);
+        // Native applies this for any GameMode other than 0 or 5 (4FCA5C..6C).
+        // Only LAN/WOL admit a MaxAhead; the other raw modes are unreachable.
+        if !self.session.execution_topology().is_lockstep() {
+            return duration;
+        }
+        let frame = self.session.binary_frame() as i32;
+        let remaining = crate::sim::timer::CdTimer::started(frame, duration).remaining(frame);
+        let ahead = self
+            .session
+            .network_max_ahead_frames()
+            .expect("network mode has admitted timing");
+        let remaining = if remaining <= ahead {
+            crate::sim::timer::CdTimer::started(frame, ahead).remaining(frame)
+        } else {
+            remaining
+        };
+        (frame.wrapping_add(remaining).wrapping_add(9) / 10)
+            .wrapping_mul(10)
+            .wrapping_sub(frame)
+    }
+
+    /// `HouseClass::Flag_To_Win4FC9E0`, shared campaign/multiplayer path.
+    /// +298 is the same timer AllowWin Tags and Flag_To_Die mutate;
+    /// action67's argument1 preserves it. Native minutes conversion and
+    /// network ten-frame alignment stay with outcome_savour_frames.
+    pub(crate) fn flag_house_to_win(
+        &mut self,
+        owner: InternedId,
+        rules: &RuleSet,
+        skip_timer: bool,
+        effects: &mut FrameEffects<'_>,
+    ) -> bool {
+        let savour = self.outcome_savour_frames(rules);
+        let accepted = self.houses.get_mut(&owner).is_some_and(|house| {
+            house.accept_win_result(self.session.binary_frame() as i32, savour, skip_timer)
+        });
+        if accepted {
+            self.publish_accepted_house_outcome(
+                owner,
+                crate::sim::house_state::HouseOutcomeKind::Victory,
+                rules,
+                effects,
+            );
+        }
+        // Native returns the current +1F7 byte, including a repeated call.
+        self.houses.get(&owner).is_some_and(|house| house.has_won())
+    }
+
+    /// `HouseClass::Flag_To_Lose4FCBD0`: clear Win first, accept Lost only
+    /// once, then use the same timer/effect owners as Flag_To_Win.
+    pub(crate) fn flag_house_to_lose(
+        &mut self,
+        owner: InternedId,
+        rules: &RuleSet,
+        skip_timer: bool,
+        effects: &mut FrameEffects<'_>,
+    ) -> bool {
+        let savour = self.outcome_savour_frames(rules);
+        let accepted = self.houses.get_mut(&owner).is_some_and(|house| {
+            house.accept_lose_result(self.session.binary_frame() as i32, savour, skip_timer)
+        });
+        if accepted {
+            self.publish_accepted_house_outcome(
+                owner,
+                crate::sim::house_state::HouseOutcomeKind::Defeat,
+                rules,
+                effects,
+            );
+        }
+        self.houses
+            .get(&owner)
+            .is_some_and(|house| house.has_lost())
+    }
+
+    /// Shared presentation boundary of the two native Flag bodies. Their
+    /// state/timer decisions stay in HouseState; no separate trigger result
+    /// or announcement state is retained. Native684240 is campaign-only.
+    fn publish_accepted_house_outcome(
+        &mut self,
+        owner: InternedId,
+        kind: crate::sim::house_state::HouseOutcomeKind,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let follow_player_control = self.outcomes_follow_player_control();
+        let announce = if follow_player_control {
+            self.houses
+                .get(&owner)
+                .is_some_and(|house| house.is_human() || house.player_control())
+        } else {
+            self.session.current_house() == Some(owner)
+        };
+        if !announce {
+            return;
+        }
+        if follow_player_control {
+            let was_locked = self.session.lock_input();
+            self.publish_trigger_effects(vec![
+                crate::sim::trigger_runtime::TriggerEffect::InputLockChanged {
+                    locked: true,
+                    was_locked,
+                },
+            ]);
+        }
+        // VERA watching: on the observer's sidebar a watcher takes no side,
+        // so the House it stands in has no verdict to say to it.
+        if (kind == crate::sim::house_state::HouseOutcomeKind::Defeat
+            && self.session.is_observer_house(owner))
+            || self.session.watcher_observes()
+        {
+            return;
+        }
+        self.sound_events
+            .emit(SimSoundEvent::MatchOutcome { owner, kind });
+        //752700 is reached synchronously before the Flag call returns.
+        effects.flush_sound(self, rules);
+    }
+
+    /// TAction1/2/67/68/69 dispatch6DEA37/6DEA67/6DDD77/6DDD93/6DDDAF
+    /// and TeamAI Script7/23 at6E98C9/6E98E5. All target PlayerPtr, not
+    /// the caller's House. Country compares +90 with its HouseType ordinal;
+    /// Flag preserves the caller's skip-timer argument (scripts pass false).
+    /// In a VERA network world the same decision runs for each represented
+    /// human viewpoint; current-only effects and app routing stay separate.
+    pub(crate) fn request_player_outcome(
+        &mut self,
+        request: PlayerOutcomeRequest,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) -> bool {
+        let mut handled = false;
+        for owner in self.outcome_viewpoints() {
+            let (kind, skip_timer) = match request {
+                PlayerOutcomeRequest::Country {
+                    country_index,
+                    win_on_match,
+                } => {
+                    let native_country = self.houses[&owner]
+                        .country()
+                        .and_then(|country| rules.country_index(self.interner.resolve(country)))
+                        .map(|index| i32::from(index.0));
+                    let Some(native_country) = native_country else {
+                        continue;
+                    };
+                    let kind = if (native_country == country_index) == win_on_match {
+                        HouseOutcomeKind::Victory
+                    } else {
+                        HouseOutcomeKind::Defeat
+                    };
+                    (kind, false)
+                }
+                PlayerOutcomeRequest::Flag { kind, skip_timer } => (kind, skip_timer),
+                PlayerOutcomeRequest::EndScenario => {
+                    //4FCDC0 calls the existing FlagWin(0) if neither result is
+                    //set; otherwise only resume the same timer's paused anchor.
+                    if self.houses[&owner].has_won() || self.houses[&owner].has_lost() {
+                        self.houses
+                            .get_mut(&owner)
+                            .unwrap()
+                            .resume_result_timer(self.session.binary_frame() as i32);
+                        handled = true;
+                        continue;
+                    }
+                    (HouseOutcomeKind::Victory, false)
+                }
+            };
+            match kind {
+                HouseOutcomeKind::Victory => {
+                    self.flag_house_to_win(owner, rules, skip_timer, effects);
+                }
+                HouseOutcomeKind::Defeat => {
+                    self.flag_house_to_lose(owner, rules, skip_timer, effects);
+                }
+            }
+            handled = true;
+        }
+        // Each original TAction arm returns AL1 independently of Flag AL.
+        handled
+    }
+
+    /// Diagnostic producer for a map's TAction 67/68 on the current
+    /// House, through the same [`Self::request_player_outcome`] owner. Only
+    /// the dev chord's capture routes reach it; shipping builds omit it.
+    #[cfg(feature = "dev-overlays")]
+    pub fn dev_trigger_current_house_outcome(
+        &mut self,
+        rules: &RuleSet,
+        kind: crate::sim::house_state::HouseOutcomeKind,
+    ) -> bool {
+        self.request_player_outcome(
+            PlayerOutcomeRequest::Flag {
+                kind,
+                skip_timer: true,
+            },
+            rules,
+            &mut FrameEffects::empty(),
+        )
+    }
+
+    /// Session `+0x300` (`0x00A8B538`), written when the current house is
+    /// defeated (`0x004FC205`; the other writer, `0x005C3ABE`, is the
+    /// cooperative mode's). VERA reads it as the current house's Defeated
+    /// flag, which only [`Self::mplayer_defeated`] sets. Its readers here are
+    /// the House radar recheck (`0x004F84FB`), the Lightning Storm's outages
+    /// (`0x00539FE0`), the superweapon EVA lines (`0x004468DA`, `0x006CCCF0`
+    /// and the other `SuperClass::Launch` cases), selection navigation,
+    /// AllToCheer input (`0x00730F30`), the command-bar opener (`0x006D08F5`)
+    /// and local planning admission (`0x00731A50`).
+    pub fn local_player_defeated(&self) -> bool {
+        self.session
+            .current_house()
+            .and_then(|house| self.houses.get(&house))
+            .is_some_and(|house| house.is_defeated())
+    }
+
+    /// HouseClass cleanup4FC6D0/4FC790/4FC820/4FC8D0. Original Steam
+    ///gamemd; tools/spatial_oracle/house_blowup_all is the oracle.
+    /// One owner for defeat and trigger119..122, including limbo/RTTI/Naval
+    /// admission, dynamic registry order and same-callback receiver effects.
+    pub(crate) fn house_blowup(
+        &mut self,
+        house: InternedId,
+        subset: HouseBlowupSubset,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
+    ) {
+        let c4 = self.interner.intern(&rules.bridge_warheads.c4_name);
+        //All four bodies re-read the current slot/count after ReceiveDamage.
+        //The last-pointer guard advances an unchanged slot; immediate removal
+        //exposes its successor at that same ordinal. Do not snapshot/sort IDs.
+        let mut ordinal = 0;
+        let mut last = None;
+        while ordinal < self.substrate.entities.techno_registry_len() {
+            let id = self.substrate.entities.techno_registry_at(ordinal).unwrap();
+            if !self.blown_up_with(id, house, subset, rules) || last == Some(id) {
+                ordinal += 1;
+                continue;
+            }
+            // Ares 3.0 10024150 (hook 0x004FC731, Blowup_All only): a
+            // returned structure is skipped (0x004FC770).
+            if rules.ares()
+                && subset == HouseBlowupSubset::All
+                && self.ares_return_structure(id, house, rules, registry, frame_effects)
+            {
+                ordinal += 1;
+                continue;
+            }
+            //4FC731/4FC7D1/4FC879/4FC929 reads Health before Temporal
+            //release; callbacks do not replace that already captured damage.
+            let Some(health) = self.substrate.entities.get(id).map(|e| e.health.current()) else {
+                ordinal += 1;
+                continue;
+            };
+            // 0x004FC742: the chain warping it lets go first.
+            if let Some(head) = self
+                .substrate
+                .entities
+                .get(id)
+                .and_then(|entity| entity.temporal.chain_head())
+            {
+                self.temporal_release_chain_no_idle(head, rules, frame_effects);
+            }
+            let event = EntityDamageEvent::direct_receiver(
+                id,
+                health,
+                0,
+                RAD_NO_ATTACKER,
+                None,
+                c4,
+                ReceiverCallFlags {
+                    ignore_defenses: true,
+                    arg6: true,
+                },
+            );
+            #[cfg(any(test, feature = "test-support"))]
+            BLOWUP_TRACE.with(|trace| trace.borrow_mut().push(event));
+            self.commit_direct_damage_receiver(rules, registry, event, frame_effects);
+            last = Some(id);
+        }
+    }
+
+    /// Ares 3.0 `HouseClass_DestroyAll_ReturnStructures @ 10024150` (hook
+    /// `0x004FC731`): outside a campaign, a building `house` is blowing up
+    /// whose first owner (`+0x14C`) is a `MultiplayPassive=` house goes back
+    /// to it instead of dying, when `Returnable=` (else `[General]
+    /// ReturnStructures=`) allows and it changed hands or is garrisoned. Its
+    /// occupants die first (`KillOccupants(NULL)`, which can end a raid);
+    /// then, still `house`'s, it joins the first owner unannounced
+    /// (`SetOwningHouse(owner, false)`, which refuses its current owner),
+    /// takes Guard (`ResetOrdersToGuard`, `vt+0x3D0`) and, if
+    /// `NeedsEngineer=`, loses its engineer and is disabled. Answers whether
+    /// it was spared; otherwise Blowup_All kills it as usual. VERA's first
+    /// owner is never null, so Ares' Civilian-side fallback for one has no
+    /// counterpart.
+    fn ares_return_structure(
+        &mut self,
+        id: u64,
+        house: InternedId,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> bool {
+        if !self.session.rule_policy().uses_elimination_results() {
+            return false;
+        }
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        if entity.category() != crate::map::entities::EntityCategory::Structure {
+            return false;
+        }
+        let first_owner = entity.initial_owner();
+        if !self
+            .houses
+            .get(&first_owner)
+            .is_some_and(|owner| owner.multiplay_passive())
+        {
+            return false;
+        }
+        let Some(object) = self.object_type(entity.type_ref(), rules) else {
+            return false;
+        };
+        let occupants = entity.passenger_role().occupants().count();
+        let needs_engineer = object.needs_engineer;
+        if !(first_owner != house || occupants > 0)
+            || !object
+                .building_type_ext()
+                .returnable(rules.ares_building_globals().return_structures)
+        {
+            return false;
+        }
+        if occupants > 0 {
+            crate::sim::passenger::garrison_eject::kill_building_occupants(
+                self,
+                id,
+                None,
+                UninitContext::new(rules).with_effects(frame_effects),
+            );
+        }
+        if self.substrate.entities.get(id).map(|entity| entity.owner()) != Some(house)
+            || first_owner == house
+        {
+            return false;
+        }
+        self.change_owner_with_rules(id, first_owner, rules, registry, frame_effects);
+        if self.substrate.entities.get(id).map(|entity| entity.owner()) != Some(first_owner) {
+            return false;
+        }
+        self.reset_orders_to_guard(id, rules, frame_effects);
+        if needs_engineer {
+            self.disable_returned_tech_building(id, rules);
+        }
+        true
+    }
+
+    /// Blowup_All's predicate (`0x004FC6F1..0x004FC731`) for one Techno:
+    /// its original owner (`TechnoClass::GetOriginalOwner @ 0x0070F820`) is
+    /// `house`. Only a unit-controlled captive owned elsewhere can substitute
+    /// a Civilian-side original owner and escape this sweep.
+    fn blown_up_with(
+        &mut self,
+        id: u64,
+        house: InternedId,
+        subset: HouseBlowupSubset,
+        rules: &RuleSet,
+    ) -> bool {
+        if self.techno_original_owner(id) != Some(house) {
+            return false;
+        }
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        if subset != HouseBlowupSubset::All {
+            //4FC7C3/4FC857/4FC907: typed cleanup excludes limbo, not dead
+            //or unmarked objects. Building RTTI is6; other Technos use the
+            //production type's native Naval read, even Aircraft/Infantry.
+            if entity.lifecycle.in_limbo() {
+                return false;
+            }
+            let building = entity.category() == crate::map::entities::EntityCategory::Structure;
+            return match subset {
+                HouseBlowupSubset::Buildings => building,
+                HouseBlowupSubset::Land | HouseBlowupSubset::Naval => {
+                    !building
+                        && self
+                            .object_type(entity.type_ref(), rules)
+                            .is_some_and(|t| t.naval == (subset == HouseBlowupSubset::Naval))
+                }
+                HouseBlowupSubset::All => unreachable!(),
+            };
+        }
+        let owner = entity.owner();
+        let Some(controller) = entity.seldom.mind_control.controller() else {
+            //4FC715 jumps to4FC727 when +2C0 is null. Trigger House control
+            //uses +2CC/+2E0, so the current Owner can differ from `house`.
+            return true;
+        };
+        // CaptureManagerClass::GetOriginalOwner @ 0x004722F0 (null without a
+        // node).
+        if owner == house {
+            return true;
+        }
+        !self.set_original_owner_to_civilian(controller, id, rules)
+    }
+
+    /// TechnoGetOriginalOwner70F820: MindControlledBy's CaptureManager is
+    /// read before the current Owner. No manager node means native NULL.
+    /// Trigger transfers retain +2CC/+2E0 independently; an ordinary capture
+    /// clears +2E0 without clearing +2CC, so this can legitimately return None.
+    pub(crate) fn techno_original_owner(&self, id: u64) -> Option<InternedId> {
+        let entity = self.substrate.entities.get(id)?;
+        if let Some(controller) = entity.seldom.mind_control.controller() {
+            self.substrate
+                .entities
+                .get(controller)?
+                .capture_manager
+                .as_ref()?
+                .original_owner(id)
+        } else if entity.seldom.mind_control.house_controller().is_some() {
+            entity.seldom.mind_control.house_original_owner()
+        } else {
+            Some(entity.owner())
+        }
+    }
+
+    /// Whether `house`'s HouseType side (`[house+0x34]+0xBC`) equals
+    /// `SideClass::Find_Index("Civilian")` (`0x006A46D0`). `Can_Ally` asks it
+    /// of the other house (`0x00501581`); [`Self::civilian_side_house`] of
+    /// each house in turn. No caller guards Find_Index's -1, and a HouseType
+    /// outside every `[Sides]` list keeps its constructor's -1, so without a
+    /// `Civilian` side a sideless type matches (native row
+    /// `missing_side_matches_negative_one_house`,
+    /// `tools/garrison_oracle/allegiance.json`). `HouseState::side_index` is
+    /// not asked: its fallbacks name a side for a country without one.
+    pub(crate) fn house_type_is_civilian(&self, house: InternedId, rules: &RuleSet) -> bool {
+        self.houses.get(&house).is_some_and(|state| {
+            rules.country_side_index(self.interner.resolve(state.house_type_id()))
+                == rules.side_index("Civilian")
+        })
+    }
+
+    /// The first house in HouseClass::Array order whose type is of the
+    /// `Civilian` side ([`Self::house_type_is_civilian`]). Five native callers
+    /// walk the array this way: AI trigger condition 7 (`0x0041ECB5`),
+    /// `SetOriginalOwnerToCivilian` (`0x00472341`), AnimClass::AI's
+    /// MakeInfantry owner (`0x004249A7`), `CheckAutoSellOrCivilian`
+    /// (`0x0045823D`) and FreeSlaves (`0x006B0B0B`).
+    pub(crate) fn civilian_side_house(&self, rules: &RuleSet) -> Option<InternedId> {
+        self.houses
+            .order()
+            .iter()
+            .copied()
+            .find(|&owner| self.house_type_is_civilian(owner, rules))
+    }
+
+    /// [`Self::civilian_side_house`] for `CheckAutoSellOrCivilian`, which
+    /// every garrisonable civilian building asks in its turn: inside the
+    /// object pass the walk's answer is remembered ([`CivilianSideHouse`]).
+    pub(crate) fn civilian_side_house_in_pass(&mut self, rules: &RuleSet) -> Option<InternedId> {
+        let key = (rules.serial(), self.houses.len());
+        let memo = &self.civilian_house_memo;
+        if let Some((_, house)) = memo.answer.filter(|&(walked, _)| walked == key) {
+            debug_assert!(
+                !crate::sim::touch_log::live_read_check_enabled()
+                    || house == self.civilian_side_house(rules),
+                "the remembered Civilian-side house is current"
+            );
+            return house;
+        }
+        let house = self.civilian_side_house(rules);
+        let memo = &mut self.civilian_house_memo;
+        #[cfg(any(test, feature = "test-support"))]
+        {
+            memo.walks += 1;
+        }
+        if memo.remembering {
+            memo.answer = Some((key, house));
+        }
+        house
+    }
+
+    /// Installed Ares `HouseExt::GetHouseKind`10021310, the resolver Phobos'
+    /// `HouseExt::GetHouseKind` shares. The random permission is the consumer's:
+    /// KillDriver10052C31 and UnitDelivery pass it clear (`random_house` None),
+    /// while Phobos' animation-owner tail supplies its Scenario draw. Keep the
+    /// native distinction between a missing invoker/killer/victim (fallback)
+    /// and missing named houses (NULL).
+    pub(crate) fn house_kind(
+        &self,
+        selector: crate::rules::ares_warhead::HouseSelector,
+        fallback: Option<InternedId>,
+        invoker: Option<InternedId>,
+        killer: Option<InternedId>,
+        victim: Option<InternedId>,
+        rules: &RuleSet,
+        random_house: Option<InternedId>,
+    ) -> Option<InternedId> {
+        use crate::rules::ares_warhead::HouseSelector;
+        match selector {
+            HouseSelector::Default => fallback,
+            HouseSelector::Random => random_house.or(fallback),
+            HouseSelector::Invoker => invoker.or(fallback),
+            HouseSelector::Killer => killer.or(fallback),
+            HouseSelector::Victim => victim.or(fallback),
+            HouseSelector::Civilian => self.civilian_side_house(rules),
+            HouseSelector::Special | HouseSelector::Neutral => {
+                let name = if selector == HouseSelector::Special {
+                    "Special"
+                } else {
+                    "Neutral"
+                };
+                self.house_by_country_index(rules.country_index(name)?, rules)
+            }
+        }
+    }
+
+    /// `CaptureManagerClass::SetOriginalOwnerToCivilian @ 0x00472330`: the
+    /// first house in HouseClass::Array order whose side is `Civilian`
+    /// (`0x006A46D0`) becomes the victim's original owner in every node of
+    /// the controller's manager. False when no such house exists.
+    fn set_original_owner_to_civilian(
+        &mut self,
+        controller: u64,
+        victim: u64,
+        rules: &RuleSet,
+    ) -> bool {
+        let Some(civilian) = self.civilian_side_house(rules) else {
+            return false;
+        };
+        if let Some(manager) = self
+            .substrate
+            .entities
+            .get_mut(controller)
+            .and_then(|controller| controller.capture_manager.as_mut())
+        {
+            manager.set_original_owner(victim, civilian);
+        }
+        true
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+thread_local! {
+    /// Blowup_All's receiver calls, in order, for the native comparison.
+    static BLOWUP_TRACE: std::cell::RefCell<Vec<EntityDamageEvent>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+#[cfg(any(test, feature = "test-support"))]
+fn take_blowup_trace() -> Vec<EntityDamageEvent> {
+    BLOWUP_TRACE.with(|trace| std::mem::take(&mut *trace.borrow_mut()))
+}
+
+#[cfg(all(test, tests_sim_world_c_o))]
+#[path = "house_defeat_tests.rs"]
+mod tests;

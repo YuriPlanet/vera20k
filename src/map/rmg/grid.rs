@@ -1,0 +1,453 @@
+//! The generator's working cell grid and the native cell-iteration order.
+//!
+//! Phases mutate `GridCell`s (the subset of cell state the generator reads or
+//! writes); `emit` projects the grid into a `MapFile` at the end. Iteration
+//! order is load-bearing: every per-cell RNG draw happens in
+//! [`RmgGrid::native_cells`] order, so a different traversal silently
+//! reorders the whole draw stream.
+
+use super::MapGeometry;
+use super::tiles::TILE_UNASSIGNED;
+use crate::map::playfield::{AllocatedCellWalk, SizeDiamond};
+use crate::util::direction::DIRECTION_DELTAS;
+
+/// One generated cell — the fields the generation phases touch.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GridCell {
+    /// Flat tile index; 0 = clear ground, `TILE_UNASSIGNED` = untouched.
+    pub tile: i32,
+    /// Sub-tile index within a multi-cell tile block (0 = anchor/unset).
+    pub sub_tile: u8,
+    /// Ground level.
+    pub level: u8,
+    /// Native raw slope id (0 flat; generated ramps use values through at least 16).
+    pub slope: u8,
+    /// Overlay type index, -1 = none.
+    pub overlay: i32,
+    /// Overlay density/frame byte.
+    pub density: u8,
+    /// An object occupies this cell (tree, tech building).
+    pub occupied: bool,
+    /// Start-cell marker set when a waypoint lands here.
+    pub start_marker: bool,
+}
+
+impl Default for GridCell {
+    fn default() -> Self {
+        Self {
+            tile: TILE_UNASSIGNED,
+            sub_tile: 0,
+            // The map-prep stage initialises generated cells to level 4.
+            level: 4,
+            slope: 0,
+            overlay: -1,
+            density: 0,
+            occupied: false,
+            start_marker: false,
+        }
+    }
+}
+
+/// A cell reference a phase holds across later lookups.
+///
+/// The original keeps raw cell pointers; every out-of-band lookup returns the
+/// one shared border cell, so a held reference must distinguish "a real cell"
+/// from "the border cell" to preserve the aliasing (a border reference reads
+/// the border's coordinate slot at use time — it does not remember the
+/// coordinate it was created from).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CellRef {
+    Cell(i16, i16),
+    Border,
+}
+
+/// Working grid, addressed by the same (x, y) as the scratch array but stored
+/// diagonal-major ([`RmgGrid::slot`]). Cells outside the map's valid band
+/// read as `None`, which is what terminates the native iteration.
+#[derive(Debug, Clone)]
+pub struct RmgGrid {
+    width: usize,
+    diamond: SizeDiamond,
+    cells: Vec<GridCell>,
+    /// The shared out-of-band fallback cell. The original returns one static
+    /// cell for every invalid lookup, writing the requested coordinate into
+    /// it first — so out-of-band accesses alias each other, and a phase that
+    /// paints the fallback affects every later out-of-band read. Its tile
+    /// starts at FFFF through the original Cell constructor; the clear-tile
+    /// predicate accepts that unassigned identity as well as tile zero.
+    border: GridCell,
+    border_coord: (i16, i16),
+}
+
+impl RmgGrid {
+    /// Allocate the working cells for a generated map.
+    pub fn from_geometry(geometry: MapGeometry) -> Self {
+        Self::allocate(geometry.stride(), geometry.size_diamond())
+    }
+
+    /// Build a fixture with an independently sized square and diamond.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn new(width: usize, diamond_min: i32, diamond_max: i32) -> Self {
+        Self::allocate(width, SizeDiamond::from_bounds(diamond_min, diamond_max))
+    }
+
+    fn allocate(width: usize, diamond: SizeDiamond) -> Self {
+        Self {
+            width,
+            diamond,
+            // Diagonal-major (see `slot`): rows of constant x + y, 2W of them.
+            cells: vec![GridCell::default(); 2 * width * width],
+            // Original Cell constructor47BC11 writesFFFF, not zero;
+            // startup565060 and Resize5670F2 construct the shared Dummy.
+            // RMG599E70 resets only allocated iterator cells. Native input
+            // observation: tools/rmg_oracle/cliff_materialization.py.
+            border: GridCell {
+                tile: super::tiles::TILE_UNASSIGNED,
+                level: 0,
+                ..GridCell::default()
+            },
+            border_coord: (0, 0),
+        }
+    }
+
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    /// The edge of the "whole map" rects and packed cell ids the phases use:
+    /// the original's 512-cell array (`0x200`), which every native size fits.
+    /// VERA extension: a grid wider than that (Giant and up) uses its own
+    /// width, so those maps grow lakes, rivers and bridges past cell 512.
+    pub fn whole_extent(&self) -> i32 {
+        (self.width as i32).max(0x200)
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn diamond_bounds(&self) -> (i32, i32) {
+        self.diamond.bounds()
+    }
+
+    /// Whether a cell exists at this coordinate — the allocation predicate
+    /// the original uses when building the map (asymmetric diamond band).
+    pub fn is_valid(&self, x: i32, y: i32) -> bool {
+        self.diamond.contains(x, y) && self.in_bounds(x, y)
+    }
+
+    fn in_bounds(&self, x: i32, y: i32) -> bool {
+        in_bounds(self.width, x, y)
+    }
+
+    pub fn get(&self, x: i32, y: i32) -> Option<&GridCell> {
+        self.is_valid(x, y).then(|| &self.cells[self.slot(x, y)])
+    }
+
+    pub fn get_mut(&mut self, x: i32, y: i32) -> Option<&mut GridCell> {
+        self.is_valid(x, y)
+            .then(|| self.slot(x, y))
+            .map(move |slot| &mut self.cells[slot])
+    }
+
+    /// The original's cell-pointer lookup, kept as a held reference: an
+    /// invalid coordinate stamps itself into the shared border cell, which
+    /// the reference then names (native lookup `0x5657A0`; the stampers
+    /// inline the same fallback).
+    pub fn cell_ref(&mut self, x: i32, y: i32) -> CellRef {
+        if self.is_valid(x, y) {
+            CellRef::Cell(x as i16, y as i16)
+        } else {
+            self.border_coord = (x as i16, y as i16);
+            CellRef::Border
+        }
+    }
+
+    /// The coordinate read back through a held reference; a border reference
+    /// sees the shared cell's latest stamped coordinate.
+    pub fn ref_coord(&self, held: CellRef) -> (i32, i32) {
+        match held {
+            CellRef::Cell(x, y) => (i32::from(x), i32::from(y)),
+            CellRef::Border => self.border_coord(),
+        }
+    }
+
+    /// The cell behind a held reference, without a fresh (stamping) lookup.
+    pub fn ref_cell(&self, held: CellRef) -> &GridCell {
+        match held {
+            CellRef::Cell(x, y) => &self.cells[self.held_index(x, y)],
+            CellRef::Border => &self.border,
+        }
+    }
+
+    /// Mutable variant of [`Self::ref_cell`].
+    pub fn ref_cell_mut(&mut self, held: CellRef) -> &mut GridCell {
+        match held {
+            CellRef::Cell(x, y) => {
+                let index = self.held_index(x, y);
+                &mut self.cells[index]
+            }
+            CellRef::Border => &mut self.border,
+        }
+    }
+
+    fn held_index(&self, x: i16, y: i16) -> usize {
+        let (x, y) = (i32::from(x), i32::from(y));
+        debug_assert!(
+            self.is_valid(x, y),
+            "a held cell reference names a valid cell"
+        );
+        self.slot(x, y)
+    }
+
+    /// Storage slot of an in-bounds cell: diagonal-major, `(x + y) * W + x`.
+    ///
+    /// [`Self::native_cells`] walks anti-diagonals `(x + 1, y - 1)`, so this
+    /// puts consecutive cells of that scan in consecutive slots; the row-major
+    /// `y * W + x` put each one a whole row apart and missed the cache on
+    /// every step of the shore tiler's full-map passes. The linear scratch
+    /// walks that read the grid (`PartitionRegions @ 0x0058CF90`, the hill
+    /// corner morph) take those misses instead, but once per stage rather than
+    /// after every blob. A storage choice only: cells are still addressed by
+    /// `(x, y)`, so no value or order changes.
+    fn slot(&self, x: i32, y: i32) -> usize {
+        slot(self.width, x, y)
+    }
+
+    /// Cell lookup with the original's fallback semantics: an invalid
+    /// coordinate yields the shared border cell after stamping the requested
+    /// coordinate into it.
+    pub fn cell_native(&mut self, x: i32, y: i32) -> &GridCell {
+        let held = self.cell_ref(x, y);
+        self.ref_cell(held)
+    }
+
+    /// Mutable variant of [`Self::cell_native`].
+    pub fn cell_native_mut(&mut self, x: i32, y: i32) -> &mut GridCell {
+        let held = self.cell_ref(x, y);
+        self.ref_cell_mut(held)
+    }
+
+    /// The coordinate most recently stamped into the border cell — what the
+    /// original reads back from the fallback's coordinate field.
+    pub fn border_coord(&self) -> (i32, i32) {
+        (
+            i32::from(self.border_coord.0),
+            i32::from(self.border_coord.1),
+        )
+    }
+
+    /// Neighbor coordinate one step in direction `dir` (0..7, masked like the
+    /// original's `& 7`).
+    pub fn step(x: i32, y: i32, dir: usize) -> (i32, i32) {
+        let (dx, dy) = DIRECTION_DELTAS[dir & 7];
+        (x + dx, y + dy)
+    }
+
+    /// All existing cells in native scan order: the allocated-cell walk
+    /// ([`SizeDiamond::allocated_cells`]). On a Size at least two wide its
+    /// rows stay inside the off-axis bounds, so the first coordinate past the
+    /// far diagonal is where the original's null-cell check stops it.
+    pub fn native_cells(&self) -> AllocatedCellWalk {
+        self.diamond.allocated_cells()
+    }
+
+    /// Each cell of [`Self::native_cells`] with its coordinate, in that
+    /// order. A grid built from its map geometry holds every cell the walk
+    /// names.
+    pub fn cells_in_native_order(&self) -> impl Iterator<Item = ((i32, i32), &GridCell)> {
+        self.native_cells()
+            .filter_map(|(x, y)| Some(((x, y), self.get(x, y)?)))
+    }
+
+    /// Mutable variant of [`Self::cells_in_native_order`].
+    pub fn cells_in_native_order_mut(
+        &mut self,
+    ) -> impl Iterator<Item = ((i32, i32), &mut GridCell)> {
+        let walk = self.native_cells();
+        let width = self.width;
+        let mut unvisited: &mut [GridCell] = &mut self.cells;
+        let mut first_unvisited = 0;
+        walk.filter(move |&(x, y)| in_bounds(width, x, y))
+            .filter_map(move |(x, y)| {
+                // The walk raises x + y from row to row and x within a row, so
+                // its storage slots only grow: each cell is split off the part
+                // of the grid the walk has not reached yet.
+                let slot = slot(width, x, y);
+                let (_, rest) = std::mem::take(&mut unvisited).split_at_mut(slot - first_unvisited);
+                let (cell, rest) = rest.split_first_mut()?;
+                unvisited = rest;
+                first_unvisited = slot + 1;
+                Some(((x, y), cell))
+            })
+    }
+}
+
+fn in_bounds(width: usize, x: i32, y: i32) -> bool {
+    x >= 0 && y >= 0 && (x as usize) < width && (y as usize) < width
+}
+
+/// Storage slot of an in-bounds cell; see [`RmgGrid::slot`].
+fn slot(width: usize, x: i32, y: i32) -> usize {
+    (x + y) as usize * width + x as usize
+}
+
+#[cfg(all(test, tests_map))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn whole_extent_is_native_until_the_grid_outgrows_it() {
+        // Very Large at 30 players (stride 481) keeps the original 0x200; a
+        // Colossal grid (1017) must reach its own far edge.
+        assert_eq!(RmgGrid::new(481, 0, 0).whole_extent(), 0x200);
+        assert_eq!(RmgGrid::new(1017, 0, 0).whole_extent(), 1017);
+    }
+
+    #[test]
+    fn step_masks_the_direction_like_the_original() {
+        assert_eq!(RmgGrid::step(5, 5, 2), (6, 5));
+        assert_eq!(RmgGrid::step(5, 5, 8 + 2), (6, 5), "dir & 7 wraps");
+    }
+
+    /// Hand-walked from the original iterator's state machine with Size
+    /// width 4. Rows alternate 4 and 3 cells; anti-diagonal sums increase by
+    /// one per row, and the walk stops past the far diagonal (8). Any
+    /// deviation here reorders every per-cell draw in the pipeline.
+    #[test]
+    fn scan_order_matches_the_native_state_machine() {
+        let seq: Vec<(i32, i32)> = RmgGrid::new(16, 4, 8).native_cells().collect();
+        assert_eq!(
+            seq,
+            vec![
+                (1, 4),
+                (2, 3),
+                (3, 2),
+                (4, 1), // row sum 5, 4 cells
+                (2, 4),
+                (3, 3),
+                (4, 2), // row sum 6, 3 cells
+                (2, 5),
+                (3, 4),
+                (4, 3),
+                (5, 2), // row sum 7, 4 cells
+                (3, 5),
+                (4, 4),
+                (5, 3), // row sum 8, 3 cells
+            ]
+        );
+    }
+
+    /// The cell iterators visit the walk's coordinates in its order, and each
+    /// yields the cell the coordinate names.
+    #[test]
+    fn cell_iterators_follow_the_native_walk() {
+        let mut grid = RmgGrid::new(16, 4, 8);
+        let walk: Vec<(i32, i32)> = grid.native_cells().collect();
+        let mut visited = Vec::new();
+        for (coord, cell) in grid.cells_in_native_order_mut() {
+            cell.tile = coord.0 * 100 + coord.1;
+            visited.push(coord);
+        }
+        assert_eq!(visited, walk);
+        assert_eq!(grid.get(3, 4).unwrap().tile, 304);
+        let read: Vec<_> = grid
+            .cells_in_native_order()
+            .map(|(coord, cell)| (coord, cell.tile))
+            .collect();
+        let expected: Vec<_> = walk.iter().map(|&(x, y)| ((x, y), x * 100 + y)).collect();
+        assert_eq!(read, expected);
+    }
+
+    #[test]
+    fn default_cell_matches_map_prep_initial_state() {
+        let cell = GridCell::default();
+        assert_eq!(cell.tile, TILE_UNASSIGNED);
+        assert_eq!(cell.level, 4, "generated cells initialise to level 4");
+        assert_eq!(cell.overlay, -1);
+        assert_eq!(cell.sub_tile, 0);
+        assert!(!cell.occupied);
+    }
+
+    #[test]
+    fn grid_validity_is_the_diamond_band() {
+        let mut grid = RmgGrid::new(16, 4, 12);
+        assert!(grid.get(3, 2).is_some(), "sum 5 is inside");
+        assert!(grid.get(2, 2).is_none(), "sum == min is outside");
+        assert!(grid.get(6, 6).is_some(), "sum == max is inside");
+        assert!(grid.get(7, 6).is_none(), "sum > max is outside");
+        assert!(grid.get(6, 1).is_none(), "x - y >= min is outside");
+        grid.get_mut(3, 2).unwrap().tile = 42;
+        assert_eq!(grid.get(3, 2).unwrap().tile, 42);
+        assert_eq!(grid.get(2, 3).unwrap().tile, TILE_UNASSIGNED);
+
+        // A fixture may allocate a smaller square than its logical diamond.
+        let scratch = crate::map::rmg::RmgScratch::new(4, 4, 12);
+        let mut grid = RmgGrid::new(4, 4, 12);
+        assert!(scratch.in_diamond(5, 3));
+        assert!(grid.native_cells().any(|cell| cell == (5, 3)));
+        assert!(grid.get(5, 3).is_none());
+        let held = grid.cell_ref(5, 3);
+        assert_eq!(held, CellRef::Border);
+        assert_eq!(grid.ref_coord(held), (5, 3));
+    }
+
+    #[test]
+    fn out_of_band_lookups_share_the_border_cell() {
+        let mut grid = RmgGrid::new(16, 4, 12);
+        assert_eq!(
+            grid.cell_native(0, 0).tile,
+            0xFFFF,
+            "native constructed border starts unassigned"
+        );
+        assert_eq!(grid.border_coord(), (0, 0));
+        grid.cell_native_mut(15, 15).tile = 99;
+        assert_eq!(grid.border_coord(), (15, 15), "lookup stamps the coord");
+        assert_eq!(
+            grid.cell_native(1, 0).tile,
+            99,
+            "every invalid coordinate aliases the same cell"
+        );
+        assert_eq!(grid.border_coord(), (1, 0));
+        assert_eq!(
+            grid.get(6, 6).unwrap().tile,
+            TILE_UNASSIGNED,
+            "valid cells are untouched by border writes"
+        );
+    }
+
+    #[test]
+    fn held_border_references_read_the_latest_stamped_coordinate() {
+        let mut grid = RmgGrid::new(16, 4, 12);
+        let held = grid.cell_ref(15, 15);
+        assert_eq!(held, CellRef::Border);
+        assert_eq!(grid.ref_coord(held), (15, 15));
+        grid.cell_native(1, 0);
+        assert_eq!(grid.ref_coord(held), (1, 0), "the shared slot moved");
+        grid.ref_cell_mut(held).tile = 7;
+        assert_eq!(grid.border_coord(), (1, 0), "a held write does not stamp");
+        assert_eq!(grid.cell_native(0, 0).tile, 7, "one shared border cell");
+        assert_eq!(grid.cell_ref(6, 6), CellRef::Cell(6, 6));
+        assert_eq!(
+            grid.border_coord(),
+            (0, 0),
+            "a valid lookup leaves the slot"
+        );
+    }
+
+    #[test]
+    fn native_cells_walk_the_band_and_stop_at_the_far_diagonal() {
+        let grid = RmgGrid::new(16, 4, 8);
+        let cells: Vec<(i32, i32)> = grid.native_cells().collect();
+        assert_eq!(cells.first(), Some(&(1, 4)));
+        assert!(cells.iter().all(|&(x, y)| grid.is_valid(x, y)));
+        assert!(cells.iter().all(|&(x, y)| x + y <= 8));
+        // Every valid cell appears exactly once.
+        let mut sorted = cells.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), cells.len(), "no duplicates");
+        let expected: usize = (0..16i32)
+            .flat_map(|y| (0..16i32).map(move |x| (x, y)))
+            .filter(|&(x, y)| grid.is_valid(x, y))
+            .count();
+        assert_eq!(cells.len(), expected, "full coverage of the band");
+    }
+}

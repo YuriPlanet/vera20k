@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original TechnoType virtual +0x84: TechnoTypeClass::Cost_Of 0x711F00 on Infantry, Unit and Aircraft types and the BuildingType override 0x45EDD0 (actual cost 0x45ED50, the Pad aircraft bundle, FreeUnit and its clamp), with the country (0x50BDF0) and FactoryPlant (0x50BEB0) factor getters. No claim about which callers pass which House.",
+  "assumptions": [
+    "Original type vtables Building 0x7E4570, Unit 0x7F6218, Infantry 0x7EB610 and Aircraft 0x7E2868 supply WhatAmI and the cost virtuals. Cost +0x610, BuildCat +0xE08, FreeUnit +0xEA0, aircraft Dock items +0x3EC; House country +0x34 and factors +0x5390..+0x53A0; HouseType Cost*Mult +0x114..+0x124; Rules at [0x8871E0] with PadAircraft items +0xB5C and SeparateAircraft +0x17E8. Unused storage zero; default native FPCW 0x0E7F.",
+    "Factor values are fixtures chosen to separate the five slots and cover the retail values (Industrial Plant UnitsCostBonus 0.75, country 1.0, SeparateAircraft=yes, 1400-credit FreeUnit refineries); extreme bits cross signed zero, subnormal and minimum normal factors with extreme costs. They are arithmetic-domain inputs, not a claim that every value occurs in play."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "building_cost_of": "0x0045EDD0",
+    "techno_cost_of": "0x00711F00",
+    "country_factor": "0x0050BDF0",
+    "house_factor": "0x0050BEB0",
+    "building_actual_cost": "0x0045ED50",
+    "raw_cost": "0x00711EB0"
+  },
+  "payload_sha256": "b1ddae236508fe2dcda1a865df9b61689dd1b2c6ad43b25653f19633336e7b53"
+}

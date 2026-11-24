@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Session698161..69822D once-only MainRng initialization and repeated settings reads",
+  "assumptions": [
+    "Initialization histories enter at698161 with Session in EBP and stop69822D after SendDelay/PortNumberOverride stores; the broader country/phonebook reader is not claimed.",
+    "Each initialization history uses shared seeded_struct executing original65C6D0, a zero first-entry gate, and two calls on the same VM without resetting RNG or gate. Full3F4-byte RNG states and actual65C84B stores are retained."
+  ],
+  "substitutions": [
+    "Initialization uses existing building_body_rules.Fixture to supply cached INI entries with original native key CRCs at process owner8870C0; original5276D0/5295F0 parsers,65C7E0 RNG and5D93D0 firewall reader execute unchanged. No parser or RNG result substitution."
+  ],
+  "entry_points": {
+    "session_prefix": "0x00698161",
+    "session_stop": "0x0069822D",
+    "rng_seed": "0x0065C6D0",
+    "rng_ranged": "0x0065C7E0",
+    "read_int": "0x005276D0",
+    "read_bool": "0x005295F0",
+    "firewall_read": "0x005D93D0"
+  },
+  "replay_command": "python -m tools.storage_oracle.network_options",
+  "payload_sha256": "c4027a54a7449630897f22ee2020999f2f4ccfee0de331d9982ea593d1c59a42"
+}

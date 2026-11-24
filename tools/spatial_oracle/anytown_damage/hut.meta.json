@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Bounded original Anytown concrete hut damage callers and their retry sweeps.\n\nPhysical stock cells and selected native Recalc are reused from anytown_damage.\nAlready-entered Map574000 is supplied; no hut/Bomb/Building lifecycle is claimed.\nAnimation construction, graphs and presentation stop at declared request seams.\n",
+  "assumptions": [
+    "Unmodified stock Anytown map and native-read concrete overlay/TMP bindings from the frozen anytown_damage owner. Both authored huts are supplied directly to original Map574000. First-damaged/collapsed prerequisites are produced by one/two actual57CCF0 calls at87,54, not manufactured overlay writes.",
+    "The complete original lookup, primary selection, physical Y-axis bounded sweep, retries and57CCF0 execute. Native future cell reads observe each prior mutation immediately. Both function return EAX and low byte are recorded mechanically; hut root/walker have no declared Boolean return contract.",
+    "Actual Lists reader executes BridgeExplosions constructor/read blocks over physical layer strings. Original AnimType constructors and vector storage are copied unchanged into the resident VM. No ART or Anim instance construction is inferred from retained names.",
+    "Original CRT-then-WinMain precision/rounding setup comes from shared Repair bootstrap. Actual Map startup561710/5617A0/5617C0/5617E0 derivesABDE88=104; signed Cell level forms animation Z. No host jitter/rounding substitutes native arithmetic.",
+    "Native seed0 states bracket preparations and the hut call. Main/Scenario/MapGen, ordered request/result/raw draw events, frame1000 and Display dirty writes are retained. No whole-frame scheduling or native scenario-loaded stream is claimed.",
+    "Original binary/text is verified; no executable instruction is patched. Other-axis575870 and fallback574000\u2192587180\u219257CCF0 are instruction-only leads, not stock-route dynamic coverage."
+  ],
+  "substitutions": [
+    "All inherited sparse map, INI cache, supplied TMP head/zone plane, bounded allocator, zero display/radar/graph callback seams remain explicit in the packaged Resident owner.",
+    "Anim421EA0 records all seven native arguments and returns its already-allocated storage. It executes no constructor, ART, lifetime, random-rate/audio or spawned-effect callbacks; those could interleave further RNG in a broader chain.",
+    "The hut/Building/Bomb lifecycle prefix is excluded. Active caller instruction slices identify Bomb438982 and Building44031B, but neither full owner update nor triggering a live bomb is executed. No occupant, Engineer, whole-graph or production parity claim."
+  ],
+  "entry_points": {
+    "hut": "0x00574000",
+    "selector": "0x005749C0",
+    "x_walker_instruction_only": "0x00575870",
+    "y_walker": "0x00575BA0",
+    "damage": "0x0057CCF0",
+    "map_lookup": "0x005657A0",
+    "scenario_range": "0x0065C7E0",
+    "animation_request_boundary": "0x00421EA0",
+    "fallback_dispatch_instruction_only": "0x00587180",
+    "bridge_explosion_reader": "0x0066DB93",
+    "map_height_initializer": "0x005617E0"
+  },
+  "payload_sha256": "a15bbe36b40348bbba40dee338cf07e575b64f0650cb8568a23321d076ce20fb",
+  "packaging": "canonical JSON; gzip mtime=0; copied lexical inputs replaced by SHA256"
+}

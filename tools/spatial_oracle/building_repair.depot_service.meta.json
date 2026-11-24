@@ -1,0 +1,387 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Stock HTNK/NADEPT repair-depot service with MTNK/GADEPT controls: original selected constructor/INI/ART reads, UnitType cost/heal virtual getters, Unit\u2192Foot\u2192Techno radio1C, Building Guard admission and MissionRepairAndProduce, MissionAI timer dispatch, independent Building Stage, payment/retry, native outside-list exit and radio detach; additive pending-entry lifecycle controls over original Unit bodies and admitted MegaMission/Stop/Deploy Event slices, and complete original terminal Drive/PerCell/idle composition with separately read retail idle prerequisites, plus repair fallback power/readiness controls over the same original MissionAI owner.",
+  "assumptions": [
+    "Physical cached INI index construction is supplied by the shared Landing owner; selected original readers execute in RULESMD\u2192optional LANGRULE\u2192MPBattleMD\u2192XMP03T4 order. ARTMD is not layered. Effective Image names equal the two depot IDs; selected native constructors and original startup outside-list initializer execute, and produced bytes transfer to the scene VM.",
+    "Shared refinery_dock map/Drive/Scenario fixture: 32x32 supplied cells, playable width16/height16, depot NW(6,9), actual Unit/UnitType/Building/BuildingType vtables, in-play actor and depot membership and contacts supplied. No combat, parasite or live smoke object is present; the additive terminal section binds an original-read Primary identity solely for IsArmed presence. House money interface uses its original vtable, empty storage, no silos, cash/Spent at row inputs.",
+    "Arrival is supplied at original GetDockCoords, or at original GetCoords plus a declared delta for Guard controls. Stock NADEPT DockingOffset0=(128,0,0) separates these points. The corpus does not establish natural Drive/path/Enter arrival satisfying Guard center-distance<64.",
+    "Independent Stage constructor slices execute; state2 controls explicitly supply prior Stage state. MissionAI executes on every history frame, while unchanged quiet snapshots are omitted only with exact state equality, retained frame/EAX and a hash of every complete native dispatch.",
+    "Prerequisite rows execute original DOCK_NOW and the original postdispatch Building Update ReadyCommence slice. Service histories otherwise begin on the declared mission/status. The full Building/Techno AI prefix, its C4 visit counter, passive target work, animation producers and the general Techno Stage are not executed by these mission-dispatch histories.",
+    "The restore-seed0 history supplies a mid-progress continuation boundary and executes original Random::Seed(0), matching the existing Rust snapshot-load policy. Native disk serialization and full LoadGame are not executed. The Rust consumer performs its actual snapshot roundtrip then continues against this original-dispatch/reseed history.",
+    "Ambient x87 FPCW0x0E7F is inherited from the existing native fixture. Signed repair inputs are controls over the original getters/receiver, not valid healthy in-play stock objects. IDIV zero divisors and signed division overflow are outside the callable cost rows. No Rust outputs generate goldens.",
+    "Category cost controls reuse existing building_repair.fixture; the same authored type fields execute under separately supplied actual BuildingType/UnitType category vtables. The old building payload and provenance remain unchanged. New scene VMs assert original text and vtables unchanged.",
+    "Destination controls supply the raw current Cell ground list, UnitRepair/Bunker flags and a UnitReload-only negative control (actual16AA versus Bunker16AB), Cell+140 high-bridge bit, deployment and force-reassign prior state. Original Unit741970, House53A130, raw GetCell5F6960, actual ILoco power slots and the Foot/Drive destination bodies execute. Ordered actor-first and no-contact controls are separate from physical placement; no movement Process runs. Native EAX is retained but is not treated as a Boolean setter result.",
+    "Thirty pending-entry controls reuse the same scene VM with explicit pending pointer, contacts/tethers, force/Nav state and a stopped powered Drive. Whole Unit destination/idle bodies execute, or admitted Event interior slices execute with the saved register/stack inputs and a 2,000,000 instruction cap. Stop prefix rows use the existing original empty Foot+5AC vector; narrower class-call rows omit the earlier path resets. Team is NULL. MegaMission stops before translation/Queue at4C7385, Stop stops before later work at4C762A or its proven early exit4C8109, and Deploy stops after Queue(Unload16) at4C7818. Event token decoding, full actor admission, network/input dispatch, Team internals, later mission work and subsequent FootAI retries are excluded. DockUnload/alive/health controls are declared raw type/object inputs; the non-Building gate uses an unchanged original Unit vtable on the supplied contact body without executing its Unit AI.",
+    "The lifecycle and additive terminal scenes execute original Foot constructor tube-index 4D31F1..4D31FB and saved-MegaMission4D32EC..4D3308 stores with ESI=actor, EBX=0 as at4D31EF, and the shared slice stack. They establish tube_index=-1, saved_megamission=-1, saved target/destination NULL and saved flag0. Lifecycle direct Unit EnterIdle controls supply exact ordinary args(0,1); arrival args are separately retained. Raw inputs before/after and initializer writes are retained. The unchanged inherited raw0 +5C4/+520 states remain the explicit prestate of every pre-lifecycle section; this addition does not silently change those prior native comparisons. Nondefault saved-MegaMission execution and tube callbacks are outside the ordinary lifecycle controls.",
+    "The lifecycle trace is read-only and interleaves original function entries/returns, instruction markers and raw memory writes. Interior PCs4C7342/4C7353 have explicit register observations rather than fabricated call arguments. Every row retains full Scenario RNG and asserts its exact equality; no frame or movement advance is supplied. Original instruction packets establish +500 clear ordering before later conditional TeamRemove and translated Queue; those later effects do not execute in the Mega rows.",
+    "Seven additive arrival controls have their own native-input receipt, preserving every prior top-level value. The full original TechnoType weapons block71284A..712A8F, DefaultToGuardArea read714F3D..714F5E, full Rules ReadIQ674240 and layered MissionControl reader establish HTNK Primary120mm, signed TurretCount0, DefaultToGuardArea0, GuardAreaIQ2 and committed Enter Zombie0/Paralyzed0. Whole original IsArmed701120 executes in the reader and terminal scene through the unchanged actual virtual slots. Primary allocation/presence is bound to the scene; WeaponType data readers, weapon callbacks and firing are excluded.",
+    "Four terminal controls begin at original4B1F97, with the exact4B0F20 prologue frame (F0 locals/four saved registers, caller argument0 and RET4). The live EBP=Drive and ESP, zeroed frame, budget1, selector0/cursor23/valid1 and pad/head coordinates are supplied. A separate existing OriginalCursor witness reads TurnTrack0\u2192RawTrack1 and executes its appended zero terminal point atcursor23 withbudget8, reaching4B1F97 withbudget1. Prior speed, admission, payment, track selection and travel do not execute in the joined VM. Original terminal refund/coordinate work, reached test, complete UnitPerCell739EC0(2), DOCK_NOW, PowerOff55A910, StopMoving4DF0D0 and virtual5044DB9B0 through UnitIdle738970 execute to the original return. In-play membership, human HouseIQ0, idleGuard0, target and reciprocal contacts are prepared. The selected route has both tether bytes0; a separate tethered row controls that input. Nonservice/nonNULL-target terminal rows are prepared gates; a no-contact control executes only post-Stop virtual504, excluding PerCell path and zone work for a broken contact. Two post-Stop direct UnitIdle rows supply queuedSleep/currentEnter/NavNULL and compare args(0,0)/(0,1), with constructor tube_index=-1 making retained tube work inert.",
+    "Arrival observations retain full before/interior/after mission/navigation/power/Drive/Foot inputs and Scenario RNG, raw writer/caller order and actual returns. The PowerOff stdcall receiver comes from its first stack argument, never stale ECX. The complete terminal returns currentEnter7/queuedGuard5 on the selected route; later mission promotion, full Drive dispatch and natural path reachability are outside this supplied terminal frame.",
+    "Twenty-two additive repair_fallback rows reuse original MissionAI and the same supplied stopped/moving Drive scene. Eighteen linked rows declare status0/1, coordinate deltas 99/100/199/200, power0/1 and Nav/moving state; two of these are state0 Nav+moving NEED_MOVE-rejection controls atdelta99. Four no-contact rows declare status0/1 and ready0/1. Readiness is written as input only when the new case declares its key; old case initialization and results are preserved. The fallback-only observer retains actual distance/NEED_MOVE returns, IPersist class ID/Release, ILoco PowerOn/Off, IsPowered/IsMoving, House gate, raw readiness/power/queue/status/timer writes and full before/interior/after Scenario RNG. None of those original bodies are substituted.",
+    "The supplied actual Drive class ID follows the state0 default threshold100: delta99 admits status1/delay3, delta100 falls back with PowerOn/delay71. Nominal delta199 measures198 through original447E00; its result is retained rather than replaced with hand arithmetic. State0 radio rejection returns10, skips the distance getter and takes the same unconditional PowerOn arm. State1 atnative distance200 avoids StopMoving, gets NEED_MOVE10 and powers on only an unpowered contact. No-contact state0 preserves ready and Queue(Guard5,1) promotes only when already ready; state1 writes ready1 before the same Queue. Existing raw Foot constructor fields, empty slot objects and presentation boundaries remain explicitly supplied in these controls."
+  ],
+  "substitutions": [
+    "Inherited source map fixture supplies scene/path reachability and bare field recalculation. Presentation calls (Building slot/play/destroy animation, EVA and building_construction presentation callbacks) are observed service sinks. Repair math, radio, wallet, idle/Guard, Stage, timer dispatch, queue/destination/archive, original exit search and radio contact removal are not substituted.",
+    "Reader VM inherits Landing allocator/delete/TLS/Interlocked services. It runs selected original read/store slices with explicitly supplied receiver/register/live-stack prerequisites, resetting ESP between slices where original following-reader arguments remain pushed."
+  ],
+  "entry_points": {
+    "rules_constructor": "0x00665650",
+    "unit_type_constructor": "0x007470D0",
+    "building_type_constructor": "0x0045DD90",
+    "building_type_find_or_allocate": "0x004653C0",
+    "mission_control_constructor": "0x004E7CF0",
+    "outside_list_initializer": "0x0045C300",
+    "strength_read": "0x005F94D3",
+    "cost_read": "0x0071469F",
+    "manual_reload_read": "0x00713343",
+    "stupid_guard_read": "0x00460EA0",
+    "unit_repair_read": "0x00460906",
+    "movement_zone_read": "0x0071605E",
+    "repair_percent_read": "0x00670DA3",
+    "repair_step_read": "0x00670DCA",
+    "unit_repair_rate_read": "0x00670E30",
+    "mission_controls_read": "0x00679C92",
+    "foundation_read": "0x00461225",
+    "outside_list_assignment": "0x00461547",
+    "building_stage_constructor": "0x0043B7F5",
+    "get_dock_coordinates": "0x00447E90",
+    "unit_cost": "0x00711EB0",
+    "building_cost": "0x0045ED50",
+    "repair_cost": "0x007120D0",
+    "unit_heal": "0x00747F20",
+    "unit_radio": "0x00737430",
+    "foot_radio": "0x004D8FB0",
+    "techno_radio": "0x006F4AB0",
+    "depot_guard": "0x004496B0",
+    "depot_service": "0x0044B780",
+    "building_ready": "0x00454250",
+    "postdispatch_ready_slice": "0x0043FF91",
+    "mission_ai": "0x005B3060",
+    "queue_mission": "0x005B35E0",
+    "commence": "0x005B3570",
+    "spend_money": "0x004F9790",
+    "add_credits": "0x004F9950",
+    "exit_cell": "0x0044EFB0",
+    "scenario_seed": "0x0065C6D0",
+    "unit_destination_power_gate": "0x00742F48",
+    "house_always_false": "0x0053A130",
+    "raw_current_cell": "0x005F6960",
+    "drive_power_on": "0x0055A8F0",
+    "drive_is_powered": "0x0055A930",
+    "foot_assign_destination": "0x004D94B0",
+    "drive_move_to": "0x004AFD40",
+    "unit_assign_destination": "0x00741970",
+    "archive_setter": "0x0070C610",
+    "unit_enter_idle": "0x00738970",
+    "foot_clear_path": "0x004DA1C0",
+    "foot_process_retained_path": "0x004DA030",
+    "path_vector_clear": "0x004E0190",
+    "radio_first_contact": "0x0065ACB0",
+    "radio_broadcast_all": "0x0065ACE0",
+    "techno_assign_target": "0x006FCDB0",
+    "event_megamission_prefix": "0x004C72E8",
+    "event_pending_entry_clear": "0x004C7353",
+    "event_stop_admitted_prefix": "0x004C7504",
+    "event_stop_class_calls": "0x004C75DA",
+    "event_deploy_class_calls": "0x004C77F0",
+    "arrival_weapon_reader": "0x0071284A",
+    "default_to_guard_area_read": "0x00714F3D",
+    "rules_iq_read": "0x00674240",
+    "unit_is_armed": "0x00701120",
+    "unit_current_weapon": "0x0070E1A0",
+    "unit_weapon": "0x0070E140",
+    "type_weapon": "0x007177C0",
+    "type_turret_count": "0x00717880",
+    "terminal_drive_arm": "0x004B1F97",
+    "unit_per_cell": "0x00739EC0",
+    "foot_per_cell": "0x004D85D0",
+    "foot_stop_moving": "0x004DF0D0",
+    "foot_navigation_gate": "0x004DB9B0",
+    "drive_power_off": "0x0055A910",
+    "drive_is_moving": "0x004AFB80",
+    "drive_persist_class_id": "0x004B4830",
+    "drive_persist_release": "0x004B4CC0",
+    "persist_query": "0x0045AEA0",
+    "depot_state0_power_fallback": "0x0044C7E5",
+    "depot_state1_need_move_fallback": "0x0044C5AB",
+    "depot_state0_no_contact": "0x0044C623",
+    "depot_state1_no_contact_ready_writer": "0x0044C18E"
+  },
+  "pending_entry_lifecycle": {
+    "row_count": 30,
+    "instruction_limit": 2000000,
+    "foot_constructor_inputs": {
+      "original_constructor": "0x004D31E0",
+      "executed_full_constructor": false,
+      "default_idle_args": [
+        0,
+        1
+      ],
+      "slices": {
+        "tube_index": {
+          "start": "0x4d31f1",
+          "end_exclusive": "0x4d31fb",
+          "registers": {
+            "esi": "selected actor",
+            "ebx": 0,
+            "ebp": 0,
+            "esp": "0x100ff000",
+            "zero_stack_bytes": 128
+          },
+          "original_bytes": "c78620050000ffffffff"
+        },
+        "saved_megamission": {
+          "start": "0x4d32ec",
+          "end_exclusive": "0x4d3308",
+          "registers": {
+            "esi": "selected actor",
+            "ebx": 0,
+            "ebp": 0,
+            "esp": "0x100ff000",
+            "zero_stack_bytes": 128
+          },
+          "original_bytes": "c786c4050000ffffffff899ec8050000899ecc050000889ed1050000"
+        }
+      },
+      "preserved_old_sections": "inherited raw saved_megamission0/tube_index0",
+      "nondefault_saved_megamission_boundary": "Existing inherited raw0 witnesses are valid bounded calls; the retained-MegaMission producer/resume mechanism is excluded"
+    },
+    "event_slices": {
+      "idle_event_calls": {
+        "start": "0x4c75da",
+        "end_exclusive": "0x4c762a",
+        "size": 80,
+        "original_bytes_sha256": "60f6ee5ecef5b2eadfe834ff8501434cf937ec850e2b5aad9fcf6c89ca3ae0ae"
+      },
+      "idle_event_foot_prefix": {
+        "start": "0x4c757d",
+        "end_exclusive": "0x4c762a",
+        "size": 173,
+        "original_bytes_sha256": "ad47f54ca11a0d81bf64ea3a4546c6444b2fd4e48a8690a98cb70e133f2bc211"
+      },
+      "idle_event_after_actor_admission": {
+        "start": "0x4c7504",
+        "end_exclusive": "0x4c762a",
+        "size": 294,
+        "original_bytes_sha256": "86c00cdbdf32cc3715ff6e0b43391bd977d06a4558a85a989e5bb1b32c257be4"
+      },
+      "deploy_event_calls": {
+        "start": "0x4c77f0",
+        "end_exclusive": "0x4c7818",
+        "size": 40,
+        "original_bytes_sha256": "aa35807de1d9d51b2c70cc3f008c4bdc17e26cb9b763d87e6391b69a0cbdfb5d"
+      },
+      "idle_tether_gate": {
+        "start": "0x4c7504",
+        "end_exclusive": "0x4c8109",
+        "size": 3077,
+        "original_bytes_sha256": "e27716e4dc37eb6d4a0ee97afe07aaa2dfa28a511825505dc8b21731559c1fad"
+      },
+      "idle_mission_gate": {
+        "start": "0x4c7504",
+        "end_exclusive": "0x4c8109",
+        "size": 3077,
+        "original_bytes_sha256": "e27716e4dc37eb6d4a0ee97afe07aaa2dfa28a511825505dc8b21731559c1fad"
+      },
+      "megamission_clear": {
+        "start": "0x4c72e8",
+        "end_exclusive": "0x4c7385",
+        "size": 157,
+        "original_bytes_sha256": "84971a4f2c0654e68c23a9eab3a6431ff70de14d745abb00326a2dda02eb727d"
+      }
+    },
+    "instruction_order": {
+      "evidence": "original instructions; constructor and post-Mega-prefix effects are not executed here",
+      "packets": {
+        "constructor_pending_zero": {
+          "pc": "0x6f310c",
+          "original_bytes": "899e00050000"
+        },
+        "megamission_pending_clear": {
+          "pc": "0x4c7353",
+          "original_bytes": "c7870005000000000000"
+        },
+        "megamission_team_remove_call": {
+          "pc": "0x4c7380",
+          "original_bytes": "e8eb342200"
+        },
+        "megamission_translate_call": {
+          "pc": "0x4c73aa",
+          "original_bytes": "ff90a4040000"
+        },
+        "megamission_queue_call": {
+          "pc": "0x4c73b9",
+          "original_bytes": "ff92e8010000"
+        },
+        "stop_broadcast_call": {
+          "pc": "0x4c75e0",
+          "original_bytes": "ff9280020000"
+        },
+        "stop_destination_call": {
+          "pc": "0x4c75ed",
+          "original_bytes": "ff9080040000"
+        },
+        "stop_target_call": {
+          "pc": "0x4c75f8",
+          "original_bytes": "ff92c8030000"
+        }
+      }
+    }
+  },
+  "arrival_terminal": {
+    "row_count": 7,
+    "complete_terminal_rows": 4,
+    "direct_navigation_gate_rows": 1,
+    "direct_unit_idle_rows": 2,
+    "instruction_limit": 2000000,
+    "original_process_reference": "0x004B0F20",
+    "executed_terminal_start": "0x004B1F97",
+    "executed_end": "original RET4 to fixture sentinel",
+    "selected_contact_inputs": {
+      "reciprocal": true,
+      "unit_tether": 0,
+      "building_tether": 0
+    },
+    "reader_slices": {
+      "type_weapons": {
+        "start": "0x71284a",
+        "end_exclusive": "0x712a8f",
+        "original_bytes_sha256": "6118f19ab48aceb79ee4b8b9df9a39224463ed7ad8ce75329c8116c6b0c8dd89"
+      },
+      "default_to_guard_area": {
+        "start": "0x714f3d",
+        "end_exclusive": "0x714f5e",
+        "original_bytes_sha256": "45c9ae7414ce27f12beb0afa462f5aaadd0031ba8f30ae316e58e7cf4933f149"
+      },
+      "mission_controls": {
+        "start": "0x679c92",
+        "end_exclusive": "0x679caf",
+        "original_bytes_sha256": "eee3c730080fcbf873014b293ca000de24cf21ec83fee5904901cc1be83c054b"
+      }
+    },
+    "whole_rules_iq_entry": "0x00674240",
+    "reader_register_inputs": {
+      "type_weapons": {
+        "ebp": "type",
+        "ebx": "type+0x24",
+        "esi": "INI",
+        "edi": "INI",
+        "eax": "current Type+0xD22 byte",
+        "esp": "shared reader SP"
+      },
+      "default_to_guard_area": {
+        "ebp": "type",
+        "ebx": "type+0x24",
+        "edi": "INI",
+        "esp": "shared reader SP"
+      },
+      "mission_controls": {
+        "esi": "INI",
+        "esp": "shared reader SP"
+      }
+    },
+    "terminal_sample_owner": "tools/spatial_oracle/locomotor_track_cursor.py::OriginalCursor",
+    "terminal_sample_bound": {
+      "selector": 0,
+      "raw_index": 1,
+      "cursor": 23,
+      "supplied_budget": 8,
+      "post_admission_budget": 1,
+      "original_sample_instruction_limit": 300
+    },
+    "foot_inputs_owner": "depot_initialize_foot_inputs",
+    "instruction_windows": {
+      "type_turret_count_constructor": {
+        "pc": "0x71136f",
+        "bytes": 16,
+        "original_bytes": "899e08080000889e10080000889e900a"
+      },
+      "type_default_to_guard_area_constructor": {
+        "pc": "0x71153c",
+        "bytes": 16,
+        "original_bytes": "889e390d000088863a0d0000889e3c0d"
+      },
+      "terminal_reached_store": {
+        "pc": "0x4b21b1",
+        "bytes": 16,
+        "original_bytes": "c64424130189088b1594078a00895004"
+      },
+      "terminal_per_cell_call": {
+        "pc": "0x4b220f",
+        "bytes": 16,
+        "original_bytes": "ff928c0100008b4d0c85c974798a8190"
+      },
+      "terminal_stop_moving_call": {
+        "pc": "0x4b2242",
+        "bytes": 16,
+        "original_bytes": "e889ce02008b450cc780e0050000ffff"
+      },
+      "terminal_navigation_gate_call": {
+        "pc": "0x4b228b",
+        "bytes": 16,
+        "original_bytes": "ff920405000084c0740f5f5e5db0015b"
+      }
+    },
+    "limits": [
+      "Physical approach, speed, prior terminal admission and complete Process_Track dispatch are supplied; only the original terminal arm and its complete downstream class calls execute.",
+      "The separate raw1 sample witness establishes the selector/cursor/budget prestate, without executing travel or occupation callbacks for the earlier real points.",
+      "No-contact control executes only post-Stop Foot virtual504; broken-contact PerCell path/zone work is excluded from this sparse scene.",
+      "Direct UnitIdle args00/01 are prepared post-Stop controls, with original constructor TubeIndex=-1 and savedMegaMission=-1; retained tube/saved-order execution is excluded.",
+      "The full terminal returns committed Enter7 and queuedGuard5; subsequent mission promotion and full-frame object scheduling are outside this caller boundary."
+    ]
+  },
+  "repair_fallback": {
+    "row_count": 22,
+    "linked_rows": 18,
+    "no_contact_rows": 4,
+    "seam": "original MissionAI5B3060 -> MissionRepairAndProduce44B780",
+    "instruction_limit": 2000000,
+    "default_frame": 200,
+    "input_readiness": "Building+6DD is explicitly supplied from the new ready key only; older cases unchanged",
+    "scope_observations": "Only repair_fallback VMs receive extra read-only call/write observers",
+    "original_slices": {
+      "state0_fallback_power_on": {
+        "start": "0x44c7e5",
+        "end_exclusive": "0x44c819",
+        "original_bytes": "8b8d1c020000e840d90e0084c07517833b00750a6803400080e81dff38008b1b538b13ff52588b44241485c074068b0850ff5108"
+      },
+      "state1_need_move_fallback": {
+        "start": "0x44c5ab",
+        "end_exclusive": "0x44c623",
+        "original_bytes": "8b8d1c020000e87adb0e0084c00f855b020000578bcde86ae720008bf08b867406000081c6740600003bc7750a6803400080e83e0139008b36568b0eff516084c00f8527020000578bcde836e720008bf08b867406000081c6740600003bc7750a6803400080e80a0139008b36568b16ff5258e9f6010000"
+      },
+      "state0_no_contact_queue": {
+        "start": "0x44c623",
+        "end_exclusive": "0x44c6fd",
+        "original_bytes": "8bcde806e8200084c00f85cb0000006a088bcde8055800006a0b8bcde8fc5700008bcde815961a00a1e0718800dc9800170000dfe0f6c44174128b8520050000b901000000058c120000eb0d8b852005000033c9057c1200003bc77412803800740d5757516a0c508bcde8fe5100008bcde8c7951a008b0de0718800dc9900170000dfe0f6c44174128b8520050000b9010000000528100000eb0d8b852005000033c905181000003bc77412803800740d5757516a03508bcde8af5100008b55006a016a058bcdff92e8010000b8010000005f5e5d5b8be55dc3"
+      },
+      "state1_no_contact_ready_queue": {
+        "start": "0x44c17d",
+        "end_exclusive": "0x44c1a8",
+        "original_bytes": "39bd8c05000075168b45006a016a058bcdc685dd06000001ff90e8010000b8010000005f5e5d5b8be55dc3"
+      },
+      "state1_distance_and_power_admission": {
+        "start": "0x44c1b9",
+        "end_exclusive": "0x44c2a6",
+        "original_bytes": "578bcde86feb20008b5d00578bcd8bf0e862eb2000508bcdff93d80400003dc80000000f8dae00000039be74060000750a6803400080e82c0539008b8674060000508b08ff516084c08b867406000074493bc7750a6803400080e8080539008b8674060000508b10ff521084c0751e39be74060000750a6803400080e8e60439008bb674060000568b06ff505cb8010000005f5e5d5b8be55dc33bc7750a6803400080e8bf0439008bb674060000568b0eff516084c0751f578bcde8b7ea200039b8a4050000740f578bcde8a7ea20008bc8e8402e09008b55006a138bcdff927402000083f8010f8505030000"
+      }
+    },
+    "state0_class_comparison_constants": {
+      "0x7e9a40": "4227584a3998d111b70900a024ddafd1",
+      "0x7e9ab0": "e174ea2bca7cd311be1400104b62a16c"
+    },
+    "limits": [
+      "The scene supplies contact membership, stopped/moving Drive and exact coordinate offsets; prior travel, Guard admission and command production do not execute.",
+      "Empty native animation slot fields are supplied; presentation constructor/audio services retain the existing owner boundaries.",
+      "Nominal coordinate delta and original measured distance are distinct; delta199 executes as distance198 under the retained x87 state.",
+      "Readiness controls execute original Queue(Guard5,1) and its immediate promotion through the existing queue/commence owners; later object visits are excluded."
+    ]
+  },
+  "payload_sha256": "ebb95d8ae2be5e48c5612668a3018aeca0bec9bfa2eff3269cd0f8bb7af9d3a3"
+}

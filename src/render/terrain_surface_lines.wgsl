@@ -1,0 +1,191 @@
+// Original4BEAC0/4BDF00/4BFD30/760190/75EDF0: packed operations, strict u16 Z.
+// Signed shifts use WGSL arithmetic shift: https://www.w3.org/TR/WGSL/#bit-expr
+@group(0) @binding(0) var old_words: texture_2d<u32>;
+@group(0) @binding(1) var old_depth: texture_2d<f32>;
+// `a_sample` is the logical pixel whose A the operation reads, two i16.
+struct Operation {
+    z: u32, strength: i32, rgb: u32, a_sample: u32, mode: u32,
+    destination_weight: i32, gate_x: i32, gate_y: i32,
+    source_x: i32, source_y: i32,
+};
+@group(1) @binding(0) var<storage, read> operations: array<Operation>;
+// ShroudBuffer's plane, composed earlier in the frame. The logical surface
+// frame and the plane share the floored camera, so a logical pixel is its
+// plane pixel. A disabled source, or a pixel off the plane, reads 127.
+@group(2) @binding(0) var surface_a_plane: texture_2d<f32>;
+@group(2) @binding(1) var<uniform> surface_a_source: TacticalASource;
+fn surface_a(sample: u32) -> u32 {
+    if surface_a_source.enabled == 0u { return 127u; }
+    let pixel = vec2i(bitcast<i32>(sample << 16u) >> 16u, bitcast<i32>(sample) >> 16u);
+    if any(pixel < vec2i(0)) || any(pixel >= vec2i(textureDimensions(surface_a_plane))) {
+        return 127u;
+    }
+    let a = u32(round(textureLoad(surface_a_plane, pixel, 0).r * 255.0));
+    return fog_lifted_a(a, surface_a_source.fog_strength);
+}
+// ParticleDraw62D02C: below A127 each signed x87 channel wraps through the
+// multiply by A and shifts arithmetically by 7; the RGB565 pack masks each
+// channel to 16 bits, so channels may overlap.
+fn point_word(rgb: vec3i, a: u32) -> u32 {
+    var lit = rgb;
+    if a < 127u {
+        lit = bitcast<vec3i>(bitcast<vec3u>(rgb) * a) >> vec3u(7u);
+    }
+    return ((bitcast<u32>(lit.r >> 3u) << 11u) & 65535u)
+        | ((bitcast<u32>(lit.g >> 2u) << 5u) & 65535u)
+        | (bitcast<u32>(lit.b >> 3u) & 65535u);
+}
+struct Output {
+    @builtin(position) position: vec4f,
+    @location(0) @interpolate(flat) span: vec2u,
+};
+@vertex
+fn vs_main(@builtin(vertex_index) vertex: u32, @location(0) rect: vec4f,
+           @location(1) span: vec2u) -> Output {
+    let corners = array<vec2f,6>(vec2f(0,0),vec2f(1,0),vec2f(0,1),
+        vec2f(0,1),vec2f(1,0),vec2f(1,1));
+    let p = rect.xy + corners[vertex] * rect.zw;
+    var out: Output;
+    out.position = vec4f(p,0,1);
+    out.span = span;
+    return out;
+}
+@fragment
+fn fs_main(input: Output) -> @location(0) vec4f {
+    let p = vec2i(input.position.xy);
+    let old_z = u32(decoded_native_z(textureLoad(old_depth,p,0).r));
+    var word = textureLoad(old_words,p,0).r;
+    var touched = false;
+    for(var i = input.span.x; i < input.span.x + input.span.y; i += 1u) {
+        let op = operations[i];
+        //Wave0/3: native75EDF0/760190 read displaced packed words. Both admit
+        //strictly unsigned candidate<stored, never queries A and never WriteZ.
+        //CPU preparation fences each Wave and includes its source footprint.
+        if op.mode == 7u || op.mode == 9u {
+            if op.z < old_z {
+                let source = textureLoad(old_words,vec2i(op.source_x,op.source_y),0).r;
+                let red = i32((source >> 11u) & 31u) << 3u;
+                let green = i32((source >> 5u) & 63u) << 2u;
+                let blue = i32(source & 31u) << 3u;
+                if op.mode == 9u {
+                    //Sonic75EEB2..75EF19 preserves red and brightens G/B.
+                    let g = min(255,green + ((op.strength * green) >> 8u));
+                    let b = min(255,blue + ((op.strength * blue) >> 8u));
+                    word = u32((red >> 3u) << 11u) | u32((g >> 2u) << 5u) | u32(b >> 3u);
+                } else {
+                    let r = min(255,red + (((op.strength / 2) * red) >> 8u));
+                    let b = min(255,blue + (((op.strength * blue) << 2u) >> 8u));
+                    word = u32((r >> 3u) << 11u) | u32((green >> 2u) << 5u) | u32(b >> 3u);
+                }
+                touched = true;
+            }
+            continue;
+        }
+        //Ares ModifyWaveColor 10055920 (hooks 75EE57/7601FB) for Wave0/3: the
+        //same strict Z and displaced read (Draw_Laser 7609E0's source is the
+        //pixel itself, hooks 760BC2/760DE2), then each channel becomes
+        //ch + added + ((ch * scale) >> 16), clamped to 0..255. The CPU folds
+        //the pixel intensity into added (rgb, a_sample, gate_y) and scale
+        //(strength, destination_weight, gate_x).
+        if op.mode == 11u {
+            if op.z < old_z {
+                let source = textureLoad(old_words,vec2i(op.source_x,op.source_y),0).r;
+                let channel = vec3i(i32((source >> 11u) & 31u) << 3u,
+                    i32((source >> 5u) & 63u) << 2u, i32(source & 31u) << 3u);
+                let added = vec3i(bitcast<i32>(op.rgb), bitcast<i32>(op.a_sample), op.gate_y);
+                let scale = vec3i(op.strength, op.destination_weight, op.gate_x);
+                let lit = clamp(channel + added + ((channel * scale) >> vec3u(16u)),
+                    vec3i(0), vec3i(255));
+                word = u32((lit.r >> 3u) << 11u) | u32((lit.g >> 2u) << 5u) | u32(lit.b >> 3u);
+                touched = true;
+            }
+            continue;
+        }
+        //Particle62D02C compares a signed candidate with an unsigned stored
+        //word. CPU preparation interpolated the channels (carried in
+        //strength/destination_weight/source_x); A and the current Z are
+        //available only at this retained Display slot.
+        if op.mode == 6u {
+            let a = surface_a(op.a_sample);
+            if a != 0u && bitcast<i32>(op.z) < i32(old_z) {
+                word = point_word(vec3i(op.strength, op.destination_weight, op.source_x), a);
+                touched = true;
+            }
+            continue;
+        }
+        //XSurface7BB350 writes opaque words, with no A/Z predicate.
+        if op.mode == 4u {
+            word = op.rgb;
+            touched = true;
+            continue;
+        }
+        //Foot4DC340's drained dashes store only where A is nonzero, no Z.
+        if op.mode == 10u {
+            if surface_a(op.a_sample) != 0u {
+                word = op.rgb;
+                touched = true;
+            }
+            continue;
+        }
+        var gate_z = old_z;
+        if op.mode == 3u || op.mode == 5u {
+            gate_z = u32(decoded_native_z(textureLoad(old_depth,vec2i(op.gate_x,op.gate_y),0).r));
+        }
+        if op.z >= gate_z { continue; }
+        //4BBCA0 never reads A; every other store skips a zero A.
+        var alpha = 127u;
+        if op.mode != 8u {
+            alpha = surface_a(op.a_sample);
+            if alpha == 0u { continue; }
+        }
+        if op.mode == 5u {
+            //The X-major arm reads the other OLD destination before either
+            //paired store. CPU dependency chunks guarantee this snapshot
+            //contains every preceding write and the pair remains atomic.
+            word = textureLoad(old_words,vec2i(op.source_x,op.source_y),0).r;
+        }
+        let dst = vec3i(i32((word >> 11u) & 31u) << 3u,
+            i32((word >> 5u) & 63u) << 2u, i32(word & 31u) << 3u);
+        let src = vec3i(i32(op.rgb & 255u),i32((op.rgb >> 8u) & 255u),i32((op.rgb >> 16u) & 255u));
+        var lit: vec3i;
+        if op.mode == 8u {
+            //4BBCA0: per-channel signed multiplication/shift, saturation, repack.
+            lit = min(dst + ((dst * op.strength) >> vec3u(8)),vec3i(255));
+        } else if op.mode == 0u {
+            let mixed = ((dst * (256 - op.strength)) >> vec3u(8))
+                + ((src * op.strength) >> vec3u(8));
+            lit = (mixed * i32(alpha)) >> vec3u(7);
+        } else if op.mode == 1u {
+            // DSurface4BDF00 -> RGB4BE9D0: additive saturation distributes
+            // excess to channels below255 before the final cap and pack.
+            lit = dst + ((src * i32(alpha)) >> vec3u(7));
+            let full = lit >= vec3i(255);
+            let count = select(0,1,full.r) + select(0,1,full.g) + select(0,1,full.b);
+            var excess = max(lit.r-255,0) + max(lit.g-255,0) + max(lit.b-255,0);
+            if count == 1 { excess = excess >> 1u; }
+            if count > 0 && count < 3 {
+                lit += select(vec3i(excess), vec3i(0), full);
+            }
+            lit = min(lit,vec3i(255));
+        } else if op.mode == 3u || op.mode == 5u {
+            //4BC750: independently indexed native cubic weights. Both pixel
+            //stores were admitted by the primary sample above; no WriteZ.
+            lit = min(((dst * op.destination_weight + src * op.strength)
+                * i32(alpha)) >> vec3u(15),vec3i(255));
+        } else {
+            // DSurface4BFD30: alpha127 copies the packed source unchanged.
+            if alpha == 127u {
+                word = op.rgb;
+                touched = true;
+                continue;
+            }
+            let packed = vec3i(i32((op.rgb >> 11u) & 31u) << 3u,
+                i32((op.rgb >> 5u) & 63u) << 2u, i32(op.rgb & 31u) << 3u);
+            lit = (packed * i32(alpha)) >> vec3u(7);
+        }
+        word = u32(((lit.r >> 3u) << 11u) | ((lit.g >> 2u) << 5u) | (lit.b >> 3u)) & 65535u;
+        touched = true;
+    }
+    if !touched { discard; }
+    return vec4f(retail_linear(word),1);
+}

@@ -1,0 +1,193 @@
+use crate::map::entities::EntityCategory;
+use crate::rules::foundation::FOUNDATION_TABLE;
+use crate::rules::ini_parser::IniFile;
+use crate::rules::ruleset::RuleSet;
+use crate::sim::ammo::TechnoAmmo;
+use crate::sim::combat::TargetKind;
+use crate::sim::game_entity::GameEntity;
+use crate::sim::intern::test_interner;
+use crate::sim::movement::locomotor::LocomotorState;
+use crate::sim::snapshot::GameSnapshot;
+use crate::sim::world::Simulation;
+use crate::util::fixed_math::SimFixed;
+use serde_json::Value;
+
+fn native_rows() -> Vec<Value> {
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/aircraft_approach_range.json",
+    ))
+    .unwrap()
+}
+
+fn fixture(row: &Value) -> (Simulation, RuleSet) {
+    let case = &row["input"];
+    let foundation = &FOUNDATION_TABLE[case["foundation"].as_u64().unwrap_or(0) as usize];
+    let primary_range = case["range"].as_i64().unwrap_or(1536) as f64 / 256.0;
+    let elite_range = case["elite_range"].as_i64().unwrap_or(2304) as f64 / 256.0;
+    let elite = if case["elite_weapon"].as_bool().unwrap_or(true) {
+        "ElitePrimary=ELITE\n"
+    } else {
+        ""
+    };
+    let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+        "[AircraftTypes]\n0=ORCA\n[VehicleTypes]\n0=TARGET\n[BuildingTypes]\n0=BUILDING\n\
+         [ORCA]\nStrength=150\nSpeed=14\nAmmo=2\nPrimary=PRIMARY\n{elite}\
+         Locomotor={{4A582746-9839-11d1-B709-00A024DDAFD1}}\n\
+         [TARGET]\nStrength=300\n[BUILDING]\nStrength=500\nFoundation={}\nBib={}\n\
+         [PRIMARY]\nRange={primary_range}\nDamage=10\nROF=20\nProjectile=PROJ\n\
+         [ELITE]\nRange={elite_range}\nDamage=10\nROF=20\nProjectile=PROJ\n\
+         [PROJ]\nROT=0\nInviso=no\n",
+        foundation.name,
+        case["bib"].as_bool().unwrap_or(false)
+    )))
+    .unwrap();
+    let set_xyz = |entity: &mut GameEntity, xyz: &Value| {
+        let x = xyz[0].as_i64().unwrap() as i32;
+        let y = xyz[1].as_i64().unwrap() as i32;
+        entity.position.set_rx_for_test((x / 256) as u16);
+        entity.position.set_ry_for_test((y / 256) as u16);
+        entity
+            .position
+            .set_sub_x_for_test(SimFixed::from_num(x % 256));
+        entity
+            .position
+            .set_sub_y_for_test(SimFixed::from_num(y % 256));
+        entity
+            .position
+            .set_exact_z_leptons_for_test(Some(xyz[2].as_i64().unwrap() as i32));
+    };
+    let mut source = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
+    source.set_category_for_test(EntityCategory::Aircraft);
+    source
+        .veterancy
+        .set_rank_for_test((case["veterancy"].as_u64().unwrap_or(0) * 100) as u16);
+    source.install_ammo_for_test(Some(TechnoAmmo::new(2)));
+    source.mission.set_current_for_test(
+        crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Attack),
+        3,
+    );
+    source.locomotor = Some(LocomotorState::from_object_type(
+        rules.object("ORCA").unwrap(),
+        0,
+    ));
+    set_xyz(&mut source, &case["source"]);
+    let mut sim = Simulation::with_seed(0);
+    let target = match case["kind"].as_str().unwrap_or("unit") {
+        "cell" => TargetKind::Cell(
+            case["cell"][0].as_u64().unwrap() as u16,
+            case["cell"][1].as_u64().unwrap() as u16,
+        ),
+        kind => {
+            let building = kind == "building";
+            let mut target = GameEntity::test_default_of_category(
+                2,
+                if building { "BUILDING" } else { "TARGET" },
+                "Soviet",
+                10,
+                10,
+                if building {
+                    EntityCategory::Structure
+                } else {
+                    EntityCategory::Unit
+                },
+            );
+            if building {
+                target
+                    .seldom
+                    .type_facts
+                    .set_foundation_for_test(foundation.name.to_owned().into());
+                assert_eq!(
+                    serde_json::json!([foundation.width, foundation.height]),
+                    row["foundation_dimensions"]
+                );
+            }
+            set_xyz(&mut target, &case["target"]);
+            sim.substrate.entities.insert(target);
+            TargetKind::Entity(2)
+        }
+    };
+    source.attack_target.set_for_test(Some(match target {
+        TargetKind::Entity(id) => TargetKind::Entity(id),
+        TargetKind::Cell(x, y) => TargetKind::Cell(x, y),
+    }));
+    sim.substrate.entities.insert(source);
+    sim.interner = test_interner();
+    sim.set_next_stable_object_id_for_test(3);
+    sim.set_logic_order_for_test(vec![1]);
+    (sim, rules)
+}
+
+fn assert_native_in_range_result(sim: &Simulation, row: &Value) {
+    let aircraft = sim.substrate.entities.get(1).unwrap();
+    assert!(row["in_range"].as_bool().unwrap());
+    let Some(sub_state) = crate::sim::aircraft::attack_state(aircraft) else {
+        panic!("unexpected mission for {row}");
+    };
+    assert_eq!(sub_state, 4, "{row}");
+    assert!(
+        !aircraft.ammo().unwrap().release_pending(),
+        "the range branch only authorizes the next mission state"
+    );
+    assert_eq!(aircraft.ammo().unwrap().current(), 2);
+    assert!(
+        crate::sim::movement::motion_query::is_moving(&aircraft) != Some(true),
+        "{row}"
+    );
+    assert!(sim.projectiles.is_empty());
+}
+
+#[test]
+fn selected_strafe_range_branch_matches_native_and_dispatches_when_in_range() {
+    let rows = native_rows();
+    assert_eq!(rows.len(), 235);
+    for row in rows {
+        let (mut sim, rules) = fixture(&row);
+        let aircraft = sim.substrate.entities.get(1).unwrap();
+        let target = aircraft.attack_target.target().unwrap();
+        let distance =
+            crate::sim::combat::object_distance_to(aircraft.stable_id(), &target, &sim).unwrap();
+        assert_eq!(distance, row["distance"].as_i64().unwrap() as i32, "{row}");
+        let weapon = crate::sim::combat::combat_weapon::primary_for_tier(
+            rules.object("ORCA").unwrap(),
+            aircraft.veterancy.rank(),
+        )
+        .unwrap();
+        assert_eq!(
+            weapon.to_lowercase(),
+            row["weapon"].as_str().unwrap(),
+            "{row}"
+        );
+        assert_eq!(
+            distance < rules.weapon(weapon).unwrap().range_leptons,
+            row["in_range"].as_bool().unwrap(),
+            "{row}"
+        );
+        // This older native corpus stops before the out-of-range setter.
+        // Complete state3 effects are compared in aircraft_approach_tests.
+        if row["in_range"].as_bool().unwrap() {
+            crate::sim::aircraft::tick_aircraft_missions(&mut sim, &rules);
+            assert_native_in_range_result(&sim, &row);
+        }
+    }
+}
+
+#[test]
+fn pending_approach_range_decision_survives_save_restore() {
+    for row in native_rows()
+        .into_iter()
+        .filter(|r| r["in_range"].as_bool().unwrap())
+        .step_by(23)
+    {
+        let (mut sim, rules) = fixture(&row);
+        // Native range inputs are already object/rules authority; no new saved
+        // distance or target cache should be needed to resume this decision.
+        let saved = GameSnapshot::save(&sim, 0, 0, "aircraft approach range", 0);
+        let mut restored = GameSnapshot::load(&saved).unwrap().sim;
+        restored.restore_after_snapshot_load().unwrap();
+        assert_eq!(sim.state_hash(), restored.state_hash());
+        crate::sim::aircraft::tick_aircraft_missions(&mut sim, &rules);
+        crate::sim::aircraft::tick_aircraft_missions(&mut restored, &rules);
+        assert_native_in_range_result(&restored, &row);
+        assert_eq!(sim.state_hash(), restored.state_hash());
+    }
+}

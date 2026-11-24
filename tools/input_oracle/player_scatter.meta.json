@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Eight selected-object Scatter controls and three target-event constructor controls",
+  "assumptions": [
+    "Existing FootMissions constructed actors, physical rules and retained map crop.",
+    "Selected list and resting/deployed/tethered scalar priors supplied explicitly.",
+    "Original emitted events delivered once in order, with a second input after the first receiver."
+  ],
+  "substitutions": [
+    "Existing native fixture OS/allocation boundaries; disabled audio backend. Shared timeGetTime transport supplies wall-ms0 to ring metadata.",
+    "Manual original Event delivery; no native network/House pump or whole-match claim."
+  ],
+  "entry_points": {
+    "command": "0x00536D80",
+    "selection": "0x00730FE0",
+    "clicked_event": "0x006FFE00",
+    "constructor": "0x004C65E0",
+    "execute": "0x004C6CB0",
+    "gi_scatter": "0x0051D0D0"
+  },
+  "command": "python -m tools.input_oracle.area_guard --scatter --check",
+  "replay_command": "python -m tools.input_oracle.area_guard --scatter",
+  "payload_sha256": "bf49821da2992b6cebd131968fa7c49f7c44e3ae4db64f8d901f53d3c1cfa190"
+}

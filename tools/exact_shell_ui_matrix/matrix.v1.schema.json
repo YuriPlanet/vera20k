@@ -1,0 +1,426 @@
+{
+  "$defs": {
+    "blocker": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "evidence_id": {
+          "anyOf": [
+            {
+              "pattern": "^evidence:[A-Za-z0-9][A-Za-z0-9.:-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence_needed": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^catalog:[A-Za-z0-9][A-Za-z0-9.:-]*$",
+          "type": "string"
+        },
+        "source_refs": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "status": {
+          "enum": [
+            "RESOLVED",
+            "UNKNOWN"
+          ]
+        }
+      },
+      "required": [
+        "description",
+        "evidence_id",
+        "evidence_needed",
+        "id",
+        "source_refs",
+        "status"
+      ],
+      "type": "object"
+    },
+    "resolution": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "width": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "height",
+        "width"
+      ],
+      "type": "object"
+    },
+    "row": {
+      "additionalProperties": false,
+      "properties": {
+        "blocker_ids": {
+          "items": {
+            "pattern": "^catalog:[A-Za-z0-9][A-Za-z0-9.:-]*$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "checkpoint": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "comparison_result": {
+          "enum": [
+            "DRIFT",
+            "DRIFT_FIXED_UNVERIFIED",
+            "INCOMPARABLE",
+            "MATCH",
+            "NOT_RUN"
+          ]
+        },
+        "evidence": {
+          "additionalProperties": false,
+          "properties": {
+            "comparison_id": {
+              "anyOf": [
+                {
+                  "pattern": "^evidence:[A-Za-z0-9][A-Za-z0-9.:-]*$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "native_ids": {
+              "items": {
+                "pattern": "^evidence:[A-Za-z0-9][A-Za-z0-9.:-]*$",
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "rust_ids": {
+              "items": {
+                "pattern": "^evidence:[A-Za-z0-9][A-Za-z0-9.:-]*$",
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "comparison_id",
+            "native_ids",
+            "rust_ids"
+          ],
+          "type": "object"
+        },
+        "family": {
+          "enum": [
+            "audio",
+            "control",
+            "first-tactical",
+            "input",
+            "loading-branch",
+            "loading-cadence",
+            "paint",
+            "pointer",
+            "transition"
+          ]
+        },
+        "id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requirements": {
+          "items": {
+            "enum": [
+              "cursor",
+              "focus",
+              "frames",
+              "input",
+              "loading",
+              "music",
+              "pixels",
+              "route",
+              "text",
+              "transition",
+              "ui-sound"
+            ]
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "residuals": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "resolution": {
+          "$ref": "#/$defs/resolution"
+        },
+        "source_refs": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "state": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "DRIFT",
+            "DRIFT_FIXED_UNVERIFIED",
+            "UNVERIFIED",
+            "VERIFIED"
+          ]
+        },
+        "variant": {
+          "additionalProperties": {
+            "type": [
+              "boolean",
+              "integer",
+              "string"
+            ]
+          },
+          "type": "object"
+        },
+        "verification_policy": {
+          "enum": [
+            "ra2ts-lifecycle-proof-required",
+            "standard"
+          ]
+        }
+      },
+      "required": [
+        "blocker_ids",
+        "checkpoint",
+        "comparison_result",
+        "evidence",
+        "family",
+        "id",
+        "owner",
+        "requirements",
+        "residuals",
+        "resolution",
+        "source_refs",
+        "state",
+        "status",
+        "variant",
+        "verification_policy"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://vera20k.local/schemas/exact-shell-ui-matrix.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "catalog_blockers": {
+      "items": {
+        "$ref": "#/$defs/blocker"
+      },
+      "type": "array"
+    },
+    "catalog_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "certification_state": {
+      "enum": [
+        "IN_PROGRESS",
+        "VERIFIED"
+      ]
+    },
+    "coverage": {
+      "additionalProperties": false,
+      "properties": {
+        "by_family": {
+          "additionalProperties": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "by_status": {
+          "additionalProperties": false,
+          "properties": {
+            "DRIFT": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "DRIFT_FIXED_UNVERIFIED": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "UNVERIFIED": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "VERIFIED": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "DRIFT",
+            "DRIFT_FIXED_UNVERIFIED",
+            "UNVERIFIED",
+            "VERIFIED"
+          ],
+          "type": "object"
+        },
+        "total": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "by_family",
+        "by_status",
+        "total"
+      ],
+      "type": "object"
+    },
+    "evidence": {
+      "items": {
+        "$ref": "exact-shell-ui-evidence.v1.schema.json#/$defs/evidence"
+      },
+      "type": "array"
+    },
+    "evidence_digest": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "generator": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "const": "vera20k-exact-shell-ui-matrix"
+        },
+        "version": {
+          "const": 1
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "type": "object"
+    },
+    "resolutions": {
+      "items": {
+        "$ref": "#/$defs/resolution"
+      },
+      "minItems": 3,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "rows": {
+      "items": {
+        "$ref": "#/$defs/row"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "scope_exclusions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^scope:[A-Za-z0-9][A-Za-z0-9.:-]*$",
+            "type": "string"
+          },
+          "source_refs": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "description",
+          "id",
+          "source_refs"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "sources": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "array",
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "catalog_blockers",
+    "catalog_digest",
+    "certification_state",
+    "coverage",
+    "evidence",
+    "evidence_digest",
+    "generator",
+    "resolutions",
+    "rows",
+    "schema_version",
+    "scope_exclusions",
+    "sources"
+  ],
+  "type": "object"
+}

@@ -1,0 +1,313 @@
+//! Campaign House team selection through its production recruitment and script owners.
+use super::*;
+use crate::rules::ini_parser::IniFile;
+use crate::rules::rule_policy::RulePolicy;
+use crate::rules::team_ai_ini::TeamAiIniRegistry;
+use crate::sim::house_state::HouseState;
+use crate::sim::rng::SimRng;
+use crate::sim::scenario_session::ScenarioGameMode;
+use crate::sim::snapshot::GameSnapshot;
+use crate::sim::world::FrameEffects;
+
+fn campaign(difficulty: i32) -> (Simulation, RuleSet, InternedId, InternedId) {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[General]\nTeamDelays=120,120,120\nTotalAITeamCap=30,30,30\n\
+         [InfantryTypes]\n0=E1\n[E1]\nStrength=100\nTechLevel=1\n",
+    ))
+    .unwrap();
+    let fixed = IniFile::from_str(&format!(
+        "[TeamTypes]\n0=TT\n[TT]\nScript=S\nTaskForce=F\nIsBaseDefense=yes\nMax=1\n\
+         [ScriptTypes]\n0=S\n[S]\n0=5,1\n1=49,0\n\
+         [TaskForces]\n0=F\n[F]\n0=2,E1\n\
+         [AITriggerTypes]\nA=Guard,TT,<all>,0,-1,<none>,{},40,10,60,0,0,1,0,<none>,1,0,0\n",
+        "00".repeat(32)
+    ));
+    let map = IniFile::from_str("[AITriggerTypesEnable]\nA=yes\n");
+    let registry = TeamAiIniRegistry::from_sources(&fixed, &map, RulePolicy::stock_campaign());
+    let mut sim = Simulation::with_seed(0xA11CE);
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    sim.install_team_ai_registry(&registry, &rules);
+    sim.session
+        .initialize_campaign_startup(
+            difficulty,
+            1,
+            None,
+            0,
+            crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+            None,
+        )
+        .unwrap();
+    let owner = sim.interner.intern("Computer");
+    let mut house = HouseState::new(owner, 0, None, false, 0, 10);
+    house.set_ai_triggers_active(true);
+    sim.houses.register(house);
+    let team_type = sim.interner.get("TT").unwrap();
+    (sim, rules, owner, team_type)
+}
+
+#[test]
+fn campaign_trigger_difficulty_uses_the_scenario_row() {
+    let (mut easy, rules, owner, _) = campaign(0);
+    easy.spawn_object("E1", "Computer", 10, 10, 0, &rules)
+        .unwrap();
+    let trigger = easy.team_script_vm.ai_triggers_in_order().next().unwrap().0;
+    let eligible = |sim: &Simulation, rules: &RuleSet, owner, trigger: &TeamAiTriggerDefinition| {
+        let admission = AiTriggerAdmission::resolve(&sim.session, &sim.houses[&owner]);
+        is_eligible(sim, rules, trigger, owner, None, false, admission)
+    };
+    assert!(eligible(&easy, &rules, owner, trigger));
+
+    let policy = RulePolicy::stock_campaign().with_uses_house_team_rules(true);
+    easy.session
+        .install_admission(ScenarioGameMode::Campaign, None, policy);
+    let admission = AiTriggerAdmission::resolve(&easy.session, &easy.houses[&owner]);
+    assert!(admission.uses_house_team_rules);
+    assert_eq!(admission.difficulty, 1, "the House remains on Normal");
+    assert!(!eligible(&easy, &rules, owner, trigger));
+
+    easy.session.set_game_mode(ScenarioGameMode::Skirmish);
+    assert!(!eligible(&easy, &rules, owner, trigger));
+
+    let (mut hard, rules, owner, _) = campaign(2);
+    hard.spawn_object("E1", "Computer", 10, 10, 0, &rules)
+        .unwrap();
+    let trigger = hard.team_script_vm.ai_triggers_in_order().next().unwrap().0;
+    assert!(!eligible(&hard, &rules, owner, trigger));
+}
+
+#[test]
+fn campaign_without_a_factory_creates_recruits_and_finishes_after_reload() {
+    let (mut sim, rules, owner, team_type) = campaign(0);
+    let members = [(10, 10), (12, 10)]
+        .map(|(x, y)| sim.spawn_object("E1", "Computer", x, y, 0, &rules).unwrap());
+    sim.advance_tick(&[], Some(&rules), None, None, 67);
+    assert!(
+        sim.team_script_vm.first_team_of_type(team_type).is_none(),
+        "constructor timer has one frame remaining"
+    );
+    sim.advance_tick(&[], Some(&rules), None, None, 67);
+    let team = sim
+        .team_script_vm
+        .first_team_of_type(team_type)
+        .unwrap_or_else(|| {
+            panic!(
+                "no campaign team at frame {}: {:?}",
+                sim.session.binary_frame(),
+                sim.houses[&owner].team_creation()
+            )
+        });
+    let team_id = team.id();
+    assert_eq!(team.member_count(), 0, "House creates after the Team rung");
+    assert_eq!(sim.houses[&owner].team_creation().timer().duration(), 120);
+    sim.advance_tick(&[], Some(&rules), None, None, 67);
+    assert_eq!(sim.team_script_vm.team(team_id).unwrap().member_count(), 1);
+
+    let bytes = GameSnapshot::save_validated(&sim, 0, 0, "campaign_ai", 0);
+    let mut loaded = GameSnapshot::load_validated(&bytes, 0, 0, sim.session.map_name())
+        .unwrap()
+        .sim;
+    loaded.restore_after_snapshot_load().unwrap();
+    crate::sim::arena_fixture::flat_ground(&mut loaded, &rules);
+    // Native load resets Scenario RNG and discards active planning tokens
+    // (ClearScene6370B0 / TechnoLoad70BF79); apply both to the control.
+    sim.scenario_rng = SimRng::new(0);
+    sim.reset_planning_after_player_load();
+    assert_eq!(sim.state_hash(), loaded.state_hash());
+    let mut formed = false;
+    for _ in 0..40 {
+        if let Some(team) = loaded.team_script_vm.team(team_id) {
+            formed |= team.formed() && team.member_count() == 2;
+        }
+        sim.advance_tick(&[], Some(&rules), None, None, 67);
+        loaded.advance_tick(&[], Some(&rules), None, None, 67);
+        assert_eq!(sim.state_hash(), loaded.state_hash());
+    }
+    assert!(formed, "the selected team recruits both preplaced E1");
+    assert!(loaded.team_script_vm.team(team_id).is_none(), "script ends");
+    for member in members {
+        assert_eq!(loaded.team_script_vm.team_for_member(member), None);
+    }
+}
+
+#[test]
+fn campaign_recruitment_fallback_checks_autocreate_flags_and_team_identity() {
+    let (mut sim, rules, owner, team_type) = campaign(0);
+    let member = sim
+        .spawn_object("E1", "Computer", 10, 10, 0, &rules)
+        .unwrap();
+    let admitted = |sim: &Simulation| {
+        factories_admit(
+            sim,
+            &rules,
+            sim.team_script_vm.team_type_definition(team_type).unwrap(),
+            owner,
+            !sim.session.rule_policy().uses_house_team_rules(),
+        )
+    };
+    assert!(
+        admitted(&sim),
+        "one recruit suffices even for a two-member entry"
+    );
+    sim.session.set_game_mode(ScenarioGameMode::Skirmish);
+    assert!(!admitted(&sim));
+
+    let policy = RulePolicy::stock_multiplayer().with_uses_house_team_rules(false);
+    sim.session
+        .install_admission(ScenarioGameMode::Skirmish, None, policy);
+    assert!(admitted(&sim));
+    sim.session.set_game_mode(ScenarioGameMode::Campaign);
+    sim.substrate
+        .entities
+        .get_mut(member)
+        .unwrap()
+        .seldom
+        .base_defense_response
+        .author_recruitable(false, true);
+    assert!(
+        !admitted(&sim),
+        "non-Autocreate requires the map recruit flag"
+    );
+    sim.team_script_vm.mark_autocreate(team_type);
+    assert!(admitted(&sim));
+    sim.substrate
+        .entities
+        .get_mut(member)
+        .unwrap()
+        .seldom
+        .base_defense_response
+        .set_team_recruitable(false);
+    assert!(!admitted(&sim), "Autocreate requires the team recruit flag");
+    sim.substrate
+        .entities
+        .get_mut(member)
+        .unwrap()
+        .seldom
+        .base_defense_response
+        .author_recruitable(true, true);
+    let team = sim.create_team(team_type, Some(owner), &rules).unwrap();
+    assert!(sim.team_add_member(team, member, false, &rules, &mut FrameEffects::default()));
+    assert!(
+        !admitted(&sim),
+        "an existing team of the same type is no source"
+    );
+}
+
+#[test]
+fn retail_all05_initiate_team_accepts_its_campaign_barracks() {
+    use crate::rules::process_owner::NativeScenarioRulesPrefix;
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let map =
+        crate::map::map_file::MapFile::from_bytes(assets.get_ref("ALL05UMD.MAP").unwrap()).unwrap();
+    let named = assets.resolve_ref("ALL05UMD.INI").map(|_| {
+        crate::rules::retail_sources::select_ini(&assets, "ALL05UMD.INI")
+            .unwrap()
+            .ini
+    });
+    let (rules, _, _, _) = crate::rules::retail_ini_fixture::retail_rules_owner(&assets)
+        .load_scenario(
+            NativeScenarioRulesPrefix::Campaign(named.as_ref()),
+            &map.ini,
+        )
+        .unwrap()
+        .into_parts();
+    let registry =
+        TeamAiIniRegistry::load_retail(&assets, &map.ini, RulePolicy::stock_campaign()).unwrap();
+    let roster =
+        crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
+    let mut sim = Simulation::with_seed(31);
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    crate::sim::scenario_bootstrap::initialize_map_roster_houses(
+        &mut sim,
+        &roster,
+        &rules,
+        Some(&map.ini),
+    );
+    sim.install_team_ai_registry(&registry, &rules);
+    let owner = sim
+        .house_by_country_index(rules.country_index("BadGuy1").unwrap(), &rules)
+        .unwrap();
+    let owner_name = sim.interner.resolve(owner).to_owned();
+    let team_type_id = sim.interner.get("090E667C").unwrap();
+    let team_type = sim
+        .team_script_vm
+        .team_type_definition(team_type_id)
+        .unwrap();
+    assert!(!factories_admit(
+        &sim,
+        &rules,
+        team_type,
+        owner,
+        !sim.session.rule_policy().uses_house_team_rules(),
+    ));
+    // The ordinary factory arm, using the stock map's country and complete
+    // campaign rules/AI passes; this controlled arena does not play ALL05.
+    sim.spawn_object("YAPOWR", &owner_name, 8, 8, 0, &rules)
+        .unwrap();
+    sim.spawn_object("YABRCK", &owner_name, 14, 8, 0, &rules)
+        .unwrap();
+    let team_type = sim
+        .team_script_vm
+        .team_type_definition(team_type_id)
+        .unwrap();
+    assert!(factories_admit(
+        &sim,
+        &rules,
+        team_type,
+        owner,
+        !sim.session.rule_policy().uses_house_team_rules(),
+    ));
+}
+
+/// Ares 100240D0 (hook 0x50965E): a TaskForce entry of two E1 needs room for
+/// both under `BuildLimit=1`, so the barracks no longer admits it and the
+/// entry falls to the campaign recruit scan, which finds no E1. The
+/// difficulty's `AllowBypassBuildLimit` admits it at the factory again.
+#[test]
+fn ares_team_factory_admission_honours_the_entry_count_build_limit() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let admitted = |bypass: &str| {
+        let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "[GlobalControls]\nAllowBypassBuildLimit={bypass}\n\
+             [Countries]\n0=C0\n[C0]\nSide=GDI\n\
+             [InfantryTypes]\n0=E1\n[E1]\nStrength=100\nTechLevel=1\nOwner=C0\nBuildLimit=1\n\
+             [BuildingTypes]\n0=BARR\n[BARR]\nStrength=100\nFactory=InfantryType\nOwner=C0\n",
+        )))
+        .unwrap();
+        let fixed = IniFile::from_str(
+            "[TeamTypes]\n0=TT\n[TT]\nScript=S\nTaskForce=F\n\
+             [ScriptTypes]\n0=S\n[S]\n0=5,1\n\
+             [TaskForces]\n0=F\n[F]\n0=2,E1\n",
+        );
+        let registry = TeamAiIniRegistry::from_sources(
+            &fixed,
+            &IniFile::from_str(""),
+            RulePolicy::stock_campaign(),
+        );
+        let mut sim = Simulation::with_seed(0x50965E);
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        sim.install_team_ai_registry(&registry, &rules);
+        let owner = sim.interner.intern("Computer");
+        let country = sim.interner.intern("C0");
+        sim.houses
+            .register(HouseState::new(owner, 0, Some(country), false, 0, 10));
+        sim.spawn_object("BARR", "Computer", 10, 10, 0, &rules)
+            .unwrap();
+        let team_type = sim.interner.get("TT").unwrap();
+        let team_type = sim.team_script_vm.team_type_definition(team_type).unwrap();
+        factories_admit(
+            &sim,
+            &rules,
+            team_type,
+            owner,
+            !sim.session.rule_policy().uses_house_team_rules(),
+        )
+    };
+    assert!(!admitted("no,no,no"));
+    assert!(admitted("yes,yes,yes"));
+}

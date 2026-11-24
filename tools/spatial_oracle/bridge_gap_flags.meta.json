@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original586BF0 ordered writes on supplied high/Tube record fixtures",
+  "assumptions": [
+    "Original49F2F0 initializes direction table",
+    "Supplied12x12 allocation with explicit holes; native packed fixed aliases execute",
+    "Full real flag words retained; dummy input restricted to currently retained1D80 domain",
+    "Record production/zone construction excluded here; separate retail composition proves producer linkage",
+    "Only axis-aligned producer records; malformed nonterminating record geometry excluded",
+    "Setter prefix cases stop after original anchor flag store, before conditional bridge blowup; neighbor stores/lifecycle excluded"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "restamp": "0x00586BF0",
+    "direction_initializer": "0x0049F2F0",
+    "nesw_anchor_store_prefix": "0x0047E040",
+    "nwse_anchor_store_prefix": "0x0047E470"
+  },
+  "payload_sha256": "e1057f3589ef417970e4b5801fb5b7e351663c0fae8bd44d1f50d3034e4a1071"
+}

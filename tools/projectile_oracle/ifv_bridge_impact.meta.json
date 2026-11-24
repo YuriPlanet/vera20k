@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Three original guided hits: rejected, damaged and primed-collapse through bridge effects, retained connectivity and Bullet retirement",
+  "assumptions": [
+    "All native launch/flight/impact/bridge/lifetime bodies execute. 225 stock scalar cells from bridge_rim_stock_inputs.json are translated[-102,-120]; map size136x140 remains. Direct cell queries execute; native map loading and translated map enumeration do not.",
+    "Supplied retained hierarchy: three levels use zone1 throughy20 thenzone2, a single active high bridge connects[10,14] to[10,32]; baseclass0inside crop and7outside. Native container constructors/initial edge publication execute, then original collapse graph disconnection584E50 and raw rebuilding56C510 execute.",
+    "Native OverlayType dense prefix/full BRIDGE2 and GEM01 reads, BridgeStrength constructor/read, bridge effect/SplashList/Wake constructor/read blocks, and full physical Anim ART readers execute. Overlay SHPs are missing; no overlay renderer claim.",
+    "Independent seeds31/39 bound rejection/admission; collapse is primed by native576BA0, not a prior full weapon hit. Bullet94 and subsequent runtime effect IDs are actual partial fixture constructor order, not wholematch identity.",
+    "Original Tactical constructor and Map/Radar/dirty vector initializers execute. Viewport800x600, camera0, known projection multiplier, GameSpeed4 and timeGetTime0 are supplied. Live-game flagA8E9A0=1 admits complete original Anim Unlimbo including native coordinate commit and Display submission. Source lifecycle/Bullet launch admission boundaries are inherited.",
+    "The shared Bullet admission boundary now executes original InLimbo clearing and coordinate fixup. Its later Conceal therefore includes DetachAll PointerExpired7258D0 and DisplayRemove4A9770 before drain; all other retained bridge, impact, ID, RNG and state outputs are unchanged.",
+    "Stops after full Bullet queue drain with impact/bridge animations retained. No post-impact Anim scheduler/retirement or whole Rules Process chronology claim. Shared ifv_impact separately executes single XGRYSML2 lifetime."
+  ],
+  "substitutions": [
+    "Shared ifv_impact transport boundaries plus verified WINMM timeGetTime import at6C8C40 supplied0. Only Python fixture setup statements are adapted in memory; no original executable instruction is patched or replaced."
+  ],
+  "entry_points": {
+    "area_damage": "0x00489280",
+    "bridge_driver": "0x00587180",
+    "high_body": "0x00576BA0",
+    "rim": "0x00576770",
+    "fallout": "0x0047DD70",
+    "disconnect": "0x00584E50",
+    "raw_connectivity": "0x0056C510",
+    "select_anim": "0x0048A4F0",
+    "splash_reader": "0x0066C184",
+    "wake_reader": "0x0066D847",
+    "radar_dirty": "0x006551C0",
+    "screen_dirty": "0x006D2790",
+    "drain": "0x00725C70"
+  },
+  "payload_sha256": "68d238eca3e859767a817bc9d87c1fe498836caf3d729c94eae9d569e39da0d5"
+}

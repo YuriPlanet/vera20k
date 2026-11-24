@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original56C510 retained class/unsigned height bytes, base IDs and13 raw movement rows with active bridge records",
+  "assumptions": [
+    "Supplied16x16 cells, Size8,8, native17x17 node plane with class7 outside the Size diamond and in padding",
+    "Input adjacency buckets empty, root count0 skips redundant virtual clearing; all256 bucket storage/capacities supplied",
+    "No memory exhaustion; input raw rows empty; native hierarchy plane remains unchanged",
+    "Both node planes receive retained heights; one case supplies different current Cell heights",
+    "All actual flood, bridge insertion and movement-row instructions execute; not a full map loading/gameplay proof"
+  ],
+  "substitutions": [
+    "7C8E17 successful bounded allocation and7C8B3D no-op free; native vector growth/copy executes"
+  ],
+  "entry_points": {
+    "connectivity": "0x0056C510",
+    "flood": "0x0056CB90",
+    "bridge_pairs": "0x0056C6CB"
+  },
+  "payload_sha256": "22c1ad80602e791923774aee200339554170fddd7c177f51951ba233393d9783"
+}

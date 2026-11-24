@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Ordinary ground transport D: two selected-unit producers, four Event9/Commence admission controls, two empty first Unload visits within those controls, and a default D-sound component.",
+  "assumptions": [
+    "Reuse refinery_dock.make_dock_fixture and its original Unit/Type vtables, constructed Drive, supplied 32x32 map, House and Scenario seed1. Positive Passengers2, no bunker/radio contacts/EMP/factory, ordinary land and alive nonlimbo Unit; no original Unit constructor.",
+    "Supplied frame100, Unload Rate0.016, old target/destination and retained archive/suspended Cell identities. Move rows begin with original Drive IsMoving true. Status7 and bypass1 are sentinels; the already-Unload row is not dispatched as a status7 handler.",
+    "The count1 head is a nonnull fixture sentinel, never dereferenced: only producer/receiver/Commence admission is executed for it.",
+    "Receiver starts with ESI=resolved actor after token/planning work. Direct Commence supplies the promotion boundary; no Ready/Logic scheduler or later mission-timer scheduling is executed.",
+    "Default sound executes constructor OR/store components66585F and 66606A, then whole750920 with audio enabled and D argument values; not full Rules construction, sound catalog or OS playback."
+  ],
+  "substitutions": [
+    "Only inherited Interlocked OS imports. No original gameplay instructions, vtables, parser answers, RNG results or decisions patched.",
+    "D producer stops at6FFE00 before event encoding/delivery and the success sound tail. Receiver stops at4C7818 before its epilogue.",
+    "Empty land transport executes one complete73D630 call after direct Commence. No passenger ejection/placement, later Unload/Guard promotion, full pathfinding or death mechanism."
+  ],
+  "entry_points": {
+    "deploy_command": "0x00730AF0",
+    "event_producer": "0x006FFE00",
+    "deploy_receiver": "0x004C76D7",
+    "deploy_receiver_stop": "0x004C7818",
+    "unit_destination": "0x00741970",
+    "techno_target": "0x006FCDB0",
+    "queue": "0x005B35E0",
+    "commence": "0x005B3570",
+    "unload": "0x0073D630",
+    "scenario_random": "0x0065C7E0",
+    "sound": "0x00750920"
+  },
+  "replay_command": "python -m tools.spatial_oracle.transport_unload --deploy-event",
+  "payload_sha256": "2dac89d7e9d7b74c6795aae78e2a69039a8458d4763f043c6f6d8991b4c22f62"
+}

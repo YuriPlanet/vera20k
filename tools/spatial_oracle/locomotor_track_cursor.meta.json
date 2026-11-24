@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Drive/Ship retained selectors, paid raw samples, chain tail and terminal budget expressions",
+  "assumptions": [
+    "Interior blocks use supplied register/stack frames and admitted selectors; no complete Process call is executed",
+    "Original TurnTrack/RawTrack data includes every real point and the trailing XY-zero sentinel, including its facing",
+    "Every point uses budgets 7/8/14/15; original tail decides cursor increment and whether another paid step is due",
+    "Fresh selection and cursor reset are separate blocks; chain cases supply an already admitted nonzero-entry successor",
+    "Chain after-state executes the survivor common tail; callback-triggered death/limbo/falling exits can retain entry-minus-one and are excluded",
+    "Terminal expressions execute original ftol with supplied FPCW and ftol control word 0xE7F, consistent with saved startup capture; runtime immutability is not proved",
+    "Terminal offsets include every referenced raw track last-real-point offset and separate scalar boundaries/distant poses; they are supplied coordinates, not complete curve-execution results"
+  ],
+  "substitutions": [
+    "Admission, movement/occupation/chain callbacks, coordinate commits, head clears, arrival and residual interpolation between blocks are not executed",
+    "The original point read and original common tail are composed across those callback seams; no instructions or call results are patched"
+  ],
+  "entry_points": {
+    "drive_fresh": "0x004B4016",
+    "drive_zero": "0x004B4659",
+    "drive_gate": "0x004B150D",
+    "drive_read": "0x004B1596",
+    "drive_tail": "0x004B1F48",
+    "drive_chain": "0x004B1C78",
+    "drive_refund": "0x004B1F97",
+    "drive_clear": "0x004B210E",
+    "ship_fresh": "0x006A3642",
+    "ship_zero": "0x006A3C88",
+    "ship_gate": "0x006A0BD5",
+    "ship_read": "0x006A0C52",
+    "ship_tail": "0x006A158B",
+    "ship_chain": "0x006A12C2",
+    "ship_refund": "0x006A15DA",
+    "ship_clear": "0x006A1751"
+  },
+  "payload_sha256": "53d5dc5be4c5497c901ccafae34aefe74dfe4e321a88c02e4067f47b55f0d5d6"
+}

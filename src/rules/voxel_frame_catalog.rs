@@ -1,0 +1,353 @@
+//! GPU-independent HVA frame-count catalog (F09).
+//!
+//! It resolves each voxel type's model variants and layers and parses `.hva`
+//! frame counts directly, with no GPU involvement. The renderer's atlas
+//! seeding and the draw's frame selection consume the same functions, so they
+//! cannot disagree on a frame count. Draws take an HVA frame as `Foot+0x538`
+//! modulo that count (`UnitClass::DrawVoxelBody @ 0x0073B470`,
+//! `AircraftClass::Draw_It @ 0x004144B0`); the simulation keeps no HVA clock.
+//!
+//! Owns model-part identity and selection from assets/rules. No simulation or
+//! presentation dependency is required to resolve physical model inputs.
+
+use crate::assets::asset_manager::AssetManager;
+use crate::assets::hva_file::HvaFile;
+use crate::rules::art_data;
+use crate::rules::object_type::{ObjectCategory, ObjectType};
+use crate::rules::ruleset::RuleSet;
+
+/// Which part of a multi-part voxel model an entity/atlas entry represents.
+///
+/// Non-turret units use `Composite` (body+turret+barrel baked together).
+/// Turret units store Body/Turret/Barrel separately so the turret can
+/// be drawn at a different facing than the body at render time.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub enum VxlLayer {
+    /// All parts composited into one sprite (for units without independent turret).
+    Composite,
+    /// Body only (hull/chassis).
+    Body,
+    /// Turret only ({IMAGE}TUR.VXL).
+    Turret,
+    /// Barrel only ({IMAGE}BARL.VXL).
+    Barrel,
+    /// Ground shadow of the main voxel: each section's occupied (x, y) columns
+    /// flattened onto z = 0 and shifted by the shadow light vector, always at
+    /// motion frame 0. See `render::vxl_raster::render_vxl_shadow`.
+    Shadow,
+}
+
+pub const NO_SPAWN_ALT_SUFFIX: &str = "WO";
+
+/// Every voxel model an object of `type_id` can select at presentation time:
+/// its own, its `UnloadingClass=`, Ares `WaterImage=` and its `%sWO`.
+///
+/// Initial atlas construction and incremental coverage checks must enumerate
+/// the same set. Otherwise an already-valid base model can hide a missing
+/// UnloadingClass, WaterImage or `%sWO` model until the draw lookup fails.
+pub fn unit_atlas_variants(type_id: &str, rules: Option<&RuleSet>) -> Vec<String> {
+    let object = rules.and_then(|rules| rules.object(type_id));
+    let mut variants = vec![type_id.to_string()];
+
+    if let Some(unloading_type) = object
+        .and_then(|object| object.unloading_class.as_deref())
+        .filter(|unloading_type| rules.is_some_and(|rules| rules.object(unloading_type).is_some()))
+    {
+        variants.push(unloading_type.to_string());
+    }
+
+    if object.is_some_and(ObjectType::no_spawn_alt) {
+        // Native stores the `%sWO` pair in the same AuxVoxel slot used by
+        // turrets. Stock NoSpawnAlt types therefore render it as one
+        // composite body and cannot also own a turret. Ares gives the pair
+        // its own slot (hooks 0x5F8277, 0x5F848C) and draws it as the body
+        // (UnitClass_DrawVXL_NoSpawnAlt 10041460, hook 0x73B6E3), so a
+        // Turret=yes type keeps its turret there; this composite omits it.
+        variants.push(format!("{type_id}{NO_SPAWN_ALT_SUFFIX}"));
+    }
+
+    if rules.is_some_and(RuleSet::ares) {
+        // DrawIt73D29C temporarily makes a dock-unloading harvester's
+        // UnloadingClass its actual type before Ares10045340 asks WaterImage.
+        let unloading = object
+            .filter(|object| object.harvester)
+            .and_then(|object| object.unloading_class.as_deref())
+            .and_then(|id| rules?.object(id));
+        for model in [object, unloading].into_iter().flatten() {
+            if let Some(image) = model.water_image()
+                && !variants.iter().any(|variant| variant == image)
+            {
+                variants.push(image.to_owned());
+            }
+        }
+    }
+
+    variants
+}
+
+/// The image a voxel model's files are named from: `type_id`'s rules `Image=`,
+/// which defaults to the type's ID. The constructor copies the ID into `+0x1F8`
+/// (`0x005F724F..0x005F7276`), `ObjectTypeClass::ReadINI` reads `Image=` over
+/// it (`0x005F9335`), and the voxel loader `0x005F8110` formats every model
+/// name from that field. Retain its entry name when a later SHP call mutates
+/// ImageFile (saved Infantry5249AD/B4). An art `Image=` does not redirect it: gamemd reads
+/// that art key for buildings (`0x0045F93A`), not for vehicles or aircraft. A
+/// name that is not a rules type is its own image.
+pub fn voxel_image_id(type_id: &str, rules: Option<&RuleSet>) -> String {
+    rules
+        .and_then(|rules| rules.object(type_id))
+        .map_or(type_id, |object| {
+            object.voxel_image_load().unwrap_or(&object.image)
+        })
+        .trim()
+        .to_uppercase()
+}
+
+/// Unit draw's indexed count: `TurretCount > 0 && !IsGattling` (73B8D9).
+/// The physical loader also requires the earlier Turret gate at5F8287;
+/// a draw can still select retained arrays when that later load was skipped.
+/// Aircraft and building turret models never use the UnitType gun arrays.
+/// Native controls: tools/spatial_oracle/ifv_turret_switching.json.
+pub fn indexed_turret_count(type_id: &str, rules: Option<&RuleSet>) -> i32 {
+    object_indexed_turret_count(rules.and_then(|rules| rules.object(type_id)))
+}
+
+/// [`indexed_turret_count`] of a type already in hand.
+pub fn object_indexed_turret_count(object: Option<&ObjectType>) -> i32 {
+    object
+        .filter(|object| object.category == ObjectCategory::Vehicle && !object.is_gattling)
+        .map_or(0, |object| object.turret_count.max(0))
+}
+
+/// Model selection at 73B8D9..73B94F. The signed current index is retained
+/// for indexed types; ordinary and Gattling models use their base gun pair.
+/// Native does not bounds-check an indexed access. The renderer deliberately
+/// omits an invalid part instead of reproducing an unchecked pointer alias.
+pub fn voxel_turret_index(type_id: &str, rules: Option<&RuleSet>, current: i32) -> i32 {
+    object_voxel_turret_index(rules.and_then(|rules| rules.object(type_id)), current)
+}
+
+/// [`voxel_turret_index`] of a type already in hand.
+pub fn object_voxel_turret_index(object: Option<&ObjectType>, current: i32) -> i32 {
+    if object_indexed_turret_count(object) > 0 {
+        current
+    } else {
+        0
+    }
+}
+
+/// Gun admission for a model drawn as its own type. Unit73B7A3 tests the
+/// selected type's Turret, and 70DC60/717880 tests the actual type's TurretCount
+/// with a current index other than -1. Mixed actual/selected indexed modes
+/// remain a presentation residual in unit_body_draw. Aircraft draw their
+/// main voxel (4144B0), and building voxel turrets have their own loader.
+pub fn draws_turret_parts(type_id: &str, rules: Option<&RuleSet>, current: i32) -> bool {
+    object_draws_turret_parts(rules.and_then(|rules| rules.object(type_id)), current)
+}
+
+/// [`draws_turret_parts`] of a type already in hand.
+pub fn object_draws_turret_parts(object: Option<&ObjectType>, current: i32) -> bool {
+    object.is_some_and(|object| {
+        object.category == ObjectCategory::Vehicle
+            && (object.has_turret || (object.turret_count > 0 && current != -1))
+    })
+}
+
+/// Shared native part naming (5F7A90 / 5F7DB0): index zero has no numeric
+/// suffix; positive indices append their decimal value after TUR or BARL.
+pub fn voxel_gun_basename(image: &str, layer: VxlLayer, index: i32) -> String {
+    let part = match layer {
+        VxlLayer::Turret => "TUR",
+        VxlLayer::Barrel => "BARL",
+        _ => unreachable!("only gun layers have a gun basename"),
+    };
+    if index == 0 {
+        format!("{image}{part}")
+    } else {
+        format!("{image}{part}{index}")
+    }
+}
+
+/// BuildingType's voxel loader45FA90 searches for `TUR` starting at byte4
+/// of TurretAnim. A match loads the B8 turret and replaces that suffix with
+/// `BARL` for C0; without a match the unchanged name loads C0 alone. Asset
+/// lookup is case-insensitive. Original execution:
+/// tools/voxel_oracle/building_barrel.json.
+/// The retail layers leave BarrelAnimIsVoxel/VoxelBarrelFile unset; that
+/// custom C0-only override is not part of this retained filename projection.
+pub fn building_voxel_names(
+    type_id: &str,
+    rules: Option<&RuleSet>,
+) -> Option<(Option<String>, String)> {
+    let object = rules?.object(type_id)?;
+    if object.category != ObjectCategory::Building
+        || !(object.turret_anim_is_voxel || object.barrel_anim_is_voxel)
+    {
+        return None;
+    }
+    let image = object.turret_anim.as_deref().unwrap_or("");
+    Some(building_voxel_pair_names(image, None))
+}
+
+/// Building464438/46467E retain 16-byte names;45FA90 consumes them.
+pub(crate) fn building_voxel_read_names(
+    body: &crate::rules::ini_parser::IniSection,
+) -> Option<(Option<String>, String)> {
+    let turret = body.read_bool("TurretAnimIsVoxel", false);
+    let barrel = body.read_bool("BarrelAnimIsVoxel", false);
+    if !(turret || barrel) {
+        return None;
+    }
+    let name = body.read_string("TurretAnim", "", 16);
+    let explicit = barrel.then(|| body.read_string("VoxelBarrelFile", "", 16));
+    Some(building_voxel_pair_names(&name, explicit.as_deref()))
+}
+
+/// Building45FA90: the first eligible TUR after byte4 wins over explicit BARL.
+pub(crate) fn building_voxel_pair_names(
+    image: &str,
+    explicit_barrel: Option<&str>,
+) -> (Option<String>, String) {
+    let image = image.to_ascii_uppercase();
+    let split = image.get(4..).and_then(|suffix| suffix.find("TUR"));
+    match split {
+        Some(offset) => {
+            let barrel = format!("{}BARL", &image[..offset + 4]);
+            (Some(image), barrel)
+        }
+        None => (None, explicit_barrel.unwrap_or(&image).to_ascii_uppercase()),
+    }
+}
+
+/// Unit73B8D9/70DCF0 uses a positive TurretCount to select indexed mode,
+/// then reads the current slot without comparing it to that count. The
+/// ObjectType5F865F/5F887B loads retain earlier native slots when a later
+/// read shrinks the count. Enumerate their physically retained libraries.
+/// Layers and gun indices the model can draw. Body and shadow storage stay
+/// independent of the selected gun, while every indexed gun has its own HVA.
+/// Missing optional barrels never create atlas work. The shared physical
+/// loader handles indexed-pair failure through ObjectType5F8ACB's cleanup
+/// before this enumeration.
+pub fn seed_layers_for(
+    asset_manager: &AssetManager,
+    type_id: &str,
+    rules: Option<&RuleSet>,
+) -> Vec<(VxlLayer, i32)> {
+    let Some(model) = super::voxel_asset_catalog::load_voxel_model(asset_manager, type_id, rules)
+    else {
+        return Vec::new();
+    };
+    let building = rules
+        .and_then(|rules| rules.object(type_id))
+        .is_some_and(|object| object.category == ObjectCategory::Building);
+    if building {
+        let mut layers = Vec::new();
+        if model.auxiliary().is_some() {
+            layers.push((VxlLayer::Turret, 0));
+        }
+        if model.barrel().is_some() {
+            layers.push((VxlLayer::Barrel, 0));
+        }
+        return layers;
+    }
+    if !draws_turret_parts(type_id, rules, 0) {
+        return model
+            .main()
+            .map_or_else(Vec::new, |_| vec![(VxlLayer::Composite, 0)]);
+    }
+    let mut layers = Vec::new();
+    if model.main().is_some() {
+        layers.push((VxlLayer::Body, 0));
+    }
+    let count = indexed_turret_count(type_id, rules);
+    if count > 0 {
+        for i in 0..model.indexed_count() {
+            let (t, b) = model.indexed_parts(i);
+            if t.is_some() {
+                layers.push((VxlLayer::Turret, i as i32));
+            }
+            if b.is_some() {
+                layers.push((VxlLayer::Barrel, i as i32));
+            }
+        }
+    } else {
+        if model.auxiliary().is_some() {
+            layers.push((VxlLayer::Turret, 0));
+        }
+        if model.barrel().is_some() {
+            layers.push((VxlLayer::Barrel, 0));
+        }
+    }
+    layers
+}
+
+/// Detect the HVA animation frame count for a given (type_id, layer) combo.
+///
+/// Loads the HVA file from the asset manager and returns `frame_count`.
+/// Returns 1 if no HVA is found or if parsing fails (single-frame default).
+pub fn detect_hva_frame_count(
+    asset_manager: &AssetManager,
+    type_id: &str,
+    layer: VxlLayer,
+    turret_index: i32,
+    rules: Option<&RuleSet>,
+) -> u32 {
+    if layer == VxlLayer::Shadow {
+        return 1;
+    }
+    if rules.and_then(|rules| rules.object(type_id)).is_some() {
+        let Some(model) =
+            super::voxel_asset_catalog::load_voxel_model(asset_manager, type_id, rules)
+        else {
+            return 1;
+        };
+        let indexed = indexed_turret_count(type_id, rules) > 0;
+        let part = match layer {
+            VxlLayer::Body | VxlLayer::Composite => model.main(),
+            VxlLayer::Turret if indexed => usize::try_from(turret_index)
+                .ok()
+                .and_then(|i| model.indexed_parts(i).0),
+            VxlLayer::Barrel if indexed => usize::try_from(turret_index)
+                .ok()
+                .and_then(|i| model.indexed_parts(i).1),
+            VxlLayer::Turret => model.auxiliary(),
+            VxlLayer::Barrel => model.barrel(),
+            VxlLayer::Shadow => None,
+        };
+        return part
+            .and_then(|part| part.hva())
+            .map_or(1, |hva| hva.frame_count.max(1));
+    }
+    let hva_name: String = if let Some((turret, barrel)) = building_voxel_names(type_id, rules) {
+        let image = match layer {
+            VxlLayer::Turret => turret,
+            VxlLayer::Barrel => Some(barrel),
+            _ => None,
+        };
+        let Some(image) = image else {
+            return 1;
+        };
+        format!("{image}.HVA")
+    } else {
+        let image = voxel_image_id(type_id, rules);
+        match layer {
+            VxlLayer::Composite | VxlLayer::Body => art_data::voxel_asset_names(&image).1,
+            VxlLayer::Turret | VxlLayer::Barrel => {
+                format!("{}.HVA", voxel_gun_basename(&image, layer, turret_index))
+            }
+            // The shadow is rendered from motion frame 0 regardless of the body's
+            // HVA length (`Get_Layer_Matrix(layer, 0)` in the TS shadow path, and
+            // the RA2 shadow key folds only slope and facing: 0x0055A7D0).
+            VxlLayer::Shadow => return 1,
+        }
+    };
+
+    let frame_count: u32 = asset_manager
+        .get_ref(&hva_name)
+        .and_then(|data| HvaFile::from_bytes(data).ok())
+        .map(|h| h.frame_count)
+        .unwrap_or(1);
+    frame_count.max(1)
+}

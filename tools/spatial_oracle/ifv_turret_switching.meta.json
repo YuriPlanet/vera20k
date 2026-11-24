@@ -1,0 +1,190 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "IFV native scalar/mapping readers, ordinary gunner cycle, initialization and bounded voxel draw decisions",
+  "assumptions": [
+    "Original gamemd.exe bytes only. Supplied cached INI section/key indexes contain physical lexical values, never Rust-parsed scalars; original section admission, ReadInt, ReadBool and FV identity compare execute.",
+    "Reader executes selected TechnoType blocks then complete FV pair block in original order. Intervening unrelated keys, original archive/INI loading and layer scheduling are not executed. Missing extracted layer is reported, not inferred to contain no override.",
+    "Constructor slices execute with original established EBX=0, EBP=-1; supplied initialized Unit/Infantry vtables and type pointers. Unit constructor and InitFromType Gunner suffixes execute separately, not their whole bodies.",
+    "Ordinary ReceiveGunner/RemoveGunner execute whole bodies with null TemporalClass. Failed vehicle-unload retry is represented by receive/remove/receive; six additional rows execute FootClass RemoveFirstPassenger and CargoClass head removal. Spatial placement remains outside this component.",
+    "Temporal contrasts supply existing TemporalClass with no target. Active GetROF is answered19 and recorded: its real RNG and full temporal scheduling are not claimed. Native rearm arithmetic and ownership writes around that boundary execute.",
+    "Draw rows execute admission and cache/index selection slices with supplied nonnull part pointers, then original indexed turret LEA. For the plain branch that LEA is a diagnostic only, not its production consumer. No renderer/raster, shadows, palette or crash parity claim.",
+    "Loader rows execute indexed-loop admission, count limits, first-failure exits and the independent Turret flag gate before barrels. Each part-load result and plain TUR asset IO are supplied; filename rows separately execute original sprintf. Final failure cleanup is established statically, not executed here.",
+    "Negative/oversized turret or mapping indices intentionally expose native unchecked memory aliasing. Rust must choose and document its safe malformed-mod policy, not mistake these rows for valid asset-table indices.",
+    "Charge-turret shared consumer executes complete original6FA4FB..6FA5BE. Fire writer slices start after existing virtual GetROF and consume supplied signed ROF; the existing GetROF RNG/cadence owner is not reimplemented or claimed. Native multiplication, signed division, clamp and timer subtraction execute, including overflow controls."
+  ],
+  "substitutions": [
+    "Existing Reader supplies bump allocator, no-op deallocator and CRT TLS while preparing INI caches; selected scalar/mapping/lifecycle/draw slices use no file or allocation substitution.",
+    "Only temporal-boundary rows intercept actual virtual GetROF entries with result19; ordinary lifecycle has no substituted calls or RNG draws.",
+    "Loader loop rows answer5F7A90/5F7DB0 with their declared boolean part-load verdict; these rows do not claim native VXL/HVA parsing or archive IO."
+  ],
+  "entry_points": {
+    "set_gunner": "0x0070DC70",
+    "receive_gunner": "0x00746420",
+    "remove_gunner": "0x007464E0",
+    "fv_reader": "0x00747BBD",
+    "ifv_mode_reader": "0x00714780",
+    "turret_draw_admission": "0x0073B7A3",
+    "turret_draw_key": "0x0073B8D9",
+    "turret_filename": "0x005F7A90",
+    "barrel_filename": "0x005F7DB0"
+  },
+  "original_slices": [
+    {
+      "start": "0x6f2b99",
+      "end_exclusive": "0x6f2bca",
+      "sha256": "3c77471a0d89790bd0f04ef5288bf30e3544eb994d64fa926c68561aae3fb9d3",
+      "hex": "83cdffc786200100009cffffff89ae2401000089ae28010000899e2c010000899e30010000889e34010000899e38010000"
+    },
+    {
+      "start": "0x7110f2",
+      "end_exclusive": "0x7110f8",
+      "sha256": "dabb96313b425be207c9442a555433f249fe9bf6e08e109382ab492098c4be83",
+      "hex": "899e88060000"
+    },
+    {
+      "start": "0x71136f",
+      "end_exclusive": "0x71137b",
+      "sha256": "277b6d1d1fdc9f6d5bc7dff08d2f93d24f61ece5ab6bf3e59cf0530a5cf6f530",
+      "hex": "899e08080000889e10080000"
+    },
+    {
+      "start": "0x711781",
+      "end_exclusive": "0x711790",
+      "sha256": "746ab638dfd5ab427d20ace4987304f3e9049118b653ad9816dbe65e2fe22787",
+      "hex": "8dbe14080000b9120000008bc5f3ab"
+    },
+    {
+      "start": "0x71284a",
+      "end_exclusive": "0x712898",
+      "sha256": "55ea5f29a68c8a5e78b90065adced5d826064bdfe9b6684fce550924513d3b2e",
+      "hex": "8b9508080000526848438400538bcee8724ee1ff8985080800008b850c08000050683c438400538bcee8584ee1ff89850c0800008a8d1008000051682c438400538bcee85e6de1ff888510080000"
+    },
+    {
+      "start": "0x714780",
+      "end_exclusive": "0x71479a",
+      "sha256": "388bb78c4ad3d553d6cb2e4af247680f9d8707de756ec402e346a7a18b80a844",
+      "hex": "8b8d880600005168e43a8400538bcfe83c2fe1ff898588060000"
+    },
+    {
+      "start": "0x747bbd",
+      "end_exclusive": "0x747e90",
+      "sha256": "efc59271aa5601e25002ed2f33b0324926763630c7449049fb56ff23344e760e",
+      "hex": "684c3184008bce8986580e0000e8718eccff84c00f84b90200006a0068805c8400558bcbe8eafaddff6aff686c5c8400558bcb8bf8e8d9faddff50578bcee890fcfcff6a0168585c8400558bcbe8c1faddff6aff68445c8400558bcb8bf8e8b0faddff50578bcee867fcfcff6a02682c5c8400558bcbe898faddff6aff68145c8400558bcb8bf8e887faddff50578bcee83efcfcff6a0368045c8400558bcbe86ffaddff6aff68f05b8400558bcb8bf8e85efaddff50578bcee815fcfcff6a0068dc5b8400558bcbe846faddff6aff68c85b8400558bcb8bf8e835faddff50578bcee8ecfbfcff6a0068b45b8400558bcbe81dfaddff8bf86aff68a05b8400558bcbe80cfaddff50578bcee8c3fbfcff6a00688c5b8400558bcbe8f4f9ddff6aff68785b8400558bcb8bf8e8e3f9ddff50578bcee89afbfcff6a0068645b8400558bcbe8cbf9ddff6aff68505b8400558bcb8bf8e8baf9ddff50578bcee871fbfcff6a0068385b8400558bcbe8a2f9ddff6aff68205b8400558bcb8bf8e891f9ddff50578bcee848fbfcff6a0068085b8400558bcbe879f9ddff6aff68f05a8400558bcb8bf8e868f9ddff50578bcee81ffbfcff6a0068dc5a8400558bcbe850f9ddff6aff68c85a8400558bcb8bf8e83ff9ddff50578bcee8f6fafcff6a0068ac5a8400558bcbe827f9ddff6aff688c5a8400558bcb8bf8e816f9ddff50578bcee8cdfafcff6a00687c5a8400558bcbe8fef8ddff6aff686c5a8400558bcb8bf8e8edf8ddff50578bcee8a4fafcff6a0068585a8400558bcbe8d5f8ddff6aff68405a8400558bcb8bf8e8c4f8ddff50578bcee87bfafcff6a00682c5a8400558bcbe8acf8ddff6aff68185a8400558bcb8bf8e89bf8ddff50578bcee852fafcff6a0068005a8400558bcbe883f8ddff6aff68e8598400558bcb8bf8e872f8ddff50578bcee829fafcff6a0068d4598400558bcbe85af8ddff6aff68bc598400558bcb8bf8e849f8ddff50578bcee800fafcff"
+    },
+    {
+      "start": "0x717890",
+      "end_exclusive": "0x7178a2",
+      "sha256": "7bc911ce2fbc7cc03ac55f7d01d40e72e8f4988d14b7236296c63f6fd4a7271e",
+      "hex": "8b4424088b54240489948114080000c20800"
+    },
+    {
+      "start": "0x7178b0",
+      "end_exclusive": "0x7178be",
+      "sha256": "3656be1fa193d5aef414b6de80b0b19d74d3f59a80d5964023ab1437f7805871",
+      "hex": "8b4424048b848114080000c20400"
+    },
+    {
+      "start": "0x70dc70",
+      "end_exclusive": "0x70dcde",
+      "sha256": "9014356aa664479953e8763139e4663f881d05d37c3d75672e637ae3b3ed8cb8",
+      "hex": "568bf1578b06ff90840000008a881008000084c975538b7c240c85ff7c2883ff127d238b16578bceff92840000008bc8e80b9c000089be380100008986240100005f5ec204008b066a008bceff90840000008bc8e8e79b0000898624010000c78638010000000000005f5ec20400"
+    },
+    {
+      "start": "0x735678",
+      "end_exclusive": "0x735691",
+      "sha256": "59d863afd77a4a704325f32b1e9655e34fdb21b28eca9f5030e747449613f3f0",
+      "hex": "8b8ec40600008a810508000084c074096a008bcee8df85fdff"
+    },
+    {
+      "start": "0x74689b",
+      "end_exclusive": "0x7468b4",
+      "sha256": "77a21895e7ce063f8b810f87fe9917525cbff849cf716d75ee6a3bea0f1357c9",
+      "hex": "8b86c40600008a880508000084c974096a008bcee8bc73fcff"
+    },
+    {
+      "start": "0x746420",
+      "end_exclusive": "0x7464dc",
+      "sha256": "ee56d8ff0f26bd59ffd1676daf2e4ced573a83b1dca4768e46734b0f01bc1f49",
+      "hex": "83ec0c5356578b7c241c8bf18b9f7402000085db0f84810000008b97ec0200008b87f40200005533ed83faff740e8b0d84eda8002bca3bc87d0b2bc185c07405bd01000000899e740200008973246a078bcec7877402000000000000e8ef77fcff85ed5d74358b96b80300008b06426a078bce8996b8030000ff90180300008b0d84eda8008d96ec020000898eec0200008b4c2410894a048942088b178bcfff92840000008b80880600008bce50e89d77fcff5f5e5b83c40cc20400"
+    },
+    {
+      "start": "0x7464e0",
+      "end_exclusive": "0x7465a6",
+      "sha256": "fe5298486b2e178b5f640b45866c88cc04ab8d09f5577aac58ba2b8097502e01",
+      "hex": "83ec0c53568b7424185785f68bf90f849e0000008b9f7402000085db0f84900000008b97ec0200008b87f40200005533ed83faff740e8b0d84eda8002bca3bc87d0b2bc185c07405bd01000000899e740200008b8774020000897024c78774020000000000008b8e7402000085c9740c8b412885c07405e86446fdff85ed5d74318b8eb80300008b16416a00898eb80300008bceff92180300008b0d84eda80081c6ec020000890e8b4c2410894e048946086a008bcfe8d576fcff5f5e5b83c40cc204009090"
+    },
+    {
+      "start": "0x4de710",
+      "end_exclusive": "0x4de74e",
+      "sha256": "242d57bdac71b1c5181849804c1d2923250f8f1bba66e4ff616f0b0a9a348abe",
+      "hex": "53568bf1578dbe140100008bcfe80e4df9ff8bd88b068bceff90840000008a880508000084c97410833f00750b8b16538bceff92d80400005f8bc35e5bc3"
+    },
+    {
+      "start": "0x473430",
+      "end_exclusive": "0x473453",
+      "sha256": "08def5937bbf41642c7c0fb9da801c0d165f7676aca144371d22886672026027",
+      "hex": "8b410485c07501c38b5030895104c7403000000000ff09c390909090909090908b4104"
+    },
+    {
+      "start": "0x5f8640",
+      "end_exclusive": "0x5f8696",
+      "sha256": "71f7cfec11a252c867dd9fb9645be06e463a46c6ceb3979986e9743c88413d58",
+      "hex": "8b068bceff502c83f828754a8bcee82df2110084c0743f389ed50c000075378bae0808000033ff3beb0f8ed50100008d86f801000057508bcee812f4ffff84c0740a473bfd7ce8e9b8010000c644241301e9ae010000"
+    },
+    {
+      "start": "0x5f8844",
+      "end_exclusive": "0x5f88ac",
+      "sha256": "3aa9d1ae8f32b2e529f73e31678b7002f0d2439db4e18428a8fa7345e6b6c1f0",
+      "hex": "8b068bceff502c83f828750c389ea10c00000f84040200008b168bceff522c83f82875448bcee811f0110084c07439389ed50c000075318bae0808000033ff3beb0f8ed50100008d86f801000057508bcee816f5ffff84c00f84c8010000473bfd7ce4e9b4010000"
+    },
+    {
+      "start": "0x73b7a3",
+      "end_exclusive": "0x73b7cb",
+      "sha256": "bf5fd015f224d3795068776673e2900c1292b503449657ac2dc43571da1fe84c",
+      "hex": "8a83a10c000084c00f85280100008bcde8a824fdff84c0740f8bcde81d25fdff84c00f850e010000"
+    },
+    {
+      "start": "0x73b8d9",
+      "end_exclusive": "0x73b94f",
+      "sha256": "b1654a79167c1dde82039caca597590019d72dbfa1e37b75d22ece094c81acf2",
+      "hex": "8bcdc744241c00000000e87823fdff84c074438b95c40600008a82d50c000084c075338bcde8ed23fdff8bc88944241cc1e1180bf18b8cc35801000085c98974242c742d8b8cc35c01000085c97422c644241201eb208b83c000000085c074118b83c400000085c07407c644241201eb05c644241200"
+    },
+    {
+      "start": "0x73bc26",
+      "end_exclusive": "0x73bd79",
+      "sha256": "8cbc7f59a613b2b470510071a04fd332cb7181e7ad26da6a85404402127d9db6",
+      "hex": "8bcde83320fdff84c00f84440100008b8dc40600008a81d50c000084c00f85300100008db5a00300008d542420528bcee875d7d8ff8b00c1e80d40d1e8a8037e238d4c2470518bcee85dd7d8ff8b10c1ea0d42d1ea83e20380fa037d07c644241101eb538a442412c64424110084c074468b8c24e00100006a006800280000518d9424400100008d4c243c528b4500518d5424748d8b80020000528b542444518b4c2438526a008d94cb580100008bcd52ff90100500008b8424e00100008b74241c6a008b7c24306800280000508d8c24e00000008d44243c8b550051508d4c24748d835802000051508b442468578d8cf3c800000050518bcdff92100500008a44241184c00f84720100008a44241284c00f84660100008b8424e00100006a006800280000508d8c24400100008b55008d44243c51508d4c24748d83800200005150578d8cf3580100006a0051e923010000"
+    },
+    {
+      "start": "0x6fa4fb",
+      "end_exclusive": "0x6fa5be",
+      "sha256": "1d456a54b5c1d8d2b00464e9a00aa3e425a9b68aa451625fe24b674c18ae1a5b",
+      "hex": "8b068bceff90840000008a881008000084c90f84ab0000008b168bceff92840000008bc8e85cd3010084c00f84920000008b068bceff90840000008a88d50c000084c9757e8b86f802000033ff3bc57e6c8b96ec0200008b86f402000083faff740e8b0d84eda8002bca3bc87d452bc18bf88b168bceff92840000008b80080800008bce0fafc799f7bef80200008bf88b06ff90840000003bb8080800007c178b168bceff92840000008bb8080800004feb0a33ffebbb3bfd7d0233ff89be24010000"
+    },
+    {
+      "start": "0x6f2e98",
+      "end_exclusive": "0x6f2e9e",
+      "sha256": "a0e0198c881ffca579283ed7978eb279a0980351de1692d35e42f264acaadb57",
+      "hex": "899ef8020000"
+    },
+    {
+      "start": "0x6fe4a4",
+      "end_exclusive": "0x6fe4c8",
+      "sha256": "b183714feefcc0410e06cd5f80a7b01f69156db3ed0b4bf8c0362155cec4e08f",
+      "hex": "8986f80200008b0d84eda8008d96ec02000057890a8b4c2438894a048b4c244451894208"
+    },
+    {
+      "start": "0x6ff28f",
+      "end_exclusive": "0x6ff2be",
+      "sha256": "cf27cb09ac30d3c83ab06abb2868568500ebe88d3674d1a96ac34dc8289c2a9f",
+      "hex": "8a8e9802000084c97405992bc2d1f88986f80200008b0d84eda8008d96ec02000033ff890a8b4c2434894a04894208"
+    }
+  ],
+  "payload_sha256": "a95a1a930942ac331b9e35ac87abc86601e1069e2c2091ade978b29c170b32f0"
+}

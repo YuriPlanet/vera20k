@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Two original single-site TEMPERATE radiation light lifecycles through real Cell gathering and selected TMP pixels",
+  "assumptions": [
+    "Each independent history uses the existing PaletteReader/TMP runtime, actual expansionRULESMD/fixedART/Battle/XMP and native per-layer Radiation/selected weapon/Warhead readers. Six allocated physical sample tuples/native Cell and Dummy constructors/ground getters precede original RadSite activation; full physical crop is separately labeled provenance only. No VERA values initialize source fields or expected pixels.",
+    "Original65B580/65B800 execute completely, including both native timers, registered LightSource constructors/updates, actual Cell483E30/484180/Convert and real expiry/deleting virtual slots. Actual native source registry order drives each supplied elapsed-frame visit. Same-center refresh at declared45 is an independent component input, not normal DESO ROF or whole-world scheduling.",
+    "Main/Scenario/MapGen are originally seeded0 at the declared post-setup entry. Complete states, actual requests/raw calls, source callbacks, both expiry receivers and native frees are retained. Real selected TMP rasters run on that same source/Cell runtime; surfaces/projection/detail/A127 are explicit component priors.",
+    "Only full outer activation65B580/refresh65B530/AI65B800 use the existing invocation owner with20M instructions/120s limits for native area publication and27/53-shade Convert work. Every other lifecycle invocation retains the historical2M/10s default; completion at actualRET_MAGIC remains mandatory.",
+    "After both histories clean up, the last central runtime executes three explicit numeric priors through original65B871..65B89E: normal, low32 multiplication overflow and signed operands. Native pushed red/green/blue words and actual IMUL/IDIV visits are observed with a200-instruction bound, stopping before LightSource access. Two further numeric controls execute full554AA0 on inactive zeroed operand storage with supplied current/proposed parameters; actual memory records its comparison gate and writes. These are not constructed RadSite/LightSource objects or additional scenario histories. CPU/stack, all three RNG streams, live registries, final Cell/source state and callback counts are restored or asserted unchanged; no host arithmetic or lifecycle result supplies an output.",
+    "The selected center enrolls its complete contiguous physical TMP suffix family through the same original descriptor/lazy-loader owner. Actual native metadata validates each file. Four phases each retain one native row per physical file; count<=4 uses original fixed16 selector data81CCA8, rotated as declared component inputs while original4814F0/547CF0 select and follow the descriptor observed at547F49. Both selector tables/flag, live RNG and lighting profile are preserved/restored. Raw selector argument and effective physical descriptor identity are distinct observations. This is not whole-world selector or Main bootstrap equivalence.",
+    "The historical isolated palette-table assertion VM and lexical-index native CRC probes remain in shared setup; this is not a literal single-VM process. RadSite/LightSource/Cell/raster lifecycle never crosses into another VM."
+  ],
+  "substitutions": [
+    "Existing shared lexical/MIX/file transports, bounded PaletteReader allocator, operator-delete storage seam, CRT/TLS, RGB565 surfaces and empty Windows SEH/checkedIsBadReadPtr. No source/Cell/timer/lifecycle/native drawing result is supplied.",
+    "LightPublication existing Map4F42F0 redraw sink returns after observing its argument; original Cell light sink is disabled, so real483E30/484180 run. Sparse six-Cell fixed512 map enrollment and empty live listeners are component priors. Original5657E0 skips missing light targets, while original5657A0 stamps missing field targets into shared Dummy; actual Dummy doubles/coords/registration and alias-call counts are retained without resets. No full physical-circle publication/cache/ID, native scenario, paid DESO, deploy/shot/audio or whole-frame parity."
+  ],
+  "entry_points": {
+    "activate": "0x0065B580",
+    "ai": "0x0065B800",
+    "site_ctor": "0x0065B1E0",
+    "site_destructor": "0x0065B2F0",
+    "site_delete": "0x0065BED0",
+    "light_ctor": "0x00554760",
+    "light_update": "0x00554AA0",
+    "light_delete": "0x00555150",
+    "area": "0x00554AF0",
+    "cell_light": "0x00483E30",
+    "cell_gather": "0x00484180",
+    "cell_site": "0x00487C70",
+    "expiry": "0x007258D0",
+    "cell_draw": "0x00480350",
+    "tmp_draw": "0x00547CF0",
+    "tint_integer_begin": "0x0065B871",
+    "tint_integer_end": "0x0065B89E"
+  },
+  "replay_command": "python -m tools.spatial_oracle.radiation_damage_boundary --light-lifecycle --light-cell 33,88",
+  "payload_sha256": "c8d9c04fd55f55433a3b9eb6cc6f68c695df2cd7ddf2e69778c13d01709ff3dc"
+}

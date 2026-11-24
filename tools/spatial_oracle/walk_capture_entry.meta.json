@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Walk prospective-coordinate/height caller joined to Infantry entry.\n\nThe interior Walk frame, actor/type and cells are supplied. Original49F3A0\ninitializes direction vectors;75B59C..75B696 produces query arguments and runs\nconcrete51BF90. Stop before head selection/refusal response; no full route claim.\n",
+  "assumptions": [
+    "Shared astar_capture_neighbor preparation supplies labelled actor/type/cells and executes original physical land-speed layer readers. Sparse map, object storage, mission/NavCom and type scalars are projected inputs, not native full constructors.",
+    "Original Walk constructor and direction-vector initializer execute. Interior frame supplies only the receiver and retained direction; original prospective coordinate, truncation, Map query, signed height and concrete Infantry admission bodies execute unchanged.",
+    "Stops before head selection or the first refusal callback. No full route, paid movement, repair, RNG, sound, lifecycle or persistence equivalence is claimed."
+  ],
+  "substitutions": [
+    "Preparation INI reader inherits bounded allocation/free/TLS/file seams. No such seam or RNG entry is reached in the measured Walk caller/Infantry corridor."
+  ],
+  "entry_points": {
+    "direction_initializer": "0x0049F3A0",
+    "walk_constructor": "0x0075AA90",
+    "prospective_caller": "0x0075B59C",
+    "height_reader": "0x005F5F00",
+    "object_get_cell": "0x005F6960",
+    "infantry_entry": "0x0051BF90",
+    "head_boundary": "0x0075BC13",
+    "refusal_boundary": "0x0075B6A0"
+  },
+  "payload_sha256": "b905f4d59c2c62cc60aa3842ed3daeea8b6a7d5b765f07aed327aa26fd772e6b"
+}

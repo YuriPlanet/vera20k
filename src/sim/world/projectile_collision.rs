@@ -1,0 +1,2591 @@
+//! BulletClass AI pre-commit ordinary admission and post-commit shared probe.
+//! Native owners: 4666E0 (467494..467B7A), 468BB0, 4CC360. World state is
+//! read at each native receiver boundary; collision does not own a second map.
+
+use super::*;
+use crate::sim::cell_rect::{CellRef, get_cellclass_fallback};
+use crate::sim::projectile::{
+    ImpactLadderTarget, ImpactLadderWorld, ProjectileCollisionMotion, ProjectileCollisionPhase,
+    ProjectileTarget, ProjectileTargetQuery, ProjectileTrajectory, ProjectileVelocity,
+    coord_distance, fixed_deck_z_for_cell_ref, is_structural_bridge_cell, projectile_cell_at,
+    projectile_ground_z, projectile_surface_z,
+};
+
+pub(super) struct ProjectileCollisionWorld<'a> {
+    pub terrain: Option<&'a ResolvedTerrainGrid>,
+    pub dummy: &'a SharedCellDummy,
+    pub occupancy: &'a OccupancyGrid,
+    pub entities: &'a EntityStore,
+    pub terrain_objects:
+        &'a std::collections::BTreeMap<u64, crate::sim::terrain_object::TerrainObjectState>,
+    pub interner: &'a crate::sim::intern::StringInterner,
+    pub alliances: &'a HouseAlliances,
+    pub overlays: Option<&'a crate::sim::overlay_grid::OverlayGrid>,
+    pub rules: &'a RuleSet,
+    pub map_size: Option<(i32, i32)>,
+    /// The Houses whose Ares firestorm is up (`sim::ares_firestorm`).
+    pub ares_firestorm: &'a crate::sim::ares_firestorm::FirestormHouses,
+}
+
+impl ProjectileCollisionWorld<'_> {
+    fn cell(&self, coord: ProjectileCoord) -> CellRef<'_> {
+        projectile_cell_at(self.terrain, self.dummy, coord)
+    }
+
+    fn packed_cell(&self, coord: ProjectileCoord) -> CellRef<'_> {
+        if self.terrain.is_some() {
+            get_cellclass_fallback(self.terrain, coord.x / 256, coord.y / 256)
+        } else {
+            self.cell(coord)
+        }
+    }
+
+    fn ground(&self, coord: ProjectileCoord) -> i32 {
+        projectile_ground_z(self.terrain, self.dummy, coord)
+    }
+
+    fn building(&self, cell: &CellRef<'_>) -> Option<u64> {
+        let CellRef::Real(cell) = cell else {
+            return None;
+        };
+        self.occupancy
+            .first_building_on_layer(cell.rx, cell.ry, MovementLayer::Ground)
+    }
+
+    /// The object's Location (+0x9C).
+    fn raw_location(&self, object: &crate::sim::game_entity::GameEntity) -> ProjectileCoord {
+        let coord = crate::sim::movement::ground_pose::object_location(object, self.terrain);
+        ProjectileCoord::new(coord.x, coord.y, coord.z)
+    }
+
+    /// The object's GetCoords (vt+0x48).
+    fn location(&self, object: &crate::sim::game_entity::GameEntity) -> ProjectileCoord {
+        let coord = crate::sim::movement::ground_pose::object_get_coords(object, self.terrain);
+        ProjectileCoord::new(coord.x, coord.y, coord.z)
+    }
+
+    fn allied(&self, source: Option<u64>, other: u64) -> bool {
+        let Some(source) = source.and_then(|id| self.entities.get(id)) else {
+            return false;
+        };
+        let Some(other) = self.entities.get(other) else {
+            return false;
+        };
+        self.alliances
+            .is_allied(self.interner, source.owner(), other.owner())
+    }
+
+    fn overlay(&self, cell: &CellRef<'_>) -> (Option<u8>, Option<crate::sim::intern::InternedId>) {
+        match cell {
+            CellRef::Real(cell) => self.overlays.map_or((None, None), |grid| {
+                let overlay = grid.cell(cell.rx, cell.ry);
+                (overlay.overlay_id, overlay.wall_owner)
+            }),
+            CellRef::Dummy { cell } => (cell.overlay_fields().0, None),
+        }
+    }
+
+    /// 47C3D0(0,0,ground,null) chooses minimum truncated distance of low-byte
+    /// XY, with strict ties retaining E4 list order. Nonbuilding Techno
+    /// insertions prepend; Building insertions append (47E8A0).
+    fn nearest(&self, cell: &CellRef<'_>) -> Option<(u64, ProjectileCoord)> {
+        let CellRef::Real(cell) = cell else {
+            return None;
+        };
+        // 47C427 tests Techno identity, set only by6F322F. Terrain's
+        // Object base sets bit1 (5F3B37), so Terrain is not eligible.
+        let objects = self
+            .occupancy
+            .get(cell.rx, cell.ry)
+            .into_iter()
+            .flat_map(|occupants| occupants.iter_layer(MovementLayer::Ground))
+            .filter_map(|occupant| self.entities.get(occupant.entity_id))
+            .map(|object| {
+                let location = self.location(object);
+                (
+                    object.stable_id(),
+                    true,
+                    crate::sim::cell_kernel::CellQueryPoint {
+                        x: location.x,
+                        y: location.y,
+                    },
+                )
+            });
+        let id = crate::sim::cell_kernel::nearest_eligible_in_order(
+            crate::sim::cell_kernel::CellQueryPoint { x: 0, y: 0 },
+            objects,
+        )?;
+        Some((id, self.raw_location(self.entities.get(id)?)))
+    }
+
+    pub fn collide(
+        &self,
+        projectile: &Projectile,
+        candidate: ProjectileCoord,
+        phase: ProjectileCollisionPhase,
+    ) -> Option<ProjectileCollisionResponse> {
+        match phase {
+            ProjectileCollisionPhase::Ordinary {
+                persistent_velocity,
+                motion,
+            } => Some(self.ordinary(projectile, motion, persistent_velocity)),
+            ProjectileCollisionPhase::Shared => self
+                .shared(projectile, candidate)
+                .then_some(ProjectileCollisionResponse::TargetZClamp(candidate)),
+            ProjectileCollisionPhase::ImpactLadder => {
+                Some(ProjectileCollisionResponse::ImpactLadder(
+                    self.impact_ladder(projectile, candidate),
+                ))
+            }
+            ProjectileCollisionPhase::AresFirestorm => self
+                .ares_firestorm(projectile, candidate)
+                .then_some(ProjectileCollisionResponse::AresFirestorm),
+        }
+    }
+
+    /// Ares BulletClass_Update_Ranged (`1001AC90`, hook `0x467B94`): while
+    /// any firestorm is up, a bullet whose type is not `IgnoresFirestorm=`
+    /// burns at `candidate` when its cell's building (MapClass::GetCellAt,
+    /// CellClass::GetBuilding) is an active firestorm wall not of its
+    /// firer's House.
+    fn ares_firestorm(&self, projectile: &Projectile, candidate: ProjectileCoord) -> bool {
+        if !self.ares_firestorm.any_active()
+            || projectile
+                .payload()
+                .projectile_type()
+                .and_then(|id| self.interner.projectile_type(id, self.rules))
+                .is_some_and(|kind| kind.bullet_type_ext.ignores_firestorm)
+        {
+            return false;
+        }
+        let Some(building) = self.building(&self.cell(candidate)) else {
+            return false;
+        };
+        let firer_house = self
+            .entities
+            .get(projectile.source_id())
+            .map(|firer| firer.owner());
+        crate::sim::ares_firestorm::is_active_firestorm_wall(
+            self.ares_firestorm,
+            self.entities,
+            self.interner,
+            self.rules,
+            building,
+            firer_house,
+        )
+    }
+
+    /// The Target and warhead facts `0x00468D80` reads, with the bullet at
+    /// `location`.
+    fn impact_ladder(
+        &self,
+        projectile: &Projectile,
+        location: ProjectileCoord,
+    ) -> ImpactLadderWorld {
+        let em_effect = self
+            .interner
+            .warhead_type(projectile.payload().warhead, self.rules)
+            .is_some_and(|warhead| warhead.em_effect);
+        let target = match projectile.target() {
+            ProjectileTarget::Entity(id) => self.entities.get(id).map(|target| {
+                let coords = self.location(target);
+                let object_type = self.interner.object_type(target.type_ref(), self.rules);
+                let offset_coords = crate::sim::movement::ground_pose::object_target_coords(
+                    target,
+                    self.terrain,
+                    object_type,
+                );
+                ImpactLadderTarget {
+                    coords,
+                    aim: coords,
+                    offset_coords: ProjectileCoord::new(
+                        offset_coords.x,
+                        offset_coords.y,
+                        offset_coords.z,
+                    ),
+                    in_air: self.high_flying(projectile.target()),
+                    ground_layer: super::display_registry::entity_layer(
+                        target,
+                        self.terrain,
+                        Some((self.rules, self.interner)),
+                    ) == super::display_layers::DisplayLayer::GROUND,
+                    distance: self
+                        .target_distance(location, projectile.target())
+                        .expect("represented impact target"),
+                    building_offset: target.category() == EntityCategory::Structure
+                        && object_type.is_some_and(|kind| kind.target_coord_offset() != [0; 3]),
+                }
+            }),
+            // Terrain is Object RTTI36, not a Techno or Building. Its +48,
+            // +58 (410540) and +A4 (41BDD0) all use the retained Location.
+            ProjectileTarget::Terrain(id) => self.terrain_objects.get(&id).map(|target| {
+                let coords = target.world_coord();
+                ImpactLadderTarget {
+                    coords,
+                    aim: coords,
+                    offset_coords: coords,
+                    in_air: self.high_flying(projectile.target()),
+                    ground_layer: target.display_layer(self.terrain, self.rules)
+                        == super::display_layers::DisplayLayer::GROUND,
+                    distance: self
+                        .target_distance(location, projectile.target())
+                        .expect("represented impact target"),
+                    building_offset: false,
+                }
+            }),
+            cell @ (ProjectileTarget::Cell { .. } | ProjectileTarget::DummyCell) => {
+                // 468DEA/468E88 and DistanceTo468F71 use Cell+48 ground.
+                // Only the last replacement468F88 reads the +58 deck aim.
+                // Conflating them moves the 32/42-lepton admission sphere
+                // from the ground to the deck and changes the final impact.
+                let coords = match cell {
+                    ProjectileTarget::Cell { rx, ry } => {
+                        crate::sim::projectile::cell_ground_coord(self.terrain, rx, ry)
+                    }
+                    ProjectileTarget::DummyCell => {
+                        crate::sim::projectile::dummy_cell_ground_coord(self.dummy)
+                    }
+                    _ => unreachable!("Cell impact target"),
+                };
+                self.target_coordinate(cell, ProjectileTargetQuery::TargetAim)
+                    .map(|aim| ImpactLadderTarget {
+                        coords,
+                        aim,
+                        offset_coords: coords,
+                        in_air: false,
+                        ground_layer: true,
+                        distance: crate::util::native_x87::object_distance(
+                            [location.x, location.y, location.z],
+                            [coords.x, coords.y, coords.z],
+                            None,
+                        ),
+                        building_offset: false,
+                    })
+            }
+            ProjectileTarget::None => None,
+        };
+        ImpactLadderWorld { target, em_effect }
+    }
+
+    fn ordinary(
+        &self,
+        projectile: &Projectile,
+        motion: ProjectileCollisionMotion,
+        persistent_velocity: ProjectileVelocity,
+    ) -> ProjectileCollisionResponse {
+        let (motion, impact) = self.ordinary_geometry(projectile, motion);
+        self.ordinary_tail(
+            projectile,
+            motion.candidate_coord(),
+            persistent_velocity,
+            ProjectileVelocity::from_native(motion.velocity),
+            motion.velocity,
+            impact,
+        )
+    }
+
+    fn ordinary_geometry(
+        &self,
+        projectile: &Projectile,
+        mut motion: ProjectileCollisionMotion,
+    ) -> (ProjectileCollisionMotion, bool) {
+        use crate::util::native_x87::NativeF64Bits;
+        let candidate = motion.candidate_coord();
+        let mut candidate_z = f64::from_bits(motion.candidate[2].bits());
+        let vertical = matches!(
+            projectile.trajectory(),
+            ProjectileTrajectory::Vertical { .. }
+        );
+        let source = self
+            .entities
+            .get(projectile.source_id())
+            .map(|_| projectile.source_id());
+        let mut impact = false;
+        if !vertical {
+            let floor = self.ground(candidate);
+            // 0x00467494..0x00467778 tests the candidate Cell first. At the
+            // bridge exit the old Cell can still supply the crossing plane.
+            let cell = self.cell(candidate);
+            let previous_cell =
+                (!is_structural_bridge_cell(&cell)).then(|| self.cell(projectile.position()));
+            let structural_cell = previous_cell.as_ref().unwrap_or(&cell);
+            let structural = is_structural_bridge_cell(structural_cell);
+            let fixed_deck =
+                fixed_deck_z_for_cell_ref(self.terrain, structural_cell).filter(|&deck| {
+                    // At a stock bridge exit the candidate floor owns the
+                    // crossing threshold. Use the old cell only when its
+                    // retained deck really replaces its local ground + 4.
+                    previous_cell.is_none()
+                        || deck
+                            != crate::sim::movement::ground_pose::z_at_height(
+                                self.ground(projectile.position()),
+                                0,
+                                true,
+                            )
+                });
+            let deck = fixed_deck
+                .unwrap_or_else(|| crate::sim::movement::ground_pose::z_at_height(floor, 0, true));
+            let crossing = if structural {
+                projectile_bridge_crossing(projectile.position().z, candidate.z, deck)
+            } else {
+                ProjectileBridgeCrossing::None
+            };
+            let mut obstacle = false;
+            if crossing == ProjectileBridgeCrossing::None
+                && candidate_z >= f64::from(floor)
+                && candidate_z < f64::from(floor) + 150.0
+            {
+                let building = self.building(&cell);
+                obstacle = building.is_some()
+                    || matches!(
+                        crate::sim::cell_kernel::wall_connection_step(
+                            self.overlay(&cell).0.map_or(-1, i32::from),
+                            -1,
+                            Some(self.rules.overlay_registry()),
+                            self.rules.ares_form(),
+                        ),
+                        crate::sim::cell_kernel::WallConnectionStep::Return(true)
+                    );
+                if let Some(id) = building {
+                    let exempt = self
+                        .entities
+                        .get(id)
+                        .and_then(|object| self.interner.object_type(object.type_ref(), self.rules))
+                        .is_some_and(|kind| {
+                            kind.is_1x1_with_undeploy()
+                                && kind
+                                    .undeploys_into
+                                    .as_deref()
+                                    .is_some_and(|name| self.rules.object(name).is_some())
+                        });
+                    // LaserFence+stage>=8 has no active retail type/data writer.
+                    obstacle &= Some(id) != source && !exempt && !self.allied(source, id);
+                }
+            }
+            if candidate_z < f64::from(floor)
+                || crossing != ProjectileBridgeCrossing::None
+                || obstacle
+            {
+                if source.is_none() {
+                    match crossing {
+                        ProjectileBridgeCrossing::Down => candidate_z = f64::from(deck),
+                        ProjectileBridgeCrossing::Up => {
+                            candidate_z = f64::from(deck.wrapping_sub(20))
+                        }
+                        ProjectileBridgeCrossing::None
+                            if candidate_z > f64::from(floor.wrapping_sub(100)) =>
+                        {
+                            candidate_z = f64::from(floor)
+                        }
+                        ProjectileBridgeCrossing::None => {}
+                    }
+                    let ground_slope = match self.cell(candidate) {
+                        CellRef::Real(c) => c.slope_type,
+                        CellRef::Dummy { cell } => cell.snapshot().slope_type,
+                    };
+                    let slope =
+                        if fixed_deck.is_some() && crossing != ProjectileBridgeCrossing::None {
+                            0
+                        } else {
+                            ground_slope
+                        };
+                    // The reflection refuses a result its f32 store cannot
+                    // hold (an `Elasticity=` near 1e36 or not finite, which
+                    // only a mod sets; native `0x00467666..0x00467778` just
+                    // stores it). The bullet then impacts with its velocity
+                    // as it was.
+                    if let Some(reflected) = crate::sim::projectile::projectile_slope_reflect_double(
+                        motion.velocity,
+                        slope,
+                        projectile.collision().elasticity_bits,
+                    ) {
+                        motion.velocity = reflected;
+                    }
+                    impact = true;
+                } else if crossing != ProjectileBridgeCrossing::None {
+                    candidate_z = f64::from(if crossing == ProjectileBridgeCrossing::Down {
+                        deck
+                    } else {
+                        deck.wrapping_sub(20)
+                    });
+                    impact = true;
+                }
+            }
+        }
+        motion.candidate[2] = NativeF64Bits::from_bits(candidate_z.to_bits());
+        (motion, impact)
+    }
+
+    fn ordinary_tail(
+        &self,
+        projectile: &Projectile,
+        mut candidate: ProjectileCoord,
+        persistent_velocity: ProjectileVelocity,
+        mut velocity: ProjectileVelocity,
+        native_velocity: [crate::util::native_x87::NativeF64Bits; 3],
+        mut impact: bool,
+    ) -> ProjectileCollisionResponse {
+        let vertical = matches!(
+            projectile.trajectory(),
+            ProjectileTrajectory::Vertical { .. }
+        );
+        let source = self
+            .entities
+            .get(projectile.source_id())
+            .map(|_| projectile.source_id());
+        let mut near_target = false;
+        let mut left_map = false;
+        let target_cell_coord = (
+            (projectile.launch_target().x / 256) as i16,
+            (projectile.launch_target().y / 256) as i16,
+        );
+        let same_cell =
+            ((candidate.x / 256) as i16, (candidate.y / 256) as i16) == target_cell_coord;
+        // `ObjectClass::GetHeight @ 0x005F5F40` on the pre-move coordinate,
+        // from the bridge deck for an OnBridge bullet.
+        let old_height = || {
+            let position = projectile.position();
+            position.z.wrapping_sub(projectile_surface_z(
+                self.terrain,
+                self.dummy,
+                position,
+                projectile.on_bridge(),
+            ))
+        };
+        if !vertical && same_cell && old_height() < 208 {
+            impact = true;
+            near_target = true;
+            velocity = persistent_velocity;
+        } else {
+            let candidate_cell = self.packed_cell(candidate);
+            let target_cell = self.packed_cell(projectile.launch_target());
+            let candidate_building = self.building(&candidate_cell);
+            let target_building = self.building(&target_cell);
+            if !vertical
+                && candidate_building.is_some()
+                && candidate_building == target_building
+                && old_height() < 208
+            {
+                impact = true;
+                near_target = true;
+                velocity = persistent_velocity;
+            } else {
+                let nearest = self.nearest(&self.cell(candidate));
+                if let Some((id, position)) = nearest.filter(|(id, position)| {
+                    Some(*id) != source
+                        && !self.allied(source, *id)
+                        && coord_distance(candidate, *position) < 128
+                }) {
+                    let _ = id;
+                    impact = true;
+                    if !projectile.collision().inaccurate {
+                        candidate = position;
+                    }
+                    velocity = persistent_velocity;
+                } else if !self.inside_map(candidate) {
+                    impact = true;
+                    left_map = true;
+                    candidate = projectile.position();
+                    velocity = persistent_velocity;
+                } else {
+                    if vertical {
+                        velocity = persistent_velocity;
+                    }
+                    if crate::sim::projectile::projectile_velocity_magnitude_double(if vertical {
+                        ProjectileCollisionMotion::from_coordinate(candidate, persistent_velocity)
+                            .velocity
+                    } else {
+                        native_velocity
+                    }) < 10.0
+                        && old_height() < 10
+                    {
+                        impact = true;
+                    }
+                }
+            }
+        }
+        ProjectileCollisionResponse::Ordinary {
+            candidate,
+            velocity,
+            impact,
+            near_target,
+            left_map,
+        }
+    }
+
+    fn inside_map(&self, candidate: ProjectileCoord) -> bool {
+        if let Some(map_size) = self.map_size {
+            map_size_contains(map_size, candidate.x, candidate.y)
+        } else {
+            self.terrain.is_none() || matches!(self.cell(candidate), CellRef::Real(_))
+        }
+    }
+
+    fn shared(&self, projectile: &Projectile, candidate: ProjectileCoord) -> bool {
+        let cell = self.cell(candidate);
+        // Ares BulletClass_ShouldDetonate_Obstacle 1001AB10 (hook 0x468BE2)
+        // adds SubjectToBuildings to the gate and passes the bullet's owner
+        // and target to GetObstacle 1006E540.
+        let solid = self.rules.ares() && projectile.collision().subject_to_solid;
+        if (projectile.collision().subject_to_cliffs
+            || projectile.collision().subject_to_walls
+            || solid)
+            && self.cliff_wall(projectile, candidate)
+        {
+            return true;
+        }
+        // 468C8A/468CF2 dispatch Object.GetHeight5F5F40 with the Bullet's
+        // retained OnBridge byte. Keep these ground queries at their original
+        // boundaries, including Flak's target-height prerequisite below.
+        let floor = self.ground(candidate);
+        let fixed_deck =
+            projectile.on_bridge() && fixed_deck_z_for_cell_ref(self.terrain, &cell).is_some();
+        // Native's OnBridge height <= -416 is a ground penetration check.
+        // With variable clearance, test the actual ground for that arm.
+        if if fixed_deck {
+            candidate.z.wrapping_sub(floor) <= 0
+        } else {
+            crate::sim::movement::ground_pose::height_at_z(
+                candidate.z,
+                floor,
+                projectile.on_bridge(),
+            ) <= -crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
+        } {
+            return true;
+        }
+        if projectile.collision().flak_scatter
+            && self
+                .target_coordinate(projectile.target(), ProjectileTargetQuery::TargetAim)
+                .is_some_and(|target| candidate.z < target.z)
+            && candidate.z.wrapping_sub(projectile_surface_z(
+                self.terrain,
+                self.dummy,
+                candidate,
+                projectile.on_bridge(),
+            )) < 0
+        {
+            return true;
+        }
+        if projectile.collision().level {
+            // Cell ctor47BC11 stores DWORD 0xFFFF; ordinary IsoMap loading
+            // rejects/reconstructs the dummy, and Recalc skips it entirely.
+            let tile = match &cell {
+                CellRef::Real(c) => c.final_tile_index,
+                CellRef::Dummy { .. } => 0xFFFF,
+            };
+            // Cell vt+0x50 (`0x004867E0`): outside the WaterSet window. Without
+            // a map the cell is the dummy, whose tile is outside every window.
+            if !self
+                .terrain
+                .is_some_and(|terrain| terrain.tile_is_water_set(tile))
+            {
+                return true;
+            }
+        }
+        if projectile.collision().anti_air
+            && self.high_flying(projectile.target())
+            && self
+                .target_distance(candidate, projectile.target())
+                .is_some_and(|distance| distance < 128)
+        {
+            return true;
+        }
+        false
+    }
+
+    fn target_distance(&self, candidate: ProjectileCoord, target: ProjectileTarget) -> Option<i32> {
+        // ObjectClass::Distance 5F6360 between the virtual +48 positions,
+        // with a building target's foundation term.
+        let (location, building) = match target {
+            ProjectileTarget::Entity(id) => {
+                let target = self.entities.get(id)?;
+                let building = (target.category() == EntityCategory::Structure)
+                    .then(|| self.interner.object_type(target.type_ref(), self.rules))
+                    .flatten()
+                    .map(|kind| {
+                        let (width, height) = kind.foundation.dimensions();
+                        (i32::from(width), i32::from(height))
+                    });
+                (self.location(target), building)
+            }
+            ProjectileTarget::Terrain(id) => (self.terrain_objects.get(&id)?.world_coord(), None),
+            _ => return None,
+        };
+        Some(crate::util::native_x87::object_distance(
+            [candidate.x, candidate.y, candidate.z],
+            [location.x, location.y, location.z],
+            building,
+        ))
+    }
+
+    fn cliff_wall(&self, projectile: &Projectile, candidate: ProjectileCoord) -> bool {
+        use crate::sim::combat::line_of_fire::{
+            CellObstructionProbe, LineOfFireInputs, LineOfFireParties, LineOfFireShot,
+            cell_blocks_line_of_fire,
+        };
+        // Shared468BB0 resolves the three retained inputs before4CC360.
+        // Source/target use565730; previous and sampled queries use5657A0.
+        let source = self.cell(projectile.launch_origin());
+        let target = self.cell(projectile.launch_target());
+        let previous = if self.terrain.is_some() {
+            get_cellclass_fallback(
+                self.terrain,
+                i32::from(projectile.previous_cell().0),
+                i32::from(projectile.previous_cell().1),
+            )
+        } else {
+            self.dummy.stamp_coord(
+                i32::from(projectile.previous_cell().0),
+                i32::from(projectile.previous_cell().1),
+            );
+            CellRef::Dummy {
+                cell: self.dummy.clone(),
+            }
+        };
+        let los = LineOfFireInputs {
+            overlay_grid: self.overlays,
+            overlay_registry: Some(self.rules.overlay_registry()),
+            alliances: Some(self.alliances),
+            // The walk itself answers on the switch; a game without Ares
+            // never asks a cell for its buildings.
+            buildings: Some(crate::sim::combat::line_of_fire::CellBuildings {
+                occupancy: self.occupancy,
+                entities: self.entities,
+            }),
+        };
+        let owner = self.entities.get(projectile.source_id());
+        cell_blocks_line_of_fire(
+            CellObstructionProbe {
+                source: &source,
+                target: &target,
+                previous: &previous,
+                sample: crate::sim::components::DriveCoord {
+                    x: candidate.x,
+                    y: candidate.y,
+                    z: candidate.z,
+                },
+                shot: LineOfFireShot {
+                    subject_to_cliffs: projectile.collision().subject_to_cliffs,
+                    subject_to_walls: projectile.collision().subject_to_walls,
+                    subject_to_solid: projectile.collision().subject_to_solid,
+                    parties: LineOfFireParties {
+                        firing_house: owner.map(|source| source.owner()),
+                        // The bullet's Owner (+0xB0) and Target (+0x10C).
+                        source_object: owner.map(|source| source.stable_id()),
+                        target_object: match projectile.target() {
+                            ProjectileTarget::Entity(id) => Some(id),
+                            _ => None,
+                        },
+                    },
+                },
+            },
+            self.interner,
+            self.rules,
+            &los,
+            self.terrain,
+            |(x, y)| {
+                self.packed_cell(ProjectileCoord::new(
+                    i32::from(x) * 256,
+                    i32::from(y) * 256,
+                    0,
+                ))
+            },
+        )
+        .is_some()
+    }
+
+    /// Resolve each native virtual through its existing coordinate owner.
+    /// Bullet AI466B95 uses Object+A4 for guidance (Building4500A0), while
+    /// Fire468707, shared Flak and final snap467CA9..467E4D retain their own queries.
+    /// Native building inputs/getter evidence: tools/projectile_oracle/shipyard_offsets.json.
+    pub(super) fn target_coordinate(
+        &self,
+        target: ProjectileTarget,
+        query: ProjectileTargetQuery,
+    ) -> Option<ProjectileCoord> {
+        match target {
+            ProjectileTarget::Entity(id) => {
+                let target = self.entities.get(id)?;
+                if query == ProjectileTargetQuery::GuidanceAim {
+                    let kind = self.interner.object_type(target.type_ref(), self.rules);
+                    let coord = crate::sim::movement::ground_pose::object_target_coords(
+                        target,
+                        self.terrain,
+                        kind,
+                    );
+                    Some(ProjectileCoord::new(coord.x, coord.y, coord.z))
+                } else {
+                    Some(self.location(target))
+                }
+            }
+            // All three Terrain virtuals preserve construction height.
+            ProjectileTarget::Terrain(id) => self
+                .terrain_objects
+                .get(&id)
+                .map(crate::sim::terrain_object::TerrainObjectState::world_coord),
+            ProjectileTarget::Cell { rx, ry } => {
+                Some(if query == ProjectileTargetQuery::GetCoords {
+                    crate::sim::projectile::cell_ground_coord(self.terrain, rx, ry)
+                } else {
+                    crate::sim::projectile::cell_target_coord(self.terrain, rx, ry)
+                })
+            }
+            ProjectileTarget::DummyCell => Some(if query == ProjectileTargetQuery::GetCoords {
+                crate::sim::projectile::dummy_cell_ground_coord(self.dummy)
+            } else {
+                crate::sim::projectile::dummy_cell_target_coord(self.dummy)
+            }),
+            ProjectileTarget::None => None,
+        }
+    }
+
+    /// The target's vt+0x54, IsInAir.
+    fn high_flying(&self, target: ProjectileTarget) -> bool {
+        match target {
+            ProjectileTarget::Entity(id) => self.entities.get(id).is_some_and(|target| {
+                crate::sim::movement::air_movement::is_high_flying(
+                    target,
+                    self.terrain,
+                    Some((self.rules, self.interner)),
+                )
+            }),
+            ProjectileTarget::Terrain(id) => self
+                .terrain_objects
+                .get(&id)
+                .is_some_and(|target| target.is_in_air(self.terrain)),
+            _ => false,
+        }
+    }
+}
+
+/// `MapClass::CoordinatesLegal @ 0x00568350`: the lepton coordinate's cell
+/// (signed words) lies in the map's Size diamond.
+fn map_size_contains((width, height): (i32, i32), x: i32, y: i32) -> bool {
+    let cell = ((x / 256) as i16, (y / 256) as i16);
+    crate::map::playfield::size_diamond_contains(width, height, cell)
+}
+
+impl Simulation {
+    /// `MapClass::CoordinatesLegal @ 0x00568350` for a lepton coordinate; a
+    /// world without a map Size admits every coordinate.
+    pub(crate) fn map_coordinates_legal(&self, x: i32, y: i32) -> bool {
+        self.map_size_diamond()
+            .is_none_or(|map_size| map_size_contains(map_size, x, y))
+    }
+}
+
+#[cfg(all(test, tests_sim_world_p_s))]
+mod tests {
+    use super::super::lifecycle_tests::{
+        gsi_05_02_projectile, insert_entity, install_common_raw_terrain,
+    };
+    use super::*;
+    use crate::sim::occupancy::CellListInsertion;
+    use crate::util::fixed_math::SimFixed;
+    use serde_json::Value;
+
+    #[test]
+    fn coordinates_legal_divides_negative_leptons_before_packing() {
+        // CoordinatesLegal @ 0x00568350 truncates toward zero, then packs signed cell words.
+        assert!(map_size_contains((4, 4), -16_776_449, 512));
+        assert!(!map_size_contains((4, 4), -16_775_425, 1536));
+    }
+
+    fn world(sim: &Simulation) -> ProjectileCollisionWorld<'_> {
+        ProjectileCollisionWorld {
+            terrain: sim.resolved_terrain.as_ref(),
+            dummy: &sim.shared_cell_dummy,
+            occupancy: &sim.substrate.occupancy,
+            entities: &sim.substrate.entities,
+            terrain_objects: sim.terrain_objects.objects(),
+            interner: &sim.interner,
+            alliances: &sim.house_alliances,
+            overlays: sim.overlay_grid.as_ref(),
+            rules: crate::rules::ruleset::RuleSet::empty_for_test(),
+            map_size: Some((2, 3)),
+            ares_firestorm: &sim.ares_firestorm,
+        }
+    }
+
+    /// Real retail FireAt supplies target OnBridge6FF08B..6FF0B0, not firer
+    /// OnBridge. A deliberately supplied later committed coordinate exercises
+    /// the shared consumer; ordinary first-AI admission is a separate control.
+    #[test]
+    fn retail_inviso_fireat_bridge_flag_reaches_shared_height_and_first_ai() {
+        use crate::sim::combat::{TargetKind, world_fire::FireVisit};
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = retail.rules;
+        let rifle = rules.object("E1").unwrap().primary().unwrap();
+        let weapon = rules.weapon(rifle).unwrap();
+        assert!(
+            rules
+                .projectile(weapon.projectile.as_deref().unwrap())
+                .unwrap()
+                .inviso
+        );
+        for (firer_bridge, target_bridge) in [(false, true), (true, false), (false, false)] {
+            let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 71);
+            let bridge = if firer_bridge { (10, 10) } else { (12, 10) };
+            // Retain the arena's actual Clear speed costs and allocation;
+            // only this supplied bridge cell differs from its initial map.
+            let bridge_cell = sim
+                .resolved_terrain
+                .as_mut()
+                .unwrap()
+                .cell_mut_for_test(bridge.0, bridge.1)
+                .unwrap();
+            let supplied =
+                super::super::lifecycle_tests::common_raw_terrain_cell(bridge.0, bridge.1, 0, true);
+            bridge_cell.bridge_facts = supplied.bridge_facts;
+            bridge_cell.has_bridge_deck = supplied.has_bridge_deck;
+            bridge_cell.bridge_walkable = supplied.bridge_walkable;
+            bridge_cell.bridge_deck_level = supplied.bridge_deck_level;
+            sim.bridge_state = Some(
+                crate::sim::bridge_state::BridgeRuntimeState::from_resolved_terrain(
+                    sim.resolved_terrain.as_ref().unwrap(),
+                    true,
+                    1500,
+                ),
+            );
+            assert!(sim.rebuild_dynamic_navigation(&rules));
+            let mut actors = Vec::new();
+            for (kind, owner, x, y, facing, on_bridge) in [
+                ("E1", "Americans", 10, 10, 64, firer_bridge),
+                ("HTNK", "Russians", 12, 10, 192, target_bridge),
+            ] {
+                let id = sim
+                    .construct_object_limbo_at_height(
+                        kind,
+                        owner,
+                        x,
+                        y,
+                        facing,
+                        0,
+                        &rules,
+                        &mut FrameEffects::default(),
+                    )
+                    .unwrap();
+                // OnBridge is an explicit caller prior, as in the existing
+                // original Unit/Infantry Unlimbo controls. Convenience spawn
+                // at a coarse Z does not set this independent retained byte.
+                sim.substrate
+                    .entities
+                    .get_mut(id)
+                    .unwrap()
+                    .set_on_bridge(on_bridge);
+                let coord =
+                    crate::sim::components::DriveCoord::cell(x, y, if on_bridge { 416 } else { 0 });
+                assert!(
+                    sim.with_object_placement_scope(|sim| {
+                        sim.reveal_constructed_object_at_coord_with_overlay_context(
+                            id,
+                            coord,
+                            facing,
+                            PlacementEvidence::EvaluateMark,
+                            &rules,
+                            None,
+                            &mut FrameEffects::default(),
+                        )
+                        .is_some()
+                    }),
+                    "supplied {kind} bridge={on_bridge} Unlimbo is admitted"
+                );
+                actors.push(id);
+            }
+            let [firer, target] = <[u64; 2]>::try_from(actors).unwrap();
+            assert_eq!(
+                sim.substrate.entities.get(firer).unwrap().on_bridge(),
+                firer_bridge
+            );
+            assert_eq!(
+                sim.substrate.entities.get(target).unwrap().on_bridge(),
+                target_bridge
+            );
+            let subject = crate::sim::combat::fire_error_world::FireSubject {
+                world: &sim,
+                rules: &rules,
+                fog: None,
+                firer: sim.substrate.entities.get(firer).unwrap(),
+                obj: rules.object("E1").unwrap(),
+                target: Some(TargetKind::Entity(target)),
+                weapon_index: 0,
+            };
+            assert!(
+                subject.in_range(),
+                "real range consumer admits this stock shot"
+            );
+            assert_eq!(
+                subject.fire_error(true),
+                crate::sim::combat::fire_error::FireError::Ok,
+                "GetFireError admits the actual retail FireAt target"
+            );
+            sim.commit_fire_visit(
+                FireVisit::Direct {
+                    id: firer,
+                    target: TargetKind::Entity(target),
+                    weapon_index: 0,
+                },
+                &rules,
+                None,
+                &mut FrameEffects::default(),
+            );
+            let bullet = sim
+                .projectiles
+                .iter()
+                .find_map(|(_, p)| (p.source_id() == firer).then(|| p.clone()))
+                .expect("retail M60 FireAt admits a Bullet");
+            assert_eq!(bullet.on_bridge(), target_bridge);
+            let collision = world(&sim);
+            // A deliberately supplied later committed position on clear
+            // ground isolates GetHeight from the independent cliff admission
+            // on the target's bridge anchor. No stock flight is claimed.
+            let later_xy = ProjectileCoord::new(bullet.position().x + 256, bullet.position().y, 0);
+            let candidate =
+                ProjectileCoord::new(later_xy.x, later_xy.y, collision.ground(later_xy));
+            let mut later = bullet.clone();
+            later.set_position_for_test(candidate);
+            assert_eq!(
+                collision
+                    .collide(&later, candidate, ProjectileCollisionPhase::Shared)
+                    .is_some(),
+                target_bridge,
+                "supplied later coordinate, firerBridge={firer_bridge}, targetBridge={target_bridge}"
+            );
+            let health = sim.substrate.entities.get(target).unwrap().health.current();
+            // The ordinary Logic frame dispatches Bullet AI separately from
+            // the Techno live-object turn and drains final deletion afterward.
+            sim.advance_tick(&[], Some(&rules), None, None, 16);
+            assert!(
+                sim.projectiles.get(bullet.id()).is_none(),
+                "stock ordinary admission still detonates at first AI"
+            );
+            assert!(
+                sim.substrate.entities.get(target).unwrap().health.current() < health,
+                "existing receiver commits the hit"
+            );
+        }
+    }
+
+    #[test]
+    fn terrain_target_queries_and_impact_keep_the_retained_object_coordinate() {
+        let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = fixture.rules;
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 1);
+        sim.resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cell_mut_for_test(10, 20)
+            .unwrap()
+            .level = 6;
+        crate::sim::terrain_spawn::construct_terrain_objects(
+            &mut sim,
+            &[crate::map::overlay::TerrainObject {
+                rx: 10,
+                ry: 20,
+                name: "TREE01".into(),
+            }],
+            &rules,
+            false,
+        );
+        let id = sim.terrain_objects.cell_index()[&(10, 20)];
+        let coord = sim.terrain_objects.objects()[&id].world_coord();
+        assert_eq!(coord.z, 624);
+        sim.resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cell_mut_for_test(10, 20)
+            .unwrap()
+            .level = 0;
+        let mut collision = world(&sim);
+        collision.rules = &rules;
+        let target = ProjectileTarget::Terrain(id);
+        for query in [
+            ProjectileTargetQuery::GetCoords,
+            ProjectileTargetQuery::TargetAim,
+            ProjectileTargetQuery::GuidanceAim,
+        ] {
+            assert_eq!(collision.target_coordinate(target, query), Some(coord));
+        }
+        let mut store = crate::sim::projectile::ProjectileStore::new();
+        let mut spawn = gsi_05_02_projectile(0, None);
+        spawn.origin = coord;
+        spawn.target = target;
+        spawn.initial_target_position = coord;
+        spawn.collision.anti_air = true;
+        store.spawn(99, spawn);
+        let bullet = store.get(99).unwrap();
+        let facts = collision.impact_ladder(bullet, coord);
+        let facts = facts.target.unwrap();
+        assert_eq!(
+            (facts.coords, facts.aim, facts.offset_coords),
+            (coord, coord, coord)
+        );
+        assert_eq!(facts.distance, 0);
+        assert!(!facts.building_offset);
+        // Object+54/78 use current height but never mutate its saved Location.
+        assert!(facts.in_air);
+        assert!(!facts.ground_layer);
+        assert!(
+            collision.shared(bullet, coord),
+            "the common AA probe also dispatches Terrain +54"
+        );
+    }
+
+    #[test]
+    fn target_coord_offset_reaches_the_retail_bullet_impact_ladder() {
+        let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = fixture.rules;
+        let native: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/shipyard_offsets.json",
+        ))
+        .unwrap();
+        for row in native["rows"].as_array().unwrap() {
+            let input = &row["input"];
+            let name = input["type_id"].as_str().unwrap();
+            let mut sim = Simulation::new();
+            let target = sim
+                .spawn_object(name, "Russians", 10, 20, 0, &rules)
+                .unwrap();
+            let mut collision = world(&sim);
+            collision.rules = &rules;
+            let centre = collision.location(sim.substrate.entities.get(target).unwrap());
+            let translate = |point: &Value| {
+                ProjectileCoord::new(
+                    centre.x + point[0].as_i64().unwrap() as i32
+                        - native["centre"][0].as_i64().unwrap() as i32,
+                    centre.y + point[1].as_i64().unwrap() as i32
+                        - native["centre"][1].as_i64().unwrap() as i32,
+                    centre.z + point[2].as_i64().unwrap() as i32
+                        - native["centre"][2].as_i64().unwrap() as i32,
+                )
+            };
+            let location = translate(&input["location"]);
+            let mut store = crate::sim::projectile::ProjectileStore::new();
+            let mut spawn = gsi_05_02_projectile(0, None);
+            spawn.target = ProjectileTarget::Entity(target);
+            spawn.origin = location;
+            spawn.initial_target_position = centre;
+            store.spawn(99, spawn);
+            let bullet = store.get(99).unwrap();
+            let Some(ProjectileCollisionResponse::ImpactLadder(facts)) =
+                collision.collide(bullet, location, ProjectileCollisionPhase::ImpactLadder)
+            else {
+                panic!("impact facts");
+            };
+            let resolved = crate::sim::projectile::resolve_impact_coord(
+                &crate::sim::projectile::ImpactLadderBullet {
+                    location,
+                    reference: centre,
+                    impact_flag: true,
+                    inaccurate: input["inaccurate"] == 1,
+                    airburst: false,
+                    arcing: true,
+                    homing: false,
+                },
+                &facts,
+            );
+            assert_eq!(resolved, translate(&row["detonation"]), "{}", input["name"]);
+            let offset: [i32; 3] = std::array::from_fn(|i| {
+                native["sources"][name]["reader"]["after"]["target_offset"][i]
+                    .as_i64()
+                    .unwrap() as i32
+            });
+            assert_eq!(rules.object(name).unwrap().target_coord_offset(), offset);
+            // Fire asks+58; guided AI independently replaces this with+A4.
+            assert_eq!(
+                collision.target_coordinate(
+                    ProjectileTarget::Entity(target),
+                    ProjectileTargetQuery::TargetAim
+                ),
+                Some(centre)
+            );
+        }
+    }
+
+    fn coord(row: &Value, key: &str, default: [i32; 3]) -> ProjectileCoord {
+        let values = row
+            .get(key)
+            .map(|array| std::array::from_fn(|i| array[i].as_i64().unwrap() as i32))
+            .unwrap_or(default);
+        ProjectileCoord::new(values[0], values[1], values[2])
+    }
+
+    fn place(sim: &mut Simulation, id: u64, position: ProjectileCoord, category: EntityCategory) {
+        insert_entity(sim, id, category);
+        let entity = sim.substrate.entities.get_mut(id).unwrap();
+        entity.position.set_rx_for_test((position.x / 256) as u16);
+        entity.position.set_ry_for_test((position.y / 256) as u16);
+        entity
+            .position
+            .set_sub_x_for_test(SimFixed::from_num(position.x % 256));
+        entity
+            .position
+            .set_sub_y_for_test(SimFixed::from_num(position.y % 256));
+        entity
+            .position
+            .set_exact_z_leptons_for_test(Some(position.z));
+    }
+
+    #[test]
+    fn ordinary_tail_matches_executed_native_admissions() {
+        let vectors: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/ordinary_collision_vectors.json",
+        ))
+        .unwrap();
+        for (index, row) in vectors["admissions"].as_array().unwrap().iter().enumerate() {
+            let mut sim = Simulation::new();
+            install_common_raw_terrain(&mut sim, 8, 8, 0, None);
+            let height = row["old_height"].as_i64().unwrap_or(500) as i32;
+            let candidate = coord(row, "candidate", [384, 128, 0]);
+            let old = coord(row, "old", [128, 128, height]);
+            let target = coord(row, "target", [640, 128, 0]);
+            let selected = row["selected"].as_str().unwrap_or("none");
+            let source_present = row["source"].as_bool().unwrap_or(false);
+            if source_present || selected == "source" {
+                place(
+                    &mut sim,
+                    1,
+                    ProjectileCoord::new(0, 0, 0),
+                    EntityCategory::Unit,
+                );
+            }
+            if selected == "object" {
+                place(
+                    &mut sim,
+                    2,
+                    coord(row, "object_coord", [384, 128, 0]),
+                    EntityCategory::Unit,
+                );
+                let owner = sim.interner.intern("Russians");
+                sim.substrate.entities.change_owner(2, owner);
+            }
+            if selected != "none" {
+                sim.substrate.occupancy.add(
+                    (candidate.x / 256) as u16,
+                    (candidate.y / 256) as u16,
+                    if selected == "source" { 1 } else { 2 },
+                    MovementLayer::Ground,
+                    None,
+                    CellListInsertion::PrependNonBuilding,
+                );
+            }
+            if row["same_building"].as_bool().unwrap_or(false) {
+                place(
+                    &mut sim,
+                    3,
+                    ProjectileCoord::new(384, 128, 2000),
+                    EntityCategory::Structure,
+                );
+                for position in [candidate, target] {
+                    sim.substrate.occupancy.add(
+                        (position.x / 256) as u16,
+                        (position.y / 256) as u16,
+                        3,
+                        MovementLayer::Ground,
+                        None,
+                        CellListInsertion::AppendBuilding,
+                    );
+                }
+            }
+            if row["allied"].as_bool().unwrap_or(false) {
+                sim.house_alliances_mut_for_test()
+                    .insert("AMERICANS".into(), ["RUSSIANS".into()].into());
+            }
+            let mut spawn = gsi_05_02_projectile(if source_present { 1 } else { 999 }, None);
+            spawn.origin = old;
+            spawn.initial_target_position = target;
+            spawn.collision.inaccurate = row["inaccurate"].as_bool().unwrap_or(false);
+            let velocity = coord(row, "velocity", [20, 0, -6]);
+            spawn.velocity = ProjectileVelocity::new(velocity.x, velocity.y, velocity.z);
+            if row["vertical"].as_bool().unwrap_or(false) {
+                spawn.trajectory = ProjectileTrajectory::Vertical {
+                    detonation_altitude: 1000,
+                    acceleration: 1,
+                    max_speed: 20,
+                };
+            }
+            sim.projectiles.spawn(100, spawn);
+            let projectile = sim.projectiles.get(100).unwrap();
+            let response = world(&sim).ordinary_tail(
+                projectile,
+                candidate,
+                projectile.velocity(),
+                projectile.velocity(),
+                ProjectileCollisionMotion::from_coordinate(candidate, projectile.velocity())
+                    .velocity,
+                false,
+            );
+            let ProjectileCollisionResponse::Ordinary {
+                candidate: result,
+                impact,
+                near_target,
+                left_map,
+                ..
+            } = response
+            else {
+                unreachable!()
+            };
+            assert_eq!(
+                (impact, near_target, left_map),
+                (
+                    row["impact"].as_bool().unwrap(),
+                    row["near_target"].as_bool().unwrap(),
+                    row["reason"].as_i64().unwrap() == 2
+                ),
+                "native row {index}: {row}"
+            );
+            assert_eq!(
+                result,
+                coord(row, "result", [0; 3]),
+                "native row {index}: {row}"
+            );
+        }
+    }
+
+    /// The original 468BB0/4CC360 bodies. Ares replaces the obstacle probe
+    /// (GetObstacle 1006E540: no geometry tail, the bridge bit 0x100 instead
+    /// of 4CC360's anchor bit 0x80); its own tests are
+    /// `ares_shared_probe_stops_at_a_solid_building_except_its_target` here
+    /// and `line_of_fire::tests::ares_cliff_counts_the_bridge_bit`.
+    #[test]
+    fn shared_probe_matches_original_bodies_and_receivers() {
+        use crate::rules::ini_parser::IniFile;
+        let vectors: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/shared_collision_vectors.json",
+        ))
+        .unwrap();
+        for (index, row) in vectors["cases"].as_array().unwrap().iter().enumerate() {
+            let mut sim = Simulation::new();
+            let flag = |key: &str| row[key].as_bool().unwrap_or(false);
+            let mut cells = Vec::new();
+            let mut allocated = Vec::new();
+            let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(8, 8);
+            let wall_owner = sim.interner.intern("Russians");
+            for y in 0..8 {
+                for x in 0..8 {
+                    if !row["missing"]
+                        .as_array()
+                        .is_some_and(|missing| missing.iter().any(|xy| xy[0] == x && xy[1] == y))
+                    {
+                        allocated.push((x as u16, y as u16));
+                    }
+                    let input = &row["cells"][format!("{x},{y}")];
+                    let mut cell = super::super::lifecycle_tests::common_raw_terrain_cell(
+                        x as u16,
+                        y as u16,
+                        input["level"].as_i64().unwrap_or(0) as u8,
+                        false,
+                    );
+                    cell.final_tile_index = input["tile"].as_i64().unwrap_or(65535) as i32;
+                    cell.slope_type = input["slope"].as_u64().unwrap_or(0) as u8;
+                    cell.bridge_facts.raw_flags = input["flags"].as_u64().unwrap_or(0) as u32;
+                    if input["wall"].as_bool().unwrap_or(false) {
+                        overlays.place_overlay(x as u16, y as u16, 0, 0);
+                        overlays.set_wall_owner(x as u16, y as u16, wall_owner);
+                    }
+                    cells.push(cell);
+                }
+            }
+            let mut terrain = ResolvedTerrainGrid::from_cells(8, 8, cells);
+            terrain.test_set_native_allocated_cells(&allocated);
+            terrain.bind_shared_cell_dummy(sim.shared_cell_dummy.clone());
+            terrain.set_projectile_water_set_base(row["water_base"].as_i64().unwrap_or(100) as i32);
+            sim.resolved_terrain = Some(terrain);
+            sim.overlay_grid = Some(overlays);
+            if row["source"].as_bool().unwrap_or(true) {
+                place(
+                    &mut sim,
+                    1,
+                    ProjectileCoord::new(128, 128, 0),
+                    EntityCategory::Unit,
+                );
+            }
+            if flag("source_allied") {
+                sim.house_alliances_mut_for_test()
+                    .insert("AMERICANS".into(), ["RUSSIANS".into()].into());
+            }
+            if flag("wall_allied") {
+                sim.house_alliances_mut_for_test()
+                    .insert("RUSSIANS".into(), ["AMERICANS".into()].into());
+            }
+            let dimensions = row["foundation_dimensions"]
+                .as_array()
+                .map(|dims| format!("{}x{}", dims[0], dims[1]))
+                .unwrap_or_else(|| "1x1".into());
+            let ini = IniFile::from_str(&format!(
+                "[WallModel]\nAlliedWallTransparency={}\n[General]\nV3RocketType=V3ROCKET\nDMislType=DMISL\n[VehicleTypes]\n0=TEST\n[AircraftTypes]\n0=V3ROCKET\n1=DMISL\n2=AIR\n[BuildingTypes]\n0=BUILD\n[BUILD]\nName=Build\n[OverlayTypes]\n0=WALL\n[WALL]\nWall=yes\n",
+                flag("transparency")
+            ));
+            let rules = RuleSet::from_ini_with_fixed_art_for_test(
+                &ini,
+                &IniFile::from_str(&format!("[BUILD]\nFoundation={dimensions}\n")),
+            )
+            .unwrap();
+            let target = &row["target"];
+            let mut spawn = gsi_05_02_projectile(1, None);
+            if target.is_object() {
+                let category = match target["category"].as_str().unwrap_or("unit") {
+                    "building" => EntityCategory::Structure,
+                    "aircraft" => EntityCategory::Aircraft,
+                    _ => EntityCategory::Unit,
+                };
+                place(
+                    &mut sim,
+                    2,
+                    coord(target, "coord", [640, 640, 500]),
+                    category,
+                );
+                let name = if category == EntityCategory::Structure {
+                    "BUILD"
+                } else if target["rocket"].as_bool().unwrap_or(false) {
+                    if target["dmisl"].as_bool().unwrap_or(false) {
+                        "DMISL"
+                    } else {
+                        "V3ROCKET"
+                    }
+                } else {
+                    "TEST"
+                };
+                let type_ref = sim.interner.intern(name);
+                let entity = sim.substrate.entities.get_mut(2).unwrap();
+                entity.set_type_ref_for_test(type_ref);
+                if category == EntityCategory::Structure {
+                    // Construction stamps the type's ART `Foundation=`.
+                    entity
+                        .seldom
+                        .type_facts
+                        .set_foundation_for_test(dimensions.clone().into());
+                }
+                entity
+                    .lifecycle
+                    .set_cell_marked_for_test(target["marked"].as_bool().unwrap_or(true));
+                entity.set_on_bridge(target["on_bridge"].as_bool().unwrap_or(false));
+                // The supplied phase is the installed Rocket's MissionState.
+                if target["rocket"].as_bool().unwrap_or(false)
+                    && target["phase"].as_u64().unwrap() != 0
+                {
+                    let mut locomotor =
+                        crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+                            crate::rules::locomotor_type::LocomotorKind::Rocket,
+                        );
+                    locomotor
+                        .rocket_runtime_mut()
+                        .unwrap()
+                        .set_mission_state_for_test(target["phase"].as_u64().unwrap() as i32);
+                    sim.substrate.entities.get_mut(2).unwrap().locomotor = Some(locomotor);
+                }
+                spawn.target = ProjectileTarget::Entity(2);
+            } else {
+                spawn.target = ProjectileTarget::None;
+            }
+            let candidate = coord(row, "candidate", [640, 640, 500]);
+            spawn.origin = coord(row, "origin", [128, 128, 0]);
+            spawn.initial_target_position = coord(row, "launch_target", [1408, 640, 0]);
+            spawn.collision.subject_to_cliffs = flag("cliffs");
+            spawn.collision.subject_to_walls = flag("walls");
+            spawn.collision.flak_scatter = flag("flak");
+            spawn.collision.anti_air = flag("aa");
+            spawn.collision.level = flag("level");
+            sim.projectiles.spawn(100, spawn);
+            let mut projectile = sim.projectiles.get(100).unwrap().clone();
+            projectile.set_position_for_test(candidate);
+            projectile.set_on_bridge_for_test(flag("on_bridge"));
+            projectile.set_previous_cell_for_test(
+                row["previous"]
+                    .as_array()
+                    .map(|xy| {
+                        (
+                            xy[0].as_i64().unwrap() as i16,
+                            xy[1].as_i64().unwrap() as i16,
+                        )
+                    })
+                    .unwrap_or((1, 2)),
+            );
+            let mut world = world(&sim);
+            world.rules = &rules;
+            assert_eq!(
+                world.shared(&projectile, candidate),
+                row["admitted"].as_bool().unwrap(),
+                "original shared row {index}: {row}"
+            );
+            assert_eq!(
+                sim.shared_cell_dummy.snapshot().coord,
+                (
+                    row["dummy_coord"][0].as_i64().unwrap() as i32,
+                    row["dummy_coord"][1].as_i64().unwrap() as i32
+                ),
+                "dummy query order row {index}: {row}"
+            );
+        }
+    }
+
+    /// A flat 8x8 map with building 2 (`SolidHeight=1`) on cell (4, 2), and
+    /// the `SubjectToBuildings=` projectile `PROBE`.
+    fn solid_building_scene() -> (Simulation, RuleSet) {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        use crate::rules::ini_parser::IniFile;
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[BuildingTypes]\n0=BLDG\n[BLDG]\nName=Bldg\n\
+                 [VehicleTypes]\n0=TANK\n[TANK]\nPrimary=GUN\n\
+                 [GUN]\nDamage=1\nRange=8\nProjectile=PROBE\nWarhead=WH\n\
+                 [PROBE]\nInviso=yes\nSubjectToBuildings=yes\n[WH]\nVerses=100%\n",
+            ),
+            &IniFile::from_str("[BLDG]\nSolidHeight=1\n"),
+        )
+        .unwrap();
+        let mut sim = Simulation::new();
+        install_common_raw_terrain(&mut sim, 8, 8, 0, None);
+        place(
+            &mut sim,
+            2,
+            ProjectileCoord::new(4 * 256 + 128, 2 * 256 + 128, 0),
+            EntityCategory::Structure,
+        );
+        let type_ref = sim.interner.intern("BLDG");
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .set_type_ref_for_test(type_ref);
+        sim.substrate.occupancy.add(
+            4,
+            2,
+            2,
+            MovementLayer::Ground,
+            None,
+            CellListInsertion::AppendBuilding,
+        );
+        (sim, rules)
+    }
+
+    /// Ares `BulletClass_ShouldDetonate_Obstacle 1001AB10` (hook 0x468BE2):
+    /// a `SubjectToBuildings=` bullet detonates in a cell whose building's
+    /// `SolidHeight=` reaches it (`GetObstacle 1006E540`), but not over its
+    /// own target building, nor above that height.
+    #[test]
+    fn ares_shared_probe_stops_at_a_solid_building_except_its_target() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let (sim, rules) = solid_building_scene();
+        let detonates = |target, z| {
+            let mut spawn = gsi_05_02_projectile(1, None);
+            spawn.origin = ProjectileCoord::new(128, 2 * 256 + 128, 0);
+            spawn.initial_target_position = ProjectileCoord::new(7 * 256 + 128, 2 * 256 + 128, 0);
+            spawn.target = target;
+            spawn.collision.subject_to_solid = true;
+            let mut projectiles = crate::sim::projectile::ProjectileStore::default();
+            projectiles.spawn(100, spawn);
+            let mut projectile = projectiles.get(100).unwrap().clone();
+            let candidate = ProjectileCoord::new(4 * 256 + 128, 2 * 256 + 128, z);
+            projectile.set_position_for_test(candidate);
+            projectile.set_previous_cell_for_test((3, 2));
+            let mut world = world(&sim);
+            world.rules = &rules;
+            world.shared(&projectile, candidate)
+        };
+        let cell = ProjectileTarget::Cell { rx: 7, ry: 2 };
+        assert!(detonates(cell, 256), "SolidHeight=1 reaches 256 leptons");
+        assert!(!detonates(cell, 257), "the bullet passes over it");
+        assert!(!detonates(ProjectileTarget::Entity(2), 0), "its own target");
+    }
+
+    /// Ares `BulletClass_SetMovement_Obstacle 1001A940` (hook 0x4688BD): an
+    /// Inviso bullet stands on the first obstacle between its launch and its
+    /// placement, at that cell's vt+0x48 (`FindFirstObstacle 1006E2B0`).
+    #[test]
+    fn ares_inviso_bullet_stands_on_the_first_solid_building() {
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let (mut sim, rules) = solid_building_scene();
+        let placement = ProjectileCoord::new(7 * 256 + 128, 2 * 256 + 128, 0);
+        let mut admit = |id, projectile_type: &str| {
+            let mut spawn = gsi_05_02_projectile(1, None);
+            spawn.origin = ProjectileCoord::new(128, 2 * 256 + 128, 0);
+            spawn.payload = crate::sim::projectile::ProjectilePayload::new(
+                1,
+                sim.interner.intern("WH"),
+                Some(sim.interner.intern(projectile_type)),
+                false,
+            );
+            sim.admit_projectile(id, spawn);
+        };
+        admit(100, "PROBE");
+        admit(101, "NONE");
+        assert_eq!(
+            sim.ares_inviso_obstacle(100, placement, &rules),
+            ProjectileCoord::new(4 * 256 + 128, 2 * 256 + 128, 0)
+        );
+        assert_eq!(sim.ares_inviso_obstacle(101, placement, &rules), placement);
+    }
+
+    #[test]
+    fn nearest_selector_matches_original_vtable_getters_and_list_ties() {
+        use crate::rules::ini_parser::IniFile;
+        let vectors: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/ordinary_collision_vectors.json",
+        ))
+        .unwrap();
+        for row in vectors["nearest"].as_array().unwrap() {
+            let mut sim = Simulation::new();
+            install_common_raw_terrain(&mut sim, 8, 8, 0, None);
+            let mut foundation = "1x1".into();
+            for (index, object) in row["objects"].as_array().unwrap().iter().enumerate().rev() {
+                // GameEntity is Techno (+14 bit0); Terrain has only bit1.
+                if object["eligible"] == false {
+                    continue;
+                }
+                let id = index as u64 + 1;
+                let position = coord(object, "coord", [0; 3]);
+                if object["terrain"] == true {
+                    // Native original selector excludes this bit2-only node.
+                    continue;
+                } else {
+                    let category = if object["building"] == true {
+                        EntityCategory::Structure
+                    } else {
+                        EntityCategory::Unit
+                    };
+                    place(&mut sim, id, position, category);
+                    sim.substrate.occupancy.add(
+                        1,
+                        0,
+                        id,
+                        MovementLayer::Ground,
+                        None,
+                        CellListInsertion::from_category(category),
+                    );
+                    if let Some(dims) = object["dimensions"].as_array() {
+                        foundation = format!("{}x{}", dims[0], dims[1]);
+                    }
+                }
+            }
+            let rules = RuleSet::from_ini_with_fixed_art_for_test(
+                &IniFile::from_str("[BuildingTypes]\n0=TEST\n[TEST]\nName=Test\n"),
+                &IniFile::from_str(&format!("[TEST]\nFoundation={foundation}\n")),
+            )
+            .unwrap();
+            // Construction stamps the type's foundation on each building.
+            for entity in sim.substrate.entities.values_mut() {
+                if entity.category() == EntityCategory::Structure {
+                    entity
+                        .seldom
+                        .type_facts
+                        .set_foundation_for_test(foundation.clone().into());
+                }
+            }
+            let mut world = world(&sim);
+            world.rules = &rules;
+            let selected = world
+                .nearest(&world.cell(ProjectileCoord::new(384, 128, 0)))
+                .map(|(id, _)| id - 1);
+            // New Walk priority shares the original ordered scalar, with
+            // +48 coordinates. Reuse these executed47C3D0 vectors; no second
+            // hand-authored nearest golden is needed for the repair query.
+            let shared = sim
+                .nearest_cell_object((1, 0), MovementLayer::Ground, None)
+                .map(|id| id - 1);
+            assert_eq!(
+                shared,
+                row["selected"].as_u64(),
+                "shared original selector: {row}"
+            );
+            assert_eq!(
+                selected,
+                row["selected"].as_u64(),
+                "original selector: {row}"
+            );
+        }
+    }
+
+    /// Original468D80 with the real CellClass receivers. Its ground-distance
+    /// thresholds must not move to the structural deck plane. The same live
+    /// +48/+58 pair applies to the one retained fallback CellClass.
+    #[test]
+    fn bridge_cell_impact_ladder_matches_original_ground_and_deck_receivers() {
+        use crate::sim::projectile::{ImpactLadderBullet, resolve_impact_coord};
+        let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/bridge_damage_admission.json",
+        ))
+        .unwrap();
+        for row in corpus["ladder_cases"].as_array().unwrap() {
+            let mut sim = Simulation::new();
+            let cell_x = row["coord"][0].as_u64().unwrap() as u16;
+            let cell_y = row["coord"][1].as_u64().unwrap() as u16;
+            let level = row["level"].as_i64().unwrap() as i8;
+            let slope = row["slope"].as_u64().unwrap() as u8;
+            let flags = row["flags"].as_u64().unwrap() as u32;
+            let mut cells = (0..32)
+                .flat_map(|y| {
+                    (0..32).map(move |x| crate::map::resolved_terrain::test_flat_cell(x, y))
+                })
+                .collect::<Vec<_>>();
+            let cell = &mut cells[usize::from(cell_y) * 32 + usize::from(cell_x)];
+            cell.level = level as u8;
+            cell.slope_type = slope;
+            cell.bridge_facts.raw_flags = flags;
+            sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(
+                32, 32, cells,
+            ));
+            let target = if row["dummy"].as_bool().unwrap() {
+                sim.shared_cell_dummy
+                    .stamp_coord(i32::from(cell_x), i32::from(cell_y));
+                sim.shared_cell_dummy.set_level_slope(level, slope);
+                sim.shared_cell_dummy.test_set_retained_bridge_flags(flags);
+                ProjectileTarget::DummyCell
+            } else {
+                ProjectileTarget::Cell {
+                    rx: cell_x,
+                    ry: cell_y,
+                }
+            };
+            assert_eq!(row["cluster"], 1, "fixture models the first detonation");
+            assert_eq!(row["em_effect"], 0, "fixture has no EM-effect warhead");
+            let location = coord(row, "location", [0; 3]);
+            let mut shot = gsi_05_02_projectile(999, None);
+            shot.target = target;
+            shot.origin = location;
+            shot.payload = crate::sim::projectile::ProjectilePayload::new(
+                1,
+                sim.interner.intern("LADDERWH"),
+                None,
+                false,
+            );
+            admit_existing(&mut sim, shot);
+            let projectile = sim.projectiles.get(100).unwrap();
+            let inputs = world(&sim).impact_ladder(projectile, location);
+            let actual = resolve_impact_coord(
+                &ImpactLadderBullet {
+                    location,
+                    reference: coord(row, "reference", [0; 3]),
+                    impact_flag: row["impact_flag"].as_u64().unwrap() != 0,
+                    inaccurate: row["inaccurate"].as_u64().unwrap() != 0,
+                    airburst: row["airburst"].as_u64().unwrap() != 0,
+                    arcing: row["arcing"].as_u64().unwrap() != 0,
+                    homing: row["rot"].as_i64().unwrap() > 0,
+                },
+                &inputs,
+            );
+            assert_eq!(
+                actual,
+                coord(row, "impact", [0; 3]),
+                "original Cell ladder {row}"
+            );
+        }
+    }
+
+    /// Admit `shot` as bullet 100, already in flight: the allocator moves
+    /// past it, so the frame's combat tail does not take it for a new shot.
+    fn admit_existing(sim: &mut Simulation, shot: crate::sim::projectile::ProjectileSpawn) {
+        sim.set_next_stable_object_id_for_test(sim.next_stable_object_id().max(101));
+        sim.admit_projectile(100, shot);
+    }
+
+    fn install_native_size_terrain(sim: &mut Simulation, width: u16, height: u16) {
+        let header = crate::map::map_file::MapHeader {
+            theater: "TEMPERATE".into(),
+            fill: "Clear".into(),
+            level: 0,
+            width: u32::from(width),
+            height: u32::from(height),
+            local_left: 0,
+            local_top: 0,
+            local_width: u32::from(width),
+            local_height: u32::from(height),
+        };
+        sim.install_playfield_from_map_header(&header);
+        // Match the native Size allocation diamond, not an allocated
+        // rectangular fixture: 565C10 and 568350 share these predicates.
+        let extent = width.saturating_add(height).max(24);
+        let cells = (0u16..extent)
+            .flat_map(|y| {
+                (0u16..extent).map(move |x| {
+                    super::super::lifecycle_tests::common_raw_terrain_cell(x, y, 0, false)
+                })
+            })
+            .collect();
+        let allocated = (0i32..i32::from(extent))
+            .flat_map(|y| {
+                (0i32..i32::from(extent)).filter_map(move |x| {
+                    (i32::from(width) < x + y
+                        && x - y < i32::from(width)
+                        && y - x < i32::from(width)
+                        && x + y <= i32::from(width) + 2 * i32::from(height))
+                    .then_some((x as u16, y as u16))
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut terrain = ResolvedTerrainGrid::from_cells(extent, extent, cells);
+        terrain.test_set_native_allocated_cells(&allocated);
+        terrain.bind_shared_cell_dummy(sim.shared_cell_dummy.clone());
+        sim.resolved_terrain = Some(terrain);
+    }
+
+    #[test]
+    fn ordinary_and_shared_admission_deliver_damage_in_runtime_logic_slot() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::sim::runtime::SimRuntime;
+        let ini = IniFile::from_str(
+            "[General]\nVeteranRatio=3.0\n[AudioVisual]\nGravity=6\n[VehicleTypes]\n0=TEST\n[TEST]\nStrength=100\n[Warheads]\n0=WALLWH\n[WALLWH]\nWall=yes\nCellSpread=0\nPercentAtMax=1\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n[OverlayTypes]\n0=WALL\n[WALL]\nWall=yes\nStrength=1\n",
+        );
+        let art = IniFile::from_str("[WALL]\nDamageLevels=4\n");
+        for (source_present, shared_wall) in [(false, false), (true, false), (true, true)] {
+            let mut sim = Simulation::new();
+            install_native_size_terrain(&mut sim, 8, 8);
+            let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(24, 24);
+            overlays.place_overlay(5, 5, 0, 0);
+            sim.overlay_grid = Some(overlays);
+            if source_present {
+                place(
+                    &mut sim,
+                    1,
+                    ProjectileCoord::new(5 * 256 + 128, 4 * 256 + 128, 0),
+                    EntityCategory::Unit,
+                );
+            }
+            let mut shot = gsi_05_02_projectile(if source_present { 1 } else { 999 }, None);
+            shot.target = ProjectileTarget::None;
+            shot.origin = ProjectileCoord::new(5 * 256 + 128, 5 * 256 + 128, 1);
+            shot.initial_target_position = ProjectileCoord::new(8 * 256 + 128, 5 * 256 + 128, 0);
+            shot.velocity = ProjectileVelocity::new(16, 0, 0);
+            shot.trajectory = ProjectileTrajectory::Ballistic;
+            shot.collision.subject_to_walls = shared_wall;
+            shot.arm_frames = 5;
+            shot.payload = crate::sim::projectile::ProjectilePayload::new(
+                1,
+                sim.interner.intern("WALLWH"),
+                None,
+                false,
+            );
+            admit_existing(&mut sim, shot);
+            let mut runtime = SimRuntime::from_simulation(sim);
+            runtime.resources_mut().rules =
+                RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+            let _ = runtime
+                .advance_frame(
+                    &[],
+                    16,
+                    crate::sim::world::TickLane::Ordinary,
+                    &mut crate::sim::world::FrameEffects::default(),
+                )
+                .expect("fixture frame must complete");
+            let detonate = !source_present || shared_wall;
+            assert_eq!(
+                runtime.simulation.projectiles.get(100).is_none(),
+                detonate,
+                "source={source_present}, shared={shared_wall}"
+            );
+            assert_eq!(
+                runtime
+                    .simulation
+                    .overlay_grid
+                    .as_ref()
+                    .unwrap()
+                    .cell(5, 5)
+                    .overlay_data,
+                if detonate { 0x10 } else { 0 }
+            );
+            if !detonate {
+                assert_eq!(
+                    runtime
+                        .simulation
+                        .projectiles
+                        .get(100)
+                        .unwrap()
+                        .position()
+                        .z,
+                    -5,
+                    "467BEE skips the common clamp when no impact was admitted"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn projectile_load_timer_opens_proximity_in_real_runtime_logic() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::sim::runtime::SimRuntime;
+        use crate::sim::snapshot::GameSnapshot;
+        let ini = IniFile::from_str(
+            "[General]\nVeteranRatio=3.0\n[AudioVisual]\nGravity=6\n[VehicleTypes]\n0=TEST\n[TEST]\nStrength=100\n[Warheads]\n0=WALLWH\n[WALLWH]\nWall=yes\nCellSpread=0\nPercentAtMax=1\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n[OverlayTypes]\n0=WALL\n[WALL]\nWall=yes\nStrength=1\n",
+        );
+        let art = IniFile::from_str("[WALL]\nDamageLevels=4\n");
+        let make_rules = || RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+        for dropping in [false, true] {
+            let mut sim = Simulation::new();
+            install_native_size_terrain(&mut sim, 16, 16);
+            let terrain = sim.resolved_terrain.as_ref().unwrap().clone();
+            sim.install_resolved_terrain_for_new_map(terrain.clone());
+            let mut overlays =
+                crate::sim::overlay_grid::OverlayGrid::new(terrain.width(), terrain.height());
+            overlays.place_overlay(12, 12, 0, 0);
+            sim.overlay_grid = Some(overlays);
+            let source = sim.substrate.allocate_stable_id();
+            place(
+                &mut sim,
+                source,
+                ProjectileCoord::new(2944, 3200, 0),
+                EntityCategory::Unit,
+            );
+            assert!(matches!(sim.reveal(source), RevealOutcome::Revealed { .. }));
+            sim.session.set_binary_frame_for_test(100);
+            sim.session.set_map_name_for_test("TIMER.MAP".into());
+            let mut shot = gsi_05_02_projectile(source, None);
+            shot.target = ProjectileTarget::Cell { rx: 12, ry: 12 };
+            let origin_z = if dropping { 100 } else { 20 };
+            shot.origin = ProjectileCoord::new(3200, 3200, origin_z);
+            shot.collision.dropping = dropping;
+            shot.initial_target_position = ProjectileCoord::new(3200, 3200, 0);
+            // Native Vertical skips the ordinary same-cell/old-height impact,
+            // isolating the proximity timer without disabling world admission.
+            shot.velocity = ProjectileVelocity::new(0, 0, -3);
+            shot.trajectory = ProjectileTrajectory::Vertical {
+                detonation_altitude: 2000,
+                acceleration: 0,
+                max_speed: 3,
+            };
+            shot.arm_frames = 10;
+            shot.ranged_fuse = true;
+            shot.payload.warhead = sim.interner.intern("WALLWH");
+            shot.payload.base_damage = 1;
+            let id = sim.substrate.allocate_stable_id();
+            sim.admit_projectile(id, shot);
+            let mut runtime = SimRuntime::from_simulation(sim);
+            runtime.resources_mut().rules = make_rules();
+            let _ = runtime
+                .advance_frame(
+                    &[],
+                    16,
+                    TickLane::Ordinary,
+                    &mut crate::sim::world::FrameEffects::default(),
+                )
+                .expect("fixture frame must complete");
+            let saved = runtime.simulation.projectiles.get(id).unwrap().clone();
+            assert_eq!(saved.arm_timer().start_frame(), 100);
+            assert_eq!(
+                saved
+                    .arm_timer()
+                    .remaining(runtime.simulation.session.binary_frame() as i32),
+                9
+            );
+            assert_eq!(
+                saved.position(),
+                ProjectileCoord::new(3200, 3200, origin_z - 3)
+            );
+            let bytes = GameSnapshot::save(&runtime.simulation, 17, 18, "TIMER.MAP", 0);
+            let mut restored = GameSnapshot::load_validated(&bytes, 17, 18, "TIMER.MAP")
+                .unwrap()
+                .sim;
+            let mut serialized_expected = saved.clone();
+            serialized_expected.set_in_logic_vector_for_test(false);
+            assert_eq!(restored.projectiles.get(id), Some(&serialized_expected));
+            restored.restore_after_snapshot_load().unwrap();
+            let mut expected = saved.clone();
+            expected
+                .arm_timer_mut_for_test()
+                .start(restored.session.binary_frame() as i32, 0);
+            assert_eq!(restored.projectiles.get(id), Some(&expected));
+            let hash = restored.state_hash();
+            restored
+                .projectiles
+                .get_mut(id)
+                .unwrap()
+                .arm_timer_mut_for_test()
+                .start(restored.session.binary_frame() as i32, 1);
+            assert_ne!(
+                restored.state_hash(),
+                hash,
+                "proximity duration is hash authority"
+            );
+            restored
+                .projectiles
+                .get_mut(id)
+                .unwrap()
+                .set_arm_timer_for_test(*expected.arm_timer());
+            restored
+                .projectiles
+                .get_mut(id)
+                .unwrap()
+                .collision_mut_for_test()
+                .dropping = !dropping;
+            assert_ne!(
+                restored.state_hash(),
+                hash,
+                "Dropping admission policy is hash authority"
+            );
+            restored
+                .projectiles
+                .get_mut(id)
+                .unwrap()
+                .collision_mut_for_test()
+                .dropping = dropping;
+            assert_eq!(restored.state_hash(), hash);
+            assert!(restored.projectiles.get(id).unwrap().in_logic_vector());
+            restored.rebuild_caches_after_load(
+                terrain,
+                crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
+                &runtime.resources.rules,
+            );
+            restored
+                .restore_map_authority_after_snapshot_load(
+                    &make_rules(),
+                    runtime.resources.rules.overlay_registry(),
+                    None,
+                )
+                .unwrap();
+            let mut resumed = SimRuntime::from_simulation(restored);
+            resumed.resources_mut().rules = make_rules();
+            let _ = runtime
+                .advance_frame(
+                    &[],
+                    16,
+                    TickLane::Ordinary,
+                    &mut crate::sim::world::FrameEffects::default(),
+                )
+                .expect("fixture frame must complete");
+            let _ = resumed
+                .advance_frame(
+                    &[],
+                    16,
+                    TickLane::Ordinary,
+                    &mut crate::sim::world::FrameEffects::default(),
+                )
+                .expect("fixture frame must complete");
+            assert!(
+                runtime.simulation.projectiles.get(id).is_some(),
+                "unloaded positive Arm still suppresses the near fuse"
+            );
+            if dropping {
+                let shot = resumed.simulation.projectiles.get(id).unwrap();
+                assert_eq!(
+                    shot.last_distance_half(),
+                    47,
+                    "Dropping commits Check's native 94/2 watermark after load"
+                );
+                assert_eq!(
+                    runtime
+                        .simulation
+                        .projectiles
+                        .get(id)
+                        .unwrap()
+                        .last_distance_half(),
+                    100
+                );
+                assert_eq!(
+                    resumed
+                        .simulation
+                        .overlay_grid
+                        .as_ref()
+                        .unwrap()
+                        .cell(12, 12)
+                        .overlay_data,
+                    0
+                );
+            } else {
+                assert!(
+                    resumed.simulation.projectiles.get(id).is_none(),
+                    "load-opened fuse retires the projectile in its actual Logic slot"
+                );
+                assert_eq!(
+                    runtime
+                        .simulation
+                        .overlay_grid
+                        .as_ref()
+                        .unwrap()
+                        .cell(12, 12)
+                        .overlay_data,
+                    0
+                );
+                assert_eq!(
+                    resumed
+                        .simulation
+                        .overlay_grid
+                        .as_ref()
+                        .unwrap()
+                        .cell(12, 12)
+                        .overlay_data,
+                    0x10,
+                    "native final cell coordinate reaches synchronous wall damage"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn projectile_arm_producer_uses_aircraft_identity_in_runtime_fireat() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::sim::combat::TargetKind;
+        use crate::sim::runtime::SimRuntime;
+        for arm in [-1, i32::MIN, i32::MAX, 9_999_999, 10] {
+            for aircraft in [false, true] {
+                let ini = IniFile::from_str(&
+                "[General]\nVeteranRatio=3.0\n[VehicleTypes]\n0=TEST\n1=VICTIM\n[AircraftTypes]\n0=AIR\n[TEST]\nStrength=300\nPrimary=GUN\n[VICTIM]\nStrength=300\n[AIR]\nStrength=300\n[GUN]\nDamage=10\nROF=100\nRange=10\nSpeed=100\nProjectile=SHOT\nWarhead=WH\n[SHOT]\nArm=10\nRanged=yes\nAA=yes\nAG=yes\n[WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n".replace("Arm=10", &format!("Arm={arm}")));
+                let mut sim = Simulation::new();
+                install_native_size_terrain(&mut sim, 16, 16);
+                let source = sim.substrate.allocate_stable_id();
+                let target = sim.substrate.allocate_stable_id();
+                place(
+                    &mut sim,
+                    source,
+                    ProjectileCoord::new(3200, 3200, 100),
+                    EntityCategory::Unit,
+                );
+                place(
+                    &mut sim,
+                    target,
+                    ProjectileCoord::new(3700, 3200, 100),
+                    if aircraft {
+                        EntityCategory::Aircraft
+                    } else {
+                        EntityCategory::Unit
+                    },
+                );
+                let type_ref = sim.interner.intern(if aircraft { "AIR" } else { "VICTIM" });
+                let owner = sim.interner.intern("Russians");
+                sim.substrate.entities.change_owner(target, owner);
+                let victim = sim.substrate.entities.get_mut(target).unwrap();
+                victim.set_type_ref_for_test(type_ref);
+                if aircraft {
+                    // Aircraft object-list membership requires its real Fly
+                    // host; a category-only fixture has no valid receiver.
+                    victim.locomotor = Some(
+                        crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+                            crate::rules::locomotor_type::LocomotorKind::Fly,
+                        ),
+                    );
+                }
+                assert!(matches!(sim.reveal(source), RevealOutcome::Revealed { .. }));
+                assert!(matches!(sim.reveal(target), RevealOutcome::Revealed { .. }));
+                for id in [source, target] {
+                    sim.substrate
+                        .entities
+                        .get_mut(id)
+                        .unwrap()
+                        .position
+                        .set_exact_z_leptons_for_test(Some(100));
+                }
+                let firer = sim.substrate.entities.get_mut(source).unwrap();
+                firer.body_facing.snap(0x4000, 0);
+                firer
+                    .attack_target
+                    .set_for_test(Some(TargetKind::Entity(target)));
+                sim.session.set_binary_frame_for_test(100);
+                let mut runtime = SimRuntime::from_simulation(sim);
+                runtime.resources_mut().rules = RuleSet::from_ini(&ini).unwrap();
+                let output = runtime
+                    .advance_frame(
+                        &[],
+                        16,
+                        TickLane::Ordinary,
+                        &mut crate::sim::world::FrameEffects::default(),
+                    )
+                    .expect("fixture frame must complete");
+                assert_eq!(
+                    runtime.simulation.projectiles.len(),
+                    1,
+                    "aircraft={aircraft}, {output:?}"
+                );
+                let (_, shot) = runtime.simulation.projectiles.iter().next().unwrap();
+                assert_eq!(
+                    shot.arm_timer().start_frame(),
+                    100, // Logic ran at frame100; advance_frame increments the clock afterward.
+                );
+                assert_eq!(shot.arm_timer().duration(), if aircraft { 0 } else { arm });
+            }
+        }
+    }
+
+    #[test]
+    fn runtime_fireat_fractional_velocity_survives_live_gravity_and_snapshot() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::sim::combat::TargetKind;
+        use crate::sim::runtime::SimRuntime;
+        use crate::sim::snapshot::GameSnapshot;
+        let native: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/fireat_runtime.json",
+        ))
+        .unwrap();
+        for voxel in [false, true] {
+            let native = native.iter().find(|row| row["voxel"] == voxel).unwrap();
+            let motion = &native["motion"];
+            let ini = IniFile::from_str(&format!(
+                "[General]\nVeteranRatio=3.0\n[AudioVisual]\nGravity=6\n[VehicleTypes]\n0=TEST\n1=VICTIM\n[TEST]\nStrength=300\nArmor=heavy\nPrimary=GUN\n[VICTIM]\nStrength=300\nArmor=heavy\n[GUN]\nDamage=10\nROF=100\nRange=10\nSpeed=100\nProjectile=SHOT\nWarhead=WH\n[SHOT]\nImage=BULLET\nArcing={}\nVertical={}\nAA=yes\nDetonationAltitude=2000\n[WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+                if voxel { "no" } else { "yes" },
+                if voxel { "yes" } else { "no" },
+            ));
+            let make_rules = || {
+                RuleSet::from_ini_with_fixed_art_for_test(
+                    &ini,
+                    &IniFile::from_str(&format!(
+                        "[BULLET]\nVoxel={}\n",
+                        if voxel { "yes" } else { "no" }
+                    )),
+                )
+                .unwrap()
+            };
+            let mut sim = Simulation::new();
+            install_native_size_terrain(&mut sim, 16, 16);
+            let terrain_template = sim.resolved_terrain.as_ref().unwrap().clone();
+            sim.install_resolved_terrain_for_new_map(terrain_template.clone());
+            sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(
+                terrain_template.width(),
+                terrain_template.height(),
+            ));
+            let source = sim.substrate.allocate_stable_id();
+            let target = sim.substrate.allocate_stable_id();
+            let z = if voxel { 1000 } else { 100 };
+            place(
+                &mut sim,
+                source,
+                ProjectileCoord::new(3200, 3200, z),
+                EntityCategory::Unit,
+            );
+            place(
+                &mut sim,
+                target,
+                ProjectileCoord::new(3700, 3200, z - if voxel { 300 } else { 0 }),
+                EntityCategory::Unit,
+            );
+            let target_type = sim.interner.intern("VICTIM");
+            let enemy = sim.interner.intern("Russians");
+            sim.substrate.entities.change_owner(target, enemy);
+            let victim = sim.substrate.entities.get_mut(target).unwrap();
+            victim.set_type_ref_for_test(target_type);
+            assert!(matches!(sim.reveal(source), RevealOutcome::Revealed { .. }));
+            assert!(matches!(sim.reveal(target), RevealOutcome::Revealed { .. }));
+            // Reveal commits the coarse map coordinate; install the supplied
+            // admitted raw XYZ afterward, matching the native oracle receiver.
+            sim.substrate
+                .entities
+                .get_mut(source)
+                .unwrap()
+                .position
+                .set_exact_z_leptons_for_test(Some(z));
+            sim.substrate
+                .entities
+                .get_mut(target)
+                .unwrap()
+                .position
+                .set_exact_z_leptons_for_test(Some(z - if voxel { 300 } else { 0 }));
+            assert!(sim.substrate.entities.get(source).unwrap().in_playfield());
+            assert!(sim.substrate.entities.get(target).unwrap().in_playfield());
+            let firer = sim.substrate.entities.get_mut(source).unwrap();
+            firer.body_facing.snap(0x4000, 0);
+            firer
+                .attack_target
+                .set_for_test(Some(TargetKind::Entity(target)));
+            let mut runtime = SimRuntime::from_simulation(sim);
+            runtime.resources_mut().rules = make_rules();
+            let inputs = &native["inputs"];
+            let rules = &runtime.resources.rules;
+            assert_eq!(rules.weapon("GUN").unwrap().speed, inputs["stored_speed"]);
+            let projectile = rules.projectile("SHOT").unwrap();
+            assert_eq!(projectile.voxel, voxel);
+            assert_eq!(projectile.vertical, voxel);
+            assert_eq!(projectile.rot, inputs["rot"]);
+            assert_eq!(projectile.floater, inputs["floater"]);
+            assert_eq!(projectile.acceleration, inputs["acceleration"]);
+            assert_eq!(rules.general.gravity, inputs["gravity"]);
+            let output = runtime
+                .advance_frame(
+                    &[],
+                    16,
+                    TickLane::Ordinary,
+                    &mut crate::sim::world::FrameEffects::default(),
+                )
+                .expect("fixture frame must complete");
+            assert_eq!(
+                runtime.simulation.projectiles.len(),
+                1,
+                "normal runtime FireAt must create one projectile, voxel={voxel}, fire_events={:?}, attack={:?}, logic={:?}",
+                output.fire_events,
+                runtime.simulation.substrate.entities.get(source).map(|e| (
+                    &e.attack_target,
+                    e.lifecycle,
+                    e.in_playfield(),
+                    e.mission.current()
+                )),
+                runtime.simulation.live_object_order_snapshot()
+            );
+            let (&id, shot) = runtime.simulation.projectiles.iter().next().unwrap();
+            // Native Logic 55B613 reloads the live count after each AI;
+            // Bullet Fire -> Unlimbo 5F5040 appends the new object. This first
+            // runtime frame therefore includes its first motion visit. The
+            // composed oracle executes Rules Process, GetSpeed, launch and
+            // motion separately; admission/collision are supplied boundaries.
+            let expected = &motion["frames"][0];
+            let expected_bits: Vec<_> = expected["bits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap())
+                .collect();
+            assert_eq!(
+                shot.velocity()
+                    .native()
+                    .map(|v| format!("{:016x}", v.bits()))
+                    .as_slice(),
+                expected_bits.as_slice()
+            );
+            assert_eq!(
+                [shot.position().x, shot.position().y, shot.position().z],
+                std::array::from_fn::<_, 3, _>(
+                    |i| expected["candidate"][i].as_i64().unwrap() as i32
+                ),
+                "new projectile receives its first AI in the firing frame"
+            );
+            if voxel {
+                continue;
+            }
+            runtime
+                .simulation
+                .substrate
+                .entities
+                .get_mut(source)
+                .unwrap()
+                .attack_target
+                .set_for_test(None);
+            let snapshot = GameSnapshot::save(&runtime.simulation, 0, 0, "native motion", 0);
+            let mut restored = GameSnapshot::load(&snapshot).unwrap().sim;
+            let mut serialized_expected = runtime.simulation.projectiles.get(id).unwrap().clone();
+            serialized_expected.set_in_logic_vector_for_test(false);
+            assert_eq!(restored.projectiles.get(id), Some(&serialized_expected));
+            restored.restore_after_snapshot_load().unwrap();
+            assert_eq!(
+                restored.projectiles.get(id).unwrap().velocity(),
+                runtime.simulation.projectiles.get(id).unwrap().velocity()
+            );
+            let mut expected_loaded = runtime.simulation.projectiles.get(id).unwrap().clone();
+            expected_loaded
+                .arm_timer_mut_for_test()
+                .start(restored.session.binary_frame() as i32, 0);
+            assert_eq!(restored.projectiles.get(id), Some(&expected_loaded));
+            let hash = restored.state_hash();
+            let velocity = restored.projectiles.get(id).unwrap().velocity();
+            restored
+                .projectiles
+                .get_mut(id)
+                .unwrap()
+                .velocity_mut_for_test()
+                .x = crate::util::native_x87::NativeF64Bits::from_bits(velocity.x.bits() ^ 1);
+            assert_ne!(
+                restored.state_hash(),
+                hash,
+                "one binary64 ULP remains hash-visible"
+            );
+            restored
+                .projectiles
+                .get_mut(id)
+                .unwrap()
+                .set_velocity_for_test(velocity);
+            assert_eq!(restored.state_hash(), hash);
+            // The real load contract rebuilds skipped map caches and native
+            // overlay/Tiberium authority. Scenario RNG and Tiberium timers have
+            // their own load resets, so compare the delivered Bullet state rather
+            // than claiming whole-world identity across those resets.
+            restored.rebuild_caches_after_load(
+                terrain_template,
+                crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
+                &runtime.resources.rules,
+            );
+            restored
+                .restore_map_authority_after_snapshot_load(
+                    &make_rules(),
+                    runtime.resources.rules.overlay_registry(),
+                    None,
+                )
+                .unwrap();
+            let mut resumed = SimRuntime::from_simulation(restored);
+            resumed.resources_mut().rules = make_rules();
+            let row = motion;
+            for frame in 0..3 {
+                if frame != 0 {
+                    for runtime in [&mut runtime, &mut resumed] {
+                        runtime.resources_mut().rules.general.gravity =
+                            row["gravity_sequence"][frame].as_i64().unwrap() as i32;
+                        let _ = runtime
+                            .advance_frame(
+                                &[],
+                                16,
+                                TickLane::Ordinary,
+                                &mut crate::sim::world::FrameEffects::default(),
+                            )
+                            .expect("fixture frame must complete");
+                    }
+                }
+                let shot = runtime
+                    .simulation
+                    .projectiles
+                    .get(id)
+                    .expect("ordinary source shot survives these visits");
+                let expected = &row["frames"][frame];
+                let expected_bits: Vec<_> = expected["bits"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| v.as_str().unwrap())
+                    .collect();
+                assert_eq!(
+                    shot.velocity()
+                        .native()
+                        .map(|v| format!("{:016x}", v.bits()))
+                        .as_slice(),
+                    expected_bits.as_slice(),
+                    "runtime native motion frame {frame}"
+                );
+                assert_eq!(
+                    [shot.position().x, shot.position().y, shot.position().z],
+                    std::array::from_fn::<_, 3, _>(
+                        |i| expected["candidate"][i].as_i64().unwrap() as i32
+                    )
+                );
+                assert_eq!(
+                    shot.position(),
+                    resumed.simulation.projectiles.get(id).unwrap().position(),
+                    "snapshot continuation frame {frame}"
+                );
+                assert_eq!(
+                    shot.velocity(),
+                    resumed.simulation.projectiles.get(id).unwrap().velocity()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn vertical_projectile_keeps_post_ramp_velocity_across_runtime_visits() {
+        use crate::sim::runtime::SimRuntime;
+        let mut sim = Simulation::new();
+        install_native_size_terrain(&mut sim, 2, 3);
+        let mut shot = gsi_05_02_projectile(999, None);
+        // The supplied motion fixture has no BulletType or installed weapon.
+        // Its warhead still uses a valid Simulation-owned symbol.
+        let missing = sim.interner.intern("MISSING");
+        shot.payload = crate::sim::projectile::ProjectilePayload::new(
+            shot.payload.base_damage,
+            missing,
+            None,
+            false,
+        );
+        shot.origin = ProjectileCoord::new(640, 640, 5);
+        shot.target = ProjectileTarget::Cell { rx: 5, ry: 2 };
+        shot.initial_target_position = ProjectileCoord::new(1408, 640, 0);
+        shot.velocity = ProjectileVelocity::new(1, 0, 0);
+        shot.speed_leptons_per_frame = 1;
+        shot.trajectory = ProjectileTrajectory::Vertical {
+            detonation_altitude: 1000,
+            acceleration: 10,
+            max_speed: 100,
+        };
+        admit_existing(&mut sim, shot);
+        let mut runtime = SimRuntime::from_simulation(sim);
+        // Original successive visits preserve the binary64 ramp, including
+        // the approximate normalization's fractional bits after the first visit.
+        let rows: Vec<Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/vertical_motion.json",
+        ))
+        .unwrap();
+        let row = rows
+            .iter()
+            .find(|row| {
+                row["origin"] == serde_json::json!([640, 640, 5]) && row["acceleration"] == 10
+            })
+            .unwrap();
+        for expected in row["frames"].as_array().unwrap().iter().take(3) {
+            let _ = runtime
+                .advance_frame(
+                    &[],
+                    16,
+                    TickLane::Ordinary,
+                    &mut crate::sim::world::FrameEffects::default(),
+                )
+                .expect("fixture frame must complete");
+            let projectile = runtime
+                .simulation
+                .projectiles
+                .get(100)
+                .expect("post-ramp speed survives the ordinary tail");
+            let candidate = &expected["candidate"];
+            assert_eq!(
+                projectile.position(),
+                ProjectileCoord::new(
+                    candidate[0].as_i64().unwrap() as i32,
+                    candidate[1].as_i64().unwrap() as i32,
+                    candidate[2].as_i64().unwrap() as i32
+                )
+            );
+            let expected_bits: Vec<_> = expected["bits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap())
+                .collect();
+            assert_eq!(
+                projectile
+                    .velocity()
+                    .native()
+                    .map(|v| format!("{:016x}", v.bits()))
+                    .as_slice(),
+                expected_bits.as_slice()
+            );
+        }
+    }
+
+    #[test]
+    fn ordinary_projectile_crosses_fixed_deck_when_leaving_the_span() {
+        use crate::map::bridge_facts::{BRIDGE_FLAG_ANCHOR_SELF, BRIDGE_FLAG_STRUCTURAL};
+        use crate::util::native_x87::NativeF64Bits;
+
+        let mut sim = Simulation::new();
+        install_common_raw_terrain(&mut sim, 8, 8, 0, None);
+        let terrain = sim.resolved_terrain.as_mut().unwrap();
+        let anchor = terrain.native_cell_identity((2, 2));
+        terrain.write_native_cell_flags(anchor, BRIDGE_FLAG_ANCHOR_SELF | BRIDGE_FLAG_STRUCTURAL);
+        terrain.set_authored_high_bridge_deck(anchor, 8);
+
+        place(
+            &mut sim,
+            1,
+            ProjectileCoord::new(384, 640, 0),
+            EntityCategory::Unit,
+        );
+        let mut shot = gsi_05_02_projectile(1, None);
+        shot.origin = ProjectileCoord::new(765, 640, 840);
+        sim.projectiles.spawn(100, shot);
+        let motion = ProjectileCollisionMotion {
+            candidate: [770.0f64, 640.0, 820.0].map(|v| NativeF64Bits::from_bits(v.to_bits())),
+            velocity: [5.0f64, 0.0, -20.0].map(|v| NativeF64Bits::from_bits(v.to_bits())),
+        };
+        let (resolved, impact) =
+            world(&sim).ordinary_geometry(sim.projectiles.get(100).unwrap(), motion);
+        assert!(impact);
+        assert_eq!(
+            resolved.candidate_coord(),
+            ProjectileCoord::new(770, 640, 832)
+        );
+
+        let terrain = sim.resolved_terrain.as_mut().unwrap();
+        terrain.set_authored_high_bridge_deck(anchor, 4);
+        terrain.cell_mut_for_test(3, 2).unwrap().level = 4;
+        let (resolved, impact) =
+            world(&sim).ordinary_geometry(sim.projectiles.get(100).unwrap(), motion);
+        assert!(impact);
+        assert_eq!(
+            resolved.candidate_coord(),
+            ProjectileCoord::new(770, 640, 832)
+        );
+    }
+
+    #[test]
+    fn ordinary_geometry_uses_native_double_and_integer_boundaries() {
+        use crate::util::native_x87::NativeF64Bits;
+        let vectors: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/projectile_oracle/ordinary_collision_vectors.json",
+        ))
+        .unwrap();
+        for (index, row) in vectors["geometry"].as_array().unwrap().iter().enumerate() {
+            let mut sim = Simulation::new();
+            install_common_raw_terrain(&mut sim, 8, 8, 0, None);
+            let cell = &row["cells"]["2,2"];
+            sim.resolved_terrain
+                .as_mut()
+                .unwrap()
+                .cell_mut_for_test(2, 2)
+                .unwrap()
+                .bridge_facts
+                .raw_flags = cell["flags"].as_u64().unwrap_or(0) as u32;
+            let overlay = cell["overlay"].as_i64().unwrap_or(-1);
+            if overlay >= 0 {
+                let mut grid = crate::sim::overlay_grid::OverlayGrid::new(8, 8);
+                grid.place_overlay(2, 2, overlay as u8, 0);
+                sim.overlay_grid = Some(grid);
+            }
+            if row["source"].as_bool().unwrap_or(true) {
+                place(
+                    &mut sim,
+                    1,
+                    ProjectileCoord::new(384, 640, 0),
+                    EntityCategory::Unit,
+                );
+            }
+            let building = &row["building"];
+            let dimensions = row["foundation_dimensions"]
+                .as_array()
+                .map(|v| format!("{}x{}", v[0], v[1]))
+                .unwrap_or_else(|| "1x1".into());
+            let undeploy = if building["undeploy"] == true {
+                "UndeploysInto=UNIT\n"
+            } else {
+                ""
+            };
+            let rules=RuleSet::from_ini_with_fixed_art_for_test(&crate::rules::ini_parser::IniFile::from_str(&format!("[VehicleTypes]\n0=UNIT\n[UNIT]\nStrength=100\n[BuildingTypes]\n0=TEST\n[TEST]\nName=Test\n{undeploy}")), &crate::rules::ini_parser::IniFile::from_str(&format!("[TEST]\nFoundation={dimensions}\n"))).unwrap();
+            if building.is_object() {
+                place(
+                    &mut sim,
+                    2,
+                    ProjectileCoord::new(640, 640, 0),
+                    EntityCategory::Structure,
+                );
+                let owner = sim.interner.intern("Russians");
+                sim.substrate.entities.change_owner(2, owner);
+                sim.substrate.occupancy.add(
+                    2,
+                    2,
+                    2,
+                    MovementLayer::Ground,
+                    None,
+                    CellListInsertion::AppendBuilding,
+                );
+            }
+            if row["source_allied"] == true {
+                sim.house_alliances_mut_for_test()
+                    .insert("AMERICANS".into(), ["RUSSIANS".into()].into());
+            }
+            let mut shot = gsi_05_02_projectile(
+                if building["source_identity"] == true {
+                    2
+                } else {
+                    1
+                },
+                None,
+            );
+            shot.origin = coord(row, "old", [640, 640, 500]);
+            sim.projectiles.spawn(100, shot);
+            let candidate: [NativeF64Bits; 3] = std::array::from_fn(|i| {
+                NativeF64Bits::from_bits(row["candidate"][i].as_f64().unwrap().to_bits())
+            });
+            let motion = ProjectileCollisionMotion {
+                candidate,
+                velocity: [20.0f64, 3.0, -6.0].map(|v| NativeF64Bits::from_bits(v.to_bits())),
+            };
+            let mut world = world(&sim);
+            world.rules = &rules;
+            let (actual, impact) =
+                world.ordinary_geometry(sim.projectiles.get(100).unwrap(), motion);
+            assert_eq!(
+                impact,
+                row["impact"].as_bool().unwrap(),
+                "native geometry{index}: {row}"
+            );
+            assert_eq!(
+                actual.candidate_coord(),
+                coord(row, "result", [0; 3]),
+                "native geometry{index}: {row}"
+            );
+            assert_eq!(
+                serde_json::json!(actual.candidate.map(|v| v.bits())),
+                row["result_candidate_bits"],
+                "native candidate{index}: {row}"
+            );
+            assert_eq!(
+                serde_json::json!(actual.velocity.map(|v| v.bits())),
+                row["result_velocity_bits"],
+                "native reflection{index}: {row}"
+            );
+        }
+    }
+}

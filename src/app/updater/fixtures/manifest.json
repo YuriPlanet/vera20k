@@ -1,0 +1,41 @@
+{
+  "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "files": {
+    "linux": {
+      "key": "releases/v1.2.3/vera20k-1.2.3-linux-x64.AppImage",
+      "name": "vera20k-1.2.3-linux-x64.AppImage",
+      "sha256": "7b115c6f8a66cf4cf819b3f623d2ebe907e0fdcafa604165cc3971ee4b6f0c9c",
+      "size": 42
+    },
+    "macos": {
+      "key": "releases/v1.2.3/vera20k-1.2.3-macos-arm64.dmg",
+      "name": "vera20k-1.2.3-macos-arm64.dmg",
+      "sha256": "c34df1848523ab81ea8a5c644b99cd104414e5570c4cbeb83cef51fe356397fe",
+      "size": 39
+    },
+    "macos-x64": {
+      "key": "releases/v1.2.3/vera20k-1.2.3-macos-x64.dmg",
+      "name": "vera20k-1.2.3-macos-x64.dmg",
+      "sha256": "074467cf12df768c8ca2ee256e252f2f3a3930fdf151bd683819e55e480d7295",
+      "size": 37
+    },
+    "windows": {
+      "key": "releases/v1.2.3/vera20k-1.2.3-windows-x64-setup.exe",
+      "name": "vera20k-1.2.3-windows-x64-setup.exe",
+      "sha256": "2bc30bca68e94da35142a73ad98ceb66c7773889a4553e14e8f5806273903e40",
+      "size": 45
+    }
+  },
+  "notes": [
+    "This test release checks that VERA20K updates itself from the downloads site.",
+    "Its offer lists each change from the release page, below the question.",
+    "Long changes wrap onto further rows, indented under their first word.",
+    "Emphasis and links lose their Markdown.",
+    "The list scrolls with its arrows, its thumb or the mouse wheel.",
+    "Update downloads the release with progress, installs it and restarts VERA20K."
+  ],
+  "tag": "v1.2.3",
+  "update_key": "9RgFMsR6olA58x544bkCwjNUbEhkc3SA0i6qaKB8qK4=",
+  "updater": 1,
+  "version": "1.2.3"
+}

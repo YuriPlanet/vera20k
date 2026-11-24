@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Building GetWeapon/IsOccupied/HalfFoundation, inherited GetCurrentWeapon/GetWeaponRange and all 22 foundation dimensions; original occupied Greatest_Threat bound slice before its air pre-pass. No full scan, boarding, fire-index writer or shot/lifecycle parity.",
+  "assumptions": [
+    "Original Building7E3EBC and Infantry7EB058 vtables, no overrides; type pointers +520/+6C0, occupants +688/+694, index+69C and rank+150 supplied. Building upgrades+702=0, no open-topped cargo or range bonuses. WeaponType identities and Range+ B4 are supplied fixture inputs.",
+    "All 22 original Foundation width8192B8/height819310 table entries run through45EC90/45ECA0(0) and458E00. Types, field flags, occupant order and weapon links are supplied, not their INI readers/constructors.",
+    "Scan bound starts at6F917D with this inESI, original vtable inEDX and prior bound atESP+38; stops at6F91A7. Both flag-false/empty preservation and occupied overwrite execute. Full prior-bound computation, air pre-pass, cell ring walk, scoring and rejection gates are excluded.",
+    "Every whole-function query uses the shared fresh-call runner and confirms supplied scratch state is unchanged. Ring slice uses the shared checked runner and confirms ESP and scratch state. No RNG, timer or detach call lies in the executed query bodies/slice."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "building_get_weapon": "0x004526F0",
+    "is_occupied": "0x00458DD0",
+    "half_foundation": "0x00458E00",
+    "get_current_weapon": "0x0070E1A0",
+    "get_weapon_range": "0x007012C0",
+    "foundation_width": "0x0045EC90",
+    "foundation_height": "0x0045ECA0",
+    "ring_bound": "0x006F917D",
+    "ring_stop": "0x006F91A7"
+  },
+  "commands": [
+    "python -m tools.garrison_oracle.weapon_range --write",
+    "python -m tools.garrison_oracle.weapon_range --check"
+  ],
+  "payload_sha256": "1eab009ca271b39d56b3327d239c6e5f1dfb3cccf1ab32c26dd86360157b2593",
+  "replay_command": "python -m tools.garrison_oracle.weapon_range"
+}

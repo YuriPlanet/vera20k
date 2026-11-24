@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "ILocomotion +0xA4 Can_Use_Track over scratch Drive/Ship locomotors",
+  "assumptions": [
+    "this is the ILocomotion interface at object+4; owner at object+0xC",
+    "owner path queue head is the only owner field read (+0x5E0)",
+    "turn selector +0x58, cursor +0x5C, short byte +0x60 supplied per case",
+    "tables read from the mapped image; no runtime writers exist for them"
+  ],
+  "substitutions": [
+    "no occupant walk, no caller state, no callback"
+  ],
+  "entry_points": {
+    "drive": "0x004B4B00",
+    "ship": "0x006A4130"
+  },
+  "payload_sha256": "2d32a79abf239518155c105a35c1e70a20aec257bf25ba2f31e0447fe2718eee"
+}

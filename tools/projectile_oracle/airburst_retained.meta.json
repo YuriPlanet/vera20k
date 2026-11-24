@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original BulletType ctor46BBC0 and fullReadINI46BEE0; eight ordered synthetic Rules histories for retained Airburst byte+294.",
+  "assumptions": [
+    "Empty fixed ART and file transport; no physical retail assets are read. Existing original type/vector/INI/CRT initializer owners execute; supplied INI indexes contain only listed lexical strings.",
+    "Type SHOT is reused through full readers, including missing section, missing key, invalid and empty tokens. All three RNG storages and complete original text must remain unchanged.",
+    "This establishes reader retention, not a retail unit firing root, original save/load, whole Rules Process order, child fan, flight or damage."
+  ],
+  "substitutions": [
+    "Existing native Reader allocator/free/TLS and file transport; asset_names=() explicitly reads no input files. Default unrelated ColorScheme storage is supplied by BulletReader."
+  ],
+  "entry_points": {
+    "constructor": "0x0046BBC0",
+    "read_ini": "0x0046BEE0"
+  },
+  "replay_command": "python -m tools.projectile_oracle.airburst_retained",
+  "payload_sha256": "1059f4e455450964d629e7a2cfd5cc64a07e5b01ba1eaf7341b234fdc7210382"
+}

@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "scope": "Import/path/diagnostic-output changes only in runner; original native code, retained state and seed0 output are unchanged. Copied retail lexical inputs become SHA256; native observations remain intact.",
+  "results": {
+    "mission.json": {
+      "original_payload_sha256": "a4ccbe7f7cb286481045b0527d217fb4455d59d5c7534611a492b9dfdbed7528",
+      "published_payload_sha256": "6918572224f3a5eddef6dbf49f492ad85a22d1168a0bb30dd4b0143c567d90e7",
+      "original_reference_sha256": "be8b569cc6ef7bc966eb0bea0c91770477f6efa3a80a6d092f4de9ae065dfac7"
+    }
+  },
+  "source_body": {
+    "mission_class_ast_equal": true
+  },
+  "counter": {
+    "frozen_native_payload_sha256": "efa91e1b33cd97f083e59921102f71b56567df28ba2b127d50e4ed6b2fab7bde",
+    "comparison_projection_sha256": "d34ab12a532f4a30b2f01d00c02128a05c183553c0f679fb051bccf6c0e28a78",
+    "production_input_sha256": "3ca42781e1b1e8385dabfa52170b625678c5be4231247ff8e300bcc4bf9ccdc8",
+    "scope": "Exact boundary and first_tick projection of independent frozen v7 native replay, with original instruction readback added by the packaged runner"
+  }
+}

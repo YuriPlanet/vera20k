@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Execute full original587410 over supplied CellClass/BridgeRecord inputs.\n\nComplements the physical Anytown cursor packet; does not substitute query,\nlookup, record search or packed-coordinate arithmetic. No native loader/UI.\n",
+  "assumptions": [
+    "Supplied sparse CellClass table, pristine tile widths and ordered BridgeRecords; not native construction or retail-map reachability.",
+    "Original direction initializer49F2F0 executes before queries; template widths and unsigned subtiles are supplied.",
+    "Original complete587410,5657A0,56DA10 and42D510 execute without patched bytes; cell/record memory and full mapped.text remain unchanged.",
+    "Dummy coordinate mutations and original lookup/record-search order are retained; the Boolean contract is AL."
+  ],
+  "substitutions": [
+    "Inherited OriginalRim output sinks exist but no query reaches them; any sink event rejects the case.",
+    "No UI/Engineer/class lifecycle or full Scenario initialization. No query/lookup/record result is substituted."
+  ],
+  "entry_points": {
+    "repair_query": "0x00587410",
+    "record_search": "0x0056DA10",
+    "lookup": "0x005657A0",
+    "coord_add": "0x0042D510"
+  },
+  "payload_sha256": "8e02535558da02169dcdd213ba8b7ab5c9d0ed693c2671033ce959135d033afd",
+  "replay_command": "python -m tools.spatial_oracle.bridge_repair_query"
+}

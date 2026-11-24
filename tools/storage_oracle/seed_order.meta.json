@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "36 saved-entry qsort fixtures through original qsort/short-sort/comparator; order and comparison count",
+  "assumptions": [
+    "The input pointer array preserves supplied enumeration order; physical filesystem enumeration is outside the fixture",
+    "Each record has FILETIME at +0x1AC; all other fields are zero",
+    "Fixtures cover both sides of eight-element cutoff, equal keys, future/new-row placement and high DWORD timestamps",
+    "The comparator is pure unsigned FILETIME ordering; no other qsort caller is certified"
+  ],
+  "substitutions": [
+    "CompareFileTime IAT call at 00559D49 supplies unsigned64 order and stdcall cleanup; original comparator NEG executes"
+  ],
+  "entry_points": {
+    "qsort": "0x007C8B48",
+    "short_sort": "0x007C8C9C",
+    "saved_comparator": "0x00559D30"
+  },
+  "payload_sha256": "b2a6d25efefc074486e92c0ea4f9b2481658aaa0c9826a9d614a8761cf39fe50"
+}

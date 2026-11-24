@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original retail VirusCloud1/VirusCloudD1 constructor and complete Gas System AI, Particle AI/Move, child retirement and RNG histories in a supplied flat world.",
+  "assumptions": [
+    "Existing DamageSmoke flat cells, original type readers, original slope/CRT startup via native_slope.initialize_slope_tables, PC53/chop and native ID/Scenario prior-state inputs.",
+    "Physical TXGASG.SHP from RA2MD.MIX/CONQMD.MIX is admitted by the original type/image reader (20 frames); drawing is not executed.",
+    "Optional Infantry receiver has supplied Object construction, concrete vtable, location, Alive and Health."
+  ],
+  "substitutions": [
+    "Existing shared archive/INI, allocator and OS transport only.",
+    "Infantry ReceiveDamage517FA0 records its original Gas caller arguments and returns zero; no native receiver HP/death claim."
+  ],
+  "entry_points": {
+    "system": "0x0062FD60",
+    "gas_system": "0x0062E6D0",
+    "particle": "0x0062CE40",
+    "gas_ai": "0x0062BD50",
+    "move": "0x0062D2A0",
+    "spawn": "0x0062E430",
+    "constructor": "0x0062B5E0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.virus_gas",
+  "payload_sha256": "557d5e197cbd5627398911d22f3efed729c3375b25244239ccfd7d47c3878489"
+}

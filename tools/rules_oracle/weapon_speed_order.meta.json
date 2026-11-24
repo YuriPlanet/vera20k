@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Retained Weapon Speed and prior-pass Rules Gravity through complete original RulesClass Process",
+  "assumptions": [
+    "Original RulesClass665650 and WeaponType771C70 constructors initialize Gravity3 and Speed0. Original Process668BF0 executes all its calls, including full ReadTypeData679A10, Weapon postpass7729F0 and AudioVisual6691E0. The Process function is void; incidental EAX is not treated as a success code.",
+    "One Weapon is constructed before the first supplied Process, standing for prior type discovery. Unrelated native type registries are initially empty. Cached minimal source sections supply inputs, not native physical INI loading or complete active-retail type discovery.",
+    "The cold_gravity6 sequence first executes full AudioVisual6691E0, matching the inspected cold caller52D132. The complete startup wrapper and destructive reset6686C0 are not executed. Their retained RulesClass lifetime still requires separate evidence.",
+    "All phase observations are read-only hooks at actual Process call/return sites668EF0/668EF5/668F56/668F5B. GetSpeed773070 executes after each completed pass, so it sees the newly read Gravity while the stored postpass speed used the earlier value.",
+    "Native x87 fixture uses 53-bit precision and truncation0E7F. No arithmetic, reader, postpass, or phase result is replaced with Python output."
+  ],
+  "substitutions": [
+    "Inherited BulletReader supplies signed-CRC INI cache structures, allocator/delete/CRT/TLS and archive file boundaries. Unrelated Color fallback points to a supplied fixture entry; no color behavior is claimed."
+  ],
+  "entry_points": {
+    "rules_ctor": "0x00665650",
+    "weapon_ctor": "0x00771C70",
+    "rules_process": "0x00668BF0",
+    "type_data": "0x00679A10",
+    "weapon_postpass": "0x007729F0",
+    "audio_visual": "0x006691E0",
+    "read_speed": "0x00474810",
+    "get_speed": "0x00773070"
+  },
+  "payload_sha256": "72351c3d075fa20faeaab53875c2e64f56fbf6c2058559a71c2e46f97ea5cdce"
+}

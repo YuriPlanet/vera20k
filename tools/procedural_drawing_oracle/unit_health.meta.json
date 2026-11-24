@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Ordinary rookie MTNK selected/hover health strip through original Extras/health/pip-tail and physical SHP pixels",
+  "assumptions": [
+    "One existing PaletteReader owns original image/allocator/native INI cache and complete Rules665650/UnitType7470D0 constructors. Selected Strength, PixelSelectionBracketDelta, PipScale and ConditionRed/Yellow original read/store blocks consume physical RULESMD, optional LANGRULE, MPBattleMD and XMP03T4 lexical layers; fixed ART supplies none of these keys. Whole Scenario and Rules/UnitType file readers do not run.",
+    "Physical PIPS21frame and PIPBRD/PALETTE copies match independently resolved normal STOCK_DIGITAL production AssetManager winners, including loose/expansion/language precedence. The oracle consumes unchanged agreed archive bytes; it does not emulate native archive opening/search. ANIM.PAL is an inherited palette-startup dependency, not the health Convert.",
+    "Original palette initialize52BE61..52BFCE and full Convert/LUT constructors execute in the same VM. Existing bridge_render_shape.prepare_surface supplies RGB565 BSurface/circular A/Z storage, baseline32768, raw backgroundF940, A127/63/2/0 and oldZ65535/0. A2 is physical stock unrevealed SHROUD-frame15 output established by existing shroud owner; its whole writer is not rerun here.",
+    "Prepared original Unit-vtable/type/House linkage, rookie state, no cargo/spawn/capture/group/selfheal, selected/hover/sinking and health fields are supplied consumer priors, not Unit constructor, damage, selection or sinking lifecycle proof. Original UnitGetCoords5F65A0 and Tactical6D2140 derive each actor point from supplied XYZ/camera. Supplied overlap positions are a drawing-order control, not proven legal dense-unit placement.",
+    "Original complete DrawExtras6F5190 executes ordinary no-bomb/no-repair/rookie state through full DrawHealth6F64A0 and its actually reached ordinary709A90/70AA60 tail. Every actual4AED70 frame/centering/clip, picker490B90, rowwalker and leaf executes unchanged. No MTNK VXL body, whole Display loop, shroud/AlphaShapes, rank/text/selfheal rendering or other PipScale is established.",
+    "Ordered color stores and final sparse RGB565 pixels are native outputs. Per-draw A/Z plane accesses distinguish backgroundE00 consumesA/noZ from fill600 bypassesA/Z. Original code/vtables, A/Z and prepared actor bytes stay unchanged; no drawing RNG entry, timer write or detach occurs in these measured ordinary intervals."
+  ],
+  "substitutions": [
+    "Inherited Reader successful allocation/delete/CRT TLS and immutable physical asset file transports; existing BSurface and circular A/Z memory replace DirectDraw storage. No health ratio/count/frame, selected/hover gate, gameplay function result, palette table, shape decoder or pixel leaf is substituted."
+  ],
+  "entry_points": {
+    "rules_ctor": "0x00665650",
+    "unit_type_ctor": "0x007470D0",
+    "strength_begin": "0x005F94D3",
+    "strength_end": "0x005F94F3",
+    "pip_scale_begin": "0x00714111",
+    "pip_scale_end": "0x0071412B",
+    "delta_begin": "0x0071415F",
+    "delta_end": "0x00714179",
+    "red_begin": "0x0066B337",
+    "red_end": "0x0066B35E",
+    "yellow_begin": "0x0066B35E",
+    "yellow_end": "0x0066B385",
+    "extras": "0x006F5190",
+    "health": "0x006F64A0",
+    "pip_tail": "0x00709A90",
+    "status_tail": "0x0070AA60",
+    "shape": "0x004AED70",
+    "picker": "0x00490B90",
+    "background_leaf": "0x00493DF0",
+    "fill_leaf": "0x004912B0"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.shroud --unit-health",
+  "payload_sha256": "edd13ef729996480e8f1b59bebe05dc4c26e8a35427264750d64e3f0d0c61926"
+}

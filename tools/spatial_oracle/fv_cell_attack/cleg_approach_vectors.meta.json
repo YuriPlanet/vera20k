@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original FootApproach class-specific radius and radial numeric fragments, supplied boundary inputs only.",
+  "assumptions": [
+    "Native image mapping is the shared native_oracle owner. Infantry vtable7EB058+2C selects actual original523340, which executes and returns15. Unit RTTI1 is a supplied comparison input.",
+    "Ranges and foundation dimensions are supplied stack/register inputs. The0,0 row omits the building-only addition; huge dimensions and extreme ranges are arithmetic boundary controls, not valid retail foundations. Original signed wrapping, binary64 subtraction, CRT ftol and radius clamping execute unchanged.",
+    "The existing mapgen_range.Machine.startup owner executes original CRT/WinMain floating-control fragments and cached-control-word writes. Windows/CPU startup probes are excluded. Radius controls additionally declare FPCW0E3F and0E7F inputs; radial geometry retains the established0E3F/cache state. Original RTTI leaf uses the shared call default environment and returns a constant.",
+    "Four supplied XY poses, targetZ416/sourceZ0 and five supplied radii execute the existing geometry owner through original facing/Sin/Cos/ftol. These100 rays do not execute target getters, Cell snapping, map heights, Cell admission, zone costs, destination setters or whole Approach.",
+    "Original Cell compass initializer49F2F0 executes through its realRET49F39B before the shared geometry owner reads its eight packed direction pairs. No compass output is supplied.",
+    "Sixteen candidate-height controls reuse OriginalBridgeQuery sparse Cell setup, supplied level/slope/flags, level step104 and deck416. Original CRT/WinMain floating setup executes. The non-CloseRange snap/height block4D60FB..61A4 executes Map578080/Cell47B3A0 then independent Map565730 without substituted queries. Returned snapped XY, ground and final Z are observed, not calculated. At6181 ESP is four bytes below its entry value: [esp+38] aliases the candidate at entryESP+34; the saved ground therefore contributes to final Z. No target/range/admission or whole approach is executed."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "infantry_rtti": "0x00523340",
+    "range_adjustment": "0x004D56E4",
+    "building_radius_addition": "0x004D5B97",
+    "class_radius": "0x004D5BB1",
+    "approach_facing": "0x004D5C53",
+    "approach_radial": "0x004D5FFE",
+    "candidate_height": "0x004D60FB",
+    "map_ground": "0x00578080",
+    "cell_ground": "0x0047B3A0",
+    "map_flags": "0x00565730"
+  },
+  "replay_command": "python -m tools.spatial_oracle.fv_cell_attack.candidates --cleg-radius",
+  "payload_sha256": "62fde605912bfb15d1c884c12ce648b7b23d50998ee64f2f5d2216ed43890f5b"
+}

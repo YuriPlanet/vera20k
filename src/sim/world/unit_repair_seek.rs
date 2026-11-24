@@ -1,0 +1,270 @@
+//! `UnitClass::AI @ 0x007360C0`'s repair seek (`0x0073671F..0x00736817`):
+//! on every 16th frame a computer house's damaged vehicle standing guard
+//! drives to the nearest of its House's UnitRepair stations that answers its
+//! CAN_LOAD, after archiving its own Cell as the post to return to.
+//!
+//! The station search is `0x00455DD0`. It admits any nonzero CAN_LOAD
+//! answer, not only ROGER: a Naval Yard answers a land vehicle NEGATORY
+//! (`0x0043C3F3`), so a damaged computer tank near its own Naval Yard takes
+//! that yard as its station. Ares 3.0 (`1005CB50`, hook `0x455E4C`) asks only
+//! a bay of the unit's own Naval kind that is no aircraft pad, and takes only
+//! ROGER.
+//!
+//! The separate `UnitClass::Mission_Repair @ 0x00740EF0` handler, also
+//! accepted by the map placement reader, uses the retained `[General]
+//! `RepairBay=` list. It establishes contact before handing off to Enter;
+//! the existing docking service owns movement, payment, healing and release.
+
+use crate::map::entities::EntityCategory;
+use crate::rules::ruleset::RuleSet;
+use crate::sim::combat::TargetKind;
+use crate::sim::components::NavTargetRef;
+use crate::sim::mission::authority::LiveReadyInputProvider;
+use crate::sim::mission::{MissionId, MissionType};
+use crate::sim::movement::ground_pose::object_location;
+use crate::sim::radio::{RadioMessage, RadioPayload, RadioResponse, transmit};
+use crate::util::native_x87::{X87Chop53, distance_3d_leptons, sqrt_approx_f32};
+
+use super::{FrameEffects, Simulation};
+
+/// `0x00455DD0`'s reach, `ftol(CellDiagonal * 20.0)`
+/// (`0x00455E03..0x00455E1C`). CellDiagonal is Sqrt_Approx of `2 * 256²`
+/// (static initializer `0x0043AF40`, stored as a double), and 20.0 is the
+/// double at `0x007E44C8`.
+fn unit_repair_reach() -> i32 {
+    let diagonal = sqrt_approx_f32(X87Chop53::load_i32(2 * 256 * 256))
+        .and_then(X87Chop53::load_f32)
+        .expect("Sqrt_Approx of a finite square is finite");
+    X87Chop53::ftol_i32_low_masked(X87Chop53::mul(diagonal, X87Chop53::load_i32(20)))
+}
+
+impl Simulation {
+    /// `UnitClass::Mission_Repair @ 0x00740EF0`: find a free RepairBay,
+    /// introduce the Unit by HELLO, then queue Enter without commencing it.
+    /// A bay found only by the wide scan calls Enter_Idle_Mode(0,1). With no
+    /// accepted HELLO the return is the current mission's unjittered rate;
+    /// an accepted HELLO returns one frame. The existing Enter and depot
+    /// service owners drive, repair and release the Unit after this handoff.
+    /// This handler never assigns a destination: a map-authored Repair with
+    /// none waits in Enter after establishing contact, as the native radio
+    /// and Enter bodies do. A destination-bearing order supplies that leg.
+    pub(crate) fn unit_mission_repair(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) -> i32 {
+        use crate::sim::miner::miner_system::find_docking_bay;
+
+        let bay = find_docking_bay(
+            self,
+            rules,
+            id,
+            &rules.repair_bay_types,
+            false,
+            false,
+            effects,
+        );
+        crate::sim::miner::miner_system::unit_ai_clear_harvesting(&mut self.substrate, id);
+        if let Some(bay) = bay {
+            if transmit(
+                self,
+                id,
+                bay,
+                RadioMessage::Hello,
+                RadioPayload::default(),
+                rules,
+                effects,
+            ) == RadioResponse::Roger
+            {
+                let _ = self.mission_queue_exact(
+                    id,
+                    MissionId::from_known(MissionType::Enter),
+                    0,
+                    self.session.binary_frame(),
+                    &LiveReadyInputProvider { rules },
+                );
+                return 1;
+            }
+        } else if find_docking_bay(
+            self,
+            rules,
+            id,
+            &rules.repair_bay_types,
+            true,
+            false,
+            effects,
+        )
+        .is_some()
+        {
+            self.unit_enter_idle_mode(id, rules, false, effects);
+        }
+        let mission = self
+            .substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .mission
+            .current()
+            .known();
+        rules
+            .mission_control
+            .rate_frames(mission.unwrap_or(MissionType::Repair))
+    }
+
+    /// `UnitClass::AI`'s repair seek (`0x0073671F..0x00736817`), right after
+    /// its second Ready/Commence. On a frame whose counter is a multiple of
+    /// 16, a Unit on Guard (5) or AreaGuard (0xB) with nothing queued, whose
+    /// House no human controls (`0x0050B730`), below its type's Strength,
+    /// with no ArchiveTarget unless on AreaGuard, and neither `Harvester=`
+    /// (`+0xE0E`) nor `Weeder=` (`+0xE0F`), looks for a station
+    /// ([`Self::nearest_unit_repair_station`]). With one, it archives its
+    /// own Cell when it has no ArchiveTarget (`0x0070C610`), queues Enter
+    /// without commencing (vt+0x1E8(7, 0)), drops its Target (vt+0x3C8) and
+    /// takes the station as its destination (vt+0x480(station, 1)).
+    pub(crate) fn unit_ai_seek_repair(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        if self.session.binary_frame() & 0xF != 0 {
+            return;
+        }
+        let Some(unit) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let current = unit.mission.current();
+        let area_guard = current == MissionId::from_known(MissionType::AreaGuard);
+        if unit.category() != EntityCategory::Unit
+            || !(area_guard || current == MissionId::from_known(MissionType::Guard))
+            || self
+                .houses
+                .get(&unit.owner())
+                .is_none_or(|house| house.is_controlled_by_human(self.session.rule_policy()))
+            || unit.mission.queued() != MissionId::NONE
+        {
+            return;
+        }
+        let Some(object) = self.object_type(unit.type_ref(), rules) else {
+            return;
+        };
+        if unit.health.current() >= object.strength
+            || (unit.archive_target().is_some() && !area_guard)
+            || object.harvester
+            || object.weeder
+        {
+            return;
+        }
+        let Some(station) = self.nearest_unit_repair_station(id, rules, effects) else {
+            return;
+        };
+        let Some(unit) = self.substrate.entities.get_mut(id) else {
+            return;
+        };
+        if unit.archive_target().is_none() {
+            let post = TargetKind::Cell(unit.position.rx(), unit.position.ry());
+            unit.set_archive_target(Some(post));
+        }
+        let now = self.session.binary_frame();
+        let _ = self.mission_queue_exact(
+            id,
+            MissionId::from_known(MissionType::Enter),
+            0,
+            now,
+            &LiveReadyInputProvider { rules },
+        );
+        let _ = self.assign_target_represented(id, None, rules, effects);
+        let _ = self.assign_destination_represented(
+            id,
+            Some(NavTargetRef::object(station)),
+            rules,
+            effects,
+        );
+    }
+
+    /// `0x00455DD0`: of the House's UnitRepair stations
+    /// ([`Self::house_unit_repair_stations`]), in list order, the first
+    /// strictly nearest one that answers the Unit's CAN_LOAD (vt+0x278(0x0F))
+    /// with anything but silence and lies nearer than [`unit_repair_reach`].
+    /// The distance is between the two Locations (`+0x9C`), `(dx²+dz²)+dy²`
+    /// through Sqrt_Approx and ftol (`0x00455E5D..0x00455EBF`).
+    fn nearest_unit_repair_station(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) -> Option<u64> {
+        let owner = self.substrate.entities.get(id)?.owner();
+        let reach = unit_repair_reach();
+        let mut best = None;
+        let mut best_distance = i32::MAX;
+        for station in self.house_unit_repair_stations(owner, rules) {
+            // Ares 3.0 HouseClass_FindRepairBay (1005CB50, hook 0x455E4C):
+            // a BalloonHover unit, a bay of the other Naval kind, an
+            // aircraft factory, a helipad, or a hover pad without
+            // `SeparateAircraft=` is passed over without the query.
+            if rules.ares() && !self.ares_repair_bay_accepts(id, station, rules) {
+                continue;
+            }
+            let answer = transmit(
+                self,
+                id,
+                station,
+                RadioMessage::CanEnter,
+                RadioPayload::default(),
+                rules,
+                effects,
+            );
+            // 1005CB50 also takes only ROGER; the original any answer.
+            if answer == RadioResponse::None || rules.ares() && answer != RadioResponse::Roger {
+                continue;
+            }
+            let (Some(unit), Some(building)) = (
+                self.substrate.entities.get(id),
+                self.substrate.entities.get(station),
+            ) else {
+                continue;
+            };
+            let terrain = self.resolved_terrain.as_ref();
+            let from = object_location(unit, terrain);
+            let to = object_location(building, terrain);
+            let distance = distance_3d_leptons([to.x, to.z, to.y], [from.x, from.z, from.y]);
+            if distance < best_distance && distance < reach {
+                best_distance = distance;
+                best = Some(station);
+            }
+        }
+        best
+    }
+
+    /// The type tests of `HouseClass_FindRepairBay @ 1005CB50` (Ares 3.0,
+    /// hook 0x455E4C) ahead of the CAN_LOAD query: the unit is not
+    /// `BalloonHover=` (UnitType `+0xD6A`), the bay's `Naval=` matches the
+    /// unit's (`+0xCCE`), and the bay is no aircraft factory (`Factory=` RTTI
+    /// 3, `+0xEB8`), no `Helipad=` (`+0x16CB`) and no `HoverPad=` (`+0x154E`)
+    /// unless `[General] SeparateAircraft=yes`.
+    fn ares_repair_bay_accepts(&self, unit: u64, bay: u64, rules: &RuleSet) -> bool {
+        let (Some(unit), Some(bay)) = (
+            self.substrate
+                .entities
+                .get(unit)
+                .and_then(|entity| self.object_type(entity.type_ref(), rules)),
+            self.substrate
+                .entities
+                .get(bay)
+                .and_then(|entity| self.object_type(entity.type_ref(), rules)),
+        ) else {
+            return false;
+        };
+        !(unit.balloon_hover
+            || bay.naval != unit.naval
+            || bay.factory_rtti() == 3
+            || bay.helipad
+            || bay.hover_pad && !rules.general.separate_aircraft)
+    }
+}
+
+#[cfg(all(test, tests_sim_world_t_z))]
+#[path = "unit_repair_seek_tests.rs"]
+mod tests;

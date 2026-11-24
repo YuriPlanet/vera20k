@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original RT_DIALOG 0x10C controls, their 0x006040B0 help labels and the ordinary child's complete 0x0060B7A0 placement",
+  "assumptions": [
+    "Template bytes read from the mapped original resource directory; supplied 6x13 dialog base units, not emulated font metrics",
+    "0x0060C0C0 sends 0x10C's ordinary child to 0x0060B7A0 (0x0060C3D9) and its title, Return and status line to dedicated placements, established by original instruction inspection",
+    "Parent origin 0 and extents 640x480, 800x600, 1024x768",
+    "Help: only the table fallback; the 0x10C proc handles no 0x4E9"
+  ],
+  "substitutions": [
+    "Shared native_child_case supplies GetParent/GetWindowRect/MoveWindow and true 0x0069BBE0 hooks",
+    "Shared help_label supplies the record-table hash and GetDlgCtrlID"
+  ],
+  "entry_points": {
+    "show": "0x0065F520",
+    "dialog_proc": "0x0065F710",
+    "dispatcher": "0x0060C0C0",
+    "ordinary_child": "0x0060B7A0",
+    "help_lookup": "0x006040B0"
+  },
+  "replay_command": "python -m tools.storage_oracle.restate_shell_layout",
+  "payload_sha256": "81815be42becf5f837b2b9e84e4fa2df9c76237080074b4f96601146c70fde5b"
+}

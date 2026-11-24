@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original576BA0 high-body branch and complete47E040 setter with synchronous callback boundaries",
+  "assumptions": [
+    "Executable coverage is body states9/15 and setter direction6,set0; no NS/intact/partial/dummy coverage is claimed",
+    "Supplied xbayopigs stock scalar cells; original loader and outer damage admission/RNG are excluded",
+    "Initial anchor9 is stock;15 supplies the state following a prior effective body hit",
+    "Synthetic callback state/flag/coordinate writes are continuation tests, not retail callback reachability claims",
+    "Coordinate mutation covers retained setter F1; body anchor-coordinate reload is separate static instruction evidence",
+    "Retained anchor+2C initialized as in bridge_rim; admitted body tests cover stock self and nonself resolution"
+  ],
+  "substitutions": [
+    "All eight perpendicular helpers are synchronous sinks with supplied optional callback writes; their bodies are excluded",
+    "Rim576770 and zone56DAE0 are sinks; zone returns0 and no connectivity rebuild executes",
+    "BlowUpBridge47DD70/radar6551C0/presentation sinks inherited from bridge_rim; object and RNG bodies are excluded",
+    "No high-body or setter instructions are replaced"
+  ],
+  "entry_points": {
+    "high_body": "0x00576BA0",
+    "full_setter": "0x0047E040"
+  },
+  "payload_sha256": "ad869318ef4dc0a386b22b56fc9aa1ceed65ae23aa98ae98727c67aef15822d6"
+}

@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original TechnoClass::Time_To_Build 0x6F47A0 on fixture objects: the type getter 0x711EE0, country multiplier 0x50C0A0, power ratio 0x4FCE30, factory counter 0x500910 and the Rules factors it reads. No claim about which objects reach it, the factory rate division or the step cadence.",
+  "assumptions": [
+    "Retail vtables supply WhatAmI and the type getters: Infantry 0x7EB058 (type +0x6C0), Unit 0x7F5C70 and Aircraft 0x7E22A4 (+0x6C4), Building 0x7E3EBC (+0x520); type vtables 0x7EB610, 0x7F6218, 0x7E2868, 0x7E4570. Owner +0x21C; type Cost +0x610, BuildTimeMultiplier +0x608, Naval +0xCCE, building BuildCat +0xE08, wall +0x1571; house country +0x34, power +0x53A4/+0x53A8, factory counters +0x5378..+0x5388 (unread counters hold 97); country multipliers +0x134..+0x144 (unread slots hold 64.0); Rules at [0x8871E0] with +0x570..+0x57C, +0x758 and +0x1748. Default native FPCW 0x0E7F.",
+    "Inputs are fixture values chosen to cover stock rules and the branches (power, clamps, counts, walls); they are not a claim that every combination occurs in retail play. Double fields hold values as INIClass::ReadDouble 0x5283D0 stores them (a %f scan widened to double); three BuildSpeed values are doubles only a percent value (x 0.01) produces."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "time_to_build": "0x006F47A0"
+  },
+  "payload_sha256": "9dd2f6d104112136bff2ae14996cd66e44fee3133da359bd91433aff95e660e7"
+}

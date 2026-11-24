@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "TeamClass::Recalc over TaskForce totals, member counts and strength bytes; Calc_Center off action 10 over synthetic members and move targets; Recruit over one class array with supplied Can_Add answers; ObjectClass::Distance to a Foot or a building of every foundation; the action 5 guard timer; action 54's point up to its FNPC call; FindOwnBuilding over one house's buildings; Find_Best_Target_Building over BuildingClass::Array with four houses; action 53 up to its FNPC call or its early return; Quarry_To_Threat; Coordinate_Attack's frame test; EnterBioReactor over one house's absorber list with supplied CAN_LOAD answers; EnterBattleBunker over one house's occupiable list with supplied CanBeOccupiedBy answers; EnterTankBunker over one house's tank bunker list; actions 14, 9 and 8 and action 43's inline test over up to five synthetic infantry, vehicle and aircraft members.",
+  "assumptions": [
+    "x87 control word 0x0E7F (PC53, chop), the harness default.",
+    "Fixture objects carry only the fields the entries read.",
+    "ScenarioInit (0xA8E7AC), the empty coordinate 0xB0E968 and the empty cell 0xB0E948 read zero, as at load (BSS)."
+  ],
+  "substitutions": [
+    "WhatAmI (vt+0x2C), GetTechnoType (vt+0x84), the GuardSlower weight (vt+0x4E0), Can_Enter_Cell (vt+0x1AC) and SetTarget (vt+0x3C8) answer from the case; objects' GetCoords is the original 0x5F65A0, a building's answers the case's coordinate.",
+    "ScriptClass::Current 0x691500 answers action 0; MapClass::GetCellAt 0x565730 records its coordinate and answers one cell; the team destructor (vt+0x20) records its call.",
+    "Can_Add 0x6EA610 answers from the case and Add_Member 0x6EA500 records its call; Get_Group 0x6F1870 answers the case's group; the TeamType waypoint 0x6F18A0 answers the empty cell; the first passenger 0x473450 answers none.",
+    "Base_Center 0x50DF30 answers the case's centres ([0, 0] for none, z 0); RandomRanged 0x65C7E0 answers from the case and records its range.",
+    "FindOwnBuilding's threat map read 0x56BCD0 answers 0.",
+    "Find_Best_Target_Building: a building's GetCoords (vt+0x48) answers the case's coordinate; the threat map read 0x56BCD0 answers the scored building's case value and records its cell and house; IsAlliedWith 0x4F9A50 runs on the houses' ArrayIndex (+0x30) and Allies bits (+0x5788).",
+    "EnterBioReactor's Transmit_Message (vt+0x278) answers the case's CAN_LOAD reply and records it; Queue_Mission (vt+0x1E8) and Assign_Destination (vt+0x480) record their calls; the pick is read from EDI at 0x4DFC52.",
+    "EnterBattleBunker's BuildingClass::CanBeOccupiedBy 0x457CE0 answers the case's admission for the Foot, refuses NULL as its first test (0x457CEB) does, and records its building and occupant; Queue_Mission and Assign_Destination record their calls.",
+    "EnterTankBunker: the current weapon (vt+0x3F4) answers a weapon with or without a type; Transmit_Message, Queue_Mission and Assign_Destination record their calls; RadioClass::Contact 0x65AD30 runs as original and records its building; the admission's answer is read from AL at 0x4DFF54.",
+    "The transport actions: Get_Mission (vt+0x184) and Ready_To_Commence (vt+0x200) answer from the case; Queue_Mission, Assign_Destination, Assign_Target, Commence (vt+0x1EC) and TeamClass::Remove_Member 0x6EA870 record their calls; MapClass::GetCellAt 0x565730 records its coordinate and answers one cell, for which Look_up_building_in_cell 0x47C520 answers the member's case (its game-active gate 0xA8E9A0 is set in play); In_Radio_Contact 0x65AE30 and Set_ArchiveTarget 0x70C610 run as original; action 43 runs from 0x6E9C22 to its branch targets.",
+    "Action 9: Mark (vt+0x124) and Flush_For_Placement 0x45EE70 record their calls; the DeploysInto= building's CanPlaceAt (vt+0xA8) answers the case's placement and records its cell and house; GetMapCoords (vt+0x1B8) is the original 0x41BEA0."
+  ],
+  "entry_points": {
+    "recalc": "0x006EA3E0",
+    "calc_center": "0x006EAEE0",
+    "recruit": "0x006EAA90",
+    "distance": "0x005F6360",
+    "guard_case": "0x006E97CE",
+    "regroup_at_base": "0x006EFA10",
+    "find_own_building": "0x006EEEA0",
+    "find_best_target_building": "0x006EEBD0",
+    "gather_at_enemy_base": "0x006EF700",
+    "quarry_to_threat": "0x00645BB0",
+    "attack_cadence": "0x006EB59A",
+    "enter_bio_reactor": "0x004DFB70",
+    "enter_battle_bunker": "0x004DFCB0",
+    "enter_tank_bunker": "0x004DFF40",
+    "load_onto_transport": "0x006ED200",
+    "wait_loaded": "0x006E9C22",
+    "unload": "0x006EF110",
+    "script_deploy": "0x006ED4D0"
+  },
+  "replay_command": "python -m tools.team_recruit_oracle",
+  "payload_sha256": "5d14d5ba409a53f0202ae874a91898bbec862bfe3c4782c1118af753aea7a404"
+}

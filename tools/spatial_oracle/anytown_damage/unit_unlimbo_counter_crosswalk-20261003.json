@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "source": "RA2-GAME.EXE-IDB/redalert2yr/gamemd.exe",
+  "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+  "reader": "RA2-GAME.EXE-IDB/scripts/yurire_reloc_queue.py:PEImage",
+  "reader_sha256": "82503a5398aa1f2f65610f5622d44bcbe6e4598020116b69bccfc0fe30d0893e",
+  "gates": {
+    "unit_boundary": {
+      "address": "0x73f34c",
+      "hex": "a1ace7a80085c07549",
+      "instructions": [
+        {
+          "address": "0x73f34c",
+          "mnemonic": "mov",
+          "operands": "eax, dword ptr [0xa8e7ac]"
+        },
+        {
+          "address": "0x73f351",
+          "mnemonic": "test",
+          "operands": "eax, eax"
+        },
+        {
+          "address": "0x73f353",
+          "mnemonic": "jne",
+          "operands": "0x73f39e"
+        }
+      ]
+    },
+    "object_admission": {
+      "address": "0x5f4f1b",
+      "hex": "a1ace7a80085c07526",
+      "instructions": [
+        {
+          "address": "0x5f4f1b",
+          "mnemonic": "mov",
+          "operands": "eax, dword ptr [0xa8e7ac]"
+        },
+        {
+          "address": "0x5f4f20",
+          "mnemonic": "test",
+          "operands": "eax, eax"
+        },
+        {
+          "address": "0x5f4f22",
+          "mnemonic": "jne",
+          "operands": "0x5f4f4a"
+        }
+      ]
+    },
+    "infantry_retained": {
+      "address": "0x51c13a",
+      "hex": "8a85d503000084c07438",
+      "instructions": [
+        {
+          "address": "0x51c13a",
+          "mnemonic": "mov",
+          "operands": "al, byte ptr [ebp + 0x3d5]"
+        },
+        {
+          "address": "0x51c140",
+          "mnemonic": "test",
+          "operands": "al, al"
+        },
+        {
+          "address": "0x51c142",
+          "mnemonic": "je",
+          "operands": "0x51c17c"
+        }
+      ]
+    },
+    "infantry_boundary": {
+      "address": "0x51c144",
+      "hex": "a1ace7a80085c0752f",
+      "instructions": [
+        {
+          "address": "0x51c144",
+          "mnemonic": "mov",
+          "operands": "eax, dword ptr [0xa8e7ac]"
+        },
+        {
+          "address": "0x51c149",
+          "mnemonic": "test",
+          "operands": "eax, eax"
+        },
+        {
+          "address": "0x51c14b",
+          "mnemonic": "jne",
+          "operands": "0x51c17c"
+        }
+      ]
+    },
+    "unit_crate": {
+      "address": "0x73f405",
+      "hex": "a138b2a80085c07512",
+      "instructions": [
+        {
+          "address": "0x73f405",
+          "mnemonic": "mov",
+          "operands": "eax, dword ptr [0xa8b238]"
+        },
+        {
+          "address": "0x73f40a",
+          "mnemonic": "test",
+          "operands": "eax, eax"
+        },
+        {
+          "address": "0x73f40c",
+          "mnemonic": "jne",
+          "operands": "0x73f420"
+        }
+      ]
+    }
+  },
+  "saved_oracle_spans": {
+    "unit_scope_and_mode": {
+      "address": "0x0073F34C",
+      "length": 212,
+      "sha256": "6d0daea1bd2bb84b0ff7f6c31faeb6e3e1a276a4c7a02a15daf401d829b00229",
+      "matches_saved_oracle_span": true
+    },
+    "infantry_scope": {
+      "address": "0x0051C13A",
+      "length": 160,
+      "sha256": "4cf0afa62df2d988d1b59a3f1e71a3e84c063c222f97c78b8920e7a53613020d",
+      "matches_saved_oracle_span": true
+    }
+  },
+  "conclusion": "Unit and Object read A8E7AC placement priority. Infantry additionally checks retained +3D5. Unit crate arm reads actual GameMode A8B238.",
+  "limits": "Static instruction-region crosswalk only. Steam whole image differs from the accepted native oracle image; no fresh native execution or whole-image qualification."
+}

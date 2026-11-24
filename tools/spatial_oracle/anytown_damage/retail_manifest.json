@@ -1,0 +1,194 @@
+{
+  "absent_asset_boundary": "Generic reader asset requests remain absent unless the runner explicitly supplies one of the selected local SHPs. Do not include additional assets in the bootstrap cache.",
+  "archive_roots": {
+    "RA2_DIR": {
+      "boundary": "Physical archives consumed by the frozen navigation_inputs owner; separate from the original sparse-reader/selected-asset roots.",
+      "files": {
+        "expandmd01.mix": {
+          "bytes": 4813968,
+          "sha256": "0c0a64e741bdecdc3843a0beb6bb1f58aa2df5b86eb3bc4a953821ec98f3d6ec"
+        },
+        "langmd.mix": {
+          "bytes": 84883510,
+          "sha256": "ea608dca312cd59373f121d164b3bf4cec0472f460f6bf1d1238500959637c88"
+        },
+        "language.mix": {
+          "bytes": 53116040,
+          "sha256": "30345ccc41ab98d225cb87c8ea8629eb8cb1467ce0d7f15de87fb307424801e6"
+        },
+        "ra2.mix": {
+          "bytes": 281888480,
+          "sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914"
+        },
+        "ra2md.mix": {
+          "bytes": 204527696,
+          "sha256": "69d886defad9114dd440a013b364c8c004e369b5221d1889957b49d00058559d"
+        }
+      },
+      "runners": [
+        "navigation"
+      ]
+    }
+  },
+  "roots": {
+    "VERA20K_ANYTOWN_INPUTS": {
+      "default_directory": "target/anytown-native-inputs/extract",
+      "files": {
+        "120mm.shp": {
+          "archive": "ra2.mix/conquer.mix",
+          "bytes": 48,
+          "entry_id": "17EDBDA8",
+          "sha256": "4c98740538c483eb9ff631d852b2a963eb08928763f1d8383e8098e3a5d6ab3b"
+        },
+        "H2O_EXP1.SHP": {
+          "archive": "ra2.mix/conquer.mix",
+          "bytes": 49344,
+          "entry_id": "63B209B3",
+          "sha256": "225fd22e2ae2b7f2b185d9e625bcb42dbfb469a668860beca1238485e17195dc"
+        },
+        "H2O_EXP2.SHP": {
+          "archive": "ra2.mix/conquer.mix",
+          "bytes": 28424,
+          "entry_id": "24127363",
+          "sha256": "05bf3a1f03993c6d1b39e0fbdee04dd9496946ece7c1021de4b3f6442294fb2d"
+        },
+        "H2O_EXP3.SHP": {
+          "archive": "ra2.mix/conquer.mix",
+          "bytes": 17600,
+          "entry_id": "19725AD3",
+          "sha256": "15d204a79c94212e8ffd439d862e3539049f1a6498dec1fba053faca69731585"
+        },
+        "Proad02.tem": {
+          "archive": "ra2.mix -> isotemp.mix",
+          "bytes": 5584,
+          "entry_id": "0x1D335A45",
+          "sha256": "3a0b2d8e83e9bcf4fbe2c9e144cee3cf0e6e670ce6202ceca5b3fad9f9be734b"
+        },
+        "S_CLSN16.SHP": {
+          "archive": "ra2.mix/conquer.mix",
+          "bytes": 6088,
+          "entry_id": "C55B94F3",
+          "sha256": "771b2c8f180dc29d6296cd96084425bdb4323c708aa133fe1e339eb0b2d2d3da"
+        },
+        "S_CLSN22.SHP": {
+          "archive": "ra2.mix/conquer.mix",
+          "bytes": 9536,
+          "entry_id": "B64F409D",
+          "sha256": "4217fa39c3c970fa718c8e16d500a6bf39ecdb72c1dd7df21a1a6271abb0a294"
+        },
+        "Shore01.tem": {
+          "archive": "ra2.mix -> isotemp.mix",
+          "bytes": 7440,
+          "entry_id": "0xF987187E",
+          "sha256": "d42e7913ed38b2ffd4f42de1d2c7865b16a22cfe77d6aa7664e5c494a2d9ccf2"
+        },
+        "Shore02.tem": {
+          "archive": "ra2.mix -> isotemp.mix",
+          "bytes": 7440,
+          "entry_id": "0x7F136AD0",
+          "sha256": "42f6d7a15d70c0b47b91b87e907846829f403df7d69ffc8bddf3bbe198d972ff"
+        },
+        "Shore17.tem": {
+          "archive": "ra2.mix -> isotemp.mix",
+          "bytes": 7440,
+          "entry_id": "0x89A9F0D7",
+          "sha256": "7c2794562a923dc510f4a6270a51fd6c89fe1b8d8afb484600fac2e00ce1ed7a"
+        },
+        "Shore18.tem": {
+          "archive": "ra2.mix -> isotemp.mix",
+          "bytes": 7440,
+          "entry_id": "0x78FF4202",
+          "sha256": "c4c0c11d72d65bdff49f3a10302dabfba9afe6f363c0854be08325b61c7a757d"
+        },
+        "Water09.tem": {
+          "archive": "ra2.mix -> isotemp.mix",
+          "bytes": 1872,
+          "entry_id": "0x0C0EF27C",
+          "sha256": "783f941b2545e4cbafba70ba579bd8e8175879f47c6f709e5655726abb5af6a8"
+        },
+        "Water10.tem": {
+          "archive": "ra2.mix -> isotemp.mix",
+          "bytes": 1872,
+          "entry_id": "0x8D76A800",
+          "sha256": "6960703d3aafa650827e6d1b5d12f15ce15139a8db4c2d52e75c5130af40728d"
+        },
+        "Water11.tem": {
+          "archive": "ra2.mix -> isotemp.mix",
+          "bytes": 1872,
+          "entry_id": "0x462A7BA5",
+          "sha256": "cd2216276e5e22d01a1d23fc5d9049a02983f9d45791a3ac25ce50dcc7d21bc1"
+        },
+        "Water12.tem": {
+          "archive": "ra2.mix -> isotemp.mix",
+          "bytes": 1872,
+          "entry_id": "0xC0BE090B",
+          "sha256": "6564dfedea436444a37824b183eb2f12692c32aff8d7e8ed966ebdb952875ee5"
+        },
+        "Water13.tem": {
+          "archive": "ra2.mix -> isotemp.mix",
+          "bytes": 1872,
+          "entry_id": "0x0BE2DAAE",
+          "sha256": "e42ce948f6634915aa4367dc724798e6b6965efe1483cce6df28236581835ef4"
+        },
+        "XMP03T4.MAP": {
+          "archive": "multimd.mix",
+          "bytes": 156269,
+          "entry_id": "0xCD0DDEF2",
+          "sha256": "7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e"
+        },
+        "gunfire.shp": {
+          "archive": "ra2.mix/conquer.mix",
+          "bytes": 792,
+          "entry_id": "3C43FFD0",
+          "sha256": "863ad6a6a184f8ca1863ea1546af75972f0af973c36efa7e270575ae28a161e9"
+        }
+      }
+    },
+    "VERA20K_SHRAPNEL_INPUTS": {
+      "boundary": "Existing sparse Shrapnel reader bootstrap. Do not add the Anytown SHPs to this cache; the attack witness admits them explicitly afterward.",
+      "default_directory": "target/shrapnel-native-inputs/extract",
+      "files": {
+        "ARTMD.INI": {
+          "bytes": 336535,
+          "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31"
+        },
+        "LANGRULE.INI": {
+          "absent": true,
+          "catalog_lookup": "all mixes; neither winner nor catalog-only entry"
+        },
+        "MPBattleMD.ini": {
+          "archive": "ra2md.mix -> localmd.mix",
+          "bytes": 295,
+          "catalog_only_before_theater_binding": false,
+          "entry_id": "0xAF084179",
+          "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963"
+        },
+        "RULESMD.INI": {
+          "archive": "expandmd01.mix",
+          "bytes": 743215,
+          "catalog_only_before_theater_binding": false,
+          "entry_id": "0x8218F9F4",
+          "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+        },
+        "SOUNDMD.INI": {
+          "bytes": 99392,
+          "sha256": "0a8e85381aef1a0f97074c953bfe99504da00c6220fae1a023a1afd857023232"
+        },
+        "TEMPERATMD.INI": {
+          "archive": "ra2md.mix -> localmd.mix",
+          "bytes": 25269,
+          "entry_id": "0xEDF92D06",
+          "sha256": "bf656852ad19636068f2dde6f9ddd1440ecf0e13e6e4de6cd7fb179a3592549d"
+        },
+        "XShrapnel.MAP": {
+          "archive": "multimd.mix",
+          "bytes": 148622,
+          "catalog_only_before_theater_binding": false,
+          "entry_id": "0x38D73A35",
+          "sha256": "c32e412e938e1b9a0b29f89ff9bc0e6f410f75bc76701fb4acef6581fd19b438"
+        }
+      }
+    }
+  },
+  "schema": 1
+}

@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Full original BulletType constructor and retained ART reads across rules layers, plus physical retail referenced projectile type inputs",
+  "assumptions": [
+    "Original5F9070 entries record the latest admitted SHP load descriptor independently of final Bullet Image25. Actual+0A4 image pointer is reverse-mapped to supplied physical asset allocations; constructor-only null, failed loads and retained successful loads are recorded.",
+    "Original BulletType46BBC0/46BEE0 executes including ObjectType5F92D0, Image25 reads, type allocation, integer/bool parsing and byte narrowing. Prepared signed-CRC INI indexes are made from physical-loader-style lexical strings; physical INI/archive walking is not executed.",
+    "Before each Bullet layer, original registered AnimType D constructor/ReadINI427D00 executes with its absent ART section, reproducing the active earlier Animation sweep cache invalidation (427D13 ->526B00). This is a bounded predecessor, not the complete RulesClass::ReadTypeData loop. Stocks without any preceding Anim/other ART access are not characterized by these rows.",
+    "Control Art snapshot is fixed while subsequent rules passes are admitted or absent. Empty/whitespace physical values are omitted before caching, so controls do not claim loader-unreachable empty cached values.",
+    "Retail types whose required ART section is duplicated are explicitly excluded rather than inventing native physical-loader duplicate semantics. Retail type identity selection follows physical Projectile references in RULESMD sections and is a supplied fixture selection, not native RulesClass registry traversal. Full native type bodies run for each selected type through RULESMD, optional LANGRULE, MPBattleMD and exact Hills inputs.",
+    "Extracted asset directory is shared with bridge_render_inputs. Other referenced image files are absent and native archive IO returns missing; only ART metadata/read timing is established for those types, not successful image binding or pixels."
+  ],
+  "substitutions": [
+    "Inherited original-reader harness supplies allocator/delete/TLS boundaries, initialized registries and unused Color default entry; archive callback returns exact extracted file bytes or missing. No native reader/default/scalar or type-reference result is replaced.",
+    "ObjectType LoadVoxel5F8110 returns immediately for Voxel=true controls/retail types; scalar reader results are already written before this asset consumer. Voxel model binding and its runtime globals are not established."
+  ],
+  "entry_points": {
+    "bullet_ctor": "0x0046BBC0",
+    "bullet_reader": "0x0046BEE0",
+    "object_reader": "0x005F92D0",
+    "image_and_guarded_art": "0x0046C1CC",
+    "animation_bytes_and_palette": "0x0046C37E",
+    "read_int": "0x005276D0",
+    "read_bool": "0x005295F0",
+    "read_string": "0x00528A10",
+    "find_or_allocate_anim": "0x00428B80"
+  },
+  "payload_sha256": "7b4824a26ed1d655ee337db971079e7992a337c820beb33385725270876f898d"
+}

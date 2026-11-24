@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "original House4FD150 entry through center/radius publication, stopping before4FD42F sector aggregation or at4FD4F8 epilogue. Actual BuildingType+84 cost, Building+48 center and FNPC execute. Supplied tracking count, ordered Building records and cost multiplier premise; not count lifecycle or whole House AI/Rust parity.",
+  "assumptions": [
+    "House primary14,14/radius9999 to expose reset, optional alternate1,1. Declared object health/limbo, original Building/BuildingType/UnitType vtables, foundationindex0, suppliedCost/FreeUnit1400. House and country factors1 except explicitUnit.75. SeparateAircrafttrue; valid nonmatchingpad/dock pointer.",
+    "Map Size8,8 LocalSize0,0,8,8 with allocated17x17flatcells/nooverlay/rawoccupation0; uniformNormalrawgroup1, all90landspeeds1; frame100/FPCW0E7F and104heightconstants. No map loader, actual Building placement or House field producer claim."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "projection": "0x004FD150",
+    "radius_published_stop": "0x004FD42F",
+    "epilogue_stop": "0x004FD4F8",
+    "cost": "0x0045EDD0",
+    "building_center": "0x00447AC0",
+    "nearby": "0x0056DC20"
+  },
+  "payload_sha256": "3da49d76a7792960b4c35f79f27ce7dece1a85b47b95e112d70c5114fbad36f8"
+}

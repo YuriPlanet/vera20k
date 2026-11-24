@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original582D70 full high/Tube helper and429780 path walk into temporary hierarchy buckets",
+  "assumptions": [
+    "Supplied cell/tube/zone state, original direction initializer executes",
+    "Native sideW+H+1 with zero hierarchy padding; all three levels sampled",
+    "Adequate preallocated temporary buckets; allocation failures excluded",
+    "No code patches or substituted returns; no full floodfill or final edge allocation",
+    "42CB22 gate stops at reject, precheck-call preparation or ordinary continuation; raw labels/allowHS supplied",
+    "Path0..8, adjacent zero slots9..13, captured initialized constants14/15/-2/-1 address aliases sampled; arbitrary raw data domain unproved",
+    "Original constant initializers run at hardware-captured FPCW0xE7F and bytes are checked against tube_startup_capture.json"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "register": "0x00582D70",
+    "walk": "0x00429780",
+    "append": "0x0058AF80",
+    "last_pair": "0x00589E20",
+    "raw_binding_tail": "0x0072850A",
+    "raw_zone_equality_gate": "0x0042CB22",
+    "path_get_zone": "0x0056D230"
+  },
+  "payload_sha256": "4ecbfeecd3f0c8ec29a44e1ee19be1105a26bffd3bc74ffd079e28a66c2fdabc"
+}

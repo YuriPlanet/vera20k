@@ -1,0 +1,17 @@
+{
+  "command": "RA2_DIR=/path/to/retail python -m tools.mouse_oracle.tactical_actions --check",
+  "entries": [
+    "692610",
+    "73FD50",
+    "700600",
+    "6FFEC0",
+    "4AAE90",
+    "70F0B0",
+    "731BF0",
+    "51E9C1",
+    "4D74E0",
+    "6FFBE0"
+  ],
+  "coverage": "48 modifier controls run DetermineAction and full Display; 10 infantry controls execute 51E9C1..51EB24 and Display with supplied base action and weapon index. Three original Foot ClickedAction controls reach the real ClickedMission argument boundary (Attack1 or Sabotage17).",
+  "limits": "Immutable game code and real vtables. Existing spatial VM supplies keyboard, singleton selection, clear Cell/environment, fire-error and range verdicts. Modifiers use a clear non-WaterSet tile, empty House waypoint containers, no persistent attack-move toggle. Infantry controls supply base action and selected index zero; they do not prove preceding Infantry admission, weapon selection, encoded click events, delivery/arrival, or rendered pixels. Rust retail tests exercise production selection separately."
+}

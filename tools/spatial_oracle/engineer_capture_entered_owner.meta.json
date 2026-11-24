@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "scope": "Original Engineer two Entered callbacks, current-owner capture and deferred destruction; supplied admitted target, House/map priors and final arrival head. See engineer_capture_accounting.md for boundaries.",
+  "replay_command": "python -m tools.spatial_oracle.engineer_capture_accounting --entered-owner",
+  "payload_sha256": "ae7bac515f669f8a22ba1bede2cb869fa619f83c8a56e88b397fd3793c4fcef1"
+}

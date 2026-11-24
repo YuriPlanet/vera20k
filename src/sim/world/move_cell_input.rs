@@ -1,0 +1,1726 @@
+//! Input-time Foot Move click queries: What_Action on a Cell for a Move
+//! click, the Cell a Move click on a Cell resolves, and the destination a Move
+//! click over an object resolves. Synchronized commands already carry the
+//! chosen destination; their executor never repeats these input queries.
+
+use super::{ControlProjection, Simulation};
+use crate::map::cell_index::NativeCellIdentity;
+use crate::map::entities::EntityCategory;
+use crate::map::resolved_terrain::NativeCellQuery;
+use crate::rules::locomotor_type::{MovementZone, SpeedType};
+use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::ruleset::RuleSet;
+use crate::rules::terrain_rules::LandType;
+use crate::sim::cell_kernel::{CellCoordinate, cell_center};
+use crate::sim::cell_rect::{
+    BurrowingContents, PlayfieldBounds, cell_is_in_playfield_height_aware_in_query,
+};
+use crate::sim::combat::TargetKind;
+use crate::sim::components::{DriveCoord, NavTargetRef};
+use crate::sim::find_nearby_cell::{
+    NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell, map_owned_radius_cap,
+};
+use crate::sim::intern::InternedId;
+use crate::sim::movement::ground_pose;
+use crate::sim::movement::ground_pose::query_ground_height as query_ground;
+use crate::sim::movement::infantry_entry::{EntryQueryMode, InfantryEntryArgs};
+use crate::sim::occupancy::RawCellOccupationGrid;
+use crate::sim::pathfinding::zone_map::{ZoneGrid, ZoneQueryCell};
+
+/// What_Action's answer, on a Cell (vt+0x70) or over an object (vt+0x74), in
+/// the rungs a Move click reaches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MoveAction {
+    /// Action 0: the arrow cursor, and a click orders nothing.
+    None,
+    /// Action 1.
+    Move,
+    /// Action 2: the barred cursor. A click still resolves a destination
+    /// (`0x004D8065`, `0x004D77BD`).
+    NoMove,
+    /// Action 6, on a Cell only: a Unit's harvest rungs turn its Move into
+    /// Harvest (`0x007405F5..0x007406C3`). ClickedAction's case 6 sends
+    /// ClickedMission Harvest with the Cell as Destination and no Target
+    /// (`0x004D7E8E`), before the MoveFlash and the Cell resolver.
+    Harvest,
+    /// Action 0x23: enter the tunnel from its clicked mouth.
+    EnterTunnel,
+}
+
+impl MoveAction {
+    pub(crate) const fn native(self) -> u32 {
+        match self {
+            Self::None => 0,
+            Self::Move => 1,
+            Self::NoMove => 2,
+            Self::Harvest => 6,
+            Self::EnterTunnel => 0x23,
+        }
+    }
+}
+
+/// How What_Action on a Cell is asked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CellActionQuery {
+    /// DetermineAction's (`0x00692610`) third argument, which Techno
+    /// `0x00700600` reads as its second: 1 from the cursor update
+    /// (`0x0069300B`); 0 from the button release (`0x00693267`), the
+    /// selection's click loop (`0x004AE974`), ClickedAction (`0x004D7DA1`) and
+    /// the Cell resolver (`0x004DE1E4`). With it set, the Move rungs answer
+    /// Move before asking Can_Enter_Cell (`0x00700B51..0x00700B57`).
+    pub mouse_over: bool,
+    /// The Shift key (`0x00A8EC08`/`0x00A8EC0C`, `0x00700696..0x007006C5`),
+    /// which Ctrl clears (`0x00700706..0x0070071B`).
+    pub shift: bool,
+}
+
+impl Simulation {
+    /// What_Action on a Cell (vt+0x70), in the rungs a Move click reaches: for
+    /// a Foot, the class wrapper (Unit `0x007404B0`, Infantry `0x0051F800`,
+    /// Aircraft `0x00417F80`) around Foot `0x004DDDE0` around Techno
+    /// `0x00700600`; for a Building, [`Self::building_cell_move_action`]. The
+    /// cursor and the click both ask it.
+    ///
+    /// For a Foot, in order:
+    /// - each class wrapper answers 0 for a House that is not the player's
+    ///   (`0x007404BF`, `0x0051F80E`, `0x00417F89`);
+    /// - Techno answers 0 for a berserk object (`0x00700609`), a warped one
+    ///   (`+0x270`/`+0x271`, `0x00700731`, `0x00700743`) and one the player
+    ///   cannot order (vt+0xA0, `0x00700ACE`). vt+0x284 is the constant false
+    ///   `0x0041BEE0` for all three classes, so Alt adds nothing;
+    /// - outside the playfield it answers NoMove (`0x00700AF6`), then Move for
+    ///   Shift (`0x00700B03`) and for the cursor's query (`0x00700B51`);
+    /// - otherwise the mover's own Can_Enter_Cell with no facing, level or
+    ///   source Cell ([`Self::techno_cell_move_rungs`]) answers Move up to 1,
+    ///   else NoMove;
+    /// - Foot turns any answer but 0 over a shrouded Cell centre into Move for
+    ///   a MoveToShroud type inside the playfield, else NoMove
+    ///   (`0x004DDE64..0x004DDEBE`);
+    /// - a Unit's Move over a Cell whose centre is not shrouded
+    ///   (`0x0074056E..0x007405EF`) becomes Harvest where its type gathers
+    ///   that Cell's Land ([`unit_harvests_land`], `0x007405F5..0x007406C3`);
+    /// - a Unit's other Move becomes 0 while it is deployed, deploying or
+    ///   undeploying (6E0/6E1/6E2, `0x00740709..0x00740727`), so its deployed
+    ///   IsSimpleDeployer arm (`0x00740752..0x00740767`) finds no Move;
+    /// - an Infantry Deployer in Doing27..30 turns Move into NoMove
+    ///   (`0x0051F8BB..0x0051F94E`), and an Infantry 0 becomes NoMove unless
+    ///   it is a JumpJet or cannot be ordered (`0x0051FAAB..0x0051FADD`): a
+    ///   berserk soldier.
+    ///
+    /// The planning rung (Ctrl+Alt or +0x43A, `0x00700815..0x007008A3`) never
+    /// answers its patrol action 0x33 in YR, so Ctrl+Alt always gives Guard
+    /// (0x1A). HouseClass::GetPlanningWaypointAt (`0x005023B0`) searches the
+    /// House+0x210 legacy waypoint paths, whose one insert (`0x007639A0`) is
+    /// called only from `0x00502160`, which has no call, jump or pointer
+    /// reference. FootClass::ActivatePlanningWaypoint sets +0x43A
+    /// (`0x004DC8D3`) and clears it before returning (`0x004DCE6B`), and it
+    /// asks What_Action only for a waypoint from those empty paths.
+    ///
+    /// Not modelled, each answering another action where native reaches it:
+    /// the attack rungs (`0x007008A6..0x00700AB4`), which callers ask first
+    /// (Ctrl's forced shot, and [`Self::cell_attack_rung_admits`]); the fogged-object scans; and
+    /// DirectRocker (`+0x2A8`, `0x00700617`), which nothing in retail sets.
+    /// The harvest rungs' FogOfWar scan (`0x0074052A..0x0074056C`) needs a fog
+    /// record of WhatAmI 0x14 (Overlay), which only FoggedObjectClass's overlay
+    /// constructor (`0x004D0980`) makes, and nothing calls it. The rungs then
+    /// read the live Cell, as here.
+    pub fn cell_move_action(
+        &self,
+        viewer: InternedId,
+        id: u64,
+        cell: (u16, u16),
+        query: CellActionQuery,
+        rules: &RuleSet,
+    ) -> Result<MoveAction, String> {
+        self.cell_move_action_with(&self.control_projection(), viewer, id, cell, query, rules)
+    }
+
+    pub fn cell_move_action_with(
+        &self,
+        control: &ControlProjection<'_>,
+        viewer: InternedId,
+        id: u64,
+        cell: (u16, u16),
+        query: CellActionQuery,
+        rules: &RuleSet,
+    ) -> Result<MoveAction, String> {
+        let entity = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("What_Action receiver disappeared")?;
+        // Ares hooks at the head of each class What_Action over a Cell (Unit
+        // `0x007404B9`, Infantry `0x0051F808`, Aircraft `0x00417F83`, Building
+        // `0x00447548`; Ares.dll `1004CF30`, `1004CC10`, `1004CAE0`,
+        // `1004CB50`): a Deactivated (`+0x1C8`) object answers 0.
+        if rules.ares() && entity.deactivated.is_offline() {
+            return Ok(MoveAction::None);
+        }
+        if entity.category() == EntityCategory::Structure {
+            return self.building_cell_move_action(control, viewer, id, cell, query, rules);
+        }
+        if !control.can_order(entity.owner()) {
+            return Ok(MoveAction::None);
+        }
+        let object = self
+            .interner
+            .object_type(entity.type_ref(), rules)
+            .ok_or("What_Action receiver lacks its type")?;
+        let terrain = self
+            .resolved_terrain
+            .as_ref()
+            .ok_or("What_Action needs map cells")?;
+        let cells = NativeCellQuery::isolated(terrain);
+        let clicked = (cell.0 as i16, cell.1 as i16);
+        let in_playfield = cell_is_in_playfield_height_aware_in_query(
+            (i32::from(clicked.0), i32::from(clicked.1)),
+            self.playfield_bounds,
+            Some(terrain),
+            Some(&cells),
+        );
+        let controllable = self.local_techno_controllable_with(control, id, rules);
+        let mut action = if entity.berserk.is_active()
+            || entity.is_warped_out()
+            || entity.is_warping_in()
+            || !controllable
+        {
+            MoveAction::None
+        } else {
+            Self::techno_cell_move_rungs(object, in_playfield, query, rules, || {
+                self.mover_can_enter(
+                    id,
+                    clicked,
+                    InfantryEntryArgs::REPAIR,
+                    EntryQueryMode::CheckLocomotor,
+                    rules,
+                )
+            })?
+        };
+        let shroud_action = if action == MoveAction::None {
+            None
+        } else {
+            foot_cell_shroud_rung(&self.fog, &cells, viewer, object, clicked, in_playfield)?
+        };
+        let shrouded = shroud_action.is_some();
+        if let Some(shroud_action) = shroud_action {
+            action = shroud_action;
+        }
+        match entity.category() {
+            // Unit asks IsShrouded again at the same Cell centre; the harvest
+            // rungs return before the deploy rung.
+            EntityCategory::Unit if action == MoveAction::Move => {
+                if !shrouded && unit_harvests_land(object, cells.land_type(cells.lookup(clicked))) {
+                    action = MoveAction::Harvest;
+                } else if cells.is_tube_cell(cells.lookup(clicked)) {
+                    // Unit 7406CF and Infantry 51F9AC: IsTubeCell, then
+                    // AllowsTubeEntry (484F10), which always returns true.
+                    action = MoveAction::EnterTunnel;
+                } else if entity.is_deployed() {
+                    action = MoveAction::None;
+                }
+            }
+            EntityCategory::Infantry => {
+                if object.jumpjet && matches!(action, MoveAction::Move | MoveAction::NoMove) {
+                    let cell = cells.lookup(clicked);
+                    if cells.is_near_tube_northwest(cell) || cells.is_at_tube_entrance(cell) {
+                        // InfantryClass::What_Action_OnCell 0x0051F860..0x0051F8A6.
+                        action = MoveAction::None;
+                    }
+                }
+                if action == MoveAction::Move {
+                    if object.deployer && entity.infantry_deploy_doing() {
+                        action = MoveAction::NoMove;
+                    } else if cells.is_tube_cell(cells.lookup(clicked)) {
+                        action = MoveAction::EnterTunnel;
+                    }
+                }
+                if action == MoveAction::None && !object.jumpjet && controllable {
+                    action = MoveAction::NoMove;
+                }
+            }
+            _ => {}
+        }
+        Ok(action)
+    }
+
+    /// Techno What_Action on a Cell's Move rungs (`0x00700AE1..0x00700C06`)
+    /// for a receiver the player may order: NoMove outside the playfield
+    /// (`0x00700AF6`), then Move for Shift (`0x00700B03`) and for the cursor's
+    /// query (`0x00700B51`), otherwise the receiver's own Can_Enter_Cell with
+    /// no facing, level or source Cell (`0x00700B5F..0x00700B7E`): Move up to
+    /// 1. Above it a Building whose UndeploysInto unit is a
+    /// `ResourceGatherer=` (TechnoType+0x5EC, `0x00700B84..0x00700BB4`)
+    /// answers Move; any other receiver NoMove. The Subterranean (Type+D2C)
+    /// second probe without the locomotor (`0x00700BD1..0x00700C06`) repeats
+    /// that answer, since no class reads the argument it changes
+    /// ([`EntryQueryMode`]).
+    fn techno_cell_move_rungs(
+        object: &crate::rules::object_type::ObjectType,
+        in_playfield: bool,
+        query: CellActionQuery,
+        rules: &RuleSet,
+        can_enter: impl FnOnce() -> Result<u8, String>,
+    ) -> Result<MoveAction, String> {
+        if !in_playfield {
+            return Ok(MoveAction::NoMove);
+        }
+        if query.shift || query.mouse_over || can_enter()? <= 1 {
+            return Ok(MoveAction::Move);
+        }
+        let gatherer = object.category == crate::rules::object_type::ObjectCategory::Building
+            && object
+                .undeploys_into
+                .as_deref()
+                .and_then(|unit| rules.object(unit))
+                .is_some_and(|unit| unit.resource_gatherer);
+        Ok(if gatherer {
+            MoveAction::Move
+        } else {
+            MoveAction::NoMove
+        })
+    }
+
+    /// What_Action on a Cell for a Building:
+    /// `BuildingClass::What_Action_OnCell @ 0x00447540` around Techno
+    /// `0x00700600`, in the rungs a Move click reaches. In order:
+    /// - a building [`Self::takes_rally_point`] refuses for `viewer` answers
+    ///   0: another House's, or one the player cannot order (Techno
+    ///   `0x00700ACE`, Building `0x00447617..0x0044762A`);
+    /// - a rally-line type (vt+0x284, `0x00455DA0`) answers Move, whatever
+    ///   rung Techno reached (`0x0044774B..0x00447768`);
+    /// - an UndeploysInto type asks Techno without the mouse-over argument
+    ///   (`0x004475A0`), so its own Can_Enter_Cell ([`Self::building_can_enter`])
+    ///   decides the cursor as it does the click
+    ///   ([`Self::techno_cell_move_rungs`]): a Construction Yard over water
+    ///   answers NoMove, and the Slave Miner's yard always moves.
+    ///
+    /// Callers ask the attack rungs first ([`Self::cell_attack_rung_admits`]),
+    /// and the Ctrl+Alt guard rung (`0x00700815..0x007008A3`), which only a
+    /// building without a rally line keeps. The cursor answers the Harvest 6
+    /// over mapped Tiberium (`0x00447563..0x004475EE`), which the click treats
+    /// as Move (`0x004436F0`). InvisibleInGame's 0 (`0x0044754B`) is not
+    /// modelled: no retail type with a rally line or UndeploysInto sets it.
+    fn building_cell_move_action(
+        &self,
+        control: &ControlProjection<'_>,
+        viewer: InternedId,
+        id: u64,
+        cell: (u16, u16),
+        query: CellActionQuery,
+        rules: &RuleSet,
+    ) -> Result<MoveAction, String> {
+        if !self.local_takes_rally_point_with(control, id, viewer, rules) {
+            return Ok(MoveAction::None);
+        }
+        let entity = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("What_Action receiver disappeared")?;
+        let object = self
+            .interner
+            .object_type(entity.type_ref(), rules)
+            .ok_or("What_Action receiver lacks its type")?;
+        if object.has_rally_line() {
+            return Ok(MoveAction::Move);
+        }
+        let terrain = self
+            .resolved_terrain
+            .as_ref()
+            .ok_or("What_Action needs map cells")?;
+        let cells = NativeCellQuery::isolated(terrain);
+        let clicked = (cell.0 as i16, cell.1 as i16);
+        let in_playfield = cell_is_in_playfield_height_aware_in_query(
+            (i32::from(clicked.0), i32::from(clicked.1)),
+            self.playfield_bounds,
+            Some(terrain),
+            Some(&cells),
+        );
+        let query = CellActionQuery {
+            mouse_over: false,
+            ..query
+        };
+        Self::techno_cell_move_rungs(object, in_playfield, query, rules, || {
+            self.building_can_enter(id, clicked, rules)
+        })
+    }
+
+    /// Building What_Action_OnObject's factory rungs
+    /// (`BuildingClass::What_Action_OnObject @ 0x00447210`,
+    /// `0x0044744E..0x0044750B`) for a building whose Techno answer over the
+    /// object `target` was Move, the force-move key held. An Infantry or Unit
+    /// factory (Type+0xEB8) answers NoMove when
+    /// [`Self::building_in_same_zone_as_coords`] refuses the centre, at height
+    /// 0, of the Cell of `target`'s GetCoords (vt+0x48), or when that Cell
+    /// has no structural high bridge (`+0x140 & 0x100`) and its zone type
+    /// (`+0x4C`, RecalcZoneType) is not ground. Any other building keeps
+    /// Move. The `AircraftType` arm (`0x0044749B`) is never reached: vt+0xA0
+    /// (`0x0044F5C0`) refuses an airfield first, which answers Select.
+    pub fn building_object_move_action(
+        &self,
+        id: u64,
+        target: u64,
+        rules: &RuleSet,
+    ) -> Result<MoveAction, String> {
+        use crate::rules::object_type::FactoryType;
+        let entity = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("What_Action receiver disappeared")?;
+        let object = self
+            .interner
+            .object_type(entity.type_ref(), rules)
+            .ok_or("What_Action receiver lacks its type")?;
+        if !matches!(
+            object.factory_type(),
+            Some(FactoryType::InfantryType | FactoryType::UnitType)
+        ) {
+            return Ok(MoveAction::Move);
+        }
+        let terrain = self
+            .resolved_terrain
+            .as_ref()
+            .ok_or("What_Action needs map cells")?;
+        let cells = NativeCellQuery::isolated(terrain);
+        let coords = ground_pose::target_get_coords(TargetKind::Entity(target), self, Some(&cells))
+            .ok_or("What_Action target disappeared")?;
+        // `CDQ; AND EDX,0xFF; ADD; SAR 8` (`0x0044745D..0x00447479`), kept
+        // as the signed words the rungs read.
+        let cell = (
+            crate::util::lepton::lepton_to_cell_packed(coords.x),
+            crate::util::lepton::lepton_to_cell_packed(coords.y),
+        );
+        let centre = DriveCoord {
+            x: i32::from(cell.0) * 256 + 0x80,
+            y: i32::from(cell.1) * 256 + 0x80,
+            z: 0,
+        };
+        let mut action = MoveAction::Move;
+        if !self.building_in_same_zone_as_coords(&cells, id, centre, rules)? {
+            action = MoveAction::NoMove;
+        }
+        let looked = cells.lookup(cell);
+        if cells.flags(looked) & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL == 0
+            && terrain.native_cell_zone_type(looked)
+                != crate::map::resolved_terrain::zone_class::GROUND
+        {
+            return Ok(MoveAction::NoMove);
+        }
+        Ok(action)
+    }
+
+    /// `TechnoClass::IsInSameZoneAsCoords @ 0x00707F60` (vt+0x2CC), the body
+    /// a Building keeps; the Foot classes override the slot. Can_Reach_Zone
+    /// (`0x0056D100`, [`ZoneGrid::can_reach_native`], which answers true for
+    /// MovementZone -1) from the Cell of the building's vt+0x4C coordinate
+    /// with no requester (`0x00447E90`), on its ShouldBeOnBridge layer
+    /// (vt+0xBC, `0x005F6A70`), with its type's MovementZone (`+0x5B4`), to
+    /// `coord`'s Cell with that Cell's structural bridge flag
+    /// (`+0x140 & 0x100`), and vt+0x320's 0 as the fringe argument. A
+    /// NullCoord `coord` answers true natively (`0x00707F7F..0x00707FA7`);
+    /// the one caller passes a Cell centre, which never is.
+    fn building_in_same_zone_as_coords(
+        &self,
+        cells: &NativeCellQuery<'_>,
+        id: u64,
+        coord: DriveCoord,
+        rules: &RuleSet,
+    ) -> Result<bool, String> {
+        let entity = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("IsInSameZoneAsCoords receiver disappeared")?;
+        let object = self
+            .interner
+            .object_type(entity.type_ref(), rules)
+            .ok_or("IsInSameZoneAsCoords receiver lacks its type")?;
+        let cell = crate::util::lepton::lepton_to_cell_packed;
+        let destination = (cell(coord.x), cell(coord.y));
+        let navigation =
+            self.navigation_target_coordinate(NavTargetRef::Object { id }, None, rules)?;
+        let source = (cell(navigation.x), cell(navigation.y));
+        let destination_bridge = cells.flags(cells.lookup(destination))
+            & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
+            != 0;
+        let source_bridge = ground_pose::navigation_should_be_on_bridge(
+            cells,
+            navigation,
+            ground_pose::object_location(entity, self.resolved_terrain.as_ref()),
+            entity.on_bridge(),
+            false,
+        )?;
+        let (Some(zones), Some(bounds), Some(height)) = (
+            self.zone_grid.as_ref(),
+            self.playfield_bounds,
+            self.playfield_size_height(),
+        ) else {
+            return Err("IsInSameZoneAsCoords needs native zone topology".into());
+        };
+        zones
+            .can_reach_native(
+                cells,
+                ZoneQueryCell::Copied(source),
+                ZoneQueryCell::Copied(destination),
+                object.movement_zone,
+                source_bridge,
+                destination_bridge,
+                false,
+                bounds,
+                (bounds.base, height),
+            )
+            .ok_or_else(|| "IsInSameZoneAsCoords lacks native zone topology".into())
+    }
+
+    /// The Cell a left click's receivers are asked about: the selection's
+    /// click loop clamps the clicked Cell to the playfield
+    /// (`Clamp_To_Playfield @ 0x00586E50`, `0x004AE77E`) before any receiver's
+    /// What_Action on it. Without bounds or map cells it keeps the Cell:
+    /// VERA-internal, as a live gamemd session always has both.
+    pub fn clamped_click_cell(&self, cell: (u16, u16)) -> (u16, u16) {
+        let (Some(bounds), Some(terrain)) = (self.playfield_bounds, self.resolved_terrain.as_ref())
+        else {
+            return cell;
+        };
+        let cells = NativeCellQuery::isolated(terrain);
+        let (x, y) = crate::sim::cell_rect::clamp_cell_to_playfield(
+            (i32::from(cell.0 as i16), i32::from(cell.1 as i16)),
+            bounds,
+            Some(terrain),
+            Some(&cells),
+        );
+        (x as u16, y as u16)
+    }
+
+    /// Whether Techno What_Action on a Cell (`0x00700600`) reaches its
+    /// unforced Attack rung for `id` (`0x007008A6..0x007009F1`). The caller
+    /// then resolves that rung's tail (vt+0xA0 or InRange, answering 5) the
+    /// way it resolves a forced shot at the Cell. In order:
+    /// - 0 for a berserk or warped object (`0x00700609`, `0x00700731`,
+    ///   `0x00700743`), and the rung needs a human player's object
+    ///   (`0x007008AC`) holding a current weapon (vt+0x3F4, `0x007008BD`);
+    /// - the Cell must hold a LegalTarget overlay (`0x0070092E..0x0070093E`)
+    ///   or be a destroyable cliff (`0x00486900`) for a warhead without
+    ///   `Fire=` (`0x00700908..0x00700924`);
+    /// - then it attacks with no overlay (the cliff), a live veinhole monster,
+    ///   or a Wall overlay its owner (`CellClass+0x50`) is not allied with
+    ///   (`0x0070097E`), when the warhead has `Wall=`, or `Wood=` against an
+    ///   `Armor=wood` overlay (`0x007009C8..0x007009F1`);
+    /// - a Cell this rung refuses, or whose tail refuses, reaches the
+    ///   TerrainFire rung (`0x00700A46..0x00700AA6`): [`Self::fires_at_terrain`],
+    ///   then the same tail. The tails match, so it admits here.
+    ///
+    /// The planning rung before it (`0x00700840`) never answers in YR; see
+    /// [`Self::cell_move_action`]. Residuals: the fogged-object scan
+    /// behind the scenario's FogOfWar flag
+    /// (`0x00700761..0x0070080F`: a fogged enemy building admits the rung)
+    /// and the veinhole monster (`0x00700990`, no VERA owner) are not
+    /// modelled. The scan's fogged-overlay arm never fires: no overlay fog
+    /// record exists (`0x004D0980` has no caller).
+    pub fn cell_attack_rung_admits(
+        &self,
+        id: u64,
+        cell: (u16, u16),
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) -> bool {
+        self.cell_attack_rung_admits_with(&self.control_projection(), id, cell, rules, registry)
+    }
+
+    pub fn cell_attack_rung_admits_with(
+        &self,
+        control: &ControlProjection<'_>,
+        id: u64,
+        cell: (u16, u16),
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) -> bool {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        if entity.berserk.is_active()
+            || entity.is_warped_out()
+            || entity.is_warping_in()
+            || !control.can_order(entity.owner())
+        {
+            return false;
+        }
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+            return false;
+        };
+        let Some(weapon) = crate::sim::combat::combat_weapon::current_weapon(
+            entity,
+            object,
+            &self.substrate.entities,
+            rules,
+            &self.interner,
+        ) else {
+            return false;
+        };
+        let warhead = rules.weapon_warhead(weapon);
+        let overlay_cell = self
+            .overlay_grid
+            .as_ref()
+            .map(|grid| grid.cell(cell.0, cell.1));
+        let overlay = overlay_cell
+            .and_then(|cell| cell.overlay_id)
+            .and_then(|overlay_id| registry?.flags(overlay_id));
+        let cliff = self
+            .resolved_terrain
+            .as_ref()
+            .is_some_and(|terrain| terrain.is_destroyable_cliff(cell.0, cell.1))
+            && !warhead.is_some_and(|warhead| warhead.fire);
+        let attack_rung = match overlay {
+            _ if !(overlay.is_some_and(|overlay| overlay.legal_target) || cliff) => false,
+            None => true,
+            Some(overlay) => {
+                let enemy_owned =
+                    overlay_cell
+                        .and_then(|cell| cell.wall_owner)
+                        .is_some_and(|owner| {
+                            !self
+                                .house_alliances
+                                .is_allied(&self.interner, owner, entity.owner())
+                        });
+                enemy_owned
+                    && overlay.wall
+                    && warhead.is_some_and(|warhead| {
+                        warhead.wall || (warhead.wood && overlay.armor_is_wood)
+                    })
+            }
+        };
+        attack_rung || self.fires_at_terrain(id, &TargetKind::Cell(cell.0, cell.1), rules, registry)
+    }
+
+    /// TechnoClass vt+0x398 (`0x0070EF00`, which no class overrides):
+    /// whether `id`'s weapon may fire at `target` as terrain. SelectWeapon
+    /// (vt+0x2E4) and GetWeapon (vt+0x3F8) pick the weapon; without one it
+    /// answers no (`0x0070EF1F`). Then:
+    /// - a Terrain object (`0x0070EF29..0x0070EF4B`) answers
+    ///   `[CombatDamage] TreeTargeting=` (`Rules+0x17E9`) or the weapon's
+    ///   `TerrainFire=` (`+0x138`);
+    /// - anything else needs `TerrainFire=` (`0x0070EF53`), then a Cell whose
+    ///   overlay is `IsARock=` (`OverlayType+0x2B5`, `0x0070EF61..0x0070EF82`),
+    ///   or an object that IsDisguised (vt+0xC4, `+0x1D8`) and wears no house
+    ///   (vt+0xD0(1), `0x0070EF8C..0x0070EFB2`), as a Mirage worn as a tree.
+    ///
+    /// Retail rules give `TerrainFire=` only to `TankMakeupKit`, which no
+    /// type carries, and leave `TreeTargeting=` off; a map may set either.
+    pub fn fires_at_terrain(
+        &self,
+        id: u64,
+        target: &TargetKind,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) -> bool {
+        use crate::sim::combat::combat_weapon;
+
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+            return false;
+        };
+        let cells = self
+            .resolved_terrain
+            .as_ref()
+            .map(NativeCellQuery::isolated);
+        // Only the WeaponType is tested (`0x0070EF1B..0x0070EF1F`), never
+        // its warhead.
+        let Some(weapon) = combat_weapon::select_weapon_index_against_in_query(
+            rules,
+            entity,
+            object,
+            &combat_weapon::attacker_facts(entity, object),
+            Some(target),
+            self,
+            &self.interner,
+            cells.as_ref(),
+            Some(&self.house_alliances),
+        )
+        .and_then(|index| {
+            combat_weapon::get_weapon(
+                entity,
+                object,
+                index,
+                &self.substrate.entities,
+                rules,
+                &self.interner,
+            )
+        }) else {
+            return false;
+        };
+        let terrain_fire = weapon.terrain_fire;
+        match *target {
+            TargetKind::Entity(target_id) if self.terrain_objects().get(target_id).is_some() => {
+                rules.general.tree_targeting || terrain_fire
+            }
+            _ if !terrain_fire => false,
+            TargetKind::Cell(x, y) => self
+                .overlay_grid
+                .as_ref()
+                .and_then(|grid| grid.cell(x, y).overlay_id)
+                .and_then(|overlay_id| registry?.flags(overlay_id))
+                .is_some_and(|overlay| overlay.is_a_rock),
+            // Infantry's vt+0xD0 answers the current player for no worn
+            // house (`0x005226C0`); the asker's owner stands in for it.
+            TargetKind::Entity(target_id) => {
+                self.substrate
+                    .entities
+                    .get(target_id)
+                    .is_some_and(|target| {
+                        target
+                            .seldom
+                            .disguise
+                            .as_ref()
+                            .is_some_and(|disguise| disguise.is_disguised())
+                            && target
+                                .disguise_house(true, Some(entity.owner()), false)
+                                .is_none()
+                    })
+            }
+        }
+    }
+
+    /// `MapClass::IsShrouded @ 0x00586360` for `viewer` at a clicked Cell's
+    /// coordinate, as Foot What_Action's shroud rung and the Unit harvest
+    /// rungs' gate ask it ([`Self::cell_move_action`]); the cursor asks it for
+    /// a Building's harvest rung and the Cell attack rung.
+    pub fn clicked_cell_is_shrouded(
+        &self,
+        viewer: InternedId,
+        cell: (u16, u16),
+    ) -> Result<bool, String> {
+        let terrain = self
+            .resolved_terrain
+            .as_ref()
+            .ok_or("IsShrouded needs map cells")?;
+        clicked_cell_shrouded(
+            &self.fog,
+            &NativeCellQuery::isolated(terrain),
+            viewer,
+            (cell.0 as i16, cell.1 as i16),
+        )
+    }
+
+    /// Foot What_Action's shroud rung over a Cell
+    /// (`FootClass::What_Action_OnCell @ 0x004DDDE0`) for Techno's nonzero
+    /// answer: over a Cell centre, raised to a bridge deck, that `viewer`'s
+    /// map shrouds (`IsShrouded 0x00586360`), a Foot answers Move for a
+    /// `MoveToShroud=` type in the playfield, else NoMove
+    /// (`0x004DDE64..0x004DDEBE`). The Move rungs' answer goes through it
+    /// ([`Self::cell_move_action`]); the input layer asks it of the Cell
+    /// attack rungs' Attack. None keeps the answer: a Building has no Foot
+    /// wrapper (`0x00447540`).
+    pub fn foot_cell_shroud_action(
+        &self,
+        viewer: InternedId,
+        id: u64,
+        cell: (u16, u16),
+        rules: &RuleSet,
+    ) -> Option<MoveAction> {
+        let entity = self.substrate.entities.get(id)?;
+        if entity.category() == EntityCategory::Structure {
+            return None;
+        }
+        let object = self.interner.object_type(entity.type_ref(), rules)?;
+        let terrain = self.resolved_terrain.as_ref()?;
+        let cells = NativeCellQuery::isolated(terrain);
+        let clicked = (cell.0 as i16, cell.1 as i16);
+        let in_playfield = cell_is_in_playfield_height_aware_in_query(
+            (i32::from(clicked.0), i32::from(clicked.1)),
+            self.playfield_bounds,
+            Some(terrain),
+            Some(&cells),
+        );
+        foot_cell_shroud_rung(&self.fog, &cells, viewer, object, clicked, in_playfield)
+            .ok()
+            .flatten()
+    }
+
+    /// The Cell a Foot's Move click resolves, before event encoding. The
+    /// selection's click loop (`0x004AE94E..0x004AE990`) asks each receiver's
+    /// own What_Action ([`Self::cell_move_action`], `0x004AE976`); its
+    /// ClickedAction (vt+0x140: Unit `0x00738910`, Infantry `0x0051F250`,
+    /// Aircraft `0x00417C80`, then Foot `0x004D7D50`) sends Move and NoMove
+    /// alike to the Cell resolver `0x004DE1D0` (`0x004D7EB5`, `0x004D806F`),
+    /// whatever the locomotor. Refused before it:
+    /// - action 0, which ClickedAction has no arm for (`0x004D7DCC..0x004D7DD2`);
+    /// - NoMove for a deployed (6E0) Unit (`0x0073891D..0x00738933`) or for an
+    ///   Infantry in Doing27..30 (`0x0051F25D..0x0051F285`);
+    /// - Harvest, whose case 6 sends ClickedMission Harvest instead
+    ///   (`0x004D7E8E`), which the click producers send first.
+    ///
+    /// ClickedAction's outside-playfield refusal (`0x004D7DB3..0x004D7DBF`)
+    /// never fires: outside the playfield What_Action answers NoMove or 0.
+    /// The Berserk refusals (`0x004D7D58`, `0x0073893D`, `0x0051F28F`) are
+    /// [`Self::click_order_receivers`], which the producers apply first.
+    /// `None` sends no order. Native comparisons: walk_first_path.json
+    /// `gi_reissue` (GI and MTNK What_Action and click rows) and
+    /// walk_move_admission.json (the resolver).
+    pub fn cell_click_destination(
+        &self,
+        viewer: InternedId,
+        id: u64,
+        clicked: (u16, u16),
+        shift: bool,
+        rules: &RuleSet,
+    ) -> Result<Option<(u16, u16)>, String> {
+        self.cell_click_destination_with(
+            &self.control_projection(),
+            viewer,
+            id,
+            clicked,
+            shift,
+            rules,
+        )
+    }
+
+    pub fn cell_click_destination_with(
+        &self,
+        control: &ControlProjection<'_>,
+        viewer: InternedId,
+        id: u64,
+        clicked: (u16, u16),
+        shift: bool,
+        rules: &RuleSet,
+    ) -> Result<Option<(u16, u16)>, String> {
+        let action = self.cell_move_action_with(
+            control,
+            viewer,
+            id,
+            clicked,
+            CellActionQuery {
+                mouse_over: false,
+                shift,
+            },
+            rules,
+        )?;
+        let entity = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("Cell click receiver disappeared")?;
+        let refused = match action {
+            MoveAction::None | MoveAction::Harvest => true,
+            MoveAction::EnterTunnel => {
+                // FootClass::ClickedAction_Cell 0x004D81A9..0x004D8231:
+                // follow both tube records. Issue Move one cell out from the
+                // far mouth, facing away from its own entry direction.
+                let Some(terrain) = self.resolved_terrain.as_ref() else {
+                    return Ok(None);
+                };
+                let cells = NativeCellQuery::isolated(terrain);
+                let Some(tube) = terrain
+                    .tube_for_native_cell(cells.lookup((clicked.0 as i16, clicked.1 as i16)))
+                else {
+                    return Ok(None);
+                };
+                let exit = cells.lookup((tube.exit.0 as i16, tube.exit.1 as i16));
+                let Some(reverse) = terrain.tube_for_native_cell(exit) else {
+                    return Ok(None);
+                };
+                let direction = (reverse.direction.wrapping_sub(4) & 7) as usize;
+                let (dx, dy) = crate::util::direction::DIRECTION_DELTAS[direction];
+                return Ok(Some((
+                    tube.exit.0.wrapping_add_signed(dx as i16),
+                    tube.exit.1.wrapping_add_signed(dy as i16),
+                )));
+            }
+            MoveAction::NoMove => match entity.category() {
+                EntityCategory::Unit => entity.is_fully_deployed(),
+                EntityCategory::Infantry => entity.infantry_deploy_doing(),
+                EntityCategory::Aircraft | EntityCategory::Structure => false,
+            },
+            MoveAction::Move => false,
+        };
+        if refused {
+            return Ok(None);
+        }
+        let object = self
+            .interner
+            .object_type(entity.type_ref(), rules)
+            .ok_or("Cell click receiver lacks its type")?;
+        let map = self.click_map()?;
+        let terrain = map.cells.terrain();
+        resolve_foot_cell_click(
+            &map,
+            &FootCellClick {
+                clicked: (clicked.0 as i16, clicked.1 as i16),
+                action: action.native(),
+                move_to_shroud: object.move_to_shroud,
+                teleporter: object.teleporter,
+                mover: self.click_mover(id, object)?,
+            },
+            |cell| {
+                Ok(crate::sim::vision::cell_ground_mapped(
+                    &self.fog, terrain, viewer, cell,
+                ))
+            },
+        )
+    }
+
+    /// Whether a Move click on `clicked` spawns the MoveFlash for receiver
+    /// `id`: ClickedAction_Cell re-asks its What_Action (`0x004D7DA6`,
+    /// [`Self::cell_move_action`]) and only Move (and 0x3E, which no Cell
+    /// What_Action answers) reaches the flash (`0x004D7EB5`). The selection's
+    /// first receiver alone asks: `Selection__DispatchMultiUnitOrder` clears
+    /// the latch `0x00822CF2` after each receiver (`0x004AE8CF`, `0x004AE935`,
+    /// `0x004AE98A`) and sets it again after the loop.
+    pub fn cell_click_flashes_move(
+        &self,
+        viewer: InternedId,
+        id: u64,
+        clicked: (u16, u16),
+        shift: bool,
+        rules: &RuleSet,
+    ) -> Result<bool, String> {
+        self.cell_click_flashes_move_with(
+            &self.control_projection(),
+            viewer,
+            id,
+            clicked,
+            shift,
+            rules,
+        )
+    }
+
+    pub fn cell_click_flashes_move_with(
+        &self,
+        control: &ControlProjection<'_>,
+        viewer: InternedId,
+        id: u64,
+        clicked: (u16, u16),
+        shift: bool,
+        rules: &RuleSet,
+    ) -> Result<bool, String> {
+        let action = self.cell_move_action_with(
+            control,
+            viewer,
+            id,
+            clicked,
+            CellActionQuery {
+                mouse_over: false,
+                shift,
+            },
+            rules,
+        )?;
+        Ok(action == MoveAction::Move)
+    }
+
+    /// Foot What_Action's shroud rung over an object
+    /// (`FootClass::What_Action_OnObject @ 0x004DDED0`), which every Foot
+    /// class asks before its own rungs (Unit `0x0073FD62`, Infantry
+    /// `0x0051E44C`, Aircraft `0x00417CD3`): in a campaign (Session GameMode
+    /// `[0x00A8B238]` 0, `0x004DDF5C..0x004DDF63`), Techno's nonzero answer
+    /// (`0x004DDF58`) over an object whose coordinate (vt+0x48) on its ground,
+    /// raised to a bridge deck (`0x004DDEE7..0x004DDF41`), `viewer`'s map
+    /// shrouds (`IsShrouded 0x00586360`) becomes Move for a `MoveToShroud=`
+    /// type (TechnoType+0xC8D), else NoMove (`0x004DDF65..0x004DDF7B`). The
+    /// key rungs' answers (Shift, Alt, Ctrl+Alt) are Techno's too. Unlike the
+    /// Cell wrapper (`0x004DDE64..0x004DDEBE`), it asks neither the playfield
+    /// nor the planning action, and only in a campaign.
+    ///
+    /// The caller asks it only of a nonzero answer. None keeps that answer,
+    /// as for a Building, which has no Foot wrapper.
+    pub fn foot_object_shroud_action(
+        &self,
+        viewer: InternedId,
+        id: u64,
+        target: u64,
+        rules: &RuleSet,
+    ) -> Option<MoveAction> {
+        let entity = self.substrate.entities.get(id)?;
+        if entity.category() == EntityCategory::Structure
+            || self.session.game_mode() != crate::sim::scenario_session::ScenarioGameMode::Campaign
+        {
+            return None;
+        }
+        let object = self.interner.object_type(entity.type_ref(), rules)?;
+        let cells = NativeCellQuery::isolated(self.resolved_terrain.as_ref()?);
+        let coords =
+            ground_pose::target_get_coords(TargetKind::Entity(target), self, Some(&cells))?;
+        let point = grounded_coordinate(&cells, coords.x, coords.y).ok()?;
+        crate::sim::vision::point_is_shrouded(&self.fog, &cells, viewer, point).then_some(
+            if object.move_to_shroud {
+                MoveAction::Move
+            } else {
+                MoveAction::NoMove
+            },
+        )
+    }
+
+    /// The class rungs of a Foot's What_Action over an object that turn the
+    /// Techno action `action` into another Move action; each ClickedAction
+    /// wrapper's re-ask (`0x007388A1`, `0x0051F1A1`) answers them too:
+    /// - the deployer rungs turn Move into NoMove for a player's Deployer in
+    ///   Doing27..30 (Infantry `0x0051EB81..0x0051EBD7`) and a player's
+    ///   deployed (6E0) IsSimpleDeployer (Unit `0x0074037A..0x007403AD`);
+    /// - the tails turn 0 into NoMove for a player's Unit or Infantry it
+    ///   may control (vt+0xA0; Unit `0x007403EB..0x00740414`, Infantry
+    ///   `0x0051F05E..0x0051F08B`);
+    /// - an Aircraft's 0 becomes its own What_Action on the Cell under the
+    ///   object's GetCoords (vt+0x48, `/256`), asked with 0 as its second
+    ///   argument (`0x00417D7C..0x00417DCB`): Move for a player's aircraft
+    ///   over an object it may not attack;
+    /// - then a NoMove over an object worn as terrain becomes Move
+    ///   ([`Self::worn_as_terrain`]): Unit `0x00740440..0x00740476`, Infantry
+    ///   `0x0051F114..0x0051F14F`, Aircraft `0x00417EFE..0x00417F39`. The
+    ///   Infantry deployer rung returns before it.
+    ///
+    /// The aircraft's cell query passes no Shift. Native asks it with the
+    /// keys read live (third argument 0), but Shift's early Move only differs
+    /// where the aircraft's Can_Enter_Cell refuses the Cell, which it never
+    /// does in a session game ([`Self::aircraft_can_enter_cell`]).
+    ///
+    /// The Aircraft wrapper's AirportBound rung (`0x00417CE9..0x00417CFE`)
+    /// turns a base 0x1A into 0 for an `AirportBound=` type, but no base over
+    /// an object is 0x1A for an aircraft: Techno's only 0x1A
+    /// (`0x007001DD`) refuses an Aircraft actor (RTTI 2,
+    /// `0x007001B4..0x007001BA`) and answers Move under Alt
+    /// (`0x007001E9..0x00700217`), and Foot's wrapper (`0x004DDED0`) makes
+    /// none. Ctrl+Alt over an object moves a Harrier, natively as here.
+    ///
+    /// The Cell query's unforced Attack rung (`0x007008A6..`) answers before
+    /// these Move rungs; the input layer asks it first
+    /// (`context_order::aircraft_cell_attack_under_object`).
+    pub fn foot_object_class_action(
+        &self,
+        viewer: InternedId,
+        id: u64,
+        target: u64,
+        action: MoveAction,
+        rules: &RuleSet,
+    ) -> MoveAction {
+        self.foot_object_class_action_with(
+            &self.control_projection(),
+            viewer,
+            id,
+            target,
+            action,
+            rules,
+        )
+    }
+
+    pub fn foot_object_class_action_with(
+        &self,
+        control: &ControlProjection<'_>,
+        viewer: InternedId,
+        id: u64,
+        target: u64,
+        action: MoveAction,
+        rules: &RuleSet,
+    ) -> MoveAction {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return action;
+        };
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+            return action;
+        };
+        if entity.category() == EntityCategory::Aircraft {
+            return self.aircraft_object_class_action(control, viewer, id, target, action, rules);
+        }
+        let human = control.can_order(entity.owner());
+        let action = match (entity.category(), action) {
+            // Returns at once (`0x0051EBCB..0x0051EBD7`), before the rung below.
+            (EntityCategory::Infantry, MoveAction::Move)
+                if human && object.deployer && entity.infantry_deploy_doing() =>
+            {
+                return MoveAction::NoMove;
+            }
+            (EntityCategory::Unit, MoveAction::Move)
+                if human && object.is_simple_deployer && entity.is_fully_deployed() =>
+            {
+                MoveAction::NoMove
+            }
+            (EntityCategory::Unit | EntityCategory::Infantry, MoveAction::None)
+                if human && self.local_techno_controllable_with(control, id, rules) =>
+            {
+                MoveAction::NoMove
+            }
+            _ => action,
+        };
+        // Unit `0x00740440..0x00740476`, Infantry `0x0051F114..0x0051F14F`.
+        if matches!(
+            entity.category(),
+            EntityCategory::Unit | EntityCategory::Infantry
+        ) && action == MoveAction::NoMove
+            && self.worn_as_terrain(viewer, target, rules)
+        {
+            MoveAction::Move
+        } else {
+            action
+        }
+    }
+
+    /// Whether `target` wears Terrain to `viewer`: IsDisguised (vt+0xC4), no
+    /// worn house (vt+0xD0(1)) and a worn type whose RTTI is Terrain
+    /// (vt+0xCC(1), 0x15), as a Mirage worn as a tree. The Unit, Infantry and
+    /// Aircraft tails make a NoMove over it Move.
+    fn worn_as_terrain(&self, viewer: InternedId, target: u64, rules: &RuleSet) -> bool {
+        self.substrate.entities.get(target).is_some_and(|target| {
+            target
+                .seldom
+                .disguise
+                .as_ref()
+                .filter(|disguise| disguise.is_disguised())
+                .and_then(|disguise| disguise.type_id())
+                .is_some_and(|worn| {
+                    rules
+                        .terrain_object_type_case_insensitive(self.interner.resolve(worn))
+                        .is_some()
+                })
+                && target.disguise_house(true, Some(viewer), false).is_none()
+        })
+    }
+
+    /// The Aircraft rungs of [`Self::foot_object_class_action`].
+    fn aircraft_object_class_action(
+        &self,
+        control: &ControlProjection<'_>,
+        viewer: InternedId,
+        id: u64,
+        target: u64,
+        action: MoveAction,
+        rules: &RuleSet,
+    ) -> MoveAction {
+        let action = if action == MoveAction::None {
+            let Some(cell) = self.object_coords_cell(target) else {
+                return action;
+            };
+            let query = CellActionQuery {
+                mouse_over: false,
+                shift: false,
+            };
+            self.cell_move_action_with(control, viewer, id, cell, query, rules)
+                .unwrap_or(MoveAction::None)
+        } else {
+            action
+        };
+        if action == MoveAction::NoMove && self.worn_as_terrain(viewer, target, rules) {
+            MoveAction::Move
+        } else {
+            action
+        }
+    }
+
+    /// The Cell under the object `target`'s GetCoords (vt+0x48), a Techno or
+    /// a Terrain object, each axis `>> 8` toward zero (`CDQ; AND EDX,0xFF;
+    /// SAR 8`): the Cell an Aircraft's What_Action over the object asks its
+    /// own Cell action on (`0x00417D80..0x00417DB7`), the Cell a building's
+    /// factory rungs judge (`0x0044745D..0x00447479`), and its rally Cell
+    /// over the object (`0x004436A4..0x004436C9`).
+    pub fn object_coords_cell(&self, target: u64) -> Option<(u16, u16)> {
+        let cells = self
+            .resolved_terrain
+            .as_ref()
+            .map(NativeCellQuery::canonical);
+        let coords =
+            ground_pose::target_get_coords(TargetKind::Entity(target), self, cells.as_ref())?;
+        Some(((coords.x / 256) as u16, (coords.y / 256) as u16))
+    }
+
+    /// The destination a Foot's Move or NoMove click over an object orders:
+    /// the object, or a Cell near it. The click loop
+    /// (`0x004AE829..0x004AE844`) hands each receiver's own What_Action over
+    /// the object to its ClickedAction (vt+0x144: Unit `0x00738890`, Infantry
+    /// `0x0051F190`, Aircraft `0x00417BD0`) with 0 as the third argument. Move
+    /// and NoMove reach Foot `0x004D74E0`, whose Move arm sends
+    /// `ClickedMission(Move, NULL, destination)` (`0x004D7C76`); the object's
+    /// Cell it adds as the fourth argument feeds only planning mode's event
+    /// (`0x006FFC23..0x006FFCA9`).
+    ///
+    /// `action` is the receiver's What_Action over the object before the class
+    /// rungs ([`Self::foot_object_class_action`]).
+    ///
+    /// No order (`None`) for:
+    /// - action 0 that no tail turned (`0x004D7521..0x004D7527`);
+    /// - an Aircraft's NoMove (`0x00417C12`) and a Unit's NoMove over itself
+    ///   (`0x007388D5..0x007388E8`);
+    /// - a berserk receiver (`0x007388EB`, `0x0051F1D8`, `0x004D74EC`);
+    /// - NoMove where the object's coordinate (vt+0x48) is shrouded, for a
+    ///   type without MoveToShroud (`0x004D77BD..0x004D77EA`);
+    /// - a receiver the player cannot order (vt+0xA0, `0x004D77FB..0x004D7807`);
+    /// - an Aircraft, or a Subterannean mover while
+    ///   `AllowShroudedSubteranneanMoves=no`, whose object coordinate raised
+    ///   to its ground is shrouded (`0x004D7809..0x004D7896`).
+    ///
+    /// Otherwise [`resolve_foot_object_click`] picks the object or a Cell.
+    ///
+    /// Not modelled: DirectRocker (`+0x2A8`, `0x004D74FA..0x004D7514`), which
+    /// nothing in retail sets.
+    pub fn object_move_click(
+        &self,
+        viewer: InternedId,
+        id: u64,
+        target: u64,
+        action: MoveAction,
+        force_move_key: bool,
+        rules: &RuleSet,
+    ) -> Result<Option<TargetKind>, String> {
+        self.object_move_click_with(
+            &self.control_projection(),
+            viewer,
+            id,
+            target,
+            action,
+            force_move_key,
+            rules,
+        )
+    }
+
+    pub fn object_move_click_with(
+        &self,
+        control: &ControlProjection<'_>,
+        viewer: InternedId,
+        id: u64,
+        target: u64,
+        action: MoveAction,
+        force_move_key: bool,
+        rules: &RuleSet,
+    ) -> Result<Option<TargetKind>, String> {
+        let entity = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("Move click receiver disappeared")?;
+        if entity.category() == EntityCategory::Structure {
+            return Err("a building answers ClickedAction through its own class".into());
+        }
+        let object = self
+            .interner
+            .object_type(entity.type_ref(), rules)
+            .ok_or("Move click receiver lacks its type")?;
+        let action = self.foot_object_class_action_with(control, viewer, id, target, action, rules);
+        let refused = match action {
+            // Both are Cell answers only.
+            MoveAction::None | MoveAction::Harvest | MoveAction::EnterTunnel => true,
+            MoveAction::NoMove => match entity.category() {
+                EntityCategory::Aircraft => true,
+                EntityCategory::Unit => target == id,
+                EntityCategory::Infantry | EntityCategory::Structure => false,
+            },
+            MoveAction::Move => false,
+        };
+        if refused || entity.berserk.is_active() {
+            return Ok(None);
+        }
+        let map = self.click_map()?;
+        let terrain = map.cells.terrain();
+        let open = |cell| {
+            Ok(crate::sim::vision::cell_ground_mapped(
+                &self.fog, terrain, viewer, cell,
+            ))
+        };
+        // The object's vt+0x48: a Techno's, or a Terrain object's under Ctrl.
+        let coords =
+            ground_pose::target_get_coords(TargetKind::Entity(target), self, Some(&map.cells))
+                .ok_or("Move click target disappeared")?;
+        if action == MoveAction::NoMove
+            && crate::sim::vision::coordinate_is_shrouded(&map.cells, coords, &open)?
+            && !object.move_to_shroud
+        {
+            return Ok(None);
+        }
+        if !self.local_techno_controllable_with(control, id, rules) {
+            return Ok(None);
+        }
+        let raised = DriveCoord {
+            z: coords.z.max(query_ground(&map.cells, coords)?),
+            ..coords
+        };
+        // Foot4D785F..4D7896: row6 with the Rules gate off joins Aircraft's
+        // raised-coordinate shroud rejection, before navigation queries.
+        if ((object.movement_zone == MovementZone::Subterranean
+            && !rules.general.allow_shrouded_subterannean_moves())
+            || entity.category() == EntityCategory::Aircraft)
+            && crate::sim::vision::coordinate_is_shrouded(&map.cells, raised, &open)?
+        {
+            return Ok(None);
+        }
+        let navigation = crate::sim::movement::nav_target_coordinate(
+            NavTargetRef::object(target),
+            None,
+            self,
+            Some(terrain),
+            Some((rules, &self.interner)),
+        )?;
+        let click = FootObjectClick {
+            target: ((navigation.x / 256) as i16, (navigation.y / 256) as i16),
+            no_move: action == MoveAction::NoMove,
+            infantry: entity.category() == EntityCategory::Infantry,
+            force_move_key,
+            mover: self.click_mover(id, object)?,
+        };
+        Ok(Some(match resolve_foot_object_click(&map, &click, open)? {
+            Some((x, y)) => TargetKind::Cell(x, y),
+            None => TargetKind::Entity(target),
+        }))
+    }
+
+    /// The map both Foot click receivers read, through one fresh query
+    /// identity that every nested call shares.
+    fn click_map(&self) -> Result<ClickMap<'_>, String> {
+        let terrain = self
+            .resolved_terrain
+            .as_ref()
+            .ok_or("Move click needs map cells")?;
+        let zones = self.zone_grid.as_ref().ok_or("Move click needs zones")?;
+        let bounds = self
+            .playfield_bounds
+            .ok_or("Move click needs the playfield")?;
+        let size = self
+            .map_size_diamond()
+            .ok_or("Move click needs the map Size")?;
+        //One fresh query identity starts from the canonical retained bytes.
+        let cells = NativeCellQuery::isolated(terrain);
+        if cells.dummy().raw_flags() & 3 != 0 {
+            return Err("input Dummy visibility outside the constructor-derived domain".into());
+        }
+        Ok(ClickMap {
+            cells,
+            zones,
+            raw: &self.substrate.raw_cell_occupation,
+            overlays: self.overlay_grid.as_ref(),
+            burrowing_contents: Some(BurrowingContents {
+                occupancy: &self.substrate.occupancy,
+                terrain_objects: self.terrain_objects.cell_index(),
+            }),
+            bounds,
+            size,
+            frame: self.session.binary_frame(),
+        })
+    }
+
+    fn click_mover(
+        &self,
+        id: u64,
+        object: &crate::rules::object_type::ObjectType,
+    ) -> Result<ClickMover, String> {
+        let entity = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("Move click receiver disappeared")?;
+        Ok(ClickMover {
+            current: self.foot_current_coordinate(id)?,
+            coordinate: self.foot_navigation_coordinate(id)?,
+            marked: entity.lifecycle.cell_marked(),
+            on_bridge: entity.on_bridge(),
+            in_tube: entity.active_tube().is_some(),
+            special_type: object.movement_zone == MovementZone::Subterranean
+                || entity.category() == EntityCategory::Aircraft
+                || (entity.category() == EntityCategory::Infantry && object.jumpjet),
+            movement_zone: object.movement_zone,
+            speed_type: object.speed_type,
+        })
+    }
+}
+
+/// The mover facts both Foot click receivers read: the Cell resolver
+/// `0x004DE1D0` and the object receiver `0x004D74E0`.
+struct ClickMover {
+    /// The mover's own coordinate (Object+9C, altitude included), which
+    /// IsInAir (`0x005F6B90`) measures against the ground.
+    current: DriveCoord,
+    /// vt+0x4C with no requester, whose Cell is the zone source.
+    coordinate: DriveCoord,
+    marked: bool,
+    on_bridge: bool,
+    in_tube: bool,
+    /// The type terms of the special test after IsInAir (`0x004DE2EA..
+    /// 0x004DE335`, `0x004D793E..0x004D797F`): Type+D2C (Subterranean), an
+    /// Infantry's Type+D94 (JumpJet; 4DE1D0's House53A130 test is constant
+    /// false), or an Aircraft.
+    special_type: bool,
+    movement_zone: MovementZone,
+    speed_type: SpeedType,
+}
+
+impl ClickMover {
+    /// IsInAir (vt+0x54, `0x005F6B90`): GetHeight (`0x005F5F40`) two levels
+    /// above the ground, sampled only when Object+74 is true. GetHeight
+    /// subtracts OnBridge's deck independently of the ShouldBeOnBridge query.
+    fn in_air(&self, cells: &NativeCellQuery<'_>) -> bool {
+        use crate::sim::movement::air_movement::{object_flight_predicate, object_height_in_query};
+        object_flight_predicate(
+            self.marked,
+            || object_height_in_query(self.current, self.on_bridge, Some(cells)),
+            true,
+        )
+    }
+
+    /// Foot4DE3DB..4DE3F9 /4D7A3B..4D7A5A: the independent FNPC
+    /// burrow gate asks GetHeight only for Type+D2C, and requires it below0.
+    fn requires_burrowable(&self, cells: &NativeCellQuery<'_>) -> bool {
+        self.movement_zone == MovementZone::Subterranean
+            && crate::sim::movement::air_movement::object_height_in_query(
+                self.current,
+                self.on_bridge,
+                Some(cells),
+            ) < 0
+    }
+}
+
+/// The map queries both Foot click receivers make.
+struct ClickMap<'a> {
+    cells: NativeCellQuery<'a>,
+    zones: &'a ZoneGrid,
+    raw: &'a RawCellOccupationGrid,
+    /// The live overlays whose `Wall=` FNPC's passability test reads.
+    overlays: Option<&'a crate::sim::overlay_grid::OverlayGrid>,
+    /// Input runs while GameActive is set; synthetic inactive queries omit it.
+    burrowing_contents: Option<BurrowingContents<'a>>,
+    bounds: PlayfieldBounds,
+    size: (i32, i32),
+    frame: u32,
+}
+
+impl ClickMap<'_> {
+    /// `0x00578460(cell, 1)`.
+    fn in_playfield(&self, cell: (i16, i16)) -> bool {
+        cell_is_in_playfield_height_aware_in_query(
+            (i32::from(cell.0), i32::from(cell.1)),
+            Some(self.bounds),
+            Some(self.cells.terrain()),
+            Some(&self.cells),
+        )
+    }
+
+    /// The Cell of the mover's vt+0x4C coordinate, retained as the zone source.
+    fn source(&self, mover: &ClickMover) -> NativeCellIdentity {
+        self.cells
+            .lookup_world(mover.coordinate.x, mover.coordinate.y)
+    }
+
+    /// ShouldBeOnBridge (vt+0xBC) with 0.
+    fn source_bridge(&self, mover: &ClickMover) -> Result<bool, String> {
+        ground_pose::navigation_should_be_on_bridge(
+            &self.cells,
+            mover.coordinate,
+            mover.current,
+            mover.on_bridge,
+            mover.in_tube,
+        )
+    }
+
+    /// The bridge flag of `cell`'s Map lookup (`+0x140 & 0x100`).
+    fn bridge(&self, cell: (i16, i16)) -> bool {
+        self.cells.flags(self.cells.lookup(cell)) & 0x100 != 0
+    }
+
+    /// Can_Reach_Zone `0x0056D100` from the retained source to a copy of
+    /// `target`, with `target`'s bridge flag read first.
+    fn reaches(
+        &self,
+        source: NativeCellIdentity,
+        source_bridge: bool,
+        target: (i16, i16),
+        movement_zone: MovementZone,
+    ) -> Result<bool, String> {
+        let bridge = self.bridge(target);
+        self.zones
+            .can_reach_native(
+                &self.cells,
+                ZoneQueryCell::Retained(source),
+                ZoneQueryCell::Copied(target),
+                movement_zone,
+                source_bridge,
+                bridge,
+                false,
+                self.bounds,
+                self.size,
+            )
+            .ok_or_else(|| "input lacks native zone topology".into())
+    }
+
+    /// FNPC `0x0056DC20` around `target` with both receivers' arguments: one
+    /// Cell, `target`'s bridge flag, and the zone `0x0056D230` gives the
+    /// retained source (`zone_source`, with its bridge flag), or none for -1.
+    /// The bridge flag is read before the zone, as both push them. FNPC's
+    /// (0,0) answer is `None`.
+    fn nearby(
+        &self,
+        target: (i16, i16),
+        speed_type: SpeedType,
+        movement_zone: MovementZone,
+        zone_source: Option<(NativeCellIdentity, bool)>,
+        require_burrowable: bool,
+    ) -> Result<Option<(u16, u16)>, String> {
+        let bridge = self.bridge(target);
+        let required_zone = zone_source
+            .map(|(source, source_bridge)| {
+                let p = self.cells.coord(source);
+                // FNPC disables the comparison for DWORD -1 and raw 0xFFFF alike.
+                self.zones
+                    .get_zone_id_native_in_query(
+                        self.cells.terrain(),
+                        (p.0 as u16, p.1 as u16),
+                        movement_zone,
+                        source_bridge,
+                        Some(&self.cells),
+                    )
+                    .ok_or("input FNPC source lacks native zone topology")
+            })
+            .transpose()?;
+        Ok(find_nearby_passable_cell(
+            (i32::from(target.0), i32::from(target.1)),
+            &NearbyQuery {
+                native_cells: Some(&self.cells),
+                raw_occupation: Some(self.raw),
+                passability: PassabilityArgs {
+                    speed_type,
+                    required_zone_id: required_zone,
+                    movement_zone,
+                    bridge_aware_zone: bridge,
+                },
+                footprint: NearbyFootprint::SINGLE,
+                allow_bridge_cells: true,
+                check_height: true,
+                require_burrowable,
+                burrowing_contents: self.burrowing_contents,
+                check_occupancy: false,
+                radius_cap: map_owned_radius_cap(self.size.0, self.size.1),
+                target_cell: None,
+                path_grid: None,
+                resolved_terrain: Some(self.cells.terrain()),
+                overlay_grid: self.overlays,
+                occupancy: None,
+                entities: None,
+                zone_grid: Some(self.zones),
+                playfield_bounds: Some(self.bounds),
+            },
+            self.frame,
+        )
+        .filter(|cell| *cell != (0, 0)))
+    }
+}
+
+/// Values the Foot Cell resolver 4DE1D0 reads. Its own What_Action
+/// (`0x004DE1E9`) asks what the click already asked, so the action arrives
+/// selected; it is not a mission.
+struct FootCellClick {
+    clicked: (i16, i16),
+    action: u32,
+    move_to_shroud: bool,
+    teleporter: bool,
+    mover: ClickMover,
+}
+
+fn clicked_cell_shrouded(
+    fog: &crate::sim::vision::FogState,
+    cells: &NativeCellQuery<'_>,
+    viewer: InternedId,
+    clicked: (i16, i16),
+) -> Result<bool, String> {
+    Ok(crate::sim::vision::point_is_shrouded(
+        fog,
+        cells,
+        viewer,
+        clicked_coordinate(cells, clicked)?,
+    ))
+}
+
+/// [`Simulation::foot_cell_shroud_action`]'s rung for a Foot of type `object`.
+fn foot_cell_shroud_rung(
+    fog: &crate::sim::vision::FogState,
+    cells: &NativeCellQuery<'_>,
+    viewer: InternedId,
+    object: &crate::rules::object_type::ObjectType,
+    clicked: (i16, i16),
+    in_playfield: bool,
+) -> Result<Option<MoveAction>, String> {
+    Ok(
+        clicked_cell_shrouded(fog, cells, viewer, clicked)?.then_some(
+            if object.move_to_shroud && in_playfield {
+                MoveAction::Move
+            } else {
+                MoveAction::NoMove
+            },
+        ),
+    )
+}
+
+/// UnitClass What_Action's harvest rungs (`0x007405F5..0x007406C3`), by the
+/// Cell's Land (CellClass+0xEC): Tiberium for a `Harvester=` type
+/// (UnitType+0xE0E) or one both `ResourceGatherer=` and
+/// `ResourceDestination=` (TechnoType+0x5EC, +0x5ED), and Weeds for a
+/// `Weeder=` type (UnitType+0xE0F).
+fn unit_harvests_land(object: &crate::rules::object_type::ObjectType, land: i32) -> bool {
+    let land_is = |land_type: LandType| land == i32::from(land_type.as_index());
+    (land_is(LandType::Tiberium)
+        && (object.harvester || (object.resource_gatherer && object.resource_destination)))
+        || (land_is(LandType::Weeds) && object.weeder)
+}
+
+/// A clicked Cell's centre on its ground, raised to a bridge deck: the
+/// coordinate What_Action and 4DE1D0 build before IsShrouded (`0x0074056E..
+/// 0x007405CD`, `0x004DE1FD..0x004DE25D`).
+fn clicked_coordinate(
+    cells: &NativeCellQuery<'_>,
+    clicked: (i16, i16),
+) -> Result<DriveCoord, String> {
+    let centre = cell_center(
+        CellCoordinate {
+            x: i32::from(clicked.0),
+            y: i32::from(clicked.1),
+        },
+        0,
+    );
+    grounded_coordinate(cells, centre.x, centre.y)
+}
+
+/// The point `(x, y)` on its ground (`Map__GetGroundHeightAtCoord
+/// 0x00578080`), raised to a bridge deck where the Cell under it has one
+/// (Cell `+0x140 & 0x100`): [`clicked_coordinate`] from a Cell's centre, and
+/// Foot What_Action's object coordinate (`0x004DDEE7..0x004DDF41`).
+fn grounded_coordinate(cells: &NativeCellQuery<'_>, x: i32, y: i32) -> Result<DriveCoord, String> {
+    let mut point = DriveCoord { x, y, z: 0 };
+    point.z = query_ground(cells, point)?;
+    // 4DE242/4DE38C are separate Map calls after the height query.
+    let cell = cells.lookup_world(point.x, point.y);
+    if cells.flags(cell) & 0x100 != 0 {
+        point.z = ground_pose::deck_surface_z(cells, cell, point.z);
+    }
+    Ok(point)
+}
+
+/// Original 4DE1D0 for every Foot. No A* search and no
+/// entity/mission/navigation mutation occurs here. Native comparisons live in
+/// tools/spatial_oracle/walk_move_admission (Infantry and Unit/Drive
+/// receivers, original input action supplied).
+///
+/// FNPC's independent burrow argument (`0x004DE3DB..0x004DE3F9`) is set
+/// only for the special NoMove arm when Type+D2C and GetHeight below0.
+fn resolve_foot_cell_click(
+    map: &ClickMap<'_>,
+    click: &FootCellClick,
+    open: impl Fn(NativeCellIdentity) -> Result<bool, String>,
+) -> Result<Option<(u16, u16)>, String> {
+    let cells = &map.cells;
+    let in_playfield = map.in_playfield(click.clicked);
+    let point = clicked_coordinate(cells, click.clicked)?;
+    if !click.move_to_shroud && crate::sim::vision::coordinate_is_shrouded(cells, point, &open)? {
+        return Ok(None);
+    }
+    let source = map.source(&click.mover);
+    let in_air = click.mover.in_air(cells);
+    //4DE2B7..4DE2DA: Subterranean searches as Normal. Fly becomes Infantry
+    //only when House53A130 answers true, and it is constant false.
+    let movement_zone = match click.mover.movement_zone {
+        MovementZone::Subterranean => MovementZone::Normal,
+        zone => zone,
+    };
+    let special = in_air || click.mover.special_type;
+    let source_bridge = map.source_bridge(&click.mover)?;
+    let point = clicked_coordinate(cells, click.clicked)?;
+    let shrouded = crate::sim::vision::coordinate_is_shrouded(cells, point, &open)?;
+    let unrestricted = special && click.action == 2;
+    let clicked =
+        (click.clicked != (0, 0)).then_some((click.clicked.0 as u16, click.clicked.1 as u16));
+    if !unrestricted && in_playfield && !shrouded {
+        if special || (click.teleporter && click.action != 2) {
+            return Ok(clicked);
+        }
+        if map.reaches(source, source_bridge, click.clicked, movement_zone)? {
+            return Ok(clicked);
+        }
+    }
+    map.nearby(
+        click.clicked,
+        click.mover.speed_type,
+        movement_zone,
+        (!unrestricted).then_some((source, source_bridge)),
+        unrestricted && click.mover.requires_burrowable(cells),
+    )
+}
+
+/// Values Foot `0x004D74E0`'s Move arm reads once it has an order to send.
+struct FootObjectClick {
+    /// The object's Cell: its vt+0x4C coordinate with no requester, each axis
+    /// divided by 256 toward zero (`0x004D78AC..0x004D78E8`).
+    target: (i16, i16),
+    /// NoMove, which enters the Move arm at `0x004D77FB` once its own shroud
+    /// test passes.
+    no_move: bool,
+    infantry: bool,
+    /// The force-move key (`0x00A8EBF8`/`0x00A8EBFC`, `0x004D79E1..0x004D7A1A`),
+    /// which the arm reads because the click loop passes 0.
+    force_move_key: bool,
+    mover: ClickMover,
+}
+
+/// Foot `0x004D74E0`'s Move arm from the object's Cell on
+/// (`0x004D78AC..0x004D7C08`): the Cell FNPC finds near the object's Cell, or
+/// `None` to keep the object. Special movers (IsInAir or the type terms of
+/// [`ClickMover::special_type`]) keep the object inside the playfield, and
+/// their NoMove searches with any zone. Any other mover keeps the object only
+/// over a mapped Cell its zone reaches, unless it clicked NoMove or is an
+/// Infantry under the force-move key; otherwise, as outside the playfield, it
+/// searches its own zone. FNPC's (0,0) answer keeps the object
+/// (`0x004D7AC5..0x004D7ADE`).
+fn resolve_foot_object_click(
+    map: &ClickMap<'_>,
+    click: &FootObjectClick,
+    open: impl Fn(NativeCellIdentity) -> Result<bool, String>,
+) -> Result<Option<(u16, u16)>, String> {
+    let cells = &map.cells;
+    let in_playfield = map.in_playfield(click.target);
+    let source = map.source(&click.mover);
+    //4D791C..4D7931: Subterranean searches as Normal and Fly as Infantry, with
+    //no House test.
+    let movement_zone = match click.mover.movement_zone {
+        MovementZone::Subterranean => MovementZone::Normal,
+        MovementZone::Fly => MovementZone::Infantry,
+        zone => zone,
+    };
+    let special = click.mover.in_air(cells) || click.mover.special_type;
+    let source_bridge = map.source_bridge(&click.mover)?;
+    //4D7990..4D79DF: the Cell's centre on its ground, with no bridge raise.
+    let point = cell_center(
+        CellCoordinate {
+            x: i32::from(click.target.0),
+            y: i32::from(click.target.1),
+        },
+        0,
+    );
+    let mut centre = DriveCoord {
+        x: point.x,
+        y: point.y,
+        z: 0,
+    };
+    centre.z = query_ground(cells, centre)?;
+    let shrouded = crate::sim::vision::coordinate_is_shrouded(cells, centre, &open)?;
+    let own_zone = Some((source, source_bridge));
+    let nearby = |zone_source, require_burrowable| {
+        map.nearby(
+            click.target,
+            click.mover.speed_type,
+            movement_zone,
+            zone_source,
+            require_burrowable,
+        )
+    };
+    if special && click.no_move {
+        return nearby(None, click.mover.requires_burrowable(cells));
+    }
+    if !in_playfield {
+        return nearby(own_zone, false);
+    }
+    if special {
+        return Ok(None);
+    }
+    if shrouded
+        || click.no_move
+        || (click.force_move_key && click.infantry)
+        || !map.reaches(source, source_bridge, click.target, movement_zone)?
+    {
+        return nearby(own_zone, false);
+    }
+    Ok(None)
+}
+
+#[cfg(any(test, feature = "test-support"))]
+#[path = "move_cell_input_tests.rs"]
+mod tests;

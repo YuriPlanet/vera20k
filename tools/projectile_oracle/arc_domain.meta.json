@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "288 supplied arc-domain cases, each executing original angle48A9D0 and word48A8D0 solvers. Observes success bytes and raw outputs, including native rejection; not a projectile launch, flight or impact witness.",
+  "assumptions": [
+    "Each solver runs in fresh shared call() state with verified PE bytes, a return sentinel and default live FPCW0E7F. No native OS/CRT/scenario/type startup executes.",
+    "ECX supplies mode, EDX supplies speed; stack arguments supply range, signed height bits, binary64 gravity and the output pointer. Scratch begins with eightCD bytes so unchanged failure outputs remain visible.",
+    "Original case and call order is preserved. Native Boolean failure is recorded normally; faults, exhausted budgets, incomplete returns or other exceptions abort generation and cannot become golden error fields.",
+    "Negative/zero inputs characterize solver domain boundaries and are not claimed to arise from active retail weapon rules. No INI defaults or complete FireAt admission are supplied by this fixture.",
+    "The Rust consumer checks angle status and successful raw angle bits. Word outputs remain checked native observations without a direct Rust consumer.",
+    "No timer, RNG draw, detach, upstream targeting or downstream trajectory/lifecycle equivalence is claimed."
+  ],
+  "substitutions": [
+    "None; original solver bodies and reached code execute without behavioral hooks or instruction patches."
+  ],
+  "entry_points": {
+    "angle": "0x0048A9D0",
+    "word": "0x0048A8D0"
+  },
+  "payload_sha256": "3f84e78e8da527498a7998f5fb1dea7443f46e694c2a8e15fa944ec156312c3d"
+}

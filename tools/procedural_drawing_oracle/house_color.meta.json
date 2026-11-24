@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "21 physical RULESMD Colors entries parsed by original474C70; original ramp68C3B0, N53 LightConvert556090 in scalar/CMOV/MMX modes, whole House50B840/50BA00, campaign block500DF7..501086 and all65536 RGB565 normalizer inputs",
+  "assumptions": [
+    "ini/rulesmd.ini physical bytes and lexical strings are recorded with SHA256. Existing lexical.sections only extracts strings; supplied native CRC/section caches replace INI/archive IO. Original ReadString64, sprintf and sscanf own parsing. Mode/map/LANGRULE overrides are not loaded in this base-reader corpus.",
+    "Original ColorScheme68C769..68C7DC constructor slice writes lookup index16. Original ramp68C3B0..68C4AD includes palette copy, native trig table sampling, ftol and HSV conversion, stopping before allocation of LightConvert. Base palette outside indices16..31 is supplied A5 and asserted unchanged.",
+    "Existing tools.palette_oracle.oracle owns full original556090 table construction, scalar/CMOV/MMX dispatch and plain4BBB00 comparison. N53 and RGB1000/1000/1000 are supplied constructor inputs from68C710; active RGB565 shifts/losses and FPCW0E7F are supplied. ColorScheme mask16 is1, so its result is identical to the fixture all-one mask.",
+    "Convert48E740 stores +174 at ((N-1)>>1)*512 bytes after +170, so House receives the actual native row26 bytes. Converter allocation, row-pointer construction and active effects/rebuild state are instruction evidence, not executed in this fixture.",
+    "Whole House50B840 receives supplied registry/ColorScheme/converter fields. Campaign starts500DF7 after ReadColorString with supplied index in EAX and House in EBX, continues through the original normalization50B920 and setter50E430, and stops501086 before Allies. Whole campaign INI reader and name lookup are excluded.",
+    "All21 colors compare normal/campaign body and laser RGB in all three CPU paths. The normal route calls whole50BA00 after50B840, matching player/AI Create_Houses687F10 call order. Neutral/Special Create_Houses skip50BA00; their zero-initialized laser color is not projected by these player/AI rows.",
+    "Whole50BA00 additionally executes all65536 loss-only RGB565 unpacks and saves each RGB triplet in ascending-word order. Adjacent bytes remain unchanged. Six distinct +330 lookup controls and negative-scheme fallback preserve the earlier body-only behavior. No full renderer/GPU or exhaustive arbitrary-HSV equivalence claim."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "read_color": "0x00474C70",
+    "ramp": "0x0068C3B0",
+    "constructor_index_begin": "0x0068C769",
+    "constructor_index_end": "0x0068C7DC",
+    "light_table": "0x00556090",
+    "plain_table": "0x004BBB00",
+    "house_init_color": "0x0050B840",
+    "campaign_color_begin": "0x00500DF7",
+    "house_compute_remap": "0x0050BA00",
+    "campaign_color_end": "0x00501086",
+    "campaign_normalize": "0x0050B920",
+    "campaign_color_store": "0x0050E430"
+  },
+  "payload_sha256": "e1865c3ef4f5c2ca430b4d0e806e5ef1d68d67a94e28c7f42d971628f115b080"
+}

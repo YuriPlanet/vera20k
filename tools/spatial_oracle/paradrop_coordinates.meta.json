@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "393216 original DropPayload coordinate prefixes: every u16 heading, both payload parities, three supplied world origins. Hashes pack signed little-endian XY pairs in ascending heading order; selected pairs are also retained.",
+  "assumptions": [
+    "Start after a passenger was removed; EDI is a supplied Aircraft using the original vtable, ESI is the removed passenger, ESP is the native post-prologue frame.",
+    "Location XY is supplied, Z=1040; payload count is 1 or 2 before the original decrement; FacingClass has the selected full word and zero turn rate.",
+    "Ambient x87 PC53/chop0E7F; original ftol cached control word and radius128 are checked. No INI inputs occur in this numeric prefix.",
+    "Stops before Map::GetCell, passenger admission, subcell selection, Reveal and retry. No complete paradrop or arbitrary-i32 coordinate parity claim."
+  ],
+  "substitutions": [
+    "No code or callee substitutions. At the stop boundary, a hook records output and supplies the next independent object/CPU frame."
+  ],
+  "entry_points": {
+    "prefix": "0x00415C7D",
+    "before_map_lookup": "0x00415D78",
+    "facing_current": "0x004C93D0",
+    "sin": "0x004CACB0",
+    "cos": "0x004CAD00",
+    "ftol": "0x007C5F00"
+  },
+  "payload_sha256": "a7693e802b9c4915234ff6a728a85993597c8c945f18901bc92239cb2c155fa0",
+  "replay_command": "python -m tools.spatial_oracle.paradrop_coordinates"
+}

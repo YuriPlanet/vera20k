@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original radar gadget6539D0 through tracked Foot navigation, Cell center and immediate camera/view bounds.",
+  "assumptions": [
+    "Existing CameraFixture/SavedViewFixture own VM transport, original WinMain PC53/chop initialization, native projection multiplier and full viewport updater. No camera formula is copied.",
+    "Moving arrival_1 and Stop pose/head come from the consumed original Move corpus; physical GoldSt ramp106,34 level5/slope1 comes from consumed original TMP/Recalc placement inputs. Replayed prepared state is not whole native scenario or absolute timing parity.",
+    "Shared OriginalBridgeQuery setup owns Foot/Drive and Cell backing. Native Unit+4C, Foot4DBDF0, Drive4AFCC0 and null/current fallback execute. No pose/head/navigation output comes from Rust.",
+    "Existing initialize_discovery_geometry executes original ground/shroud/Tactical startup, establishing104/416 and projection scalars before the selected calls. Original camera constructor matrix stores execute in this same VM.",
+    "MapSize103,82 and LocalSize2,4,99,72 reflect physical GoldSt. Sparse enrollment, flat corridor slope0/flags0, one retained tracker entry and generated ImageRect/scale/offsets are supplied component inputs. Whole native geometry generation, radar provider/power/animation and tracker registration producers are excluded.",
+    "Flags11 executes original ground/shroud queries, signed clamp, never-null Map lookup, Cell480A30, Tactical6D6070/6D8B30/redraw and zero-flags Gadget tail. Controls refuse mode/state, margin and flags22.",
+    "No ZBuffer allocation is present. Original cursor setter uses its already-set/null-image early return on the margin control. No rendered radar/cursor or whole-frame pixels are claimed."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "radar_action": "0x006539D0",
+    "radar_pick": "0x00656750",
+    "radar_project": "0x006557F0",
+    "foot_navigation": "0x004DBDF0",
+    "drive_head": "0x004AFCC0",
+    "map_cell": "0x005657A0",
+    "map_ground": "0x00578080",
+    "cell_ground": "0x0047B3A0",
+    "cell_center": "0x00480A30",
+    "set_view": "0x006D6070",
+    "viewport_update": "0x006D8B30",
+    "clamp": "0x006D8640",
+    "redraw": "0x004F42F0"
+  },
+  "replay_command": "python -m tools.input_oracle.fast_scroll --radar-click",
+  "payload_sha256": "0a3289ee5de799a117e7521bfea3774657ba60fb6e8e7b8d3e83a5faa8d4754a"
+}

@@ -1,0 +1,28 @@
+"""Bind hut packaging to the independently frozen six-case native payload."""
+import json
+from pathlib import Path
+
+from tools.native_oracle import OracleError, _canonical
+from tools.spatial_oracle.shrapnel_repair import packet_io
+from .publication import publication_projection as shared_projection
+
+HERE = Path(__file__).resolve().parent
+
+
+def publication_projection(data):
+    result = shared_projection(data)
+    for layer in result.get('animation_inputs', {}).get('layers', []):
+        if 'source_lines' in layer:
+            layer['source_lines_sha256'] = packet_io.digest(_canonical(layer.pop('source_lines')))
+    return result
+
+
+def finish_vectors(data, default_path, *, provenance, argv=None):
+    actual = data() if callable(data) else data
+    promotion_path = HERE / 'hut_promotion.json'
+    identity = default_path.name.removesuffix('.gz')
+    expected = json.loads(promotion_path.read_bytes())['results'][identity]
+    if packet_io.digest(_canonical(json.loads(_canonical(actual)))) != expected['original_payload_sha256']:
+        raise OracleError(f'Original frozen hut payload changed: {identity}')
+    packet_io.finish_vectors(actual, default_path, provenance=provenance, argv=argv,
+                             promotion_path=promotion_path, projection=publication_projection)

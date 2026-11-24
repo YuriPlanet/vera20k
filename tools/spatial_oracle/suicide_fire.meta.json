@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Stock TERROR synchronous Suicide FireAt, explicit DeathWeapon/real2x2 GAPOWR area receivers and native Infantry sequence/UnInit/deferred cleanup; three prepared direct/ordinary controls.",
+  "assumptions": [
+    "Existing joined_inputs/joined_fixture owns the VM, original readers/registries/constructors, clear flat admitted map/House priors and original CellSpread/Infantry/subcell startup. Original full scenario/House/target production/Unlimbo and input/approach are excluded. The supplied target750HP/2x2 foundation is reinserted by original Mark0/3.",
+    "Fixed ART/SHP is physical TRST/TerroristSequence, MININUKE and six Rules DeadBodies assets. Raw guardA8ED6B=0 and sessionA8B238=1 retain literal identities, with no Editor/session enum claim. Wounded17 is reached by original58/Super/ignoreDefenses1/arg6false receiver before measured FireAt75.",
+    "Seed31; source placement[2496,2752,0] is independently admitted by original Infantry ctor/Unlimbo, with target[2688,2688,0]. Other objects, House/effect Anim AI, global Logic interleaving/audio service/PCM/render are excluded. Behind remains explicitly excluded; incidental constructor observations do not establish its reader/assets/render parity.",
+    "Full three RNG states at named boundaries and native request/raw draws are observed; timer middle words/void EAX/DoAction high bytes and freed-object interpretations are excluded. Post-destructor bytes are retained arena storage."
+  ],
+  "substitutions": [
+    "Existing source-order lexical/physical-file IO, successful arena allocation/no-op release, CRT/TLS/SEH/Windows COM/audio device/clock/listener boundaries. Actual original Walk/Drive/Bullet factories execute. Remap705D70/radar655560/655740 remain presentation sinks. No selected FireAt, receiver, fatal, Bullet/AoE, source AI, corpse or cleanup result is supplied."
+  ],
+  "entry_points": {
+    "type_ctor": "0x005236A0",
+    "type_reader": "0x005240A0",
+    "weapon_reader": "0x00772080",
+    "infantry_ctor": "0x00517A50",
+    "infantry_unlimbo": "0x0051DFF0",
+    "fire_at_target": "0x005206B0",
+    "infantry_ai": "0x0051BAB0",
+    "infantry_fire": "0x0051DF60",
+    "techno_fire": "0x006FDD50",
+    "infantry_receiver": "0x00517FA0",
+    "techno_receiver": "0x00701900",
+    "death_weapon": "0x0070D690",
+    "area_damage": "0x00489280",
+    "corpse_completion": "0x00520AE0",
+    "deferred_drain": "0x00725C70"
+  },
+  "replay_command": "python -m tools.spatial_oracle.building_death_anims --suicide-fire",
+  "payload_sha256": "fb5201e524285d8c1e93a763496a5d2c76975b18dc3afab8768289d624950e4c"
+}

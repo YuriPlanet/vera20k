@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Literal native conditional-FV frame projection for production comparison.",
+  "assumptions": [
+    "Every expected frame value comes from the executed native conditional packet, or a literal little-endian decode of its actor/Bullet/Anim bytes. Only live Bullets appear in the consumer frame list; the full source retains all constructed/retired bytes and full three-stream RNG.",
+    "The source input supplies declared constructor identity/options/RNG boundary and outside-world raw calls. This does not establish native whole-Scenario population or outside-producer scheduling parity."
+  ],
+  "substitutions": [
+    "JSON selection and native raw-byte decoding only. No gameplay values are computed from Rust, and no native control flow is simulated here."
+  ],
+  "entry_points": {
+    "source_live_logic": "0x0055B5FF"
+  },
+  "source_sha256": "afb2e79f8f7aab9248b79db0de7e64507c08bf23a188ccf81d9836af9ca109c6",
+  "source_metadata_sha256": "8786f12a142849a9ece71fa131b20602e0ff2507180d641f2f1dd2ce56634dce",
+  "payload_sha256": "d9d95878a60af4f8ba0cd03ce4f6ca61dc2269096bb8b9825b2a7731374c3700"
+}

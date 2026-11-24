@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Ordinary MTNK rank prefix through complete DrawExtras and physical PIPS14/15/19 pixels",
+  "assumptions": [
+    "One existing selected-health generator and _HealthRecorder own the Unit-rank mode. Existing PaletteReader owns original image/allocator/native INI cache, palette constructors and file transports; existing bridge_render_shape owns Surface/circular A/Z storage. No second VM, INI parser, rank state, palette, SHP decoder or rasterizer produces expected output.",
+    "Whole Rules665650/UnitType7470D0 constructors and the unchanged selected native Strength/PipScale/PixelSelectionBracketDelta/ConditionRed/Yellow reader blocks consume physical RULESMD, optional LANGRULE, MPBattleMD and XMP03T4. Selected physical layers leave Invisible unset; the visual predicate consumes its recorded native constructorfalse. Fixed ART supplies no rank keys;70A990 has no Trainable or tunable frame/threshold key. Existing physical PIPS21frame/PIPBRD/PALETTE winners and palette initialize52BE61..52BFCE execute in this owner.",
+    "The established original Unit7353C0->Foot4D31E0 constructor prefix stops7354CE before the unrelated typed COM activation. Original Drive4AF540/base constructor executes; supplied owner/link/active fields expose its real virtual55ABC0, not a supplied callback return. Spare native registry capacity and seeded Main/Scenario/MapGen streams are fixture priors. Constructor RNG requests and actual retained fields are recorded. Whole Unit constructor, CoCreate, Unlimbo, movement, damage/kill/promotion and whole Scenario/Display are excluded.",
+    "Original750080/750090/7500B0 and signed-percent7500E0(-100) initialize raw rank bits. Actor input.veterancy_raw_bits is the actual after-setter single, not a host rank calculation. Prepared health, selected/hover/sinking, raw Location, owner/current-house-owned, cloak state/progress, disguise/fake-house and cell counter values are explicit consumer priors. Ordinary stock MTNK does not produce the prepared cloak/disguise negatives in this oracle.",
+    "Every row runs complete6F5190. Native746750/41C010/4F9A50 and4DA4E0->realDrive55ABC0->703860 observer predicates execute unchanged. Sparse flat/revealed47BBF0 Cells share the existing ground fixture owner; currentHouse index0, enemyHouse index1, no mutual alliance, supplied Cell+7C sensor and+AC disguise-detection signed counters feed original4870D0/4870F0. No observer result, body gate, rank admission or pixel leaf is substituted.",
+    "Complete70A990 executes before selected/hover health dispatch. Veteran PIPS14, elite15 and negative19 use flagsE00, remap0, signed zAdjust-2, gradient0, brightness1000 and Convert87F6C4. Original4AED70/picker/rowwalker/493DF0 run; actual A reads, zero Z accesses, ordered shapes and final sparse RGB565 pixels are recorded. A127/63/2/0 and Z0 are consumer controls; A2 is already established physical SHROUD frame15 output, not regenerated vision lifecycle.",
+    "Owned/sensed fully cloaked actors have visual character3 but retain the same opaque rank material: body cloak opacity/tint is not inherited by70A990. Selected and hover cases continue through actual6F64A0/709A90/70AA60 tails. Ordered two-parent rank+health, real viewport clip and prepared sinking are bounded drawing controls. Whole original code/vtable and actor bytes, A/Z remain unchanged; no drawing RNG request is observed. Rank interval has no timer update or detach. Native VT bindings prove Infantry/Aircraft use the same6F5190/70A990 bodies; their different RTTI anchor and observer-gate dispatch are instruction evidence, not full constructor/shape controls for those classes."
+  ],
+  "substitutions": [
+    "Inherited successful allocation/delete/CRT TLS, immutable physical archive/file transport and Surface memory replace platform services. Actor admission/lifecycle and sparse Map traversal are supplied priors. No reached rank/predicate/Drive/palette/shape function result or original instruction is replaced."
+  ],
+  "entry_points": {
+    "unit_type_ctor": "0x007470D0",
+    "unit_ctor_begin": "0x007353C0",
+    "unit_ctor_stop": "0x007354CE",
+    "foot_ctor": "0x004D31E0",
+    "drive_ctor": "0x004AF540",
+    "drive_visual": "0x0055ABC0",
+    "rookie_setter": "0x00750080",
+    "veteran_setter": "0x00750090",
+    "elite_setter": "0x007500B0",
+    "percent_setter": "0x007500E0",
+    "extras": "0x006F5190",
+    "disguised_to": "0x00746750",
+    "visual_character": "0x004DA4E0",
+    "techno_visual": "0x00703860",
+    "cell_sensor": "0x004870D0",
+    "cell_disguise_detect": "0x004870F0",
+    "rank": "0x0070A990",
+    "veteran_test": "0x0074FF90",
+    "elite_test": "0x00750010",
+    "negative_test": "0x0074FFF0",
+    "shape": "0x004AED70",
+    "picker": "0x00490B90",
+    "rank_leaf": "0x00493DF0"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.shroud --unit-rank",
+  "payload_sha256": "401f9070f1209c7e080d0ea3897242c69158bb91609bf72d4b9a46312500c599"
+}

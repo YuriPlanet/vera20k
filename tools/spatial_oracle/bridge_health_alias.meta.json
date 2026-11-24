@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original47DD70 ground loop calling original701900 early immunity returns; copied packet controls",
+  "assumptions": [
+    "Synthetic single-member ground list, Health100, null next/source/house, forced flags true/true",
+    "Accepted C4 warhead flags; stock Super has none of these immunity flags",
+    "Zero supplied unused object/type fields; no ammo update, Object receiver, or death callbacks reached",
+    "Aliased cases stop at47DDBA before deck/debris work; controls return from701900"
+  ],
+  "substitutions": [
+    "Supplied Object vtable16C binds directly to Techno701900; concrete class wrappers excluded",
+    "Vtable160 and1D4 predicates return false; vtable84 returns supplied Type"
+  ],
+  "entry_points": {
+    "bridge_ground": "0x0047DD70",
+    "techno_receive": "0x00701900"
+  },
+  "payload_sha256": "ba33e41eec213875f0fbb3be90266fc7aeea108a4abef7b566a212f8b206a229"
+}

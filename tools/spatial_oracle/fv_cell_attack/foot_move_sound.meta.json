@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original idle SQD counter/MoveSound tail and handle/load lifecycle controls.\n\nInvoked by ``move_sound --foot-tail``. This composes existing native fixture\nowners; Ship Process and accepted device playback remain declared boundaries.\nNo Ship movement, whole FootAI, whole save/load or audible-output claim is made.\n",
+  "assumptions": [
+    "Existing naval_occupants VM owns original UnitType/base Unit/Foot constructor prefix and Ship constructor, supplied actor/house/cell placement and its inherited selected type/rules reads. This is an already-live healthy SQD boundary, not full Unlimbo or physical map placement.",
+    "Selected physical RULESMD, absent LANGRULE, MPBattleMD and Hills inner-map INI caches execute original WalkRate then IdleRate/current defaults and MoveSound ordered-vector blocks. Fixed SOUNDMD original selected SoundList/Defaults/Voc bodies bind SquidMove and GenLargeWaterDie; indexes are fixture-relative and sample lookup maps physical names locally.",
+    "Original4DA806..4DAB3C captures the actual pre-Process body counter, executes original gates, original body counter and complete sound tail. Stock idle IsMovingNow executes original69F330 from original Ship ctor state. Explicit callback variants are supplied retained responses. Earlier Foot/Techno AI and full object/world scheduling are excluded.",
+    "stock_idle_frame_zero supplies globalA8ED84 values0..15 to the same already-live SQD boundary. Original idle-rate division4DA989 and counter increment4DA9FB execute at frame0; no host modulo or counter delta is supplied. Its before/after visit states bracket the AI body, while production exact-step receipts expose the subsequently committed frame. Native scenario frame initialization and whole first-frame AI are excluded.",
+    "All three whole0x3F4 RNG states are seeded through original65C6D0. Draw results, modulo-selected list slot, order and counter/timer writes come from original execution. No host arithmetic supplies an expected output. Foot selection draws are distinct from later audio-service Main RNG.",
+    "Tagged playing/pending and authored loop controls are explicit event/type boundary fields, with no attached channel/sample buffer. Original405D40/405FD0/406060 and bounded FootLimbo/destructor suffixes execute all cleanup writes. Pending state2 is a supplied state, not an event-allocation lifetime claim.",
+    "Raw-load controls reuse naval_lifetime_controls: original AbstractLoad, unconditional Foot audio reset, no-init Foot ctor and Unit vtables execute against supplied Unit-size bytes. Dynamic vectors, COM/pointer swizzling and whole old-world Clear are excluded. NoInit clears the saved locomotor pointer; the next visit explicitly reattaches the existing constructor-built idle Ship and uses the declared Process boundary. Pair+2A8/type+692 controls supply presence/byte only and do not establish reciprocal-link lifecycle.",
+    "Queued controls construct the original six-record pool4074D0 and SoundEvent405190, then supply ready state1, one already-loaded sample and optional lower-entry bucket0 membership. Original4048B0 takes its already-loaded short path; full404700 and start-pass4045A6..4046C6 perform rejection, priority lookup, retries, collateral cleanup and pool return. Lower-entry Priority=LOW is read by original750440; its playing/ready/dead records are explicit inputs. Sample loading, whole ranking pass and the surrounding audio scheduler are excluded."
+  ],
+  "substitutions": [
+    "Inherited allocator, CRT/TLS, Interlocked and prepared INI/source-order cache boundaries remain unchanged. Original .text is checked byte-for-byte.",
+    "Ship Process69FC10 returns through an explicit RET4 transport without movement. Ordinary IsMovingNow executes original code; separately named authored callback controls declare every supplied answer.",
+    "Default playback executes original7509E0 through supplied8464AC=0 disabled gate. Accepted-boundary timelines attach the shared tagged playing-event fixture and return from7509E0; decoding, device mixing, audio scheduling and their later Main draws are excluded. They prove caller latch/handle lifetime, not audible sound.",
+    "Queued ordinary/released controls observe admission to4054A0 and supply success without running device playback. The one preloaded SampleTracker record and its reference count are supplied decoder boundaries; original sample-reference release executes. Global pool-enable flags and bucket membership are supplied startup/ranking state."
+  ],
+  "entry_points": {
+    "foot_counter_and_sound": "0x004DA806",
+    "sound_tail": "0x004DAA01",
+    "counter_update": "0x004DA886",
+    "idle_rate_division": "0x004DA989",
+    "body_counter_increment": "0x004DA9FB",
+    "body_rate_reader": "0x00712222",
+    "move_sound_reader": "0x00713459",
+    "sound_list": "0x00525430",
+    "sound_registry": "0x007510D0",
+    "voc_reader": "0x00750440",
+    "ship_constructor": "0x0069EC50",
+    "ship_is_moving_now": "0x0069F330",
+    "random_next": "0x0065C780",
+    "playback": "0x007509E0",
+    "hard_stop": "0x00405D40",
+    "decay_stop": "0x00405FD0",
+    "release": "0x00406060",
+    "foot_limbo_tail": "0x004DB34D",
+    "foot_destructor_tail": "0x004D366E",
+    "raw_load": "0x00410380",
+    "foot_load_reset": "0x004DB60D",
+    "prepare_playout": "0x00404700",
+    "start_pass": "0x004045A6",
+    "find_lowest_priority": "0x00404E20",
+    "return_to_pool": "0x00404DD0",
+    "sound_event_allocate": "0x00405190"
+  },
+  "command": "python -m tools.spatial_oracle.fv_cell_attack.move_sound --foot-tail --check",
+  "input_environment": [
+    "VERA20K_GAMEMD_EXE or RA2_DIR",
+    "VERA20K_SHRAPNEL_INPUTS",
+    "VERA20K_ANYTOWN_INPUTS",
+    "VERA20K_PROJECTILE_RENDER_ASSETS",
+    "optional VERA20K_MOVE_SOUND_MAP"
+  ],
+  "payload_sha256": "d84ae1ca670a7c27a217e5c4d6274bae370d00e8b22997f429acb8a5f1dc1d7f"
+}

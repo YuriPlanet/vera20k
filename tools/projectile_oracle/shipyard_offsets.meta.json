@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Retail BuildingType TargetCoordOffset reader, Building4500A0 and Bullet468D80 handoff",
+  "assumptions": [
+    "Physical ini/rulesmd.ini and ini/artmd.ini through the existing type reader.",
+    "Supplied target centre (5000,6000,416) and 4x4/2x2 foundation dimensions; x87 PC53 chop."
+  ],
+  "substitutions": [
+    "Target+48 and type Width/Height are supplied as in the existing ladder fixture.",
+    "Target+58 executes Object410540; +A4 executes Building4500A0 with the original reader's offset.",
+    "DetonateAtCoord4690B0 is the stop boundary; no damage body is substituted as a golden."
+  ],
+  "entry_points": {
+    "ladder": "0x00468D80",
+    "building_target": "0x004500A0",
+    "offset_read": "0x00460F50"
+  },
+  "replay_command": "python -m tools.projectile_oracle.impact_ladder --shipyard-offsets",
+  "payload_sha256": "fe851ad79ca12c71b63b56aae37c3dfb9e5f6893889df7be63a54382e8a4b07d"
+}

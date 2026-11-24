@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Bounded packed/world lookup, LocalSize normalization prefix, and playfield predicates; not phase-wide parity",
+  "assumptions": [
+    "Fresh emulator per query with seven explicit allocated slots and all remaining pointer slots zero",
+    "MapClass+13C and global 87F924 select the same table; capacity is retail 0x40000",
+    "Dummy coordinate seed and level/slope are supplied; queries must preserve level/slope and source input",
+    "Five packed lookups also execute consecutively in one emulator, retaining the first dummy pointer",
+    "Real-cell level/slope inputs and signed/overflow cases are synthetic; nearoref.map supplies the 80x58/2,4,76,48 header",
+    "567230 executes original ClipRect and stops at 5672D3 before redraw and Techno membership effects",
+    "No map constructors, lifecycle, final presentation, complete callers or exhaustive i32 domain are claimed"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "packed_lookup": "0x005657A0",
+    "world_lookup": "0x00565730",
+    "playfield": "0x00578460",
+    "world_playfield": "0x005785F0",
+    "normalize": "0x00567230",
+    "clip_rect": "0x00421B60"
+  },
+  "payload_sha256": "14cd022a1b472d4ac3331e800b5213a2612c35f103acac79a2beb63f99a7bbfb"
+}

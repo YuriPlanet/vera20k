@@ -1,0 +1,13 @@
+[package]
+name = "vera20k-relay"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+rusqlite = { version = "=0.40.2", features = ["bundled"] }
+ureq = { version = "=3.5.0", default-features = false, features = ["rustls"] }
+vera20k-relay-protocol = { path = "../relay-protocol" }
+
+[lints]
+workspace = true

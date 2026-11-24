@@ -1,0 +1,7 @@
+# The restriction lints that outside-data readers deny (`unwrap_used`,
+# `expect_used`, `panic`, `indexing_slicing`) leave test code alone: a test
+# that unwraps states what it expects.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true

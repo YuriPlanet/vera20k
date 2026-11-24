@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "HouseClass::Spend_Money, Add_Credits, Add_Tiberium_Credits and Available_Money on a house with empty silo storage. Synthetic fixtures only; the silo-drain arm of Spend_Money is not reached.",
+  "assumptions": [
+    "The house holds no silo storage (+0x2FC) and a capacity (+0x310) of 200, so Spend_Money never drains buildings and Update_Silo_Damage_Frames compares two empty fill ratios and returns."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "spend_money": "0x004F9790",
+    "add_credits": "0x004F9950",
+    "add_tiberium_credits": "0x004F9610",
+    "available_money": "0x004F6990"
+  },
+  "fill_silos": {
+    "scope": "Original 0x684F02 through the unexecuted 0x684F7F interior boundary only.",
+    "entry_points": {
+      "begin": "0x00684F02",
+      "end_before": "0x00684F7F",
+      "available_storage": "0x004F69D0"
+    },
+    "assumptions": [
+      "One synthetic non-null House in A8022C/A80238; EAX is a supplied Scenario with +34B2 flag. No map admission, House/Building constructor or full startup runs.",
+      "All four House +2FC amount words are explicitly zero. Balance, score, spent, capacity, first Tiberium Value and HouseType IncomeMult are supplied scalar priors.",
+      "House +24 uses original vtable 7EA834. Original 4F6990, 4F69D0, 4F9610, 6C9650 and 7C5F00 execute without selected-query or credit substitutions.",
+      "The inherited Emu CRT/allocation transport is not entered by this interior. No RNG, timers, detachment, placement or nonempty-storage history is claimed.",
+      "Positive Values terminate normally. The sole negative Value is -1 with INT_MAX budget, terminating after one signed SUB wrap. Zero and other potentially nonterminating custom Values are not executed."
+    ],
+    "observations": "Signed cash, score, spent, capacity and local ESI budget; four raw amount words and native query/credit call counts. Budget is null when no money query ran. Original code is read back unchanged after every row.",
+    "substitutions": []
+  },
+  "replay_command": "python -m tools.house_money_oracle",
+  "payload_sha256": "c7223e993d6fd6b05a09f76d5f8507ed95acdb10cb8d4f614a991b15ef425824"
+}

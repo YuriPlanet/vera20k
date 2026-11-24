@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Anytown native damage/repair geometry with original Cell Recalc and empty residents.\nPhysical TMP blocks and native overlay reads are composed; supplied pristine\ntile heads and zone storage do not claim full native scenario/theater loading.\n",
+  "assumptions": [
+    "Geometry packet inputs reused; original overlay readers for205..232 plus physical TMP bodies and original Recalc, LAT and zone classification.",
+    "All23 selected cells receive actual initial Recalc; all later repair/damage Recalc executes, as does empty487A10. No objects or CellTags.",
+    "Original56D3F0 index stride166 from80+85+1; initial native zone planes supplied, original stores retained."
+  ],
+  "substitutions": [
+    "Pristine tile-type heads supplied with actual relocated TMP bodies, terrain anim=-1, no auxiliary cell list; no native type/theater loader.",
+    "NativeRules helper bootstrap precedes explicit Anytown family-layer reads; no full Rules load chronology.",
+    "Connectivity56C510 and hierarchy586990 callbacks; display/radar sinks; bounded successful heap.",
+    "Direct admitted damage driver and repair controller calls, no projectile/area or Engineer admission and no production comparison."
+  ],
+  "entry_points": {
+    "damage": "0x0057CCF0",
+    "repair": "0x00573540",
+    "recalc": "0x0047D2B0",
+    "lat": "0x0047CA80",
+    "zone": "0x00483C80",
+    "index": "0x0056D3F0",
+    "occupants": "0x00487A10"
+  },
+  "payload_sha256": "11b88bb7e8c5c90c5a457782e541396b11c8f8b9b13c079570de4f68a7f20876",
+  "packaging": "canonical JSON; gzip mtime=0; copied lexical inputs replaced by SHA256"
+}

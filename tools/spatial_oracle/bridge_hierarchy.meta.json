@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original581F90 hierarchy construction,584550 local rebuild and586990 two-pass batch including original Recalc",
+  "assumptions": [
+    "Supplied native Size, bounds, class/height/base-ID planes and allocated Cell table",
+    "Original graph/bucket vector constructors and successful bounded storage; allocation failure and native signed-negative node pointers excluded",
+    "Most batch cells use invalid tile2 with supplied registry length2; one supplied resident1x1 Road TMP changes slope0 to1 and changes second-pass admission; no overlay/objects, CliffBack0 and Wheel1.0 for all lands",
+    "Most small supplied bounds are branch fixtures, not normalized retail-map dimensions; alias case uses normalized11,8 bounds and Resize allocation with supplied signed-negative Cell height252, not a stock nonnegative-height witness",
+    "Empty temporary bucket values copied from one original zero-capacity constructor result; native per-bucket virtual clear/growth executes",
+    "All13 input raw rows contain supplied sentinel/ordinary labels and remain byte-identical; all base-ID words remain unchanged through local/batch actions",
+    "One full/local case supplies two active and one inactive high record with raw high tile103; full forward and local reverse582D70 reinsertion execute, no Tube/TS claims",
+    "Three direct flood witnesses supply a2x1 seed run, surrounding neighbor2 and optional preexisting flag1 pair; compare low flag byte only",
+    "Three normalized11,8/Resize/nonnegative-height cases retain baseID0 after a supplied raw +4 height change; actual batch, full reconstruction and local re-patch preserve mutable padding and32 aliased represented cells",
+    "One local target retains class7 while the live query admits it; one full build retains wider cached classes with narrower supplied current bounds, preserving IDs while changing ordered edges",
+    "Not a complete native map-load or gameplay execution"
+  ],
+  "substitutions": [
+    "Successful bounded operator_new7C8E17 and no-op operator_delete7C8B3D"
+  ],
+  "entry_points": {
+    "build": "0x00581F90",
+    "local": "0x00584550",
+    "flood": "0x005824A0",
+    "batch": "0x00586990",
+    "recalc": "0x0047D2B0",
+    "playfield": "0x00578460",
+    "scratch": "0x0042C1C0",
+    "high_pairs": "0x00582D70"
+  },
+  "payload_sha256": "a51a9b531f66c99bd096ec64d4b1cd8881afffa79845ec8072d94e99a43eb3d3"
+}

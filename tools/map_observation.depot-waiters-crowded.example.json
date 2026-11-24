@@ -1,0 +1,518 @@
+{
+  "schema_version": "vera20k.map-observation-profile.v2",
+  "launch": {
+    "mode": {
+      "class": "Battle",
+      "id": 1,
+      "ui_name_key": "GUI:Battle",
+      "tooltip_key": "STT:ModeBattle",
+      "override_file": "MPBattleMD.ini",
+      "map_filter": "standard",
+      "random_maps_allowed": true,
+      "allies_allowed": true,
+      "must_ally": false
+    },
+    "selected_map_file": "XMP03T4.MAP",
+    "humans": [
+      {
+        "raw_slot_index": 0,
+        "name": "VERA-OBSERVER",
+        "slot": {
+          "country": 0,
+          "country_random": false,
+          "color_index": 0,
+          "color_random": false,
+          "start_position": {
+            "Position": 0
+          },
+          "team": {
+            "Team": 0
+          }
+        },
+        "role": {
+          "Player": {
+            "group": 0
+          }
+        }
+      }
+    ],
+    "local_player_index": 0,
+    "ai_player_count": 2,
+    "opponents": [
+      {
+        "country": 2,
+        "country_random": false,
+        "color_index": 1,
+        "color_random": false,
+        "start_position": {
+          "Position": 1
+        },
+        "team": {
+          "Team": 0
+        },
+        "difficulty": "Easy",
+        "raw_slot_index": 1
+      },
+      {
+        "country": 0,
+        "country_random": false,
+        "color_index": 2,
+        "color_random": false,
+        "start_position": {
+          "Position": 2
+        },
+        "team": {
+          "Team": 1
+        },
+        "difficulty": "Easy",
+        "raw_slot_index": 2
+      }
+    ],
+    "pre_fill_house_roster": {
+      "human_nodes": [
+        {
+          "priority": 0,
+          "source_order": 0,
+          "observer": false
+        }
+      ],
+      "ai_slots": [
+        {
+          "slot_index": 0,
+          "valid": false
+        },
+        {
+          "slot_index": 1,
+          "valid": true
+        },
+        {
+          "slot_index": 2,
+          "valid": true
+        },
+        {
+          "slot_index": 3,
+          "valid": false
+        },
+        {
+          "slot_index": 4,
+          "valid": false
+        },
+        {
+          "slot_index": 5,
+          "valid": false
+        },
+        {
+          "slot_index": 6,
+          "valid": false
+        },
+        {
+          "slot_index": 7,
+          "valid": false
+        }
+      ],
+      "fixed_tail": [
+        "Neutral",
+        "Special"
+      ]
+    },
+    "options": {
+      "starting_credits": 20000,
+      "unit_count": 8,
+      "tech_level": 10,
+      "game_speed": 1,
+      "default_ai_difficulty": 0,
+      "short_game": false,
+      "bases": true,
+      "bridges_destroyable": true,
+      "super_weapons": true,
+      "build_off_ally": true,
+      "crates": false,
+      "mcv_redeploy": true,
+      "fog_of_war": false,
+      "shroud": false,
+      "tiberium_grows": false,
+      "multi_engineer": false,
+      "harvester_truce": false,
+      "ally_change_allowed": true
+    }
+  },
+  "seed": 305419896,
+  "input_delay_ticks": 2,
+  "ticks": 8500,
+  "width": 800,
+  "height": 600,
+  "timeout_seconds": 300,
+  "commands": [
+    {
+      "issue_after_step": 0,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "Move": {
+          "entity_id": 1378,
+          "target_rx": 40,
+          "target_ry": 80
+        }
+      }
+    },
+    {
+      "issue_after_step": 0,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "Move": {
+          "entity_id": 1379,
+          "target_rx": 41,
+          "target_ry": 80
+        }
+      }
+    },
+    {
+      "issue_after_step": 0,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "Move": {
+          "entity_id": 1380,
+          "target_rx": 42,
+          "target_ry": 80
+        }
+      }
+    },
+    {
+      "issue_after_step": 0,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "Move": {
+          "entity_id": 1381,
+          "target_rx": 40,
+          "target_ry": 79
+        }
+      }
+    },
+    {
+      "issue_after_step": 0,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "Move": {
+          "entity_id": 1375,
+          "target_rx": 32,
+          "target_ry": 82
+        }
+      }
+    },
+    {
+      "issue_after_step": 0,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "Move": {
+          "entity_id": 1376,
+          "target_rx": 35,
+          "target_ry": 82
+        }
+      }
+    },
+    {
+      "issue_after_step": 0,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "Move": {
+          "entity_id": 1377,
+          "target_rx": 38,
+          "target_ry": 82
+        }
+      }
+    },
+    {
+      "issue_after_step": 0,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "Move": {
+          "entity_id": 1374,
+          "target_rx": 35,
+          "target_ry": 85
+        }
+      }
+    },
+    {
+      "issue_after_step": 500,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "Attack": {
+          "attacker_id": 1374,
+          "target_id": 1375
+        }
+      }
+    },
+    {
+      "issue_after_step": 650,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "DeployMcv": {
+          "entity_id": 1371
+        }
+      }
+    },
+    {
+      "issue_after_step": 720,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "QueueProduction": {
+          "type_id": 272
+        }
+      }
+    },
+    {
+      "issue_after_step": 750,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "Stop": {
+          "entity_id": 1374
+        }
+      }
+    },
+    {
+      "issue_after_step": 800,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "Attack": {
+          "attacker_id": 1374,
+          "target_id": 1376
+        }
+      }
+    },
+    {
+      "issue_after_step": 1050,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "Stop": {
+          "entity_id": 1374
+        }
+      }
+    },
+    {
+      "issue_after_step": 1100,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "Attack": {
+          "attacker_id": 1374,
+          "target_id": 1377
+        }
+      }
+    },
+    {
+      "issue_after_step": 1320,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "Stop": {
+          "entity_id": 1374
+        }
+      }
+    },
+    {
+      "issue_after_step": 1350,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "PlaceReadyBuilding": {
+          "type_id": 272,
+          "rx": 31,
+          "ry": 89
+        }
+      }
+    },
+    {
+      "issue_after_step": 1400,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "QueueProduction": {
+          "type_id": 275
+        }
+      }
+    },
+    {
+      "issue_after_step": 1450,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "Move": {
+          "entity_id": 1374,
+          "target_rx": 39,
+          "target_ry": 84
+        }
+      }
+    },
+    {
+      "issue_after_step": 1550,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "Move": {
+          "entity_id": 1375,
+          "target_rx": 35,
+          "target_ry": 94
+        }
+      }
+    },
+    {
+      "issue_after_step": 1550,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "Move": {
+          "entity_id": 1376,
+          "target_rx": 38,
+          "target_ry": 94
+        }
+      }
+    },
+    {
+      "issue_after_step": 1550,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "Move": {
+          "entity_id": 1377,
+          "target_rx": 38,
+          "target_ry": 90
+        }
+      }
+    },
+    {
+      "issue_after_step": 1900,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "PlaceReadyBuilding": {
+          "type_id": 275,
+          "rx": 31,
+          "ry": 91
+        }
+      }
+    },
+    {
+      "issue_after_step": 1970,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "QueueProduction": {
+          "type_id": 273
+        }
+      }
+    },
+    {
+      "issue_after_step": 3500,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "PlaceReadyBuilding": {
+          "type_id": 273,
+          "rx": 31,
+          "ry": 85
+        }
+      }
+    },
+    {
+      "issue_after_step": 3560,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "Stop": {
+          "entity_id": 1878
+        }
+      }
+    },
+    {
+      "issue_after_step": 3580,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "QueueProduction": {
+          "type_id": 279
+        }
+      }
+    },
+    {
+      "issue_after_step": 5150,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "PlaceReadyBuilding": {
+          "type_id": 279,
+          "rx": 25,
+          "ry": 91
+        }
+      }
+    },
+    {
+      "issue_after_step": 5230,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "QueueProduction": {
+          "type_id": 277
+        }
+      }
+    },
+    {
+      "issue_after_step": 5900,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "PlaceReadyBuilding": {
+          "type_id": 277,
+          "rx": 35,
+          "ry": 91
+        }
+      }
+    },
+    {
+      "issue_after_step": 6020,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "MegaMission": {
+          "entity_id": 1375,
+          "mission": "Enter",
+          "target": null,
+          "destination": {
+            "Entity": 1985
+          }
+        }
+      }
+    },
+    {
+      "issue_after_step": 6040,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "MegaMission": {
+          "entity_id": 1376,
+          "mission": "Enter",
+          "target": null,
+          "destination": {
+            "Entity": 1985
+          }
+        }
+      }
+    },
+    {
+      "issue_after_step": 6040,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "MegaMission": {
+          "entity_id": 1377,
+          "mission": "Enter",
+          "target": null,
+          "destination": {
+            "Entity": 1985
+          }
+        }
+      }
+    }
+  ],
+  "observe_owners": [
+    "VERA-OBSERVER"
+  ],
+  "camera_cell": [
+    35,
+    91
+  ],
+  "terrain_cells": [
+    [
+      37,
+      93
+    ],
+    [
+      37,
+      94
+    ]
+  ],
+  "observe_types": [
+    "MTNK",
+    "GADEPT",
+    "CMIN"
+  ]
+}

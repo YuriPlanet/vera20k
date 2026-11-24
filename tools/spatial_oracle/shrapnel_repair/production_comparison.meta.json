@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Compare saved original-execution outputs with frozen production boundary captures.",
+  "assumptions": [
+    "Only declared fields and stages compared. Native load or whole-scene equality is not inferred from matching supplied projections."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "compared_repair": "0x00570050",
+    "compared_connectivity": "0x0056C510",
+    "compared_hierarchy_batch": "0x00586990"
+  },
+  "payload_sha256": "750cb2a89044472656ed2e05f9f222256573979821e48ec4b912cfc04233a90e"
+}

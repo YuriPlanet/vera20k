@@ -1,0 +1,938 @@
+//! Original Foot4DC060/7049C0 comparisons through the production line builder.
+//! The JSON contains native execution, never expected pixels made by Rust.
+
+use super::*;
+use crate::app::presentation::frame::PresentationFrame;
+use crate::sim::components::{DriveCoord, NavTargetRef};
+use crate::sim::game_entity::GameEntity;
+use serde_json::Value;
+
+/// The drawn snapshot of `sim`; a fixture without rules captures with empty rules.
+fn frame_of(sim: &Simulation, rules: Option<&RuleSet>) -> PresentationFrame {
+    PresentationFrame::of_test(sim, rules.unwrap_or(RuleSet::empty_for_test()))
+}
+
+fn native() -> &'static Value {
+    static CORPUS: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+    CORPUS.get_or_init(|| {
+        serde_json::from_str(crate::test_fixture::text(
+            "tools/procedural_drawing_oracle/action_lines.json",
+        ))
+        .unwrap()
+    })
+}
+
+fn point<const N: usize>(value: &Value) -> [i32; N] {
+    std::array::from_fn(|i| value[i].as_i64().unwrap() as i32)
+}
+
+fn hex_bytes(hex: &str) -> Vec<u8> {
+    hex.as_bytes()
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+        .collect()
+}
+
+fn palette_bytes() -> Vec<u8> {
+    hex_bytes(
+        native()["physical_inputs"]["palettes"]["PALETTE.PAL"]["hex"]
+            .as_str()
+            .unwrap(),
+    )
+}
+
+fn palette() -> crate::assets::pal_file::Palette {
+    crate::assets::pal_file::Palette::from_bytes(&palette_bytes()).unwrap()
+}
+
+fn baseline_rows() -> impl Iterator<Item = &'static Value> {
+    native()["cases"].as_array().unwrap().iter().filter(|row| {
+        matches!(
+            row["input"]["family"].as_str(),
+            Some("geometry" | "timer" | "original_control")
+        )
+    })
+}
+
+fn drawing_rows() -> impl Iterator<Item = &'static Value> {
+    native()["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(native()["tactical_gate_cases"].as_array().unwrap().iter())
+        .chain(native()["batch_cases"].as_array().unwrap().iter())
+}
+
+fn attack_rows() -> impl Iterator<Item = &'static Value> {
+    native()["attack_cases"].as_array().unwrap().iter()
+}
+
+fn viewport(input: &Value) -> TacticalViewport {
+    let mut camera = point(&input["camera"]);
+    camera[1] += 15; // Shared VERA world projection bias, not a line adjustment.
+    TacticalViewport {
+        camera,
+        clip: input.get("clip").map_or([0, 0, 160, 120], point),
+    }
+}
+
+fn fixture(row: &Value) -> (Simulation, TargetLineState, TacticalViewport) {
+    use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
+    let input = &row["input"];
+    let mut sim = Simulation::new();
+    let owner = sim.intern("Americans");
+    let mut cells: Vec<_> = (0..32)
+        .flat_map(|y| (0..32).map(move |x| ResolvedTerrainCell::clear_for_test(x, y)))
+        .collect();
+    let actors: Vec<_> = input["actors"]
+        .as_array()
+        .map_or_else(|| vec![input], |actors| actors.iter().collect());
+    let order: Vec<_> = input["techno_order"].as_array().map_or_else(
+        || (0..actors.len()).collect(),
+        |order| order.iter().map(|v| v.as_u64().unwrap() as usize).collect(),
+    );
+    for (construction_index, actor_index) in order.into_iter().enumerate() {
+        let actor_input = actors[actor_index];
+        let mut actor =
+            GameEntity::test_default(construction_index as u64 + 1, "MTNK", "Americans", 20, 20);
+        actor.set_owner_for_test(owner);
+        actor.set_type_ref_for_test(sim.intern("MTNK"));
+        actor
+            .seldom
+            .selection
+            .set_selected_for_test(actor_input["selected"].as_bool().unwrap_or(true));
+        actor.set_on_bridge(actor_input["on_bridge"].as_bool().unwrap_or(false));
+        let [x, y, z] = point(&actor_input["source"]);
+        actor.position.put_location(DriveCoord { x, y, z });
+        let [tx, ty] = point(&actor_input["target_cell"]);
+        actor.navigation.set_nav_com_for_test(
+            (!actor_input["nav_null"].as_bool().unwrap_or(false))
+                .then_some(NavTargetRef::cell(tx as u16, ty as u16)),
+        );
+        let mut target_cells = vec![[tx, ty]];
+        if let Some(queue) = actor_input["queue_cells"].as_array() {
+            for target in queue {
+                let [x, y] = point(target);
+                actor
+                    .navigation
+                    .push_nav_queue_for_test(NavTargetRef::cell(x as u16, y as u16));
+                target_cells.push([x, y]);
+            }
+        }
+        for target in cells
+            .iter_mut()
+            .filter(|c| target_cells.contains(&[i32::from(c.rx), i32::from(c.ry)]))
+        {
+            target.level = actor_input["level"].as_u64().unwrap_or(0) as u8;
+            target.slope_type = actor_input["slope"].as_u64().unwrap_or(0) as u8;
+            target.has_bridge_deck = actor_input["flags"].as_u64().unwrap_or(0) & 0x100 != 0;
+        }
+        sim.entities_mut_for_test().insert(actor);
+    }
+    sim.session_mut_for_test().set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+            input["mode"].as_u64().unwrap_or(1) != 0,
+        ),
+    );
+    sim.session_mut_for_test()
+        .set_current_house_for_test(input["local"].as_bool().unwrap_or(true).then_some(owner));
+    let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 0);
+    if let Some(flags) = input["campaign_flags"].as_array() {
+        house.set_is_human_for_test(flags[0].as_bool().unwrap());
+        house.set_player_control_for_test(flags[1].as_bool().unwrap());
+    }
+    sim.houses_mut_for_test().register(house);
+    sim.session_mut_for_test()
+        .set_binary_frame_for_test(input["frame"].as_u64().unwrap_or(100) as u32);
+    // The timer must consume the binary frame, independently of VERA's tick.
+    sim.session_mut_for_test().set_tick_for_test(999_999);
+    *sim.resolved_terrain_mut_for_test() =
+        Some(ResolvedTerrainGrid::from_cells(32, 32, cells).test_mark_decks_structural());
+    {
+        let size = input
+            .get("map_size")
+            .unwrap_or(&native()["prepared_common"]["map_size"]);
+        let [width, height] = point(size);
+        sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
+            theater: "TEMPERATE".into(),
+            fill: "Clear".into(),
+            level: 0,
+            width: width as u32,
+            height: height as u32,
+            local_left: 0,
+            local_top: 0,
+            local_width: width as u32,
+            local_height: height as u32,
+        });
+    }
+    let mut state = TargetLineState::default();
+    state.start_timer(input["timer_start"].as_u64().unwrap_or(100) as u32);
+    state.set_unit_action_lines_enabled(input["option"].as_bool().unwrap_or(true));
+    (sim, state, viewport(input))
+}
+
+/// Prepare the original raster inputs through existing rules/state owners.
+/// These supplied poses supplement the separately executed retail constructor,
+/// command and live-getter histories; they do not stand in for those histories.
+fn drawing_fixture(
+    row: &Value,
+) -> (
+    Simulation,
+    Option<RuleSet>,
+    TargetLineState,
+    TacticalViewport,
+) {
+    use crate::rules::art_data::ArtRegistry;
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::locomotor_type::LocomotorKind;
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+    use crate::sim::combat::TargetKind;
+    use crate::sim::movement::locomotor::LocomotorState;
+    use crate::sim::movement::track_process::TrackFamily;
+    use crate::util::native_x87::NativeF64Bits;
+
+    let (mut sim, state, view) = fixture(row);
+    let input = &row["input"];
+    if input["family"] != "attack" {
+        return (sim, None, state, view);
+    }
+    let speed = &input["target_speed_inputs"];
+    let weapon = &input["weapon_inputs"];
+    let ini = IniFile::from_str(&format!(
+        "[AudioVisual]\nGravity={}\n[General]\nVeteranSpeed={}\n\
+         [Countries]\n0=Americans\n[Americans]\nSpeedUnitsMult={}\n\
+         [VehicleTypes]\n0=MTNK\n[MTNK]\nImage=GTNK\nSpeed={}\nTurret=yes\n\
+         Primary={}\nVeteranAbilities={}\nEliteAbilities={}\n\
+         [ACTION]\nProjectile=ACTIONP\nSpeed={}\nRange={}\n\
+         [ACTIONP]\nROT={}\nFloater={}\n",
+        weapon["gravity"].as_f64().unwrap(),
+        speed["veteran"].as_f64().unwrap(),
+        speed["house"].as_f64().unwrap(),
+        speed["speed_percent"].as_i64().unwrap(),
+        if weapon["present"].as_bool().unwrap() {
+            "ACTION"
+        } else {
+            ""
+        },
+        if speed["faster"].as_bool().unwrap() {
+            "FASTER"
+        } else {
+            ""
+        },
+        if speed["elite_faster"].as_bool().unwrap() {
+            "FASTER"
+        } else {
+            ""
+        },
+        weapon["speed_percent"].as_i64().unwrap(),
+        weapon["range_cells"].as_i64().unwrap(),
+        weapon["rot"].as_i64().unwrap(),
+        if weapon["floater"].as_bool().unwrap() {
+            "yes"
+        } else {
+            "no"
+        },
+    ));
+    let art = IniFile::from_str(&format!(
+        "[GTNK]\nTurretOffset={}\nPrimaryFireFLH=150,0,100\n",
+        input["turret_offset"].as_i64().unwrap(),
+    ));
+    // ReadTypeData runs before AudioVisual in each Process pass. The first
+    // weapon postpass therefore sees constructor Gravity3; the later mode
+    // and map passes see the loaded Gravity6 and produce the retained95.
+    // Native chronology: rules_oracle/weapon_speed_order and the physical
+    // action_lines_attack_prerequisites packet. Do not flatten these passes.
+    let mut layers = RulesLayerStack::new(ini);
+    layers.push(RulesLayerKind::GameMode, IniFile::empty());
+    layers.push(RulesLayerKind::Scenario, IniFile::empty());
+    let mut rules =
+        RuleSet::from_processed_rules(&layers.process_with_fixed_art(&art).unwrap()).unwrap();
+    rules.install_art_data(ArtRegistry::from_ini(&art));
+    if weapon["present"].as_bool().unwrap() {
+        assert_eq!(
+            serde_json::json!(rules.weapon("ACTION").unwrap().speed),
+            weapon["speed"]
+        );
+    }
+    assert_eq!(
+        crate::util::fixed_math::ra2_speed_to_leptons_per_frame(
+            rules.object("MTNK").unwrap().speed
+        ),
+        speed["raw"].as_i64().unwrap() as i32,
+        "prepared raw speed is bound to the original type reader's authored input"
+    );
+    assert_eq!(speed["flag_owner"], -1, "retail CTF is dormant");
+    let interner = sim.interner().clone();
+    for house in sim.houses_mut_for_test().values_mut() {
+        house.project_country_mults(&rules, &interner);
+    }
+    let frame = sim.session().binary_frame();
+    let actor = sim.entity_mut_for_test(1).unwrap();
+    actor.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
+    actor
+        .body_facing
+        .snap(input["body_facing"].as_u64().unwrap() as u16, frame);
+    let mut turret = crate::sim::movement::FacingClass::new(0, 0);
+    turret.snap(input["turret_facing"].as_u64().unwrap() as u16, frame);
+    actor.barrel_facing = Some(turret);
+    actor.attack_target.set_for_test(
+        input["target_present"]
+            .as_bool()
+            .unwrap()
+            .then(|| TargetKind::Entity(2)),
+    );
+    let owner = actor.owner();
+    let type_ref = actor.type_ref();
+    let mut target = GameEntity::test_default(2, "MTNK", "Americans", 20, 20);
+    target.set_owner_for_test(owner);
+    target.set_type_ref_for_test(type_ref);
+    target.seldom.selection.set_selected_for_test(false);
+    let [x, y, z] = point(&input["target_xyz"]);
+    target.position.put_location(DriveCoord { x, y, z });
+    let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Drive);
+    if input["target_moving"].as_bool().unwrap() {
+        locomotor.ensure_installed_track_state();
+        assert!(
+            locomotor.store_track_destination(TrackFamily::Drive, Some(DriveCoord { x, y, z }))
+        );
+    }
+    target.locomotor = Some(locomotor);
+    target
+        .body_facing
+        .snap(input["target_facing"].as_u64().unwrap() as u16, frame);
+    match speed["rank"].as_f64().unwrap() {
+        0. => {}
+        1. => target.veterancy.set_veteran(),
+        2. => target.veterancy.set_elite(),
+        other => panic!("unsupported prepared rank {other}"),
+    }
+    assert!(
+        target
+            .foot_speed
+            .accept_speed_crate(NativeF64Bits::from_bits(
+                speed["crate"].as_f64().unwrap().to_bits(),
+            ))
+    );
+    target
+        .foot_speed
+        .set_speed_fraction_native_bits(speed["applied"].as_f64().unwrap().to_bits());
+    assert_eq!(
+        crate::sim::movement::motion_query::is_moving(&target),
+        input["target_moving"].as_bool()
+    );
+    sim.entities_mut_for_test().insert(target);
+    (sim, Some(rules), state, view)
+}
+
+fn built(row: &Value) -> (Vec<SurfaceStroke>, TacticalViewport) {
+    if row.get("draws").is_some() && row["input"].get("wall_ms").is_some() {
+        let input = &row["input"];
+        let view = viewport(input);
+        let coord = |value: &Value| {
+            let [x, y, z] = point(value);
+            DriveCoord { x, y, z }
+        };
+        let mut strokes = Vec::new();
+        crate::app::presentation::control_links::append_line_strokes(
+            &mut strokes,
+            coord(&input["source"]),
+            coord(&input["target"]),
+            point(&input["rgb"]).map(|v| v as u8),
+            input["wall_ms"].as_u64().unwrap() as u32,
+            view,
+        );
+        return (strokes, view);
+    }
+    if let Some(primitives) = row["input"]["primitives"].as_array() {
+        let view = viewport(&row["input"]);
+        let project = |value: &Value| {
+            let [x, y, z] = point(value);
+            let (x, y) = crate::util::lepton::absolute_leptons_to_screen(x, y, z);
+            [
+                x as i32 - view.camera[0],
+                y as i32 - view.camera[1] + view.clip[1],
+            ]
+        };
+        let order = row["input"]
+            .get("primitive_order")
+            .unwrap_or(&row["primitive_order"])
+            .as_array()
+            .unwrap();
+        let lines: Vec<_> = order
+            .iter()
+            .map(|index| {
+                let input = &primitives[index.as_u64().unwrap() as usize];
+                ProjectedActionLine {
+                    start: project(&input["source"]),
+                    end: project(&input["target"]),
+                    kind: match input["color_index"].as_u64().unwrap() {
+                        3 => SelectedLineKind::Move,
+                        8 => SelectedLineKind::Attack,
+                        _ => panic!("unsupported primitive color"),
+                    },
+                }
+            })
+            .collect();
+        let palette = crate::assets::pal_file::Palette::from_bytes(&palette_bytes()).unwrap();
+        // Original7049C0 primitive color/order, not an Attack coordinate claim.
+        let words = [action_line_word(&palette, 3), action_line_word(&palette, 8)];
+        let mut strokes = Vec::new();
+        for line in lines {
+            push_selected_action_line(&mut strokes, line, words, view);
+        }
+        return (strokes, view);
+    }
+    let (sim, rules, state, view) = drawing_fixture(row);
+    let strokes = build_target_line_strokes(
+        &state,
+        row["input"]["planning"].as_bool().unwrap_or(false),
+        Some(&sim),
+        Some(&frame_of(&sim, rules.as_ref())),
+        rules.as_ref(),
+        Some(&palette()),
+        &HouseColorMap::new(),
+        0,
+        view,
+        None,
+    );
+    (strokes, view)
+}
+
+fn words(row: &Value) -> Vec<u16> {
+    let mut result = vec![0x39E7; 160 * 120];
+    for pixel in row["pixels"].as_array().unwrap() {
+        let [x, y, word] = point(pixel);
+        result[(y * 160 + x) as usize] = word as u16;
+    }
+    result
+}
+
+fn has_clip_rounding_residual(row: &Value) -> bool {
+    // Saved original clip endpoint [89,119] versus shared f64 [90,119].
+    // This is the existing surface_line chop-rounding residual, not a new
+    // tolerance for coordinates, colors, timers, uncut lines or other rows.
+    (row["input"]["name"] == "interior_clip" && row["input"].get("wall_ms").is_some())
+        || matches!(
+            row["input"]["name"].as_str(),
+            Some(
+                "height_2_bridge_1"
+                    | "slope_5_bridge_1"
+                    | "slope_6_bridge_1"
+                    | "slope_7_bridge_1"
+                    | "slope_8_bridge_1"
+            )
+        )
+}
+
+fn assert_native_pixels<T: PartialEq>(
+    actual: &[T],
+    expected: &[T],
+    size: [usize; 2],
+    radius: usize,
+    row: &Value,
+) {
+    assert_eq!(actual.len(), expected.len());
+    assert_eq!(actual.len(), size[0] * size[1]);
+    for (index, (a, b)) in actual.iter().zip(expected).enumerate() {
+        if a == b {
+            continue;
+        }
+        assert!(
+            radius > 0 && has_clip_rounding_residual(row),
+            "{}: differing pixel {index}",
+            row["input"]
+        );
+        let x = index % size[0];
+        let y = index / size[0];
+        let nearby = |pixels: &[T], color: &T| {
+            (y.saturating_sub(radius)..=(y + radius).min(size[1] - 1)).any(|ny| {
+                (x.saturating_sub(radius)..=(x + radius).min(size[0] - 1))
+                    .any(|nx| &pixels[ny * size[0] + nx] == color)
+            })
+        };
+        assert!(
+            nearby(expected, a) && nearby(actual, b),
+            "{}: clip residual exceeds {radius} pixels at {index}",
+            row["input"]
+        );
+    }
+}
+
+fn raster(strokes: &[SurfaceStroke], view: TacticalViewport) -> Vec<u16> {
+    let mut result = vec![0x39E7; 160 * 120];
+    for stroke in strokes {
+        stroke.for_each_rect(|[x, y, width, height]| {
+            let [x, y] = [x - view.camera[0], y - view.camera[1]];
+            for y in y..y + height {
+                for x in x..x + width {
+                    assert!((0..160).contains(&x) && (0..120).contains(&y));
+                    result[(y * 160 + x) as usize] = stroke.word();
+                }
+            }
+        });
+    }
+    result
+}
+
+#[test]
+fn original_foot_move_line_pixels_through_production_builder() {
+    let mut count = 0;
+    for row in drawing_rows() {
+        let (strokes, view) = built(row);
+        let actual = raster(&strokes, view);
+        let expected = words(row);
+        assert_native_pixels(
+            &actual,
+            &expected,
+            [160, 120],
+            usize::from(has_clip_rounding_residual(row)),
+            row,
+        );
+        count += 1;
+    }
+    assert_eq!(count, 128);
+}
+
+#[test]
+fn original_unit_attack_line_pixels_and_read_only_coordinate_queries() {
+    let rows: Vec<_> = attack_rows().collect();
+    assert!(rows.len() >= 9);
+    for row in rows {
+        let (sim, rules, state, view) = drawing_fixture(row);
+        let hash = sim.state_hash();
+        let rng = (
+            sim.main_rng().logical_state(),
+            sim.scenario_rng().logical_state(),
+        );
+        let query = NativeCellQuery::canonical(sim.resolved_terrain().unwrap());
+        let dummy = query.dummy().snapshot();
+        let strokes = build_target_line_strokes(
+            &state,
+            false,
+            Some(&sim),
+            Some(&frame_of(&sim, rules.as_ref())),
+            rules.as_ref(),
+            Some(&palette()),
+            &HouseColorMap::new(),
+            0,
+            view,
+            None,
+        );
+        assert_native_pixels(&raster(&strokes, view), &words(row), [160, 120], 0, row);
+        assert_eq!(sim.state_hash(), hash, "{}", row["input"]);
+        assert_eq!(
+            (
+                sim.main_rng().logical_state(),
+                sim.scenario_rng().logical_state()
+            ),
+            rng
+        );
+        assert_eq!(query.dummy().snapshot(), dummy);
+    }
+}
+
+#[test]
+fn retail_tank_attack_inputs_match_original_readers() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let original = crate::test_fixture::json(
+        "tools/procedural_drawing_oracle/action_lines_attack_prerequisites.json",
+    );
+    let input = &original["type_inputs"];
+    let rules = &retail.rules;
+    let object = rules.object("MTNK").unwrap();
+    let art = crate::sim::combat::fire_coord::firer_art(rules, object).unwrap();
+    let weapon = rules.weapon(object.primary().unwrap()).unwrap();
+    let projectile = rules
+        .projectile(weapon.projectile.as_deref().unwrap())
+        .unwrap();
+    let warhead = rules.warhead(weapon.warhead.as_deref().unwrap()).unwrap();
+    assert_eq!(object.image, input["resolved_image"].as_str().unwrap());
+    assert_eq!(
+        object.primary().unwrap(),
+        input["primary_name"].as_str().unwrap()
+    );
+    assert_eq!(serde_json::json!(art.turret_offset), input["turret_offset"]);
+    assert_eq!(
+        [
+            object.weapon_flh(0, false).forward,
+            object.weapon_flh(0, false).lateral,
+            object.weapon_flh(0, false).height,
+        ],
+        point::<3>(&input["primary_flh"])
+    );
+    assert_eq!(
+        serde_json::json!(crate::util::fixed_math::ra2_speed_to_leptons_per_frame(
+            object.speed
+        )),
+        input["speed"],
+    );
+    assert_eq!(
+        rules.general.veteran_speed.to_bits(),
+        u64::from_le_bytes(
+            hex_bytes(input["veteran_speed_bits"].as_str().unwrap())
+                .try_into()
+                .unwrap(),
+        )
+    );
+    assert_eq!(
+        rules.country_speed_mults("Americans")[1].bits(),
+        u32::from_le_bytes(
+            hex_bytes(input["country_speed_bits"].as_str().unwrap())
+                .try_into()
+                .unwrap(),
+        )
+    );
+    assert_eq!(serde_json::json!(weapon.speed), input["weapon_speed"]);
+    assert_eq!(serde_json::json!(projectile.rot), input["projectile_rot"]);
+    assert_eq!(
+        serde_json::json!(u8::from(projectile.floater)),
+        input["projectile_floater"]
+    );
+    assert_eq!(serde_json::json!(rules.general.gravity), input["gravity"]);
+    assert_eq!(
+        weapon.warhead.as_deref().unwrap(),
+        input["warhead"].as_str().unwrap()
+    );
+    assert_eq!(serde_json::json!(warhead.rocker), input["rocker"]);
+    assert_eq!(
+        serde_json::json!(warhead.direct_rocker),
+        input["direct_rocker"]
+    );
+}
+
+#[test]
+fn original_opaque_overlap_order_across_batch_cutover() {
+    let rows = native()["compositing_cases"].as_array().unwrap();
+    assert_eq!(rows.len(), 6);
+    for row in rows {
+        let (strokes, view) = built(row);
+        assert_native_pixels(&raster(&strokes, view), &words(row), [160, 120], 0, row);
+    }
+}
+
+#[test]
+fn original_source_and_target_projection_before_surface_clipping() {
+    for row in native()["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(attack_rows())
+    {
+        let Some(clip) = row["calls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|call| call["name"] == "clip_line")
+        else {
+            continue;
+        };
+        let (sim, rules, _, view) = drawing_fixture(row);
+        let cells = sim.resolved_terrain().map(NativeCellQuery::isolated);
+        let line = action_line_endpoints(
+            sim.entities().get(1).unwrap(),
+            &sim,
+            rules.as_ref(),
+            cells.as_ref(),
+        )
+        .unwrap();
+        let project = |p: ScreenPoint| {
+            [
+                p.x as i32 - view.camera[0],
+                p.y as i32 - view.camera[1] + view.clip[1],
+            ]
+        };
+        // Original7049C0's first7BC2B0 input is observed before rejection or
+        // clipping. Thus an empty high-ground surface cannot hide a wrong
+        // source Location, target+48 or bridge/slope projection.
+        assert_eq!(
+            [project(line.start), project(line.end)],
+            [
+                point::<2>(&clip["points_before"][0]),
+                point::<2>(&clip["points_before"][1])
+            ],
+            "{}",
+            row["input"]
+        );
+    }
+}
+
+#[test]
+fn original_solid_leaf_and_endpoint_intersection() {
+    use crate::render::surface_line::{clip_line, solid_line};
+    for row in native()["leaf_cases"].as_array().unwrap() {
+        let input = &row["input"];
+        let mut from = point(&input["from_point"]);
+        let mut to = point(&input["to_point"]);
+        let clip = crate::util::rect::clip_rect([0, 0, 160, 120], point(&input["clip"]));
+        // XSurface7BA610 translates relative endpoints by the requested
+        // clipping origin before7BC2B0. The shared leaf accepts absolute,
+        // already clipped pixels; ordinary7049C0 calls it with origin zero.
+        for point in [&mut from, &mut to] {
+            point[0] += input["clip"][0].as_i64().unwrap() as i32;
+            point[1] += input["clip"][1].as_i64().unwrap() as i32;
+        }
+        let mut actual = vec![0x39E7; 160 * 120];
+        if clip_line(&mut from, &mut to, clip) {
+            solid_line(from, to, |[x, y, width, height]| {
+                for y in y..y + height {
+                    for x in x..x + width {
+                        actual[(y * 160 + x) as usize] = 0x0540;
+                    }
+                }
+            });
+        }
+        assert!(actual == words(row), "{input}");
+    }
+    for row in native()["clip_rect_cases"].as_array().unwrap() {
+        // Original optional offset pointers are observed separately; no current
+        // Rust consumer asks for them. They cannot change the output rectangle.
+        assert_eq!(
+            crate::util::rect::clip_rect(
+                point(&row["input"]["rectangle"]),
+                point(&row["input"]["clip"])
+            ),
+            point::<4>(&row["rectangle"]),
+            "{}",
+            row["input"]
+        );
+    }
+}
+
+#[test]
+fn original_timer_default_and_successful_load_reanchor() {
+    for row in native()["timer_prerequisites"].as_array().unwrap() {
+        let input = &row["input"];
+        let mut state = TargetLineState::default();
+        let frame = input["frame"].as_u64().unwrap() as u32;
+        if let Some(before) = input.get("timer_before") {
+            state.timer = CdTimer::from_raw(
+                before[0].as_u64().unwrap() as i32,
+                before[2].as_u64().unwrap() as i32,
+            );
+            state.reanchor_after_load(frame);
+            assert_eq!(
+                state.timer.start_frame(),
+                row["native_timer"][0].as_u64().unwrap() as i32
+            );
+        }
+        assert_eq!(
+            state.timer.duration(),
+            row["native_timer"][2].as_u64().unwrap() as i32,
+            "{input}"
+        );
+        assert_eq!(
+            state.is_selected_action_active(frame),
+            row["pixel_count"].as_u64().unwrap() > 0,
+            "{input}"
+        );
+    }
+}
+
+#[test]
+fn physical_palette_matches_original_convert_middle_row() {
+    let palette = crate::assets::pal_file::Palette::from_bytes(&palette_bytes()).unwrap();
+    let expected = hex_bytes(
+        native()["native_convert"]["middle_row_hex"]
+            .as_str()
+            .unwrap(),
+    );
+    let convert = crate::render::palette_light::PaletteLight::plain(53, 1000);
+    let actual: Vec<_> = palette
+        .colors()
+        .iter()
+        .enumerate()
+        .flat_map(|(index, color)| {
+            convert
+                .rgb565([color.r, color.g, color.b], index as u8, 127)
+                .to_le_bytes()
+        })
+        .collect();
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn original_action_timer_wrap_sentinel_and_positive_remainder() {
+    let mut count = 0;
+    for row in baseline_rows().filter(|r| r["input"]["family"] == "timer") {
+        let input = &row["input"];
+        let mut state = TargetLineState::default();
+        state.start_timer(input["timer_start"].as_u64().unwrap() as u32);
+        let active = state.is_selected_action_active(input["frame"].as_u64().unwrap() as u32);
+        assert_eq!(active, row["pixel_count"].as_u64().unwrap() != 0, "{input}");
+        count += 1;
+    }
+    assert_eq!(count, 25);
+}
+
+#[test]
+fn move_line_ends_at_the_bridge_surface_over_a_depressed_lane() {
+    use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+    use crate::map::resolved_terrain::{test_flat_cell, test_grid};
+    use crate::util::lepton::{GROUND_LEVEL_HEIGHT_LEPTONS, absolute_leptons_to_screen};
+
+    let (mut sim, _, _) = fixture(&serde_json::json!({"input": {
+        "source": [5248, 5248, 0], "target_cell": [21, 20], "camera": [-80, 555]
+    }}));
+    let anchor = (21, 19);
+    let mut terrain = test_grid(32, 32, |rx, ry| {
+        let mut cell = test_flat_cell(rx, ry);
+        if (rx, ry) == anchor {
+            cell.level = 2;
+        }
+        cell
+    });
+    terrain.apply_runtime_bridge_mark_stamp(
+        BridgeFlagStamp::new(anchor, 0, true),
+        BridgeStampFamily::Nesw,
+    );
+    assert_eq!(terrain.corrected_high_bridge_deck_level((21, 20)), Some(6));
+    *sim.resolved_terrain_mut_for_test() = Some(terrain);
+    let cells = sim.resolved_terrain().map(NativeCellQuery::isolated);
+    let line =
+        action_line_endpoints(sim.entities().get(1).unwrap(), &sim, None, cells.as_ref()).unwrap();
+    assert_eq!(line.kind, SelectedLineKind::Move);
+    assert_eq!(
+        line.end,
+        absolute_leptons_to_screen(
+            21 * 256 + 128,
+            20 * 256 + 128,
+            6 * GROUND_LEVEL_HEIGHT_LEPTONS
+        )
+        .into(),
+    );
+}
+
+#[test]
+fn move_line_query_leaves_the_simulation_dummy_unchanged() {
+    let (mut sim, state, view) = fixture(baseline_rows().next().unwrap());
+    sim.entity_mut_for_test(1)
+        .unwrap()
+        .navigation
+        .set_nav_com_for_test(Some(NavTargetRef::cell(u16::MAX, u16::MAX)));
+    let terrain = sim.resolved_terrain().unwrap();
+    let query = NativeCellQuery::canonical(terrain);
+    let before = query.dummy().snapshot().coord;
+    let _ = build_target_line_strokes(
+        &state,
+        false,
+        Some(&sim),
+        Some(&frame_of(&sim, None)),
+        None,
+        Some(&palette()),
+        &HouseColorMap::new(),
+        0,
+        view,
+        None,
+    );
+    assert_eq!(query.dummy().snapshot().coord, before);
+}
+
+#[test]
+#[ignore = "requires GPU; production action-line strokes and XSurface7BA610 leaves, unchanged depth"]
+fn production_action_line_gpu_matches_original_surface() {
+    use crate::render::batch::BatchRenderer;
+    use crate::render::surface_line::clip_line;
+    use crate::render::terrain_draw_gpu_tests::{Gpu, camera, clear, draw_strokes, encoded};
+    let gpu = Gpu::new();
+    static CONTROL_LINKS: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+    let control_links = CONTROL_LINKS.get_or_init(|| {
+        serde_json::from_str(crate::test_fixture::text(
+            "tools/procedural_drawing_oracle/control_links.json",
+        ))
+        .unwrap()
+    });
+    let size = [160, 120];
+    let mut cases: Vec<(&Value, Vec<SurfaceStroke>, [i32; 2])> = drawing_rows()
+        .chain(attack_rows())
+        .chain(native()["compositing_cases"].as_array().unwrap().iter())
+        .chain(control_links["cases"].as_array().unwrap().iter())
+        .map(|row| {
+            let (strokes, view) = built(row);
+            (row, strokes, view.camera)
+        })
+        .collect();
+    // XSurface7BA610's own leaf rows, as the CPU leaf test draws them.
+    for row in native()["leaf_cases"].as_array().unwrap() {
+        let input = &row["input"];
+        let mut from = point(&input["from_point"]);
+        let mut to = point(&input["to_point"]);
+        let clip = crate::util::rect::clip_rect([0, 0, 160, 120], point(&input["clip"]));
+        for point in [&mut from, &mut to] {
+            point[0] += input["clip"][0].as_i64().unwrap() as i32;
+            point[1] += input["clip"][1].as_i64().unwrap() as i32;
+        }
+        let strokes = if clip_line(&mut from, &mut to, clip) {
+            vec![SurfaceStroke::solid(from, to, 0x0540, [0, 0])]
+        } else {
+            Vec::new()
+        };
+        cases.push((row, strokes, [0, 0]));
+    }
+    for format in [
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    ] {
+        let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+        let color = gpu.target(size, format);
+        let cv = color.create_view(&Default::default());
+        let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
+        let dv = depth.create_view(&Default::default());
+        for (row, strokes, camera_pos) in &cases {
+            batch.write_camera(
+                &gpu.queue,
+                crate::render::batch::CameraUniform {
+                    camera_pos: camera_pos.map(|v| v as f32),
+                    ..camera(size)
+                },
+            );
+            gpu.queue.write_texture(
+                color.as_image_copy(),
+                &encoded(0x39E7, format).repeat((size[0] * size[1]) as usize),
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(size[0] * 4),
+                    rows_per_image: Some(size[1]),
+                },
+                color.size(),
+            );
+            let mut encoder = gpu.device.create_command_encoder(&Default::default());
+            clear(&mut encoder, &cv, &dv, 12345, wgpu::LoadOp::Load);
+            draw_strokes(&gpu, &batch, &mut encoder, &cv, &dv, strokes);
+            let reads = [
+                gpu.read(&mut encoder, &color),
+                gpu.read(&mut encoder, &depth),
+            ];
+            let output = gpu.finish(encoder, &reads, size);
+            // Saved clip controls retain the documented1px CPU rounding
+            // residual. For those only, the CPU test bounds the native
+            // difference, and this GPU check verifies that the GPU draws
+            // exactly the CPU walk. All other inputs take their expected
+            // pixels directly from native.
+            let native_words = if has_clip_rounding_residual(row) {
+                raster(
+                    strokes,
+                    TacticalViewport {
+                        camera: *camera_pos,
+                        clip: [0, 0, 160, 120],
+                    },
+                )
+            } else {
+                words(row)
+            };
+            let expected: Vec<[u8; 4]> = native_words
+                .iter()
+                .map(|&word| encoded(word, format))
+                .collect();
+            let actual: Vec<[u8; 4]> = output[0].as_chunks::<4>().0.to_vec();
+            assert_native_pixels(&actual, &expected, [160, 120], 0, row);
+            assert!(output[1].as_chunks::<4>().0.iter().all(|bytes| {
+                crate::render::native_z::stored_z(f32::from_le_bytes(*bytes)) == 12345
+            }));
+        }
+    }
+}

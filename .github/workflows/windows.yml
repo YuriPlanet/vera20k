@@ -1,0 +1,13 @@
+name: Windows
+
+# Windows x86-64: the main development platform.
+# Manual only: run it from the Actions tab or with
+# `gh workflow run windows.yml --ref <branch>`.
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+    with:
+      os: windows-latest

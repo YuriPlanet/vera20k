@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original FNPC/rectangle/raw leaf and two missing-cell mark/query histories; not full map, projection, or Scatter parity",
+  "assumptions": [
+    "Sparse original fixed-stride table allocates only Cell(10,10); dummy data starts zero except overlay and infantry owners=-1",
+    "Map size sum supplies cap0 or1; Foot speed0, zone-1, movement-zone0, footprint1x1, target=seed",
+    "No overlay, reject-overlay=false, occupant-safety=false, allow-bridge=true, extra-ring=false, final-occupancy=false",
+    "All supplied land speed floats are1.0; signed level, structural flag and both raw planes vary",
+    "Two additional rows execute Infantry5217C0/521850 with supplied owner99/height constants104 and416 before querying another missing coordinate",
+    "No whole constructor, live actor reachability or multi-ring distance coverage"
+  ],
+  "substitutions": [
+    "578540 returns true after verifying mode1; map geometry is outside this comparison",
+    "6D6410 returns the supplied candidate cell directly; no native projection lookup side effects are claimed",
+    "Infantry+38 supplies the explicit row owner index; both raw leaves and their map/ground calls execute original code",
+    "Events observe those two seams and entry4834A0 only; map lookup, raw/height gates and collection/selection execute original bytes"
+  ],
+  "entry_points": {
+    "nearby": "0x0056DC20",
+    "rectangle": "0x0056E7C0",
+    "raw_passability": "0x004834A0",
+    "infantry_mark": "0x005217C0",
+    "infantry_clear": "0x00521850"
+  },
+  "payload_sha256": "5d64ec57129d9200b17e7d2bc1774e479057b91b233ed79a75438bfc8bb308c8"
+}

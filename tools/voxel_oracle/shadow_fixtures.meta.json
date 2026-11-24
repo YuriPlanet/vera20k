@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "64 original shadow core cases: generated single-section art, all 32 facings, null or supplied indexed body mask",
+  "assumptions": [
+    "flat scale-one viewer, ShadowIndex/frame zero",
+    "original x87 0E7F and startup camera/light",
+    "supplied body mask is a patterned 256-square input; Unit composition is a separate gate"
+  ],
+  "substitutions": [
+    "immutable file vtable IO",
+    "operator new mapped heap allocation"
+  ],
+  "entry_points": {
+    "quad": "0x00753F90",
+    "crop": "0x00754510",
+    "raster": "0x00756860",
+    "surface_ctor": "0x0043AD00"
+  },
+  "payload_sha256": "3e4da6299053c4efa10139d5eaaf87820d591ca4a21a3fdda91fe35746d38170"
+}

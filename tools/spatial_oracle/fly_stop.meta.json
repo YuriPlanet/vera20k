@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "ILocomotion Stop_Moving of a living aircraft: not moving, pitch, Find_Attack_Cell around the cell under it (free and held by a building), Find_Nearest_Friendly_Airfield on Attack (Dock= weighting, list order, the own-cell search near a building, Limbo, the ObjectClass fallback and the own-cell answer), the edge cell outside the playfield (in a LocalSize margin and beyond the Size diamond) and the loaner exception, and the cell (0, 0) self-destruct; the death-arm Stun of a moving, attacking (with and without a TarCom) and still aircraft over free and building-held cells; and 0x00586AC0 over four Size/LocalSize rectangles. Excludes the arm for a Fly owner that is not an Aircraft, team members (vt+0x4DC through 0x006EC300), real zone tables, and cells beyond the MapClass cell array (the shared dummy cell, whose coordinate every later lookup restamps).",
+  "assumptions": [
+    "The aircraft, map and Fly of fly_process: one Aircraft on the cloned Aircraft vtable with the original AircraftType, FacingClass and FlyLocomotionClass constructors; the 128x128 cell block of aircraft_fire_location with MapSize 64x64 and LocalSize 0,0,64,64, every cell a flat Clear CellClass (vtable 0x007E4EEC, no overlay) with land cost 1.0 for every speed type; the aircraft alone in the Foot and Aircraft vectors. The shared dummy cell 0x00ABDC50 is built by CellClass::Constructor 0x0047BBF0, as startup builds it.",
+    "Rows supply the owner state (mission, loaner +0x3D4, Location, Fly moving byte and pitch), a LocalSize where they inset it, the AircraftType Dock= list (+0x3EC, count +0x3F8), the House building list (+0x6C, count +0x78) and ObjectClass::Array (the aircraft first, then the row's Units, then its buildings). Buildings are BuildingClass objects with original BuildingType foundations; other technos are Units on the UnitClass vtable sharing the aircraft's type pointer."
+  ],
+  "substitutions": [
+    "Aircraft vt+0x480 Assign_Destination and vt+0x16C ReceiveDamage recorded with their arguments and returned without running; in Stun rows a NULL Assign_Destination runs its original body.",
+    "Stun rows: vt+0x280 radio broadcast, vt+0xDC Detach_All and vt+0x150 deselect recorded with their arguments and returned without running.",
+    "MapClass::GetZoneID 0x0056D230 answers 1 for every call; the calls Find_Nearest_Friendly_Airfield makes are recorded with their cell, movement zone and bridge flag."
+  ],
+  "entry_points": {
+    "stop_moving": "0x004CCFD0",
+    "edge_cell": "0x00586AC0",
+    "find_nearest_friendly_airfield": "0x0041A160",
+    "find_attack_cell": "0x00418E20",
+    "nearby_passable_cell": "0x0056DC20"
+  },
+  "payload_sha256": "e7adf9d6fda4885e1d7016af5f95cb5a846668b984bd641a3548fbfcbea527c6"
+}

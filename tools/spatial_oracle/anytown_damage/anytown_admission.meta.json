@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Native ordinary bridge admission joined to physical Anytown driver/Recalc/repair.\nMTNK weapon selection and selected rules readers execute on physical caches.\nInterior area frame, enabled Scenario gate and isolated seed0 are supplied;\nattempt counts are not a native shot count or full scenario comparison.\n",
+  "assumptions": [
+    "Physical Anytown topology and resident bindings from prior packet; actual57CCF0/57D530/57ED00/Recalc/empty487A10 execute inside original area bridge blocks.",
+    "Native MTNK\u2192105mm\u2192Cannon/AP and Damage/Wall/BridgeStrength readers run in physical RULESMD, absentLANGRULE,MPBattleMD,Anytown layers.",
+    "Supplied already-reached489E87 stack frame, enabled Scenario0x8000 and independent original-seeded0 states. Repeat continuation until one interior collapse, then actual573540 repair."
+  ],
+  "substitutions": [
+    "Native pristine TMP type heads and initial zone storage supplied; original Recalc derives selected rows.",
+    "Detach70D4A0 and graphs56C510/586990 are recording boundaries; zero display extents/radar/screen sinks and bounded heap.",
+    "No full scenario/type load, projectile flight, cluster/scatter, receiver damage, actor lifetime or production match claim."
+  ],
+  "entry_points": {
+    "area": "0x00489E87",
+    "area_stop": "0x0048A2C4",
+    "damage": "0x0057CCF0",
+    "random": "0x0065C7E0",
+    "detach_boundary": "0x0070D4A0",
+    "repair": "0x00573540",
+    "weapon_reader": "0x00772080",
+    "wall_reader": "0x0075D4F4",
+    "strength_reader": "0x0066CD66"
+  },
+  "payload_sha256": "3360c77c253e70751363379dc0bb3065215fefe7372de6c8db6fb230098b4317",
+  "packaging": "canonical JSON; gzip mtime=0; copied lexical inputs replaced by SHA256"
+}

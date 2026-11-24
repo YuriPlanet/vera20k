@@ -1,0 +1,4040 @@
+//! Headless retail-scenario loading for cross-engine parity runs.
+//!
+//! Loads a real retail map with production rules, art, theater and terrain, then
+//! constructs a `Simulation` from an explicit seed — no GPU, no window, no atlases.
+//! Depends on `assets`/`rules`/`map`/`sim` only; nothing here may reach into `render`,
+//! `ui`, `sidebar`, `audio` or `net`.
+//!
+//! **Scope.** Construction goes through the same GPU-free funnel the app uses
+//! (`sim::runtime::finalize_and_populate_staged_authored_scenario`, on a `Simulation`
+//! staged before terrain Fill): map-roster houses are created before objects,
+//! terrain objects before map entities, and map-placed units/structures spawn with
+//! terrain-attached animations. A Battle launch session ([`battle_session`]) creates
+//! the player houses, the local one and any computer opponents, and places them on
+//! their starts. What a headless scenario still lacks versus an app launch is
+//! atlas-derived voxel animation frame counts (a GPU concern).
+//!
+//! The seed contract mirrors the original engine: one 32-bit word seeds the scenario and
+//! main streams identically, fixed before any setup-phase draw.
+
+#[cfg(any(test, feature = "test-support"))]
+pub mod radiation_test_evidence;
+
+use std::path::Path;
+
+use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
+use crate::map::campaign_manifest::{CampaignStage, ManifestError};
+use crate::map::map_file::MapFile;
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::map::theater;
+use crate::map::tile_variant_selector::TileVariantSelectorCache;
+use crate::map::waypoints;
+use crate::rules::rule_policy::BootstrapRuleProfile;
+use crate::sim::intern::InternedId;
+use crate::sim::scenario_bootstrap::{
+    AuthoredCampaignStart, FreshScenarioPrefix, FreshScenarioPrefixError, MatchLaunchDescriptor,
+    ScenarioBootstrapRng,
+};
+use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioGameMode};
+use crate::sim::world::Simulation;
+use crate::skirmish_launch::{AiDifficulty, LaunchCountry, SkirmishLaunchSession};
+
+/// A Battle session on `selected_map_file`: the local player against one
+/// computer house for each of `opponents` (its country and difficulty), every
+/// house on a start the launch draws.
+pub fn battle_session(
+    selected_map_file: &str,
+    opponents: &[(LaunchCountry, AiDifficulty)],
+) -> SkirmishLaunchSession {
+    use crate::skirmish_launch::{
+        BATTLE_MODE_ID, LaunchStartPosition, LaunchTeam, SkirmishAiSlot, SkirmishLaunchMode,
+        SkirmishLaunchOptions, SkirmishLocalSlot,
+    };
+
+    SkirmishLaunchSession::from_rows(
+        SkirmishLaunchMode::stock(BATTLE_MODE_ID).expect("stock Battle row"),
+        Some(selected_map_file.to_string()),
+        vec![crate::skirmish_launch::SkirmishHumanSlot {
+            raw_slot_index: Some(0),
+            name: "Player".to_string(),
+            slot: SkirmishLocalSlot {
+                country: LaunchCountry::America,
+                country_random: false,
+                color_index: 0,
+                color_random: false,
+                start_position: LaunchStartPosition::Auto,
+                team: LaunchTeam::None,
+            },
+            role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
+        }],
+        0,
+        opponents
+            .iter()
+            .enumerate()
+            .map(|(slot, &(country, difficulty))| SkirmishAiSlot {
+                raw_slot_index: (slot + 1) as u8,
+                country,
+                country_random: false,
+                color_index: slot as u8 + 1,
+                color_random: false,
+                start_position: LaunchStartPosition::Auto,
+                team: LaunchTeam::None,
+                difficulty,
+            })
+            .collect(),
+        SkirmishLaunchOptions::default(),
+    )
+}
+
+/// A loaded scenario plus the per-tick inputs `advance_tick` needs.
+pub struct HeadlessScenario {
+    /// The runtime owner (F09): simulation plus its bound immutable
+    /// resources - no independently swappable execution inputs remain.
+    pub runtime: crate::sim::runtime::SimRuntime,
+    pub map: MapFile,
+    /// Identity of the exact map payload consumed by this construction.
+    pub source: crate::map::source::LoadedMapSource,
+}
+
+impl HeadlessScenario {
+    /// Read access for digest/tooling callers.
+    pub fn sim(&self) -> &Simulation {
+        &self.runtime.simulation
+    }
+
+    /// Add a human player's house of `country` after the load, built by the
+    /// launch's own house constructor with the session's credits and tech
+    /// level. The launch gave it no start, starting force or alliance, so it
+    /// is at war with every house.
+    pub fn add_human_house(&mut self, owner_name: &str, country: LaunchCountry) -> InternedId {
+        let slot = crate::sim::scenario_bootstrap::NormalizedSkirmishSlot {
+            owner_name: owner_name.to_string(),
+            country,
+            color_index: 0,
+            start_position: crate::skirmish_launch::LaunchStartPosition::Auto,
+            team: crate::skirmish_launch::LaunchTeam::None,
+            is_human: true,
+            observer: false,
+            controllers: Vec::new(),
+            handle: None,
+            difficulty: crate::sim::house_state::HouseDifficulty::Normal,
+            commander: None,
+        };
+        let runtime = &mut self.runtime;
+        crate::sim::scenario_bootstrap::populate_launch_houses(
+            &mut runtime.simulation,
+            std::slice::from_ref(&slot),
+            &runtime.resources.rules,
+        );
+        // A launch commits its ally graph after building every house
+        // (`apply_skirmish_launch_alliances`). Committing the unchanged graph
+        // again does the same here: the ally matrix the load already built
+        // is rebuilt with this house's id, instead of answering every
+        // question about the house by name.
+        let alliances = runtime.simulation.house_alliances.as_map().clone();
+        runtime.simulation.install_house_alliances(
+            crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(alliances),
+            &runtime.resources.rules,
+        );
+        runtime
+            .simulation
+            .interner
+            .get(owner_name)
+            .expect("the house constructor interns its name")
+    }
+}
+
+/// Native logic-frame cadence (66 ms), the step headless tools hand each
+/// frame. The client paces its frames at `app::types::SIM_TICK_MS` = 22 ms
+/// instead, and a relay paces them at `1000 / FPS`: a frame is one native
+/// logic frame either way, so frame counts, state hashes and
+/// `scenario_session::ScenarioSession::total_sim_ms` agree across all three.
+pub const SIM_TICK_MS: u32 = 1000 / crate::util::fixed_math::RA2_LOGIC_FRAMES_PER_SECOND;
+
+/// Load `map_file_name` from the retail install at `retail_dir` with a pinned seed.
+///
+/// `map_file_name` uses the game's shared loose/MIX source resolver (e.g.
+/// `"Dustbowl.mmx"` or `"XMP03T4.MAP"`).
+pub fn load(retail_dir: &Path, map_file_name: &str, seed: u32) -> Result<HeadlessScenario, String> {
+    load_session(
+        retail_dir,
+        map_file_name,
+        seed,
+        battle_session(map_file_name, &[]),
+    )
+}
+
+/// Load `map_file_name` as `session` launches it (see [`battle_session`]).
+pub fn load_session(
+    retail_dir: &Path,
+    map_file_name: &str,
+    seed: u32,
+    session: SkirmishLaunchSession,
+) -> Result<HeadlessScenario, String> {
+    let launch = crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(session)
+        .map_err(|error| format!("resolve Battle launch: {error}"))?;
+    load_with_launch(retail_dir, map_file_name, seed, launch)
+}
+
+/// Run the same construction and bound-resource handoff with an explicit
+/// resolved launch. The quickplay regression uses its real app descriptor here
+/// so house creation and starting forces cannot drift from the tested session.
+pub fn load_with_launch(
+    retail_dir: &Path,
+    map_file_name: &str,
+    seed: u32,
+    launch: crate::sim::scenario_bootstrap::MatchLaunchDescriptor,
+) -> Result<HeadlessScenario, String> {
+    load_with_launch_and_ini(
+        retail_dir,
+        map_file_name,
+        seed,
+        launch,
+        &Default::default(),
+        crate::sim::scenario_session::ScenarioGameMode::Skirmish,
+        None,
+        None,
+    )
+}
+
+/// Explicit asset policy and launch GameMode; no hidden cwd/config reread.
+/// Rules, fixed Art and AI consume the one resolved provider choice. Replays
+/// retain the recorded mode before any mode-dependent House construction.
+pub fn load_with_launch_and_ini(
+    retail_dir: &Path,
+    map_file_name: &str,
+    seed: u32,
+    launch: crate::sim::scenario_bootstrap::MatchLaunchDescriptor,
+    ini: &crate::util::ini_roots::IniRootConfig,
+    game_mode: crate::sim::scenario_session::ScenarioGameMode,
+    accepted_native_id_prefix: Option<u32>,
+    process_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
+) -> Result<HeadlessScenario, String> {
+    let mut assets = AssetManager::new(retail_dir, MediaArchiveMode::STOCK_DIGITAL)
+        .and_then(|assets| assets.with_ini_roots(ini))
+        .map_err(|error| {
+            format!(
+                "open retail MIX archives in {}: {error}",
+                retail_dir.display()
+            )
+        })?;
+    load_with_assets(
+        retail_dir,
+        map_file_name,
+        seed,
+        HeadlessLaunch::Slots(&launch),
+        &mut assets,
+        game_mode,
+        accepted_native_id_prefix,
+        process_rules,
+    )
+    .map_err(|error| error.to_string())
+}
+
+/// Load a lockstep campaign from the map's own Houses and the accepted role
+/// roster. The launch is local tooling data and needs no live transport.
+pub fn load_campaign_stage(
+    retail_dir: &Path,
+    map_file_name: &str,
+    seed: u32,
+    launch: crate::sim::scenario_bootstrap::AuthoredCampaignLaunch<'_>,
+    accepted_native_id_prefix: Option<u32>,
+    game_speed: Option<i32>,
+    logical_map: Option<&str>,
+) -> Result<HeadlessScenario, String> {
+    let mut assets =
+        AssetManager::new(retail_dir, MediaArchiveMode::STOCK_DIGITAL).map_err(|error| {
+            format!(
+                "open retail MIX archives in {}: {error}",
+                retail_dir.display()
+            )
+        })?;
+    load_with_assets(
+        retail_dir,
+        map_file_name,
+        seed,
+        HeadlessLaunch::Campaign {
+            launch,
+            manifest: None,
+            game_speed,
+            logical_map,
+        },
+        &mut assets,
+        launch.mode,
+        accepted_native_id_prefix,
+        None,
+    )
+    .map_err(|error| error.to_string())
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct CampaignStageCheck {
+    pub stage: String,
+    pub manifest_sha256: String,
+    pub map_sha256: String,
+    pub checked_frames: usize,
+    pub final_state_hash: String,
+}
+
+/// Author command: exercise both the production bootstrap and a separately
+/// reconstructed world loaded from the serialized diagnostic replay.
+pub fn check_campaign_stage(
+    retail_dir: &Path,
+    manifest_path: &Path,
+    stage_id: &str,
+    frames: u32,
+) -> anyhow::Result<CampaignStageCheck> {
+    use crate::map::campaign_manifest::CampaignManifest;
+    use crate::sim::replay::{ReplayLog, ReplayRunner};
+    use anyhow::Context;
+
+    anyhow::ensure!(frames != 0, "campaign-check requires at least one frame");
+    let manifest = CampaignManifest::load(manifest_path)?;
+    let index = manifest
+        .stage_index(stage_id)
+        .with_context(|| format!("no stage '{stage_id}' in {}", manifest_path.display()))?;
+    let stage = &manifest.stages[index];
+    let series = manifest_path
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+        .canonicalize()
+        .context("resolve campaign series directory")?;
+    let map = series.join(&stage.map).canonicalize().map_err(|error| {
+        stage.map_error(
+            format!("cannot open '{}': {error}", stage.map),
+            "Set Map to an existing map inside the series directory",
+        )
+    })?;
+    if !map.starts_with(&series) {
+        return Err(stage
+            .map_error(
+                "campaign map resolves outside the series directory",
+                "Set Map to a file contained in the series directory",
+            )
+            .into());
+    }
+    let map_path = map.to_str().ok_or_else(|| {
+        stage.map_error(
+            "campaign map path is not UTF-8",
+            "Use a UTF-8 path inside the series directory",
+        )
+    })?;
+    let start = AuthoredCampaignStart::from_stage(stage, index, 1, Default::default())?;
+    let mut assets = AssetManager::new(retail_dir, MediaArchiveMode::STOCK_DIGITAL)?;
+    let mut scene = load_with_assets(
+        retail_dir,
+        map_path,
+        1,
+        HeadlessLaunch::Campaign {
+            launch: crate::sim::scenario_bootstrap::AuthoredCampaignLaunch {
+                start: &start,
+                mode: ScenarioGameMode::Lan,
+                local_source: Some(0),
+            },
+            manifest: Some(stage),
+            game_speed: None,
+            logical_map: None,
+        },
+        &mut assets,
+        ScenarioGameMode::Lan,
+        None,
+        None,
+    )
+    .map_err(|error| match error {
+        HeadlessLoadError::Runtime(message) => anyhow::Error::msg(message),
+        HeadlessLoadError::Manifest(error) => anyhow::Error::new(error),
+    })?;
+    let (_, map_sha256) = scene
+        .source
+        .physical_identity()
+        .context("campaign stage does not have an authored map digest")?;
+    let map_sha256 = map_sha256.to_owned();
+    let log = ReplayRunner::record_campaign_stage(&mut scene, &start, frames)?;
+    let mut bytes = Vec::new();
+    log.write_json(&mut bytes)?;
+    let recorded = ReplayLog::decode_json(&bytes)?;
+    let result = ReplayRunner::verify(retail_dir, &recorded, Some(map_path))?;
+    anyhow::ensure!(
+        result.checked_hashes == frames as usize,
+        "campaign replay is missing frame checks"
+    );
+    Ok(CampaignStageCheck {
+        stage: stage.id.clone(),
+        manifest_sha256: manifest.digest,
+        map_sha256,
+        checked_frames: result.checked_hashes,
+        final_state_hash: format!("{:016x}", result.final_state_hash),
+    })
+}
+
+enum HeadlessLaunch<'a> {
+    Slots(&'a MatchLaunchDescriptor),
+    Campaign {
+        launch: crate::sim::scenario_bootstrap::AuthoredCampaignLaunch<'a>,
+        manifest: Option<&'a CampaignStage>,
+        game_speed: Option<i32>,
+        logical_map: Option<&'a str>,
+    },
+}
+
+#[derive(Debug, thiserror::Error)]
+enum HeadlessLoadError {
+    #[error("{0}")]
+    Runtime(String),
+    #[error(transparent)]
+    Manifest(#[from] ManifestError),
+}
+
+impl From<String> for HeadlessLoadError {
+    fn from(message: String) -> Self {
+        Self::Runtime(message)
+    }
+}
+
+/// Reuse the production headless scenario load after retail scenario discovery
+/// has already registered loose YRO archives in the caller's AssetManager.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn load_with_registered_scenario_assets(
+    retail_dir: &Path,
+    map_file_name: &str,
+    seed: u32,
+    launch: crate::sim::scenario_bootstrap::MatchLaunchDescriptor,
+    assets: &mut AssetManager,
+) -> Result<HeadlessScenario, String> {
+    load_with_assets(
+        retail_dir,
+        map_file_name,
+        seed,
+        HeadlessLaunch::Slots(&launch),
+        assets,
+        crate::sim::scenario_session::ScenarioGameMode::Skirmish,
+        None,
+        None,
+    )
+    .map_err(|error| error.to_string())
+}
+
+fn load_with_assets(
+    retail_dir: &Path,
+    map_file_name: &str,
+    seed: u32,
+    launch: HeadlessLaunch<'_>,
+    assets: &mut AssetManager,
+    game_mode: crate::sim::scenario_session::ScenarioGameMode,
+    accepted_native_id_prefix: Option<u32>,
+    process_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
+) -> Result<HeadlessScenario, HeadlessLoadError> {
+    let (slot_launch, campaign, manifest, campaign_speed, logical_map) = match launch {
+        HeadlessLaunch::Slots(launch) => (Some(launch), None, None, None, None),
+        HeadlessLaunch::Campaign {
+            launch,
+            manifest,
+            game_speed,
+            logical_map,
+        } => (None, Some(launch.start), manifest, game_speed, logical_map),
+    };
+    let loaded_map =
+        crate::map::source::load_map_by_name_or_path_with_assets(retail_dir, map_file_name, assets)
+            .map_err(|error| match manifest {
+                Some(stage) => HeadlessLoadError::Manifest(stage.map_error(
+                    format!("cannot decode '{}': {error}", stage.map),
+                    "Set Map to a valid authored scenario",
+                )),
+                None => HeadlessLoadError::Runtime(format!("load map {map_file_name}: {error}")),
+            })?;
+    let source = loaded_map.source;
+    if let Some(stage) = manifest {
+        let (_, digest) = source.physical_identity().ok_or_else(|| {
+            stage.map_error(
+                "map has no authored payload digest",
+                "Set Map to a loose authored scenario",
+            )
+        })?;
+        stage.verify_map_digest(digest)?;
+    }
+    let mut map = loaded_map.map;
+    // Preserve the process-owned cold Rules registry before theater archive
+    // priority changes. The same owner then performs the active noncampaign
+    // reset/rebuild and transfers its move-only native-ID receipt.
+    let audio_definitions = crate::rules::audio_sources::AudioDefinitions::select(&assets);
+    let mut cold_rules_owner;
+    let native_rules_owner = if let Some(owner) = process_rules {
+        owner
+    } else {
+        let (_, _, owner) = crate::rules::retail_sources::load_startup_rules(
+            &assets,
+            std::sync::Arc::clone(audio_definitions.sounds()),
+            std::sync::Arc::clone(audio_definitions.eva()),
+        )
+        .ok_or_else(|| "load native startup rules".to_string())?
+        .into_parts();
+        cold_rules_owner = owner;
+        &mut cold_rules_owner
+    };
+    if let Some(launch) = slot_launch {
+        if let Some(rules) = launch.personal_rules() {
+            native_rules_owner.use_personal_rules(rules.clone());
+        } else if game_mode.execution_topology().is_lockstep() {
+            native_rules_owner
+                .use_personal_rules(launch.session().options.host_rules.personal_rules()?);
+        }
+    }
+    if game_mode.execution_topology().is_lockstep() {
+        native_rules_owner
+            .reset_for_network_match()
+            .map_err(|error| format!("reset network Rules: {error}"))?;
+    }
+    // ThemeClass::ReadINI720590 is process data even without an output device.
+    // Keep the existing headless archive stack: THEMEMD.MIX and the preserved
+    // RA2 THEME.MIX extension were mounted at startup; this route has no shell
+    // neutral-archive activation. Resolve before scenario Rules/theater changes.
+    let themes = crate::rules::theme_ini::ThemeCatalog::select(&assets);
+    let scenario_prefix_plan = slot_launch
+        .map(|launch| {
+            crate::sim::scenario_bootstrap::prepare_stock_offline_scenario_prefix_plan(
+                launch,
+                &map,
+                &map.waypoints,
+                seed,
+            )
+        })
+        .transpose()
+        .map_err(|error| format!("prepare stock-offline scenario prefix: {error}"))?;
+    let mode_override = crate::rules::retail_sources::select_mode_ini(
+        &assets,
+        slot_launch.map(|launch| launch.session().mode.override_file.as_str()),
+    )?;
+    let rules_prefix = match campaign {
+        Some(_) => crate::rules::process_owner::NativeScenarioRulesPrefix::Campaign(None),
+        None => crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
+            mode_override.as_ref(),
+        ),
+    };
+    // This headless entry has no MainMenuTypedCodes owner or THETEAM input.
+    // It shares the process Rules owner; this no-mod entry skips LANGRULE
+    // and cannot admit Full_Init's mode-5 TMCJ4F route.
+    let (mut rules, _, art_ini, native_rules_receipt) = native_rules_owner
+        .load_scenario(rules_prefix, &map.ini)
+        .map_err(|error| format!("load native scenario rules: {error}"))?
+        .into_parts();
+    // The game's later readers (ARTMD, the asset closures) follow the way its
+    // Rules were read (`ares_switch::ares_way`).
+    let _ares_way = crate::rules::ares_switch::read_ares_way(rules.reads_ares_way());
+    let mode_class = slot_launch.map(|launch| launch.session().mode.class);
+    let rule_policy = if let Some(start) = campaign {
+        start.rule_policy()
+    } else {
+        // Slot launches keep their native constructor even with scripted rules.
+        let construction = BootstrapRuleProfile::Multiplayer;
+        slot_launch
+            .and_then(MatchLaunchDescriptor::rule_policy_override)
+            .map(|policy| policy.with_bootstrap(construction))
+            .unwrap_or_else(|| game_mode.stock_rule_policy_for_bootstrap(construction, mode_class))
+    };
+    let team_ai_registry =
+        crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, rule_policy)?;
+    let theater = theater::load_scenario_theater(assets, &map.header.theater, &map.ini, false)
+        .map_err(|error| format!("{error:#}"))?
+        .ok_or_else(|| format!("load theater {}", map.header.theater))?;
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
+    let house_roster = crate::map::houses::parse_house_roster(
+        &map.ini,
+        rules.color_schemes.as_slice(),
+        Some(&rules),
+    );
+    if let Some(stage) = manifest {
+        stage.validate_house_names(house_roster.houses.iter().map(|house| house.name.as_str()))?;
+    }
+    let campaign_options = campaign_speed.map(|game_speed| crate::sim::game_options::GameOptions {
+        game_speed,
+        ..Default::default()
+    });
+    let prefix = match (launch, scenario_prefix_plan) {
+        (HeadlessLaunch::Slots(launch), Some(plan)) => FreshScenarioPrefix::StockOffline(
+            plan.bind_native_rules_receipt(native_rules_receipt, launch, &rules)
+                .map_err(|error| format!("admit rebuilt launch Countries: {error}"))?,
+        ),
+        (HeadlessLaunch::Campaign { launch, .. }, None) => FreshScenarioPrefix::Campaign {
+            native_rules_receipt,
+            rules: &rules,
+            map_data: &map,
+            house_roster: &house_roster,
+            difficulty: launch.start.difficulty(),
+            mission_counter: launch.start.mission_counter(),
+            game_options: campaign_options.as_ref(),
+            campaign_index: 0,
+            restart_carry_over: crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+            network: Some(launch),
+        },
+        _ => unreachable!("each launch uses its own prepared construction"),
+    };
+    let lighting_profiles = crate::map::lighting::parse_lighting_profiles(&map.ini);
+    let native_start_bounds =
+        crate::sim::scenario_bootstrap::NativeStartBounds::from_map_header(&map.header)
+            .ok_or_else(|| "map Size does not produce a valid fresh cell array".to_string())?;
+    let scenario_cell_extent = native_start_bounds
+        .min_rx
+        .checked_add(native_start_bounds.width)
+        .ok_or_else(|| "fresh cell-array extent overflow".to_string())?;
+    let descriptor = ScenarioDescriptor {
+        seed,
+        map_name: logical_map.unwrap_or(map_file_name).to_string(),
+        theater: map.header.theater.clone(),
+        rule_policy,
+        free_radar: map.basic.free_radar.unwrap_or(false),
+        ignore_global_ai_triggers: map.basic.ignore_global_ai_triggers.unwrap_or(false),
+        timer_inherit: map.basic.timer_inherit.unwrap_or(false),
+        carry_over_money: map.basic.carry_over_money,
+        carry_over_cap: map.basic.carry_over_cap,
+        train_crate: map.basic.train_crate.unwrap_or(false),
+        truck_crate: map.basic.truck_crate.unwrap_or(false),
+        ice_growth_enabled: map.basic.ice_growth_enabled,
+        vein_growth_enabled: map.basic.vein_growth_enabled,
+        map_width: scenario_cell_extent,
+        map_height: scenario_cell_extent,
+        mp_start_waypoints: match &prefix {
+            FreshScenarioPrefix::StockOffline(bound) => waypoints::multiplayer_start_waypoints(
+                bound.projection().active_scenario_waypoints(),
+            )
+            .into_iter()
+            .map(|wp| (wp.index, (wp.rx, wp.ry)))
+            .collect(),
+            FreshScenarioPrefix::Campaign { .. } => Default::default(),
+        },
+        pixel_conversion_bounds: Default::default(),
+        lighting: crate::sim::scenario_session::ScenarioLightingState::from_map(&lighting_profiles),
+        ..Default::default()
+    }
+    .with_authored_special_flags(
+        &map.special_flags,
+        slot_launch.is_some_and(|launch| launch.session().options.harvester_truce),
+    );
+    let bootstrap_rng = ScenarioBootstrapRng::new(seed);
+    let (mut sim, scenario_prefix_projection) = bootstrap_rng
+        .into_fresh_staged_simulation(&descriptor, prefix)
+        .map_err(|error| match (manifest, &error) {
+            (Some(stage), FreshScenarioPrefixError::DuplicateCampaignHouse(_)) => {
+                HeadlessLoadError::Manifest(stage.map_error(
+                    error.to_string(),
+                    "Give every entry in the map's [Houses] list a distinct name",
+                ))
+            }
+            _ => HeadlessLoadError::Runtime(format!("stage authored Simulation: {error}")),
+        })?;
+    // CreateHouses687FCE..688092 gives WOL humans their node name; other
+    // modes use "<human player>". The House owner hashes that native identity,
+    // so restoring GameMode after construction cannot reconstruct a WOL start.
+    if let Some(launch) = slot_launch {
+        sim.install_session_admission(
+            game_mode,
+            mode_class,
+            launch
+                .rule_policy_override()
+                .unwrap_or_else(|| game_mode.stock_rule_policy(mode_class)),
+        );
+        if let Some(start) = launch.network_start() {
+            if !game_mode.execution_topology().is_lockstep() {
+                return Err("Offline launch has lockstep start settings"
+                    .to_owned()
+                    .into());
+            }
+            start.install(&mut sim);
+        }
+    }
+    if let Some(checkpoint) = accepted_native_id_prefix
+        && campaign.is_none()
+    {
+        sim.install_accepted_native_id_prefix(checkpoint)
+            .map_err(|error| format!("replay native-ID prefix: {error}"))?;
+    }
+    let shared_cell_dummy = crate::map::resolved_terrain::SharedCellDummy::fresh();
+    shared_cell_dummy.reconstruct_for_map_resize();
+    sim.bind_shared_cell_dummy(shared_cell_dummy.clone());
+    sim.session.install_waypoints(&map.waypoints);
+    sim.initialize_trigger_definitions(
+        &map,
+        &team_ai_registry,
+        Some(audio_definitions.eva()),
+        Some(audio_definitions.sounds().as_ref()),
+        Some(&themes),
+    );
+    let (mut scenario_fill_rng, variant_main_rng) = sim.terrain_load_draws();
+    let mut scenario_fill_ranged =
+        |low, high| scenario_fill_rng.next_range_u32_inclusive(low, high);
+    let mut variant_draw = move || variant_main_rng.next_u32();
+    let mut variant_selector_cache = TileVariantSelectorCache::default();
+    let mut variant_selector = variant_selector_cache.begin_load(&mut variant_draw);
+    let terrain_fill =
+        ResolvedTerrainGrid::build_pending_authored_with_variant_selector_and_shared_dummy(
+            &map,
+            Some(&theater),
+            Some(&assets),
+            Some(&rules.terrain_rules),
+            Some(rules.overlay_registry()),
+            true,
+            rules.general.cliff_back_impassability,
+            &mut scenario_fill_ranged,
+            &mut variant_selector,
+            shared_cell_dummy,
+        );
+    drop(variant_draw);
+
+    // Pending authored Fill has no eager Tile##Anim list. Bind damage-fire
+    // roots now and let the authored host bind each actually reached map Anim
+    // synchronously before its native constructor spends an ID.
+    let scheduler_roots = crate::map::resolved_terrain::scheduler_anim_roots(&rules, &[]);
+    rules.bind_scheduler_anim_assets(
+        &scheduler_roots,
+        &assets,
+        theater.extension,
+        &map.header.theater,
+    );
+    // Every other AnimClass producer and the building animations: tolerant pass,
+    // after the strict one, which rewrites the scheduler-owned set wholesale.
+    let tolerant_roots = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&rules);
+    let unbound_explosion_roots = rules.bind_anim_class_assets(
+        &tolerant_roots,
+        &assets,
+        theater.extension,
+        &map.header.theater,
+    );
+    crate::rules::effect_asset_catalog::log_unbound_combat_explosion_roots(unbound_explosion_roots);
+    let mut authored_anim_roots =
+        crate::map::actions::trigger_anim_class_roots(&rules, &map.actions);
+    authored_anim_roots.extend(team_ai_registry.script_anim_class_roots(&rules));
+    rules.bind_anim_class_assets(
+        &authored_anim_roots,
+        &assets,
+        theater.extension,
+        &map.header.theater,
+    );
+    let (populated_smudge_dims, fallback_smudge_dims) =
+        rules.populate_anim_frame_dims(&assets, theater.extension, &map.header.theater);
+    log::info!(
+        "Anim frame dims: {} populated, {} fallback (defaults to 30x30)",
+        populated_smudge_dims,
+        fallback_smudge_dims,
+    );
+    rules.bind_effect_assets(&assets, theater.extension, &map.header.theater);
+    rules.bind_building_buildup_assets(&assets, &map.header.theater);
+    rules.bind_building_rubble_assets(&assets, theater.extension, &map.header.theater);
+    rules.bind_terrain_assets(
+        &assets,
+        theater.extension,
+        crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
+    );
+    rules.bind_alpha_images(&assets);
+    let overlay_shp_ids = crate::rules::effect_asset_catalog::resolved_overlay_shp_ids(
+        rules.overlay_registry(),
+        &assets,
+        theater.extension,
+        &map.header.theater,
+    );
+    sim.construct_native_map_tubes(&map.ini)
+        .map_err(|error| format!("construct native [Tubes]: {error}"))?;
+    let bridge_mode = if campaign.is_some() {
+        crate::map::basic::BridgeDestroyabilityMode::CampaignOrEditor
+    } else {
+        crate::map::basic::BridgeDestroyabilityMode::SkirmishOrMultiplayer {
+            bridge_destruction: true,
+        }
+    };
+    let signed_new_ini_format = map.basic.new_ini_format.unwrap_or(0);
+    let cliff_back_impassability = rules.general.cliff_back_impassability;
+    let resolved_terrain = crate::sim::runtime::finalize_and_populate_staged_authored_scenario(
+        &mut sim,
+        &mut map,
+        terrain_fill,
+        &theater,
+        &assets,
+        &mut rules,
+        native_rules_owner,
+        &overlay_shp_ids,
+        signed_new_ini_format,
+        true,
+        cliff_back_impassability,
+        theater.extension,
+        &descriptor.theater,
+        bridge_mode,
+        &descriptor,
+        |sim, rules| {
+            if let Some(launch) = slot_launch {
+                crate::sim::scenario_bootstrap::initialize_skirmish_launch_houses(
+                    sim,
+                    &house_roster,
+                    rules,
+                    launch,
+                );
+            }
+        },
+    )
+    .map_err(|error| format!("finalize authored headless load: {error}"))?;
+    // Match the ordinary app's pre-launch binding: production options need
+    // identities for unspawned types too, and snapshots carry this interner.
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    sim.install_team_ai_registry(&team_ai_registry, &rules);
+    if let (Some(launch), Some(projection)) = (slot_launch, scenario_prefix_projection.as_ref()) {
+        crate::sim::scenario_bootstrap::apply_pre_fill_scenario_prefix_launch_session(
+            &mut sim,
+            &map,
+            &house_roster,
+            &rules,
+            &resolved_terrain,
+            launch,
+            projection,
+        );
+    }
+    let post_map = crate::sim::runtime::finalize_constructed_scenario(
+        &mut sim,
+        &map,
+        &rules,
+        &house_roster,
+        descriptor.rule_policy,
+        slot_launch,
+        campaign.map(AuthoredCampaignStart::carry_over),
+    )
+    .map_err(|error| error.to_string())?;
+    if !post_map.navigation_published {
+        return Err("publish headless post-map navigation".to_owned().into());
+    }
+    if sim.path_grid().is_none() {
+        return Err("headless post-map navigation is unavailable"
+            .to_owned()
+            .into());
+    }
+    // MapHouses has already spent its House and Super IDs before Resize.
+    // Replay must rebuild that prefix from the same rules, then check it at
+    // the map-read fence rather than replacing the live cursor afterwards.
+    if let Some(checkpoint) = accepted_native_id_prefix
+        && campaign.is_some()
+        && sim.native_identity_prefix_checkpoint() != Some(checkpoint)
+    {
+        return Err(
+            "replay campaign native-ID prefix differs from the reconstructed House roster"
+                .to_owned()
+                .into(),
+        );
+    }
+    if campaign.is_some() {
+        // The author runner dispatches the canonical source roster every
+        // logic frame without waiting for a transport or reserving a lead.
+        let sources: Vec<_> = sim
+            .session
+            .network_sources(sim.houses.len())
+            .map(|(source, _)| source)
+            .collect();
+        sim.install_network_timing(0);
+        sim.network_command_queues()
+            .install_timing(0, std::num::NonZeroU8::MIN, sources);
+    }
+    sim.session.publish_started();
+    Ok(HeadlessScenario {
+        runtime: crate::sim::runtime::SimRuntime {
+            simulation: sim,
+            resources: std::sync::Arc::new(crate::sim::runtime::SimResources {
+                terrain_template: None,
+                rules,
+            }),
+        },
+        map,
+        source,
+    })
+}
+
+impl HeadlessScenario {
+    /// Advance one committed simulation frame with no player commands,
+    /// through the same bound-resource runtime transaction the app uses.
+    pub fn tick(&mut self) {
+        let _ = self
+            .runtime
+            .advance_frame(
+                &[],
+                SIM_TICK_MS,
+                crate::sim::world::TickLane::Ordinary,
+                &mut crate::sim::world::FrameEffects::default(),
+            )
+            .expect("simulation frame failed; prior world mutations remain");
+    }
+}
+
+#[cfg(all(test, tests_scenario))]
+mod retail_construction_tests {
+    use super::*;
+    use crate::sim::rng::SimRng;
+
+    /// A synthetic map through the load in production order, with production
+    /// functions only: stage the one `Simulation`, let terrain Fill draw from
+    /// it, then populate it. No theater, assets or rules are needed, which the
+    /// retail funnel (`load`) cannot do without.
+    ///
+    /// Active YR `MapClass::Clear @ 0x00565B00` clears the fixed cell table, then
+    /// `MapClass::Resize @ 0x00565C10` allocates the complete Size diamond before
+    /// IsoMapPack records overwrite it (allocation loop `0x0056639E..0x00566451`).
+    fn stage_fill_populate<F>(
+        map: &MapFile,
+        theater_name: &str,
+        rules: Option<&crate::rules::ruleset::RuleSet>,
+        bridge_destroyability_mode: crate::map::basic::BridgeDestroyabilityMode,
+        descriptor: ScenarioDescriptor,
+        initialize_houses_before_objects: F,
+    ) -> (Simulation, ResolvedTerrainGrid)
+    where
+        F: FnOnce(&mut Simulation),
+    {
+        // Native Resize constructs a square cell-array extent of SizeW+SizeH;
+        // the descriptor carries it before Fill exists, as the app load does.
+        let bounds =
+            crate::sim::scenario_bootstrap::NativeStartBounds::from_map_header(&map.header)
+                .expect("map Size produces a fresh cell array");
+        let extent = bounds.min_rx + bounds.width;
+        let descriptor = ScenarioDescriptor {
+            map_width: extent,
+            map_height: extent,
+            ..descriptor
+        };
+        let mut sim = ScenarioBootstrapRng::new(descriptor.seed).into_simulation(&descriptor);
+        // This synthetic fixture omits the production native Rules prefix.
+        sim.native_unique_ids =
+            Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
+        let resolved = {
+            let (mut scenario_fill_rng, variant_main_rng) = sim.terrain_load_draws();
+            let mut scenario_fill_ranged =
+                |low, high| scenario_fill_rng.next_range_u32_inclusive(low, high);
+            let mut variant_draw = move || variant_main_rng.next_u32();
+            let mut variant_selector_cache = TileVariantSelectorCache::default();
+            let mut variant_selector = variant_selector_cache.begin_load(&mut variant_draw);
+            let shared_cell_dummy = crate::map::resolved_terrain::SharedCellDummy::fresh();
+            shared_cell_dummy.reconstruct_for_map_resize();
+            ResolvedTerrainGrid::build_with_variant_selector_and_shared_dummy(
+                map,
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+                2,
+                &mut scenario_fill_ranged,
+                &mut variant_selector,
+                shared_cell_dummy,
+                crate::map::resolved_terrain::OverlayLoadSource::Authored,
+                descriptor.pixel_conversion_bounds,
+            )
+        };
+        assert_eq!(
+            (resolved.width(), resolved.height()),
+            (extent, extent),
+            "Fill allocates the extent the descriptor announced"
+        );
+        crate::sim::runtime::populate_staged_fixture(
+            &mut sim,
+            map,
+            &resolved,
+            theater_name,
+            rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
+            None,
+            None,
+            bridge_destroyability_mode,
+            &descriptor,
+            None,
+            initialize_houses_before_objects,
+        )
+        .expect("fixed-map Techno constructor projection cannot fail");
+        (sim, resolved)
+    }
+
+    /// One valid LZO chunk whose decompressed bytes are the `(0, 0)`
+    /// IsoMapPack terminator, so the parsed map has no explicit cell records.
+    const EMPTY_ISO_MAP_PACK: &str = "CAAEABUAAAAAEQAA";
+
+    #[test]
+    fn free_radar_map_reload_and_recording_callback_rebuild_scenario_authority() {
+        use crate::sim::replay::{NativeReplayHeader, NativeReplayStream};
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n",
+            ))
+            .unwrap();
+        // A native recording supplies identity/seed to a normal-load callback.
+        // This exercises that API with the actual GPU-free construction funnel;
+        // the app's native recording UI/loader is not yet connected to it.
+        for (key, expected) in [
+            ("FreeRadar=yes\n", true),
+            ("", false),
+            ("FreeRadar=no\n", false),
+            ("FreeRadar=invalid\n", false),
+        ] {
+            let map_bytes = format!(
+                "[Basic]\n{key}[Map]\nTheater=TEMPERATE\nSize=0,0,2,2\nLocalSize=0,0,2,2\nFill=Water\n[IsoMapPack5]\n1={EMPTY_ISO_MAP_PACK}\n"
+            );
+            let map = MapFile::from_bytes(map_bytes.as_bytes()).unwrap();
+            let header = NativeReplayHeader::new(0x12345678, "radar.map");
+            let recording = header.encode();
+            let playback = NativeReplayStream::initialize(
+                &recording,
+                NativeReplayHeader::default(),
+                |loaded| {
+                    let descriptor = ScenarioDescriptor {
+                        free_radar: map.basic.free_radar.unwrap_or(false),
+                        ..ScenarioDescriptor::from_native_replay_header(loaded)
+                    };
+                    let (sim, _terrain) = stage_fill_populate(
+                        &map,
+                        "TEMPERATE",
+                        Some(&rules),
+                        crate::map::basic::BridgeDestroyabilityMode::CampaignOrEditor,
+                        descriptor,
+                        |sim| {
+                            let americans = sim.interner.intern("Americans");
+                            sim.houses
+                                .register(crate::sim::house_state::HouseState::new(
+                                    americans, 0, None, true, 0, 10,
+                                ));
+                        },
+                    );
+                    Ok::<_, ()>(sim)
+                },
+            )
+            .unwrap();
+            assert_eq!(playback.state.session.free_radar(), expected);
+            // House 0x00508DF0 reads Scenario FreeRadar when the House's
+            // first update rechecks radar.
+            let mut sim = playback.state;
+            sim.advance_tick(&[], Some(&rules), None, None, 0);
+            assert_eq!(
+                crate::sim::radar::has_radar_for_owner(&sim, &rules, "Americans"),
+                expected
+            );
+            assert_eq!(sim.session.map_name(), "radar.map");
+        }
+    }
+
+    #[test]
+    fn headless_battle_launch_is_the_exact_single_local_stock_session() {
+        let launch = crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(
+            battle_session("TEST.MAP", &[]),
+        )
+        .expect("one-player Battle launch");
+        let session = launch.session();
+
+        assert_eq!(session.mode.id, 1);
+        assert_eq!(session.mode.override_file, "MPBattleMD.ini");
+        assert_eq!(session.selected_map_file.as_deref(), Some("TEST.MAP"));
+        assert!(session.opponents.is_empty());
+        assert_eq!(session.local_slot().color_index, 0);
+    }
+
+    #[test]
+    fn gsi_04_01_headless_sparse_water_load_materializes_and_draws_on_the_staged_owner() {
+        let seed = 0x0401_5EED;
+        let map_bytes = format!(
+            "[Map]\n\
+             Theater=TEMPERATE\n\
+             Size=0,0,2,1\n\
+             LocalSize=0,0,2,1\n\
+             Fill=Water\n\
+             [IsoMapPack5]\n\
+             1={EMPTY_ISO_MAP_PACK}\n"
+        );
+        let map = MapFile::from_bytes(map_bytes.as_bytes()).expect("parse sparse INI map");
+        assert!(
+            map.cells.is_empty(),
+            "fixture has no explicit terrain cells"
+        );
+
+        let descriptor = ScenarioDescriptor {
+            seed,
+            ..ScenarioDescriptor::default()
+        };
+        let (sim, resolved) = stage_fill_populate(
+            &map,
+            &map.header.theater,
+            None,
+            crate::map::basic::BridgeDestroyabilityMode::SkirmishOrMultiplayer {
+                bridge_destruction: true,
+            },
+            descriptor,
+            |_| {},
+        );
+        assert_eq!(
+            (resolved.width(), resolved.height()),
+            (3, 3),
+            "the canonical cell array spans the Size diamond's highest coordinate"
+        );
+        let mut allocated: Vec<_> = resolved.iter().map(|cell| (cell.rx, cell.ry)).collect();
+        allocated.sort_unstable();
+        assert_eq!(allocated, vec![(1, 2), (2, 1), (2, 2)]);
+
+        let mut expected_scenario = SimRng::new(u64::from(seed));
+        for _ in 0..3 {
+            let _ = expected_scenario.next_range_u32_inclusive(0, 3);
+        }
+        let state = sim.rng_state();
+        assert_eq!(state.scenario, expected_scenario.logical_state());
+        assert_eq!(
+            state.main,
+            SimRng::new(u64::from(seed)).logical_state(),
+            "no theater TMP selection means the Main cursor stays at its seed"
+        );
+    }
+
+    #[test]
+    fn retail_signed_terrain_key_constructs_a_live_display_nonmember() {
+        use crate::map::source::test_support::TestDirectory;
+        use crate::util::ini_writer::{replace_ini_section, set_ini_values};
+
+        let Some((ra2, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let bytes = assets.resolve_ref("XXmas.MAP").unwrap().bytes;
+        let map = MapFile::from_bytes(bytes).unwrap();
+        let control_cell = map.terrain_objects.first().unwrap();
+        let key = (u32::from(control_cell.ry) * 1000 + u32::from(control_cell.rx)).to_string();
+        let bytes = set_ini_values(bytes, "Basic", &[("NewINIFormat", "4")]);
+        let directory = TestDirectory::new("signed-terrain-key");
+        directory.write(
+            "control.map",
+            &replace_ini_section(&bytes, "Terrain", &[(&key, "TREE01")]),
+        );
+        directory.write(
+            "signed.map",
+            &replace_ini_section(&bytes, "Terrain", &[("-1", "TREE01"), (&key, "TREE01")]),
+        );
+        let control = load(
+            &ra2,
+            directory.path().join("control.map").to_str().unwrap(),
+            31,
+        )
+        .unwrap();
+        let signed = load(
+            &ra2,
+            directory.path().join("signed.map").to_str().unwrap(),
+            31,
+        )
+        .unwrap();
+        // ReadMap71CAEF..71CB19 keeps the signed remainder word; ctor71BC34
+        // tests those input words before Get_Cell_Packed41BEA0 derives0,0.
+        assert_eq!(signed.map.terrain_objects.len(), 2);
+        assert_eq!(
+            (
+                signed.map.terrain_objects[0].rx,
+                signed.map.terrain_objects[0].ry
+            ),
+            (u16::MAX, 0)
+        );
+        assert_eq!(signed.sim().terrain_objects().objects().len(), 2);
+        let tree = signed
+            .sim()
+            .terrain_objects()
+            .objects()
+            .values()
+            .next()
+            .unwrap();
+        assert_eq!(
+            tree.world_coord(),
+            crate::sim::projectile::ProjectileCoord::new(-128, 128, 0)
+        );
+        assert_eq!(tree.cell(), (0, 0));
+        assert!(tree.object_alive() && tree.is_live() && !tree.in_logic_vector());
+        assert!(
+            signed
+                .sim()
+                .display_layers()
+                .layer_of(tree.stable_id())
+                .is_some()
+        );
+        assert!(signed.sim().terrain_objects().id_at((0, 0)).is_none());
+        assert!(
+            signed
+                .sim()
+                .terrain_objects()
+                .id_at((u16::MAX, 0))
+                .is_none()
+        );
+        let ordinary = signed
+            .sim()
+            .terrain_objects()
+            .id_at((control_cell.rx, control_cell.ry))
+            .unwrap();
+        let baseline = control
+            .sim()
+            .terrain_objects()
+            .objects()
+            .values()
+            .next()
+            .unwrap();
+        assert_eq!(tree.native_unique_id(), baseline.native_unique_id());
+        assert_eq!(
+            signed
+                .sim()
+                .terrain_objects()
+                .get(ordinary)
+                .unwrap()
+                .native_unique_id(),
+            baseline.native_unique_id().map(|id| id.wrapping_add(1))
+        );
+        assert_eq!(signed.sim().rng_state(), control.sim().rng_state());
+        assert_eq!(signed.sim().ground_occupation_bits_for_test(0, 0), 0);
+        assert_eq!(signed.sim().ground_occupation_bits_for_test(u16::MAX, 0), 0);
+    }
+
+    #[test]
+    fn retail_signed_terrain_alias_uses_the_real_cell_chain_through_restore_and_pickup() {
+        use crate::map::source::test_support::TestDirectory;
+        use crate::sim::snapshot::GameSnapshot;
+        use crate::sim::world::UninitContext;
+        use crate::util::ini_writer::{replace_ini_section, set_ini_values};
+
+        let Some((ra2, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let bytes = assets.resolve_ref("XXmas.MAP").unwrap().bytes;
+        let bytes = set_ini_values(bytes, "Basic", &[("NewINIFormat", "4")]);
+        let directory = TestDirectory::new("signed-terrain-alias");
+        let bytes = replace_ini_section(
+            &bytes,
+            "Structures",
+            &[(
+                "0",
+                "Neutral,GAPOWR,256,26,60,0,None,1,0,1,0,0,None,None,None,0,0",
+            )],
+        );
+        directory.write(
+            "alias.map",
+            &replace_ini_section(
+                &bytes,
+                "Terrain",
+                &[
+                    ("-65474999", "TREE01"),
+                    ("60026", "TREE01"),
+                    ("-65433999", "TREE01"),
+                ],
+            ),
+        );
+        let scene = load(
+            &ra2,
+            directory.path().join("alias.map").to_str().unwrap(),
+            31,
+        )
+        .unwrap();
+        let sim = scene.sim();
+        let alias = sim.terrain_objects().objects().values().next().unwrap();
+        let alias_id = alias.stable_id();
+        // ReadMap71CB10 narrows quotient-65474 to word62; signed center
+        // (-999*256+128,62*256+128) derives(-998,62). Map5657A0's fixed
+        // index62*512-998 is the ordinary allocated slot(26,60).
+        let coord = alias.world_coord();
+        assert_eq!((coord.x, coord.y), (-255616, 16000));
+        assert_eq!(alias.cell(), ((-998i16) as u16, 62));
+        let ordinary_id = sim.terrain_objects().id_at((26, 60)).unwrap();
+        let hole_id = sim
+            .terrain_objects()
+            .objects()
+            .values()
+            .last()
+            .unwrap()
+            .stable_id();
+        assert_ne!(ordinary_id, alias_id);
+        assert_eq!(
+            coord.z,
+            sim.terrain_objects()
+                .get(ordinary_id)
+                .unwrap()
+                .world_coord()
+                .z,
+            "both locations query the same native ground receiver"
+        );
+        assert_eq!(
+            sim.terrain_objects()
+                .members_at((26, 60))
+                .collect::<Vec<_>>(),
+            [ordinary_id, alias_id]
+        );
+        assert_eq!(sim.terrain_objects().cell_index().len(), 1);
+        use crate::sim::occupancy::CellObjectMember;
+        let building = sim
+            .occupancy()
+            .first_building_on_layer(
+                26,
+                60,
+                crate::sim::movement::locomotor::MovementLayer::Ground,
+            )
+            .unwrap();
+        assert_eq!(
+            sim.next_cell_object(CellObjectMember::Terrain(ordinary_id)),
+            Some(CellObjectMember::Terrain(alias_id))
+        );
+        assert_eq!(
+            sim.next_cell_object(CellObjectMember::Terrain(alias_id)),
+            Some(CellObjectMember::Entity(building)),
+            "canonical Cell+E4 list continues into its appended Building"
+        );
+        let rules = &scene.runtime.resources.rules;
+        let bytes = GameSnapshot::save_validated(
+            sim,
+            0,
+            rules.simulation_config_hash(),
+            "signed Terrain alias",
+            0,
+        );
+        let mut loaded = GameSnapshot::load(&bytes).unwrap().sim;
+        loaded.restore_after_snapshot_load().unwrap();
+        loaded.rebuild_caches_after_load(
+            sim.resolved_terrain().unwrap().clone(),
+            Default::default(),
+            rules,
+        );
+        loaded
+            .restore_map_authority_after_snapshot_load(rules, rules.overlay_registry(), None)
+            .unwrap();
+        loaded.resolve_type_handles(rules);
+        assert_eq!(
+            loaded
+                .terrain_objects()
+                .members_at((26, 60))
+                .collect::<Vec<_>>(),
+            [ordinary_id, alias_id]
+        );
+        let warhead_ref = loaded.interner.intern("HE");
+        loaded.commit_direct_terrain_damage_receiver(
+            rules,
+            Some(rules.overlay_registry()),
+            crate::sim::combat::TerrainDamageEvent {
+                damage_writeback: None,
+                stable_id: alias_id,
+                rx: 26,
+                ry: 60,
+                damage: 1,
+                distance_leptons: 0,
+                warhead_ref,
+                near_center_ic_isolation_eligible: false,
+            },
+            true,
+            &mut Default::default(),
+        );
+        assert_eq!(
+            loaded.terrain_objects().get(alias_id).unwrap().health(),
+            alias.health() - 1
+        );
+        loaded.dirty_cells.clear_radar_for_test();
+        loaded.uninit_with_context(alias_id, UninitContext::new(rules));
+        assert_eq!(
+            loaded
+                .terrain_objects()
+                .members_at((26, 60))
+                .collect::<Vec<_>>(),
+            [ordinary_id]
+        );
+        assert_eq!(loaded.dirty_cells.radar(), [alias.cell()]);
+        loaded.process_pending_delete_with(rules, &mut Default::default(), 1, true);
+        assert!(loaded.terrain_objects().get(alias_id).is_none());
+        assert!(loaded.terrain_objects().get(ordinary_id).unwrap().is_live());
+        assert_eq!(
+            loaded.next_cell_object(CellObjectMember::Terrain(ordinary_id)),
+            Some(CellObjectMember::Entity(building))
+        );
+
+        // Native71CA42/51 is independent of Map allocation. This second
+        // source derives(-998,103): Map fixed512 selects the hole(26,101),
+        // but the retained157-stride zone record selects allocated(101,96).
+        let terrain = loaded.resolved_terrain().unwrap();
+        assert!(terrain.native_fixed_cell_index(26, 101).is_none());
+        assert!(terrain.native_fixed_cell_index(101, 96).is_some());
+        let zones = loaded.zone_grid.as_mut().unwrap();
+        let width = usize::from(zones.width());
+        let target = 96 * width + 101;
+        let base = zones.base_topology_mut_for_test();
+        let cluster = base.zone_ids().iter().copied().find(|&id| id > 1).unwrap();
+        base.movement_classes_mut_for_test()[target] =
+            crate::map::resolved_terrain::zone_class::GROUND;
+        base.zone_ids_mut_for_test()[target] = 0;
+        for (dx, dy) in crate::util::direction::DIRECTION_DELTAS {
+            let index = ((96 + dy) as usize) * width + (101 + dx) as usize;
+            base.movement_classes_mut_for_test()[index] =
+                crate::map::resolved_terrain::zone_class::GROUND;
+            base.zone_ids_mut_for_test()[index] = cluster;
+        }
+        loaded.uninit_with_context(hole_id, UninitContext::new(rules));
+        assert_eq!(
+            loaded
+                .zone_grid
+                .as_mut()
+                .unwrap()
+                .base_topology_mut_for_test()
+                .zone_ids()[target],
+            cluster,
+            "AssignOrphaned must repair its retained zone receiver after Dummy Recalc"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+    fn retail_authored_unknown_terrain_allocates_before_instance_and_clears_ore_without_membership()
+    {
+        use crate::map::source::test_support::TestDirectory;
+        use crate::util::ini_writer::{replace_ini_section, set_ini_values};
+
+        let (ra2, assets) = crate::rules::retail_ini_fixture::retail_assets()
+            .expect("set RA2_DIR to the retail RA2/YR install directory");
+        let battle =
+            crate::rules::retail_ini_fixture::retail_battle_rules().expect("retail Battle rules");
+        assert!(
+            assets.get_ref("SMOKEY.SHP").is_some(),
+            "same-name physical image exists"
+        );
+        assert!(
+            battle.fixed_art.section("SMOKEY").is_some(),
+            "stock Anim ART exists"
+        );
+        let ore_id = battle
+            .rules
+            .overlay_registry()
+            .id_for_name("TIB01")
+            .unwrap();
+        let bytes = assets
+            .resolve_ref("XMP03T4.MAP")
+            .expect("retail Anytown")
+            .bytes;
+        let map = MapFile::from_bytes(bytes).expect("retail map parser");
+        let known = map.terrain_objects.first().expect("retail Terrain control");
+        let source = map
+            .overlays
+            .iter()
+            .find(|entry| {
+                entry.overlay_id == ore_id && (entry.rx, entry.ry) != (known.rx, known.ry)
+            })
+            .expect("retail ore cell");
+        let source_key = (u32::from(source.ry) * 1000 + u32::from(source.rx)).to_string();
+        let known_key = (u32::from(known.ry) * 1000 + u32::from(known.rx)).to_string();
+        // Full_Init68774F processes this orphan body before Read_Map_Section
+        // 71CA70 reaches FindOrAllocate71E2A0. Late allocation must not read it.
+        let bytes = set_ini_values(bytes, "Basic", &[("NewINIFormat", "4")]);
+        let bytes = set_ini_values(
+            &bytes,
+            "SMOKEY",
+            &[
+                ("Strength", "9000"),
+                ("Foundation", "2x2"),
+                ("SpawnsTiberium", "yes"),
+                ("Image", "TREE01"),
+            ],
+        );
+        let directory = TestDirectory::new("late-terrain-factory");
+        directory.write(
+            "control.map",
+            &replace_ini_section(&bytes, "Terrain", &[(&known_key, "TREE01")]),
+        );
+        directory.write(
+            "late.map",
+            &replace_ini_section(
+                &bytes,
+                "Terrain",
+                &[(&source_key, "SMOKEY"), (&known_key, "TREE01")],
+            ),
+        );
+        let control_path = directory.path().join("control.map");
+        let late_path = directory.path().join("late.map");
+        let control =
+            load(&ra2, control_path.to_str().unwrap(), 31).expect("control authored load");
+        let late = load(&ra2, late_path.to_str().unwrap(), 31).expect("late factory authored load");
+        assert!(
+            control
+                .runtime
+                .resources
+                .rules
+                .terrain_object_type_case_insensitive("SMOKEY")
+                .is_none()
+        );
+        assert_eq!(
+            late.sim().terrain_objects().objects().len(),
+            2,
+            "TerrainReadMap71CAD2/71CB6E constructs the missing type and then its instance"
+        );
+        let control_id = control
+            .sim()
+            .terrain_objects()
+            .objects()
+            .values()
+            .next()
+            .unwrap()
+            .native_unique_id()
+            .unwrap();
+        let unknown = late
+            .sim()
+            .terrain_objects()
+            .objects()
+            .values()
+            .find(|object| late.sim().interner.resolve(object.type_ref()) == "SMOKEY")
+            .expect("live ctor-only Terrain instance");
+        // TerrainTypeCtor71DA80 at71DB11 spends an ID before instance71BC19;
+        // the following known TREE01 constructor must observe both allocations.
+        assert_eq!(unknown.native_unique_id(), Some(control_id.wrapping_add(1)));
+        let known_id = late
+            .sim()
+            .terrain_objects()
+            .id_at((known.rx, known.ry))
+            .unwrap();
+        assert_eq!(
+            late.sim()
+                .terrain_objects()
+                .get(known_id)
+                .unwrap()
+                .native_unique_id(),
+            Some(control_id.wrapping_add(2))
+        );
+        assert_eq!((unknown.health(), unknown.max_health()), (-1, -1));
+        assert!(unknown.is_live() && !unknown.in_logic_vector());
+        assert!(
+            late.sim()
+                .display_layers()
+                .layer_of(unknown.stable_id())
+                .is_some()
+        );
+        assert_eq!(
+            late.runtime
+                .resources
+                .rules
+                .terrain_shape_filename("SMOKEY"),
+            None
+        );
+        // Ctor-null Occupy_List71DAF1/71DE40 visits no Cell in MapPlaceDown,
+        // but TerrainUnlimbo71D0E2..71D12B still clears the source ore.
+        assert_eq!(
+            late.sim().terrain_objects().id_at((source.rx, source.ry)),
+            None
+        );
+        assert_eq!(
+            late.sim()
+                .ground_occupation_bits_for_test(source.rx, source.ry)
+                & 0x1C,
+            0
+        );
+        assert_eq!(
+            late.sim()
+                .resolved_terrain
+                .as_ref()
+                .unwrap()
+                .cell(source.rx, source.ry)
+                .unwrap()
+                .terrain_object_occupation,
+            None
+        );
+        let control_cell = control
+            .sim()
+            .overlay_grid
+            .as_ref()
+            .unwrap()
+            .cell(source.rx, source.ry);
+        assert_eq!(control_cell.overlay_id, Some(ore_id));
+        assert_eq!(control_cell.overlay_data, source.frame);
+        let cleared = late
+            .sim()
+            .overlay_grid
+            .as_ref()
+            .unwrap()
+            .cell(source.rx, source.ry);
+        assert_eq!((cleared.overlay_id, cleared.overlay_data), (None, 0));
+    }
+
+    /// F09 certification: the shared GPU-free funnel produces a deterministic,
+    /// fully populated headless scenario on a retail map. Two loads of the same
+    /// map and seed must yield identical parity digests at construction and on
+    /// every tick, and the construction gains the funnel promises — stock launch
+    /// houses, overlay/smudge/bridge authority, published navigation — must all
+    /// be present. App-vs-headless assembly drift is prevented structurally:
+    /// both call `finalize_and_populate_staged_authored_scenario` followed by
+    /// `finalize_constructed_scenario`.
+    #[test]
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+    fn retail_headless_funnel_construction_is_deterministic_and_populated() {
+        let ra2 = std::path::PathBuf::from(
+            std::env::var("RA2_DIR").expect("set RA2_DIR to the retail RA2/YR install directory"),
+        );
+        let seed = 0x00C0_FFEE;
+        let mut a = load(&ra2, "Dustbowl.mmx", seed).expect("first headless load");
+        let mut b = load(&ra2, "Dustbowl.mmx", seed).expect("second headless load");
+
+        let rules = &a.runtime.resources.rules;
+        for name in rules
+            .infantry_ids
+            .iter()
+            .chain(&rules.vehicle_ids)
+            .chain(&rules.aircraft_ids)
+            .chain(&rules.building_ids)
+        {
+            let id = a
+                .sim()
+                .interner
+                .get(name)
+                .expect("bound unspawned type identity");
+            assert!(a.sim().interner.resolve(id).eq_ignore_ascii_case(name));
+            assert_eq!(
+                a.sim().object_type(id, rules).map(|object| &object.id),
+                rules.object(name).map(|object| &object.id)
+            );
+        }
+        assert!(
+            a.sim().resolved_rule_handles().is_some(),
+            "headless combat rule bindings"
+        );
+        assert_eq!(rules.general.metallic_debris.len(), 15);
+        assert_eq!(
+            rules.general.metallic_debris.last().map(String::as_str),
+            Some("D")
+        );
+        let d = rules
+            .art()
+            .anim_runtime_config("D")
+            .expect("native unread type receipt");
+        assert!(!d.art_body_read);
+        assert!(!d.bouncer);
+        assert_eq!(d.raw_shp_frame_count, None);
+        assert!(rules.art().scheduler_anim_types().contains("D"));
+        assert_eq!(
+            rules.simulation_config_hash(),
+            b.runtime.resources.rules.simulation_config_hash(),
+            "each fresh load publishes the same final bound ART owner"
+        );
+
+        assert_eq!(
+            a.sim().parity_digest(),
+            b.sim().parity_digest(),
+            "same map+seed must produce an identical construction fingerprint"
+        );
+        assert!(
+            !a.sim().houses.is_empty(),
+            "map-roster houses must be constructed before objects"
+        );
+        assert!(
+            a.sim().overlay_grid.is_some(),
+            "overlay authority must be installed by the shared finalization"
+        );
+        assert!(
+            a.sim().smudge_grid.is_some(),
+            "smudge authority must be installed by the shared finalization"
+        );
+        assert!(
+            a.sim().bridge_state.is_some(),
+            "bridge runtime state must be constructed by the funnel"
+        );
+        assert!(
+            a.sim().authored_tiberium_value_total().is_some(),
+            "authored Full_Init stores the value-only InitCellAttributes(0) total"
+        );
+
+        for tick in 0..30u32 {
+            a.tick();
+            b.tick();
+            assert_eq!(
+                a.sim().parity_digest(),
+                b.sim().parity_digest(),
+                "runtime-backed headless execution diverged at tick {tick}"
+            );
+        }
+
+        // The same pair as a LAN session, whose GameMode takes the multiplayer
+        // Queue_AI route: both instances store an identical retail sync
+        // checksum every frame.
+        for scenario in [&mut a, &mut b] {
+            let session = &mut scenario.runtime.simulation.session;
+            session.set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
+            session.install_network_timing(10);
+        }
+        for tick in 0..60u32 {
+            let [checksum_a, checksum_b] = [&mut a, &mut b].map(|scenario| {
+                tick_with_due_commands(scenario)
+                    .multiplayer_checksum
+                    .expect("multiplayer route checksums every frame")
+            });
+            assert!(
+                checksum_a.checksum.is_ok(),
+                "retail registries cover every display/Logic entry: {checksum_a:?}"
+            );
+            assert_eq!(
+                checksum_a, checksum_b,
+                "multiplayer sync checksum diverged at tick {tick}"
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+    fn retail_authored_terrain_anims_consume_the_final_bound_art_owner() {
+        let ra2 = std::path::PathBuf::from(
+            std::env::var("RA2_DIR").expect("set RA2_DIR to the retail RA2/YR install directory"),
+        );
+        // Stock Anytown supplies waterfall tiles. Exercise the full authored
+        // finalizer, whose pending Fill has no eagerly constructed tile Anims.
+        let scenario = load(&ra2, "XMP03T4.MAP", 0x00C0_FFEE).expect("Anytown headless load");
+        let rules = &scenario.runtime.resources.rules;
+        let mut terrain_anims = 0;
+        for (id, anim) in scenario
+            .sim()
+            .anims()
+            .filter(|(_, anim)| anim.terrain_attached())
+        {
+            terrain_anims += 1;
+            let name = scenario.sim().interner.resolve(anim.type_id());
+            let config = rules
+                .art()
+                .anim_runtime_config(name)
+                .expect("bound terrain type");
+            assert!(rules.art().scheduler_anim_types().contains(name));
+            assert!(config.art_body_read && config.raw_shp_frame_count.is_some());
+            assert_eq!(anim.effective_end(), config.end, "{name} final bound End");
+            assert_eq!(
+                anim.effective_loop_end(),
+                config.loop_end,
+                "{name} final bound LoopEnd"
+            );
+            assert!(anim.use_cell_drawer());
+            assert!(scenario.sim().anim_display_layer(*id, rules).is_some());
+        }
+        assert!(
+            terrain_anims > 0,
+            "retail finalizer coverage must not be vacuous"
+        );
+        eprintln!("Anytown final bound ART owner: {terrain_anims} live terrain Anims");
+    }
+
+    /// XMP03T4 with the local house idle and three computer houses: Russia
+    /// (Hard), Yuri (Normal) and France (Easy). Returns the computer houses.
+    fn retail_skirmish() -> (HeadlessScenario, Vec<crate::sim::intern::InternedId>) {
+        use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
+
+        retail_battle(
+            |_| {},
+            &[
+                (LaunchCountry::Russia, AiDifficulty::Hard),
+                (LaunchCountry::Yuri, AiDifficulty::Normal),
+                (LaunchCountry::France, AiDifficulty::Easy),
+            ],
+        )
+    }
+
+    /// XMP03T4 with the local house idle, as `configure` adjusts the battle
+    /// session, against the computer `opponents`. Returns the computer houses.
+    fn retail_battle(
+        configure: impl FnOnce(&mut crate::skirmish_launch::SkirmishLaunchSession),
+        opponents: &[(
+            crate::skirmish_launch::LaunchCountry,
+            crate::skirmish_launch::AiDifficulty,
+        )],
+    ) -> (HeadlessScenario, Vec<crate::sim::intern::InternedId>) {
+        use crate::sim::intern::InternedId;
+
+        let ra2 = std::path::PathBuf::from(
+            std::env::var("RA2_DIR").expect("set RA2_DIR to the retail RA2/YR install directory"),
+        );
+        // A four-start map: fewer start waypoints than houses would seed the
+        // extra starts at random, which the lobby never allows.
+        let map = "XMP03T4.MAP";
+        let mut session = battle_session(map, opponents);
+        configure(&mut session);
+        let scenario = load_session(&ra2, map, 0x00C0_FFEE, session).unwrap();
+        let computers: Vec<InternedId> = scenario
+            .sim()
+            .houses
+            .iter()
+            .filter(|(_, house)| !house.is_human() && !house.multiplay_passive())
+            .map(|(&id, _)| id)
+            .collect();
+        assert_eq!(computers.len(), opponents.len());
+        (scenario, computers)
+    }
+
+    /// Whether `entity` aims at an object of another house.
+    fn aims_at_another_house(
+        sim: &Simulation,
+        entity: &crate::sim::game_entity::GameEntity,
+    ) -> bool {
+        match entity.attack_target.target() {
+            Some(crate::sim::combat::TargetKind::Entity(id)) => sim
+                .entities()
+                .get(id)
+                .is_some_and(|target| target.owner() != entity.owner()),
+            _ => false,
+        }
+    }
+
+    /// A retail skirmish: the local house idles while three computer houses
+    /// build their bases, create teams from their AI triggers and build what
+    /// the teams need. Every 1500 frames it prints each computer house's
+    /// teams (with the script action each is on), choices and Foot objects;
+    /// each house must have created a team.
+    #[test]
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+    fn retail_skirmish_computer_houses_build_their_teams() {
+        use crate::map::entities::EntityCategory;
+
+        let (mut scenario, computers) = retail_skirmish();
+        let mut created = std::collections::BTreeMap::new();
+        for frame in 1..=6_000u32 {
+            scenario.tick();
+            let sim = scenario.sim();
+            created.extend(
+                sim.team_script_vm
+                    .teams_in_order()
+                    .map(|team| (team.id(), team.owner())),
+            );
+            if frame % 1500 != 0 {
+                continue;
+            }
+            for &owner in &computers {
+                let house = &sim.houses[&owner];
+                let (teams, members) = sim
+                    .team_script_vm
+                    .teams_in_order()
+                    .filter(|team| team.owner() == owner)
+                    .fold((0, 0), |(teams, members), team| {
+                        (teams + 1, members + team.member_count())
+                    });
+                let foot = sim
+                    .entities()
+                    .values()
+                    .filter(|entity| {
+                        entity.owner() == owner && entity.category() != EntityCategory::Structure
+                    })
+                    .count();
+                let buildings = sim
+                    .entities()
+                    .values()
+                    .filter(|entity| {
+                        entity.owner() == owner && entity.category() == EntityCategory::Structure
+                    })
+                    .count();
+                eprintln!(
+                    "frame {frame} {}: {buildings} buildings, {foot} foot, {teams} live teams \
+                     ({members} members), choices {:?}",
+                    sim.interner.resolve(owner),
+                    house.ai_unit_choices(),
+                );
+            }
+            for team in sim.team_script_vm.teams_in_order() {
+                eprintln!(
+                    "  team {} of {}: action {} at line {}, formed {}, {} members",
+                    team.id(),
+                    sim.interner.resolve(team.owner()),
+                    team.current_action(&sim.team_script_vm),
+                    team.cursor(),
+                    team.formed(),
+                    team.member_count(),
+                );
+            }
+            eprintln!("frame {frame}: {} teams created so far", created.len());
+        }
+        for owner in computers {
+            assert!(
+                created.values().any(|&creator| creator == owner),
+                "{} created no team",
+                scenario.sim().interner.resolve(owner)
+            );
+        }
+    }
+
+    /// Spawns `types` for the first house of `country`, in order, on free
+    /// infantry cells within 15 cells of its base centre.
+    fn spawn_beside_base(
+        sim: &mut Simulation,
+        rules: &crate::rules::ruleset::RuleSet,
+        country: &str,
+        types: &[&str],
+    ) -> (crate::sim::intern::InternedId, Vec<u64>) {
+        let house = house_of(sim, country);
+        let (bx, by) = sim.houses[&house]
+            .base_center()
+            .expect("the base has a centre");
+        let cells = (0..900).map(|n| (i32::from(bx) + n % 30 - 15, i32::from(by) + n / 30 - 15));
+        let spawned = spawn_on_free_cells(sim, rules, house, cells, types);
+        (house, spawned)
+    }
+
+    /// The first house of `country`.
+    fn house_of(sim: &Simulation, country: &str) -> crate::sim::intern::InternedId {
+        let country_id = sim.interner.get(country).expect("retail country interned");
+        sim.houses
+            .iter()
+            .find(|(_, house)| house.country() == Some(country_id))
+            .map(|(&id, _)| id)
+            .expect("a house of the country")
+    }
+
+    /// Spawns `types` for `house`, in order, each on the next of `cells`
+    /// that is a free infantry cell.
+    fn spawn_on_free_cells(
+        sim: &mut Simulation,
+        rules: &crate::rules::ruleset::RuleSet,
+        house: crate::sim::intern::InternedId,
+        cells: impl IntoIterator<Item = (i32, i32)>,
+        types: &[&str],
+    ) -> Vec<u64> {
+        use crate::sim::movement::locomotor::MovementLayer;
+
+        let owner = sim.interner.resolve(house).to_string();
+        let free: Vec<(u16, u16)> = cells
+            .into_iter()
+            .filter_map(|(rx, ry)| {
+                let (rx, ry) = (u16::try_from(rx).ok()?, u16::try_from(ry).ok()?);
+                let walkable = sim
+                    .path_grid()
+                    .is_some_and(|grid| grid.is_walkable_for_infantry(rx, ry));
+                let empty = sim
+                    .occupancy()
+                    .get(rx, ry)
+                    .is_none_or(|cell| cell.is_empty_on(MovementLayer::Ground));
+                (walkable && empty).then_some((rx, ry))
+            })
+            .collect();
+        let mut free = free.into_iter();
+        types
+            .iter()
+            .map(|type_name| {
+                free.by_ref()
+                    .find_map(|(rx, ry)| {
+                        let z = sim.terrain_cell_level(rx, ry).unwrap_or(0);
+                        sim.spawn_object_at_height(type_name, &owner, rx, ry, 0, z, rules)
+                    })
+                    .expect("a free cell")
+            })
+            .collect()
+    }
+
+    /// The cells within 10 of `centre` on both axes, nearest first.
+    fn cells_nearest(centre: (i32, i32)) -> Vec<(i32, i32)> {
+        let mut offsets: Vec<(i32, i32)> = (0..441).map(|n| (n % 21 - 10, n / 21 - 10)).collect();
+        offsets.sort_by_key(|&(dx, dy)| (dx * dx + dy * dy, dy, dx));
+        offsets
+            .into_iter()
+            .map(|(dx, dy)| (centre.0 + dx, centre.1 + dy))
+            .collect()
+    }
+
+    /// Two retail Yuri TeamTypes whose members are spawned on the free cells
+    /// nearest the Yuri house's base centre once the bases stand: "Yuri
+    /// Infantry - M1" (`05FFB46C-G`, five Initiates and an engineer, script
+    /// `0,4 / 49 / 0,1`) and "Yuri Engineers" (`08B95EFC-G`,
+    /// `54 / 0,6 / 49 / 0,9 / 0,2`). The first team may recruit the house's
+    /// own Initiates; its leader's action 0 scan finds another house's
+    /// infantry, which an Initiate of the team attacks. For the second it
+    /// prints whether an engineer aimed at another house's building.
+    ///
+    /// The cells 15 north of that base lie in no zone (0xFFFF), and
+    /// `Evaluate_Candidate`'s zone test (`0x006F7E7E..0x006F7E9C`) rejects
+    /// every quarry of a leader standing there: action 0 finds nothing, the
+    /// script runs out and the team is gone.
+    #[test]
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+    fn retail_yuri_teams_attack() {
+        use crate::map::entities::EntityCategory;
+
+        let (mut scenario, _) = retail_skirmish();
+        for _ in 0..1500 {
+            scenario.tick();
+        }
+        let runtime = &mut scenario.runtime;
+        let (sim, resources) = (&mut runtime.simulation, &runtime.resources);
+        let yuri = house_of(sim, "YuriCountry");
+        let (bx, by) = sim.houses[&yuri]
+            .base_center()
+            .expect("the base has a centre");
+        let spawned = spawn_on_free_cells(
+            sim,
+            &resources.rules,
+            yuri,
+            cells_nearest((i32::from(bx), i32::from(by))),
+            &[
+                "INIT",
+                "INIT",
+                "INIT",
+                "INIT",
+                "INIT",
+                "YENGINEER",
+                "YENGINEER",
+                "YENGINEER",
+            ],
+        );
+        let factory_scan = crate::sim::world::direct_greatest_threat(
+            sim,
+            &resources.rules,
+            None,
+            spawned[5],
+            crate::sim::combat::ScanMission::Quarry {
+                mask: 0x1000,
+                only_target_house_enemy: false,
+            },
+        );
+        eprintln!(
+            "a Yuri engineer's quarry-6 scan: {:?}",
+            factory_scan.map(|pick| match pick {
+                crate::sim::combat::TargetKind::Entity(id) => sim
+                    .interner
+                    .resolve(sim.entities().get(id).unwrap().type_ref())
+                    .to_owned(),
+                cell => format!("{cell:?}"),
+            })
+        );
+        let teams: Vec<u64> = ["05FFB46C-G", "08B95EFC-G"]
+            .into_iter()
+            .map(|team_type| {
+                let id = sim
+                    .interner
+                    .get(team_type)
+                    .expect("retail TeamType interned");
+                sim.create_team(id, Some(yuri), &resources.rules)
+                    .expect("under the TeamType's Max=")
+            })
+            .collect();
+        let initiate = sim.interner.get("INIT").expect("INIT interned");
+        let engineer = sim.interner.get("YENGINEER").expect("YENGINEER interned");
+        let aims_at_a_building = |sim: &Simulation, id: u64| {
+            let Some(entity) = sim.entities().get(id) else {
+                return false;
+            };
+            aims_at_another_house(sim, entity)
+                && matches!(
+                    entity.attack_target.target(),
+                    Some(crate::sim::combat::TargetKind::Entity(target))
+                        if sim.entities().get(target).is_some_and(|target| {
+                            target.category() == EntityCategory::Structure
+                        })
+                )
+        };
+        let (mut infantry_attacked, mut engineer_attacked) = (false, false);
+        for frame in 1..=3_000u32 {
+            scenario.tick();
+            let sim = scenario.sim();
+            infantry_attacked |= sim.team_script_vm.team(teams[0]).is_some_and(|team| {
+                team.members().any(|id| {
+                    sim.entities().get(id).is_some_and(|entity| {
+                        entity.type_ref() == initiate && aims_at_another_house(sim, entity)
+                    })
+                })
+            });
+            engineer_attacked |= spawned.iter().any(|&id| {
+                sim.entities()
+                    .get(id)
+                    .is_some_and(|entity| entity.type_ref() == engineer)
+                    && aims_at_a_building(sim, id)
+            });
+            let report = if frame <= 1000 {
+                frame % 50 == 0
+            } else {
+                frame % 500 == 0
+            };
+            if report {
+                for &team_id in &teams {
+                    let Some(team) = sim.team_script_vm.team(team_id) else {
+                        eprintln!("frame {frame}: team {team_id} is gone");
+                        continue;
+                    };
+                    let members: Vec<String> = team
+                        .members()
+                        .filter_map(|id| sim.entities().get(id))
+                        .map(|entity| {
+                            format!(
+                                "{}@({},{}) m{} aims away {}",
+                                sim.interner.resolve(entity.type_ref()),
+                                entity.position.rx(),
+                                entity.position.ry(),
+                                entity.mission.effective().raw(),
+                                aims_at_another_house(sim, entity),
+                            )
+                        })
+                        .collect();
+                    eprintln!(
+                        "frame {frame}: team {team_id} action {} at line {}, formed {}: {members:?}",
+                        team.current_action(&sim.team_script_vm),
+                        team.cursor(),
+                        team.formed(),
+                    );
+                }
+            }
+            if infantry_attacked && engineer_attacked {
+                break;
+            }
+        }
+        eprintln!("an engineer aimed at another house's building: {engineer_attacked}");
+        assert!(
+            infantry_attacked,
+            "no Initiate aimed at another house's object"
+        );
+    }
+
+    /// Two retail transport TeamTypes, each in a duel against an idle local
+    /// house that starts with only its MCV (`UnitCount=0`), deployed on the
+    /// first frame, so that undefended construction yard is the team's
+    /// least-threat target (mode 0):
+    /// - "Soviet Engineer vs Ally" (`0C143EFC-G`: an HTK and five SENGINEER,
+    ///   `58,131086 / 14 / 43 / 47,2 / 8,0 / 49 / 46,131074`), Russia against
+    ///   America;
+    /// - "Allied Tanya vs Soviet Con" (`0AD4D7BC-G`: a Night Hawk, Tanya,
+    ///   three GIs and a Guardian GI, `TransportsReturnOnUnload=yes`,
+    ///   `58,7 / 14 / 43 / 47,25 / 8,2 / 46,131097 / 49`), France against
+    ///   Russia.
+    ///
+    /// Each team's members are spawned beside the computer base once it
+    /// stands. The infantry board the transport, leaving the team (actions
+    /// 14 and 43); it carries them to the yard (47) and unloads them, and
+    /// they rejoin the team (8). Five riders fill the Night Hawk, so action
+    /// 14 finishes on its no-transport arm without archiving a cell (only a
+    /// transport with a seat left reaches `Set_ArchiveTarget @ 0x0070C610`).
+    /// It keeps the post its Area Guard archived before the team stepped
+    /// (`TeamClass::AI @ 0x006E9140` spares a `TransportsReturnOnUnload=`
+    /// transport's archive), and the unload sends it out of the team to that
+    /// post.
+    #[test]
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+    fn retail_transport_teams_load_and_unload() {
+        use crate::sim::command::{Command, CommandEnvelope};
+        use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
+
+        for (local, opponent, country, team_type, types) in [
+            (
+                LaunchCountry::America,
+                LaunchCountry::Russia,
+                "Russians",
+                "0C143EFC-G",
+                [
+                    "HTK",
+                    "SENGINEER",
+                    "SENGINEER",
+                    "SENGINEER",
+                    "SENGINEER",
+                    "SENGINEER",
+                ],
+            ),
+            (
+                LaunchCountry::Russia,
+                LaunchCountry::France,
+                "French",
+                "0AD4D7BC-G",
+                ["SHAD", "TANY", "E1", "E1", "E1", "GGI"],
+            ),
+        ] {
+            let (mut scenario, _) = retail_battle(
+                |session| {
+                    session.local_slot_mut().country = local;
+                    session.options.unit_count = 0;
+                },
+                &[(opponent, AiDifficulty::Hard)],
+            );
+            let sim = scenario.sim();
+            let human = sim
+                .houses
+                .iter()
+                .find(|(_, house)| house.is_human())
+                .map(|(&id, _)| id)
+                .expect("the local house");
+            let mcv = sim
+                .entities()
+                .iter_sorted()
+                .find(|(_, entity)| entity.owner() == human)
+                .map(|(id, _)| id)
+                .expect("the local MCV");
+            let deploy = CommandEnvelope::new(
+                human,
+                sim.session.tick() + 1,
+                Command::DeployMcv { entity_id: mcv },
+            );
+            scenario
+                .runtime
+                .advance_frame(
+                    &[deploy],
+                    SIM_TICK_MS,
+                    crate::sim::world::TickLane::Ordinary,
+                    &mut crate::sim::world::FrameEffects::default(),
+                )
+                .expect("simulation frame failed; prior world mutations remain");
+            for _ in 0..1500 {
+                scenario.tick();
+            }
+            let runtime = &mut scenario.runtime;
+            let (sim, resources) = (&mut runtime.simulation, &runtime.resources);
+            let yards: Vec<String> = sim
+                .entities()
+                .iter_sorted()
+                .filter(|(_, entity)| entity.owner() == human)
+                .map(|(_, entity)| sim.interner.resolve(entity.type_ref()).to_string())
+                .collect();
+            eprintln!("{team_type}: the local house owns {yards:?}");
+            // The members stand together in a free 3x3 block, within Stray of
+            // their mean, the team's centre (`Calc_Center @ 0x006EAEE0`).
+            // Action 14 (`0x006ED200`) sends a member farther off there on
+            // Move before it joins, and a Night Hawk in flight cannot be
+            // boarded: on Move with a NavCom it answers its passengers
+            // NEGATIVE (`UnitClass::Receive_Radio`,
+            // `0x007377F5..0x0073780D`), and a cell they stand in refuses its
+            // landing (State 4, `0x0054C6CE..0x0054C714`, to Stop_Moving at
+            // `0x0054CA3C`).
+            let house = house_of(sim, country);
+            let (bx, by) = sim.houses[&house]
+                .base_center()
+                .expect("the base has a centre");
+            let free = |sim: &Simulation, rx: i32, ry: i32| {
+                let (Ok(x), Ok(y)) = (u16::try_from(rx), u16::try_from(ry)) else {
+                    return false;
+                };
+                sim.path_grid()
+                    .is_some_and(|grid| grid.is_walkable_for_infantry(x, y))
+                    && sim.occupancy().get(x, y).is_none_or(|cell| {
+                        cell.is_empty_on(crate::sim::movement::locomotor::MovementLayer::Ground)
+                    })
+            };
+            let block = (0..900)
+                .map(|n| (i32::from(bx) + n % 30 - 15, i32::from(by) + n / 30 - 15))
+                .find(|&(rx, ry)| {
+                    (-1..=1).all(|dy| (-1..=1).all(|dx| free(&*sim, rx + dx, ry + dy)))
+                })
+                .expect("a free 3x3 block beside the base");
+            let spawned =
+                spawn_on_free_cells(sim, &resources.rules, house, cells_nearest(block), &types);
+            let id = sim
+                .interner
+                .get(team_type)
+                .expect("retail TeamType interned");
+            // The computer house may already have made the team; then it
+            // recruits the new members.
+            let team_id = sim
+                .create_team(id, Some(house), &resources.rules)
+                .or_else(|| {
+                    sim.team_script_vm
+                        .teams_in_order()
+                        .find(|team| team.team_type_id() == Some(id) && team.owner() == house)
+                        .map(|team| team.id())
+                })
+                .expect("a team of the TeamType");
+            let (transport, infantry) = (spawned[0], &spawned[1..]);
+            // The transport's cell, which a computer's Foot on Area Guard
+            // archives as its post (`FootClass::Mission_AreaGuard`,
+            // `0x004D6D78..0x004D6DB9`) before the team steps.
+            let post = sim
+                .entities()
+                .get(transport)
+                .map(|entity| (entity.position.rx(), entity.position.ry()))
+                .expect("the transport stands");
+            // The first frame all the infantry were aboard the transport and
+            // its archive then, the first frame after that they were all
+            // members again, and the first frame the team stood without the
+            // transport, with its NavCom then. A team whose engineers took the
+            // only building ends instead: action 46 (`0x006EE310`) finds no
+            // target and completes, and `TeamClass::AI` destroys a team run
+            // past its script's end (`0x006E9140`, to `0x006E9713`).
+            let (mut loaded, mut archive, mut unloaded) = (None, None, None);
+            let mut transport_left = None;
+            let mut present = (true, vec![true; spawned.len()]);
+            for frame in 1..=6_000u32 {
+                scenario.tick();
+                let sim = scenario.sim();
+                let team = sim.team_script_vm.team(team_id);
+                let aboard = infantry.iter().all(|&id| {
+                    sim.entities().get(id).is_some_and(|entity| {
+                        entity.passenger_role().inside_transport_id() == Some(transport)
+                    })
+                });
+                if loaded.is_none() && aboard {
+                    loaded = Some(frame);
+                }
+                if loaded.is_some() && unloaded.is_none() {
+                    archive = sim
+                        .entities()
+                        .get(transport)
+                        .and_then(|entity| entity.archive_target());
+                }
+                let rejoined = team.is_some_and(|team| {
+                    infantry
+                        .iter()
+                        .all(|&id| team.members().any(|member| member == id))
+                });
+                if loaded.is_some() && unloaded.is_none() && rejoined {
+                    unloaded = Some(frame);
+                }
+                let now = (
+                    team.is_some(),
+                    spawned
+                        .iter()
+                        .map(|&id| sim.entities().get(id).is_some())
+                        .collect::<Vec<_>>(),
+                );
+                let changed = now != present;
+                present = now;
+                if frame % 250 == 0 || unloaded == Some(frame) || changed {
+                    let members: Vec<String> = spawned
+                        .iter()
+                        .map(|&id| {
+                            let Some(entity) = sim.entities().get(id) else {
+                                return format!("{id}:gone");
+                            };
+                            format!(
+                                "{}@({},{}) hp{} m{} {} nav {:?}{}",
+                                sim.interner.resolve(entity.type_ref()),
+                                entity.position.rx(),
+                                entity.position.ry(),
+                                entity.health.current(),
+                                entity.mission.effective().raw(),
+                                match sim.team_script_vm.team_for_member(id) {
+                                    Some((member_team, _)) if member_team == team_id => "in",
+                                    Some(_) => "in another team",
+                                    None => "out",
+                                },
+                                entity.navigation.nav_com(),
+                                if entity.passenger_role().is_inside_transport() {
+                                    " aboard"
+                                } else {
+                                    ""
+                                },
+                            )
+                        })
+                        .collect();
+                    match team {
+                        Some(team) => eprintln!(
+                            "frame {frame}: {team_type} action {} at line {}: {members:?}",
+                            team.current_action(&sim.team_script_vm),
+                            team.cursor(),
+                        ),
+                        None => eprintln!("frame {frame}: {team_type} is gone: {members:?}"),
+                    }
+                }
+                if let Some(done) = unloaded {
+                    if transport_left.is_none()
+                        && team.is_some_and(|team| team.members().all(|member| member != transport))
+                    {
+                        transport_left = Some((
+                            frame,
+                            sim.entities()
+                                .get(transport)
+                                .and_then(|entity| entity.navigation.nav_com()),
+                        ));
+                    }
+                    if frame >= done + 60 {
+                        break;
+                    }
+                }
+            }
+            eprintln!(
+                "{team_type}: aboard at {loaded:?}, transport archive {archive:?}, \
+                 rejoined after unloading at {unloaded:?}, transport left with its \
+                 NavCom at {transport_left:?}"
+            );
+            assert!(loaded.is_some(), "{team_type}: the infantry never boarded");
+            assert!(
+                unloaded.is_some(),
+                "{team_type}: the infantry never rejoined"
+            );
+            if team_type == "0AD4D7BC-G" {
+                let (x, y) = post;
+                assert_eq!(
+                    archive,
+                    Some(crate::sim::combat::TargetKind::Cell(x, y)),
+                    "the full Night Hawk archived a cell over its post"
+                );
+                assert_eq!(
+                    transport_left.map(|(_, nav_com)| nav_com),
+                    Some(Some(crate::sim::components::NavTargetRef::Cell {
+                        rx: x,
+                        ry: y
+                    })),
+                    "the Night Hawk left its team for its post"
+                );
+            } else {
+                assert_eq!(transport_left, None, "the HTK left its team");
+            }
+        }
+    }
+
+    /// Computer engineers capture once hit on Guard, in two XMP03T4 duels
+    /// of a Hard Russia against an idle America whose MCV deploys on frame 1:
+    /// - a lone Soviet Engineer by the yard, inside an American GI's range:
+    ///   shot on Guard, it queues Hunt (`0x00518BF2`), and Mission_Hunt's
+    ///   engineer arm (`0x004D53BA`) sends it away from the GI to capture
+    ///   what its scan finds;
+    /// - "Soviet Engineer vs Ally" (`0C143EFC-G`, an HTK and five Soviet
+    ///   Engineers) against three Rhino Tanks by the yard: unloaded, the
+    ///   engineers stand on Guard until action 46 gives them Attack, and one
+    ///   hit on Guard hunts and captures.
+    ///
+    /// Each prints when an engineer first hunted and first took Capture, and
+    /// must take the American Construction Yard.
+    #[test]
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+    fn retail_computer_engineers_capture_once_hit() {
+        use crate::sim::command::{Command, CommandEnvelope};
+        use crate::sim::mission::MissionType;
+        use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
+
+        for lone in [true, false] {
+            let (mut scenario, _) = retail_battle(
+                |session| {
+                    session.local_slot_mut().country = LaunchCountry::America;
+                    session.options.unit_count = 0;
+                },
+                &[(LaunchCountry::Russia, AiDifficulty::Hard)],
+            );
+            let sim = scenario.sim();
+            let human = sim
+                .houses
+                .iter()
+                .find(|(_, house)| house.is_human())
+                .map(|(&id, _)| id)
+                .expect("the local house");
+            let mcv = sim
+                .entities()
+                .iter_sorted()
+                .find(|(_, entity)| entity.owner() == human)
+                .map(|(id, _)| id)
+                .expect("the local MCV");
+            let deploy = CommandEnvelope::new(
+                human,
+                sim.session.tick() + 1,
+                Command::DeployMcv { entity_id: mcv },
+            );
+            scenario
+                .runtime
+                .advance_frame(
+                    &[deploy],
+                    SIM_TICK_MS,
+                    crate::sim::world::TickLane::Ordinary,
+                    &mut crate::sim::world::FrameEffects::default(),
+                )
+                .expect("simulation frame failed; prior world mutations remain");
+            for _ in 0..1500 {
+                scenario.tick();
+            }
+            let runtime = &mut scenario.runtime;
+            let (sim, resources) = (&mut runtime.simulation, &runtime.resources);
+            let yard = sim
+                .entities()
+                .iter_sorted()
+                .find(|(_, entity)| entity.owner() == human)
+                .map(|(id, _)| id)
+                .expect("the local Construction Yard");
+            let at = |sim: &Simulation, id| {
+                let entity = sim.entities().get(id).expect("spawned");
+                (
+                    i32::from(entity.position.rx()),
+                    i32::from(entity.position.ry()),
+                )
+            };
+            let (yx, yy) = at(sim, yard);
+            let russians = house_of(sim, "Russians");
+            let engineers = if lone {
+                let engineer = spawn_on_free_cells(
+                    sim,
+                    &resources.rules,
+                    russians,
+                    cells_nearest((yx - 2, yy - 2)),
+                    &["SENGINEER"],
+                );
+                let (ex, ey) = at(sim, engineer[0]);
+                spawn_on_free_cells(
+                    sim,
+                    &resources.rules,
+                    human,
+                    cells_nearest((ex - 3, ey - 2)),
+                    &["E1"],
+                );
+                engineer
+            } else {
+                let (house, spawned) = spawn_beside_base(
+                    sim,
+                    &resources.rules,
+                    "Russians",
+                    &[
+                        "HTK",
+                        "SENGINEER",
+                        "SENGINEER",
+                        "SENGINEER",
+                        "SENGINEER",
+                        "SENGINEER",
+                    ],
+                );
+                let id = sim
+                    .interner
+                    .get("0C143EFC-G")
+                    .expect("retail TeamType interned");
+                // The computer house may already have made the team; then it
+                // recruits the new members.
+                sim.create_team(id, Some(house), &resources.rules)
+                    .or_else(|| {
+                        sim.team_script_vm
+                            .teams_in_order()
+                            .find(|team| team.team_type_id() == Some(id) && team.owner() == house)
+                            .map(|team| team.id())
+                    })
+                    .expect("a team of the TeamType");
+                spawn_on_free_cells(
+                    sim,
+                    &resources.rules,
+                    human,
+                    cells_nearest((yx + 3, yy + 3)),
+                    &["MTNK", "MTNK", "MTNK"],
+                );
+                spawned[1..].to_vec()
+            };
+            let label = if lone { "lone engineer" } else { "0C143EFC-G" };
+            let (mut hunted, mut capturing, mut captured) = (None, None, None);
+            for frame in 1..=4_000u32 {
+                scenario.tick();
+                let sim = scenario.sim();
+                for &id in &engineers {
+                    let Some(entity) = sim.entities().get(id) else {
+                        continue;
+                    };
+                    let current = entity.mission.current().known();
+                    if hunted.is_none()
+                        && (current == Some(MissionType::Hunt)
+                            || entity.mission.queued().known() == Some(MissionType::Hunt))
+                    {
+                        hunted = Some((frame, id));
+                    }
+                    if capturing.is_none() && current == Some(MissionType::Capture) {
+                        capturing = Some((frame, id));
+                    }
+                }
+                if sim
+                    .entities()
+                    .get(yard)
+                    .is_some_and(|entity| entity.owner() == russians)
+                {
+                    captured = Some(frame);
+                    break;
+                }
+            }
+            eprintln!(
+                "{label}: hunted at {hunted:?}, took Capture at {capturing:?}, \
+                 captured the yard at {captured:?}"
+            );
+            assert!(hunted.is_some(), "{label}: no engineer hunted");
+            assert!(capturing.is_some(), "{label}: no engineer took Capture");
+            assert!(captured.is_some(), "{label}: the yard was not captured");
+        }
+    }
+
+    /// "Yuri Armor - E1" (`05FC195C-G`: three Lashers and a Gattling Tank,
+    /// the "Yuri Unit Hunter" script `54 / 61 / 0,5 / 49 / 0,4 / 0,1`) for a
+    /// Normal Yuri against an idle America on XMP03T4. Once the base stands,
+    /// a Yuri Tank Bunker is placed on the nearest open ground beside it and
+    /// the team's members are spawned there. Action 61 sends the first
+    /// member that the bunker admits into it, and the team goes on past it.
+    /// Then the stock "Yuri Chaos - M1" (`07C0304C-G`, one Chaos Drone, the
+    /// same script) reaches action 61 beside a second, free bunker: the
+    /// drone (`Bunkerable=no`) stays in its team and the team goes on.
+    #[test]
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+    fn retail_yuri_armor_team_mans_a_tank_bunker() {
+        use crate::sim::movement::locomotor::MovementLayer;
+        use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
+
+        let (mut scenario, _) =
+            retail_battle(|_| {}, &[(LaunchCountry::Yuri, AiDifficulty::Normal)]);
+        for _ in 0..1500 {
+            scenario.tick();
+        }
+        let runtime = &mut scenario.runtime;
+        let (sim, resources) = (&mut runtime.simulation, &runtime.resources);
+        let yuri = house_of(sim, "YuriCountry");
+        let (bx, by) = sim.houses[&yuri]
+            .base_center()
+            .expect("the base has a centre");
+        // A 2x2 foundation inside a free 4x4 square, so a tank can reach it,
+        // where the bunker's own placement test admits it (the AI's base
+        // changes which free cells are ramps, ore or otherwise unbuildable).
+        let placing = std::sync::Arc::clone(resources);
+        let open = move |sim: &Simulation, rx: i32, ry: i32| {
+            let (Ok(x), Ok(y)) = (i16::try_from(rx), i16::try_from(ry)) else {
+                return false;
+            };
+            let natbnk = placing.rules.object("NATBNK").expect("retail NATBNK");
+            crate::sim::build_site::can_place_building_at(
+                sim,
+                &placing.rules,
+                Some(placing.rules.overlay_registry()),
+                natbnk,
+                (x, y),
+                None,
+                None,
+                None,
+            ) && (-1..3).all(|dy| {
+                (-1..3).all(|dx| {
+                    let (Ok(x), Ok(y)) = (u16::try_from(rx + dx), u16::try_from(ry + dy)) else {
+                        return false;
+                    };
+                    sim.path_grid()
+                        .is_some_and(|grid| grid.is_walkable_for_infantry(x, y))
+                        && sim
+                            .occupancy()
+                            .get(x, y)
+                            .is_none_or(|cell| cell.is_empty_on(MovementLayer::Ground))
+                })
+            })
+        };
+        let (rx, ry) = cells_nearest((i32::from(bx), i32::from(by)))
+            .into_iter()
+            .find(|&(rx, ry)| open(&*sim, rx, ry))
+            .and_then(|(rx, ry)| Some((u16::try_from(rx).ok()?, u16::try_from(ry).ok()?)))
+            .expect("open ground beside the base");
+        let z = sim.terrain_cell_level(rx, ry).unwrap_or(0);
+        let owner = sim.interner.resolve(yuri).to_string();
+        let bunker = sim
+            .spawn_object_at_height("NATBNK", &owner, rx, ry, 0, z, &resources.rules)
+            .expect("the bunker spawns");
+        let (_, members) = spawn_beside_base(
+            sim,
+            &resources.rules,
+            "YuriCountry",
+            &["LTNK", "LTNK", "LTNK", "YTNK"],
+        );
+        let team_type = sim
+            .interner
+            .get("05FC195C-G")
+            .expect("retail TeamType interned");
+        // The computer house may already have made the team; then it
+        // recruits the new members.
+        let team = sim
+            .create_team(team_type, Some(yuri), &resources.rules)
+            .or_else(|| {
+                sim.team_script_vm
+                    .teams_in_order()
+                    .find(|team| team.team_type_id() == Some(team_type) && team.owner() == yuri)
+                    .map(|team| team.id())
+            })
+            .expect("a team of the TeamType");
+        let (mut seeking, mut installed, mut passed) = (None, None, None);
+        for frame in 1..=3_000u32 {
+            scenario.tick();
+            let sim = scenario.sim();
+            if seeking.is_none() {
+                seeking = members
+                    .iter()
+                    .find(|&&id| {
+                        sim.entities().get(id).is_some_and(|entity| {
+                            entity.seldom.radio_contacts.slot(0) == Some(bunker)
+                        })
+                    })
+                    .map(|&id| (frame, id));
+            }
+            if installed.is_none() {
+                installed = sim
+                    .entities()
+                    .get(bunker)
+                    .and_then(|entity| entity.bunker.occupant())
+                    .filter(|occupant| members.contains(occupant))
+                    .map(|occupant| (frame, occupant));
+            }
+            let line = sim
+                .team_script_vm
+                .team(team)
+                .map(|team| (team.cursor(), team.current_action(&sim.team_script_vm)));
+            if passed.is_none() && line.is_none_or(|(cursor, _)| cursor >= 2) {
+                passed = Some((frame, line));
+            }
+            if frame % 250 == 0 {
+                eprintln!(
+                    "frame {frame}: team line {line:?}, seeking {seeking:?}, installed {installed:?}"
+                );
+            }
+            if installed.is_some() && passed.is_some() {
+                break;
+            }
+        }
+        eprintln!(
+            "bunker at ({rx},{ry}): sought at {seeking:?}, manned at {installed:?}, \
+             the team passed action 61 at {passed:?}"
+        );
+        assert!(installed.is_some(), "no team member manned the bunker");
+        assert!(passed.is_some(), "the team stayed on action 61");
+
+        let runtime = &mut scenario.runtime;
+        let (sim, resources) = (&mut runtime.simulation, &runtime.resources);
+        let (fx, fy) = cells_nearest((i32::from(bx), i32::from(by)))
+            .into_iter()
+            .find(|&(rx, ry)| open(&*sim, rx, ry))
+            .and_then(|(rx, ry)| Some((u16::try_from(rx).ok()?, u16::try_from(ry).ok()?)))
+            .expect("more open ground beside the base");
+        let z = sim.terrain_cell_level(fx, fy).unwrap_or(0);
+        let free = sim
+            .spawn_object_at_height("NATBNK", &owner, fx, fy, 0, z, &resources.rules)
+            .expect("the second bunker spawns");
+        spawn_beside_base(sim, &resources.rules, "YuriCountry", &["CAOS"]);
+        let team_type = sim
+            .interner
+            .get("07C0304C-G")
+            .expect("retail TeamType interned");
+        let team = sim
+            .create_team(team_type, Some(yuri), &resources.rules)
+            .or_else(|| {
+                sim.team_script_vm
+                    .teams_in_order()
+                    .find(|team| team.team_type_id() == Some(team_type) && team.owner() == yuri)
+                    .map(|team| team.id())
+            })
+            .expect("a team of the TeamType");
+        let (mut on_61, mut past) = (None, None);
+        for frame in 1..=3_000u32 {
+            scenario.tick();
+            let sim = scenario.sim();
+            let Some(line) = sim.team_script_vm.team(team) else {
+                break;
+            };
+            let members: Vec<u64> = line.members().collect();
+            if line.cursor() == 1 {
+                on_61 = Some((frame, members));
+            } else if line.cursor() >= 2 && on_61.is_some() {
+                let held = sim.entities().get(free).is_none_or(|bunker| {
+                    bunker.bunker.occupant().is_some()
+                        || bunker.seldom.radio_contacts.slot(0).is_some()
+                });
+                past = Some((frame, members, held));
+                break;
+            }
+        }
+        eprintln!("Chaos Drone team: on action 61 {on_61:?}, past it {past:?}");
+        let (_, on_61) = on_61.expect("the Chaos Drone team never reached action 61");
+        let (_, members, held) = past.expect("the Chaos Drone team stayed on action 61");
+        assert!(
+            !on_61.is_empty(),
+            "the team reached action 61 without a drone"
+        );
+        assert_eq!(members, on_61, "a drone left its team at action 61");
+        assert!(!held, "the second bunker was taken");
+    }
+
+    /// "Soviet SChop vs All" (`07C3092C-G`: two Siege Choppers, script
+    /// `54 / 53 / 47,131072 / 9 / 0,9 / 49 / 0,2 / 0,1`) for a Normal Soviet
+    /// AI against an idle America on XMP03T4, with two Siege Choppers spawned
+    /// beside the standing base for the team.
+    ///
+    /// The team holds on action 54, as natively. Each chopper reaches the
+    /// gather point and hovers there: a `DeployToLand=` simple deployer's
+    /// State 2 holds without clearing the moving byte (`0x0054BE09..0x0054BE2F`).
+    /// So `Coordinate_Move` keeps its NavCom (`Is_Moving` at `0x006EBDA2`) and
+    /// counts it unarrived (`0x006EBF01..0x006EBF13`); only a `BalloonHover=`
+    /// member is let off (`0x006EBED5..0x006EBEFB`). Ares bug 895814 reports
+    /// this of the game: the AI's Siege Choppers run their script only once an
+    /// enemy is within range, and `BalloonHover=yes` cures it. That release is
+    /// not reproduced here.
+    ///
+    /// Put on line 3 instead, as action 6 would, the team's action 9 orders
+    /// each chopper (`IsSimpleDeployer=`) to Unload, and they start to land.
+    /// Action 9 is done at once, and the team's next attack order queues
+    /// Attack over their Unload, as `Coordinate_Attack` does natively
+    /// (`0x006EB79A..0x006EB7B5`): Unit vt+0x4E4 (`0x00736D50`) keeps only a
+    /// `DeployToFire=` unit, or a computer one deploying into a `TickTank=`
+    /// building, on Unload, and the Siege Chopper is neither. The queued
+    /// Attack waits while the chopper comes down
+    /// (`UnitClass::Is_Ready_To_Commence @ 0x00744270`, the moving arm
+    /// `0x007442C2..0x00744327`; a descending jumpjet is moving,
+    /// `JumpjetLocomotionClass::Is_Moving_Now @ 0x0054D0D0`), so each takes
+    /// it once it is down, before it deploys.
+    #[test]
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+    fn retail_soviet_siege_chopper_team_holds_then_attacks_undeployed() {
+        use crate::sim::mission::MissionType;
+        use crate::sim::movement::jumpjet_movement::jumpjet_flight::{STATE_DESCEND, STATE_HOLD};
+        use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
+
+        let (mut scenario, _) =
+            retail_battle(|_| {}, &[(LaunchCountry::Russia, AiDifficulty::Normal)]);
+        for _ in 0..1500 {
+            scenario.tick();
+        }
+        let runtime = &mut scenario.runtime;
+        let (sim, resources) = (&mut runtime.simulation, &runtime.resources);
+        let (soviet, choppers) =
+            spawn_beside_base(sim, &resources.rules, "Russians", &["SCHP", "SCHP"]);
+        let team_type = sim
+            .interner
+            .get("07C3092C-G")
+            .expect("retail TeamType interned");
+        let team = sim
+            .create_team(team_type, Some(soviet), &resources.rules)
+            .or_else(|| {
+                sim.team_script_vm
+                    .teams_in_order()
+                    .find(|team| team.team_type_id() == Some(team_type) && team.owner() == soviet)
+                    .map(|team| team.id())
+            })
+            .expect("a team of the TeamType");
+        // Hovering on Move at its destination in State 2, with a NavCom and
+        // the moving byte set (State 1 passes through State 2 at lift-off);
+        // the team recruits the choppers on its first frames.
+        let holding = |sim: &Simulation, id: u64| {
+            sim.entities().get(id).is_some_and(|entity| {
+                let at = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+                entity.mission.current().known() == Some(MissionType::Move)
+                    && entity.navigation.nav_com().is_some()
+                    && entity
+                        .locomotor
+                        .as_ref()
+                        .and_then(|locomotor| locomotor.jumpjet_runtime())
+                        .is_some_and(|jumpjet| {
+                            let to = jumpjet.destination();
+                            jumpjet.phase() == STATE_HOLD
+                                && jumpjet.moving()
+                                && (to.x, to.y) == (at.x, at.y)
+                        })
+            })
+        };
+        let mut held = None;
+        for frame in 1..=1_500u32 {
+            scenario.tick();
+            let sim = scenario.sim();
+            let line = sim.team_script_vm.team(team).expect("the team lives");
+            assert!(
+                line.cursor() <= 0,
+                "the team left action 54 at frame {frame}"
+            );
+            let both = choppers
+                .iter()
+                .all(|&id| line.members().any(|member| member == id) && holding(sim, id));
+            match held {
+                None if both => held = Some(frame),
+                Some(since) => assert!(
+                    both,
+                    "a chopper left the team or its hold at frame {frame} (held from {since})"
+                ),
+                None => {}
+            }
+        }
+        let since = held.expect("the choppers never held at the gather point");
+        let sim = scenario.sim();
+        let cells: Vec<_> = choppers
+            .iter()
+            .filter_map(|&id| sim.entities().get(id))
+            .map(|entity| {
+                (
+                    (entity.position.rx(), entity.position.ry()),
+                    entity.navigation.nav_com(),
+                )
+            })
+            .collect();
+        eprintln!("Siege Chopper team: held on action 54 from frame {since}: {cells:?}");
+        assert!(since <= 1_000, "the choppers held only from frame {since}");
+
+        scenario
+            .runtime
+            .simulation
+            .team_script_vm
+            .seek_line_for_test(team, 3);
+        // The phase of each chopper's jumpjet, its height, whether it is
+        // deployed and its mission.
+        let state = |sim: &Simulation, id: u64| {
+            let entity = sim.entities().get(id).expect("the chopper lives");
+            (
+                entity
+                    .locomotor
+                    .as_ref()
+                    .and_then(|locomotor| locomotor.jumpjet_runtime())
+                    .map(|jumpjet| jumpjet.phase()),
+                crate::sim::movement::air_movement::current_fly_height(
+                    entity,
+                    sim.resolved_terrain.as_ref(),
+                ),
+                entity.is_deployed(),
+                entity.mission.current().known(),
+            )
+        };
+        let (mut on_9, mut past, mut attacking) = (None, None, None);
+        // Each chopper's state on the first frame it is on Attack.
+        let mut ordered = vec![None; choppers.len()];
+        for frame in 1..=600u32 {
+            scenario.tick();
+            let sim = scenario.sim();
+            let states: Vec<_> = choppers.iter().map(|&id| state(sim, id)).collect();
+            assert!(
+                states.iter().all(|state| !state.2),
+                "a chopper deployed at frame {frame}: {states:?}"
+            );
+            for (first, state) in ordered.iter_mut().zip(&states) {
+                if first.is_none() && state.3 == Some(MissionType::Attack) {
+                    *first = Some((frame, *state));
+                }
+            }
+            let cursor = sim.team_script_vm.team(team).map(|team| team.cursor());
+            if on_9.is_none() && cursor == Some(3) {
+                on_9 = Some((frame, states.clone()));
+            }
+            if past.is_none() && on_9.is_some() && cursor.is_none_or(|cursor| cursor >= 4) {
+                past = Some(frame);
+            }
+            if states
+                .iter()
+                .all(|state| state.3 == Some(MissionType::Attack))
+            {
+                attacking = Some((frame, cursor, states));
+                break;
+            }
+        }
+        eprintln!(
+            "Siege Chopper team: on action 9 {on_9:?}, past it at {past:?}, attacking at \
+             {attacking:?}"
+        );
+        let (_, unloading) = on_9.expect("the team never ran action 9");
+        assert!(
+            unloading.iter().all(|state| {
+                state.0 == Some(STATE_DESCEND) && state.3 == Some(MissionType::Unload)
+            }),
+            "action 9 did not set both choppers landing to unload: {unloading:?}"
+        );
+        assert!(past.is_some(), "the team stayed on action 9");
+        attacking.expect("no attack order took the choppers off Unload");
+        eprintln!("Siege Chopper team: each chopper's first Attack frame {ordered:?}");
+        // Is_Ready_To_Commence @ 0x00744270 holds the queued Attack while the
+        // jumpjet moves, so none takes it on the way down (it was once
+        // expected in the air).
+        assert!(
+            ordered
+                .iter()
+                .flatten()
+                .all(|(_, state)| state.0 != Some(STATE_DESCEND)),
+            "a chopper took Attack while it was descending: {ordered:?}"
+        );
+    }
+
+    /// "Soviet MCV" (`043F83EC-G`: one SMCV, script `043F23CC-G`
+    /// `54 / 9 / 49`, which the Hard "Soviet MCV - H" trigger makes for a
+    /// house without a Construction Yard) for a Hard Soviet AI against an
+    /// idle America on XMP03T4. Once the base stands its yard is removed, and
+    /// an SMCV is spawned beside the base for the team. The MCV becomes a
+    /// yard again, it leaves the team as it does, and the team is done with
+    /// its TeamType's `Max=` slot free. The house's own MCV routes act on a
+    /// team member too (UnitClass::AI's Hunt queue has no team check), so
+    /// the deploy may be theirs: the test prints the MCV's orders.
+    /// [`retail_soviet_mcv_team_deploys_its_mcv_by_action_9`] isolates
+    /// action 9.
+    #[test]
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+    fn retail_hard_soviet_mcv_team_rebuilds_its_yard() {
+        use crate::sim::mission::MissionType;
+        use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
+
+        let (mut scenario, _) =
+            retail_battle(|_| {}, &[(LaunchCountry::Russia, AiDifficulty::Hard)]);
+        for _ in 0..1500 {
+            scenario.tick();
+        }
+        let yards = |sim: &Simulation, owner| -> Vec<u64> {
+            sim.entities()
+                .values()
+                .filter(|entity| {
+                    !entity.death.is_dying()
+                        && entity.owner() == owner
+                        && sim.interner.resolve(entity.type_ref()) == "NACNST"
+                })
+                .map(crate::sim::game_entity::GameEntity::stable_id)
+                .collect()
+        };
+        let runtime = &mut scenario.runtime;
+        let (sim, resources) = (&mut runtime.simulation, &runtime.resources);
+        let soviet = house_of(sim, "Russians");
+        let lost = yards(sim, soviet);
+        assert!(!lost.is_empty(), "the base has a yard");
+        for yard in &lost {
+            sim.uninit_with_rules(*yard, &resources.rules);
+        }
+        let (_, spawned) = spawn_beside_base(sim, &resources.rules, "Russians", &["SMCV"]);
+        let mcv = spawned[0];
+        let team_type = sim
+            .interner
+            .get("043F83EC-G")
+            .expect("retail TeamType interned");
+        let team = sim
+            .create_team(team_type, Some(soviet), &resources.rules)
+            .or_else(|| {
+                sim.team_script_vm
+                    .teams_in_order()
+                    .find(|team| team.team_type_id() == Some(team_type) && team.owner() == soviet)
+                    .map(|team| team.id())
+            })
+            .expect("a team of the TeamType");
+        let (mut joined, mut on_9, mut rebuilt, mut done) = (None, None, None, None);
+        let mut orders: Vec<(u32, Option<MissionType>, Option<MissionType>)> = Vec::new();
+        for frame in 1..=3_000u32 {
+            scenario.tick();
+            let sim = scenario.sim();
+            let line = sim.team_script_vm.team(team);
+            if joined.is_none() && line.is_some_and(|line| line.members().any(|id| id == mcv)) {
+                joined = Some(frame);
+            }
+            if on_9.is_none() && line.is_some_and(|line| line.cursor() == 1) {
+                on_9 = Some((frame, line.map(|line| line.member_count())));
+            }
+            if let Some(entity) = sim
+                .entities()
+                .get(mcv)
+                .filter(|entity| !entity.death.is_dying())
+            {
+                let order = (
+                    entity.mission.current().known(),
+                    entity.mission.queued().known(),
+                );
+                if orders.last().is_none_or(|last| (last.1, last.2) != order) {
+                    orders.push((frame, order.0, order.1));
+                }
+            }
+            if rebuilt.is_none() && !yards(sim, soviet).is_empty() {
+                rebuilt = Some(frame);
+            }
+            if done.is_none() && line.is_none_or(|line| line.cursor() >= 2) {
+                done = Some(frame);
+            }
+            if rebuilt.is_some() && done.is_some() {
+                break;
+            }
+        }
+        let sim = scenario.sim();
+        let live = sim
+            .team_script_vm
+            .teams_in_order()
+            .filter(|line| line.team_type_id() == Some(team_type) && line.owner() == soviet)
+            .count();
+        eprintln!(
+            "MCV team: joined at {joined:?}, on action 9 {on_9:?}, yard rebuilt at {rebuilt:?}, \
+             done at {done:?}, {live} left of the type; MCV orders (frame, current, queued) \
+             {orders:?}"
+        );
+        assert!(joined.is_some(), "the MCV never joined the team");
+        assert!(rebuilt.is_some(), "no yard was rebuilt");
+        assert!(done.is_some(), "the team stayed on its script");
+        assert_eq!(live, 0, "the TeamType's Max= slot is still taken");
+    }
+
+    /// The "Soviet MCV" team (`043F83EC-G`) of a Hard Soviet AI on XMP03T4,
+    /// with an SMCV spawned beside the standing base for it and the house's
+    /// `AutoBaseBuilding` latch cleared, so neither UnitClass::AI's Hunt
+    /// queue nor Mission_Guard's Unload arm deploys the MCV. Put on line 1,
+    /// action 9 asks the yard to stand at the MCV's own cell and orders it
+    /// to Unload; Mission_Unload deploys it, it leaves the team as a yard, and
+    /// the team, empty, is done.
+    #[test]
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+    fn retail_soviet_mcv_team_deploys_its_mcv_by_action_9() {
+        use crate::sim::mission::{MissionId, MissionType};
+        use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
+
+        let (mut scenario, _) =
+            retail_battle(|_| {}, &[(LaunchCountry::Russia, AiDifficulty::Hard)]);
+        for _ in 0..1500 {
+            scenario.tick();
+        }
+        let yards = |sim: &Simulation, owner| -> usize {
+            sim.entities()
+                .values()
+                .filter(|entity| {
+                    !entity.death.is_dying()
+                        && entity.owner() == owner
+                        && sim.interner.resolve(entity.type_ref()) == "NACNST"
+                })
+                .count()
+        };
+        let runtime = &mut scenario.runtime;
+        let (sim, resources) = (&mut runtime.simulation, &runtime.resources);
+        let soviet = house_of(sim, "Russians");
+        let standing = yards(sim, soviet);
+        let house = sim.houses.get_mut(&soviet).expect("the Soviet house");
+        house.set_ai_activation_for_test(crate::sim::house_state::HouseAiActivationLatches {
+            auto_base_building: false,
+            ..house.ai_activation()
+        });
+        // The first cell near the base where a yard can stand from every
+        // origin within a cell of it: the MCV's own cell (action 9's test),
+        // Deploy's (-1, -1), and a cell of drift.
+        let yard = resources.rules.object("NACNST").expect("retail NACNST");
+        let (bx, by) = sim.houses[&soviet]
+            .base_center()
+            .expect("the base has a centre");
+        let mut around: Vec<(i32, i32)> = (0..1681).map(|n| (n % 41 - 20, n / 41 - 20)).collect();
+        around.sort_by_key(|&(dx, dy)| (dx * dx + dy * dy, dy, dx));
+        let (rx, ry) = around
+            .into_iter()
+            .map(|(dx, dy)| (i32::from(bx) + dx, i32::from(by) + dy))
+            .find(|&(rx, ry)| {
+                (-1..=1).all(|dy| {
+                    (-1..=1).all(|dx| {
+                        let (Ok(x), Ok(y)) = (i16::try_from(rx + dx), i16::try_from(ry + dy))
+                        else {
+                            return false;
+                        };
+                        crate::sim::build_site::can_place_building_at(
+                            sim,
+                            &resources.rules,
+                            Some(resources.rules.overlay_registry()),
+                            yard,
+                            (x, y),
+                            None,
+                            None,
+                            None,
+                        )
+                    })
+                })
+            })
+            .and_then(|(rx, ry)| Some((u16::try_from(rx).ok()?, u16::try_from(ry).ok()?)))
+            .expect("room for a yard near the base");
+        let z = sim.terrain_cell_level(rx, ry).unwrap_or(0);
+        let owner = sim.interner.resolve(soviet).to_string();
+        let mcv = sim
+            .spawn_object_at_height("SMCV", &owner, rx, ry, 0, z, &resources.rules)
+            .expect("the MCV spawns");
+        let team_type = sim
+            .interner
+            .get("043F83EC-G")
+            .expect("retail TeamType interned");
+        let team = sim
+            .create_team(team_type, Some(soviet), &resources.rules)
+            .or_else(|| {
+                sim.team_script_vm
+                    .teams_in_order()
+                    .find(|team| team.team_type_id() == Some(team_type) && team.owner() == soviet)
+                    .map(|team| team.id())
+            })
+            .expect("a team of the TeamType");
+        // A full team forms and starts its script over (`0x006E91AD..
+        // 0x006E91F5`), so it is put on line 1 once formed.
+        let mut joined = None;
+        for frame in 1..=60u32 {
+            scenario.tick();
+            if scenario
+                .sim()
+                .team_script_vm
+                .team(team)
+                .is_some_and(|line| line.formed() && line.members().any(|id| id == mcv))
+            {
+                joined = Some(frame);
+                break;
+            }
+        }
+        assert!(joined.is_some(), "the MCV never joined the team");
+        scenario
+            .runtime
+            .simulation
+            .team_script_vm
+            .seek_line_for_test(team, 1);
+        let (mut ordered, mut deployed, mut done) = (None, None, None);
+        for frame in 1..=1_500u32 {
+            scenario.tick();
+            let sim = scenario.sim();
+            let line = sim.team_script_vm.team(team);
+            if ordered.is_none()
+                && line.is_some_and(|line| line.cursor() == 1)
+                && sim.entities().get(mcv).is_some_and(|entity| {
+                    entity.mission.effective() == MissionId::from_known(MissionType::Unload)
+                })
+            {
+                ordered = Some(frame);
+            }
+            if deployed.is_none() && yards(sim, soviet) > standing {
+                deployed = Some(frame);
+            }
+            if done.is_none() && line.is_none_or(|line| line.cursor() >= 2) {
+                done = Some(frame);
+            }
+            if deployed.is_some() && done.is_some() {
+                break;
+            }
+        }
+        eprintln!(
+            "MCV team, house routes off, MCV at ({rx},{ry}): joined at {joined:?}, Unload on \
+             action 9 at {ordered:?}, deployed at {deployed:?}, done at {done:?}"
+        );
+        assert!(
+            ordered.is_some(),
+            "action 9 never ordered the MCV to Unload"
+        );
+        assert!(deployed.is_some(), "the MCV did not deploy");
+        assert!(done.is_some(), "the team stayed on its script");
+    }
+
+    /// Advances one frame with the commands now due, as `tick` does with none.
+    fn tick_with_due_commands(
+        scenario: &mut HeadlessScenario,
+    ) -> crate::sim::world::SimFrameOutput {
+        let commands = scenario.runtime.simulation.take_due_commands();
+        scenario
+            .runtime
+            .advance_frame(
+                &commands,
+                SIM_TICK_MS,
+                crate::sim::world::TickLane::Ordinary,
+                &mut crate::sim::world::FrameEffects::default(),
+            )
+            .expect("simulation frame failed")
+    }
+
+    /// A Normal Soviet house's Rhino, in no team, shot by a GI beside it:
+    /// `UnitClass::ReceiveDamage`'s computer-owner response gives it the GI
+    /// as its NavCom and queues Move (`combat::unit_damage_response`), it
+    /// drives off its cell at the GI, and crushes it.
+    #[test]
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+    fn retail_computer_rhino_runs_at_the_gi_that_shoots_it() {
+        use crate::sim::command::{Command, CommandEnvelope};
+        use crate::sim::components::NavTargetRef;
+        use crate::sim::mission::{MissionId, MissionType};
+        use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
+
+        let (mut scenario, _) =
+            retail_battle(|_| {}, &[(LaunchCountry::Russia, AiDifficulty::Normal)]);
+        for _ in 0..60 {
+            scenario.tick();
+        }
+        let runtime = &mut scenario.runtime;
+        let (sim, rules) = (&mut runtime.simulation, &runtime.resources.rules);
+        let (_, spawned) = spawn_beside_base(sim, rules, "Russians", &["HTNK"]);
+        let rhino = spawned[0];
+        let start = {
+            let entity = sim.entities().get(rhino).expect("the Rhino");
+            (entity.position.rx(), entity.position.ry())
+        };
+        let america = house_of(sim, "Americans");
+        let gi = spawn_on_free_cells(
+            sim,
+            rules,
+            america,
+            cells_nearest((i32::from(start.0), i32::from(start.1))),
+            &["E1"],
+        )[0];
+        let tick = sim.session.tick();
+        sim.queue_command(CommandEnvelope::new(
+            america,
+            tick + 1,
+            Command::Attack {
+                attacker_id: gi,
+                target_id: rhino,
+            },
+        ));
+        let full = sim.entities().get(rhino).unwrap().health.current();
+        let move_mission = MissionId::from_known(MissionType::Move);
+        let (mut hit, mut charged, mut moved, mut died) = (None, None, None, None);
+        let (mut gi_cell, mut crushed) = (None, false);
+        for frame in 1..=600u32 {
+            let output = tick_with_due_commands(&mut scenario);
+            let sim = scenario.sim();
+            let entity = sim.entities().get(rhino).expect("the Rhino lives");
+            if hit.is_none() && entity.health.current() < full {
+                assert!(
+                    sim.team_script_vm.team_for_member(rhino).is_none(),
+                    "the Rhino joined a team before the hit"
+                );
+                hit = Some(frame);
+            }
+            if charged.is_none()
+                && entity.navigation.nav_com() == Some(NavTargetRef::object(gi))
+                && (entity.mission.queued() == move_mission
+                    || entity.mission.current() == move_mission)
+            {
+                charged = Some(frame);
+            }
+            if charged.is_some()
+                && moved.is_none()
+                && (entity.position.rx(), entity.position.ry()) != start
+            {
+                moved = Some(frame);
+            }
+            match sim
+                .entities()
+                .get(gi)
+                .filter(|gi| !gi.death.is_dying() && gi.health.current() > 0)
+            {
+                Some(gi) => gi_cell = Some((gi.position.rx(), gi.position.ry())),
+                None => {
+                    died = Some(frame);
+                    // The per-cell crush plays the victim's `CrushSound=` at
+                    // the crusher's Location, in the victim's own cell.
+                    crushed = output.sound_events.iter().any(|event| {
+                        matches!(
+                            event,
+                            crate::sim::world::SimSoundEvent::EntityCrushed { world, .. }
+                                if gi_cell
+                                    == Some((world.to_cell_sub_z().0, world.to_cell_sub_z().1))
+                        )
+                    });
+                    break;
+                }
+            }
+        }
+        eprintln!(
+            "hit {hit:?}, charged {charged:?}, moved {moved:?}, GI died {died:?}, crushed {crushed}"
+        );
+        assert!(hit.is_some(), "the GI never hit the Rhino");
+        assert!(
+            charged >= hit,
+            "the Rhino never took the GI as its NavCom on Move"
+        );
+        assert!(moved.is_some(), "the Rhino never left its cell");
+        assert!(died.is_some(), "the GI survived");
+        assert!(crushed, "the GI died, but not under the Rhino");
+    }
+
+    /// A Normal Soviet house's Rhino sent to Attack a GI beside it drives over
+    /// it: `UnitClass::Approach_Target`'s computer crush arm gives it the GI
+    /// as its destination (`movement::foot_approach::ApproachCrush`).
+    #[test]
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+    fn retail_computer_rhino_drives_over_the_gi_it_attacks() {
+        use crate::sim::combat::TargetKind;
+        use crate::sim::components::NavTargetRef;
+        use crate::sim::mission::{MissionId, MissionType};
+        use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
+
+        let (mut scenario, _) =
+            retail_battle(|_| {}, &[(LaunchCountry::Russia, AiDifficulty::Normal)]);
+        for _ in 0..60 {
+            scenario.tick();
+        }
+        let runtime = &mut scenario.runtime;
+        let (sim, rules) = (&mut runtime.simulation, &runtime.resources.rules);
+        let (_, spawned) = spawn_beside_base(sim, rules, "Russians", &["HTNK"]);
+        let rhino = spawned[0];
+        let start = {
+            let entity = sim.entities().get(rhino).expect("the Rhino");
+            (entity.position.rx(), entity.position.ry())
+        };
+        let america = house_of(sim, "Americans");
+        let gi = spawn_on_free_cells(
+            sim,
+            rules,
+            america,
+            cells_nearest((i32::from(start.0), i32::from(start.1))),
+            &["E1"],
+        )[0];
+        sim.assign_target_represented(
+            rhino,
+            Some(TargetKind::Entity(gi)),
+            rules,
+            &mut crate::sim::world::FrameEffects::default(),
+        )
+        .expect("the Rhino takes the GI as its target");
+        let now = sim.session.binary_frame();
+        sim.substrate_mut_for_test()
+            .mission_assign_exact(rhino, MissionId::from_known(MissionType::Attack), now)
+            .expect("the Rhino takes Attack");
+        let _ = sim
+            .substrate_mut_for_test()
+            .mission_commence_exact(rhino, now);
+        let (mut charged, mut died, mut gi_cell, mut crushed) = (None, None, None, false);
+        for frame in 1..=600u32 {
+            let output = tick_with_due_commands(&mut scenario);
+            let sim = scenario.sim();
+            let entity = sim.entities().get(rhino).expect("the Rhino lives");
+            if charged.is_none() && entity.navigation.nav_com() == Some(NavTargetRef::object(gi)) {
+                charged = Some(frame);
+            }
+            match sim
+                .entities()
+                .get(gi)
+                .filter(|gi| !gi.death.is_dying() && gi.health.current() > 0)
+            {
+                Some(gi) => gi_cell = Some((gi.position.rx(), gi.position.ry())),
+                None => {
+                    died = Some(frame);
+                    crushed = output.sound_events.iter().any(|event| {
+                        matches!(
+                            event,
+                            crate::sim::world::SimSoundEvent::EntityCrushed { world, .. }
+                                if gi_cell
+                                    == Some((world.to_cell_sub_z().0, world.to_cell_sub_z().1))
+                        )
+                    });
+                    break;
+                }
+            }
+        }
+        // Its first Attack tick, the frame after Commence, takes the charge.
+        assert_eq!(charged, Some(1), "the Rhino's first Attack tick");
+        assert!(died.is_some(), "the GI survived");
+        assert!(crushed, "the GI died, but not under the Rhino");
+    }
+
+    /// The local Allied player's Spy sent into a Normal Soviet house's Tesla
+    /// Reactor walks in and leaves the game; the Soviet power blacks out for
+    /// `SpyPowerBlackout=` frames, and the sim announces it for the local
+    /// player's EVA (`sim::spy_infiltration`).
+    #[test]
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+    fn retail_player_spy_blacks_out_a_computer_power_plant() {
+        use crate::sim::command::{Command, CommandEnvelope};
+        use crate::sim::spy_infiltration::InfiltrationEffect;
+        use crate::sim::world::SimSoundEvent;
+        use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
+
+        let (mut scenario, _) =
+            retail_battle(|_| {}, &[(LaunchCountry::Russia, AiDifficulty::Normal)]);
+        let soviet = house_of(scenario.sim(), "Russians");
+        let mut reactor = None;
+        for _ in 0..6000 {
+            scenario.tick();
+            let sim = scenario.sim();
+            reactor = sim
+                .entities()
+                .values()
+                .find(|entity| {
+                    entity.owner() == soviet
+                        && !entity.death.is_dying()
+                        && !entity.lifecycle.in_limbo()
+                        && sim.interner.resolve(entity.type_ref()) == "NAPOWR"
+                })
+                .map(|entity| entity.stable_id());
+            if reactor.is_some() {
+                break;
+            }
+        }
+        let reactor = reactor.expect("a Tesla Reactor");
+        // Past its build-up.
+        for _ in 0..300 {
+            scenario.tick();
+        }
+        let runtime = &mut scenario.runtime;
+        let (sim, rules) = (&mut runtime.simulation, &runtime.resources.rules);
+        let at = {
+            let entity = sim.entities().get(reactor).expect("the reactor stands");
+            (
+                i32::from(entity.position.rx()),
+                i32::from(entity.position.ry()),
+            )
+        };
+        let america = house_of(sim, "Americans");
+        let cells = cells_nearest(at)
+            .into_iter()
+            .filter(|&(rx, ry)| (rx - at.0).abs().max((ry - at.1).abs()) >= 3);
+        let spy = spawn_on_free_cells(sim, rules, america, cells, &["SPY"])[0];
+        let tick = sim.session.tick();
+        sim.queue_command(CommandEnvelope::new(
+            america,
+            tick + 1,
+            Command::CaptureBuilding {
+                engineer_id: spy,
+                target_building_id: reactor,
+            },
+        ));
+        let mut announced = None;
+        for _ in 0..600 {
+            let output = tick_with_due_commands(&mut scenario);
+            announced = announced.or(output.sound_events.iter().find_map(|event| match event {
+                SimSoundEvent::BuildingInfiltrated {
+                    owner,
+                    infiltrator,
+                    effect,
+                    ..
+                } => Some((*owner, *infiltrator, *effect)),
+                _ => None,
+            }));
+            if scenario.sim().entities().get(spy).is_none() {
+                break;
+            }
+        }
+        let sim = scenario.sim();
+        assert_eq!(
+            announced,
+            Some((soviet, america, InfiltrationEffect::Power)),
+            "the spy never went in"
+        );
+        assert!(sim.entities().get(spy).is_none(), "the spy stayed");
+        let frame = sim.session.binary_frame();
+        assert!(sim.power_states[&soviet].blackout_remaining(frame) > 0);
+    }
+
+    /// "Allied Spy vs Soviet Power" (`09B5091C-G`: one SPY, the script
+    /// `0,4 / 47,131081 / 46,9 / 47,131083 / 46,11`) for a Normal American
+    /// house against the idle local Soviet house, which is given a Tesla
+    /// Reactor beside its MCV, guarded by a Sentry Gun and a Conscript, once
+    /// the American house has deployed its MCV: that yard's deploy sends
+    /// every ground Techno of the house, a team's included, to the new base
+    /// (`HouseClass::MoveGroundForcesToBase @ 0x0050C920`, from
+    /// `UnitClass::Deploy` at `0x00739926`), and would call the spy home. The
+    /// team's spy is spawned twelve cells from the reactor, towards its own
+    /// house's yard. Action 0 (attack infantry) takes the flat walk over every
+    /// object (`0x006F8FE0`) and finds the Conscript, which the `MakeupKit`
+    /// (`Range=-2`) reaches from anywhere: its `MakesDisguise=` shot dresses
+    /// the spy as a Soviet Conscript, and the `FireOnce=` shot ends the
+    /// action. Action 47 brings it beside the reactor past guards that take
+    /// it for their own, and action 46 hands it the reactor:
+    /// `Assign_Target`'s infiltration arm heads it there, Mission_Attack's
+    /// computer arm puts it on Capture, and it walks in and blacks the local
+    /// house out.
+    #[test]
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+    fn retail_computer_spy_team_infiltrates_a_tesla_reactor() {
+        use crate::sim::mission::MissionType;
+        use crate::sim::spy_infiltration::InfiltrationEffect;
+        use crate::sim::world::SimSoundEvent;
+        use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
+
+        let (mut scenario, _) = retail_battle(
+            |session| {
+                session.local_slot_mut().country = LaunchCountry::Russia;
+                session.options.unit_count = 0;
+            },
+            &[(LaunchCountry::America, AiDifficulty::Normal)],
+        );
+        let america = house_of(scenario.sim(), "Americans");
+        let is_american_yard = |entity: &crate::sim::game_entity::GameEntity| {
+            entity.owner() == america
+                && entity.category() == crate::map::entities::EntityCategory::Structure
+        };
+        for _ in 0..300 {
+            scenario.tick();
+            if scenario.sim().entities().values().any(is_american_yard) {
+                break;
+            }
+        }
+        let runtime = &mut scenario.runtime;
+        let (sim, rules) = (&mut runtime.simulation, &runtime.resources.rules);
+        let soviet = house_of(sim, "Russians");
+        let at = |sim: &Simulation, id| {
+            let entity = sim.entities().get(id).expect("spawned");
+            (
+                i32::from(entity.position.rx()),
+                i32::from(entity.position.ry()),
+            )
+        };
+        let mcv = sim
+            .entities()
+            .iter_sorted()
+            .find(|(_, entity)| entity.owner() == soviet)
+            .map(|(id, _)| id)
+            .expect("the local MCV");
+        let (mx, my) = at(sim, mcv);
+        let reactor = spawn_on_free_cells(
+            sim,
+            rules,
+            soviet,
+            cells_nearest((mx + 5, my + 5)),
+            &["NAPOWR"],
+        )[0];
+        let (rx, ry) = at(sim, reactor);
+        spawn_on_free_cells(
+            sim,
+            rules,
+            soviet,
+            cells_nearest((rx, ry)),
+            &["NALASR", "E2"],
+        );
+        // Twelve cells out towards the American yard. The nearest cells the
+        // other way lie in no zone (0xFFFF), and Evaluate_Candidate's zone
+        // test, which only DWORD -1 skips (`0x006F7E36`), then rejects every
+        // quarry of a spy standing there.
+        let american_yard = sim
+            .entities()
+            .iter_sorted()
+            .find(|(_, entity)| is_american_yard(entity))
+            .map(|(id, _)| id)
+            .expect("the American Construction Yard");
+        let (ax, ay) = at(sim, american_yard);
+        let reach = (ax - rx).abs().max((ay - ry).abs()).max(1);
+        let toward = (rx + (ax - rx) * 12 / reach, ry + (ay - ry) * 12 / reach);
+        let cells = cells_nearest(toward)
+            .into_iter()
+            .filter(|&(x, y)| (x - rx).abs().max((y - ry).abs()) >= 10);
+        let spy = spawn_on_free_cells(sim, rules, america, cells, &["SPY"])[0];
+        let id = sim
+            .interner
+            .get("09B5091C-G")
+            .expect("retail TeamType interned");
+        // The computer house may already have made the team; then it
+        // recruits the new spy.
+        sim.create_team(id, Some(america), rules)
+            .or_else(|| {
+                sim.team_script_vm
+                    .teams_in_order()
+                    .find(|team| team.team_type_id() == Some(id) && team.owner() == america)
+                    .map(|team| team.id())
+            })
+            .expect("a team of the TeamType");
+        let (mut capturing, mut announced, mut hurt) = (None, None, false);
+        for frame in 1..=2_000u32 {
+            let output = tick_with_due_commands(&mut scenario);
+            announced = announced.or(output.sound_events.iter().find_map(|event| match event {
+                SimSoundEvent::BuildingInfiltrated {
+                    owner,
+                    infiltrator,
+                    effect,
+                    ..
+                } => Some((frame, *owner, *infiltrator, *effect)),
+                _ => None,
+            }));
+            if let Some(entity) = scenario.sim().entities().get(spy) {
+                hurt |= entity.health.current() < 100;
+                if capturing.is_none()
+                    && entity.mission.current().known() == Some(MissionType::Capture)
+                {
+                    let worn = entity.seldom.disguise.as_ref().filter(|d| d.is_disguised());
+                    capturing = Some((frame, worn.map(|d| (d.type_id(), d.house()))));
+                }
+            }
+            if announced.is_some() {
+                break;
+            }
+        }
+        eprintln!("09B5091C-G: took Capture at {capturing:?}, went in: {announced:?}");
+        let conscript = scenario.sim().interner.get("E2");
+        assert_eq!(
+            capturing.map(|(_, worn)| worn),
+            Some(Some((conscript, Some(soviet)))),
+            "the spy took Capture dressed as a Soviet Conscript"
+        );
+        assert!(!hurt, "a guard shot the disguised spy");
+        assert_eq!(
+            announced.map(|(_, owner, infiltrator, effect)| (owner, infiltrator, effect)),
+            Some((soviet, america, InfiltrationEffect::Power)),
+            "the spy never went in"
+        );
+        let sim = scenario.sim();
+        assert!(sim.power_states[&soviet].blackout_remaining(sim.session.binary_frame()) > 0);
+    }
+
+    /// A Normal American house's Tanya (retail `[TANY]`: `C4=yes`,
+    /// `Secondary=Sapper`) handed a Soviet Tesla Reactor eight cells away
+    /// with Attack, as a team's action 46 does. Mission_Attack's C4 arm heads
+    /// her in on Sabotage, she plants on the first reactor cell she reaches,
+    /// and retail `C4Delay=.03` sets the charge off 26 frames later. The
+    /// reactor dies; she lives.
+    #[test]
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+    fn retail_computer_tanya_plants_c4_on_a_tesla_reactor() {
+        use crate::sim::combat::TargetKind;
+        use crate::sim::mission::{MissionId, MissionType};
+        use crate::sim::world::FrameEffects;
+        use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
+
+        let (mut scenario, _) = retail_battle(
+            |session| {
+                session.local_slot_mut().country = LaunchCountry::Russia;
+                session.options.unit_count = 0;
+            },
+            &[(LaunchCountry::America, AiDifficulty::Normal)],
+        );
+        // As the spy team's test waits: the American yard's deploy sends
+        // every ground Techno of the house to the new base
+        // (`HouseClass::MoveGroundForcesToBase @ 0x0050C920`) and would call
+        // Tanya off the reactor.
+        let america = house_of(scenario.sim(), "Americans");
+        for _ in 0..300 {
+            scenario.tick();
+            if scenario.sim().entities().values().any(|entity| {
+                entity.owner() == america
+                    && entity.category() == crate::map::entities::EntityCategory::Structure
+            }) {
+                break;
+            }
+        }
+        let runtime = &mut scenario.runtime;
+        let (sim, rules) = (&mut runtime.simulation, &runtime.resources.rules);
+        let soviet = house_of(sim, "Russians");
+        let at = |sim: &Simulation, id| {
+            let entity = sim.entities().get(id).expect("spawned");
+            (
+                i32::from(entity.position.rx()),
+                i32::from(entity.position.ry()),
+            )
+        };
+        let mcv_of = |sim: &Simulation, house| {
+            sim.entities()
+                .iter_sorted()
+                .find(|(_, entity)| entity.owner() == house)
+                .map(|(id, _)| id)
+                .expect("the house's MCV")
+        };
+        let (mx, my) = at(sim, mcv_of(sim, soviet));
+        let reactor = spawn_on_free_cells(
+            sim,
+            rules,
+            soviet,
+            cells_nearest((mx + 5, my + 5)),
+            &["NAPOWR"],
+        )[0];
+        let (rx, ry) = at(sim, reactor);
+        // Out towards the American MCV: some nearer cells the other way lie
+        // in no zone (see the spy team's test).
+        let (ax, ay) = at(sim, mcv_of(sim, america));
+        let reach = (ax - rx).abs().max((ay - ry).abs()).max(1);
+        let toward = (rx + (ax - rx) * 8 / reach, ry + (ay - ry) * 8 / reach);
+        let cells = cells_nearest(toward)
+            .into_iter()
+            .filter(|&(x, y)| (x - rx).abs().max((y - ry).abs()) >= 6);
+        let tanya = spawn_on_free_cells(sim, rules, america, cells, &["TANY"])[0];
+        let now = sim.session.binary_frame();
+        sim.substrate_mut_for_test()
+            .mission_assign_exact(tanya, MissionId::from_known(MissionType::Attack), now)
+            .unwrap();
+        sim.assign_target_represented(
+            tanya,
+            Some(TargetKind::Entity(reactor)),
+            rules,
+            &mut FrameEffects::default(),
+        )
+        .unwrap();
+        let (mut sabotage, mut planted, mut died) = (None, None, None);
+        for frame in 1..=1_500u32 {
+            tick_with_due_commands(&mut scenario);
+            let sim = scenario.sim();
+            if sabotage.is_none()
+                && sim.entities().get(tanya).is_some_and(|tanya| {
+                    tanya.mission.current().known() == Some(MissionType::Sabotage)
+                })
+            {
+                sabotage = Some(frame);
+            }
+            if planted.is_none()
+                && let Some(pending) = sim
+                    .entities()
+                    .get(reactor)
+                    .and_then(|reactor| reactor.building.pending_c4_detonation.pending())
+            {
+                planted = Some((frame, pending));
+            }
+            if sim
+                .entities()
+                .get(reactor)
+                .is_none_or(|reactor| reactor.death.is_dying())
+            {
+                died = Some(frame);
+                break;
+            }
+        }
+        eprintln!("TANY: Sabotage at {sabotage:?}, planted {planted:?}, reactor died {died:?}");
+        assert!(sabotage.is_some(), "Tanya never took Sabotage");
+        let (plant_frame, pending) = planted.expect("Tanya planted no charge");
+        assert_eq!(pending.source_entity_id(), Some(tanya));
+        assert_eq!(pending.timer().duration(), 26);
+        assert_eq!(died, Some(plant_frame + 26));
+        assert!(
+            scenario
+                .sim()
+                .entities()
+                .get(tanya)
+                .is_some_and(|tanya| !tanya.death.is_dying() && tanya.health.current() > 0),
+            "Tanya died"
+        );
+    }
+
+    /// A Normal Soviet house's War Miner out on the ore with a load, brought
+    /// to half strength and shot by a Grizzly: its refinery answers its HELLO
+    /// and it queues Enter (`combat::unit_damage_response`), then docks.
+    #[test]
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+    fn retail_damaged_computer_miner_heads_for_its_refinery() {
+        use crate::sim::command::{Command, CommandEnvelope};
+        use crate::sim::mission::{MissionId, MissionType};
+        use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
+
+        let (mut scenario, _) =
+            retail_battle(|_| {}, &[(LaunchCountry::Russia, AiDifficulty::Normal)]);
+        let soviet = house_of(scenario.sim(), "Russians");
+        let harvest = MissionId::from_known(MissionType::Harvest);
+        let mut miner = None;
+        for _ in 0..6000 {
+            scenario.tick();
+            let sim = scenario.sim();
+            miner = sim
+                .entities()
+                .values()
+                .find(|entity| {
+                    entity.owner() == soviet
+                        && !entity.death.is_dying()
+                        && sim.interner.resolve(entity.type_ref()) == "HARV"
+                        && entity.seldom.radio_contacts.is_empty()
+                        && entity.mission.current() == harvest
+                        && entity
+                            .miner
+                            .as_ref()
+                            .is_some_and(|miner| miner.cargo().len() >= 5)
+                })
+                .map(|entity| entity.stable_id());
+            if miner.is_some() {
+                break;
+            }
+        }
+        let miner = miner.expect("a loaded War Miner on the ore");
+        let runtime = &mut scenario.runtime;
+        let (sim, rules) = (&mut runtime.simulation, &runtime.resources.rules);
+        let strength = rules.object("HARV").expect("retail HARV").strength;
+        let at = {
+            let entity = sim.entity_mut_for_test(miner).unwrap();
+            entity.health.set_for_test(strength / 2);
+            (
+                i32::from(entity.position.rx()),
+                i32::from(entity.position.ry()),
+            )
+        };
+        let america = house_of(sim, "Americans");
+        let cells = cells_nearest(at)
+            .into_iter()
+            .filter(|&(rx, ry)| (rx - at.0).abs().max((ry - at.1).abs()) >= 2);
+        let tank = spawn_on_free_cells(sim, rules, america, cells, &["MTNK"])[0];
+        let tick = sim.session.tick();
+        sim.queue_command(CommandEnvelope::new(
+            america,
+            tick + 1,
+            Command::Attack {
+                attacker_id: tank,
+                target_id: miner,
+            },
+        ));
+        let enter = MissionId::from_known(MissionType::Enter);
+        let (mut entered, mut docked) = (None, None);
+        for frame in 1..=900u32 {
+            tick_with_due_commands(&mut scenario);
+            let sim = scenario.sim();
+            let entity = sim.entities().get(miner).expect("the miner lives");
+            let refinery = entity.seldom.radio_contacts.slot(0).filter(|&dock| {
+                sim.entities().get(dock).is_some_and(|dock| {
+                    dock.owner() == soviet && sim.interner.resolve(dock.type_ref()) == "NAREFN"
+                })
+            });
+            if entered.is_none()
+                && refinery.is_some()
+                && (entity.mission.queued() == enter || entity.mission.current() == enter)
+            {
+                entered = Some(frame);
+            }
+            if entered.is_some() && entity.seldom.tether.partner().is_some() {
+                docked = Some(frame);
+                break;
+            }
+        }
+        eprintln!("entered {entered:?}, docked {docked:?}");
+        assert!(entered.is_some(), "the miner never headed for its refinery");
+        assert!(docked.is_some(), "the miner never docked");
+    }
+
+    /// A Normal Soviet house on XMP03T4 whose refineries and War Miners are
+    /// gone needs no rebuild a credit above a refinery's price, and does a
+    /// credit below it (`sim::ai_build_need`). There, the strategy tick's
+    /// Manage_Build_Queue sells the last sellable building of its base plan,
+    /// which pays, and chooses a refinery. The yard stands, nothing is sent
+    /// to hunt, and the yard builds the refinery, which brings a War Miner
+    /// back.
+    #[test]
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+    fn retail_broke_computer_house_sells_to_rebuild_its_refinery() {
+        use crate::map::entities::EntityCategory;
+        use crate::sim::ai_build_need::MANAGE_CALLS;
+        use crate::sim::mission::{MissionId, MissionType};
+        use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
+
+        let (mut scenario, _) =
+            retail_battle(|_| {}, &[(LaunchCountry::Russia, AiDifficulty::Normal)]);
+        let soviet = house_of(scenario.sim(), "Russians");
+        // The house's live objects of type `name`, on the map or, with
+        // `limbo`, in limbo too (a factory's product).
+        let of_type = |sim: &Simulation, name: &str, limbo: bool| -> Vec<u64> {
+            sim.entities()
+                .values()
+                .filter(|entity| {
+                    !entity.death.is_dying()
+                        && (limbo || !entity.lifecycle.in_limbo())
+                        && entity.owner() == soviet
+                        && sim.interner.resolve(entity.type_ref()) == name
+                })
+                .map(crate::sim::game_entity::GameEntity::stable_id)
+                .collect()
+        };
+        let mut standing = None;
+        for frame in 1..=9000u32 {
+            scenario.tick();
+            let sim = scenario.sim();
+            let economy = ["NAREFN", "HARV"]
+                .iter()
+                .all(|name| of_type(sim, name, true).len() == of_type(sim, name, false).len());
+            if economy
+                && ["NAREFN", "NAWEAP", "HARV"]
+                    .iter()
+                    .all(|name| !of_type(sim, name, false).is_empty())
+            {
+                standing = Some(frame);
+                break;
+            }
+        }
+        assert!(
+            standing.is_some(),
+            "the base never stood with a refinery, a war factory and a miner"
+        );
+        let runtime = &mut scenario.runtime;
+        let (sim, rules) = (&mut runtime.simulation, &runtime.resources.rules);
+        let lost: Vec<u64> = ["NAREFN", "HARV"]
+            .iter()
+            .flat_map(|name| of_type(&*sim, name, false))
+            .collect();
+        for id in lost {
+            sim.uninit_with_rules(id, rules);
+        }
+        let price = sim.cost_of(
+            soviet,
+            rules.object("NAREFN").expect("retail NAREFN"),
+            rules,
+        );
+        // A yard's house can make money above the refinery's price, and must
+        // rebuild below it.
+        for (credits, need) in [(price + 1, false), (price - 1, true)] {
+            sim.houses
+                .get_mut(&soviet)
+                .unwrap()
+                .economy_mut()
+                .set_credits_for_test(credits);
+            assert_eq!(
+                crate::sim::ai_build_need::check_build_need(sim, rules, soviet),
+                need,
+                "{credits} credits"
+            );
+        }
+        let refinery = rules.building_type_index("NAREFN").expect("retail NAREFN");
+        let (selling, construction) = (
+            MissionId::from_known(MissionType::Selling),
+            MissionId::from_known(MissionType::Construction),
+        );
+        MANAGE_CALLS.set(Some(0));
+        let (mut managed, mut chosen, mut rebuilt, mut mined) = (None, None, None, None);
+        let mut sold = std::collections::BTreeMap::new();
+        for frame in 1..=9000u32 {
+            scenario.tick();
+            let sim = scenario.sim();
+            if managed.is_none() && MANAGE_CALLS.get().is_some_and(|calls| calls > 0) {
+                managed = Some(frame);
+            }
+            for entity in sim.entities().values() {
+                if entity.owner() == soviet
+                    && entity.category() == EntityCategory::Structure
+                    && entity.mission.current() == selling
+                {
+                    sold.entry(entity.stable_id()).or_insert_with(|| {
+                        (frame, sim.interner.resolve(entity.type_ref()).to_string())
+                    });
+                }
+            }
+            if chosen.is_none()
+                && managed.is_some()
+                && sim.houses[&soviet].ai_production().building_choice() == refinery
+            {
+                chosen = Some(frame);
+            }
+            if rebuilt.is_none()
+                && of_type(sim, "NAREFN", false).iter().any(|&id| {
+                    sim.entities()
+                        .get(id)
+                        .is_some_and(|building| building.mission.current() != construction)
+                })
+            {
+                rebuilt = Some(frame);
+            }
+            if mined.is_none() && !of_type(sim, "HARV", false).is_empty() {
+                mined = Some(frame);
+            }
+            if rebuilt.is_some() && mined.is_some() {
+                break;
+            }
+        }
+        let calls = MANAGE_CALLS.take().unwrap_or(0);
+        let sim = scenario.sim();
+        let hunting = sim.houses[&soviet].strategy_emergency().all_to_hunt_bias();
+        let yards = of_type(sim, "NACNST", false).len();
+        eprintln!(
+            "base standing at {standing:?}; Manage_Build_Queue first at {managed:?} ({calls} \
+             calls), refinery chosen at {chosen:?}, standing at {rebuilt:?}, miner back at \
+             {mined:?}; {yards} yards, hunting {hunting}; sold (frame, type) {:?}",
+            sold.values().collect::<Vec<_>>()
+        );
+        assert!(managed.is_some(), "Manage_Build_Queue never ran");
+        assert!(!sold.is_empty(), "the house sold nothing");
+        assert!(
+            sold.values().all(|(_, name)| name != "NACNST") && yards > 0,
+            "the house sold its yard"
+        );
+        assert!(!hunting, "the house sent everything to hunt");
+        assert!(chosen.is_some(), "the house never chose a refinery");
+        assert!(rebuilt.is_some(), "no refinery was rebuilt");
+        assert!(mined.is_some(), "no War Miner came back");
+    }
+}
+
+#[cfg(all(test, tests_scenario))]
+mod launch_special_flags_tests {
+    use super::*;
+
+    /// The nonzero game mode's session-flags replacement (`0x00687C16..
+    /// 0x00687C29`) for Scenario bit `0x800`: `PregameSetup` stores the
+    /// session's Harvester Truce byte (`0x00A8B31D`) in the staging word
+    /// (`0x005E7495..0x005E74D4`), and the launch copies it over the map's
+    /// flags. A launched session with the truce on carries the bit; the
+    /// default skirmish session — whose dialog clears the byte
+    /// (`0x006AD89D`) — leaves it clear.
+    #[test]
+    #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
+    fn headless_launch_harvester_truce_sets_the_scenario_bit() {
+        let root = std::path::PathBuf::from(
+            std::env::var("RA2_DIR").expect("set RA2_DIR to the retail RA2/YR install directory"),
+        );
+        let mut truce = battle_session(
+            "XMP03T4.MAP",
+            &[(
+                crate::skirmish_launch::LaunchCountry::America,
+                crate::skirmish_launch::AiDifficulty::Easy,
+            )],
+        );
+        truce.options.harvester_truce = true;
+        let scene = load_session(&root, "XMP03T4.MAP", 0x1234_5678, truce)
+            .expect("launch with Harvester Truce on");
+        assert!(
+            scene.sim().session.harvester_immune(),
+            "the session's truce byte replaces the map's bit"
+        );
+
+        let plain = load_session(
+            &root,
+            "XMP03T4.MAP",
+            0x1234_5678,
+            battle_session(
+                "XMP03T4.MAP",
+                &[(
+                    crate::skirmish_launch::LaunchCountry::America,
+                    crate::skirmish_launch::AiDifficulty::Easy,
+                )],
+            ),
+        )
+        .expect("launch with the default options");
+        assert!(
+            !plain.sim().session.harvester_immune(),
+            "the default skirmish session leaves the bit clear"
+        );
+    }
+}
+
+#[cfg(all(test, tests_scenario))]
+mod launch_alliance_tests {
+    use super::{battle_session, load_session};
+
+    /// A skirmish launch never reads a map House's `Allies=`: gamemd reads it
+    /// in `HouseClass::Read_Scenario_INI @ 0x00500B40`, which an authored map
+    /// reaches only through `HouseClass::Read_INI @ 0x005009B0`, called in
+    /// campaigns alone (`0x0068776E..0x006877B9`). XMP29U2's `[Neutral]`
+    /// names Americans, here the human's House. A pair with Special cannot
+    /// probe this: Post_Map_Init allies Special with every House
+    /// (`0x00686A9E..0x00686AC1`).
+    #[test]
+    fn a_skirmish_launch_leaves_neutral_without_the_maps_allies() {
+        let Some((root, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let mut session = battle_session(
+            "XMP29U2.MAP",
+            &[(
+                crate::skirmish_launch::LaunchCountry::America,
+                crate::skirmish_launch::AiDifficulty::Easy,
+            )],
+        );
+        session.humans[0].name = "Americans".to_string();
+        let scene = load_session(&root, "XMP29U2.MAP", 0x1234_5678, session).unwrap();
+        let sim = scene.sim();
+        let neutral = sim.interner().get("Neutral").unwrap();
+        let human = sim.interner().get("Americans").unwrap();
+        assert!(
+            sim.houses()
+                .get(&human)
+                .is_some_and(|house| house.is_human())
+        );
+        assert!(
+            !sim.house_alliances()
+                .is_allied(sim.interner(), neutral, human)
+        );
+    }
+}

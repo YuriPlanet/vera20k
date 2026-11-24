@@ -1,0 +1,151 @@
+{
+  "schema_version": "vera20k.map-observation-expectations.v1",
+  "assertions": [
+    {
+      "name": "Guard Aegis starts without a target",
+      "subject": {
+        "actor": {
+          "type_id": "AEGIS",
+          "owner": "VERA-OBSERVER"
+        }
+      },
+      "field": "target",
+      "op": "eq",
+      "value": null,
+      "at_step": 0
+    },
+    {
+      "name": "Guard Aegis has the ordinary Guard mission",
+      "subject": {
+        "actor": {
+          "type_id": "AEGIS",
+          "owner": "VERA-OBSERVER"
+        }
+      },
+      "field": "mission.effective",
+      "op": "eq",
+      "value": 5,
+      "at_step": 0
+    },
+    {
+      "name": "Aircraft A enters the maintained airborne index",
+      "subject": {
+        "actor": {
+          "type_id": "ZEP",
+          "owner": "Computer1",
+          "cell": [
+            44,
+            44
+          ]
+        }
+      },
+      "field": "foot.air.spatial_bucket",
+      "op": "ne",
+      "value": null,
+      "eventually": {
+        "from_step": 1,
+        "through_step": 360
+      }
+    },
+    {
+      "name": "Aircraft A receives stock Medusa damage",
+      "subject": {
+        "actor": {
+          "type_id": "ZEP",
+          "owner": "Computer1",
+          "cell": [
+            44,
+            44
+          ]
+        }
+      },
+      "field": "health",
+      "op": "lt",
+      "value": 2000,
+      "eventually": {
+        "from_step": 1,
+        "through_step": 360
+      }
+    },
+    {
+      "name": "Aircraft A survives the observed cycle",
+      "subject": {
+        "actor": {
+          "type_id": "ZEP",
+          "owner": "Computer1",
+          "cell": [
+            44,
+            44
+          ]
+        }
+      },
+      "field": "health",
+      "op": "gt",
+      "value": 0,
+      "always": {
+        "from_step": 0,
+        "through_step": 360
+      }
+    },
+    {
+      "name": "Aircraft B enters the maintained airborne index",
+      "subject": {
+        "actor": {
+          "type_id": "ZEP",
+          "owner": "Computer1",
+          "cell": [
+            45,
+            44
+          ]
+        }
+      },
+      "field": "foot.air.spatial_bucket",
+      "op": "ne",
+      "value": null,
+      "eventually": {
+        "from_step": 1,
+        "through_step": 360
+      }
+    },
+    {
+      "name": "Aircraft B receives stock Medusa damage",
+      "subject": {
+        "actor": {
+          "type_id": "ZEP",
+          "owner": "Computer1",
+          "cell": [
+            45,
+            44
+          ]
+        }
+      },
+      "field": "health",
+      "op": "lt",
+      "value": 2000,
+      "eventually": {
+        "from_step": 1,
+        "through_step": 360
+      }
+    },
+    {
+      "name": "Aircraft B survives the observed cycle",
+      "subject": {
+        "actor": {
+          "type_id": "ZEP",
+          "owner": "Computer1",
+          "cell": [
+            45,
+            44
+          ]
+        }
+      },
+      "field": "health",
+      "op": "gt",
+      "value": 0,
+      "always": {
+        "from_step": 0,
+        "through_step": 360
+      }
+    }
+  ]
+}

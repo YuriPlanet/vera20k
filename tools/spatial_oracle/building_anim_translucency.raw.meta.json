@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Physical GAPOWR ActiveAnim slot creation, populated temporal notice, LetGo, AI and whole GAPOWR_A DrawIfVisible/raster; three supplied RGB565/A/Z underlays at eight actual AI frames and slot replacement.",
+  "assumptions": [
+    "Each case uses a fresh shared TMP/palette VM. Original selected BuildingType/ART readers, Country5113F0, House4F54A0, Building43B740 and idle44D6A0 run. Physical GAPOWR must retain Enslaves=NULL; no slave manager or Infantry construction is suppressed. Selected physical layers are RULESMD, optional loose LANGRULE, MPBattleMD and XMP03T4.",
+    "Country uses constructor defaults. Human/current-player/LightGold House fields and admitted alive/placed/Guard Building state are supplied. This is not Country/House INI loading, a complete stock type registry, map loading, Unlimbo or GrandOpening.",
+    "Original mask startup4BAA73..4BAB06 runs before full palette/Convert construction. The actual selected LightGold converter and its masks are observed, not inferred from shade count. Original discovery geometry and Tactical matrix startup execute. Sparse flat revealed Cells, camera(-384,380), clock1000, game speed4, detail2 and uniform 160x160 surfaces are supplied component inputs.",
+    "With explicit empty counters/timer and Options detail2, original setters55AF40/55AF50 install minimum15/buffer5; original Logic counter55AFB0..55AFD9 and Throttle55E33B tail produce FPS60 from 60 visits and supplied timeGetTime0/960ms. Original6C8C40 and GetMinFrameRate55AF60 stay live. Each draw records that admission call and its latch before/after. No physical DetailLevel, FPS result or gate answer is patched; full Logic/Options startup and actual host frame rate are excluded.",
+    "Original451890 creates physical slot3 GAPOWR_A. AI423AC0 reaches frames0..7 without frame/timer writes. A declared already-linked zeroed lone Temporal head enters notice71B0EA..71B14E, which calls populated4521C0. Whole LetGo71ABC0 calls452210 and clears the native parent/head link. Four paused AI calls and resumed AI are measured. Replacement during erasure also uses original451890 and retirement.",
+    "The original noShadow, nonFlat physical type must issue exactly one Surface call per complete DrawIfVisible422C70/DrawIt422CA0. The original Convert selector, decoder, row walker and pixel bodies run. Each draw starts with uniform inputs and retains full before/after color/Z/A RLE planes, actual arguments and store coverage; expected pixels never come from a host blend formula. No terrain or Building body is included in these reset draw surfaces.",
+    "Only pristine missing Object-destructor vector headers receive their original CRT prefixes, before any Anim creation. Established live headers remain unchanged. Original text and listed class and observed pixel-object vtables are checked unchanged. No full CLEG shot/admission, Temporal constructor/AI, Display traversal or whole-scene equivalence is claimed."
+  ],
+  "substitutions": [
+    "Shared cached lexical INI and immutable named-file transports supply physical strings and bytes; native archive search and the physical INI parser are not executed. Heap/delete/TLS/Win32 interlocked/GUID/exit-registration and setup clock transports are inherited and recorded. Empty spare registries and component Surface storage/vtable adapters are supplied.",
+    "Performance timer initialization admits successful CRT atexit registration7C978A only from caller55E36F and records its callback. The exit callback is not invoked, and cdecl argument cleanup stays with the original caller. Throttle and FPS admission remain live.",
+    "Object Mark5F5850 and Display registration4A9720 return1 and are recorded presentation sinks. No coordinate, slot/frame/pause/forced state, palette, selector, decoder, destructor or pixel answer is replaced. Complete original native code/vtables remain unchanged."
+  ],
+  "entry_points": {
+    "building_type": "0x0045DD90",
+    "building_reader": "0x0045FE50",
+    "country": "0x005113F0",
+    "house": "0x004F54A0",
+    "building": "0x0043B740",
+    "anim_type_factory": "0x00428B80",
+    "anim_type_reader": "0x00427D00",
+    "image_load": "0x00427B50",
+    "slot": "0x00451890",
+    "anim": "0x00421EA0",
+    "start": "0x00424CE0",
+    "ai": "0x00423AC0",
+    "notice_begin": "0x0071B0EA",
+    "notice_end": "0x0071B14E",
+    "building_notice": "0x004521C0",
+    "let_go": "0x0071ABC0",
+    "building_release": "0x00452210",
+    "draw_if_visible": "0x00422C70",
+    "draw": "0x00422CA0",
+    "shape": "0x004AED70",
+    "plain_selector": "0x00490B90",
+    "rle_selector": "0x00490E50",
+    "logic_counter": "0x0055AFB0",
+    "throttle_tail": "0x0055E33B",
+    "minimum_fps": "0x0055AF60",
+    "format_masks_begin": "0x004BAA73",
+    "format_masks_end": "0x004BAB06"
+  },
+  "replay_command": "python -m tools.spatial_oracle.building_anim_translucency",
+  "payload_sha256": "61f8806acb2739caf2ef193e9191b49897ff17846757ae47801a78bc957b53c3",
+  "raw_archive": {
+    "file": "building_anim_translucency.raw.json.gz",
+    "sha256": "fd9c20b7aedfe3638c0d48c9e30da656f35790de6405426057938182a93bece6",
+    "bytes": 1037481,
+    "uncompressed_sha256": "dc38126cae9ec7a9ae9b4a00e34b634e0a5407452888f9d50aa1061402d62efb",
+    "uncompressed_bytes": 31870123,
+    "canonical_payload_sha256": "61f8806acb2739caf2ef193e9191b49897ff17846757ae47801a78bc957b53c3",
+    "compression": {
+      "format": "gzip",
+      "level": 9,
+      "mtime": 0,
+      "filename": "",
+      "os_byte": 255,
+      "zlib_runtime": "1.3.2"
+    }
+  },
+  "projected_payload_sha256": "1a68b43c931883c2687f6288a01570c7350be1242bb885e50b16a319607a48c0"
+}

@@ -1,0 +1,354 @@
+//! Retail sine and cosine, for the facing-quantised rotations gamemd performs.
+//!
+//! gamemd does not compute trig at runtime for these: `Math__SinFromTable @
+//! 0x004CACB0` and `Math__CosFromTable @ 0x004CAD00` both end in a single
+//! `FLD float ptr [EAX*4 + 0x84F084]; RET` — a raw `f32` read out of one shared
+//! table, with no interpolation. Every rotation that quantises its angle to a
+//! multiple of pi/16 therefore reduces to a table read, and porting the read is
+//! exact where recomputing the angle is not.
+//!
+//! Shared retail table data, bounded FLH lookups and full-facing displacement.
+
+use crate::util::retail_trig::TrigTable;
+
+// Original 0084F084 table, extracted and checked by walk_direction_table.py.
+// The small FLH arrays below are derived lookups for its different, f32-narrowed
+// angle input. Walk uses a full signed direction and must not quantize to 32 steps.
+pub const RETAIL_SINE_TABLE: &[u8; 10241 * 4] = include_bytes!("native_trig_table.bin");
+
+/// Original85D0A4, consumed by Math__TanFromTable4096 @4CAD50. This is
+/// a separate retail table, not a ratio of the sine/cosine approximations.
+/// Original execution/whole-table controls: procedural_drawing_oracle/radial_indicator.
+pub const RETAIL_TANGENT_TABLE: &[u8; 4096 * 4] = include_bytes!("native_tangent_table.bin");
+
+pub fn native_tan_from_table(
+    radians: crate::util::native_x87::X87Value,
+) -> crate::util::native_x87::X87Value {
+    use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53 as X};
+    //4CAD54's binary64 scale, ftol then signed remainder corrected into0..4095.
+    let scale = X::load_f64(NativeF64Bits::from_bits(651.8986469044033_f64.to_bits()))
+        .expect("finite native tangent scale");
+    let index = X::ftol_i32_low_masked(X::mul(radians, scale)).rem_euclid(4096) as usize;
+    let offset = index * 4;
+    let bits = u32::from_le_bytes(RETAIL_TANGENT_TABLE[offset..offset + 4].try_into().unwrap());
+    X::load_f32(NativeF32Bits::from_bits(bits)).expect("finite retail tangent entry")
+}
+
+/// Walk75C067's `Math::SinFromTable`/`CosFromTable` units for a facing word:
+/// the signed direction minus 3FFF, times double 7E2810, times float
+/// 8223B0/8223B4 (both 16384/2pi), cut by ftol. Their exact product is this
+/// dyadic ratio. Integer evaluation gives the same truncated units for ALL
+/// 65536 words as the original instruction sequence (walk_direction_table
+/// corpus); the table lookups then fold them as every other caller does.
+fn walk_table_units(facing: u16) -> i32 {
+    const NUMERATOR: i128 = 75_560_166_591_041_506_239_877;
+    const DENOMINATOR: i128 = 1 << 78;
+    let direction = i128::from(facing as i16) - 0x3FFF;
+    (-direction * NUMERATOR / DENOMINATOR) as i32
+}
+
+fn advance_integer_coordinate(origin: i32, speed: i32, coefficient: u32) -> i32 {
+    // Keep the table's binary fraction as an integer numerator/denominator.
+    // Rounding it to I16F16 first would erase tiny negative cardinal entries:
+    // native truncates the final world coordinate, so those can pay one lepton.
+    // No host floating point or additional x87 emulation is used here.
+    if coefficient & 0x7FFF_FFFF == 0 || speed == 0 {
+        return origin;
+    }
+    let exponent = ((coefficient >> 23) & 0xFF) as i32;
+    let shift = (150 - exponent) as u32;
+    let mantissa = i128::from((coefficient & 0x7F_FFFF) | 0x80_0000);
+    let signed = if coefficient >> 31 == 0 {
+        mantissa
+    } else {
+        -mantissa
+    };
+    let numerator = (i128::from(origin) << shift) + signed * i128::from(speed);
+    i32::try_from(numerator / (1_i128 << shift)).expect("facing step world coordinate exceeds i32")
+}
+
+/// Walk75C067..75C0CB and Fly4CDA84..4CDAE5 use this same full-direction math.
+/// The caller chooses the direction (Walk's request, Fly's Primary.Current,
+/// Hover's steering facing at 0x00514803..0x00514860, or DropPayload's
+/// wrapped +/-3FFF heading at 0x00415CC7/0x00415CEA).
+/// Inputs/outputs are whole world leptons, with Z
+/// and subsequent placement owned by the caller. Table products remain exact
+/// at the simulation's bounded integer movement speeds; final truncation is
+/// toward zero, after adding each displacement to its world coordinate.
+pub fn facing_step_world_xy(current: [i32; 2], facing: u16, speed: i32) -> [i32; 2] {
+    let table = TrigTable::embedded();
+    let units = walk_table_units(facing);
+    let bits = |index| table.entry(index).to_bits();
+    [
+        advance_integer_coordinate(current[0], speed, bits(table.cos_index(units))),
+        advance_integer_coordinate(
+            current[1],
+            speed,
+            bits(table.sin_index(units)) ^ 0x8000_0000,
+        ),
+    ]
+}
+
+/// The reachable index range on both `TechnoClass::GetFLH` branches.
+///
+/// `k` is the raw SIGNED step count: `dir32 - 8` on the simple branch, and the
+/// difference of two such values on the turret branch. It is never reduced
+/// modulo 32 — the wrapping pairs genuinely disagree in the retail table
+/// (`k = -9` and `k = +23` return different sines), so folding it is a bug.
+pub const NATIVE_TRIG_MIN_STEP: i32 = -31;
+/// Inclusive upper bound of [`NATIVE_TRIG_MIN_STEP`]'s range.
+pub const NATIVE_TRIG_MAX_STEP: i32 = 31;
+
+/// How `TechnoClass::GetFLH @ 0x006F3AD0` forms the angle these entries answer:
+///
+/// ```text
+/// FILD  dword [k]              ; the signed step, as an integer
+/// FMUL  double [0x007E4408]    ; times -(pi/16), a DOUBLE
+/// FSTP  double [tmp]           ; narrowed to f64
+/// FLD   double [tmp]
+/// FSTP  float  [arg]           ; then to f32 -- this is what RotateZ receives
+/// ```
+///
+/// The double constant is load-bearing. Forming the angle as
+/// `f32(k) * f32(-0.19634955)` instead selects a DIFFERENT table entry at 22 of
+/// the 63 reachable steps, because the index truncates and the two products
+/// straddle a boundary. The entries below were taken at the indices the
+/// disassembled index computation produces for the double form.
+///
+/// `sin(-(pi/16) * k)` exactly as retail returns it, indexed by `k + 31`.
+///
+/// These are the bytes at `0x0084F084 + idx * 4`, not computed values. They
+/// cache `Matrix3x4_RotateZ`'s two table lookups at each step's angle;
+/// `step_tables_are_the_table_lookups_at_get_flh_angles` derives every entry
+/// through [`TrigTable`]. The retail table differs from a correctly-rounded `f32` sine on 4997 of its
+/// 10241 entries, and its scale constant is slightly low, so negative angles
+/// land two index steps short. That asymmetry is real and load-bearing —
+/// `k = -1` yields `+0.195090309` while `k = +1` yields `-0.193585575`, which
+/// is NOT its negation. Do not regenerate this table from `f32::sin`.
+pub const NATIVE_SIN_BY_STEP: [u32; 63] = [
+    0xBE47C5C1, 0xBEC3EF15, 0xBF0E39D9, 0xBF3504F3, 0xBF54DB31, 0xBF6C835E, 0xBF7B14BE, 0xBF800000,
+    0xBF7B14BE, 0xBF6C835E, 0xBF54DB31, 0xBF3504F3, 0xBF0E39D9, 0xBEC3EF15, 0xBE47C5C1, 0x250D3000,
+    0x3E47C5C1, 0x3EC3EF15, 0x3F0E39D9, 0x3F3504F3, 0x3F54DB31, 0x3F6C835E, 0x3F7B14BE, 0x3F800000,
+    0x3F7B14BE, 0x3F6C835E, 0x3F54DB31, 0x3F3504F3, 0x3F0E39D9, 0x3EC3EF15, 0x3E47C5C1, 0x00000000,
+    0xBE463B4C, 0xBEC33544, 0xBF0DE638, 0xBF34BDCF, 0xBF54A346, 0xBF6C5CD3, 0xBF7B010E, 0xBF7FFFEC,
+    0xBF7B2847, 0xBF6CA9C4, 0xBF5512FA, 0xBF354BFB, 0xBF0E8D65, 0xBEC4A8C7, 0xBE495018, 0xBAC90FD5,
+    0x3E463B4C, 0x3EC33544, 0x3F0DE638, 0x3F34BDCF, 0x3F54A346, 0x3F6C5CD3, 0x3F7B010E, 0x3F7FFFEC,
+    0x3F7B2847, 0x3F6CA9C4, 0x3F5512FA, 0x3F354BFB, 0x3F0E8D65, 0x3EC4A8C7, 0x3E495018,
+];
+
+/// `cos(-(pi/16) * k)` from the same table, indexed by `k + 31`.
+pub const NATIVE_COS_BY_STEP: [u32; 63] = [
+    0x3F7B14BE, 0x3F6C835E, 0x3F54DB31, 0x3F3504F3, 0x3F0E39D9, 0x3EC3EF15, 0x3E47C5C1, 0xA58D3000,
+    0xBE47C5C1, 0xBEC3EF15, 0xBF0E39D9, 0xBF3504F3, 0xBF54DB31, 0xBF6C835E, 0xBF7B14BE, 0xBF800000,
+    0xBF7B14BE, 0xBF6C835E, 0xBF54DB31, 0xBF3504F3, 0xBF0E39D9, 0xBEC3EF15, 0xBE47C5C1, 0x250D3000,
+    0x3E47C5C1, 0x3EC3EF15, 0x3F0E39D9, 0x3F3504F3, 0x3F54DB31, 0x3F6C835E, 0x3F7B14BE, 0x3F800000,
+    0x3F7B2847, 0x3F6CA9C4, 0x3F5512FA, 0x3F354BFB, 0x3F0E8D65, 0x3EC4A8C7, 0x3E495018, 0x3AC90FD5,
+    0xBE463B4C, 0xBEC33544, 0xBF0DE638, 0xBF34BDCF, 0xBF54A346, 0xBF6C5CD3, 0xBF7B010E, 0xBF7FFFEC,
+    0xBF7B2847, 0xBF6CA9C4, 0xBF5512FA, 0xBF354BFB, 0xBF0E8D65, 0xBEC4A8C7, 0xBE495018, 0xBAC90FD5,
+    0x3E463B4C, 0x3EC33544, 0x3F0DE638, 0x3F34BDCF, 0x3F54A346, 0x3F6C5CD3, 0x3F7B010E,
+];
+
+/// Look up the retail `(sin, cos)` pair for a signed quarter-facing step.
+///
+/// Returns `None` outside the reachable range rather than wrapping, because a
+/// wrap would silently return the wrong entry.
+pub fn native_sin_cos_by_step(step: i32) -> Option<(f32, f32)> {
+    if !(NATIVE_TRIG_MIN_STEP..=NATIVE_TRIG_MAX_STEP).contains(&step) {
+        return None;
+    }
+    let idx = (step - NATIVE_TRIG_MIN_STEP) as usize;
+    Some((
+        f32::from_bits(NATIVE_SIN_BY_STEP[idx]),
+        f32::from_bits(NATIVE_COS_BY_STEP[idx]),
+    ))
+}
+
+#[cfg(all(test, tests_util))]
+mod tests {
+    use super::*;
+
+    /// Full original FindFireLocation4197C0 calls record every candidate before
+    /// map/visibility/reservation filtering. This pins the candidate geometry
+    /// and ranking distances the production search
+    /// (`Simulation::aircraft_find_fire_location`) builds on;
+    /// `aircraft_fire_location_tests` compares that search's results and RNG.
+    #[test]
+    fn aircraft_fire_location_candidates_and_distances_match_native() {
+        let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/aircraft_fire_location.json",
+        ))
+        .unwrap();
+        let mut candidate_count = 0;
+        let mut distance_count = 0;
+        for row in rows.as_array().unwrap() {
+            let input = &row["input"];
+            let xyz = |key: &str, default: [i32; 3]| -> [i32; 3] {
+                input[key].as_array().map_or(default, |v| {
+                    std::array::from_fn(|axis| v[axis].as_i64().unwrap() as i32)
+                })
+            };
+            let target = xyz("target", [16512, 16512, 0]);
+            let range = row["weapon_range"].as_i64().unwrap() as i32;
+            let candidates = row["candidates"].as_array().unwrap();
+            for (index, native) in candidates.iter().enumerate() {
+                let radius = range - 256 * (1 + index as i32 / 16);
+                let actual = facing_step_world_xy(
+                    [target[0], target[1]],
+                    ((index % 16) as u16) << 12,
+                    radius,
+                );
+                assert_eq!(
+                    actual[0],
+                    native[0].as_i64().unwrap() as i32,
+                    "{input}, candidate {index} X"
+                );
+                assert_eq!(
+                    actual[1],
+                    native[1].as_i64().unwrap() as i32,
+                    "{input}, candidate {index} Y"
+                );
+                candidate_count += 1;
+            }
+            let reference = if input["target_has_destination"].as_bool().unwrap_or(false)
+                && input["target_flags"].as_i64().unwrap_or(4) & 4 != 0
+            {
+                xyz("destination", [20608, 16512, 0])
+            } else {
+                xyz("aircraft", [10368, 16512, 500])
+            };
+            // The native observer records which candidate reached ranking;
+            // equal packed cells across rings must retain their distinct XYZ.
+            for ranked in row["ranked"].as_array().unwrap() {
+                let native = &candidates[ranked["candidate_index"].as_u64().unwrap() as usize];
+                let actual = crate::util::native_x87::distance_3d_leptons(
+                    [
+                        native[0].as_i64().unwrap() as i32,
+                        native[1].as_i64().unwrap() as i32,
+                        0,
+                    ],
+                    [reference[0], reference[1], 0],
+                );
+                assert_eq!(
+                    actual as i64,
+                    ranked["distance"].as_i64().unwrap(),
+                    "{input}: {ranked}"
+                );
+                distance_count += 1;
+            }
+        }
+        assert!(candidate_count > 600);
+        assert!(distance_count > 400);
+    }
+
+    #[test]
+    fn every_walk_heading_uses_the_original_trig_entries() {
+        use crate::util::sha256::{Sha256, digest_hex, sha256_hex};
+        let oracle: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/walk_direction_table.json",
+        ))
+        .unwrap();
+        assert_eq!(sha256_hex(RETAIL_SINE_TABLE), oracle["table_sha256"]);
+        let mut indexes = Sha256::new();
+        let mut values = Sha256::new();
+        let table = TrigTable::embedded();
+        for heading in 0..=u16::MAX {
+            let units = walk_table_units(heading);
+            for index in [table.sin_index(units), table.cos_index(units)] {
+                indexes.update(&(index as u16).to_le_bytes());
+                values.update(&table.entry(index).to_bits().to_le_bytes());
+            }
+        }
+        assert_eq!(
+            digest_hex(indexes.finalize()),
+            oracle["sin_cos_index_sha256"]
+        );
+        assert_eq!(digest_hex(values.finalize()), oracle["sin_cos_bits_sha256"]);
+    }
+
+    /// `Matrix3x4_RotateZ @ 0x005AF1A0` reads `CosFromTable` and
+    /// `SinFromTable` of `(double)theta`, where GetFLH forms `theta` from the
+    /// step with FILD, FMUL double `[0x007E4408]` (-(pi/16)), FSTP double, FLD
+    /// double and FSTP float.
+    #[test]
+    fn step_tables_are_the_table_lookups_at_get_flh_angles() {
+        use crate::util::native_x87::{NativeF64Bits, X87Chop53 as X};
+        let minus_pi_16 = X::load_f64(NativeF64Bits::from_bits(0xBFC9_21FB_5444_2D18)).unwrap();
+        let table = TrigTable::embedded();
+        for step in NATIVE_TRIG_MIN_STEP..=NATIVE_TRIG_MAX_STEP {
+            let product = X::mul(X::load_i32(step), minus_pi_16);
+            let double = X::load_f64(X::store_f64(product).unwrap()).unwrap();
+            let theta = X::load_f32(X::store_f32(double).unwrap()).unwrap();
+            let sin = X::store_f32(table.sin_from_table(theta)).unwrap().bits();
+            let cos = X::store_f32(table.cos_from_table(theta)).unwrap().bits();
+            let index = (step - NATIVE_TRIG_MIN_STEP) as usize;
+            assert_eq!(
+                (sin, cos),
+                (NATIVE_SIN_BY_STEP[index], NATIVE_COS_BY_STEP[index]),
+                "step {step}"
+            );
+        }
+    }
+
+    /// The table is NOT odd-symmetric: retail's negative-angle indices land two
+    /// steps short of the true angle. A port that negates instead of reading is
+    /// wrong for half the facings, so this pins the asymmetry.
+    #[test]
+    fn gsi_08_04_table_is_not_odd_symmetric() {
+        let (minus_one, _) = native_sin_cos_by_step(-1).expect("in range");
+        let (plus_one, _) = native_sin_cos_by_step(1).expect("in range");
+        assert_eq!(minus_one.to_bits(), 0x3E47_C5C1);
+        assert_eq!(plus_one.to_bits(), 0xBE46_3B4C);
+        assert_ne!(plus_one, -minus_one);
+    }
+
+    /// The zero step is the identity, and a quarter turn moves `+X` onto the
+    /// other axis — the orientation a transposed rotation would swap. The
+    /// rotation is `Matrix3x4_RotateZ @ 0x005AF1A0`'s one port,
+    /// [`crate::util::native_affine::rotate_z`], applied to the identity.
+    ///
+    /// Note what the retail table does at the two quarter turns: step `-8` is
+    /// exact (sin 1.0, cos 0.0), while step `+8` returns sin `-0.999998808` and
+    /// cos `+0.001533980`. That ~0.0015 error is RETAIL's, produced by its
+    /// slightly-low scale constant and a truncating index, and reproducing it is
+    /// the point — a port that used a real cosine would be the one that drifts.
+    #[test]
+    fn gsi_08_04_rotate_z_matches_the_native_matrix_layout() {
+        let point = glam::Vec3::new(190.0, 25.0, 120.0);
+        let turned_by = |step| {
+            let (sin, cos) = native_sin_cos_by_step(step).expect("in range");
+            crate::util::native_affine::rotate_z(glam::Mat4::IDENTITY, sin, cos)
+                .transform_point3(point)
+        };
+        assert_eq!(turned_by(0), point);
+
+        let (sin_neg, cos_neg) = native_sin_cos_by_step(-8).expect("in range");
+        assert_eq!(
+            sin_neg.to_bits(),
+            0x3F80_0000,
+            "step -8 sine is exactly 1.0"
+        );
+        assert_eq!(
+            cos_neg.to_bits(),
+            0x250D_3000,
+            "step -8 cosine is retail's ~0"
+        );
+
+        let (sin_pos, cos_pos) = native_sin_cos_by_step(8).expect("in range");
+        assert_eq!(
+            sin_pos.to_bits(),
+            0xBF7F_FFEC,
+            "step +8 sine is NOT exactly -1"
+        );
+        assert_eq!(
+            cos_pos.to_bits(),
+            0x3AC9_0FD5,
+            "step +8 cosine is NOT exactly 0"
+        );
+
+        // The geometry still has to be right within the table's own error.
+        let turned = turned_by(8);
+        assert!((turned.x - 25.0).abs() < 0.5, "x={}", turned.x);
+        assert!((turned.y + 190.0).abs() < 0.5, "y={}", turned.y);
+        assert_eq!(turned.z, 120.0, "Z is carried through untouched");
+    }
+}

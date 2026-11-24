@@ -1,0 +1,304 @@
+//! Original51BF90 counter0/1/2 and actual mode0/1 controls. The native
+//! fixture supplies the same clear/rim cell and independently retained object
+//! list/raw occupation priors; it does not certify whole Unlimbo or movement.
+
+use super::*;
+use crate::sim::components::DriveCoord;
+use crate::sim::house_state::HouseState;
+use crate::sim::movement::DriveLocomotionRuntime;
+use crate::sim::movement::infantry_entry::InfantryEntryArgs;
+use crate::sim::movement::locomotion::piggyback::LocomotorRuntimePayload;
+use crate::sim::movement::locomotor::LocomotorState;
+use crate::sim::occupancy::CellListInsertion;
+use crate::sim::rng::SimRng;
+use crate::sim::world::entry_test_fixture;
+use crate::util::fixed_math::SimFixed;
+
+#[test]
+fn escape_counter_matches_native_cell_list_and_raw_owner_gates() {
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_scatter_entry_priority.json",
+    ))
+    .unwrap();
+    let cases = corpus["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 192);
+    let structure_cases = corpus["structure_cases"].as_array().unwrap();
+    assert_eq!(structure_cases.len(), 30);
+    for row in cases.iter().chain(structure_cases) {
+        let code_sections = row["native_executable_sections_unchanged"]
+            .as_array()
+            .unwrap();
+        assert_eq!(code_sections.len(), 1);
+        assert_eq!(code_sections[0]["address"], "0x401000");
+        assert_eq!(code_sections[0]["length"], 0x3E0000);
+        let input = &row["input"];
+        let armed = input["armed"].as_bool().unwrap();
+        let extra = format!(
+            "[InfantryTypes]\n2=MOVER\n3=I_BLOCKER\n[VehicleTypes]\n0=U_BLOCKER\n\
+             [MOVER]\nSpeedType=Foot\n{}\
+             [BuildingTypes]\n1=B_BLOCKER\n[AircraftTypes]\n1=A_BLOCKER\n\
+             [I_BLOCKER]\nSpeedType=Foot\n[U_BLOCKER]\nSpeedType=Track\n\
+             [B_BLOCKER]\nGate={}\n[A_BLOCKER]\nSpeedType=Winged\n\
+             [TESTGUN]\nDamage=1\nROF=20\nRange=5\nProjectile=TESTPROJECTILE\n\
+             Warhead=SA\n[TESTPROJECTILE]\nAG=yes\n",
+            if armed { "Primary=TESTGUN\n" } else { "" },
+            input["gate"].as_bool().unwrap_or(false),
+        );
+        let (mut sim, rules, _) = entry_test_fixture::fixture_with_rules(&extra);
+        let ours = sim.intern("Americans");
+        let enemy = sim.intern("Russians");
+        for house in [ours, enemy] {
+            sim.houses
+                .register(HouseState::new(house, 0, None, false, 0, 10));
+        }
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                input["mode"].as_u64().unwrap() != 0,
+            ),
+        );
+        sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+            base: 16,
+            off_fc: if input["rim"].as_bool().unwrap() {
+                0
+            } else {
+                -16
+            },
+            off_100: if input["rim"].as_bool().unwrap() {
+                0
+            } else {
+                -16
+            },
+            off_104: if input["rim"].as_bool().unwrap() {
+                1
+            } else {
+                64
+            },
+            off_108: if input["rim"].as_bool().unwrap() {
+                1
+            } else {
+                64
+            },
+        });
+        let mut mover = GameEntity::test_default(90, "MOVER", "Americans", 10, 10);
+        mover.set_owner_for_test(ours);
+        mover.set_type_ref_for_test(sim.intern("MOVER"));
+        mover.set_category_for_test(EntityCategory::Infantry);
+        mover.set_in_playfield(true);
+        mover.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
+        sim.substrate.entities.insert(mover);
+        sim.substrate
+            .mission_assign_exact(90, crate::sim::mission::MissionId::from_raw(5), 0)
+            .unwrap();
+        if input["occupant"] != "none" {
+            let kind = input["occupant_kind"].as_str().unwrap();
+            let (name, category) = match kind {
+                "infantry" => ("I_BLOCKER", EntityCategory::Infantry),
+                "unit" => ("U_BLOCKER", EntityCategory::Unit),
+                "building" => ("B_BLOCKER", EntityCategory::Structure),
+                "aircraft" => ("A_BLOCKER", EntityCategory::Aircraft),
+                _ => panic!("unexpected native blocker {kind}"),
+            };
+            let infantry = category == EntityCategory::Infantry;
+            let mut blocker = GameEntity::test_default(91, name, "Russians", 11, 10);
+            blocker.set_owner_for_test(enemy);
+            blocker.set_type_ref_for_test(sim.intern(name));
+            blocker.set_category_for_test(category);
+            blocker.position.set_sub_x_for_test(SimFixed::from_num(128));
+            blocker.position.set_sub_y_for_test(SimFixed::from_num(128));
+            blocker.set_foot_occupation_enabled(true);
+            let moving = input["occupant"] == "moving";
+            if infantry {
+                let mut locomotor = LocomotorState::for_test_kind(LocomotorKind::Walk);
+                let LocomotorRuntimePayload::Walk(walk) = locomotor.runtime_payload_mut() else {
+                    unreachable!()
+                };
+                walk.set_moving_for_test(moving);
+                blocker.locomotor = Some(locomotor);
+            } else if category == EntityCategory::Unit {
+                blocker.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
+                assert!(
+                    blocker
+                        .locomotor
+                        .as_mut()
+                        .unwrap()
+                        .install_drive_state_for_test(Some(
+                            DriveLocomotionRuntime::default().with_destination_for_test(
+                                moving.then_some(DriveCoord {
+                                    x: 3200,
+                                    y: 2688,
+                                    z: 0,
+                                })
+                            )
+                        ))
+                );
+            }
+            let category = blocker.category();
+            sim.substrate.entities.insert(blocker);
+            sim.substrate.occupancy.add(
+                11,
+                10,
+                91,
+                MovementLayer::Ground,
+                None,
+                CellListInsertion::from_category(category),
+            );
+        }
+        let bits = input["raw_bits"].as_u64().unwrap() as u8;
+        if input["raw_owner"] == 1 {
+            sim.substrate
+                .raw_cell_occupation
+                .mark_ground_infantry(11, 10, bits, enemy);
+        } else {
+            sim.substrate.raw_cell_occupation.mark_ground(11, 10, bits);
+        }
+        sim.scenario_rng = SimRng::new(31);
+        sim.main_rng = SimRng::new(37);
+        sim.mapgen_rng = SimRng::new(41);
+        let cell = sim
+            .resolved_terrain
+            .as_ref()
+            .unwrap()
+            .native_cell_identity((11, 10));
+        // Asked from the world and again through a path batch's kept facts.
+        let probe = |sim: &mut Simulation| {
+            let kept = EntryFacts::fitted(sim);
+            let [world, batched] = [None, Some(&kept)].map(|facts| {
+                sim.foot_entry_receiver(90, &rules, facts)
+                    .unwrap()
+                    .can_enter(cell, InfantryEntryArgs::REPAIR)
+                    .unwrap()
+            });
+            assert_eq!(world, batched, "kept facts answer as the world does");
+            world
+        };
+        for (name, rng) in [
+            ("scenario", sim.scenario_rng.native_state_hex()),
+            ("main", sim.main_rng.native_state_hex()),
+            ("mapgen", sim.mapgen_rng.native_state_hex()),
+        ] {
+            assert!(
+                rng == row["rng_before"][name].as_str().unwrap(),
+                "{input}: full {name} native prior"
+            );
+        }
+        let result = match input["priority"].as_u64().unwrap() {
+            0 => probe(&mut sim),
+            1 => sim.with_object_placement_scope(probe),
+            2 => sim.with_object_placement_scope(|sim| sim.with_object_placement_scope(probe)),
+            _ => unreachable!(),
+        };
+        assert_eq!(
+            u64::from(result),
+            row["result"].as_u64().unwrap(),
+            "{input}"
+        );
+        assert!(
+            !sim.object_placement_scope_active(),
+            "{input}: bracket cleanup"
+        );
+        for (name, rng) in [
+            ("scenario", sim.scenario_rng.native_state_hex()),
+            ("main", sim.main_rng.native_state_hex()),
+            ("mapgen", sim.mapgen_rng.native_state_hex()),
+        ] {
+            assert!(
+                rng == row["rng_after"][name].as_str().unwrap(),
+                "{input}: full {name} after entry"
+            );
+        }
+    }
+}
+
+/// One Americans infantryman on `mission` at (10,10) asking about (11,10).
+fn target_shortcut_scene(
+    extra: &str,
+    mission: i32,
+    nav_com: crate::sim::components::NavTargetRef,
+) -> (Simulation, RuleSet, Cell) {
+    let extra = format!("[InfantryTypes]\n2=MOVER\n[MOVER]\nSpeedType=Foot\nEngineer=yes\n{extra}");
+    let (mut sim, rules, _) = entry_test_fixture::fixture_with_rules(&extra);
+    let ours = sim.intern("Americans");
+    sim.houses
+        .register(HouseState::new(ours, 0, None, false, 0, 10));
+    let mut mover = GameEntity::test_default(90, "MOVER", "Americans", 10, 10);
+    mover.set_owner_for_test(ours);
+    mover.set_type_ref_for_test(sim.intern("MOVER"));
+    mover.set_category_for_test(EntityCategory::Infantry);
+    mover.set_in_playfield(true);
+    mover.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
+    mover.navigation.set_nav_com_for_test(Some(nav_com));
+    sim.substrate.entities.insert(mover);
+    sim.substrate
+        .mission_assign_exact(90, crate::sim::mission::MissionId::from_raw(mission), 0)
+        .unwrap();
+    let cell = sim
+        .resolved_terrain
+        .as_ref()
+        .unwrap()
+        .native_cell_identity((11, 10));
+    (sim, rules, cell)
+}
+
+/// 51C553..51C573: Enter (7), NavCom the occupant and the tether set enters
+/// a warped-out allied Building; untethered, the allied arm refuses it.
+#[test]
+fn a_tethered_enter_mover_may_take_its_warped_out_navcom() {
+    use crate::sim::components::NavTargetRef;
+    let (mut sim, rules, cell) = target_shortcut_scene(
+        "[BuildingTypes]\n1=DEPOT\n[DEPOT]\nStrength=100\n",
+        7,
+        NavTargetRef::object(91),
+    );
+    let ours = sim.intern("Americans");
+    let mut depot = GameEntity::test_default(91, "DEPOT", "Americans", 11, 10);
+    depot.set_owner_for_test(ours);
+    depot.set_type_ref_for_test(sim.intern("DEPOT"));
+    depot.set_category_for_test(EntityCategory::Structure);
+    depot.set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(92));
+    sim.substrate.entities.insert(depot);
+    sim.substrate.occupancy.add(
+        11,
+        10,
+        91,
+        MovementLayer::Ground,
+        None,
+        CellListInsertion::from_category(EntityCategory::Structure),
+    );
+    let entry = |sim: &mut Simulation| {
+        sim.foot_entry_receiver(90, &rules, None)
+            .unwrap()
+            .can_enter(cell, InfantryEntryArgs::REPAIR)
+            .unwrap()
+    };
+    assert_eq!(entry(&mut sim), 7);
+    let mover = sim.substrate.entities.get_mut(90).unwrap();
+    mover.seldom.tether.set_for_test(Some(91));
+    assert_eq!(entry(&mut sim), 0);
+}
+
+/// 51C37D..51C3B6 tests Terrain too: an Engineer on Patrol (11) whose NavCom
+/// is the tree's cell may enter it, on ground its speed row can cross.
+#[test]
+fn an_engineer_patrolling_to_a_tree_cell_is_not_refused_by_the_tree() {
+    use crate::sim::components::NavTargetRef;
+    let trees = "[TerrainTypes]\n0=TREE01\n[TREE01]\nStrength=100\n";
+    let probe = |nav_com: NavTargetRef| {
+        let (mut sim, rules, cell) = target_shortcut_scene(trees, 11, nav_com);
+        crate::sim::terrain_spawn::construct_terrain_objects(
+            &mut sim,
+            &[crate::map::overlay::TerrainObject {
+                rx: 11,
+                ry: 10,
+                name: "TREE01".into(),
+            }],
+            &rules,
+            false,
+        );
+        sim.foot_entry_receiver(90, &rules, None)
+            .unwrap()
+            .can_enter(cell, InfantryEntryArgs::REPAIR)
+            .unwrap()
+    };
+    assert_eq!(probe(NavTargetRef::cell(11, 10)), 0);
+    assert_eq!(probe(NavTargetRef::cell(12, 10)), 7);
+}

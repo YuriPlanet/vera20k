@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Infantry517FA0 -> Foot4D7330 -> Techno701900 -> Object5F5390; stop at Death_Announcement4D98C0 or DieSound PlayAt7509E0",
+  "assumptions": [
+    "Health0 and Alive0/1 variants, damage aliases Health, distance0, null source/house, forced flags true/true",
+    "Stock Super InfDeath2; zero other supplied object/type/warhead/rules state except optional one-entry DieSound vector",
+    "Synthetic DieSound ID123hex; actual Random65C6D0 seeds main RNG886B88 with1; original65C780 draw has no substitution",
+    "No original Object exact-zero callbacks run: its entry Health gate returns before them",
+    "Sound playback, Death_Announcement body and remaining Infantry postlude are excluded"
+  ],
+  "substitutions": [
+    "Seven supplied vtable results:84=Type,160=false,1D4=false,280=false,3A0=false,1C8=height0,3F8=emptyWeaponRecord",
+    "Vtable3B8 binds original Death_Announcement; no executable instructions replaced"
+  ],
+  "entry_points": {
+    "infantry_receive": "0x00517FA0",
+    "foot_receive": "0x004D7330",
+    "techno_receive": "0x00701900",
+    "object_receive": "0x005F5390",
+    "random_seed": "0x0065C6D0",
+    "random_next": "0x0065C780"
+  },
+  "payload_sha256": "a0540f93dc44596b89045ccb6e9241b1fc5d1f8124fedbc0e31a9ef19914a932"
+}

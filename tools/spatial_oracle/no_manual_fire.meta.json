@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Ares NoManualFire constructor, retained parser/physical INI controls and normal Unit action/Display/click admission; bounded shared VM priors.",
+  "assumptions": [
+    "Original full TypeExt1003C710 initializes NoManualFire+4C6=false. Original field block1003F002..1003F018 uses current Type.ID section, current passed INI, literal NoManualFire, ReadString capacity2048 and empty default; no ART switch or field-specific postpass. Missing/empty/invalid retain the prior field. Bool parser uses first ASCII character 1/T/Y or 0/F/N, case insensitive.",
+    "Ares prerequisites.Probe owns lexical controls and original native vtables. Its ReadString input seam supplies raw already-read text without trimming; raw-space controls deliberately distinguish this boundary from physical ReadString. Native parser, constructor and hook exports are not replaced.",
+    "Existing retail_history owns physical INI bytes/load and exact section admission. Nine declared file inputs execute real528A10 trim and exact-case lookup plus the same Ares block. This is a declared file sequence, not a complete session Process/Rules reset/language digest/mode/map startup execution. Unrelated extension-reader keys are skipped.",
+    "Historical run() remains the only action/Display/click VM. 32 hover rows supply mouse_over=true, matching69300B, and cover Object/Cell and all Ctrl/Shift/Alt combinations with false/true values transferred by value from executed yes/no reader controls. Original DetermineAction passes1 to the Cell query but hard-codes0 for Object; Object ClickedAction re-query also passes0. Actual Unit query arguments and Cell callee returns are observed separately. Synthetic Syringe frames invoke actual exports at original hook sites, restore complete CPU context, and follow the returned continuation; no original instruction is patched.",
+    "Ordinary enemy Object left click re-queries the action in UnitClickedObject. False reaches mission1/target argument producer6FFBE0; true preserves native nonattack fallback and stops4D78BA before navigation coordinates. Complete event delivery/navigation/firing is outside the boundary. Cell rows compare action/cursor and hook reachability; supplied movement state does not certify every movement fallback.",
+    "NoManualFire has two observed action-query consumers. It does not establish a global firing ban. Script-issued/already-queued Attack and automatic targeting bypassing these UI queries remain outside executable controls; no simulation CanFire/AttackAI check is introduced. In the bounded object click continuation, existing observer asserts zero Main/RandomRanged, action-timer-start and detach calls; later command/voice/action-line effects are excluded."
+  ],
+  "substitutions": [
+    "Retain historical singleton selection, keyboard, map/Cell, shroud, playfield, terrain, range/FireError, palette and cursor-sink services. Actor/type/House/weapon state is supplied; no full native scenario, complete constructors/range arithmetic or Windows pixels.",
+    "Reuse ares_prerequisites.Probe and physical Rules retail_history; no PCX/private path/assets, second VM, alternate parser, action or country implementation. Move fixture stack storage away from Ares preferred base only. Whole original gamemd text and Ares text10001000..10093000 remain unchanged."
+  ],
+  "entry_points": {
+    "type_ext_ctor": "0x1003C710",
+    "type_reader": "0x1003F002",
+    "bool_wrapper": "0x1000EBF0",
+    "bool_reader": "0x1000FC50",
+    "bool_parser": "0x10076CC0",
+    "read_string": "0x00528A10",
+    "type_loader_hook": "0x10040DF0",
+    "object_hook": "0x1004A460",
+    "object_site": "0x00700536",
+    "object_skip": "0x0070056C",
+    "cell_hook": "0x1004A430",
+    "cell_site": "0x007008D4",
+    "cell_skip": "0x00700AB7"
+  },
+  "replay_command": "python -m tools.spatial_oracle.bunker_attack_action --no-manual-fire",
+  "payload_sha256": "7bebf168f43f8417747ba7c61a0d8452bb17ff34ecd0c407633fce9c5a832d85"
+}

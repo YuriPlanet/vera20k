@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original HouseClass::Update Tag raise 0x004F8F87..0x004F8FBE",
+  "assumptions": [
+    "Frame [0xA8ED84] signed; House +0x3C Tag list items, +0x48 count; raise Cell [0xA8EF98] zero",
+    "The list is not changed between raises: ProcessTriggerEvent is not run"
+  ],
+  "substitutions": [
+    "Recorded at entry and returned (ret 0x14) without running: TagClass::ProcessTriggerEvent 0x006E53A0"
+  ],
+  "entry_points": {
+    "raise": "0x004F8F87",
+    "join": "0x004F8FBE"
+  },
+  "replay_command": "python -m tools.spatial_oracle.house_tag_raise",
+  "payload_sha256": "85122686937d5bf11426508a3312b8a75bf00b0574a2ccdca8056fbb7d690339"
+}

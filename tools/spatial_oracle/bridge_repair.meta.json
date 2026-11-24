@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original high and low ramp/span repair caller control over synthetic supplied cells",
+  "assumptions": [
+    "Native49F2F0 initializes direction offsets; concretebase100 and woodbase500 distinguish family dispatch",
+    "Theater relative keys use stock urbannmd values; synthetic16-entry TMP heads admit the pavement predicate",
+    "No resource exhaustion; successful bounded synthetic heap supplied, native vector growth/copy executes",
+    "No native loading, object lifecycle, real bridge zone graph, complete engineer order or rendered parity claim"
+  ],
+  "substitutions": [
+    "47D2B0 records receiver/level and returns; tile metadata recalculation excluded",
+    "56DB70 records coordinate and returns a supplied Boolean; real zone records and edge mutation excluded",
+    "5FC380 records overlay type, coordinate and frame then returns; constructor registration, terrain gate, Mark, Recalc and UnInit excluded",
+    "56C510 and586990 record ordered calls/list then return; connectivity and batched terrain/zone work excluded",
+    "57F200/57F440 record first-match ordinary repair dispatch; ordinary strip walker excluded",
+    "7C8E17/7C8B3D provide successful allocation/free; native vector writes/growth execute",
+    "6551C0 radar and6D2790 display sinks;6D2140 supplies point0,0; pixels and rectangle values excluded"
+  ],
+  "entry_points": {
+    "high_entry": "0x00573540",
+    "low_entry": "0x00570050",
+    "high_span": "0x00568E40",
+    "low_span": "0x00569760",
+    "flood": "0x0056EB80",
+    "pavement": "0x0056E990",
+    "damaged_gate": "0x005471F0"
+  },
+  "payload_sha256": "f413d5208bf74aff69a00cf151c28feb783a7e548857a7dbd5ca2f088e5400b5"
+}

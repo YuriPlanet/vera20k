@@ -1,0 +1,14 @@
+{
+  "name": "vera20k-telemetry-dashboard",
+  "private": true,
+  "description": "Browser dashboard for the VERA20k telemetry server (dev tool; not shipped with the game)",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch"
+  },
+  "devDependencies": {
+    "@types/three": "^0.180.0",
+    "typescript": "^5.6.0"
+  }
+}

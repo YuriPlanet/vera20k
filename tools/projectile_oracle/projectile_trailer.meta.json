@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Bullet placement/Fire, AI trailer cadence and complete free-standing BBBLELRG Anim lifetime",
+  "assumptions": [
+    "The full original BulletType constructor and readers consume supplied physical lexical RULESMD, optional LANGRULE, MPBattleMD and Hills inputs; fixed ART reads consume SUBT and BBBLELRG. Hills.map is the unchanged inner INI entryD5FE80AC extracted from loose Hills.mmx, not the MMX container or XHills.MAP. Native physical archive/INI walking is outside this witness.",
+    "The existing guided and impact fixture owners initialize selected original registries and flat level6 Cell objects. Each header Bullet executes full original Fire468670/Unlimbo before documented in-flight position/alive/wait/frame overrides; admission is retained in retail.admission. GameActive, empty receiver pools, target Cell and incoming Fire velocity are supplied boundaries. No SUB placement, upstream Techno FireAt, collision, rendering or complete startup pool identity is claimed.",
+    "Header execution begins at4666E0 including ObjectAI and ends before flight4668BD, at the original dead/wait return, or the expired-wait explosion entry468D80. One continuation executes native Torpedo guidance through precommit467B7A with supplied incoming velocity and records its distinct candidate coordinate after the earlier Anim constructor. No native arithmetic result or branch outcome is calculated by Python. Explicit #DE controls accept only processor-exception faults at the two original IDIV instructions; all other execution failures abort publication.",
+    "The original38 header rows remain unchanged: their scaled controls execute original setter46C840 with supplied input. The separate scalable_controls execute whole original46B280 with constructor/reader-backed types, ordered vector growth, direct PointerExpired controls and full UnInit/drain, including sole-member self callbacks. It explicitly executes vector initializer4662E0..466316, stopping BEFORE unsupported CRT atexit registration; not full CRT startup. Its two extreme ART base delays execute original readers and eight whole enrollments each to observe wrapping addition; they are authored arithmetic controls, not stock tuning. ART delay controls go through original readers. Main and Scenario RNG are independently seeded by original65C6D0 with seed31; original raw draw stores and both retained state hashes are recorded.",
+    "Every admitted emission executes full Anim421EA0 including native identity, registration, Unlimbo and timer setup. Two histories remove the original Bullet through UnInit and deferred drain, then run the surviving independent AnimAI from the same frame through deferred retirement. The host supplies that schedule; the complete Logic loop, renderer and audio device are outside coverage.",
+    "One authored RandomRate=450,225 ART control executes the original reader conversion before constructor RNG ordering and continuation; stock BBBLELRG retains its physical ART. Reader dependencies use unchanged shared default fixture setup rather than a separate world implementation.",
+    "Original Bullet466380 plus AddRef46AFD0 establishes one host-held COM reference; original Configure4664C0 reads the physical weapon/type outputs. This does not execute upstream Unit FireAt or COM activation.",
+    "The auxiliary Scalable inventory is selected from physical RULESMD Projectile references plus the two explicit nuclear roots. Every included constructor/full layered reader executes; this selection is not original native registry discovery and excludes no duplicate selected ART section silently.",
+    "Placement controls execute the concrete BulletType virtual+6C owner46C4F0 and full BulletFire468670, including original ObjectUnlimbo, SetLocation, Display and ProximitySetup. Flat Cell level/slope/live-bridge inputs, raw muzzle XYZ, mapped target Cell and incoming velocity are supplied; no upstream Unit GetFLH/FireAt or native whole-map placement is claimed. Dummy/unallocated source/cell-target aliasing is outside these mapped-cell controls. Each control constructs a fresh unadmitted physical Torpedo through the existing world owner. Direct controls include signed input-height extremes without supplying an impossible INT_MAX terrain result."
+  ],
+  "substitutions": [
+    "Inherited reader supplies signed-CRC INI indexes, exact extracted archive bytes, allocation/delete/CRT/TLS and the unused Color entry. Original ObjectType LoadVoxel5F8110 is skipped only after scalar reads, as in ArtStateReader. Runtime voxel loading is not established.",
+    "The one allocation-failure control returns null at the shared operator_new boundary only for the producer requested1C8 bytes. Existing shared Windows InterlockedIncrement/Decrement and checked IsBadReadPtr transports admit original native reference/retirement/RTTI with an empty supplied FS exception chain."
+  ],
+  "entry_points": {
+    "bullet_ai": "0x004666E0",
+    "base_idiv": "0x0046687C",
+    "scaled_idiv": "0x00466844",
+    "anim_ctor": "0x00421EA0",
+    "anim_ai": "0x00423AC0",
+    "anim_reader": "0x00427D00",
+    "bullet_type_ctor": "0x0046BBC0",
+    "bullet_type_reader": "0x0046BEE0",
+    "scaled_setter": "0x0046C840",
+    "scalable_vector_init_prefix": "0x004662E0",
+    "scalable_vector_init_end": "0x00466316",
+    "init_scalable": "0x0046B280",
+    "bullet_pointer_expired": "0x004684E0",
+    "bullet_type_fixup_coord": "0x0046C4F0",
+    "bullet_fire": "0x00468670",
+    "object_unlimbo": "0x005F4EC0",
+    "set_location": "0x005F6940",
+    "map_ground": "0x00578080",
+    "proximity_setup": "0x004E1130",
+    "uninit": "0x005F65F0",
+    "drain": "0x00725C70"
+  },
+  "command": "PYTHONDONTWRITEBYTECODE=1 python -m tools.projectile_oracle.projectile_trailer --check",
+  "input_environment": "RA2_DIR or VERA20K_GAMEMD_EXE selects the supported executable; VERA20K_PROJECTILE_RENDER_ASSETS selects the extracted files identified in the payload sources.",
+  "replay_command": "python -m tools.projectile_oracle.projectile_trailer",
+  "payload_sha256": "1a4167c1ed9fc352f7abb4e0c7f6c5f8020f88ef1cb201984a7079430795c86d"
+}

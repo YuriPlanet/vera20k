@@ -1,0 +1,2966 @@
+//! Jumpjet flight kernel: the per-frame altitude and translation body shared by
+//! every moving Jumpjet state, and the cruise state that steers it.
+//!
+//! gamemd-derived (disassembly read 2026-09-15; YR 1.001):
+//!
+//! - `JumpjetLocomotionClass::Update_Coordinates_And_Altitude @ 0x0054D0F0`,
+//!   called from `Process @ 0x0054AEC0` whenever the locomotor reports moving.
+//!   It ramps the speed double toward the target speed, advances the hover bob,
+//!   integrates height toward the bobbed target height over a terrain reference,
+//!   zeroes the speed while too low outside the destination cell, then steps the
+//!   owner along the locomotor's own facing and copies that facing to the body.
+//!   Outside the hold and the cruise it runs between the owner's Mark(REMOVE)
+//!   and Mark(PUT), so its own cell no longer lists it while it samples cell
+//!   tops.
+//! - `JumpjetLocomotionClass::State3_Translate @ 0x0054BFF0`: desired facing
+//!   toward the destination through the retail arctangent, four distance speed
+//!   zones with a turn-error slowdown, target-height choice, and arrival below
+//!   20 leptons.
+//! - The crash: `Process`'s latch (`0x0054AF2E..0x0054B02C`) turns a crashing
+//!   owner (`FootClass+0x425`) still above the ground into State 5
+//!   `0x0054CA90`, which drops it by `JumpjetCrash=` a frame on top of
+//!   Update's descent, spins its facing, and at the ground (or on crossing a
+//!   bridge deck) releases its air slot and sends the owner's impact notice.
+//! - The Magnetron's arms (`sim::locomotor_lift`): a held owner (`+0x6AD`)
+//!   keeps its body facing, is let go on arriving at its holder, is centred
+//!   on its cell before the latch, falls ever faster, and once dropped
+//!   (`+0x427`) crushes, lands, sinks or crashes where it meets the ground.
+//! - The reference height helper `0x0054D820` and the cell top height
+//!   `CellClass @ 0x00485080` (ground at the cell centre, plus a building's
+//!   `Dimension2` height or 85 leptons for any other techno in the cell).
+//!
+//! Parity demonstrated for the flat-map subset by
+//! `tools/spatial_oracle/jumpjet_flight.json` (native Unicorn execution; see the
+//! `.meta.json` scope): speed ramps, zones, turn slowdowns, bob, climb and
+//! descent, the low-altitude speed gate, arrival into state 4 or a claimed hold.
+//! The kill and the crash fall to its impact are pinned by
+//! `tools/spatial_oracle/jumpjet_crash.json` for ZEP, SHAD, HIND, SCHP and DISK
+//! (not the deployed SCHD, whose block matches SCHP's) in the hover, and for
+//! kills in the cruise and in the descent's last step. The Rocketeer's fall
+//! (`tools/spatial_oracle/jumpjet_infantry_crash.json`) runs the original
+//! `FootClass::Mark` chain, so it also pins Update's Mark bracket: the faller
+//! is listed in its cell below twice the level height, yet never lifts its own
+//! cell top. Bridges, building tops and other cell objects are Rust-tested only.
+//!
+//! Composed stock-SHAD controls in `jumpjet_states.json` compare synchronous
+//! class callbacks, separate Foot caches, Mark-byte ordering, landing and
+//! touchdown continuations. Their expected projection and full raw archive are
+//! documented in `jumpjet_states.md`. State2 balloon/deployer Mark suffix
+//! ordering rests on original instructions; those retail flags are false for
+//! the compared SHAD common path.
+//!
+//! Numeric model: `WinMain` installs x87 control word `0x0E7F` (53-bit
+//! precision, round toward zero; `_controlfp(0x300, 0x300)` at `0x006BBFC1`),
+//! and every double here is evaluated in native operand order with
+//! [`X87Chop53`]. Sine, cosine and arctangent read the retail tables; the
+//! distance uses `Sqrt_Approx`; `Math::ftol @ 0x007C5F00` keeps the low dword.
+//!
+//! ## Dependency rules
+//! - Part of sim/ — depends on util/retail_trig, rules/jumpjet_params, util and
+//!   sim/movement only.
+
+use super::JumpjetRuntime;
+use crate::rules::jumpjet_params::JumpjetParams;
+use crate::sim::movement::facing_class::FacingClass;
+use crate::util::direction::DIRECTION_DELTAS;
+use crate::util::direction_tables::{
+    LEPTON_DELTAS, dir_from_facing16, radians_from_facing16, round_facing16_to_8,
+};
+use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, GROUND_LEVEL_HEIGHT_LEPTONS};
+use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53, X87Ordering, X87Value};
+use crate::util::retail_trig::TrigTable;
+
+/// Arrival radius in leptons (`CMP EBX,0x14` at `0x0054C163`).
+const ARRIVAL_RADIUS: i32 = 20;
+/// Extra reference height for a non-building techno in a cell (`ADD EBP,0x55`
+/// at `0x004850EF`).
+const CELL_OBJECT_LIFT: i32 = 0x55;
+/// `0x007E3CC0`: 2pi.
+const TWO_PI: u64 = 0x4019_21FB_5444_2D18;
+/// `0x007ECE60`: 15.0.
+const FIFTEEN: u64 = 0x402E_0000_0000_0000;
+/// `0x007E48F0`: 1.5.
+const ONE_AND_A_HALF: u64 = 0x3FF8_0000_0000_0000;
+/// `0x007E7FC0`: 0.75.
+const THREE_QUARTERS: u64 = 0x3FE8_0000_0000_0000;
+/// `0x007E1718`: 1.0.
+const ONE: u64 = 0x3FF0_0000_0000_0000;
+
+/// Native state byte `+0x50`.
+pub(crate) const STATE_GROUND: i32 = 0;
+pub(crate) const STATE_ASCEND: i32 = 1;
+pub(crate) const STATE_HOLD: i32 = 2;
+pub(crate) const STATE_TRANSLATE: i32 = 3;
+pub(crate) const STATE_DESCEND: i32 = 4;
+/// State 5, the crash fall (`0x0054CA90`).
+pub(crate) const STATE_CRASH: i32 = 5;
+/// State 6, set by the crash's impact; the jump table at `0x0054B19C` runs no
+/// body for it.
+pub(crate) const STATE_CRASHED: i32 = 6;
+/// The target height the crash latch sets (`MOV [ESI+0x7C],-5` at
+/// `0x0054B006`), which Update's descent chases below the ground.
+const CRASH_TARGET_HEIGHT: i32 = -5;
+/// `ADD CX,0x2D00` at `0x0054CB24`: State 5 re-aims the facing this far past
+/// its animated current every frame, so it turns at the full turn rate.
+const CRASH_SPIN: u16 = 0x2D00;
+/// `[0x007E2AC8]` = 1.0f, the held fall's per-frame growth of `JumpjetCrash=`.
+const ONE_F32: u32 = 0x3F80_0000;
+/// `CellClass+0xEC` LandType Water and Beach.
+const LAND_WATER: u8 = 2;
+const LAND_BEACH: u8 = 6;
+
+/// The type block `Link_To_Object @ 0x0054AD30` copies into the locomotor
+/// (receiver `+0x1C..+0x3C`). Floats keep their binary32 bits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct JumpjetFlightParams {
+    /// `+0x1C` `JumpjetTurnRate=`: the facing rate and the turn-error threshold.
+    turn_rate: i32,
+    /// `+0x20` `JumpjetSpeed=` (an int).
+    speed: i32,
+    /// `+0x24` `JumpjetClimb=`.
+    climb_bits: u32,
+    /// `+0x28` `JumpjetCrash=`.
+    crash_bits: u32,
+    /// `+0x2C` `JumpjetHeight=`, floored at two cell levels (`0x0054AD9B`).
+    height: i32,
+    /// `+0x30` `JumpjetAccel=`.
+    accel_bits: u32,
+    /// `+0x34` `JumpjetWobbles=`.
+    wobbles_bits: u32,
+    /// `+0x38` `JumpjetDeviation=`.
+    deviation: i32,
+    /// `+0x3C` `JumpjetNoWobbles=`.
+    no_wobbles: bool,
+}
+
+impl JumpjetFlightParams {
+    /// See the field.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) const fn turn_rate(&self) -> i32 {
+        self.turn_rate
+    }
+
+    /// See the field.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) const fn speed(&self) -> i32 {
+        self.speed
+    }
+
+    /// A fixture's value.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_speed_for_test(&mut self, speed: i32) {
+        self.speed = speed;
+    }
+
+    /// See the field.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) const fn climb_bits(&self) -> u32 {
+        self.climb_bits
+    }
+
+    /// See the field.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) const fn crash_bits(&self) -> u32 {
+        self.crash_bits
+    }
+
+    /// See the field.
+    pub(crate) const fn height(&self) -> i32 {
+        self.height
+    }
+
+    /// A fixture's value.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_height_for_test(&mut self, height: i32) {
+        self.height = height;
+    }
+
+    /// See the field.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) const fn accel_bits(&self) -> u32 {
+        self.accel_bits
+    }
+
+    /// See the field.
+    #[cfg(all(feature = "phobos", any(test, feature = "test-support")))]
+    pub(crate) const fn wobbles_bits(&self) -> u32 {
+        self.wobbles_bits
+    }
+
+    /// See the field.
+    #[cfg(all(feature = "phobos", any(test, feature = "test-support")))]
+    pub(crate) const fn deviation(&self) -> i32 {
+        self.deviation
+    }
+
+    /// See the field.
+    #[cfg(all(feature = "phobos", any(test, feature = "test-support")))]
+    pub(crate) const fn no_wobbles(&self) -> bool {
+        self.no_wobbles
+    }
+}
+
+impl Default for JumpjetFlightParams {
+    fn default() -> Self {
+        Self::link(&JumpjetParams::default())
+    }
+}
+
+impl JumpjetFlightParams {
+    /// `Link_To_Object @ 0x0054AD30`'s straight-line copy.
+    ///
+    /// `JumpjetSpeed=` is an int natively; VERA's rules keep a fraction, which
+    /// truncates here (the reader residual is recorded in `jumpjet_params.rs`).
+    pub fn link(params: &JumpjetParams) -> Self {
+        Self {
+            turn_rate: params.turn_rate,
+            speed: params.speed.to_num::<i32>(),
+            climb_bits: params.climb.to_bits(),
+            crash_bits: params.crash.to_bits(),
+            height: params.height.max(2 * GROUND_LEVEL_HEIGHT_LEPTONS),
+            accel_bits: params.accel.to_bits(),
+            wobbles_bits: params.wobbles.to_bits(),
+            deviation: params.deviation,
+            no_wobbles: params.no_wobbles,
+        }
+    }
+
+    /// The locomotor facing `Link_To_Object` builds (`FUN_004C91E0` then
+    /// `Set`/`UpdateFacing` to `0x4000`). The rate constructor4C91E0 uses the
+    /// same signed clamp/low-byte shift as SetROT4C9680; preserve its raw word
+    /// even when the controller interprets it as non-positive (instant).
+    pub fn linked_facing(&self) -> FacingClass {
+        FacingClass::new(0x4000, self.turn_rate)
+    }
+}
+
+/// Flight fields of the locomotor (receiver `+0x54..+0x8C`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct JumpjetFlight {
+    /// `+0x54` the locomotor's own facing; the body copies it every Update.
+    facing: FacingClass,
+    /// `+0x70` current speed, binary64 bits.
+    current_speed_bits: u64,
+    /// `+0x78` target speed, binary64 bits.
+    target_speed_bits: u64,
+    /// `+0x80` target height above the reference.
+    target_height: i32,
+    /// `+0x88` hover bob phase in radians, binary64 bits.
+    bob_phase_bits: u64,
+}
+
+impl JumpjetFlight {
+    /// See the field.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn facing(&self) -> &FacingClass {
+        &self.facing
+    }
+
+    /// See the field.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn facing_mut(&mut self) -> &mut FacingClass {
+        &mut self.facing
+    }
+
+    /// See the field.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) const fn current_speed_bits(&self) -> u64 {
+        self.current_speed_bits
+    }
+
+    /// A fixture's value.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_current_speed_bits_for_test(&mut self, current_speed_bits: u64) {
+        self.current_speed_bits = current_speed_bits;
+    }
+
+    /// See the field.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) const fn target_speed_bits(&self) -> u64 {
+        self.target_speed_bits
+    }
+
+    /// See the field.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) const fn target_height(&self) -> i32 {
+        self.target_height
+    }
+
+    /// Move_To lifts a descent back into the climb at `JumpjetHeight=`
+    /// (`0x0054B455..0x0054B467`).
+    pub(crate) fn lift_to(&mut self, height: i32) {
+        self.target_height = height;
+    }
+
+    /// A fixture's target height.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_target_height_for_test(&mut self, target_height: i32) {
+        self.target_height = target_height;
+    }
+
+    /// See the field.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) const fn bob_phase_bits(&self) -> u64 {
+        self.bob_phase_bits
+    }
+}
+
+impl JumpjetFlight {
+    pub fn linked(params: &JumpjetFlightParams) -> Self {
+        Self {
+            facing: params.linked_facing(),
+            current_speed_bits: 0,
+            target_speed_bits: 0,
+            target_height: 0,
+            bob_phase_bits: 0,
+        }
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn target_speed(&self) -> f64 {
+        f64::from_bits(self.target_speed_bits)
+    }
+}
+
+impl Default for JumpjetFlight {
+    fn default() -> Self {
+        Self::linked(&JumpjetFlightParams::default())
+    }
+}
+
+/// RTTI of the owner as the kernel distinguishes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FlightOwnerKind {
+    Unit,
+    Infantry,
+    Aircraft,
+    Other,
+}
+
+impl FlightOwnerKind {
+    pub(crate) fn of(category: crate::map::entities::EntityCategory) -> Self {
+        use crate::map::entities::EntityCategory;
+        match category {
+            EntityCategory::Unit => Self::Unit,
+            EntityCategory::Infantry => Self::Infantry,
+            EntityCategory::Aircraft => Self::Aircraft,
+            _ => Self::Other,
+        }
+    }
+}
+
+/// A structural high bridge with either a fixed deck Z or stock geometry.
+#[derive(Clone, Copy)]
+pub(crate) enum JumpjetBridgeDeck {
+    Fixed(i32),
+    Legacy,
+}
+
+impl JumpjetBridgeDeck {
+    fn above(self, ground: i32) -> i32 {
+        match self {
+            Self::Fixed(z) => z,
+            Self::Legacy => ground.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS),
+        }
+    }
+}
+
+/// Everything the flight kernel reads from or writes to the owner and the map.
+/// Coordinates are world leptons.
+pub(crate) trait JumpjetFlightHost {
+    /// VERA `[JumpjetControls] SmoothFacing=`; off is the original.
+    fn smooth_facing(&self) -> bool {
+        false
+    }
+    /// VERA `[JumpjetControls] LandNearby=` in cells; 0 is the original.
+    fn land_nearby_range(&self) -> i32 {
+        0
+    }
+    /// VERA `LandNearby=`: the owner's id, to settle two Jumpjets heading
+    /// for one cell.
+    fn owner_id(&self) -> u64 {
+        0
+    }
+    /// VERA `LandNearby=`: the lowest id among the other airborne Jumpjets
+    /// whose destination is `cell`.
+    fn landing_cell_claimed_by(&self, _cell: (i16, i16)) -> Option<u64> {
+        None
+    }
+    fn binary_frame(&self) -> u32;
+    fn trig(&self) -> &TrigTable;
+    fn owner_kind(&self) -> FlightOwnerKind;
+    /// Whether the owner still has this kind of locomotor after a callback.
+    fn has_installed_jumpjet(&self) -> bool;
+    /// Object+90, checked after Update54AF24 before the state dispatch.
+    fn is_object_alive(&self) -> bool;
+    /// Process's tail after the state dispatch (`0x0054B07D..0x0054B16C`):
+    /// the owner's deselect over the player's shroud, then its discovery by
+    /// the player over open ground. The callback runs on the published
+    /// instance.
+    fn visibility_tail(&mut self, runtime: &mut JumpjetRuntime);
+    fn marked(&self) -> bool;
+    /// Save/clear/restore Object+74 without calling Mark or changing lists.
+    fn replace_marked_byte(&mut self, marked: bool) -> bool;
+    /// Owner `+0x9C` coordinate.
+    fn location(&self) -> [i32; 3];
+    /// `FootClass::SetLocation` (vtable `+0x1B4`).
+    fn set_location(&mut self, coord: [i32; 3]);
+    /// `ObjectClass::SetZ @ 0x005F6060`.
+    fn set_z(&mut self, z: i32);
+    /// `ObjectClass::GetHeight @ 0x005F5F40`.
+    fn height_above_ground(&self) -> i32;
+    /// Owner `+0x8C`, on a bridge deck.
+    fn on_bridge(&self) -> bool;
+    /// Update's grounded reset at `0x0054D407..D438`: vtable `+0xF4` with the
+    /// location, then `+0x8C = 0`.
+    fn grounded_reset(&mut self);
+    /// `CellClass::GetGroundHeight @ 0x00578080` at a coordinate, deck excluded.
+    fn floor_height(&self, xy: [i32; 2]) -> i32;
+    /// The cell holding `xy` carries a high bridge (`+0x140 & 0x100`).
+    fn cell_high_bridge(&self, xy: [i32; 2]) -> bool;
+    fn high_bridge_deck(&self, xy: [i32; 2]) -> Option<JumpjetBridgeDeck> {
+        self.cell_high_bridge(xy).then_some(JumpjetBridgeDeck::Legacy)
+    }
+    /// `CellClass @ 0x00485080` for the cell holding `xy`.
+    fn cell_top_height(&self, xy: [i32; 2]) -> i32;
+    /// `CellClass+0xEC` LandType of the cell holding `xy`.
+    fn cell_land_type(&self, xy: [i32; 2]) -> u8;
+    /// `TechnoTypeClass+0xD6A` `BalloonHover=`.
+    fn balloon_hover(&self) -> bool;
+    /// Owner `+0x2B4` TarCom is set.
+    fn has_target(&self) -> bool;
+    /// Foot `+0x6AD`: a Magnetron lifted the owner (`sim::locomotor_lift`).
+    fn piggyback_active(&self) -> bool;
+    /// A lifted owner's arrival (`0x0054C1BD..0x0054C1CB`): the Magnetron
+    /// still holding it (`+0x2B0`) lets it go (`0x0070FEE0(1)`), which drops
+    /// it. The callback runs on the published instance.
+    fn piggyback_arrival(&mut self, runtime: &mut JumpjetRuntime);
+    /// `UnitTypeClass+0xE13` `IsSimpleDeployer=` on a Unit owner.
+    fn simple_deployer(&self) -> bool;
+    /// `TechnoTypeClass+0x6AD` on a Unit owner.
+    fn type_flag_6ad(&self) -> bool;
+    /// `SetSpeedFraction` (vtable `+0x544`), with the binary64 argument.
+    fn set_speed_fraction(&mut self, fraction_bits: u64);
+    /// `0x00705D60` on the owner after an arrival transition.
+    fn arrival_notify(&mut self);
+    /// `FacingClass::UpdateFacing` on the body facing (`+0x388`).
+    fn snap_body_facing(&mut self, facing: u16);
+    /// Infantry with `InfantryTypeClass+0xECB` holding a target in state 2:
+    /// the facing `0x005F3DB0` answers toward the target.
+    fn hold_target_facing(&self) -> Option<u16>;
+
+    // Seams the takeoff, hold and landing states add on top of the cruise.
+    /// The cell holding `xy`, as `MapClass::Get_CellClass_At_Coord @ 0x00565730`
+    /// resolves it.
+    fn cell_of(&self, xy: [i32; 2]) -> (i16, i16);
+    /// Owner body facing `+0x388`; State 0 snaps the locomotor facing to it.
+    fn body_facing(&self) -> u16;
+    /// `RandomRanged(0, 7)` on `ScenarioClass+0x218`.
+    fn random_direction(&mut self) -> u32;
+    /// `0x004135A0`: `cell+0xE0` holds an object that is not the owner.
+    fn air_slot_taken_at(&mut self, cell: (i16, i16)) -> bool;
+    /// `cell+0xE0` is the owner itself.
+    fn holds_air_slot_at(&self, cell: (i16, i16)) -> bool;
+    /// `cell+0xE0 == 0`, read directly rather than through `0x004135A0`.
+    fn air_slot_empty_at(&self, cell: (i16, i16)) -> bool;
+    /// Foot+560, independently retained by the aircraft tracker.
+    fn tracker_cell(&self) -> (i16, i16);
+    fn tracker_add(&mut self);
+    fn tracker_update(&mut self, cell: (i16, i16));
+    /// `0x00487D70(cell, owner)`.
+    fn claim_air_slot_at(&mut self, cell: (i16, i16));
+    /// `0x00487D70(cell, 0)`.
+    fn release_air_slot_at(&mut self, cell: (i16, i16));
+    /// `Set_Destination` (vtable `+0x480`) with the stepped neighbour cell.
+    fn set_destination_cell(&mut self, cell: (i16, i16), runtime: &mut JumpjetRuntime);
+    /// `Can_Enter_Cell` (vtable `+0x1AC`) at the landing cell. Native answers 0
+    /// for a clear cell; 2 is conditional and anything above 2 refuses.
+    fn can_enter_cell(&self, cell: (i16, i16)) -> i32;
+    /// `CellClass::IsSubCellFree @ 0x00481130`, for sub-cells 2 and above.
+    /// Sub-cells 0 and 1 answer a definite `false` (`XOR AL,AL` at
+    /// `0x0048117A`; only the upper bytes of EAX are stale), which the caller
+    /// applies, so this is never consulted for them.
+    fn sub_cell_free(&self, cell: (i16, i16), sub_cell: i32, bridge: bool) -> bool;
+    /// Owner `+0xB4` (the queued mission) or `GetCurrentMission` (vtable
+    /// `+0x184`, `0x005B3040`) is Enter (7), which skips State 4's landing
+    /// admission.
+    fn mission_is_seven(&self) -> bool;
+    /// State 4's refusal calls `Stop_Moving` (interface vtable `+0x48`) as its
+    /// last act. The host runs the order body
+    /// ([`JumpjetRuntime::stop_moving`](super::JumpjetRuntime::stop_moving))
+    /// synchronously, retaining all instance writes made by the callback.
+    fn stop_moving(&mut self, runtime: &mut JumpjetRuntime) -> i32;
+    /// State 1's factory-contact callback (`0x0054BC59..0x0054BCB3`): while
+    /// the owner's `Contacts[0]` is a Building whose type is `WeaponsFactory=`,
+    /// `GDIBarracks=`, `NODBarracks=` or `YuriBarracks=`, the owner receives
+    /// `INotifyProc::Notify(0x117B, 0)` (Infantry `0x00522A60`, Unit
+    /// `0x00746100`: [`Simulation::jumpjet_lift_off_notify`]). The callback
+    /// may re-target the owner; the caller re-reads the destination after it.
+    ///
+    /// [`Simulation::jumpjet_lift_off_notify`]: crate::sim::world::Simulation::jumpjet_lift_off_notify
+    fn factory_contact_notify(&mut self, runtime: &mut JumpjetRuntime);
+    /// `CellClass+0x140 & 0x100`: the cell carries a high bridge.
+    fn cell_high_bridge_at(&self, cell: (i16, i16)) -> bool;
+    /// Locomotor `+0x90`, the latch State 4 sets once it has admitted a
+    /// landing, so later frames stop re-testing the cell.
+    /// Set that latch and run the owner's `+0xF0` landing callback.
+    fn begin_landing(&mut self, destination: [i32; 3]);
+    /// Owner `+0x134`, which suppresses the `DeployToLand=` hold.
+    fn deploy_latched(&self) -> bool;
+    /// `RulesClass+0x48` as a facing, the heading a simple deployer turns to
+    /// before it settles (`0x0054C767..C7A2`).
+    fn deploy_facing(&self) -> Option<u16>;
+    /// PerCell(2), class NULL destination and the owner gate54C905..54C92C.
+    /// False aborts the remaining landing, retaining the callback's runtime.
+    /// True also releases the owned air slot and tracker, before phase0.
+    fn touchdown(&mut self, runtime: &mut JumpjetRuntime) -> bool;
+    /// Crate pickup54C9F6 and owner cleanup after the phase0 write54C9E4:
+    /// an admitted touchdown lets a
+    /// lift end (`+0x6AE = 1`, `0x0054C9FE`) and clears the dropped and crash
+    /// bytes (`+0x427`, `+0x425`, `0x0054CA08`, `0x0054CA12`).
+    fn finish_touchdown(&mut self, runtime: &mut JumpjetRuntime);
+
+    // Seams the crash adds.
+    /// Owner `+0x425`, the latch `FootClass::Crash @ 0x004DEBB0` raises.
+    fn crashing(&self) -> bool;
+    /// `MapClass::In_Bounds @ 0x00568300` for a cell.
+    fn in_bounds(&self, cell: (i16, i16)) -> bool;
+    /// State 5's relocation (`0x0054CBCB..0x0054CC0D`): the owner leaves the
+    /// display (`0x004A9770`) and its cell (`Mark(REMOVE)`, vtable `+0x124`),
+    /// moves (`SetLocation`, `+0x1B4`), and is marked (`Mark(PUT)`) and
+    /// submitted (`0x004A9720`) again.
+    fn crash_relocate(&mut self, coord: [i32; 3]);
+    /// The owner's `Mark` (vtable `+0x124`, `FootClass::Mark @ 0x004D3780`)
+    /// at its current location: PUT when `put`, REMOVE otherwise.
+    fn mark(&mut self, put: bool);
+    /// The crash impact's owner work after its air slot release
+    /// (`0x0054D06C..0x0054D095`): `AircraftTracker::Remove @ 0x004135D0`, then
+    /// the owner's `INoticeSink` slot 0 with `(0x117C, 0)`, whose handler
+    /// finishes the wreck.
+    fn crash_impact(&mut self);
+    /// The latch's owner work (`0x0054B014..0x0054B02C`): an Infantry owner
+    /// (What_Am_I 0xF) plays AirDeathStart, an unforced Do_Action(0x22).
+    fn crash_latched(&mut self);
+
+    // Seams the Magnetron's drop adds.
+    /// `CellClass::GetCoords` (vtable `+0x48`, `0x00486840`) of the cell
+    /// `MapClass @ 0x005657A0` finds: its centre at its ground height.
+    fn cell_coords(&self, cell: (i16, i16)) -> [i32; 3];
+    /// Owner `+0x427`: a Magnetron dropped it.
+    fn dropped(&self) -> bool;
+    /// The dropped impact (`0x0054CC47..0x0054CDBD`) on the ground list of
+    /// the cell under the owner (`Simulation::dropped_impact`). Answers
+    /// whether it lands on a Unit or a Building, which crashes it.
+    fn crush_below(&mut self, runtime: &mut JumpjetRuntime) -> bool;
+    /// `TechnoTypeClass+0xD94` `JumpJet=` of the owner's type.
+    fn jumpjet_type(&self) -> bool;
+    /// [`check_cell_passability`](crate::sim::cell_rect::check_cell_passability)
+    /// with (Wheel, 1, 1, -1, Normal, -1, 1) (`0x0054CE7F..0x0054CE8F`).
+    fn wheel_clear(&self, cell: (i16, i16)) -> bool;
+    /// A dropped owner refused the water it falls on sinks
+    /// (`0x0054CEB4..0x0054CF37`, `Simulation::dropped_sink`).
+    fn sink(&mut self, runtime: &mut JumpjetRuntime);
+    /// The owner's `Set_Destination(0, 1)` (vtable `+0x480`, `0x0054CFAF`).
+    fn null_destination(&mut self, runtime: &mut JumpjetRuntime);
+    /// Owner `+0x428` and `+0x42C`, the drop's kill credit, cleared.
+    fn clear_drop_credit(&mut self);
+    /// Owner `+0x8C` OnBridge raised (`0x0054D012`).
+    fn set_on_bridge(&mut self);
+}
+
+fn zero() -> X87Value {
+    X87Chop53::load_i32(0)
+}
+
+fn int(value: i32) -> X87Value {
+    X87Chop53::load_i32(value)
+}
+
+fn double(bits: u64) -> X87Value {
+    X87Chop53::load_f64(NativeF64Bits::from_bits(bits)).unwrap_or_else(|_| zero())
+}
+
+fn single(bits: u32) -> X87Value {
+    X87Chop53::load_f32(NativeF32Bits::from_bits(bits)).unwrap_or_else(|_| zero())
+}
+
+fn store_double(value: X87Value) -> u64 {
+    X87Chop53::store_f64(value).map_or(0, |bits| bits.bits())
+}
+
+fn ordering(lhs: X87Value, rhs: X87Value) -> X87Ordering {
+    X87Chop53::compare(lhs, rhs)
+}
+
+fn native_cell(value: i32) -> i16 {
+    (value.wrapping_add((value >> 31) & 0xFF) >> 8) as i16
+}
+
+/// Reference height `0x0054D820`: the current cell's top height, and while
+/// moving the max-or-average with the cell one step ahead along the facing.
+///
+/// Both stock bridge tests add the rise to the *current* cell's value
+/// (`ADD EDI` at `0x0054D875` and `0x0054D906`). A fixed deck is a world-space
+/// obstacle in its own cell, alongside any taller terrain or building.
+fn reference_height(
+    flight: &JumpjetFlight,
+    host: &impl JumpjetFlightHost,
+    location: [i32; 3],
+) -> i32 {
+    let here_xy = [location[0], location[1]];
+    let mut here = host.cell_top_height(here_xy);
+    let here_bridge = host.high_bridge_deck(here_xy);
+    match here_bridge {
+        Some(JumpjetBridgeDeck::Fixed(deck)) => here = here.max(deck),
+        Some(JumpjetBridgeDeck::Legacy) => here = here.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS),
+        None => {}
+    }
+    if ordering(double(flight.current_speed_bits), zero()) != X87Ordering::Greater {
+        return here;
+    }
+    // `0x0054D897..D8AC`: the eight-way direction of the 16-bit facing.
+    let direction = dir_from_facing16(flight.facing.current(host.binary_frame()));
+    let (dx, dy) = LEPTON_DELTAS[usize::from(direction)];
+    let ahead_xy = [location[0].wrapping_add(dx), location[1].wrapping_add(dy)];
+    let mut ahead = host.cell_top_height(ahead_xy);
+    match host.high_bridge_deck(ahead_xy) {
+        Some(JumpjetBridgeDeck::Fixed(deck)) => ahead = ahead.max(deck),
+        Some(JumpjetBridgeDeck::Legacy) if matches!(here_bridge, Some(JumpjetBridgeDeck::Fixed(_))) => {
+            ahead = ahead.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS);
+        }
+        Some(JumpjetBridgeDeck::Legacy) => here = here.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS),
+        None => {}
+    }
+    if ahead > here {
+        ahead
+    } else {
+        ahead.wrapping_add(here) / 2
+    }
+}
+
+/// `Update_Coordinates_And_Altitude @ 0x0054D0F0`.
+pub(crate) fn update_coordinates_and_altitude(
+    phase: i32,
+    destination: [i32; 3],
+    params: &JumpjetFlightParams,
+    flight: &mut JumpjetFlight,
+    host: &mut impl JumpjetFlightHost,
+) {
+    let hold_or_translate = matches!(phase, STATE_HOLD | STATE_TRANSLATE);
+    // 0x0054D0FF..0x0054D134: outside the hold and the cruise the owner is
+    // taken off the map for the body (Mark(REMOVE) here, Mark(PUT) at the end,
+    // 0x0054D6A6), so its own cell does not list it while the reference height
+    // samples the cell top. The hold and the cruise instead clear +0x74 here
+    // and restore the saved byte at the end (0x0054D6B4..0x0054D6BD), leaving
+    // the lists alone (VERA's host still unlinks a link left in the cell the
+    // owner leaves, `CruiseHost::set_location`). Either way SetZ (0x005F6060)
+    // finds +0x74 clear and skips its own Mark pair.
+    let lifted = !hold_or_translate;
+    let saved_marked = host.marked();
+    if lifted {
+        host.mark(false);
+    } else {
+        host.replace_marked_byte(false);
+    }
+
+    // Speed ramp 0x0054D138..D1AE. The acceleration test runs first and the
+    // deceleration test reads the updated value, so a target below the cap can
+    // be overshot and pulled back in the same frame.
+    let cap = int(params.speed);
+    let target = double(flight.target_speed_bits);
+    let mut current = double(flight.current_speed_bits);
+    if ordering(target, current) == X87Ordering::Greater {
+        let next = X87Chop53::add(single(params.accel_bits), current);
+        current = if ordering(next, cap) == X87Ordering::Less {
+            next
+        } else {
+            cap
+        };
+    }
+    if ordering(target, current) == X87Ordering::Less {
+        let braking = X87Chop53::mul(single(params.accel_bits), double(ONE_AND_A_HALF));
+        let next = X87Chop53::sub(current, braking);
+        current = if ordering(next, zero()) == X87Ordering::Greater {
+            next
+        } else {
+            zero()
+        };
+    }
+    flight.current_speed_bits = store_double(current);
+    // A zero speed divides by zero natively (masked, infinity or NaN); no stock
+    // jumpjet has one, and VERA reports a zero fraction instead.
+    host.set_speed_fraction(X87Chop53::div(current, cap).map_or(0, store_double));
+
+    let location = host.location();
+    let same_cell = native_cell(destination[0]) == native_cell(location[0])
+        && native_cell(destination[1]) == native_cell(location[1]);
+
+    // Hover bob 0x0054D1FB..D23A, then the bobbed target height.
+    let bob = if hold_or_translate && !params.no_wobbles {
+        let step = X87Chop53::div(double(FIFTEEN), single(params.wobbles_bits))
+            .and_then(|period| X87Chop53::div(double(TWO_PI), period))
+            .unwrap_or_else(|_| zero());
+        X87Chop53::add(step, double(flight.bob_phase_bits))
+    } else {
+        zero()
+    };
+    flight.bob_phase_bits = store_double(bob);
+    let bob_target = X87Chop53::ftol_i32_low_masked(X87Chop53::add(
+        X87Chop53::mul(host.trig().sin_from_table(bob), int(params.deviation)),
+        int(flight.target_height),
+    ));
+
+    // Ground under the owner, raised to the deck once near it (0x0054D29A..D314).
+    let z = location[2];
+    let xy = [location[0], location[1]];
+    let mut ground = host.floor_height(xy);
+    if let Some(bridge) = host.high_bridge_deck(xy) {
+        let deck = bridge.above(ground);
+        let deck_approach = X87Chop53::sub(int(deck), single(params.crash_bits));
+        if ordering(deck_approach, int(z)) != X87Ordering::Greater {
+            ground = deck;
+        }
+    }
+    let reference =
+        if matches!(phase, STATE_DESCEND | STATE_GROUND) || (same_cell && !host.balloon_hover()) {
+            ground
+        } else {
+            reference_height(flight, host, location)
+        };
+
+    // Height integration 0x0054D354..D4BB.
+    let climb = single(params.climb_bits);
+    let mut altitude = z.wrapping_sub(reference);
+    let mut new_z = None;
+    if altitude < bob_target {
+        let mut height = host.height_above_ground();
+        if let Some(bridge) = host.high_bridge_deck(xy)
+            && !host.on_bridge()
+        {
+            let floor = host.floor_height(xy);
+            let deck = bridge.above(floor);
+            if z >= deck {
+                height = height.wrapping_sub(deck.wrapping_sub(floor));
+            }
+        }
+        if height == 0 {
+            host.grounded_reset();
+        }
+        let reach = X87Chop53::add(int(altitude), climb);
+        new_z = Some(if ordering(int(bob_target), reach) == X87Ordering::Less {
+            z.wrapping_add(bob_target.wrapping_sub(altitude))
+        } else {
+            X87Chop53::ftol_i32_low_masked(X87Chop53::add(int(z), climb))
+        });
+    } else if altitude > bob_target {
+        let floor = X87Chop53::sub(int(altitude), climb);
+        let mut next = if ordering(int(bob_target), floor) != X87Ordering::Greater {
+            X87Chop53::ftol_i32_low_masked(X87Chop53::sub(int(z), climb))
+        } else {
+            z.wrapping_add(bob_target.wrapping_sub(altitude))
+        };
+        if next <= ground {
+            next = ground;
+        }
+        if altitude <= 0 {
+            altitude = 0;
+        }
+        new_z = Some(next);
+    }
+
+    // Too low outside the destination cell: no horizontal speed (0x0054D4FD..D52D).
+    if !same_cell && (altitude < bob_target / 2 || altitude < bob_target / 4) {
+        flight.current_speed_bits = 0;
+    }
+    if let Some(next) = new_z {
+        host.set_z(next);
+        // 0x0054D546..0x0054D554: a second Mark(REMOVE), which the first one
+        // has already made a refusal.
+        if lifted {
+            host.mark(false);
+        }
+    }
+
+    // Horizontal step along the locomotor facing (0x0054D55A..D607).
+    let location = host.location();
+    let frame = host.binary_frame();
+    let step = int(X87Chop53::ftol_i32_low_masked(double(
+        flight.current_speed_bits,
+    )));
+    let angle = X87Chop53::load_f64(radians_from_facing16(flight.facing.current(frame)))
+        .expect("a facing word's radians are finite");
+    let new_y = X87Chop53::ftol_i32_low_masked(X87Chop53::sub(
+        int(location[1]),
+        X87Chop53::mul(host.trig().sin_from_table(angle), step),
+    ));
+    let new_x = X87Chop53::ftol_i32_low_masked(X87Chop53::add(
+        X87Chop53::mul(host.trig().cos_from_table(angle), step),
+        int(location[0]),
+    ));
+    host.set_location([new_x, new_y, location[2]]);
+
+    // Body facing (0x0054D60D..D692).
+    if !host.piggyback_active() {
+        let hold_facing = (host.owner_kind() == FlightOwnerKind::Infantry
+            && phase == STATE_HOLD
+            && host.has_target())
+        .then(|| host.hold_target_facing())
+        .flatten();
+        match hold_facing {
+            Some(toward_target) => {
+                flight.facing.snap(toward_target, frame);
+            }
+            // VERA `SmoothFacing=` (a deviation from `0x0054D67B`, off by
+            // default): on the ground the body keeps its own heading, so
+            // State 0 hands that heading to the locomotor and the body then
+            // turns with it instead of snapping to a stale one.
+            None if host.smooth_facing() && phase == STATE_GROUND => {}
+            None => host.snap_body_facing(flight.facing.current(frame)),
+        }
+    }
+    if lifted {
+        host.mark(true);
+    } else {
+        host.replace_marked_byte(saved_marked);
+    }
+}
+
+/// `State3_Translate @ 0x0054BFF0`. Returns the new state.
+pub(crate) fn state3_translate(
+    runtime: &mut JumpjetRuntime,
+    host: &mut impl JumpjetFlightHost,
+) -> i32 {
+    let params = runtime.params;
+    let destination = [
+        runtime.destination.x,
+        runtime.destination.y,
+        runtime.destination.z,
+    ];
+    let mut state = STATE_TRANSLATE;
+    let frame = host.binary_frame();
+    let location = host.location();
+    let tracker_cell = host.cell_of([location[0], location[1]]);
+    if tracker_cell != host.tracker_cell() {
+        host.tracker_update(tracker_cell);
+    }
+    // VERA `LandNearby=` (off by default, no native counterpart).
+    if replan_landing_on_approach(runtime, tracker_cell, host) {
+        return STATE_TRANSLATE;
+    }
+
+    // Desired facing toward the destination (0x0054C081..C0CD).
+    runtime
+        .flight
+        .facing
+        .set(desired_facing(destination, location), frame);
+    // `FUN_004C9530` is destination minus animated current; the error byte
+    // rounds the unsigned 16-bit difference to eighths of a byte, so any turn
+    // to the left reads as a large error.
+    let difference = runtime
+        .flight
+        .facing
+        .destination()
+        .wrapping_sub(runtime.flight.facing.current(frame));
+    let turn_error = i32::from(round_facing16_to_8(difference));
+
+    let distance = crate::sim::cell_kernel::native_xy_distance(
+        location[0].wrapping_sub(destination[0]),
+        location[1].wrapping_sub(destination[1]),
+    );
+    let unit_owner = host.owner_kind() == FlightOwnerKind::Unit;
+    let has_target = host.has_target();
+
+    if distance < ARRIVAL_RADIUS {
+        runtime.flight.current_speed_bits = 0;
+        runtime.flight.target_speed_bits = 0;
+        let marked = host.replace_marked_byte(false);
+        host.set_location([destination[0], destination[1], location[2]]);
+        host.replace_marked_byte(marked);
+        // The arrival snaps the owner onto the destination, so the cell it
+        // claims is the destination's.
+        let here = host.cell_of([destination[0], destination[1]]);
+        if host.piggyback_active() {
+            runtime.flight.target_height = 0;
+            host.piggyback_arrival(runtime);
+            if !host.has_installed_jumpjet() {
+                return runtime.phase;
+            }
+            state = STATE_DESCEND;
+        } else if !has_target && !host.balloon_hover() {
+            if unit_owner && host.simple_deployer() && host.type_flag_6ad() {
+                if claim_or_scatter(here, runtime, host) {
+                    runtime.flight.target_height = params.height;
+                    let marked = host.marked();
+                    host.mark(false);
+                    host.replace_marked_byte(marked);
+                    state = STATE_HOLD;
+                }
+            } else {
+                runtime.flight.target_height = 0;
+                state = STATE_DESCEND;
+            }
+            if host.has_installed_jumpjet() {
+                host.arrival_notify();
+            }
+        } else if claim_or_scatter(here, runtime, host) {
+            let marked = host.marked();
+            host.mark(false);
+            host.replace_marked_byte(marked);
+            state = STATE_HOLD;
+        }
+    } else {
+        let speed = params.speed;
+        // `FCOMP 1.0` then store 1.0 when below (`0x0054C432`, `0x0054C4CC`).
+        let at_least_one = |value: i32| {
+            if ordering(int(value), double(ONE)) == X87Ordering::Less {
+                ONE
+            } else {
+                store_double(int(value))
+            }
+        };
+        let target_bits = if distance < speed {
+            if !has_target {
+                runtime.flight.target_height = params.height / 2;
+            }
+            store_double(int(speed / 8))
+        } else if distance < speed.wrapping_mul(2) {
+            if !has_target {
+                runtime.flight.target_height = params.height / 2;
+            }
+            if turn_error > params.turn_rate {
+                at_least_one(speed / 10)
+            } else {
+                store_double(int(speed / 4))
+            }
+        } else if speed
+            .wrapping_mul(50)
+            .checked_div(params.turn_rate)
+            .is_some_and(|slow_radius| distance < slow_radius)
+        {
+            // A zero turn rate faults natively (`IDIV` at `0x0054C45E`); no
+            // stock type reaches it, and VERA skips the zone instead.
+            if !has_target {
+                runtime.flight.target_height = X87Chop53::ftol_i32_low_masked(X87Chop53::mul(
+                    int(params.height),
+                    double(THREE_QUARTERS),
+                ));
+            }
+            if turn_error > params.turn_rate.wrapping_mul(5) {
+                at_least_one(speed / 5)
+            } else {
+                store_double(int(speed / 2))
+            }
+        } else {
+            runtime.flight.target_height = params.height;
+            store_double(int(speed))
+        };
+        runtime.flight.target_speed_bits = target_bits;
+    }
+
+    // Tail 0x0054C4FD..C544: hovering types, water and beach destinations and
+    // flagged units keep full height.
+    if !host.has_installed_jumpjet() {
+        return runtime.phase;
+    }
+    if host.balloon_hover()
+        || matches!(
+            host.cell_land_type([runtime.destination.x, runtime.destination.y]),
+            2 | 6
+        )
+        || (unit_owner && host.type_flag_6ad())
+    {
+        runtime.flight.target_height = params.height;
+    }
+    state
+}
+
+/// One `Process @ 0x0054AEC0` frame: the Update gate, the crash latch, the
+/// state at `+0x50` through the jump table at `0x0054B19C`, then the
+/// visibility tail ([`JumpjetFlightHost::visibility_tail`]). Returns the new
+/// state.
+///
+/// The gate is the moving byte or `Is_Moving_Now` (`0x0054D0D0`, any state
+/// but ground and hold), so an idle landed (state 0) or idle holding (state 2)
+/// Jumpjet is advanced by nothing at all. It comes first, so a crashing owner
+/// idle in the hold never latches and hangs where it is, natively too.
+///
+/// Not modelled: `0x0053A130`'s constant-false arm.
+pub(crate) fn process(runtime: &mut JumpjetRuntime, host: &mut impl JumpjetFlightHost) -> i32 {
+    let state = runtime.phase;
+    if !runtime.moving
+        && !(crate::sim::movement::locomotor_ready::LocomotorReadyState::Jumpjet { state })
+            .is_moving_now()
+    {
+        return state;
+    }
+    let destination = [
+        runtime.destination.x,
+        runtime.destination.y,
+        runtime.destination.z,
+    ];
+    let params = runtime.params;
+    update_coordinates_and_altitude(state, destination, &params, &mut runtime.flight, host);
+    if !host.has_installed_jumpjet() || !host.is_object_alive() {
+        return runtime.phase;
+    }
+    runtime.phase = crash_latch(state, runtime, host);
+    // State 2 reads the destination the latch may have just centred.
+    let destination = [
+        runtime.destination.x,
+        runtime.destination.y,
+        runtime.destination.z,
+    ];
+    runtime.phase = match runtime.phase {
+        STATE_GROUND => state0_ground(runtime.moving, &params, &mut runtime.flight, host),
+        STATE_ASCEND => state1_ascend(runtime, host),
+        STATE_HOLD => state2_hold(
+            runtime.moving,
+            destination,
+            &params,
+            &mut runtime.flight,
+            host,
+        ),
+        STATE_TRANSLATE => state3_translate(runtime, host),
+        STATE_DESCEND => state4_descend(runtime, host),
+        STATE_CRASH => state5_crash(runtime, host),
+        other => other,
+    };
+    if host.has_installed_jumpjet() {
+        host.visibility_tail(runtime);
+    }
+    runtime.phase
+}
+
+/// `Process`'s crash latch (`0x0054AF2E..0x0054B02C`), between Update and the
+/// dispatch: a crashing owner above the ground, not already falling, enters
+/// State 5 with the target height at -5.
+///
+/// An Infantry owner's latch plays AirDeathStart (vtable `+0x558`,
+/// `0x0054B02C`; [`JumpjetFlightHost::crash_latched`]).
+///
+/// A lifted owner (`+0x6AD`) latches only over the centre of its cell
+/// (GetCoords XY against the cell's, `0x0054AFE0..0x0054AFF6`); elsewhere
+/// the cell's GetCoords becomes the destination and the state runs on
+/// (`0x0054AFF8..0x0054B004`).
+fn crash_latch(state: i32, runtime: &mut JumpjetRuntime, host: &mut impl JumpjetFlightHost) -> i32 {
+    if !host.crashing()
+        || matches!(state, STATE_CRASH | STATE_CRASHED)
+        || host.height_above_ground() <= 0
+    {
+        return state;
+    }
+    if host.piggyback_active() {
+        let location = host.location();
+        let centre = host.cell_coords(host.cell_of([location[0], location[1]]));
+        if location[0] != centre[0] || location[1] != centre[1] {
+            runtime.destination = crate::sim::components::DriveCoord {
+                x: centre[0],
+                y: centre[1],
+                z: centre[2],
+            };
+            return state;
+        }
+    }
+    runtime.flight.target_height = CRASH_TARGET_HEIGHT;
+    host.crash_latched();
+    STATE_CRASH
+}
+
+/// The desired facing toward `destination` (`0x0054C081..C0CD`, and the same
+/// sequence in State 1 and State 2).
+fn desired_facing(destination: [i32; 3], location: [i32; 3]) -> u16 {
+    crate::util::direction_tables::facing16_between(
+        [location[0], location[1]],
+        [destination[0], destination[1]],
+    )
+}
+
+/// `MapCoord_StepByDir_GetCell @ 0x00481810` adds the signed-word entries
+/// at `0x0089F688`; keep its word wrapping when reading the shared cell table.
+fn step_cell(cell: (i16, i16), direction: u32) -> (i16, i16) {
+    let (dx, dy) = DIRECTION_DELTAS[(direction & 7) as usize];
+    (
+        cell.0.wrapping_add(dx as i16),
+        cell.1.wrapping_add(dy as i16),
+    )
+}
+
+/// The air-slot bookkeeping States 1, 3 and 4 share: claim the cell's slot, or
+/// step to a random neighbour and re-target when another object holds it.
+/// Answers whether the slot was claimed.
+fn claim_or_scatter(
+    cell: (i16, i16),
+    runtime: &mut JumpjetRuntime,
+    host: &mut impl JumpjetFlightHost,
+) -> bool {
+    if host.air_slot_taken_at(cell) {
+        let direction = host.random_direction();
+        host.set_destination_cell(step_cell(cell, direction), runtime);
+        false
+    } else {
+        host.claim_air_slot_at(cell);
+        true
+    }
+}
+
+/// The widest `[JumpjetControls] LandNearby=` range: its reader clamps the
+/// key to 0..=8 (VERA's own bound).
+const LAND_NEARBY_MAX_RANGE: i32 = 8;
+
+/// The cells of the widest range's square, its centre left out: a bound on
+/// the candidates [`nearby_landing_cell`] sorts.
+const LAND_NEARBY_MAX_CELLS: usize =
+    ((2 * LAND_NEARBY_MAX_RANGE + 1) * (2 * LAND_NEARBY_MAX_RANGE + 1) - 1) as usize;
+
+/// VERA `[JumpjetControls] LandNearby=`: among the cells within the key's
+/// range of `refused`, the one nearest the owner's own cell `here` that the
+/// owner may enter outright (`Can_Enter_Cell` 0), that is neither water nor
+/// beach, has no other object in its air slot and is no other airborne
+/// Jumpjet's destination. Ties go to the lower row, then the lower column.
+fn nearby_landing_cell(
+    refused: (i16, i16),
+    here: (i16, i16),
+    host: &mut impl JumpjetFlightHost,
+) -> Option<(i16, i16)> {
+    let range = host.land_nearby_range().min(LAND_NEARBY_MAX_RANGE);
+    if range <= 0 {
+        return None;
+    }
+    let mut cells = [(0, 0, 0); LAND_NEARBY_MAX_CELLS];
+    let mut count = 0;
+    for dy in -range..=range {
+        for dx in -range..=range {
+            if (dx, dy) != (0, 0) && dx * dx + dy * dy <= range * range {
+                let x = i32::from(refused.0) + dx;
+                let y = i32::from(refused.1) + dy;
+                let (hx, hy) = (x - i32::from(here.0), y - i32::from(here.1));
+                cells[count] = (hx * hx + hy * hy, y, x);
+                count += 1;
+            }
+        }
+    }
+    let cells = &mut cells[..count];
+    cells.sort_unstable();
+    cells.iter().find_map(|&(_, y, x)| {
+        let x = i16::try_from(x).ok().filter(|x| *x >= 0)?;
+        let y = i16::try_from(y).ok().filter(|y| *y >= 0)?;
+        let centre = [i32::from(x) * 256 + 128, i32::from(y) * 256 + 128];
+        (host.can_enter_cell((x, y)) == 0
+            && !matches!(host.cell_land_type(centre), 2 | 6)
+            && host.landing_cell_claimed_by((x, y)).is_none()
+            && !host.air_slot_taken_at((x, y)))
+        .then_some((x, y))
+    })
+}
+
+/// VERA `LandNearby=`, on approach: every eighth frame within four cells of
+/// its destination, a Jumpjet on an ordinary move whose landing cell is taken
+/// (`Can_Enter_Cell` 2 or more), or is also the destination of an airborne
+/// Jumpjet with a lower id, picks its landing cell now instead of on arrival.
+/// Answers whether it re-aimed.
+fn replan_landing_on_approach(
+    runtime: &mut JumpjetRuntime,
+    here: (i16, i16),
+    host: &mut impl JumpjetFlightHost,
+) -> bool {
+    if host.land_nearby_range() <= 0
+        || host.binary_frame() % 8 != 0
+        || host.mission_is_seven()
+        || host.has_target()
+    {
+        return false;
+    }
+    let destination = [runtime.destination.x, runtime.destination.y];
+    let dest_cell = host.cell_of(destination);
+    let (dx, dy) = (
+        i32::from(dest_cell.0) - i32::from(here.0),
+        i32::from(dest_cell.1) - i32::from(here.1),
+    );
+    if dest_cell == here
+        || dx * dx + dy * dy > 16
+        || matches!(host.cell_land_type(destination), 2 | 6)
+    {
+        return false;
+    }
+    let taken = host.can_enter_cell(dest_cell) >= 2
+        || host
+            .landing_cell_claimed_by(dest_cell)
+            .is_some_and(|other| other < host.owner_id());
+    if !taken {
+        return false;
+    }
+    match nearby_landing_cell(dest_cell, here, host) {
+        Some(cell) => {
+            host.set_destination_cell(cell, runtime);
+            true
+        }
+        None => false,
+    }
+}
+
+/// `CellClass::GetSubCell @ 0x004810A0`: the infantry sub-cell a coordinate
+/// falls in. Only 0, 2, 3 and 4 are produced — never 1.
+fn sub_cell_of(coord: [i32; 3]) -> i32 {
+    let x = coord[0] & 0xFF;
+    let y = coord[1] & 0xFF;
+    if crate::sim::cell_kernel::native_xy_distance(x - 0x80, y - 0x80) < 0x3C {
+        return 0;
+    }
+    let quadrant = i32::from(x > 0x80) | (i32::from(y > 0x80) << 1);
+    if quadrant == 0 { 0 } else { quadrant + 1 }
+}
+
+/// `State0_GroundIdle @ 0x0054B980`. Returns the new state.
+///
+/// An untracked owner's retained Foot+560 NativeNull gates Add4134A0 at
+///54B9F8..54BA20. Touchdown removes it independently of the slot+564 cache.
+pub(crate) fn state0_ground(
+    moving: bool,
+    params: &JumpjetFlightParams,
+    flight: &mut JumpjetFlight,
+    host: &mut impl JumpjetFlightHost,
+) -> i32 {
+    if !moving {
+        return STATE_GROUND;
+    }
+    let frame = host.binary_frame();
+    host.set_speed_fraction(ONE);
+    // `0x0054B9AA..0x0054B9C1`: the locomotor facing takes the body's
+    // (UpdateFacing). `Process` has already run Update this frame
+    // (`0x0054AEF0`, before this dispatch at `0x0054B046`), and Update copies
+    // the locomotor facing onto the body (`0x0054D67B..0x0054D692`). So the
+    // body first snaps to the locomotor's heading: the link-time `0x4000` on
+    // the first take-off, later the heading of the last flight, whatever
+    // `Do_Turn` (`0x0054B6E0`, body only) wrote on the ground since. VERA's
+    // `SmoothFacing=` skips that copy on the ground (Update, above).
+    flight.facing.snap(host.body_facing(), frame);
+    flight.current_speed_bits = 0;
+    flight.target_speed_bits = 0;
+    flight.target_height = params.height;
+    if host.tracker_cell() == (0, 0) {
+        host.tracker_add();
+    }
+    // `0x0053A130` is the constant-false leaf, so its early return is dead.
+    STATE_ASCEND
+}
+
+/// `State1_Ascend @ 0x0054BA30`.
+pub(crate) fn state1_ascend(
+    runtime: &mut JumpjetRuntime,
+    host: &mut impl JumpjetFlightHost,
+) -> i32 {
+    let destination = [
+        runtime.destination.x,
+        runtime.destination.y,
+        runtime.destination.z,
+    ];
+    let params = runtime.params;
+    let frame = host.binary_frame();
+    let location = host.location();
+    let here = host.cell_of([location[0], location[1]]);
+    if here != host.tracker_cell() {
+        host.tracker_update(here);
+    }
+    // The owner's own height, taken off the deck while it flies over a bridge.
+    let height = height_over_landing_surface(host, location);
+
+    if height < runtime.flight.target_height {
+        // Climbing: a quarter of the way up releases the horizontal speed, and
+        // a hovering Unit waits until half way (0x0054BB8D..).
+        let gate = if host.owner_kind() == FlightOwnerKind::Unit && host.balloon_hover() {
+            runtime.flight.target_height / 2
+        } else {
+            runtime.flight.target_height / 4
+        };
+        if gate < height {
+            runtime.flight.target_speed_bits = store_double(int(params.speed));
+            runtime
+                .flight
+                .facing
+                .set(desired_facing(destination, location), frame);
+            // A factory contact hears the lift-off; the barracks releases
+            // its tether and the owner may take its rally or scatter again.
+            host.factory_contact_notify(runtime);
+            if !host.has_installed_jumpjet() {
+                return runtime.phase;
+            }
+            // 0x0054BCB5 re-reads +0x40/+0x44 after that callback.
+            let destination = [runtime.destination.x, runtime.destination.y];
+            let dest_cell = host.cell_of(destination);
+            if here == dest_cell && !host.balloon_hover() {
+                // Already over the destination: hold this height and translate.
+                runtime.flight.target_height = host.height_above_ground();
+                let marked = host.marked();
+                host.mark(false);
+                host.replace_marked_byte(marked);
+                return STATE_TRANSLATE;
+            }
+        }
+        return STATE_ASCEND;
+    }
+
+    // At cruise height the owner claims the cell's air slot, or scatters to a
+    // random neighbour when another object already holds it.
+    let claimed = claim_or_scatter(here, runtime, host);
+    if !host.has_installed_jumpjet() {
+        return runtime.phase;
+    }
+    //54BB3C/54BB62 suffix is after the class callback on both arms.
+    let marked = host.marked();
+    host.mark(false);
+    host.replace_marked_byte(marked);
+    if claimed { STATE_HOLD } else { STATE_TRANSLATE }
+}
+
+/// `State2_HoldStation @ 0x0054BD30`.
+pub(crate) fn state2_hold(
+    moving: bool,
+    destination: [i32; 3],
+    params: &JumpjetFlightParams,
+    flight: &mut JumpjetFlight,
+    host: &mut impl JumpjetFlightHost,
+) -> i32 {
+    if !moving {
+        return STATE_HOLD;
+    }
+    let frame = host.binary_frame();
+    let location = host.location();
+    let here = host.cell_of([location[0], location[1]]);
+
+    // A destination elsewhere re-opens the cruise (0x0054BEE7).
+    if destination[0] != location[0] || destination[1] != location[1] {
+        flight
+            .facing
+            .set(desired_facing(destination, location), frame);
+        // 0x0054BF60..0x0054BFBC: with the current cell's slot empty, the
+        // owner's independently retained tracker cell (+560) is released
+        // when it still holds this owner; the setter's Foot notification
+        // clears +564. Then current-cell release is unconditional.
+        if host.air_slot_empty_at(here) {
+            let cached = host.tracker_cell();
+            if host.holds_air_slot_at(cached) {
+                host.release_air_slot_at(cached);
+            }
+        }
+        host.release_air_slot_at(here);
+        let marked = host.marked();
+        host.mark(false);
+        host.replace_marked_byte(marked);
+        return STATE_TRANSLATE;
+    }
+
+    // Arrived and holding: a target keeps the owner in place.
+    if host.has_target() {
+        return STATE_HOLD;
+    }
+    let deployer = host.owner_kind() == FlightOwnerKind::Unit
+        && host.simple_deployer()
+        && !host.piggyback_active();
+    if deployer {
+        // A Siege Chopper with `DeployToLand=` hovers at full height instead.
+        if host.type_flag_6ad() && !host.deploy_latched() {
+            flight.target_height = params.height;
+            let marked = host.marked();
+            host.mark(false);
+            host.replace_marked_byte(marked);
+            host.arrival_notify();
+            return STATE_HOLD;
+        }
+    } else if host.balloon_hover() {
+        let marked = host.marked();
+        host.mark(false);
+        host.replace_marked_byte(marked);
+        host.arrival_notify();
+        return STATE_HOLD;
+    }
+    if host.holds_air_slot_at(here) {
+        host.release_air_slot_at(here);
+    }
+    host.arrival_notify();
+    STATE_DESCEND
+}
+
+/// `State4_Descend @ 0x0054C550`.
+pub(crate) fn state4_descend(
+    runtime: &mut JumpjetRuntime,
+    host: &mut impl JumpjetFlightHost,
+) -> i32 {
+    let params = runtime.params;
+    let destination = [
+        runtime.destination.x,
+        runtime.destination.y,
+        runtime.destination.z,
+    ];
+    let frame = host.binary_frame();
+    let location = host.location();
+    let here = host.cell_of([location[0], location[1]]);
+    let dest_cell = host.cell_of([destination[0], destination[1]]);
+
+    if !host.piggyback_active() {
+        let mission_seven = host.mission_is_seven();
+        // Water and beach refuse a landing: hold over the cell instead.
+        if matches!(host.cell_land_type([destination[0], destination[1]]), 2 | 6) && !mission_seven
+        {
+            let claimed = claim_or_scatter(here, runtime, host);
+            if !host.has_installed_jumpjet() {
+                return runtime.phase;
+            }
+            let marked = host.marked();
+            host.mark(false);
+            host.replace_marked_byte(marked);
+            if !claimed {
+                return STATE_TRANSLATE;
+            }
+            runtime.flight.target_height = params.height;
+            return STATE_HOLD;
+        }
+
+        // Landing admission 0x0054C65F..0x0054C736.
+        let answer = host.can_enter_cell(dest_cell);
+        let sub_cell = sub_cell_of(destination);
+        let bridge = host.cell_high_bridge_at(dest_cell);
+        // `IsSubCellFree 0x00481130` answers a definite false for sub-cells 0
+        // and 1 (`XOR AL,AL` at `0x0048117A`). Native's Unit-on-sub-cell-0
+        // override at `0x0054C6BE` exists precisely because of that, and an
+        // Infantry owner on the cell centre is refused the first admission.
+        let sub_free = sub_cell > 1 && host.sub_cell_free(dest_cell, sub_cell, bridge);
+        let admitted = sub_free
+            || runtime.landing_latched
+            || (host.owner_kind() == FlightOwnerKind::Unit && sub_cell == 0);
+        if !mission_seven {
+            let refused =
+                !admitted || (!bridge && (answer > 2 || (answer == 2 && !runtime.landing_latched)));
+            if refused {
+                // VERA `LandNearby=` (a deviation from `0x0054CA43`'s stop,
+                // off by default): fly to the nearest clear cell and land
+                // there. No RNG draw; with none in range, the original's stop.
+                if let Some(cell) = nearby_landing_cell(dest_cell, here, host) {
+                    host.set_destination_cell(cell, runtime);
+                    if !host.has_installed_jumpjet() {
+                        return runtime.phase;
+                    }
+                    // It leaves for the cruise as State 4's own re-aim does
+                    // (`0x0054C5F9..0x0054C610`): Mark(UP), then `+0x74`
+                    // restored. Below two levels Update's Mark(DOWN)
+                    // (`0x0054D6A6`) has linked it in this cell's list, and
+                    // the cruise moves it with no Mark pair (`0x0054D134`).
+                    let marked = host.marked();
+                    host.mark(false);
+                    host.replace_marked_byte(marked);
+                    return STATE_TRANSLATE;
+                }
+                return host.stop_moving(runtime);
+            }
+            if !runtime.landing_latched {
+                runtime.landing_latched = true;
+                host.begin_landing(destination);
+            }
+        }
+    }
+
+    // 0x0054C737: a simple deployer turns to the Rules deploy facing first.
+    if host.owner_kind() == FlightOwnerKind::Unit
+        && host.simple_deployer()
+        && !host.piggyback_active()
+        && let Some(deploy) = host.deploy_facing()
+        && runtime.flight.facing.current(frame) != deploy
+    {
+        runtime.flight.facing.set(deploy, frame);
+    }
+    runtime.flight.target_height = 0;
+
+    let height = height_over_landing_surface(host, location);
+    if height != 0 {
+        return STATE_DESCEND;
+    }
+
+    // Touchdown 0x0054C80D..0x0054CA7B.
+    host.set_speed_fraction(0);
+    host.mark(false);
+    if !host.piggyback_active() {
+        host.set_location(destination);
+    }
+    host.mark(true);
+    runtime.destination = JumpjetRuntime::NULL;
+    runtime.moving = false;
+    if !host.touchdown(runtime) {
+        return runtime.phase;
+    }
+    runtime.phase = STATE_GROUND;
+    host.finish_touchdown(runtime);
+    runtime.landing_latched = false;
+    runtime.phase
+}
+
+/// States 1 (`0x0054BA3D..0x0054BA90`) and 4 (`0x0054C7B2..0x0054C805`) adjust GetHeight only
+/// when a flyer has reached the deck and isn't already marked OnBridge.
+fn height_over_landing_surface(host: &impl JumpjetFlightHost, location: [i32; 3]) -> i32 {
+    let mut height = host.height_above_ground();
+    let xy = [location[0], location[1]];
+    if !host.on_bridge() && let Some(bridge) = host.high_bridge_deck(xy) {
+        let rise = match bridge {
+            JumpjetBridgeDeck::Fixed(deck) => deck.wrapping_sub(host.floor_height(xy)),
+            JumpjetBridgeDeck::Legacy => BRIDGE_DECK_HEIGHT_LEPTONS,
+        };
+        if height >= rise {
+            height = height.wrapping_sub(rise);
+        }
+    }
+    height
+}
+
+/// `State5_Crash @ 0x0054CA90`. Returns the new state.
+///
+/// The owner drops by `JumpjetCrash=` below where Update left it, truncated by
+/// `Math::ftol` (`0x0054CAFE..0x0054CB0A`), and the facing is re-aimed
+/// `0x2D00` past its animated current (`0x0054CB0E..0x0054CB39`). A lifted
+/// owner (`+0x6AD`) instead stops dead and falls ever faster: its speeds
+/// zero and `JumpjetCrash=` grows by 1.0f a frame after the drop, stored as
+/// binary32 under the chop control word (`0x0054CAD2..0x0054CAFC`). Only a
+/// cell inside the map takes the drop (`0x0054CBC2`); outside it Update's
+/// descent alone brings the owner down. The impact is the ground or a
+/// crossing of a high bridge's deck from above (`0x0054CB3E..0x0054CB81`).
+///
+/// A dropped owner (`+0x427`) meeting it first hits what is below
+/// ([`JumpjetFlightHost::crush_below`]): landing on a Unit or a Building
+/// crashes it. Otherwise the cell under its Location is weighed
+/// (`0x0054CDC3..0x0054CE9A`): a cell its `Can_Enter_Cell` admits (and, for a
+/// `JumpJet=` type, Wheel can cross) lands it through State 4 with a null
+/// destination; water it is refused sinks it; anything else crashes it. An
+/// Aircraft owner also needs Wheel to cross the cell, whatever its type's
+/// `JumpJet=` (`0x0054CE43..0x0054CE65`).
+/// Then a crash, or an owner no Magnetron lifted, above the ground loses
+/// the drop's credit, and a deck crossing after the weighing sets OnBridge
+/// (`0x0054CFBC..0x0054D012`).
+///
+/// The impact proper (`0x0054D019..0x0054D0A7`) waits for the ground or a
+/// deck crossing, and for a lifted owner a crash: it releases the air slot
+/// the owner holds, zeroes the target speed and hands the owner its notice
+/// ([`JumpjetFlightHost::crash_impact`]), leaving State 6.
+///
+/// Dead and not ported: the landing's crash for a Foot speed fraction
+/// (`+0x578`) of 5.0 or 7.0 (`0x0054CF3C..0x0054CF75`); its only writer,
+/// `SetSpeedFraction @ 0x004D3710`, clamps it to [0, 1].
+pub(crate) fn state5_crash(runtime: &mut JumpjetRuntime, host: &mut impl JumpjetFlightHost) -> i32 {
+    let frame = host.binary_frame();
+    let [x, y, old_z] = host.location();
+    let new_z = X87Chop53::ftol_i32_low_masked(X87Chop53::sub(
+        int(old_z),
+        single(runtime.params.crash_bits),
+    ));
+    if host.piggyback_active() {
+        runtime.flight.current_speed_bits = 0;
+        runtime.flight.target_speed_bits = 0;
+        runtime.params.crash_bits = X87Chop53::store_f32_masked_chop(X87Chop53::add(
+            single(runtime.params.crash_bits),
+            single(ONE_F32),
+        ))
+        .bits();
+    } else {
+        let spin = runtime
+            .flight
+            .facing
+            .current(frame)
+            .wrapping_add(CRASH_SPIN);
+        runtime.flight.facing.set(spin, frame);
+    }
+
+    // `CMP EBP,ESI` / `CMP EAX,ESI`, both signed: from on or above the deck to
+    // below it.
+    let floor = host.floor_height([x, y]);
+    let crossed_deck = host.high_bridge_deck([x, y]).is_some_and(|bridge| {
+        let deck = bridge.above(floor);
+        old_z >= deck && new_z < deck
+    });
+    let here = host.cell_of([x, y]);
+    if host.in_bounds(here) {
+        host.crash_relocate([x, y, new_z]);
+    }
+
+    let mut crash = false;
+    if (host.height_above_ground() <= 0 || crossed_deck) && host.dropped() {
+        let evaluated = !host.crush_below(runtime);
+        if !host.has_installed_jumpjet() {
+            return runtime.phase;
+        }
+        if evaluated {
+            let location = host.location();
+            let xy = [location[0], location[1]];
+            let cell = host.cell_of(xy);
+            let land = host.cell_land_type(xy);
+            let water = land == LAND_WATER && !crossed_deck;
+            let beach = land == LAND_BEACH && !crossed_deck;
+            let mut answer = host.can_enter_cell(cell);
+            // Aircraft's own entry query can admit impassable terrain.
+            // State5 asks the Cell's Wheel check separately and replaces
+            // its answer with Move_No (7) on refusal (54CE43..54CE65).
+            if host.owner_kind() == FlightOwnerKind::Aircraft && !host.wheel_clear(cell) {
+                answer = 7;
+            }
+            let landable = (!host.jumpjet_type() || host.wheel_clear(cell)) && answer == 0;
+            if landable {
+                if host.holds_air_slot_at(cell) {
+                    host.release_air_slot_at(cell);
+                }
+                runtime.phase = STATE_DESCEND;
+                host.null_destination(runtime);
+            } else if water && !beach {
+                host.sink(runtime);
+            } else {
+                crash = true;
+            }
+        } else {
+            crash = true;
+        }
+        if !host.has_installed_jumpjet() {
+            return runtime.phase;
+        }
+        if crossed_deck {
+            if evaluated {
+                host.set_on_bridge();
+            }
+        } else if host.height_above_ground() > 0 && (!host.piggyback_active() || crash) {
+            host.clear_drop_credit();
+        }
+    }
+
+    if (host.height_above_ground() > 0 && !crossed_deck) || (host.piggyback_active() && !crash) {
+        return runtime.phase;
+    }
+    if host.holds_air_slot_at(here) {
+        host.release_air_slot_at(here);
+    }
+    runtime.flight.target_speed_bits = 0;
+    host.crash_impact();
+    STATE_CRASHED
+}
+
+/// `CellClass @ 0x00485080`: ground at the cell centre, plus the first
+/// building's `BuildingTypeClass::Dimension2` height (vtable `+0x7C`,
+/// `0x00464AF0`) or, with no building, 85 leptons when
+/// `Find_Nearest_Object @ 0x0047C3D0` finds any techno in the ground list.
+pub(crate) fn cell_top_height(
+    centre_ground: i32,
+    first_building_height: Option<i32>,
+    any_techno: bool,
+) -> i32 {
+    match first_building_height {
+        Some(height) => centre_ground.wrapping_add(height),
+        None if any_techno => centre_ground.wrapping_add(CELL_OBJECT_LIFT),
+        None => centre_ground,
+    }
+}
+
+#[cfg(all(test, tests_sim_movement))]
+mod tests {
+    use super::*;
+    use crate::sim::components::DriveCoord;
+    use crate::sim::movement::jumpjet_movement::{JumpjetOrderHost, JumpjetRuntime};
+    use crate::util::fixed_math::SimFixed;
+    use serde_json::{Value, json};
+
+    /// The oracle's map fixture: cell (10,10) is level 0 and flat, cell (9,10)
+    /// is level 2 with slope 1 (the shared `Original` harness), and every other
+    /// lookup is the zero-height dummy cell. No cell has a bridge, building or
+    /// object, and the owner flags are clear.
+    struct FixtureHost<'a> {
+        frame: u32,
+        trig: &'a TrigTable,
+        kind: FlightOwnerKind,
+        location: [i32; 3],
+        balloon_hover: bool,
+        has_target: bool,
+        fractions: Vec<u64>,
+        events: Vec<&'static str>,
+        /// Cell top heights that replace the terrain sample (buildings, objects).
+        tops: Vec<((i16, i16), i32)>,
+        /// Cells carrying a high bridge.
+        bridges: Vec<(i16, i16)>,
+        piggyback: bool,
+        simple_deployer: bool,
+        deploy_to_land: bool,
+        /// LandType of fixture cell (10,10).
+        destination_land_type: u8,
+        /// Owner body facing `+0x388`, written by Update's `UpdateFacing`.
+        body_facing: u16,
+        /// Cells whose `+0xE0` air slot another object already holds.
+        taken_slots: Vec<(i16, i16)>,
+        /// The cell whose air slot this owner holds.
+        held_slot: Option<(i16, i16)>,
+        /// The direction `RandomRanged(0, 7)` answers for a scatter.
+        scatter_direction: u32,
+        /// The `Can_Enter_Cell` answer for the landing cell.
+        can_enter: i32,
+        /// Locomotor `+0x90`, the landing-admitted latch.
+        landing_latched: bool,
+    }
+
+    impl FixtureHost<'_> {
+        fn cell_terrain(xy: [i32; 2]) -> (u8, u8) {
+            if (native_cell(xy[0]), native_cell(xy[1])) == (9, 10) {
+                (2, 1)
+            } else {
+                (0, 0)
+            }
+        }
+    }
+
+    impl JumpjetFlightHost for FixtureHost<'_> {
+        // This older corpus substitutes Mark/tracker/class receivers.
+        fn is_object_alive(&self) -> bool {
+            true
+        }
+        fn has_installed_jumpjet(&self) -> bool {
+            true
+        }
+        fn visibility_tail(&mut self, _runtime: &mut JumpjetRuntime) {}
+        fn marked(&self) -> bool {
+            true
+        }
+        fn replace_marked_byte(&mut self, _marked: bool) -> bool {
+            true
+        }
+        fn tracker_cell(&self) -> (i16, i16) {
+            (0, 0)
+        }
+        fn tracker_add(&mut self) {}
+        fn tracker_update(&mut self, _cell: (i16, i16)) {}
+        fn finish_touchdown(&mut self, _runtime: &mut JumpjetRuntime) {}
+        fn binary_frame(&self) -> u32 {
+            self.frame
+        }
+        fn trig(&self) -> &TrigTable {
+            self.trig
+        }
+        fn owner_kind(&self) -> FlightOwnerKind {
+            self.kind
+        }
+        fn location(&self) -> [i32; 3] {
+            self.location
+        }
+        fn set_location(&mut self, coord: [i32; 3]) {
+            self.location = coord;
+        }
+        fn set_z(&mut self, z: i32) {
+            self.location[2] = z;
+        }
+        fn height_above_ground(&self) -> i32 {
+            self.location[2]
+                - JumpjetFlightHost::floor_height(self, [self.location[0], self.location[1]])
+        }
+        fn on_bridge(&self) -> bool {
+            false
+        }
+        fn grounded_reset(&mut self) {
+            self.events.push("grounded_reset");
+        }
+        fn floor_height(&self, xy: [i32; 2]) -> i32 {
+            let (level, slope) = Self::cell_terrain(xy);
+            crate::util::lepton::ground_height_leptons(level, slope, xy[0], xy[1])
+                .expect("fixture slope is supported")
+        }
+        fn cell_high_bridge(&self, xy: [i32; 2]) -> bool {
+            self.bridges
+                .contains(&(native_cell(xy[0]), native_cell(xy[1])))
+        }
+        fn cell_top_height(&self, xy: [i32; 2]) -> i32 {
+            let cell = (native_cell(xy[0]), native_cell(xy[1]));
+            if let Some(&(_, top)) = self.tops.iter().find(|(key, _)| *key == cell) {
+                return top;
+            }
+            let (level, slope) = Self::cell_terrain(xy);
+            let centre = crate::util::lepton::ground_height_leptons(level, slope, 128, 128)
+                .expect("fixture slope is supported");
+            cell_top_height(centre, None, false)
+        }
+        fn cell_land_type(&self, xy: [i32; 2]) -> u8 {
+            if (native_cell(xy[0]), native_cell(xy[1])) == (10, 10) {
+                self.destination_land_type
+            } else {
+                0
+            }
+        }
+        fn balloon_hover(&self) -> bool {
+            self.balloon_hover
+        }
+        fn has_target(&self) -> bool {
+            self.has_target
+        }
+        fn piggyback_active(&self) -> bool {
+            self.piggyback
+        }
+        fn piggyback_arrival(&mut self, _runtime: &mut JumpjetRuntime) {}
+        fn simple_deployer(&self) -> bool {
+            self.simple_deployer
+        }
+        fn type_flag_6ad(&self) -> bool {
+            self.deploy_to_land
+        }
+        fn set_speed_fraction(&mut self, fraction_bits: u64) {
+            self.fractions.push(fraction_bits);
+        }
+        fn arrival_notify(&mut self) {
+            self.events.push("mission_notify");
+        }
+        fn snap_body_facing(&mut self, facing: u16) {
+            self.body_facing = facing;
+        }
+        fn hold_target_facing(&self) -> Option<u16> {
+            None
+        }
+        fn cell_of(&self, xy: [i32; 2]) -> (i16, i16) {
+            (native_cell(xy[0]), native_cell(xy[1]))
+        }
+        fn body_facing(&self) -> u16 {
+            self.body_facing
+        }
+        fn random_direction(&mut self) -> u32 {
+            self.scatter_direction
+        }
+        fn air_slot_taken_at(&mut self, cell: (i16, i16)) -> bool {
+            self.events.push("slot_query");
+            self.taken_slots.contains(&cell)
+        }
+        fn holds_air_slot_at(&self, cell: (i16, i16)) -> bool {
+            self.held_slot == Some(cell)
+        }
+        fn air_slot_empty_at(&self, cell: (i16, i16)) -> bool {
+            self.held_slot != Some(cell) && !self.taken_slots.contains(&cell)
+        }
+        fn claim_air_slot_at(&mut self, cell: (i16, i16)) {
+            self.events.push("slot_claim");
+            self.held_slot = Some(cell);
+        }
+        fn release_air_slot_at(&mut self, cell: (i16, i16)) {
+            self.events.push("slot_release");
+            if self.held_slot == Some(cell) {
+                self.held_slot = None;
+            }
+        }
+        fn set_destination_cell(&mut self, _cell: (i16, i16), _runtime: &mut JumpjetRuntime) {
+            self.events.push("set_destination");
+        }
+        fn can_enter_cell(&self, _cell: (i16, i16)) -> i32 {
+            self.can_enter
+        }
+        fn sub_cell_free(&self, _cell: (i16, i16), _sub_cell: i32, _bridge: bool) -> bool {
+            true
+        }
+        fn mission_is_seven(&self) -> bool {
+            false
+        }
+        fn stop_moving(&mut self, _runtime: &mut JumpjetRuntime) -> i32 {
+            self.events.push("stop_moving");
+            STATE_ASCEND
+        }
+        fn factory_contact_notify(&mut self, _runtime: &mut JumpjetRuntime) {}
+        fn cell_high_bridge_at(&self, cell: (i16, i16)) -> bool {
+            self.bridges.contains(&cell)
+        }
+        fn begin_landing(&mut self, _destination: [i32; 3]) {
+            self.events.push("begin_landing");
+            self.landing_latched = true;
+        }
+        fn deploy_latched(&self) -> bool {
+            false
+        }
+        fn deploy_facing(&self) -> Option<u16> {
+            None
+        }
+        fn touchdown(&mut self, _runtime: &mut JumpjetRuntime) -> bool {
+            self.events.push("touchdown");
+            self.held_slot = None;
+            true
+        }
+        fn crashing(&self) -> bool {
+            false
+        }
+        fn in_bounds(&self, _cell: (i16, i16)) -> bool {
+            true
+        }
+        fn crash_relocate(&mut self, coord: [i32; 3]) {
+            self.events.push("crash_relocate");
+            self.location = coord;
+        }
+        // The flight corpus stubs Mark (`jumpjet_coordinates.MARK`).
+        fn mark(&mut self, _put: bool) {}
+        fn crash_impact(&mut self) {
+            self.events.push("crash_impact");
+        }
+        fn crash_latched(&mut self) {}
+        // Neither corpus lifts or drops its owner.
+        fn cell_coords(&self, cell: (i16, i16)) -> [i32; 3] {
+            let xy = [i32::from(cell.0) * 256 + 128, i32::from(cell.1) * 256 + 128];
+            [xy[0], xy[1], self.floor_height(xy)]
+        }
+        fn dropped(&self) -> bool {
+            false
+        }
+        fn crush_below(&mut self, _runtime: &mut JumpjetRuntime) -> bool {
+            false
+        }
+        fn jumpjet_type(&self) -> bool {
+            false
+        }
+        fn wheel_clear(&self, _cell: (i16, i16)) -> bool {
+            true
+        }
+        fn sink(&mut self, _runtime: &mut JumpjetRuntime) {}
+        fn null_destination(&mut self, _runtime: &mut JumpjetRuntime) {}
+        fn clear_drop_credit(&mut self) {}
+        fn set_on_bridge(&mut self) {}
+    }
+
+    fn int(value: &Value) -> i64 {
+        value.as_i64().expect("integer field")
+    }
+
+    /// Parity with `tools/spatial_oracle/jumpjet_flight.json`: native Update
+    /// `0x0054D0F0` then State3 `0x0054BFF0` per frame, every field bit-exact.
+    #[test]
+    fn flight_matches_the_native_update_and_translate_corpus() {
+        let trig = TrigTable::embedded();
+        let rows: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/jumpjet_flight.json",
+        ))
+        .expect("corpus parses");
+        let rows = rows.as_array().expect("row list");
+        assert_eq!(rows.len(), 14);
+        for row in rows {
+            let name = row["name"].as_str().expect("row name");
+            let input = &row["input"];
+            let float = |key: &str| input[key].as_f64().expect("float field") as f32;
+            let type_params = JumpjetParams {
+                turn_rate: int(&input["turn_rate"]) as i32,
+                speed: SimFixed::from_num(int(&input["speed"])),
+                climb: float("climb"),
+                crash: float("crash"),
+                height: int(&input["height"]) as i32,
+                accel: float("accel"),
+                wobbles: float("wobbles"),
+                deviation: int(&input["deviation"]) as i32,
+                no_wobbles: input["no_wobbles"].as_bool().expect("flag"),
+            };
+            let params = JumpjetFlightParams::link(&type_params);
+            let first_frame = int(&input["first_frame"]) as u32;
+            let mut flight = JumpjetFlight::linked(&params);
+            flight
+                .facing
+                .snap(int(&input["facing"]) as u16, first_frame);
+            flight.target_height = int(&input["target_height"]) as i32;
+            let start = &input["start"];
+            let destination = [
+                int(&input["destination"][0]) as i32,
+                int(&input["destination"][1]) as i32,
+                0,
+            ];
+            let mut host = FixtureHost {
+                frame: first_frame,
+                trig,
+                kind: if int(&input["rtti"]) == 15 {
+                    FlightOwnerKind::Infantry
+                } else {
+                    FlightOwnerKind::Unit
+                },
+                location: [
+                    int(&start[0]) as i32,
+                    int(&start[1]) as i32,
+                    int(&start[2]) as i32,
+                ],
+                balloon_hover: input["balloon_hover"].as_bool().expect("flag"),
+                has_target: input["tarcom"].as_bool().expect("flag"),
+                fractions: Vec::new(),
+                events: Vec::new(),
+                tops: Vec::new(),
+                bridges: Vec::new(),
+                piggyback: input["piggyback"].as_bool().expect("flag"),
+                simple_deployer: input["simple_deployer"].as_bool().expect("flag"),
+                deploy_to_land: input["deploy_to_land"].as_bool().expect("flag"),
+                destination_land_type: int(&input["destination_land_type"]) as u8,
+                body_facing: 0,
+                taken_slots: Vec::new(),
+                held_slot: None,
+                scatter_direction: 0,
+                can_enter: 0,
+                landing_latched: false,
+            };
+            let expected = row["output"]["frames"].as_array().expect("frames");
+            let mut phase = STATE_TRANSLATE;
+            let mut produced = 0;
+            for _ in 0..int(&input["max_frames"]) {
+                host.fractions.clear();
+                host.events.clear();
+                host.frame += 1;
+                update_coordinates_and_altitude(
+                    phase,
+                    destination,
+                    &params,
+                    &mut flight,
+                    &mut host,
+                );
+                if phase == STATE_TRANSLATE {
+                    let mut runtime = StatesHost::order_runtime(
+                        &params,
+                        flight,
+                        phase,
+                        true,
+                        destination,
+                        host.landing_latched,
+                    );
+                    phase = state3_translate(&mut runtime, &mut host);
+                    flight = runtime.flight;
+                }
+                let frame = json!({
+                    "coord": host.location,
+                    "current_speed": flight.current_speed_bits,
+                    "target_speed": flight.target_speed_bits,
+                    "target_height": flight.target_height,
+                    "bob_phase": flight.bob_phase_bits,
+                    "phase": phase,
+                    "facing_current": flight.facing.current(host.frame),
+                    "facing_destination": flight.facing.destination(),
+                    "body_facing": host.body_facing,
+                    "speed_fractions": host.fractions,
+                    "events": host.events,
+                });
+                assert_eq!(
+                    Some(&frame),
+                    expected.get(produced),
+                    "{name}: frame {produced} differs"
+                );
+                produced += 1;
+                if phase != STATE_TRANSLATE {
+                    break;
+                }
+            }
+            assert_eq!(produced, expected.len(), "{name}: frame count");
+        }
+    }
+
+    /// The states corpus fixture: the declared cell block x=6..20 by y=9..11,
+    /// flat except where a row names a level and slope on the flight line y=10.
+    /// Everything outside the block is the zero-height dummy cell.
+    struct StatesHost<'a> {
+        frame: u32,
+        trig: &'a TrigTable,
+        kind: FlightOwnerKind,
+        location: [i32; 3],
+        balloon_hover: bool,
+        has_target: bool,
+        piggyback: bool,
+        simple_deployer: bool,
+        deploy_to_land: bool,
+        body_facing: u16,
+        /// `x -> (level, slope)` on the flight line.
+        terrain: Vec<(i16, (u8, u8))>,
+        /// `x -> LandType` on the flight line.
+        land_types: Vec<(i16, u8)>,
+        /// `x -> Can_Enter_Cell answer` on the flight line.
+        can_enter: Vec<(i16, i32)>,
+        /// The AltObject slots, owner id per cell.
+        slots: Vec<((i16, i16), u64)>,
+        owner: u64,
+        /// The `RandomRanged(0, 7)` draw, supplied from the recorded neighbour.
+        scatter_direction: u32,
+        scatter_to: Option<(i16, i16)>,
+        stop_requested: bool,
+        /// The cells the searches answer, in call order as the corpus declares
+        /// them; past the end the last answer repeats, and `None` stands for
+        /// `fnpc_default`.
+        fnpc_answers: Vec<Option<(i16, i16)>>,
+        fnpc_default: (i16, i16),
+        fnpc_calls: usize,
+        /// Owner `+0x5A4` as the cell it names.
+        nav_com: Option<(i16, i16)>,
+        landing_latched: bool,
+        touched_down: bool,
+        /// The air-slot calls this frame, in the corpus's own vocabulary.
+        slot_events: Vec<Value>,
+        /// Owner `+0x425`.
+        crashing: bool,
+        /// `MapClass+0xF4/+0xF8`, the `In_Bounds` diamond's width and height.
+        map_size: (i32, i32),
+        /// State 5's owner calls this frame, in the corpus's vocabulary: the
+        /// relocation's display removal, the AircraftTracker removal and the
+        /// `(0x117C, 0)` notice.
+        impact_events: Vec<Value>,
+    }
+
+    impl StatesHost<'_> {
+        fn cell_terrain(&self, cell: (i16, i16)) -> (u8, u8) {
+            if cell.1 != 10 {
+                return (0, 0);
+            }
+            self.terrain
+                .iter()
+                .find(|(x, _)| *x == cell.0)
+                .map_or((0, 0), |(_, levels)| *levels)
+        }
+
+        fn next_fnpc(&mut self) -> Option<(i16, i16)> {
+            let answer = self
+                .fnpc_answers
+                .get(
+                    self.fnpc_calls
+                        .min(self.fnpc_answers.len().saturating_sub(1)),
+                )
+                .copied()
+                .flatten()
+                .unwrap_or(self.fnpc_default);
+            self.fnpc_calls += 1;
+            Some(answer)
+        }
+
+        /// The locomotor block the order bodies work on.
+        fn order_runtime(
+            params: &JumpjetFlightParams,
+            flight: JumpjetFlight,
+            state: i32,
+            moving: bool,
+            destination: [i32; 3],
+            landing_latched: bool,
+        ) -> JumpjetRuntime {
+            JumpjetRuntime {
+                destination: DriveCoord {
+                    x: destination[0],
+                    y: destination[1],
+                    z: destination[2],
+                },
+                moving,
+                phase: state,
+                params: *params,
+                flight,
+                landing_latched,
+            }
+        }
+    }
+
+    impl JumpjetOrderHost for StatesHost<'_> {
+        fn withdraw_landing(&mut self, _destination: DriveCoord) {}
+        fn owner_kind(&self) -> FlightOwnerKind {
+            self.kind
+        }
+        fn balloon_hover(&self) -> bool {
+            self.balloon_hover
+        }
+        fn mission_is_enter(&self) -> bool {
+            false
+        }
+        fn location(&self) -> DriveCoord {
+            DriveCoord {
+                x: self.location[0],
+                y: self.location[1],
+                z: self.location[2],
+            }
+        }
+        fn stop_search(&mut self, _seed: (i16, i16)) -> Option<(i16, i16)> {
+            self.next_fnpc()
+        }
+        fn move_search(
+            &mut self,
+            _seed: (i16, i16),
+            _alt: bool,
+            _allow_bridge: bool,
+        ) -> Option<(i16, i16)> {
+            self.next_fnpc()
+        }
+        fn cell_coords(&self, xy: [i32; 2]) -> [i32; 2] {
+            let cell = (native_cell(xy[0]), native_cell(xy[1]));
+            [i32::from(cell.0) * 256 + 128, i32::from(cell.1) * 256 + 128]
+        }
+        fn floor_height(&self, xy: [i32; 2]) -> i32 {
+            JumpjetFlightHost::floor_height(self, xy)
+        }
+        fn cell_high_bridge(&self, xy: [i32; 2]) -> bool {
+            JumpjetFlightHost::cell_high_bridge(self, xy)
+        }
+        fn infantry_destination(&mut self, _centre: DriveCoord) -> Option<DriveCoord> {
+            unreachable!("the corpora fly Unit owners")
+        }
+        fn set_nav_com(&mut self, destination: DriveCoord) {
+            self.nav_com = Some((native_cell(destination.x), native_cell(destination.y)));
+        }
+    }
+
+    impl JumpjetFlightHost for StatesHost<'_> {
+        // This older corpus substitutes Mark/tracker/class receivers.
+        fn is_object_alive(&self) -> bool {
+            true
+        }
+        fn has_installed_jumpjet(&self) -> bool {
+            true
+        }
+        fn visibility_tail(&mut self, _runtime: &mut JumpjetRuntime) {}
+        fn marked(&self) -> bool {
+            true
+        }
+        fn replace_marked_byte(&mut self, _marked: bool) -> bool {
+            true
+        }
+        fn tracker_cell(&self) -> (i16, i16) {
+            (0, 0)
+        }
+        fn tracker_add(&mut self) {}
+        fn tracker_update(&mut self, _cell: (i16, i16)) {}
+        fn finish_touchdown(&mut self, _runtime: &mut JumpjetRuntime) {}
+        fn binary_frame(&self) -> u32 {
+            self.frame
+        }
+        fn trig(&self) -> &TrigTable {
+            self.trig
+        }
+        fn owner_kind(&self) -> FlightOwnerKind {
+            self.kind
+        }
+        fn location(&self) -> [i32; 3] {
+            self.location
+        }
+        fn set_location(&mut self, coord: [i32; 3]) {
+            self.location = coord;
+        }
+        fn set_z(&mut self, z: i32) {
+            self.location[2] = z;
+        }
+        fn height_above_ground(&self) -> i32 {
+            self.location[2]
+                - JumpjetFlightHost::floor_height(self, [self.location[0], self.location[1]])
+        }
+        fn on_bridge(&self) -> bool {
+            false
+        }
+        fn grounded_reset(&mut self) {}
+        fn floor_height(&self, xy: [i32; 2]) -> i32 {
+            let (level, slope) = self.cell_terrain((native_cell(xy[0]), native_cell(xy[1])));
+            crate::util::lepton::ground_height_leptons(level, slope, xy[0], xy[1])
+                .expect("fixture slope is supported")
+        }
+        fn cell_high_bridge(&self, _xy: [i32; 2]) -> bool {
+            false
+        }
+        fn cell_top_height(&self, xy: [i32; 2]) -> i32 {
+            let (level, slope) = self.cell_terrain((native_cell(xy[0]), native_cell(xy[1])));
+            let centre = crate::util::lepton::ground_height_leptons(level, slope, 128, 128)
+                .expect("fixture slope is supported");
+            cell_top_height(centre, None, false)
+        }
+        fn cell_land_type(&self, xy: [i32; 2]) -> u8 {
+            let cell = (native_cell(xy[0]), native_cell(xy[1]));
+            if cell.1 != 10 {
+                return 0;
+            }
+            self.land_types
+                .iter()
+                .find(|(x, _)| *x == cell.0)
+                .map_or(0, |(_, land)| *land)
+        }
+        fn balloon_hover(&self) -> bool {
+            self.balloon_hover
+        }
+        fn has_target(&self) -> bool {
+            self.has_target
+        }
+        fn piggyback_active(&self) -> bool {
+            self.piggyback
+        }
+        fn piggyback_arrival(&mut self, _runtime: &mut JumpjetRuntime) {}
+        fn simple_deployer(&self) -> bool {
+            self.simple_deployer
+        }
+        fn type_flag_6ad(&self) -> bool {
+            self.deploy_to_land
+        }
+        fn set_speed_fraction(&mut self, _fraction_bits: u64) {}
+        fn arrival_notify(&mut self) {}
+        fn snap_body_facing(&mut self, facing: u16) {
+            self.body_facing = facing;
+        }
+        fn hold_target_facing(&self) -> Option<u16> {
+            None
+        }
+        fn cell_of(&self, xy: [i32; 2]) -> (i16, i16) {
+            (native_cell(xy[0]), native_cell(xy[1]))
+        }
+        fn body_facing(&self) -> u16 {
+            self.body_facing
+        }
+        fn random_direction(&mut self) -> u32 {
+            self.scatter_direction
+        }
+        fn air_slot_taken_at(&mut self, cell: (i16, i16)) -> bool {
+            let taken = self
+                .slots
+                .iter()
+                .any(|(at, held)| *at == cell && *held != self.owner);
+            self.slot_events
+                .push(json!(["query", cell.0, cell.1, taken]));
+            taken
+        }
+        fn holds_air_slot_at(&self, cell: (i16, i16)) -> bool {
+            self.slots
+                .iter()
+                .any(|(at, held)| *at == cell && *held == self.owner)
+        }
+        fn air_slot_empty_at(&self, cell: (i16, i16)) -> bool {
+            !self.slots.iter().any(|(at, _)| *at == cell)
+        }
+        fn claim_air_slot_at(&mut self, cell: (i16, i16)) {
+            self.slot_events.push(json!(["claim", cell.0, cell.1]));
+            if !self.slots.iter().any(|(at, _)| *at == cell) {
+                self.slots.push((cell, self.owner));
+            }
+        }
+        fn release_air_slot_at(&mut self, cell: (i16, i16)) {
+            self.slot_events.push(json!(["release", cell.0, cell.1]));
+            self.slots.retain(|(at, _)| *at != cell);
+        }
+        fn set_destination_cell(&mut self, cell: (i16, i16), _runtime: &mut JumpjetRuntime) {
+            self.scatter_to = Some(cell);
+        }
+        fn can_enter_cell(&self, cell: (i16, i16)) -> i32 {
+            if cell.1 != 10 {
+                return 0;
+            }
+            self.can_enter
+                .iter()
+                .find(|(x, _)| *x == cell.0)
+                .map_or(0, |(_, answer)| *answer)
+        }
+        fn sub_cell_free(&self, _cell: (i16, i16), _sub_cell: i32, _bridge: bool) -> bool {
+            true
+        }
+        fn mission_is_seven(&self) -> bool {
+            false
+        }
+        fn stop_moving(&mut self, _runtime: &mut JumpjetRuntime) -> i32 {
+            // Legacy native fixture substitutes this callback; its declared
+            // order replay below is separate. Production runs it synchronously.
+            self.stop_requested = true;
+            STATE_DESCEND
+        }
+        fn factory_contact_notify(&mut self, _runtime: &mut JumpjetRuntime) {}
+        fn cell_high_bridge_at(&self, _cell: (i16, i16)) -> bool {
+            false
+        }
+        fn begin_landing(&mut self, _destination: [i32; 3]) {
+            self.landing_latched = true;
+        }
+        fn deploy_latched(&self) -> bool {
+            false
+        }
+        fn deploy_facing(&self) -> Option<u16> {
+            None
+        }
+        fn touchdown(&mut self, _runtime: &mut JumpjetRuntime) -> bool {
+            self.touched_down = true;
+            // 0x0054C9B2..0x0054C9CE: the touchdown release is conditional —
+            // `CMP [cell+0xE0], owner` skips it unless the owner still holds
+            // that slot, which it does not after State 2 re-opened the cruise.
+            let here = self.cell_of([self.location[0], self.location[1]]);
+            if self.holds_air_slot_at(here) {
+                self.release_air_slot_at(here);
+            }
+            self.landing_latched = false;
+            true
+        }
+        fn crashing(&self) -> bool {
+            self.crashing
+        }
+        fn in_bounds(&self, cell: (i16, i16)) -> bool {
+            crate::map::playfield::size_diamond_contains(self.map_size.0, self.map_size.1, cell)
+        }
+        fn crash_relocate(&mut self, coord: [i32; 3]) {
+            self.impact_events.push(json!("layer_remove"));
+            self.location = coord;
+        }
+        // The states corpus stubs Mark (`jumpjet_states.MARK`).
+        fn mark(&mut self, _put: bool) {}
+        fn crash_impact(&mut self) {
+            self.impact_events.push(json!("bucket_remove"));
+            self.impact_events.push(json!([0x117C, 0]));
+        }
+        fn crash_latched(&mut self) {}
+        // Neither corpus lifts or drops its owner.
+        fn cell_coords(&self, cell: (i16, i16)) -> [i32; 3] {
+            let xy = [i32::from(cell.0) * 256 + 128, i32::from(cell.1) * 256 + 128];
+            [xy[0], xy[1], JumpjetFlightHost::floor_height(self, xy)]
+        }
+        fn dropped(&self) -> bool {
+            false
+        }
+        fn crush_below(&mut self, _runtime: &mut JumpjetRuntime) -> bool {
+            false
+        }
+        fn jumpjet_type(&self) -> bool {
+            false
+        }
+        fn wheel_clear(&self, _cell: (i16, i16)) -> bool {
+            true
+        }
+        fn sink(&mut self, _runtime: &mut JumpjetRuntime) {}
+        fn null_destination(&mut self, _runtime: &mut JumpjetRuntime) {}
+        fn clear_drop_credit(&mut self) {}
+        fn set_on_bridge(&mut self) {}
+    }
+
+    /// Parity with `tools/spatial_oracle/jumpjet_states.json`: the native
+    /// `Process 0x0054AEC0` gate and state dispatch, frame by frame.
+    ///
+    /// Two values are supplied inputs rather than predictions, exactly as the
+    /// oracle supplies them: the `RandomRanged(0, 7)` scatter draw (recovered
+    /// from the neighbour the corpus recorded) and the cell `Stop_Moving`
+    /// re-targets through FNPC.
+    #[test]
+    fn states_match_the_native_process_corpus() {
+        let trig = TrigTable::embedded();
+        let rows: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/jumpjet_states.json",
+        ))
+        .expect("corpus parses");
+        assert_eq!(rows["schema_version"], 2);
+        let rows = rows["legacy_rows"].as_array().expect("legacy row list");
+        assert_eq!(rows.len(), 10);
+
+        for row in rows {
+            let name = row["name"].as_str().expect("row name");
+            let input = &row["input"];
+            let float = |key: &str| input[key].as_f64().expect("float field") as f32;
+            let params = JumpjetFlightParams::link(&JumpjetParams {
+                turn_rate: int(&input["turn_rate"]) as i32,
+                speed: SimFixed::from_num(int(&input["speed"])),
+                climb: float("climb"),
+                crash: float("crash"),
+                height: int(&input["height"]) as i32,
+                accel: float("accel"),
+                wobbles: float("wobbles"),
+                deviation: int(&input["deviation"]) as i32,
+                no_wobbles: input["no_wobbles"].as_bool().expect("flag"),
+            });
+            let first_frame = int(&input["first_frame"]) as u32;
+            let mut flight = JumpjetFlight::linked(&params);
+            flight
+                .facing
+                .snap(int(&input["facing"]) as u16, first_frame);
+            flight.target_height = int(&input["target_height"]) as i32;
+
+            let list = |key: &str| -> Vec<Vec<i64>> {
+                input[key]
+                    .as_array()
+                    .expect("list field")
+                    .iter()
+                    .map(|entry| entry.as_array().expect("pair").iter().map(int).collect())
+                    .collect()
+            };
+            let frames = row["output"]["frames"].as_array().expect("frames");
+            // The neighbour a scatter chose tells us which draw the original
+            // made; solve for it once so the step table itself is under test.
+            let scatter_direction = frames
+                .iter()
+                .find_map(|frame| {
+                    let target = frame["events"].as_array()?.iter().find_map(|event| {
+                        let event = event.as_array()?;
+                        (event.first()?.as_str()? == "set_destination")
+                            .then(|| event.get(1)?.as_array())
+                            .flatten()
+                    })?;
+                    let from = frame["cell"].as_array()?;
+                    let from = (int(&from[0]) as i16, int(&from[1]) as i16);
+                    let target = (int(&target[0]) as i16, int(&target[1]) as i16);
+                    (0..8u32).find(|d| step_cell(from, *d) == target)
+                })
+                .unwrap_or(0);
+
+            let mut host = StatesHost {
+                frame: first_frame,
+                trig,
+                kind: if int(&input["rtti"]) == 15 {
+                    FlightOwnerKind::Infantry
+                } else {
+                    FlightOwnerKind::Unit
+                },
+                location: [
+                    int(&input["start"][0]) as i32,
+                    int(&input["start"][1]) as i32,
+                    int(&input["start"][2]) as i32,
+                ],
+                balloon_hover: input["balloon_hover"].as_bool().expect("flag"),
+                has_target: input["tarcom"].as_bool().expect("flag"),
+                piggyback: input["piggyback"].as_bool().expect("flag"),
+                simple_deployer: input["simple_deployer"].as_bool().expect("flag"),
+                deploy_to_land: input["deploy_to_land"].as_bool().expect("flag"),
+                body_facing: 0,
+                terrain: list("terrain")
+                    .into_iter()
+                    .map(|row| (row[0] as i16, (row[1] as u8, row[2] as u8)))
+                    .collect(),
+                land_types: list("land_types")
+                    .into_iter()
+                    .map(|row| (row[0] as i16, row[1] as u8))
+                    .collect(),
+                can_enter: input["can_enter_cells"]
+                    .as_object()
+                    .expect("map")
+                    .iter()
+                    .map(|(cell, answer)| {
+                        (
+                            cell.parse::<i16>().expect("cell key"),
+                            answer.as_i64().expect("answer") as i32,
+                        )
+                    })
+                    .collect(),
+                slots: input["occupied_slots"]
+                    .as_array()
+                    .expect("list")
+                    .iter()
+                    .map(|x| ((int(x) as i16, 10), 2))
+                    .collect(),
+                owner: 1,
+                scatter_direction,
+                scatter_to: None,
+                stop_requested: false,
+                // The corpus answers each search with the next declared cell,
+                // the ordered one by default; the order's own search was the
+                // first.
+                fnpc_answers: input["fnpc_cells"]
+                    .as_array()
+                    .map(|answers| {
+                        answers
+                            .iter()
+                            .map(|answer| {
+                                answer
+                                    .as_array()
+                                    .map(|cell| (int(&cell[0]) as i16, int(&cell[1]) as i16))
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                fnpc_default: input["order"].as_array().map_or((0, 0), |order| {
+                    (
+                        native_cell(int(&order[0]) as i32),
+                        native_cell(int(&order[1]) as i32),
+                    )
+                }),
+                fnpc_calls: 1,
+                nav_com: None,
+                landing_latched: false,
+                touched_down: false,
+                slot_events: Vec::new(),
+                crashing: false,
+                map_size: (0, 0),
+                impact_events: Vec::new(),
+            };
+
+            // `Move_To` ran before the first Process frame; take what it left
+            // behind, which is what the corpus records on that labelled frame.
+            let seeded = frames[0]["label"] == "move_to";
+            let (mut state, mut moving, mut destination) = if seeded {
+                let seed = &frames[0];
+                (
+                    int(&seed["phase"]) as i32,
+                    seed["moving"].as_bool().expect("flag"),
+                    [
+                        int(&seed["destination"][0]) as i32,
+                        int(&seed["destination"][1]) as i32,
+                        int(&seed["destination"][2]) as i32,
+                    ],
+                )
+            } else {
+                (
+                    int(&input["phase"]) as i32,
+                    input["moving"].as_bool().expect("flag"),
+                    [0, 0, 0],
+                )
+            };
+            for (index, expected) in frames.iter().enumerate().skip(usize::from(seeded)) {
+                host.frame += 1;
+                host.scatter_to = None;
+                host.slot_events.clear();
+                let mut runtime = StatesHost::order_runtime(
+                    &params,
+                    flight,
+                    state,
+                    moving,
+                    destination,
+                    host.landing_latched,
+                );
+                state = process(&mut runtime, &mut host);
+                moving = runtime.moving;
+                destination = [
+                    runtime.destination.x,
+                    runtime.destination.y,
+                    runtime.destination.z,
+                ];
+                flight = runtime.flight;
+                host.landing_latched = runtime.landing_latched;
+                if host.touched_down {
+                    host.touched_down = false;
+                    moving = false;
+                    destination = [0, 0, 0];
+                }
+                if host.stop_requested {
+                    host.stop_requested = false;
+                    // State 4's last act: the ported `Stop_Moving`, which
+                    // re-targets through `Move_To` and lifts the descent.
+                    let mut runtime = StatesHost::order_runtime(
+                        &params,
+                        flight,
+                        state,
+                        moving,
+                        destination,
+                        host.landing_latched,
+                    );
+                    runtime.stop_moving(&mut host);
+                    state = runtime.phase;
+                    moving = runtime.moving;
+                    destination = [
+                        runtime.destination.x,
+                        runtime.destination.y,
+                        runtime.destination.z,
+                    ];
+                    flight = runtime.flight;
+                    host.landing_latched = runtime.landing_latched;
+                }
+                let produced = json!({
+                    "coord": host.location,
+                    "destination": destination,
+                    "current_speed": flight.current_speed_bits,
+                    "target_speed": flight.target_speed_bits,
+                    "target_height": flight.target_height,
+                    "bob_phase": flight.bob_phase_bits,
+                    "phase": state,
+                    "moving": moving,
+                    "facing_current": flight.facing.current(host.frame),
+                    "facing_destination": flight.facing.destination(),
+                    "body_facing": host.body_facing,
+                    // The air slot is the one genuinely new mechanism here, so
+                    // its native call sequence is compared, not just kinematics.
+                    "slot_events": host.slot_events,
+                });
+                let native = json!({
+                    "coord": expected["coord"],
+                    "destination": expected["destination"],
+                    "current_speed": expected["current_speed"],
+                    "target_speed": expected["target_speed"],
+                    "target_height": expected["target_height"],
+                    "bob_phase": expected["bob_phase"],
+                    "phase": expected["phase"],
+                    "moving": expected["moving"],
+                    "facing_current": expected["facing_current"],
+                    "facing_destination": expected["facing_destination"],
+                    "body_facing": expected["body_facing"],
+                    "slot_events": expected["slot_events"],
+                });
+                assert_eq!(produced, native, "{name}: frame {index} differs");
+            }
+        }
+    }
+
+    /// Parity with `tools/spatial_oracle/jumpjet_crash.json`. The kill first:
+    /// the ported `Stop_Moving` twice around the `+0x425` latch, its searches
+    /// answered as the native ones were, must leave the locomotor as the
+    /// native kill did (a hover re-targets its own cell, a cruise the cell
+    /// under the wreck, and the descent's last step lifts into State 1). Then
+    /// from that state the native `Process` latch and State 5 `0x0054CA90`
+    /// frame by frame to the impact notice: ZEP, SHAD, HIND, SCHP and DISK in
+    /// the hover, SHAD and ZEP in the cruise, SHAD and HIND one climb step
+    /// above the ground, an idle hover the latch never reaches and a fall
+    /// outside `In_Bounds`.
+    #[test]
+    fn a_crashing_jumpjet_falls_like_the_native_state5() {
+        let trig = TrigTable::embedded();
+        let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/jumpjet_crash.json",
+        ))
+        .expect("corpus parses");
+        let rows = corpus["fall"].as_array().expect("fall rows");
+        assert_eq!(rows.len(), 11);
+
+        for row in rows {
+            let name = row["name"].as_str().expect("row name");
+            let input = &row["input"];
+            let float = |key: &str| input[key].as_f64().expect("float field") as f32;
+            let params = JumpjetFlightParams::link(&JumpjetParams {
+                turn_rate: int(&input["turn_rate"]) as i32,
+                speed: SimFixed::from_num(int(&input["speed"])),
+                climb: float("climb"),
+                crash: float("crash"),
+                height: int(&input["height"]) as i32,
+                accel: float("accel"),
+                wobbles: float("wobbles"),
+                deviation: int(&input["deviation"]) as i32,
+                no_wobbles: input["no_wobbles"].as_bool().expect("flag"),
+            });
+            let killed = &row["output"]["killed"];
+            let bits = |value: &Value| value.as_u64().expect("bit field");
+            let triple = |value: &Value| [0, 1, 2].map(|i| int(&value[i]) as i32);
+            // Every row's kill leaves the facing at rest, so a snap reproduces
+            // its animated value from any frame.
+            assert_eq!(
+                killed["facing_current"], killed["facing_destination"],
+                "{name}"
+            );
+            let first_frame = 1000;
+            let mut flight = JumpjetFlight::linked(&params);
+            flight
+                .facing
+                .snap(int(&killed["facing_current"]) as u16, first_frame);
+            flight.current_speed_bits = bits(&killed["current_speed"]);
+            flight.target_speed_bits = bits(&killed["target_speed"]);
+            flight.target_height = int(&killed["target_height"]) as i32;
+            flight.bob_phase_bits = bits(&killed["bob_phase"]);
+            let cell = (
+                int(&killed["cell"][0]) as i16,
+                int(&killed["cell"][1]) as i16,
+            );
+            let map_size = if input["kill_map_size"].is_null() {
+                &input["map_size"]
+            } else {
+                &input["kill_map_size"]
+            };
+            let mut host = StatesHost {
+                frame: first_frame,
+                trig,
+                kind: FlightOwnerKind::Unit,
+                location: triple(&killed["coord"]),
+                balloon_hover: input["balloon_hover"].as_bool().expect("flag"),
+                has_target: input["tarcom"].as_bool().expect("flag"),
+                piggyback: false,
+                simple_deployer: false,
+                deploy_to_land: false,
+                body_facing: int(&killed["body_facing"]) as u16,
+                terrain: Vec::new(),
+                land_types: Vec::new(),
+                can_enter: Vec::new(),
+                slots: if bits(&killed["slot_holder"]) == 0 {
+                    Vec::new()
+                } else {
+                    vec![(cell, 1)]
+                },
+                owner: 1,
+                scatter_direction: 0,
+                scatter_to: None,
+                stop_requested: false,
+                fnpc_answers: Vec::new(),
+                fnpc_default: (0, 0),
+                fnpc_calls: 0,
+                nav_com: None,
+                landing_latched: false,
+                touched_down: false,
+                slot_events: Vec::new(),
+                crashing: true,
+                map_size: (int(&map_size[0]) as i32, int(&map_size[1]) as i32),
+                impact_events: Vec::new(),
+            };
+
+            // The kill, from the state the flight left.
+            let before = &row["output"]["before"];
+            let cell_of = |value: &Value| {
+                value
+                    .as_array()
+                    .map(|cell| (int(&cell[0]) as i16, int(&cell[1]) as i16))
+            };
+            let mut kill_flight = JumpjetFlight::linked(&params);
+            kill_flight.target_height = int(&before["target_height"]) as i32;
+            let mut runtime = StatesHost::order_runtime(
+                &params,
+                kill_flight,
+                int(&before["phase"]) as i32,
+                before["moving"].as_bool().expect("flag"),
+                triple(&before["destination"]),
+                before["landing_latched"].as_bool().expect("flag"),
+            );
+            let location = host.location;
+            host.location = triple(&before["coord"]);
+            host.fnpc_answers = killed["events"]
+                .as_array()
+                .expect("kill events")
+                .iter()
+                .filter(|event| event[0] == "fnpc")
+                .map(|event| cell_of(&event[1]))
+                .collect();
+            host.nav_com = cell_of(&before["nav_com"]);
+            runtime.stop_moving(&mut host);
+            host.crashing = true;
+            runtime.stop_moving(&mut host);
+            assert_eq!(
+                json!({
+                    "destination": [
+                        runtime.destination.x,
+                        runtime.destination.y,
+                        runtime.destination.z
+                    ],
+                    "moving": runtime.moving,
+                    "phase": runtime.phase,
+                    "target_height": runtime.flight.target_height,
+                    "landing_latched": runtime.landing_latched,
+                    "nav_com": host.nav_com.map(|cell| [cell.0, cell.1]),
+                    "searches": host.fnpc_calls,
+                }),
+                json!({
+                    "destination": killed["destination"],
+                    "moving": killed["moving"],
+                    "phase": killed["phase"],
+                    "target_height": killed["target_height"],
+                    "landing_latched": killed["landing_latched"],
+                    "nav_com": killed["nav_com"],
+                    "searches": host.fnpc_answers.len(),
+                }),
+                "{name}: the kill"
+            );
+            host.location = location;
+
+            let mut state = int(&killed["phase"]) as i32;
+            let moving = killed["moving"].as_bool().expect("flag");
+            let destination = triple(&killed["destination"]);
+
+            let frames = row["output"]["frames"].as_array().expect("frames");
+            for (index, expected) in frames.iter().enumerate() {
+                host.frame += 1;
+                host.slot_events.clear();
+                host.impact_events.clear();
+                let mut runtime = StatesHost::order_runtime(
+                    &params,
+                    flight,
+                    state,
+                    moving,
+                    destination,
+                    host.landing_latched,
+                );
+                state = process(&mut runtime, &mut host);
+                flight = runtime.flight;
+                let produced = json!({
+                    "coord": host.location,
+                    "current_speed": flight.current_speed_bits,
+                    "target_speed": flight.target_speed_bits,
+                    "target_height": flight.target_height,
+                    "bob_phase": flight.bob_phase_bits,
+                    "phase": state,
+                    "facing_current": flight.facing.current(host.frame),
+                    "facing_destination": flight.facing.destination(),
+                    "body_facing": host.body_facing,
+                    "slot_events": host.slot_events,
+                    "impact": host.impact_events,
+                });
+                let native_impact: Vec<Value> = expected["events"]
+                    .as_array()
+                    .expect("events")
+                    .iter()
+                    .filter(|event| {
+                        matches!(event.as_str(), Some("layer_remove" | "bucket_remove"))
+                    })
+                    .chain(expected["notices"].as_array().expect("notices"))
+                    .cloned()
+                    .collect();
+                let native = json!({
+                    "coord": expected["coord"],
+                    "current_speed": expected["current_speed"],
+                    "target_speed": expected["target_speed"],
+                    "target_height": expected["target_height"],
+                    "bob_phase": expected["bob_phase"],
+                    "phase": expected["phase"],
+                    "facing_current": expected["facing_current"],
+                    "facing_destination": expected["facing_destination"],
+                    "body_facing": expected["body_facing"],
+                    "slot_events": expected["slot_events"],
+                    "impact": native_impact,
+                });
+                assert_eq!(produced, native, "{name}: frame {index} differs");
+            }
+            let impacts = frames
+                .iter()
+                .filter(|frame| !frame["notices"].as_array().expect("notices").is_empty())
+                .count();
+            let hangs = name == "SHAD_hover_without_moving_byte_hangs";
+            assert_eq!(impacts, usize::from(!hangs), "{name}: impact count");
+        }
+    }
+
+    fn edge_host(
+        trig: &'static TrigTable,
+        tops: Vec<((i16, i16), i32)>,
+        bridges: Vec<(i16, i16)>,
+    ) -> FixtureHost<'static> {
+        FixtureHost {
+            frame: 10,
+            trig,
+            kind: FlightOwnerKind::Unit,
+            // Cell (3,3) centre, far from the terrain fixture's sloped cell.
+            location: [3 * 256 + 128, 3 * 256 + 128, 500],
+            balloon_hover: false,
+            has_target: false,
+            fractions: Vec::new(),
+            events: Vec::new(),
+            tops,
+            bridges,
+            piggyback: false,
+            simple_deployer: false,
+            deploy_to_land: false,
+            destination_land_type: 0,
+            body_facing: 0,
+            taken_slots: Vec::new(),
+            held_slot: None,
+            scatter_direction: 0,
+            can_enter: 0,
+            landing_latched: false,
+        }
+    }
+
+    fn eastbound_flight(speed: f64) -> JumpjetFlight {
+        let mut flight = JumpjetFlight::linked(&JumpjetFlightParams::default());
+        flight.facing.snap(0x4000, 0);
+        flight.current_speed_bits = speed.to_bits();
+        flight
+    }
+
+    /// `0x0054D820`: both bridge tests add the deck to the *current* cell's
+    /// sample, so a bridge one cell ahead raises the current value, and the
+    /// flat cell ahead then averages with it.
+    #[test]
+    fn a_bridge_ahead_raises_the_current_reference_sample() {
+        let trig = TrigTable::embedded();
+        let host = edge_host(trig, Vec::new(), vec![(4, 3)]);
+        let location = host.location;
+        assert_eq!(
+            reference_height(&eastbound_flight(4.0), &host, location),
+            BRIDGE_DECK_HEIGHT_LEPTONS / 2
+        );
+        // Stationary: no look-ahead, and the current cell has no bridge.
+        assert_eq!(reference_height(&eastbound_flight(0.0), &host, location), 0);
+    }
+
+    /// While moving, a higher cell one step ahead along the facing wins.
+    #[test]
+    fn a_higher_cell_ahead_sets_the_reference() {
+        let trig = TrigTable::embedded();
+        let host = edge_host(trig, vec![((4, 3), 300)], Vec::new());
+        let location = host.location;
+        assert_eq!(
+            reference_height(&eastbound_flight(4.0), &host, location),
+            300
+        );
+        // A lower cell ahead averages instead: (100 + 300) / 2 from the current cell.
+        let host = edge_host(trig, vec![((3, 3), 300), ((4, 3), 100)], Vec::new());
+        assert_eq!(
+            reference_height(&eastbound_flight(4.0), &host, location),
+            200
+        );
+    }
+
+    /// `CellClass @ 0x00485080`: a building's `Dimension2` height is used ahead
+    /// of the 85-lepton lift for any other techno.
+    #[test]
+    fn cell_top_height_prefers_a_building_over_the_object_lift() {
+        assert_eq!(cell_top_height(10, Some(208), true), 218);
+        assert_eq!(cell_top_height(10, None, true), 95);
+        assert_eq!(cell_top_height(10, None, false), 10);
+    }
+
+    /// State3's turn error rounds the unsigned 16-bit difference, so a quarter
+    /// turn left reads 192 and a quarter turn right reads 64.
+    #[test]
+    fn a_left_turn_reads_as_a_larger_error_than_the_same_right_turn() {
+        let error = crate::util::direction_tables::round_facing16_to_8;
+        assert_eq!(error(0x4000), 64);
+        assert_eq!(error(0xC000), 192);
+        assert_eq!(error(0xFFFF), 0);
+    }
+}

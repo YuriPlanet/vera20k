@@ -1,0 +1,1544 @@
+//! `HoverLocomotionClass` methods that move the Foot: Process (0x00514310)
+//! with SpeedUpdate (0x00515ED0), the path/arrival continuation
+//! (0x005164D0), ProcessMovement (0x00514F70) and the path trim
+//! (0x005163B0), plus the Move_To (0x00514D90) and Stop_Moving (0x00516320)
+//! state writes the Foot setter reaches and the Power_Off override
+//! (0x00516BF0) that Deactivate and the Unit's docks reach.
+//!
+//! Hover shares the Foot's path words (+0x5E0), timers and latches with
+//! Walk, Drive and Ship, and asks the one `Find_Path` (0x004D3920) and
+//! Unit `Can_Enter_Cell` (0x0073F0A0) ports. It does not ride the movement
+//! pass; `world::object_turn` calls [`Simulation::process_hover_locomotor`]
+//! as the Foot's one Process.
+//!
+//! Residuals:
+//! - Move_To's early return for a null coordinate (0x00514D90 entry) is not
+//!   ported: every VERA caller passes a resolved coordinate, so it is dormant.
+//! - The Foot's AbstractClass ID (Fetch_ID) phases the altitude bob
+//!   (0x00513DF6); VERA keeps none, so the stable handle stands in. Effect:
+//!   the ±2-lepton bob phase and period scale. Frequency: every Hover frame.
+//! - The water wake (Rules+0x94 anim every 10 frames, 0x00514A21..0x00514AC3)
+//!   comes from the shared wake pass (`Simulation::spawn_wakes_for_frame`,
+//!   gated on the Hover's Is_Moving_Now), not from this Process tail. WAKE1
+//!   draws no RNG; the residual is the anim's creation order (its AbstractClass
+//!   ID) relative to the objects after this one. Process also returns before
+//!   the wake when the unit is dead after its speed update
+//!   (`0x00514342..0x0051435E`), dead, in limbo or falling after its cell
+//!   step (`0x00514640..0x00514664` to `0x005149F4`, and
+//!   `0x005146D3..0x005146F9`), and once it is in a tube (Foot `+0x684` >= 0,
+//!   `0x00514705..0x00514717`); the shared pass does not check those, which
+//!   no player sees.
+//! - The vein tag (0x00486920) is not ported: the vein cell has no retail
+//!   user.
+//! - Crates (0x00481A00 at 0x005153E9) run through `Simulation::pickup_crate_at`,
+//!   as in Drive; a host called without the OverlayType table answers as a
+//!   cell without a crate.
+
+use super::HoverRuntime;
+use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
+use crate::rules::mission_data::MissionType;
+use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::ruleset::RuleSet;
+use crate::sim::cell_kernel::{native_xy_distance, native_xyz_distance};
+use crate::sim::components::{DriveCoord, NavTargetRef};
+use crate::sim::game_entity::GameEntity;
+use crate::sim::movement::foot_path::{FindPathResult, coord_cell};
+use crate::sim::movement::ground_pose;
+use crate::sim::movement::infantry_entry::InfantryEntryArgs;
+use crate::sim::movement::movement_tick::FootPathRequest;
+use crate::sim::pathfinding::PathGrid;
+use crate::sim::rng::SimRng;
+use crate::sim::scenario_session::ScenarioSession;
+use crate::sim::world::ObjectSubstrate;
+use crate::sim::world::{FrameAdvanceError, FrameEffects, Simulation};
+use crate::util::direction::DIRECTION_DELTAS;
+use crate::util::direction_tables::facing16_from_delta;
+use crate::util::fixed_math::{SIM_ONE, SIM_ZERO};
+use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, GROUND_LEVEL_HEIGHT_LEPTONS};
+use crate::util::native_x87::distance_3d_leptons;
+use std::sync::Arc;
+
+/// What one Hover Process did that its caller reports.
+#[derive(Debug, Default, Clone, Copy)]
+pub(crate) struct HoverProcessOutcome {
+    /// Per_Cell_Process(2) ran (0x005146CA or 0x00515A1C).
+    pub(crate) per_cell_ran: bool,
+    pub(crate) bridge_state_changed: bool,
+}
+
+/// The `HoverLocomotionClass` object behind the Foot's Locomotor (`+0x674`).
+fn runtime(entity: &GameEntity) -> Option<&HoverRuntime> {
+    entity.locomotor.as_ref()?.hover_runtime()
+}
+
+fn runtime_mut(entity: &mut GameEntity) -> Option<&mut HoverRuntime> {
+    entity.locomotor.as_mut()?.hover_runtime_mut()
+}
+
+fn null_coord(coord: Option<DriveCoord>) -> DriveCoord {
+    coord.unwrap_or(DriveCoord { x: 0, y: 0, z: 0 })
+}
+
+fn path_word(entity: &GameEntity, index: usize) -> Option<u8> {
+    entity
+        .navigation
+        .path_replay()
+        .remaining_directions()
+        .get(index)
+        .copied()
+}
+
+/// What [`hover_move_to`] leaves to its caller, the owner of the Simulation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HoverMoveTo {
+    /// The Foot is not on Hover.
+    NotHover,
+    /// Move_To returned after its state writes.
+    Done,
+    /// Move_To goes on to [`Simulation::hover_move_to_path_step`].
+    PathStepOwed,
+}
+
+/// `Move_To` 0x00514D90 on a Hover Foot, as the Foot setter (0x004D94B0)
+/// dispatches it: the destination, dropped to the ground (a deck on a
+/// structural cell), then the speed request. House 0x0053A130 answers false,
+/// so the ion-storm Power_Off arm (0x00514DC7..0x00514DF0) is dead. The
+/// caller finishes with [`Simulation::hover_move_to_path_step`] on
+/// [`HoverMoveTo::PathStepOwed`].
+pub(crate) fn hover_move_to(
+    entity: &mut GameEntity,
+    coord: DriveCoord,
+    terrain: Option<&ResolvedTerrainGrid>,
+    frame: u32,
+) -> HoverMoveTo {
+    let paralyzed = entity.parasite.is_paralyzed(frame);
+    let airborne = hover_is_powered(entity, terrain.map(NativeCellQuery::canonical).as_ref());
+    let Some(hover) = runtime_mut(entity) else {
+        return HoverMoveTo::NotHover;
+    };
+    //514D9C..514DBE: the coordinate is stored before the paralysis return.
+    hover.destination = Some(coord);
+    if paralyzed {
+        return HoverMoveTo::Done;
+    }
+    //514DE5..514E26: ground height, plus the deck on a structural cell.
+    let z = terrain.map_or(coord.z, |terrain| {
+        let cells = NativeCellQuery::canonical(terrain);
+        let ground = ground_pose::query_ground_height(&cells, coord).unwrap_or(coord.z);
+        let cell = cells.lookup_world(coord.x, coord.y);
+        if cells.flags(cell) & 0x100 != 0 {
+            ground_pose::deck_surface_z(&cells, cell, ground)
+        } else {
+            ground
+        }
+    });
+    hover.destination = Some(DriveCoord { z, ..coord });
+    if !airborne {
+        return HoverMoveTo::Done;
+    }
+    //514E66: Is_Moving_Now is moving with a nonzero request. A Foot already
+    //moving to a head keeps it; one without a head (514EA1) takes the request.
+    let moving_now = hover.ready_state().is_moving_now();
+    if moving_now && hover.head.is_some() {
+        return HoverMoveTo::Done;
+    }
+    if moving_now {
+        hover.speed_request = crate::util::native_x87::NativeF64Bits::ONE;
+    }
+    entity.foot_speed.set_speed_fraction(SIM_ONE);
+    HoverMoveTo::PathStepOwed
+}
+
+/// `Stop_Moving` 0x00516320 on a Hover Foot: a destination other than the
+/// head is cleared with the Foot's path head (+0x5E0 = -1). Returns false
+/// when the Foot is not on Hover.
+pub(crate) fn hover_stop_moving(entity: &mut GameEntity) -> bool {
+    let Some(hover) = runtime_mut(entity) else {
+        return false;
+    };
+    if hover.stop_moving() {
+        entity.navigation.path_replay_mut().clear_live_head();
+    }
+    true
+}
+
+/// Hover's `Is_Powered` (0x00516C70): the locomotor's powered byte (base
+/// 0x0055A930, called at 0x00516C76), or the Foot above its surface
+/// (GetHeight 0x005F5F40 > 0, its vt+0x1C8 at 0x00516C84). Draw_Matrix
+/// (0x00513F88) asks it too ([`super::hover_draw_slope`]), so the height reads
+/// through the caller's cell query: the simulation's canonical one, or an
+/// isolated one whose miss stamps its own dummy.
+pub(crate) fn hover_is_powered(entity: &GameEntity, cells: Option<&NativeCellQuery<'_>>) -> bool {
+    entity
+        .locomotor
+        .as_ref()
+        .is_some_and(|loco| loco.is_powered())
+        || super::super::air_movement::queried_flight_height(entity, cells) > 0
+}
+
+impl Simulation {
+    fn hover_error(&self, id: u64, cause: impl Into<String>) -> FrameAdvanceError {
+        FrameAdvanceError {
+            tick: self.session.tick(),
+            binary_frame: self.session.binary_frame(),
+            entity_id: id,
+            cause: cause.into(),
+        }
+    }
+
+    fn hover(&self, id: u64) -> Option<&HoverRuntime> {
+        self.substrate.entities.get(id).and_then(runtime)
+    }
+
+    fn hover_alive(&self, id: u64) -> bool {
+        self.substrate
+            .entities
+            .get(id)
+            .is_some_and(|e| e.lifecycle.object_alive())
+    }
+
+    fn hover_is_moving(&self, id: u64) -> bool {
+        self.hover(id).is_some_and(HoverRuntime::is_moving)
+    }
+
+    fn hover_location(&self, id: u64) -> Option<DriveCoord> {
+        self.substrate
+            .entities
+            .get(id)
+            .map(|e| ground_pose::position_world_coord(&e.position))
+    }
+
+    /// `0x005152D7..0x0051531E` and its twin `0x0051541F..0x0051546D`: the
+    /// Foot's path head (+0x5E0 = -1), the dummy head, `SetDestination(NULL,
+    /// 1)`, the four zeroed speeds and `SetSpeedFraction(0.0)`.
+    fn hover_drop_track(&mut self, id: u64, rules: &RuleSet, effects: &mut FrameEffects<'_>) {
+        if let Some(entity) = self.substrate.entities.get_mut(id) {
+            entity.navigation.path_replay_mut().clear_live_head();
+            if let Some(hover) = runtime_mut(entity) {
+                hover.head = None;
+            }
+        }
+        self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+        self.substrate.hover_halt(id);
+    }
+
+    /// `Power_Off` 0x00516BF0, Hover's override of ILocomotion+0x5C: a
+    /// powered Hover (its Is_Powered, 0x00516C70: the powered byte, or any
+    /// height) whose Foot's mission (`+0xAC`, read raw) is neither Sleep nor
+    /// Enter spins as it settles, a Shove of `Random(20, 30)` steps negated
+    /// when `Random(0, 99) < 50` (0x00516C11..0x00516C4B), which Process pays
+    /// back while it stays aloft; a moving one stops (0x00516C4E..0x00516C5B,
+    /// Stop_Moving 0x00516320, which keeps the head); then the base
+    /// Power_Off (0x0055A910) clears the powered byte. Returns false when
+    /// `id` is not on Hover.
+    pub(crate) fn hover_power_off(
+        scenario_rng: &mut SimRng,
+        substrate: &mut ObjectSubstrate,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        id: u64,
+    ) -> bool {
+        let Some(entity) = substrate.entities.get(id) else {
+            return false;
+        };
+        if runtime(entity).is_none() {
+            return false;
+        }
+        let powered = hover_is_powered(
+            entity,
+            resolved_terrain
+                .as_ref()
+                .map(NativeCellQuery::canonical)
+                .as_ref(),
+        );
+        let settled = matches!(
+            entity.mission.current().known(),
+            Some(MissionType::Sleep | MissionType::Enter)
+        );
+        if powered && !settled {
+            let steps = scenario_rng.next_range_i32_inclusive(20, 30);
+            let negate = scenario_rng.next_range_i32_inclusive(0, 99) < 50;
+            let hover = substrate.hover_mut(id).expect("same Hover Foot");
+            hover.shove_turning = true;
+            hover.shove_steps = if negate { steps.wrapping_neg() } else { steps };
+        }
+        let entity = substrate.entities.get_mut(id).expect("same Hover Foot");
+        if runtime(entity).is_some_and(HoverRuntime::is_moving) {
+            hover_stop_moving(entity);
+        }
+        if let Some(locomotor) = entity.locomotor.as_mut() {
+            locomotor.power_off();
+        }
+        true
+    }
+
+    /// `if (head) { Unit vt+0xF4(head); head = null; }`.
+    fn hover_release_head(
+        substrate: &mut ObjectSubstrate,
+        path_grid: &Option<Arc<PathGrid>>,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        id: u64,
+        ares: bool,
+    ) {
+        if let Some(head) = substrate.hover_mut(id).and_then(|hover| hover.head.take()) {
+            Self::track_raw_mark_at(
+                substrate,
+                path_grid,
+                resolved_terrain,
+                id,
+                head,
+                false,
+                ares,
+            );
+        }
+    }
+
+    /// The Foot's current speed (vt+0x538, GetCurrentSpeed 0x004DB1A0).
+    fn hover_foot_speed(&self, id: u64, rules: &RuleSet) -> i32 {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return 0;
+        };
+        super::super::foot_speed::owner_current_speed(
+            entity,
+            self.object_type(entity.type_ref(), rules),
+            rules.general.veteran_speed,
+            &self.houses,
+        )
+    }
+
+    /// The tail of Move_To 0x00514D90 ([`HoverMoveTo::PathStepOwed`]):
+    /// `Path_And_Arrival(0)` then `ProcessMovement(1)` (0x00514E85..0x00514E92
+    /// and 0x00514F4A..0x00514F5B; the second site's skip of ProcessMovement
+    /// needs a head, and it runs only without one). The Foot setter has just
+    /// restarted the movement timer, so neither call searches: they stop a
+    /// Foot already in its destination's cell and step along a retained path.
+    /// A new route's search belongs to the next Process.
+    pub(crate) fn hover_move_to_path_step(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) -> Result<(), FrameAdvanceError> {
+        let registry = Some(rules.overlay_registry());
+        self.hover_path_and_arrival(id, 0, rules, registry, effects)?;
+        let mut out = HoverProcessOutcome::default();
+        self.hover_process_movement(id, true, rules, registry, &mut out, effects)?;
+        Ok(())
+    }
+
+    /// FootClass::AI's Process call for a Hover Foot (ILocomotion +0x40,
+    /// 0x00514310).
+    pub(crate) fn process_hover_locomotor(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) -> Result<HoverProcessOutcome, FrameAdvanceError> {
+        let mut out = HoverProcessOutcome::default();
+        if self.hover_is_moving(id) && !self.hover_move(id, rules, registry, &mut out, effects)? {
+            return Ok(out);
+        }
+        self.hover_process_tail(id, rules, effects);
+        Ok(out)
+    }
+
+    /// Process 0x00514325..0x00514A1E. Returns false when Process returns
+    /// before its tail.
+    fn hover_move(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        out: &mut HoverProcessOutcome,
+        effects: &mut FrameEffects<'_>,
+    ) -> Result<bool, FrameAdvanceError> {
+        let frame = self.session.binary_frame();
+        self.hover_speed_update(id, rules, registry, out, effects)?;
+        //514349..514358: a dead Foot returns before the tail.
+        if !self.hover_alive(id) {
+            return Ok(false);
+        }
+        let Some(start) = self.hover_location(id) else {
+            return Ok(false);
+        };
+        let mut speed = self.hover(id).map_or(0, |hover| {
+            hover.step_leptons(self.hover_foot_speed(id, rules))
+        });
+        let head = null_coord(self.hover(id).and_then(|hover| hover.head));
+        let desired =
+            facing16_from_delta(head.x.wrapping_sub(start.x), head.y.wrapping_sub(start.y));
+        //5143DE..5144B9: a stopped Foot facing its head exactly restarts.
+        let aligned = self
+            .hover(id)
+            .is_some_and(|hover| hover.facing.current(frame) == desired);
+        if speed == 0 && aligned {
+            let at_head_cell = self
+                .hover(id)
+                .and_then(|hover| hover.head)
+                .is_none_or(|head| coord_cell(head) == coord_cell(start));
+            if let Some(hover) = self.substrate.hover_mut(id) {
+                hover.speed_request = crate::util::native_x87::NativeF64Bits::ONE;
+            }
+            self.substrate.hover_set_speed(id, true);
+            self.hover_path_and_arrival(id, 0, rules, registry, effects)?;
+            if at_head_cell {
+                self.hover_process_movement(id, true, rules, registry, out, effects)?;
+            }
+            speed = self.hover(id).map_or(0, |hover| {
+                hover.step_leptons(self.hover_foot_speed(id, rules))
+            });
+        }
+        //5144BD..514513: the planar distance to the head, Location-based.
+        let Some(location) = self.hover_location(id) else {
+            return Ok(false);
+        };
+        let head = null_coord(self.hover(id).and_then(|hover| hover.head));
+        let reach = native_xy_distance(
+            location.x.wrapping_sub(head.x),
+            location.y.wrapping_sub(head.y),
+        );
+        if speed >= reach {
+            match self.hover_arrive(id, rules, registry, out, effects)? {
+                Arrival::Return => return Ok(false),
+                Arrival::Tail => return Ok(true),
+                Arrival::Step => {}
+            }
+        }
+        if speed > 0 {
+            self.hover_step(id, start.z, speed, rules, registry, effects);
+        }
+        Ok(true)
+    }
+
+    /// The arrival arm 0x00514519..0x00514740.
+    fn hover_arrive(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        out: &mut HoverProcessOutcome,
+        effects: &mut FrameEffects<'_>,
+    ) -> Result<Arrival, FrameAdvanceError> {
+        if let Some(entity) = self.substrate.entities.get_mut(id) {
+            entity.foot_occupation_enabled.resume();
+            entity.navigation.path_runtime_mut().clear_blockage();
+            if let Some(hover) = runtime_mut(entity) {
+                hover.pushed = false;
+            }
+        }
+        self.hover_path_and_arrival(id, 0, rules, registry, effects)?;
+        //51453A..514581: no path and no destination: the head drops (no F4).
+        if let Some(entity) = self.substrate.entities.get_mut(id)
+            && path_word(entity, 0).is_none()
+            && let Some(hover) = runtime_mut(entity)
+            && hover.destination.is_none()
+        {
+            hover.head = None;
+        }
+        //514584..5145FF: the cell of radio slot 0's vt+0x4C (with this
+        //Foot as requester), else the null cell (0, 0).
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return Ok(Arrival::Return);
+        };
+        let contact_cell = match entity.seldom.radio_contacts.slot(0) {
+            Some(contact) => {
+                let coord = super::super::navcom::nav_target_coordinate(
+                    NavTargetRef::Object { id: contact },
+                    Some(id),
+                    self,
+                    self.resolved_terrain.as_ref(),
+                    Some((rules, &self.interner)),
+                )
+                .map_err(|cause| self.hover_error(id, cause))?;
+                coord_cell(coord)
+            }
+            None => (0, 0),
+        };
+        let at_contact =
+            coord_cell(ground_pose::position_world_coord(&entity.position)) == contact_cell;
+        let has_destination = runtime(entity).is_some_and(|hover| hover.destination.is_some());
+        if !has_destination && !at_contact {
+            return Ok(Arrival::Step);
+        }
+        let code = self.hover_process_movement(id, true, rules, registry, out, effects)?;
+        if !self.track_survives(id) {
+            return Ok(Arrival::Return);
+        }
+        let head_null = self.hover(id).is_some_and(|hover| hover.head.is_none());
+        if code == 0 && head_null {
+            //514698..5146EF: mark the Location, then Per_Cell_Process(2).
+            if let Some(location) = self.hover_location(id) {
+                Self::track_raw_mark_at(
+                    &mut self.substrate,
+                    &self.path_grid,
+                    &self.resolved_terrain,
+                    id,
+                    location,
+                    true,
+                    rules.ares_form(),
+                );
+            }
+            out.bridge_state_changed |= self.per_cell_process(
+                id,
+                super::super::PerCellReason::Arrival,
+                rules,
+                registry,
+                effects,
+            )?;
+            out.per_cell_ran = true;
+            if !self.track_survives(id) {
+                return Ok(Arrival::Return);
+            }
+        }
+        if code == 7 {
+            //514705..514740: inside a tube the Foot returns; otherwise the
+            //order ends and the Foot still takes this frame's step.
+            if self
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|e| e.active_tube().is_some())
+            {
+                return Ok(Arrival::Return);
+            }
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+            self.substrate.hover_halt(id);
+        } else if code != 0 {
+            //514982..5149EA.
+            self.substrate.hover_halt(id);
+            Self::hover_release_head(
+                &mut self.substrate,
+                &self.path_grid,
+                &self.resolved_terrain,
+                id,
+                rules.ares_form(),
+            );
+            return Ok(Arrival::Tail);
+        }
+        Ok(Arrival::Step)
+    }
+
+    /// The XY step 0x00514746..0x00514973 along the steering facing.
+    fn hover_step(
+        &mut self,
+        id: u64,
+        z: i32,
+        speed: i32,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) {
+        let frame = self.session.binary_frame();
+        let Some(location) = self.hover_location(id) else {
+            return;
+        };
+        //514775..5147DF: the first moving frame releases the Location's
+        //claim; +6B6 then keeps AddContent from marking until arrival.
+        let release = self.substrate.entities.get(id).is_some_and(|entity| {
+            entity.foot_occupation_enabled() && runtime(entity).is_some_and(|h| h.head.is_some())
+        });
+        if release {
+            Self::track_raw_mark_at(
+                &mut self.substrate,
+                &self.path_grid,
+                &self.resolved_terrain,
+                id,
+                location,
+                false,
+                rules.ares_form(),
+            );
+            if let Some(entity) = self.substrate.entities.get_mut(id) {
+                entity.foot_occupation_enabled.suspend();
+                entity.navigation.path_runtime_mut().clear_blockage();
+            }
+        }
+        let Some(facing) = self.hover(id).map(|hover| hover.facing.current(frame)) else {
+            return;
+        };
+        let [x, y] =
+            crate::util::native_trig::facing_step_world_xy([location.x, location.y], facing, speed);
+        let next = DriveCoord { x, y, z };
+        if coord_cell(next) == coord_cell(location) {
+            //5149F7..514A1E: SetCoords and SetZ with +74 cleared, so without
+            //a Mark; VERA's SetCoords never marks.
+            super::super::ground_pose::foot_set_location(
+                &mut self.substrate.entities,
+                id,
+                next,
+                rules,
+                &self.interner,
+            );
+            return;
+        }
+        //5148DF..514973: Mark(REMOVE), SetCoords, SetZ, the bridge byte from
+        //the new cell and the height, Mark(PUT).
+        self.foot_mark_remove(id, rules, registry, effects);
+        super::super::ground_pose::foot_set_location(
+            &mut self.substrate.entities,
+            id,
+            next,
+            rules,
+            &self.interner,
+        );
+        let terrain = self.resolved_terrain.as_ref();
+        if let (Some(terrain), Some(entity)) = (terrain, self.substrate.entities.get(id)) {
+            let cells = NativeCellQuery::canonical(terrain);
+            let entered = cells.lookup_world(x, y);
+            let structural = cells.flags(entered) & 0x100 != 0;
+            let height = super::super::air_movement::current_fly_height(entity, Some(terrain));
+            let reaches_deck = ground_pose::corrected_deck_z(terrain, entered)
+                .map_or(height >= BRIDGE_DECK_HEIGHT_LEPTONS, |deck| next.z >= deck);
+            let on_bridge = structural && (entity.on_bridge() || reaches_deck);
+            let level = cells.ground_fields(entered).0;
+            let deck = terrain.corrected_high_bridge_deck_at(entered);
+            if let Some(entity) = self.substrate.entities.get_mut(id) {
+                entity.on_bridge.store(on_bridge);
+                entity
+                    .position
+                    .store_cell_level_on_deck(level, on_bridge, deck);
+            }
+        }
+        self.foot_mark_put(id, rules, registry, effects);
+    }
+
+    /// Process 0x00514A21..0x00514C12: the altitude controller and the
+    /// Shove tail and the water DropAsBomb gate.
+    fn hover_process_tail(&mut self, id: u64, rules: &RuleSet, effects: &mut FrameEffects<'_>) {
+        Self::hover_altitude(
+            &self.session,
+            &mut self.substrate,
+            &self.resolved_terrain,
+            id,
+            rules,
+        );
+        self.hover_spin_tail(id, rules, effects);
+    }
+
+    /// Original Process suffix514AD0..514C12, after altitude adjustment.
+    fn hover_spin_tail(&mut self, id: u64, rules: &RuleSet, effects: &mut FrameEffects<'_>) {
+        //514AD0..514AD5: an object not spinning on entry skips the entire
+        // tail, including water admission. Power_Off516BF0 starts the spin.
+        let was_spinning = self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(runtime)
+            .is_some_and(|hover| hover.shove_turning);
+        Self::hover_shove(
+            &self.session,
+            &mut self.substrate,
+            &self.resolved_terrain,
+            id,
+        );
+        //514B49..514C0C: when this spin ends, water below floor+104 drops
+        //the Foot as a bomb. Startup513AE0 initializes A8F1C0=104;
+        //this is a positive threshold, not one level below the surface.
+        let drop = was_spinning
+            && self.substrate.entities.get(id).is_some_and(|entity| {
+                runtime(entity).is_some_and(|h| !h.shove_turning)
+                    && self.resolved_terrain.as_ref().is_some_and(|terrain| {
+                        let cells = NativeCellQuery::canonical(terrain);
+                        let at = ground_pose::position_world_coord(&entity.position);
+                        let cell = cells.lookup_world(at.x, at.y);
+                        cells.land_type(cell) == 2
+                            && ground_pose::query_ground_height(&cells, at).is_ok_and(|floor| {
+                                at.z < floor.wrapping_add(GROUND_LEVEL_HEIGHT_LEPTONS)
+                            })
+                    })
+            });
+        if drop {
+            self.drop_as_bomb(
+                id,
+                crate::sim::world::UninitContext::new(rules).with_effects(effects),
+            );
+        }
+    }
+
+    fn hover_shove(
+        session: &ScenarioSession,
+        substrate: &mut ObjectSubstrate,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        id: u64,
+    ) {
+        let frame = session.binary_frame();
+        let cells = resolved_terrain.as_ref().map(NativeCellQuery::canonical);
+        let powered = substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| hover_is_powered(entity, cells.as_ref()));
+        let Some(entity) = substrate.entities.get_mut(id) else {
+            return;
+        };
+        let Some(hover) = runtime_mut(entity) else {
+            return;
+        };
+        if !hover.shove_turning {
+            return;
+        }
+        if !powered {
+            hover.shove_turning = false;
+            return;
+        }
+        //514AE5..514B47: PrimaryFacing.UpdateFacing(Current + steps << 8),
+        //then one step back toward zero.
+        let steps = hover.shove_steps;
+        let paid = steps.signum();
+        hover.shove_steps = steps - paid;
+        if hover.shove_steps == 0 {
+            hover.shove_turning = false;
+        }
+        let current = entity.body_facing.current(frame);
+        entity
+            .body_facing
+            .snap(current.wrapping_add((steps << 8) as u16), frame);
+    }
+
+    /// 0x00513D20 on the Foot: GetHeight, the controller, SetHeight with the
+    /// mark byte cleared.
+    fn hover_altitude(
+        session: &ScenarioSession,
+        substrate: &mut ObjectSubstrate,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        id: u64,
+        rules: &RuleSet,
+    ) {
+        let frame = session.binary_frame() as i32;
+        let terrain = resolved_terrain.as_ref();
+        let Some(entity) = substrate.entities.get_mut(id) else {
+            return;
+        };
+        let height = super::super::air_movement::current_fly_height(entity, terrain);
+        let location = ground_pose::position_world_coord(&entity.position);
+        //513D45..513DDC: the ground (0x00578080) one direction step ahead
+        //above the ground here.
+        let climbing = terrain.is_some_and(|terrain| {
+            let cells = NativeCellQuery::canonical(terrain);
+            path_word(entity, 0).is_some_and(|direction| {
+                let ahead = super::super::track_head::offset_head(location, direction);
+                let ground = |at: DriveCoord| ground_pose::query_ground_height(&cells, at).ok();
+                matches!((ground(ahead), ground(location)), (Some(next), Some(here)) if next > here)
+            })
+        });
+        let powered = entity
+            .locomotor
+            .as_ref()
+            .is_some_and(|loco| loco.is_powered());
+        let Some(hover) = runtime_mut(entity) else {
+            return;
+        };
+        let visible = hover.altitude_step(height, climbing, id as i32, frame, powered, rules);
+        //513E74..513E8C: SetHeight with +0x74 cleared, so unmarked.
+        Self::set_object_height_unmarked(substrate, resolved_terrain, id, visible);
+    }
+
+    /// SpeedUpdate 0x00515ED0.
+    fn hover_speed_update(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        out: &mut HoverProcessOutcome,
+        effects: &mut FrameEffects<'_>,
+    ) -> Result<(), FrameAdvanceError> {
+        let frame = self.session.binary_frame();
+        let terrain = self.resolved_terrain.as_ref();
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return Ok(());
+        };
+        let Some(hover) = runtime(entity) else {
+            return Ok(());
+        };
+        let Some(head) = hover.head else {
+            //5162BA..516309: moving with no head asks for one.
+            if hover.is_moving() {
+                self.substrate.hover_set_speed(id, true);
+                self.hover_path_and_arrival(id, 0, rules, registry, effects)?;
+                self.hover_process_movement(id, true, rules, registry, out, effects)?;
+            }
+            return Ok(());
+        };
+        let foot = ground_pose::position_world_coord(&entity.position);
+        let airborne = hover_is_powered(entity, terrain.map(NativeCellQuery::canonical).as_ref());
+        let pushed = hover.pushed;
+        let boost = matches!(
+            (path_word(entity, 0), path_word(entity, 1)),
+            (Some(first), Some(second)) if first == second
+        );
+        let look_ahead = match path_word(entity, 0) {
+            Some(direction) if direction != crate::util::direction::TUBE_STEP_DIRECTION => {
+                super::super::track_head::offset_head(head, direction)
+            }
+            _ => head,
+        };
+        let entity = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .expect("same Hover Foot");
+        let Some(hover) = runtime_mut(entity) else {
+            return Ok(());
+        };
+        hover.choose_request(foot, head, airborne, frame);
+        hover.ramp_speed(boost, rules);
+        //5161E7..5162AD: a moving, unpushed Foot points its PrimaryFacing
+        //one cell past the head.
+        let request_positive =
+            hover.speed_request.bits() != 0 && hover.speed_request.bits() >> 63 == 0;
+        if request_positive && !pushed {
+            let look = facing16_from_delta(
+                look_ahead.x.wrapping_sub(foot.x),
+                look_ahead.y.wrapping_sub(foot.y),
+            );
+            entity.body_facing.set(look, frame);
+        }
+        Ok(())
+    }
+
+    /// 0x005163B0: an object NavCom (Unit or Infantry) within 24 cells cuts
+    /// the path there; else a TarCom the Foot can fire at drops the head.
+    fn hover_trim_path(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if !runtime(entity).is_some_and(HoverRuntime::is_moving) || path_word(entity, 0).is_none() {
+            return;
+        }
+        let destination = null_coord(runtime(entity).and_then(|hover| hover.destination));
+        if self.substrate.trim_path_for_object_navcom(id, destination) {
+            return;
+        }
+        if self.foot_can_fire_at_target(id, rules, registry) == Some(true)
+            && let Some(entity) = self.substrate.entities.get_mut(id)
+        {
+            entity.navigation.path_replay_mut().clear_live_head();
+        }
+    }
+
+    /// `Path_And_Arrival` 0x005164D0; `urgency` is Find_Path's third
+    /// argument.
+    fn hover_path_and_arrival(
+        &mut self,
+        id: u64,
+        urgency: u8,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) -> Result<(), FrameAdvanceError> {
+        let frame = self.session.binary_frame();
+        self.hover_trim_path(id, rules, registry);
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return Ok(());
+        };
+        let location = ground_pose::position_world_coord(&entity.position);
+        let navigation = self
+            .foot_navigation_coordinate(id)
+            .map_err(|cause| self.hover_error(id, cause))?;
+        let entity = self.substrate.entities.get(id).expect("same Hover Foot");
+        let Some(destination) = runtime(entity).and_then(|hover| hover.destination) else {
+            return Ok(());
+        };
+        let same_cell = coord_cell(location) == coord_cell(destination);
+        let dz = navigation.z.wrapping_sub(destination.z).wrapping_abs();
+        //5164E1..51657F: standing in the destination's cell and band stops.
+        if same_cell && dz < 2 * GROUND_LEVEL_HEIGHT_LEPTONS {
+            if let Some(entity) = self.substrate.entities.get_mut(id) {
+                hover_stop_moving(entity);
+            }
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+            return Ok(());
+        }
+        if path_word(entity, 0).is_some() {
+            return Ok(());
+        }
+        if same_cell && dz <= 2 * GROUND_LEVEL_HEIGHT_LEPTONS {
+            return Ok(());
+        }
+        if !entity
+            .navigation
+            .path_runtime()
+            .movement_timer()
+            .expired(frame as i32)
+        {
+            return Ok(());
+        }
+        let request = FootPathRequest::track(
+            &self.substrate.entities,
+            id,
+            destination,
+            urgency,
+            self.playfield_bounds(),
+        )
+        .ok_or_else(|| self.hover_error(id, "retired Hover Find_Path requester"))?;
+        let found = self
+            .foot_find_path(&request, rules, registry, effects)
+            .map_err(|cause| self.hover_error(id, cause))?;
+        //51668B..5166BA / 5168D0..516904: +640 = (Frame, PathDelay).
+        if let Some(entity) = self.substrate.entities.get_mut(id) {
+            entity
+                .navigation
+                .path_runtime_mut()
+                .start_movement(frame, rules.general.path_delay_ticks());
+        } else {
+            return Ok(());
+        }
+        if found != FindPathResult::Failed {
+            return self.hover_found_path(id, rules, registry, effects);
+        }
+        self.hover_failed_path(id, rules, registry, effects)
+    }
+
+    /// 0x005168D0..0x00516BCD after a found route.
+    fn hover_found_path(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) -> Result<(), FrameAdvanceError> {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return Ok(());
+        };
+        if let Some(direction) = path_word(entity, 0) {
+            let location = ground_pose::position_world_coord(&entity.position);
+            let (dx, dy) = DIRECTION_DELTAS[usize::from(direction & 7)];
+            let current = coord_cell(location);
+            let cell = (i32::from(current.0) + dx, i32::from(current.1) + dy);
+            if crate::sim::cell_rect::cell_is_in_playfield_height_aware(
+                cell,
+                self.playfield_bounds(),
+                self.resolved_terrain.as_ref(),
+            ) && self.hover_can_enter(id, (cell.0 as i16, cell.1 as i16), direction, rules)? == 6
+                && self.hover_ally_cell(id, cell, rules, registry, effects)?
+            {
+                return Ok(());
+            }
+        }
+        if let Some(entity) = self.substrate.entities.get_mut(id) {
+            entity.navigation.path_runtime_mut().reload_retries();
+        }
+        Ok(())
+    }
+
+    /// The found route's code-6 arm (0x005169BD..0x00516BC5): the nearest
+    /// object of the cell's list (the deck above three levels), when an ally,
+    /// either ends the move — close enough, no radio contact, in the stop
+    /// band — or has the cell scattered. Returns true when the move ended.
+    fn hover_ally_cell(
+        &mut self,
+        id: u64,
+        cell: (i32, i32),
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) -> Result<bool, FrameAdvanceError> {
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return Ok(false);
+        };
+        let cells = NativeCellQuery::canonical(terrain);
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return Ok(false);
+        };
+        let location = ground_pose::position_world_coord(&entity.position);
+        let centre = DriveCoord {
+            x: cell.0 * 256 + 128,
+            y: cell.1 * 256 + 128,
+            z: 0,
+        };
+        let ground = ground_pose::query_ground_height(&cells, centre)
+            .map_err(|cause| self.hover_error(id, cause))?;
+        let layer = if location.z > ground + 3 * GROUND_LEVEL_HEIGHT_LEPTONS {
+            super::super::locomotor::MovementLayer::Bridge
+        } else {
+            super::super::locomotor::MovementLayer::Ground
+        };
+        let Some(nearest) = self.nearest_cell_object((cell.0 as u16, cell.1 as u16), layer, None)
+        else {
+            return Ok(false);
+        };
+        let allied = self.substrate.entities.get(nearest).is_some_and(|object| {
+            self.house_alliances
+                .is_allied(&self.interner, entity.owner(), object.owner())
+        });
+        if !allied {
+            return Ok(false);
+        }
+        let destination = null_coord(runtime(entity).and_then(|hover| hover.destination));
+        let close = native_xyz_distance(
+            location.x.wrapping_sub(destination.x),
+            location.y.wrapping_sub(destination.y),
+            location.z.wrapping_sub(destination.z),
+        ) < rules.general.close_enough;
+        if close
+            && entity.seldom.radio_contacts.is_empty()
+            && self.track_stop_band(location, destination)
+        {
+            if let Some(entity) = self.substrate.entities.get_mut(id) {
+                hover_stop_moving(entity);
+            }
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+            return Ok(true);
+        }
+        self.scatter_blocked_track_cell(
+            id,
+            (cell.0 as i16, cell.1 as i16),
+            rules,
+            registry,
+            effects,
+        )
+        .map_err(|cause| self.hover_error(id, cause))?;
+        Ok(false)
+    }
+
+    /// 0x0051668B..0x005168C3 after Find_Path refused.
+    fn hover_failed_path(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: &mut FrameEffects<'_>,
+    ) -> Result<(), FrameAdvanceError> {
+        //5166BD..5166DD: the zone precheck on the live destination, which the
+        //failed search's +500 receiver (Stop_Moving) may have nulled.
+        let destination = null_coord(self.hover(id).and_then(|hover| hover.destination));
+        if !self
+            .foot_path_zone_precheck(id, destination, rules)
+            .map_err(|cause| self.hover_error(id, cause))?
+        {
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+            return Ok(());
+        }
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return Ok(());
+        };
+        let mission = entity.mission.effective().known();
+        let location = ground_pose::position_world_coord(&entity.position);
+        //5166E7..5167BD: not Enter, close enough, Move or AreaGuard.
+        if mission != Some(MissionType::Enter)
+            && native_xyz_distance(
+                location.x.wrapping_sub(destination.x),
+                location.y.wrapping_sub(destination.y),
+                location.z.wrapping_sub(destination.z),
+            ) < rules.general.close_enough
+            && matches!(mission, Some(MissionType::Move | MissionType::AreaGuard))
+        {
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+            if !self.hover_alive(id) {
+                return Ok(());
+            }
+        } else if self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|e| e.navigation.path_runtime().retries_left() > 0)
+        {
+            if let Some(entity) = self.substrate.entities.get_mut(id) {
+                entity
+                    .navigation
+                    .path_runtime_mut()
+                    .decrement_retries_left();
+            }
+        } else {
+            //5167D5..51681B: give up, with the retained scold sound.
+            self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+            if !self.hover_alive(id) {
+                return Ok(());
+            }
+            Self::play_foot_path_scold(&self.substrate, &mut self.sound_events, id, rules);
+            if let Some(entity) = self.substrate.entities.get_mut(id) {
+                entity.navigation.path_runtime_mut().clear_scold_latch();
+            }
+        }
+        //516822..5168C3: a stopped Foot drops a target it cannot fire at;
+        //then the head and Stop_Moving.
+        if !self.hover_is_moving(id) {
+            self.drop_unfireable_target(id, rules, registry, effects);
+        }
+        Self::hover_release_head(
+            &mut self.substrate,
+            &self.path_grid,
+            &self.resolved_terrain,
+            id,
+            rules.ares_form(),
+        );
+        if let Some(entity) = self.substrate.entities.get_mut(id) {
+            hover_stop_moving(entity);
+        }
+        Ok(())
+    }
+
+    /// Unit `Can_Enter_Cell` (+0x1AC) for a Hover candidate, with the Techno
+    /// height (0x005F5F00).
+    fn hover_can_enter(
+        &self,
+        id: u64,
+        cell: (i16, i16),
+        direction: u8,
+        rules: &RuleSet,
+    ) -> Result<u8, FrameAdvanceError> {
+        let terrain = self
+            .resolved_terrain
+            .as_ref()
+            .ok_or_else(|| self.hover_error(id, "Hover Can_Enter_Cell requires map cells"))?;
+        let entity = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or_else(|| self.hover_error(id, "retired Hover Foot"))?;
+        let cells = NativeCellQuery::canonical(terrain);
+        let height = ground_pose::query_object_cell_height(
+            &cells,
+            ground_pose::position_world_coord(&entity.position),
+            entity.on_bridge(),
+        );
+        self.foot_can_enter(
+            id,
+            terrain.native_cell_identity(cell),
+            InfantryEntryArgs {
+                direction: i32::from(direction),
+                height,
+                previous_cell: None,
+            },
+            rules,
+        )
+        .map_err(|cause| self.hover_error(id, cause))
+    }
+
+    /// `ProcessMovement` 0x00514F70; `retry` is its argument. Returns its
+    /// code: 0 accepted or no work, 7 stopped, else the refusal code.
+    fn hover_process_movement(
+        &mut self,
+        id: u64,
+        retry: bool,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        out: &mut HoverProcessOutcome,
+        effects: &mut FrameEffects<'_>,
+    ) -> Result<u8, FrameAdvanceError> {
+        let frame = self.session.binary_frame();
+        //514F83..514FCA: the old head's claim goes first.
+        Self::hover_release_head(
+            &mut self.substrate,
+            &self.path_grid,
+            &self.resolved_terrain,
+            id,
+            rules.ares_form(),
+        );
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return Ok(7);
+        };
+        if entity.parasite.is_paralyzed(frame) {
+            return Ok(7);
+        }
+        let Some(hover) = runtime(entity) else {
+            return Ok(0);
+        };
+        if !hover.is_moving() || hover.destination.is_none() {
+            return Ok(0);
+        }
+        let Some(direction) = path_word(entity, 0) else {
+            //515DEE: no path word asks the continuation.
+            self.hover_path_and_arrival(id, 0, rules, registry, effects)?;
+            return Ok(0);
+        };
+        if direction == crate::util::direction::TUBE_STEP_DIRECTION {
+            if self
+                .enter_walk_or_hover_tube(id, rules, registry, effects)
+                .map_err(|cause| self.hover_error(id, cause))?
+                != crate::sim::movement::tube_movement::TubeEntry::Entered
+            {
+                // 5152D1..51532E: no valid tube. Drop the track, then send
+                // the second null destination through the Foot's class setter.
+                self.hover_drop_track(id, rules, effects);
+                self.assign_null_destination(id, rules, Some(rules.overlay_registry()), effects);
+            }
+            return Ok(7);
+        }
+        let location = ground_pose::position_world_coord(&entity.position);
+        let current = coord_cell(location);
+        let (dx, dy) = DIRECTION_DELTAS[usize::from(direction & 7)];
+        let cell = (
+            current.0.wrapping_add(dx as i16),
+            current.1.wrapping_add(dy as i16),
+        );
+        let terrain = self
+            .resolved_terrain
+            .as_ref()
+            .ok_or_else(|| self.hover_error(id, "Hover ProcessMovement requires map cells"))?;
+        let cells = NativeCellQuery::canonical(terrain);
+        //51533C..5153D5: the head is the candidate's centre on its ground, or
+        //its deck when the Foot rides three levels above that ground.
+        let mut head = DriveCoord {
+            x: i32::from(cell.0) * 256 + 128,
+            y: i32::from(cell.1) * 256 + 128,
+            z: 0,
+        };
+        let ground = ground_pose::query_ground_height(&cells, head)
+            .map_err(|cause| self.hover_error(id, cause))?;
+        head.z = if ground + 3 * GROUND_LEVEL_HEIGHT_LEPTONS <= location.z {
+            ground + BRIDGE_DECK_HEIGHT_LEPTONS
+        } else {
+            ground
+        };
+        let probe = super::super::track_head::offset_head(location, direction);
+        let probe_structural = cells.flags(cells.lookup_world(probe.x, probe.y)) & 0x100 != 0;
+        if let Some(hover) = self.substrate.hover_mut(id) {
+            hover.head = Some(head);
+        }
+        //5153D8..5153EE: the crate question on the candidate cell.
+        if !self.pickup_crate_at(id, cell, rules, registry, effects) {
+            //5153F6..515478: a false answer (a placed free vehicle): an owner
+            //in limbo rejoins the ordinary checks; a dead or falling one
+            //returns; a live one drops its path head, head and speeds and
+            //returns.
+            let in_limbo = self
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| entity.lifecycle.in_limbo());
+            if !in_limbo {
+                if self.track_survives(id) {
+                    self.hover_drop_track(id, rules, effects);
+                }
+                return Ok(7);
+            }
+        }
+        //51547B..5154A2: a dead, limbo or falling Foot returns.
+        if !self.track_survives(id) {
+            return Ok(7);
+        }
+        //5154A8..515513: the candidate cell's bridge bit against OnBridge.
+        let entity = self
+            .substrate
+            .entities
+            .get(id)
+            .expect("surviving Hover Foot");
+        if probe_structural != entity.on_bridge() {
+            self.substrate.latch_foot_68b(id);
+        }
+        let code = self.hover_can_enter(id, cell, direction, rules)?;
+        match code {
+            0 => {
+                //515A1C: Per_Cell_Process(2), then the claim and the shift.
+                out.bridge_state_changed |= self.per_cell_process(
+                    id,
+                    super::super::PerCellReason::Arrival,
+                    rules,
+                    registry,
+                    effects,
+                )?;
+                out.per_cell_ran = true;
+                if !self.track_survives(id) {
+                    return Ok(7);
+                }
+                let in_playfield = self
+                    .substrate
+                    .entities
+                    .get(id)
+                    .is_some_and(|entity| entity.in_playfield());
+                if in_playfield && let Some(head) = self.hover(id).and_then(|hover| hover.head) {
+                    Self::track_raw_mark_at(
+                        &mut self.substrate,
+                        &self.path_grid,
+                        &self.resolved_terrain,
+                        id,
+                        head,
+                        true,
+                        rules.ares_form(),
+                    );
+                }
+                if let Some(entity) = self.substrate.entities.get_mut(id) {
+                    let queue = entity.navigation.path_replay_mut();
+                    queue.consume(1);
+                    queue.rebase(coord_cell(head));
+                }
+                Ok(0)
+            }
+            1 | 7 => {
+                self.uncloak_contacts_at_cell(cell, rules)
+                    .map_err(|cause| self.hover_error(id, cause))?;
+                let mut code = code;
+                if retry {
+                    self.substrate.hover_halt(id);
+                    Self::hover_release_head(
+                        &mut self.substrate,
+                        &self.path_grid,
+                        &self.resolved_terrain,
+                        id,
+                        rules.ares_form(),
+                    );
+                    Self::hover_restart_path(&self.session, &mut self.substrate, id);
+                    self.hover_path_and_arrival(id, 0, rules, registry, effects)?;
+                    code = self.hover_process_movement(id, false, rules, registry, out, effects)?;
+                }
+                if code != 0 {
+                    if let Some(hover) = self.substrate.hover_mut(id) {
+                        hover.head = None;
+                    }
+                    self.substrate.hover_halt(id);
+                }
+                Ok(code)
+            }
+            2 => {
+                if let Some(hover) = self.substrate.hover_mut(id) {
+                    hover.head = None;
+                }
+                self.substrate.hover_halt(id);
+                let entity = self
+                    .substrate
+                    .entities
+                    .get_mut(id)
+                    .expect("same Hover Foot");
+                let runtime = entity.navigation.path_runtime_mut();
+                runtime.latch_blockage(frame, rules.general.blockage_path_delay_ticks);
+                if runtime.movement_timer().expired(frame as i32) {
+                    entity.navigation.path_replay_mut().clear_live_head();
+                }
+                let runtime = &entity.navigation.path_runtime_mut();
+                let urgency =
+                    if runtime.path_blocked() && runtime.blocked_timer().expired(frame as i32) {
+                        2
+                    } else {
+                        1
+                    };
+                self.hover_path_and_arrival(id, urgency, rules, registry, effects)?;
+                Ok(2)
+            }
+            3 => {
+                if let Some(hover) = self.substrate.hover_mut(id) {
+                    hover.head = None;
+                }
+                let _ = crate::sim::gate_runtime::request_gate_open_for_cell(
+                    self,
+                    (cell.0 as u16, cell.1 as u16),
+                    id,
+                    rules,
+                );
+                self.substrate.hover_halt(id);
+                Ok(3)
+            }
+            4 | 5 => {
+                if let Some(hover) = self.substrate.hover_mut(id) {
+                    hover.head = None;
+                }
+                if retry {
+                    self.substrate.hover_halt(id);
+                    Self::hover_restart_path(&self.session, &mut self.substrate, id);
+                    self.hover_path_and_arrival(id, 0, rules, registry, effects)?;
+                    return self.hover_process_movement(id, false, rules, registry, out, effects);
+                }
+                self.override_movement_blocker_at(id, cell, rules, registry, effects);
+                Ok(code)
+            }
+            6 => {
+                if retry {
+                    if let Some(hover) = self.substrate.hover_mut(id) {
+                        hover.head = None;
+                    }
+                    self.substrate.hover_halt(id);
+                    Self::hover_restart_path(&self.session, &mut self.substrate, id);
+                    self.hover_path_and_arrival(id, 0, rules, registry, effects)?;
+                    return self.hover_process_movement(id, false, rules, registry, out, effects);
+                }
+                //51581D..5158F4: close enough and in the stop band ends it.
+                let entity = self.substrate.entities.get(id).expect("same Hover Foot");
+                let destination = null_coord(runtime(entity).and_then(|hover| hover.destination));
+                let close = distance_3d_leptons(
+                    [location.x, location.y, location.z],
+                    [destination.x, destination.y, destination.z],
+                ) < rules.general.close_enough;
+                if close && self.track_stop_band(location, destination) {
+                    if let Some(entity) = self.substrate.entities.get_mut(id) {
+                        hover_stop_moving(entity);
+                    }
+                    self.assign_null_destination(
+                        id,
+                        rules,
+                        Some(rules.overlay_registry()),
+                        effects,
+                    );
+                    return Ok(7);
+                }
+                //515902..5159E1: scatter the head cell; the head drops.
+                self.scatter_blocked_track_cell(id, cell, rules, registry, effects)
+                    .map_err(|cause| self.hover_error(id, cause))?;
+                if let Some(hover) = self.substrate.hover_mut(id) {
+                    hover.head = None;
+                }
+                self.substrate.hover_halt(id);
+                Ok(6)
+            }
+            other => Err(self.hover_error(id, format!("Can_Enter_Cell code {other}"))),
+        }
+    }
+
+    /// The retry preamble: +640 = (Frame, 0) and the path head dropped.
+    fn hover_restart_path(session: &ScenarioSession, substrate: &mut ObjectSubstrate, id: u64) {
+        let frame = session.binary_frame();
+        if let Some(entity) = substrate.entities.get_mut(id) {
+            entity
+                .navigation
+                .path_runtime_mut()
+                .start_movement(frame, 0);
+            entity.navigation.path_replay_mut().clear_live_head();
+        }
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    fn hover_mut(&mut self, id: u64) -> Option<&mut HoverRuntime> {
+        self.entities.get_mut(id).and_then(runtime_mut)
+    }
+    /// `Set_Speed` (Foot vt+0x544, SetSpeedFraction 0x004D3710).
+    fn hover_set_speed(&mut self, id: u64, full: bool) {
+        if let Some(entity) = self.entities.get_mut(id) {
+            entity
+                .foot_speed
+                .set_speed_fraction(if full { SIM_ONE } else { SIM_ZERO });
+        }
+    }
+    /// The zeroed request/current pair and `Set_Speed(0)`.
+    fn hover_halt(&mut self, id: u64) {
+        if let Some(hover) = self.hover_mut(id) {
+            hover.zero_speeds();
+        }
+        self.hover_set_speed(id, false);
+    }
+}
+
+enum Arrival {
+    /// Process returns before its tail.
+    Return,
+    /// Skip the step, run the tail.
+    Tail,
+    /// Take the step, then the tail.
+    Step,
+}
+
+#[cfg(all(test, tests_sim_movement))]
+mod tests {
+    use super::*;
+
+    /// Hover::Path_And_Arrival stops at 51657C and sends NULL at 5166D7 through
+    /// Foot+480. Human Infantry in deploy Doing 27 refuses at 51AA7E.
+    #[test]
+    fn hover_arrival_obeys_the_infantry_destination_receiver() {
+        let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+            "[InfantryTypes]\n0=GUARD\n[GUARD]\nStrength=100\nSpeed=4\nSpeedType=Foot\nMovementZone=Infantry\nLocomotor={4A582742-9839-11D1-B709-00A024DDAFD1}\n",
+        );
+        let house = sim.intern("Americans");
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                house, 0, None, true, 0, 10,
+            ));
+        let id = sim
+            .spawn_object("GUARD", "Americans", 15, 15, 0, &rules)
+            .unwrap();
+        let destination = crate::sim::components::NavTargetRef::cell(15, 15);
+        let actor = sim.substrate.entities.get_mut(id).unwrap();
+        let at = ground_pose::position_world_coord(&actor.position);
+        actor.navigation.publish_nav_com(Some(destination));
+        actor.mission_leaf.set_infantry_doing_verified(27).unwrap();
+        runtime_mut(actor).unwrap().destination = Some(at);
+        sim.hover_path_and_arrival(id, 0, &rules, Some(&registry), &mut FrameEffects::default())
+            .unwrap();
+        let actor = sim.entities().get(id).unwrap();
+        assert_eq!(actor.navigation.nav_com(), Some(destination));
+        assert!(runtime(actor).unwrap().destination.is_none());
+    }
+
+    /// A Hover Foot that steps into a cell under a fixed high-bridge deck
+    /// stores that deck as its level (`0x005148DF..0x00514973` sets the
+    /// bridge byte from the new cell), not the dip's ground plus four.
+    #[test]
+    fn hover_cell_entry_over_a_dip_stores_the_decks_level() {
+        use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily};
+        use crate::map::resolved_terrain::{test_flat_cell, test_grid};
+
+        let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str("")).unwrap();
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0);
+        // The anchor at level 5 puts the deck at 9; its lane (10, 9) is a dip.
+        let mut terrain = test_grid(32, 32, |x, y| {
+            let mut cell = test_flat_cell(x, y);
+            cell.level = if (x, y) == (10, 9) { 0 } else { 5 };
+            cell
+        });
+        terrain.apply_runtime_bridge_mark_stamp(
+            BridgeFlagStamp::new((10, 8), 0, true),
+            BridgeStampFamily::Nesw,
+        );
+        sim.install_resolved_terrain_for_new_map(terrain);
+        let mut entity = GameEntity::test_default(1, "ROBO", "Americans", 10, 10);
+        entity.locomotor = Some(
+            crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+                crate::rules::locomotor_type::LocomotorKind::Hover,
+            ),
+        );
+        sim.substrate.entities.insert(entity);
+
+        // Facing 0 at a cell's speed steps north out of (10, 10), at the
+        // deck's height.
+        sim.hover_step(1, 9 * 104, 256, &rules, None, &mut FrameEffects::default());
+
+        let entity = sim.substrate.entities.get(1).unwrap();
+        assert_eq!((entity.position.rx(), entity.position.ry()), (10, 9));
+        assert!(entity.on_bridge());
+        assert_eq!(entity.position.z(), 9);
+    }
+
+    #[test]
+    fn production_hover_spin_exit_water_gate_matches_native() {
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/drop_as_bomb.json",
+        ))
+        .unwrap();
+        let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str("")).unwrap();
+        let mut count = 0;
+        for row in rows
+            .iter()
+            .filter(|row| row["input"]["kind"] == "hover_water")
+        {
+            let input = &row["input"];
+            let name = input["name"].as_str().unwrap();
+            let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0);
+            let cell = sim
+                .resolved_terrain
+                .as_mut()
+                .unwrap()
+                .cell_mut_for_test(10, 10)
+                .unwrap();
+            cell.land_type = input["land"].as_u64().unwrap_or(2) as u8;
+            let mut entity = GameEntity::test_default(1, "ROBO", "Americans", 10, 10);
+            entity
+                .position
+                .set_exact_z_leptons_for_test(Some(input["z"].as_i64().unwrap() as i32));
+            let mut loco = crate::sim::movement::locomotor::LocomotorState::for_test_kind(
+                crate::rules::locomotor_type::LocomotorKind::Hover,
+            );
+            loco.set_powered_for_test(input["powered"].as_u64().unwrap_or(0) != 0);
+            let hover = loco.hover_runtime_mut().unwrap();
+            hover.shove_turning = input["spinning"].as_u64().unwrap_or(0) != 0;
+            hover.shove_steps = input["steps"].as_i64().unwrap_or(2) as i32;
+            entity.locomotor = Some(loco);
+            sim.substrate.entities.insert(entity);
+            sim.hover_spin_tail(1, &rules, &mut FrameEffects::default());
+            let entity = sim.substrate.entities.get(1).unwrap();
+            assert_eq!(
+                entity.was_dropped_as_bomb(),
+                row["bomb"].as_bool().unwrap(),
+                "{name}"
+            );
+            assert_eq!(
+                entity.is_falling_down(),
+                row["falling"].as_bool().unwrap(),
+                "{name}"
+            );
+            count += 1;
+        }
+        assert_eq!(count, 8);
+    }
+}

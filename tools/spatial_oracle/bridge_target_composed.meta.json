@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original empty-FV passive AI block through scan, Evaluate, G27 and assignment.\n\nResearch for the next chain only. Native Unit lifecycle/map admission and House\nconstruction are supplied; full native AI/movement/bridge mutation are not claimed.\nNo scan, fire-error, candidate, score, assignment or RNG return is substituted.\n",
+  "assumptions": [
+    "Starts after the native mission/earlier AI phases at6FA65A with ESI source and EBP0 supplied; ends at6FA6F5 before bomb/remaining AI. No full Unit scheduler.",
+    "Physical empty FV/weapon prepare and actual UnitType ctor inherited from ifv_fire_coord. Added original retained FV LegalTarget/Armor/Strength/Immune/Insignificant, CanPassiveAquire/DistributedFire, GuardRange/AirRangeBonus/ThreatPosed and coefficient readers plus full HE readers; original General Process precedes each layer coefficient read. Original section admission controls the selected type blocks. Full Rules ctor+Process executes only selected physical General keys; unrelated type sections omitted.",
+    "Consumed-field audit additionally executes retained LandTargeting, VHPScan, IsTrain, OpenTopped, MobileFire, OpportunityFire, SprayAttack, Natural, Invisible, NoAutoFire, HunterSeeker, Organic, AttackFriendlies, Unit DeployToFire/IsSimpleDeployer, SmallVisceroid/LargeVisceroid and NonVehicle blocks. Physical FV leaves these keys absent: MobileFire/LegalTarget remain1 and the other recorded fields0. Fixed FV ART omits FiringSyncFrame0/1; original loop747AA2..747B03 retains constructor-1/-1.",
+    "EstimateDamage reaches Rules MaxDamage+16C8. Original constructor supplies1000; section admission526810 and retained block66CE2C..66CE57 consume physical CombatDamage MaxDamage10000. Later absent sections retain10000. The selected raw damage25 remains below both caps, so this input correction changes no retained pick/debit outcome. Adjacent stores preserve their native-produced current values; no VERA scalar initializes these fields.",
+    "Selected HoverMissile original full reader retains physical Range1536, MinimumRange256, Damage25, ROF50; AAHeatSeeker2 full reader retains AA/AG. FV AirRangeBonus71479A..7147B4 reads physical4 into1024. Actual GreatestThreat fallback resolves range0 and radius11. Earlier joined traces with omitted AirRangeBonus/radius7 are superseded.",
+    "Supplied zero-initialized on-map Guard Unit fields, actual vtables, original Drive construction with supplied owner link, actual Unit ammo/health initialization735592..7355C6 and respawn sentinel735416..73541C. No complete Unit ctor/Unlimbo or registry prefix.",
+    "Supplied sparse real cells, raw bridge flags, native map size20x20 and AirTracker extent64x64/empty buckets, two hostile human Houses/countries, combat multipliers1, original non-null HouseType ctor arm4F643B..6455 sets house+1FB=1. No map/House/Country loading or bridge collapse/repair drivers.",
+    "Each history starts actual Scenario Seed31. Passive scanner executes original ranged RNG, timer, traversal, real fire-error/evaluation/score/assignment/debit and outer passive byte. Read-only hooks observe; claimed runtime rejects allocator/TLS/archive substitution or native constructor/detach calls.",
+    "Between-step OnBridge/XYZ/list/flag and frame changes are supplied. Clear-target control invokes original AssignTarget. Existing target retention and timer-not-due path are actual scanner outcomes.",
+    "Pointer-valued ObjectGetCell returns and target-pointer writes are normalized to symbolic identities; allocator layout is not gameplay output. Height, score, RNG, native-ID cursor and timer numbers remain original numeric values.",
+    "Original Object CRT table8141D8..81420C executes before runtime, establishing level104 and bridge416 for actual GetHeight/IsHighFlying. Read-only return observers record height/highFlying and ObjectGetCell parent callers.",
+    "Original Techno scalar CRT table815040..815074 executes before runtime; separate B0EB34=104 and B0EB24=416 are consumed by InRange/GetFireError. Same-ground structural and ground-to-deck rearm cases reject at InRange6F81B8 before G27; deck-to-ground rearm reaches G27. Earlier zero-Techno-CRT exploratory results are invalid.",
+    "Three ring controls supply another hostile FV: same-cell ground list under rejected deck head, deliberately mixed same deck-list tail with ground OnBridge/pose, or legal later cell12,21. They test original selection/retry behavior; the mixed tail is not ordinary admission.",
+    "One direct full Evaluate control supplies a stale/missing-cell target with health0 specifically to observe the early GetFireError lookup side effect before later health rejection; not an ordinary valid ring-membership claim.",
+    "Native inactive timer member comes from reused stack scratch (initially cleared, subsequently overwritten by real calls); its recorded pointer-like value is fixture-specific. Ordinary OnBridge0/1 only. Native x87 PC53/chop0E7F."
+  ],
+  "substitutions": [
+    "Preparation inherits lexical INI cache, bump allocator/delete, CRT TLS and archive input boundaries. Runtime claimed block uses original callees only; world/lifecycle/house inputs are supplied."
+  ],
+  "entry_points": {
+    "passive_ai_block": "0x006FA65A",
+    "stop_after_passive_publication": "0x006FA6F5",
+    "passive_gate": "0x00709290",
+    "scanner": "0x00709820",
+    "greatest_threat": "0x006F8DF0",
+    "evaluate": "0x006F7CA0",
+    "unit_fire_error": "0x00740FD0",
+    "bridge_gate": "0x006F8682",
+    "threat_score": "0x0070CD10",
+    "assign_target": "0x006FCDB0",
+    "estimate_damage": "0x006FDB80"
+  },
+  "payload_sha256": "fe384a99b146cea3301a71fe2720a6f15f80288fc116d44ba04a8ac9904dd215"
+}

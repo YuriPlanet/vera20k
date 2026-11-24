@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Bounded original sinking sound readers and FootAI edge/selection controls.\n\nExtends, and does not modify, frozen naval_occupants evidence. Prepared INI\ncaches and selected SoundList are explicit boundaries; 7509E0 is an observed\nvoid playback boundary. No audible output or whole audio RNG claim is made.\n",
+  "assumptions": [
+    "Original UnitType constructor7470D0 and Rules constructor store665940 establish -1. Selected actual7510D0/750440/7514D0 registry resolves physical GenLargeWaterDie with its original SoundList key; index0 is fixture relative.",
+    "Actual AudioVisual/SinkingSound block669986..6699CE and type SinkingSound712FA1..712FF7/VoiceSinking713055..7130AB execute over physical RULESMD, active MPBattleMD and XShrapnel caches. Native full loader not claimed; The physical MPBattleMD fixture hash is asserted.",
+    "4DABC7..4DACDD executes a supplied FootAI interior frame ESIactor,EBX0,EDI-1; preceding FootAI, movement audio and UnitAI cadence remain separate. All three full RNG states bracket this bounded edge."
+  ],
+  "substitutions": [
+    "Inherited native setup allocator/CRT/Interlocked boundaries.",
+    "AudioIndex4015C0 maps physical sample name gnavsina to local index0; audio bag and sample decode excluded.",
+    "7509E0 is a declared observed void playback boundary; full playback, device output and its Main RNG draws excluded. Actual406060 release executes on an empty constructor handle."
+  ],
+  "entry_points": {
+    "edge": "0x004DABC7",
+    "sound": "0x007509E0",
+    "release": "0x00406060",
+    "rules_read": "0x00669986",
+    "type_sound_read": "0x00712FA1",
+    "type_voice_read": "0x00713055"
+  },
+  "payload_sha256": "e0137fba94e66063b258b5a3d2685ffd476043950d7194b19fdb76dee161e1ef"
+}

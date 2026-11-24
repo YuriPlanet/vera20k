@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Full original House4F9610, Unit73E40C numeric deposit interior, and bounded native field readers.",
+  "assumptions": [
+    "Deposit rows: fresh data-shaped House/HouseType, four Tiberium slots, Unit/UnitType, Rules and stack; raw amount/IncomeMult/PurifierBonus fields, signed32 slot Values, wallet and effective purifier count are supplied. No native object constructor, INI reader, harvesting, difficulty/virtual-count addition or mission admission runs.",
+    "Unit begins after effective-count selection with ESI Unit, EBX recipient House, EBP selected slot and count at ESP+30. Original GetAmount6C9680 and RemoveAmount6C96B0 execute; Weeder is false. End73E4DA or73E4DC is not executed. No Refinery smoke/radio, stage dispatch, map lookup or later mission suffix runs.",
+    "The full House4F9610 body and original7C5F00 execute for every credit call, including separate base/positive-bonus score and cash updates. Unit73E441 stores bonus to float32 before its comparison and optional second call.",
+    "Ambient x87 control0E7F supplies masked exceptions, 53-bit precision and chop. Raw quiet NaNs, infinities, subnormals and conversion overflow are component inputs, not claims that stock gameplay produces them. Unit cargo is whole amounts1..40 plus two empty controls; arbitrary fractional cargo histories remain open.",
+    "Numeric rows supply raw3EAA7EF9 without parsing; it is not the no-percent .333 reader result. Raw3EAA7EFA is separate. Reader rows establish .333=>3EAA7EFA and33.3%=>3EAA7EF9 for both fields.",
+    "Every original executable section is compared byte-for-byte to its PE mapping before and after each row. Original65C6D0 seeds complete1012-byte Main and Scenario RNG buffers before the measured interval; both remain byte-identical. Inherited Emu heap/CRT transports are guarded and never entered.",
+    "Reader rows independently reuse country_veterancy.fresh/BulletReader: original scanner initializer7C8F5E, Country constructor5113F0 and complete Country ReadINI511850 execute for IncomeMult. PurifierBonus executes exact Rules66FC56..unexecuted66FC7B, including ReadDouble5283D0 and float store66FC75; its initial .25 field is supplied, without Rules construction. Six cached string/default cases per field include a prior native1.2 read before retained absence.",
+    "Reader measured intervals begin after fixture/native Country constructor setup and check every executable section, all three complete inherited RNG buffers and the action-timer sentinel. Cached strings are supplied; physical INI/MIX loading is excluded. No decimal parse or selected reader result is substituted. The reader helper supplies its existing unrelated color registry."
+  ],
+  "substitutions": [
+    "Reader rows only: existing BulletReader bump allocation7C8E17, inert delete7C8B3D and CRT TLS accessor7D140B returning thread storage. Cached exact-case INI entries replace physical file/archive loading. Deposit rows do not enter their separate inherited heap/CRT transports."
+  ],
+  "entry_points": {
+    "house": "0x004F9610",
+    "unit_begin": "0x0073E40C",
+    "unit_positive_end_before": "0x0073E4DA",
+    "unit_empty_end_before": "0x0073E4DC",
+    "get_amount": "0x006C9680",
+    "remove_amount": "0x006C96B0",
+    "ftol": "0x007C5F00",
+    "country_constructor": "0x005113F0",
+    "country_reader": "0x00511850",
+    "purifier_reader_begin": "0x0066FC56",
+    "purifier_reader_end_before": "0x0066FC7B",
+    "read_double": "0x005283D0",
+    "scanner_init": "0x007C8F5E"
+  },
+  "row_counts": {
+    "primitive": 191,
+    "unit": 258,
+    "reader": 12
+  },
+  "observations": "Raw input words, per-slot signed live Values, each original credit-call amount and before/after wallet, final wallet/spent/capacity/House store, Unit narrowed bonus/cargo/stage and unexecuted stop boundary. Reader input strings/current defaults, original ReadDouble default/section/key and final float field bits. No executable bytes or executable identity hashes are published.",
+  "replay_command": "python -m tools.spatial_oracle.refinery_income",
+  "payload_sha256": "3cda55a887d0e0bd853ac3595f70ef880d3e003efa1c53ad7d815c680a024f76"
+}

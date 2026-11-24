@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "checked_at_utc": "2026-09-27T23:55:16.768216+00:00",
+  "checked_run": "checked-run.json",
+  "historical_fixtures_and_provenance_byte_identical": true,
+  "native_coverage": {
+    "fixture_files": 14,
+    "palette_tables": 21,
+    "scanline_executions": 832,
+    "base_scales": 2001,
+    "cell_finalizations": 6014,
+    "ground_level_authored_inputs": 16,
+    "default_roundtrips": 2,
+    "ground_level_extra_cell_finalizations": 7
+  },
+  "native_commands": [
+    "python -m tools.palette_oracle.oracle --write --output <new-directory>",
+    "python -m tools.palette_oracle.check --generated <new-directory>",
+    "python -O -m tools.palette_oracle.oracle --check"
+  ],
+  "native_commands_passed": true,
+  "python_tests": {
+    "command": "python -m tools.run_tests",
+    "total": 252,
+    "passed": 250,
+    "skipped": 2,
+    "skip_reason": "Unchanged documented optional sealed Windows/retail checks."
+  },
+  "rust_regression": [
+    {
+      "command": "python -m tools.cargo_run -- test -p vera20k --lib render::palette_light::",
+      "passed": 3,
+      "failed": 0
+    },
+    {
+      "command": "python -m tools.cargo_run -- test -p vera20k --lib map::lighting::tests::native_",
+      "passed": 3,
+      "failed": 0
+    },
+    {
+      "command": "python -m tools.cargo_run -- test -p vera20k --lib native_palette_tables_match_all_ordinary_shader_pixels -- --ignored --nocapture",
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "command": "python -m tools.cargo_run -- test -p vera20k --lib native_shp_loader_atlas_palette_indices_reach_production_pixels -- --ignored --nocapture",
+      "passed": 1,
+      "failed": 0
+    }
+  ],
+  "gpu_adapter": "Apple M4, Metal",
+  "production_evidence": "Actual Batch, TMP, SHP depth-read/depth-write and cached VXL vertex/fragment entrypoints plus production SHP decoder and atlas page-copy helper; test-owned texture/group setup. No complete BatchRenderer upload or retail-scene claim.",
+  "limits": "Fresh isolated execution does not refresh historical active-runtime observations, establish scene reachability, or certify non-clear A-buffer composition, map gathering or whole-scene parity.",
+  "runtime_lifecycle": "No gameplay Rust changed; RNG, timer and detach behavior is outside these isolated palette samples.",
+  "independent_review": {
+    "passes": 1,
+    "actionable_findings": 2,
+    "resolved": [
+      "Reject source or historical provenance changes during replay and attest the validated pre-execution identity.",
+      "Create missing export parents after successful execution/comparison while reserving the candidate directory exclusively."
+    ],
+    "regression_tests": "12 focused palette/lifecycle tests passed including optimized replay of both regression cases."
+  }
+}

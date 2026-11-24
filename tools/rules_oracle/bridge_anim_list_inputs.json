@@ -1,0 +1,4 @@
+[{"file":"RULESMD.INI","MetallicDebris":"DBRIS1LG,DBRIS2LG,DBRIS3LG,DBRIS4LG,DBRIS5LG,DBRIS6LG,DBRIS7LG,DBRIS8LG,DBRIS9LG,DBRS10LG,DBRIS1SM,DBRIS2SM,DBRIS3SM,DBRIS4SM,DBRIS5SM,DBRIS6SM,DBRIS7SM,DBRIS8SM,DBRIS9SM,DBRS10SM","BridgeExplosions":"TWLT026,TWLT036,TWLT050,TWLT070"},
+{"file":"LANGRULE.INI","absent":true},
+{"file":"MPBattleMD.ini","MetallicDebris":null,"BridgeExplosions":null},
+{"file":"Hills.mmx","MetallicDebris":null,"BridgeExplosions":null}]

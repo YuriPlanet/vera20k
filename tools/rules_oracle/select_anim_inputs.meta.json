@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Retained inputs consumed by original SelectAnim48A4F0.\n\nFull Rules/Warhead constructors and full Warhead reader execute. Rules reads\nare isolated original WeatherConBoltExplosion, WeaponNullifyAnim, LightningWarhead and SplashList\nblocks, in their relative Process order; physical loader/full Process omitted.\n",
+  "assumptions": [
+    "Same native objects retain fields across all passes. Full original constructors/Warhead reader execute; only named Rules blocks execute, not full Process.",
+    "Physical INI loading is replaced by lexical CRC caches with empty-value omission. Original ReadBool, ReadString128, strtok, factories and vector-copy blocks own all scalar and reference results.",
+    "Warhead+154 is EMEffect, not RandomAnims; Rules+17B4/+2F4 are LightningWarhead/WeatherConBoltExplosion, not IonCannonWarhead/IonBlast.",
+    "Inherited fresh helper constructs one unrelated Weapon before Rules. No SelectAnim call, runtime effect construction or destructive Type reset executes."
+  ],
+  "substitutions": [
+    "Inherited fresh helper supplies allocator/CRT/TLS/archive and lexical cache boundaries."
+  ],
+  "entry_points": {
+    "rules_ctor": "0x00665650",
+    "warhead_ctor": "0x0075CEC0",
+    "warhead_reader": "0x0075D3A0",
+    "weather_anim_reader": "0x0066DF19",
+    "lightning_warhead_reader": "0x00671053",
+    "nullify_anim_reader": "0x0066E2AF",
+    "splash_list_reader": "0x0066C184",
+    "select_anim_consumer": "0x0048A4F0"
+  },
+  "payload_sha256": "087adb5c482314cc85a290329a46968f907dd9989bbdc208d79decd0b1f41ee6"
+}

@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "House50D610 capture, real sale/Action14 ownership transfer, and direct live Action130: foreign resident blocked versus cleared by original virtual F8, before deferred deletion drains.",
+  "assumptions": [
+    "Uses the existing Engineer input reader and sale Fixture. Two separate cold House/Base instances are prepared before the first Building; original Base constructors and Mark reservation execute. This is not a full House constructor, retail scenario load or HighExpR timing proof.",
+    "The inherited declared 32x32 clear-map admission prior contains one retail GAPOWR at10,10. Original construction and GrandOpening execute; mission19/status2 is a supplied sale-completion boundary. The real live Action14 changes owner, before the outer sale Limbo tail.",
+    "Initial-record values come only from actual House50D610. Original member construction and HouseCtor tail initialize empty capacity. No record, resident, success return, executable code or vtable is replaced.",
+    "Original readers create the supplied synthetic Tag/Trigger/TEvent/TAction definitions. Action130 selector0 uses country index0, with live Trigger context. Its event13=999 is not polled; direct dispatch excludes event registration/timing and startup-mode selection claims.",
+    "The cleared control executes original virtual F8 through deferred expiry and original Limbo/Mark; deletion is not drained. Both controls execute real constructor/ForceCreate and retain refused objects until pending deletion. Only normalized lifecycle/records/cell/RNG outputs are compared; later AI/body completion and whole458A80 parity remain outside scope."
+  ],
+  "substitutions": [
+    "Allocator/free, TLS/interlocked, OS/audio/presentation and the declared House/map admission prior are inherited from the existing shared Engineer/sale fixture. No parallel VM owner or native gameplay return stub is introduced."
+  ],
+  "entry_points": {
+    "capture": "0x0050D610",
+    "restore_buildings": "0x0050D320",
+    "action_dispatch": "0x006DD8B0",
+    "action130": "0x006E3120",
+    "base_constructor": "0x0042E6F0",
+    "records_constructor": "0x00510690",
+    "house_records_tail": "0x004F562B",
+    "building_constructor": "0x0043B740",
+    "mark_reservation": "0x00455F10",
+    "sale_completion": "0x0044A1E8",
+    "change_owner": "0x00448260",
+    "resident": "0x0047C520",
+    "force_create": "0x00458A80",
+    "unlimbo": "0x00440580",
+    "uninit": "0x005F65F0",
+    "deferred_expiry": "0x007258D0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.house_initial_technos",
+  "payload_sha256": "7d7beff610c23bb722a139bf6ab1f4275596bdafd753fef90f1c682af10df8c2"
+}

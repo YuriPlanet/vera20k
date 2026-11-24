@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Ten installed Ares FactoryOwners qualification suffix controls at100221A0 (statuses3/2), twelve human skip-tech CanBuild10021B00 build-limit tail controls (answers0/1/-1), eight retained GlobalControls reads, two CountOwned conversion/installed-upgrade controls, and six human-predicate/TechLevel=-1 branch controls; not complete ordinary CanBuild or production history.",
+  "assumptions": [
+    "Earlier Requirements gates are declared passed; supplied target uses actual BuildingType vtable7E4570, TechLevel1 and SuperWeapon=-1. House TechLevel10, GameMode1 and enabled superweapons are declared inputs.",
+    "Retained allowed/forbidden Country pointer vectors, House permanent plans and current owned Building membership are synthetic priors. Country constructors, INI/list readers, parent binding and producer/loss transitions are not executed.",
+    "The actual native candidate traversal, same-candidate allowed/forbidden tests, permanent-plan path, live Factory RTTI/HasAllPlans checks and remaining admitted suffix execute. Actual target WhatAmI runs from the original vtable.",
+    "Two qualification controls retain a live Building with NULL OriginalCountry, separately with forbidden-only and nonempty allowed restrictions. NULL is an explicit supplied pointer prior, not a constructor/lifecycle result.",
+    "Human/TechLevel controls enter100220F8 after earlier gates have passed and execute actual10020AD0 with supplied GameMode and House bytes+1EC/+1ED. They stop before10022118 (branch admitted) or10022325 (branch rejected); admitted is not a full Requirements or CanBuild result.",
+    "CountOwned controls execute10020AF0 and the real Building Find with supplied signed counters/current host list/all three upgrade slots. Conversion lifecycle, upgrade installation, VehicleThief state and generated production histories are not executed.",
+    "Build-limit controls supply signed owned/produced counters and held-object membership as boundary priors, not gameplay histories; skip-tech=true and human=true bypass qualification, rich FindFactory and AI global controls.",
+    "Build-limit controls execute Counter49F9B0 construction, CountProduced10003220, CountOwned10020AF0, held-object100212F0/4F83C0/4CA160 and actual InfantryType/object leaves. Produced Counter base is House+55C8, backing+55CC. Incorrect prior misbound-counter results are excluded.",
+    "GlobalControls executes constructor1002A360 then eight retained phase2 reads1002B370 with actual tokenizer1002A180 and bool10076CC0; only ReadString528A10 lexical transport is supplied. Reverse successful prefix writes difficulty slots2/1/0; phase0 unrelated registry initializers and installed Process caller are not executed.",
+    "CountryFixture rejects monitored RNG65C6D0/65C780/65C7E0 and detach7258D0; selected Ares code bytes are checked unchanged. Complete ordinary CanBuild, prerequisites, FindFactory, allocation failure, saves, UI and production output parity are excluded."
+  ],
+  "substitutions": [
+    "Existing ares_country_veterancy.CountryFixture owns the Probe VM, image mapping, heap, return arena and code checks; no new VM, parser or queue is introduced.",
+    "Supplied heap object shells, preallocated std::vector backing, existing DynamicVector input helper and synthetic entry ABI after earlier admission. Existing Probe allocation/free services remain inherited boundaries.",
+    "Four-entry counter backing attaches after native construction; Factory owner/held fields and global Factory array are supplied. Count/type/get-held decisions execute without answer stubs.",
+    "GlobalControls ReadString supplies ASCII values with the actual requested default/capacity; the native parser, constructor and retained writes execute unchanged. Other GlobalControls keys are omitted."
+  ],
+  "entry_points": {
+    "qualification_suffix": "0x100221A0",
+    "permanent_candidates": "0x100221E8",
+    "live_candidates": "0x100222B0",
+    "live_factory_rtti": "0x100222F9",
+    "live_has_all_plans": "0x1002230B",
+    "refused_tail": "0x10022325",
+    "can_build": "0x10021B00",
+    "build_limit_tail": "0x10021BEB",
+    "count_produced": "0x10003220",
+    "count_owned": "0x10020AF0",
+    "held_type_count": "0x100212F0",
+    "factory_scan": "0x004F83C0",
+    "get_held_object": "0x004CA160",
+    "counter_constructor": "0x0049F9B0",
+    "rules_ext_constructor": "0x1002A360",
+    "global_read": "0x1002B370",
+    "global_bool_prefix": "0x1002A180",
+    "ares_bool": "0x10076CC0",
+    "human_tech_gate": "0x100220F8",
+    "human_predicate": "0x10020AD0",
+    "human_tech_admitted": "0x10022118"
+  },
+  "replay_command": "python -m tools.rules_oracle.ares_factory_owners",
+  "payload_sha256": "b1504260dc876c4f783889dbca4606e5058ba62c00331d48e5bccdc39c383188"
+}

@@ -1,0 +1,443 @@
+//! Building443860 rally search and Grand_Opening's naval default producer.
+//! Input isolates the fallback Cell; the opening uses the live simulation Cell.
+//! Both publish prepared targets through the existing event1E command owner.
+
+use super::{ControlProjection, Simulation};
+use crate::map::resolved_terrain::NativeCellQuery;
+use crate::rules::locomotor_type::{MovementZone, SpeedType};
+use crate::rules::object_type::FactoryType;
+use crate::rules::ruleset::RuleSet;
+use crate::sim::cell_rect::PlayfieldBounds;
+use crate::sim::components::DriveCoord;
+use crate::sim::find_nearby_cell::{
+    NearbyArgs, NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell,
+    map_owned_radius_cap,
+};
+use crate::sim::occupancy::RawCellOccupationGrid;
+use crate::sim::pathfinding::zone_map::ZoneGrid;
+
+impl Simulation {
+    /// BuildingClass::SetRallyPoint443860 prepares each factory's cell before
+    /// enqueueing event1E. Foot/Normal are literal defaults even for a tank
+    /// factory. AircraftType changes them to Winged/Fly; Naval overrides both.
+    /// Source zone uses physical Location, and the clicked cell's bridge flag.
+    /// Native FNPC selection reads binary frame; it makes no RNG draw.
+    /// Answers the Cell event 0x1E archives, or `None` when the click
+    /// archives nothing.
+    pub fn factory_rally_cell_input(
+        &self,
+        id: u64,
+        clicked: (u16, u16),
+        rules: &RuleSet,
+    ) -> Result<Option<(u16, u16)>, String> {
+        self.factory_rally_cell_input_with(&self.control_projection(), id, clicked, rules)
+    }
+
+    pub fn factory_rally_cell_input_with(
+        &self,
+        control: &ControlProjection<'_>,
+        id: u64,
+        clicked: (u16, u16),
+        rules: &RuleSet,
+    ) -> Result<Option<(u16, u16)>, String> {
+        self.factory_rally_cell(id, clicked, rules, Some(control))
+    }
+
+    /// The sole SetRallyPoint443860 search, shared by input and live Logic.
+    fn factory_rally_cell(
+        &self,
+        id: u64,
+        clicked: (u16, u16),
+        rules: &RuleSet,
+        control: Option<&ControlProjection<'_>>,
+    ) -> Result<Option<(u16, u16)>, String> {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return Ok(None);
+        };
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+            return Ok(None);
+        };
+        let terrain = self
+            .resolved_terrain
+            .as_ref()
+            .ok_or("rally search lacks terrain")?;
+        let zones = self
+            .zone_grid
+            .as_ref()
+            .ok_or("rally input lacks native zones")?;
+        let bounds = self
+            .playfield_bounds
+            .ok_or("rally input lacks playfield bounds")?;
+        let size = self
+            .map_size_diamond()
+            .ok_or("rally input lacks native map dimensions")?;
+        let cells = if control.is_none() {
+            NativeCellQuery::canonical(terrain)
+        } else {
+            NativeCellQuery::isolated(terrain)
+        };
+        let found = resolve_rally_cell_click(
+            &cells,
+            zones,
+            &self.substrate.raw_cell_occupation,
+            self.overlay_grid.as_ref(),
+            bounds,
+            size,
+            self.session.binary_frame(),
+            &RallyCellClick {
+                clicked: (clicked.0 as i16, clicked.1 as i16),
+                location: crate::sim::movement::ground_pose::position_world_coord(&entity.position),
+                factory: object.factory_type(),
+                naval: object.naval,
+            },
+        )?;
+        if found.is_some() {
+            return Ok(found);
+        }
+        // FNPC searches only rings 0..31 around the click (`0x0056DCE1`),
+        // so a click with no reachable ground nearby misses. A miss
+        // (`0x0044395E..0x00443977`) sends no event, and an older
+        // ArchiveTarget stays, except for a Construction Yard that passes
+        // the redeploy gates again (`0x00443A7B..0x00443AB8`: ConstructionYard
+        // `Type+0x16B9`, owner IsControlledByHuman, GameMode, the MCV-redeploy
+        // option, not mind-controlled): it archives the Cell under its own
+        // GetCoords (vt+0x48 -> Map565730, `0x00443ABE..0x00443B4B`, event
+        // 0x1E), so the MCV it packs into stays. A yard never announces
+        // (`0x00443A4B` refuses ConstructionYard); any other factory's miss
+        // still reaches the announcement (`0x00443A89` -> `0x00443A2B`),
+        // which the click owner plays. It also queues the following SELL.
+        let redeploy_yard = object.construction_yard
+            && self.can_redeploy_construction_yard_from_input(entity, control);
+        Ok(if redeploy_yard {
+            self.object_coords_cell(id)
+        } else {
+            None
+        })
+    }
+
+    /// Grand_Opening445F80's naval branch44699A..446A5B. An empty archive on
+    /// any WeaponsFactory+Naval building admits a 5x5 Float/Water search from
+    /// physical GetMapCoords41BEA0. Add2 to BOTH signed Cell words before the
+    /// null-cell test, including when FNPC returns the null cell itself.
+    /// Original-byte caller controls confirm the wrapping and miss arms.
+    /// SetRallyPoint443860 then searches again with its own naval arguments
+    /// and enqueues ARCHIVE1E with announce=false; it never stores immediately.
+    /// No RNG, timer writes or detach calls. Queue/replay policy stays with
+    /// issue_local_command; this branch never overwrites an existing archive.
+    ///
+    /// Residual: preplaced map buildings can open before runtime population
+    /// publishes native zones. Their missing Map567110 initialization remains
+    /// a separate loader dependency; do not substitute guessed zone IDs here.
+    pub(crate) fn initialize_naval_rally_point(&mut self, id: u64, rules: &RuleSet) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+            return;
+        };
+        if !object.weapons_factory || !object.naval || entity.archive_target().is_some() {
+            return;
+        }
+        let owner = entity.owner();
+        let location = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+        let origin = (
+            i32::from((location.x / 256) as i16),
+            i32::from((location.y / 256) as i16),
+        );
+        let found = self
+            .nearby_passable_cell(
+                origin,
+                NearbyArgs::plain(
+                    PassabilityArgs {
+                        speed_type: SpeedType::Float,
+                        required_zone_id: None,
+                        movement_zone: MovementZone::Water,
+                        bridge_aware_zone: false,
+                    },
+                    NearbyFootprint::new(5, 5),
+                ),
+            )
+            .unwrap_or((0, 0));
+        let clicked = (found.0.wrapping_add(2), found.1.wrapping_add(2));
+        if clicked == (0, 0) {
+            return;
+        }
+        let prepared = self.factory_rally_cell(id, clicked, rules, None);
+        match prepared {
+            Ok(Some((rx, ry))) => {
+                let _ = self.issue_local_command(crate::sim::command::CommandEnvelope::new(
+                    owner,
+                    self.session.tick().saturating_add(1),
+                    crate::sim::command::Command::SetRally {
+                        rx,
+                        ry,
+                        producer_ids: vec![id],
+                    },
+                ));
+            }
+            Ok(None) => {}
+            Err(cause) => log::warn!("Shipyard {id} default rally: {cause}"),
+        }
+    }
+}
+
+struct RallyCellClick {
+    clicked: (i16, i16),
+    location: DriveCoord,
+    factory: Option<FactoryType>,
+    naval: bool,
+}
+
+/// Original4438B8..44395C literal caller arguments, using the existing
+/// Map56D230 zone and Map56DC20 FNPC owners rather than a second path search.
+fn resolve_rally_cell_click(
+    cells: &NativeCellQuery<'_>,
+    zones: &ZoneGrid,
+    raw: &RawCellOccupationGrid,
+    overlays: Option<&crate::sim::overlay_grid::OverlayGrid>,
+    bounds: PlayfieldBounds,
+    size: (i32, i32),
+    frame: u32,
+    click: &RallyCellClick,
+) -> Result<Option<(u16, u16)>, String> {
+    let (speed_type, movement_zone) = if click.naval {
+        (SpeedType::Amphibious, MovementZone::AmphibiousCrusher)
+    } else if click.factory == Some(FactoryType::AircraftType) {
+        (SpeedType::Winged, MovementZone::Fly)
+    } else {
+        (SpeedType::Foot, MovementZone::Normal)
+    };
+    let terrain = cells.terrain();
+    let bridge = cells.flags(cells.lookup(click.clicked)) & 0x100 != 0;
+    let source = (
+        (click.location.x / 256) as i16 as u16,
+        (click.location.y / 256) as i16 as u16,
+    );
+    let required_zone_id = zones
+        .get_zone_id_native_in_query(terrain, source, movement_zone, bridge, Some(cells))
+        .ok_or("rally FNPC source lacks native zone topology")?;
+    Ok(find_nearby_passable_cell(
+        (i32::from(click.clicked.0), i32::from(click.clicked.1)),
+        &NearbyQuery {
+            native_cells: Some(cells),
+            raw_occupation: Some(raw),
+            passability: PassabilityArgs {
+                speed_type,
+                required_zone_id: Some(required_zone_id),
+                movement_zone,
+                bridge_aware_zone: bridge,
+            },
+            footprint: NearbyFootprint::SINGLE,
+            allow_bridge_cells: true,
+            check_height: false,
+            require_burrowable: false,
+            burrowing_contents: None,
+            check_occupancy: false,
+            radius_cap: map_owned_radius_cap(size.0, size.1),
+            target_cell: None,
+            path_grid: None,
+            resolved_terrain: Some(terrain),
+            overlay_grid: overlays,
+            occupancy: None,
+            entities: None,
+            zone_grid: Some(zones),
+            playfield_bounds: Some(bounds),
+        },
+        frame,
+    )
+    .filter(|cell| *cell != (0, 0)))
+}
+
+#[cfg(all(test, tests_sim_world_p_s))]
+#[path = "naval_opening_tests.rs"]
+mod naval_opening_tests;
+
+#[cfg(all(test, tests_sim_world_p_s))]
+mod tests {
+    use super::super::native_cell_input_test_fixture::{bounds, coord, native_fixture, pair};
+    use super::*;
+    use crate::map::cell_index::NativeCellIdentity;
+    use serde_json::{Value, json};
+
+    #[test]
+    fn prepared_rally_cell_reaches_archive_and_stop_without_input_mutation() {
+        use crate::map::entities::EntityCategory;
+        use crate::rules::ini_parser::IniFile;
+        use crate::sim::combat::Health;
+        use crate::sim::combat::TargetKind;
+        use crate::sim::command::Command;
+        use crate::sim::game_entity::GameEntity;
+        use crate::util::fixed_math::SimFixed;
+        let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/procedural_drawing_oracle/rally_input.json",
+        ))
+        .unwrap();
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[BuildingTypes]\n0=FACTORY\n[FACTORY]\nFactory=UnitType\nStrength=1000\n",
+        ))
+        .unwrap();
+        for name in ["clicked_raw_0000001f", "no_passable_speed"] {
+            let row = corpus["cases"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["input"]["name"] == name)
+                .unwrap();
+            let (terrain, zones, raw) = native_fixture(&row["input"]);
+            let mut sim = Simulation::new();
+            let owner = sim.interner.intern("Local");
+            let type_ref = sim.interner.intern("FACTORY");
+            let mut actor = GameEntity::new_at_frame_zero_for_test(
+                1,
+                5,
+                5,
+                0,
+                0,
+                owner,
+                Health::new(1000),
+                type_ref,
+                EntityCategory::Structure,
+                0,
+                5,
+                false,
+            );
+            actor.lifecycle.set_in_limbo_for_test(false);
+            actor.position.set_sub_x_for_test(SimFixed::from_num(64));
+            actor.position.set_sub_y_for_test(SimFixed::from_num(64));
+            actor.set_archive_target(Some(TargetKind::Cell(6, 5)));
+            sim.substrate.entities.insert(actor);
+            sim.resolved_terrain = Some(terrain);
+            sim.zone_grid = Some(zones.into());
+            sim.substrate.raw_cell_occupation = raw;
+            sim.playfield_bounds = Some(bounds());
+            sim.playfield_size_height = Some(8);
+            sim.session.set_binary_frame_for_test(100);
+            let rng = sim.scenario_rng.state();
+            let prepared = sim.factory_rally_cell_input(1, (11, 5), &rules).unwrap();
+            let expected = pair(&row["nearby"][0]["result"]);
+            assert_eq!(prepared, (expected != (0, 0)).then_some(expected), "{name}");
+            assert_eq!(
+                sim.substrate.entities.get(1).unwrap().archive_target(),
+                Some(TargetKind::Cell(6, 5))
+            );
+            assert_eq!(
+                sim.resolved_terrain
+                    .as_ref()
+                    .unwrap()
+                    .dummy_cell_requested_coord(),
+                (99, 98)
+            );
+            assert_eq!(sim.scenario_rng.state(), rng);
+            if let Some((rx, ry)) = prepared {
+                let command = Command::SetRally {
+                    rx,
+                    ry,
+                    producer_ids: vec![1],
+                };
+                let command: Command =
+                    serde_json::from_slice(&serde_json::to_vec(&command).unwrap()).unwrap();
+                assert!(sim.apply_command("Local", &command, Some(&rules)));
+                assert_eq!(
+                    sim.substrate.entities.get(1).unwrap().archive_target(),
+                    Some(TargetKind::Cell(expected.0, expected.1))
+                );
+                assert!(sim.apply_command("Local", &Command::Stop { entity_id: 1 }, Some(&rules)));
+                assert_eq!(
+                    sim.substrate.entities.get(1).unwrap().archive_target(),
+                    None
+                );
+            }
+        }
+    }
+
+    /// Whole original443860 corpus supplies expected FNPC results. Queue-full
+    /// controls still search: transport admission belongs after this resolver.
+    #[test]
+    fn rally_cell_input_matches_25_defined_original_building_clicks() {
+        let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/procedural_drawing_oracle/rally_input.json",
+        ))
+        .unwrap();
+        let rows = corpus["cases"].as_array().unwrap();
+        assert_eq!(rows.len(), 27);
+        let mut compared = 0;
+        for row in rows {
+            let input = &row["input"];
+            // Original56E6AF/CDQ+IDIV can index BEFORE its candidate array for
+            // negative Frame. The zeroed native fixture's return is then stack
+            // history, not a defined golden. Keep both controls in the evidence
+            // without claiming the portable unsigned extension matches them.
+            if input["frame"].as_u64().unwrap_or(100) > i32::MAX as u64 {
+                continue;
+            }
+            compared += 1;
+            let (terrain, zones, raw) = native_fixture(input);
+            let cells = NativeCellQuery::isolated(&terrain);
+            let clicked = pair(input.get("clicked").unwrap_or(&json!([11, 5])));
+            let result = resolve_rally_cell_click(
+                &cells,
+                &zones,
+                &raw,
+                None,
+                bounds(),
+                (8, 8),
+                input["frame"].as_u64().unwrap_or(100) as u32,
+                &RallyCellClick {
+                    clicked: (clicked.0 as i16, clicked.1 as i16),
+                    location: coord(input.get("source").unwrap_or(&json!([1344, 1344, 0]))),
+                    factory: Some(match input["factory"].as_u64().unwrap_or(40) {
+                        40 => FactoryType::UnitType,
+                        16 => FactoryType::InfantryType,
+                        3 => FactoryType::AircraftType,
+                        other => panic!("unmapped native Factory {other}"),
+                    }),
+                    naval: input["naval"].as_bool().unwrap_or(false),
+                },
+            )
+            .unwrap();
+            let expected = pair(&row["nearby"][0]["result"]);
+            assert_eq!(result, (expected != (0, 0)).then_some(expected), "{input}");
+            let dummy = pair(&row["nearby"][0]["dummy_at_return"]);
+            assert_eq!(
+                cells.coord(NativeCellIdentity::Dummy),
+                (dummy.0 as i16, dummy.1 as i16),
+                "{input}"
+            );
+            assert_eq!(terrain.dummy_cell_requested_coord(), (99, 98), "{input}");
+        }
+        assert_eq!(compared, 25);
+    }
+
+    /// A wall on the clicked cell refuses the rally search's Foot through
+    /// `0x004834A0`'s wall test, so FNPC answers a neighbour. The input view
+    /// reads the live overlay grid; without it every wall cell would pass.
+    #[test]
+    fn a_rally_click_on_a_wall_answers_a_neighbour() {
+        let (mut terrain, zones, raw) = native_fixture(&json!({}));
+        let click = RallyCellClick {
+            clicked: (11, 5),
+            location: coord(&json!([1344, 1344, 0])),
+            factory: Some(FactoryType::UnitType),
+            naval: false,
+        };
+        let resolve =
+            |terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
+             overlays: Option<&crate::sim::overlay_grid::OverlayGrid>| {
+                resolve_rally_cell_click(
+                    &NativeCellQuery::isolated(terrain),
+                    &zones,
+                    &raw,
+                    overlays,
+                    bounds(),
+                    (8, 8),
+                    100,
+                    &click,
+                )
+                .unwrap()
+            };
+        assert_eq!(resolve(&terrain, None), Some((11, 5)));
+        let walls = crate::sim::overlay_grid::test_wall_overlays(&mut terrain, &[(11, 5)]);
+        let answer = resolve(&terrain, Some(&walls)).expect("a neighbour passes");
+        assert_ne!(answer, (11, 5));
+    }
+}

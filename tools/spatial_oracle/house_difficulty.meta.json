@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Whole SetDifficulty body: all nine stored House doubles, literal difficulty index and wrapped team timer over the existing72 controls. Reader fixture separately executes full ReadDifficulty over retained rows and8 layers.",
+  "assumptions": [
+    "x87 control word0x0E7F (PC53, chop), the shared harness default.",
+    "Rules difficulty rows, GameSpeedBias, TeamDelays11/22/33, Country scalar priors, frame100, GameMode0/5 and House index are explicit inputs. Some odd direct double inputs intentionally do not represent INI-read values.",
+    "Reader rows supply lexical/source cache storage using existing BulletReader owner. Original ReadDouble/ReadBool and full66D270 execute; physical file admission, complete Rules Process and gameplay consumers are excluded. Malformed floating scans leave native stack storage undefined and are excluded; defined numeric-prefix scans are retained.",
+    "Arithmetic storage is established here; no downstream speed/armor/cost effect is implied merely by these stored scalars."
+  ],
+  "substitutions": [
+    "Reader-only existing bounded allocation/CRT transport and lexical INI cache storage; no numeric operation or gameplay callable is replaced."
+  ],
+  "entry_points": {
+    "set_difficulty": "0x004F6EC0",
+    "read_difficulty": "0x0066D270"
+  },
+  "reproduce_command": "RA2_DIR='<retail-directory-containing-original-gamemd.exe>' python -m tools.spatial_oracle.house_difficulty --check",
+  "payload_sha256": "82f3a74ef7938ff3c2dcccf1adafb7bb0bdf86138c7c5525d5daa92ea0236e7a",
+  "replay_command": "python -m tools.spatial_oracle.house_difficulty"
+}

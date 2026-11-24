@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Building Gate MissionOpen44E440/admission452540 true RETs and a declared Building per-turn mission/Door-completion cadence using this existing fixture owner",
+  "assumptions": [
+    "Existing building_construction/slave_manager supplied 2x2 Building at12,12, original Building and BuildingType vtables. Complete class constructors, physical retail INI readers and Gate map placement are excluded. Gate/type booleans, current/queued mission, handler cursor and hold clock are explicit retained boundary inputs.",
+    "Original foundation initializer45B1C0 executes; BuildingTypeDFC is supplied to its 2x2 list as the original461541 publisher does. Actual Object5F5B90 lazy terminal initialization, BuildingType45EC20, Foundation/GetCell/Map lookups and Ground list walk execute; no obstruction answer is supplied.",
+    "DeployTime=.044, GateCloseDelay=.2 and Open Rate=.016 are supplied ReadDouble-shaped float-widened controls, not a claim of complete retail Gate rules closure. Original Door constructor/producers, ftol7C5F00, reversal4A5290 and stable completion execute; stable phase bytes and previous hold clock are supplied retained states.",
+    "Full1012-byte Main/Scenario/MapGen originally seeded per row through65C6D0. Scenario rejection draws execute without supplied values; before/after state and calls retained. FPCW0E7F is fixture ambient state, not an established WinMain producer.",
+    "Single controls reach original RETs44E794/4525E0 or early true RETs. Cadence starts with actual normal BuildingIdle44D6A0(0,1), then composes original UpdateAnimation4509D0, pre-Ready43FE27..43FE54, Door completion6FA5BE..6FA5D6, counter and full MissionAI 6FA646..6FA65A, post-Ready43FF91..43FFB4 and queued-body43FFB4..440042 in order. All other Building/Techno AI steps, object-to-object Logic scheduling, damage, freeze, drawing and entire active-game reachability are excluded.",
+    "Ground and Bridge blockers are supplied pointers only on the stated cell list. Dead Ground pointer control establishes no Health test; it does not execute object death/Mark."
+  ],
+  "substitutions": [
+    "Reuse existing fixture boundaries: sound7509E0, repaint6D2790 and ClearBib449540 are observers; unrelated existing FireError/FireAt/target/facing predicates remain outside the measured Gate call path. The added Gate-only GetBoundsRect455C20 observer returns an empty supplied rectangle copied solely to repaint; native Tactical camera/SHP closure and Gate drawing parity are excluded. CRT atexit7C978A registration is a no-op; original lazy terminal writes execute. No Gate, Door, foundation query, mission verb, dispatch timer or RNG return/state is replaced. Original .text checked byte-for-byte."
+  ],
+  "entry_points": {
+    "mission_open": "0x0044E440",
+    "admission": "0x00452540",
+    "door_ctor": "0x004A50F0",
+    "door_open": "0x004A51F0",
+    "door_close": "0x004A5240",
+    "door_completion_start": "0x006FA5BE",
+    "door_completion_endpoint": "0x006FA5D6",
+    "mission_ai": "0x005B3060",
+    "mission_counter_start": "0x006FA646",
+    "mission_counter_endpoint": "0x006FA65A",
+    "update_animation": "0x004509D0",
+    "building_idle": "0x0044D6A0",
+    "scenario_random": "0x0065C7E0"
+  },
+  "payload_sha256": "b6d2188c002c3f0f1872442dd3bd49c4378d6dc0f186797e34903d037676fbb2",
+  "replay_command": "python -m tools.spatial_oracle.building_guard_attack --gate"
+}

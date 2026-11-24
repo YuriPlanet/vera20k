@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Two synthetic Ares Custom foundations and one required outline/cursor continuation: constructor, exact cached INI readers, point sort/unique, outline, getter/list and hidden-map add/remove bodies; not whole-game rendering parity.",
+  "assumptions": [
+    "Ares binary SHA256 93ce890f387a6c1b3240a2dd7b674f25fec5a0e96f0b0d0306796b2edf7b5b83; retail executable identity retained in the local execution receipt, not published. Both supported retail variants have equal inspected Foundation/ReadInt/Map instructions.",
+    "EmpProbe/Probe is the only VM/PE/CRT owner. Existing Reader.make_ini supplies lexical CCINI lookup caches, with CRC4A1DE0 executed in the same VM. Original ReadString528A10 and ReadInt5276D0 execute; no scanner or parser result is supplied.",
+    "Actual extension constructor1000CAE0 and reader interior1000DE0F..1000E11A execute on synthetic BuildingType fields. Whole BuildingType constructor, phase wrapper and physical INI loader are not executed. Image is CUSTOM_ART; native cell/outline pointer installation executes.",
+    "CRT snprintf key formatting is a transport for the actual caller index, not numeric INI parsing. CRT atexit registration is a returning-zero process shutdown service; native lazy GetFoundation sentinel initialization executes.",
+    "Getter hook frames are supplied and hook return continuations observed; original executable jumps are not patched. Virtual+108 is explicitly directed to original Type GetFoundation45EC20. Whole BuildingClass Mark/Unmark and pathfinding are excluded from native execution; Rust integration tests cover their shared owners.",
+    "Map origin20,20, hidden diagonal depth2 and allocated cell shells12..27 are explicit world inputs. Original helper10011B00 and Add/Remove counter writes execute, including deduplication. The fixture is interior; signed/map-edge and huge allocation behavior are not certified.",
+    "Two Map histories record terminated outline views. One additional reader-only history captures complete backing storage, a meaningful index10 behind an earlier missing-slot sentinel, and original cursor4A94F0/4A8C9E..4A8D11 through argument publication. Stops before Mark4A95A0; no previous Map history replays for that added evidence.",
+    "Three complete native RNG states, seeded31 in EmpProbe setup, are retained before/after. All streams and code bytes stay unchanged. No timer or detach call is expected on this selected geometry path.",
+    "Two development prefixes faulted before completed histories: missing CRT atexit service and a packed Cell value supplied where the hook requires Cell*. Both boundaries were corrected; each final history completed once. No older corpus was replayed."
+  ],
+  "substitutions": [
+    "Lexical INI cache layout, CRT locale/format/shutdown, allocation/free services, hook frames, Type virtual foundation dispatch, allocated Cell shells; no geometry/sort/counter/INI conversion outcome is injected."
+  ],
+  "entry_points": {
+    "constructor": "0x1000CAE0",
+    "reader": "0x1000DE0F",
+    "reader_end_exclusive": "0x1000E11A",
+    "width": "0x10015310",
+    "height": "0x100152D0",
+    "max_pips": "0x10010150",
+    "outline": "0x10010120",
+    "bounds": "0x10011980",
+    "map_add_list": "0x10015490",
+    "map_add_hidden": "0x10015420",
+    "map_remove_hidden": "0x100154B0",
+    "hidden_diagonal_list": "0x10011B00"
+  },
+  "payload_sha256": "41d09987f0af22a6174fc369169a88e86357b41d51f9390661a9cd1e5b3bd6ae"
+}

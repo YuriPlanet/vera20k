@@ -1,0 +1,572 @@
+//! Full original AreaDamage489280 receipt controls. Native substitutes the
+//! Unit ReceiveDamage return ABI; Rust executes its real receiver. The
+//! comparison is receipt/collection/isolation, never native health or kills.
+
+use super::*;
+use crate::rules::ini_parser::IniFile;
+use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+use crate::sim::superweapon::invulnerability::{InvulnKind, InvulnerabilityState};
+use serde_json::Value;
+
+/// The native companion enters DetonateAtCoord directly. The existing
+/// DeathWeapon reason selects that same bare-entry boundary in Rust (without
+/// ResolveImpactCoordAndDetonate's later Cluster draws). No death-weapon factory
+/// or receiver health mutation parity is claimed by these six comparisons.
+#[test]
+fn original_area_receipt_selects_nullify_after_em_effect_rng_and_before_return() {
+    use crate::sim::native_identity::NativeUniqueIdCursor;
+    use crate::sim::projectile::{
+        ProjectileCollisionPolicy, ProjectileDetonationReason, ProjectileSpawn,
+        ProjectileTrajectory, ProjectileVelocity, ProjectileVisualState, TargetExpiryPolicy,
+    };
+    let Some((base, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/ifv_isolated_tail.json",
+    ))
+    .unwrap();
+    assert_eq!(native["rows"].as_array().unwrap().len(), 6);
+    for row in native["rows"].as_array().unwrap() {
+        let input = &row["input"];
+        let name = input["name"].as_str().unwrap();
+        let mut layers = RulesLayerStack::new(base.clone());
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str(&format!(
+                "[HE]\nEMEffect={}\n",
+                if input["em_effect"] == true {
+                    "yes"
+                } else {
+                    "no"
+                }
+            )),
+        );
+        let processed = layers.process_with_fixed_art(&art).unwrap();
+        let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+        rules.install_art_data(crate::rules::retail_ini_fixture::art_registry(&art));
+        for item in native["initial"]["impact_anim_art"].as_array().unwrap() {
+            rules.bind_anim_frame_count_for_test(
+                item["name"].as_str().unwrap(),
+                item["frame_count"].as_i64().unwrap() as i32,
+            );
+        }
+        rules.bind_anim_frame_count_for_test(
+            "IRONFX",
+            native["nullify_art"]["raw_shp_frame_count"]
+                .as_i64()
+                .unwrap() as i32,
+        );
+        assert_eq!(rules.general.weapon_nullify_anim, "IRONFX");
+        let mut world = Simulation::with_seed(31);
+        world
+            .session
+            .set_binary_frame_for_test(input["binary_frame"].as_u64().unwrap() as u32);
+        crate::sim::arena_fixture::flat_arena(&mut world, &rules);
+        for cell in world
+            .resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cells_mut_for_test()
+        {
+            cell.level = 6;
+        }
+        let receiver = if input["receiver_mode"] != "empty" {
+            let id = world
+                .spawn_object("FV", "Americans", 10, 20, 0, &rules)
+                .unwrap();
+            let target = world.substrate.entities.get_mut(id).unwrap();
+            target.position.set_sub_x_for_test(SimFixed::from_num(128));
+            target.position.set_sub_y_for_test(SimFixed::from_num(128));
+            target.position.set_exact_z_leptons_for_test(Some(624));
+            target
+                .health
+                .set_for_test(input["receiver_health"].as_i64().unwrap() as i32);
+            target.invulnerability = Some(InvulnerabilityState::new(
+                crate::sim::timer::CdTimer::started(
+                    input["ic_start"].as_u64().unwrap() as i32,
+                    input["ic_duration"].as_u64().unwrap() as i32,
+                ),
+                InvulnKind::IronCurtain,
+            ));
+            Some(id)
+        } else {
+            None
+        };
+        world.intern_rule_type_ids(&rules);
+        world.resolve_type_handles(&rules);
+        world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+            row["native_cursor_before"].as_u64().unwrap() as u32,
+        ));
+        world.scenario_rng = SimRng::new(input["scenario_rng_seed"].as_u64().unwrap());
+        let coordinate = ProjectileCoord::new(2688, 5248, 624);
+        assert_eq!(
+            serde_json::json!([coordinate.x, coordinate.y, coordinate.z]),
+            input["live"]
+        );
+        assert_eq!(input["live"], input["placement"]);
+        let payload = super::combat_tests::payload_from_weapon(
+            rules.weapon("HoverMissile").unwrap().damage,
+            world.interner.intern("HE"),
+            world.interner.intern("HoverMissile"),
+            &rules,
+            &mut world.interner,
+        );
+        let target = ProjectileTarget::Cell { rx: 10, ry: 20 };
+        let id = world.substrate.allocate_stable_id();
+        world.admit_projectile(
+            id,
+            ProjectileSpawn {
+                native_unique_id: row["bullet_native_id"].as_i64().unwrap() as i32,
+                line_trail: None,
+                flat: false,
+                source_id: RAD_NO_ATTACKER,
+                origin: coordinate,
+                target,
+                initial_target_position: coordinate,
+                payload,
+                speed_leptons_per_frame: 1,
+                velocity: ProjectileVelocity::new(0, 0, 0),
+                trajectory: ProjectileTrajectory::Straight,
+                guidance: None,
+                visual: ProjectileVisualState::new(0, 0, 0),
+                arm_frames: 0,
+                fuse_frames: None,
+                ranged_fuse: false,
+                tracks_target: false,
+                target_expiry: TargetExpiryPolicy::DetonateAtLastKnown,
+                collision: ProjectileCollisionPolicy::NONE,
+            },
+        );
+        let main_before = world.main_rng.logical_state();
+        assert!(world.particle_systems().is_empty(), "{name}");
+        let output = commit_projectiles(
+            &mut world,
+            &mut ReceiverRun::default(),
+            &[ProjectileDetonation {
+                projectile_id: id,
+                source_id: RAD_NO_ATTACKER,
+                target,
+                impact: coordinate,
+                payload,
+                reason: ProjectileDetonationReason::DeathWeapon,
+            }],
+            &rules,
+            None,
+        );
+        assert!(
+            output.effects.explosion_effects.is_empty(),
+            "{name}: constructed inline"
+        );
+        // The original harness substitutes Unit ReceiveDamage737C90. Our
+        // real receiver crosses FV's yellow threshold and synchronously
+        // admits its damage smoke before returning to the impact caller.
+        // Assert this one excluded allocation explicitly; do not treat the
+        // isolated native cursor as a whole-receiver identity golden.
+        let receiver_allocations = u32::from(input["receiver_mode"] == "receiver");
+        assert_eq!(
+            world.particle_systems().len(),
+            receiver_allocations as usize,
+            "{name}"
+        );
+        if receiver_allocations == 1 {
+            let receiver = receiver.unwrap();
+            let fv = rules.object("FV").unwrap();
+            assert_eq!(fv.strength, 200);
+            assert_eq!(fv.damage_particle_systems, ["SparkSys", "SmallGreySSys"]);
+            let (id, smoke) = world.particle_systems().iter().next().unwrap();
+            assert_eq!(
+                smoke.type_id(),
+                rules.ps_type_id_by_name("SmallGreySSys").unwrap()
+            );
+            assert_eq!(
+                smoke.native_unique_id() as u32,
+                (row["native_cursor_before"].as_u64().unwrap() as u32).wrapping_add(1),
+                "{name}"
+            );
+            assert!(
+                smoke.particles().is_empty(),
+                "{name}: no smoke AI visit yet"
+            );
+            assert_eq!(smoke.owner_entity(), Some(receiver));
+            assert_eq!(
+                world
+                    .substrate
+                    .entities
+                    .get(receiver)
+                    .unwrap()
+                    .seldom
+                    .damage_smoke_system_id
+                    .system(),
+                Some(*id)
+            );
+        } else if let Some(receiver) = receiver {
+            assert!(
+                world
+                    .substrate
+                    .entities
+                    .get(receiver)
+                    .unwrap()
+                    .seldom
+                    .damage_smoke_system_id
+                    .system()
+                    .is_none()
+            );
+        }
+        let anims = world
+            .substrate
+            .anims
+            .iter()
+            .map(|(_, a)| a)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            anims.len(),
+            row["anim_count"].as_u64().unwrap() as usize,
+            "{name}"
+        );
+        let anim = anims[0];
+        assert_eq!(
+            world.interner.resolve(anim.type_id()),
+            row["constructed"].as_str().unwrap(),
+            "{name}"
+        );
+        assert_eq!(
+            serde_json::json!([
+                anim.world_coord().x,
+                anim.world_coord().y,
+                anim.world_coord().z
+            ]),
+            row["constructor"]["position"],
+            "{name}"
+        );
+        assert_eq!(
+            serde_json::json!(anim.draw_flags()),
+            row["constructor"]["flags"],
+            "{name}"
+        );
+        assert_eq!(
+            serde_json::json!(anim.z_adjust()),
+            row["constructor"]["z_adjust"],
+            "{name}"
+        );
+        let expected_cursor = (row["native_cursor_after"].as_u64().unwrap() as u32)
+            .wrapping_add(receiver_allocations);
+        assert_eq!(anim.native_unique_id() as u32, expected_cursor, "{name}");
+        assert_eq!(
+            world.native_unique_ids.as_ref().unwrap().current_raw(),
+            expected_cursor,
+            "{name}"
+        );
+        let hex = world.scenario_rng.native_state_hex();
+        let bytes = hex
+            .as_bytes()
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|digits| u8::from_str_radix(std::str::from_utf8(digits).unwrap(), 16).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            crate::util::sha256::sha256_hex(&bytes),
+            row["rng_after_sha256"].as_str().unwrap(),
+            "{name}"
+        );
+        assert_eq!(
+            row["constructor"]["rng_hash"], row["rng_after_sha256"],
+            "{name}: constructor adds no draws"
+        );
+        assert_eq!(world.main_rng.logical_state(), main_before, "{name}");
+        assert!(
+            world.projectiles.get(id).is_some(),
+            "{name}: bare entry does not retire the Bullet"
+        );
+    }
+}
+
+#[test]
+#[ignore = "slow; run when changing what it covers"]
+fn native_area_receipt_tracks_dispatch_and_strict_iron_curtain_boundary() {
+    let Some((base, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/ifv_area_receipt.json",
+    ))
+    .unwrap();
+    assert_eq!(native["rows"].as_array().unwrap().len(), 22);
+    for row in native["rows"].as_array().unwrap() {
+        let input = &row["input"];
+        let name = input["name"].as_str().unwrap();
+        let mut layers = RulesLayerStack::new(base.clone());
+        // Same independent original HE reread as the native control, through
+        // the existing production layer owner and exact numeric parser.
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str(&format!(
+                "[HE]\nCellSpread={}\n",
+                input["spread"].as_str().unwrap()
+            )),
+        );
+        let processed = layers.process_with_fixed_art(&art).unwrap();
+        let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+        rules.install_art_data(crate::rules::retail_ini_fixture::art_registry(&art));
+        let mut world = Simulation::with_seed(31);
+        world.session.set_binary_frame_for_test(100);
+        world
+            .session
+            .set_no_damage_for_test(input["scenario_flags"].as_u64().unwrap() & 0x20 != 0);
+        let owner = world.interner.intern("Americans");
+        world
+            .houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
+        crate::sim::arena_fixture::flat_arena(&mut world, &rules);
+        for cell in world
+            .resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cells_mut_for_test()
+        {
+            cell.level = 6;
+        }
+        let target = if input["empty"] == true {
+            None
+        } else {
+            let id = world
+                .spawn_object("FV", "Americans", 10, 20, 0, &rules)
+                .unwrap();
+            let entity = world.substrate.entities.get_mut(id).unwrap();
+            entity.position.set_sub_x_for_test(SimFixed::from_num(
+                128 + input["distance"].as_i64().unwrap() as i32,
+            ));
+            entity.position.set_sub_y_for_test(SimFixed::from_num(128));
+            entity.position.set_exact_z_leptons_for_test(Some(624));
+            entity
+                .health
+                .set_for_test(input["health"].as_i64().unwrap() as i32);
+            entity
+                .lifecycle
+                .set_object_alive_for_test(input["alive"].as_bool().unwrap());
+            entity
+                .lifecycle
+                .set_cell_marked_for_test(input["marked"].as_bool().unwrap());
+            entity
+                .lifecycle
+                .set_in_limbo_for_test(input["limbo"].as_bool().unwrap());
+            entity.invulnerability = (input["ic"] == true).then(|| {
+                InvulnerabilityState::new(
+                    crate::sim::timer::CdTimer::started(
+                        input["start"].as_u64().unwrap() as i32,
+                        input["duration"].as_u64().unwrap() as i32,
+                    ),
+                    if input["ic_kind"] == 0 {
+                        InvulnKind::IronCurtain
+                    } else {
+                        InvulnKind::ForceShield
+                    },
+                )
+            });
+            Some(id)
+        };
+        world.intern_rule_type_ids(&rules);
+        world.resolve_type_handles(&rules);
+        let he = world.interner.intern("HE");
+        if input["null_wh"] == true {
+            // A null C++ pointer cannot enter collect_area(&WarheadType).
+            // Its production analogue is the existing missing-rule caller
+            // exit. Exercise that caller, without inventing a receipt value
+            // or a placeholder WarheadType solely to enter the typed API.
+            let missing = world.interner.intern("MISSING_AREA_RECEIPT_WARHEAD");
+            let weapon = world.interner.intern("HoverMissile");
+            let health = world
+                .substrate
+                .entities
+                .get(target.unwrap())
+                .unwrap()
+                .health
+                .current();
+            let rng = world.scenario_rng.logical_state();
+            let payload = super::combat_tests::payload_from_weapon(
+                25,
+                missing,
+                weapon,
+                &rules,
+                &mut world.interner,
+            );
+            let output = commit_projectiles(
+                &mut world,
+                &mut ReceiverRun::default(),
+                &[ProjectileDetonation {
+                    projectile_id: 999,
+                    source_id: RAD_NO_ATTACKER,
+                    target: ProjectileTarget::Cell { rx: 10, ry: 20 },
+                    impact: ProjectileCoord::new(2688, 5248, 624),
+                    payload,
+                    reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
+                }],
+                &rules,
+                None,
+            );
+            assert!(output.effects.explosion_effects.is_empty());
+            assert_eq!(world.substrate.anims.len(), 0);
+            assert_eq!(
+                world
+                    .substrate
+                    .entities
+                    .get(target.unwrap())
+                    .unwrap()
+                    .health
+                    .current(),
+                health
+            );
+            assert_eq!(world.scenario_rng.logical_state(), rng);
+            assert_eq!(row["dispatch"].as_array().unwrap().len(), 0);
+            assert_eq!(row["result"], 1);
+            continue;
+        }
+        let before = world.scenario_rng.logical_state();
+        let collected = collect_area(
+            &mut world,
+            &rules,
+            None,
+            (10, 20),
+            input["damage"].as_i64().unwrap() as i32,
+            rules.warhead("HE").unwrap(),
+            true,
+            (RAD_NO_ATTACKER, None, he),
+            Some(combat_aoe::AoEAirImpact {
+                sub_x: SimFixed::from_num(128),
+                sub_y: SimFixed::from_num(128),
+                z_leptons: 624,
+            }),
+            6,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
+        assert_eq!(
+            world.scenario_rng.logical_state(),
+            before,
+            "{name} collection RNG"
+        );
+        // Receiver bodies are different explicit proof boundaries. Do not
+        // require Rust to return the oracle's supplied0/1/2/4 or to preserve
+        // its unmodified Health. All four native outputs establish the same
+        // enclosing AreaDamage result regardless of that callee return.
+        if !row["dispatch"].as_array().unwrap().is_empty() {
+            assert_eq!(collected.receivers.len(), 1, "{name}");
+            let combat_aoe::AreaDamageReceiver::Entity(record) = collected.receivers[0] else {
+                panic!("{name}: expected supplied Unit record");
+            };
+            assert_eq!(Some(record.target_id), target, "{name}");
+            assert_eq!(
+                record.distance_leptons,
+                input["distance"].as_i64().unwrap() as i32,
+                "{name}"
+            );
+        }
+        let (_, result) = commit_area_with_dispatch(
+            &mut world,
+            &mut ReceiverRun::default(),
+            &collected.receivers,
+            &rules,
+            None,
+            &mut Vec::new(),
+        );
+        assert_eq!(
+            i64::from(result as u8),
+            row["result"].as_i64().unwrap(),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "slow; run when changing what it covers"]
+fn area_ic_primary_cell_controls_cross_cell_health() {
+    let Some((base, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let processed = RulesLayerStack::new(base)
+        .process_with_fixed_art(&art)
+        .unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    rules.install_art_data(crate::rules::retail_ini_fixture::art_registry(&art));
+    assert_eq!(rules.object("MTNK").unwrap().primary(), Some("105mm"));
+    let damage = rules.weapon("105mm").unwrap().damage;
+    assert_eq!(damage, 65);
+    // AreaDamage489280, 489932..489968: only the first ground cell arms
+    // isolation; 489A2F..489A57 then filters receivers across all cells.
+    // Original full-function controls dispatch both records when only the
+    // adjacent one is protected, and only the protected primary otherwise.
+    for protected_primary in [false, true] {
+        let mut world = crate::sim::arena_fixture::rival_arena(&rules, 31);
+        world.session.set_binary_frame_for_test(100);
+        for cell in world
+            .resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cells_mut_for_test()
+        {
+            cell.level = 6;
+        }
+        let mut ids = Vec::new();
+        for (primary, x) in [(true, 2788), (false, 2828)] {
+            let id = world
+                .spawn_object("MTNK", "Americans", (x / 256) as u16, 20, 0, &rules)
+                .unwrap();
+            let target = world.substrate.entities.get_mut(id).unwrap();
+            target
+                .position
+                .set_sub_x_for_test(SimFixed::from_num(x % 256));
+            target.position.set_sub_y_for_test(SimFixed::from_num(128));
+            target.position.set_exact_z_leptons_for_test(Some(624));
+            target.health.set_for_test(100);
+            if primary == protected_primary {
+                target.invulnerability = Some(InvulnerabilityState::new(
+                    crate::sim::timer::CdTimer::started(100, 10),
+                    InvulnKind::IronCurtain,
+                ));
+            }
+            ids.push((id, primary));
+        }
+        world.intern_rule_type_ids(&rules);
+        world.resolve_type_handles(&rules);
+        let wh = world.interner.intern("AP");
+        let weapon = world.interner.intern("105mm");
+        let payload = super::combat_tests::payload_from_weapon(
+            damage,
+            wh,
+            weapon,
+            &rules,
+            &mut world.interner,
+        );
+        let target = ProjectileTarget::Cell { rx: 10, ry: 20 };
+        let bullet = world.construct_projectile(RAD_NO_ATTACKER, target, payload, &rules);
+        let impact = ProjectileCoord::new(2808, 5248, 624);
+        world
+            .projectiles
+            .get_mut(bullet)
+            .unwrap()
+            .set_position_for_test(impact);
+        commit_projectiles(
+            &mut world,
+            &mut ReceiverRun::default(),
+            &[ProjectileDetonation {
+                projectile_id: bullet,
+                source_id: RAD_NO_ATTACKER,
+                target,
+                impact,
+                payload,
+                reason: crate::sim::projectile::ProjectileDetonationReason::DeathWeapon,
+            }],
+            &rules,
+            None,
+        );
+        for (id, primary) in ids {
+            let health = world.substrate.entities.get(id).unwrap().health.current();
+            // Rust's actual receiver supplies these health effects; the native
+            // controls establish dispatch, not ReceiveDamage health parity.
+            assert_eq!(health < 100, primary && !protected_primary);
+            assert!(health > 0);
+        }
+    }
+}

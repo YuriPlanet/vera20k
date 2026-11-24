@@ -1,0 +1,1200 @@
+//! `RocketLocomotionClass`, the flight of the V3, Dreadnought and Boomer
+//! missiles: constructor `0x00661EC0`, ILocomotion vtable `0x007F0B1C`.
+//!
+//! [`RocketRuntime`] is the class's private object, carried by the owner's
+//! locomotor ([`LocomotorRuntimePayload::Rocket`]). [`move_to`] and
+//! [`process`] are the two entries that change it; every owner, map and
+//! subsystem effect goes through [`RocketHost`] at its native call site, so
+//! the production host and the native oracle fixture run the same kernel.
+//!
+//! Selection: Move_To, Process and Detonate read the `RulesClass` block of
+//! the owner's type ([`MissileSpawnRules::rocket_block`]): V3 for the V3
+//! type, CMisl for the CMisl type, DMisl for any other.
+//!
+//! The states (`+0x40`, `Process @ 0x006622C0`, jump table `0x00663010`):
+//! 0 idle until Move_To; 1 pause (`0x00662326`); 2 tilt (`0x00662720`);
+//! 3 climb (`0x006628F0`); 4 cruise (`0x006629C7`); 5 dive (`0x00662CAC`);
+//! 6 the Boomer's vertical raise (`0x006624C8`). Every arm then reaches the
+//! shared tail (`0x00662D74`) unless a detonation returned first.
+//!
+//! Arithmetic runs under the process x87 control word `0x0E7F` (53-bit,
+//! toward zero) with exceptions masked, as [`MaskedX87Chop53`]: a pitch or
+//! acceleration key is read as a double and stored to its binary32 field with
+//! chop, so it is infinite only when the double is (about `1.8e308` and up,
+//! e.g. `1e309`; `1e39` stores the largest finite float), and the pitch and
+//! speed carry it, or the NaN it makes, as the FPU does. The trig and
+//! arctangent are the retail tables. Native comparisons: `tools/rocket_oracle/` (see its README).
+//!
+//! [`LocomotorRuntimePayload::Rocket`]: super::locomotion::piggyback::LocomotorRuntimePayload
+//! [`MissileSpawnRules::rocket_block`]: crate::rules::missile_spawn::MissileSpawnRules::rocket_block
+
+use crate::rules::missile_spawn::{MissileSpawnParams, RocketTypeExt};
+use crate::sim::components::DriveCoord;
+use crate::sim::timer::CdTimer;
+use crate::util::direction_tables::{facing16_between, native_atan_from_table};
+use crate::util::lepton::lepton_to_cell_packed;
+use crate::util::native_trig::facing_step_world_xy;
+use crate::util::native_x87::{
+    MaskedX87Chop53 as M, MaskedX87Ordering, MaskedX87Value, NativeF32Bits, NativeF64Bits,
+    X87Chop53, X87Ordering, sqrt_approx_f32, sqrt_approx_length,
+};
+use crate::util::retail_trig::TrigTable;
+
+/// `+0x40` before Move_To: Process runs only the tail, which a zero speed
+/// leaves idle.
+const STATE_IDLE: i32 = 0;
+const STATE_PAUSE: i32 = 1;
+const STATE_TILT: i32 = 2;
+const STATE_CLIMB: i32 = 3;
+const STATE_CRUISE: i32 = 4;
+const STATE_DIVE: i32 = 5;
+const STATE_RAISE: i32 = 6;
+
+/// `PUSH 0x600`: the AnimClass draw flags of every rocket puff, Process's and
+/// the spawn manager's Boomer launch alike.
+pub(crate) const PUFF_DRAW_FLAGS: u32 = 0x600;
+
+/// `0x007E2820`, binary64 pi/2: the quarter-turn scale of the pitch keys.
+const HALF_PI: NativeF64Bits = NativeF64Bits::from_bits(0x3FF9_21FB_5444_2D18);
+/// `0x007F0C10`, binary64 -pi/2: the dive angle with nothing left to cover.
+const NEG_HALF_PI: NativeF64Bits = NativeF64Bits::from_bits(0xBFF9_21FB_5444_2D18);
+
+/// `[0x00B04E18]`, the cell the AircraftTracker's retained cell is compared
+/// with before an Add: only the static initializer `0x00661E50` writes it,
+/// with zero.
+const UNTRACKED_CELL: (i16, i16) = (0, 0);
+
+/// One rocket's `RocketLocomotionClass` fields.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct RocketRuntime {
+    /// `+0x18` Destination; the empty coordinate `[0x00B04E38]` (zero) until
+    /// Move_To. Is_Moving (`0x00661F50`) is "not empty".
+    destination: DriveCoord,
+    /// `+0x24` MissionTimer: the pause, tilt or raise countdown.
+    mission_timer: CdTimer,
+    /// `+0x30` the length MissionTimer was last started with, the divisor of
+    /// its "done" test and of the tilt's progress.
+    mission_timer_rate: i32,
+    /// `+0x34` TrailerTimer, gating the V3TAKOFF and V3TRAIL puffs.
+    #[serde(deserialize_with = "deserialize_trailer_timer_after_load")]
+    trailer_timer: CdTimer,
+    /// `+0x40` MissionState.
+    mission_state: i32,
+    /// `+0x48` CurrentSpeed, binary64 bits, leptons per frame.
+    current_speed: u64,
+    /// `+0x50`: clear while the CMisl pause has resubmitted the owner to the
+    /// display; the climb resubmits and sets it again. The constructor sets it.
+    resubmit_latch: bool,
+    /// `+0x51` SpawnerIsElite, refreshed by states 1, 2 and 6.
+    spawner_is_elite: bool,
+    /// `+0x54` CurrentPitch, binary32 bits, radians above the horizon.
+    current_pitch: u32,
+    /// `+0x58` CruiseStartDistance, the horizontal distance left when the
+    /// climb ended: the LazyCurve blend's denominator.
+    cruise_start_distance: i32,
+}
+
+/// `RocketLocomotionClass::Load @ 0x00663410` restarts TrailerTimer at the
+/// load frame with no time left after the saved bytes are read. A saved start
+/// is never after the load frame, so keeping it with a zero length reads the
+/// same zero remainder from then on.
+fn deserialize_trailer_timer_after_load<'de, D>(deserializer: D) -> Result<CdTimer, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let saved = <CdTimer as serde::Deserialize>::deserialize(deserializer)?;
+    Ok(CdTimer::from_raw(saved.start_frame(), 0))
+}
+
+impl RocketRuntime {
+    /// The constructor (`0x00661EC0`): both timers start now with no length,
+    /// the latch is set and every other field is zero.
+    pub(crate) fn constructed(binary_frame: u32) -> Self {
+        let now = binary_frame as i32;
+        Self {
+            destination: DriveCoord { x: 0, y: 0, z: 0 },
+            mission_timer: CdTimer::started(now, 0),
+            mission_timer_rate: 0,
+            trailer_timer: CdTimer::started(now, 0),
+            mission_state: STATE_IDLE,
+            current_speed: NativeF64Bits::POSITIVE_ZERO.bits(),
+            resubmit_latch: true,
+            spawner_is_elite: false,
+            current_pitch: NativeF32Bits::POSITIVE_ZERO.bits(),
+            cruise_start_distance: 0,
+        }
+    }
+
+    /// `Is_Moving @ 0x00661F50`.
+    pub(crate) fn is_moving(&self) -> bool {
+        self.destination != (DriveCoord { x: 0, y: 0, z: 0 })
+    }
+
+    /// `Is_Moving_Now @ 0x00661F90`: climbing, cruising or diving.
+    pub(crate) fn is_moving_now(&self) -> bool {
+        (STATE_CLIMB..=STATE_DIVE).contains(&self.mission_state)
+    }
+
+    /// The MissionTimer "done" test every arm makes: `(rate - remaining) /
+    /// rate == 1.0`, skipped as done when the rate is zero. Two int32s divide
+    /// to exactly one only when equal, so it is "no time left".
+    fn mission_timer_done(&self, frame: i32) -> bool {
+        self.mission_timer_rate == 0 || self.mission_timer.remaining(frame) == 0
+    }
+
+    fn start_mission_timer(&mut self, frame: i32, frames: i32) {
+        self.mission_timer = CdTimer::started(frame, frames);
+        self.mission_timer_rate = frames;
+    }
+
+    fn pitch_value(&self) -> MaskedX87Value {
+        f32_value(NativeF32Bits::from_bits(self.current_pitch))
+    }
+
+    /// CurrentPitch in radians above the horizon, as
+    /// `RocketLocomotionClass::Draw_Matrix @ 0x00663470` tilts the body by it.
+    pub fn draw_pitch(&self) -> f32 {
+        f32::from_bits(self.current_pitch)
+    }
+
+    /// The bits `RocketLocomotionClass::Draw_Matrix @ 0x00663470` adds to the
+    /// draw key under the facing, or `None` where it keys the draw -1: none
+    /// at zero pitch (`0x006634C1`), 0x20 when CurrentPitch equals the
+    /// block's unrounded PitchInitial quarter turns (`0x0066352C..0x00663541`)
+    /// and 0x40 at its stored PitchFinal product (`0x0066351B`,
+    /// `0x00663547..0x00663557`). The block is the owner type's
+    /// ([`crate::rules::missile_spawn::MissileSpawnRules::rocket_block`],
+    /// `0x006634E8..0x0066351B`).
+    pub fn draw_key_bits(&self, block: &MissileSpawnParams) -> Option<u32> {
+        let pitch = self.pitch_value();
+        let half_pi = f64_value(HALF_PI);
+        // `TEST AH,0x40`: an unordered (NaN) pitch counts as equal.
+        let equal = |value| {
+            matches!(
+                M::compare(pitch, value),
+                MaskedX87Ordering::Equal | MaskedX87Ordering::Unordered
+            )
+        };
+        if equal(M::load_i32(0)) {
+            Some(0)
+        } else if equal(M::mul(f32_value(block.pitch_initial), half_pi)) {
+            Some(0x20)
+        } else if equal(f32_value(NativeF32Bits::from_bits(quarter_turns(
+            block.pitch_final,
+        )))) {
+            Some(0x40)
+        } else {
+            None
+        }
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_mission_state_for_test(&mut self, state: i32) {
+        self.mission_state = state;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn mission_state_for_test(&self) -> i32 {
+        self.mission_state
+    }
+
+    /// ILocomotion::Destination661FB0 copies the retained +14 coordinate.
+    pub(crate) fn destination(&self) -> DriveCoord {
+        self.destination
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn current_speed_for_test(&self) -> f64 {
+        f64::from_bits(self.current_speed)
+    }
+}
+
+/// What Process reads from and writes to its owner, the map and the shared
+/// subsystems. Coordinates are world leptons.
+pub(crate) trait RocketHost {
+    /// `[0x00A8ED84]`, the frame the timers count from.
+    fn binary_frame(&self) -> u32;
+    fn trig(&self) -> &TrigTable;
+    /// `[Map] Size` width plus height past the original's 512 limit: the pitch
+    /// takes the true 64-bit square on a VERA-only map.
+    fn vera_only_map(&self) -> bool;
+    /// Owner `+0x2D4` SpawnOwner is set and `VeterancyStruct::IsElite @
+    /// 0x00750010` holds for its `+0x150`.
+    fn spawn_owner_is_elite(&self) -> bool;
+    /// Owner `+0x9C` Location, which its GetCoords (vtable `+0x48` ->
+    /// `0x005F65A0`) also answers.
+    fn location(&self) -> [i32; 3];
+    /// `FootClass::SetLocation` (vtable `+0x1B4` -> `0x004DB810`).
+    fn set_location(&mut self, coord: [i32; 3]);
+    /// `ObjectClass::GetHeight @ 0x005F5F40` (vtable `+0x1C8`).
+    fn height(&self) -> i32;
+    /// Owner type `+0x678`, the `Speed=` leptons per frame.
+    fn type_speed(&self) -> i32;
+    /// `MapClass::In_Bounds @ 0x00568300`.
+    fn in_bounds(&self, cell: (i16, i16)) -> bool;
+    /// Owner Mark (vtable `+0x124`): `false` lifts it (MARK_UP), `true` puts
+    /// it down (MARK_DOWN).
+    fn mark(&mut self, put: bool);
+    /// `DisplayClass::Submit @ 0x004A9720` of the owner.
+    fn submit_display(&mut self);
+    /// Owner `+0x560`, the cell the AircraftTracker retained.
+    fn tracker_cell(&self) -> (i16, i16);
+    /// `AircraftTrackerClass::Add @ 0x004134A0`.
+    fn tracker_add(&mut self);
+    /// `AircraftTrackerClass::Update @ 0x004138C0` to `cell`.
+    fn tracker_update(&mut self, cell: (i16, i16));
+    /// `AircraftTrackerClass::Remove @ 0x004135D0`.
+    fn tracker_remove(&mut self);
+    /// Owner `+0x90` IsAlive.
+    fn is_alive(&self) -> bool;
+    /// Owner `+0x6C` Health.
+    fn health(&self) -> i32;
+    /// `FacingClass::Current @ 0x004C93D0` of the owner's `+0x388`.
+    fn facing(&self) -> u16;
+    /// `FacingClass::Set @ 0x004C9220` of the owner's `+0x388`.
+    fn set_facing(&mut self, facing: u16);
+    /// `new AnimClass(type, &coord, delay, 1, 0x600, z_adjust, 0)` for a
+    /// takeoff or trailer puff ([`RocketTypeExt`]).
+    fn anim(&mut self, name: &str, coord: [i32; 3], delay: i32, z_adjust: i32);
+    /// `VocClass::PlayAt @ 0x007509E0` of the owner type's `AuxSound1=`
+    /// (`+0x52C`) at `coord`, with no handle.
+    fn aux_sound(&mut self, coord: [i32; 3]);
+    /// The owner's cell (GetCell, vtable `+0x1BC` -> `0x005F6960`): its own
+    /// GetCoords Z (`0x00486840`) when it carries a structural bridge
+    /// (`+0x140 & 0x100`), else `None`.
+    fn structural_bridge_floor_and_deck(&self) -> Option<(i32, i32)>;
+    /// Detonate's explosion: `SelectAnim @ 0x0048A4F0(damage, warhead, land,
+    /// &coord)` with the land of the cell holding `coord`, then
+    /// `new AnimClass(type, &coord, 0, 1, 0x2600, -15, 0)`.
+    fn explosion(&mut self, damage: i32, warhead: &str, coord: [i32; 3]);
+    /// `0x0048A620(damage, warhead, coord, 0, 0)`, the impact's flash.
+    fn combat_light(&mut self, damage: i32, warhead: &str, coord: [i32; 3]);
+    /// `Apply_area_damage @ 0x00489280(&coord, damage, owner, warhead, 1,
+    /// null house)`.
+    fn area_damage(&mut self, coord: [i32; 3], damage: i32, warhead: &str);
+    /// Ares `RocketLocomotionClass_Explode_CustomMissile2` (Ares.dll
+    /// 10060FF0, hook 0x663218): a bullet of the weapon's projectile with its
+    /// damage, warhead and Bright, owner and target the rocket itself, is
+    /// created, given the weapon, limboed and detonated at `coord`
+    /// (`BulletClass::Detonate @ 0x004690B0`), then UnInit.
+    fn weapon_detonation(&mut self, weapon: &str, coord: [i32; 3]);
+    /// Owner UnInit (vtable `+0xF8`).
+    fn uninit(&mut self);
+}
+
+/// `Move_To @ 0x006632E0`. Only an empty Destination accepts: a rocket in
+/// flight keeps its first target. The pause starts when the block has one,
+/// otherwise the tilt, and the pitch starts at `PitchInitial` quarter turns.
+pub fn move_to(
+    rocket: &mut RocketRuntime,
+    block: &MissileSpawnParams,
+    to: DriveCoord,
+    binary_frame: u32,
+) {
+    if rocket.is_moving() {
+        return;
+    }
+    let frames = if block.pause_frames != 0 {
+        rocket.mission_state = STATE_PAUSE;
+        block.pause_frames
+    } else {
+        rocket.mission_state = STATE_TILT;
+        block.tilt_frames
+    };
+    rocket.start_mission_timer(binary_frame as i32, frames);
+    rocket.current_pitch = quarter_turns(block.pitch_initial);
+    rocket.destination = to;
+}
+
+/// `Process @ 0x006622C0` for one frame. `block` is the owner type's rocket
+/// block and `cmisl` whether that block's type is the CMisl type, which the
+/// Boomer arms compare (`0x0066235A`, `0x00662493`), not the selection.
+/// `ext` is the owner type's puffs and impact weapon.
+/// The native return, Is_Moving, has no reader (`FootClass::AI` tests the
+/// owner's IsAlive instead).
+pub(crate) fn process(
+    rocket: &mut RocketRuntime,
+    block: &MissileSpawnParams,
+    cmisl: bool,
+    ext: &RocketTypeExt<'_>,
+    host: &mut impl RocketHost,
+) {
+    let frame = host.binary_frame() as i32;
+    match rocket.mission_state {
+        STATE_PAUSE => pause(rocket, block, cmisl, ext, frame, host),
+        STATE_TILT => tilt(rocket, block, ext, frame, host),
+        STATE_CLIMB => climb(rocket, block, host),
+        STATE_CRUISE => {
+            if !cruise(rocket, block, ext, host) {
+                return;
+            }
+        }
+        STATE_DIVE => {
+            if predicted_impact(rocket, block, ext, host) {
+                return;
+            }
+            dive(rocket, block, host);
+        }
+        STATE_RAISE => raise(rocket, block, ext, frame, host),
+        _ => {}
+    }
+    tail(rocket, block, ext, frame, host);
+}
+
+/// State 1 (`0x00662326..0x006624C3`).
+fn pause(
+    rocket: &mut RocketRuntime,
+    block: &MissileSpawnParams,
+    cmisl: bool,
+    ext: &RocketTypeExt<'_>,
+    frame: i32,
+    host: &mut impl RocketHost,
+) {
+    rocket.current_speed = NativeF64Bits::POSITIVE_ZERO.bits();
+    rocket.spawner_is_elite = host.spawn_owner_is_elite();
+    if cmisl {
+        if rocket.trailer_timer.remaining(frame) == 0 {
+            // Ares Takeoff1 (hook 0x66238A, Ares.dll 10061120) names it.
+            takeoff_puff(ext, host);
+            rocket.trailer_timer = CdTimer::started(frame, 0x18);
+        }
+        if rocket.resubmit_latch {
+            host.mark(false);
+            rocket.resubmit_latch = false;
+            host.submit_display();
+            host.mark(true);
+        }
+    } else {
+        rocket.resubmit_latch = true;
+    }
+    if rocket.mission_timer_done(frame) {
+        rocket.mission_state = if cmisl { STATE_RAISE } else { STATE_TILT };
+        rocket.start_mission_timer(frame, block.tilt_frames);
+    }
+}
+
+/// State 2 (`0x00662720..0x006628EB`): the pitch moves linearly from
+/// PitchInitial to PitchFinal over TiltFrames; at the end the rocket climbs,
+/// joins the AircraftTracker, puffs V3TAKOFF and plays AuxSound1.
+fn tilt(
+    rocket: &mut RocketRuntime,
+    block: &MissileSpawnParams,
+    ext: &RocketTypeExt<'_>,
+    frame: i32,
+    host: &mut impl RocketHost,
+) {
+    rocket.current_speed = NativeF64Bits::POSITIVE_ZERO.bits();
+    rocket.spawner_is_elite = host.spawn_owner_is_elite();
+    if rocket.mission_timer_done(frame) {
+        rocket.current_pitch = quarter_turns(block.pitch_final);
+        rocket.mission_state = STATE_CLIMB;
+        if host.tracker_cell() == UNTRACKED_CELL {
+            host.tracker_add();
+        }
+        // Ares Takeoff3 (hook 0x6627E5, Ares.dll 10061200).
+        takeoff_puff(ext, host);
+        host.aux_sound(host.location());
+        return;
+    }
+    let half_pi = f64_value(HALF_PI);
+    let initial = M::mul(f32_value(block.pitch_initial), half_pi);
+    let last = M::mul(f32_value(block.pitch_final), half_pi);
+    let rate = rocket.mission_timer_rate;
+    let progress = M::div(
+        M::load_i32(rate.wrapping_sub(rocket.mission_timer.remaining(frame))),
+        M::load_i32(rate),
+    );
+    rocket.current_pitch = store_f32(M::add(M::mul(M::sub(last, initial), progress), initial));
+}
+
+/// State 3 (`0x006628F0..0x006629C2`): accelerate straight along the pitch
+/// until `Altitude=` above the ground, then remember the horizontal distance
+/// still to go.
+fn climb(rocket: &mut RocketRuntime, block: &MissileSpawnParams, host: &mut impl RocketHost) {
+    if !rocket.resubmit_latch {
+        host.mark(false);
+        rocket.resubmit_latch = true;
+        host.submit_display();
+        host.mark(true);
+    }
+    accelerate(rocket, block, &*host);
+    if host.height() < block.altitude {
+        return;
+    }
+    rocket.mission_state = STATE_CRUISE;
+    let here = host.location();
+    rocket.cruise_start_distance = sqrt_approx_length([
+        here[1].wrapping_sub(rocket.destination.y),
+        here[0].wrapping_sub(rocket.destination.x),
+    ]);
+}
+
+/// State 4 (`0x006629C7..0x00662CA7`). Answers false when the rocket
+/// detonated, which returns before the tail.
+fn cruise(
+    rocket: &mut RocketRuntime,
+    block: &MissileSpawnParams,
+    ext: &RocketTypeExt<'_>,
+    host: &mut impl RocketHost,
+) -> bool {
+    if host.height() <= 0 {
+        detonate(rocket, block, ext, host);
+        return false;
+    }
+    accelerate(rocket, block, &*host);
+    let destination = rocket.destination;
+    if !block.lazy_curve || rocket.cruise_start_distance == 0 {
+        // 0x00662B51: level off by TurnRate a frame, not below zero; the dive
+        // starts once the distance is no more than the height over the
+        // destination. GetCoords is the Location, so the Z term is zero.
+        let zero = M::load_i32(0);
+        let pitch = rocket.pitch_value();
+        if M::compare(pitch, zero) == MaskedX87Ordering::Greater {
+            let lowered = M::sub(pitch, f32_value(block.turn_rate));
+            rocket.current_pitch = store_f32(lowered);
+            // 0x00662B6A: `TEST AH,0x1`.
+            if matches!(
+                M::compare(lowered, zero),
+                MaskedX87Ordering::Less | MaskedX87Ordering::Unordered
+            ) {
+                rocket.current_pitch = NativeF32Bits::POSITIVE_ZERO.bits();
+            }
+        }
+        let here = host.location();
+        let above = here[2].wrapping_sub(destination.z);
+        let coords = host.location();
+        let distance = sqrt_approx_length([
+            coords[2].wrapping_sub(here[2]),
+            coords[1].wrapping_sub(destination.y),
+            coords[0].wrapping_sub(destination.x),
+        ]);
+        if distance <= above {
+            rocket.mission_state = STATE_DIVE;
+        }
+    } else {
+        // 0x00662A32: blend from the target angle toward PitchFinal as the
+        // remaining share of CruiseStartDistance shrinks.
+        if predicted_impact(rocket, block, ext, host) {
+            return false;
+        }
+        let coords = host.location();
+        let left = sqrt_approx_length([
+            coords[1].wrapping_sub(destination.y),
+            coords[0].wrapping_sub(destination.x),
+        ]);
+        let share = M::div(M::load_i32(left), M::load_i32(rocket.cruise_start_distance));
+        let angle = target_angle(destination, host.location(), host.vera_only_map());
+        let rest = M::sub(f64_value(NativeF64Bits::ONE), share);
+        let toward_final = M::mul(
+            M::mul(f32_value(block.pitch_final), share),
+            f64_value(HALF_PI),
+        );
+        rocket.current_pitch = store_f32(M::add(toward_final, M::mul(angle, rest)));
+    }
+    // 0x00662C3A: steer the body at the destination.
+    let coords = host.location();
+    let facing = facing16_between([coords[0], coords[1]], [destination.x, destination.y]);
+    host.set_facing(facing);
+    true
+}
+
+/// State 5 (`0x00662CBF..0x0066300A`) after the impact prediction: turn the
+/// pitch toward the target angle by at most TurnRate.
+fn dive(rocket: &mut RocketRuntime, block: &MissileSpawnParams, host: &mut impl RocketHost) {
+    let angle = target_angle(rocket.destination, host.location(), host.vera_only_map());
+    let zero = M::load_i32(0);
+    let pitch = rocket.pitch_value();
+    let turn = f32_value(block.turn_rate);
+    let difference = M::sub(angle, pitch);
+    // 0x00662D39 and 0x00662D5A test `AH,0x1`, so an unordered difference
+    // counts as negative; 0x00662D4C (`TEST AH,0x41`) takes the whole
+    // difference unless the magnitude is above TurnRate.
+    let negative = matches!(
+        M::compare(difference, zero),
+        MaskedX87Ordering::Less | MaskedX87Ordering::Unordered
+    );
+    let magnitude = if negative {
+        M::neg(difference)
+    } else {
+        difference
+    };
+    rocket.current_pitch = store_f32(
+        if M::compare(magnitude, turn) != MaskedX87Ordering::Greater {
+            M::add(pitch, difference)
+        } else if negative {
+            M::sub(pitch, turn)
+        } else {
+            M::add(turn, pitch)
+        },
+    );
+}
+
+/// State 6 (`0x006624C8..0x0066271B`): the Boomer's missile rises RaiseRate
+/// leptons a frame for TiltFrames, puffing V3TAKOFF, then pitches to
+/// PitchFinal and climbs.
+fn raise(
+    rocket: &mut RocketRuntime,
+    block: &MissileSpawnParams,
+    ext: &RocketTypeExt<'_>,
+    frame: i32,
+    host: &mut impl RocketHost,
+) {
+    rocket.spawner_is_elite = host.spawn_owner_is_elite();
+    if rocket.trailer_timer.remaining(frame) == 0 {
+        // Ares Takeoff2 (hook 0x662512, Ares.dll 10061190).
+        takeoff_puff(ext, host);
+        rocket.trailer_timer = CdTimer::started(frame, 0x18);
+    }
+    let here = host.location();
+    if !rocket.mission_timer_done(frame) {
+        let raised = [here[0], here[1], here[2].wrapping_add(block.raise_rate)];
+        if host.in_bounds(cell_of(raised)) {
+            host.set_location(raised);
+        }
+        return;
+    }
+    rocket.current_pitch = quarter_turns(block.pitch_final);
+    if host.tracker_cell() == UNTRACKED_CELL {
+        host.aux_sound(host.location());
+        host.tracker_add();
+    }
+    rocket.trailer_timer = CdTimer::started(frame, 0);
+    rocket.mission_state = STATE_CLIMB;
+}
+
+/// The shared tail (`0x00662D74..0x00662FE1`): the V3TRAIL puffs while
+/// moving, then a frame of flight along the facing and pitch, the tracker's
+/// cell, and the explosion of a rocket left without Health.
+fn tail(
+    rocket: &mut RocketRuntime,
+    block: &MissileSpawnParams,
+    ext: &RocketTypeExt<'_>,
+    frame: i32,
+    host: &mut impl RocketHost,
+) {
+    // Ares CustomMissileTrailer (hook 0x662D85, Ares.dll 10061270) restarts
+    // the timer with the type's separation, then puffs its trailer anim.
+    if rocket.is_moving_now() && rocket.trailer_timer.remaining(frame) == 0 {
+        if let Some(anim) = ext.trailer_anim {
+            host.anim(anim, host.location(), 0, 0);
+        }
+        rocket.trailer_timer = CdTimer::started(frame, ext.trailer_separation);
+    }
+    let speed = f64_value(NativeF64Bits::from_bits(rocket.current_speed));
+    if M::compare(speed, M::load_i32(0)) != MaskedX87Ordering::Greater {
+        return;
+    }
+    let speed = M::load_i32(M::ftol_i32_low_masked(speed));
+    let next = along_nose(rocket, &*host, speed);
+    if host.in_bounds(cell_of(next)) {
+        host.set_location(next);
+    }
+    let cell = cell_of(host.location());
+    if cell != host.tracker_cell() && host.is_alive() {
+        host.tracker_update(cell);
+    }
+    if host.health() <= 0 {
+        detonate(rocket, block, ext, host);
+    }
+}
+
+/// `new AnimClass(V3TAKOFF, &Location, 2, 1, 0x600, -10, 0)`, the takeoff
+/// puff of states 1, 2 and 6; an Ares game names the type's anim and puffs
+/// nothing for a null one.
+fn takeoff_puff(ext: &RocketTypeExt<'_>, host: &mut impl RocketHost) {
+    if let Some(anim) = ext.takeoff_anim {
+        host.anim(anim, host.location(), 2, -10);
+    }
+}
+
+/// CurrentSpeed gains Acceleration, then is clamped to the type's Speed
+/// (`0x0066291F..0x00662954`, again at `0x006629E6..0x00662A1B`).
+fn accelerate(rocket: &mut RocketRuntime, block: &MissileSpawnParams, host: &impl RocketHost) {
+    let speed = M::add(
+        f32_value(block.acceleration),
+        f64_value(NativeF64Bits::from_bits(rocket.current_speed)),
+    );
+    rocket.current_speed = store_f64(speed);
+    let limit = M::load_i32(host.type_speed());
+    // `FCOMP` against the stored speed, `TEST AH,0x1`.
+    if matches!(
+        M::compare(
+            limit,
+            f64_value(NativeF64Bits::from_bits(rocket.current_speed))
+        ),
+        MaskedX87Ordering::Less | MaskedX87Ordering::Unordered
+    ) {
+        rocket.current_speed = store_f64(limit);
+    }
+}
+
+/// The impact predictor (`0x006620F0`): the nose, BodyLength ahead along the
+/// pitch, has reached the destination's height, or the deck height over a
+/// structural bridge whose cell floor is the destination's, or the rocket is
+/// on the ground. It detonates and answers true.
+fn predicted_impact(
+    rocket: &mut RocketRuntime,
+    block: &MissileSpawnParams,
+    ext: &RocketTypeExt<'_>,
+    host: &mut impl RocketHost,
+) -> bool {
+    let here = host.location();
+    let nose = M::ftol_i32_low_masked(M::add(
+        M::mul(
+            host.trig().sin_from_table(rocket.pitch_value()).into(),
+            M::load_i32(block.body_length),
+        ),
+        M::load_i32(here[2]),
+    ));
+    let floor = rocket.destination.z;
+    let impact = nose <= floor
+        || host
+            .structural_bridge_floor_and_deck()
+            .is_some_and(|(cell_floor, deck)| cell_floor == floor && nose <= deck)
+        || host.height() <= 0;
+    if impact {
+        detonate(rocket, block, ext, host);
+    }
+    impact
+}
+
+/// `Detonate @ 0x00663030`: leave the AircraftTracker, explode BodyLength
+/// ahead along the nose with the elite or normal damage and warhead, and
+/// UnInit the owner. An Ares custom missile with a `Missile.Weapon` (elite:
+/// `Missile.EliteWeapon`) detonates that weapon there instead of the
+/// explosion, light and area damage (hook 0x663218 resumes at `0x006632CC`).
+fn detonate(
+    rocket: &RocketRuntime,
+    block: &MissileSpawnParams,
+    ext: &RocketTypeExt<'_>,
+    host: &mut impl RocketHost,
+) {
+    host.tracker_remove();
+    let impact = along_nose(rocket, &*host, M::load_i32(block.body_length));
+    let elite = rocket.spawner_is_elite;
+    if let Some(weapon) = ext.weapon(elite) {
+        host.weapon_detonation(weapon, impact);
+        host.uninit();
+        return;
+    }
+    let damage = block.damage_for(elite);
+    let warhead = block.warhead_for(elite);
+    host.explosion(damage, warhead, impact);
+    host.combat_light(damage, warhead, impact);
+    host.area_damage(impact, damage, warhead);
+    host.uninit();
+}
+
+/// The point `length` ahead of the owner along its facing and pitch: the
+/// horizontal share `ftol(cos(pitch) * length)` steps along the facing and
+/// Z gains `sin(pitch) * length` (the tail `0x00662E2A..0x00662F27`, the
+/// impact `0x006630F7..0x006631C7`).
+fn along_nose(rocket: &RocketRuntime, host: &impl RocketHost, length: MaskedX87Value) -> [i32; 3] {
+    let here = host.location();
+    let pitch = rocket.pitch_value();
+    let horizontal =
+        M::ftol_i32_low_masked(M::mul(host.trig().cos_from_table(pitch).into(), length));
+    let [x, y] = facing_step_world_xy([here[0], here[1]], host.facing(), horizontal);
+    let z = M::ftol_i32_low_masked(M::add(
+        M::mul(host.trig().sin_from_table(pitch).into(), length),
+        M::load_i32(here[2]),
+    ));
+    [x, y, z]
+}
+
+/// The angle down to the destination, inlined in the cruise (`0x00662AA2..
+/// 0x00662B2E`) and the dive (`0x00662CBF..0x00662D2E`): the horizontal
+/// distance squares and sums in int32, and nothing left to cover is straight
+/// down.
+fn target_angle(destination: DriveCoord, here: [i32; 3], vera_only_map: bool) -> MaskedX87Value {
+    let dz = destination.z.wrapping_sub(here[2]);
+    let squared = crate::util::native_coord::squared_xy_leptons_for_map(
+        [destination.x, destination.y],
+        [here[0], here[1]],
+        vera_only_map,
+    );
+    let squared = if vera_only_map {
+        X87Chop53::load_f64(NativeF64Bits::from_bits((squared as f64).to_bits()))
+            .expect("a VERA-only squared distance is finite")
+    } else {
+        X87Chop53::load_i32(squared as i32)
+    };
+    let distance =
+        X87Chop53::load_f32(sqrt_approx_f32(squared).expect("a finite int32 has a finite root"))
+            .expect("Sqrt_Approx returns a finite value");
+    if X87Chop53::compare(distance, X87Chop53::load_i32(0)) != X87Ordering::Greater {
+        return f64_value(NEG_HALF_PI);
+    }
+    native_atan_from_table(
+        X87Chop53::div(X87Chop53::load_i32(dz), distance).expect("the distance is positive"),
+    )
+    .into()
+}
+
+/// A pitch key in quarter turns as radians, stored as binary32
+/// (`FLD float; FMUL [0x007E2820]; FSTP float`).
+fn quarter_turns(value: NativeF32Bits) -> u32 {
+    store_f32(M::mul(f32_value(value), f64_value(HALF_PI)))
+}
+
+/// The cell a coordinate falls in, as `0x0041BEA0` and the In_Bounds
+/// callers truncate it.
+fn cell_of(coord: [i32; 3]) -> (i16, i16) {
+    (
+        lepton_to_cell_packed(coord[0]),
+        lepton_to_cell_packed(coord[1]),
+    )
+}
+
+fn f32_value(bits: NativeF32Bits) -> MaskedX87Value {
+    M::load_f32(bits)
+}
+
+fn f64_value(bits: NativeF64Bits) -> MaskedX87Value {
+    M::load_f64(bits)
+}
+
+fn store_f32(value: MaskedX87Value) -> u32 {
+    M::store_f32_masked_chop(value).bits()
+}
+
+fn store_f64(value: MaskedX87Value) -> u64 {
+    M::store_f64_masked_chop(value).bits()
+}
+
+#[cfg(all(test, tests_sim_movement))]
+mod tests {
+    use super::*;
+    use crate::rules::missile_spawn::MissileSpawnRules;
+    use crate::sim::movement::facing_class::FacingClass;
+    use serde_json::{Value, json};
+
+    /// The oracle's seams (`tools/rocket_oracle/flight.py`), recording each
+    /// call as the native harness records it.
+    struct FixtureHost<'a> {
+        input: &'a Value,
+        frame: u32,
+        trig: &'a TrigTable,
+        location: [i32; 3],
+        facing: FacingClass,
+        health: i32,
+        tracker_cell: (i16, i16),
+        events: Vec<Value>,
+        uninit: bool,
+    }
+
+    fn int(value: &Value) -> i64 {
+        value.as_i64().expect("integer field")
+    }
+
+    fn coord(value: &Value) -> [i32; 3] {
+        [0, 1, 2].map(|axis| int(&value[axis]) as i32)
+    }
+
+    impl RocketHost for FixtureHost<'_> {
+        fn binary_frame(&self) -> u32 {
+            self.frame
+        }
+        fn trig(&self) -> &TrigTable {
+            self.trig
+        }
+        fn vera_only_map(&self) -> bool {
+            // The oracle rows are original-executable samples.
+            false
+        }
+        fn spawn_owner_is_elite(&self) -> bool {
+            // VeterancyStruct::IsElite: Veterancy >= [0x007E37B4] (2.0f).
+            self.input["spawner_veterancy"]
+                .as_f64()
+                .is_some_and(|veterancy| veterancy as f32 >= 2.0)
+        }
+        fn location(&self) -> [i32; 3] {
+            self.location
+        }
+        fn set_location(&mut self, coord: [i32; 3]) {
+            self.location = coord;
+            self.events.push(json!(["set_location", coord]));
+        }
+        fn height(&self) -> i32 {
+            let hill = &self.input["hill"];
+            let floor = if !hill.is_null() && i64::from(self.location[0]) >= int(&hill["from_x"]) {
+                int(&hill["floor"])
+            } else {
+                int(&self.input["floor"])
+            };
+            self.location[2] - floor as i32
+        }
+        fn type_speed(&self) -> i32 {
+            int(&self.input["type_speed"]) as i32
+        }
+        fn in_bounds(&self, cell: (i16, i16)) -> bool {
+            let size = &self.input["map_size"];
+            crate::map::playfield::size_diamond_contains(
+                int(&size[0]) as i32,
+                int(&size[1]) as i32,
+                cell,
+            )
+        }
+        fn mark(&mut self, put: bool) {
+            self.events.push(json!(["mark", u8::from(put)]));
+        }
+        fn submit_display(&mut self) {
+            self.events.push(json!(["submit"]));
+        }
+        fn tracker_cell(&self) -> (i16, i16) {
+            self.tracker_cell
+        }
+        fn tracker_add(&mut self) {
+            self.tracker_cell = cell_of(self.location);
+            let (x, y) = self.tracker_cell;
+            self.events.push(json!(["tracker_add", [x, y]]));
+        }
+        fn tracker_update(&mut self, cell: (i16, i16)) {
+            self.tracker_cell = cell;
+            self.events
+                .push(json!(["tracker_update", [cell.0, cell.1]]));
+        }
+        fn tracker_remove(&mut self) {
+            self.events.push(json!(["tracker_remove"]));
+        }
+        fn is_alive(&self) -> bool {
+            self.input["alive"].as_bool().expect("alive flag")
+        }
+        fn health(&self) -> i32 {
+            self.health
+        }
+        fn facing(&self) -> u16 {
+            self.facing.current(self.frame)
+        }
+        fn set_facing(&mut self, facing: u16) {
+            self.facing.set(facing, self.frame);
+        }
+        fn anim(&mut self, name: &str, coord: [i32; 3], delay: i32, z_adjust: i32) {
+            self.events
+                .push(json!(["anim", name, coord, delay, 1, 0x600, z_adjust, 0]));
+        }
+        fn aux_sound(&mut self, coord: [i32; 3]) {
+            self.events
+                .push(json!(["aux_sound", self.input["aux_sound"], coord]));
+        }
+        fn structural_bridge_floor_and_deck(&self) -> Option<(i32, i32)> {
+            let (x, y) = cell_of(self.location);
+            self.input["bridge_cells"]
+                .as_array()
+                .expect("bridge cells")
+                .contains(&json!([x, y]))
+                .then(|| {
+                    let floor = int(&self.input["bridge_floor"]) as i32;
+                    (
+                        floor,
+                        floor.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS),
+                    )
+                })
+        }
+        fn explosion(&mut self, damage: i32, warhead: &str, coord: [i32; 3]) {
+            let (x, y) = cell_of(coord);
+            let land = &self.input["impact_land"];
+            self.events.push(json!(["impact_cell", [x, y]]));
+            self.events
+                .push(json!(["select_anim", damage, warhead, land, coord]));
+            self.events.push(json!([
+                "anim",
+                "explosion",
+                coord,
+                0,
+                1,
+                crate::sim::anim_class::COMBAT_EXPLOSION_DRAW_FLAGS,
+                crate::sim::anim_class::COMBAT_EXPLOSION_Z_ADJUST,
+                0
+            ]));
+        }
+        fn combat_light(&mut self, damage: i32, warhead: &str, coord: [i32; 3]) {
+            self.events
+                .push(json!(["combat_light", damage, warhead, coord, 0, 0]));
+        }
+        fn area_damage(&mut self, coord: [i32; 3], damage: i32, warhead: &str) {
+            self.events
+                .push(json!(["area_damage", coord, damage, warhead, 1, 0]));
+        }
+        fn weapon_detonation(&mut self, weapon: &str, coord: [i32; 3]) {
+            self.events.push(json!(["weapon", weapon, coord]));
+        }
+        fn uninit(&mut self) {
+            self.uninit = true;
+            self.events.push(json!(["uninit"]));
+        }
+    }
+
+    /// The oracle's rows through the production block selection: a block's
+    /// type is the owner's, another type of its own, or unset.
+    fn rules(input: &Value) -> MissileSpawnRules {
+        let mut rules = MissileSpawnRules::default();
+        for (key, block, other, warheads) in [
+            ("V3", &mut rules.v3, "V3OTHER", ["V3WH", "V3EWH"]),
+            (
+                "DMisl",
+                &mut rules.dmisl,
+                "DMISLOTHER",
+                ["DMISLWH", "DMISLEWH"],
+            ),
+            (
+                "CMisl",
+                &mut rules.cmisl,
+                "CMISLOTHER",
+                ["CMISLWH", "CMISLEWH"],
+            ),
+        ] {
+            let row = &input["blocks"][key];
+            let bits = |field: &str| NativeF32Bits::from_bits(int(&row[field]) as u32);
+            block.type_name = match row["type"].as_str().expect("block type") {
+                "owner" => "OWNER".to_string(),
+                "other" => other.to_string(),
+                _ => String::new(),
+            };
+            block.pause_frames = int(&row["pause_frames"]) as i32;
+            block.tilt_frames = int(&row["tilt_frames"]) as i32;
+            block.pitch_initial = bits("pitch_initial");
+            block.pitch_final = bits("pitch_final");
+            block.turn_rate = bits("turn_rate");
+            block.raise_rate = int(&row["raise_rate"]) as i32;
+            block.acceleration = bits("acceleration");
+            block.altitude = int(&row["altitude"]) as i32;
+            block.damage = int(&row["damage"]) as i32;
+            block.elite_damage = int(&row["elite_damage"]) as i32;
+            block.body_length = int(&row["body_length"]) as i32;
+            block.lazy_curve = row["lazy_curve"].as_bool().expect("lazy flag");
+            block.warhead = warheads[0].to_string();
+            block.elite_warhead = warheads[1].to_string();
+        }
+        rules
+    }
+
+    fn observed(rocket: &RocketRuntime, host: &FixtureHost<'_>) -> Value {
+        let d = rocket.destination;
+        json!({
+            "location": host.location,
+            "facing": host.facing.current(host.frame),
+            "destination": [d.x, d.y, d.z],
+            "mission_timer": [
+                rocket.mission_timer.start_frame(),
+                rocket.mission_timer.duration(),
+                rocket.mission_timer_rate
+            ],
+            "trailer_timer": [
+                rocket.trailer_timer.start_frame(),
+                rocket.trailer_timer.duration()
+            ],
+            "mission_state": rocket.mission_state,
+            "current_speed": rocket.current_speed,
+            "resubmit_latch": u8::from(rocket.resubmit_latch),
+            "spawner_is_elite": u8::from(rocket.spawner_is_elite),
+            "current_pitch": rocket.current_pitch,
+            "cruise_start_distance": rocket.cruise_start_distance,
+            "tracker_cell": [host.tracker_cell.0, host.tracker_cell.1],
+        })
+    }
+
+    /// Parity with `tools/rocket_oracle/flight.json`: the original
+    /// constructor, Move_To and a Process per frame through Detonate, every
+    /// field and seam call bit-exact.
+    #[test]
+    fn flights_match_the_native_move_to_process_and_detonate_corpus() {
+        let trig = TrigTable::embedded();
+        let rows: Value =
+            serde_json::from_str(crate::test_fixture::text("tools/rocket_oracle/flight.json"))
+                .expect("corpus parses");
+        let rows = rows.as_array().expect("row list");
+        assert_eq!(rows.len(), 16);
+        for row in rows {
+            let name = row["name"].as_str().expect("row name");
+            let input = &row["input"];
+            let rules = rules(input);
+            let (block, cmisl) = rules.rocket_block("OWNER");
+            let first_frame = int(&input["first_frame"]) as u32;
+            let mut facing = FacingClass::new(0, int(&input["rot"]) as i32);
+            facing.snap(int(&input["facing"]) as u16, first_frame);
+            let mut host = FixtureHost {
+                input,
+                frame: first_frame,
+                trig,
+                location: coord(&input["start"]),
+                facing,
+                health: int(&input["health"]) as i32,
+                tracker_cell: (0, 0),
+                events: Vec::new(),
+                uninit: false,
+            };
+            let mut rocket = RocketRuntime::constructed(first_frame);
+            let output = &row["output"];
+            let mut start = observed(&rocket, &host);
+            start["destination"] = json!([0, 0, 0]);
+            assert_eq!(start, output["start"], "{name}: constructed");
+            let to = |value: &Value| {
+                let [x, y, z] = coord(value);
+                DriveCoord { x, y, z }
+            };
+            move_to(&mut rocket, block, to(&input["destination"]), first_frame);
+            let frames = output["frames"].as_array().expect("frames");
+            for (index, expected) in frames.iter().enumerate() {
+                host.frame += 1;
+                host.events.clear();
+                for later in input["later_moves"].as_array().expect("moves") {
+                    if int(&later["frame"]) == i64::from(host.frame) {
+                        move_to(&mut rocket, block, to(&later["destination"]), host.frame);
+                    }
+                }
+                if input["kill_frames"]
+                    .as_array()
+                    .expect("kill frames")
+                    .contains(&json!(host.frame))
+                {
+                    host.health = 0;
+                }
+                process(&mut rocket, block, cmisl, &RocketTypeExt::STOCK, &mut host);
+                let mut actual = observed(&rocket, &host);
+                actual["events"] = json!(host.events);
+                assert_eq!(&actual, expected, "{name}: frame {index}");
+            }
+            let last = frames.last().expect("a frame");
+            assert_eq!(
+                host.uninit,
+                last["events"]
+                    .as_array()
+                    .expect("events")
+                    .contains(&json!(["uninit"])),
+                "{name}: the flight ends where the original's does"
+            );
+        }
+    }
+
+    /// An Ares game names the owner type's puffs and spaces the trailer by its
+    /// `Missile.TrailerSeparation` (hooks 0x66238A..0x662D85), and a custom
+    /// missile's `Missile.Weapon` replaces Detonate's explosion, light and
+    /// area damage (0x663218). The first corpus flight, with that type.
+    #[test]
+    fn type_puffs_and_missile_weapon_replace_the_stock_ones() {
+        let trig = TrigTable::embedded();
+        let rows: Value =
+            serde_json::from_str(crate::test_fixture::text("tools/rocket_oracle/flight.json"))
+                .expect("corpus parses");
+        let input = &rows[0]["input"];
+        let rules = rules(input);
+        let (block, cmisl) = rules.rocket_block("OWNER");
+        let ext = RocketTypeExt {
+            takeoff_anim: Some("MYTAKE"),
+            trailer_anim: Some("MYTRAIL"),
+            trailer_separation: 7,
+            weapons: [Some("MYGUN"), None],
+        };
+        let first_frame = int(&input["first_frame"]) as u32;
+        let mut facing = FacingClass::new(0, int(&input["rot"]) as i32);
+        facing.snap(int(&input["facing"]) as u16, first_frame);
+        let mut host = FixtureHost {
+            input,
+            frame: first_frame,
+            trig,
+            location: coord(&input["start"]),
+            facing,
+            health: int(&input["health"]) as i32,
+            tracker_cell: (0, 0),
+            events: Vec::new(),
+            uninit: false,
+        };
+        let mut rocket = RocketRuntime::constructed(first_frame);
+        let [x, y, z] = coord(&input["destination"]);
+        move_to(&mut rocket, block, DriveCoord { x, y, z }, first_frame);
+        let mut trailer_spacings = Vec::new();
+        while !host.uninit && host.frame < first_frame + 2000 {
+            host.frame += 1;
+            process(&mut rocket, block, cmisl, &ext, &mut host);
+            if rocket.trailer_timer.start_frame() == host.frame as i32 {
+                trailer_spacings.push(rocket.trailer_timer.duration());
+            }
+        }
+        let names: Vec<&str> = host
+            .events
+            .iter()
+            .filter_map(|event| event[0].as_str())
+            .collect();
+        assert!(host.uninit, "the flight detonates");
+        assert!(names.contains(&"weapon") && !names.contains(&"area_damage"));
+        assert!(!names.contains(&"select_anim") && !names.contains(&"combat_light"));
+        let anims: Vec<&str> = host
+            .events
+            .iter()
+            .filter(|event| event[0] == "anim")
+            .filter_map(|event| event[1].as_str())
+            .collect();
+        assert!(anims.contains(&"MYTAKE") && anims.contains(&"MYTRAIL"));
+        assert!(
+            anims
+                .iter()
+                .all(|name| ["MYTAKE", "MYTRAIL"].contains(name))
+        );
+        assert!(trailer_spacings.contains(&7) && !trailer_spacings.contains(&3));
+    }
+
+    /// `Draw_Matrix @ 0x00663470` keys a pitched V3 only at the stored
+    /// PitchFinal product. It compares the PitchInitial product unrounded,
+    /// so Move_To's binary32 start pitch (retail 0.21) keys -1.
+    #[test]
+    fn draw_key_caches_a_pitched_rocket_only_at_the_stored_pitch_final() {
+        let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let spawn = &battle.rules.missile_spawn;
+        let (block, _) = spawn.rocket_block(&spawn.v3.type_name);
+        let mut rocket = RocketRuntime::constructed(0);
+        assert_eq!(rocket.draw_key_bits(block), Some(0));
+        move_to(&mut rocket, block, DriveCoord { x: 1, y: 1, z: 0 }, 0);
+        assert_ne!(rocket.current_pitch, 0);
+        assert_eq!(rocket.draw_key_bits(block), None);
+        rocket.current_pitch = quarter_turns(block.pitch_final);
+        assert_eq!(rocket.draw_key_bits(block), Some(0x40));
+        rocket.current_pitch += 1;
+        assert_eq!(rocket.draw_key_bits(block), None);
+    }
+
+    /// `V3RocketPitchInitial=1e999` reads as a binary32 infinity. Move_To stores
+    /// its quarter turns, infinity again, and Draw_Matrix's compare against
+    /// the PitchInitial product (`0x00663535`) finds them equal.
+    #[test]
+    fn infinite_pitch_initial_starts_and_keys_an_infinite_pitch() {
+        let rules = crate::rules::ruleset::RuleSet::from_ini(
+            &crate::rules::ini_parser::IniFile::from_str("[General]\nV3RocketPitchInitial=1e999\n"),
+        )
+        .unwrap();
+        let block = &rules.missile_spawn.v3;
+        assert_eq!(block.pitch_initial.bits(), f32::INFINITY.to_bits());
+        let mut rocket = RocketRuntime::constructed(0);
+        move_to(&mut rocket, block, DriveCoord { x: 1, y: 1, z: 0 }, 0);
+        assert_eq!(rocket.current_pitch, f32::INFINITY.to_bits());
+        assert_eq!(rocket.draw_key_bits(block), Some(0x20));
+    }
+
+    /// `0x00662AA2`/`0x00662CBF`: `(46_341, 46_341)` wraps the native
+    /// horizontal square to 9,266 (96 leptons); the true square is 65,536.
+    /// With a 1,000-lepton drop the native angle is steep and the VERA-only
+    /// one shallow.
+    #[test]
+    fn vera_only_target_angle_uses_the_true_square() {
+        let destination = DriveCoord {
+            x: 46_341,
+            y: 46_341,
+            z: 1_000,
+        };
+        let here = [0, 0, 0];
+        let native = f64::from_bits(super::store_f64(super::target_angle(
+            destination,
+            here,
+            false,
+        )));
+        let vera_only = f64::from_bits(super::store_f64(super::target_angle(
+            destination,
+            here,
+            true,
+        )));
+        assert!(native > 1.0, "native steep angle {native}");
+        assert!(vera_only < 0.1, "true shallow angle {vera_only}");
+    }
+}

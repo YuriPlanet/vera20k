@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "FootPerCell mode2 interior range-stop caller through actual Infantry null SetDestination, Foot null setter and Walk Stop; coordinate/source and mission/NavQueue order. Final InRange boolean and original-target weapon choice are supplied, not full range/selection parity.",
+  "assumptions": [
+    "Supplied FootPerCell mode2 register/frame at4D882F, after prior mode2 work; this does not execute whole InfantryPerCell or WalkProcess head retirement.",
+    "Original Infantry/Unit tables7EB058/7F5C70 copied unchanged, supplied valid actor/target/type/house objects. Only Walk constructor executes; default Infantry state is supplied, not constructor-certified.",
+    "Type+5E4=false ordinary range branch; no strict XYZ branch claim. Actor at2624,2624,0, marked=false; target actual XYZ defaults3036,2780,123. Real flat cells10,10/11,10 plus shared Dummy; target coordinates copied by actual+4F0 before signed565730.",
+    "Supplied ordinary null-setter envelope: reciprocal2A8 absent, no swap/open-top/bunker links; Enter contrasts execute original65AE30 with absent/present contact; stopped callback6E4=false. Doing27 human/nonhuman contrast executes originalHouse50B730 and actual early refusal.",
+    "Supplied ownerNavCom/aux, queue head2 with suffix3/4/5, timers/latch and Walk destination/moving. Setter-only head row has a supplied committed head, not a whole movement producer proof.",
+    "process_motion rows execute original75AEC0 entry/head gate through75BD25, observing full+36=true; no-head variants then supply head retirement before the caller. Numeric motion/retirement and Infantry6E4=true stopped-DoAction branch remain outside scope.",
+    "NavQueue count and two backing entries are supplied independently from the path queue and captured even in setter-only rows.",
+    "Frame100 and Rules+1768=22 supplied. Timer middle DWORD records original stack-derived ignored CDTimer slot; no logical timer meaning inferred. NullXYZ global suppliedzero; captured startup x87 control0E7F."
+  ],
+  "substitutions": [
+    "SelectWeapon virtual+2E4 records originalTarCom and returns supplied index; GetWeapon+3F8 records same index and returns supplied weapon slot.",
+    "6F7220 records actual sourceXYZ and converted targetCell then returns supplied boolean; this isolates caller ordering from existing range geometry/line-of-fire.",
+    "No substitution of target+4F0,565730,6F7970,6F77B0,Mission+184,House50B730,Infantry51AA40,Foot4D94B0,Walk75ADA0 or stopped521B40."
+  ],
+  "entry_points": {
+    "percell_range_block": "0x004D882F",
+    "percell_range_end": "0x004D8978",
+    "target_coordinate": "0x004D9FF0",
+    "coordinate_cell_wrapper": "0x006F7970",
+    "range_source": "0x006F77B0",
+    "infantry_set_destination": "0x0051AA40",
+    "foot_set_destination": "0x004D94B0",
+    "walk_constructor": "0x0075AA90",
+    "walk_stop": "0x0075ADA0",
+    "infantry_stopped": "0x00521B40"
+  },
+  "payload_sha256": "679d8d1e3571ec9a12769092c66915dfca46b589bbb2ed64560d21525ad87e12"
+}

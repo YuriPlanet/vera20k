@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "32 joined original47DD70 bridge producers -> original423AC0 primaryAnimAI perframe -> original439B00 physics -> original423930 contact/result -> native dry/water/deck landing constructors, actual489280 area/bridge admission and48A620 combat-light call, native primaryDestroy/UnInit and original725C70 duplicatequeue drain toonescalardestructorboundary. Emptycontactreceiver lists. D normalexpiry and DBRIS1LG trailer construction included. Primary-only scheduler boundary: otheranims are constructed but not AI-scheduled.",
+  "assumptions": [
+    "Imports companion bridge_debris_producer.py; original producer inputs/assumptions inherit its metadata. Companion bridge_debris_flight.inputs.json production PR552 release Hills export supplies24 resolvedtypes, actualWAKE1/orderedSplashList[H2O_EXP3,H2O_EXP2,H2O_EXP1], HEWalltrue and BridgeStrength1500.",
+    "All24 AnimType constructors427530 execute; ART numericfields and bindings supplied from export. Originalimage suffix derivesMiddle fromactualframecounts. D remainsnativeconstructor-only, absentsection/image. Framebuffers/pixels absent.",
+    "OriginalMapGetCell565730/5657A0 run on supplied32x30 realCelltable. Slopematricesretail, allcellsflat slope0; ordinarylevels4/0, 3x3level4mesa surrounded0,5x5level0pit surrounded4, or singlelevel4source surrounded12(cliff). Structuralbridge cases allcellsraw0x100; watercases CellLand2. Dummycelllevel0/overlay-1. This is boundedgeometry, notloadedmap/topologyproof.",
+    "Original47B2C0/439610/421E20/489100 initialize bridge/Bounce/Anim/Area416 offsets fromsupplied104 scalars. Runtimeframe1000 then incrementsonceperprimaryAI. No otherAnimAI runs, including siblingbridgeexplosion, trailer or expiry/wake/splash; their later sound/smudge/frame RNG is outside scope.",
+    "Bridge and waterbridge cases supplyconcretefamilytile1020, base1000,middle20, sharedanchoroverlay18; originalareaA/B/C/D execute on admittedimpact. ScenarioDestroyabletrue, MaxDamage/HE exact stored bits independently established by rules_oracle/bridge_landing_inputs original readers; active retail MaxDamage10000, wood0.75, spread0.5/PAM0.5. Driver callbacks, ifreached, returnfalse toexclude collapsephysics; no geometrymutation claim.",
+    "PrimaryfullAnimAI uses nativecreated state fromproducer. DBRIS1LG trailerSMOKEY2 binding andseparation2 supplied andoriginalconstructor runs on cadence. WaterWake/Splash bindings followorderedproductionexport. Object/tag/audio/house/Techno observers empty. GlobalAnimvector containsconstructedobjects; commonLogicvector empty, pendingdeletebuffer hascapacity256.",
+    "Report/sound indices remain nativector-1 in alltypes, despiteproduction names ininputfile: soundStart side effects intentionally notexecuted. This is a declared input substitution, not silent actualARTsound parity. Scorch/crater flags are copied but delayedchildMiddle bodies notscheduled. No cross-animation scheduler/RNGparity claim."
+  ],
+  "substitutions": [
+    "Inherited ObjectMark5F5850 returns1; DisplaySubmit4A9720 returns1; operatornew7C8E17 is bumpallocator. Actual Maplookups override inheritedcontrolledlookup, withno map substitution.",
+    "439150 empty BombListPointerGotInvalid and4A9770 DisplayRemove return0; operator_delete7C8B3D no-op. NativeAnimDestroy4255B0/ObjectUnInit5F65F0/AnimLimbo/ObjectLimbo/pointerexpiry execute withdeclaredemptyobservers.",
+    "Bridge driver587180/57BAA0/57CCF0, ifreached, returnfalse andlogactualcaller. No contactreceiver substitutes becausecontactlistsareempty. Dryarea489280 andcombatlight48A620 originalbodiesexecute; lighttypefieldszero/noactualdynamiclight.",
+    "Original725850..725886 initializespendingdeletevector beforeprovidedcapacity/buffer; terminal725C70 drainexecuteswholebody. FS:[0] suppliesvalidemptySEHchain. OriginalRTTI/classcomparisonsrun, withWindowsIsBadReadPtr importedcallat7CAA5E supplied0 aftercheckingmappedfixturememory. ScalarAnimDtor426590 returns0, pops4, andrecordscall/flags. Queuecompactionisnotstubbed.",
+    "Originalexecutableinstructionsunchanged. RuntimeART/report/reference/image/observer/bufferstate suppliedasdeclaredabove. No graphics output orwholegame/nativefullschedulerclaim."
+  ],
+  "entry_points": {
+    "producer": "0x0047DD70",
+    "anim_type_ctor": "0x00427530",
+    "anim_ctor": "0x00421EA0",
+    "anim_ai": "0x00423AC0",
+    "bounce_update": "0x00439B00",
+    "bounce_result": "0x00423930",
+    "anim_destroy": "0x004255B0",
+    "area_damage": "0x00489280",
+    "combat_light": "0x0048A620",
+    "anim_deck_init": "0x00421E20",
+    "area_deck_init": "0x00489100",
+    "pending_vector_init": "0x00725850",
+    "pending_drain": "0x00725C70",
+    "scalar_anim_dtor_boundary": "0x00426590"
+  },
+  "native_landing_inputs_sha256": "d7cedef65837fca09ba0d18c15683e5fd51393d3dc190e322cd1b575f1218541",
+  "fixture_input_sha256": "9c4467fd05ce5c23f417dd0f8596ab99f43cda9b0330dceb287168b925e1fa0e",
+  "payload_sha256": "83c0378ef422ea8242d2a17f8b431f2f6f100fc226f0f551eb68fb8474107f4d"
+}

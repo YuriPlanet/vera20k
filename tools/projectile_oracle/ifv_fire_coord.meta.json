@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original physical FV numbered FLH, flat Drive transform and two burst tails.\n\nPhysical INI cache setup, source lifecycle, source pose, HouseROF1, ScenarioSeed31\nand second FireAt call time are supplied. This proves neither whole Unit AI nor\nwhole-scenario native identity prefix. Read ifv_fire_coord.md for exact coverage.\nspawn_launch adds GetFLH with a nonzero base and SpawnManagerClass::AI case 0's\nlaunch coordinate for retail V3, DRED and BSUB on a supplied flat pose.\n",
+  "assumptions": [
+    "Physical retail strings supplied through native CRC caches; full physical file loader omitted",
+    "Partial FV type readers; original UnitType constructor/default BurstDelay loop and numbered FLH loop execute",
+    "Source Unit lifecycle/flat pose and HouseROF1 supplied; original Drive constructor and GetFLH execute",
+    "Scenario Seed31 and host shot frames0,4 supplied; no intervening world/Bullet AI or whole-world native-ID claim",
+    "HE constructor only, sound registry empty, no native impact/retirement or post6FF43F tail",
+    "spawn_launch: partial V3/DRED/BSUB type readers, full Weapon readers and the ART reader through SecondSpawnOffset execute; owner Unit state, flat pose, heading0x2000, burst index1, frame0 and spawn manager/slot memory supplied",
+    "spawn_launch: case0 runs 6B73C4 to the child Unlimbo call 6B7505 and the reset block to 6B758F; Unlimbo, the CMislType V3TAKOFF anim block and the rest of AI are not executed"
+  ],
+  "substitutions": [
+    "Original Bullet COM activation dispatched to actual6C5090 factory; Windows InterlockedIncrement supplied",
+    "ObjectUnlimbo and Display admission supplied; originalPE instructions unchanged",
+    "spawn_launch: CMislType is a supplied pointer identity (native compares pointers only); the CMislType anim block is skipped by resuming at 6B757A"
+  ],
+  "entry_points": {
+    "unit_type_ctor": "0x007470D0",
+    "numbered_flh_reader": "0x00715B10",
+    "read_coord": "0x00529CA0",
+    "burst_delay_reader": "0x00747B03",
+    "get_flh": "0x006F3AD0",
+    "drive_ctor": "0x004AF540",
+    "drive_draw_matrix": "0x004AFF60",
+    "launch_to_muzzle_gate": "0x006FE4F2",
+    "get_rof": "0x006FCFA0",
+    "weapon_reader": "0x00772080",
+    "ship_ctor": "0x0069EC50",
+    "ship_draw_matrix": "0x0069F670",
+    "spawn_launch": "0x006B73C4",
+    "spawn_burst_reset": "0x006B757A"
+  },
+  "physical_files": [
+    {
+      "name": "RULESMD.INI",
+      "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+    },
+    {
+      "name": "MPBattleMD.ini",
+      "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963"
+    },
+    {
+      "name": "Hills.map",
+      "sha256": "780d5d6e6d3c81ac0d510a5df326848dd426b3d840ac290114f44faf8eab9e9e"
+    },
+    {
+      "name": "ARTMD.INI",
+      "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31"
+    }
+  ],
+  "payload_sha256": "ee6474c05fb945bca5891196694e510068fabc17dbc267984a70c19aa3ccdbc5"
+}

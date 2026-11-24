@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Drive/Ship post-placement cursor gates use live progress and the retained raw descriptor",
+  "assumptions": [
+    "Supplied admitted initial curve; original selection and point-zero payment execute",
+    "Within-point world mutations are supplied counterfactual inputs, not proven gameplay callback outcomes",
+    "Only the cursor portion of chain admission executes; direction, mismatch, entry and lifecycle gates are outside coverage",
+    "All distinct retail raw descriptors selected by either family are covered, with same and different live selectors and cursor-zero exclusion"
+  ],
+  "substitutions": [
+    "Direct retained selector/cursor/short/residual writes replace omitted placement/Mark/world effects without patching any original instructions",
+    "A second supplied cursor write replaces the omitted handoff receiver before executing the later chain gate",
+    "Execution stops at each original branch destination, before handoff or chain effects"
+  ],
+  "entry_points": {
+    "drive_handoff": "0x004B1AC6",
+    "drive_chain": "0x004B1B35",
+    "ship_handoff": "0x006A1102",
+    "ship_chain": "0x006A1171"
+  },
+  "payload_sha256": "a784554ce541edad9ab0c59cc741cdb2149bb08216d8ef3ad1ac3887cb5d3fa5"
+}

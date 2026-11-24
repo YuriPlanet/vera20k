@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original full Shrapnel navigation with native-derived physical Cell inputs.\n\nThe shared Anytown Navigation owner executes original constructors, Recalc,\nTerrain placement, connectivity and hierarchy. This wrapper changes only the\nphysical input selection and retained low-wood controller sequence.\n",
+  "assumptions": [
+    "Original Full_Init687631..68764F reads Map/Theater through475870/528A10 and48DBE0, storing Scenario+1258. The derived1 is transplanted into this VM before Terrain71C110 and Cell483DDF consume it.",
+    "Physical XShrapnel.MAP diamond fields, original scalar/type readers and physical SNOWMD/primary TMP bytes; original Cell constructors and Recalc derive all class/slope/height inputs. No VERA planes, graph IDs or crop state supplied.",
+    "Original Terrain constructors and direct Place_Down follow physical source order; complete ordinary building class gates must independently read false. Initial/final full Cell sweeps and all13 movement rows/all3 graphs are retained.",
+    "Actual568BB0 final initialization,56C510 and581F90(2,1,0), then original570050 repair,57BAA0 damage/collapse,570050 repair and repeat execute. Shared builder owns all navigation initialization/publication.",
+    "Main, Scenario and MapGen begin with original seeded0 complete states, supplied separately. Original Terrain/Unit constructor draws are observed; no whole native scenario-load RNG or command timing claim.",
+    "MTNK constructor prefix and active73F0A0 execute on a supplied alive receiver at115,58,height2; queries use direction4/null previousCell/arg5=1. No spawn, route, occupancy or command admission claim."
+  ],
+  "substitutions": [
+    "Successful bounded malloc/free, CRT atexit/TLS, host MIX decoding and lexical INI cache preparation inherited from shared owners.",
+    "Waterfall Anim421EA0 returns allocated receiver; animation registration/playback/lifetime and its hidden RNG excluded. Shroud returns hidden; full Terrain Unlimbo/Logic registration excluded.",
+    "Screen/radar/dirty rectangles are shared sinks. Ordinary mobiles/buildings omitted from class-neutral memberships; bridge occupants are empty and no CellTags exist.",
+    "No outer area-damage/strength RNG, projectile/firing, Engineer prefix/suffix, save/load or native raster output claimed."
+  ],
+  "entry_points": {
+    "cell_ctor": "0x0047BBF0",
+    "terrain_ctor": "0x0071BB90",
+    "terrain_place": "0x005683C0",
+    "recalc": "0x0047D2B0",
+    "zone": "0x00483C80",
+    "final_init": "0x00568BB0",
+    "connectivity": "0x0056C510",
+    "hierarchy": "0x00581F90",
+    "batch": "0x00586990",
+    "damage": "0x0057BAA0",
+    "repair": "0x00570050",
+    "unit_can_enter": "0x0073F0A0"
+  },
+  "payload_sha256": "24cc5905dbfaacc31ab11f93bdb1314e8b58b8f463d619b245908b234e95d50c",
+  "packaging": "canonical JSON; gzip mtime=0; copied lexical inputs replaced by SHA256"
+}

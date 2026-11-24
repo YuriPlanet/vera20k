@@ -1,0 +1,187 @@
+{
+  "schema_version": 1,
+  "scope": "Ares 3.0 GenericPrerequisites reader, owned/planned requirements including installed upgrades, clear/default lifecycle and alternate-membership refresh hooks",
+  "ares_sha256": "93ce890f387a6c1b3240a2dd7b674f25fec5a0e96f0b0d0306796b2edf7b5b83",
+  "payload_sha256": "d7ac8b30578067deb2e373abfe3b2e5aa38e559253429add64926a4f58ad5320",
+  "control_count": 57,
+  "entry_points": {
+    "LoadFromINI": "0x10008470",
+    "Parse": "0x100085f0",
+    "HouseOwnsAll": "0x10008110",
+    "HouseOwnsAny": "0x100081e0",
+    "HouseOwnsSpecific": "0x100082b0",
+    "ListContainsAll": "0x10008370",
+    "Clear": "0x10004ca0",
+    "AddDefaults": "0x10007db0",
+    "CountOwnedNow": "0x100032f0",
+    "IsGenericPrerequisite": "0x1003dd00",
+    "FootPutPrereqs": "0x1004e780",
+    "AircraftDestructorPrereqs": "0x1004e750",
+    "InfantryDestructorPrereqs": "0x1004e7c0",
+    "UnitDestructorPrereqs": "0x1004e890",
+    "ChangeOwnershipPrereqs": "0x1004e7f0",
+    "DiscoveredByPrereqs": "0x1004e840"
+  },
+  "boundaries": "Existing type/group registries, valid house-owned counts and ReadString return payloads are supplied. Actual Ares Parse/LoadFromINI/comma tokenizer/FindIndex/group lookup/list writes/HouseOwnsAll/Any/ListContainsAll/CountOwnedNow and Clear/destructor/AddDefaults/FindOrAllocate execute. Installed-upgrade controls also execute HouseOwnsSpecific and host lookup with supplied House Buildings and fixed three-slot Building shells; active counters, installed slots and upgrade-count bytes are supplied, not initialized through native installation. CRT _stricmp/_strlwr_s/strncpy_s/format and allocation leaves supplied for ASCII, debug log suppressed, WhatAmI type-category query supplied. CountOwnedNow executes its original category switch, index bound and tracked-counter reads (+5500 building,+5514 unit,+5528 infantry,+553C aircraft), independent of active/on-map counters. No whole DLL startup, INI byte parsing, custom-key registration, complete CanBuild, savegame or whole-scenario parity claimed. Eleven refresh controls execute the original exported hooks and IsGenericPrerequisite with supplied Syringe register storage, type extensions with empty membership cache, group alternates and House shells. Actual original object vtables answer WhatAmI/GetTechnoType. Whole Put/death/discovery/ownership transitions are not executed by these component controls.",
+  "provenance": "Executed original Ares 3.0 instructions at preferred base0x10000000 with supplied ASCII INI-return/type/ownership fixtures; gamemd byte identity records the supporting original image. All controls use authored A/B/COLLIDE/TANK/INF synthetic type names, no third-party mod rules or resources.",
+  "source_lead": "https://github.com/Ares-Developers/Ares/blob/4f1d929920aca31924c6cd4d3dfa849daa65252a/src/Enum/Prerequisites.cpp",
+  "source_limit": "Public source lead declares older 0.A; actual Ares3.0 DLL instructions and execution establish this corpus, not equivalence to that source revision.",
+  "unicorn_binding": "2.1.4",
+  "command": "python -m tools.rules_oracle.ares_prerequisites --ares-dll <Ares.dll> --gamemd-exe <gamemd.exe> --output <corpus.json>",
+  "mapping_geometry": {
+    "Ares": {
+      "base": "0x10000000",
+      "size": "0xe0000",
+      "headers": "0x400"
+    },
+    "gamemd": {
+      "base": "0x400000",
+      "size": "0xa00000",
+      "headers": "0x1000"
+    },
+    "supplied_heap_and_stack": {
+      "base": "0x20000000",
+      "size": "0x200000"
+    },
+    "supplied_return_and_category_service": {
+      "base": "0x30000000",
+      "size": "0x1000"
+    }
+  },
+  "execution_budget_per_call": {
+    "instructions": 100000,
+    "timeout_us": 5000000,
+    "required_endpoint": "0x30000000"
+  },
+  "read_only_evidence": "CanBuild10021B00 calls Qualification10021FF0 before human admission; Qualification calls Any at10022041/100220C0, normal-list All at10021B81 is gated by effective IsHuman and Qualification result3. Supporting gamemd440871..440A2F installs then UnInits the temporary upgrade before normal Techno Unlimbo and its Added_To_Game call6F6D8F. These caller/lifecycle statements are instruction reads, not whole-function execution controls. Reproduce bounded original spans with the same explicit binary arguments and --disassemble.",
+  "rng_timer_detach_limit": "No RNG draw, timer write or detach call in inspected prerequisite component bodies. Supporting install construction, refresh, temporary UnInit and destructor tracking are outside the component execution controls.",
+  "native_regions_end_exclusive": {
+    "HouseOwnsAll": [
+      "0x10008110",
+      "0x100081d6"
+    ],
+    "HouseOwnsAny": [
+      "0x100081e0",
+      "0x100082a8"
+    ],
+    "HouseOwnsSpecific": [
+      "0x100082b0",
+      "0x10008362"
+    ],
+    "FindBuildingType": [
+      "0x10007e50",
+      "0x10007e97"
+    ],
+    "CanBuild": [
+      "0x10021b00",
+      "0x10021c49"
+    ],
+    "Qualification": [
+      "0x10021ff0",
+      "0x10022356"
+    ],
+    "SupportingUpgradeUnlimboArm": [
+      "0x440871",
+      "0x440a32"
+    ],
+    "SupportingTechnoActiveCounterCall": [
+      "0x6f6d85",
+      "0x6f6d94"
+    ],
+    "IsGenericPrerequisite": [
+      "0x1003dd00",
+      "0x1003dd60"
+    ],
+    "AircraftDestructorPrereqs": [
+      "0x1004e750",
+      "0x1004e77e"
+    ],
+    "FootPutPrereqs": [
+      "0x1004e780",
+      "0x1004e7b2"
+    ],
+    "InfantryDestructorPrereqs": [
+      "0x1004e7c0",
+      "0x1004e7ee"
+    ],
+    "ChangeOwnershipPrereqs": [
+      "0x1004e7f0",
+      "0x1004e83e"
+    ],
+    "DiscoveredByPrereqs": [
+      "0x1004e840",
+      "0x1004e882"
+    ],
+    "UnitDestructorPrereqs": [
+      "0x1004e890",
+      "0x1004e8be"
+    ],
+    "TypeExtConstructorCachePrefix": [
+      "0x1003c710",
+      "0x1003c7ae"
+    ],
+    "LoadTypeExtCachePrefix": [
+      "0x1003a370",
+      "0x1003a3f8"
+    ],
+    "SupportingUnitDestructorPrelude": [
+      "0x7357bb",
+      "0x73581b"
+    ],
+    "SupportingInfantryDestructorPrelude": [
+      "0x517db7",
+      "0x517e33"
+    ],
+    "SupportingAircraftDestructorPrelude": [
+      "0x4140b7",
+      "0x414110"
+    ],
+    "SupportingFootPutPreludeAndDiscovery": [
+      "0x4d718c",
+      "0x4d7235"
+    ],
+    "SupportingDiscovery": [
+      "0x6f4960",
+      "0x6f4a3f"
+    ],
+    "SupportingChangeOwnerTracking": [
+      "0x7015d8",
+      "0x7015f2"
+    ]
+  },
+  "hook_registrations": {
+    "FootPutPrereqs": [
+      "0x4d7221",
+      6
+    ],
+    "AircraftDestructorPrereqs": [
+      "0x4140eb",
+      6
+    ],
+    "InfantryDestructorPrereqs": [
+      "0x517df2",
+      6
+    ],
+    "UnitDestructorPrereqs": [
+      "0x7357f6",
+      6
+    ],
+    "ChangeOwnershipPrereqs": [
+      "0x7015eb",
+      7
+    ],
+    "DiscoveredByPrereqs": [
+      [
+        "0x6f4a1d",
+        6
+      ],
+      [
+        "0x6f4a37",
+        5
+      ]
+    ]
+  },
+  "hook_registration_source": "Authenticated original Ares .syhks00 section at0x100C3000..0x100C8A80; 16-byte records contain stock hook address, overwritten length, exported-name pointer, padding. Hook names resolve through the original PE export table.",
+  "membership_cache_limit": "Original ctor initializes TypeExt+68/+69 to0. Actual load-reader1003A3D6..1003A3F3 restores initialized flag then optional cached value. Selected normal fresh-match scope uses retained final catalog membership during play. Full saved-game behavior and live INI reread cache invalidation after a membership query remain outside coverage; no claim from a scan finding no direct +68/+69 access in ReadINIFile.",
+  "lifecycle_source_lead": "https://github.com/Ares-Developers/Ares/blob/4f1d929920aca31924c6cd4d3dfa849daa65252a/src/Ext/Techno/Hooks.Prerequisites.cpp"
+}

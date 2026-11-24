@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original587410 repair cursor over both physical Anytown huts and four states.\n\nReuses the physical Resident owner. Damage/repair prerequisites execute original\nbodies; cursor selection and walks execute without replaced dependencies.\nStructural-record and other-axis branches remain outside this stock witness.\n",
+  "assumptions": [
+    "Physical XMP03T4.MAP cells, exact theater tile bases and original overlay/land readers are reused from anytown_damage.Resident. Both actual hut coordinates are supplied directly to original587410.",
+    "Healthy, first_damage, collapsed and repaired states are made by zero/one/two original57CCF0 calls at87,54, plus original573540 from the selected hut for repaired. No overlay edits manufacture cursor results.",
+    "Original587410 executes its entire selected path, including native Y-major25-cell selection, tile-family precedence, live last matching cell, concrete overlay orientation and both directed walks as reached. No cursor predicate or lookup answer is substituted.",
+    "All180 cell snapshots, complete cell-memory hashes, scan/lookup/walk trace, return EAX/AL, frame1000 and complete Main/Scenario/MapGen states are recorded around the query. AL is the cursor Boolean; upper EAX bits are retained mechanically.",
+    "Complete mapped.text is unchanged after each measured native call."
+  ],
+  "substitutions": [
+    "The inherited sparse physical map, pristine TMP heads, supplied initial zone planes, empty objects, zero presentation/graph callbacks and successful bounded allocator remain as documented by the Resident owner. Actual selected Recalc executes.",
+    "Map query starts at587410; no Input/Mouse/Engineer or full Building lifecycle executes. Structural record branch fails closed if reached and is not represented by synthetic fixtures. The stock overlay family takes the Y-axis path; the other-axis code is instruction-only.",
+    "Native seed0 streams and frame1000 are supplied, not a full scenario-loaded RNG position. Preparatory repair consumes native MapGen; every cursor query records its own unchanged or changed streams independently."
+  ],
+  "entry_points": {
+    "cursor": "0x00587410",
+    "lookup": "0x005657A0",
+    "damage": "0x0057CCF0",
+    "repair": "0x00573540",
+    "recalc": "0x0047D2B0",
+    "structural_branch_excluded": "0x005876C6"
+  },
+  "payload_sha256": "444a1e344b60a42e0a77028582d1708246cf6a4bcadcbcccae7dc8fbb0b832e9",
+  "packaging": "canonical JSON; gzip mtime=0; copied lexical inputs replaced by SHA256"
+}

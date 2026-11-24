@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Three native Ares3.0 supplemental CSF histories, synthetic files only.",
+  "assumptions": [
+    "Initialized sorted two-label base table and base language0 are explicit inputs.",
+    "Actual enumeration10060DF0, admission100608C0, override10060C80, index10060EE0 and originalReadFile734990 execute; Syringe register transport is supplied without patching code.",
+    "File bytes/read cursors, heap allocation/free, ASCII strcmpi and printf formatting are supplied services. Native record parser, normalization, label search and sort execute.",
+    "No mod assets, physical MIX priority, arbitrary duplicate new labels, multiple values, overflow or whole startup equivalence."
+  ],
+  "substitutions": [
+    "CCFile services, initialized base storage, heap/ASCII CRT leaves and Syringe register transport only; no decoded labels or merge results injected."
+  ],
+  "entry_points": {
+    "extra": "0x10060DF0",
+    "admission": "0x100608C0",
+    "override": "0x10060C80",
+    "index": "0x10060EE0",
+    "reader": "0x00734990"
+  },
+  "ares_sha256": "93ce890f387a6c1b3240a2dd7b674f25fec5a0e96f0b0d0306796b2edf7b5b83",
+  "replay_command": "python -m tools.rules_oracle.ares_csf --ares-dll <Ares.dll> --gamemd-exe <gamemd.exe>",
+  "payload_sha256": "f072031048328718d94d81504be78e15f67da0a40bbf4d1c6f4e44f80bb9b98e",
+  "publication_note": "Replay placeholders replace private installation paths; native payload is unchanged. Three histories were executed once; this metadata edit did not replay them."
+}

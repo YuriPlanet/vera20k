@@ -1,0 +1,708 @@
+//! VERA-only: the facts a path search's Can_Enter_Cell asks share, copied once
+//! per batch of searches. A batch's searches
+//! ([`crate::sim::movement::path_batch`]) all read one unchanged world, and in
+//! a jam each real cell is asked about ~36 times a batch and each blocker read
+//! ~42 times, every time from scattered terrain, occupancy and entity records.
+//! The first ask copies what Infantry `0x0051BF90` / Unit `0x0073F0A0` read of
+//! the cell or blocker into a dense table and later asks read the copy;
+//! searches asking at once never wait for one another ([`EntryFacts::cell`]).
+//! The searches through a jam also price its moving friendlies by the same
+//! urgency-0 code-2 chains (`AStar_compute_edge_cost @ 0x00429830`,
+//! `0x00429886..0x00429984`), each a walk along up to ten Foots, so a cell's
+//! chain is kept too ([`EntryFacts::code2_chain`]). A walk skips its own
+//! search's mover, so one is kept only when it skipped none, with a bit for
+//! each Foot it followed; a search whose mover's bit is set walks its own.
+//! A core search a Foot runs at its own turn, after its Mark0, reads one
+//! unchanged world too, so it keeps facts in the same tables, a batch of one;
+//! it walks its chains itself, since no other search shares its world.
+//! The world stays the source of truth: the tables are emptied before each
+//! batch and each such search (the chains before each batch only), never
+//! saved or hashed, and debug builds compare
+//! every reuse with a fresh read. Other asks read the world directly. A batch
+//! asks about a few thousand of the map's cells, so the tables mark what they
+//! keep and the reset empties only those.
+
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+
+use crate::map::cell_index::NativeCellIdentity as Cell;
+use crate::map::entities::EntityCategory;
+use crate::rules::locomotor_type::SpeedType;
+use crate::rules::terrain_rules::SpeedCostProfile;
+use crate::sim::components::DriveCoord;
+use crate::sim::game_entity::GameEntity;
+use crate::sim::intern::InternedId;
+use crate::sim::movement::Code2Chain;
+use crate::sim::movement::bump_crush::CrushTarget;
+use crate::sim::movement::locomotor::MovementLayer;
+use crate::sim::occupancy::RawCellKey;
+use crate::sim::overlay_grid::OverlayCell;
+use crate::sim::world::Simulation;
+
+/// Set in every kept [`EntryFacts::code2_chain`] word, so 0 is "not walked
+/// yet". Below the two flags the word holds the walk's
+/// [`Code2Chain::named`] bits.
+const CHAIN_KEPT: u64 = 1 << 63;
+/// The kept chain jams.
+const CHAIN_JAMS: u64 = 1 << 62;
+
+/// One batch's [`CellFacts`], [`PlainCell`] and code-2 chains by real cell
+/// index and [`BlockerFacts`] by entity slot, each kept from its first ask.
+#[derive(Default)]
+pub(crate) struct EntryFacts {
+    cells: Vec<OnceLock<CellFacts>>,
+    /// The real cells whose `cells` entry a search claimed this batch: the
+    /// one search that stores it ([`EntryFacts::keep`]).
+    cells_claimed: KeptBits,
+    /// Each real cell's [`PlainCell`] bits, 0 until asked.
+    plain: Vec<AtomicU32>,
+    /// The real cells whose `plain` entry this batch filled.
+    plain_kept: KeptBits,
+    blockers: Vec<OnceLock<BlockerFacts>>,
+    /// The slots whose `blockers` entry a search claimed this batch.
+    blockers_claimed: KeptBits,
+    /// Each real cell's ground (`2 * index`) and deck (`2 * index + 1`)
+    /// code-2 chain ([`EntryFacts::code2_chain`]), 0 until kept.
+    chains: Vec<AtomicU64>,
+    /// The entries of `chains` this batch kept.
+    chains_kept: KeptBits,
+}
+
+/// A copy starts empty. The facts belong to the batch in flight, and the one
+/// copy of a world, the presentation frame (docs/sim-thread.md), never
+/// searches; a batch rebuilds them from its first ask.
+impl Clone for EntryFacts {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+/// One bit per table entry, set when an ask fills it, so a reset empties only
+/// the filled entries. Searches on several threads may set one bit at once.
+#[derive(Default)]
+struct KeptBits(Vec<AtomicU64>);
+
+impl KeptBits {
+    fn mark(&self, index: usize) {
+        let _ = self.claim(index);
+    }
+
+    /// Set `index`'s bit, answering whether this call set it: of several
+    /// searches claiming one entry at once, exactly one does.
+    fn claim(&self, index: usize) -> bool {
+        let (word, bit) = (&self.0[index / 64], 1u64 << (index % 64));
+        word.load(Ordering::Relaxed) & bit == 0 && word.fetch_or(bit, Ordering::Relaxed) & bit == 0
+    }
+
+    /// `empty` every marked entry and clear the marks, then fit them to `len`
+    /// entries.
+    fn empty_marked(&mut self, len: usize, mut empty: impl FnMut(usize)) {
+        for (word_index, word) in self.0.iter_mut().enumerate() {
+            let mut bits = std::mem::take(word.get_mut());
+            while bits != 0 {
+                empty(word_index * 64 + bits.trailing_zeros() as usize);
+                bits &= bits - 1;
+            }
+        }
+        self.0.resize_with(len.div_ceil(64), AtomicU64::default);
+    }
+}
+
+impl std::fmt::Debug for EntryFacts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EntryFacts")
+            .field("cells", &self.cells.len())
+            .field("blockers", &self.blockers.len())
+            .finish()
+    }
+}
+
+impl EntryFacts {
+    /// Forget every kept fact and fit the tables to `cells` real cells and
+    /// `slots` entity slots, before a batch.
+    pub(crate) fn reset(&mut self, cells: usize, slots: usize) {
+        let kept_cells = &mut self.cells;
+        self.cells_claimed.empty_marked(cells, |index| {
+            kept_cells[index].take();
+        });
+        self.cells.resize_with(cells, OnceLock::new);
+        let plain = &mut self.plain;
+        self.plain_kept.empty_marked(cells, |index| {
+            *plain[index].get_mut() = 0;
+        });
+        self.plain.resize_with(cells, AtomicU32::default);
+        let blockers = &mut self.blockers;
+        self.blockers_claimed.empty_marked(slots, |slot| {
+            blockers[slot].take();
+        });
+        self.blockers.resize_with(slots, OnceLock::new);
+    }
+
+    /// Forget every kept code-2 chain and fit the table to `cells` real
+    /// cells, before a batch: only a batch's searches share chains.
+    pub(crate) fn reset_chains(&mut self, cells: usize) {
+        let chains = &mut self.chains;
+        self.chains_kept.empty_marked(2 * cells, |note| {
+            *chains[note].get_mut() = 0;
+        });
+        self.chains.resize_with(2 * cells, AtomicU64::default);
+    }
+
+    /// Real cell `index`'s facts, kept from this batch's first ask
+    /// ([`Self::keep`]), lent to `see`: most asks read a few fields of them.
+    pub(super) fn cell<R>(
+        &self,
+        index: usize,
+        read: impl Fn() -> CellFacts,
+        see: impl FnOnce(&CellFacts) -> R,
+    ) -> R {
+        Self::keep(
+            &self.cells[index],
+            &self.cells_claimed,
+            index,
+            &read,
+            |facts| {
+                debug_assert!(
+                    !crate::sim::touch_log::live_read_check_enabled() || *facts == read(),
+                    "real cell {index} changed during a path search"
+                );
+                see(facts)
+            },
+        )
+    }
+
+    /// Real cell `index`'s [`PlainCell`], kept from this batch's first ask.
+    /// Searches asking at once may each read it and store the same bits:
+    /// every read sees the one unchanged world.
+    pub(super) fn plain(&self, index: usize, read: impl Fn() -> PlainCell) -> PlainCell {
+        let kept = &self.plain[index];
+        let cell = match kept.load(Ordering::Relaxed) {
+            0 => {
+                let cell = read();
+                self.plain_kept.mark(index);
+                kept.store(cell.0, Ordering::Relaxed);
+                cell
+            }
+            bits => PlainCell(bits),
+        };
+        debug_assert!(
+            !crate::sim::touch_log::live_read_check_enabled() || cell == read(),
+            "real cell {index} changed during a path search"
+        );
+        cell
+    }
+
+    /// The facts of the entity in `slot`, kept from this batch's first ask
+    /// ([`Self::keep`]).
+    pub(super) fn blocker(&self, slot: usize, read: impl Fn() -> BlockerFacts) -> BlockerFacts {
+        Self::keep(
+            &self.blockers[slot],
+            &self.blockers_claimed,
+            slot,
+            &read,
+            |&facts| {
+                debug_assert!(
+                    !crate::sim::touch_log::live_read_check_enabled() || facts == read(),
+                    "the entity in slot {slot} changed during a path search"
+                );
+                facts
+            },
+        )
+    }
+
+    /// Whether the code-2 chain from real cell `index`'s `layer` list jams
+    /// for a search whose mover is `unlisted`
+    /// (`Simulation::astar_code2_chain`, which `walk` runs): the batch's
+    /// kept answer unless that chain followed the mover. A walk is kept when
+    /// every search whose mover it did not follow walks the same
+    /// ([`Code2Chain::shared`]). Searches walking one chain at once may each
+    /// store it: every walk sees the one unchanged world, so the words are
+    /// equal.
+    pub(crate) fn code2_chain(
+        &self,
+        index: usize,
+        layer: MovementLayer,
+        unlisted: Option<u64>,
+        walk: impl Fn() -> Result<Code2Chain, String>,
+    ) -> Result<bool, String> {
+        let note = match layer {
+            MovementLayer::Ground => 2 * index,
+            MovementLayer::Bridge => 2 * index + 1,
+            MovementLayer::Air | MovementLayer::Underground => {
+                return walk().map(|chain| chain.jams);
+            }
+        };
+        let kept = &self.chains[note];
+        let word = kept.load(Ordering::Relaxed);
+        if word & CHAIN_KEPT != 0
+            && unlisted.is_none_or(|mover| word & Code2Chain::name_bit(mover) == 0)
+        {
+            let jams = word & CHAIN_JAMS != 0;
+            debug_assert!(
+                !crate::sim::touch_log::live_read_check_enabled()
+                    || walk().map(|chain| chain.jams) == Ok(jams),
+                "the code-2 chain from real cell {index} changed during a path search"
+            );
+            return Ok(jams);
+        }
+        let chain = walk()?;
+        if chain.shared && word & CHAIN_KEPT == 0 {
+            self.chains_kept.mark(note);
+            let jams = if chain.jams { CHAIN_JAMS } else { 0 };
+            kept.store(CHAIN_KEPT | jams | chain.named, Ordering::Relaxed);
+        }
+        Ok(chain.jams)
+    }
+
+    /// `see` of entry `index`'s kept facts, else of a search's own `read`,
+    /// which it keeps when it is the one to claim the entry. Only that search
+    /// sets `kept`, so the set never waits, and a search asking before the
+    /// set lands sees its own read instead of waiting for it. Each search
+    /// reads before it claims, so searches asking at once read side by side.
+    /// Every read sees the one unchanged world, so the answers are equal.
+    fn keep<T: Copy, R>(
+        kept: &OnceLock<T>,
+        claimed: &KeptBits,
+        index: usize,
+        read: impl Fn() -> T,
+        see: impl FnOnce(&T) -> R,
+    ) -> R {
+        if let Some(facts) = kept.get() {
+            return see(facts);
+        }
+        let facts = read();
+        if claimed.claim(index) {
+            let _ = kept.set(facts);
+        }
+        see(&facts)
+    }
+}
+
+/// What Can_Enter_Cell reads of one real cell. Its object lists' members, its
+/// tube, the first-Building lookups and MovementRestrictedTo's land, tile and
+/// overlay reads stay live; a [`PlainCell`] keeps only whether it has a tube.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct CellFacts {
+    pub(super) coord: (i16, i16),
+    pub(super) level: i8,
+    pub(super) slope: u8,
+    pub(super) flags: u32,
+    /// The raw ground and deck occupation bytes, each with its infantry owner.
+    pub(super) ground: (u8, Option<InternedId>),
+    pub(super) deck: (u8, Option<InternedId>),
+    pub(super) in_playfield: bool,
+    pub(super) overlay: OverlayCell,
+    pub(super) terrain_object: bool,
+    /// Whether the ground and deck object lists yield anything, a terrain
+    /// object included.
+    pub(super) ground_listed: bool,
+    pub(super) deck_listed: bool,
+    pub(super) speed_costs: SpeedCostProfile,
+}
+
+impl CellFacts {
+    /// Real cell `index` as the world holds it now. Reads no lookup, so it
+    /// never stamps the shared Dummy.
+    pub(super) fn of(sim: &Simulation, index: usize) -> Self {
+        let terrain = sim
+            .resolved_terrain
+            .as_ref()
+            .expect("live cell-entry terrain");
+        let cell = Cell::Real(index);
+        let c = &terrain.cells()[index];
+        let key = RawCellKey::from_native(terrain, cell);
+        let raw = &sim.substrate.raw_cell_occupation;
+        let terrain_object = sim.terrain_objects.cell_index().get(&(c.rx, c.ry)).copied();
+        let listed = |layer| {
+            sim.substrate
+                .occupancy
+                .cell_objects(c.rx, c.ry, layer, terrain_object)
+                .next()
+                .is_some()
+        };
+        Self {
+            coord: terrain.native_cell_coord(cell),
+            level: c.level as i8,
+            slope: c.slope_type,
+            flags: terrain.native_cell_flags(cell),
+            ground: raw.occupant_at(key, MovementLayer::Ground),
+            deck: raw.occupant_at(key, MovementLayer::Bridge),
+            in_playfield: crate::sim::cell_rect::retained_cell_is_in_playfield(
+                cell,
+                sim.playfield_bounds,
+                &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
+            ),
+            overlay: sim.cell_overlay(cell),
+            terrain_object: terrain_object.is_some(),
+            ground_listed: listed(MovementLayer::Ground),
+            deck_listed: listed(MovementLayer::Bridge),
+            speed_costs: c.speed_costs,
+        }
+    }
+
+    /// Whether `layer`'s object list yields anything. Other layers' lists are
+    /// walked live.
+    pub(super) fn listed(&self, layer: MovementLayer) -> bool {
+        match layer {
+            MovementLayer::Ground => self.ground_listed,
+            MovementLayer::Bridge => self.deck_listed,
+            MovementLayer::Air | MovementLayer::Underground => true,
+        }
+    }
+}
+
+/// What a step from a flat cell onto an empty one reads of each cell
+/// ([`super::plain_entry`]), packed in one word: a search floods mostly open
+/// ground, and these asks then read four bytes per cell instead of its
+/// [`CellFacts`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct PlainCell(u32);
+
+impl PlainCell {
+    /// Set in every kept word, so 0 is "not asked yet".
+    const KNOWN: u32 = 1 << 31;
+    /// No structural bridge (`0x100`) and no tube: a step into or out of the
+    /// cell reads nothing else of its bridge or tube.
+    const FLAT: u32 = 1 << 30;
+    /// Also no raw ground occupation, nothing in the ground object list (a
+    /// terrain object included), and inside the playfield.
+    const EMPTY: u32 = 1 << 29;
+    /// An overlay, whose type's flags the asker reads.
+    const OVERLAY: u32 = 1 << 28;
+    /// The SpeedTypes this word answers for, in discriminant order.
+    const SPEEDS: [SpeedType; 8] = [
+        SpeedType::Foot,
+        SpeedType::Track,
+        SpeedType::Wheel,
+        SpeedType::Hover,
+        SpeedType::Winged,
+        SpeedType::Float,
+        SpeedType::Amphibious,
+        SpeedType::FloatBeach,
+    ];
+
+    /// The bits of the cell with `facts`, holding a tube when `tube`.
+    pub(super) fn new(facts: &CellFacts, tube: bool) -> Self {
+        let flat = facts.flags & 0x100 == 0 && !tube;
+        let empty = flat && facts.ground == (0, None) && !facts.ground_listed && facts.in_playfield;
+        // Bits 8..16: the land row resolved for SpeedType n; 16..24: nonzero.
+        let rows = Self::SPEEDS
+            .iter()
+            .enumerate()
+            .map(|(n, &speed)| {
+                facts
+                    .speed_costs
+                    .cost_for_speed_type(speed)
+                    .map_or(0, |cost| {
+                        (1 << (8 + n)) | (u32::from(!cost.is_zero()) << (16 + n))
+                    })
+            })
+            .fold(0, |rows, row| rows | row);
+        Self(
+            Self::KNOWN
+                | if flat { Self::FLAT } else { 0 }
+                | if empty { Self::EMPTY } else { 0 }
+                | if facts.overlay.overlay_id.is_some() {
+                    Self::OVERLAY
+                } else {
+                    0
+                }
+                | rows
+                | u32::from(facts.level as u8),
+        )
+    }
+
+    pub(super) fn flat(self) -> bool {
+        self.0 & Self::FLAT != 0
+    }
+
+    pub(super) fn empty(self) -> bool {
+        self.0 & Self::EMPTY != 0
+    }
+
+    pub(super) fn overlay(self) -> bool {
+        self.0 & Self::OVERLAY != 0
+    }
+
+    pub(super) fn level(self) -> i8 {
+        self.0 as u8 as i8
+    }
+
+    /// The row the word keeps for SpeedType `speed`, for
+    /// [`Self::row_nonzero`]; `None` for one it keeps none for.
+    pub(super) fn speed_row(speed: SpeedType) -> Option<u32> {
+        Self::SPEEDS
+            .iter()
+            .position(|&known| known == speed)
+            .map(|n| n as u32)
+    }
+
+    /// Whether the land row `n` ([`Self::speed_row`]) is nonzero, when the
+    /// cell has one ([`CellFacts::speed_costs`]).
+    pub(super) fn row_nonzero(self, n: u32) -> Option<bool> {
+        (self.0 >> (8 + n) & 1 != 0).then_some(self.0 >> (16 + n) & 1 != 0)
+    }
+}
+
+/// One blocker in a cell's object list as Can_Enter_Cell reads it: a path
+/// search's kept [`BlockerFacts`], or the entity itself at a frame. An ask
+/// outside a search reads each fact only where its branch tests it, with the
+/// read [`BlockerFacts::of`] makes, so it answers as the copy would
+/// (VERA-only; every read is of the blocker's own record and stamps no
+/// Dummy).
+#[derive(Clone, Copy)]
+pub(super) enum Blocker<'a> {
+    Kept(BlockerFacts),
+    Live(&'a GameEntity, u32),
+}
+
+impl Blocker<'_> {
+    pub(super) fn category(&self) -> EntityCategory {
+        match *self {
+            Self::Kept(facts) => facts.crush.category,
+            Self::Live(b, _) => b.category(),
+        }
+    }
+
+    /// Iron Curtain or Force Shield at that frame.
+    pub(super) fn invulnerable(&self) -> bool {
+        self.crush().iron_curtained
+    }
+}
+
+/// [`BlockerFacts`] and the [`Blocker`] read of each of its facts, from one
+/// list of each fact's read of the blocker `$b` at frame `$frame`.
+macro_rules! blocker_facts {
+    (|$b:ident, $frame:ident| $($(#[$doc:meta])* $fact:ident: $ty:ty = $read:expr,)*) => {
+        /// What Can_Enter_Cell reads of one blocker in a cell's object list,
+        /// at one frame.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub(super) struct BlockerFacts {
+            $($(#[$doc])* pub(super) $fact: $ty,)*
+        }
+
+        impl BlockerFacts {
+            /// VERA-only: a per-batch read-only copy of each blocker's
+            /// category, owner, type, cloak, crush target, motion, facing and
+            /// position, with its warp, disguise, gate, bunker, occupation and
+            /// track-slot bits, for classify_foot_entry (Infantry
+            /// `0x0051BF90` / Unit `0x0073F0A0`); the entity records are the
+            /// source of truth, rebuilt every batch. An ask outside a batch
+            /// reads them fresh ([`Blocker::Live`]).
+            pub(super) fn of($b: &GameEntity, $frame: u32) -> Self {
+                Self { $($fact: $read,)* }
+            }
+        }
+
+        impl Blocker<'_> {
+            $(
+                // A read may leave the frame unused, and a fact only the
+                // copy's comparison reads (its type) has no live asker.
+                #[allow(dead_code, unused_variables)]
+                pub(super) fn $fact(&self) -> $ty {
+                    match *self {
+                        Self::Kept(facts) => facts.$fact,
+                        Self::Live($b, $frame) => $read,
+                    }
+                }
+            )*
+        }
+    };
+}
+
+blocker_facts! { |b, frame|
+    owner: InternedId = b.owner(),
+    type_ref: InternedId = b.type_ref(),
+    /// Its crush inputs, with its category and Iron Curtain.
+    crush: CrushTarget = CrushTarget::from_entity(b, frame),
+    /// Its world coordinate, its cell's x and its body facing.
+    position: DriveCoord = crate::sim::movement::ground_pose::position_world_coord(&b.position),
+    rx: u16 = b.position.rx(),
+    facing: u16 = b.body_facing_current(frame),
+    /// `motion_query::is_moving`, and whether it has a NavCom or turns.
+    moving: Option<bool> = crate::sim::movement::motion_query::is_moving(b),
+    nav_com: bool = b.navigation.nav_com().is_some(),
+    rotating: bool = b.body_facing.is_rotating(frame),
+    warped_out: bool = b.is_warped_out(),
+    fully_cloaked: bool = b.cloak.as_ref().is_some_and(|s| s.is_fully_cloaked()),
+    disguised: bool = b.seldom.disguise.as_ref().is_some_and(|s| s.is_disguised()),
+    open_gate: bool = b.is_open_gate(),
+    bunker_occupied: bool = b.bunker.occupant().is_some(),
+    foot_occupation: bool = b.foot_occupation_enabled(),
+    occupant_slot_a4: bool =
+        crate::sim::movement::drive_track::occupant_slot_a4_answers_true(b),
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl EntryFacts {
+    /// An empty table fitted to `sim`, as a batch starts.
+    pub(crate) fn fitted(sim: &Simulation) -> Self {
+        let mut facts = Self::default();
+        let cells = sim
+            .resolved_terrain
+            .as_ref()
+            .map_or(0, |terrain| terrain.cells().len());
+        facts.reset(cells, sim.substrate.entities.slot_count());
+        facts.reset_chains(cells);
+        facts
+    }
+}
+
+#[cfg(test)]
+impl EntryFacts {
+    /// Whether no ask has kept a fact since the last reset.
+    pub(crate) fn is_empty(&self) -> bool {
+        [
+            &self.cells_claimed,
+            &self.plain_kept,
+            &self.blockers_claimed,
+            &self.chains_kept,
+        ]
+        .iter()
+        .all(|kept| kept.0.iter().all(|word| word.load(Ordering::Relaxed) == 0))
+    }
+}
+
+#[cfg(all(test, tests_sim_world_c_o))]
+mod tests {
+    use super::*;
+
+    fn cell_facts(level: i8) -> CellFacts {
+        CellFacts {
+            coord: (1, 2),
+            level,
+            slope: 0,
+            flags: 0,
+            ground: (0, None),
+            deck: (0, None),
+            in_playfield: true,
+            overlay: OverlayCell::default(),
+            terrain_object: false,
+            ground_listed: false,
+            deck_listed: false,
+            speed_costs: SpeedCostProfile::default(),
+        }
+    }
+
+    fn blocker(id: u64, rx: u16) -> BlockerFacts {
+        BlockerFacts::of(&GameEntity::test_default(id, "MTNK", "Americans", rx, 0), 0)
+    }
+
+    /// A code-2 chain walk every search may share.
+    fn shared_walk(jams: bool) -> Code2Chain {
+        Code2Chain {
+            jams,
+            named: 0,
+            shared: true,
+        }
+    }
+
+    /// A reset empties what the last batch kept on both sides of a mark-word
+    /// boundary, and a slot kept before the table shrinks comes back empty
+    /// when it regrows. It forgets the claims too, so the next batch's first
+    /// asks keep their facts again. A chain reset empties the kept chains the
+    /// same way.
+    #[test]
+    fn a_reset_forgets_every_fact_the_last_batch_kept() {
+        let mut facts = EntryFacts::default();
+        facts.reset(130, 70);
+        facts.reset_chains(130);
+        for index in [0, 63, 64, 129] {
+            facts.cell(index, || cell_facts(1), |_| ());
+            facts.plain(index, || PlainCell(PlainCell::KNOWN | 1));
+            let jams = || Ok(shared_walk(true));
+            assert_eq!(
+                facts.code2_chain(index, MovementLayer::Bridge, None, jams),
+                Ok(true)
+            );
+        }
+        facts.blocker(69, || blocker(1, 5));
+        facts.reset(130, 10);
+        facts.reset(130, 70);
+        facts.reset_chains(130);
+        for index in [0, 63, 64, 129] {
+            assert_eq!(facts.cell(index, || cell_facts(2), |kept| kept.level), 2);
+            assert_eq!(facts.cells[index].get(), Some(&cell_facts(2)));
+            assert_eq!(
+                facts.plain(index, || PlainCell(PlainCell::KNOWN | 2)),
+                PlainCell(PlainCell::KNOWN | 2)
+            );
+            let clears = || Ok(shared_walk(false));
+            assert_eq!(
+                facts.code2_chain(index, MovementLayer::Bridge, None, clears),
+                Ok(false)
+            );
+        }
+        assert_eq!(facts.blocker(69, || blocker(2, 9)).rx, 9);
+        assert_eq!(facts.blockers[69].get(), Some(&blocker(2, 9)));
+    }
+
+    /// A search asking while another holds an entry's claim but has not kept
+    /// its facts answers from its own read at once and leaves the entry to
+    /// the claimer, so only the claimer ever sets it.
+    #[test]
+    fn an_ask_before_the_claimer_keeps_answers_from_its_own_read() {
+        let mut facts = EntryFacts::default();
+        facts.reset(1, 1);
+        assert!(facts.cells_claimed.claim(0));
+        assert!(facts.blockers_claimed.claim(0));
+        assert_eq!(facts.cell(0, || cell_facts(4), |&own| own), cell_facts(4));
+        assert_eq!(facts.blocker(0, || blocker(1, 7)), blocker(1, 7));
+        assert!(facts.cells[0].get().is_none());
+        assert!(facts.blockers[0].get().is_none());
+    }
+
+    /// Two searches asking about one cell, or one blocker, at once both
+    /// read it, neither waiting for the other's read, and both get the facts
+    /// the table keeps.
+    #[test]
+    fn searches_asking_at_once_read_side_by_side() {
+        use std::sync::atomic::AtomicUsize;
+        let mut facts = EntryFacts::default();
+        facts.reset(1, 1);
+        let reading = AtomicUsize::new(0);
+        // Each search's first read waits until the other's has started.
+        let side_by_side = || {
+            reading.fetch_add(1, Ordering::SeqCst);
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while reading.load(Ordering::SeqCst) % 2 != 0 {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "a search waited for the other's read"
+                );
+                std::thread::yield_now();
+            }
+        };
+        let at_once = |ask: &(dyn Fn(&dyn Fn()) + Sync)| {
+            std::thread::scope(|scope| {
+                for _ in 0..2 {
+                    scope.spawn(|| ask(&side_by_side));
+                }
+            });
+        };
+        at_once(&|wait| {
+            let first = std::cell::Cell::new(true);
+            let kept = facts.cell(
+                0,
+                || {
+                    if first.replace(false) {
+                        wait();
+                    }
+                    cell_facts(3)
+                },
+                |&kept| kept,
+            );
+            assert_eq!(kept, cell_facts(3));
+        });
+        at_once(&|wait| {
+            let first = std::cell::Cell::new(true);
+            let kept = facts.blocker(0, || {
+                if first.replace(false) {
+                    wait();
+                }
+                blocker(1, 5)
+            });
+            assert_eq!(kept, blocker(1, 5));
+        });
+    }
+}

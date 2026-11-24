@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "MapClass area reveals 0x5678E0 and RevealShroud 0x5673A0: the cells their walk hands its leaves, and the house",
+  "assumptions": [
+    "The offset tables 0xABD490 and 0xABCF60 come from their static initializers 0x561910 and 0x5638D0",
+    "Map Size= is the fixture diamond (MapClass+0xF4/+0xF8); every in-bounds cell within 24 of the centre is a fixture CellClass (+0x24, +0x11B), others are absent",
+    "Rules+0x17E7 AllyReveal= and +0x17EE RevealByHeight= are written; 0xABDE88 is 104 and 0xB0CD48 the standard Z multiplier; GameMode 1, no session object, no +0x54E4 bit; the outline and unreveal arguments are 0",
+    "MapCell 0x653830, Unshroud 0x4876F0, the fog border 0x567DA0, the unreveal leaf 0x4A9DD0 and IsAlliedWith 0x4F9A50 are recorded stubs; their effects are not compared"
+  ],
+  "substitutions": [
+    "0x653830",
+    "0x4876F0",
+    "0x567DA0",
+    "0x4A9DD0",
+    "0x4F9A50"
+  ],
+  "entry_points": {
+    "reveal_area": "0x005678E0",
+    "reveal_shroud": "0x005673A0",
+    "cell_offsets": "0x00561910",
+    "los_offsets": "0x005638D0"
+  },
+  "payload_sha256": "2d345035fd171fa3608dca83f3c6be484874ed1fe4427d099169611a7cbbcb84"
+}

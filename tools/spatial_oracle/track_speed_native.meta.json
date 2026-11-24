@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Complete live Foot getter and original Drive/Ship speed prefixes through retry mask/residual addition, including retained rank/destination histories",
+  "assumptions": [
+    "Supplied Unit/UnitType/House memory with original vtables; house binary32, crate/rules/applied binary64 and FASTER arrays/rank are explicit inputs",
+    "Startup x87 chop53 and ftol control0E7F, flat level2 cells/104 height and structural bridge416 globals are supplied; lifecycle/map/rules parsing are excluded",
+    "Prefix admits selector and valid state, sets class destination and retained target independently; linked-member chain is empty",
+    "Sinking/crush bytes are supplied; flag producers, world callbacks, ProcessMovement target publication and later paid points are outside coverage",
+    "Four order histories reuse track_destination.make_destination_fixture on level0 cells; original SetVeteran/SetElite and Unit destination run before each original Drive/Ship prefix; supplied full speed fraction and Accelerates=no isolate live rank sampling, not full movement or promotion AI",
+    "Finite normal/zero numeric inputs and signed64-convertible products; NaN/infinity/subnormal/ftol invalid cases excluded"
+  ],
+  "substitutions": [
+    "No instruction patches or substituted gameplay calls; original actor/type/locomotor vtables execute",
+    "The reused composed destination fixture supplies only OS Interlocked increment/decrement; standalone getter/prefix hooks observe only"
+  ],
+  "entry_points": {
+    "drive_prefix": "0x004B0F20",
+    "ship_prefix": "0x006A05F0",
+    "foot_getter": "0x004DB1A0",
+    "house_bonus": "0x0050C050",
+    "ability": "0x0070D0D0",
+    "setter": "0x004D3710",
+    "ftol": "0x007C5F00",
+    "unit_destination": "0x00741970",
+    "set_veteran": "0x00750090",
+    "set_elite": "0x007500B0",
+    "drive_stop_after_budget": "0x004B1297",
+    "ship_stop_after_budget": "0x006A095F"
+  },
+  "replay_command": "python -m tools.spatial_oracle.track_speed_native",
+  "payload_sha256": "bf773fd3047f8874ee253ff253a59fe9b831e840a23cbfe8d030817ca00707a5"
+}

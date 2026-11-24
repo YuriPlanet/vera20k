@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original retained Weapon ReadSpeed, postpass components and physical IFV scalar inputs",
+  "assumptions": [
+    "Full original Weapon771C70/772080 and Bullet46BBC0/46BEE0 execute from supplied cached INI objects. Thirty raw Speed controls cover sentinel, clamp, signed overflow, prefix, hexadecimal, empty and case behavior; sequential history retains the same native object.",
+    "Physical RULESMD/LANGRULE/MPBattleMD/Hills keys are source bytes parsed into the supplied native cache. Reader order here intentionally reads Gravity before Weapon postpass: this is a component fixture, NOT full Rules Process chronology. See weapon_speed_order.py for original full Process ordering. The selected guided ROT60 speed is unaffected by Gravity.",
+    "Cannon and retained postpass history supply Gravity6. Original postpass7729F0 and GetSpeed773070 execute; no Python formula supplies expected speed.",
+    "Guided scalar launch executes6FEA18..6FEA52 with supplied prior amount99 and RadialFireSegments0. Cardinal acceleration executes4668D9..466B0C from supplied velocity1,0,0 for38visits. These are component controls, not full launch or trajectory comparisons.",
+    "Native x87 fixture selects53-bit precision and truncation0E7F."
+  ],
+  "substitutions": [
+    "BulletReader supplies INI cache objects, allocator/delete/CRT/TLS and absent archive boundaries. No physical INI loader, scenario loader, full Type discovery, world admission, receiver or rendering claim."
+  ],
+  "entry_points": {
+    "weapon_ctor": "0x00771C70",
+    "weapon_reader": "0x00772080",
+    "read_speed": "0x00474810",
+    "weapon_postpass": "0x007729F0",
+    "get_speed": "0x00773070",
+    "bullet_ctor": "0x00466380",
+    "bullet_reader": "0x0046BEE0",
+    "guided_ramp": "0x004668D9"
+  },
+  "payload_sha256": "c9c664fba35d42e9ef32c13170183b6e5be06bd290a9f70a22b48ff87a3b41be"
+}

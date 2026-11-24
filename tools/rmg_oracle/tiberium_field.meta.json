@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "9 whole original PlaceTiberiumField calls (ore and gem growth, 1- and 2-cell fields at the 10x node pool, saturated walled pockets that re-seed up to the cap, a locked origin, prior ore/gem/foreign overlays, a clipped playfield) and 4 whole CreateTiberium calls (start-mean and random-cell gem anchors, skipped regions, gem second pass, a zero region total), with the heap, Gaussian, TIBTRE draws and names, overlay and density writes, stamps and Unlimbo's resource clear",
+  "assumptions": [
+    "Existing CliffFixture owns original-constructed Cell backing, admission, the stride-33 scratch, the physical clear/cliff TMP registration and the 49F2F0 direction table; bounds 16..48. Scratch coordinates stamped for in-diamond records only; region and stamp start 0, mask cache -1, +45 lock 0 unless declared. Cells start tile 0, overlay -1, density 0.",
+    "Declared scene: origin, size, field id, gem flag, non-clear (CliffSet base) cells, locked records and prior overlay/density pairs. MapClass +F4 width 16 and +FC local rect per row. Not a complete Generate prefix.",
+    "Driver rows: generator +3C map type, +40 Resources, +54 Tiberium option, +2BC/+2C0 minimum/maximum; region vector ABDF94/ABDFA0 records with +0 field-slot vector (or null), +20 start quota, +2C/+38 cell list; ScenarioClass +632 start waypoints read by 68BCC0. Gaussian cache empty with source 598000.",
+    "Prepared retail overlay/Tiberium registries as harvest_field declares them (Riparius 102 +12/+8, Cruentus 27 +12, Vinifera 127 and Aboreus 147 +12/+8); OverlayType +2A9 Tiberium set on those ordinals only. FPCW 0E7F. All streams seeded by original 65C6D0.",
+    "ObjectClass::Unlimbo 5F4EC0 admits each TIBTRE: Generate raises ScenarioInit A8E7AC at 598A9A and lowers it at 59934A around CreateTiberium (598EF4), so Can_Enter_Cell is skipped at 5F4F1B; Main__PrepareSession sets GameActive at 52D9D7; a new object is in limbo."
+  ],
+  "substitutions": [
+    "Existing PaletteReader CRT allocation/free/TLS, with guard bytes after each block that refuse a pool overrun; native code bytes unchanged. No overlay, density, stamp, Gaussian or RNG result is supplied.",
+    "TerrainTypeClass::Find_By_Name_Index 71DD80 records its original-formatted name and returns slot 0. The TerrainClass constructor 71BB90 is entered only to record its cell; original TerrainClass::Unlimbo 71D0E2..71D132 then runs on the cell centre, and the constructor returns. Object construction, ID registry, Mark/Place_Down, neighbour counters, render point and TerrainClass::Array are not executed."
+  ],
+  "entry_points": {
+    "place_tiberium_field": "0x005A28C0",
+    "create_tiberium": "0x005A23A0",
+    "next": "0x0065C780",
+    "gaussian": "0x005980C0",
+    "terrain_find": "0x0071DD80",
+    "terrain_ctor": "0x0071BB90",
+    "unlimbo_clear": "0x0071D0E2"
+  },
+  "replay_command": "python -m tools.rmg_oracle.tiberium_field",
+  "payload_sha256": "c6512155bfac1b023770bc07bbf2e4b29ada4e5d469282cf8f4b713d4ef854c9"
+}

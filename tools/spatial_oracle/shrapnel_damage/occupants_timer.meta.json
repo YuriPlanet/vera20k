@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Narrow executed RadarCombatFlash accesses during the frozen lethal packets.",
+  "assumptions": [
+    "Only the four frozen MTNK lethal cases are rerun; all existing occupants boundary substitutions remain. This observes exact actor+174..17F CPU reads/writes and original70D990 entry through controller return.",
+    "No read or radar update is observed during the synchronous selected lethal receiver/cleanup. Original removal ends with objectalive0, limbo1, no cell/Logic/Display membership and deferred deletion. This is not a global claim that the timer has no surviving-object consumer.",
+    "Original source excerpts expose the radar reader, ordinary AI/tube callers, conditional Limbo removal and a separate TriggerAction global-Unit caller. Conditional armed radar removal and trigger scheduling are instruction evidence only; fixture placement did not execute native radar registration."
+  ],
+  "substitutions": [
+    "Inherited occupants.md sinks only; no timer read, write or radar-update callback is replaced."
+  ],
+  "entry_points": {
+    "area_low_admitted": "0x0048A25A",
+    "radar_update": "0x0070D990"
+  },
+  "upstream": {
+    "schema_version": 1,
+    "unicorn_binding": "2.1.4",
+    "unicorn_core": [
+      2,
+      1,
+      33621247
+    ],
+    "scope": "Original repaired Shrapnel wooden damage, MTNK occupants and Cell Detach.\n\nThe shared Occupied owner executes all actor/Drive/admission/damage/lifetime\nbodies. This adapter supplies physical scene coordinates and observes original\nlow-controller/list ordering. Native Unlimbo/orders/retained-head production,\nouter damage admission, complete effect playback and navigation are excluded.\n",
+    "assumptions": [
+      "Physical XShrapnel MAP/SNOW TMP and original overlay/theater/land readers come from the existing Shrapnel ResidentRepair owner. Actual570050/57F200/57FBC0 repair and all nine47D2B0 calls establish the retained healthy input; initial crop and zone storage are explicit supplied boundaries.",
+      "Measured original area-low continuation48A25A..48A26A calls actual57BAA0/57C2B0/57E2A0,487A10 and conditional70D4A0. Entry is after the admitted Scenario strength roll; no projectile/fire/outer damage gate is claimed.",
+      "Shared anytown_occupants.Occupied executes unchanged native MTNK/Drive type/construction, path admission, C4/Super receiver, death cleanup, list removal and target restoration bodies. Actor/House/world membership, mission, frame1000 and retained incoming head are supplied active-state projections.",
+      "Physical layered RULESMD, absentLANGRULE, MPBattleMD and XShrapnel readers execute. The sound registry contains GenVehicleDie at relative index0; original sound reader executes, sample IO is supplied.",
+      "Main,Scenario,MapGen are original65C6D0 seeded0 after setup. Full raw states bracket both visits. Original RNG calls/results, timers, detach, cached resident Next and live neighbor Next are observed. Native .text checksum must remain unchanged."
+    ],
+    "substitutions": [
+      "Shared successful bounded heap/CRT/OS seams and signed-CRC INI lexical caches; no gameplay callback return is substituted within admission, receiver or cleanup.",
+      "Animation421EA0 and sound7509E0 are request boundaries; spawned effect playback/lifetime and their later RNG remain excluded.",
+      "Connectivity56C510/hierarchy586990 and display/radar extents are recorded return boundaries. No native whole scenario load or production actor admission/order/head creation is claimed."
+    ],
+    "entry_points": {
+      "area_low_continuation": "0x0048A25A",
+      "driver": "0x0057BAA0",
+      "root": "0x0057C2B0",
+      "sibling": "0x0057E2A0",
+      "recalc": "0x0047D2B0",
+      "occupants": "0x00487A10",
+      "unit_can_enter": "0x0073F0A0",
+      "drive_at_coord": "0x004B4920",
+      "unit_damage": "0x00737C90",
+      "detach": "0x0070D4A0"
+    }
+  },
+  "inherited_corpus_sha256": "dae34d6ac6325a51ea22d7658eac9061042fc09807ab59f5216e7d0d1e3b5f66",
+  "payload_sha256": "d281bd4922de9452459b178463a9dbba9b9dfffd60817521fdb092aeff61c967"
+}

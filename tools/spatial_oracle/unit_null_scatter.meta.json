@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Unit743A50 null-coordinate arm 743BE0..744070 after the admitted state gates: FNPC literal arguments, the Foot+4C seed, SetDestination(cell,1) only for a non-NullCell answer, no RNG, QueueMission or Process. Not FNPC, setter or movement parity.",
+  "assumptions": [
+    "unit_scatter_state make_fixture: original Unit vtable, constructed Drive, current mission 5, no NavCom, no turn, both deploy bytes clear.",
+    "No tube (Foot+684=-1) and a null Drive head, so Foot+4C returns the physical coordinate; zero NullCoord/NullCell globals; Scenario seeded 31."
+  ],
+  "substitutions": [
+    "FNPC 56DC20 answers the row cell after checking its arguments; Unit SetDestination 741970, QueueMission 5B35E0 and the Drive Process slot are recording observers."
+  ],
+  "entry_points": {
+    "scatter": "0x00743A50",
+    "navigation_coord": "0x004DBDF0",
+    "get_cell": "0x005657A0",
+    "random_seed": "0x0065C6D0",
+    "random_ranged": "0x0065C7E0"
+  },
+  "payload_sha256": "5fce9b35f5dbdbb5eb8ef63c3a81b89c1b6fbfdb2fe3f746120b5e620c68327d"
+}

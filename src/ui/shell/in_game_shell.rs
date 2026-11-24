@@ -1,0 +1,403 @@
+//! Active-scenario dialog geometry, from original gamemd.exe 0x0072FC60.
+//!
+//! This consumes SHP canvas dimensions, without depending on the renderer or
+//! assuming all themes have the same art. The complete native procedure is
+//! exercised by tools/storage_oracle/in_game_shell_geometry.py; its nine stock
+//! cases cover Allied, Soviet and Yuri at 640x480, 800x600 and 1024x768.
+
+use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
+
+use super::geom::{RectPx, ShellAlign};
+
+/// Canvas dimensions supplied by the active side's loaded art. SIDE2, rather
+/// than the separately painted SIDE2B, controls column repetition (0x0072FD96).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InGameShellSizes {
+    pub background_small: [i32; 2],
+    pub background_medium: [i32; 2],
+    pub background_large: [i32; 2],
+    pub credits: [i32; 2],
+    pub top: [i32; 2],
+    pub radar: [i32; 2],
+    pub side1: [i32; 2],
+    pub side2: [i32; 2],
+    pub side3: [i32; 2],
+    pub addon: [i32; 2],
+    pub bottom_spacer: [i32; 2],
+    pub left_cap: [i32; 2],
+    pub button_background: [i32; 2],
+    pub right_cap: [i32; 2],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InGameShellLayout {
+    pub background: RectPx,        // B0FC30
+    pub credits: RectPx,           // B0FC34
+    pub top: RectPx,               // B0FC38
+    pub radar: RectPx,             // B0FC3C
+    pub top_and_radar: RectPx,     // B0FC40
+    pub side1: RectPx,             // B0FC44
+    pub side2: RectPx,             // B0FC48, first repeated tile
+    pub side3: RectPx,             // B0FC4C; its y is the Back button's lower anchor
+    pub addon: RectPx,             // B0FC50
+    pub side_column: RectPx,       // B0FC54
+    pub bottom_clip: RectPx,       // B0FC58
+    pub bottom_spacer: RectPx,     // B0FC5C, LSPACER
+    pub left_cap: RectPx,          // B0FC60, expanded command strip
+    pub closed_left_cap: RectPx,   // B0FC64, ordinary modal strip
+    pub button_background: RectPx, // B0FC68, BTTNBKGD first repeat
+    pub right_cap: RectPx,         // B0FC6C
+    pub side2_count: i32,
+    pub bottom_repeat_count: i32,
+    pub bottom_left_x: i32,
+    pub bottom_closed_x: i32,
+    pub bottom_repeat_span: i32,
+}
+
+impl InGameShellLayout {
+    /// Native layout for valid loaded art; absent divisor dimensions cannot
+    /// produce a usable layout. Stock positive dimensions are oracle-covered.
+    pub fn new(width: i32, height: i32, sizes: InGameShellSizes) -> Option<Self> {
+        if sizes.side2[1] <= 0 || sizes.button_background[0] <= 0 {
+            return None;
+        }
+        let background_size = match width {
+            640 => sizes.background_small,
+            800 => sizes.background_medium,
+            _ => sizes.background_large,
+        };
+        let background = RectPx::new(0, 0, background_size[0], background_size[1]);
+        // 0x0072FCC2..0x0072FE33: all column rectangles use CREDITS width.
+        let column_x = width - sizes.credits[0];
+        let column = |y, h| RectPx::new(column_x, y, sizes.credits[0], h);
+        let credits = column(0, sizes.credits[1]);
+        let top = column(credits.h, sizes.top[1]);
+        let radar = column(top.y + top.h, sizes.radar[1]);
+        let side1 = column(radar.y + radar.h, sizes.side1[1]);
+        let side2 = column(side1.y + side1.h, sizes.side2[1]);
+        // 0x0072FE33..0x0072FE9B: signed integer division, then bottom anchors.
+        let side2_count = (height - sizes.side3[1] - side2.y) / side2.h;
+        let side3 = column(side2.y + side2_count * side2.h, sizes.side3[1]);
+        let addon = column(side3.y + side3.h, sizes.addon[1]);
+        let bottom_y = height - 32;
+        let bottom_clip = RectPx::new(0, bottom_y, width - 168, 32);
+        let bottom = |x, size: [i32; 2]| RectPx::new(x, bottom_y, size[0], size[1]);
+        let bottom_spacer = bottom(0, sizes.bottom_spacer);
+        // 0x0072FFBF..0x00730058 positions lower art from right to left.
+        let bottom_repeat_count = (width - sizes.left_cap[0] - credits.w - sizes.right_cap[0])
+            / sizes.button_background[0];
+        let right_cap = bottom(credits.x - sizes.right_cap[0], sizes.right_cap);
+        let bottom_repeat_span = bottom_repeat_count * sizes.button_background[0];
+        let button_background = bottom(right_cap.x - bottom_repeat_span, sizes.button_background);
+        let left_cap = bottom(button_background.x - sizes.left_cap[0], sizes.left_cap);
+        let closed_left_cap = bottom(right_cap.x - sizes.left_cap[0], sizes.left_cap);
+        Some(Self {
+            background,
+            credits,
+            top,
+            radar,
+            top_and_radar: column(top.y, top.h + radar.h),
+            side1,
+            side2,
+            side3,
+            addon,
+            side_column: column(side1.y, side1.h + side2_count * side2.h + side3.h),
+            bottom_clip,
+            bottom_spacer,
+            left_cap,
+            closed_left_cap,
+            button_background,
+            right_cap,
+            side2_count,
+            bottom_repeat_count,
+            bottom_left_x: left_cap.x,
+            bottom_closed_x: closed_left_cap.x,
+            bottom_repeat_span,
+        })
+    }
+
+    /// Active-game branch of original 0x0060B000, 0x0060B124..0x0060B1C1.
+    /// `raw` is the original control rectangle in parent-client physical pixels;
+    /// the native midpoint and row divisions both truncate toward zero.
+    pub fn button_rect(&self, raw: RectPx, button_size: [i32; 2]) -> RectPx {
+        let row = (raw.y + raw.h / 2 - 198) / 44;
+        RectPx::new(
+            self.credits.x + self.credits.w - 147,
+            self.side2.y + row * button_size[1],
+            button_size[0],
+            button_size[1],
+        )
+    }
+
+    /// The lower right-panel button (Resume, Back, Return): active branch of
+    /// original 0x0060B350, whose lower anchor is SIDE3's top
+    /// (0x0060B3FC..0x0060B41C), not the viewport bottom.
+    pub fn lower_button_rect(&self, width: i32, button_size: [i32; 2]) -> RectPx {
+        RectPx::new(
+            width - 147,
+            self.side3.y - button_size[1],
+            button_size[0],
+            button_size[1],
+        )
+    }
+
+    /// Phobos `uimd.ini [Sidebar] CenterPauseMenuBackground`: the
+    /// `InitSideRectangles_CenterBackground` hook at 0x0072FCB5 replaces the
+    /// background's top-left corner with the centre of the battlefield, the
+    /// frame less the 168-pixel right column and the 32-pixel bottom strip.
+    /// The hook holds those two insets as literals rather than as the loaded
+    /// CREDITS width, so this keeps the literals too. Signed halves truncate
+    /// toward zero, as the native `idiv` does.
+    pub fn with_centered_background(mut self, width: i32, height: i32) -> Self {
+        self.background.x = (width - 168 - self.background.w) / 2;
+        self.background.y = (height - 32 - self.background.h) / 2;
+        self
+    }
+
+    /// VERA's placement without the Phobos switch: the whole battlefield, left
+    /// of the column and above the bottom strip, with the art stretched over
+    /// it. `0x0072FC60` keeps the canvas size, and retail art is exactly the
+    /// battlefield at 640x480, 800x600 and 1024x768, so those stay 1:1. VERA's
+    /// frames take any size (Zoom, Sidebar size), where the canvas would leave
+    /// black beside or below the art, or crop it.
+    pub fn with_battlefield_background(mut self) -> Self {
+        self.background = RectPx::new(0, 0, self.credits.x, self.bottom_clip.y);
+        self
+    }
+}
+
+/// Every active-game dialog's right-panel title static and status line.
+pub const TITLE: u16 = 0x694;
+pub const FOOTER: u16 = 0x695;
+
+/// Title 0x694 (`PANEL_TITLE`) and status line 0x695 (unaligned) as a
+/// dialog's nodes: statics with no help, which the pointer passes by. A
+/// dialog without a title gives 0x694 no rect.
+pub fn panel_statics() -> [NodeSpec; 2] {
+    let text = |id: u16, align: ShellAlign| {
+        NodeSpec::new(NodeKind::Text)
+            .id(id.into())
+            .with(Prop::Align, Value::Int(i32::from(align.0)))
+    };
+    [
+        text(TITLE, ShellAlign::PANEL_TITLE),
+        text(FOOTER, ShellAlign::NONE),
+    ]
+}
+
+/// An active-game dialog's title static 0x694: original 0x0060B1D0's active
+/// branch, without the launcher title's +7 final adjustment.
+pub fn right_panel_title_rect(width: i32) -> RectPx {
+    RectPx::new(width - 165, 2, 162, 16)
+}
+
+/// An active-game dialog's status line 0x695: original 0x0060B550's active
+/// branch keeps the 455x20 resource canvas, its left at 10 and its bottom one
+/// pixel above the parent's.
+pub fn status_line_rect(height: i32) -> RectPx {
+    RectPx::new(10, height - 21, 455, 20)
+}
+
+/// Active-game branch of original 0x0060B7A0 for an ordinary child: its
+/// template rectangle in pixels (`geom::dlu_rect`), moved by half the
+/// screen's growth beyond 800x600 per axis and clamped at zero. Signed halves
+/// truncate toward zero; the final coordinates clamp, not the half-delta.
+/// Executed for B6 and dialog 0x73 by `tools/storage_oracle/
+/// abort_shell_layout.py` and `diplomacy_shell_layout.py`.
+pub fn ordinary_child_rect(raw: RectPx, width: i32, height: i32) -> RectPx {
+    RectPx::new(
+        (raw.x + (width - 800) / 2).max(0),
+        (raw.y + (height - 600) / 2).max(0),
+        raw.w,
+        raw.h,
+    )
+}
+
+/// The active-game shell over the allied theme's retail art sizes, from the
+/// `tools/storage_oracle/in_game_shell_geometry.json` corpus, for the dialog
+/// layout tests that place children against it.
+#[cfg(test)]
+pub(crate) fn allied_fixture_layout(width: i32, height: i32) -> InGameShellLayout {
+    let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/storage_oracle/in_game_shell_geometry.json",
+    ))
+    .unwrap();
+    let assets = &fixture["assets"]["allied"];
+    let size = |address: &str| {
+        [
+            assets[address]["width"].as_i64().unwrap() as i32,
+            assets[address]["height"].as_i64().unwrap() as i32,
+        ]
+    };
+    InGameShellLayout::new(
+        width,
+        height,
+        InGameShellSizes {
+            background_small: size("00b0fad4"),
+            background_medium: size("00b0fac8"),
+            background_large: size("00b0fa50"),
+            credits: size("00b0fb08"),
+            top: size("00b0f9e0"),
+            radar: size("00b0fa68"),
+            side1: size("00b0fa70"),
+            side2: size("00b0fafc"),
+            side3: size("00b0fa8c"),
+            addon: size("00b0fa48"),
+            bottom_spacer: size("00b0fa3c"),
+            left_cap: size("00b0fa90"),
+            button_background: size("00b0faa8"),
+            right_cap: size("00b0fabc"),
+        },
+    )
+    .unwrap()
+}
+
+#[cfg(all(test, tests_ui))]
+mod tests {
+    use super::*;
+    use serde::Deserialize;
+    use std::collections::BTreeMap;
+
+    #[derive(Deserialize)]
+    struct Asset {
+        width: i32,
+        height: i32,
+    }
+
+    #[derive(Deserialize)]
+    struct Case {
+        theme: String,
+        width: i32,
+        height: i32,
+        rects: BTreeMap<String, [i32; 4]>,
+        side2_count: i32,
+        bottom_repeat_count: i32,
+        bottom_left_x: i32,
+        bottom_closed_x: i32,
+        bottom_repeat_span: i32,
+    }
+
+    #[derive(Deserialize)]
+    struct Fixture {
+        assets: BTreeMap<String, BTreeMap<String, Asset>>,
+        cases: Vec<Case>,
+    }
+
+    #[test]
+    fn all_native_stock_geometry_rectangles_and_counts_match() {
+        let fixture: Fixture = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/in_game_shell_geometry.json",
+        ))
+        .unwrap();
+        assert_eq!(fixture.cases.len(), 9);
+        for case in fixture.cases {
+            let assets = &fixture.assets[&case.theme];
+            let size = |name: &str| {
+                let asset = &assets[name];
+                [asset.width, asset.height]
+            };
+            let layout = InGameShellLayout::new(
+                case.width,
+                case.height,
+                InGameShellSizes {
+                    background_small: size("00b0fad4"),
+                    background_medium: size("00b0fac8"),
+                    background_large: size("00b0fa50"),
+                    credits: size("00b0fb08"),
+                    top: size("00b0f9e0"),
+                    radar: size("00b0fa68"),
+                    side1: size("00b0fa70"),
+                    side2: size("00b0fafc"),
+                    side3: size("00b0fa8c"),
+                    addon: size("00b0fa48"),
+                    bottom_spacer: size("00b0fa3c"),
+                    left_cap: size("00b0fa90"),
+                    button_background: size("00b0faa8"),
+                    right_cap: size("00b0fabc"),
+                },
+            )
+            .unwrap();
+            let actual_rects = [
+                layout.background,
+                layout.credits,
+                layout.top,
+                layout.radar,
+                layout.top_and_radar,
+                layout.side1,
+                layout.side2,
+                layout.side3,
+                layout.addon,
+                layout.side_column,
+                layout.bottom_clip,
+                layout.bottom_spacer,
+                layout.left_cap,
+                layout.closed_left_cap,
+                layout.button_background,
+                layout.right_cap,
+            ];
+            assert_eq!(case.rects.len(), actual_rects.len());
+            for (index, rect) in actual_rects.into_iter().enumerate() {
+                let address = format!("{:08x}", 0xb0fc30 + index * 4);
+                assert_eq!(
+                    [rect.x, rect.y, rect.w, rect.h],
+                    case.rects[&address],
+                    "{} {}x{} {address}",
+                    case.theme,
+                    case.width,
+                    case.height,
+                );
+            }
+            assert_eq!(layout.side2_count, case.side2_count);
+            assert_eq!(layout.bottom_repeat_count, case.bottom_repeat_count);
+            assert_eq!(layout.bottom_left_x, case.bottom_left_x);
+            assert_eq!(layout.bottom_closed_x, case.bottom_closed_x);
+            assert_eq!(layout.bottom_repeat_span, case.bottom_repeat_span);
+        }
+    }
+
+    /// Phobos `[Sidebar] CenterPauseMenuBackground` at 0x0072FCB5. Retail art
+    /// fills the battlefield exactly at 640x480, 800x600 and 1024x768, so the
+    /// hook leaves those placements alone; the resolution it was written for
+    /// keeps BKGDLG's 856x736 canvas and centres it.
+    #[test]
+    fn centered_background_keeps_stock_art_and_centres_it_at_a_larger_frame() {
+        for (width, height, canvas) in [
+            (640, 480, RectPx::new(0, 0, 472, 448)),
+            (800, 600, RectPx::new(0, 0, 632, 568)),
+            (1024, 768, RectPx::new(0, 0, 856, 736)),
+        ] {
+            let layout = allied_fixture_layout(width, height);
+            assert_eq!(layout.background, canvas);
+            assert_eq!(
+                layout.with_centered_background(width, height).background,
+                canvas
+            );
+        }
+        let layout = allied_fixture_layout(1280, 1024);
+        assert_eq!(layout.background, RectPx::new(0, 0, 856, 736));
+        assert_eq!(
+            layout.with_centered_background(1280, 1024).background,
+            RectPx::new(128, 128, 856, 736)
+        );
+    }
+
+    /// The reported Auto zoom frame, 1121x741: BKGDLG's 856x736 canvas falls
+    /// short of the 953x709 battlefield, which the art now fills. At the stock
+    /// sizes the battlefield is the canvas itself.
+    #[test]
+    fn battlefield_background_fills_any_frame_and_keeps_stock_canvases() {
+        for (width, height) in [(640, 480), (800, 600), (1024, 768)] {
+            let layout = allied_fixture_layout(width, height);
+            assert_eq!(
+                layout.with_battlefield_background().background,
+                layout.background
+            );
+        }
+        assert_eq!(
+            allied_fixture_layout(1121, 741)
+                .with_battlefield_background()
+                .background,
+            RectPx::new(0, 0, 953, 709)
+        );
+    }
+}

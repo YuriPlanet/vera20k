@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original bridge-record consumer56C6CB..56C7E6: signed clamp, reverse order, canonical deduplicated bucket pairs",
+  "assumptions": [
+    "Original producer outputs reused as inputs for83 cases plus three explicit consumer fixtures",
+    "Base-zone words supplied independently of flood fill; padding node words0",
+    "Native node side W+H+1 and count side squared; Rust projection width W+H",
+    "Each native bucket has32 preallocated entries, excluding allocation/failure",
+    "Starts after native flood-fill and stops before adjacency allocation and MovementZone projection"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "consumer_begin": "0x0056C6CB",
+    "consumer_end": "0x0056C7E6"
+  },
+  "payload_sha256": "818dd8daf66d7338c10e1c5ba09bc06a518ee84ee699c91aa504d8b7436b9eca"
+}

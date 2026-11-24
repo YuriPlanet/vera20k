@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original finishing coefficients, Team override and spatial-threat arithmetic.\n\nCompanion to astar_structural_height --threat-inputs. Scalar slices execute\noriginal readers; supplied lexical caches are not full native Scenario loading.\n",
+  "assumptions": [
+    "The existing actual Hills MTNK type/input owner supplies the original type constructor and scalar layer states. Custom type controls then execute the exact ReadDouble block with its retained default.",
+    "Original TeamType constructor uses supplied spare-capacity registries. AvoidThreats controls and every physical AIMD TeamTypes row execute its reached ReadBool slice, not full TeamType ReadINI or Scenario team creation. Malformed and supplied-empty cache controls retain the original caller default; physical empty INI omission is separately checked through the production Rust parser.",
+    "Foot getter controls supply raw Foot+530, nullable Team pointer and TeamType+F2; shared native_oracle.call observes original ST0 through its declared out-of-image FSTP capture. No contribution lifecycle or path output claim.",
+    "Original56BC50 executes13 signed packed-coordinate controls. Original4FA2E0 executes42 nine-slot adjustments with supplied initial House values, including signed overflow, INT_MIN negation and zero clamping. Untouched storage canaries and original executable bytes are asserted; no object census, constructor or incremental lifecycle is substituted by these arithmetic controls."
+  ],
+  "substitutions": [
+    "Existing input owner allocator/TLS/file/lexical cache boundaries. No coefficient reader, constructor, RNG or getter return substitution."
+  ],
+  "entry_points": {
+    "type_coefficient_reader": "0x00712452",
+    "team_constructor": "0x006F06E0",
+    "team_avoid_reader": "0x006F1371",
+    "foot_coefficient_getter": "0x004DC760",
+    "threat_bucket_index": "0x0056BC50",
+    "adjust_spatial_threat": "0x004FA2E0"
+  },
+  "payload_sha256": "ee35b36eb94ac9cfff55f138bf10107ebd99b3457bbecfc3a44387744e0fc86f"
+}

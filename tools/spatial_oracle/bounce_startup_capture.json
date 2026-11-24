@@ -1,0 +1,42 @@
+{
+  "recorded_os": "Windows-11-10.0.26200-SP0",
+  "mechanism": "hardware execution breakpoints, no WriteProcessMemory or code patches",
+  "coverage": "original process PE entry, Bounce initializer439610 and following439640 and WinMain entry, before application startup; no runtime immutability or arbitrary process-memory proof",
+  "captures": [
+    {
+      "eip": "0x7cd80f",
+      "fpcw": "0x27f",
+      "region_address": "0x89c760",
+      "region_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+      "original_instruction_bytes": "558bec6aff6898977f0068d4c17c0064"
+    },
+    {
+      "eip": "0x439610",
+      "fpcw": "0xe7f",
+      "region_address": "0x89c760",
+      "region_hex": "0000000000000000000000000000000011111111cb2218406800000000000000",
+      "original_instruction_bytes": "51a178c789008d0c8500000000894c24"
+    },
+    {
+      "eip": "0x439640",
+      "fpcw": "0xe7f",
+      "region_address": "0x89c760",
+      "region_hex": "000000000000000000000000a001000011111111cb2218406800000000000000",
+      "original_instruction_bytes": "33c066a318c7890066a31ac78900c390"
+    },
+    {
+      "eip": "0x6bb9a0",
+      "fpcw": "0xe7f",
+      "region_address": "0x89c760",
+      "region_hex": "800000008000000000000000a001000011111111cb2218406800000000000000",
+      "original_instruction_bytes": "558bec6aff6818377f0068d4c17c0064"
+    }
+  ],
+  "executable_sections": [
+    {
+      "address": "0x401000",
+      "size": 4063232,
+      "original_and_loaded_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc"
+    }
+  ]
+}

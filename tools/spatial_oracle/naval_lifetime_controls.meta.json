@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Bounded original selection, repeated fatal damage and raw-load sound tail.\n\nFull scenario/COM stream loading is excluded. Saved-object bytes and original\nFootLoad sound-reset tail are composed as explicit interior boundaries.\n",
+  "assumptions": [
+    "Original selection gates and ObjectSelect execute on an empty capacity16 selection vector, supplied local human owner/discovery and native type Selectable constructor default. Selection voice wrapper6FBFA0, screen picking and later movement command handling excluded.",
+    "Repeated C4 uses actual original Unit receiver after initial actual sinking. It is direct receiver evidence, not proof that a particular area effect will still acquire an unmarked hull.",
+    "Original Unit GetSize returns0x8E8; imported object gets a separate0x1000 buffer, first0x800 bytes from the bounded source actor and zero extension. Original AbstractLoad410380 copies these supplied Unit-size object bytes through a supplied exact IStreamRead callback. Original FootLoad audio-reset tail4DB60D..4DB624 then no-initFoot ctor4D3540 and original Unit vtable reconstruction744521..74453B execute. Intervening vectors, COM and pointer-swizzling load bodies excluded. Fields3CD/3CE survive these measured boundaries; already-seen1 produces no replay from actual sound edge."
+  ],
+  "substitutions": [
+    "Inherited native setup and audio sound callback boundary from naval_lifetime_audio.",
+    "IStreamRead supplies retained raw object bytes; original native loader controls read lengths and writes."
+  ],
+  "entry_points": {
+    "selection": "0x005F4520",
+    "repeat_damage": "0x00737C90",
+    "raw_load": "0x00410380",
+    "foot_load_sound_reset": "0x004DB60D",
+    "foot_noinit": "0x004D3540",
+    "unit_noinit_vtables": "0x00744521"
+  },
+  "payload_sha256": "dfd3c3b2572db7bb2ec1f3613796e4df882311a6a9ae0ee01563ee8777f0a441"
+}

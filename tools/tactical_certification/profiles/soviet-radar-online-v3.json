@@ -1,0 +1,191 @@
+{
+  "schema_version": "vera20k.tactical-profile.v3",
+  "profile_id": "soviet-radar-online-v3",
+  "checkpoint": "radar-online-v2",
+  "fixture": {
+    "logical_map_name": "Fight.MAP",
+    "theater": "NEWURBAN",
+    "map_size": {
+      "width": 81,
+      "height": 52
+    },
+    "local_size": {
+      "width": 75,
+      "height": 42
+    },
+    "start_waypoint_count": 2,
+    "archive_name": "multimd.mix",
+    "archive_byte_length": 31264268,
+    "archive_sha256": "ff4138ba95f7efd8bded14342fc9082b99c47e43c25ab18236e4eea141b488e9",
+    "mix_entry_id": 2466705488,
+    "entry_payload_byte_length": 91254,
+    "entry_payload_sha256": "d751dce7cd3611077e9228c33235f39c71681fff6ac08ca1f716d963ad6ce070",
+    "entry_digest_authority": "DECLARED_FIXTURE_PROVENANCE",
+    "battle_descriptor_id": 1,
+    "catalog_scen_index": 12
+  },
+  "launch": {
+    "mode": {
+      "id": 1,
+      "ui_name_key": "GUI:Battle",
+      "tooltip_key": "STT:ModeBattle",
+      "override_file": "MPBattleMD.ini",
+      "map_filter": "standard",
+      "random_maps_allowed": true,
+      "allies_allowed": true,
+      "must_ally": false
+    },
+    "seed": 305419896,
+    "input_delay_ticks": 2,
+    "player_name": "VERA-SOVIET",
+    "local": {
+      "country": "Russia",
+      "country_random": false,
+      "color_index": 0,
+      "color_random": false,
+      "start_position": 0,
+      "team": null
+    },
+    "opponents": [
+      {
+        "country": "Yuri",
+        "country_random": false,
+        "color_index": 1,
+        "color_random": false,
+        "start_position": 1,
+        "team": null,
+        "difficulty": "Easy"
+      }
+    ],
+    "options": {
+      "starting_credits": 10000,
+      "unit_count": 0,
+      "tech_level": 10,
+      "game_speed": 1,
+      "default_ai_difficulty": 0,
+      "short_game": true,
+      "bases": true,
+      "bridges_destroyable": true,
+      "super_weapons": true,
+      "build_off_ally": true,
+      "crates": true,
+      "mcv_redeploy": true,
+      "fog_of_war": false,
+      "shroud": true,
+      "tiberium_grows": true,
+      "multi_engineer": false,
+      "harvester_truce": false,
+      "ally_change_allowed": true
+    }
+  },
+  "capture": {
+    "internal_width": 800,
+    "internal_height": 600,
+    "output_width": 800,
+    "output_height": 600,
+    "surface_formats": [
+      "Bgra8Unorm",
+      "Bgra8UnormSrgb"
+    ],
+    "vsync": true,
+    "upscale": false,
+    "extra_animations": true,
+    "exact_step_hz": 45,
+    "sim_tick_ms": 22,
+    "app_ui_scale": 1.0,
+    "post_load_cursor": {
+      "x": 316,
+      "y": 284
+    },
+    "cursor_id": "Default",
+    "software_cursor_required": true,
+    "placement_radius": 16,
+    "warm_frames": 16,
+    "build_targets": {
+      "power": "NAPOWR",
+      "refinery": "NAREFN",
+      "radar": "NARADR",
+      "refinery_spawned_harvester": "HARV"
+    }
+  },
+  "budgets": {
+    "stages": [
+      {
+        "name": "yard_active",
+        "tick_cap": 48,
+        "wall_seconds": 15
+      },
+      {
+        "name": "power_ready",
+        "tick_cap": 640,
+        "wall_seconds": 90
+      },
+      {
+        "name": "power_active",
+        "tick_cap": 64,
+        "wall_seconds": 15
+      },
+      {
+        "name": "refinery_ready",
+        "tick_cap": 2048,
+        "wall_seconds": 270
+      },
+      {
+        "name": "refinery_active",
+        "tick_cap": 64,
+        "wall_seconds": 15
+      },
+      {
+        "name": "radar_ready",
+        "tick_cap": 1024,
+        "wall_seconds": 140
+      },
+      {
+        "name": "radar_active",
+        "tick_cap": 64,
+        "wall_seconds": 15
+      },
+      {
+        "name": "radar_online",
+        "tick_cap": 4096,
+        "wall_seconds": 20
+      },
+      {
+        "name": "readiness_and_warm_frames",
+        "tick_cap": 18,
+        "wall_seconds": 10
+      }
+    ],
+    "overall_tick_cap": 8192,
+    "post_l0_timeout_seconds": 600,
+    "child_timeout_seconds": 720,
+    "absolute_timeout_max_seconds": 900,
+    "expected_ledger": {
+      "yard_active": 34,
+      "power_ready": 619,
+      "power_active": 672,
+      "refinery_ready": 2635,
+      "refinery_active": 2688,
+      "radar_ready": 3644,
+      "radar_active": 3676
+    }
+  },
+  "pixel_inputs": {
+    "bitmap_font": {
+      "logical_name": "GAME.FNT",
+      "source_archive": "ra2.mix -> local.mix",
+      "archive_name": "ra2.mix",
+      "archive_byte_length": 281888480,
+      "archive_sha256": "896a8b64f9f1bb8ad5e0bc64fc0b8ea8c84112494761ea1a43478d10c5ef9914",
+      "entry_id": -1311409470,
+      "payload_byte_length": 1584195,
+      "payload_sha256": "ec8d6d85db3eedf5a862cc6ffb87bfad4c77279dd946bc2d30879ad9140c8d3f"
+    }
+  },
+  "evidence_limitations": [
+    "Rust production-route regression evidence only",
+    "native comparator NONE",
+    "parity certification NONE",
+    "visible-window pacing input audio and wider-map coverage unverified"
+  ]
+}

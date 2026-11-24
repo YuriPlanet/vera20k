@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Seven supplied seeds, 32 sequential CRT draws each; arithmetic and seed write extent only",
+  "assumptions": [
+    "EAX is the valid context pointer returned by native TLS accessor 0x007D140B",
+    "Each case has a fresh context; state is retained across its 32 draws",
+    "No startup route, TLS allocation, consumer scheduling or live Save seed is certified"
+  ],
+  "substitutions": [
+    "TLS accessor call bypassed by supplying its returned context pointer"
+  ],
+  "entry_points": {
+    "rand_arithmetic": "0x007CB4AF",
+    "ret_boundary": "0x007CB4CB"
+  },
+  "payload_sha256": "10e221c6aa69941731ad72c755be109684dc33753f3d4a4990d825757f888b2e"
+}

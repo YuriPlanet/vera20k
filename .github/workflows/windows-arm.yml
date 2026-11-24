@@ -1,0 +1,13 @@
+name: Windows ARM
+
+# Windows on ARM64 (Snapdragon laptops).
+# Manual only: run it from the Actions tab or with
+# `gh workflow run windows-arm.yml --ref <branch>`.
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+    with:
+      os: windows-11-arm

@@ -1,0 +1,4480 @@
+{
+  "cell_early_gates": [
+    {
+      "case": "overlay_-1",
+      "cell_unchanged": true,
+      "ground_list_present": true,
+      "reached": [],
+      "supplied_density": 255,
+      "supplied_flags": 0,
+      "supplied_overlay": -1,
+      "supplied_slope": 0
+    },
+    {
+      "case": "overlay_24",
+      "cell_unchanged": true,
+      "ground_list_present": true,
+      "reached": [],
+      "supplied_density": 255,
+      "supplied_flags": 0,
+      "supplied_overlay": 24,
+      "supplied_slope": 0
+    },
+    {
+      "case": "overlay_25",
+      "cell_unchanged": true,
+      "ground_list_present": true,
+      "reached": [],
+      "supplied_density": 255,
+      "supplied_flags": 0,
+      "supplied_overlay": 25,
+      "supplied_slope": 0
+    },
+    {
+      "case": "overlay_122",
+      "cell_unchanged": true,
+      "ground_list_present": true,
+      "reached": [],
+      "supplied_density": 255,
+      "supplied_flags": 0,
+      "supplied_overlay": 122,
+      "supplied_slope": 0
+    },
+    {
+      "case": "overlay_123",
+      "cell_unchanged": true,
+      "ground_list_present": true,
+      "reached": [],
+      "supplied_density": 255,
+      "supplied_flags": 0,
+      "supplied_overlay": 123,
+      "supplied_slope": 0
+    },
+    {
+      "case": "overlay_124",
+      "cell_unchanged": true,
+      "ground_list_present": true,
+      "reached": [],
+      "supplied_density": 255,
+      "supplied_flags": 0,
+      "supplied_overlay": 124,
+      "supplied_slope": 0
+    },
+    {
+      "case": "overlay_125",
+      "cell_unchanged": true,
+      "ground_list_present": true,
+      "reached": [],
+      "supplied_density": 255,
+      "supplied_flags": 0,
+      "supplied_overlay": 125,
+      "supplied_slope": 0
+    },
+    {
+      "case": "density_47",
+      "cell_unchanged": true,
+      "ground_list_present": true,
+      "reached": [],
+      "supplied_density": 47,
+      "supplied_flags": 0,
+      "supplied_overlay": 126,
+      "supplied_slope": 0
+    },
+    {
+      "case": "slope_1",
+      "cell_unchanged": true,
+      "ground_list_present": true,
+      "reached": [],
+      "supplied_density": 48,
+      "supplied_flags": 0,
+      "supplied_overlay": 126,
+      "supplied_slope": 1
+    },
+    {
+      "case": "already_latched",
+      "cell_unchanged": true,
+      "ground_list_present": true,
+      "reached": [],
+      "supplied_density": 48,
+      "supplied_flags": 131072,
+      "supplied_overlay": 126,
+      "supplied_slope": 0
+    },
+    {
+      "case": "empty_ground_list",
+      "cell_unchanged": true,
+      "ground_list_present": false,
+      "reached": [
+        "0x48695c"
+      ],
+      "supplied_density": 48,
+      "supplied_flags": 0,
+      "supplied_overlay": 126,
+      "supplied_slope": 0
+    }
+  ],
+  "emp": {
+    "constructor": 0,
+    "controls": [
+      {
+        "result": 0,
+        "supplied_signed_emp_timer": 0
+      },
+      {
+        "result": 1,
+        "supplied_signed_emp_timer": 1
+      },
+      {
+        "result": 1,
+        "supplied_signed_emp_timer": 255
+      },
+      {
+        "result": 0,
+        "supplied_signed_emp_timer": -1
+      },
+      {
+        "result": 1,
+        "supplied_signed_emp_timer": 2147483647
+      },
+      {
+        "result": 0,
+        "supplied_signed_emp_timer": -2147483648
+      }
+    ],
+    "infantry_receiver": "0x70efd0"
+  },
+  "engineer_immunity": {
+    "constructor": 0,
+    "key": "ImmuneToVeins",
+    "layers": [
+      {
+        "after": 1,
+        "before": 0,
+        "bytes": 743215,
+        "file": "RULESMD.INI",
+        "sections": {
+          "ENGINEER": {
+            "AllowedToStartInMultiplayer": "no",
+            "Armor": "none",
+            "BombSight": "4",
+            "Category": "Soldier",
+            "Cost": "500",
+            "CrushSound": "InfantrySquish",
+            "DieSound": "EngAllDie",
+            "Engineer": "yes",
+            "ForbiddenHouses": "Russians,Confederation,Africans,Arabs,YuriCountry",
+            "GuardRange": "9",
+            "IFVMode": "1",
+            "ImmuneToVeins": "yes",
+            "IsSelectableCombatant": "no",
+            "LeadershipRating": "3",
+            "Locomotor": "{4A582744-9839-11d1-B709-00A024DDAFD1}",
+            "MovementZone": "Infantry",
+            "Name": "Engineer",
+            "Owner": "Russians,Confederation,Africans,Arabs,YuriCountry,British,French,Germans,Americans,Alliance",
+            "PhysicalSize": "1",
+            "Pip": "Blue",
+            "Points": "5",
+            "Prerequisite": "Barracks",
+            "PreventAttackMove": "yes",
+            "Primary": "DefuseKit",
+            "Secondary": "VirtualScanner",
+            "Sight": "4",
+            "Size": "1",
+            "Soylent": "250",
+            "SpecialThreatValue": "1",
+            "Speed": "4",
+            "Strength": "75",
+            "TechLevel": "1",
+            "ThreatPosed": "0",
+            "Trainable": "no",
+            "UIName": "Name:ENGINEER",
+            "VoiceAttack": "EngAllMove",
+            "VoiceCapture": "EngAllAttackCommand",
+            "VoiceEnter": "EngAllMove",
+            "VoiceFeedback": "EngAllFear",
+            "VoiceMove": "EngAllMove",
+            "VoiceSelect": "EngAllSelect",
+            "VoiceSpecialAttack": "EngAllAttackCommand"
+          }
+        },
+        "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef",
+        "source_lines": [
+          {
+            "key": "UIName",
+            "line": 3818,
+            "section": "ENGINEER",
+            "value": "Name:ENGINEER"
+          },
+          {
+            "key": "Name",
+            "line": 3819,
+            "section": "ENGINEER",
+            "value": "Engineer"
+          },
+          {
+            "key": "Category",
+            "line": 3820,
+            "section": "ENGINEER",
+            "value": "Soldier"
+          },
+          {
+            "key": "Primary",
+            "line": 3821,
+            "section": "ENGINEER",
+            "value": "DefuseKit"
+          },
+          {
+            "key": "Secondary",
+            "line": 3822,
+            "section": "ENGINEER",
+            "value": "VirtualScanner"
+          },
+          {
+            "key": "Prerequisite",
+            "line": 3823,
+            "section": "ENGINEER",
+            "value": "Barracks"
+          },
+          {
+            "key": "CrushSound",
+            "line": 3824,
+            "section": "ENGINEER",
+            "value": "InfantrySquish"
+          },
+          {
+            "key": "LeadershipRating",
+            "line": 3825,
+            "section": "ENGINEER",
+            "value": "3"
+          },
+          {
+            "key": "Strength",
+            "line": 3826,
+            "section": "ENGINEER",
+            "value": "75"
+          },
+          {
+            "key": "Armor",
+            "line": 3827,
+            "section": "ENGINEER",
+            "value": "none"
+          },
+          {
+            "key": "TechLevel",
+            "line": 3828,
+            "section": "ENGINEER",
+            "value": "1"
+          },
+          {
+            "key": "Sight",
+            "line": 3829,
+            "section": "ENGINEER",
+            "value": "4"
+          },
+          {
+            "key": "BombSight",
+            "line": 3830,
+            "section": "ENGINEER",
+            "value": "4"
+          },
+          {
+            "key": "Speed",
+            "line": 3831,
+            "section": "ENGINEER",
+            "value": "4"
+          },
+          {
+            "key": "Pip",
+            "line": 3832,
+            "section": "ENGINEER",
+            "value": "Blue"
+          },
+          {
+            "key": "Engineer",
+            "line": 3833,
+            "section": "ENGINEER",
+            "value": "yes"
+          },
+          {
+            "key": "Owner",
+            "line": 3834,
+            "section": "ENGINEER",
+            "value": "Russians,Confederation,Africans,Arabs,YuriCountry,British,French,Germans,Americans,Alliance"
+          },
+          {
+            "key": "ForbiddenHouses",
+            "line": 3835,
+            "section": "ENGINEER",
+            "value": "Russians,Confederation,Africans,Arabs,YuriCountry"
+          },
+          {
+            "key": "AllowedToStartInMultiplayer",
+            "line": 3836,
+            "section": "ENGINEER",
+            "value": "no"
+          },
+          {
+            "key": "Cost",
+            "line": 3837,
+            "section": "ENGINEER",
+            "value": "500"
+          },
+          {
+            "key": "Soylent",
+            "line": 3838,
+            "section": "ENGINEER",
+            "value": "250"
+          },
+          {
+            "key": "Points",
+            "line": 3839,
+            "section": "ENGINEER",
+            "value": "5"
+          },
+          {
+            "key": "IsSelectableCombatant",
+            "line": 3840,
+            "section": "ENGINEER",
+            "value": "no"
+          },
+          {
+            "key": "VoiceSelect",
+            "line": 3841,
+            "section": "ENGINEER",
+            "value": "EngAllSelect"
+          },
+          {
+            "key": "VoiceMove",
+            "line": 3842,
+            "section": "ENGINEER",
+            "value": "EngAllMove"
+          },
+          {
+            "key": "VoiceAttack",
+            "line": 3843,
+            "section": "ENGINEER",
+            "value": "EngAllMove"
+          },
+          {
+            "key": "VoiceFeedback",
+            "line": 3844,
+            "section": "ENGINEER",
+            "value": "EngAllFear"
+          },
+          {
+            "key": "VoiceSpecialAttack",
+            "line": 3845,
+            "section": "ENGINEER",
+            "value": "EngAllAttackCommand"
+          },
+          {
+            "key": "VoiceEnter",
+            "line": 3846,
+            "section": "ENGINEER",
+            "value": "EngAllMove"
+          },
+          {
+            "key": "VoiceCapture",
+            "line": 3847,
+            "section": "ENGINEER",
+            "value": "EngAllAttackCommand"
+          },
+          {
+            "key": "DieSound",
+            "line": 3848,
+            "section": "ENGINEER",
+            "value": "EngAllDie"
+          },
+          {
+            "key": "Locomotor",
+            "line": 3849,
+            "section": "ENGINEER",
+            "value": "{4A582744-9839-11d1-B709-00A024DDAFD1}"
+          },
+          {
+            "key": "PhysicalSize",
+            "line": 3850,
+            "section": "ENGINEER",
+            "value": "1"
+          },
+          {
+            "key": "MovementZone",
+            "line": 3851,
+            "section": "ENGINEER",
+            "value": "Infantry"
+          },
+          {
+            "key": "ThreatPosed",
+            "line": 3852,
+            "section": "ENGINEER",
+            "value": "0"
+          },
+          {
+            "key": "SpecialThreatValue",
+            "line": 3853,
+            "section": "ENGINEER",
+            "value": "1"
+          },
+          {
+            "key": "ImmuneToVeins",
+            "line": 3854,
+            "section": "ENGINEER",
+            "value": "yes"
+          },
+          {
+            "key": "GuardRange",
+            "line": 3855,
+            "section": "ENGINEER",
+            "value": "9"
+          },
+          {
+            "key": "Size",
+            "line": 3856,
+            "section": "ENGINEER",
+            "value": "1"
+          },
+          {
+            "key": "PreventAttackMove",
+            "line": 3857,
+            "section": "ENGINEER",
+            "value": "yes"
+          },
+          {
+            "key": "IFVMode",
+            "line": 3858,
+            "section": "ENGINEER",
+            "value": "1"
+          },
+          {
+            "key": "Trainable",
+            "line": 3859,
+            "section": "ENGINEER",
+            "value": "no"
+          }
+        ]
+      },
+      {
+        "absent": true,
+        "file": "LANGRULE.INI"
+      },
+      {
+        "after": 1,
+        "before": 1,
+        "bytes": 295,
+        "file": "MPBattleMD.ini",
+        "sections": {},
+        "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963",
+        "source_lines": []
+      },
+      {
+        "after": 1,
+        "before": 1,
+        "bytes": 144458,
+        "file": "Hills.map",
+        "sections": {},
+        "sha256": "780d5d6e6d3c81ac0d510a5df326848dd426b3d840ac290114f44faf8eab9e9e",
+        "source_lines": []
+      }
+    ],
+    "type_name": "ENGINEER"
+  },
+  "overlay_registry": {
+    "physical_sections": {
+      "OverlayTypes": {
+        "1": "GASAND",
+        "10": "DUMMY5",
+        "100": "LOBRDG24",
+        "101": "LOBRDG25",
+        "102": "LOBRDG26",
+        "103": "LOBRDG27",
+        "104": "LOBRDG28",
+        "105": "TIB01",
+        "106": "TIB02",
+        "107": "TIB03",
+        "108": "TIB04",
+        "109": "TIB05",
+        "11": "DUMMY6",
+        "110": "TIB06",
+        "111": "TIB07",
+        "112": "TIB08",
+        "113": "TIB09",
+        "114": "TIB10",
+        "115": "TIB11",
+        "116": "TIB12",
+        "117": "TIB13",
+        "118": "TIB14",
+        "119": "TIB15",
+        "12": "DUMMY7",
+        "120": "TIB16",
+        "121": "TIB17",
+        "122": "TIB18",
+        "123": "TIB19",
+        "124": "TIB20",
+        "125": "LOBRDGE1",
+        "126": "LOBRDGE2",
+        "127": "LOBRDGE3",
+        "128": "LOBRDGE4",
+        "129": "DUMMYOLD",
+        "13": "DUMMY8",
+        "130": "TIB2_01",
+        "131": "TIB2_02",
+        "132": "TIB2_03",
+        "133": "TIB2_04",
+        "134": "TIB2_05",
+        "135": "TIB2_06",
+        "136": "TIB2_07",
+        "137": "TIB2_08",
+        "138": "TIB2_09",
+        "139": "TIB2_10",
+        "14": "DUMMY9",
+        "140": "TIB2_11",
+        "141": "TIB2_12",
+        "142": "TIB2_13",
+        "143": "TIB2_14",
+        "144": "TIB2_15",
+        "145": "TIB2_16",
+        "146": "TIB2_17",
+        "147": "TIB2_18",
+        "148": "TIB2_19",
+        "149": "TIB2_20",
+        "15": "DUMMY10",
+        "150": "TIB3_01",
+        "151": "TIB3_02",
+        "152": "TIB3_03",
+        "153": "TIB3_04",
+        "154": "TIB3_05",
+        "155": "TIB3_06",
+        "156": "TIB3_07",
+        "157": "TIB3_08",
+        "158": "TIB3_09",
+        "159": "TIB3_10",
+        "16": "DUMMY11",
+        "160": "TIB3_11",
+        "161": "TIB3_12",
+        "162": "TIB3_13",
+        "163": "TIB3_14",
+        "164": "TIB3_15",
+        "165": "TIB3_16",
+        "166": "TIB3_17",
+        "167": "TIB3_18",
+        "168": "TIB3_19",
+        "169": "TIB3_20",
+        "17": "DUMMY12",
+        "170": "USELESS",
+        "171": "SROCK01",
+        "172": "SROCK02",
+        "173": "SROCK03",
+        "174": "SROCK04",
+        "175": "SROCK05",
+        "176": "TROCK01",
+        "177": "TROCK02",
+        "178": "TROCK03",
+        "179": "TROCK04",
+        "18": "V16",
+        "180": "TROCK05",
+        "181": "VEINHOLEDUMMY",
+        "182": "CRATE",
+        "184": "FENCE01",
+        "185": "FENCE02",
+        "186": "FENCE03",
+        "187": "FENCE04",
+        "188": "FENCE05",
+        "189": "FENCE06",
+        "19": "V17",
+        "190": "FENCE07",
+        "191": "FENCE08",
+        "192": "FENCE09",
+        "193": "FENCE10",
+        "194": "FENCE11",
+        "195": "FENCE12",
+        "196": "FENCE13",
+        "197": "FENCE14",
+        "198": "FENCE15",
+        "199": "FENCE16",
+        "2": "CYCL",
+        "20": "V18",
+        "200": "FENCE17",
+        "201": "FENCE18",
+        "202": "FENCE19",
+        "203": "FENCE20",
+        "204": "FENCE21",
+        "205": "FENCE22",
+        "206": "GAWRONG",
+        "207": "CAFNCB",
+        "208": "CAFNCW",
+        "209": "LOBRDB01",
+        "21": "DUMMY13",
+        "210": "LOBRDB02",
+        "211": "LOBRDB03",
+        "212": "LOBRDB04",
+        "213": "LOBRDB05",
+        "214": "LOBRDB06",
+        "215": "LOBRDB07",
+        "216": "LOBRDB08",
+        "217": "LOBRDB09",
+        "218": "LOBRDB10",
+        "219": "LOBRDB11",
+        "22": "DUMMY14",
+        "220": "LOBRDB12",
+        "221": "LOBRDB13",
+        "222": "LOBRDB14",
+        "223": "LOBRDB15",
+        "224": "LOBRDB16",
+        "225": "LOBRDB17",
+        "226": "LOBRDB18",
+        "227": "LOBRDB19",
+        "228": "LOBRDB20",
+        "229": "LOBRDB21",
+        "23": "FENC",
+        "230": "LOBRDB22",
+        "231": "LOBRDB23",
+        "232": "LOBRDB24",
+        "233": "LOBRDB25",
+        "234": "LOBRDB26",
+        "235": "LOBRDB27",
+        "236": "LOBRDB28",
+        "237": "LOBRDGB1",
+        "238": "LOBRDGB2",
+        "239": "LOBRDGB3",
+        "24": "DUMMY15",
+        "240": "LOBRDGB4",
+        "241": "BRIDGEB1",
+        "242": "BRIDGEB2",
+        "243": "RUBBLE_OVERLAY",
+        "244": "CAKRMW",
+        "245": "CAFNCP",
+        "246": "WCRATE",
+        "247": "GAFWLL",
+        "248": "LUNRK1",
+        "249": "LUNRK2",
+        "25": "BRIDGE1",
+        "250": "LUNRK3",
+        "251": "LUNRK4",
+        "252": "LUNRK5",
+        "253": "LUNRK6",
+        "26": "BRIDGE2",
+        "27": "NAWALL",
+        "28": "GEM01",
+        "29": "GEM02",
+        "3": "GAWALL",
+        "30": "GEM03",
+        "31": "GEM04",
+        "32": "GEM05",
+        "33": "GEM06",
+        "34": "GEM07",
+        "35": "GEM08",
+        "36": "GEM09",
+        "37": "GEM10",
+        "38": "GEM11",
+        "39": "GEM12",
+        "4": "BARB",
+        "42": "TRACKS01",
+        "43": "TRACKS02",
+        "44": "TRACKS03",
+        "45": "TRACKS04",
+        "46": "TRACKS05",
+        "47": "TRACKS06",
+        "48": "TRACKS07",
+        "49": "TRACKS08",
+        "5": "WOOD",
+        "50": "TRACKS09",
+        "51": "TRACKS10",
+        "52": "TRACKS11",
+        "53": "TRACKS12",
+        "54": "TRACKS13",
+        "55": "TRACKS14",
+        "56": "TRACKS15",
+        "57": "TRACKS16",
+        "58": "TRACKTUNNEL01",
+        "59": "TRACKTUNNEL02",
+        "6": "DUMMY",
+        "60": "TRACKTUNNEL03",
+        "61": "TRACKTUNNEL04",
+        "62": "RAILBRDG1",
+        "63": "RAILBRDG2",
+        "64": "CRAT01",
+        "65": "CRAT02",
+        "66": "CRAT03",
+        "67": "CRAT04",
+        "68": "CRAT0A",
+        "69": "CRAT0B",
+        "7": "DUMMY2",
+        "70": "CRAT0C",
+        "71": "DRUM01",
+        "72": "DRUM02",
+        "73": "PALET01",
+        "74": "PALET02",
+        "75": "PALET03",
+        "76": "PALET04",
+        "77": "LOBRDG01",
+        "78": "LOBRDG02",
+        "79": "LOBRDG03",
+        "8": "DUMMY3",
+        "80": "LOBRDG04",
+        "81": "LOBRDG05",
+        "82": "LOBRDG06",
+        "83": "LOBRDG07",
+        "84": "LOBRDG08",
+        "85": "LOBRDG09",
+        "86": "LOBRDG10",
+        "87": "LOBRDG11",
+        "88": "LOBRDG12",
+        "89": "LOBRDG13",
+        "9": "DUMMY4",
+        "90": "LOBRDG14",
+        "91": "LOBRDG15",
+        "92": "LOBRDG16",
+        "93": "LOBRDG17",
+        "94": "LOBRDG18",
+        "95": "LOBRDG19",
+        "96": "LOBRDG20",
+        "97": "LOBRDG21",
+        "98": "LOBRDG22",
+        "99": "LOBRDG23"
+      }
+    },
+    "registry": [
+      {
+        "index": 0,
+        "name": "GASAND",
+        "stored_index": 0
+      },
+      {
+        "index": 1,
+        "name": "CYCL",
+        "stored_index": 1
+      },
+      {
+        "index": 2,
+        "name": "GAWALL",
+        "stored_index": 2
+      },
+      {
+        "index": 3,
+        "name": "BARB",
+        "stored_index": 3
+      },
+      {
+        "index": 4,
+        "name": "WOOD",
+        "stored_index": 4
+      },
+      {
+        "index": 5,
+        "name": "DUMMY",
+        "stored_index": 5
+      },
+      {
+        "index": 6,
+        "name": "DUMMY2",
+        "stored_index": 6
+      },
+      {
+        "index": 7,
+        "name": "DUMMY3",
+        "stored_index": 7
+      },
+      {
+        "index": 8,
+        "name": "DUMMY4",
+        "stored_index": 8
+      },
+      {
+        "index": 9,
+        "name": "DUMMY5",
+        "stored_index": 9
+      },
+      {
+        "index": 10,
+        "name": "DUMMY6",
+        "stored_index": 10
+      },
+      {
+        "index": 11,
+        "name": "DUMMY7",
+        "stored_index": 11
+      },
+      {
+        "index": 12,
+        "name": "DUMMY8",
+        "stored_index": 12
+      },
+      {
+        "index": 13,
+        "name": "DUMMY9",
+        "stored_index": 13
+      },
+      {
+        "index": 14,
+        "name": "DUMMY10",
+        "stored_index": 14
+      },
+      {
+        "index": 15,
+        "name": "DUMMY11",
+        "stored_index": 15
+      },
+      {
+        "index": 16,
+        "name": "DUMMY12",
+        "stored_index": 16
+      },
+      {
+        "index": 17,
+        "name": "V16",
+        "stored_index": 17
+      },
+      {
+        "index": 18,
+        "name": "V17",
+        "stored_index": 18
+      },
+      {
+        "index": 19,
+        "name": "V18",
+        "stored_index": 19
+      },
+      {
+        "index": 20,
+        "name": "DUMMY13",
+        "stored_index": 20
+      },
+      {
+        "index": 21,
+        "name": "DUMMY14",
+        "stored_index": 21
+      },
+      {
+        "index": 22,
+        "name": "FENC",
+        "stored_index": 22
+      },
+      {
+        "index": 23,
+        "name": "DUMMY15",
+        "stored_index": 23
+      },
+      {
+        "index": 24,
+        "name": "BRIDGE1",
+        "stored_index": 24
+      },
+      {
+        "index": 25,
+        "name": "BRIDGE2",
+        "stored_index": 25
+      },
+      {
+        "index": 26,
+        "name": "NAWALL",
+        "stored_index": 26
+      },
+      {
+        "index": 27,
+        "name": "GEM01",
+        "stored_index": 27
+      },
+      {
+        "index": 28,
+        "name": "GEM02",
+        "stored_index": 28
+      },
+      {
+        "index": 29,
+        "name": "GEM03",
+        "stored_index": 29
+      },
+      {
+        "index": 30,
+        "name": "GEM04",
+        "stored_index": 30
+      },
+      {
+        "index": 31,
+        "name": "GEM05",
+        "stored_index": 31
+      },
+      {
+        "index": 32,
+        "name": "GEM06",
+        "stored_index": 32
+      },
+      {
+        "index": 33,
+        "name": "GEM07",
+        "stored_index": 33
+      },
+      {
+        "index": 34,
+        "name": "GEM08",
+        "stored_index": 34
+      },
+      {
+        "index": 35,
+        "name": "GEM09",
+        "stored_index": 35
+      },
+      {
+        "index": 36,
+        "name": "GEM10",
+        "stored_index": 36
+      },
+      {
+        "index": 37,
+        "name": "GEM11",
+        "stored_index": 37
+      },
+      {
+        "index": 38,
+        "name": "GEM12",
+        "stored_index": 38
+      },
+      {
+        "index": 39,
+        "name": "TRACKS01",
+        "stored_index": 39
+      },
+      {
+        "index": 40,
+        "name": "TRACKS02",
+        "stored_index": 40
+      },
+      {
+        "index": 41,
+        "name": "TRACKS03",
+        "stored_index": 41
+      },
+      {
+        "index": 42,
+        "name": "TRACKS04",
+        "stored_index": 42
+      },
+      {
+        "index": 43,
+        "name": "TRACKS05",
+        "stored_index": 43
+      },
+      {
+        "index": 44,
+        "name": "TRACKS06",
+        "stored_index": 44
+      },
+      {
+        "index": 45,
+        "name": "TRACKS07",
+        "stored_index": 45
+      },
+      {
+        "index": 46,
+        "name": "TRACKS08",
+        "stored_index": 46
+      },
+      {
+        "index": 47,
+        "name": "TRACKS09",
+        "stored_index": 47
+      },
+      {
+        "index": 48,
+        "name": "TRACKS10",
+        "stored_index": 48
+      },
+      {
+        "index": 49,
+        "name": "TRACKS11",
+        "stored_index": 49
+      },
+      {
+        "index": 50,
+        "name": "TRACKS12",
+        "stored_index": 50
+      },
+      {
+        "index": 51,
+        "name": "TRACKS13",
+        "stored_index": 51
+      },
+      {
+        "index": 52,
+        "name": "TRACKS14",
+        "stored_index": 52
+      },
+      {
+        "index": 53,
+        "name": "TRACKS15",
+        "stored_index": 53
+      },
+      {
+        "index": 54,
+        "name": "TRACKS16",
+        "stored_index": 54
+      },
+      {
+        "index": 55,
+        "name": "TRACKTUNNEL01",
+        "stored_index": 55
+      },
+      {
+        "index": 56,
+        "name": "TRACKTUNNEL02",
+        "stored_index": 56
+      },
+      {
+        "index": 57,
+        "name": "TRACKTUNNEL03",
+        "stored_index": 57
+      },
+      {
+        "index": 58,
+        "name": "TRACKTUNNEL04",
+        "stored_index": 58
+      },
+      {
+        "index": 59,
+        "name": "RAILBRDG1",
+        "stored_index": 59
+      },
+      {
+        "index": 60,
+        "name": "RAILBRDG2",
+        "stored_index": 60
+      },
+      {
+        "index": 61,
+        "name": "CRAT01",
+        "stored_index": 61
+      },
+      {
+        "index": 62,
+        "name": "CRAT02",
+        "stored_index": 62
+      },
+      {
+        "index": 63,
+        "name": "CRAT03",
+        "stored_index": 63
+      },
+      {
+        "index": 64,
+        "name": "CRAT04",
+        "stored_index": 64
+      },
+      {
+        "index": 65,
+        "name": "CRAT0A",
+        "stored_index": 65
+      },
+      {
+        "index": 66,
+        "name": "CRAT0B",
+        "stored_index": 66
+      },
+      {
+        "index": 67,
+        "name": "CRAT0C",
+        "stored_index": 67
+      },
+      {
+        "index": 68,
+        "name": "DRUM01",
+        "stored_index": 68
+      },
+      {
+        "index": 69,
+        "name": "DRUM02",
+        "stored_index": 69
+      },
+      {
+        "index": 70,
+        "name": "PALET01",
+        "stored_index": 70
+      },
+      {
+        "index": 71,
+        "name": "PALET02",
+        "stored_index": 71
+      },
+      {
+        "index": 72,
+        "name": "PALET03",
+        "stored_index": 72
+      },
+      {
+        "index": 73,
+        "name": "PALET04",
+        "stored_index": 73
+      },
+      {
+        "index": 74,
+        "name": "LOBRDG01",
+        "stored_index": 74
+      },
+      {
+        "index": 75,
+        "name": "LOBRDG02",
+        "stored_index": 75
+      },
+      {
+        "index": 76,
+        "name": "LOBRDG03",
+        "stored_index": 76
+      },
+      {
+        "index": 77,
+        "name": "LOBRDG04",
+        "stored_index": 77
+      },
+      {
+        "index": 78,
+        "name": "LOBRDG05",
+        "stored_index": 78
+      },
+      {
+        "index": 79,
+        "name": "LOBRDG06",
+        "stored_index": 79
+      },
+      {
+        "index": 80,
+        "name": "LOBRDG07",
+        "stored_index": 80
+      },
+      {
+        "index": 81,
+        "name": "LOBRDG08",
+        "stored_index": 81
+      },
+      {
+        "index": 82,
+        "name": "LOBRDG09",
+        "stored_index": 82
+      },
+      {
+        "index": 83,
+        "name": "LOBRDG10",
+        "stored_index": 83
+      },
+      {
+        "index": 84,
+        "name": "LOBRDG11",
+        "stored_index": 84
+      },
+      {
+        "index": 85,
+        "name": "LOBRDG12",
+        "stored_index": 85
+      },
+      {
+        "index": 86,
+        "name": "LOBRDG13",
+        "stored_index": 86
+      },
+      {
+        "index": 87,
+        "name": "LOBRDG14",
+        "stored_index": 87
+      },
+      {
+        "index": 88,
+        "name": "LOBRDG15",
+        "stored_index": 88
+      },
+      {
+        "index": 89,
+        "name": "LOBRDG16",
+        "stored_index": 89
+      },
+      {
+        "index": 90,
+        "name": "LOBRDG17",
+        "stored_index": 90
+      },
+      {
+        "index": 91,
+        "name": "LOBRDG18",
+        "stored_index": 91
+      },
+      {
+        "index": 92,
+        "name": "LOBRDG19",
+        "stored_index": 92
+      },
+      {
+        "index": 93,
+        "name": "LOBRDG20",
+        "stored_index": 93
+      },
+      {
+        "index": 94,
+        "name": "LOBRDG21",
+        "stored_index": 94
+      },
+      {
+        "index": 95,
+        "name": "LOBRDG22",
+        "stored_index": 95
+      },
+      {
+        "index": 96,
+        "name": "LOBRDG23",
+        "stored_index": 96
+      },
+      {
+        "index": 97,
+        "name": "LOBRDG24",
+        "stored_index": 97
+      },
+      {
+        "index": 98,
+        "name": "LOBRDG25",
+        "stored_index": 98
+      },
+      {
+        "index": 99,
+        "name": "LOBRDG26",
+        "stored_index": 99
+      },
+      {
+        "index": 100,
+        "name": "LOBRDG27",
+        "stored_index": 100
+      },
+      {
+        "index": 101,
+        "name": "LOBRDG28",
+        "stored_index": 101
+      },
+      {
+        "index": 102,
+        "name": "TIB01",
+        "stored_index": 102
+      },
+      {
+        "index": 103,
+        "name": "TIB02",
+        "stored_index": 103
+      },
+      {
+        "index": 104,
+        "name": "TIB03",
+        "stored_index": 104
+      },
+      {
+        "index": 105,
+        "name": "TIB04",
+        "stored_index": 105
+      },
+      {
+        "index": 106,
+        "name": "TIB05",
+        "stored_index": 106
+      },
+      {
+        "index": 107,
+        "name": "TIB06",
+        "stored_index": 107
+      },
+      {
+        "index": 108,
+        "name": "TIB07",
+        "stored_index": 108
+      },
+      {
+        "index": 109,
+        "name": "TIB08",
+        "stored_index": 109
+      },
+      {
+        "index": 110,
+        "name": "TIB09",
+        "stored_index": 110
+      },
+      {
+        "index": 111,
+        "name": "TIB10",
+        "stored_index": 111
+      },
+      {
+        "index": 112,
+        "name": "TIB11",
+        "stored_index": 112
+      },
+      {
+        "index": 113,
+        "name": "TIB12",
+        "stored_index": 113
+      },
+      {
+        "index": 114,
+        "name": "TIB13",
+        "stored_index": 114
+      },
+      {
+        "index": 115,
+        "name": "TIB14",
+        "stored_index": 115
+      },
+      {
+        "index": 116,
+        "name": "TIB15",
+        "stored_index": 116
+      },
+      {
+        "index": 117,
+        "name": "TIB16",
+        "stored_index": 117
+      },
+      {
+        "index": 118,
+        "name": "TIB17",
+        "stored_index": 118
+      },
+      {
+        "index": 119,
+        "name": "TIB18",
+        "stored_index": 119
+      },
+      {
+        "index": 120,
+        "name": "TIB19",
+        "stored_index": 120
+      },
+      {
+        "index": 121,
+        "name": "TIB20",
+        "stored_index": 121
+      },
+      {
+        "index": 122,
+        "name": "LOBRDGE1",
+        "stored_index": 122
+      },
+      {
+        "index": 123,
+        "name": "LOBRDGE2",
+        "stored_index": 123
+      },
+      {
+        "index": 124,
+        "name": "LOBRDGE3",
+        "stored_index": 124
+      },
+      {
+        "index": 125,
+        "name": "LOBRDGE4",
+        "stored_index": 125
+      },
+      {
+        "index": 126,
+        "name": "DUMMYOLD",
+        "stored_index": 126
+      },
+      {
+        "index": 127,
+        "name": "TIB2_01",
+        "stored_index": 127
+      },
+      {
+        "index": 128,
+        "name": "TIB2_02",
+        "stored_index": 128
+      },
+      {
+        "index": 129,
+        "name": "TIB2_03",
+        "stored_index": 129
+      },
+      {
+        "index": 130,
+        "name": "TIB2_04",
+        "stored_index": 130
+      },
+      {
+        "index": 131,
+        "name": "TIB2_05",
+        "stored_index": 131
+      },
+      {
+        "index": 132,
+        "name": "TIB2_06",
+        "stored_index": 132
+      },
+      {
+        "index": 133,
+        "name": "TIB2_07",
+        "stored_index": 133
+      },
+      {
+        "index": 134,
+        "name": "TIB2_08",
+        "stored_index": 134
+      },
+      {
+        "index": 135,
+        "name": "TIB2_09",
+        "stored_index": 135
+      },
+      {
+        "index": 136,
+        "name": "TIB2_10",
+        "stored_index": 136
+      },
+      {
+        "index": 137,
+        "name": "TIB2_11",
+        "stored_index": 137
+      },
+      {
+        "index": 138,
+        "name": "TIB2_12",
+        "stored_index": 138
+      },
+      {
+        "index": 139,
+        "name": "TIB2_13",
+        "stored_index": 139
+      },
+      {
+        "index": 140,
+        "name": "TIB2_14",
+        "stored_index": 140
+      },
+      {
+        "index": 141,
+        "name": "TIB2_15",
+        "stored_index": 141
+      },
+      {
+        "index": 142,
+        "name": "TIB2_16",
+        "stored_index": 142
+      },
+      {
+        "index": 143,
+        "name": "TIB2_17",
+        "stored_index": 143
+      },
+      {
+        "index": 144,
+        "name": "TIB2_18",
+        "stored_index": 144
+      },
+      {
+        "index": 145,
+        "name": "TIB2_19",
+        "stored_index": 145
+      },
+      {
+        "index": 146,
+        "name": "TIB2_20",
+        "stored_index": 146
+      },
+      {
+        "index": 147,
+        "name": "TIB3_01",
+        "stored_index": 147
+      },
+      {
+        "index": 148,
+        "name": "TIB3_02",
+        "stored_index": 148
+      },
+      {
+        "index": 149,
+        "name": "TIB3_03",
+        "stored_index": 149
+      },
+      {
+        "index": 150,
+        "name": "TIB3_04",
+        "stored_index": 150
+      },
+      {
+        "index": 151,
+        "name": "TIB3_05",
+        "stored_index": 151
+      },
+      {
+        "index": 152,
+        "name": "TIB3_06",
+        "stored_index": 152
+      },
+      {
+        "index": 153,
+        "name": "TIB3_07",
+        "stored_index": 153
+      },
+      {
+        "index": 154,
+        "name": "TIB3_08",
+        "stored_index": 154
+      },
+      {
+        "index": 155,
+        "name": "TIB3_09",
+        "stored_index": 155
+      },
+      {
+        "index": 156,
+        "name": "TIB3_10",
+        "stored_index": 156
+      },
+      {
+        "index": 157,
+        "name": "TIB3_11",
+        "stored_index": 157
+      },
+      {
+        "index": 158,
+        "name": "TIB3_12",
+        "stored_index": 158
+      },
+      {
+        "index": 159,
+        "name": "TIB3_13",
+        "stored_index": 159
+      },
+      {
+        "index": 160,
+        "name": "TIB3_14",
+        "stored_index": 160
+      },
+      {
+        "index": 161,
+        "name": "TIB3_15",
+        "stored_index": 161
+      },
+      {
+        "index": 162,
+        "name": "TIB3_16",
+        "stored_index": 162
+      },
+      {
+        "index": 163,
+        "name": "TIB3_17",
+        "stored_index": 163
+      },
+      {
+        "index": 164,
+        "name": "TIB3_18",
+        "stored_index": 164
+      },
+      {
+        "index": 165,
+        "name": "TIB3_19",
+        "stored_index": 165
+      },
+      {
+        "index": 166,
+        "name": "TIB3_20",
+        "stored_index": 166
+      },
+      {
+        "index": 167,
+        "name": "USELESS",
+        "stored_index": 167
+      },
+      {
+        "index": 168,
+        "name": "SROCK01",
+        "stored_index": 168
+      },
+      {
+        "index": 169,
+        "name": "SROCK02",
+        "stored_index": 169
+      },
+      {
+        "index": 170,
+        "name": "SROCK03",
+        "stored_index": 170
+      },
+      {
+        "index": 171,
+        "name": "SROCK04",
+        "stored_index": 171
+      },
+      {
+        "index": 172,
+        "name": "SROCK05",
+        "stored_index": 172
+      },
+      {
+        "index": 173,
+        "name": "TROCK01",
+        "stored_index": 173
+      },
+      {
+        "index": 174,
+        "name": "TROCK02",
+        "stored_index": 174
+      },
+      {
+        "index": 175,
+        "name": "TROCK03",
+        "stored_index": 175
+      },
+      {
+        "index": 176,
+        "name": "TROCK04",
+        "stored_index": 176
+      },
+      {
+        "index": 177,
+        "name": "TROCK05",
+        "stored_index": 177
+      },
+      {
+        "index": 178,
+        "name": "VEINHOLEDUMMY",
+        "stored_index": 178
+      },
+      {
+        "index": 179,
+        "name": "CRATE",
+        "stored_index": 179
+      },
+      {
+        "index": 180,
+        "name": "FENCE01",
+        "stored_index": 180
+      },
+      {
+        "index": 181,
+        "name": "FENCE02",
+        "stored_index": 181
+      },
+      {
+        "index": 182,
+        "name": "FENCE03",
+        "stored_index": 182
+      },
+      {
+        "index": 183,
+        "name": "FENCE04",
+        "stored_index": 183
+      },
+      {
+        "index": 184,
+        "name": "FENCE05",
+        "stored_index": 184
+      },
+      {
+        "index": 185,
+        "name": "FENCE06",
+        "stored_index": 185
+      },
+      {
+        "index": 186,
+        "name": "FENCE07",
+        "stored_index": 186
+      },
+      {
+        "index": 187,
+        "name": "FENCE08",
+        "stored_index": 187
+      },
+      {
+        "index": 188,
+        "name": "FENCE09",
+        "stored_index": 188
+      },
+      {
+        "index": 189,
+        "name": "FENCE10",
+        "stored_index": 189
+      },
+      {
+        "index": 190,
+        "name": "FENCE11",
+        "stored_index": 190
+      },
+      {
+        "index": 191,
+        "name": "FENCE12",
+        "stored_index": 191
+      },
+      {
+        "index": 192,
+        "name": "FENCE13",
+        "stored_index": 192
+      },
+      {
+        "index": 193,
+        "name": "FENCE14",
+        "stored_index": 193
+      },
+      {
+        "index": 194,
+        "name": "FENCE15",
+        "stored_index": 194
+      },
+      {
+        "index": 195,
+        "name": "FENCE16",
+        "stored_index": 195
+      },
+      {
+        "index": 196,
+        "name": "FENCE17",
+        "stored_index": 196
+      },
+      {
+        "index": 197,
+        "name": "FENCE18",
+        "stored_index": 197
+      },
+      {
+        "index": 198,
+        "name": "FENCE19",
+        "stored_index": 198
+      },
+      {
+        "index": 199,
+        "name": "FENCE20",
+        "stored_index": 199
+      },
+      {
+        "index": 200,
+        "name": "FENCE21",
+        "stored_index": 200
+      },
+      {
+        "index": 201,
+        "name": "FENCE22",
+        "stored_index": 201
+      },
+      {
+        "index": 202,
+        "name": "GAWRONG",
+        "stored_index": 202
+      },
+      {
+        "index": 203,
+        "name": "CAFNCB",
+        "stored_index": 203
+      },
+      {
+        "index": 204,
+        "name": "CAFNCW",
+        "stored_index": 204
+      },
+      {
+        "index": 205,
+        "name": "LOBRDB01",
+        "stored_index": 205
+      },
+      {
+        "index": 206,
+        "name": "LOBRDB02",
+        "stored_index": 206
+      },
+      {
+        "index": 207,
+        "name": "LOBRDB03",
+        "stored_index": 207
+      },
+      {
+        "index": 208,
+        "name": "LOBRDB04",
+        "stored_index": 208
+      },
+      {
+        "index": 209,
+        "name": "LOBRDB05",
+        "stored_index": 209
+      },
+      {
+        "index": 210,
+        "name": "LOBRDB06",
+        "stored_index": 210
+      },
+      {
+        "index": 211,
+        "name": "LOBRDB07",
+        "stored_index": 211
+      },
+      {
+        "index": 212,
+        "name": "LOBRDB08",
+        "stored_index": 212
+      },
+      {
+        "index": 213,
+        "name": "LOBRDB09",
+        "stored_index": 213
+      },
+      {
+        "index": 214,
+        "name": "LOBRDB10",
+        "stored_index": 214
+      },
+      {
+        "index": 215,
+        "name": "LOBRDB11",
+        "stored_index": 215
+      },
+      {
+        "index": 216,
+        "name": "LOBRDB12",
+        "stored_index": 216
+      },
+      {
+        "index": 217,
+        "name": "LOBRDB13",
+        "stored_index": 217
+      },
+      {
+        "index": 218,
+        "name": "LOBRDB14",
+        "stored_index": 218
+      },
+      {
+        "index": 219,
+        "name": "LOBRDB15",
+        "stored_index": 219
+      },
+      {
+        "index": 220,
+        "name": "LOBRDB16",
+        "stored_index": 220
+      },
+      {
+        "index": 221,
+        "name": "LOBRDB17",
+        "stored_index": 221
+      },
+      {
+        "index": 222,
+        "name": "LOBRDB18",
+        "stored_index": 222
+      },
+      {
+        "index": 223,
+        "name": "LOBRDB19",
+        "stored_index": 223
+      },
+      {
+        "index": 224,
+        "name": "LOBRDB20",
+        "stored_index": 224
+      },
+      {
+        "index": 225,
+        "name": "LOBRDB21",
+        "stored_index": 225
+      },
+      {
+        "index": 226,
+        "name": "LOBRDB22",
+        "stored_index": 226
+      },
+      {
+        "index": 227,
+        "name": "LOBRDB23",
+        "stored_index": 227
+      },
+      {
+        "index": 228,
+        "name": "LOBRDB24",
+        "stored_index": 228
+      },
+      {
+        "index": 229,
+        "name": "LOBRDB25",
+        "stored_index": 229
+      },
+      {
+        "index": 230,
+        "name": "LOBRDB26",
+        "stored_index": 230
+      },
+      {
+        "index": 231,
+        "name": "LOBRDB27",
+        "stored_index": 231
+      },
+      {
+        "index": 232,
+        "name": "LOBRDB28",
+        "stored_index": 232
+      },
+      {
+        "index": 233,
+        "name": "LOBRDGB1",
+        "stored_index": 233
+      },
+      {
+        "index": 234,
+        "name": "LOBRDGB2",
+        "stored_index": 234
+      },
+      {
+        "index": 235,
+        "name": "LOBRDGB3",
+        "stored_index": 235
+      },
+      {
+        "index": 236,
+        "name": "LOBRDGB4",
+        "stored_index": 236
+      },
+      {
+        "index": 237,
+        "name": "BRIDGEB1",
+        "stored_index": 237
+      },
+      {
+        "index": 238,
+        "name": "BRIDGEB2",
+        "stored_index": 238
+      },
+      {
+        "index": 239,
+        "name": "RUBBLE_OVERLAY",
+        "stored_index": 239
+      },
+      {
+        "index": 240,
+        "name": "CAKRMW",
+        "stored_index": 240
+      },
+      {
+        "index": 241,
+        "name": "CAFNCP",
+        "stored_index": 241
+      },
+      {
+        "index": 242,
+        "name": "WCRATE",
+        "stored_index": 242
+      },
+      {
+        "index": 243,
+        "name": "GAFWLL",
+        "stored_index": 243
+      },
+      {
+        "index": 244,
+        "name": "LUNRK1",
+        "stored_index": 244
+      },
+      {
+        "index": 245,
+        "name": "LUNRK2",
+        "stored_index": 245
+      },
+      {
+        "index": 246,
+        "name": "LUNRK3",
+        "stored_index": 246
+      },
+      {
+        "index": 247,
+        "name": "LUNRK4",
+        "stored_index": 247
+      },
+      {
+        "index": 248,
+        "name": "LUNRK5",
+        "stored_index": 248
+      },
+      {
+        "index": 249,
+        "name": "LUNRK6",
+        "stored_index": 249
+      }
+    ],
+    "rules_sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef",
+    "source_lines": [
+      {
+        "key": "1",
+        "line": 1737,
+        "section": "OverlayTypes",
+        "value": "GASAND"
+      },
+      {
+        "key": "2",
+        "line": 1738,
+        "section": "OverlayTypes",
+        "value": "CYCL"
+      },
+      {
+        "key": "3",
+        "line": 1739,
+        "section": "OverlayTypes",
+        "value": "GAWALL"
+      },
+      {
+        "key": "4",
+        "line": 1740,
+        "section": "OverlayTypes",
+        "value": "BARB"
+      },
+      {
+        "key": "5",
+        "line": 1741,
+        "section": "OverlayTypes",
+        "value": "WOOD"
+      },
+      {
+        "key": "6",
+        "line": 1742,
+        "section": "OverlayTypes",
+        "value": "DUMMY"
+      },
+      {
+        "key": "7",
+        "line": 1743,
+        "section": "OverlayTypes",
+        "value": "DUMMY2"
+      },
+      {
+        "key": "8",
+        "line": 1744,
+        "section": "OverlayTypes",
+        "value": "DUMMY3"
+      },
+      {
+        "key": "9",
+        "line": 1745,
+        "section": "OverlayTypes",
+        "value": "DUMMY4"
+      },
+      {
+        "key": "10",
+        "line": 1746,
+        "section": "OverlayTypes",
+        "value": "DUMMY5"
+      },
+      {
+        "key": "11",
+        "line": 1747,
+        "section": "OverlayTypes",
+        "value": "DUMMY6"
+      },
+      {
+        "key": "12",
+        "line": 1748,
+        "section": "OverlayTypes",
+        "value": "DUMMY7"
+      },
+      {
+        "key": "13",
+        "line": 1749,
+        "section": "OverlayTypes",
+        "value": "DUMMY8"
+      },
+      {
+        "key": "14",
+        "line": 1750,
+        "section": "OverlayTypes",
+        "value": "DUMMY9"
+      },
+      {
+        "key": "15",
+        "line": 1751,
+        "section": "OverlayTypes",
+        "value": "DUMMY10"
+      },
+      {
+        "key": "16",
+        "line": 1752,
+        "section": "OverlayTypes",
+        "value": "DUMMY11"
+      },
+      {
+        "key": "17",
+        "line": 1753,
+        "section": "OverlayTypes",
+        "value": "DUMMY12"
+      },
+      {
+        "key": "18",
+        "line": 1754,
+        "section": "OverlayTypes",
+        "value": "V16"
+      },
+      {
+        "key": "19",
+        "line": 1755,
+        "section": "OverlayTypes",
+        "value": "V17"
+      },
+      {
+        "key": "20",
+        "line": 1756,
+        "section": "OverlayTypes",
+        "value": "V18"
+      },
+      {
+        "key": "21",
+        "line": 1757,
+        "section": "OverlayTypes",
+        "value": "DUMMY13"
+      },
+      {
+        "key": "22",
+        "line": 1758,
+        "section": "OverlayTypes",
+        "value": "DUMMY14"
+      },
+      {
+        "key": "23",
+        "line": 1759,
+        "section": "OverlayTypes",
+        "value": "FENC"
+      },
+      {
+        "key": "24",
+        "line": 1760,
+        "section": "OverlayTypes",
+        "value": "DUMMY15"
+      },
+      {
+        "key": "25",
+        "line": 1761,
+        "section": "OverlayTypes",
+        "value": "BRIDGE1"
+      },
+      {
+        "key": "26",
+        "line": 1762,
+        "section": "OverlayTypes",
+        "value": "BRIDGE2"
+      },
+      {
+        "key": "27",
+        "line": 1763,
+        "section": "OverlayTypes",
+        "value": "NAWALL"
+      },
+      {
+        "key": "28",
+        "line": 1764,
+        "section": "OverlayTypes",
+        "value": "GEM01"
+      },
+      {
+        "key": "29",
+        "line": 1765,
+        "section": "OverlayTypes",
+        "value": "GEM02"
+      },
+      {
+        "key": "30",
+        "line": 1766,
+        "section": "OverlayTypes",
+        "value": "GEM03"
+      },
+      {
+        "key": "31",
+        "line": 1767,
+        "section": "OverlayTypes",
+        "value": "GEM04"
+      },
+      {
+        "key": "32",
+        "line": 1768,
+        "section": "OverlayTypes",
+        "value": "GEM05"
+      },
+      {
+        "key": "33",
+        "line": 1769,
+        "section": "OverlayTypes",
+        "value": "GEM06"
+      },
+      {
+        "key": "34",
+        "line": 1770,
+        "section": "OverlayTypes",
+        "value": "GEM07"
+      },
+      {
+        "key": "35",
+        "line": 1771,
+        "section": "OverlayTypes",
+        "value": "GEM08"
+      },
+      {
+        "key": "36",
+        "line": 1772,
+        "section": "OverlayTypes",
+        "value": "GEM09"
+      },
+      {
+        "key": "37",
+        "line": 1773,
+        "section": "OverlayTypes",
+        "value": "GEM10"
+      },
+      {
+        "key": "38",
+        "line": 1774,
+        "section": "OverlayTypes",
+        "value": "GEM11"
+      },
+      {
+        "key": "39",
+        "line": 1775,
+        "section": "OverlayTypes",
+        "value": "GEM12"
+      },
+      {
+        "key": "42",
+        "line": 1776,
+        "section": "OverlayTypes",
+        "value": "TRACKS01"
+      },
+      {
+        "key": "43",
+        "line": 1777,
+        "section": "OverlayTypes",
+        "value": "TRACKS02"
+      },
+      {
+        "key": "44",
+        "line": 1778,
+        "section": "OverlayTypes",
+        "value": "TRACKS03"
+      },
+      {
+        "key": "45",
+        "line": 1779,
+        "section": "OverlayTypes",
+        "value": "TRACKS04"
+      },
+      {
+        "key": "46",
+        "line": 1780,
+        "section": "OverlayTypes",
+        "value": "TRACKS05"
+      },
+      {
+        "key": "47",
+        "line": 1781,
+        "section": "OverlayTypes",
+        "value": "TRACKS06"
+      },
+      {
+        "key": "48",
+        "line": 1782,
+        "section": "OverlayTypes",
+        "value": "TRACKS07"
+      },
+      {
+        "key": "49",
+        "line": 1783,
+        "section": "OverlayTypes",
+        "value": "TRACKS08"
+      },
+      {
+        "key": "50",
+        "line": 1784,
+        "section": "OverlayTypes",
+        "value": "TRACKS09"
+      },
+      {
+        "key": "51",
+        "line": 1785,
+        "section": "OverlayTypes",
+        "value": "TRACKS10"
+      },
+      {
+        "key": "52",
+        "line": 1786,
+        "section": "OverlayTypes",
+        "value": "TRACKS11"
+      },
+      {
+        "key": "53",
+        "line": 1787,
+        "section": "OverlayTypes",
+        "value": "TRACKS12"
+      },
+      {
+        "key": "54",
+        "line": 1788,
+        "section": "OverlayTypes",
+        "value": "TRACKS13"
+      },
+      {
+        "key": "55",
+        "line": 1789,
+        "section": "OverlayTypes",
+        "value": "TRACKS14"
+      },
+      {
+        "key": "56",
+        "line": 1790,
+        "section": "OverlayTypes",
+        "value": "TRACKS15"
+      },
+      {
+        "key": "57",
+        "line": 1791,
+        "section": "OverlayTypes",
+        "value": "TRACKS16"
+      },
+      {
+        "key": "58",
+        "line": 1792,
+        "section": "OverlayTypes",
+        "value": "TRACKTUNNEL01"
+      },
+      {
+        "key": "59",
+        "line": 1793,
+        "section": "OverlayTypes",
+        "value": "TRACKTUNNEL02"
+      },
+      {
+        "key": "60",
+        "line": 1794,
+        "section": "OverlayTypes",
+        "value": "TRACKTUNNEL03"
+      },
+      {
+        "key": "61",
+        "line": 1795,
+        "section": "OverlayTypes",
+        "value": "TRACKTUNNEL04"
+      },
+      {
+        "key": "62",
+        "line": 1796,
+        "section": "OverlayTypes",
+        "value": "RAILBRDG1"
+      },
+      {
+        "key": "63",
+        "line": 1797,
+        "section": "OverlayTypes",
+        "value": "RAILBRDG2"
+      },
+      {
+        "key": "64",
+        "line": 1798,
+        "section": "OverlayTypes",
+        "value": "CRAT01"
+      },
+      {
+        "key": "65",
+        "line": 1799,
+        "section": "OverlayTypes",
+        "value": "CRAT02"
+      },
+      {
+        "key": "66",
+        "line": 1800,
+        "section": "OverlayTypes",
+        "value": "CRAT03"
+      },
+      {
+        "key": "67",
+        "line": 1801,
+        "section": "OverlayTypes",
+        "value": "CRAT04"
+      },
+      {
+        "key": "68",
+        "line": 1802,
+        "section": "OverlayTypes",
+        "value": "CRAT0A"
+      },
+      {
+        "key": "69",
+        "line": 1803,
+        "section": "OverlayTypes",
+        "value": "CRAT0B"
+      },
+      {
+        "key": "70",
+        "line": 1804,
+        "section": "OverlayTypes",
+        "value": "CRAT0C"
+      },
+      {
+        "key": "71",
+        "line": 1805,
+        "section": "OverlayTypes",
+        "value": "DRUM01"
+      },
+      {
+        "key": "72",
+        "line": 1806,
+        "section": "OverlayTypes",
+        "value": "DRUM02"
+      },
+      {
+        "key": "73",
+        "line": 1807,
+        "section": "OverlayTypes",
+        "value": "PALET01"
+      },
+      {
+        "key": "74",
+        "line": 1808,
+        "section": "OverlayTypes",
+        "value": "PALET02"
+      },
+      {
+        "key": "75",
+        "line": 1809,
+        "section": "OverlayTypes",
+        "value": "PALET03"
+      },
+      {
+        "key": "76",
+        "line": 1810,
+        "section": "OverlayTypes",
+        "value": "PALET04"
+      },
+      {
+        "key": "77",
+        "line": 1811,
+        "section": "OverlayTypes",
+        "value": "LOBRDG01"
+      },
+      {
+        "key": "78",
+        "line": 1812,
+        "section": "OverlayTypes",
+        "value": "LOBRDG02"
+      },
+      {
+        "key": "79",
+        "line": 1813,
+        "section": "OverlayTypes",
+        "value": "LOBRDG03"
+      },
+      {
+        "key": "80",
+        "line": 1814,
+        "section": "OverlayTypes",
+        "value": "LOBRDG04"
+      },
+      {
+        "key": "81",
+        "line": 1815,
+        "section": "OverlayTypes",
+        "value": "LOBRDG05"
+      },
+      {
+        "key": "82",
+        "line": 1816,
+        "section": "OverlayTypes",
+        "value": "LOBRDG06"
+      },
+      {
+        "key": "83",
+        "line": 1817,
+        "section": "OverlayTypes",
+        "value": "LOBRDG07"
+      },
+      {
+        "key": "84",
+        "line": 1818,
+        "section": "OverlayTypes",
+        "value": "LOBRDG08"
+      },
+      {
+        "key": "85",
+        "line": 1819,
+        "section": "OverlayTypes",
+        "value": "LOBRDG09"
+      },
+      {
+        "key": "86",
+        "line": 1820,
+        "section": "OverlayTypes",
+        "value": "LOBRDG10"
+      },
+      {
+        "key": "87",
+        "line": 1821,
+        "section": "OverlayTypes",
+        "value": "LOBRDG11"
+      },
+      {
+        "key": "88",
+        "line": 1822,
+        "section": "OverlayTypes",
+        "value": "LOBRDG12"
+      },
+      {
+        "key": "89",
+        "line": 1823,
+        "section": "OverlayTypes",
+        "value": "LOBRDG13"
+      },
+      {
+        "key": "90",
+        "line": 1824,
+        "section": "OverlayTypes",
+        "value": "LOBRDG14"
+      },
+      {
+        "key": "91",
+        "line": 1825,
+        "section": "OverlayTypes",
+        "value": "LOBRDG15"
+      },
+      {
+        "key": "92",
+        "line": 1826,
+        "section": "OverlayTypes",
+        "value": "LOBRDG16"
+      },
+      {
+        "key": "93",
+        "line": 1827,
+        "section": "OverlayTypes",
+        "value": "LOBRDG17"
+      },
+      {
+        "key": "94",
+        "line": 1828,
+        "section": "OverlayTypes",
+        "value": "LOBRDG18"
+      },
+      {
+        "key": "95",
+        "line": 1829,
+        "section": "OverlayTypes",
+        "value": "LOBRDG19"
+      },
+      {
+        "key": "96",
+        "line": 1830,
+        "section": "OverlayTypes",
+        "value": "LOBRDG20"
+      },
+      {
+        "key": "97",
+        "line": 1831,
+        "section": "OverlayTypes",
+        "value": "LOBRDG21"
+      },
+      {
+        "key": "98",
+        "line": 1832,
+        "section": "OverlayTypes",
+        "value": "LOBRDG22"
+      },
+      {
+        "key": "99",
+        "line": 1833,
+        "section": "OverlayTypes",
+        "value": "LOBRDG23"
+      },
+      {
+        "key": "100",
+        "line": 1834,
+        "section": "OverlayTypes",
+        "value": "LOBRDG24"
+      },
+      {
+        "key": "101",
+        "line": 1835,
+        "section": "OverlayTypes",
+        "value": "LOBRDG25"
+      },
+      {
+        "key": "102",
+        "line": 1836,
+        "section": "OverlayTypes",
+        "value": "LOBRDG26"
+      },
+      {
+        "key": "103",
+        "line": 1837,
+        "section": "OverlayTypes",
+        "value": "LOBRDG27"
+      },
+      {
+        "key": "104",
+        "line": 1838,
+        "section": "OverlayTypes",
+        "value": "LOBRDG28"
+      },
+      {
+        "key": "105",
+        "line": 1839,
+        "section": "OverlayTypes",
+        "value": "TIB01"
+      },
+      {
+        "key": "106",
+        "line": 1840,
+        "section": "OverlayTypes",
+        "value": "TIB02"
+      },
+      {
+        "key": "107",
+        "line": 1841,
+        "section": "OverlayTypes",
+        "value": "TIB03"
+      },
+      {
+        "key": "108",
+        "line": 1842,
+        "section": "OverlayTypes",
+        "value": "TIB04"
+      },
+      {
+        "key": "109",
+        "line": 1843,
+        "section": "OverlayTypes",
+        "value": "TIB05"
+      },
+      {
+        "key": "110",
+        "line": 1844,
+        "section": "OverlayTypes",
+        "value": "TIB06"
+      },
+      {
+        "key": "111",
+        "line": 1845,
+        "section": "OverlayTypes",
+        "value": "TIB07"
+      },
+      {
+        "key": "112",
+        "line": 1846,
+        "section": "OverlayTypes",
+        "value": "TIB08"
+      },
+      {
+        "key": "113",
+        "line": 1847,
+        "section": "OverlayTypes",
+        "value": "TIB09"
+      },
+      {
+        "key": "114",
+        "line": 1848,
+        "section": "OverlayTypes",
+        "value": "TIB10"
+      },
+      {
+        "key": "115",
+        "line": 1849,
+        "section": "OverlayTypes",
+        "value": "TIB11"
+      },
+      {
+        "key": "116",
+        "line": 1850,
+        "section": "OverlayTypes",
+        "value": "TIB12"
+      },
+      {
+        "key": "117",
+        "line": 1851,
+        "section": "OverlayTypes",
+        "value": "TIB13"
+      },
+      {
+        "key": "118",
+        "line": 1852,
+        "section": "OverlayTypes",
+        "value": "TIB14"
+      },
+      {
+        "key": "119",
+        "line": 1853,
+        "section": "OverlayTypes",
+        "value": "TIB15"
+      },
+      {
+        "key": "120",
+        "line": 1854,
+        "section": "OverlayTypes",
+        "value": "TIB16"
+      },
+      {
+        "key": "121",
+        "line": 1855,
+        "section": "OverlayTypes",
+        "value": "TIB17"
+      },
+      {
+        "key": "122",
+        "line": 1856,
+        "section": "OverlayTypes",
+        "value": "TIB18"
+      },
+      {
+        "key": "123",
+        "line": 1857,
+        "section": "OverlayTypes",
+        "value": "TIB19"
+      },
+      {
+        "key": "124",
+        "line": 1858,
+        "section": "OverlayTypes",
+        "value": "TIB20"
+      },
+      {
+        "key": "125",
+        "line": 1859,
+        "section": "OverlayTypes",
+        "value": "LOBRDGE1"
+      },
+      {
+        "key": "126",
+        "line": 1860,
+        "section": "OverlayTypes",
+        "value": "LOBRDGE2"
+      },
+      {
+        "key": "127",
+        "line": 1861,
+        "section": "OverlayTypes",
+        "value": "LOBRDGE3"
+      },
+      {
+        "key": "128",
+        "line": 1862,
+        "section": "OverlayTypes",
+        "value": "LOBRDGE4"
+      },
+      {
+        "key": "129",
+        "line": 1863,
+        "section": "OverlayTypes",
+        "value": "DUMMYOLD"
+      },
+      {
+        "key": "130",
+        "line": 1864,
+        "section": "OverlayTypes",
+        "value": "TIB2_01"
+      },
+      {
+        "key": "131",
+        "line": 1865,
+        "section": "OverlayTypes",
+        "value": "TIB2_02"
+      },
+      {
+        "key": "132",
+        "line": 1866,
+        "section": "OverlayTypes",
+        "value": "TIB2_03"
+      },
+      {
+        "key": "133",
+        "line": 1867,
+        "section": "OverlayTypes",
+        "value": "TIB2_04"
+      },
+      {
+        "key": "134",
+        "line": 1868,
+        "section": "OverlayTypes",
+        "value": "TIB2_05"
+      },
+      {
+        "key": "135",
+        "line": 1869,
+        "section": "OverlayTypes",
+        "value": "TIB2_06"
+      },
+      {
+        "key": "136",
+        "line": 1870,
+        "section": "OverlayTypes",
+        "value": "TIB2_07"
+      },
+      {
+        "key": "137",
+        "line": 1871,
+        "section": "OverlayTypes",
+        "value": "TIB2_08"
+      },
+      {
+        "key": "138",
+        "line": 1872,
+        "section": "OverlayTypes",
+        "value": "TIB2_09"
+      },
+      {
+        "key": "139",
+        "line": 1873,
+        "section": "OverlayTypes",
+        "value": "TIB2_10"
+      },
+      {
+        "key": "140",
+        "line": 1874,
+        "section": "OverlayTypes",
+        "value": "TIB2_11"
+      },
+      {
+        "key": "141",
+        "line": 1875,
+        "section": "OverlayTypes",
+        "value": "TIB2_12"
+      },
+      {
+        "key": "142",
+        "line": 1876,
+        "section": "OverlayTypes",
+        "value": "TIB2_13"
+      },
+      {
+        "key": "143",
+        "line": 1877,
+        "section": "OverlayTypes",
+        "value": "TIB2_14"
+      },
+      {
+        "key": "144",
+        "line": 1878,
+        "section": "OverlayTypes",
+        "value": "TIB2_15"
+      },
+      {
+        "key": "145",
+        "line": 1879,
+        "section": "OverlayTypes",
+        "value": "TIB2_16"
+      },
+      {
+        "key": "146",
+        "line": 1880,
+        "section": "OverlayTypes",
+        "value": "TIB2_17"
+      },
+      {
+        "key": "147",
+        "line": 1881,
+        "section": "OverlayTypes",
+        "value": "TIB2_18"
+      },
+      {
+        "key": "148",
+        "line": 1882,
+        "section": "OverlayTypes",
+        "value": "TIB2_19"
+      },
+      {
+        "key": "149",
+        "line": 1883,
+        "section": "OverlayTypes",
+        "value": "TIB2_20"
+      },
+      {
+        "key": "150",
+        "line": 1884,
+        "section": "OverlayTypes",
+        "value": "TIB3_01"
+      },
+      {
+        "key": "151",
+        "line": 1885,
+        "section": "OverlayTypes",
+        "value": "TIB3_02"
+      },
+      {
+        "key": "152",
+        "line": 1886,
+        "section": "OverlayTypes",
+        "value": "TIB3_03"
+      },
+      {
+        "key": "153",
+        "line": 1887,
+        "section": "OverlayTypes",
+        "value": "TIB3_04"
+      },
+      {
+        "key": "154",
+        "line": 1888,
+        "section": "OverlayTypes",
+        "value": "TIB3_05"
+      },
+      {
+        "key": "155",
+        "line": 1889,
+        "section": "OverlayTypes",
+        "value": "TIB3_06"
+      },
+      {
+        "key": "156",
+        "line": 1890,
+        "section": "OverlayTypes",
+        "value": "TIB3_07"
+      },
+      {
+        "key": "157",
+        "line": 1891,
+        "section": "OverlayTypes",
+        "value": "TIB3_08"
+      },
+      {
+        "key": "158",
+        "line": 1892,
+        "section": "OverlayTypes",
+        "value": "TIB3_09"
+      },
+      {
+        "key": "159",
+        "line": 1893,
+        "section": "OverlayTypes",
+        "value": "TIB3_10"
+      },
+      {
+        "key": "160",
+        "line": 1894,
+        "section": "OverlayTypes",
+        "value": "TIB3_11"
+      },
+      {
+        "key": "161",
+        "line": 1895,
+        "section": "OverlayTypes",
+        "value": "TIB3_12"
+      },
+      {
+        "key": "162",
+        "line": 1896,
+        "section": "OverlayTypes",
+        "value": "TIB3_13"
+      },
+      {
+        "key": "163",
+        "line": 1897,
+        "section": "OverlayTypes",
+        "value": "TIB3_14"
+      },
+      {
+        "key": "164",
+        "line": 1898,
+        "section": "OverlayTypes",
+        "value": "TIB3_15"
+      },
+      {
+        "key": "165",
+        "line": 1899,
+        "section": "OverlayTypes",
+        "value": "TIB3_16"
+      },
+      {
+        "key": "166",
+        "line": 1900,
+        "section": "OverlayTypes",
+        "value": "TIB3_17"
+      },
+      {
+        "key": "167",
+        "line": 1901,
+        "section": "OverlayTypes",
+        "value": "TIB3_18"
+      },
+      {
+        "key": "168",
+        "line": 1902,
+        "section": "OverlayTypes",
+        "value": "TIB3_19"
+      },
+      {
+        "key": "169",
+        "line": 1903,
+        "section": "OverlayTypes",
+        "value": "TIB3_20"
+      },
+      {
+        "key": "170",
+        "line": 1904,
+        "section": "OverlayTypes",
+        "value": "USELESS"
+      },
+      {
+        "key": "171",
+        "line": 1905,
+        "section": "OverlayTypes",
+        "value": "SROCK01"
+      },
+      {
+        "key": "172",
+        "line": 1906,
+        "section": "OverlayTypes",
+        "value": "SROCK02"
+      },
+      {
+        "key": "173",
+        "line": 1907,
+        "section": "OverlayTypes",
+        "value": "SROCK03"
+      },
+      {
+        "key": "174",
+        "line": 1908,
+        "section": "OverlayTypes",
+        "value": "SROCK04"
+      },
+      {
+        "key": "175",
+        "line": 1909,
+        "section": "OverlayTypes",
+        "value": "SROCK05"
+      },
+      {
+        "key": "176",
+        "line": 1910,
+        "section": "OverlayTypes",
+        "value": "TROCK01"
+      },
+      {
+        "key": "177",
+        "line": 1911,
+        "section": "OverlayTypes",
+        "value": "TROCK02"
+      },
+      {
+        "key": "178",
+        "line": 1912,
+        "section": "OverlayTypes",
+        "value": "TROCK03"
+      },
+      {
+        "key": "179",
+        "line": 1913,
+        "section": "OverlayTypes",
+        "value": "TROCK04"
+      },
+      {
+        "key": "180",
+        "line": 1914,
+        "section": "OverlayTypes",
+        "value": "TROCK05"
+      },
+      {
+        "key": "181",
+        "line": 1915,
+        "section": "OverlayTypes",
+        "value": "VEINHOLEDUMMY"
+      },
+      {
+        "key": "182",
+        "line": 1916,
+        "section": "OverlayTypes",
+        "value": "CRATE"
+      },
+      {
+        "key": "184",
+        "line": 1918,
+        "section": "OverlayTypes",
+        "value": "FENCE01"
+      },
+      {
+        "key": "185",
+        "line": 1919,
+        "section": "OverlayTypes",
+        "value": "FENCE02"
+      },
+      {
+        "key": "186",
+        "line": 1920,
+        "section": "OverlayTypes",
+        "value": "FENCE03"
+      },
+      {
+        "key": "187",
+        "line": 1921,
+        "section": "OverlayTypes",
+        "value": "FENCE04"
+      },
+      {
+        "key": "188",
+        "line": 1922,
+        "section": "OverlayTypes",
+        "value": "FENCE05"
+      },
+      {
+        "key": "189",
+        "line": 1923,
+        "section": "OverlayTypes",
+        "value": "FENCE06"
+      },
+      {
+        "key": "190",
+        "line": 1924,
+        "section": "OverlayTypes",
+        "value": "FENCE07"
+      },
+      {
+        "key": "191",
+        "line": 1925,
+        "section": "OverlayTypes",
+        "value": "FENCE08"
+      },
+      {
+        "key": "192",
+        "line": 1926,
+        "section": "OverlayTypes",
+        "value": "FENCE09"
+      },
+      {
+        "key": "193",
+        "line": 1927,
+        "section": "OverlayTypes",
+        "value": "FENCE10"
+      },
+      {
+        "key": "194",
+        "line": 1928,
+        "section": "OverlayTypes",
+        "value": "FENCE11"
+      },
+      {
+        "key": "195",
+        "line": 1929,
+        "section": "OverlayTypes",
+        "value": "FENCE12"
+      },
+      {
+        "key": "196",
+        "line": 1930,
+        "section": "OverlayTypes",
+        "value": "FENCE13"
+      },
+      {
+        "key": "197",
+        "line": 1931,
+        "section": "OverlayTypes",
+        "value": "FENCE14"
+      },
+      {
+        "key": "198",
+        "line": 1932,
+        "section": "OverlayTypes",
+        "value": "FENCE15"
+      },
+      {
+        "key": "199",
+        "line": 1933,
+        "section": "OverlayTypes",
+        "value": "FENCE16"
+      },
+      {
+        "key": "200",
+        "line": 1934,
+        "section": "OverlayTypes",
+        "value": "FENCE17"
+      },
+      {
+        "key": "201",
+        "line": 1935,
+        "section": "OverlayTypes",
+        "value": "FENCE18"
+      },
+      {
+        "key": "202",
+        "line": 1936,
+        "section": "OverlayTypes",
+        "value": "FENCE19"
+      },
+      {
+        "key": "203",
+        "line": 1937,
+        "section": "OverlayTypes",
+        "value": "FENCE20"
+      },
+      {
+        "key": "204",
+        "line": 1938,
+        "section": "OverlayTypes",
+        "value": "FENCE21"
+      },
+      {
+        "key": "205",
+        "line": 1939,
+        "section": "OverlayTypes",
+        "value": "FENCE22"
+      },
+      {
+        "key": "206",
+        "line": 1941,
+        "section": "OverlayTypes",
+        "value": "GAWRONG"
+      },
+      {
+        "key": "207",
+        "line": 1942,
+        "section": "OverlayTypes",
+        "value": "CAFNCB"
+      },
+      {
+        "key": "208",
+        "line": 1943,
+        "section": "OverlayTypes",
+        "value": "CAFNCW"
+      },
+      {
+        "key": "209",
+        "line": 1945,
+        "section": "OverlayTypes",
+        "value": "LOBRDB01"
+      },
+      {
+        "key": "210",
+        "line": 1946,
+        "section": "OverlayTypes",
+        "value": "LOBRDB02"
+      },
+      {
+        "key": "211",
+        "line": 1947,
+        "section": "OverlayTypes",
+        "value": "LOBRDB03"
+      },
+      {
+        "key": "212",
+        "line": 1948,
+        "section": "OverlayTypes",
+        "value": "LOBRDB04"
+      },
+      {
+        "key": "213",
+        "line": 1949,
+        "section": "OverlayTypes",
+        "value": "LOBRDB05"
+      },
+      {
+        "key": "214",
+        "line": 1950,
+        "section": "OverlayTypes",
+        "value": "LOBRDB06"
+      },
+      {
+        "key": "215",
+        "line": 1951,
+        "section": "OverlayTypes",
+        "value": "LOBRDB07"
+      },
+      {
+        "key": "216",
+        "line": 1952,
+        "section": "OverlayTypes",
+        "value": "LOBRDB08"
+      },
+      {
+        "key": "217",
+        "line": 1953,
+        "section": "OverlayTypes",
+        "value": "LOBRDB09"
+      },
+      {
+        "key": "218",
+        "line": 1954,
+        "section": "OverlayTypes",
+        "value": "LOBRDB10"
+      },
+      {
+        "key": "219",
+        "line": 1955,
+        "section": "OverlayTypes",
+        "value": "LOBRDB11"
+      },
+      {
+        "key": "220",
+        "line": 1956,
+        "section": "OverlayTypes",
+        "value": "LOBRDB12"
+      },
+      {
+        "key": "221",
+        "line": 1957,
+        "section": "OverlayTypes",
+        "value": "LOBRDB13"
+      },
+      {
+        "key": "222",
+        "line": 1958,
+        "section": "OverlayTypes",
+        "value": "LOBRDB14"
+      },
+      {
+        "key": "223",
+        "line": 1959,
+        "section": "OverlayTypes",
+        "value": "LOBRDB15"
+      },
+      {
+        "key": "224",
+        "line": 1960,
+        "section": "OverlayTypes",
+        "value": "LOBRDB16"
+      },
+      {
+        "key": "225",
+        "line": 1961,
+        "section": "OverlayTypes",
+        "value": "LOBRDB17"
+      },
+      {
+        "key": "226",
+        "line": 1962,
+        "section": "OverlayTypes",
+        "value": "LOBRDB18"
+      },
+      {
+        "key": "227",
+        "line": 1963,
+        "section": "OverlayTypes",
+        "value": "LOBRDB19"
+      },
+      {
+        "key": "228",
+        "line": 1964,
+        "section": "OverlayTypes",
+        "value": "LOBRDB20"
+      },
+      {
+        "key": "229",
+        "line": 1965,
+        "section": "OverlayTypes",
+        "value": "LOBRDB21"
+      },
+      {
+        "key": "230",
+        "line": 1966,
+        "section": "OverlayTypes",
+        "value": "LOBRDB22"
+      },
+      {
+        "key": "231",
+        "line": 1967,
+        "section": "OverlayTypes",
+        "value": "LOBRDB23"
+      },
+      {
+        "key": "232",
+        "line": 1968,
+        "section": "OverlayTypes",
+        "value": "LOBRDB24"
+      },
+      {
+        "key": "233",
+        "line": 1969,
+        "section": "OverlayTypes",
+        "value": "LOBRDB25"
+      },
+      {
+        "key": "234",
+        "line": 1970,
+        "section": "OverlayTypes",
+        "value": "LOBRDB26"
+      },
+      {
+        "key": "235",
+        "line": 1971,
+        "section": "OverlayTypes",
+        "value": "LOBRDB27"
+      },
+      {
+        "key": "236",
+        "line": 1972,
+        "section": "OverlayTypes",
+        "value": "LOBRDB28"
+      },
+      {
+        "key": "237",
+        "line": 1973,
+        "section": "OverlayTypes",
+        "value": "LOBRDGB1"
+      },
+      {
+        "key": "238",
+        "line": 1974,
+        "section": "OverlayTypes",
+        "value": "LOBRDGB2"
+      },
+      {
+        "key": "239",
+        "line": 1975,
+        "section": "OverlayTypes",
+        "value": "LOBRDGB3"
+      },
+      {
+        "key": "240",
+        "line": 1976,
+        "section": "OverlayTypes",
+        "value": "LOBRDGB4"
+      },
+      {
+        "key": "241",
+        "line": 1977,
+        "section": "OverlayTypes",
+        "value": "BRIDGEB1"
+      },
+      {
+        "key": "242",
+        "line": 1978,
+        "section": "OverlayTypes",
+        "value": "BRIDGEB2"
+      },
+      {
+        "key": "243",
+        "line": 1979,
+        "section": "OverlayTypes",
+        "value": "RUBBLE_OVERLAY"
+      },
+      {
+        "key": "244",
+        "line": 1980,
+        "section": "OverlayTypes",
+        "value": "CAKRMW"
+      },
+      {
+        "key": "245",
+        "line": 1981,
+        "section": "OverlayTypes",
+        "value": "CAFNCP"
+      },
+      {
+        "key": "246",
+        "line": 1982,
+        "section": "OverlayTypes",
+        "value": "WCRATE"
+      },
+      {
+        "key": "247",
+        "line": 1983,
+        "section": "OverlayTypes",
+        "value": "GAFWLL"
+      },
+      {
+        "key": "248",
+        "line": 1984,
+        "section": "OverlayTypes",
+        "value": "LUNRK1"
+      },
+      {
+        "key": "249",
+        "line": 1985,
+        "section": "OverlayTypes",
+        "value": "LUNRK2"
+      },
+      {
+        "key": "250",
+        "line": 1986,
+        "section": "OverlayTypes",
+        "value": "LUNRK3"
+      },
+      {
+        "key": "251",
+        "line": 1987,
+        "section": "OverlayTypes",
+        "value": "LUNRK4"
+      },
+      {
+        "key": "252",
+        "line": 1988,
+        "section": "OverlayTypes",
+        "value": "LUNRK5"
+      },
+      {
+        "key": "253",
+        "line": 1989,
+        "section": "OverlayTypes",
+        "value": "LUNRK6"
+      }
+    ]
+  },
+  "schema_version": 1,
+  "vein_attack_rule": {
+    "constructor": 0,
+    "key": "VeinAttack",
+    "layers": [
+      {
+        "after": 0,
+        "before": 0,
+        "bytes": 743215,
+        "file": "RULESMD.INI",
+        "sections": {
+          "AudioVisual": {
+            "AddPlanningModeCommandSound": "PlanningModeAdd",
+            "AirstrikeAbortSound": "MIGMissionAborted",
+            "AirstrikeAttackVoice": "MIGMove",
+            "AllyReveal": "yes",
+            "AmbientChangeRate": ".2",
+            "AmbientChangeStep": ".2",
+            "BaseUnderAttackSound": "BaseUnderAttackSiren",
+            "BerserkColor": "4",
+            "BombAttachSound": "CrazyIvanAttack",
+            "BombTickingSound": "CrazyIvanBombTick",
+            "BuildingDamageSound": "BuildingDamaged",
+            "BuildingDieSound": "BuildingGenericDie",
+            "BuildingDrop": "PlaceBuilding",
+            "BuildingGarrisonedSound": "BuildingGarrisoned",
+            "BuildingRepairedSound": "BuildingRepaired",
+            "BuildingSlam": "PlaceBuilding",
+            "BunkerWallsDownSound": "TankBunkerDown",
+            "BunkerWallsUpSound": "TankBunkerUp",
+            "CheerSound": "Cheer",
+            "ChronoBeamColor": "128,200,255",
+            "ChronoInSound": "ChronoMinerTeleport",
+            "ChronoOutSound": "ChronoMinerTeleport",
+            "ChuteSound": "ParachuteDrop",
+            "CloakSound": "NavalUnitEmerge",
+            "ConditionRed": "25%",
+            "ConditionYellow": "50%",
+            "Construction": "Dummy",
+            "CrateArmourSound": "CrateArmor",
+            "CrateFireSound": "CrateFirePower",
+            "CrateMoneySound": "CrateMoney",
+            "CratePromoteSound": "CratePromoted",
+            "CrateRevealSound": "CrateReveal",
+            "CrateSpeedSound": "CrateSpeed",
+            "CrateUnitSound": "CrateFreeUnit",
+            "CreditTicks": "CreditUp,CreditDown",
+            "DeployDir": "2",
+            "DetailBufferZoneWidth": "5",
+            "DetailMinFrameRateMovie": "20",
+            "DetailMinFrameRateNormal": "15",
+            "DigSound": "NukeSiren",
+            "DirectRockingCoefficient": "1.5",
+            "DiskLaserChargeUp": "FloatingDiscChargeUp",
+            "DropZoneRadius": "4",
+            "EliteFlashTimer": "150",
+            "EndPlanningModeSound": "PlanningModeEnd",
+            "EnemyHealth": "yes",
+            "EnterBioReactorSound": "BioReactorEnter",
+            "EnterGrinderSound": "GrinderGrinding",
+            "ExtraAircraftLight": ".2",
+            "ExtraInfantryLight": ".2",
+            "ExtraUnitLight": ".2",
+            "FallBackCoefficient": "0.1",
+            "FogRate": ".01",
+            "ForceShieldColor": "6",
+            "GUIBuildSound": "MenuClick",
+            "GUICheckboxSound": "MenuClick",
+            "GUICloseSound": "MenuACBClose",
+            "GUIComboCloseSound": "MenuACBClose",
+            "GUIComboOpenSound": "MenuACBOpen",
+            "GUIMainButtonSound": "MenuClick",
+            "GUIMoveInSound": "MenuSlideIn",
+            "GUIMoveOutSound": "MenuSlideOut",
+            "GUIOpenSound": "MenuACBOpen",
+            "GUITabSound": "MenuTab",
+            "GameClosed": "GameClosed",
+            "GameForming": "NewGame",
+            "GateDown": "Dummy",
+            "GateUp": "Dummy",
+            "GenericBeep": "GenericBeep",
+            "GenericClick": "MenuClick",
+            "GeneticMutatorActivateSound": "GeneticMutatorActivate",
+            "Gravity": "6",
+            "GuardSound": "CommandBar",
+            "IceGrowthRate": "1.5",
+            "IceSolidifyFrameTime": "1000",
+            "IdleActionFrequency": ".15",
+            "ImpactWaterSound": "ExplosionWaterLarge",
+            "IncomingMessage": "MessageText",
+            "IronCurtainColor": "0",
+            "LaserTargetColor": "4",
+            "LeaveBioReactorSound": "BioReactorEnter",
+            "LetsDoTheTimeWarpInAgain": "ChronoScreenSoundAgain",
+            "LetsDoTheTimeWarpOutAgain": "ChronoScreenSound",
+            "LightningSounds": "WeatherStrike",
+            "LineTrailColorOverride": "0,0,0",
+            "LocalRadarColor": "0,255,0",
+            "MagnaBeamColor": "255,200,255",
+            "MasterMindOverloadDeathSound": "MasterMindOverloadVoice",
+            "MessageCharTyped": "TextBleep",
+            "MessageDelay": ".6",
+            "MindClearedSound": "MindCleared",
+            "MovieOff": "MovieOff",
+            "MovieOn": "MovieOn",
+            "MovieTime": ".06",
+            "NamedCivilians": "no",
+            "OptionsChanged": "OptionsChanged",
+            "OreTwinkleChance": "30",
+            "PlaceBeaconSound": "BeaconPlaced",
+            "PlayerJoined": "PlayerJoined",
+            "PoseDir": "2",
+            "PsychicDominatorActivateSound": "PsychicDominatorActivate",
+            "PsychicRevealActivateSound": "PsychicRevealActivate",
+            "RadarOff": "RadarOff",
+            "RadarOn": "RadarOn",
+            "RepairBridgeSound": "BridgeRepaired",
+            "SavourDelay": ".1",
+            "ScatterSound": "CommandBar",
+            "ScoldSound": "MenuScold",
+            "ScoreAnimSound": "ScoreEmblemSoundLoop",
+            "ScrollMultiplier": ".07",
+            "SellSound": "SellBuilding",
+            "ShakeScreen": "400",
+            "ShroudGrow": "no",
+            "ShroudRate": "4",
+            "SinkingSound": "GenLargeWaterDie",
+            "SlaveMinerDeploySound": "SlaveMinerDeploy",
+            "SlaveMinerUndeploySound": "SlaveMinerDeploy",
+            "SlavesFreeSound": "SlaveWorkerLiberated",
+            "Smoke": "xxxx",
+            "SpeakDelay": "2",
+            "SpyPlaneCamera": "SpyPlaneSnapshot",
+            "SpyPlaneCameraFrames": "16",
+            "SpySatActivationSound": "SpyUplinkOn",
+            "SpySatDeactivationSound": "SpyUplinkOff",
+            "StartPlanningModeSound": "PlanningModeStart",
+            "StopSound": "CommandBar",
+            "StormSound": "WeatherIntro",
+            "SystemError": "GenericBeep",
+            "TeslaCharge": "TeslaCoilPowerUp",
+            "TimerWarning": "2",
+            "UpgradeEliteSound": "UpgradeElite",
+            "UpgradeVeteranSound": "UpgradeVeteran",
+            "VoiceIFVRepair": "IFVMove",
+            "WaypointAnimationSpeed": "10",
+            "YuriMindControlSound": "YuriMindControl"
+          }
+        },
+        "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef",
+        "source_lines": [
+          {
+            "key": "DetailMinFrameRateNormal",
+            "line": 596,
+            "section": "AudioVisual",
+            "value": "15"
+          },
+          {
+            "key": "DetailMinFrameRateMovie",
+            "line": 597,
+            "section": "AudioVisual",
+            "value": "20"
+          },
+          {
+            "key": "DetailBufferZoneWidth",
+            "line": 598,
+            "section": "AudioVisual",
+            "value": "5"
+          },
+          {
+            "key": "LineTrailColorOverride",
+            "line": 600,
+            "section": "AudioVisual",
+            "value": "0,0,0"
+          },
+          {
+            "key": "ChronoBeamColor",
+            "line": 601,
+            "section": "AudioVisual",
+            "value": "128,200,255"
+          },
+          {
+            "key": "MagnaBeamColor",
+            "line": 602,
+            "section": "AudioVisual",
+            "value": "255,200,255"
+          },
+          {
+            "key": "OreTwinkleChance",
+            "line": 603,
+            "section": "AudioVisual",
+            "value": "30"
+          },
+          {
+            "key": "SpySatActivationSound",
+            "line": 608,
+            "section": "AudioVisual",
+            "value": "SpyUplinkOn"
+          },
+          {
+            "key": "SpySatDeactivationSound",
+            "line": 609,
+            "section": "AudioVisual",
+            "value": "SpyUplinkOff"
+          },
+          {
+            "key": "UpgradeVeteranSound",
+            "line": 611,
+            "section": "AudioVisual",
+            "value": "UpgradeVeteran"
+          },
+          {
+            "key": "UpgradeEliteSound",
+            "line": 612,
+            "section": "AudioVisual",
+            "value": "UpgradeElite"
+          },
+          {
+            "key": "BaseUnderAttackSound",
+            "line": 613,
+            "section": "AudioVisual",
+            "value": "BaseUnderAttackSiren"
+          },
+          {
+            "key": "BuildingGarrisonedSound",
+            "line": 614,
+            "section": "AudioVisual",
+            "value": "BuildingGarrisoned"
+          },
+          {
+            "key": "BuildingRepairedSound",
+            "line": 615,
+            "section": "AudioVisual",
+            "value": "BuildingRepaired"
+          },
+          {
+            "key": "CheerSound",
+            "line": 616,
+            "section": "AudioVisual",
+            "value": "Cheer"
+          },
+          {
+            "key": "PlaceBeaconSound",
+            "line": 617,
+            "section": "AudioVisual",
+            "value": "BeaconPlaced"
+          },
+          {
+            "key": "DirectRockingCoefficient",
+            "line": 620,
+            "section": "AudioVisual",
+            "value": "1.5"
+          },
+          {
+            "key": "FallBackCoefficient",
+            "line": 621,
+            "section": "AudioVisual",
+            "value": "0.1"
+          },
+          {
+            "key": "LaserTargetColor",
+            "line": 625,
+            "section": "AudioVisual",
+            "value": "4"
+          },
+          {
+            "key": "IronCurtainColor",
+            "line": 626,
+            "section": "AudioVisual",
+            "value": "0"
+          },
+          {
+            "key": "BerserkColor",
+            "line": 627,
+            "section": "AudioVisual",
+            "value": "4"
+          },
+          {
+            "key": "ForceShieldColor",
+            "line": 628,
+            "section": "AudioVisual",
+            "value": "6"
+          },
+          {
+            "key": "StartPlanningModeSound",
+            "line": 630,
+            "section": "AudioVisual",
+            "value": "PlanningModeStart"
+          },
+          {
+            "key": "EndPlanningModeSound",
+            "line": 631,
+            "section": "AudioVisual",
+            "value": "PlanningModeEnd"
+          },
+          {
+            "key": "AddPlanningModeCommandSound",
+            "line": 632,
+            "section": "AudioVisual",
+            "value": "PlanningModeAdd"
+          },
+          {
+            "key": "CratePromoteSound",
+            "line": 635,
+            "section": "AudioVisual",
+            "value": "CratePromoted"
+          },
+          {
+            "key": "CrateMoneySound",
+            "line": 636,
+            "section": "AudioVisual",
+            "value": "CrateMoney"
+          },
+          {
+            "key": "CrateRevealSound",
+            "line": 637,
+            "section": "AudioVisual",
+            "value": "CrateReveal"
+          },
+          {
+            "key": "CrateFireSound",
+            "line": 638,
+            "section": "AudioVisual",
+            "value": "CrateFirePower"
+          },
+          {
+            "key": "CrateArmourSound",
+            "line": 639,
+            "section": "AudioVisual",
+            "value": "CrateArmor"
+          },
+          {
+            "key": "CrateSpeedSound",
+            "line": 640,
+            "section": "AudioVisual",
+            "value": "CrateSpeed"
+          },
+          {
+            "key": "CrateUnitSound",
+            "line": 641,
+            "section": "AudioVisual",
+            "value": "CrateFreeUnit"
+          },
+          {
+            "key": "GUIMainButtonSound",
+            "line": 643,
+            "section": "AudioVisual",
+            "value": "MenuClick"
+          },
+          {
+            "key": "GUIBuildSound",
+            "line": 644,
+            "section": "AudioVisual",
+            "value": "MenuClick"
+          },
+          {
+            "key": "GUITabSound",
+            "line": 645,
+            "section": "AudioVisual",
+            "value": "MenuTab"
+          },
+          {
+            "key": "GUIOpenSound",
+            "line": 646,
+            "section": "AudioVisual",
+            "value": "MenuACBOpen"
+          },
+          {
+            "key": "GUICloseSound",
+            "line": 647,
+            "section": "AudioVisual",
+            "value": "MenuACBClose"
+          },
+          {
+            "key": "GUIMoveOutSound",
+            "line": 648,
+            "section": "AudioVisual",
+            "value": "MenuSlideOut"
+          },
+          {
+            "key": "GUIMoveInSound",
+            "line": 649,
+            "section": "AudioVisual",
+            "value": "MenuSlideIn"
+          },
+          {
+            "key": "GUIComboOpenSound",
+            "line": 650,
+            "section": "AudioVisual",
+            "value": "MenuACBOpen"
+          },
+          {
+            "key": "GUIComboCloseSound",
+            "line": 651,
+            "section": "AudioVisual",
+            "value": "MenuACBClose"
+          },
+          {
+            "key": "GUICheckboxSound",
+            "line": 652,
+            "section": "AudioVisual",
+            "value": "MenuClick"
+          },
+          {
+            "key": "ScoreAnimSound",
+            "line": 654,
+            "section": "AudioVisual",
+            "value": "ScoreEmblemSoundLoop"
+          },
+          {
+            "key": "SinkingSound",
+            "line": 656,
+            "section": "AudioVisual",
+            "value": "GenLargeWaterDie"
+          },
+          {
+            "key": "ImpactWaterSound",
+            "line": 657,
+            "section": "AudioVisual",
+            "value": "ExplosionWaterLarge"
+          },
+          {
+            "key": "BombTickingSound",
+            "line": 659,
+            "section": "AudioVisual",
+            "value": "CrazyIvanBombTick"
+          },
+          {
+            "key": "ChronoInSound",
+            "line": 660,
+            "section": "AudioVisual",
+            "value": "ChronoMinerTeleport"
+          },
+          {
+            "key": "ChronoOutSound",
+            "line": 661,
+            "section": "AudioVisual",
+            "value": "ChronoMinerTeleport"
+          },
+          {
+            "key": "BombAttachSound",
+            "line": 662,
+            "section": "AudioVisual",
+            "value": "CrazyIvanAttack"
+          },
+          {
+            "key": "YuriMindControlSound",
+            "line": 663,
+            "section": "AudioVisual",
+            "value": "YuriMindControl"
+          },
+          {
+            "key": "PoseDir",
+            "line": 667,
+            "section": "AudioVisual",
+            "value": "2"
+          },
+          {
+            "key": "DeployDir",
+            "line": 668,
+            "section": "AudioVisual",
+            "value": "2"
+          },
+          {
+            "key": "WaypointAnimationSpeed",
+            "line": 670,
+            "section": "AudioVisual",
+            "value": "10"
+          },
+          {
+            "key": "DigSound",
+            "line": 672,
+            "section": "AudioVisual",
+            "value": "NukeSiren"
+          },
+          {
+            "key": "GateUp",
+            "line": 675,
+            "section": "AudioVisual",
+            "value": "Dummy"
+          },
+          {
+            "key": "GateDown",
+            "line": 676,
+            "section": "AudioVisual",
+            "value": "Dummy"
+          },
+          {
+            "key": "ShroudGrow",
+            "line": 677,
+            "section": "AudioVisual",
+            "value": "no"
+          },
+          {
+            "key": "ScrollMultiplier",
+            "line": 678,
+            "section": "AudioVisual",
+            "value": ".07"
+          },
+          {
+            "key": "ShakeScreen",
+            "line": 679,
+            "section": "AudioVisual",
+            "value": "400"
+          },
+          {
+            "key": "CloakSound",
+            "line": 680,
+            "section": "AudioVisual",
+            "value": "NavalUnitEmerge"
+          },
+          {
+            "key": "SellSound",
+            "line": 681,
+            "section": "AudioVisual",
+            "value": "SellBuilding"
+          },
+          {
+            "key": "GameClosed",
+            "line": 682,
+            "section": "AudioVisual",
+            "value": "GameClosed"
+          },
+          {
+            "key": "IncomingMessage",
+            "line": 683,
+            "section": "AudioVisual",
+            "value": "MessageText"
+          },
+          {
+            "key": "MessageCharTyped",
+            "line": 684,
+            "section": "AudioVisual",
+            "value": "TextBleep"
+          },
+          {
+            "key": "SystemError",
+            "line": 685,
+            "section": "AudioVisual",
+            "value": "GenericBeep"
+          },
+          {
+            "key": "OptionsChanged",
+            "line": 686,
+            "section": "AudioVisual",
+            "value": "OptionsChanged"
+          },
+          {
+            "key": "GameForming",
+            "line": 687,
+            "section": "AudioVisual",
+            "value": "NewGame"
+          },
+          {
+            "key": "PlayerJoined",
+            "line": 689,
+            "section": "AudioVisual",
+            "value": "PlayerJoined"
+          },
+          {
+            "key": "Construction",
+            "line": 690,
+            "section": "AudioVisual",
+            "value": "Dummy"
+          },
+          {
+            "key": "CreditTicks",
+            "line": 691,
+            "section": "AudioVisual",
+            "value": "CreditUp,CreditDown"
+          },
+          {
+            "key": "BuildingDieSound",
+            "line": 692,
+            "section": "AudioVisual",
+            "value": "BuildingGenericDie"
+          },
+          {
+            "key": "BuildingSlam",
+            "line": 693,
+            "section": "AudioVisual",
+            "value": "PlaceBuilding"
+          },
+          {
+            "key": "RadarOn",
+            "line": 694,
+            "section": "AudioVisual",
+            "value": "RadarOn"
+          },
+          {
+            "key": "RadarOff",
+            "line": 695,
+            "section": "AudioVisual",
+            "value": "RadarOff"
+          },
+          {
+            "key": "MovieOn",
+            "line": 696,
+            "section": "AudioVisual",
+            "value": "MovieOn"
+          },
+          {
+            "key": "MovieOff",
+            "line": 697,
+            "section": "AudioVisual",
+            "value": "MovieOff"
+          },
+          {
+            "key": "ScoldSound",
+            "line": 698,
+            "section": "AudioVisual",
+            "value": "MenuScold"
+          },
+          {
+            "key": "TeslaCharge",
+            "line": 699,
+            "section": "AudioVisual",
+            "value": "TeslaCoilPowerUp"
+          },
+          {
+            "key": "BuildingDamageSound",
+            "line": 701,
+            "section": "AudioVisual",
+            "value": "BuildingDamaged"
+          },
+          {
+            "key": "ChuteSound",
+            "line": 702,
+            "section": "AudioVisual",
+            "value": "ParachuteDrop"
+          },
+          {
+            "key": "GenericClick",
+            "line": 703,
+            "section": "AudioVisual",
+            "value": "MenuClick"
+          },
+          {
+            "key": "GenericBeep",
+            "line": 704,
+            "section": "AudioVisual",
+            "value": "GenericBeep"
+          },
+          {
+            "key": "BuildingDrop",
+            "line": 705,
+            "section": "AudioVisual",
+            "value": "PlaceBuilding"
+          },
+          {
+            "key": "StopSound",
+            "line": 706,
+            "section": "AudioVisual",
+            "value": "CommandBar"
+          },
+          {
+            "key": "GuardSound",
+            "line": 707,
+            "section": "AudioVisual",
+            "value": "CommandBar"
+          },
+          {
+            "key": "ScatterSound",
+            "line": 708,
+            "section": "AudioVisual",
+            "value": "CommandBar"
+          },
+          {
+            "key": "StormSound",
+            "line": 710,
+            "section": "AudioVisual",
+            "value": "WeatherIntro"
+          },
+          {
+            "key": "LightningSounds",
+            "line": 711,
+            "section": "AudioVisual",
+            "value": "WeatherStrike"
+          },
+          {
+            "key": "VoiceIFVRepair",
+            "line": 715,
+            "section": "AudioVisual",
+            "value": "IFVMove"
+          },
+          {
+            "key": "SlavesFreeSound",
+            "line": 716,
+            "section": "AudioVisual",
+            "value": "SlaveWorkerLiberated"
+          },
+          {
+            "key": "SlaveMinerDeploySound",
+            "line": 717,
+            "section": "AudioVisual",
+            "value": "SlaveMinerDeploy"
+          },
+          {
+            "key": "SlaveMinerUndeploySound",
+            "line": 718,
+            "section": "AudioVisual",
+            "value": "SlaveMinerDeploy"
+          },
+          {
+            "key": "BunkerWallsUpSound",
+            "line": 719,
+            "section": "AudioVisual",
+            "value": "TankBunkerUp"
+          },
+          {
+            "key": "BunkerWallsDownSound",
+            "line": 720,
+            "section": "AudioVisual",
+            "value": "TankBunkerDown"
+          },
+          {
+            "key": "RepairBridgeSound",
+            "line": 721,
+            "section": "AudioVisual",
+            "value": "BridgeRepaired"
+          },
+          {
+            "key": "PsychicDominatorActivateSound",
+            "line": 722,
+            "section": "AudioVisual",
+            "value": "PsychicDominatorActivate"
+          },
+          {
+            "key": "GeneticMutatorActivateSound",
+            "line": 723,
+            "section": "AudioVisual",
+            "value": "GeneticMutatorActivate"
+          },
+          {
+            "key": "PsychicRevealActivateSound",
+            "line": 724,
+            "section": "AudioVisual",
+            "value": "PsychicRevealActivate"
+          },
+          {
+            "key": "MasterMindOverloadDeathSound",
+            "line": 725,
+            "section": "AudioVisual",
+            "value": "MasterMindOverloadVoice"
+          },
+          {
+            "key": "MindClearedSound",
+            "line": 726,
+            "section": "AudioVisual",
+            "value": "MindCleared"
+          },
+          {
+            "key": "EnterGrinderSound",
+            "line": 727,
+            "section": "AudioVisual",
+            "value": "GrinderGrinding"
+          },
+          {
+            "key": "EnterBioReactorSound",
+            "line": 729,
+            "section": "AudioVisual",
+            "value": "BioReactorEnter"
+          },
+          {
+            "key": "LeaveBioReactorSound",
+            "line": 730,
+            "section": "AudioVisual",
+            "value": "BioReactorEnter"
+          },
+          {
+            "key": "AirstrikeAbortSound",
+            "line": 733,
+            "section": "AudioVisual",
+            "value": "MIGMissionAborted"
+          },
+          {
+            "key": "AirstrikeAttackVoice",
+            "line": 734,
+            "section": "AudioVisual",
+            "value": "MIGMove"
+          },
+          {
+            "key": "SpyPlaneCamera",
+            "line": 735,
+            "section": "AudioVisual",
+            "value": "SpyPlaneSnapshot"
+          },
+          {
+            "key": "SpyPlaneCameraFrames",
+            "line": 736,
+            "section": "AudioVisual",
+            "value": "16"
+          },
+          {
+            "key": "DiskLaserChargeUp",
+            "line": 737,
+            "section": "AudioVisual",
+            "value": "FloatingDiscChargeUp"
+          },
+          {
+            "key": "LetsDoTheTimeWarpOutAgain",
+            "line": 738,
+            "section": "AudioVisual",
+            "value": "ChronoScreenSound"
+          },
+          {
+            "key": "LetsDoTheTimeWarpInAgain",
+            "line": 739,
+            "section": "AudioVisual",
+            "value": "ChronoScreenSoundAgain"
+          },
+          {
+            "key": "Smoke",
+            "line": 741,
+            "section": "AudioVisual",
+            "value": "xxxx"
+          },
+          {
+            "key": "EliteFlashTimer",
+            "line": 747,
+            "section": "AudioVisual",
+            "value": "150"
+          },
+          {
+            "key": "AllyReveal",
+            "line": 751,
+            "section": "AudioVisual",
+            "value": "yes"
+          },
+          {
+            "key": "ConditionRed",
+            "line": 752,
+            "section": "AudioVisual",
+            "value": "25%"
+          },
+          {
+            "key": "ConditionYellow",
+            "line": 753,
+            "section": "AudioVisual",
+            "value": "50%"
+          },
+          {
+            "key": "DropZoneRadius",
+            "line": 754,
+            "section": "AudioVisual",
+            "value": "4"
+          },
+          {
+            "key": "EnemyHealth",
+            "line": 755,
+            "section": "AudioVisual",
+            "value": "yes"
+          },
+          {
+            "key": "Gravity",
+            "line": 756,
+            "section": "AudioVisual",
+            "value": "6"
+          },
+          {
+            "key": "IdleActionFrequency",
+            "line": 757,
+            "section": "AudioVisual",
+            "value": ".15"
+          },
+          {
+            "key": "MessageDelay",
+            "line": 758,
+            "section": "AudioVisual",
+            "value": ".6"
+          },
+          {
+            "key": "MovieTime",
+            "line": 759,
+            "section": "AudioVisual",
+            "value": ".06"
+          },
+          {
+            "key": "NamedCivilians",
+            "line": 760,
+            "section": "AudioVisual",
+            "value": "no"
+          },
+          {
+            "key": "SavourDelay",
+            "line": 761,
+            "section": "AudioVisual",
+            "value": ".1"
+          },
+          {
+            "key": "ShroudRate",
+            "line": 762,
+            "section": "AudioVisual",
+            "value": "4"
+          },
+          {
+            "key": "FogRate",
+            "line": 763,
+            "section": "AudioVisual",
+            "value": ".01"
+          },
+          {
+            "key": "IceGrowthRate",
+            "line": 764,
+            "section": "AudioVisual",
+            "value": "1.5"
+          },
+          {
+            "key": "IceSolidifyFrameTime",
+            "line": 765,
+            "section": "AudioVisual",
+            "value": "1000"
+          },
+          {
+            "key": "AmbientChangeRate",
+            "line": 767,
+            "section": "AudioVisual",
+            "value": ".2"
+          },
+          {
+            "key": "AmbientChangeStep",
+            "line": 768,
+            "section": "AudioVisual",
+            "value": ".2"
+          },
+          {
+            "key": "SpeakDelay",
+            "line": 770,
+            "section": "AudioVisual",
+            "value": "2"
+          },
+          {
+            "key": "TimerWarning",
+            "line": 771,
+            "section": "AudioVisual",
+            "value": "2"
+          },
+          {
+            "key": "ExtraUnitLight",
+            "line": 772,
+            "section": "AudioVisual",
+            "value": ".2"
+          },
+          {
+            "key": "ExtraInfantryLight",
+            "line": 773,
+            "section": "AudioVisual",
+            "value": ".2"
+          },
+          {
+            "key": "ExtraAircraftLight",
+            "line": 774,
+            "section": "AudioVisual",
+            "value": ".2"
+          },
+          {
+            "key": "LocalRadarColor",
+            "line": 776,
+            "section": "AudioVisual",
+            "value": "0,255,0"
+          }
+        ]
+      },
+      {
+        "absent": true,
+        "file": "LANGRULE.INI"
+      },
+      {
+        "after": 0,
+        "before": 0,
+        "bytes": 295,
+        "file": "MPBattleMD.ini",
+        "sections": {},
+        "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963",
+        "source_lines": []
+      },
+      {
+        "after": 0,
+        "before": 0,
+        "bytes": 144458,
+        "file": "Hills.map",
+        "sections": {},
+        "sha256": "780d5d6e6d3c81ac0d510a5df326848dd426b3d840ac290114f44faf8eab9e9e",
+        "source_lines": []
+      }
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Jumpjet Link_To_Object type copy and facing, then per-frame Update_Coordinates_And_Altitude and State3_Translate on the two-cell fixture (10,10 level 0 flat; 9,10 level 2 slope 1; dummy elsewhere) until the locomotor leaves state 3. Not ascend, hold, descend, crash, bridges, building tops, cell objects or the air-slot contents.",
+  "assumptions": [
+    "FPCW 0E7F, the process control word WinMain installs with _controlfp(0x300, 0x300) at 0x006BBFC1; level height 104 at 0xABC5E8 and deck 416 at 0xABC5DC; two-cell map fixture as scoped; direction deltas from the original initializer; frame counter from 1001; owner RTTI 1 (Unit) or 15 (Infantry); owner +0x74 and +0x8C clear; per row: owner piggyback byte +0x6AD, UnitType +0xE13 IsSimpleDeployer, TechnoType +0x6AD DeployToLand and cell (10,10) LandType +0xEC; TarCom is a non-null marker only."
+  ],
+  "substitutions": [
+    "Owner SetLocation(+0x1B4) writes the coordinate only; Mark(+0x124), SetSpeedFraction(+0x544, argument recorded), +0xF4 and Set_Destination(+0x480) are supplied callbacks; air-bucket bookkeeping 0x004138C0, base link 0x0055A710 and mission notify 0x00705D60 are no-ops; air-slot query 0x004135A0 answers free and claim 0x00487D70 succeeds."
+  ],
+  "entry_points": {
+    "direction_delta_init": "0x0049F3A0",
+    "link_to_object": "0x0054AD30",
+    "update": "0x0054D0F0",
+    "state3": "0x0054BFF0",
+    "facing_current": "0x004C93D0",
+    "facing_snap": "0x004C9300"
+  },
+  "payload_sha256": "565050a1f9273c9f81a7f95eea8ed3e9bd446f89ebba2670df6e87da11e03df5"
+}

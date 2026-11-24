@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Ordinary selected GAPOWR Building health component and whole Extras/body/late-Extras composition",
+  "assumptions": [
+    "The existing selected-health generator/recorder has one Building mode. The existing tmp_clear_render PaletteReader owns original image, native allocator/INI caches, palette/TMP/shape transports and original BSurface/circular A/Z storage; no second VM, INI parser, palette expansion, rasterizer or body mask supplies expected output.",
+    "Whole Rules665650/BuildingType45DD90 constructors and complete45FE50 reader consume physical RULESMD, optional LANGRULE, MPBattleMD and XMP03T4; ARTMD is fixed. Native constructor and per-layer type fields are retained. Original ConditionRed/Yellow read/store blocks consume each matching AudioVisual section. Supplied startup height factor104 feeds native464AF0; GetCoords447AC0 and Tactical6D2140 derive points from raw Object Location/camera.",
+    "PIPS21frame/PIPBRD/PALETTE, GGPOWR6frame/UNITTEM/BUILDNGZ and fixed ART archive bytes match normal STOCK_DIGITAL production AssetManager winners, with no loose override. Existing physical archive transport is supplied rather than a native archive search. Full original palette/LightGold constructors execute in the same owner.",
+    "Positive component rows enter complete6F64A0 directly with third argument0: these are an explicit health consumer boundary and do not establish caller admission. Hover-only/absent/sinking rows instead run complete6F5190 so actual caller gates execute without selected bracket contamination. Actor linkage, health, selection, hover, sinking and positions are supplied inputs, not damage/selection/placement lifecycle proof. The sinking field is a prepared negative control, not stock GAPOWR reachability.",
+    "Every actual4AED70 frame/point/flags/clip and picker/rowwalker/leaf runs unchanged. Building uses physical PIPS0/1/2/4, flags600 plain/noA/noZ, including empty pips; this is distinct from mobile PIPBRD E00. Components cover HP750/375/187/1, immediate-above thresholds, A127/63/2/0, oldZ0, real viewport-edge clipping and ordered strips. A2 is existing original SHROUD frame15 output, not regenerated reveal lifecycle.",
+    "Composition reuses actual original flat constructed/revealed Cells47BBF0 and TMP480350, full Building43B740/idle44D6A0, BUILDNGZ45E8F0 and43CEA0->455C20/459EF0->43D290->705E00->4AED70 body/shadow. Native GAPOWR BibShape isNULL. Whole Behind, complete first Extras, actual admitted body and complete late Extras execute in that order; the neighbor case adds an actual earlier unselected stock body and its empty Extras. Sparse Map enrollment, traversal order, placed byte6E4, House/remap/lighting/frame and viewport are supplied priors, not whole Display/Scenario/Map loading.",
+    "The measured single and earlier-neighbor controls have zero body-overwritten health pixels: their first and late health stores are opaque/idempotent at these sampled locations. They establish the original call order with an actual intervening body, not a positive visible ordering regression.",
+    "Phase-aware records close each shape at its real caller return before bracket lines. Only health-addressed native ground color/Z, RGB565 samples before body/before late/final and actual after-body Z and body-overwrite witnesses are retained for composition consumers; full native crop color/Z hashes identify the actual body interval. A/Z component invariance, no RNG and unchanged original code are asserted. These controls do not establish a GPU body renderer, other Building types/status tails, whole frame, or health damage lifecycle."
+  ],
+  "substitutions": [
+    "Inherited native Reader allocator/delete/CRT TLS and immutable physical file/archive transport; existing BSurface/circular A/Z memory replaces DirectDraw. No reached health/tail/body/line/palette/shape function result or native instruction is substituted."
+  ],
+  "entry_points": {
+    "rules_ctor": "0x00665650",
+    "type_ctor": "0x0045DD90",
+    "type_reader": "0x0045FE50",
+    "dimension2": "0x00464AF0",
+    "get_coords": "0x00447AC0",
+    "projection": "0x006D2140",
+    "behind": "0x006F60D0",
+    "extras": "0x006F5190",
+    "health": "0x006F64A0",
+    "pip_tail": "0x00709A90",
+    "body_admission": "0x0043CEA0",
+    "body": "0x0043D290",
+    "render_coords": "0x00459EF0",
+    "shape": "0x004AED70",
+    "picker": "0x00490B90",
+    "fill_leaf": "0x004912B0",
+    "building_zshape": "0x0045E8F0",
+    "cell_tile": "0x00480350",
+    "pips_draw_for_all_ctor": "0x00710D22",
+    "pips_draw_for_all_reader": "0x0071413A",
+    "can_be_occupied_ctor": "0x0045E07D",
+    "can_be_occupied_reader": "0x004600DA"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.shroud --building-health",
+  "payload_sha256": "22878008d19ddf98b389b840f974916a9cc5459a5cb29788ec319bf0a4c71426"
+}

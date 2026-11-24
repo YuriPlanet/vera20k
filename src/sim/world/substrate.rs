@@ -1,0 +1,718 @@
+//! Shared object storage, registration order and spatial occupation authority.
+//!
+//! ObjectSubstrate owns the entity, animation, voxel-animation and particle-system
+//! stores, independent Logic/display vectors, counters and occupation planes.
+//! Terrain, projectile and wave stores remain in their mechanism owners and
+//! participate in the same lifecycle dispatch and global object-ID namespace.
+//!
+//! Lifecycle operations live on Simulation because Reveal/Conceal/UnInit also
+//! coordinate houses, terrain and other mechanism state. Storage order, active
+//! Logic order and per-cell object order are distinct contracts. Field comments
+//! identify serialized authority versus caches rebuilt after snapshot loading.
+//!
+//! Dependency rules: part of sim/; no presentation, audio or network dependency.
+
+use serde::{Deserialize, Serialize};
+use std::hash::Hash;
+
+use super::LogicVector;
+use crate::sim::anim_class::AnimStore;
+use crate::sim::cell_rect::CellReservationGrid;
+use crate::sim::entity_store::EntityStore;
+use crate::sim::occupancy::{
+    AirSlotGrid, HiddenOccupationGrid, OccupancyGrid, RawCellOccupationGrid,
+};
+use crate::sim::particles::ParticleSystemStore;
+use crate::sim::voxel_anim::VoxelAnimStore;
+
+/// One retained identity in original AbstractClass deferred queue B0F698.
+/// Tag/Trigger ordinals belong to their own registries; Object/Overlay stable
+/// IDs share the substrate allocator but retain distinct destructor owners.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum DeferredDeleteTicket {
+    Object(u64),
+    Overlay(u64),
+    Tag(usize),
+    Trigger(usize),
+    DiskLaser(u64),
+}
+
+/// Serialized, ordered authority for every725C70 enqueue. Registry membership
+/// and readiness belong to the corresponding object owners; this queue owns
+/// admission order and duplicate removal, including destructor-added entries.
+#[derive(Debug, Clone, Default)]
+pub struct DeferredDeleteQueue {
+    entries: Vec<Option<DeferredDeleteTicket>>,
+    /// Derived identity→storage positions; updated at every append/removal.
+    positions: std::collections::BTreeMap<DeferredDeleteTicket, Vec<usize>>,
+    /// Derived Fenwick prefix counts select a native logical cursor in O(log N).
+    /// Storage holes never affect queue order, saves or hashes. Rebuilt after
+    /// compaction/load; no family-specific queue or queue shadow exists.
+    prefix_counts: Vec<usize>,
+    live_count: usize,
+}
+
+impl DeferredDeleteQueue {
+    pub(crate) fn queue_object(&mut self, id: u64) {
+        self.append(DeferredDeleteTicket::Object(id));
+    }
+    pub(crate) fn queue_tag(&mut self, id: usize) {
+        self.append(DeferredDeleteTicket::Tag(id));
+    }
+    pub(crate) fn queue_trigger(&mut self, id: usize) {
+        self.append(DeferredDeleteTicket::Trigger(id));
+    }
+    pub(super) fn queue_disk_laser(&mut self, id: u64) {
+        self.append(DeferredDeleteTicket::DiskLaser(id));
+    }
+    pub(crate) fn queue_overlay(&mut self, id: u64) -> Result<(), ()> {
+        self.entries.try_reserve(1).map_err(|_| ())?;
+        self.append(DeferredDeleteTicket::Overlay(id));
+        Ok(())
+    }
+    pub fn contains_object(&self, id: &u64) -> bool {
+        self.positions
+            .contains_key(&DeferredDeleteTicket::Object(*id))
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn contains_overlay(&self, id: u64) -> bool {
+        self.positions
+            .contains_key(&DeferredDeleteTicket::Overlay(id))
+    }
+    pub(crate) fn remove_object(&mut self, id: u64) {
+        self.remove(DeferredDeleteTicket::Object(id));
+    }
+    pub(super) fn remove(&mut self, ticket: DeferredDeleteTicket) {
+        if let Some(positions) = self.positions.remove(&ticket) {
+            for position in positions {
+                self.entries[position] = None;
+                self.live_count -= 1;
+                self.change_prefix(position, false);
+            }
+        }
+    }
+    pub(super) fn ticket(&self, index: usize) -> Option<DeferredDeleteTicket> {
+        let position = self.storage_position(index)?;
+        self.entries[position]
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn len(&self) -> usize {
+        self.live_count
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.live_count == 0
+    }
+    pub(crate) fn retained_tickets(&self) -> impl Iterator<Item = DeferredDeleteTicket> + '_ {
+        self.entries.iter().flatten().copied()
+    }
+    pub fn object_tickets(&self) -> impl Iterator<Item = u64> + '_ {
+        self.retained_tickets().filter_map(|ticket| match ticket {
+            DeferredDeleteTicket::Object(id) => Some(id),
+            _ => None,
+        })
+    }
+    pub(crate) fn hash_state(&self, hasher: &mut impl std::hash::Hasher) {
+        self.live_count.hash(hasher);
+        for ticket in self.entries.iter().flatten() {
+            // Preserve the established object-only fold. Non-Object tickets
+            // carry an explicit family marker before their retained identity.
+            match ticket {
+                DeferredDeleteTicket::Object(id) => id.hash(hasher),
+                _ => {
+                    "AbstractDeferredTicket".hash(hasher);
+                    ticket.hash(hasher);
+                }
+            }
+        }
+    }
+    fn append(&mut self, ticket: DeferredDeleteTicket) {
+        let position = self.entries.len();
+        self.entries.push(Some(ticket));
+        self.positions.entry(ticket).or_default().push(position);
+        self.live_count += 1;
+        if position + 1 >= self.prefix_counts.len() {
+            self.rebuild_prefix();
+        } else {
+            self.change_prefix(position, true);
+        }
+    }
+    fn change_prefix(&mut self, position: usize, add: bool) {
+        let mut index = position + 1;
+        while index < self.prefix_counts.len() {
+            if add {
+                self.prefix_counts[index] += 1;
+            } else {
+                self.prefix_counts[index] -= 1;
+            }
+            index += index.isolate_lowest_one();
+        }
+    }
+    fn rebuild_prefix(&mut self) {
+        let capacity = self.entries.len().max(8).next_power_of_two();
+        self.prefix_counts = vec![0; capacity + 1];
+        for (index, entry) in self.entries.iter().enumerate() {
+            self.prefix_counts[index + 1] = usize::from(entry.is_some());
+        }
+        for index in 1..=capacity {
+            let parent = index + index.isolate_lowest_one();
+            if parent <= capacity {
+                self.prefix_counts[parent] += self.prefix_counts[index];
+            }
+        }
+    }
+    fn storage_position(&self, logical_index: usize) -> Option<usize> {
+        if logical_index >= self.live_count {
+            return None;
+        }
+        let capacity = self.prefix_counts.len() - 1;
+        let mut target = logical_index + 1;
+        let mut position = 0;
+        let mut step = capacity;
+        while step != 0 {
+            let next = position + step;
+            if next <= capacity && self.prefix_counts[next] < target {
+                target -= self.prefix_counts[next];
+                position = next;
+            }
+            step /= 2;
+        }
+        Some(position)
+    }
+    /// Finish a native scan with one stable compaction. Destructors and their
+    /// callbacks have already observed the same live logical queue throughout.
+    pub(super) fn finish_drain(&mut self) {
+        if self.entries.len() != self.live_count {
+            self.entries.retain(Option::is_some);
+            self.rebuild_indexes();
+        }
+    }
+    fn rebuild_indexes(&mut self) {
+        self.positions.clear();
+        self.live_count = 0;
+        for (position, ticket) in self.entries.iter().enumerate() {
+            if let Some(ticket) = ticket {
+                self.positions.entry(*ticket).or_default().push(position);
+                self.live_count += 1;
+            }
+        }
+        self.rebuild_prefix();
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn tickets(&self) -> Vec<DeferredDeleteTicket> {
+        self.entries.iter().flatten().copied().collect()
+    }
+    /// Check every derived index against the sole serialized order source.
+    /// Native history tests call this before and after every saved boundary.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn assert_consistent_for_test(&self) {
+        let mut rebuilt = Self {
+            entries: self.entries.clone(),
+            ..Self::default()
+        };
+        rebuilt.rebuild_indexes();
+        assert_eq!(self.positions, rebuilt.positions);
+        if self.prefix_counts.is_empty() {
+            assert!(self.entries.is_empty());
+        } else {
+            assert_eq!(self.prefix_counts, rebuilt.prefix_counts);
+        }
+        assert_eq!(self.live_count, rebuilt.live_count);
+        for (index, ticket) in self.retained_tickets().enumerate() {
+            assert_eq!(self.ticket(index), Some(ticket));
+        }
+        assert_eq!(self.ticket(self.live_count), None);
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn object_ids(&self) -> Vec<u64> {
+        self.object_tickets().collect()
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn overlay_count(&self) -> usize {
+        self.entries
+            .iter()
+            .flatten()
+            .filter(|ticket| matches!(ticket, DeferredDeleteTicket::Overlay(_)))
+            .count()
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn clear_for_test(&mut self) {
+        *self = Self::default();
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn remove_ticket_for_test(&mut self, ticket: DeferredDeleteTicket) {
+        self.remove(ticket);
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn swap_for_test(&mut self, a: usize, b: usize) {
+        let a = self.storage_position(a).unwrap();
+        let b = self.storage_position(b).unwrap();
+        self.entries.swap(a, b);
+        self.rebuild_indexes();
+    }
+}
+
+impl PartialEq for DeferredDeleteQueue {
+    fn eq(&self, other: &Self) -> bool {
+        self.entries
+            .iter()
+            .flatten()
+            .eq(other.entries.iter().flatten())
+    }
+}
+impl Eq for DeferredDeleteQueue {}
+
+impl Serialize for DeferredDeleteQueue {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut seq = serializer.serialize_seq(Some(self.live_count))?;
+        for ticket in self.entries.iter().flatten() {
+            seq.serialize_element(ticket)?;
+        }
+        seq.end()
+    }
+}
+impl<'de> Deserialize<'de> for DeferredDeleteQueue {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let tickets = Vec::<DeferredDeleteTicket>::deserialize(deserializer)?;
+        let mut queue = Self {
+            entries: tickets.into_iter().map(Some).collect(),
+            ..Self::default()
+        };
+        queue.rebuild_indexes();
+        Ok(queue)
+    }
+}
+
+/// Monotonic source for the AirTracker's registration order. Each airborne
+/// entity stores the value assigned when it entered its bucket; this counter
+/// hands out the next one. The sole mutator is `next()` — callers cannot mis-increment
+/// or skip the saturating semantics. Serialized + hashed at its `ObjectSubstrate` field
+/// (a `#[serde(transparent)]` + derived-`Hash` newtype is byte- and hash-identical to the
+/// bare `u64` it replaces).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct EnterOrderCounter(u64);
+
+impl EnterOrderCounter {
+    /// Fresh counter. Starts at 1; 0 is the reserved sentinel.
+    pub(crate) const fn new() -> Self {
+        Self(1)
+    }
+
+    /// Return the current order value and advance. Saturating — never wraps,
+    /// matching the pre-consolidation `saturating_add(1)` at every assign-site.
+    pub(crate) fn next(&mut self) -> u64 {
+        let order = self.0;
+        self.0 = self.0.saturating_add(1);
+        order
+    }
+
+    /// Next value that will be handed out.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) const fn current(self) -> u64 {
+        self.0
+    }
+}
+
+/// Monotonic per-instance id source (never reused). Each spawned object draws
+/// the next value, so a stale reference degrades to `None` rather than
+/// aliasing a reused slot. The sole mutator is `allocate`. Serialized + hashed
+/// at its `ObjectSubstrate` field like `EnterOrderCounter`: the transparent
+/// newtype is byte- and hash-identical to the bare `u64` it replaces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct StableIdCursor(u64);
+
+impl StableIdCursor {
+    /// Fresh cursor. Starts at 1; 0 is the reserved sentinel.
+    pub(crate) const fn new() -> Self {
+        Self(1)
+    }
+
+    /// Next value `allocate` hands out.
+    pub(crate) const fn peek(self) -> u64 {
+        self.0
+    }
+
+    /// Sole stable-ID allocator, also used while a constructor borrows the
+    /// map and other disjoint substrate fields. Native numeric IDs have their
+    /// separate Scenario cursor; every Rust object shares this namespace.
+    pub(crate) fn allocate(&mut self, entities: &EntityStore) -> u64 {
+        let id = self.0;
+        // Fixtures may insert entities directly without advancing the cursor.
+        #[cfg(any(test, feature = "test-support"))]
+        let id = {
+            let mut id = id;
+            while entities.contains(id) {
+                id += 1;
+            }
+            id
+        };
+        #[cfg(not(any(test, feature = "test-support")))]
+        debug_assert!(!entities.contains(id), "stable id {id} is already live");
+        self.0 = id.saturating_add(1);
+        id
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_for_test(&mut self, next: u64) {
+        self.0 = next;
+    }
+}
+
+/// Declares [`ObjectKind`] and [`ObjectKind::ALL`] from one list, so every
+/// walk over `ALL` covers a new kind.
+macro_rules! object_kinds {
+    ($($(#[$doc:meta])* $kind:ident,)+) => {
+        /// The ObjectClass kinds the stores hold, one per store. Object IDs are
+        /// unique across stores (one monotonic `next_stable_object_id`
+        /// namespace), so an ID names one kind ([`Simulation::classify_object`]).
+        /// Each lifecycle dispatch matches on the kind without a wildcard, so a
+        /// new kind must take a side in every one:
+        ///
+        /// | Kind | Logic | Pointer expiry | Ready to delete |
+        /// | --- | --- | --- | --- |
+        /// | `Entity` | member | listens | `!ObjectAlive` |
+        /// | `Anim` | member | listens | out of Logic |
+        /// | `VoxelAnim` | member | Object's (`0x005F5230`): nothing to clear | VERA removes it on its AI's Delete (`visit_voxel_anim`); native's UnInit (`0x005F65F0`) queues it |
+        /// | `Spotlight` | member | `0x00436A00`, apart from the roster | `!ObjectAlive` |
+        /// | `ParticleSystem` | member | listens | done and empty (`0x0062FE60`) |
+        /// | `Terrain` | member | `0x0071CFD0`: Object's retained successor relink | dead and out of Logic |
+        /// | `Projectile` | member | listens | out of Logic |
+        /// | `Wave` | member | listens | out of Logic |
+        /// | `Smudge` | never | Object's: nothing to clear | `!ObjectAlive` |
+        /// | `Particle` | never: its type's Logic byte (`+0x234`, zeroed at `0x00644DB5`) is clear, so Unlimbo skips RegisterObject (`0x005F4FEF`); its system runs it | Object's: nothing to clear | `!ObjectAlive` (`0x005F6690`) |
+        ///
+        /// A snapshot restore registers every kind's IDs (`RestoredObjectIndex`).
+        ///
+        /// [`Simulation::classify_object`]: super::Simulation::classify_object
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub(crate) enum ObjectKind {
+            $($(#[$doc])* $kind,)+
+        }
+
+        impl ObjectKind {
+            /// Every kind, in the order [`Simulation::classify_object`] probes
+            /// the stores it has not already asked.
+            ///
+            /// [`Simulation::classify_object`]: super::Simulation::classify_object
+            pub(crate) const ALL: [Self; [$(ObjectKind::$kind),+].len()] = [$(Self::$kind),+];
+        }
+    };
+}
+
+object_kinds! {
+    Entity,
+    Anim,
+    VoxelAnim,
+    Spotlight,
+    ParticleSystem,
+    Terrain,
+    Projectile,
+    Wave,
+    Smudge,
+    /// A `ParticleClass` (vtable `0x007EF954`) in its system or detached
+    /// from it; the Display Air layer holds it (`reveal_particle`). Finding
+    /// one walks the systems, so it is probed last.
+    Particle,
+}
+
+impl ObjectKind {
+    /// Whether this kind's objects join LogicClass (`RegisterObject @
+    /// 0x0055BAA0`). A smudge never does, and a particle is run by its
+    /// system's AI.
+    pub(crate) const fn joins_logic(self) -> bool {
+        match self {
+            Self::Smudge | Self::Particle => false,
+            Self::Entity
+            | Self::Anim
+            | Self::VoxelAnim
+            | Self::Spotlight
+            | Self::ParticleSystem
+            | Self::Terrain
+            | Self::Projectile
+            | Self::Wave => true,
+        }
+    }
+}
+
+/// Owns the active-object order and the substrate's monotonic counters. Field
+/// paths are `Simulation.substrate.*`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ObjectSubstrate {
+    /// Monotonic per-instance id source shared by every object store.
+    pub(crate) next_stable_object_id: StableIdCursor,
+    /// Monotonic source for the independently ordered AirTracker. Cell lists
+    /// keep their own insertion order. See `EnterOrderCounter`.
+    pub(crate) next_air_tracker_order: EnterOrderCounter,
+    /// LogicClass active-object vector — the authority on AI visitation order.
+    /// Tail-append on reveal, compacting-remove on conceal. Serialized verbatim.
+    #[serde(default)]
+    pub(crate) logic: LogicVector,
+    /// Independent persistent DisplayClass layers, including the Ground vector
+    /// read by crate effects. Never reconstructed from Logic or storage order.
+    pub(crate) display: super::display_layers::DisplayLayers,
+    /// Actual CellClass-style memberships/order, preserved across save/restore.
+    /// Cell483C10/4839F0 saves and swizzles its ground/deck heads; rebuilding
+    /// from current locomotor phase or terrain cannot recover those histories.
+    pub(crate) occupancy: OccupancyGrid,
+    /// Authoritative raw CellClass occupation bytes. These destructive
+    /// OR/AND-not bytes are serialized verbatim and are never rebuilt from
+    /// entity lists.
+    #[serde(default)]
+    pub(crate) raw_cell_occupation: RawCellOccupationGrid,
+    /// Separate authoritative building hidden-object counters. Serialized
+    /// verbatim because RemoveOccupy's enter-only cancellation is not
+    /// reconstructible from the currently placed entity set.
+    #[serde(default)]
+    pub(crate) hidden_occupation: HiddenOccupationGrid,
+    /// Authoritative CellClass `+0xE0` AltObject slots — the one airborne
+    /// object each cell holds. Serialized verbatim: a hovering Jumpjet's claim
+    /// is not reconstructible from its position or locomotor phase.
+    #[serde(default)]
+    pub(crate) air_slots: AirSlotGrid,
+    /// Authoritative CellClass `+0xDC` per-house Building base reservations,
+    /// including the single shared dummy CellClass mask.
+    #[serde(default)]
+    pub(crate) base_reservations: CellReservationGrid,
+    /// Plain-struct entity storage (dense, in stable_id order, + infantry registry).
+    /// The authoritative object store — serialized verbatim (NOT skipped).
+    pub(in crate::sim) entities: EntityStore,
+    /// Synchronous Phobos limbo hook controls; stable saves restore enabled/idle.
+    #[cfg(feature = "phobos")]
+    #[serde(skip)]
+    pub(crate) phobos_limbo_control: crate::sim::house_tracking::PhobosLimboControl,
+    /// Separate AnimClass registry sharing the global object ID namespace and
+    /// LogicVector with entities.
+    #[serde(default)]
+    pub(crate) anims: AnimStore,
+    /// `VoxelAnimClass` registry — the flying VXL debris a death throws. Shares
+    /// the global object-ID namespace and the LogicVector with entities and
+    /// anims, exactly as native's `VoxelAnimClass::Constructor` does through
+    /// `AbstractClass::Create_ID` and `ObjectClass::Unlimbo`.
+    #[serde(default)]
+    pub(crate) voxel_anims: VoxelAnimStore,
+    #[serde(default)]
+    pub(crate) spotlights: super::spotlight::SpotlightStore,
+    /// ParticleSystemClass registry. Systems share the global object-ID
+    /// namespace and LogicVector; individual particles remain container-owned.
+    #[serde(default)]
+    pub(crate) particle_systems: ParticleSystemStore,
+    /// Deferred-delete queue (the native `PendingDeleteList`). Ordered tickets may
+    /// survive a Rust snapshot boundary: between enqueue and the ordinary late
+    /// drain an entity remains resolvable in storage while its independent
+    /// lifecycle facts describe dead/limbo/cell/logic state. Serialized verbatim;
+    /// the state hash folds queue identities in insertion order.
+    #[serde(default)]
+    pub(crate) pending_delete: DeferredDeleteQueue,
+    /// Buildings whose Temporal online latch changed since the last factory
+    /// sweep, in order, for the Ares factory queue refresh
+    /// (`Simulation::ares_refresh_temporal_factories`). Empty in a game
+    /// without Ares.
+    #[serde(default)]
+    ares_temporal_factory_refresh: Vec<u64>,
+}
+
+impl ObjectSubstrate {
+    /// The buildings waiting for the Ares factory queue refresh, in order.
+    pub(crate) fn ares_temporal_factory_refresh(&self) -> &[u64] {
+        &self.ares_temporal_factory_refresh
+    }
+
+    /// A building's Temporal online latch changed: queue it for the next
+    /// factory sweep.
+    pub(crate) fn queue_ares_temporal_factory_refresh(&mut self, id: u64) {
+        self.ares_temporal_factory_refresh.push(id);
+    }
+
+    /// The factory sweep takes the queued buildings and leaves none.
+    pub(crate) fn take_ares_temporal_factory_refresh(&mut self) -> Vec<u64> {
+        std::mem::take(&mut self.ares_temporal_factory_refresh)
+    }
+}
+
+impl ObjectSubstrate {
+    /// Fresh substrate for a new world. Counters start at 1 (0 is a reserved
+    /// sentinel), matching the pre-consolidation `Simulation::new` initializers.
+    pub(crate) fn new() -> Self {
+        Self {
+            next_stable_object_id: StableIdCursor::new(),
+            next_air_tracker_order: EnterOrderCounter::new(),
+            logic: LogicVector::new(),
+            display: Default::default(),
+            occupancy: OccupancyGrid::new(),
+            raw_cell_occupation: RawCellOccupationGrid::new(),
+            hidden_occupation: HiddenOccupationGrid::new(),
+            air_slots: AirSlotGrid::default(),
+            base_reservations: CellReservationGrid::new(),
+            entities: EntityStore::new(),
+            #[cfg(feature = "phobos")]
+            phobos_limbo_control: Default::default(),
+            anims: AnimStore::default(),
+            voxel_anims: VoxelAnimStore::default(),
+            spotlights: Default::default(),
+            particle_systems: ParticleSystemStore::default(),
+            pending_delete: DeferredDeleteQueue::default(),
+            ares_temporal_factory_refresh: Vec::new(),
+        }
+    }
+}
+
+impl ObjectSubstrate {
+    /// Shared identity source for every modeled runtime `AbstractClass` analogue.
+    ///
+    /// `AbstractClass::Create_ID @ 0x00410230` delegates to
+    /// `ScenarioClass::NextUniqueID @ 0x0068BCB0`; individual stores therefore
+    /// must not own independent counters.
+    pub fn allocate_stable_id(&mut self) -> u64 {
+        self.next_stable_object_id.allocate(&self.entities)
+    }
+
+    /// Restore-time validation of the substrate's monotonic counters and the
+    /// deserialized LogicVector (F13; moved verbatim from
+    /// `restore_after_snapshot_load`, which remains the ordered coordinator).
+    /// Returns the validated logic-member set so the coordinator's store
+    /// cross-checks read exactly what was admitted here.
+    pub(crate) fn validate_restored_counters_and_logic(
+        &self,
+        highest_id: u64,
+        identities: &std::collections::BTreeMap<u64, &'static str>,
+    ) -> Result<std::collections::BTreeSet<u64>, crate::sim::snapshot::SnapshotRestoreError> {
+        use crate::sim::snapshot::SnapshotRestoreError;
+        if self.next_stable_object_id.peek() <= highest_id {
+            return Err(SnapshotRestoreError::ObjectIdCounterBehind {
+                next_id: self.next_stable_object_id.peek(),
+                highest_id,
+            });
+        }
+
+        let mut seen_logic = std::collections::BTreeSet::new();
+        for &object_id in self.display.ordered_ids() {
+            if !identities.contains_key(&object_id) {
+                return Err(SnapshotRestoreError::MissingDisplayIdentity { object_id });
+            }
+        }
+        for &object_id in self.logic.as_slice() {
+            if !seen_logic.insert(object_id) {
+                return Err(SnapshotRestoreError::DuplicateLogicIdentity { object_id });
+            }
+            if !identities.contains_key(&object_id) {
+                return Err(SnapshotRestoreError::MissingLogicIdentity { object_id });
+            }
+        }
+        Ok(seen_logic)
+    }
+
+    // State-hash folds over substrate-owned occupation state (F13).
+    // Called from `state_hash` at fixed positions; the fold
+    // order and byte layout are part of the hash contract.
+
+    /// Fold the authoritative sparse raw occupation bytes without conflating
+    /// coordinates or the ground/deck planes. Empty raw state contributes no
+    /// bytes, preserving established hashes while every modeled zero remains
+    /// represented canonically by the absence of a sparse entry.
+    pub(crate) fn fold_raw_cell_occupation(&self, hasher: &mut impl std::hash::Hasher) {
+        if let Some(dummy) = self.raw_cell_occupation.dummy_for_hash() {
+            b"raw-dummy-occupation-v1".hash(hasher);
+            dummy.hash(hasher);
+        }
+        let entry_count = self.raw_cell_occupation.entry_count();
+        if entry_count == 0 {
+            return;
+        }
+
+        b"raw-cell-occupation-v2".hash(hasher);
+        entry_count.hash(hasher);
+        for (rx, ry, ground, deck, ground_owner, deck_owner) in self.raw_cell_occupation.entries() {
+            0xC1u8.hash(hasher); // entry delimiter
+            rx.hash(hasher);
+            ry.hash(hasher);
+            0u8.hash(hasher); // ground-plane tag
+            ground.hash(hasher);
+            1u8.hash(hasher); // deck-plane tag
+            deck.hash(hasher);
+            ground_owner.hash(hasher);
+            deck_owner.hash(hasher);
+        }
+    }
+
+    /// Fold the cell AltObject slots. Empty stays silent so a save with no
+    /// hovering Jumpjet hashes exactly as it did before the slots existed.
+    pub(crate) fn fold_air_slots(&self, hasher: &mut impl std::hash::Hasher) {
+        let entry_count = self.air_slots.entry_count();
+        if entry_count == 0 {
+            return;
+        }
+
+        b"cell-air-slots-v1".hash(hasher);
+        entry_count.hash(hasher);
+        for (rx, ry, owner) in self.air_slots.entries() {
+            rx.hash(hasher);
+            ry.hash(hasher);
+            owner.hash(hasher);
+        }
+    }
+
+    /// `CellClass @ 0x00487E00`: does the Cell hide what stands on it? Its
+    /// hidden-occupation count (`+0x100`) is nonzero, except a Cell whose
+    /// ground object list (`+0xE4`) holds a Building and whose count is
+    /// exactly 1, the building's own contribution. The building walk is
+    /// gated on GameActive (`0x00A8E9A0`), which holds during the AI.
+    pub(crate) fn cell_hides_objects(&self, rx: u16, ry: u16) -> bool {
+        let count = self.hidden_occupation.count(rx, ry);
+        let building = self
+            .occupancy
+            .first_building_on_layer(
+                rx,
+                ry,
+                crate::sim::movement::locomotor::MovementLayer::Ground,
+            )
+            .is_some();
+        count != 0 && !(building && count == 1)
+    }
+
+    pub(crate) fn fold_hidden_occupation(&self, hasher: &mut impl std::hash::Hasher) {
+        let entry_count = self.hidden_occupation.entry_count();
+        if entry_count == 0 {
+            return;
+        }
+
+        b"hidden-cell-occupation-v1".hash(hasher);
+        entry_count.hash(hasher);
+        for (rx, ry, count) in self.hidden_occupation.entries() {
+            rx.hash(hasher);
+            ry.hash(hasher);
+            count.hash(hasher);
+        }
+    }
+
+    pub(crate) fn fold_base_reservations(&self, hasher: &mut impl std::hash::Hasher) {
+        b"building-base-reservation-v1".hash(hasher);
+        let entry_count = self.base_reservations.entries().len();
+        entry_count.hash(hasher);
+        for (rx, ry, mask) in self.base_reservations.entries() {
+            rx.hash(hasher);
+            ry.hash(hasher);
+            (mask as u32).hash(hasher);
+            if mask > u128::from(u32::MAX) {
+                // An impossible cell coordinate distinguishes the upper words
+                // from the next real cell. Legacy cells keep their four bytes.
+                u16::MAX.hash(hasher);
+                (mask >> u32::BITS).hash(hasher);
+            }
+        }
+        let dummy = self.base_reservations.dummy_mask();
+        (dummy as u32).hash(hasher);
+        if dummy > u128::from(u32::MAX) {
+            b"extended-reservation-dummy".hash(hasher);
+            (dummy >> u32::BITS).hash(hasher);
+        }
+    }
+}
+
+impl Default for ObjectSubstrate {
+    fn default() -> Self {
+        Self::new()
+    }
+}

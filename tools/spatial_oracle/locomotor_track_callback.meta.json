@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Drive/Ship paid raw-cache retention, accepted-chain cache publication, live transforms and residual reselection",
+  "assumptions": [
+    "Supplied admitted initial curve and callback mutations; this does not prove a particular gameplay callback produces each mutation",
+    "Original read and survivor tail are composed across omitted owner callbacks and placement work; no complete Process invocation executes",
+    "All eight retail transform-flag combinations, both short-byte states and explicit accepted-chain cache replacement are exercised for both families",
+    "Residual comparison stops after original raw XY lookup, before residual math and placement"
+  ],
+  "substitutions": [
+    "Callback mutations directly write retained selector/cursor/short/head/residual data at a supplied seam; original code and call results remain unpatched",
+    "Accepted-chain admission is supplied; its original cache publication, full Null head clear and valid flag execute up to the callback callsite; PerCellProcess and later lifecycle/placement work are excluded",
+    "Transform_Track_Coords executes as a separate complete original helper call using the paid cached raw point and current instance fields"
+  ],
+  "entry_points": {
+    "drive_chain_cache_end": "0x004B1CF9",
+    "drive_transform": "0x004B4780",
+    "drive_residual": "0x004B1F5C",
+    "drive_residual_point": "0x004B2312",
+    "ship_chain_cache_end": "0x006A133C",
+    "ship_transform": "0x006A3DB0",
+    "ship_residual": "0x006A159F",
+    "ship_residual_point": "0x006A1951"
+  },
+  "payload_sha256": "f4406e0b25884ea347276d9a429e9b8d1892861e9908720dd068eab657f47703"
+}

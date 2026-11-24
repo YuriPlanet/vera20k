@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Focused original42D170/42C290 controls using the FV Continuation owner.",
+  "assumptions": [
+    "Original FV constructor, complete physical Anytown setup, OS seams, hierarchy constructors and scratch initialization are reused from the independently checked pursuit owner.",
+    "Tiny ordered graph inputs replace only constructed node type,parent,edge fields and the two endpoint hierarchy IDs. These are synthetic controls, not claims about physical graph production.",
+    "FV Foot+530=0 and Team=NULL are checked; direct entry uses supplied movement row0. Original function instructions, projection, precheck, heap and float stores execute unmodified."
+  ],
+  "substitutions": [
+    "Supplied graph and endpoint inputs; no returned admission,cost,path,heap,RNG or timer value is substituted."
+  ],
+  "entry_points": {
+    "cost": "0x0042D170",
+    "precheck": "0x0042C290"
+  },
+  "payload_sha256": "c37fab8449443a19f7411d65ca3b8c5a49ae9ea9af9fff3b288ab29e741589f2"
+}

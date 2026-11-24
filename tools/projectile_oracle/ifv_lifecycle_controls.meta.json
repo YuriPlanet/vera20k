@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original guided controls for two lifecycle-test fixture assumptions",
+  "assumptions": [
+    "Tracked ifv_guided_controls/guided_step setup executes original Bullet construction/configure and physical layered Weapon/Bullet/General readers. This is not complete Rules Process chronology.",
+    "Map cells are supplied flat level6. Native ID100/frame1, incoming XYZ/velocity, maximum speed, counters/lock, null source and target kind are supplied. Level and Acceleration overrides execute the full original BulletType reader. Safety500 is a supplied retained Rules scalar.",
+    "All three controls stop before world coordinate commit. No original pointer expiry, save/load, Unit scheduling, collision receiver or deletion is executed here.",
+    "Rust ground fixture translates native floor624 to208 (level6 to2), and cells[10,20]/[17,20] to[5,5]/[12,5]. Its first step compares the native relative crossing; phase-independent Level/yaw-aligned candidate is the bounded comparison.",
+    "Rust null fixture translates floor624 to0 and places the Bullet at[1024,1024,400]. ID100/frame1, incoming velocity, maximum, latch and guidance flags match. Velocity and height deltas are comparable in the zero-target pitch arm; its coordinate-dependent closing accumulator is not compared."
+  ],
+  "substitutions": [
+    "Inherits tracked BulletReader physical lexical INI caches and archive byte delivery, allocation/delete/CRT TLS and verified OS imports. Observation records original calls and rejects RNG. Only the Python supplied-state table differs; original instructions and callees are unchanged."
+  ],
+  "entry_points": {
+    "guided_ai": "0x004668BD",
+    "homing": "0x005B20F0",
+    "null_safety": "0x00466E70",
+    "precommit_stop": "0x00467B7A"
+  },
+  "payload_sha256": "ce543f2b9c67abb6357864f9edf9c6b86c32262aadd2e8a877c25db6653832ac"
+}

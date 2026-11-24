@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Jumpjet constructor/query, supplied-result FNPC MoveTo/Stop and original Infantry coordinate adjustment/slot selection; phase0 activation. Not full flight/landing/callbacks or unrestricted FNPC.",
+  "assumptions": [
+    "Infantry RTTI15, mission0 supplied, current9,10 and selected10,10; ground level/slope/raw and 104/416 runtime height inputs; subcell offsets from existing placement corpus; Scenario RNG seed31, FPCW0E7F; supplied nonzero phases in two rows."
+  ],
+  "substitutions": [
+    "FNPC returns10,10 or NullCell0,0 as declared; owner type/kind/height/cell getters and Mark/SetSpeed/damage callbacks supplied; original House53A130 executes constantfalse."
+  ],
+  "entry_points": {
+    "constructor": "0x0054AC40",
+    "move_to": "0x0054B1C0",
+    "stop": "0x0054B4D0",
+    "adjust": "0x0054D6D0",
+    "placement": "0x004ACA10",
+    "cell_placement": "0x00481180",
+    "coordinate": "0x0054D9B0",
+    "foot_coordinate": "0x004DBDF0",
+    "moving": "0x0054AE50",
+    "phase0": "0x0054B980"
+  },
+  "payload_sha256": "e783dab444a4c9dc6cb2dadd2004b2db315ce9ac5b33b9e95183392177155fd7"
+}

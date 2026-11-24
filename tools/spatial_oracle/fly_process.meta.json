@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "ILocomotion Process of a living aircraft per frame: cruise, turns, arrival slowdown and landing at a ground cell, cruise-mode and armed circling, strafe, lock, HunterSeeker, FlyBy, Guard to Move, Commence, flight-level restore and selection, climb, the landing drift, IsDropship flight level, dock contact and attack-cell approach, and the AirportBound refusal. Excludes the dead fall (aircraft_crash), the map edge (fly_map_edge), Stop_Moving, Power_Off and the spin.",
+  "assumptions": [
+    "The in-game flag 0x00A8E9A0 is raised, as Main__PrepareSession does for a scenario. One Aircraft on the cloned Aircraft vtable with real AircraftType (Speed through the original ReadINI conversion), FacingClass and FlyLocomotionClass constructed by their original code; the 128x128 cell block, MapSize 64x64 and LocalSize 0,0,64,64 of aircraft_fire_location, every cell carrying the CellClass vtable 0x007E4EEC with Track land cost 1.0, as aircraft_move has them; the aircraft alone in the Foot and Aircraft vectors; the original air tracker and Display layers of fly_landing_phase, the aircraft registered at its starting height.",
+    "Rows supply the in-flight state at their first frame (Fly destination, moving, flight level, speeds, phase flags, cruise byte; owner mission, Target, Ammo, NavCom, lock and ready latches); the producers of that state are not run. Rules FlightLevel 1500, PoseDir per row, Find_Attack_Cell radius 0x2000 (Rules+0x1478, the constructor value).",
+    "Dock rows place one Helipad building (BuildingType foundation from the original tables, NumberOfDocks and DockingOffsets per row) on the destination cell; a contact row lists the aircraft in the building's radio slot and the building in the aircraft's one slot."
+  ],
+  "substitutions": [
+    "Aircraft vt+0x484 Enter_Idle_Mode and vt+0x150 recorded with their arguments and returned 0 without running."
+  ],
+  "entry_points": {
+    "process": "0x004CCB40",
+    "update_flight_motion": "0x004CD600",
+    "horizontal_step": "0x004CEFB0",
+    "begin_landing": "0x004CFA70",
+    "get_dock_coord": "0x00447B20",
+    "find_attack_cell": "0x00418E20",
+    "phase_transitions": "0x004CD2A0",
+    "playfield_latch": "0x004CD510"
+  },
+  "payload_sha256": "df9db5d83bff55316285c60fd682e15d9097df2a42c42e3cdbd51c3f5fd63c6a"
+}

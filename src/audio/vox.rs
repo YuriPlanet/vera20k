@@ -1,0 +1,884 @@
+//! The EVA announcement queue — gamemd's `VoxClass`.
+//!
+//! Pure decision state; the stream itself lives in [`crate::audio::sfx`].
+//! Native storage this mirrors (all bodies read for this module):
+//!
+//! | native | here |
+//! |---|---|
+//! | interrupt list `0xB1D3C8` (`Type=QUEUED_INTERRUPT` nodes) | `interrupt_list` |
+//! | critical list `0xB1D3F0` (`Priority=CRITICAL` nodes) | `critical_list` |
+//! | pending slot `0xB1D4B8` (one STANDARD/INTERRUPT node) | `pending` |
+//! | four `Type=QUEUE` FIFOs `0xB1D450 + priority * 0xC` | `priority_lists` |
+//! | current entry `0xB1D4C4` (+ type `0xB1D3B8`, priority `0xB1D3E0`) | `current` |
+//! | node sequence counter `0xB1D4C0` (`% 100`) | `seq_counter` |
+//! | 64-bit gap after the stream's end time `0xB1D4D0/0xB1D4D4` | `gap_ms` |
+//! | pause depth `0xB1D428` (`PauseEVA @ 0x007535B0` / `UnpauseEVA @ 0x00753620`) | `pause_depth` |
+//! | suspend depth `0xB1D3D8` (`SuspendEVA @ 0x00753570` / `ResumeEVA @ 0x00753580`) | `suspend_depth` |
+//!
+//! Functions: `VoxClass::QueueVoice @ 0x00752480` ([`VoxQueue::queue_voice`]),
+//! `InsertIntoQueue @ 0x00752590`, `FindInQueues @ 0x00752680`,
+//! `PlayNextQueued @ 0x00752760` ([`VoxQueue::take_next`] + [`VoxQueue::started`]),
+//! `ClearAllQueues @ 0x00752370`, `ResetAll @ 0x007535D0`,
+//! `PumpAndCheckActive @ 0x007529E0` ([`VoxQueue::is_active`]).
+
+use std::collections::{BTreeMap, VecDeque};
+
+use crate::rules::sound_ini::{EvaPriority, EvaRegistry, EvaType};
+
+/// `VoxClass::PlayNextQueued @ 0x00752760`: `0x0075296D MOV [0xB1D4D0],0x1F4`
+/// — the gap installed after a line starts successfully; the next line may
+/// start only once `now > end_time + gap` (unsigned 64-bit compare at
+/// `0x007527A1..0x007527CF`).
+pub const INTER_LINE_GAP_MS: u64 = 500;
+
+/// One queue node (native `operator_new(0x20)`: `+0x0C` entry, `+0x14`
+/// priority, `+0x18` type, `+0x1C` sequence).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VoxNode {
+    /// Entry identity: the `[DialogList]` name, upper-cased for the
+    /// `stricmp` match `VoxClass::PlayEVA` performs.
+    pub event: String,
+    pub eva_type: EvaType,
+    pub priority: EvaPriority,
+    /// `DAT_00B1D4C0 % 100` at insertion; bookkeeping only.
+    pub seq: u32,
+}
+
+/// What `VoxClass::QueueVoice` asks the stream layer to do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct QueueEffect {
+    /// `StreamPlayer::Stop` was called (type 2 while a line was current).
+    pub stop_stream: bool,
+    /// The request was inserted into a queue or the pending slot.
+    pub inserted: bool,
+    /// The original QueueVoice reaches PlayNextQueued752760 after its
+    /// admission guards, including a duplicate or insertion discard. A
+    /// suspended/current-entry rejection does not pump the queue.
+    pub advance_queue: bool,
+}
+
+/// One announcement request as `VoxClass::PlayEVA` resolves it.
+#[derive(Debug, Clone, Copy)]
+pub struct VoxRequest<'a> {
+    pub event: &'a str,
+    pub eva_type: EvaType,
+    pub priority: EvaPriority,
+}
+
+/// `VoxClass` queue state.
+#[derive(Debug, Default)]
+pub struct VoxQueue {
+    /// Process B1D4C8, initially0 in the PE zero-fill region. SetSide7534E0
+    /// binds it independently of saved Scenario+34B8. ResetAll preserves it.
+    selected_voice: i32,
+    /// Native Dialog entry+50:0 playing,1 admitted,2 done. Entries begin2;
+    /// dequeue7528E1 writes2 before PlayFile, and success75298E alone writes0.
+    entry_states: BTreeMap<String, u8>,
+    interrupt_list: VecDeque<VoxNode>,
+    critical_list: VecDeque<VoxNode>,
+    pending: Option<VoxNode>,
+    priority_lists: [VecDeque<VoxNode>; 4],
+    current: Option<VoxNode>,
+    seq_counter: u32,
+    gap_ms: u64,
+    /// Stand-in for `StreamPlayer::GetEndTime` (`0x00408140`): the moment the
+    /// last line was observed to end, reported by the stream owner.
+    end_time_ms: u64,
+    pause_depth: i32,
+    suspend_depth: i32,
+}
+
+impl VoxQueue {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// SetSide7534E0 / installed Ares1002FB00 bind the process cache.
+    /// Native stock and Ares histories: spatial_oracle/eva_selection.json
+    /// and ares_eva.json. Missing Side retains the Ares cache; negative
+    /// Scenario.Side clears it. Reading EVA.Tag never calls this binding.
+    /// Ares' binding reads the SideExt only Rules read the Ares way hold.
+    pub fn set_side(&mut self, side: i32, rules: &crate::rules::ruleset::RuleSet) {
+        if rules.ares_form() {
+            if side < 0 {
+                self.selected_voice = -1;
+            } else if let Some(voice) = rules.side_eva_voice_index(side) {
+                self.selected_voice = voice;
+            }
+        } else {
+            self.selected_voice = if side == -1 { 0 } else { side };
+        }
+    }
+
+    /// Ares trigger action 148 (TActionExt::Execute 100396C0) stores its
+    /// value, at least -1, in the process cache when it is below the voice
+    /// count; a larger value leaves the cache alone.
+    pub fn set_trigger_voice(&mut self, index: i32, registry: &EvaRegistry) {
+        if index < registry.voice_count() {
+            self.selected_voice = index.max(-1);
+        }
+    }
+
+    pub const fn selected_voice(&self) -> i32 {
+        self.selected_voice
+    }
+
+    /// GetFilename753380 / PlayNextQueued7528E8 share the event's column
+    /// lookup. Resolve at dequeue, after any intervening SetSide, against
+    /// the one immutable process catalog. Queue nodes retain no filename.
+    pub(super) fn sample_for<'a>(
+        &self,
+        node: &VoxNode,
+        registry: &'a EvaRegistry,
+    ) -> Option<&'a str> {
+        registry
+            .entry(&node.event)?
+            .column_by_voice(self.selected_voice)
+    }
+
+    /// `VoxClass::QueueVoice @ 0x00752480`.
+    ///
+    /// Guards (one `if`, `0x00752480..`): the stream player exists, the index
+    /// is valid, `DAT_00B1D3D8 == 0` (not suspended) and the entry is not the
+    /// current one (`iVar1 != DAT_00B1D4C4`). A `-1` type/priority takes the
+    /// entry's own; `PlayEVA` passes priority `-1`, while Radar6579BB passes
+    /// type0/priority3 through this same owner.
+    ///
+    /// Type 2 (INTERRUPT) **while an entry is current**: every interrupt-list
+    /// node is dropped, the current entry is marked done, `StreamPlayer::Stop`,
+    /// `ClearAllQueues`, and the 64-bit gap is zeroed. With no current entry
+    /// a type-2 line is routed like STANDARD and existing nodes survive.
+    ///
+    /// Then `FindInQueues`: a node for this entry **with the same type** is a
+    /// duplicate and the request is dropped (`0x00752566`); otherwise
+    /// `InsertIntoQueue`. QueueVoice itself then runs `PlayNextQueued`; the
+    /// stream owner follows `QueueEffect::advance_queue` for that call.
+    pub fn queue_voice(
+        &mut self,
+        request: VoxRequest<'_>,
+        type_override: Option<EvaType>,
+        priority_override: Option<EvaPriority>,
+    ) -> QueueEffect {
+        let mut effect = QueueEffect::default();
+        let event = request.event.to_ascii_uppercase();
+        if self.suspend_depth != 0 {
+            return effect;
+        }
+        if self
+            .current
+            .as_ref()
+            .is_some_and(|current| current.event == event)
+        {
+            return effect;
+        }
+        effect.advance_queue = true;
+        let eva_type = type_override.unwrap_or(request.eva_type);
+        let priority = priority_override.unwrap_or(request.priority);
+
+        if self.current.is_some() && eva_type == EvaType::Interrupt {
+            if let Some(current) = self.current.take() {
+                self.entry_states.insert(current.event, 2);
+            }
+            effect.stop_stream = true;
+            self.clear_all_queues();
+            // 0x00752550: only the gap is zeroed. The end time is the stop's
+            // own moment, which the stream owner reports through
+            // [`Self::stream_ended`] (Stop's channel callback `0x00407A60`
+            // stamps it), so the strict `now > end` gate starts the line on
+            // a later pump, not inside this QueueVoice.
+            self.gap_ms = 0;
+        }
+
+        let duplicate = self
+            .find_in_queues(&event)
+            .is_some_and(|node| node.eva_type == eva_type);
+        if !duplicate {
+            self.entry_states.insert(event.clone(), 1);
+            effect.inserted = self.insert_into_queue(VoxNode {
+                event,
+                eva_type,
+                priority,
+                seq: self.seq_counter % 100,
+            });
+        }
+        effect
+    }
+
+    /// `VoxClass::InsertIntoQueue @ 0x00752590`. Returns whether the node was
+    /// kept.
+    ///
+    /// `0x007525CF CMP EDI,3` → interrupt list `0xB1D3C8`;
+    /// `0x007525F4 CMP EDI,1` → `0xB1D450 + priority*0xC`;
+    /// `0x00752611 CMP ECX,3` (priority CRITICAL) → critical list `0xB1D3F0`;
+    /// else the pending slot `0xB1D4B8`, taken only if both the interrupt and
+    /// critical lists are empty (`0x00752629..0x0075263F`) and the slot is
+    /// empty or holds a **strictly lower** priority (`0x0075264A CMP
+    /// [EAX+0x14],ECX ; JGE discard`). Otherwise the new node is discarded
+    /// (entry state 2). A replaced pending node is overwritten at
+    /// `0x0075264F` without a free or a state write: its entry keeps state 1.
+    fn insert_into_queue(&mut self, node: VoxNode) -> bool {
+        self.seq_counter = self.seq_counter.wrapping_add(1);
+        match node.eva_type {
+            EvaType::QueuedInterrupt => {
+                self.interrupt_list.push_back(node);
+                true
+            }
+            EvaType::Queue => {
+                self.priority_lists[node.priority.list_index()].push_back(node);
+                true
+            }
+            _ if node.priority == EvaPriority::Critical => {
+                self.critical_list.push_back(node);
+                true
+            }
+            _ => {
+                let slot_free = self.interrupt_list.is_empty()
+                    && self.critical_list.is_empty()
+                    && self
+                        .pending
+                        .as_ref()
+                        .is_none_or(|pending| pending.priority < node.priority);
+                if slot_free {
+                    self.pending = Some(node);
+                    true
+                } else {
+                    self.entry_states.insert(node.event, 2);
+                    false
+                }
+            }
+        }
+    }
+
+    /// `VoxClass::FindInQueues @ 0x00752680`: critical list, pending slot, the
+    /// four priority lists (`0xB1D474` down to `0xB1D450`), interrupt list.
+    fn find_in_queues(&self, event: &str) -> Option<&VoxNode> {
+        self.critical_list
+            .iter()
+            .find(|node| node.event == event)
+            .or_else(|| self.pending.as_ref().filter(|node| node.event == event))
+            .or_else(|| {
+                self.priority_lists
+                    .iter()
+                    .rev()
+                    .find_map(|list| list.iter().find(|node| node.event == event))
+            })
+            .or_else(|| self.interrupt_list.iter().find(|node| node.event == event))
+    }
+
+    /// `VoxClass::RemoveFromQueues @ 0x00752A40`: every queued node of the
+    /// entry, wherever `FindInQueues` finds one (the lists and the pending
+    /// slot), is dropped; the current entry plays on.
+    pub fn remove_from_queues(&mut self, event: &str) {
+        let event = event.to_ascii_uppercase();
+        if self.find_in_queues(&event).is_some() {
+            self.entry_states.insert(event.clone(), 2);
+        }
+        self.critical_list.retain(|node| node.event != event);
+        if self
+            .pending
+            .as_ref()
+            .is_some_and(|node| node.event == event)
+        {
+            self.pending = None;
+        }
+        for list in &mut self.priority_lists {
+            list.retain(|node| node.event != event);
+        }
+        self.interrupt_list.retain(|node| node.event != event);
+    }
+
+    /// The dequeue half of `VoxClass::PlayNextQueued @ 0x00752760`.
+    ///
+    /// Gate: `StreamPlayer::IsPlaying() == 0` (`0x00752794`), `now >
+    /// end_time + gap` (`0x007527A1..0x007527CF`), `DAT_00B1D428 == 0`
+    /// (`0x007527D5`). Then the current entry is marked done
+    /// (`0x007527E2..0x007527F2`) and one node is taken in this order:
+    /// interrupt list (`0x007527F8`) → critical list (`0x00752835`) → pending
+    /// slot (`0x00752866`) → priority lists CRITICAL..LOW (`0x00752878`,
+    /// `0xB1D474` stepping `-0xC` to `0xB1D450`). Taking an interrupt or
+    /// critical node **frees the pending slot** (`0x00752824`/`0x00752855`).
+    ///
+    /// The caller tries to start the returned node and reports success with
+    /// [`Self::started`]; a failed `PlayFile` leaves nothing current and the
+    /// node is simply gone, as at `0x00752963 JZ`.
+    pub fn take_next(&mut self, now_ms: u64, stream_playing: bool) -> Option<VoxNode> {
+        if stream_playing {
+            return None;
+        }
+        if now_ms <= self.end_time_ms.saturating_add(self.gap_ms) {
+            return None;
+        }
+        if self.pause_depth != 0 {
+            return None;
+        }
+        if let Some(current) = self.current.take() {
+            self.entry_states.insert(current.event, 2);
+        }
+        let node = if let Some(node) = self.interrupt_list.pop_front() {
+            //752824 frees the superseded pending node without writing its
+            //event's +50. Node ownership and event state are independent.
+            self.pending = None;
+            Some(node)
+        } else if let Some(node) = self.critical_list.pop_front() {
+            //752855 has the same raw-free-only effect.
+            self.pending = None;
+            Some(node)
+        } else {
+            self.pending.take().or_else(|| {
+                self.priority_lists
+                    .iter_mut()
+                    .rev()
+                    .find_map(|list| list.pop_front())
+            })
+        };
+        if let Some(node) = &node {
+            //All selected lists join7528A7;7528E1 marks the entry done
+            //before filename lookup. A failed PlayFile leaves this value.
+            self.entry_states.insert(node.event.clone(), 2);
+        }
+        node
+    }
+
+    /// `0x0075296D..0x0075298E`: after `StreamPlayer::PlayFile` succeeded —
+    /// gap = 500 ms, the node becomes the current entry (state 0).
+    pub fn started(&mut self, node: VoxNode) {
+        self.entry_states.insert(node.event.clone(), 0);
+        self.gap_ms = INTER_LINE_GAP_MS;
+        self.end_time_ms = u64::MAX - INTER_LINE_GAP_MS;
+        self.current = Some(node);
+    }
+
+    /// The stream stopped at `now_ms`, by itself or through
+    /// `StreamPlayer::Stop` (`StreamPlayer::GetEndTime` stand-in: the
+    /// channel's done and stop callbacks `0x00407A30`/`0x00407A60` stamp
+    /// `+0x20` when the stream was playing or paused).
+    pub fn stream_ended(&mut self, now_ms: u64) {
+        self.end_time_ms = now_ms;
+    }
+
+    /// `VoxClass::ClearAllQueues @ 0x00752370`: the pending slot, the
+    /// interrupt and critical lists and the four priority lists; the current
+    /// entry is untouched.
+    pub fn clear_all_queues(&mut self) {
+        for node in self
+            .pending
+            .iter()
+            .chain(self.interrupt_list.iter())
+            .chain(self.critical_list.iter())
+            .chain(self.priority_lists.iter().flatten())
+        {
+            self.entry_states.insert(node.event.clone(), 2);
+        }
+        self.pending = None;
+        self.interrupt_list.clear();
+        self.critical_list.clear();
+        for list in &mut self.priority_lists {
+            list.clear();
+        }
+    }
+
+    /// `VoxClass::ResetAll @ 0x007535D0`: current entry done, `StreamPlayer::Stop`
+    /// (the caller's job — returns `true` when a line was current),
+    /// `ClearAllQueues`, then `DAT_00B1D428 = 0` and `DAT_00B1D3D8 = 0`. The
+    /// gap `0xB1D4D0` and the stream's end time stay as they stand.
+    pub fn reset_all(&mut self) -> bool {
+        let had_current = self.stop_all(true);
+        self.pause_depth = 0;
+        self.suspend_depth = 0;
+        had_current
+    }
+
+    ///7529A0 marks the current entry done and optionally clears waiting
+    ///queues. Unlike ResetAll7535D0, it preserves both nested depths.
+    pub(crate) fn stop_all(&mut self, clear_queues: bool) -> bool {
+        let had_current = self.current.is_some();
+        if let Some(current) = self.current.take() {
+            self.entry_states.insert(current.event, 2);
+        }
+        if clear_queues {
+            self.clear_all_queues();
+        }
+        had_current
+    }
+
+    /// `PauseEVA @ 0x007535B0` (`DAT_00B1D428 += 1`) / `UnpauseEVA @
+    /// 0x00753620` (`if (d != 0) { d -= 1; if (d < 0) d = 0; }`), one edge
+    /// per call. `GamePause::Enter @ 0x00406F00` / `Exit @ 0x00406F40` are
+    /// the callers.
+    pub fn set_paused(&mut self, paused: bool) {
+        if paused {
+            self.pause_depth += 1;
+        } else if self.pause_depth != 0 {
+            self.pause_depth = (self.pause_depth - 1).max(0);
+        }
+    }
+
+    /// `PlayNextQueued`'s `DAT_00B1D428 == 0` gate.
+    #[cfg(test)]
+    pub fn dequeue_allowed(&self) -> bool {
+        self.pause_depth == 0
+    }
+
+    /// `VoxClass::SuspendEVA @ 0x00753570`: `DAT_00B1D3D8 += 1`. Blocks
+    /// **queueing** (`QueueVoice` guard), not playback. Stock callers:
+    /// `NukeFlash::StartScreenFlash 0x0053B554`, `RadarClass::PlayRadarMovie
+    /// 0x006579C0`.
+    pub fn suspend(&mut self) {
+        self.suspend_depth += 1;
+    }
+
+    /// `VoxClass::ResumeEVA @ 0x00753580`: `if (d != 0) { d -= 1; if (d < 0)
+    /// d = 0; }`.
+    pub fn resume(&mut self) {
+        if self.suspend_depth != 0 {
+            self.suspend_depth = (self.suspend_depth - 1).max(0);
+        }
+    }
+
+    /// `VoxClass::PumpAndCheckActive @ 0x007529E0` after its `PlayNextQueued`:
+    /// stream playing, or any node in the interrupt/critical lists, the
+    /// pending slot or a priority list.
+    pub fn is_active(&self, stream_playing: bool) -> bool {
+        stream_playing || self.queued_count() > 0
+    }
+
+    /// Nodes waiting in any list or the pending slot.
+    pub fn queued_count(&self) -> usize {
+        self.interrupt_list.len()
+            + self.critical_list.len()
+            + usize::from(self.pending.is_some())
+            + self.priority_lists.iter().map(VecDeque::len).sum::<usize>()
+    }
+
+    /// The entry that is current (playing or inside its post-line gap).
+    pub fn current(&self) -> Option<&VoxNode> {
+        self.current.as_ref()
+    }
+    ///7532A0 asks the selected entry's state, not aggregate queue activity.
+    pub fn entry_done(&self, event: &str) -> bool {
+        self.entry_states
+            .get(&event.to_ascii_uppercase())
+            .copied()
+            .unwrap_or(2)
+            == 2
+    }
+
+    #[cfg(test)]
+    fn pending_event(&self) -> Option<&str> {
+        self.pending.as_ref().map(|node| node.event.as_str())
+    }
+}
+
+#[cfg(all(test, tests_audio))]
+#[path = "vox_opening_tests.rs"]
+mod opening_tests;
+
+// Original SetSide/GetFilename, read the stock way: Ares replaces those
+// hooks, and its own executed selection controls are covered by ares_eva
+// tests.
+#[cfg(all(test, tests_audio))]
+#[path = "eva_selection_tests.rs"]
+mod selection_tests;
+
+#[cfg(all(test, tests_audio))]
+mod tests {
+    use super::*;
+
+    fn req(event: &'static str, eva_type: EvaType, priority: EvaPriority) -> VoxRequest<'static> {
+        VoxRequest {
+            event,
+            eva_type,
+            priority,
+        }
+    }
+
+    // Stock evamd.ini rows used below (ini/evamd.ini):
+    // EVA_UnitLost STANDARD IMPORTANT; EVA_OurBaseIsUnderAttack STANDARD NORMAL;
+    // EVA_UnitReady / EVA_ConstructionComplete STANDARD LOW;
+    // EVA_LowPower QUEUE IMPORTANT; EVA_NewConstructionOptions QUEUE LOW;
+    // EVA_YouHaveLost STANDARD NORMAL; EVA_NuclearMissileLaunched STANDARD CRITICAL;
+    // EVA_BattleControlTerminated STANDARD CRITICAL (call-site type 2).
+    fn unit_lost() -> VoxRequest<'static> {
+        req("EVA_UnitLost", EvaType::Standard, EvaPriority::Important)
+    }
+    fn base_attack() -> VoxRequest<'static> {
+        req(
+            "EVA_OurBaseIsUnderAttack",
+            EvaType::Standard,
+            EvaPriority::Normal,
+        )
+    }
+    fn unit_ready() -> VoxRequest<'static> {
+        req("EVA_UnitReady", EvaType::Standard, EvaPriority::Low)
+    }
+    fn construction_complete() -> VoxRequest<'static> {
+        req(
+            "EVA_ConstructionComplete",
+            EvaType::Standard,
+            EvaPriority::Low,
+        )
+    }
+    fn low_power() -> VoxRequest<'static> {
+        req("EVA_LowPower", EvaType::Queue, EvaPriority::Important)
+    }
+    fn new_options() -> VoxRequest<'static> {
+        req(
+            "EVA_NewConstructionOptions",
+            EvaType::Queue,
+            EvaPriority::Low,
+        )
+    }
+
+    /// Radar6578F0 executed control: IncomingTransmission standard/critical,
+    /// suspend rejects new admission while its already queued line can play.
+    /// Selected state stays0 at end+500, becomes2 only at end+501 (752760).
+    #[test]
+    fn selected_radar_entry_completion_preserves_native_gap_and_suspend() {
+        let mut q = VoxQueue::new();
+        let incoming = req("EVA_IncomingTransmission", EvaType::Queue, EvaPriority::Low);
+        q.queue_voice(
+            incoming,
+            Some(EvaType::Standard),
+            Some(EvaPriority::Critical),
+        );
+        assert!(!q.entry_done(incoming.event));
+        q.suspend();
+        assert!(!q.queue_voice(unit_lost(), None, None).inserted);
+        let node = q
+            .take_next(1, false)
+            .expect("suspend affects admission, not dequeue");
+        assert_eq!(
+            (node.eva_type, node.priority),
+            (EvaType::Standard, EvaPriority::Critical)
+        );
+        q.started(node);
+        q.stream_ended(1_000);
+        assert!(q.take_next(1_500, false).is_none());
+        assert!(!q.entry_done(incoming.event));
+        assert!(q.take_next(1_501, false).is_none());
+        assert!(q.entry_done(incoming.event));
+        q.resume();
+        assert!(q.queue_voice(unit_lost(), None, None).inserted);
+    }
+
+    #[test]
+    fn selected_entry_done_is_independent_of_other_voices_and_failed_start() {
+        let mut q = VoxQueue::new();
+        assert!(q.entry_done("EVA_IncomingTransmission"));
+        q.queue_voice(low_power(), None, None);
+        assert!(q.is_active(false));
+        assert!(q.entry_done("EVA_IncomingTransmission"));
+        q.remove_from_queues("EVA_LowPower");
+        assert!(q.entry_done("EVA_LowPower"));
+        q.queue_voice(unit_lost(), None, None);
+        let _failed_play_file = q.take_next(1, false).unwrap();
+        assert!(
+            q.entry_done("EVA_UnitLost"),
+            "dequeue7528E1 precedes a failed physical start"
+        );
+    }
+    fn you_have_lost() -> VoxRequest<'static> {
+        req("EVA_YouHaveLost", EvaType::Standard, EvaPriority::Normal)
+    }
+    fn nuke_launched() -> VoxRequest<'static> {
+        req(
+            "EVA_NuclearMissileLaunched",
+            EvaType::Standard,
+            EvaPriority::Critical,
+        )
+    }
+
+    /// Start whatever is next at `now` and report its event.
+    fn play_next(q: &mut VoxQueue, now: u64) -> Option<String> {
+        let node = q.take_next(now, false)?;
+        let event = node.event.clone();
+        q.started(node);
+        Some(event)
+    }
+
+    /// `VoxClass::RemoveFromQueues @ 0x00752A40` frees every node
+    /// `FindInQueues` finds for the entry, wherever it waits; the current
+    /// line and other entries stay.
+    #[test]
+    fn remove_from_queues_drops_every_waiting_node_of_the_entry() {
+        let mut q = VoxQueue::new();
+        q.queue_voice(construction_complete(), None, None);
+        play_next(&mut q, 1);
+        let ready = |eva_type| req("EVA_ChronosphereReady", eva_type, EvaPriority::Important);
+        assert!(q.queue_voice(ready(EvaType::Standard), None, None).inserted);
+        assert!(q.queue_voice(ready(EvaType::Queue), None, None).inserted);
+        assert!(
+            q.queue_voice(ready(EvaType::QueuedInterrupt), None, None)
+                .inserted
+        );
+        assert!(q.queue_voice(low_power(), None, None).inserted);
+        assert_eq!(q.queued_count(), 4);
+
+        q.remove_from_queues("EVA_ChronosphereReady");
+
+        assert_eq!(q.queued_count(), 1);
+        assert_eq!(
+            q.current().map(|node| node.event.as_str()),
+            Some("EVA_CONSTRUCTIONCOMPLETE")
+        );
+        q.stream_ended(1_000);
+        assert_eq!(play_next(&mut q, 1_501).as_deref(), Some("EVA_LOWPOWER"));
+        assert_eq!(q.queued_count(), 0);
+    }
+
+    /// `InsertIntoQueue 0x0075264A`: the pending slot is replaced only by a
+    /// strictly higher priority; equal or lower is discarded.
+    #[test]
+    fn pending_slot_replacement_is_strict_priority() {
+        let mut q = VoxQueue::new();
+        // Occupy the stream so requests park in the pending slot.
+        q.queue_voice(construction_complete(), None, None);
+        assert_eq!(
+            play_next(&mut q, 1).as_deref(),
+            Some("EVA_CONSTRUCTIONCOMPLETE")
+        );
+
+        assert!(q.queue_voice(base_attack(), None, None).inserted);
+        assert_eq!(q.pending_event(), Some("EVA_OURBASEISUNDERATTACK"));
+        // NORMAL pending, IMPORTANT arrives: replaced; the base line never plays.
+        assert!(q.queue_voice(unit_lost(), None, None).inserted);
+        assert_eq!(q.pending_event(), Some("EVA_UNITLOST"));
+        // `0x0075264F` overwrites the slot: the replaced entry keeps state 1.
+        assert!(!q.entry_done("EVA_OurBaseIsUnderAttack"));
+        // IMPORTANT pending, NORMAL arrives: discarded.
+        assert!(!q.queue_voice(base_attack(), None, None).inserted);
+        assert_eq!(q.pending_event(), Some("EVA_UNITLOST"));
+        // Equal priority from a different entry: `JGE` discards it too.
+        assert!(
+            !q.queue_voice(
+                req(
+                    "EVA_OtherImportant",
+                    EvaType::Standard,
+                    EvaPriority::Important
+                ),
+                None,
+                None
+            )
+            .inserted
+        );
+        assert_eq!(q.queued_count(), 1);
+    }
+
+    /// A STANDARD line arriving while another plays is kept (pending slot),
+    /// not dropped, and plays after the gap — the M2.1 case.
+    #[test]
+    fn a_standard_line_waits_in_the_pending_slot_while_a_line_plays() {
+        let mut q = VoxQueue::new();
+        q.queue_voice(construction_complete(), None, None);
+        assert_eq!(
+            play_next(&mut q, 1).as_deref(),
+            Some("EVA_CONSTRUCTIONCOMPLETE")
+        );
+        assert!(q.queue_voice(unit_ready(), None, None).inserted);
+        assert!(q.take_next(2, true).is_none(), "stream still playing");
+        q.stream_ended(1_000);
+        assert_eq!(play_next(&mut q, 1_501).as_deref(), Some("EVA_UNITREADY"));
+    }
+
+    /// Each `Type=QUEUE` list is FIFO, the lists drain CRITICAL..LOW, and the
+    /// pending slot plays before any of them (`PlayNextQueued` order).
+    #[test]
+    fn queue_lists_are_fifo_per_priority_and_drain_after_the_pending_slot() {
+        let mut q = VoxQueue::new();
+        q.queue_voice(construction_complete(), None, None);
+        play_next(&mut q, 1);
+        // Two LOW queue lines, one IMPORTANT queue line, then a STANDARD one.
+        assert!(q.queue_voice(new_options(), None, None).inserted);
+        assert!(
+            q.queue_voice(
+                req("EVA_OtherLowQueue", EvaType::Queue, EvaPriority::Low),
+                None,
+                None
+            )
+            .inserted
+        );
+        assert!(q.queue_voice(low_power(), None, None).inserted);
+        assert!(q.queue_voice(unit_lost(), None, None).inserted);
+        assert_eq!(q.queued_count(), 4);
+
+        let mut order = Vec::new();
+        let mut now = 1_000;
+        for _ in 0..4 {
+            q.stream_ended(now);
+            now += INTER_LINE_GAP_MS + 1;
+            order.push(play_next(&mut q, now).unwrap());
+        }
+        assert_eq!(
+            order,
+            [
+                "EVA_UNITLOST",
+                "EVA_LOWPOWER",
+                "EVA_NEWCONSTRUCTIONOPTIONS",
+                "EVA_OTHERLOWQUEUE",
+            ]
+        );
+        assert!(!q.is_active(false));
+    }
+
+    /// `QueueVoice 0x00752566`: a queued node for the same entry with the same
+    /// type is a duplicate; a different type is not. The current entry is
+    /// refused outright (`iVar1 != DAT_00B1D4C4`), even inside its gap.
+    #[test]
+    fn duplicate_rule_matches_entry_and_type() {
+        let mut q = VoxQueue::new();
+        q.queue_voice(construction_complete(), None, None);
+        play_next(&mut q, 1);
+        assert!(q.queue_voice(low_power(), None, None).inserted);
+        assert!(
+            !q.queue_voice(low_power(), None, None).inserted,
+            "same entry, same type"
+        );
+        assert_eq!(q.queued_count(), 1);
+        // Same entry with an overridden type is a second node.
+        assert!(
+            q.queue_voice(low_power(), Some(EvaType::QueuedInterrupt), None)
+                .inserted
+        );
+        assert_eq!(q.queued_count(), 2);
+
+        // The current entry is refused while current, including during the gap.
+        assert!(!q.queue_voice(construction_complete(), None, None).inserted);
+        q.stream_ended(1_000);
+        assert!(q.take_next(1_200, false).is_none());
+        assert!(!q.queue_voice(construction_complete(), None, None).inserted);
+    }
+
+    /// "You have lost" (STANDARD NORMAL) arriving while "Unit lost" plays is
+    /// kept in the pending slot; a CRITICAL line goes to the critical list,
+    /// is never discarded, plays first and frees the pending slot.
+    #[test]
+    fn outcome_and_critical_lines_are_not_dropped_while_a_line_plays() {
+        let mut q = VoxQueue::new();
+        q.queue_voice(unit_lost(), None, None);
+        assert_eq!(play_next(&mut q, 1).as_deref(), Some("EVA_UNITLOST"));
+        assert!(q.queue_voice(you_have_lost(), None, None).inserted);
+        assert!(q.is_active(true));
+        q.stream_ended(3_000);
+        assert_eq!(play_next(&mut q, 3_501).as_deref(), Some("EVA_YOUHAVELOST"));
+
+        let mut q = VoxQueue::new();
+        q.queue_voice(unit_lost(), None, None);
+        play_next(&mut q, 1);
+        assert!(q.queue_voice(base_attack(), None, None).inserted);
+        assert!(q.queue_voice(nuke_launched(), None, None).inserted);
+        // With a critical node waiting, a new STANDARD line cannot take the slot.
+        assert!(!q.queue_voice(unit_ready(), None, None).inserted);
+        q.stream_ended(1_000);
+        assert_eq!(
+            play_next(&mut q, 1_501).as_deref(),
+            Some("EVA_NUCLEARMISSILELAUNCHED")
+        );
+        // `0x00752855`: the pending "base under attack" was freed with it.
+        assert_eq!(q.pending_event(), None);
+        assert!(!q.is_active(true) || q.queued_count() == 0);
+    }
+
+    /// `0x0075296D`: 500 ms after the line's end time before the next starts;
+    /// the compare is strict (`JBE` → wait when `now <= end + gap`).
+    #[test]
+    fn next_line_waits_five_hundred_ms_after_the_previous_ended() {
+        let mut q = VoxQueue::new();
+        q.queue_voice(construction_complete(), None, None);
+        play_next(&mut q, 1);
+        q.queue_voice(unit_ready(), None, None);
+        q.stream_ended(10_000);
+        assert!(q.take_next(10_499, false).is_none());
+        assert!(q.take_next(10_500, false).is_none(), "equality still waits");
+        assert!(q.take_next(10_501, false).is_some());
+    }
+
+    /// Type 2 while a line is current: stream stopped, every queue cleared,
+    /// gap zeroed, and the interrupt line starts at once. With an idle slot a
+    /// type-2 line routes like STANDARD and existing nodes survive.
+    #[test]
+    fn interrupt_cuts_only_when_a_line_is_current() {
+        let mut q = VoxQueue::new();
+        q.queue_voice(construction_complete(), None, None);
+        play_next(&mut q, 1);
+        q.queue_voice(low_power(), None, None);
+        q.queue_voice(unit_lost(), None, None);
+        let bct = req(
+            "EVA_BattleControlTerminated",
+            EvaType::Standard,
+            EvaPriority::Critical,
+        );
+        let effect = q.queue_voice(bct, Some(EvaType::Interrupt), None);
+        assert!(effect.stop_stream && effect.inserted);
+        assert_eq!(q.queued_count(), 1);
+        assert!(q.current().is_none());
+        // Stop stamps the end time (`0x00407A60`) and the gap is zero: the
+        // strict compare holds the line for the rest of that millisecond.
+        q.stream_ended(2);
+        assert!(q.take_next(2, false).is_none());
+        assert_eq!(
+            play_next(&mut q, 3).as_deref(),
+            Some("EVA_BATTLECONTROLTERMINATED")
+        );
+
+        let mut q = VoxQueue::new();
+        q.queue_voice(low_power(), None, None);
+        let effect = q.queue_voice(unit_lost(), Some(EvaType::Interrupt), None);
+        assert!(!effect.stop_stream && effect.inserted);
+        assert_eq!(q.queued_count(), 2, "idle slot: nothing is cleared");
+        assert_eq!(q.pending_event(), Some("EVA_UNITLOST"));
+    }
+
+    /// Pausing stops the queue from advancing until every pause is lifted
+    /// (`DAT_00B1D428`, a depth with a floor of 0), and `ResetAll` zeroes it.
+    #[test]
+    fn pausing_suspends_the_eva_queue_until_every_pause_is_lifted() {
+        let mut q = VoxQueue::new();
+        q.queue_voice(construction_complete(), None, None);
+        q.set_paused(true);
+        q.set_paused(true);
+        assert!(q.take_next(1, false).is_none());
+        q.set_paused(false);
+        assert!(q.take_next(1, false).is_none());
+        q.set_paused(false);
+        assert!(q.dequeue_allowed());
+        // An unmatched resume never drives the counter negative.
+        q.set_paused(false);
+        q.set_paused(true);
+        assert!(!q.dequeue_allowed());
+
+        q.reset_all();
+        assert!(q.dequeue_allowed());
+        assert_eq!(q.queued_count(), 0);
+    }
+
+    /// `ResetAll @ 0x007535D0` zeroes both depths but not the gap: a line
+    /// cut by the reset still holds the next one 500 ms past the stop.
+    #[test]
+    fn reset_keeps_the_gap_after_the_stopped_line() {
+        let mut q = VoxQueue::new();
+        q.queue_voice(construction_complete(), None, None);
+        play_next(&mut q, 1);
+        assert!(q.reset_all());
+        q.stream_ended(1_000);
+        q.queue_voice(unit_ready(), None, None);
+        assert!(q.take_next(1_500, false).is_none());
+        assert_eq!(play_next(&mut q, 1_501).as_deref(), Some("EVA_UNITREADY"));
+    }
+
+    /// `SuspendEVA` (`0xB1D3D8`) blocks queueing, not playback.
+    #[test]
+    fn suspend_blocks_queueing_but_not_dequeue() {
+        let mut q = VoxQueue::new();
+        q.queue_voice(low_power(), None, None);
+        q.suspend();
+        assert!(!q.queue_voice(unit_lost(), None, None).inserted);
+        assert_eq!(play_next(&mut q, 1).as_deref(), Some("EVA_LOWPOWER"));
+        q.resume();
+        q.resume();
+        assert!(q.queue_voice(unit_lost(), None, None).inserted);
+    }
+}
+
+#[cfg(all(test, tests_audio))]
+#[path = "ares_eva_tests.rs"]
+mod ares_eva_tests;

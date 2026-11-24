@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "2304 HSV byte inputs: every hue at nine saturation/value pairs; not all 256^3 inputs",
+  "assumptions": [
+    "ECX points to three HSV bytes; one stack argument points to writable three-byte RGB output",
+    "fresh emulator per case; destination guards and unchanged source checked",
+    "pure integer leaf; no runtime global initialization or floating-point assumptions required",
+    "caller input selection, ramp modulation, display packing and GPU output are outside this comparison"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "HSV_To_RGB": "0x00517440"
+  },
+  "payload_sha256": "e22f9f5f3b208f7c3a1c0878a78be461487b3ce755aabf6b2002cf44f448d624"
+}

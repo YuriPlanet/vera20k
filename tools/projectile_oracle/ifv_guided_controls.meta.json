@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Thirty-one expanded original guided-flight controls before coordinate commit",
+  "assumptions": [
+    "Full original4668BD..467B7A executes, including reached HomingTrack5B20F0, native target getters, Cell lookups and floor. Each row starts from the same original Bullet constructor/configure state and native physical HoverMissile/AAHeatSeeker2 reader setup in guided_step.create.",
+    "Physical RULESMD, optional LANGRULE, MPBattleMD and Hills layer hashes and constructor initializers are recorded under initial. The shared create fixture is not the full Rules Process chronology; guided ROT60 speed102 is independently bounded.",
+    "Incoming signed XYZ, binary64 velocity, counters, latch, maximum speed and binary-frame/native-ID are supplied. Native type overrides run the full BulletType reader. Mapped flat level6 cells, null source and an Aircraft-shaped target with original vtable7E22A4 and supplied XYZ are fixture inputs, not a native Aircraft lifecycle claim.",
+    "Target-null controls use the native zero-coordinate fallback; query order, cached target/old coordinate locals and raw closing accumulator bits are retained. Safety controls bound old-height499/500/501 for SafetyAltitude500.",
+    "Original x87 state is53-bit/truncate0E7F. No Rust/fixed-point expectation is used; no world commit, collision effect, renderer, launch or scheduler claim."
+  ],
+  "substitutions": [
+    "Inherited BulletReader supplies physical lexical INI caches, allocation/delete/CRT TLS/archive services. Observation hooks record original calls/state and reject unexpected RNG; no guided instruction or callee is replaced."
+  ],
+  "entry_points": {
+    "bullet_ctor": "0x00466380",
+    "configure": "0x004664C0",
+    "guided_step": "0x004668BD",
+    "homing": "0x005B20F0",
+    "contact": "0x00467032",
+    "precommit_boundary": "0x00467B7A",
+    "proximity_setup": "0x004E1130",
+    "bullet_type_reader": "0x0046BEE0",
+    "aircraft_vtable_writer": "0x00413D87"
+  },
+  "payload_sha256": "cca27f4670e3f37ab72d8e36b9de72f2122472f58531ff94aafdab7643900394"
+}

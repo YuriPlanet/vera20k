@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Project original MissionAttack observations for production Rust comparisons.",
+  "assumptions": [
+    "Projection only: input coordinates and expected results are copied from the separately executed original MissionAttack packet; no Rust values or calculated golden outcomes contribute."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "projected_original_approach": "0x004D5690"
+  },
+  "source_sha256": "a5b1ca7758825e05277090649990b0f7a5692acdd0b58043cf72c6314539edb1",
+  "payload_sha256": "4e6d384311db298d536a30921021a1fa40ae6baa8c7cbcda00ba3dbdca5bbf48"
+}

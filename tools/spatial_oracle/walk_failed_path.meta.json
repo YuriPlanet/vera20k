@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Infantry51AA40 accepted Cell setter then full Walk75AEC0: 18 supplied FindPath failure rows, one actual FindPath4D3920 raw-zone rejection row and four original-wrapper/AStar-NULL-result rows (Clear/Water current-cell contrasts); failure/cancellation consequences and connected520F40..520FAF effective-Move restart prefix. No AStar search failure, full InfantryAI/Doing, successful movement or Rust parity claim.",
+  "assumptions": [
+    "Fixture derived from walk_first_path. Original Infantry/Unit/Cell vtable bytes copied; Cell+48 explicitly selects original486840. Supplied ordinary non-Jumpjet Infantry/House/type, human Doing0, alive, no transport/bunker/radio/links, Type+D94false, Type MovementZone4, no TarCom, no paid head. All unused actor/type storage is zero. Foot+684 byte255 matches Foot constructor4D338F and selects ordinary4DBDF0 ILoco destination coordinates; Foot+6B7 supplied true as in accepted setter fixture.",
+    "CurrentXYZ2624,2624,0; destination Cell11,10 has original Cell center2944,2688,0. Two ordinary flat cells; Cell+44=-1, bridge flags0, original Cell vtable,104 level constant and FPCW0E7F. Map width8/height8/bounds0,0,8,8, raw path-group records289 and zone4 lookup[1,2]. Default current/destination group0; different_zone assigns destination group1. Original56D100/56D230 execute; no map loading, zone rebuild or pathfinding-core proof.",
+    "Initial FootNavComNULL; backing path2,3,4,5/reference9,8 and NavQueue count0/storage TARGET,CELL supplied. Actual setter clears first path word. Actual Walk constructor and referencecount1 model owned ILoco. Initial logical movement timer50/5 and blocked timer40/6; frame100, Rules+1768=22, PathDelay double0.01, CloseEnough128 with325/326/327/512 contrasts. Retry counter dword10/1/0/256/FFFFFFFF supplied before setter; no counter-lifetime/domain/load claim beyond these inputs. Raw actor+418 gate false with true contrast; raw+3D5 true with false contrast; +68Afalse avoids exhausted-path sound branch.",
+    "The astar_null rows initially supply all90 land-speed floats1.0 at89EA40 (flat LandType0/SpeedType0 clear-cell premise), all42 Infantry sequence counts6 at Type+E3C and health100, and execute original direction initializer49F2F0. Other original fixture state is retained, including Object+74/dirty+80/type+235zero, no Team/TarCom and ordinary human/MZ4. Near Cell11,10 and far Cell13,10 are same-zone flat destinations, each allocated alongside currentCell10,10. Original Mark0/1, Infantry+500=51DAF0, DoAction, current-cell CanEnter, WalkStop, NULL setters and human queued-Guard callback execute. Capture full state immediately before original FindPath failure return and again after outer Process. No marked-object occupancy/redraw lifetime, adjacent-bridge/actorOnBridge contrast, nonhuman/Team failure, full AStar core or generic mission/action proof.",
+    "Two added current_water rows change only current Cell+EC to LandType2 and its Foot speed at89EA40+18*4 to0.0, matching active rulesmd[Water]Foot=0%. Original674000 uses land-name table839D68, whose third pointer81BAE8 is Water; Foot key81DBD4 writes float0 in each24h-byte land record. Original CanEnter51C7AB..51C7D3 indexes Cell+EC and Type+67C and returns7 for this zero speed; original51DAF0 therefore retains Infantry+6DC=1 rather than the Clear controls0. Near/far XYZ, cancellation and queued-Guard results are captured unchanged. Supplied current terrain does not prove bridge-collapse publication, marked-object lifetime or the later520FF1 consumer.",
+    "Non-restart rows run Process at frames100,108,109, except astar_null rows use frame100 only. They preserve resulting FootNavCom separately from cleared Walk destination; later direct Process calls are not complete game turns. Mission15/noTarCom contrast executes the original failure callback cancellation; no universal mission claim.",
+    "Restart rows run failed Process then original520F40 until520FAF in the SAME fixture, advancing frames100/101/102. Effective Move2 (including currentNONE/queuedMove2) reaches original same-pointer Infantry/Foot setter and speed1.0; mission1 contrast skips the prefix. No gameplay state injected between Process and prefix. Real caller order: Infantry51BC9F calls Foot4DA530 with Process4DA877, then surviving51BF7B calls520F40. Intervening shooting/animation/alive gates and520FAF onward remain outside this bounded continuation. No unconditional retry or full Doing delivery claim."
+  ],
+  "substitutions": [
+    "In the first 18 rows FindPath4D3920 returns EAX0 with original stdcall12 cleanup, leaving actor/path/map state unchanged. The native_find_path/different_zone row executes original4D3920: its raw-zone predicate rejects before AStar, then Process rechecks the zone and cancels through the original NULL setter. That row has no gameplay callable substitution; it proves a supplied raw-zone disconnect, not a bridge-collapse producer, AStar failure or its side effects. Every reached caller/zone/receiver/distance/timer/Stop/restart setter remains original.",
+    "In the four astar_null rows only4CBBA0 returns EAX0 with original stdcall24 cleanup and no path/core writes. Actual4D3920 wrapper failure effects therefore precede the original Process failure continuation. This is a supplied NULL core-result boundary, not proof of an AStar search producingNULL. It deliberately demonstrates why the first18 caller-only rows cannot model complete original FindPath failure: +500 always Stops Walk before returning, so the caller retained destination pointer now observes zero and cancelsNavCom. The far wrapper also clears target and queuesGuard5 before returning; current mission2 is preserved.",
+    "OS InterlockedIncrement/Decrement IAT imports update one pointed count and return it with original stdcall4 cleanup; no other callable substituted beyond the explicitly row-selected path/core seams. Restart prefix ends at520FAF before its next instruction; each subsequent Process gets a fresh ABI call frame."
+  ],
+  "entry_points": {
+    "setter": "0x0051AA40",
+    "foot_setter": "0x004D94B0",
+    "walk_constructor": "0x0075AA90",
+    "process": "0x0075AEC0",
+    "find_path": "0x004D3920",
+    "astar_result_seam": "0x004CBBA0",
+    "startup_directions": "0x0049F2F0",
+    "infantry_failure_receiver": "0x0051DAF0",
+    "foot_zone_predicate": "0x004D3810",
+    "can_reach_zone": "0x0056D100",
+    "failure_receiver": "0x00521DD0",
+    "mission_receiver": "0x004DC030",
+    "stop": "0x0075ADA0",
+    "restart_prefix": "0x00520F40",
+    "restart_endpoint": "0x00520FAF"
+  },
+  "payload_sha256": "f7247e7adcad4f331ec84bfb37ef5da9cbc82a824585ac9af5da32b902c8c7f6"
+}

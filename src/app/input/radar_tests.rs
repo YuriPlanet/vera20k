@@ -1,0 +1,551 @@
+//! `RadarClass::Action @ 0x006539D0` through the production What_Action port,
+//! on retail rules.
+
+use super::*;
+use crate::app::input::context_order::OrderModifier;
+use crate::app::types::OrderMode;
+use crate::rules::ruleset::RuleSet;
+use crate::sim::world::Simulation;
+
+fn scene() -> Option<(Simulation, RuleSet)> {
+    let battle = crate::rules::retail_ini_fixture::retail_battle_rules()?;
+    let (sim, rules, _) = Simulation::walk_cell_input_test_scene_with(battle.rules, false);
+    Some((sim, rules))
+}
+
+fn spawn(sim: &mut Simulation, rules: &RuleSet, type_id: &str, (rx, ry): (u16, u16)) -> u64 {
+    let id = sim
+        .spawn_object(type_id, "Local", rx, ry, 0, rules)
+        .expect(type_id);
+    sim.resolve_type_handles(rules);
+    id
+}
+
+/// The radar asks without mouse-over (`0x00653C9A`) and with no key held.
+fn query<'a>(sim: &'a Simulation, rules: &'a RuleSet, selected: &'a [u64]) -> ActionQuery<'a> {
+    ActionQuery {
+        sim,
+        rules: Some(rules),
+        overlays: None,
+        viewer: sim.interner().get("Local"),
+        selected,
+        modifier: OrderModifier::Normal,
+        force_move_key: false,
+        force_fire_key: false,
+        order_mode: OrderMode::Move,
+        planning: false,
+        mouse_over: false,
+        full_visibility: false,
+    }
+}
+
+fn planning<'a>(sim: &'a Simulation, rules: &'a RuleSet, selected: &'a [u64]) -> ActionQuery<'a> {
+    ActionQuery {
+        planning: true,
+        ..query(sim, rules, selected)
+    }
+}
+
+fn ctrl<'a>(sim: &'a Simulation, rules: &'a RuleSet, selected: &'a [u64]) -> ActionQuery<'a> {
+    ActionQuery {
+        modifier: OrderModifier::ForceFire,
+        force_fire_key: true,
+        ..query(sim, rules, selected)
+    }
+}
+
+/// A tracked object's pick: its Cell and the Techno What_Action sees.
+fn dot(sim: &Simulation, id: u64) -> ((u16, u16), Option<HoverObject>) {
+    let entity = sim.entities().get(id).expect("tracked object");
+    (
+        (entity.position.rx(), entity.position.ry()),
+        crate::app::input::entity_pick::hover_object_by_id(sim, id, "Local"),
+    )
+}
+
+/// Open ground inside the scene's playfield, beside the tanks.
+const GROUND: (u16, u16) = (11, 5);
+/// A river Cell, which a tank cannot enter.
+const RIVER: (u16, u16) = (9, 5);
+
+/// With a selection, a radar click is the selection's order at the radar
+/// Cell: the best object's What_Action there (`0x00653C88..0x00653CA1`) is
+/// Move, which the keep table keeps, so the press leaves the view where it is
+/// and the release hands Move to BandBox_LeftUp (`0x00653D58`).
+#[test]
+fn a_selected_tank_moves_to_the_radar_cell() {
+    let Some((mut sim, rules)) = scene() else {
+        return;
+    };
+    let tank = spawn(&mut sim, &rules, "MTNK", (12, 5));
+    assert_eq!(
+        action(&query(&sim, &rules, &[tank]), None, GROUND, None),
+        Some(RadarAction::Move)
+    );
+    assert_eq!(
+        RadarAction::Move.cursor(false, false),
+        CursorId::MinimapMove
+    );
+}
+
+/// The radar asks the Cell's What_Action without mouse-over
+/// (`0x00653C9A`), so Can_Enter_Cell answers it (`0x00700B51..0x00700B7E`):
+/// over the river the tank's radar action is NoMove, which the keep table
+/// keeps and the cursor draws as the barred mini, where the tactical cursor
+/// (mouse-over 1) shows Move.
+#[test]
+fn the_radar_asks_can_enter_cell() {
+    let Some((mut sim, rules)) = scene() else {
+        return;
+    };
+    let tank = spawn(&mut sim, &rules, "MTNK", (12, 5));
+    let selected = [tank];
+    assert_eq!(
+        action(&query(&sim, &rules, &selected), None, RIVER, None),
+        Some(RadarAction::NoMove)
+    );
+    assert_eq!(
+        RadarAction::NoMove.cursor(false, false),
+        CursorId::MinimapNoMove
+    );
+    let tactical = ActionQuery {
+        mouse_over: true,
+        ..query(&sim, &rules, &selected)
+    };
+    assert_eq!(
+        tactical.selection_action(RIVER, None).0,
+        Some(CursorFeedbackKind::Move)
+    );
+}
+
+/// With nothing selected and nothing armed there is no action
+/// (`0x00653B91..0x00653BD3` exits to `0x00653D62`): the cursor is the plain
+/// arrow mini and the press recentres.
+#[test]
+fn without_a_selection_the_radar_only_recentres() {
+    let Some((mut sim, rules)) = scene() else {
+        return;
+    };
+    let tank = spawn(&mut sim, &rules, "MTNK", (12, 5));
+    assert_eq!(action(&query(&sim, &rules, &[]), None, GROUND, None), None);
+    let (cell, object) = dot(&sim, tank);
+    assert_eq!(action(&query(&sim, &rules, &[]), None, cell, object), None);
+}
+
+/// VERA minimap beacons: in Place Beacon mode with nothing selected, the
+/// option turns the radar's empty answer into the beacon action; off, the
+/// click only recentres as in gamemd. A selection's own action and an armed
+/// superweapon keep the click.
+#[test]
+fn minimap_beacons_answer_only_the_empty_radar_click() {
+    let Some((mut sim, rules)) = scene() else {
+        return;
+    };
+    let empty = action(&query(&sim, &rules, &[]), None, GROUND, None);
+    assert_eq!(with_minimap_beacon(empty, false, true, true, false), None);
+    assert_eq!(
+        with_minimap_beacon(empty, true, true, true, false),
+        Some(RadarAction::PlaceBeacon)
+    );
+    assert_eq!(
+        RadarAction::PlaceBeacon.cursor(true, false),
+        CursorId::Beacon
+    );
+    assert_eq!(with_minimap_beacon(empty, true, false, true, false), None);
+    assert_eq!(with_minimap_beacon(empty, true, true, true, true), None);
+    let tank = spawn(&mut sim, &rules, "MTNK", (12, 5));
+    let moved = action(&query(&sim, &rules, &[tank]), None, GROUND, None);
+    assert_eq!(
+        with_minimap_beacon(moved, true, true, false, false),
+        Some(RadarAction::Move)
+    );
+}
+
+/// Over a tracked object the radar asks the object's What_Action
+/// (`0x00653C72..0x00653C83`). The lone selected tank over its own dot
+/// answers NoMove — its Self arm leaves 0, which the Unit tail turns into
+/// NoMove for an object its player orders (`0x007403EB..0x00740414`) — and
+/// the keep table keeps it, so that press does not recentre. Another own
+/// tank's dot answers Select, which it drops: that press recentres.
+#[test]
+fn own_dots_split_on_the_keep_table() {
+    let Some((mut sim, rules)) = scene() else {
+        return;
+    };
+    let tank = spawn(&mut sim, &rules, "MTNK", (12, 5));
+    let other = spawn(&mut sim, &rules, "MTNK", (4, 6));
+    let selected = [tank];
+    let (cell, object) = dot(&sim, tank);
+    assert_eq!(
+        action(&query(&sim, &rules, &selected), None, cell, object),
+        Some(RadarAction::NoMove)
+    );
+    let (cell, object) = dot(&sim, other);
+    assert_eq!(
+        action(&query(&sim, &rules, &selected), None, cell, object),
+        None
+    );
+}
+
+/// A Crazy Ivan's forced Attack over a bombed object is NoIvanBomb
+/// (`0x0051EB24..0x0051EB75`; `ivan_already_bombed` in
+/// `tools/spatial_oracle/allied_object_action.json`). It shares NoMove's
+/// cursor row, not its keep: the radar drops it, where it keeps the
+/// unforced answer over the same dot, NoMove.
+#[test]
+fn a_forced_ivan_over_a_bombed_dot_has_no_radar_action() {
+    let Some((mut sim, rules)) = scene() else {
+        return;
+    };
+    let ivan = spawn(&mut sim, &rules, "IVAN", (12, 5));
+    let tank = sim
+        .spawn_object("HTNK", "Enemy", 13, 7, 0, &rules)
+        .expect("HTNK");
+    sim.resolve_type_handles(&rules);
+    sim.bomb_attach_for_test(ivan, Some(tank), &rules);
+    sim.bomb_list_update_for_test(&rules);
+    sim.bomb_list_update_for_test(&rules);
+    let selected = [ivan];
+    let forced = ActionQuery {
+        modifier: OrderModifier::ForceFire,
+        force_fire_key: true,
+        ..query(&sim, &rules, &selected)
+    };
+    let (cell, object) = dot(&sim, tank);
+    assert_eq!(
+        forced.selection_action(cell, object).0,
+        Some(CursorFeedbackKind::NoIvanBomb)
+    );
+    assert_eq!(action(&forced, None, cell, object), None);
+    assert_eq!(
+        action(&query(&sim, &rules, &selected), None, cell, object),
+        Some(RadarAction::NoMove)
+    );
+}
+
+/// Ctrl over a shrouded Cell: Techno What_Action (`0x00700600`) answers an
+/// armed pillbox's forced Attack before any shroud test and the Building
+/// wrapper (`0x00447540`) keeps it, so the radar keeps it and its release
+/// fires as the tactical click does, while the tactical cursor's shrouded
+/// switch draws it as Move (`0x004AB35A`). A tank's Foot wrapper
+/// (`0x004DDDE0`) turns it into Move, unless the sandbox shows every Cell,
+/// and so it does for a deactivated tank the player cannot order
+/// (`0x00700C40`), whose forced Attack Techno answers with the Cell in range.
+#[test]
+fn ctrl_over_shroud_keeps_a_buildings_attack() {
+    let Some((mut sim, rules)) = scene() else {
+        return;
+    };
+    let pillbox = spawn(&mut sim, &rules, "GAPILL", (12, 5));
+    let tank = spawn(&mut sim, &rules, "MTNK", (4, 6));
+    let deactivated = spawn(&mut sim, &rules, "MTNK", (12, 6));
+    sim.entity_mut_for_test(deactivated)
+        .unwrap()
+        .deactivated
+        .set_for_test(true);
+    *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(16, 16);
+    let (pillboxes, tanks) = ([pillbox], [tank]);
+    assert_eq!(
+        action(&ctrl(&sim, &rules, &[deactivated]), None, GROUND, None),
+        Some(RadarAction::Move)
+    );
+    assert!(!ctrl(&sim, &rules, &pillboxes).cell_visible(GROUND));
+    assert_eq!(
+        action(&ctrl(&sim, &rules, &pillboxes), None, GROUND, None),
+        Some(RadarAction::Attack)
+    );
+    assert_eq!(
+        action(&ctrl(&sim, &rules, &tanks), None, GROUND, None),
+        Some(RadarAction::Move)
+    );
+    let tactical = ActionQuery {
+        mouse_over: true,
+        ..ctrl(&sim, &rules, &pillboxes)
+    };
+    let kind = tactical.selection_action(GROUND, None).0.unwrap();
+    assert_eq!(
+        crate::app::input::cursor::shrouded_cell_feedback(kind, tactical.lead_moves_to_shroud()),
+        CursorFeedbackKind::Move
+    );
+    let revealed = ActionQuery {
+        full_visibility: true,
+        ..ctrl(&sim, &rules, &tanks)
+    };
+    assert_eq!(
+        action(&revealed, None, GROUND, None),
+        Some(RadarAction::Attack)
+    );
+}
+
+/// Foot's Cell wrapper asks IsShrouded (`0x00586360`) at the Cell centre
+/// raised to its bridge deck (`0x004DDDE0`), for the click as
+/// for the cursor: the river bridge Cell (9,6) is level 0 with its deck four
+/// levels up, so the test reads Cell (7,4), not (9,6).
+#[test]
+fn the_foot_shroud_test_reads_the_bridge_deck() {
+    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let (mut sim, rules, soldier) = Simulation::walk_cell_input_test_scene_with(battle.rules, true);
+    let local = sim.interner().get("Local").unwrap();
+    let mapped_but = |sim: &mut Simulation, hidden: (u16, u16)| {
+        let fog = sim.fog_mut_for_test();
+        *fog = crate::sim::vision::FogState::new(16, 16);
+        fog.reveal_cells_for_owner(
+            local,
+            (0..16)
+                .flat_map(|y| (0..16).map(move |x| (x, y)))
+                .filter(|&cell| cell != hidden),
+        );
+    };
+    mapped_but(&mut sim, (7, 4));
+    assert!(
+        sim.foot_cell_shroud_action(local, soldier, (9, 6), &rules)
+            .is_some()
+    );
+    mapped_but(&mut sim, (9, 6));
+    assert_eq!(
+        sim.foot_cell_shroud_action(local, soldier, (9, 6), &rules),
+        None
+    );
+}
+
+/// The keep table reads the action, not its cursor row: NoMove (2) stays
+/// and NoIvanBomb (0x36) goes although both draw row 19, and the selection,
+/// deployment, repair and other tactical-only actions go too. Over a Cell
+/// the player has not mapped the shrouded switch (`0x004AB35A`) sends
+/// Attack (5) to the Move row and Harvest, Enter and Sabotage to row 0,
+/// and GuardArea (0x1A) keeps row 22 in both switches (`0x004AB4D9`,
+/// `0x004AB3A1`).
+#[test]
+fn the_keep_table_reads_the_action_not_its_row() {
+    assert_eq!(
+        RadarAction::kept(CursorFeedbackKind::Invalid),
+        Some(RadarAction::NoMove)
+    );
+    for kind in [
+        CursorFeedbackKind::NoIvanBomb,
+        CursorFeedbackKind::Select,
+        CursorFeedbackKind::Deploy,
+        CursorFeedbackKind::RepairAction(true),
+        CursorFeedbackKind::IvanBomb,
+        CursorFeedbackKind::Grind,
+        CursorFeedbackKind::NoEnter,
+        CursorFeedbackKind::WeaponDemolish,
+    ] {
+        assert_eq!(RadarAction::kept(kind), None, "{kind:?}");
+    }
+    for kind in [
+        CursorFeedbackKind::EnemyUnit,
+        CursorFeedbackKind::EnemyOutOfRange,
+    ] {
+        let attack = RadarAction::kept(kind).unwrap();
+        assert_eq!(attack.cursor(false, false), CursorId::MinimapAttack);
+        assert_eq!(attack.cursor(true, false), CursorId::MinimapMove);
+    }
+    for shrouded in [false, true] {
+        assert_eq!(
+            RadarAction::GuardArea.cursor(shrouded, false),
+            CursorId::MinimapGuardArea
+        );
+        // `0x0070F0B0` turns Move and Attack into 0x3E/0x3F ahead of either
+        // switch, and both draw row 71, whose mini set is the attack one.
+        assert_eq!(
+            RadarAction::AttackMove.cursor(shrouded, false),
+            CursorId::MinimapAttack
+        );
+    }
+    for action in [
+        RadarAction::Harvest,
+        RadarAction::Enter,
+        RadarAction::Sabotage,
+    ] {
+        assert_eq!(action.cursor(true, false), CursorId::DefaultMini);
+    }
+    // The shrouded NoMove takes row 18 when the first selected type has
+    // MoveToShroud (`0x004AB3EC..0x004AB42B`).
+    assert_eq!(
+        RadarAction::NoMove.cursor(true, true),
+        CursorId::MinimapMove
+    );
+    assert_eq!(
+        RadarAction::NoMove.cursor(true, false),
+        CursorId::MinimapNoMove
+    );
+}
+
+/// The armed superweapon's index answers before the selection
+/// (`0x00653B3A..0x00653C63`): Nuke (index 0) with nothing selected; Iron
+/// Curtain (index 1) maps to an action the keep table drops, even with a
+/// selection; the Chronosphere's index 3 is not listed, so the selection
+/// answers, and with none there is no action.
+#[test]
+fn the_armed_superweapon_index_answers_first() {
+    let Some((mut sim, rules)) = scene() else {
+        return;
+    };
+    let tank = spawn(&mut sim, &rules, "MTNK", (12, 5));
+    let none = query(&sim, &rules, &[]);
+    let selected = [tank];
+    let some = query(&sim, &rules, &selected);
+    assert_eq!(
+        action(&none, Some(0), GROUND, None),
+        Some(RadarAction::SuperWeapon(RadarSuperWeapon::Nuke))
+    );
+    assert_eq!(
+        RadarAction::SuperWeapon(RadarSuperWeapon::Nuke).cursor(false, false),
+        CursorId::NukeMini
+    );
+    assert_eq!(action(&some, Some(1), GROUND, None), None);
+    assert_eq!(action(&none, Some(3), GROUND, None), None);
+    // Installed Ares asks the redirected Chronosphere first (hook 0x653B3A):
+    // its Chronosphere cursor has no radar frames, so `0x653CA6` leaves no
+    // action, selection or not. That holds in a game read the Ares way
+    // (`RuleSet::ares_form`).
+    assert_eq!(
+        action(&some, Some(3), GROUND, None),
+        (!rules.ares_form()).then_some(RadarAction::Move)
+    );
+}
+
+/// Ares answers an allowed launch with its own action (10033EB0, 10034D00),
+/// which `0x4AC20C` launches as the armed type. A Lightning Storm at index 0
+/// whose `Cursor=` is Nuke draws the Nuke answer's frames, but that stock
+/// answer would launch no Lightning Storm, so the radar keeps the Ares launch.
+#[test]
+fn a_super_weapon_drawing_another_index_cursor_keeps_its_radar_launch() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "Hills.mmx",
+        &crate::rules::ini_parser::IniFile::from_str(
+            "[NukeSpecial]\nType=LightningStorm\nCursor=Nuke\n",
+        ),
+    ) else {
+        return;
+    };
+    let (sim, rules, _) = Simulation::walk_cell_input_test_scene_with(battle.rules, false);
+    assert_eq!(rules.super_weapon_index("NukeSpecial"), Some(0));
+    let launch = action(&query(&sim, &rules, &[]), Some(0), GROUND, None);
+    assert!(
+        matches!(
+            launch,
+            Some(RadarAction::AresSuperWeapon { launch: true, .. })
+        ),
+        "{launch:?}"
+    );
+}
+
+/// In Planning Mode (`0x00637AA0`) the selection walk 0x00639DA0 gates the
+/// action (`0x00653CC9..0x00653CD1`), a superweapon's included: a tank may
+/// take waypoints, so its radar Move stands; an aircraft in the selection
+/// may not, and the radar has no action.
+#[test]
+fn planning_mode_needs_a_selection_that_takes_waypoints() {
+    let Some((mut sim, rules)) = scene() else {
+        return;
+    };
+    let tank = spawn(&mut sim, &rules, "MTNK", (12, 5));
+    let harrier = spawn(&mut sim, &rules, "ORCA", (3, 3));
+    assert_eq!(
+        action(&planning(&sim, &rules, &[tank]), None, GROUND, None),
+        Some(RadarAction::Move)
+    );
+    let mixed = [tank, harrier];
+    assert_eq!(
+        action(&planning(&sim, &rules, &mixed), None, GROUND, None),
+        None
+    );
+    assert_eq!(
+        action(&planning(&sim, &rules, &mixed), Some(0), GROUND, None),
+        None
+    );
+}
+
+/// The radar maps the armed index, not the type's `Action=`, and
+/// SPECIAL_PLACE names the first type whose `Action=` is the release's action
+/// (`SuperWeaponTypeClass::FindFirstOfAction @ 0x006CEEB0`, against
+/// `CCINIClass::ReadAction @ 0x00474EE0`'s case-insensitive name). In retail
+/// rules every type is the first of its action, so both releases launch the
+/// armed type: the tactical one with its own action, the radar's with each
+/// kept index's.
+#[test]
+fn retail_special_place_launches_the_armed_type() {
+    use crate::app::input::commands::special_place_type;
+    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &battle.rules;
+    let mut kept = 0;
+    for (index, section) in rules.super_weapon_order.iter().enumerate() {
+        let own = rules
+            .super_weapon(section)
+            .and_then(|super_weapon| super_weapon.action.as_deref())
+            .unwrap_or("None");
+        let armed = Some(section.as_str());
+        assert_eq!(
+            special_place_type(rules, section, PlaceAction::Stock(own)),
+            armed
+        );
+        if let Armed::Kept(super_weapon) = armed_action(index) {
+            let radar = PlaceAction::Stock(super_weapon.action_name());
+            assert_eq!(special_place_type(rules, section, radar), armed);
+            kept += 1;
+        }
+    }
+    assert_eq!(kept, 7);
+}
+
+/// `RadarClass::Action` writes no cursor with the left button held
+/// (`0x006539D8`), with the radar not online (`0x006539E6`) or on the empty
+/// pick (`0x00653AC6`), so the last one stays; off the image it sets the
+/// normal arrow (`0x00653EE2`).
+#[test]
+fn the_radar_keeps_the_cursor_where_its_action_writes_none() {
+    let nuke = || Some(CursorId::NukeMini);
+    assert_eq!(written_cursor(true, true, true, nuke), RadarCursor::Kept);
+    assert_eq!(written_cursor(false, false, true, nuke), RadarCursor::Kept);
+    assert_eq!(
+        written_cursor(false, true, true, || None),
+        RadarCursor::Kept
+    );
+    assert_eq!(written_cursor(false, true, false, nuke), RadarCursor::Arrow);
+    assert_eq!(
+        written_cursor(false, true, true, nuke),
+        RadarCursor::Mini(CursorId::NukeMini)
+    );
+}
+
+/// SPECIAL_PLACE names the first type whose `Action=` is the release's action
+/// (`0x004AC20C`, `FindFirstOfAction @ 0x006CEEB0`), not the armed type: the
+/// radar's index 0 is Nuke whatever type it lists. With the Ares superweapons
+/// on (hook `0x4AC20C`, 10034BF0) an Ares action names the armed type, a stock
+/// one only when it is the armed type's `Action=`.
+#[test]
+fn special_place_names_the_first_type_of_the_release_action() {
+    use crate::app::input::commands::special_place_type;
+    let read = |ares_key: &str| {
+        let ini = format!(
+            "[SuperWeaponTypes]\n0=Storm\n1=Bomb\n2=Bomb2\n\
+            [Storm]\nType=LightningStorm\nAction=LightningStorm\n\
+            [Bomb]\nType=Nuke\nAction=Nuke\n\
+            [Bomb2]\nType=Nuke\nAction=nuke\n{ares_key}"
+        );
+        RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(&ini)).unwrap()
+    };
+    let nuke = PlaceAction::Stock(RadarSuperWeapon::Nuke.action_name());
+    let paradrop = PlaceAction::Stock(RadarSuperWeapon::ParaDrop.action_name());
+    let stock = read("");
+    assert!(!stock.ares_form());
+    assert_eq!(special_place_type(&stock, "Storm", nuke), Some("Bomb"));
+    assert_eq!(special_place_type(&stock, "Bomb2", nuke), Some("Bomb"));
+    assert_eq!(special_place_type(&stock, "Storm", paradrop), None);
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let ares = read("SW.Deferment=1\n");
+    assert!(ares.ares_form());
+    assert_eq!(special_place_type(&ares, "Bomb2", nuke), Some("Bomb2"));
+    assert_eq!(special_place_type(&ares, "Storm", nuke), None);
+    assert_eq!(
+        special_place_type(&ares, "Storm", PlaceAction::Ares),
+        Some("Storm")
+    );
+}

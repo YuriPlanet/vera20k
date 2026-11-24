@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Read-only original ScoldSound reader and Foot latch constructor audit.\n\nRun with PYTHONPATH=. and the shared native environment. Default --check is\nread-only; explicit --write records this corpus. See foot_scold_latch.md.\n",
+  "assumptions": [
+    "Foot constructor prefix after original parent call executes with valid supplied object storage initiallyA5; original XOR EBX at4D31EF and all reached scalar/vector initialization through4D33B4 execute.",
+    "Physical SOUNDMD Defaults/MenuScold and actual SoundList key populate native7510D0 registry using source-order linked/CRC INI caches. Registry contains only MenuScold, so returned index0 is fixture-relative; retained identity is the evidence.",
+    "Original Rules AudioVisual block66ABCD..66AC18 executes its ReadString528A10, FindByName7514D0 and+700 store against each applicable physical Hills layer. Initial-1 comes from Rules constructor666027 EBP default. Missing/empty/unknown name controls preserve the prior binding.",
+    "Capstone literal memory-field scan includes wider writes covering68A and nearby LEA formations. Its limits are explicit: other class offsets and generic raw stream deserialization require owner/caller interpretation."
+  ],
+  "substitutions": [
+    "INI caches are lexically prepared from physical text; no full physical INI/archive loading. Existing allocator/free/TLS seams are inherited.",
+    "AudioIndex::FindSample4015C0 records native reader sample names and supplies local sample indices; no sample data, device output or audible parity claim.",
+    "The raw-load controls supply a serialized token and 0x6F0-byte Infantry body through IStream::Read; original Abstract load, Here_I_Am and Infantry size leaf execute. Original no-init Foot constructor then executes. Intervening dynamic Foot/Infantry Load suffixes are instruction-audited, not emulated in these controls.",
+    "The optional sound guard controls record entry to 750920 and return without audio playback. Guard, arguments and latch-clear execute unchanged. A nonzero imported/supplied byte is not proof of a normal-game arming producer.",
+    "Paid-tail controls supply reached interior branch state, positive/zero applied speed and lifecycle flags; original Foot speed setter executes. Fresh fixture virtual slots Mark+124, predicate+37C, SetCoords+1B4 and SetHeight+1CC observe request arguments/latch then return. These controls establish tail ordering/clears, not the callbacks effects or preceding complete Walk movement.",
+    "Dead fresh-head controls enter75BC2A with Object+90 false and motion initially zero. Original motion write and75BC36 guard reach75C1F1 without clearing the supplied latch; no facing/speed callback executes and ordinary dead-owner reachability is not claimed.",
+    "Drive/Ship controls enter after the exhausted-path alive gate or at the first-rejection sound fragment. They stop immediately after exhausted latch clear or before first-rejection retry continuation; the latter retains the byte and may recurse before a later clear. Full retry routing is not emulated here.",
+    "No latch writer, native ScoldSound reader return or original executable instruction is replaced."
+  ],
+  "entry_points": {
+    "foot_ctor_after_parent": "0x004D31EF",
+    "latch_init": "0x004D33B4",
+    "rules_ctor_default_store": "0x00666027",
+    "scold_read": "0x0066ABCD",
+    "read_string": "0x00528A10",
+    "sound_registry": "0x007510D0",
+    "sound_find": "0x007514D0",
+    "active_walk_wrapper": "0x0075AC80",
+    "walk_scold_guard": "0x0075B085",
+    "abstract_load": "0x00410380",
+    "infantry_object_size": "0x005232F0",
+    "noinit_foot_ctor": "0x004D3540",
+    "foot_checksum_byte": "0x004DBCFE",
+    "crc_byte_helper": "0x004A1CA0",
+    "walk_no_head_tail": "0x0075BCE3",
+    "walk_arrival_mark": "0x0075BF64",
+    "walk_predicate_tail": "0x0075BF85",
+    "walk_same_cell_tail": "0x0075C1FB",
+    "walk_common_tail": "0x0075C1E7",
+    "walk_post_percell": "0x0075BE42",
+    "walk_fresh_head_tail": "0x0075BC2A",
+    "drive_exhausted_guard": "0x004B2E47",
+    "drive_first_guard": "0x004B3AA1",
+    "ship_exhausted_guard": "0x006A2497",
+    "ship_first_guard": "0x006A30F0"
+  },
+  "payload_sha256": "fdb5f1d3e1897ef184d8c87c31c18c20f0a626e69afb088e8189b2a89f83cef8"
+}

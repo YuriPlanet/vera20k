@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original ordinary N1 converter for three stock sidebar palettes and full-byte-domain synthetic PAL.",
+  "assumptions": [
+    "Allocated source/output buffers; established RGB565 shifts11/5/0 and losses3/2/3.",
+    "N1 sidebar converter87F6CC; radar usesB0FBF8 from72F510 with side2 RADARYURI.PAL.",
+    "Source index0 is not suppressed by table construction;4912B0 owns skipped stores."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "pal_expand": "0x0072AE3E",
+    "N1_convert": "0x004BBB00"
+  },
+  "payload_sha256": "cf176ae12282fa44b01036b729b1b17a399f3a48738135ec6d85ab5587d60c71"
+}

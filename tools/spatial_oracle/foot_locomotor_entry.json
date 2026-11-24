@@ -1,0 +1,530 @@
+[
+  {
+    "coord": [
+      0,
+      0
+    ],
+    "enabled": false,
+    "family": "drive",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007E7EB0"
+  },
+  {
+    "coord": [
+      0,
+      0
+    ],
+    "enabled": true,
+    "family": "drive",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007E7EB0"
+  },
+  {
+    "coord": [
+      11,
+      10
+    ],
+    "enabled": false,
+    "family": "drive",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007E7EB0"
+  },
+  {
+    "coord": [
+      11,
+      10
+    ],
+    "enabled": true,
+    "family": "drive",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007E7EB0"
+  },
+  {
+    "coord": [
+      -32768,
+      32767
+    ],
+    "enabled": false,
+    "family": "drive",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007E7EB0"
+  },
+  {
+    "coord": [
+      -32768,
+      32767
+    ],
+    "enabled": true,
+    "family": "drive",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007E7EB0"
+  },
+  {
+    "coord": [
+      0,
+      0
+    ],
+    "enabled": false,
+    "family": "ship",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F2D8C"
+  },
+  {
+    "coord": [
+      0,
+      0
+    ],
+    "enabled": true,
+    "family": "ship",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F2D8C"
+  },
+  {
+    "coord": [
+      11,
+      10
+    ],
+    "enabled": false,
+    "family": "ship",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F2D8C"
+  },
+  {
+    "coord": [
+      11,
+      10
+    ],
+    "enabled": true,
+    "family": "ship",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F2D8C"
+  },
+  {
+    "coord": [
+      -32768,
+      32767
+    ],
+    "enabled": false,
+    "family": "ship",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F2D8C"
+  },
+  {
+    "coord": [
+      -32768,
+      32767
+    ],
+    "enabled": true,
+    "family": "ship",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F2D8C"
+  },
+  {
+    "coord": [
+      0,
+      0
+    ],
+    "enabled": false,
+    "family": "walk",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F69F8"
+  },
+  {
+    "coord": [
+      0,
+      0
+    ],
+    "enabled": true,
+    "family": "walk",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F69F8"
+  },
+  {
+    "coord": [
+      11,
+      10
+    ],
+    "enabled": false,
+    "family": "walk",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F69F8"
+  },
+  {
+    "coord": [
+      11,
+      10
+    ],
+    "enabled": true,
+    "family": "walk",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F69F8"
+  },
+  {
+    "coord": [
+      -32768,
+      32767
+    ],
+    "enabled": false,
+    "family": "walk",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F69F8"
+  },
+  {
+    "coord": [
+      -32768,
+      32767
+    ],
+    "enabled": true,
+    "family": "walk",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F69F8"
+  },
+  {
+    "coord": [
+      0,
+      0
+    ],
+    "enabled": false,
+    "family": "hover",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007EACFC"
+  },
+  {
+    "coord": [
+      0,
+      0
+    ],
+    "enabled": true,
+    "family": "hover",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007EACFC"
+  },
+  {
+    "coord": [
+      11,
+      10
+    ],
+    "enabled": false,
+    "family": "hover",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007EACFC"
+  },
+  {
+    "coord": [
+      11,
+      10
+    ],
+    "enabled": true,
+    "family": "hover",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007EACFC"
+  },
+  {
+    "coord": [
+      -32768,
+      32767
+    ],
+    "enabled": false,
+    "family": "hover",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007EACFC"
+  },
+  {
+    "coord": [
+      -32768,
+      32767
+    ],
+    "enabled": true,
+    "family": "hover",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007EACFC"
+  },
+  {
+    "coord": [
+      0,
+      0
+    ],
+    "enabled": false,
+    "family": "fly",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007E89F4"
+  },
+  {
+    "coord": [
+      0,
+      0
+    ],
+    "enabled": true,
+    "family": "fly",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007E89F4"
+  },
+  {
+    "coord": [
+      11,
+      10
+    ],
+    "enabled": false,
+    "family": "fly",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007E89F4"
+  },
+  {
+    "coord": [
+      11,
+      10
+    ],
+    "enabled": true,
+    "family": "fly",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007E89F4"
+  },
+  {
+    "coord": [
+      -32768,
+      32767
+    ],
+    "enabled": false,
+    "family": "fly",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007E89F4"
+  },
+  {
+    "coord": [
+      -32768,
+      32767
+    ],
+    "enabled": true,
+    "family": "fly",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007E89F4"
+  },
+  {
+    "coord": [
+      0,
+      0
+    ],
+    "enabled": false,
+    "family": "jumpjet",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007ECD68"
+  },
+  {
+    "coord": [
+      0,
+      0
+    ],
+    "enabled": true,
+    "family": "jumpjet",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007ECD68"
+  },
+  {
+    "coord": [
+      11,
+      10
+    ],
+    "enabled": false,
+    "family": "jumpjet",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007ECD68"
+  },
+  {
+    "coord": [
+      11,
+      10
+    ],
+    "enabled": true,
+    "family": "jumpjet",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007ECD68"
+  },
+  {
+    "coord": [
+      -32768,
+      32767
+    ],
+    "enabled": false,
+    "family": "jumpjet",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007ECD68"
+  },
+  {
+    "coord": [
+      -32768,
+      32767
+    ],
+    "enabled": true,
+    "family": "jumpjet",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007ECD68"
+  },
+  {
+    "coord": [
+      0,
+      0
+    ],
+    "enabled": false,
+    "family": "rocket",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F0B1C"
+  },
+  {
+    "coord": [
+      0,
+      0
+    ],
+    "enabled": true,
+    "family": "rocket",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F0B1C"
+  },
+  {
+    "coord": [
+      11,
+      10
+    ],
+    "enabled": false,
+    "family": "rocket",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F0B1C"
+  },
+  {
+    "coord": [
+      11,
+      10
+    ],
+    "enabled": true,
+    "family": "rocket",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F0B1C"
+  },
+  {
+    "coord": [
+      -32768,
+      32767
+    ],
+    "enabled": false,
+    "family": "rocket",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F0B1C"
+  },
+  {
+    "coord": [
+      -32768,
+      32767
+    ],
+    "enabled": true,
+    "family": "rocket",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F0B1C"
+  },
+  {
+    "coord": [
+      0,
+      0
+    ],
+    "enabled": false,
+    "family": "teleport",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F5000"
+  },
+  {
+    "coord": [
+      0,
+      0
+    ],
+    "enabled": true,
+    "family": "teleport",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F5000"
+  },
+  {
+    "coord": [
+      11,
+      10
+    ],
+    "enabled": false,
+    "family": "teleport",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F5000"
+  },
+  {
+    "coord": [
+      11,
+      10
+    ],
+    "enabled": true,
+    "family": "teleport",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F5000"
+  },
+  {
+    "coord": [
+      -32768,
+      32767
+    ],
+    "enabled": false,
+    "family": "teleport",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F5000"
+  },
+  {
+    "coord": [
+      -32768,
+      32767
+    ],
+    "enabled": true,
+    "family": "teleport",
+    "result": 0,
+    "slot_1c": "0x0055ABF0",
+    "vtable": "0x007F5000"
+  }
+]

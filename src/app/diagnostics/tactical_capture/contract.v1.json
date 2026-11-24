@@ -1,0 +1,22 @@
+{
+  "schema_version": "vera20k.tactical-capture-contract.v1",
+  "absolute_max_child_timeout_seconds": 900,
+  "environment_denylist": [
+    "RA2_QUICKPLAY",
+    "RA2_DEV_SKIRMISH_SHELL",
+    "RA2_DEBUG_SPAWN_UNITS",
+    "RA2_DISABLE_LAT",
+    "RA2_ENABLE_LAT",
+    "RA2_DEBUG_CAMEO_PALETTES",
+    "RA2_DEBUG_BRIDGE_RENDER_BUCKETS",
+    "RA2_FORCE_TIB3_TO_TIB01",
+    "RA2_TIB_ID_OFFSET",
+    "RA2_FORCE_TIB_IMAGE",
+    "RA2_DEBUG_MOUSE_CURSOR_SHEET",
+    "RA2_NORMAL_COUNT",
+    "RA2_NORMALS",
+    "RA2_QUEUE_FRAME_MS",
+    "RA2_DIR",
+    "RA2_DUMP_SHROUD"
+  ]
+}

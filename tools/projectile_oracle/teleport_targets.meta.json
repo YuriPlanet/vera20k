@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original LoseTarget468430 and PointerExpired4684E0; retained departure Cell through guided AI",
+  "assumptions": [
+    "Ten supplied Unit poses cover marked ground, high threshold, unmarked high, placement scope, sentinel, negative fraction, signed cell alias, missing slot and signed16 wrap. Native getters, Map5657A0 and both Bullet callbacks execute unchanged.",
+    "Original Object CRT entries initialize the height constants. Sparse flat level6 cells, Unit7F5C70 vtable and incoming Bullet fields are supplied; no Unit constructor, native Teleport Process, map loader or full Rules Process is executed.",
+    "Source equals target in callback controls. LoseTarget may change only +10C; PointerExpired additionally clears +B0. No RNG or timer draws/writes occur in these bodies.",
+    "One guided continuation moves the Unit only after native LoseTarget. Source is absent, ID100/frame1, XYZ2688,5248,800 and velocity1,0,0 are supplied. Original4668BD..467B7A observes the old Cell after the Unit moves to4224,6016,624; no world commit/damage/deletion claim.",
+    "Selected physical HoverMissile/AAHeatSeeker2 readers and Object/Bullet/Cell/Homing initializers are inherited from existing owners. MissileLauncher uses the same stock BulletType; Rust also tests its final retail projection. x87 PC53/chop0E7F."
+  ],
+  "substitutions": [
+    "Existing guided_step BulletReader supplies INI cache/archive, allocation and OS/CRT boundaries. Map allocation and retained Unit state are supplied. No getter, target-repair, map lookup or guided result is substituted; hooks observe and reject RNG."
+  ],
+  "entry_points": {
+    "lose_target": "0x00468430",
+    "pointer_expired": "0x004684E0",
+    "unit_coords": "0x005F65A0",
+    "unit_high": "0x004DE620",
+    "map_cell": "0x005657A0",
+    "guided_ai": "0x004668BD",
+    "homing": "0x005B20F0",
+    "precommit_stop": "0x00467B7A"
+  },
+  "replay_command": "python -m tools.projectile_oracle.ifv_lifecycle_controls --teleport-targets",
+  "payload_sha256": "b4cd0f0389ca60aada9d9c5c2f6614ebc2c1df9cccb7254c975c55d94864ad9f"
+}

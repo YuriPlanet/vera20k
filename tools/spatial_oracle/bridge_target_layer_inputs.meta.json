@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Physical empty FV passive admission and GreatestThreat wrapper boundary.\n\nReuses the declared partial physical FV/weapon preparation from ifv_fire_coord.\nFull CanAcquireTarget7091D0 and PassiveAcquireGate709290 execute. Original\nUnit743190/Foot4D9920 wrappers stop at GreatestThreat6F8DF0; no scan/pick proof.\nSource Unit lifecycle, human House, Guard mission and absent target are supplied.\n",
+  "assumptions": [
+    "Physical FV layers omit both selected keys; original constructor/readers retain CanPassiveAquire true and DistributedFire false.",
+    "Source lifecycle/House/mission are supplied, actual Unit vtable/getters/weapon selection execute. No callbacks in the claimed gates/wrappers are replaced.",
+    "Inherited physical selected preparation and its archive/CRT/allocator boundaries are those of ifv_fire_coord; not complete Unit construction or native map loading.",
+    "Gate and wrapper calls enter separately; no complete AI tick, GreatestThreat traversal, candidate evaluation or retained-target assignment is executed."
+  ],
+  "substitutions": [
+    "Inherited supplied lexical INI caches, allocation/TLS/archive boundaries; explicit human House and Guard/no-target source state."
+  ],
+  "entry_points": {
+    "unit_type_ctor": "0x007470D0",
+    "can_passive_aquire_reader": "0x0071446C",
+    "distributed_fire_reader": "0x00714850",
+    "can_acquire": "0x007091D0",
+    "passive_gate": "0x00709290",
+    "unit_wrapper": "0x00743190",
+    "foot_wrapper": "0x004D9920",
+    "stop_before_greatest_threat": "0x006F8DF0"
+  },
+  "payload_sha256": "dbc1499c43e17cabb99f23b9adec2876908efd2216f9a48796e3d033ad16d04b"
+}

@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original retained MissileROTVar/MissileSafetyAltitude ctor and reader slice.\n\nFull Rules665650 executes; only the two original General scalar reads execute\nper pass. Cached INI loading and unrelated type discovery are supplied. Invalid\nfloat strings are observed as native failed scans, not assigned host values.\n",
+  "assumptions": [
+    "Full original RulesClass665650 constructor executes. The sequential passes execute only66EC1B..66EC62; no full General or Process chronology is claimed.",
+    "Before each call the same retained Rules object supplies both reader defaults; no scalar output is computed or installed by the host.",
+    "Main sequence supplies lexical General cache strings after ASCII trimming/empty omission, matching the production loader contract. Physical INI parsing/archive IO is not executed.",
+    "Separate raw_empty_cache deliberately retains empty cached values and is not a physical empty-INI-value claim.",
+    "ReadDouble scans into a binary32 result then widens to binary64; percent multiplication, failed scans and overflow execute natively. Results are preserved as bits to represent non-finite values without JSON NaN/Infinity.",
+    "Malformed nonempty/empty cached float outputs expose the unchanged scanner destination in this caller/cache fixture. They are observations, not universal invalid-input defaults for the unexecuted full General body.",
+    "The pinned minimum-subnormal decimal control differs from Rust parsing. It bounds the finite-normal-input production comparison; no custom subnormal or failed-scan emulation is supplied.",
+    "The inherited fresh helper constructs an unrelated OrderProbe Weapon before Rules; it is not read by the selected slice. Runtime native ID/RNG calls inside the reader slice are rejected.",
+    "Native x87 PC53/chop0E7F; no original code patches, scalar reader hooks or supplied arithmetic results."
+  ],
+  "substitutions": [
+    "Inherited BulletReader supplies exact signed-CRC INI cache, allocator/CRT TLS/archive boundaries and a fixture Color fallback; none of those other behaviors are claimed."
+  ],
+  "entry_points": {
+    "rules_constructor": "0x00665650",
+    "guided_controls_reader": "0x0066EC1B",
+    "end_exclusive": "0x0066EC62",
+    "read_double": "0x005283D0",
+    "read_int": "0x005276D0",
+    "crt_float_scanner_init": "0x007C8F5E"
+  },
+  "payload_sha256": "2035f814870bdebc29c449e6f2880a59c4cd3bd351b54dd00b586fe3e87d221f"
+}

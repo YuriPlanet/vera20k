@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original concrete ground-bridge selector57CCF0, root walkers and propagation.\n\nSynthetic overlay strips isolate identity/store/callback order. Reuses the\nordinary-bridge fixture and declared Recalc/occupant/navigation/display seams.\nPhysical map, actual occupants and ordinary firing have separate joined witnesses.\n",
+  "assumptions": [
+    "Synthetic finite strips, every concrete family overlay plus adjacent rejected sentinels, all3 input width positions",
+    "Original endpoint scans and untagged575EE0 traversal execute; no CellTags supplied",
+    "Original rectangle5868A0 enumeration; successful bounded allocation"
+  ],
+  "substitutions": [
+    "47D2B0/487A10/56C510/586990 record calls and return; no live objects or graph proof here",
+    "47FDE0/47FB90 zero display rectangles and6551C0/6D2790 sinks"
+  ],
+  "entry_points": {
+    "selector": "0x0057CCF0",
+    "ns_root": "0x0057CF60",
+    "ew_root": "0x0057D530",
+    "ns_propagation": "0x0057E7A0",
+    "ew_propagation": "0x0057ED00"
+  },
+  "payload_sha256": "111a7b9f6c4ef427bd0702618b8adbe41cbdc126e8d4a277edb2a389123b552a"
+}

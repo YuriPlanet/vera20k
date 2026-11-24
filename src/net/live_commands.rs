@@ -1,0 +1,1252 @@
+//! One match's live command session, in one of two modes chosen once at
+//! install ([`relay_clock`], handed to `LiveCommandSession::new`):
+//!
+//! - LAN, and an online match with one human that the relay does not order,
+//!   run the protocol-2 Queue_AI visit from ProcessNetwork6475F0 through
+//!   SendOutList649CA0 and Wait_For_Players648710. Direct UDP replaces retail
+//!   LAN's IPX sockets. The wait dialog, cancel and timeout recovery belong to
+//!   `app::match_runtime::network_match`.
+//! - Every other online match runs `sequenced`: it assembles the relay's
+//!   sealed timeline, turns relay departures and unreadable batches into EXIT
+//!   or EVENT_REMOVEPLAYER records, and ends the match on relay absence,
+//!   watcher silence or a relay record this build cannot read.
+//!
+//! Simulation owns the commands; this session keeps the transport, packet
+//! exchange and the current post-Logic visit while the client services its UI.
+
+use std::io;
+use std::net::SocketAddrV4;
+use std::num::NonZeroU32;
+
+mod sequenced;
+mod startup;
+mod timing;
+pub use sequenced::{
+    CommandDeliveryTrace, DeliveryCounters, MatchConnectionChange, MatchPauseChange,
+    MatchSpeedChange, MultiplayerPauseStatus, NarrativeHold, SequencedError, SequencedTiming,
+};
+pub use startup::{StartupAgreement, StartupError};
+/// The share of each second the relay lets a player's simulation take,
+/// which online render pacing leaves it.
+pub use vera20k_relay_protocol::SUSTAIN_PERCENT;
+/// The relay's turn length, which online playout follows.
+pub use vera20k_relay_protocol::turn_frames;
+/// The relay link measurements a match's network report reads.
+pub use vera20k_relay_protocol::{ClientLinkStats, LinkState};
+
+use crate::sim::world::{NetworkCommandQueues, NetworkQueueContext, NetworkQueuePass};
+
+use super::command_exchange::{
+    CommandExchange, CommandExchangeError, CommandPeerProgress, FrameWait, RetainedSendProgress,
+    SendPoll,
+};
+use super::lockstep::NetworkSendPolicy;
+use super::reliable::{Delivery, LanConnections, RetryTiming};
+use super::udp::{LanUdpTransport, OrderingCertificate, UdpServiceReport};
+
+// Ordinary648060 passes180 for either transport mode.
+// Both are6C8C40 wall-clock buckets (timeGetTime>>4), not simulation frames.
+const ORDINARY_PROBE_INTERVAL: i32 = 180;
+//648930..649529 handles at most64 private messages before checking progress.
+const WAIT_RECEIVE_BUDGET: usize = 64;
+
+/// ProcessNetwork647919..647954 indexes the current GameMode's row at
+/// 837340. The relay changes physical routing, not this timing selection.
+/// Source: original gamemd.exe instructions and the row bytes. VERA: only a
+/// WOL match can run on the relay's clock ([`relay_clock`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LiveCommandMode {
+    Lan,
+    Wol,
+}
+
+/// Local presentation only; these facts never affect the committed clock or
+/// another participant's progress. A disconnected player keeps their world.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetworkRecoveryStatus {
+    Reconnecting,
+    CatchingUp { frames: u32 },
+}
+
+/// One GameMode's row of Wait_For_Players' timing table at 837340 (16 bytes
+/// a GameMode: LAN is row 3, WOL row 4), in 6C8C40 wall-clock buckets. The
+/// initial wait (647919..647954) passes +0, +4 and +C; the ordinary one
+/// (64800E..648067) passes 180, max(3 * response time, +8) and +C.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WaitTiming {
+    /// +0: the initial wait's probe interval.
+    pub initial_probe: i32,
+    /// +4: the initial wait's dialog delay.
+    pub initial_dialog: i32,
+    /// +8: the ordinary wait's dialog-delay floor.
+    pub dialog_floor: i32,
+    /// +C: the timeout.
+    pub timeout: i32,
+}
+
+impl LiveCommandMode {
+    pub const fn wait_timing(self) -> WaitTiming {
+        match self {
+            Self::Lan => WaitTiming {
+                initial_probe: 60,
+                initial_dialog: 900,
+                dialog_floor: 420,
+                timeout: 2400,
+            },
+            Self::Wol => WaitTiming {
+                initial_probe: 120,
+                initial_dialog: 1800,
+                dialog_floor: 720,
+                timeout: 7200,
+            },
+        }
+    }
+}
+
+/// VERA: the lobby's certificate when the relay orders this match, which then
+/// runs on the relay's clock (send rate 1, `SequencedSession`). Install calls
+/// this once, before the start agreement hashes the timing, and hands the
+/// answer to [`LiveCommandSession::new`]. Only a WOL match runs there, and
+/// only when its certificate orders it (`OrderingCertificate::relay_orders`).
+/// `houses` counts the original admission; a certificate naming another number
+/// of sources never starts. `SequencedSession::new` checks which sources.
+pub fn relay_clock(
+    mode: LiveCommandMode,
+    transport: &LanUdpTransport,
+    houses: usize,
+) -> Result<Option<OrderingCertificate>, StartupError> {
+    let Some(bytes) = transport
+        .ordering_certificate()
+        .filter(|_| mode == LiveCommandMode::Wol)
+    else {
+        return Ok(None);
+    };
+    let certificate =
+        OrderingCertificate::parse(&bytes).map_err(|_| StartupError::InvalidAdmission)?;
+    if certificate.sources_mask.count_ones() as usize != houses {
+        return Err(StartupError::ClockRoster);
+    }
+    Ok(Some(certificate).filter(OrderingCertificate::relay_orders))
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum LiveCommandError {
+    #[error(transparent)]
+    Sequenced(#[from] SequencedError),
+    #[error("invalid local House {0}")]
+    InvalidLocalHouse(i8),
+    #[error("invalid remote House {0}")]
+    InvalidRemoteHouse(i32),
+    #[error("remote House {house_id} has no direct endpoint: {endpoint}")]
+    UnboundPeer {
+        house_id: i32,
+        endpoint: SocketAddrV4,
+    },
+    #[error("MaxAhead must be nonnegative, got {0}")]
+    InvalidMaxAhead(i32),
+    #[error("expected network frame {expected}, got {actual}")]
+    FrameSequence { expected: u32, actual: u32 },
+    #[error("post-Logic values changed while network frame {0} was retained")]
+    ChangedFrame(u32),
+    #[error("network frame exchange has already failed")]
+    Failed,
+    #[error(transparent)]
+    Startup(#[from] StartupError),
+    #[error(transparent)]
+    Exchange(#[from] CommandExchangeError),
+}
+
+#[derive(Debug, Clone, Copy)]
+enum FramePhase {
+    InitialBarrier {
+        entered_at: u32,
+        response_time_at_entry: u32,
+        last_probe: u32,
+    },
+    Sending {
+        entered_at: u32,
+        response_time_at_entry: u32,
+        last_probe: u32,
+    },
+    Waiting {
+        entered_at: u32,
+        response_time_at_entry: u32,
+        last_probe: u32,
+    },
+    Finished(NetworkQueuePass),
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LiveWaitKind {
+    Initial,
+    Ordinary,
+}
+
+/// Diagnostic projection of the retained visit. It does not distinguish
+/// backpressure causes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LiveCommandPhase {
+    InitialBarrier,
+    Sending,
+    Waiting,
+    Finished,
+    Failed,
+}
+
+/// The current648710 invocation, borrowed as facts by the app's existing
+/// dialog/recovery owner. Recovery restarts countdowns without changing entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LiveWaitInfo {
+    pub mode: LiveCommandMode,
+    pub kind: LiveWaitKind,
+    pub entered_at: u32,
+    ///64800E..64803A samples this before ordinary Wait_For_Players;
+    ///later acknowledgments cannot change that invocation's dialog period.
+    pub response_time_at_entry: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CurrentFrame {
+    context: NetworkQueueContext,
+    max_ahead: i32,
+    phase: FramePhase,
+}
+
+/// One established match's live command channel; `FrameChecksumState`
+/// (`sim::command_queue`) keeps the checksum history. A retained frame never
+/// re-runs Logic or recreates an encoded packet.
+#[derive(Debug)]
+pub struct LiveCommandSession {
+    transport: LanUdpTransport,
+    exchange: CommandExchange,
+    startup: startup::StartupHandshake,
+    local_house: i8,
+    initial_seed: u32,
+    policy: NetworkSendPolicy,
+    timing: timing::LiveTiming,
+    mode: LiveCommandMode,
+    current: Option<CurrentFrame>,
+    last_service: Option<UdpServiceReport>,
+    sequenced: Option<sequenced::SequencedSession>,
+}
+
+impl LiveCommandSession {
+    /// `clock` is [`relay_clock`]'s answer for this match, the one the
+    /// installed timing already follows.
+    pub fn new(
+        agreement: StartupAgreement,
+        transport: LanUdpTransport,
+        local_house: i8,
+        initial_seed: u32,
+        frame_send_rate: NonZeroU32,
+        mode: LiveCommandMode,
+        clock: Option<OrderingCertificate>,
+    ) -> Result<Self, LiveCommandError> {
+        if local_house < 0 {
+            return Err(LiveCommandError::InvalidLocalHouse(local_house));
+        }
+        let mut houses = Vec::new();
+        for (id, endpoint) in transport.connections().peers() {
+            let house = i8::try_from(id)
+                .ok()
+                .filter(|&house| house >= 0 && house != local_house)
+                .ok_or(LiveCommandError::InvalidRemoteHouse(id))?;
+            if endpoint.port() == 0
+                || endpoint.ip().is_unspecified()
+                || endpoint.ip().is_broadcast()
+                || endpoint.ip().is_multicast()
+            {
+                return Err(LiveCommandError::UnboundPeer {
+                    house_id: id,
+                    endpoint,
+                });
+            }
+            houses.push(house);
+        }
+        // Intentional modern online policy: solo AI needs no command lead
+        // time, unless the lobby has the relay order the match, so that others
+        // can watch the one person in it watch AI play (`relay_clock`). The
+        // original admission is immutable; losing remote players later must
+        // never switch an existing multiplayer game to local input.
+        let solo =
+            mode == LiveCommandMode::Wol && agreement.original_houses() == 1 && clock.is_none();
+        let policy = if solo {
+            NetworkSendPolicy::Local
+        } else {
+            NetworkSendPolicy::FrameSendRate2 { frame_send_rate }
+        };
+        let sequenced = clock
+            .map(|clock| {
+                sequenced::SequencedSession::new(&agreement, &transport, local_house, &clock)
+            })
+            .transpose()?;
+        let startup = startup::StartupHandshake::new(
+            agreement,
+            local_house,
+            houses.iter().copied(),
+            initial_seed,
+            frame_send_rate,
+        )?;
+        Ok(Self {
+            transport,
+            exchange: CommandExchange::new(houses)?,
+            startup,
+            local_house,
+            initial_seed,
+            policy,
+            timing: timing::LiveTiming::default(),
+            mode,
+            current: None,
+            last_service: None,
+            sequenced,
+        })
+    }
+
+    pub fn primary_addr(&self) -> io::Result<SocketAddrV4> {
+        self.transport.primary_addr()
+    }
+
+    pub fn alternate_addr(&self) -> io::Result<SocketAddrV4> {
+        self.transport.alternate_addr()
+    }
+
+    ///Transfer the same socket/global-channel owner back to the session
+    ///lobby after gameplay. No second transport is constructed during return.
+    pub fn into_transport(mut self) -> LanUdpTransport {
+        if self.uses_sequenced_lockstep() {
+            self.transport.retire_relay();
+        }
+        self.transport
+    }
+
+    pub fn uses_sequenced_lockstep(&self) -> bool {
+        self.sequenced.is_some()
+    }
+
+    /// Remote Houses whose connection the relay ended in frames dispatched so
+    /// far; their shared EVENT_REMOVEPLAYER already ran in that frame.
+    pub fn take_lost_houses(&mut self) -> Vec<i8> {
+        self.sequenced
+            .as_mut()
+            .map_or_else(Vec::new, |session| session.take_lost())
+    }
+
+    /// The relay's rate changes in frames dispatched so far.
+    pub fn take_speed_changes(&mut self) -> Vec<MatchSpeedChange> {
+        self.sequenced
+            .as_mut()
+            .map_or_else(Vec::new, |session| session.take_speed_changes())
+    }
+
+    /// VERA: other players' shared pauses and resumes in frames dispatched so
+    /// far.
+    pub fn take_pause_changes(&mut self) -> Vec<MatchPauseChange> {
+        self.sequenced
+            .as_mut()
+            .map_or_else(Vec::new, |session| session.take_pause_changes())
+    }
+
+    /// VERA: other players the relay stopped or started hearing since the
+    /// last call. One whose connection this game already removed is left
+    /// out: the relay may never have heard them leave.
+    pub fn take_connection_changes(&mut self) -> Vec<MatchConnectionChange> {
+        let mut changes = self
+            .sequenced
+            .as_mut()
+            .map_or_else(Vec::new, |session| session.take_connection_changes());
+        let peers = self.exchange.peers();
+        changes.retain(|change| peers.iter().any(|peer| peer.house_id() == change.house));
+        changes
+    }
+
+    /// VERA: true once, when this game reaches a pause that found it catching
+    /// up. `reached` is whether the simulation has reached the pause.
+    pub fn take_caught_up_in_pause(&mut self, reached: bool, current_frame: u32) -> bool {
+        self.sequenced
+            .as_mut()
+            .is_some_and(|session| session.take_caught_up_in_pause(reached, current_frame))
+    }
+
+    /// A hidden window's frames may be throttled by its system, so it never
+    /// reports falling behind the relay's clock.
+    pub fn set_presentation_hidden(&mut self, hidden: bool) {
+        if let Some(session) = &mut self.sequenced {
+            session.set_presentation_hidden(hidden);
+        }
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn mark_sequenced_started_for_test(&mut self) {
+        if let Some(session) = &mut self.sequenced {
+            session.mark_started_for_test();
+        }
+    }
+
+    /// Replay records this immutable admission cadence once at startup. Solo
+    /// online Local input and relay commits both dispatch each frame; ordinary
+    /// LAN retains its configured native send cadence.
+    pub fn dispatches_every_frame(&self) -> bool {
+        self.uses_sequenced_lockstep() || self.policy.should_send(1)
+    }
+
+    pub fn has_terminal_network_error(&self) -> bool {
+        self.sequenced
+            .as_ref()
+            .is_some_and(|session| session.failed())
+    }
+
+    /// Highest complete immutable frame buffered by this client. The relay's
+    /// advertised head alone never admits simulation or skips missing bytes.
+    pub fn committed_frontier(&self) -> u32 {
+        self.sequenced
+            .as_ref()
+            .map_or(0, |session| session.frontier())
+    }
+
+    /// One local simulation tick's wall-clock cost. The relay's pace
+    /// reports carry its recent 90th percentile; nothing else reads it.
+    pub fn record_tick_cost(&mut self, cost: std::time::Duration) {
+        if let Some(session) = self.sequenced.as_mut() {
+            session.record_tick_cost(cost.as_micros().min(u128::from(u32::MAX)) as u32);
+        }
+    }
+
+    /// The relay's current frame rate: the match's own, or slower while a
+    /// player's PC cannot keep up. The simulation keeps the match's own.
+    pub fn relay_frames_per_second(&self) -> Option<u16> {
+        self.sequenced.as_ref().map(|session| session.pace_fps)
+    }
+
+    /// The relay currently seals slower than the match's own rate.
+    pub fn relay_slowed(&self) -> bool {
+        self.sequenced
+            .as_ref()
+            .is_some_and(|session| session.slowed())
+    }
+
+    /// App-only counts of this match's ordered delivery.
+    pub fn delivery_counters(&self) -> Option<DeliveryCounters> {
+        self.sequenced
+            .as_ref()
+            .map(|session| session.delivery_counters())
+    }
+
+    /// The relay's sealed head as this PC last learned it; the frames past
+    /// the local simulation are its backlog.
+    pub fn relay_head_frame(&self) -> Option<u32> {
+        self.sequenced.as_ref().map(|session| session.head_frame())
+    }
+
+    /// App-only pacing observation. Availability and canonical dispatch remain
+    /// owned by this session, irrespective of presentation's chosen cadence.
+    pub fn sequenced_timing(&self) -> Option<SequencedTiming> {
+        self.sequenced.as_ref()?.timing()
+    }
+
+    /// App diagnostics: recent local command batches' send, relay frame
+    /// assignment and sealed-frame receipt times.
+    pub fn command_delivery_traces(&self) -> impl Iterator<Item = &CommandDeliveryTrace> {
+        self.sequenced
+            .iter()
+            .flat_map(|session| session.command_traces())
+    }
+
+    /// Shared pause is a relay timeline control, independent of local menus.
+    /// A direct LAN match has none, and one spread over several relays
+    /// leaves it unavailable.
+    pub fn multiplayer_pause(&self) -> Option<MultiplayerPauseStatus> {
+        self.sequenced
+            .as_ref()
+            .map(|session| session.pause_status())
+    }
+
+    /// Request an explicit state. Network service retries the same request;
+    /// canonical receipt, never this button press, determines the boundary.
+    pub fn request_multiplayer_pause(&mut self, paused: bool) -> bool {
+        self.sequenced
+            .as_mut()
+            .is_some_and(|session| session.request_pause(paused))
+    }
+
+    /// Authored presentation is a deliberate local hold on every player.
+    /// Only the host controls the shared relay clock for this boundary.
+    pub fn set_narrative_hold(&mut self, hold: Option<NarrativeHold>) {
+        if let Some(session) = &mut self.sequenced {
+            session.set_narrative_hold(hold);
+        }
+    }
+
+    /// Called only after a confirmed UI exit has queued its native EXIT.
+    /// Keep that command dispatchable even if a shared pause is in flight.
+    pub fn keep_running_for_exit(&mut self) {
+        if let Some(session) = self.sequenced.as_mut() {
+            session.keep_running_for_exit();
+        }
+    }
+
+    /// This process replaces one that left a match under way (Networking.md).
+    pub fn begin_match_restore(&mut self) {
+        if let Some(session) = self.sequenced.as_mut() {
+            session.begin_restore();
+        }
+    }
+
+    /// Still replaying a match this process rejoined; local input has no place
+    /// in it yet.
+    pub fn restoring_match(&self) -> bool {
+        self.sequenced
+            .as_ref()
+            .is_some_and(|session| session.restoring())
+    }
+
+    /// VERA: this game watches the match instead of playing in it
+    /// (Networking.md, Watching). It follows the local House and sends
+    /// nothing into the match.
+    pub fn watching(&self) -> bool {
+        self.sequenced
+            .as_ref()
+            .is_some_and(|session| session.watching())
+    }
+
+    /// A watched match is over: every player left it, and every frame before
+    /// that ran here.
+    pub fn watch_over(&self) -> bool {
+        self.sequenced
+            .as_ref()
+            .is_some_and(|session| session.watch_over())
+    }
+
+    /// Whether a confirmed UI exit's EXIT waits for the relay to sequence it.
+    pub fn exit_requested(&self) -> bool {
+        self.sequenced
+            .as_ref()
+            .is_some_and(|session| session.exit_requested())
+    }
+
+    pub fn recovery_status(
+        &self,
+        now_millis: u32,
+        current_frame: u32,
+    ) -> Option<NetworkRecoveryStatus> {
+        self.sequenced
+            .as_ref()?
+            .recovery_status(now_millis, current_frame)
+    }
+
+    pub fn relay_expires(&self) -> Option<u64> {
+        self.transport.relay_expires()
+    }
+
+    /// A watcher's delay behind the players, from its watch ticket (relay
+    /// README "Watchers"); `None` for a player.
+    pub fn relay_watch_delay(&self) -> Option<u32> {
+        self.transport.relay_watch_delay()
+    }
+
+    pub fn renew_relay(
+        &mut self,
+        address: SocketAddrV4,
+        ticket: &[u8],
+        key: [u8; 32],
+        payload_key: [u8; 32],
+    ) -> io::Result<()> {
+        self.transport
+            .renew_relay(address, ticket, key, payload_key)
+    }
+
+    pub fn connections(&self) -> super::udp::UdpReadGuard<'_, LanConnections> {
+        self.transport.connections()
+    }
+
+    pub fn global(&self) -> super::udp::UdpReadGuard<'_, super::global::GlobalChannel> {
+        self.transport.global()
+    }
+
+    pub fn global_mut(&mut self) -> super::udp::UdpWriteGuard<'_, super::global::GlobalChannel> {
+        self.transport.global_mut()
+    }
+
+    pub fn pop_global_received(&mut self) -> Option<super::global::GlobalMessage> {
+        self.transport.pop_global_received()
+    }
+
+    ///48D1E0 services the same manager while demultiplexing global traffic.
+    ///Private command messages remain queued for the reached Wait phase.
+    pub fn service_transport(&mut self, now_wall_bucket: u32) {
+        self.flush_startup();
+        retain_service_report(
+            &mut self.last_service,
+            self.transport.service(now_wall_bucket),
+        );
+        if let Some(session) = &mut self.sequenced {
+            session.service(&mut self.transport, now_wall_bucket.wrapping_shl(4));
+        }
+    }
+
+    /// Service the same transport and send fresh sequenced input while the
+    /// canonical frontier is closed. Queue ownership stays in Simulation;
+    /// this does not advance Logic or dispatch received commands. Native LAN
+    /// keeps its existing post-Logic transfer boundary.
+    pub fn service_pending_commands(
+        &mut self,
+        queues: &mut NetworkCommandQueues<'_>,
+        now_wall_bucket: u32,
+    ) {
+        self.service_transport(now_wall_bucket);
+        if let Some(session) = &mut self.sequenced {
+            session.service_pending_commands(
+                &mut self.transport,
+                queues,
+                now_wall_bucket.wrapping_shl(4),
+            );
+        }
+    }
+
+    pub fn send_global(
+        &mut self,
+        payload: &[u8],
+        reliable: bool,
+        destination: super::global::GlobalDestination,
+    ) -> bool {
+        self.transport.global_mut().send(
+            payload,
+            destination,
+            if reliable {
+                Delivery::Reliable
+            } else {
+                Delivery::Unreliable
+            },
+            0,
+        )
+    }
+
+    pub fn send_terminal_global(
+        &mut self,
+        payload: &[u8],
+        recipients: &[SocketAddrV4],
+    ) -> io::Result<()> {
+        self.transport.send_terminal_global(payload, recipients)
+    }
+
+    pub fn peers(&self) -> &[CommandPeerProgress] {
+        self.exchange.peers()
+    }
+
+    pub fn sent_commands(&self) -> u64 {
+        if let Some(session) = &self.sequenced {
+            return session.sent_commands();
+        }
+        self.exchange.sent_commands()
+    }
+
+    pub fn retained_send(&self) -> Option<RetainedSendProgress> {
+        self.exchange.retained_send()
+    }
+
+    pub fn phase(&self) -> Option<LiveCommandPhase> {
+        self.current.map(|current| match current.phase {
+            FramePhase::InitialBarrier { .. } => LiveCommandPhase::InitialBarrier,
+            FramePhase::Sending { .. } => LiveCommandPhase::Sending,
+            FramePhase::Waiting { .. } => LiveCommandPhase::Waiting,
+            FramePhase::Finished(_) => LiveCommandPhase::Finished,
+            FramePhase::Failed => LiveCommandPhase::Failed,
+        })
+    }
+
+    pub fn queued_send_count(&self, house: i8) -> Option<usize> {
+        self.transport
+            .connections()
+            .queued_send_count(i32::from(house))
+    }
+
+    /// Existing reliable response history, in16ms wall-clock buckets.
+    pub fn peer_response_time(&self, house: i8) -> Option<u32> {
+        self.transport
+            .connections()
+            .mean_response_time(i32::from(house))
+    }
+
+    ///Manager ResponseTime542450 uses private histories, excluding primary
+    ///global traffic. Its optional extra channel has no direct-LAN owner.
+    pub fn response_time(&self) -> u32 {
+        self.transport.response_time()
+    }
+
+    pub fn configure_precalculated_timing(&mut self, max_ahead: i32, frames_per_second: i32) {
+        self.timing
+            .configure_precalculated(max_ahead, frames_per_second);
+    }
+
+    pub fn record_processing_time(&mut self, milliseconds: u32) {
+        self.timing.record_processing_time(milliseconds);
+    }
+
+    pub fn begin_processing(&mut self, now_millis: u32) {
+        self.timing.begin_processing(now_millis);
+    }
+
+    pub fn finish_processing(&mut self, now_millis: u32) {
+        self.timing.finish_processing(now_millis);
+    }
+
+    /// Keep the private connection and its progress row in the same lifetime.
+    /// `new` builds the progress rows from the transport's connections, and
+    /// this session owns that transport and removes a connection only here,
+    /// so a row this removed always had its connection.
+    pub fn remove_peer(&mut self, house: i8) -> bool {
+        if !self.exchange.remove_peer(house) {
+            return false;
+        }
+        if !self.uses_sequenced_lockstep() {
+            self.startup.abort();
+        }
+        let connected = self
+            .transport
+            .connections_mut()
+            .remove_peer(i32::from(house));
+        assert!(
+            connected,
+            "the admitted connection and command progress share one roster"
+        );
+        true
+    }
+
+    /// A kick/cancel before release cannot elect a smaller initial set. The
+    /// snapshot remains immutable even while ordinary cleanup removes sockets.
+    /// A failed startup remains uncertified throughout that cleanup. A relay
+    /// match that ran once stays released, even while a relay that lost its
+    /// configuration (NotConfigured) has its clock stopped.
+    pub fn startup_pending(&self) -> bool {
+        if let Some(session) = &self.sequenced {
+            return !session.ever_started();
+        }
+        !self.startup.released()
+    }
+
+    pub fn set_retry_timing(&mut self, timing: RetryTiming) {
+        self.transport.connections_mut().set_timing(timing);
+    }
+
+    /// Diagnostic facts from every service pass in the last poll. Native
+    /// 647F63,649FB5,648B94 and649518 ignore the service result; the app's
+    /// Wait_For_Players timers own recovery. A later successful service in
+    /// the same poll does not erase an earlier failure diagnostic.
+    pub fn take_service_report(&mut self) -> Option<UdpServiceReport> {
+        self.last_service.take()
+    }
+
+    /// The same aggregate consumed by take_service_report, reset at each poll.
+    /// Readers must project numeric counters, never Debug-format its errors.
+    pub fn service_report(&self) -> Option<&UdpServiceReport> {
+        self.last_service.as_ref()
+    }
+
+    pub fn awaiting_initial_barrier(&self) -> bool {
+        if let Some(session) = &self.sequenced {
+            return !session.started();
+        }
+        self.current
+            .is_some_and(|frame| matches!(frame.phase, FramePhase::InitialBarrier { .. }))
+    }
+
+    pub fn frame_wait(&self) -> Option<FrameWait> {
+        let current = self.current?;
+        matches!(
+            current.phase,
+            FramePhase::Waiting { .. } | FramePhase::Sending { .. }
+        )
+        .then(|| {
+            self.exchange
+                .frame_wait(current.context.frame as i32, current.max_ahead)
+        })
+    }
+
+    pub fn wait_info(&self) -> Option<LiveWaitInfo> {
+        let (kind, entered_at, response_time_at_entry) = match self.current?.phase {
+            FramePhase::InitialBarrier {
+                entered_at,
+                response_time_at_entry,
+                ..
+            } => (LiveWaitKind::Initial, entered_at, response_time_at_entry),
+            FramePhase::Sending {
+                entered_at,
+                response_time_at_entry,
+                ..
+            }
+            | FramePhase::Waiting {
+                entered_at,
+                response_time_at_entry,
+                ..
+            } => (LiveWaitKind::Ordinary, entered_at, response_time_at_entry),
+            _ => return None,
+        };
+        Some(LiveWaitInfo {
+            mode: self.mode,
+            kind,
+            entered_at,
+            response_time_at_entry,
+        })
+    }
+
+    ///64B410 selects the first minimum signed frame from the same progress
+    ///rows that gate dispatch.
+    pub fn lowest_frame_peer(&self) -> Option<&CommandPeerProgress> {
+        self.exchange.peers().iter().reduce(|first, next| {
+            if next.frame() < first.frame() {
+                next
+            } else {
+                first
+            }
+        })
+    }
+
+    ///64926F..6492A1 restarts the probe timer after recovery while the same
+    ///Wait_For_Players invocation keeps its original elapsed-time anchor.
+    pub fn restart_wait_probe(&mut self, now: u32) -> bool {
+        let Some(current) = &mut self.current else {
+            return false;
+        };
+        match &mut current.phase {
+            FramePhase::InitialBarrier { last_probe, .. }
+            | FramePhase::Sending { last_probe, .. }
+            | FramePhase::Waiting { last_probe, .. } => {
+                *last_probe = now;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Poll the same immutable post-Logic visit until Dispatch/SkipDispatch.
+    ///The clock arguments must come from one sample: now_wall_bucket is
+    ///now_millis>>4. Keep raw milliseconds for the native wait-bar reference.
+    ///On failure
+    /// the retained visit is terminal, so a partially admitted packet cannot
+    /// accidentally be replayed by polling it again.
+    pub fn poll(
+        &mut self,
+        queues: &mut NetworkCommandQueues<'_>,
+        context: NetworkQueueContext,
+        max_ahead: i32,
+        now_wall_bucket: u32,
+        now_millis: u32,
+        latency_fudge: i32,
+    ) -> Result<NetworkQueuePass, LiveCommandError> {
+        self.last_service = None;
+        if let Some(session) = &mut self.sequenced {
+            retain_service_report(
+                &mut self.last_service,
+                self.transport.service(now_wall_bucket),
+            );
+            // Transport-only service receives the same wall bucket. Do not
+            // alternate raw milliseconds with its rounded value: a later
+            // rounded sample can otherwise underflow sequenced retry timers.
+            // The session keeps any failure it reports.
+            return session.poll(
+                &mut self.transport,
+                queues,
+                context,
+                now_wall_bucket.wrapping_shl(4),
+            );
+        }
+        let result = self.poll_inner(
+            queues,
+            context,
+            max_ahead,
+            now_wall_bucket,
+            now_millis,
+            latency_fudge,
+        );
+        if result.is_err()
+            && let Some(current) = &mut self.current
+        {
+            current.phase = FramePhase::Failed;
+        }
+        result
+    }
+
+    fn poll_inner(
+        &mut self,
+        queues: &mut NetworkCommandQueues<'_>,
+        context: NetworkQueueContext,
+        max_ahead: i32,
+        now: u32,
+        now_millis: u32,
+        latency_fudge: i32,
+    ) -> Result<NetworkQueuePass, LiveCommandError> {
+        if self.startup.failed() {
+            return Err(StartupError::Aborted.into());
+        }
+        self.flush_startup();
+        if max_ahead < 0 {
+            return Err(LiveCommandError::InvalidMaxAhead(max_ahead));
+        }
+        match self.current {
+            None => {
+                if context.frame != 0 {
+                    return Err(LiveCommandError::FrameSequence {
+                        expected: 0,
+                        actual: context.frame,
+                    });
+                }
+                //647825 resets progress/cache exactly once on first frame.
+                self.exchange.reset();
+                self.current = Some(CurrentFrame {
+                    context,
+                    max_ahead,
+                    phase: FramePhase::InitialBarrier {
+                        entered_at: now,
+                        response_time_at_entry: self.transport.response_time(),
+                        last_probe: now,
+                    },
+                });
+                //647914 sends one initial probe before entering648710.
+                self.send_probe(context.frame, max_ahead)?;
+                self.exchange.begin_wait(now_millis);
+            }
+            Some(current) if matches!(current.phase, FramePhase::Failed) => {
+                return Err(LiveCommandError::Failed);
+            }
+            Some(current) if current.context.frame == context.frame => {
+                if current.context.checksum != context.checksum || current.max_ahead != max_ahead {
+                    return Err(LiveCommandError::ChangedFrame(context.frame));
+                }
+            }
+            Some(current) => {
+                let expected = current.context.frame.wrapping_add(1);
+                if !matches!(current.phase, FramePhase::Finished(_)) || context.frame != expected {
+                    return Err(LiveCommandError::FrameSequence {
+                        expected,
+                        actual: context.frame,
+                    });
+                }
+                self.current = Some(CurrentFrame {
+                    context,
+                    max_ahead,
+                    phase: FramePhase::Sending {
+                        entered_at: now,
+                        response_time_at_entry: self.transport.response_time(),
+                        last_probe: now,
+                    },
+                });
+            }
+        }
+        loop {
+            let current = self.current.expect("started frame visit");
+            match current.phase {
+                FramePhase::InitialBarrier {
+                    entered_at,
+                    response_time_at_entry,
+                    last_probe,
+                } => {
+                    if probe_due(last_probe, now, self.mode.wait_timing().initial_probe) {
+                        self.current = Some(CurrentFrame {
+                            phase: FramePhase::InitialBarrier {
+                                entered_at,
+                                response_time_at_entry,
+                                last_probe: now,
+                            },
+                            ..current
+                        });
+                        self.send_probe(context.frame, max_ahead)?;
+                    }
+                    self.service_and_receive(now, queues)?;
+                    self.flush_startup();
+                    if !self.startup.complete() || !self.exchange.initial_ready() {
+                        return Ok(NetworkQueuePass::Waiting);
+                    }
+                    self.startup.release();
+                    self.exchange.finish_initial_barrier();
+                    //647B2E/647B32: only a successful initial wait clears
+                    //manager response histories, after the peer-frame clear.
+                    self.transport.reset_response_time(true);
+                    self.current = Some(CurrentFrame {
+                        phase: FramePhase::Sending {
+                            entered_at: now,
+                            response_time_at_entry: self.transport.response_time(),
+                            last_probe: now,
+                        },
+                        ..current
+                    });
+                }
+                FramePhase::Sending {
+                    entered_at,
+                    response_time_at_entry,
+                    last_probe,
+                } => {
+                    if !self.exchange.sending() {
+                        self.prepare_timing(queues, context.frame, max_ahead, latency_fudge);
+                        if self.policy.should_send(context.frame) {
+                            self.exchange.begin_wait(now_millis);
+                        }
+                    }
+                    let transport = &mut self.transport;
+                    let service_report = &mut self.last_service;
+                    let sent = self.exchange.send_frame(
+                        queues,
+                        self.local_house,
+                        context.frame,
+                        max_ahead as u32,
+                        context.checksum,
+                        self.policy,
+                        |bytes, guaranteed| {
+                            let no_peers = transport.connections().peers().next().is_none();
+                            let accepted = no_peers
+                                || transport.connections_mut().broadcast(
+                                    bytes,
+                                    if guaranteed {
+                                        Delivery::Reliable
+                                    } else {
+                                        Delivery::Unreliable
+                                    },
+                                );
+                            // Service existing reliable queues after every
+                            // attempt. A full FIFO resumes this Sending frame;
+                            // no codec, mirror or counter is committed early.
+                            retain_service_report(service_report, transport.service(now));
+                            accepted
+                        },
+                    )?;
+                    match sent {
+                        SendPoll::Backpressure => {
+                            if probe_due(last_probe, now, ORDINARY_PROBE_INTERVAL) {
+                                self.current = Some(CurrentFrame {
+                                    phase: FramePhase::Sending {
+                                        entered_at,
+                                        response_time_at_entry,
+                                        last_probe: now,
+                                    },
+                                    ..current
+                                });
+                                self.send_probe(context.frame, max_ahead)?;
+                            }
+                            self.service_and_receive(now, queues)?;
+                            return Ok(NetworkQueuePass::Waiting);
+                        }
+                        SendPoll::OffCadence => {
+                            //647F5E..647F92 services transport only. It neither
+                            //decodes queued game packets nor checks its result.
+                            retain_service_report(
+                                &mut self.last_service,
+                                self.transport.service(now),
+                            );
+                            return Ok(self.finish(NetworkQueuePass::SkipDispatch));
+                        }
+                        SendPoll::Complete { .. } if context.frame == 0 => {
+                            return Ok(self.finish(NetworkQueuePass::SkipDispatch));
+                        }
+                        SendPoll::Complete { .. } => {
+                            self.current = Some(CurrentFrame {
+                                phase: FramePhase::Waiting {
+                                    entered_at,
+                                    response_time_at_entry,
+                                    last_probe,
+                                },
+                                ..current
+                            });
+                        }
+                    }
+                }
+                FramePhase::Waiting {
+                    entered_at,
+                    response_time_at_entry,
+                    last_probe,
+                } => {
+                    if probe_due(last_probe, now, ORDINARY_PROBE_INTERVAL) {
+                        self.current = Some(CurrentFrame {
+                            phase: FramePhase::Waiting {
+                                entered_at,
+                                response_time_at_entry,
+                                last_probe: now,
+                            },
+                            ..current
+                        });
+                        self.send_probe(context.frame, max_ahead)?;
+                    }
+                    self.service_and_receive(now, queues)?;
+                    return if self
+                        .exchange
+                        .frame_wait(context.frame as i32, max_ahead)
+                        .ready()
+                    {
+                        Ok(self.finish(NetworkQueuePass::Dispatch))
+                    } else {
+                        Ok(NetworkQueuePass::Waiting)
+                    };
+                }
+                FramePhase::Finished(pass) => return Ok(pass),
+                FramePhase::Failed => return Err(LiveCommandError::Failed),
+            }
+        }
+    }
+
+    fn flush_startup(&mut self) {
+        if self.uses_sequenced_lockstep() {
+            return;
+        }
+        let transport = &mut self.transport;
+        self.startup.flush(|bytes| {
+            let no_peers = transport.connections().peers().next().is_none();
+            no_peers
+                || transport
+                    .connections_mut()
+                    .broadcast(bytes, Delivery::Reliable)
+        });
+    }
+
+    fn prepare_timing(
+        &mut self,
+        queues: &mut NetworkCommandQueues<'_>,
+        frame: u32,
+        max_ahead: i32,
+        latency_fudge: i32,
+    ) {
+        let Some(shared) = queues.timing() else {
+            return;
+        };
+        let host = queues.timing_host_house() == Some(self.local_house);
+        let rate = shared.frame_send_rate();
+        // Multiplayer cadence follows ScenarioSession's EVENT_TIMING owner.
+        // Local scheduling remains fixed by the original solo admission.
+        if self.policy != NetworkSendPolicy::Local {
+            self.policy = NetworkSendPolicy::FrameSendRate2 {
+                frame_send_rate: NonZeroU32::from(rate),
+            };
+        }
+        if frame != 0 && frame & 127 == 0 {
+            let retry = timing::periodic_retry(self.transport.response_time(), latency_fudge);
+            self.transport.set_retry_timing(retry, false);
+            let event = crate::sim::command::ProcessTimeRecord {
+                house_id: self.local_house,
+                frame: frame as i32,
+                milliseconds: self.timing.take_process_average(),
+            };
+            let _ = queues.issue_timing_record(event.encode().expect("fixed PROCESS_TIME record"));
+            if self.mode == LiveCommandMode::Wol && frame & 2047 == 0 {
+                self.transport.reset_response_time(false);
+            }
+        }
+        if !host {
+            return;
+        }
+        let event = if let Some(event) = self
+            .timing
+            .take_precalculated(self.local_house, frame as i32)
+        {
+            Some(event)
+        } else if frame & 255 == 0 && self.exchange.sent_commands() >= 5 {
+            let Some(milliseconds) = queues.timing().and_then(|timing| {
+                timing.maximum_processing_millis(
+                    std::iter::once(self.local_house)
+                        .chain(self.exchange.peers().iter().map(|peer| peer.house_id())),
+                )
+            }) else {
+                return;
+            };
+            let (event, retry) = timing::adaptive_timing(
+                self.local_house,
+                frame as i32,
+                self.mode,
+                milliseconds,
+                queues.game_speed(),
+                max_ahead,
+                rate,
+                self.transport.response_time(),
+                self.transport.response_time(),
+                latency_fudge,
+                queues.fog_of_war(),
+            );
+            self.transport.set_retry_timing(retry, false);
+            Some(event)
+        } else {
+            None
+        };
+        if let Some(mut event) = event {
+            if self.policy == NetworkSendPolicy::Local {
+                // Preserve the existing FPS/GameSpeed/CPU timing pipeline,
+                // without widening its dispatcher retiming window over local
+                // commands. Encode the current effective ahead value with
+                // the same fog adjustment the receiver will subtract.
+                event.max_ahead =
+                    max_ahead.wrapping_add(if queues.fog_of_war() { 10 } else { 0 }) as u16;
+                event.frame_send_rate = rate;
+            }
+            let _ = queues.issue_timing_record(event.encode().expect("fixed TIMING record"));
+        }
+    }
+
+    fn finish(&mut self, pass: NetworkQueuePass) -> NetworkQueuePass {
+        self.current.as_mut().expect("started frame").phase = FramePhase::Finished(pass);
+        pass
+    }
+
+    fn send_probe(&mut self, frame: u32, max_ahead: i32) -> Result<(), LiveCommandError> {
+        let bytes = self.exchange.frame_probe(
+            self.local_house,
+            frame,
+            max_ahead as u32,
+            self.initial_seed,
+            self.policy,
+        )?;
+        //64A090 ignores admission failure; the next timer expiry tries again.
+        self.transport
+            .connections_mut()
+            .broadcast(&bytes, Delivery::Unreliable);
+        Ok(())
+    }
+
+    fn service_and_receive(
+        &mut self,
+        now: u32,
+        queues: &mut NetworkCommandQueues<'_>,
+    ) -> Result<(), LiveCommandError> {
+        //648B94 and649518 ignore the manager's failure return and continue
+        //receiving/checking progress. Neither retry exhaustion nor a socket
+        //diagnostic invents an immediate Wait_For_Players result7 here.
+        retain_service_report(&mut self.last_service, self.transport.service(now));
+        let elapsed = self
+            .wait_info()
+            .map_or(0, |wait| now.wrapping_sub(wait.entered_at));
+        for _ in 0..WAIT_RECEIVE_BUDGET {
+            let Some(message) = self.transport.pop_received() else {
+                break;
+            };
+            let source_house = i8::try_from(message.peer_id)
+                .map_err(|_| LiveCommandError::InvalidRemoteHouse(message.peer_id))?;
+            let control = self
+                .startup
+                .receive(source_house, &message.payload, message.delivery)?;
+            if !control {
+                self.exchange.receive(
+                    source_house,
+                    &message.payload,
+                    self.initial_seed,
+                    queues,
+                    elapsed,
+                )?;
+            }
+            //649514..649518 services again after each private message. The
+            //64-message budget still bounds this wait visit.
+            retain_service_report(&mut self.last_service, self.transport.service(now));
+        }
+        Ok(())
+    }
+}
+
+fn retain_service_report(current: &mut Option<UdpServiceReport>, next: UdpServiceReport) {
+    let Some(current) = current else {
+        *current = Some(next);
+        return;
+    };
+    current.accumulate(next);
+}
+
+fn probe_due(start: u32, now: u32, interval: i32) -> bool {
+    //6488DF..6488F1 uses a wrapping subtraction followed by signed JGE.
+    (now.wrapping_sub(start) as i32) >= interval
+}
+
+#[cfg(all(test, tests_net))]
+#[path = "live_commands_tests.rs"]
+mod tests;

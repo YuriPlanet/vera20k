@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original player Area Guard on the existing constructed Foot/event fixture.\n\nGIMoveHistory remains the owner of native invocation, event rings and local\ndispatch. FootMissions remains the constructor/map/mission fixture. This module\nadds selected original Guard callers and observations, not another native VM.\n",
+  "assumptions": [
+    "Existing FootMissions constructs and admits actual MTNK/E1 on its retained physical Anytown crop. Prior House and world bootstrap bounds remain explicit in that owner.",
+    "Existing GIMoveHistory owns original entry invocation, OutList observation and exact Event byte capture. Each original issued record is supplied to original4C6CB0, like the existing Mission setup; full local/network/House event scheduling is outside this corpus. No alternate event constructor or native gameplay answer is supplied.",
+    "Constructor rows supply nonzero Event storage and arguments. Only original4C6860 writes the recorded after bytes.",
+    "Authored runtime VoiceSpecialAttack controls execute the same original block with the backend present for original405170 name resolution, then disable the backend before input. Native sound playback remains disabled, not mocked."
+  ],
+  "substitutions": [
+    "Selected local input list, absolute frame, no Planning Mode and disabled audio backend are supplied boundaries. This is not a HWND/game-wide input or whole-match native capture.",
+    "Reader source-order/CRC caches and successful allocation are the existing Reader/Sound transport. Original scalar/reference/list parsing and native field writes execute.",
+    "Locomotor Process and held movement/height/Fly behavior are excluded. Required class destination calls execute original instructions."
+  ],
+  "entry_points": {
+    "guard_command": "0x00536D00",
+    "guard_selection": "0x00730D60",
+    "current_cell": "0x005F6A10",
+    "player_command": "0x006FFBE0",
+    "event_issuer": "0x00646E90",
+    "event_ctor": "0x004C6860",
+    "event_execute": "0x004C6CB0",
+    "area_guard": "0x004D6AA0",
+    "rules_ctor": "0x00665650",
+    "audio_visual_reader": "0x006691E0",
+    "techno_type_ctor": "0x00710AF0",
+    "special_voice_reader": "0x00712CC5",
+    "sound_list": "0x00525430",
+    "sound_registry": "0x007510D0"
+  },
+  "command": "python -m tools.input_oracle.area_guard --check",
+  "coverage_counts": {
+    "constructors": 8,
+    "histories": 19,
+    "list_histories": 11,
+    "reference_histories": 8,
+    "voice_receipts": 25,
+    "main_voice_draws": 12
+  },
+  "payload_sha256": "14fd9b79926e3071b96de0301e5a703da3cbf6b75db5f9040844a3e31d6ddaa3"
+}

@@ -1,0 +1,175 @@
+//! Diagnostic only: locate live load-produced inputs for native 0x00586BF0.
+//! This does not implement the restamp or assert native final-state parity.
+
+#[test]
+#[ignore = "requires active retail assets; writes a local diagnostic receipt"]
+fn retail_inactive_high_record_restamp_inventory() {
+    use serde_json::json;
+    use std::collections::BTreeSet;
+
+    let retail = super::retail_dir().expect("configured active retail install");
+    let maps = std::env::var("VERA20K_RESTAMP_MAPS")
+        .unwrap_or_else(|_| "BayOPigs.mmx;Hills.mmx;Deadman.mmx".into());
+    let mut results = Vec::new();
+    for map_name in maps.split(';') {
+        let scenario = crate::headless_scenario::load(&retail, map_name, super::SEED)
+            .unwrap_or_else(|error| panic!("load {map_name}: {error}"));
+        let sim = scenario.sim();
+        let terrain = sim
+            .resolved_terrain
+            .as_ref()
+            .expect("live resolved terrain");
+        let state = sim.bridge_state.as_ref().expect("live bridge state");
+        let records = state.endpoint_records();
+        let mut assets = crate::assets::asset_manager::AssetManager::new(
+            &retail,
+            crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+        let theater = crate::map::theater::load_theater(&mut assets, &scenario.map.header.theater)
+            .expect("same retail theater as production load");
+        let bridge_bases: Vec<_> = [theater.bridge_set, theater.wood_bridge_set]
+            .into_iter()
+            .map(|set| set.map(|index| theater.lookup.bounds()[usize::from(index)].start))
+            .collect();
+        let source_cells: BTreeSet<_> = sim.terrain_objects.cell_index().keys().copied().collect();
+        let objects = crate::sim::tiberium::TiberiumPlacementObjectContext::new(
+            sim.entities(),
+            sim.occupancy(),
+            &sim.substrate.raw_cell_occupation,
+            &scenario.runtime.resources.rules,
+            &sim.interner,
+            sim.terrain_objects.cell_index(),
+        );
+        let admission = crate::sim::tiberium::NewTiberiumAdmission::runtime(terrain, objects);
+        let inactive: Vec<_> = records
+            .iter()
+            .filter(|r| r.is_high() && !r.active)
+            .collect();
+        let mut gaps = Vec::new();
+        let mut affected = BTreeSet::new();
+        for record in &inactive {
+            let a = (
+                i32::from(record.endpoint_a.0 as i16),
+                i32::from(record.endpoint_a.1 as i16),
+            );
+            let b = (
+                i32::from(record.endpoint_b.0 as i16),
+                i32::from(record.endpoint_b.1 as i16),
+            );
+            assert!(a.0 == b.0 || a.1 == b.1, "axis-aligned producer record");
+            let step = ((b.0 - a.0).signum(), (b.1 - a.1).signum());
+            let mut cursor = (a.0 + step.0, a.1 + step.1);
+            while cursor != b {
+                if terrain
+                    .cell(cursor.0 as u16, cursor.1 as u16)
+                    .is_some_and(|cell| cell.bridge_flags() & 0x100 == 0)
+                {
+                    gaps.push(json!({"record_a": a, "record_b": b, "gap": cursor}));
+                    for offset in -2..=1 {
+                        affected.insert(if step.0 == 0 {
+                            (cursor.0 + offset, cursor.1)
+                        } else {
+                            (cursor.0, cursor.1 + offset)
+                        });
+                    }
+                }
+                cursor = (cursor.0 + step.0, cursor.1 + step.1);
+            }
+        }
+        let facts: Vec<_> = affected.into_iter().map(|(x, y)| {
+            let coord = (x as u16, y as u16);
+            let cell = terrain.cell(coord.0, coord.1);
+            json!({"coord": [x, y], "real": cell.is_some(), "cell": cell.map(|c| json!({
+                "tile": c.final_tile_index, "subtile": c.final_sub_tile,
+                "flags": c.bridge_flags(), "level": c.level, "slope": c.slope_type,
+                "land": c.land_type, "zone": c.zone_type,
+                "outside_playfield": c.outside_playfield, "allows_tiberium": c.allows_tiberium,
+                "base_build_blocked": c.base_build_blocked,
+                "resolved_tiberium_admission": crate::sim::tiberium::resolved_cell_accepts_tiberium(c),
+                "overlay_id": sim.overlay_grid.as_ref().and_then(|g| g.cell(coord.0, coord.1).overlay_id),
+                // All terrain cells conservatively form the source exclusion set;
+                // an admitted empty witness is also admitted with the narrower spawner set.
+                "live_new_tiberium_admission": sim.overlay_grid.as_ref().is_some_and(|g|
+                    crate::sim::tiberium::admit_new_tiberium_target(g, &source_cells, admission, coord).is_some()),
+                "techno_occupants": sim.occupancy().get(coord.0, coord.1).map_or(0, |o| o.occupants.len()),
+                "terrain_object": sim.terrain_objects.cell_index().contains_key(&coord),
+                "ground_walkable": sim.path_grid().and_then(|g| g.cell(coord.0, coord.1)).map(|c| c.ground_walkable),
+            }))})
+        }).collect();
+        if map_name.eq_ignore_ascii_case("Deadman.mmx") {
+            let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+                "tools/spatial_oracle/bridge_restamp_retail.json",
+            ))
+            .unwrap();
+            for change in native["changes"].as_array().unwrap() {
+                let x = change["coord"][0].as_u64().unwrap() as u16;
+                let y = change["coord"][1].as_u64().unwrap() as u16;
+                assert_eq!(
+                    u64::from(terrain.cell(x, y).unwrap().bridge_flags()),
+                    change["after"].as_u64().unwrap(),
+                    "post-load native flags at{x},{y}"
+                );
+            }
+            let witness = facts
+                .iter()
+                .find(|row| row["coord"] == serde_json::json!([57, 42]))
+                .unwrap();
+            assert_eq!(
+                witness["cell"]["live_new_tiberium_admission"], false,
+                "fresh stock load must publish native placement rejection"
+            );
+        }
+        println!(
+            "{map_name}: records={}, inactive_high={}, gaps={}, affected_cells={}",
+            records.len(),
+            inactive.len(),
+            gaps.len(),
+            facts.len()
+        );
+        let native_cells: Vec<_> = if inactive.is_empty() {
+            Vec::new()
+        } else {
+            terrain
+                .iter()
+                .map(|c| {
+                    json!([
+                        c.rx,
+                        c.ry,
+                        c.final_tile_index,
+                        c.final_sub_tile,
+                        c.bridge_flags(),
+                        c.land_type,
+                        c.tube_index.map_or(-1, |id| i32::from(id.0)),
+                        c.level,
+                        c.slope_type
+                    ])
+                })
+                .collect()
+        };
+        results.push(json!({"map": map_name, "records": records, "gaps": gaps,
+            "affected_cells": facts, "native_cells": native_cells,
+            "size": [scenario.map.header.width, scenario.map.header.height],
+            "bridge_bases": bridge_bases,
+            "tubes": terrain.tube_facts(),
+            "local_size": [scenario.map.header.local_left, scenario.map.header.local_top,
+                scenario.map.header.local_width, scenario.map.header.local_height],
+            "theater": scenario.map.header.theater,
+            "tile_allows_tiberium": (0..theater.lookup.len()).map(|tile|
+                theater.lookup.allows_tiberium(tile as u16)).collect::<Vec<_>>(),
+            "land_buildable": (0..=10).map(|land|
+                scenario.runtime.resources.rules.terrain_rules.semantics_for_land_type(land)
+                    .map(|semantics| semantics.buildable)).collect::<Vec<_>>(),
+        }));
+    }
+    let output = std::env::var("VERA20K_RESTAMP_OUTPUT").unwrap_or_else(|_| {
+        crate::test_fixture::checkout_root()
+            .join("target/restamp-retail-inventory.json")
+            .display()
+            .to_string()
+    });
+    if let Some(parent) = std::path::Path::new(&output).parent() {
+        std::fs::create_dir_all(parent).expect("inventory output directory");
+    }
+    std::fs::write(output, serde_json::to_vec_pretty(&results).unwrap()).unwrap();
+}

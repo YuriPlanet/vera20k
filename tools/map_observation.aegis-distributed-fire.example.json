@@ -1,0 +1,159 @@
+{
+  "schema_version": "vera20k.map-observation-profile.v3",
+  "launch": {
+    "mode": {
+      "class": "Battle",
+      "id": 1,
+      "ui_name_key": "GUI:Battle",
+      "tooltip_key": "STT:ModeBattle",
+      "override_file": "MPBattleMD.ini",
+      "map_filter": "standard",
+      "random_maps_allowed": true,
+      "allies_allowed": true,
+      "must_ally": false
+    },
+    "selected_map_file": "aegis-distributed-fire.map",
+    "humans": [
+      {
+        "raw_slot_index": 0,
+        "name": "VERA-OBSERVER",
+        "slot": {
+          "country": 0,
+          "country_random": false,
+          "color_index": 0,
+          "color_random": false,
+          "start_position": {
+            "Position": 0
+          },
+          "team": "None"
+        },
+        "role": {
+          "Player": {
+            "group": 0
+          }
+        }
+      }
+    ],
+    "local_player_index": 0,
+    "ai_player_count": 1,
+    "opponents": [
+      {
+        "country": 8,
+        "country_random": false,
+        "color_index": 1,
+        "color_random": false,
+        "start_position": {
+          "Position": 1
+        },
+        "team": "None",
+        "difficulty": "Easy",
+        "raw_slot_index": 1
+      }
+    ],
+    "pre_fill_house_roster": {
+      "human_nodes": [
+        {
+          "priority": 0,
+          "source_order": 0,
+          "observer": false
+        }
+      ],
+      "ai_slots": [
+        {
+          "slot_index": 0,
+          "valid": false
+        },
+        {
+          "slot_index": 1,
+          "valid": true
+        },
+        {
+          "slot_index": 2,
+          "valid": false
+        },
+        {
+          "slot_index": 3,
+          "valid": false
+        },
+        {
+          "slot_index": 4,
+          "valid": false
+        },
+        {
+          "slot_index": 5,
+          "valid": false
+        },
+        {
+          "slot_index": 6,
+          "valid": false
+        },
+        {
+          "slot_index": 7,
+          "valid": false
+        }
+      ],
+      "fixed_tail": [
+        "Neutral",
+        "Special"
+      ]
+    },
+    "options": {
+      "starting_credits": 0,
+      "unit_count": 0,
+      "tech_level": 10,
+      "game_speed": 1,
+      "default_ai_difficulty": 0,
+      "short_game": false,
+      "bases": false,
+      "bridges_destroyable": true,
+      "super_weapons": false,
+      "build_off_ally": true,
+      "crates": false,
+      "mcv_redeploy": true,
+      "fog_of_war": false,
+      "shroud": false,
+      "tiberium_grows": false,
+      "multi_engineer": false,
+      "harvester_truce": false,
+      "ally_change_allowed": true
+    }
+  },
+  "seed": 305419896,
+  "input_delay_ticks": 2,
+  "ticks": 360,
+  "width": 800,
+  "height": 600,
+  "timeout_seconds": 180,
+  "observe_owners": [
+    "VERA-OBSERVER",
+    "Computer1"
+  ],
+  "commands": [],
+  "camera_cell": [
+    43,
+    46
+  ],
+  "observe_types": [
+    "AEGIS",
+    "ZEP"
+  ],
+  "terrain_cells": [
+    [
+      40,
+      48
+    ],
+    [
+      44,
+      44
+    ],
+    [
+      45,
+      44
+    ]
+  ],
+  "observe_projectiles": true,
+  "cursor_position": [
+    720,
+    556
+  ]
+}

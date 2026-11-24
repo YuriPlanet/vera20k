@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "400 original Bullet-selected plain/RLE body/shadow compare, transparency and repeat rows; four multi-pixel transparency rows; both original shadow leaves over all65536 RGB565 destination words; ordered body/shadow pixel sequences. No full DrawIt/rowwalker/scene/GPU claim.",
+  "assumptions": [
+    "Prepared 16-bit surface/A/Z buffers and Convert leaf instances use actual original vtables. Body palette table is deliberately synthetic0x55AA, A127 and lookup offsets zero; no retail color or Convert-construction claim.",
+    "Depth candidates and old u16 depths deliberately cross signed/u16 boundaries. RLE Z-shape bytes are zero. Transparent plain index0 and RLE skip opcodes execute unchanged.",
+    "RGB565 mask is produced by original4BAA73..4BAAC8 with loss/shift inputs red5/11,green6/5,blue5/0; both exhaustive outputs must agree. No expected pixel output is synthesized.",
+    "Sequence cases execute the original leaves in listed order on retained destination/depth buffers, recording every intermediate and final word. Each step supplies exact projected spans, indices and synthetic palette-page entries. Instance IDs and palette-page labels are opaque upstream metadata absent from the native scanline ABI; they do not influence native execution. Sequences include eighty shadows, body resets, rejected depth, index zero, black palette colors and overlapping/reversed spans."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "plain_body": "0x00494B60",
+    "rle_body": "0x00497FD0",
+    "plain_shadow": "0x00492D20",
+    "rle_shadow": "0x00496820",
+    "rgb565_mask_begin": "0x004BAA73",
+    "rgb565_mask_end": "0x004BAAC8"
+  },
+  "payload_sha256": "05b2220f402174eb5a2fe75e9f878f13ca5534177fc1f09bb68caa145460e268"
+}

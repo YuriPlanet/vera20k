@@ -1,0 +1,632 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Selected original TAction numeric/reference materialization, stock EVA/input transitions, post-reset Anim41 histories, waypoint48/112, action11 message arguments, action17 retained-radius/coordinate-to-real-Cell reveal and immediate sparse-resident/cache/discovery controls. Fixed original PE only; bounded world/OS/audio/presentation seams, no whole-campaign or hardware output.",
+  "assumptions": [
+    "The first61 legacy numeric rows retain their schema and values. Additive rows are selected by case_kind before typed deserialization.",
+    "Original full TAction constructor, CRT strtok/atoi, Read and selected Execute dispatch bodies run unchanged. Supplied counted action strings and Scenario storage isolate the reader and selected consumers.",
+    "Native TeamType/TriggerType/TagType constructors publish ordered registries through their original find-or-construct helpers. Name matching, ID truncation and short-index lookup are original instructions, not fixture logic.",
+    "Reference dispatch22/53/54 has an empty live instance registry. Live force/enable/disable fanout, timer writes and detach ownership remain with existing tag_lifecycle evidence.",
+    "ReadString512 uses the existing cached single-entry transport. Capacity and missing/empty defaults execute natively; physical map-file line admission and malformed absent operands reaching atoi(NULL) are excluded.",
+    "Full original Vox Read753000 consumes all470 EVAMD DialogList entries in physical source order through shared prepared INI indexes. Physical MIX/INI preparation uses existing tools; original INI file-loading IO is outside the prepared-cache seam.",
+    "Original registry initialization752210..752246 stops before CRT exit registration; original VoiceSystem Init752290..7522EC stops before channel/file setup and sets the real cleanup guard. Original queue admission, duplicate search, insertion, unlinking, entry-state writes and cleanup execute.",
+    "EVA PlayNext takes its original pause_flagA8ED64 early exit. A supplied zeroed stream shell has no device channel, file or hardware; current-entry control is supplied for same-current and interrupt-current branches. No speech timing, audible playback or whole-mission opening claim follows.",
+    "Input actions46/47 execute original placement/mode clearing, mouse gesture cancellation, capture release, cursor show-level loops, keyboard queue clearing and Scenario lock writes. Empty placement foundation, Tactical band rectangle and MouseClass/WWMouse initialized fields/vtables are supplied.",
+    "Original MouseClass cursor methods take their initialized-but-no-SHP path. WWMouse captured-surface flag is false, keyboard record/replay selector is zero and the Windows message queue is empty. Sprite drawing, nonempty placement removal, replay IO and device event translation are excluded.",
+    "Appended positive ShowLevel1 runs full original action47 Unlock to completion, including the Show positive clamp and repeat-unlock prior gate. The signed-boundary history executes one full original Show7B9750 for1/i32MAX/i32MIN/-1; MAX/MIN full Unlock would require billions of iterations and is excluded, without replacing or shortening the loop.",
+    "Legacy EVA/input controls claim no gameplay RNG or timer cadence. EVA wait-dword clearing is observed for supplied-current interruption, without native end-time or hardware playback measurements.",
+    "Anim catalog controls execute physical RULESMD AV/master cold chronology and the post-reset Process668BF0 prefix through668E9D, after its ReadAnimations call. Other family lists are absent from this prefix; later ART-reference append discoveries are not a full-registry claim. The first607 post-reset names are established by original instructions; cold startup includes an earlier XXXX discovery.",
+    "Anim histories execute full original TAction41, Anim constructor/Start/AI/Next/UnInit and725C70 cleanup against original retail vtables. Physical ART and SHP bytes establish selected type483, frame bounds and rate. Two selected stock BH/BI histories and one synthetic Next+sound control cover retained NoEffects, late-store order, CdTimer/loops, zero gameplay RNG draws and detach/retirement. Mark and display submission are sinks; whole GPU output and broad AnimType effects are outside these histories.",
+    "Ground578080, Cell47B3A0, packed5657A0 and waypoint68BCC0 execute unchanged. Ground/bridge constants come from the original Cell/TAction CRT initializer tables; all21 slope matrices come from the shared unhooked original startup helper. Flat, slopes1/4/15/20, signed levels,100/400 bridge flags and supplied Dummy state are bounded; Focus/SetView are observed coordinate sinks.",
+    "Action11 uses original Read inline31-byte label handling, AudioVisual MessageDelay binary64 read, color LUT69A310, multiplication/ftol and CSF734E60 against prepared retail DESC:SOV1. MessageList insertion is an observed sink; native on-screen layout, expiration/pause cadence and CSF archive IO are not executed here. Missing tokenizer operands reaching atoi(NULL) are excluded; an empty constructor label and space/null-reference controls cover the valid no-message arm.",
+    "Additive trigger_reveal retains all219 preceding canonical payloads. Original Execute17 calls6E0FE0 and full5678E0/653830/4A9CA0/487630/487690 run without reveal sinks. Two original area return boundaries retain actual ordered walks and intermediate/final Cell state. Full Cell47BBF0 initializes counters/cache/vtables; supplied source level/flags distinguish signed division, word wrapping, bridge100/400 short-circuit and literal+90 versus trailing+44.",
+    "Reveal geometry reuses reveal_area.py Size58x140 diamond/window contract and original561910/5638D0 offset initialization. Map561710/5617A0/5617C0/5617E0 and existing Cell/TAction CRT tables derive104/416. Original projection6D1830/6D18C0/6D1BB0 execute in active CRT pointer814E58/814E68/814EA0 order; store6D1BDD yields native binary64 bits3FC25E5374344960 atB0CD48. The earlier zero-B0CD48 prototype is rejected and preserved only in scratch. All cells in the bounded source window execute their real constructor; other map cells are absent. Supplied flat levels plus a single source level are synthetic controls, not complete SOV terrain.",
+    "Current PlayerPtrA83D4C and a distinct triggerHouse first Execute argument have minimal supplied House storage. Both latch directions and same-player control execute original House240 gate. No full House constructor, legal null PlayerPtr, alliance transport or original client player-selection chronology is claimed.",
+    "Native dirty-screen Map+0C=1 selects6DA7D0 early exit. Empty resident lists, native frame0, GameMode0, null network session and Scenario FogOfWar clear are supplied. Real Tactical6D8700 reads the original static256-byte neighbor LUT7F4194; real5865F0 empty-object notifications execute. Boundary cache/flags and center cache/flags are distinct actual cell outputs. No full Tactical screen construction, rendered pixels, complete cache/render parity, fogged object records or long-lived sight-source admission is certified.",
+    "Intermediate shrouded booleans project original direct Cell+12C bit8 reads; final shrouded_query_al executes actual586360 at ordinary worldZ0. Every input declares rng_seed31 and executes the original scenario/main/mapgen RandomClass Seed65C6D0. rng_before/rng_after are SHA256 hashes of original-layout state bytes, not importable state hex;65C780/65C7E0 entry order is observed separately. Zero draws, unchanged native ID cursor/frame and no native allocation are bounded to these action visits, not constructors or whole opening.",
+    "RevealTriggerRadius reads exact General key83B83C, ctor665EDE stores5, retained read67181C passes Rules+62C to5276D0 and stores671836. Declared sequential physical RULESMD/map caches and synthetic missing/malformed/case/hex/wrap overrides execute that unchanged kernel. Cached empty is distinct from lexical physical empty omission. Full Rules Process chronology, optional LANGRULE/mode layers, archive IO and native physical INI loading remain outside this scalar comparison.",
+    "Existing StockPrefix owns full original fixed AIMD/map TeamType lists, TriggerType/TagType readers and selected waypoint ReadInt fragments. Their observed four Event47(0) definitions contain55 action17 records and no action16 exists in all SOV01 definitions. These are actual native type fields/linked action order; difficulty classification, live Tag construction and whole opening polling stay with tag_lifecycle rather than physical Tag ordering assumptions.",
+    "Signed LOS contrasts call unchanged reveal_area_row and execute567CB5 movsx byte11B against signed viewer level plus3. Its MapCell/Unshroud/House/fog-border sinks retain that existing geometry-only scope; the separate flat combined controls execute real knowledge leaves. Negative-radius action execution is excluded: native indexes before the count table and existing unsigned-radius production ownership requires a separate defined-domain audit. Signed negative reader outputs are retained without fabricated leaf goldens.",
+    "Additive trigger_reveal_discovery retains all220 accepted payloads, including16 action17 controls and the219 seal. Existing Entry owns native constructor/InitManagers discovery prefixes, original Infantry vtable and runtime transport; its visibility answer seam is bypassed so full586360/5865E0 execute. Real47BBF0 produces counter1/gap0/cache-2/-2 and zeroed initialized low flags. Every sparse allocated cell, signed level, flags/caches and Dummy prior is explicit in each applicable input topology.",
+    "Four campaign/noncampaign CellPUT histories execute original47E8A0 and4A9CA0 through real cache/Notify/nearest/TechnoDiscovered bodies. Owner-entry is original4D7221..4D7235. Full object allocation/Unlimbo/retail Fill is excluded. Foreign objects have NULL Tags; current-owner supplied nonnull Tag is suppressed by actual produced41A/41B. Later nonempty Event4 action chains are not executed or claimed.",
+    "Nearest controls use original CellPUT prepend order and original47C3D0 strict-distance selection, including equal-distance reversed insertion and excluded upper-list members. Seven signed diagonal levels execute586643 movsx, both inclusive bounds, fresh0 and signed-i16 wrapping into actual Dummy lookups. Supplied actors use genuine Techno discovery prefixes and native identity writer6F322F..6F323A; whole concrete constructors and transport physics are excluded.",
+    "Cache controls execute all256 masks in both real6D8700 channels and original center fallback gates; synthetic channel fields are declared inputs, not inferred render state. Fresh/cache histories and five overlapping radius2 area visits execute real immediate cell mutation/cache/notification order, retaining actual intermediate counters/flags/caches and callback traces. Only the visited cell cache is refreshed; no inferred neighbor-wide cache update is applied.",
+    "MapCell performs its own5657A0 lookup, then each6D8700 channel performs another center lookup followed by eight neighbors only when eligible. Four direct absent-in-diamond controls retain one real globalDummyABDC50 counter/cache/flags object: two distinct missing coordinates share its history. The independent packed input remains fixed while missing neighbor queries stampDummy+24; Notify reads that late-mutated cached Cell pointer. lookup records retain exact requests and real/Dummy stamped returns. These synthetic holes establish global Dummy behavior, not whole retail Map allocation or per-house-plane equivalence.",
+    "MapCell4A9D88 forwards its passed House to5865F0/vt198 rather than reading PlayerPtr again. Two identical sparse-resident controls contrast foreign-owner/current-player callbacks. Ordinary567AA9..567B18 first resolves the supplied owner to PlayerPtr through its original own/spy/allied admission and skips the area otherwise; those alternate admission branches are read-only instruction evidence and are not executed by the direct MapCell contrasts.",
+    "6565A0 fresh notifications execute their actual Map121C-null surface early exit. Original6565A0/6562D0 identify scaled radar pixel dirty-bit/vector work; this is a presentation-surface substitution, not a FogOfWar=no gate or a fogged-object cleanup claim. Frame0, Map0C=1 dirty-screen bypass, GameMode0, null network, Scenario FogOfWar clear and minimal Houses remain explicit world priors.",
+    "Building override control executes full44D5D0, actual50B730/65AE30 and original AI Unlimbo440E5C..440E7C owner-discovery corridor. A supplied already-opened6E4=1 selects the original445F80(captured0) fast return; this does not claim whole first Grand_Opening, whose existing construction owner remains separate. Synthetic TypeDF8=73 and priorHouse26C=99 expose exact copy/246/1FC writes, ScenarioInit retention, current-player discovery and duplicate suppression. No animation/first-placement opening behavior is fabricated.",
+    "Eight Building placement controls execute campaign1EC/1ED and noncampaign1EC-only human admission, current versus queuedConstruction18 and null versus nonnull Radio slots. The owner-entry callback precedes this corridor440E7C return. Building44D5ED gates both26C/246 on ScenarioInit0;1FC is always set after successful shared discovery. Full House4F54A0 executes through CampaignReader with actual Scenario/Country/Rules constructors and seed31, establishing26C=-1,246=0,1FC=1. Its one Scenario ranged450..1800 constructor call returns789 and its timer writes are explicit; that constructor is outside the zero-draw map-visit claim. Placement fixtures initialize these fields through original constructor writer kernels, while their other minimal House/Building fields remain supplied.",
+    "The ninth ai_owner_null_player_ptr placement control supplies PlayerPtrA83D4C=NULL with the same nonnull AI owner/viewer, ScenarioInit2, no Radio, currentmission0/queued-1 and already-placed6E4=1. Original6F496E compares viewer to PlayerPtr without a null guard, takes the ordinary other-house branch and admits Building44D5D0/Grand445F80 fast return. This establishes the shared headless owner-discovery boundary only; it does not establish legal full scenario startup, a null discovery viewer or nullable Action17. All prior221 aggregate outputs are sealed after projecting out only this appended placement control.",
+    "Retail BH/BI footprint runs original6E0FE0 and both complete area passes with real decoded SOV01 height bytes and allocated constructor cells in the declared58x140 diamond/window. Both original Cell/TAction CRT groups execute before the caller, deriving104/416 and nativeB0CD48. Source waypoints59/60 and retained radius9 are native-read priors established by220, not VERA inputs. Supplied zero slope/bridge state and empty resident lists exclude native TMP/object Fill. Original House ctor/read/Basic.Player selection establishes onlyRussians human/player-controlled; admitted GTGCAN/neutral structure anchors and lexical ART foundations are clearly labeled resident leads rather than nearest-object publication proof. Earlier unsealed zero-TAction-height footprint outputs are rejected and scratch-only.",
+    "Full startup footprint executes all55 native-read Event47/action17 values and retained+44 fields through original6E0FE0 and110 complete area passes. Compact topology supplies constructor cells throughout the Size58x140 diamond, each with decoded retail height or explicit zero for absent terrain records, zero slope/bridge state and empty resident lists. Actual653830 walks and actual47C3D0 admission union are retained without millions of duplicate lookup records. Source order is native TriggerType registry order followed by linked actions, not an additional claim about live Tag poll order. Shared retained StockPrefix readers provide all linked Event4 TagType/TriggerType identities; physical Techno line/Tag coordinates remain lexical object-publication leads. Every authored Event4 resident cell is compared: non-Structures use their one authored cell; CATHOSP uses all24 actually produced Foundation cells. Empty intersection excludes these supplied initial residents from this initialized footprint, not moving actors or whole native Fill.",
+    "CATHOSP Foundation evidence reuses HutTypeReader: actual45DD90 constructs the Type, original5F92F9..5F9340 retains Image across physical RULESMD/optional loose LANGRULE/map prepared cache passes, and original461225..46125D reads fixed ART Image then TypeID Foundation with original defaults/parser. Selected LANGRULE is physically absent. Actual45B1C0 initializes occupied lists and46152C..461547 binds+DFC; complete Object5F5B90/Type45EC20 produce the ordered24 offsets and7FFF sentinel. Native lazy guard/sentinel writers run until their unrelated CRT exit-registration calls, then the initialized guards are retained. The Object shell supplies the real Building vtable and constructed Type pointer; full Object constructor/Fill publication and destructor/exit registration are excluded. Measured Image/ART/list phases trace no RNG entries.",
+    "All discovery/control map fixtures seed the actual scenario/main/mapgen RandomClass with31 after initialization; hashes cover original-layout state bytes and entry traces observe65C780/65C7E0. Zero draws/no timers/no detach calls are bounded to selected NULL-Tag map/query/discovery visits. Separate whole native House setup in the retail lead projection is not included in this zero-draw claim. Scenario teardown, resident Building first-opening effects and later discovered Tag actions are excluded."
+  ],
+  "substitutions": [
+    "Inherited CRT/heap transport supplies GetLastError, SetLastError, TlsGetValue, HeapAlloc/HeapFree and critical-section imports. Original new7C8E17 receives bump storage; deletion retains storage. Original CRT accessor7D140B returns the supplied per-thread block. Gameplay instructions and real retail vtables are never patched.",
+    "Input OS imports only: WaitForSingleObject returns0, ReleaseMutex returns1, GetCapture/ReleaseCapture use the supplied window handle, ShowCursor updates a supplied OS depth and PeekMessage returns0. The native higher-level mouse/input bodies remain original.",
+    "Anim archive IO returns unchanged physical SHP bytes through the existing Reader owner. Mark5F5850/display submission4A9720 observe rather than render. PlaySound7509E0 records the original resolved sound/coordinate and prepares a valid tagged handle through the existing sound fixture; original StopAndClear/Release execute, without channel admission, audio RNG, hardware or audible output claims. Cleanup uses supplied empty Windows SEH and a checked IsBadReadPtr import over mapped memory.",
+    "MessageList5D3BA0 records all seven original arguments, including signed duration/color/style/text. Missing-CSF formatting runs original CRT; diagnostic logging4068E0 is an external sink. Locale reference-count InterlockedIncrement/Decrement imports use the shared atomic transport; no original gameplay bytes or vtables are patched."
+  ],
+  "entry_points": {
+    "constructor": "0x006DD000",
+    "read": "0x006DD5B0",
+    "execute": "0x006DD8B0",
+    "read_string": "0x00528A10",
+    "strtok": "0x007C9CC2",
+    "atoi": "0x007C9BFD",
+    "set_global": "0x00689670",
+    "set_local": "0x00689910",
+    "team_name": "0x006F1920",
+    "trigger_name": "0x00727AA0",
+    "tag_name": "0x006E6310",
+    "eva_registry_init": "0x00752210",
+    "eva_read": "0x00753000",
+    "eva_voice_init": "0x00752290",
+    "eva_name": "0x00753250",
+    "eva_set_side": "0x007534E0",
+    "eva_filename": "0x00753380",
+    "eva_queue": "0x00752480",
+    "eva_insert": "0x00752590",
+    "eva_play_next": "0x00752760",
+    "eva_clear": "0x00752370",
+    "stream_stop": "0x00407F40",
+    "lock_input": "0x00684240",
+    "unlock_input": "0x00684290",
+    "cancel_mouse_drag": "0x006938C0",
+    "cancel_band_box": "0x004AEAD0",
+    "clear_band_rect": "0x006DA160",
+    "clear_keyboard": "0x0054F720",
+    "process_messages": "0x005D4D50",
+    "mouse_hide": "0x007B9930",
+    "mouse_show": "0x007B9750",
+    "anim_action": "0x006E2290",
+    "anim_constructor": "0x00421EA0",
+    "anim_ai": "0x00423AC0",
+    "anim_start": "0x00424CE0",
+    "anim_uninit": "0x004255B0",
+    "anim_art_read": "0x00427D00",
+    "rules_constructor": "0x00665650",
+    "rules_audio_visual": "0x006691E0",
+    "rules_animation_list": "0x006728B0",
+    "rules_process": "0x00668BF0",
+    "delete_cleanup": "0x00725C70",
+    "waypoint": "0x0068BCC0",
+    "packed_cell": "0x005657A0",
+    "ground_height": "0x00578080",
+    "slope_height": "0x0047B3A0",
+    "message_color": "0x0069A310",
+    "csf_lookup": "0x00734E60",
+    "message_add": "0x005D3BA0",
+    "trigger_reveal": "0x006E0FE0",
+    "reveal_radius_ctor_store": "0x00665EDE",
+    "reveal_radius_reader": "0x0067181C",
+    "read_int": "0x005276D0",
+    "reveal_area": "0x005678E0",
+    "area_cell": "0x00653830",
+    "map_cell": "0x004A9CA0",
+    "cell_constructor": "0x0047BBF0",
+    "cell_reveal": "0x00487630",
+    "cell_leave": "0x00487690",
+    "is_shrouded": "0x00586360",
+    "area_offsets": "0x00561910",
+    "area_los_offsets": "0x005638D0",
+    "adjust_for_z": "0x006D20E0",
+    "projection_diagonal_init": "0x006D1830",
+    "projection_angle_init": "0x006D18C0",
+    "projection_z_multiplier_init": "0x006D1BB0",
+    "projection_z_multiplier_store": "0x006D1BDD",
+    "neighbor_cache": "0x006D8700",
+    "cell_put": "0x0047E8A0",
+    "cell_notify": "0x005865F0",
+    "nearest_cell_object": "0x0047C3D0",
+    "techno_discovered": "0x006F4960",
+    "building_discovered": "0x0044D5D0",
+    "ai_building_unlimbo_owner_discovery": "0x00440E5C",
+    "discovery_house_constructor": "0x004F54A0",
+    "house_human_query": "0x0050B730",
+    "radio_has_contact": "0x0065AE30",
+    "mission_query": "0x005B3040",
+    "building_type_constructor": "0x0045DD90",
+    "type_image_reader": "0x005F92F9",
+    "art_foundation_reader": "0x00461225",
+    "foundation_list_init": "0x0045B1C0",
+    "foundation_list_bind": "0x0046152C",
+    "object_foundation_list": "0x005F5B90",
+    "type_foundation_list": "0x0045EC20",
+    "radar_cell_dirty": "0x006565A0",
+    "radar_pixel_dirty": "0x006562D0"
+  },
+  "command": "python -m tools.spatial_oracle.trigger_action_values --check",
+  "retail_eva": {
+    "archive": "ra2md.mix -> localmd.mix -> EVAMD.INI",
+    "master_sha256": "69d886defad9114dd440a013b364c8c004e369b5221d1889957b49d00058559d",
+    "local_sha256": "cd181596b2deaeacf7bba77e661ae4438d3f778efc0e38ae2b967c410bf3f931",
+    "bytes": 79889,
+    "sha256": "e4df441ac619ba3b68e84ceee55e3eaf7c64c0410176cf2ea442085da9feeadc"
+  },
+  "retail_animation_inputs": [
+    {
+      "file": "RULESMD.INI",
+      "archive": "expandmd01.mix",
+      "bytes": 743215,
+      "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+    },
+    {
+      "file": "ARTMD.INI",
+      "archive": "ra2md.mix -> localmd.mix",
+      "bytes": 336535,
+      "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31"
+    }
+  ],
+  "token_layout": {
+    "token1": "ActionID -> +2C",
+    "token2": "ParameterType metadata dispatch; never the definition operand",
+    "token3": "Actual operand consumed by Read6DD5B0, including actions22/53/54",
+    "tokens4_to7": "Four numeric parameters -> +34/+38/+3C/+40",
+    "token8": "Waypoint -> +44, except types5/9 write atoi -> +90 and type11 -> +48"
+  },
+  "reference_fields": {
+    "1_and5": "TeamType +30, registryA8ECA0",
+    "2": "TriggerType +50, registry8B4178",
+    "3": "TagType +4C, registryB0E780",
+    "6": "Vox name lookup753250 -> numeric+90",
+    "4": "31-byte inline CSF label+6D, explicitNUL+8C"
+  },
+  "reference_selection": "Original atoi(operand)==-1 null check precedes strlen<3 index selection. Otherwise names remain untrimmed and helpers match case-insensitively or construct. ID storage is23 bytes plus NUL.",
+  "legacy_numeric": {
+    "rows": 61,
+    "canonical_payload_sha256": "ac1ab9e82b219e30325f9c0ee7e110d02baaecc949fa07be5cead697be629767"
+  },
+  "legacy_pre_cursor_controls": {
+    "rows": 212,
+    "canonical_payload_sha256": "05e87e0576b9da7935486aa6ac3ea9e74d58fc3d8c16780e0f660d4d8bb1298a"
+  },
+  "legacy_pre_anim_controls": {
+    "rows": 214,
+    "canonical_payload_sha256": "a86bea00768c2170934a96b143fa407e854f5cb3da60a2bfeba9a5998aec8f03"
+  },
+  "legacy_pre_reveal_controls": {
+    "rows": 219,
+    "canonical_payload_sha256": "6b82bb4d6071f29e3af421fe67fab3b69b9672f333360a2cf6ea624944ab961b"
+  },
+  "legacy_pre_discovery_controls": {
+    "rows": 220,
+    "canonical_payload_sha256": "f91481cdca8d3af67571ff29ddd49139b5c7e4e5449600c5639664b499eee26e"
+  },
+  "legacy_pre_null_player_controls": {
+    "placement_rows": 8,
+    "canonical_discovery_aggregate_sha256": "342e2d4accc1384c740edc11ec881f7db97f7b1f32f1ba22f7c883892d571a9f"
+  },
+  "retail_reveal_inputs": {
+    "sov01umd.map": {
+      "bytes": 329188,
+      "sha256": "498b989a4b6f579dee0904a77f1fabf982c14786db21a46c41900fc8344ec72b"
+    },
+    "aimd.ini": {
+      "bytes": 138538,
+      "sha256": "5df41eaec00a78d0760ef5eecdf27d65ae1cd537309c7eac973318266986f89d"
+    },
+    "evamd.ini": {
+      "bytes": 79889,
+      "sha256": "e4df441ac619ba3b68e84ceee55e3eaf7c64c0410176cf2ea442085da9feeadc"
+    },
+    "rulesmd.ini": {
+      "bytes": 743215,
+      "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+    }
+  },
+  "reveal_callers": {
+    "execute17": "6DE34E..6DE36E calls6E0FE0",
+    "spring_house": "7265F0..726605 resolves TriggerType owner through502D30 and passes first Execute argument",
+    "radius_read_order": [
+      "SpotlightRadius83B850",
+      "RevealTriggerRadius83B83C",
+      "ChargeToDrainRatio83B828",
+      "WallBuildSpeedCoefficient83B80C"
+    ],
+    "scalar_reader_file_scope": "General kernel is called per prepared INI pass; complete loader chronology excluded",
+    "cleanup": "Action17 has no detach/timer/allocation producer; Cell knowledge persists after final1. Periodic sweep/full mission cleanup excluded."
+  },
+  "original_slices": [
+    {
+      "start": "006DD000",
+      "end_exclusive": "006DD17B",
+      "sha256": "dfeb0260e01dbceede3ca77b99488a7214c166959a36d333cbcfd8f5c2bd4ac9"
+    },
+    {
+      "start": "006DD5B0",
+      "end_exclusive": "006DD87D",
+      "sha256": "4c10f8e7bb69e52af2e0405b71fe405d3b46d9f09ecd5497bf567386b0a03806"
+    },
+    {
+      "start": "006DD8B0",
+      "end_exclusive": "006E45D0",
+      "sha256": "9348ecded91de435f94c685db73e63df1880d34bed7cabbe58cec7c1320660d9"
+    },
+    {
+      "start": "00410800",
+      "end_exclusive": "004109B0",
+      "sha256": "ebedbaefb021e7c43817940a962c37b8c470b27ac3d2f2dc79bc48cbba7f0924"
+    },
+    {
+      "start": "006F06E0",
+      "end_exclusive": "006F0900",
+      "sha256": "08ffe0f276b756f6485ef9aa8056529c875ca5b7edcc2d8c161781ea220732ff"
+    },
+    {
+      "start": "006F1920",
+      "end_exclusive": "006F19A3",
+      "sha256": "d17bdc42a0f0c65be02aa57e6d656032519ecd0a1700b400b61df0f33c57cc11"
+    },
+    {
+      "start": "00726C80",
+      "end_exclusive": "00726DFB",
+      "sha256": "65d040f962ae60712ea010efba358335eabf0715d6b9bad14598e5c544d31371"
+    },
+    {
+      "start": "00727AA0",
+      "end_exclusive": "00727B23",
+      "sha256": "b8b2d98701556dbd44ce0e32a0ff7f4633ee1d564d72212c55766675dfeeba58"
+    },
+    {
+      "start": "006E5B60",
+      "end_exclusive": "006E5C90",
+      "sha256": "e4a8087ebadb45598ad53bd4c996751adcd0f9b9289be30e4d720d7299ba14f6"
+    },
+    {
+      "start": "006E6310",
+      "end_exclusive": "006E6393",
+      "sha256": "fcfbf64f8235d4fe98968f1427a37de8178abc02964a3fbc2142bf7a42d693df"
+    },
+    {
+      "start": "00752210",
+      "end_exclusive": "00753630",
+      "sha256": "b250b5d7ed8106d956983709a464f576d5ad8ccce4eb5f2165ad6e129e54fa67"
+    },
+    {
+      "start": "004072C0",
+      "end_exclusive": "004074A0",
+      "sha256": "f3dc91024c34b1902a6699c7927f0ca26cc77605129f7ca7bd4ce6ddb136ae9d"
+    },
+    {
+      "start": "00407F40",
+      "end_exclusive": "00407F74",
+      "sha256": "ef77c249dad81a76ea4da3f0024853caf7a6de7cee05e3989d146fac40ba7086"
+    },
+    {
+      "start": "00684240",
+      "end_exclusive": "006842F0",
+      "sha256": "49c4adb5b2231275b6004206b582be8364a0338f12631b109a68781a8f71f936"
+    },
+    {
+      "start": "004A8BF0",
+      "end_exclusive": "004A8D31",
+      "sha256": "cd48bf0a1e867e5dcdfacb72039efaebd0a7be760cb5e8cdfe7e51aded76cae0"
+    },
+    {
+      "start": "004AC660",
+      "end_exclusive": "004AC6F6",
+      "sha256": "877be2bc25ab1f7110e16faffe47f7f31cb690affd9403fb5ce2c71da9200f40"
+    },
+    {
+      "start": "004AC8C0",
+      "end_exclusive": "004AC957",
+      "sha256": "995000fd6209a114a2d8411bcb81312f3d847bd87dbcfefefb42bd3054673e62"
+    },
+    {
+      "start": "004AEAD0",
+      "end_exclusive": "004AEB04",
+      "sha256": "6592bb7f7dc0b4aabd4d6067c3083ae05c0e24dc1d4ade537291ffe0c758a570"
+    },
+    {
+      "start": "006938C0",
+      "end_exclusive": "006938E7",
+      "sha256": "81c775a504bc873023c6aca353647e8229e9367e242fddc2f1ab4dc1f54d5748"
+    },
+    {
+      "start": "006DA160",
+      "end_exclusive": "006DA17D",
+      "sha256": "7190eb97e343deaed02033d2f28fd6e8dafe751116d2284a85b89b2ccf075064"
+    },
+    {
+      "start": "0054F720",
+      "end_exclusive": "0054F789",
+      "sha256": "9e568c404071ce1cf754b73cf76fe3a866720d390d79b37872cb4f688fbe9a14"
+    },
+    {
+      "start": "005D4D50",
+      "end_exclusive": "005D4E70",
+      "sha256": "e5dd4faca4f15552a033b0ac92a3891481ff789e29104d7256dc15b86e98a4ab"
+    },
+    {
+      "start": "0053E770",
+      "end_exclusive": "0053EB41",
+      "sha256": "55f35216be82c651cfd05fb32594dbde9f0c194b0df710244c91d4e23788bc1f"
+    },
+    {
+      "start": "007B89F0",
+      "end_exclusive": "007B89F4",
+      "sha256": "2e339cdc5de837ec151dbde90057caeabba18ac3ea32e7c2cffc8f95df41a6ff"
+    },
+    {
+      "start": "007B9750",
+      "end_exclusive": "007B9A55",
+      "sha256": "55a67017fa04197521b710b05a41bdd8e94da320f6e18b1b855909c1807c2c53"
+    },
+    {
+      "start": "007BA330",
+      "end_exclusive": "007BA334",
+      "sha256": "47af619b3e220babf4669a6ad04ded74eac128808c50b426ef20410162316d2c"
+    },
+    {
+      "start": "005BDA40",
+      "end_exclusive": "005BDDF0",
+      "sha256": "42a027a479955ed1d80e14d22b0facb2c797a733c140be1fc516881fcf2590a7"
+    },
+    {
+      "start": "00421EA0",
+      "end_exclusive": "00422723",
+      "sha256": "7a7b140db7740b7e2131c9f567ad01ddbae19456cee48be79165d55f936fa63e"
+    },
+    {
+      "start": "00423AC0",
+      "end_exclusive": "00424B90",
+      "sha256": "81edeae7cf0414dc7a8b0c4435b42b4e25749b890cf336ad3ebc638dd5f3002d"
+    },
+    {
+      "start": "00424CE0",
+      "end_exclusive": "00424EFF",
+      "sha256": "e455aa6cb48cef8a96c82ada12f96c5bbcd07072be36985b11efb97a48b4c22c"
+    },
+    {
+      "start": "004255B0",
+      "end_exclusive": "00425629",
+      "sha256": "8288d7fb169fd5120957ba8edd81749411e16a1dbbed8dd1450b4e66b51a6cc5"
+    },
+    {
+      "start": "00427530",
+      "end_exclusive": "004293C0",
+      "sha256": "ef7d2644f079481587379d05bf2c8592e7927166f47bb2c5b83a1efe26a961ac"
+    },
+    {
+      "start": "00665650",
+      "end_exclusive": "00665F70",
+      "sha256": "34a895110ce93a21dc5ab2f81c0298711d73aee1a70b45b41eeabb1cfa2f259c"
+    },
+    {
+      "start": "006691E0",
+      "end_exclusive": "0066B85F",
+      "sha256": "b9b3d0db1955f69aebc1bd5d95752a72ac795e00ad5ec38bd3d95197689edb52"
+    },
+    {
+      "start": "006728B0",
+      "end_exclusive": "00672970",
+      "sha256": "060a8b7200ef682d7a81c902944d4ae90eea1297e90a96fae7aa659689cb640d"
+    },
+    {
+      "start": "00668BF0",
+      "end_exclusive": "00668FA3",
+      "sha256": "84fd46a9e324ef2c86820903c295a5b7dca834e470c9c97e80e238e159e0ff6d"
+    },
+    {
+      "start": "00725C70",
+      "end_exclusive": "00725D8F",
+      "sha256": "8f53d14498a19dee9ef5eca30bd58179eb055e6fc3ed3f1b54d140794f462ff4"
+    },
+    {
+      "start": "0047B150",
+      "end_exclusive": "0047BB5B",
+      "sha256": "5a9b3924b978277361c6f9a4123e6a186dc52cec329840722068faf4645008a7"
+    },
+    {
+      "start": "006DCD70",
+      "end_exclusive": "006DCF70",
+      "sha256": "becf3462863203be96034d0fdbe3779ad6e5ac2e09eb44947d931b4606ad703e"
+    },
+    {
+      "start": "00565730",
+      "end_exclusive": "00565803",
+      "sha256": "6d3fc45f7eabe15d149ed5aaa45a5569e4897e00f67fcc3359a9c8ff612aa395"
+    },
+    {
+      "start": "00578080",
+      "end_exclusive": "005780F9",
+      "sha256": "da9455b1bf1952e5e720859331297847db37f66c4c05fb3e735ccf5946169bc2"
+    },
+    {
+      "start": "00734E60",
+      "end_exclusive": "00735090",
+      "sha256": "ee49990cb0f811d9432629274ddce12a07fa410d211bf6d133e1126b988a79a2"
+    },
+    {
+      "start": "0069A310",
+      "end_exclusive": "0069A338",
+      "sha256": "fde82197a3119f9e6dc90918a99a51251895930d6d18037a66ad5a0faf5102ba"
+    },
+    {
+      "start": "0067181C",
+      "end_exclusive": "0067183C",
+      "sha256": "b29d044d4f566488f1c99411135633692089356c3a6ae26206facb83fff78bc8"
+    },
+    {
+      "start": "0047BBF0",
+      "end_exclusive": "0047BDA8",
+      "sha256": "abc5f47c9d770dd4341ba5167e5841f4c347d59a13d9b810edfd696506553c99"
+    },
+    {
+      "start": "00487630",
+      "end_exclusive": "004876F0",
+      "sha256": "58fa214624acf665cb5daa0be97b3b36d92793f91400c6fa12b0a740746e5bb2"
+    },
+    {
+      "start": "005678E0",
+      "end_exclusive": "00567D92",
+      "sha256": "6a9d6c03b9812f8a15f1eb3e0d3e1792d3bc853a876c4d046233831ce2f5ebc2"
+    },
+    {
+      "start": "00653830",
+      "end_exclusive": "0065384C",
+      "sha256": "5fbe5d9ac73b5617d05c06d4d5c3f50ab2c913774a27b34038efe251c5b95d59"
+    },
+    {
+      "start": "004A9CA0",
+      "end_exclusive": "004A9DC9",
+      "sha256": "1e24d8a11c2b2e891c6ed17780e439c00399fb7c9ba60c86436dbf5cce10193a"
+    },
+    {
+      "start": "00586360",
+      "end_exclusive": "00586497",
+      "sha256": "15125bb71fdfd1985965e4058848caa7b9d30ad0d585f177147eb1f8cc010b67"
+    },
+    {
+      "start": "00561710",
+      "end_exclusive": "00561811",
+      "sha256": "fbf702afb5ffbb38c484ebaf402b18d794a5284b047f6cd89e8f0b64013ff1b1"
+    },
+    {
+      "start": "006D1830",
+      "end_exclusive": "006D1858",
+      "sha256": "624d96f4a14331d37528bd19fa70deef93255c1ac3b9ec9a29b570b3b726acd0"
+    },
+    {
+      "start": "006D18C0",
+      "end_exclusive": "006D18D3",
+      "sha256": "94e17faffac9ae7e7581da091fecf7d5c6947ec857bcf642275aa08ef570f039"
+    },
+    {
+      "start": "006D1BB0",
+      "end_exclusive": "006D1BE4",
+      "sha256": "90f4428bc10e6514adac350e26bde5fc48ae8dfb5b4ff60a244c2986661e5806"
+    },
+    {
+      "start": "006D8700",
+      "end_exclusive": "006D8ADB",
+      "sha256": "a07fef937b48f09b6c6c7f43a7fd592b7b4b0171f9ab195ecd8ebaf659db3464"
+    }
+  ],
+  "discovery_original_slices": [
+    {
+      "start": "0047BBF0",
+      "end_exclusive": "0047BDA8",
+      "sha256": "abc5f47c9d770dd4341ba5167e5841f4c347d59a13d9b810edfd696506553c99"
+    },
+    {
+      "start": "0047E8A0",
+      "end_exclusive": "0047EA87",
+      "sha256": "b80e0659e3d1a51a10119e6e43ee77fe5e8af4287fe6ba55d8347b808e42e4e2"
+    },
+    {
+      "start": "00586360",
+      "end_exclusive": "00586497",
+      "sha256": "15125bb71fdfd1985965e4058848caa7b9d30ad0d585f177147eb1f8cc010b67"
+    },
+    {
+      "start": "005865E0",
+      "end_exclusive": "005866BA",
+      "sha256": "b7b3dfecba7d246b3e4e6187fab371268b82f65c8d12766f61f23f116b02ba8d"
+    },
+    {
+      "start": "0047C3D0",
+      "end_exclusive": "0047C4C8",
+      "sha256": "4007942d641ac7abad5a01200c6773c8a44058df9ca94470f323041530308e3b"
+    },
+    {
+      "start": "006F4960",
+      "end_exclusive": "006F4A3D",
+      "sha256": "b8a63be5c4d1b96f40dada1b8a120e562578d3b5d2ab28c92f40bfadfd0be29c"
+    },
+    {
+      "start": "004A9CA0",
+      "end_exclusive": "004A9DC9",
+      "sha256": "1e24d8a11c2b2e891c6ed17780e439c00399fb7c9ba60c86436dbf5cce10193a"
+    },
+    {
+      "start": "006D8700",
+      "end_exclusive": "006D8ADA",
+      "sha256": "47b5aafc15622beb38a578733685d4c5854b97d060dc82f1c554bf1ddb634370"
+    },
+    {
+      "start": "006565A0",
+      "end_exclusive": "0065674E",
+      "sha256": "cdfc6585ce825ce7cbda303121f8828f8075330a0a458ca1cee59acc2b1874c2"
+    },
+    {
+      "start": "006562D0",
+      "end_exclusive": "006563A2",
+      "sha256": "6cbd3e49afc49ec8ca91c4b1592a7f5fc49ff60cf14bb7cb2ae968aa76b021aa"
+    },
+    {
+      "start": "005678E0",
+      "end_exclusive": "00567D90",
+      "sha256": "547b86eed9e52f53bae852ab64914615a61db84a6e77f82b4ccf6965522800ac"
+    },
+    {
+      "start": "00487630",
+      "end_exclusive": "004876F0",
+      "sha256": "58fa214624acf665cb5daa0be97b3b36d92793f91400c6fa12b0a740746e5bb2"
+    },
+    {
+      "start": "0044D5D0",
+      "end_exclusive": "0044D69E",
+      "sha256": "f1e5c7a1dad4f676029b05a900c64e5512f7e2672b2d3243da4fa9b19be530ce"
+    },
+    {
+      "start": "00445F80",
+      "end_exclusive": "00446FCD",
+      "sha256": "050607751e61441777c0faec44aabf58348c210810e39261b2d9e49288b21f7f"
+    },
+    {
+      "start": "006E0FE0",
+      "end_exclusive": "006E1172",
+      "sha256": "ffe5d04f31dd2f48a37628f0c1f26c55eeb395e63d30053fc77790a119badd77"
+    },
+    {
+      "start": "005657A0",
+      "end_exclusive": "005657E9",
+      "sha256": "e384d6179b40d285a2e4e367696ca93aed2dd267c2ba02ac07d9a045730ef1e1"
+    },
+    {
+      "start": "00440E5C",
+      "end_exclusive": "00440E7C",
+      "sha256": "156aea0e34120bb475b29e1841c52e74b53d59442598efa51f3680ab6d98852d"
+    },
+    {
+      "start": "0050B730",
+      "end_exclusive": "0050B753",
+      "sha256": "82b880a6951afa4453901f755e53e1ca844a0c87dce771e9bb4ffdf624d570e6"
+    },
+    {
+      "start": "0065AE30",
+      "end_exclusive": "0065AE55",
+      "sha256": "d8fac123d34f55691350b13b27012a3542783472ae27b8901245656a0a6fa544"
+    },
+    {
+      "start": "005B3040",
+      "end_exclusive": "005B3052",
+      "sha256": "cfce1e37c7cceebe9363a67af6ad524e1bc0cbea00568486da7519da5d499f86"
+    },
+    {
+      "start": "004F5746",
+      "end_exclusive": "004F574D",
+      "sha256": "68cd8c9ce803ba3118872aa2607d0a09bc58566d3285d69b7bdc48ea0784c299"
+    },
+    {
+      "start": "004F5789",
+      "end_exclusive": "004F578F",
+      "sha256": "9e9fd64ca6ab154b87870475c407f097a98317a99473582570d56deb614df162"
+    },
+    {
+      "start": "004F57DB",
+      "end_exclusive": "004F57E4",
+      "sha256": "06d8e52e0aef375cbd23dab4e107d71973bd849e50d5e34beb56047afb6b7587"
+    }
+  ],
+  "replay_command": "python -m tools.spatial_oracle.trigger_action_values",
+  "payload_sha256": "2d14624910e0cd2368fc09a92e0e0a0cd156da6ac22580e31f7c0dd967ab68ce"
+}

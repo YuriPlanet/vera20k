@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "scope": "Identity compression of the independent original581F50 witness. No native value or input fact is replaced.",
+  "original_result": "anytown-navigation-restore-native/navigation_restore.json",
+  "original_file_sha256": "25ad25a8aa35b2fec4e41a33f50e7be70935e75d0ae77e4b31bd73656a7703d6",
+  "results": {
+    "anytown_navigation_restore.json": {
+      "original_payload_sha256": "faa1162b2f9bc0937282ec968ee84bb44a8df7c553c4dec38cbd1a9389f421da",
+      "published_payload_sha256": "faa1162b2f9bc0937282ec968ee84bb44a8df7c553c4dec38cbd1a9389f421da"
+    }
+  }
+}

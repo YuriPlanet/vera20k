@@ -1,0 +1,794 @@
+#!/usr/bin/env python3
+"""Compare a VERA20k shell-capture frame with a native screenshot in RGB565 units.
+
+Both engines compose shell frames on a 16-bit R5G6B5 surface. Their final
+8-bit expansions differ (cnc-ddraw shifts or replicates bits; the VERA20k
+presenter uses the enrolled ``ACTIVE_RETAIL_RGB565_PRESENTATION`` codebook in
+``src/render/native_surface_format.rs``), but both keep the unit in the top
+5/6/5 bits, so ``r >> 3``, ``g >> 2``, ``b >> 3`` recovers each surface unit
+exactly. Differences are therefore reported in RGB565 units, never in 8-bit
+display values.
+
+The capture side is a ``--shell-capture`` bundle (``capture.json`` plus the
+BGRA8 ``frame.bgra`` it names, checked against the manifest's SHA-256 or, for
+older schemas without one, its byte length). The native side is a PNG
+screenshot of the same client area (8-bit RGB/RGBA or 1/2/4/8-bit palette,
+non-interlaced). Masked rectangles are excluded, for example a cursor the
+native screenshot lacks or a region the comparison does not cover.
+
+Usage:
+    python -m tools.shell_capture_diff --capture DIR --native PNG \
+        [--mask label=x,y,w,h ...] [--output report.json] [--diff-png out.png] \
+        [--max-differing N] [--max-unit-difference D]
+    python -m tools.shell_capture_diff --capture DIR --validate-only \
+        [--output report.json]
+
+Exit status: 0 when the comparison is within the given limits (no limits:
+always 0), 1 when a limit is exceeded, 2 for invalid input.
+"""
+
+import argparse
+import hashlib
+import json
+import struct
+import sys
+import zlib
+from pathlib import Path
+
+from tools.shell_certification.core import _read_regular_bytes, absolute_path, parse_json_bytes
+
+SCHEMA = "vera20k.shell-capture-diff.v1"
+CAMPAIGN_SCHEMA = "vera20k.campaign-start-capture.v1"
+CAMPAIGN_CHECKPOINTS = {
+    f"campaign-{campaign}-{phase}": (campaign, phase)
+    for campaign in ("all1", "sov1")
+    for phase in ("loading-first-frame", "first-live-frame", "abort-return")
+}
+CAMPAIGN_CHECKPOINTS["campaign-back-return"] = (None, "campaign-back-return")
+CAMPAIGN_CHECKPOINTS["campaign-all1-opening-load-unlocked"] = (
+    "all1", "opening-load-unlocked-while-locked")
+EXPLICIT_CAMPAIGN_MAPS = {
+    "campaign-all02-first-live-frame": "ALL02UMD.MAP",
+    "campaign-sov05-first-live-frame": "SOV05UMD.MAP",
+    "campaign-sov07-first-live-frame": "SOV07TMD.MAP",
+}
+for checkpoint in EXPLICIT_CAMPAIGN_MAPS:
+    # The native external-start owner retains catalog record0 even when an
+    # explicit filename selects a mission from the other campaign.
+    CAMPAIGN_CHECKPOINTS[checkpoint] = ("all1", "explicit-first-live-frame")
+CAMPAIGN_CHECKPOINTS["campaign-all1-initial-save"] = ("all1", "initial-save")
+CAMPAIGN_CHECKPOINTS["campaign-sov1-initial-save"] = ("sov1", "initial-save")
+for phase in ("opening-locked", "opening-pan", "opening-flash", "opening-arrows",
+              "opening-unlocked", "opening-restore-unlocked",
+              "opening-timer-running", "opening-timer-expired"):
+    CAMPAIGN_CHECKPOINTS[f"campaign-sov1-{phase}"] = ("sov1", phase)
+# Campaign receipts carry per-step observations; long ones pass 100 MiB.
+MAX_MANIFEST_BYTES = 128 * 1024 * 1024
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+TILE = 50
+
+
+class InputError(Exception):
+    pass
+
+
+def _require(condition, message):
+    if not condition:
+        raise InputError(message)
+
+
+def _integer(value):
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _hex_hash(value, digits):
+    return isinstance(value, str) and len(value) == digits and all(
+        char in "0123456789abcdef" for char in value
+    )
+
+
+def validate_campaign_capture(manifest):
+    """Check route/owner receipt consistency; this does not assert native parity."""
+    checkpoint = manifest.get("checkpoint")
+    schema = manifest.get("schema_version")
+    if checkpoint not in CAMPAIGN_CHECKPOINTS and schema != CAMPAIGN_SCHEMA:
+        return None
+    _require(schema == CAMPAIGN_SCHEMA, "campaign checkpoint has no campaign receipt schema")
+    _require(checkpoint in CAMPAIGN_CHECKPOINTS, "unknown campaign receipt checkpoint")
+    campaign_id, phase = CAMPAIGN_CHECKPOINTS[checkpoint]
+    _require(manifest.get("checkpoint_phase") == phase, "campaign checkpoint phase mismatch")
+    _require(manifest.get("parity_certification") == "NONE", "capture is not a parity certificate")
+    _require(_hex_hash(manifest["frame"].get("sha256"), 64)
+             and _integer(manifest["frame"].get("byte_length")),
+             "campaign readback byte receipt missing")
+    frame = manifest["capture_frame"]
+    _require(_integer(frame) and frame > 0, "campaign capture has no presented frame ordinal")
+    route = manifest["route"]
+    _require(isinstance(route, list) and all(isinstance(row, dict) for row in route),
+             "campaign route is not an ordered receipt")
+    route_frames = [row.get("frame") for row in route]
+    _require(all(_integer(value) and 0 <= value <= frame for value in route_frames),
+             "campaign route contains an invalid presented frame")
+    _require(route_frames == sorted(route_frames), "campaign route frame order changed")
+
+    def route_action(action, dialog=None, after=-1):
+        for index, row in enumerate(route):
+            if index > after and row.get("action") == action and (
+                dialog is None or row.get("dialog") == dialog
+            ):
+                return index, row
+        raise InputError(f"campaign route omitted {action}")
+
+    main_index, _ = route_action("SinglePlayer", 0xE2)
+    new_index, _ = route_action("NewCampaign", 0x100, main_index)
+    if campaign_id is None:
+        back_index, _ = route_action("Back", 0x94, new_index)
+        route_action("Back returned", 0x100, back_index)
+        returned = manifest["shell_return"]
+        _require(returned.get("screen") == "MainMenu" and returned.get("route") == "SinglePlayer"
+                 and returned.get("campaign_page_present") is False
+                 and returned.get("loading_session_present") is False,
+                 "campaign Back did not retire the campaign/loading route")
+        return {"phase": phase, "parity_certification": "NONE"}
+
+    explicit_map = EXPLICIT_CAMPAIGN_MAPS.get(checkpoint)
+    if explicit_map:
+        release_index, press = route_action("explicit campaign spawn", after=new_index)
+        release = press
+        _require(press.get("scenario") == explicit_map and press.get("seed") == 1,
+                 "explicit campaign admission changed")
+    else:
+        press_index, press = route_action("emblem press", 0x94, new_index)
+        release_index, release = route_action("emblem release", 0x94, press_index)
+        emblem = {"all1": 0x6EA, "sov1": 0x6EC}[campaign_id]
+        _require(press.get("emblem") == emblem and release.get("emblem") == emblem
+                 and press.get("campaign") == campaign_id and release.get("campaign") == campaign_id,
+                 "campaign route selected a different emblem")
+        _require(press["frame"] < release["frame"], "emblem press was not presented before release")
+    admitted_index, _ = route_action("campaign loading admitted", after=release_index)
+    startup = manifest["startup"]
+    campaign = startup["campaign"]
+    _require(str(campaign["id"]).lower() == campaign_id, "admitted campaign differs from emblem")
+    _require(_integer(campaign["index"]) and campaign["index"] >= 0 and _integer(campaign["cd"]),
+             "campaign registry admission is missing index/CD")
+    difficulty = startup["difficulty"]
+    _require(_integer(difficulty) and 0 <= difficulty <= 2
+             and press.get("difficulty") == difficulty and release.get("difficulty") == difficulty,
+             "campaign difficulty changed between emblem admission and loading")
+    seed = startup["seed"]
+    _require(_integer(seed["value"]) and 0 <= seed["value"] <= 0xFFFFFFFF
+             and isinstance(seed["source"], str) and isinstance(seed["seed_authority_certifying"], bool),
+             "campaign has no seed authority receipt")
+    source = manifest["selected_map_source"]
+    _require(isinstance(campaign["scenario"], str) and campaign["scenario"],
+             "selected campaign filename is missing")
+    _require(manifest.get("map_admission") == "prepared" and isinstance(source, dict),
+             "prepared campaign map byte receipt is missing")
+    _require(source.get("kind") in ("loose", "mix"), "campaign map is a generated/fallback source")
+    _require(_integer(source["payload_len"]) and source["payload_len"] > 0
+             and _hex_hash(source["source_sha256"], 64), "campaign map byte identity is missing")
+    selected_name = source["logical_name"] if source["kind"] == "mix" else source["path"]
+    _require(isinstance(selected_name, str), "selected map filename is missing")
+    selected_name = selected_name.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    selected_scenario = startup.get("scenario", campaign["scenario"])
+    scenario_name = selected_scenario.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    if explicit_map:
+        _require(startup.get("scenario") == explicit_map, "explicit campaign selected another map")
+    if explicit_map == "ALL02UMD.MAP":
+        buildings = manifest["runtime"].get("player_buildings", [])
+        flaks = [b for b in buildings if b.get("type") == "NAFLAK" and b.get("cell") == [159, 165]]
+        _require(len(flaks) == 1, "ALL02 capture omitted its authored player Flak")
+        flak = flaks[0]
+        _require(flak.get("in_playfield") is False and flak.get("discovered") is False
+                 and flak.get("opened") is False and flak.get("ready") == 0
+                 and flak.get("mission") == -1 and flak.get("queued") == 5,
+                 "ALL02 hidden player Flak was prematurely opened or ready")
+    _require(selected_name == scenario_name, "map byte source differs from the admitted scenario")
+    if source["kind"] == "mix":
+        _require(isinstance(source["source_archive"], str) and source["source_archive"]
+                 and _integer(source["entry_id"]), "MIX map source provenance is missing")
+    hashes = manifest["process_source_ini_hashes"]
+    _require("parsed cache" in hashes["domain"], "process hashes are not labelled as parsed cache")
+    sources = hashes["sources"]
+    _require(isinstance(sources, list) and [row["name"].upper() for row in sources]
+             == ["RULESMD.INI", "LANGRULE.INI", "ARTMD.INI"], "process source receipt changed")
+    _require(all(_hex_hash(row["parsed_cache_hash"], 16) or (
+        row["name"].upper() == "LANGRULE.INI" and row["parsed_cache_hash"] is None
+    ) for row in sources), "process parsed-cache hash missing")
+    runtime = manifest["runtime"]
+    if phase == "loading-first-frame":
+        _require(runtime is None, "first loading capture claims an installed runtime")
+    else:
+        opening_phase = phase.startswith("opening-")
+        _require(isinstance(runtime, dict) and _integer(runtime.get("tick"))
+                 and (runtime["tick"] > 0 if opening_phase else
+                      runtime["tick"] == (1 if phase == "initial-save" else 0))
+                 and runtime.get("game_mode_nonzero") is False,
+                 "campaign capture is outside its admitted runtime frame domain")
+        _require(_integer(runtime["campaign_mission_counter"]), "campaign counter missing")
+        rows = runtime["campaign_difficulty_rows"]
+        _require(rows["player"] == difficulty and rows["computer"] == 2 - difficulty,
+                 "campaign House difficulty rows differ from admission")
+        roster = runtime["house_roster"]
+        _require(isinstance(roster, list) and roster, "campaign House registration order missing")
+        ids = [house["native_unique_id"] for house in roster]
+        _require(all(_integer(value) for value in ids) and len(ids) == len(set(ids)),
+                 "campaign House native identities are missing/duplicated")
+        current = runtime["current_house"]
+        _require(sum(house["name"] == current["name"] and house["native_unique_id"]
+                     == current["native_unique_id"] for house in roster) == 1,
+                 "current House is not the registered native identity")
+        _require(all(len(house["scalar_difficulty_bits"]) == 9 and all(
+            _hex_hash(value, 16) for value in house["scalar_difficulty_bits"]
+        ) for house in roster), "House scalar difficulty receipt missing")
+        _require(_integer(runtime["native_identity_cursor"]), "native identity cursor missing")
+        for name in ("main", "scenario", "mapgen"):
+            rng = runtime["rng"][name]
+            _require(_integer(rng["disabled"]) and _integer(rng["index_a"])
+                     and _integer(rng["index_b"]) and len(rng["words"]) == 250
+                     and all(_integer(word) and 0 <= word <= 0xFFFFFFFF for word in rng["words"]),
+                     f"{name} RNG owner receipt missing")
+        rules = runtime["active_rules"]
+        _require(_hex_hash(rules["source_ini_hash"], 16)
+                 and _hex_hash(rules["simulation_config_hash"], 16), "active Rules receipt missing")
+        camera = runtime["camera"]
+        _require(len(camera["world_pixel_origin"]) == 2 and len(camera["tactical_centre_cell"]) == 2
+                 and len(camera["view_bookmarks"]) == 4
+                 and all(isinstance(cell, list) and len(cell) == 2 for cell in camera["view_bookmarks"]),
+                 "campaign camera/bookmark receipt missing")
+        if opening_phase:
+            _validate_campaign_opening(manifest, phase, runtime)
+        if phase == "initial-save":
+            saved = manifest.get("initial_save", {})
+            _require(saved.get("game_speed") == 2 and saved.get("pending_speed_input") is False,
+                     "initial save preceded the consumed Options input")
+            title = {"all1": "Allied 01 - Time Lapse", "sov1": "Soviet 01 - Time Shift"}[campaign_id]
+            expected_filename = scenario_name.rsplit(".", 1)[0] + ".sav"
+            _require(saved.get("filename", "").lower() == expected_filename
+                     and saved.get("description") == f"[{title}]" and saved.get("tick") == 0
+                     and saved.get("new_save_description") == title,
+                     "initial campaign save/title does not match native startup")
+    if phase == "abort-return":
+        _require(manifest.get("runtime_observation") == "first-live-frame-before-Escape-press",
+                 "abort return has no pre-Escape installed-runtime observation")
+        index = admitted_index
+        observations = {}
+        for action, dialog in (
+            ("first live observed", None), ("Escape press", 0xB5), ("Escape release", 0xB5),
+            ("pause menu presented", 0xB5), ("Abort press", 0xB5), ("Abort release", 0xB5),
+            ("abort modal presented", 0xB6), ("Leave press", 0xB6), ("Leave release", 0xB6),
+            ("EXIT queued", None), ("EXIT consumed", None), ("abort returned", 0xE2),
+        ):
+            index, row = route_action(action, dialog, index)
+            observations[action] = row
+        _require(observations["first live observed"].get("tick") == runtime["tick"],
+                 "abort started after the first installed campaign")
+        for control in ("Escape", "Abort", "Leave"):
+            _require(observations[f"{control} press"]["frame"]
+                     < observations[f"{control} release"]["frame"],
+                     f"{control} press was not presented before release")
+        for control in ("Abort", "Leave"):
+            press = observations[f"{control} press"]
+            point, rect = press["point"], press["rect"]
+            _require(isinstance(point, list) and len(point) == 2
+                     and isinstance(rect, list) and len(rect) == 4
+                     and all(_integer(value) for value in point + rect),
+                     f"{control} has no physical hit geometry receipt")
+            x, y, width, height = rect
+            _require(width > 0 and height > 0 and x <= point[0] < x + width
+                     and y <= point[1] < y + height, f"{control} press missed its loaded rectangle")
+        queued = observations["EXIT queued"]
+        consumed = observations["EXIT consumed"]
+        returned = observations["abort returned"]
+        _require(_integer(queued["queued_at_tick"]) and queued["queued_at_tick"] == 0
+                 and _integer(queued["execute_tick"]) and queued["execute_tick"] >= queued["queued_at_tick"]
+                 and queued["owner"] == runtime["current_house"]["name"]
+                 and queued["owner_native_unique_id"] == runtime["current_house"]["native_unique_id"]
+                 and queued["modal_closed"] is True and queued["diagnostic_simulation_freeze"] is False
+                 and queued["quit_requested"] is False,
+                 "Leave did not release pause and queue the current House's ordinary EXIT")
+        _require(consumed["frame"] > queued["frame"] and _integer(consumed["tick"])
+                 and consumed["tick"] >= queued["execute_tick"]
+                 and consumed["scenario_exit_present"] is True
+                 and consumed["scenario_outcome_present"] is False and consumed["quit_requested"] is True,
+                 "abort return did not observe the queued EXIT's ordinary cascade")
+        cleanup = manifest["cleanup"]
+        _require(cleanup.get("screen") == "MainMenu" and cleanup.get("route") == "MainMenu"
+                 and cleanup.get("in_game_menu") == "Closed", "abort did not settle on the ordinary main menu")
+        _require(all(cleanup.get(key) is False for key in (
+            "loading_session_present", "loading_campaign_startup_present", "accepted_match_startup_present",
+            "match_startup_receipt_present", "asset_manager_leased", "campaign_page_present",
+            "fullscreen_movie_present", "scenario_exit_present", "scenario_outcome_present",
+        )), "campaign abort retained startup/loading/modal/exit owners")
+        _require(cleanup.get("campaign_installation_present", False) is False,
+                 "campaign abort retained its installation admission")
+        _require(cleanup.get("retained_scenario_started", False) is False,
+                 "campaign abort retained a started scenario")
+        _require(cleanup.get("asset_manager_available") is True
+                 and cleanup.get("retained_runtime_present") is True
+                 and cleanup.get("retained_quit_requested") is True
+                 and _integer(cleanup["campaign_mission_counter"]) and cleanup["campaign_mission_counter"] == 1
+                 and _integer(cleanup["pending_exit_commands"]) and cleanup["pending_exit_commands"] == 0
+                 and _integer(cleanup["retained_tick"]) and cleanup["retained_tick"] >= consumed["tick"]
+                 and returned["tick"] == cleanup["retained_tick"]
+                 and returned["campaign_mission_counter"] == cleanup["campaign_mission_counter"],
+                 "campaign abort omitted EXIT consumption/lease return/retained Session counter reset")
+    _require("mission_opening_1308" in manifest["coverage"], "capture omits its mission-opening limit")
+    return {"campaign": campaign_id, "phase": phase, "scenario": selected_scenario,
+            "selected_map_sha256": source["source_sha256"],
+            "map_admission": manifest["map_admission"], "parity_certification": "NONE"}
+
+
+CAMPAIGN_INSTALLED = {
+    "accepted_rust_l0": False, "campaign_installation": True, "saved_world_restored": False,
+}
+SAVED_WORLD_RESTORED = {
+    "accepted_rust_l0": False, "campaign_installation": False, "saved_world_restored": True,
+}
+
+
+def _validate_campaign_opening(manifest, phase, runtime):
+    opening = manifest["opening"]
+    _require(opening["target"] == phase and opening["saw_lock"] is True,
+             "opening did not observe its authored lock")
+    initial = opening["initial_runtime"]
+    _require(initial["tick"] == 0 and initial["game_mode_nonzero"] is False,
+             "opening skipped the ordinary tick-zero installation")
+    in_lock_load = phase == "opening-load-unlocked-while-locked"
+    countdown = phase in ("opening-timer-running", "opening-timer-expired")
+    restores = phase == "opening-restore-unlocked" or in_lock_load
+    for observation, admission in ((initial, CAMPAIGN_INSTALLED),
+                                   (runtime, SAVED_WORLD_RESTORED if restores else CAMPAIGN_INSTALLED)):
+        _require(observation.get("scenario_started") is True,
+                 "opening retained an inactive scenario")
+        _require(observation.get("startup_admission") == admission,
+                 "opening has no checked campaign installation or saved-world admission")
+    steps = opening["exact_steps"]
+    _require(isinstance(steps, list) and 0 < len(steps) <= (8000 if countdown else 6000 if in_lock_load else 2500),
+             "opening has no bounded production step sequence")
+    tick, frame = initial["tick"], initial["binary_frame"]
+    loads = []
+    unlocked_clock = None
+    clock_segments = [{(tick, frame)}]
+    for index, step in enumerate(steps):
+        before = step["tick_before"], step["binary_frame_before"]
+        if in_lock_load and before != (tick, frame):
+            if not loads:
+                unlocked_clock = tick, frame
+                expected = initial["tick"], initial["binary_frame"]
+            else:
+                expected = unlocked_clock
+            _require(len(loads) < 2 and before == expected,
+                     "ALL01 load contains an unexplained runtime clock replacement")
+            loads.append(index)
+            tick, frame = before
+            clock_segments.append(set())
+        clock_segments[-1].add(before)
+        _require(step["tick_before"] == tick and step["tick_after"] == tick + 1
+                 and step["binary_frame_before"] == frame
+                 and step["binary_frame_after"] == (frame + 1) & 0xFFFFFFFF,
+                 "opening production steps contain a gap or a repeated frame")
+        tick, frame = step["tick_after"], step["binary_frame_after"]
+        clock_segments[-1].add((tick, frame))
+    current = opening["current"]
+    _require(tick == runtime["tick"] == current["tick"]
+             and frame == runtime["binary_frame"] == current["binary_frame"],
+             "opening readback receipt differs from its last production step")
+    _require(current.get("fog_viewer") == runtime["current_house"]["name"],
+             "opening shroud observation does not belong to the installed player")
+    observations = opening["observations"]
+    clock_boundaries = set().union(*clock_segments)
+    _require(isinstance(observations, list) and observations
+             and all(_integer(row["tick"]) and _integer(row["binary_frame"])
+                     and 0 <= row["tick"] <= tick
+                     and (row["tick"], row["binary_frame"]) in clock_boundaries
+                     for row in observations),
+             "opening owner observations are not ordered within the captured run")
+    rewinds = [index for index in range(1, len(observations))
+               if observations[index - 1]["tick"] > observations[index]["tick"]]
+    _require((len(rewinds) == 1
+              and (observations[rewinds[0]]["tick"], observations[rewinds[0]]["binary_frame"])
+              == (initial["tick"], initial["binary_frame"])) if in_lock_load else not rewinds,
+             "opening observations contain an unexplained saved-world rewind")
+    probe = opening["locked_arrow_probe"]
+    _require(isinstance(probe, dict) and probe["locked"] is True
+             and (probe["custom_binding"] is True or (
+                 probe["press_admitted"] is False and probe["release_cleared"] is True)),
+             "opening did not exercise ordinary locked key admission")
+    _require(opening.get("locked_mouse_probe") == {
+        "pre_lock_capture_cancelled": True, "locked_release_cleared": True,
+        "locked_press_recorded": True, "left_held_until_unlock": True,
+        "locked_press_captured": False,
+    }, "opening did not exercise physical pointer edges across its input lock")
+    if phase == "opening-locked":
+        _require(current["input_locked"] is True and current["cursor_depth"] < 0,
+                 "lock readback has no hidden cursor/locked Scenario")
+    elif phase == "opening-pan":
+        progress = struct.unpack("<f", struct.pack("<I", current["camera"]["focus_progress_bits"]))[0]
+        _require(current["camera"]["focus_rate_bits"] != 0 and 0.25 <= progress < 1.0,
+                 "pan readback is not inside the retained camera trajectory")
+    elif phase == "opening-flash":
+        _require(any(actor.get("cell_shrouded") is False for actor in current["flashing"]),
+                 "flash readback has no unshrouded live native flash phase")
+    elif phase == "opening-arrows":
+        _require(any(anim["type"] == "ARRWSE" and anim.get("cell_shrouded") is False
+                     for anim in current["no_effects_anims"]),
+                 "arrow readback has no unshrouded post-reset retail arrow")
+    else:
+        _require(opening["saw_unlock"] is True and current["input_locked"] is False
+                 and current["cursor_depth"] == 0,
+                 "unlock readback did not restore authored input/cursor admission")
+        probe = opening["unlocked_arrow_probe"]
+        _require(isinstance(probe, dict) and probe["locked"] is False
+                 and (probe["custom_binding"] is True or (
+                     probe["press_admitted"] is True and probe["release_cleared"] is True)),
+                 "opening did not exercise ordinary unlocked key admission")
+        _require(opening.get("unlocked_mouse_probe") == {
+            "held_left_blocks_right_pan": True,
+            "released_buttons_admit_right_pan": True, "capture_released": True,
+            "camera_request_committed": False,
+        }, "opening did not exercise live button priority and release after unlock")
+        _require(in_lock_load or (any(any(actor.get("cell_shrouded") is False for actor in row["flashing"])
+                     for row in observations)
+                 and any(row["messages"] for row in observations)
+                 and any(any(anim["type"] == "ARRWSE" and anim.get("cell_shrouded") is False
+                             for anim in row["no_effects_anims"])
+                         for row in observations)),
+                 "opening missed a required flash/message/arrow consumer before unlock")
+    restored = opening["save_restore"]
+    if countdown:
+        replay = opening.get("timer_action_replay", {})
+        _require(replay.get("mode") == "retail-timer-actions-after-opening-unlock"
+                 and replay.get("trigger") == "0952F87C" and replay.get("action_count") == 3
+                 and (replay.get("tick"), replay.get("binary_frame")) in clock_boundaries,
+                 "countdown capture omits its declared retail-action replay")
+        _require(opening.get("saw_countdown") is True
+                 and any(isinstance(row.get("scenario_timer"), dict)
+                         and row["scenario_timer"].get("remaining", 0) > 0
+                         and row["scenario_timer"].get("caption") == "MISSION:TmeTimer"
+                         for row in observations),
+                 "opening did not observe the authored running countdown")
+        timer = current.get("scenario_timer")
+        if phase == "opening-timer-running":
+            _require(isinstance(timer, dict) and timer.get("remaining", 0) > 0,
+                     "running countdown readback has no time remaining")
+        else:
+            _require(timer is None, "completed countdown is still visible")
+            last = opening.get("last_running_countdown", {})
+            # The receipt uses the committed post-step frame. At zero the
+            # next Logic poll observes expiry and stops the running timer.
+            _require(last.get("timer", {}).get("remaining") == 0
+                     and last.get("tick") == tick - 1
+                     and last.get("binary_frame") == (frame - 1) & 0xFFFFFFFF,
+                     "countdown did not stop on its next production poll")
+    if in_lock_load:
+        _require(len(loads) == 2 and len(steps) - loads[1] >= 45,
+                 "ALL01 did not observe both loads and the post-load production steps")
+        _require(all(isinstance(opening.get(key), str) and opening[key]
+                     for key in ("pre_lock_save", "unlocked_save")),
+                 "ALL01 load omitted one of its ordinary saved-world paths")
+        load = opening.get("load_while_locked")
+        _require(isinstance(load, dict) and _integer(load.get("depth_before"))
+                 and load["depth_before"] < 0 and load.get("locked_after") is False
+                 and load.get("depth_after") == 0 and load.get("cursor_instances_after") == 1
+                 and load.get("right_drag_pans_after") is True and restored is None,
+                 "ALL01 in-lock load did not restore ordinary pointer/input admission")
+        # Readbacks must follow the two actual step-clock replacements. The
+        # summary's depth_before alone cannot establish a locked replay owner.
+        replay_start = rewinds[0]
+        forward_load = next((index for index in range(replay_start + 1, len(observations))
+                             if (observations[index]["tick"], observations[index]["binary_frame"])
+                             == unlocked_clock), None)
+        _require(forward_load is not None,
+                 "ALL01 load omitted its forward saved-world observation")
+        segments = (observations[:replay_start], observations[replay_start:forward_load],
+                    observations[forward_load:])
+        _require(all((row["tick"], row["binary_frame"]) in clocks
+                     for rows, clocks in zip(segments, clock_segments) for row in rows),
+                 "ALL01 owner observation belongs to a different production segment")
+        replay_owner = segments[1][-1]
+        replay_step = steps[loads[1] - 1]
+        _require((replay_owner["tick"], replay_owner["binary_frame"])
+                 == (replay_step["tick_after"], replay_step["binary_frame_after"])
+                 and replay_owner.get("input_locked") is True
+                 and _integer(replay_owner.get("cursor_depth"))
+                 and replay_owner["cursor_depth"] == load["depth_before"],
+                 "ALL01 forward load has no matching locked replay owner")
+    elif phase == "opening-restore-unlocked":
+        _require(isinstance(restored, dict)
+                 and restored["view_before"] == restored["view_after"]
+                 and restored["cursor_depth_before"] == restored["cursor_depth_after"],
+                 "ordinary save/load did not preserve the retained pan and outgoing cursor depth")
+        saved, loaded = restored["saved_runtime"], restored["loaded_runtime"]
+        _require(saved["tick"] == loaded["tick"] and saved["binary_frame"] == loaded["binary_frame"]
+                 and saved["rng"]["main"] == loaded["rng"]["main"]
+                 and saved["rng"]["mapgen"] == loaded["rng"]["mapgen"],
+                 "ordinary save/load changed its frame or retained RNG owners")
+        _require(saved.get("startup_admission") == CAMPAIGN_INSTALLED
+                 and loaded.get("startup_admission") == SAVED_WORLD_RESTORED,
+                 "ordinary load did not replace the campaign installation with its saved world")
+    else:
+        _require(restored is None, "non-restore opening capture changed the saved-game timeline")
+
+
+def _paeth(a, b, c):
+    p = a + b - c
+    pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+    if pa <= pb and pa <= pc:
+        return a
+    return b if pb <= pc else c
+
+
+def read_png_rgb(data):
+    """Decode PNG bytes to (width, height, [(r, g, b), ...] row-major)."""
+    if data[:8] != PNG_SIGNATURE:
+        raise InputError("not a PNG file")
+    pos = 8
+    header = None
+    palette = None
+    idat = []
+    while pos + 8 <= len(data):
+        length, kind = struct.unpack(">I4s", data[pos : pos + 8])
+        body = data[pos + 8 : pos + 8 + length]
+        pos += 12 + length
+        if kind == b"IHDR":
+            header = struct.unpack(">IIBBBBB", body)
+        elif kind == b"PLTE":
+            palette = [tuple(body[i : i + 3]) for i in range(0, len(body), 3)]
+        elif kind == b"IDAT":
+            idat.append(body)
+        elif kind == b"IEND":
+            break
+    if header is None:
+        raise InputError("PNG has no IHDR")
+    width, height, depth, color, _, _, interlace = header
+    if interlace != 0:
+        raise InputError("interlaced PNGs are not supported")
+    channels = {2: 3, 3: 1, 6: 4}.get(color)
+    if channels is None or (color != 3 and depth != 8) or depth not in (1, 2, 4, 8):
+        raise InputError(f"unsupported PNG color type {color} depth {depth}")
+    if color == 3 and palette is None:
+        raise InputError("palette PNG has no PLTE")
+    bits_per_pixel = depth * channels
+    stride = (width * bits_per_pixel + 7) // 8
+    step = max(1, bits_per_pixel // 8)
+    raw = zlib.decompress(b"".join(idat))
+    if len(raw) != height * (stride + 1):
+        raise InputError("PNG image data has the wrong length")
+    pixels = []
+    previous = bytearray(stride)
+    for y in range(height):
+        start = y * (stride + 1)
+        kind = raw[start]
+        line = bytearray(raw[start + 1 : start + 1 + stride])
+        for i in range(stride):
+            left = line[i - step] if i >= step else 0
+            up = previous[i]
+            up_left = previous[i - step] if i >= step else 0
+            if kind == 1:
+                line[i] = (line[i] + left) & 0xFF
+            elif kind == 2:
+                line[i] = (line[i] + up) & 0xFF
+            elif kind == 3:
+                line[i] = (line[i] + ((left + up) >> 1)) & 0xFF
+            elif kind == 4:
+                line[i] = (line[i] + _paeth(left, up, up_left)) & 0xFF
+            elif kind != 0:
+                raise InputError(f"unknown PNG filter {kind}")
+        previous = line
+        if color == 3:
+            per_byte = 8 // depth
+            mask = (1 << depth) - 1
+            for x in range(width):
+                byte = line[x // per_byte]
+                shift = 8 - depth * (x % per_byte + 1)
+                pixels.append(palette[(byte >> shift) & mask])
+        else:
+            for x in range(width):
+                offset = x * channels
+                pixels.append(tuple(line[offset : offset + 3]))
+    return width, height, pixels
+
+
+def write_png_rgb(path, width, height, pixels):
+    """Write an 8-bit RGB PNG of `pixels`: (r, g, b) tuples or packed RGB bytes, row by row."""
+    rows = bytearray()
+    packed = isinstance(pixels, (bytes, bytearray, memoryview))
+    for y in range(height):
+        rows.append(0)
+        if packed:
+            rows += pixels[y * width * 3 : (y + 1) * width * 3]
+            continue
+        for r, g, b in pixels[y * width : (y + 1) * width]:
+            rows.extend((r, g, b))
+
+    def chunk(kind, body):
+        crc = zlib.crc32(kind + body) & 0xFFFFFFFF
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", crc)
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    Path(path).write_bytes(
+        PNG_SIGNATURE
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(bytes(rows), 9))
+        + chunk(b"IEND", b"")
+    )
+
+
+def read_capture(directory):
+    """Read a shell-capture bundle as (manifest, SHA256, width, height, RGB pixels).
+
+    The shell owner's stable non-link reads and the shared strict JSON parser
+    (unique keys, finite numbers) apply; the frame must be a file in the bundle.
+    """
+    directory = absolute_path(directory)
+    manifest_raw = _read_regular_bytes(directory / "capture.json", "capture manifest",
+                                       maximum_length=MAX_MANIFEST_BYTES)
+    manifest = parse_json_bytes(manifest_raw, "capture manifest", maximum_length=MAX_MANIFEST_BYTES)
+    validate_campaign_capture(manifest)
+    surface = manifest["surface"]
+    frame = manifest["frame"]
+    if surface.get("pixel_layout") != "BGRA8" or surface.get("row_order") != "top-left":
+        raise InputError("capture frame is not top-left BGRA8")
+    width, height, stride = surface["width"], surface["height"], surface["row_stride"]
+    name = frame["path"]
+    _require(isinstance(name, str) and name not in ("", ".", "..")
+             and not any(char in name for char in "/\\:"),
+             "capture frame path must name a file in the bundle")
+    raw = _read_regular_bytes(directory / name, "capture frame")
+    if "sha256" in frame and hashlib.sha256(raw).hexdigest() != frame["sha256"]:
+        raise InputError("capture frame does not match its manifest SHA-256")
+    if "byte_length" in frame and len(raw) != frame["byte_length"]:
+        raise InputError("capture frame does not match its manifest byte length")
+    if len(raw) != stride * height or stride < width * 4:
+        raise InputError("capture frame has the wrong length")
+    pixels = []
+    for y in range(height):
+        row = raw[y * stride : y * stride + width * 4]
+        for x in range(width):
+            b, g, r = row[x * 4 : x * 4 + 3]
+            pixels.append((r, g, b))
+    return manifest, hashlib.sha256(raw).hexdigest(), width, height, pixels
+
+
+def rgb565_units(pixel):
+    r, g, b = pixel
+    return r >> 3, g >> 2, b >> 3
+
+
+def parse_mask(text):
+    label, _, rect = text.rpartition("=")
+    try:
+        x, y, w, h = (int(value) for value in rect.split(","))
+    except ValueError as error:
+        raise InputError(f"mask {text!r} is not [label=]x,y,w,h") from error
+    if w <= 0 or h <= 0:
+        raise InputError(f"mask {text!r} is empty")
+    return {"label": label or None, "rect": [x, y, w, h]}
+
+
+def compare(width, height, rust, native, masks):
+    """Return (report fields, diff image pixels) for two same-size RGB frames."""
+    rects = [mask["rect"] for mask in masks]
+
+    def masked(x, y):
+        return any(mx <= x < mx + mw and my <= y < my + mh for mx, my, mw, mh in rects)
+
+    histogram = {}
+    tiles = {}
+    bounds = None
+    compared = 0
+    differing = 0
+    max_unit = 0
+    diff = []
+    for y in range(height):
+        for x in range(width):
+            if masked(x, y):
+                diff.append((0, 0, 64))
+                continue
+            compared += 1
+            a = rgb565_units(rust[y * width + x])
+            b = rgb565_units(native[y * width + x])
+            unit = max(abs(a[0] - b[0]), abs(a[1] - b[1]), abs(a[2] - b[2]))
+            if unit == 0:
+                diff.append((0, 0, 0))
+                continue
+            differing += 1
+            max_unit = max(max_unit, unit)
+            histogram[unit] = histogram.get(unit, 0) + 1
+            tile = (x // TILE * TILE, y // TILE * TILE)
+            tiles[tile] = tiles.get(tile, 0) + 1
+            if bounds is None:
+                bounds = [x, y, x, y]
+            else:
+                bounds = [min(bounds[0], x), min(bounds[1], y), max(bounds[2], x), max(bounds[3], y)]
+            diff.append((255, 0, 0) if unit == 1 else (255, 255, 255))
+    report = {
+        "compared_pixels": compared,
+        "differing_pixels": differing,
+        "max_unit_difference": max_unit,
+        "unit_difference_histogram": {str(k): histogram[k] for k in sorted(histogram)},
+        # Inclusive pixel bounds of every difference: [x0, y0, x1, y1].
+        "differing_bounds": bounds,
+        "differing_tiles": [
+            {"x": x, "y": y, "size": TILE, "pixels": count}
+            for (x, y), count in sorted(tiles.items(), key=lambda item: (-item[1], item[0]))
+        ],
+    }
+    return report, diff
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--capture", required=True, help="shell-capture bundle directory")
+    parser.add_argument("--native", help="native screenshot PNG (required for comparison)")
+    parser.add_argument("--validate-only", action="store_true", help="check bytes/receipt without native comparison")
+    parser.add_argument("--mask", action="append", default=[], help="[label=]x,y,w,h")
+    parser.add_argument("--output", help="write the JSON report here (default: stdout)")
+    parser.add_argument("--diff-png", help="write a difference map PNG here")
+    parser.add_argument("--max-differing", type=int)
+    parser.add_argument("--max-unit-difference", type=int)
+    args = parser.parse_args(argv)
+    if not args.validate_only and not args.native:
+        parser.error("--native is required unless --validate-only is used")
+    if args.validate_only and (args.native or args.mask or args.diff_png
+                              or args.max_differing is not None or args.max_unit_difference is not None):
+        parser.error("--validate-only accepts --capture and --output only")
+    try:
+        masks = [parse_mask(text) for text in args.mask]
+        manifest, frame_sha256, width, height, rust = read_capture(args.capture)
+        if args.validate_only:
+            report = {"schema": "vera20k.shell-capture-validation.v1",
+                      "checkpoint": manifest.get("checkpoint"), "frame_sha256": frame_sha256,
+                      "size": [width, height], "campaign": validate_campaign_capture(manifest),
+                      "parity_certification": "NONE"}
+            text = json.dumps(report, indent=2) + "\n"
+            if args.output:
+                Path(args.output).write_text(text, encoding="utf-8")
+            else:
+                sys.stdout.write(text)
+            return 0
+        native_bytes = Path(args.native).read_bytes()
+        native_width, native_height, native = read_png_rgb(native_bytes)
+        if (native_width, native_height) != (width, height):
+            raise InputError(
+                f"native {native_width}x{native_height} does not match capture {width}x{height}"
+            )
+    except (InputError, OSError, KeyError, TypeError, ValueError, zlib.error) as error:
+        print(f"invalid input: {error}", file=sys.stderr)
+        return 2
+    fields, diff = compare(width, height, rust, native, masks)
+    report = {
+        "schema": SCHEMA,
+        "domain": "rgb565-units",
+        "capture": {
+            "checkpoint": manifest.get("checkpoint"),
+            "capture_frame": manifest.get("capture_frame"),
+            "frame_sha256": frame_sha256,
+        },
+        "native": {
+            "file": Path(args.native).name,
+            "sha256": hashlib.sha256(native_bytes).hexdigest(),
+        },
+        "size": [width, height],
+        "masks": masks,
+        **fields,
+    }
+    text = json.dumps(report, indent=2) + "\n"
+    if args.output:
+        Path(args.output).write_text(text, encoding="utf-8")
+    else:
+        sys.stdout.write(text)
+    if args.diff_png:
+        write_png_rgb(args.diff_png, width, height, diff)
+    exceeded = (
+        args.max_differing is not None and fields["differing_pixels"] > args.max_differing
+    ) or (
+        args.max_unit_difference is not None
+        and fields["max_unit_difference"] > args.max_unit_difference
+    )
+    return 1 if exceeded else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

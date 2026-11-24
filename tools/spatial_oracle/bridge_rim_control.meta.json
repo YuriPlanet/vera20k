@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original576200, actual untagged575EE0, retained dummy and requested endpoint control cases",
+  "assumptions": [
+    "Synthetic sparse supplied cells; not a stock-map reachability claim",
+    "Direct edge entry direction2 with null rectangle; selector and display work excluded",
+    "Missing slots share the original dummy initialized with tile=-1, no tags/objects"
+  ],
+  "substitutions": [
+    "Inherited OriginalRim output sinks; neither case enters a setter or object fallout"
+  ],
+  "entry_points": {
+    "edge": "0x00576200",
+    "notification": "0x00575EE0",
+    "lookup": "0x005657A0"
+  },
+  "payload_sha256": "fb53dc91ef050de8b169df7dbfdd282ddabd49a0b3b202c04d4a1abfbc211e9c"
+}

@@ -1,0 +1,1394 @@
+//! Particle spawn helpers.
+//!
+//! Two entry points:
+//!   - `Simulation::spawn_particle_system` — public API for combat / refinery /
+//!     gap-gen / area-damage to create a new system at a world coord.
+//!   - `spawn_particle` — ParticleSystem62E380's explicit child constructor.
+//!     Producers own their individual cap/cadence gates.
+//!
+//! Every behavior's system enters the shared live Logic vector, and its owned
+//! particles run in that system visit.
+
+use super::{Particle, ParticleSystem};
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::rules::particle_system_type::{ParticleSystemBehavesLike, ParticleSystemTypeId};
+use crate::rules::ruleset::RuleSet;
+use crate::sim::intern::InternedId;
+use crate::sim::intern::StringInterner;
+use crate::sim::scenario_session::ScenarioSession;
+use crate::sim::world::ObjectSubstrate;
+use crate::sim::world::Simulation;
+#[cfg(any(test, feature = "test-support"))]
+use crate::util::fixed_math::SimFixed;
+use crate::util::native_x87::{
+    NativeF32Bits, NativeF64Bits, NativeX87Error, X87Chop53, X87Ordering, sqrt_approx_f32,
+};
+use glam::IVec3;
+
+/// A Techno's retained ParticleSystem link: `+0x304` the Fire system
+/// FireAt6FF1A7 creates, `+0x308` the Spark system, shared by FireAt6FF1F5
+/// and the Cyborg AI producer6FAEDA, `+0x314` the Railgun system
+/// FireAt6FF26E creates, and a Building's `+0x30C` natural and `+0x320`
+/// destroy-smoke systems. Constructor6F3231 clears them;
+/// PointerExpired707AC2..707AD7 clears an exact match for either control byte.
+/// The system's actual Logic/child lifetime owns expiry, not a Techno timer.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub(crate) struct AttachedParticleSystem {
+    system: Option<u64>,
+}
+
+impl AttachedParticleSystem {
+    pub(crate) const fn system(self) -> Option<u64> {
+        self.system
+    }
+
+    /// The native producer stores the constructor result, including NULL.
+    pub(crate) fn bind(&mut self, system: Option<u64>) {
+        self.system = system;
+    }
+
+    pub(crate) fn forget(&mut self) {
+        self.system = None;
+    }
+}
+
+/// The object's damage-Smoke `ParticleSystemClass` (`TechnoClass+0x310`).
+/// The surviving ReceiveDamage postlude creates the system synchronously and
+/// records it here (`Simulation::maintain_damage_smoke_after_receive`); it
+/// UnInits the system when health recovers above `ConditionYellow`, and
+/// `TechnoClass::PointerExpired` drops the handle when the system expires
+/// ([`Self::forget`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct DamageSmoke {
+    system: Option<u64>,
+}
+
+impl DamageSmoke {
+    /// The live system's stable id.
+    pub(crate) const fn system(self) -> Option<u64> {
+        self.system
+    }
+
+    /// PointerExpired's drop of the expiring system.
+    pub(crate) fn forget(&mut self) {
+        self.system = None;
+    }
+
+    /// Install a fixture's system.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_for_test(&mut self, system: Option<u64>) {
+        self.system = system;
+    }
+}
+
+impl Simulation {
+    /// Explicit62E380 birth for AreaDamage's two system producers. The
+    /// constructor has no world callbacks; the existing store ownership
+    /// round-trip lets the one child constructor allocate/register its object.
+    pub(crate) fn spawn_particle_in_system(
+        &mut self,
+        system_id: u64,
+        coords: IVec3,
+        target_coords: IVec3,
+        rules: &RuleSet,
+    ) -> bool {
+        let Some(mut system) = self.substrate.particle_systems.take_for_tick(system_id) else {
+            return false;
+        };
+        let spawned = spawn_particle(&mut system, coords, target_coords, rules, self);
+        self.substrate.particle_systems.reinsert_after_tick(system);
+        spawned
+    }
+
+    /// Cyborg-only TechnoAI6FACD9..6FAEDA. Stock YR leaves Cyborg unset, so
+    /// ordinary damaged vehicles never enter this producer. Both it and
+    /// FireAt use the actual +308 link and the one system constructor.
+    pub(crate) fn update_damage_spark_after_ai(&mut self, id: u64, rules: &RuleSet) {
+        use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF64Bits};
+
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let Some(object) = self.object_type(entity.type_ref(), rules) else {
+            return;
+        };
+        // Ares TechnoClass_Update_DamageSparks (Ares.dll 1004B760, hook
+        // 0x6FACD9): the type's `DamageSparks`, else its own flag.
+        let sparks = if rules.ares_form() {
+            object
+                .techno_combat()
+                .damage()
+                .damage_sparks(object.emits_damage_spark())
+        } else {
+            object.emits_damage_spark()
+        };
+        if !sparks {
+            return;
+        }
+        let ratio = entity.health.ratio(object.strength);
+        let below = |threshold: f64| {
+            matches!(
+                X87::compare(
+                    ratio,
+                    X87::load_f64(NativeF64Bits::from_bits(threshold.to_bits()))
+                ),
+                MaskedX87Ordering::Less | MaskedX87Ordering::Unordered
+            )
+        };
+        if !below(rules.general.condition_yellow)
+            || Self::damage_particle_owner_height(&self.resolved_terrain, entity) <= -10
+            || entity.seldom.spark_particle_system.system().is_some()
+        {
+            return;
+        }
+        // 6FAD51..6FADA1 retains Spark entries in authored list order. They
+        // are counted here and walked again for the one the roll picks: most
+        // rolls refuse, so no list is built for them.
+        let spark_systems = || {
+            object
+                .damage_particle_systems
+                .iter()
+                .filter_map(|name| rules.ps_type_id_by_name(name))
+                .filter(|&type_id| {
+                    rules.particle_system_type(type_id).behaves_like
+                        == ParticleSystemBehavesLike::Spark
+                })
+        };
+        let count = spark_systems().count();
+        if count == 0 {
+            return;
+        }
+        let threshold = if below(rules.general.condition_red) {
+            rules.general.condition_red_spark_threshold
+        } else {
+            rules.general.condition_yellow_spark_threshold
+        };
+        let offset = damage_particle_offset(object);
+        let origin = crate::sim::movement::ground_pose::object_get_coords(
+            entity,
+            self.resolved_terrain.as_ref(),
+        );
+        let coords = IVec3::new(
+            origin.x.wrapping_add(offset.x),
+            origin.y.wrapping_add(offset.y),
+            origin.z.wrapping_add(offset.z),
+        );
+        // 6FAE11..6FAE40: Scenario ranged probability, then an admitted
+        // list selection. The shared RNG owner handles equal endpoints.
+        if self.scenario_rng.next_range_u32_inclusive(0, 0x7fff_fffe) >= threshold {
+            return;
+        }
+        let selected = self
+            .scenario_rng
+            .next_range_u32_inclusive(0, count as u32 - 1);
+        // The roll stays below the count of the same list; both draws are made.
+        let Some(selected) = spark_systems().nth(selected as usize) else {
+            return;
+        };
+        // 6FAEBC..6FAED1: supplied target NULL, owner=this, zero fifth
+        // Coord (B0EA90 initialized by6F2A50), owner House NULL. Native
+        // constructor target/owner derivation remains centralized below.
+        let system =
+            self.spawn_particle_system(selected, coords, None, Some(id), IVec3::ZERO, None, rules);
+        if let Some(entity) = self.substrate.entities.get_mut(id) {
+            entity.seldom.spark_particle_system.bind(system);
+        }
+    }
+
+    /// Reached healing tails 45096C,451477: ordered Greater only (the
+    /// self-heal tail 6FA75A adds a height arm; see the function below).
+    /// This never creates smoke and never clears the retained owner slot.
+    pub(crate) fn retire_damage_smoke_after_heal(
+        interner: &StringInterner,
+        substrate: &mut ObjectSubstrate,
+        stable_id: u64,
+        rules: &RuleSet,
+    ) {
+        let above = substrate.entities.get(stable_id).is_some_and(|entity| {
+            interner
+                .object_type(entity.type_ref(), rules)
+                .is_some_and(|object| {
+                    entity
+                        .health
+                        .compare_ratio(object.strength, rules.general.condition_yellow)
+                        == crate::util::native_x87::MaskedX87Ordering::Greater
+                })
+        });
+        if above {
+            substrate.retire_attached_damage_smoke(stable_id);
+        }
+    }
+
+    /// Selfheal6FA75A has an additional Object GetHeight5F5F40 arm after a
+    /// non-Greater health comparison. Read retained raw Object XYZ (not the
+    /// building's foundation-center coordinate), then the live terrain surface.
+    pub(crate) fn retire_damage_smoke_after_self_heal(
+        interner: &StringInterner,
+        substrate: &mut ObjectSubstrate,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        stable_id: u64,
+        rules: &RuleSet,
+    ) {
+        let retire = substrate.entities.get(stable_id).is_some_and(|entity| {
+            let Some(object) = interner.object_type(entity.type_ref(), rules) else {
+                return false;
+            };
+            if entity
+                .health
+                .compare_ratio(object.strength, rules.general.condition_yellow)
+                == crate::util::native_x87::MaskedX87Ordering::Greater
+            {
+                return true;
+            }
+            Self::damage_particle_owner_height(resolved_terrain, entity) < -10
+        });
+        if retire {
+            substrate.retire_attached_damage_smoke(stable_id);
+        }
+    }
+    /// Shared original Object5F5F40 adapter for the Smoke, destroy-smoke and
+    /// Cyborg Spark gates.
+    fn damage_particle_owner_height(
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        entity: &crate::sim::game_entity::GameEntity,
+    ) -> i32 {
+        crate::sim::movement::air_movement::current_fly_height(entity, resolved_terrain.as_ref())
+    }
+
+    /// Spawn a new particle system and return its stable id.
+    ///
+    /// gamemd-derived: `ParticleSystemClass::Constructor @ 0x0062DC50`, which
+    /// has no per-behavior branch. `particles/spark_spawn.rs` owns
+    /// `ParticleSystemClass::AI_Spark @ 0x0062E840`'s burst half and
+    /// `particles/spark.rs` the per-particle kernel; `particles/railgun.rs`
+    /// owns the Railgun system and particle bodies, whose producer is FireAt's
+    /// `IsRailgun` arm (`combat::railgun`).
+    ///
+    /// The shared `combat::electric_bolt::create` owner creates one
+    /// `[CombatDamage] DefaultSparkSystem` at the bolt's target endpoint,
+    /// matching `EBolt::Init @ 0x004C2A60`'s construction at `0x004C2B30`:
+    /// no owner house, no attachment, handle discarded, no constructor RNG.
+    /// Both system and particle constructors retain their AbstractClass IDs.
+    /// Ordinary FireAt and SpawnShrapnel call this same owner. The latter
+    /// reaches it once per child whose weapon has `IsElectricBolt`, including
+    /// retail Electricbounce -> TeslaFragment on elite Tesla discharges.
+    ///
+    /// FireAt6FF1EC uses this constructor for UseSparkParticles and retains
+    /// its result in the same Techno+308 owner as the Cyborg AI producer.
+    /// Other Spark producers are wired through combat/parasite.rs
+    /// (62A103), capture_manager.rs (471C15), and powered_unit.rs (7361A4).
+    ///
+    /// Stock-dormant, and recorded so it is not enabled for vehicles: the
+    /// `DamageParticleSystems=` Spark producer in
+    /// `TechnoClass::AI_Update @ 0x006FADB3` is Tiberian Sun legacy and never
+    /// runs in stock YR, despite 126 of the 141 stock `DamageParticleSystems=`
+    /// entries naming a Spark system. Its top gate at `0x006FACD9` reads
+    /// `TechnoType+0xC8F`, which only `InfantryTypeClass::ReadINI` writes:
+    /// cleared on every Rules pass (`0x005240BD`, not under Ares) and set at
+    /// `0x005243E7` on a pass that reads the type's section while `Cyborg=`
+    /// holds — and no stock
+    /// INI authors `Cyborg=` (`rulesmd.ini:3581` mentions it only in a
+    /// TS-inherited comment). Enabling it for vehicles would add
+    /// sparks retail does not show and consume `ScenarioClass::Random` draws
+    /// gamemd does not take, which desyncs. The `Smoke` producer below is a
+    /// different function (`TechnoClass::ReceiveDamage @ 0x00701900`) and is
+    /// not affected.
+    pub fn spawn_particle_system(
+        &mut self,
+        type_id: ParticleSystemTypeId,
+        coords: IVec3,
+        target: Option<crate::sim::combat::TargetKind>,
+        owner_entity: Option<u64>,
+        target_coords: IVec3,
+        owner_house: Option<InternedId>,
+        rules: &RuleSet,
+    ) -> Option<u64> {
+        let pst = rules.particle_system_type(type_id);
+        // Original62DC50 calls Abstract410230 -> Scenario68BCB0 before
+        // registration. The native numeric identity is not the Rust handle.
+        // Executed constructor/CRC: procedural_drawing_oracle/electric_bolt.
+        let native_unique_id = self.next_native_runtime_id();
+        let stable_id = self.substrate.allocate_stable_id();
+        // 62DD90..62DE14: a supplied target provides GetCoords; a Cell on
+        // a structural bridge additionally receives the native bridge height.
+        // The existing target-coordinate owner supplies that same Cell result.
+        // Only a NULL target copies the fifth constructor Coord argument.
+        let target_coords = target.map_or(Some(target_coords), |target| {
+            crate::sim::movement::ground_pose::target_get_target_coords(
+                target,
+                self,
+                self.resolved_terrain.as_ref(),
+            )
+            .map(|coord| IVec3::new(coord.x, coord.y, coord.z))
+        })?;
+        // 62DE35..62DE5A: the target pointer and its frozen coordinate are
+        // distinct. An owner Techno contributes its current TarCom; without
+        // an owner the constructor retains the supplied target itself.
+        let target_ref = owner_entity.map_or(target, |owner| {
+            self.substrate
+                .entities
+                .get(owner)
+                .and_then(|owner| owner.attack_target.target())
+        });
+        // Constructor62DE6D..62DEAF: retain Location - owner GetCoords,
+        // not the current type's DamageSmokeOffset. Smoke62ED49 consumes
+        // this stored world-lepton displacement; other behaviors retain it.
+        // Source/control: tools/spatial_oracle/damage_smoke.md (--following).
+        let offset = owner_entity
+            .and_then(|id| {
+                crate::sim::movement::ground_pose::target_get_coords(
+                    crate::sim::combat::TargetKind::Entity(id),
+                    self,
+                    self.resolved_terrain
+                        .as_ref()
+                        .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
+                        .as_ref(),
+                )
+            })
+            .map_or(IVec3::ZERO, |origin| {
+                IVec3::new(
+                    coords.x.wrapping_sub(origin.x),
+                    coords.y.wrapping_sub(origin.y),
+                    coords.z.wrapping_sub(origin.z),
+                )
+            });
+        let sys = ParticleSystem {
+            stable_id,
+            native_unique_id,
+            in_logic_vector: false,
+            type_id,
+            coords,
+            offset,
+            particles: Vec::new(),
+            spawn_timer: X87Chop53::store_f32(X87Chop53::load_i32(pst.spawn_frames))
+                .expect("signed SpawnFrames fits stored binary32"),
+            lifetime: pst.lifetime,
+            spark_spawn_frames: pst.spark_spawn_frames as i32,
+            facing: 0x1D,
+            target_ref,
+            owner_entity,
+            target_coords,
+            owner_house,
+            done_spawning: false,
+            owner_fire_link: false,
+            alive: true,
+            in_limbo: false,
+            // Ares 3.0 ParticleSystemClass_CTOR (Ares.dll 10028D10, hook
+            // 0x62DF05 at the constructor's end) allocates the extension,
+            // whose constructor (100267E0) picks Ares' own simulation.
+            ares: rules
+                .ares()
+                .then(|| super::ares_system::AresParticleSystemExt::for_system(pst, rules))
+                .flatten()
+                .map(Box::new),
+        };
+        debug_assert!(
+            !self.substrate.entities.contains(stable_id)
+                && !self.substrate.anims.contains_key(stable_id)
+                && !self.particle_systems().contains_key(stable_id),
+            "shared object id {stable_id} collided before particle-system insertion"
+        );
+        self.substrate.particle_systems.insert(sys);
+        self.reveal_particle_system(stable_id);
+        // A system at 0,0,0 gets no glow even where VERA reveals it
+        // (`unlimbo_alpha_shape`).
+        self.unlimbo_alpha_shape(
+            stable_id,
+            crate::sim::world::ObjectKind::ParticleSystem,
+            rules,
+        );
+        Some(stable_id)
+    }
+
+    /// Execute88 at6DF3F7..6DF49B: signed waypoint center642740, then
+    /// Ground578080 (no bridge lookup), then the existing62DC50 constructor.
+    /// Target/owner/House are NULL; target Coord B0E6A0 is zero from6DCF20.
+    /// Original Execute ignores constructor return and returns AL1.
+    pub(crate) fn trigger_create_particle_system_at_waypoint(
+        &mut self,
+        index: i32,
+        waypoint: i32,
+        rules: &RuleSet,
+    ) -> bool {
+        let Some(type_id) = rules.particle_system_type_id_by_index(index) else {
+            // Native indexes unchecked; malformed Rust inputs fail safely.
+            return false;
+        };
+        let Some(cell) = self.session.waypoint_cell(waypoint) else {
+            return false;
+        };
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return false;
+        };
+        let center = crate::sim::cell_kernel::cell_center(
+            crate::sim::cell_kernel::CellCoordinate {
+                x: i32::from(cell.0),
+                y: i32::from(cell.1),
+            },
+            0,
+        );
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        let Ok(z) = crate::sim::movement::ground_pose::query_ground_height(
+            &cells,
+            crate::sim::components::DriveCoord {
+                x: center.x,
+                y: center.y,
+                z: 0,
+            },
+        ) else {
+            return false;
+        };
+        self.spawn_particle_system(
+            type_id,
+            IVec3::new(center.x, center.y, z),
+            None,
+            None,
+            IVec3::ZERO,
+            None,
+            rules,
+        );
+        true
+    }
+
+    /// Execute89 at6DF49E..6DF518: all Alive systems whose GetCell41BEA0
+    /// equals the waypoint receive virtual F8/6301E0. No type/House filter,
+    /// RNG, timer, detach or physical deletion; even an empty list returns1.
+    pub(crate) fn trigger_mark_particle_systems_done_at_waypoint(
+        session: &ScenarioSession,
+        substrate: &mut ObjectSubstrate,
+        waypoint: i32,
+    ) -> bool {
+        let Some(cell) = session.waypoint_cell(waypoint) else {
+            return false;
+        };
+        for (_, system) in substrate.particle_systems.iter_mut() {
+            if !system.alive() {
+                continue;
+            }
+            let at = (
+                crate::util::lepton::lepton_to_cell_packed(system.coords.x),
+                crate::util::lepton::lepton_to_cell_packed(system.coords.y),
+            );
+            if at == cell {
+                system.mark_done_spawning();
+            }
+        }
+        true
+    }
+
+    /// Maintain TechnoClass's attached damage-Smoke slot from the surviving
+    /// ReceiveDamage postlude (`TechnoClass +0x310`). This runs synchronously
+    /// before the receiver may retaliate or return to Infantry scatter.
+    pub(crate) fn maintain_damage_smoke_after_receive(
+        &mut self,
+        stable_id: u64,
+        state: crate::sim::combat::damage::DamageState,
+        rules: &RuleSet,
+    ) {
+        let Some(entity) = self.substrate.entities.get(stable_id) else {
+            return;
+        };
+        let Some(object) = self.object_type(entity.type_ref(), rules) else {
+            return;
+        };
+        let above_yellow = entity
+            .health
+            .compare_ratio(object.strength, rules.general.condition_yellow)
+            == crate::util::native_x87::MaskedX87Ordering::Greater;
+        let current_system = entity.seldom.damage_smoke_system_id.system();
+
+        if above_yellow {
+            self.substrate.retire_attached_damage_smoke(stable_id);
+            return;
+        }
+
+        if current_system.is_some()
+            || !matches!(
+                state,
+                crate::sim::combat::damage::DamageState::Yellow
+                    | crate::sim::combat::damage::DamageState::Red
+            )
+        {
+            return;
+        }
+
+        let Some((coords, owner_entity, system_types)) =
+            self.substrate.entities.get(stable_id).and_then(|entity| {
+                let object = self.interner.object_type(entity.type_ref(), rules)?;
+                let offset = damage_particle_offset(object);
+                let raw = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+                let coords = IVec3::new(
+                    raw.x.wrapping_add(offset.x),
+                    raw.y.wrapping_add(offset.y),
+                    raw.z.wrapping_add(offset.z),
+                );
+                let smoke = smoke_types_last_first(&object.damage_particle_systems, rules);
+                Some((coords, stable_id, smoke))
+            })
+        else {
+            return;
+        };
+        if system_types.is_empty() {
+            return;
+        }
+
+        // Original702952..70295F queries height only after the existing-slot,
+        // damage-result and nonempty-type-list gates. Strictly greater than-10;
+        // a rejected height must consume no selection RNG or constructor ID.
+        if self.substrate.entities.get(stable_id).is_none_or(|entity| {
+            Self::damage_particle_owner_height(&self.resolved_terrain, entity) <= -10
+        }) {
+            return;
+        }
+        let selected = self
+            .scenario_rng
+            .next_range_u32_inclusive(0, system_types.len().saturating_sub(1) as u32)
+            as usize;
+        let Some(system_id) = self.spawn_particle_system(
+            system_types[selected],
+            coords,
+            None,
+            Some(owner_entity),
+            IVec3::ZERO,
+            None,
+            rules,
+        ) else {
+            return;
+        };
+        if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
+            entity.seldom.damage_smoke_system_id.system = Some(system_id);
+        }
+    }
+
+    /// BuildingClass's `NaturalParticleSystem=` constructor, as Unlimbo
+    /// (`0x00440EBB..0x00440F5B`) and UpdateCloak's fade-in
+    /// (`0x00454F72..0x0045500C`) both run it: a `ParticleSystemClass`
+    /// (`0x0062DC50`) of Type+0x764 at Location (`+0x9C`) plus
+    /// `NaturalParticleLocation=` (Type+0x768), aimed at the cell holding
+    /// Location (`MapClass::GetCellAt @ 0x00565730`), with no owner, the zero
+    /// target coordinate (`0x0089C848`, zeroed by `0x0043B0F0`) and no House.
+    /// `+0x30C` takes the result, NULL too. The callers own their gates; a
+    /// type without a system builds nothing.
+    pub(crate) fn construct_natural_particle_system(&mut self, building_id: u64, rules: &RuleSet) {
+        let Some((type_id, coords, cell)) =
+            self.substrate.entities.get(building_id).and_then(|entity| {
+                let object = self.interner.object_type(entity.type_ref(), rules)?;
+                let type_id =
+                    rules.ps_type_id_by_name(object.natural_particle_system.as_deref()?)?;
+                let location =
+                    crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+                let offset = object.natural_particle_location;
+                let coords = IVec3::new(
+                    location.x.wrapping_add(offset.x),
+                    location.y.wrapping_add(offset.y),
+                    location.z.wrapping_add(offset.z),
+                );
+                // RESIDUAL: off the map, Map565730 gives the shared dummy
+                // cell to aim at; VERA passes no target there.
+                let cell = Self::map_coord_cell(&self.resolved_terrain, location.x, location.y)
+                    .map(|(x, y)| crate::sim::combat::TargetKind::Cell(x, y));
+                Some((type_id, coords, cell))
+            })
+        else {
+            return;
+        };
+        let system =
+            self.spawn_particle_system(type_id, coords, cell, None, IVec3::ZERO, None, rules);
+        if let Some(entity) = self.substrate.entities.get_mut(building_id) {
+            entity.building.natural_particle_system.bind(system);
+        }
+    }
+
+    /// UpdateCloak's fade-out end (`0x00454E7F..0x00454E9E`): a set `+0x30C`
+    /// system is deleted at once through its vt+0x20 with 1, and the link is
+    /// cleared.
+    pub(crate) fn delete_natural_particle_system(
+        &mut self,
+        building_id: u64,
+        context: crate::sim::world::UninitContext<'_>,
+    ) {
+        let Some(system) = self
+            .substrate
+            .entities
+            .get(building_id)
+            .and_then(|entity| entity.building.natural_particle_system.system())
+        else {
+            return;
+        };
+        self.delete_particle_system_now(system, context);
+        if let Some(entity) = self.substrate.entities.get_mut(building_id) {
+            entity.building.natural_particle_system.forget();
+        }
+    }
+
+    /// BuildingClass::DestructionEffects' destroy smoke
+    /// (`0x00441D69..0x00441EF6`): the `DestroyParticleSystems=` Smoke types
+    /// from the last to the first; then, only while `+0x320` is NULL, the list
+    /// holds one and GetHeight (vt+0x1C8, `ObjectClass::GetHeight @
+    /// 0x005F5F40`) is above -10, one system at Location plus
+    /// `DestroySmokeOffset=` (Type+0x7C0), picked by Scenario
+    /// `RandomRanged(0, count - 1)` (`0x0065C7E0`) and owned by the building,
+    /// with no target, a zero target coordinate and no House. `+0x320` takes
+    /// the result.
+    pub(crate) fn construct_destroy_smoke(&mut self, building_id: u64, rules: &RuleSet) {
+        let Some((coords, system_types)) =
+            self.substrate.entities.get(building_id).and_then(|entity| {
+                let object = self.interner.object_type(entity.type_ref(), rules)?;
+                let smoke = smoke_types_last_first(&object.destroy_particle_systems, rules);
+                if entity
+                    .building
+                    .destroy_smoke_particle_system
+                    .system()
+                    .is_some()
+                    || smoke.is_empty()
+                    || Self::damage_particle_owner_height(&self.resolved_terrain, entity) <= -10
+                {
+                    return None;
+                }
+                let location =
+                    crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+                let offset = object.destroy_smoke_offset;
+                let coords = IVec3::new(
+                    location.x.wrapping_add(offset.x),
+                    location.y.wrapping_add(offset.y),
+                    location.z.wrapping_add(offset.z),
+                );
+                Some((coords, smoke))
+            })
+        else {
+            return;
+        };
+        let pick = self
+            .scenario_rng
+            .next_range_u32_inclusive(0, system_types.len() as u32 - 1) as usize;
+        let system = self.spawn_particle_system(
+            system_types[pick],
+            coords,
+            None,
+            Some(building_id),
+            IVec3::ZERO,
+            None,
+            rules,
+        );
+        if let Some(entity) = self.substrate.entities.get_mut(building_id) {
+            entity.building.destroy_smoke_particle_system.bind(system);
+        }
+    }
+}
+
+/// A `DamageParticleSystems=` or `DestroyParticleSystems=` list's Smoke types
+/// (ParticleSystemType+0x2B4 is 0), walked from the last entry to the first,
+/// as TechnoClass::ReceiveDamage (`0x00701900`) and
+/// BuildingClass::DestructionEffects (`0x00441D69..0x00441E2D`) both gather
+/// them.
+fn smoke_types_last_first(names: &[String], rules: &RuleSet) -> Vec<ParticleSystemTypeId> {
+    names
+        .iter()
+        .rev()
+        .filter_map(|name| rules.ps_type_id_by_name(name))
+        .filter(|&id| {
+            rules.particle_system_type(id).behaves_like == ParticleSystemBehavesLike::Smoke
+        })
+        .collect()
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// Mark the attached Techno+310 smoke system for retirement while retaining
+    /// its owner pointer. Native ParticleSystem virtual F8 (6301E0) only sets
+    /// its done-spawning byte; the done-empty Limbo broadcast owns pointer expiry.
+    pub(crate) fn retire_attached_damage_smoke(&mut self, stable_id: u64) {
+        let system_id = self
+            .entities
+            .get(stable_id)
+            .and_then(|entity| entity.seldom.damage_smoke_system_id.system());
+        if let Some(system_id) = system_id
+            && let Some(system) = self.particle_systems.get_mut(system_id)
+        {
+            system.mark_done_spawning();
+        }
+    }
+}
+
+/// TechnoTypeClass::GetDamageParticleOffset @0x007178C0. The screen-relative
+/// arm (`DamSmkOffScrnRel=`, +0x7BC) converts X/Y through
+/// IsometricPixelToWorld (`0x006D2070`, called at `0x007178FB`), subtracts ten
+/// times Z from both, and makes Z a height from `Sqrt_Approx(2 * (10Z)²)`
+/// scaled by 0.58 (`0x0071793B`) through ftol (`0x00717944`).
+fn damage_particle_offset(object: &crate::rules::object_type::ObjectType) -> IVec3 {
+    let offset = object.damage_smoke_offset;
+    if !object.dam_smk_off_scrn_rel {
+        return offset;
+    }
+
+    let (iso_x, iso_y) =
+        crate::util::pixel_conversion::PixelConversionBounds::isometric_pixel_to_leptons(
+            offset.x, offset.y,
+        );
+    let z_times_ten = offset.z.wrapping_mul(10);
+    // Every i32 Z gives a finite root, so the fallback never runs.
+    let magnitude = damage_particle_height(z_times_ten).unwrap_or(0);
+    let vertical = if offset.z >= 0 { -magnitude } else { magnitude };
+
+    IVec3::new(
+        iso_x.wrapping_sub(z_times_ten),
+        iso_y.wrapping_sub(z_times_ten),
+        vertical,
+    )
+}
+
+/// `0x00717921..0x00717944`: FILD, square, double, Sqrt_Approx, FMUL by the
+/// binary64 0.58 at `0x007F4FC0`, then ftol's low 32 bits.
+fn damage_particle_height(z_times_ten: i32) -> Result<i32, NativeX87Error> {
+    let z = X87Chop53::load_i32(z_times_ten);
+    let squared_twice = X87Chop53::add(X87Chop53::mul(z, z), X87Chop53::mul(z, z));
+    let root = X87Chop53::load_f32(sqrt_approx_f32(squared_twice)?)?;
+    let scale = X87Chop53::load_f64(NativeF64Bits::from_bits(0x3FE2_8F5C_28F5_C28F))?;
+    Ok(X87Chop53::ftol_i64(X87Chop53::mul(root, scale))? as i32)
+}
+
+/// ParticleSystemClass::CreateParticle62E380 (original gamemd.exe): the
+/// explicit source and target feed the common Particle constructor. There is
+/// no ParticleCap gate here; Fire/Smoke AI own their admission checks.
+pub(super) fn spawn_particle(
+    sys: &mut ParticleSystem,
+    coords: IVec3,
+    target_coords: IVec3,
+    rules: &RuleSet,
+    sim: &mut Simulation,
+) -> bool {
+    // Ares 3.0 ParticleSystemClass_SpawnParticle (Ares.dll 100290B0, hook
+    // 0x62E380 at the entry, returning to its `ret 8` at 0x62E428): a system
+    // Ares simulates constructs no ParticleClass.
+    if sys.ares.is_some() {
+        return false;
+    }
+    let pst = rules.particle_system_type(sys.type_id);
+    let Some(pt_id) = pst.holds_what else {
+        return false;
+    };
+    let particle = Particle::new(pt_id, coords, target_coords, rules, sim);
+    sys.particles.push(particle);
+    true
+}
+
+/// ParticleClass's constructor velocity: target less source, each component
+/// stored as binary32 (`0x0062B6C6..0x0062B707`), then normalized in place
+/// (`0x0062B8D7..0x0062B956`): `(x² + y²) + z²` through `Sqrt_Approx`, each
+/// component divided by that length and stored as binary32. A zero length
+/// leaves the vector as it is.
+pub(super) fn native_velocity(source: IVec3, target: IVec3) -> [NativeF32Bits; 3] {
+    let velocity = [
+        target.x.wrapping_sub(source.x),
+        target.y.wrapping_sub(source.y),
+        target.z.wrapping_sub(source.z),
+    ]
+    .map(|delta| {
+        X87Chop53::store_f32(X87Chop53::load_i32(delta))
+            .expect("a coordinate difference is a finite binary32")
+    });
+    let [x, y, z] = velocity
+        .map(|component| X87Chop53::load_f32(component).expect("a stored binary32 is finite"));
+    let squared = X87Chop53::add(
+        X87Chop53::add(X87Chop53::mul(x, x), X87Chop53::mul(y, y)),
+        X87Chop53::mul(z, z),
+    );
+    let length = sqrt_approx_f32(squared).expect("a sum of binary32 squares is finite");
+    if length.bits() == 0 {
+        return velocity;
+    }
+    let length = X87Chop53::load_f32(length).expect("Sqrt_Approx returns a finite binary32");
+    [x, y, z].map(|component| {
+        X87Chop53::div(component, length)
+            .and_then(X87Chop53::store_f32)
+            .expect("a component over a nonzero length is a finite binary32")
+    })
+}
+
+/// The state-AI advance ParticleClass's constructor leaves
+/// (`0x0062B956..0x0062BA51`). A type without `Normalized=` (`+0x30F`) keeps
+/// `StateAIAdvance=`. A normalized one takes the fewer of the ticks its
+/// particle needs to cover the source-target distance along x and along y.
+/// Each axis step is `|ftol(velocity × speed)|` stored as binary32,
+/// and an axis counts only with a step: the `1e-6` test passes any whole step
+/// from 1. The x ticks `|dx| / step` stay on the x87 (9999.0 without an x
+/// step); the y ticks are stored as binary32 and replace them unless the x
+/// ticks are smaller. The advance is the low byte of
+/// `ftol(ticks / (FinalDamageState + 1) + 1.0)`, the state sign-extended; a
+/// state of -1 divides by zero, which the masked x87 converts to 0. `speed`
+/// is the particle's stored binary32 scalar (`+0xE4`).
+pub(super) fn spawn_state_ai_advance(
+    pt: &crate::rules::particle_type::ParticleType,
+    source: IVec3,
+    target: IVec3,
+    velocity: [NativeF32Bits; 3],
+    speed: NativeF32Bits,
+) -> u8 {
+    // `0x007EF920`.
+    const NO_STEP_TICKS: NativeF32Bits = NativeF32Bits::from_bits(0x461C_3C00);
+    if !pt.normalized {
+        return pt.state_ai_advance;
+    }
+    use crate::util::native_x87::MaskedX87Chop53 as Masked;
+    // `speed` is the type's `Velocity=` (`ParticleClass+0xE4`), which INI
+    // text can make infinite: the step product is the masked x87's, whose
+    // conversion of an infinity or NaN gives 0, so such an axis has no step.
+    // Everything after a step is a whole number or a constant.
+    let speed = Masked::load_f32(speed);
+    let step =
+        |component| Masked::ftol_i32_low_masked(Masked::mul(Masked::load_f32(component), speed));
+    let load = |bits| X87Chop53::load_f32(bits).expect("a stored whole-number tick is finite");
+    let [step_x, step_y] = [
+        step(velocity[0]).wrapping_abs(),
+        step(velocity[1]).wrapping_abs(),
+    ];
+    let ticks = |from: i32, to: i32, step: i32| {
+        let step = X87Chop53::store_f32(X87Chop53::load_i32(step))
+            .expect("a whole step is a finite binary32");
+        X87Chop53::div(
+            X87Chop53::load_i32(from.wrapping_sub(to).wrapping_abs()),
+            load(step),
+        )
+        .expect("an axis counts only with a step")
+    };
+
+    let mut best = if step_x > 0 {
+        ticks(source.x, target.x, step_x)
+    } else {
+        load(NO_STEP_TICKS)
+    };
+    if step_y > 0 {
+        let y_ticks = X87Chop53::store_f32(ticks(source.y, target.y, step_y))
+            .expect("whole-lepton ticks are a finite binary32");
+        if X87Chop53::compare(best, load(y_ticks)) != X87Ordering::Less {
+            best = load(y_ticks);
+        }
+    }
+    let divisor = X87Chop53::load_i32(i32::from(pt.final_damage_state as i8) + 1);
+    let one = X87Chop53::load_f64(NativeF64Bits::ONE).expect("1.0 is finite");
+    let advance = X87Chop53::div(best, divisor).map_or(0, |per_state| {
+        X87Chop53::ftol_i32_low_masked(X87Chop53::add(per_state, one))
+    });
+    advance as u8
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod tests {
+    use crate::sim::rng::SimRng;
+
+    /// Ares TechnoClass_Update_DamageSparks (Ares.dll 1004B760, hook
+    /// 0x6FACD9): `DamageSparks=yes` admits a damaged vehicle to the Spark
+    /// producer stock keeps to Cyborg infantry (its two Scenario draws).
+    #[test]
+    fn ares_damage_sparks_admits_a_vehicle_to_the_spark_producer() {
+        use crate::sim::game_entity::GameEntity;
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=SPARKY\n1=PLAIN\n\
+             [SPARKY]\nStrength=100\nDamageSparks=yes\nDamageParticleSystems=Sys\n\
+             [PLAIN]\nStrength=100\nDamageParticleSystems=Sys\n\
+             [Particles]\n0=Spk\n[ParticleSystems]\n0=Sys\n\
+             [Spk]\nBehavesLike=Spark\nMaxEC=10\n[Sys]\nBehavesLike=Spark\nHoldsWhat=Spk\n",
+        ))
+        .unwrap();
+        let draws = |name: &str| {
+            let mut sim = Simulation::new();
+            let id = sim.substrate.allocate_stable_id();
+            let mut entity = GameEntity::test_default(id, name, "A", 3, 3);
+            entity.set_type_ref_for_test(sim.interner.intern(name));
+            entity.set_owner_for_test(sim.interner.intern("A"));
+            entity.health.set_for_test(20);
+            sim.substrate.entities.insert(entity);
+            let before = sim.scenario_rng.logical_state();
+            sim.update_damage_spark_after_ai(id, &rules);
+            sim.scenario_rng.logical_state() != before
+        };
+        assert!(draws("SPARKY"));
+        assert!(!draws("PLAIN"));
+    }
+
+    /// 6FAD51..6FAE40: only the Spark entries of `DamageParticleSystems=`
+    /// count, in authored order, and the admitted roll indexes them.
+    #[test]
+    fn a_damaged_vehicle_picks_among_its_spark_systems_only() {
+        use crate::sim::game_entity::GameEntity;
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nConditionRedSparkingProbability=1.0\n\
+             [VehicleTypes]\n0=SPARKY\n\
+             [SPARKY]\nStrength=100\nDamageSparks=yes\n\
+             DamageParticleSystems=Smk,Missing,SparkA,SparkB\n\
+             [Particles]\n0=Spk\n1=Puff\n[ParticleSystems]\n0=Smk\n1=SparkA\n2=SparkB\n\
+             [Spk]\nBehavesLike=Spark\nMaxEC=10\n[Puff]\nBehavesLike=Smoke\nMaxEC=10\n\
+             [Smk]\nBehavesLike=Smoke\nHoldsWhat=Puff\n\
+             [SparkA]\nBehavesLike=Spark\nHoldsWhat=Spk\n\
+             [SparkB]\nBehavesLike=Spark\nHoldsWhat=Spk\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let id = sim.substrate.allocate_stable_id();
+        let mut entity = GameEntity::test_default(id, "SPARKY", "A", 3, 3);
+        entity.set_type_ref_for_test(sim.interner.intern("SPARKY"));
+        entity.set_owner_for_test(sim.interner.intern("A"));
+        entity.health.set_for_test(20);
+        sim.substrate.entities.insert(entity);
+        let mut expected = sim.scenario_rng.clone();
+        let roll = expected.next_range_u32_inclusive(0, 0x7fff_fffe);
+        assert!(roll < rules.general.condition_red_spark_threshold);
+        let pick = ["SparkA", "SparkB"][expected.next_range_u32_inclusive(0, 1) as usize];
+        sim.update_damage_spark_after_ai(id, &rules);
+        let system = sim.substrate.entities.get(id).unwrap();
+        let system = system.seldom.spark_particle_system.system().unwrap();
+        let system = sim.substrate.particle_systems.get(system).unwrap();
+        assert_eq!(Some(system.type_id()), rules.ps_type_id_by_name(pick));
+    }
+
+    /// The constructor's colour seed (`0x0062BA51`) draws for any type with a
+    /// `ColorList` and a start colour, a Fire type as much as a Spark one.
+    #[test]
+    fn a_fire_particle_with_start_colors_takes_the_constructor_color_draw() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[Particles]\n0=Flame\n[Flame]\nBehavesLike=Fire\nMaxEC=10\n\
+             ColorList=(255,255,255),(200,200,80)\nStartColor1=255,128,0\nStartColor2=128,64,32\n",
+        ))
+        .unwrap();
+        let kind = rules.p_type_id_by_name("Flame").unwrap();
+        let mut sim = Simulation::new();
+        let mut expected = sim.scenario_rng.clone();
+        expected.next_raw_abs_modulo(10);
+        expected.next_range_u32_inclusive(0, 0x7fff_fffe);
+        super::Particle::new(
+            kind,
+            IVec3::new(256, 256, 0),
+            IVec3::new(512, 256, 0),
+            &rules,
+            &mut sim,
+        );
+        assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
+    }
+    #[test]
+    fn original_96_receiver_height_rows_gate_constructor_and_rng() {
+        use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
+        use crate::sim::game_entity::GameEntity;
+        let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/receiver_smoke_height.json",
+        ))
+        .unwrap();
+        assert_eq!(rows.as_array().unwrap().len(), 96);
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=TEST\n[TEST]\nStrength=100\nDamageParticleSystems=Sys,SysTwo\nDamageSmokeOffset=0,0,0\nDamSmkOffScrnRel=no\n[Particles]\n0=Smk\n[ParticleSystems]\n0=Sys\n1=SysTwo\n[Smk]\nBehavesLike=Smoke\nMaxEC=10\n[Sys]\nBehavesLike=Smoke\nHoldsWhat=Smk\n[SysTwo]\nBehavesLike=Smoke\nHoldsWhat=Smk\n")).unwrap();
+        for row in rows.as_array().unwrap() {
+            let input = &row["input"];
+            let x = input["xy"][0].as_i64().unwrap() as i32;
+            let y = input["xy"][1].as_i64().unwrap() as i32;
+            let z = input["z"].as_i64().unwrap() as i32;
+            let mut sim = Simulation::new();
+            let id = sim.substrate.allocate_stable_id();
+            let mut entity =
+                GameEntity::test_default(id, "TEST", "A", (x >> 8) as u16, (y >> 8) as u16);
+            entity.set_type_ref_for_test(sim.interner.intern("TEST"));
+            entity.set_owner_for_test(sim.interner.intern("A"));
+            entity.health.set_for_test(40);
+            entity
+                .position
+                .set_sub_x_for_test(SimFixed::from_num(x & 255));
+            entity
+                .position
+                .set_sub_y_for_test(SimFixed::from_num(y & 255));
+            entity.position.set_exact_z_leptons_for_test(Some(z));
+            entity.set_on_bridge(input["on_bridge"].as_bool().unwrap());
+            let mut cell = test_flat_cell(entity.position.rx(), entity.position.ry());
+            cell.level = input["level"].as_u64().unwrap() as u8;
+            cell.slope_type = input["slope"].as_u64().unwrap() as u8;
+            sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(8, 8, vec![cell]));
+            assert_eq!(
+                Simulation::damage_particle_owner_height(&sim.resolved_terrain, &entity),
+                row["output"]["height"].as_i64().unwrap() as i32
+            );
+            sim.substrate.entities.insert(entity);
+            let before_rng = sim.scenario_rng.logical_state();
+            sim.maintain_damage_smoke_after_receive(
+                id,
+                crate::sim::combat::damage::DamageState::Yellow,
+                &rules,
+            );
+            let smoke = sim
+                .entities()
+                .get(id)
+                .unwrap()
+                .seldom
+                .damage_smoke_system_id
+                .system();
+            assert_eq!(
+                smoke.is_some(),
+                row["output"]["spawn_admitted"] == true,
+                "{row}"
+            );
+            if let Some(smoke) = smoke {
+                assert_eq!(
+                    sim.particle_systems().get(smoke).unwrap().coords,
+                    IVec3::new(x, y, z)
+                );
+                assert_ne!(sim.scenario_rng.logical_state(), before_rng);
+            } else {
+                assert_eq!(sim.scenario_rng.logical_state(), before_rng);
+                assert_eq!(sim.substrate.allocate_stable_id(), id + 1);
+            }
+        }
+    }
+    #[test]
+    fn original_health_ratio_corpus_marks_owned_damage_smoke() {
+        use crate::map::entities::EntityCategory;
+        use crate::sim::combat::Health;
+        use crate::sim::game_entity::GameEntity;
+        for row in crate::sim::health_ratio_fixture::rows() {
+            let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+                "[VehicleTypes]\n0=TEST\n[TEST]\nStrength={}\n[Particles]\n0=Smk\n[ParticleSystems]\n0=Sys\n[Smk]\nBehavesLike=Smoke\nMaxEC=10\nMaxDC=4\nStartStateAI=0\nEndStateAI=10\nStateAIAdvance=4\n[Sys]\nBehavesLike=Smoke\nHoldsWhat=Smk\nParticleCap=10\nSpawnFrames=1\nLifetime=200\n",
+                row.input.strength
+            ))).unwrap();
+            rules.general.condition_yellow = row.input.yellow();
+            let mut sim = Simulation::new();
+            let owner = sim.interner.intern("A");
+            let type_ref = sim.interner.intern("TEST");
+            let id = sim.substrate.allocate_stable_id();
+            let entity = GameEntity::new_at_frame_zero_for_test(
+                id,
+                0,
+                0,
+                0,
+                0,
+                owner,
+                Health::new(row.input.current),
+                type_ref,
+                EntityCategory::Unit,
+                0,
+                5,
+                true,
+            );
+            sim.substrate.entities.insert(entity);
+            let system_id = sim
+                .spawn_particle_system(
+                    ParticleSystemTypeId(0),
+                    IVec3::ZERO,
+                    Some(crate::sim::combat::TargetKind::Entity(id)),
+                    Some(id),
+                    IVec3::ZERO,
+                    None,
+                    &rules,
+                )
+                .unwrap();
+            sim.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .seldom
+                .damage_smoke_system_id
+                .set_for_test(Some(system_id));
+            let before_rng = sim.scenario_rng.logical_state();
+            sim.maintain_damage_smoke_after_receive(
+                id,
+                crate::sim::combat::damage::DamageState::Yellow,
+                &rules,
+            );
+            assert_eq!(
+                sim.particle_systems().get(system_id).unwrap().done_spawning,
+                row.output.smoke_above_yellow,
+                "{row:?}"
+            );
+            assert_eq!(
+                sim.substrate
+                    .entities
+                    .get(id)
+                    .unwrap()
+                    .seldom
+                    .damage_smoke_system_id
+                    .system(),
+                Some(system_id)
+            );
+            assert_eq!(sim.particle_systems().len(), 1);
+            assert_eq!(sim.scenario_rng.logical_state(), before_rng);
+        }
+    }
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+
+    /// GetDamageParticleOffset (`0x007178C0`): the screen-relative height is
+    /// `Sqrt_Approx(2 * 100²)` (about 141.4) times 0.58 (`0x0071793B`), and X/Y
+    /// go through IsometricPixelToWorld (30, 15 pixels is 256, 0 leptons).
+    #[test]
+    fn screen_relative_damage_offset_scales_its_height() {
+        use crate::rules::object_type::{ObjectCategory, ObjectType};
+        let ini = IniFile::from_str("[X]\nDamageSmokeOffset=30,15,10\nDamSmkOffScrnRel=yes\n");
+        let object =
+            ObjectType::from_ini_section("X", ini.section("X").unwrap(), ObjectCategory::Vehicle);
+        assert_eq!(damage_particle_offset(&object), IVec3::new(156, -100, -82));
+    }
+
+    /// ParticleClass's constructor executed on each row
+    /// (`tools/spatial_oracle/sqrt_approx_distances.py`), against
+    /// `spawn_particle` for a `Normalized=` Fire type of the row's speed and
+    /// `FinalDamageState=`: the binary32 vector bit for bit, the direction
+    /// that vector toward zero within one `SimFixed` step, and the state-AI
+    /// advance byte.
+    #[test]
+    fn normalized_spawn_matches_original_rows() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/sqrt_approx_distances.json",
+        ))
+        .unwrap();
+        let rows = corpus["particle"].as_array().unwrap();
+        for row in rows {
+            let name = &row["name"];
+            let [source, target] = [&row["source"], &row["target"]]
+                .map(|v| IVec3::from_array(serde_json::from_value(v.clone()).unwrap()));
+            let ini_text = format!(
+                "[Particles]\n\
+                 1=FireStream\n\
+                 [FireStream]\n\
+                 BehavesLike=Fire\n\
+                 MaxEC=10\n\
+                 Velocity={}\n\
+                 StateAIAdvance=6\n\
+                 FinalDamageState={}\n\
+                 Normalized=yes\n\
+                 [ParticleSystems]\n\
+                 1=FireSys\n\
+                 [FireSys]\n\
+                 BehavesLike=Fire\n\
+                 HoldsWhat=FireStream\n\
+                 ParticleCap=5\n",
+                row["speed"], row["final_damage_state"],
+            );
+            let rules = RuleSet::from_ini(&IniFile::from_str(&ini_text)).expect("rules parse");
+            let mut sim = Simulation::new();
+            let sys_id = sim
+                .spawn_particle_system(
+                    ParticleSystemTypeId(0),
+                    source,
+                    None,
+                    None,
+                    target,
+                    None,
+                    &rules,
+                )
+                .unwrap();
+            let mut sys = sim
+                .substrate
+                .particle_systems
+                .take_for_tick(sys_id)
+                .unwrap();
+            let sys_target = sys.target_coords;
+            assert!(
+                spawn_particle(&mut sys, source, sys_target, &rules, &mut sim),
+                "{name}"
+            );
+
+            let particle = &sys.particles[0];
+            let velocity: [u32; 3] = serde_json::from_value(row["velocity"].clone()).unwrap();
+            assert_eq!(
+                native_velocity(source, target).map(NativeF32Bits::bits),
+                velocity,
+                "{name}"
+            );
+            assert_eq!(
+                particle.direction.map(NativeF32Bits::bits),
+                velocity,
+                "{name}"
+            );
+            assert_eq!(
+                u64::from(particle.state_ai_advance),
+                row["advance"].as_u64().unwrap(),
+                "{name}"
+            );
+        }
+        assert_eq!(rows.len(), 13);
+    }
+
+    /// `Velocity=1e999` reads as an infinity; the masked step conversion
+    /// gives neither axis a step, so the advance is from the 9999.0 ticks:
+    /// the low byte of `ftol(9999 / 1 + 1)`.
+    #[test]
+    fn an_infinite_normalized_velocity_has_no_axis_step() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[Particles]\n1=FireStream\n\
+             [FireStream]\nBehavesLike=Fire\nMaxEC=10\nVelocity=1e999\n\
+             StateAIAdvance=6\nFinalDamageState=0\nNormalized=yes\n",
+        ))
+        .expect("rules parse");
+        let pt = rules.particle_type(crate::rules::particle_type::ParticleTypeId(0));
+        let source = IVec3::new(0, 0, 0);
+        let target = IVec3::new(700, -300, 0);
+        let advance = spawn_state_ai_advance(
+            pt,
+            source,
+            target,
+            native_velocity(source, target),
+            pt.velocity,
+        );
+        assert_eq!(advance, 10_000u32 as u8);
+    }
+
+    /// Build a tiny RuleSet with one ParticleType + one ParticleSystemType.
+    /// `behaves_like` selects which BehavesLike to assign on the system.
+    /// `particle_cap` lets each test pin its own cap independently of the default.
+    fn build_rules(behaves_like: &str, particle_cap: u32) -> RuleSet {
+        let ini_text = format!(
+            "[Particles]\n\
+             1=Smk\n\
+             [ParticleSystems]\n\
+             1=Sys\n\
+             [Smk]\n\
+             BehavesLike=Smoke\n\
+             MaxEC=10\n\
+             MaxDC=4\n\
+             StartStateAI=0\n\
+             EndStateAI=10\n\
+             StateAIAdvance=4\n\
+             Translucency=0\n\
+             [Sys]\n\
+             BehavesLike={behaves_like}\n\
+             HoldsWhat=Smk\n\
+             ParticleCap={particle_cap}\n\
+             SpawnFrames=1\n\
+             Lifetime=200\n",
+        );
+        let ini = IniFile::from_str(&ini_text);
+        RuleSet::from_ini(&ini).expect("rules parse")
+    }
+
+    #[test]
+    fn spawn_returns_some_for_smoke() {
+        let rules = build_rules("Smoke", 50);
+        let mut sim = Simulation::new();
+        let prior_object_id = sim.substrate.allocate_stable_id();
+        let id = sim
+            .spawn_particle_system(
+                ParticleSystemTypeId(0),
+                IVec3::new(100, 100, 0),
+                None,
+                None,
+                IVec3::ZERO,
+                None,
+                &rules,
+            )
+            .expect("smoke system spawns");
+        assert_eq!(id, prior_object_id + 1);
+        assert_eq!(sim.particle_systems().len(), 1);
+        assert_eq!(sim.live_object_order_snapshot(), vec![id]);
+        let sys = sim.particle_systems().get(id).unwrap();
+        assert_eq!(sys.coords, IVec3::new(100, 100, 0));
+        assert_eq!(sys.lifetime, 200);
+        assert_eq!(sys.facing, 0x1D);
+    }
+
+    // A Smoke system holding a Smoke (or behaviour-less) type is simulated by
+    // Ares, whose SpawnParticle hook (0x62E380) builds no ParticleClass.
+    #[test]
+    fn explicit_particle_birth_has_no_ai_particle_cap_gate() {
+        let rules = build_rules("Smoke", 3);
+        let mut sim = Simulation::new();
+        let sys_id = sim
+            .spawn_particle_system(
+                ParticleSystemTypeId(0),
+                IVec3::ZERO,
+                None,
+                None,
+                IVec3::ZERO,
+                None,
+                &rules,
+            )
+            .unwrap();
+        for _ in 0..4 {
+            assert!(sim.spawn_particle_in_system(sys_id, IVec3::ZERO, IVec3::ZERO, &rules));
+        }
+        assert_eq!(
+            sim.particle_systems().get(sys_id).unwrap().particles.len(),
+            4
+        );
+    }
+
+    #[test]
+    fn lifetime_extra_uses_raw_abs_modulo_single_draw() {
+        // Use Gas to isolate the common lifetime roll; Smoke's preceding
+        // speed draw is covered by the original constructor corpus.
+        // MaxEC=10. seed=1 first raw draw is 0x78B76ED5 (+2_025_287_381);
+        // abs(% 10) = 1 -> lifetime_remaining = 10 + 1 = 11. The raw-modulo helper
+        // consumes EXACTLY ONE draw (no rejection loop); this pins both the value
+        // and the single-advance contract.
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[Particles]\n0=Gas\n[Gas]\nBehavesLike=Gas\nMaxEC=10\n\
+             [ParticleSystems]\n0=Sys\n[Sys]\nBehavesLike=Gas\n\
+             HoldsWhat=Gas\nParticleCap=50\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let sys_id = sim
+            .spawn_particle_system(
+                ParticleSystemTypeId(0),
+                IVec3::ZERO,
+                None,
+                None,
+                IVec3::ZERO,
+                None,
+                &rules,
+            )
+            .unwrap();
+        *sim.particle_rng() = SimRng::new(1);
+        let mut sys = sim
+            .substrate
+            .particle_systems
+            .take_for_tick(sys_id)
+            .unwrap();
+        spawn_particle(&mut sys, IVec3::ZERO, IVec3::ZERO, &rules, &mut sim);
+        assert_eq!(sys.particles[0].lifetime_remaining, 11);
+
+        // Exactly one raw draw consumed by the lifetime roll.
+        let mut reference = SimRng::new(1);
+        reference.next_u32();
+        assert_eq!(sim.particle_rng().state(), reference.state());
+    }
+
+    // A Smoke system holding a Smoke (or behaviour-less) type is simulated by
+    // Ares, whose SpawnParticle hook (0x62E380) builds no ParticleClass.
+    #[test]
+    fn spawn_particle_constructs_empty_named_type_when_holds_what_unset() {
+        // ParticleSystemTypeReadINI64430F binds the empty-named ParticleType.
+        let ini_text = "[ParticleSystems]\n\
+                        1=NoHold\n\
+                        [NoHold]\n\
+                        BehavesLike=Smoke\n\
+                        ParticleCap=10\n";
+        let ini = IniFile::from_str(ini_text);
+        let rules = RuleSet::from_ini(&ini).expect("rules parse");
+        let mut sim = Simulation::new();
+        let sys_id = sim
+            .spawn_particle_system(
+                ParticleSystemTypeId(0),
+                IVec3::ZERO,
+                None,
+                None,
+                IVec3::ZERO,
+                None,
+                &rules,
+            )
+            .unwrap();
+        *sim.particle_rng() = SimRng::new(1);
+        let mut sys = sim
+            .substrate
+            .particle_systems
+            .take_for_tick(sys_id)
+            .unwrap();
+        assert!(spawn_particle(
+            &mut sys,
+            IVec3::ZERO,
+            IVec3::ZERO,
+            &rules,
+            &mut sim
+        ));
+        assert_eq!(sys.particles.len(), 1);
+        let particle = &sys.particles[0];
+        assert_eq!(rules.particle_type(particle.type_id()).name, "");
+        assert_eq!(particle.lifetime_remaining(), 1);
+    }
+}

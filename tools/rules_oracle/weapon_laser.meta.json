@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Weapon laser and Rules detail constructors, complete readers, retained defaults, signed controls and selected physical layered keys",
+  "assumptions": [
+    "Original Weapon FindOrAllocate772FA0 and whole771C70 construct each probe; whole772080 owns section admission, all selected numeric/boolean/RGB reads and stores. Duration is observed as signed byte+14E, matching MOVSX at the active6FD21D consumer. No Python formula supplies expected fields.",
+    "Twenty-four fresh-duration controls cover absent/empty, signed boundaries, overflow, decimal/hex and malformed prefix behavior. Eight calls retain one original object, covering missing section/key, invalid boolean defaults, exact-case keys and complete RGB triples with byte narrowing. Partial malformed RGB triples are outside this corpus; native can copy uninitialized stack bytes there.",
+    "Physical RULESMD, optional loose LANGRULE, Battle1 MPBattleMD and XMP03T4 bytes use the selected installed original archives. Existing stock MIX/lexical helpers prepare only the seven laser keys in supplied INI caches; archive loading, full type discovery and unrelated weapon fields are excluded. The production asset reader separately confirms these winning layers.",
+    "Existing fresh_reset executes whole Rules665650, yielding detail thresholds15/20/5 at+0/+4/+8. Whole AudioVisual6691E0 executes15 scalar controls. One history executes a cold AudioVisual read, seven whole Process668BF0 calls, original Type reset6686C0 through its first complete Process (stop668A2C), then another Process. Original readers retain signed dwords without clamps; only the later reset archive/file reload tail is excluded.",
+    "Detail physical layers supply only the three exact-case AudioVisual threshold keys to whole Process. Supplied minimal registries and cached INI objects bound this to reader/lifetime evidence, not the complete startup or Scenario. Detail clock cadence, hysteresis and laser admission execute in building_prism instead.",
+    "The fixture uses the existing BulletReader allocation/CRT/TLS/cache boundaries and 53-bit chop control word. No executable instruction is patched; no laser lifetime, RNG, GPU pixel or whole-Scenario result is claimed."
+  ],
+  "substitutions": [
+    "Inherited BulletReader supplies source caches, allocator/delete/CRT/TLS and unused archive boundaries. Unrelated sound, Anim and projectile references are absent in the selected-key cache."
+  ],
+  "entry_points": {
+    "weapon_ctor": "0x00771C70",
+    "weapon_reader": "0x00772080",
+    "read_int": "0x005276D0",
+    "read_bool": "0x005295F0",
+    "read_rgb": "0x00474B50",
+    "duration_consumer": "0x006FD21D",
+    "rules_ctor": "0x00665650",
+    "audio_visual": "0x006691E0",
+    "rules_process": "0x00668BF0",
+    "type_reset": "0x006686C0",
+    "reset_stop": "0x00668A2C"
+  },
+  "payload_sha256": "1e8c7bef42497587796c182158008ef978133ef8a7e6e58ca4c117a50b6d32cc",
+  "replay_command": "python -m tools.rules_oracle.weapon_laser"
+}

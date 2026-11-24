@@ -1,0 +1,245 @@
+[package]
+name = "vera20k-core"
+version = "0.4.2"
+edition = "2024"
+description = "VERA20k's GPU-free engine: assets, rules, map, simulation, lockstep and the headless scenario"
+publish = false
+# This manifest sits in `src/` so rustc names every file `src/...`, as it did
+# before the workspace split (backtraces, saved RNG traces and panic locations
+# keep their paths). Targets are listed explicitly.
+# The test group cfgs (tools/README.md, "Test groups").
+build = "core_build.rs"
+autobins = false
+autotests = false
+autoexamples = false
+autobenches = false
+
+[lib]
+path = "core_lib.rs"
+
+[[bin]]
+name = "parity-digest"
+path = "bin/parity-digest.rs"
+
+# Release-build simulation tick benchmark at scale (see its module doc).
+[[bin]]
+name = "sim-bench"
+path = "bin/sim-bench.rs"
+
+# The saved-game layout id the browser build compiles in (tools/wasm/build.py).
+[[bin]]
+name = "snapshot-layout"
+path = "bin/snapshot-layout.rs"
+
+# External two-client LAN fault proof; absent from normal game builds.
+[[bin]]
+name = "lan-fault-proxy"
+path = "bin/lan-fault-proxy.rs"
+required-features = ["test-support"]
+
+# Test groups: the module path prefixes each one owns; the longest prefix
+# decides. `python -m tools.group_tests check` holds the test modules to it.
+[package.metadata.test-groups]
+assets = ["assets"]
+map = ["map"]
+net = ["net"]
+rules-a-n = [
+    "rules::a", "rules::b", "rules::c", "rules::d", "rules::e", "rules::f", "rules::g",
+    "rules::h", "rules::i", "rules::j", "rules::k", "rules::l", "rules::m", "rules::n",
+]
+rules-o-z = ["rules"]
+scenario = ["headless_scenario", "skirmish_", "rng_continuation", "test_fixture"]
+sim-a-b = ["sim::a", "sim::b"]
+sim-c-g = ["sim::c", "sim::d", "sim::e", "sim::f", "sim::g"]
+sim-combat-a-c = ["sim::combat::a", "sim::combat::b", "sim::combat::c"]
+sim-combat-d-z = ["sim::combat"]
+sim-h-o = [
+    "sim::h", "sim::i", "sim::j", "sim::k", "sim::l", "sim::m", "sim::n", "sim::o",
+]
+sim-movement = ["sim::movement"]
+sim-p-s = ["sim::p", "sim::q", "sim::r", "sim::s"]
+sim-pathfinding = ["sim::pathfinding"]
+sim-production = ["sim::production"]
+sim-superweapon = ["sim::superweapon"]
+sim-t-z = ["sim"]
+sim-trigger = ["sim::trigger"]
+sim-world-a-b = ["sim::world::a", "sim::world::b"]
+sim-world-c-o = [
+    "sim::world::c", "sim::world::d", "sim::world::e", "sim::world::f", "sim::world::g",
+    "sim::world::h", "sim::world::i", "sim::world::j", "sim::world::k", "sim::world::l",
+    "sim::world::m", "sim::world::n", "sim::world::o",
+]
+sim-world-p-s = ["sim::world::p", "sim::world::q", "sim::world::r", "sim::world::s"]
+sim-world-t-z = ["sim::world"]
+sim-world-techno = ["sim::world::techno"]
+util = ["util"]
+
+[features]
+# Forwarded by the client only for an explicitly requested browser build.
+wasm = ["dep:web-time", "dep:getrandom", "dep:js-sys"]
+wasm-net = ["wasm", "dep:wasm-bindgen"]
+wasm-lan = ["wasm-net"]
+wasm-threads = ["wasm", "dep:rayon", "dep:wasm_sync"]
+# Compile the supported Phobos behavior; INIs cannot enable an absent capability.
+# Ares needs no feature: it switches on from a game's data in every build
+# (`rules::ares_switch`).
+phobos = []
+# Placeholder: NPatch-specific readers land with their first chain.
+npatch = []
+# VERA20K's own first-party extension capability.
+verax = []
+# VERA20K's opt-in bug-fix extension adopting the NPExt changelog corrections;
+# builds without it keep every native path.
+npbug = []
+# The client's Ctrl+Shift dev chord reaches simulation and utility hooks.
+dev-overlays = []
+# Read-only snapshots and opt-in frame timing for the browser dashboard.
+telemetry = []
+# Offline trainer state and diagnostic event hooks, absent from normal builds.
+debug-tools = ["telemetry"]
+# Test fixtures and helpers that client tests share; the client enables it
+# through its dev-dependency.
+test-support = []
+# A focused test build (tools/README.md, "Test groups"): with `test-focus` only
+# the test groups whose `tests-*` feature is on compile. Without it every test
+# compiles, so a plain `cargo test` is always the full suite.
+test-focus = []
+tests-assets = []
+tests-map = []
+tests-net = []
+tests-rules-a-n = []
+tests-rules-o-z = []
+tests-scenario = []
+tests-sim-a-b = []
+tests-sim-c-g = []
+tests-sim-combat-a-c = []
+tests-sim-combat-d-z = []
+tests-sim-h-o = []
+tests-sim-movement = []
+tests-sim-p-s = []
+tests-sim-pathfinding = []
+tests-sim-production = []
+tests-sim-superweapon = []
+tests-sim-t-z = []
+tests-sim-trigger = []
+tests-sim-world-a-b = []
+tests-sim-world-c-o = []
+tests-sim-world-p-s = []
+tests-sim-world-t-z = []
+tests-sim-world-techno = []
+tests-util = []
+
+[dependencies]
+# Shared authenticated datagram codec used by the standalone relay.
+vera20k-relay-protocol = { path = "../services/relay-protocol" }
+glam = { workspace = true }
+# Fixed-point arithmetic for simulation positions and other fixed-width mechanisms.
+# Native floating-point mechanisms document their numeric contract at their owner.
+fixed = { version = "1", features = ["serde"] }
+# musl's libm in plain Rust: the same transcendental results on every target, for
+# the few native atan/ln calls whose results reach shared state (the random map
+# generator). Host C libraries differ in the last bit between platforms, and
+# glibc picks its variant by CPU.
+libm = "0.2.16"
+
+# --- Serialization ---
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# --- Binary parsing ---
+# RA2's binary asset formats (.mix, .shp, .vxl, .pal, .tmp, .hva) are parsed by
+# hand-written readers in `assets/` — no parser library, no RA2-specific crates.
+# memmap2 maps disk MIX archives instead of reading them into memory.
+
+# --- Error handling ---
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# --- Logging ---
+log = { workspace = true }
+
+# --- Parallel simulation work ---
+# The persistent worker pool behind `sim::parallel::map`; its threads keep their
+# thread-local search scratch between frames. Already in the lock via `image`.
+
+# --- Crypto (for MIX archive header decryption) ---
+# RA2 .mix files encrypt their file index with Blowfish (`assets::blowfish`).
+# The key is RSA-encrypted.
+# Big integer arithmetic — RSA modular exponentiation to extract the Blowfish key.
+# Simpler than the full `rsa` crate since RA2 uses raw/textbook RSA (no PKCS padding).
+num-bigint = "0.4"
+
+# --- Unix saved-list timestamps ---
+# Local time and the user's locale (src/util/native_file_time.rs). The
+# lockfile already carries libc 0.2.
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
+memmap2 = "0.9.12"
+rayon = "1.11"
+# Desktop mod packages accept ZIPs with Stored and DEFLATE entries.
+tempfile = "=3.27.0"
+zip = { version = "=9.8.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+web-time = { version = "1", optional = true }
+# The browser's main thread may not block, so rayon's own locks spin there.
+rayon = { version = "1.11", optional = true, features = ["web_spin_lock"] }
+# The same for the locks a tick and the draw share (`util::sync`).
+wasm_sync = { version = "0.1.2", optional = true }
+getrandom = { version = "=0.3.4", optional = true, features = ["wasm_js"] }
+js-sys = { version = "0.3", optional = true }
+wasm-bindgen = { version = "0.2", optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# Not used by core's own code. `cargo test --workspace` resolves these shared
+# crates with the client's features; listing those features here gives
+# `cargo test -p vera20k-core` (with core's dev-overlays and test-support,
+# which tools.cargo_run adds) the same dependency graph, so both commands build
+# and reuse one core test executable instead of compiling it twice.
+# unicode-ident is a normal dependency there too, which keeps the proc-macro
+# crates' build profile the same. tools/tests/test_cargo_run.py checks the
+# features still match.
+[dev-dependencies]
+# Native binary64 test values must survive their JSON decimal transport exactly.
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+bytemuck = { version = "1", default-features = false, features = ["derive", "extern_crate_alloc", "min_const_generics"] }
+half = { version = "2", default-features = false, features = ["num-traits"] }
+hashbrown = { version = "0.16", default-features = false, features = ["default-hasher", "inline-more"] }
+num-traits = { version = "0.2", features = ["libm"] }
+unicode-ident = "1"
+
+# The native client's tungstenite -> rand enables chacha20's RNG support and
+# getrandom's std and sys_rng, and its handshake's sha1 -> hybrid-array enables
+# typenum's const generics. The client's image -> png enables the defaults of
+# flate2, miniz_oxide and (through fdeflate) simd-adler32. Core reaches these and
+# getrandom 0.4 only through its native zip and tempfile.
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dev-dependencies]
+chacha20 = { version = "0.10", default-features = false, features = ["rng"] }
+flate2 = "1"
+getrandom = { version = "0.4", default-features = false, features = ["std", "sys_rng"] }
+miniz_oxide = "0.8"
+simd-adler32 = "0.3"
+typenum = { version = "1", features = ["const-generics"] }
+
+# wgpu's Vulkan/DX12 platform package enables gpu-allocator's hashbrown defaults.
+# Match that package's target gate, keeping Metal and browser tests unchanged.
+[target.'cfg(any(windows, target_os = "linux", target_os = "android", target_os = "freebsd"))'.dev-dependencies]
+hashbrown = { version = "0.16", default-features = false, features = ["default"] }
+
+# winit's Wayland decorations (this is winit's cfg) enable tiny-skia's SIMD,
+# which adds bytemuck's aarch64_simd feature to the client build. Its Wayland
+# and X11 crates enable once_cell's defaults and more of rustix, both of which
+# core reaches through tempfile.
+[target.'cfg(all(unix, not(any(target_os = "redox", target_family = "wasm", target_os = "android", target_os = "ios", target_os = "macos"))))'.dev-dependencies]
+bytemuck = { version = "1", default-features = false, features = ["aarch64_simd"] }
+once_cell = "1"
+rustix = { version = "1", features = ["event", "net", "pipe", "process", "shm", "system", "time"] }
+
+# Core's tempfile and zip use windows-sys; the client's window code, arboard and
+# rustls-platform-verifier enable more of it.
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Graphics_Gdi", "Win32_Security_Cryptography", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Ole", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+
+[lints]
+workspace = true

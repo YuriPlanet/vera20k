@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "TechnoClass::GetWeaponRange 0x007012C0 (vt+0x168, slots 0 and 1) and TechnoClass::Threat_Range 0x00707E60 (modes -1, 0, 1, 2) on a Unit transport: closed and open-topped, empty and loaded, the cargo minimum over infantry and unit riders (unarmed, elite, veteran, turreted, Spy Range=-2), transport slot and elite variants, GuardRange and the mode clamps. Not the Greatest_Threat walk bound or the candidate acceptance that consume these values.",
+  "assumptions": [
+    "One emulator; per row the scratch region and stack are rewritten, general registers zeroed, FPCW 0x0E7F, empty x87 stack.",
+    "Transport: original Unit vtable 0x007F5C70 (vt+0x168 asserted 0x007012C0), flags +0x14 = 7, type at +0x6C4, CargoClass at +0x114 (count, head).",
+    "Riders: original Infantry 0x007EB058 or Unit vtable, flags +0x14 = 7 (Foot), type at +0x6C0 / +0x6C4, NextObject +0x30, veterancy +0x150, CurrentWeaponNumber +0x138.",
+    "Types: weapon slots 0/1 at +0x898 and elite 0/1 at +0xA94 (stride 0x1C), each WeaponType with only Range +0xB4 set; OpenTopped +0x5E4, GuardRange +0x5B8, TurretCount +0x808.",
+    "No write outside the stack is allowed."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "get_weapon_range": "0x007012C0",
+    "threat_range": "0x00707E60",
+    "get_weapon": "0x0070E140",
+    "get_current_weapon": "0x0070E1A0",
+    "has_turrets": "0x00717880",
+    "is_elite": "0x00750010"
+  },
+  "payload_sha256": "19bcb77eb2a110049c66b11d0f7fef151c0e3a88ce14091ede750416e8a16b5e"
+}

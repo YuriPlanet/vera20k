@@ -1,0 +1,805 @@
+//! Who joins a team and who leaves it: `TeamClass::Can_Add @ 0x006EA610`,
+//! `Add_Member @ 0x006EA500`, `Remove_Member @ 0x006EA870` and `Recruit @
+//! 0x006EAA90`, with the two callers that empty a team: its destructor
+//! (`0x006E8DE0`) and the base-defense suspension (`0x006EC250`).
+//!
+//! The VM owns the member lists; these functions keep each member's own
+//! state in step with them.
+//!
+//! Native evidence: the instruction-level specs in
+//! `vera20k-dev/research/chain5/chain5_recruit_native.md`, and the
+//! disassembly saved beside it (`asm/canadd.asm`, `addmember.asm`,
+//! `removemember.asm`, `recruit.asm`, `team_dtor.asm`). Native execution:
+//! `tools/team_recruit_oracle.py`'s `recruit` rows (the group filter and
+//! penalty, the wrapping key, ties, the Unit search's own test, the entry
+//! gate) replay in `recruit_oracle_tests`.
+//!
+//! RESIDUALS (none has a retail producer or reader that changes a skirmish):
+//! - `Remove_Member` sets `+0x6B8` on every object it is called for; only a
+//!   `Weeder=` unit's Mission_Guard reads it (`0x00740A60`), and VERA's
+//!   Weeder takes its own guard arm.
+//! - Of `Can_Add`'s building-entry flags (`0x004E0080`) only the Bio Reactor
+//!   and Battle Bunker seeks' `+0x68F` and `+0x690` are written
+//!   (`sim::building_entry`).
+//! - `Recruit` adds a recruited unit's passengers (`0x006EADE8..0x006EAE17`);
+//!   a passenger is in limbo, which `Can_Add` refuses while `ScenarioInit`
+//!   is 0, so the loop adds nothing in play and is not ported.
+//! - The team's Risk (`+0x4C`, the members' `ThreatPosed=` sum) is not kept:
+//!   no ported reader.
+//! - `Remove_Member`'s callers in unported owners do not remove: the team
+//!   change and merge (`0x006E96FD`, `0x006ECFF8`). The occupant release
+//!   with Hunt (`0x0045812B`, `garrison_eject.rs`) and script actions 60 and
+//!   64 (`0x006E9E24`, `0x006E9F38`, `actions.rs`) are ported and remove.
+//! - The removal loops of the five per-seek member loops from `0x006ECB50`
+//!   (`0x006ECB7C..0x006ECCBC`) and of `0x0070F890` (`0x0070F8C7`) are not
+//!   ported: none of these functions has a call or a pointer anywhere in the
+//!   executable (`tools.native_inspect calls` and `find-bytes`).
+
+use crate::map::entities::EntityCategory;
+use crate::rules::ruleset::RuleSet;
+use crate::sim::game_entity::GameEntity;
+use crate::sim::movement::ground_pose::position_world_xy;
+use crate::sim::world::FrameEffects;
+use crate::sim::world::Simulation;
+
+use super::{
+    AiTriggerFeedbackRules, TeamMember, TeamMemberTypeIdentity, member_type_identity,
+    script_action_at,
+};
+
+/// `Recruit`'s penalty on a candidate outside the team's group, added to
+/// the squared distance (`0x006EABFA`).
+const OTHER_GROUP_PENALTY: i32 = 0x3200;
+
+/// Whether a TaskForce entry of `amount` with `recruited` members counted
+/// against it wants more (signed), as `TeamClass::AI`'s recruit loop
+/// (`0x006E927A`) and `Recruit` (`0x006EAB43`) test it.
+pub(super) const fn entry_short(amount: i32, recruited: i32) -> bool {
+    amount > recruited
+}
+
+/// An object `Recruit` weighs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct RecruitCandidate {
+    pub(super) id: u64,
+    /// Its location's XY (`vt+0x48`).
+    pub(super) xy: [i32; 2],
+    /// Its team group (`+0x214`).
+    pub(super) group: i32,
+    /// It passes the search's own tests: for a unit, the team's house's and
+    /// of the entry's type.
+    pub(super) matches: bool,
+}
+
+/// The walks of a house's objects one team's recruit loop shares between its
+/// short TaskForce entries of a class in one update (`TeamClass::AI`'s loop,
+/// `0x006E927A`); see [`Simulation::team_recruit`].
+#[derive(Debug, Default)]
+pub(super) struct RecruitWalks(Vec<RecruitWalk>);
+
+/// One walk of a house's objects of one class.
+#[derive(Debug)]
+struct RecruitWalk {
+    class: EntityCategory,
+    /// The ids the store listed for the house and class: the walk holds
+    /// while it lists exactly these.
+    owned: Vec<u64>,
+    /// Those of a TaskForce type, in the same order.
+    typed: Vec<u64>,
+}
+
+impl RecruitWalks {
+    /// The ids of a TaskForce type the walk of `class` found, while the
+    /// store still lists `owned` for it.
+    fn typed(&self, class: EntityCategory, owned: &[u64]) -> Option<&[u64]> {
+        self.0
+            .iter()
+            .find(|walk| walk.class == class && walk.owned == owned)
+            .map(|walk| walk.typed.as_slice())
+    }
+
+    fn keep(&mut self, class: EntityCategory, owned: &[u64], typed: Vec<u64>) {
+        self.0.retain(|walk| walk.class != class);
+        self.0.push(RecruitWalk {
+            class,
+            owned: owned.to_vec(),
+            typed,
+        });
+    }
+}
+
+/// `Recruit`'s search (`0x006EAB86..0x006EAE19`) over one class array in
+/// order: a candidate in the team's `group` (any with -2), or any for a
+/// `Recruiter=` TeamType, is keyed by its squared XY distance to `origin`
+/// (`0x005F6560`, `native_coord::squared_xy_distance_for_map`) plus `0x3200`
+/// outside the group (wrapping); it
+/// wins when it passes its own tests, its key is below the best (signed) or
+/// the best is still -1, and `can_add` admits it. A VERA-only map compares the
+/// true 64-bit square, so the wrap cannot make a far candidate win.
+pub(super) fn recruit_pick(
+    candidates: impl IntoIterator<Item = RecruitCandidate>,
+    origin: [i32; 2],
+    group: i32,
+    recruiter: bool,
+    mut can_add: impl FnMut(u64) -> bool,
+    ares: bool,
+    vera_only_map: bool,
+) -> Option<u64> {
+    let mut best = -1i64;
+    let mut winner = None;
+    for candidate in candidates {
+        if !(group == -2 || candidate.group == group || recruiter) {
+            continue;
+        }
+        let distance = crate::util::native_coord::squared_xy_distance_for_map(
+            candidate.xy,
+            origin,
+            ares,
+            vera_only_map,
+        );
+        let key = if candidate.group != group {
+            other_group_key(distance, vera_only_map)
+        } else {
+            distance
+        };
+        if candidate.matches && (key < best || best == -1) && can_add(candidate.id) {
+            winner = Some(candidate.id);
+            best = key;
+        }
+    }
+    winner
+}
+
+/// `OTHER_GROUP_PENALTY` added to a candidate outside the team's group. The
+/// original adds it in 32-bit wrapping arithmetic; a VERA-only map adds it to
+/// the true 64-bit square.
+fn other_group_key(distance: i64, vera_only_map: bool) -> i64 {
+    if vera_only_map {
+        distance + i64::from(OTHER_GROUP_PENALTY)
+    } else {
+        i64::from((distance as i32).wrapping_add(OTHER_GROUP_PENALTY))
+    }
+}
+
+impl Simulation {
+    /// gamemd.exe, `TeamTypeClass::Can_Recruit @ 0x006F1E20`, called by
+    /// HouseClass::Has_Factories_For_TeamType509610 before a Team exists.
+    /// Reads the existing membership, life, mission, radio and recruitment
+    /// owners. Unlike TeamClass::Can_Add, this has no TaskForce-slot test,
+    /// placement-scope, airport-contact or unloading exceptions, or entry,
+    /// bunker, drain and Magnetron gates. It performs no writes or RNG draws.
+    pub(crate) fn team_type_can_recruit(
+        &self,
+        team_type_id: crate::sim::intern::InternedId,
+        entity_id: u64,
+        owner: crate::sim::intern::InternedId,
+        rules: &RuleSet,
+    ) -> bool {
+        let vm = &self.team_script_vm;
+        let Some(team_type) = vm.team_type_definition(team_type_id) else {
+            return false;
+        };
+        let current_type = vm.member_team_type(entity_id);
+        if current_type.is_some_and(|current| current.id == team_type_id) {
+            return false;
+        }
+        let Some(entity) = self.substrate.entities.get(entity_id) else {
+            return false;
+        };
+        if entity.health.current() <= 0
+            || !entity.lifecycle.object_alive()
+            || entity.lifecycle.in_limbo()
+            || !entity.seldom.radio_contacts.is_empty()
+            || entity.owner() != owner
+            || !crate::sim::mission::control::mission_recruitable(rules, entity.mission.effective())
+        {
+            return false;
+        }
+        let autocreate = vm
+            .team_type_ini
+            .get(&team_type_id)
+            .is_some_and(|metadata| metadata.autocreate);
+        if (!entity.seldom.base_defense_response.recruitable_a() && !autocreate)
+            || (!entity.seldom.base_defense_response.recruitable_b() && autocreate)
+            || current_type.is_some_and(|current| current.priority >= team_type.priority)
+        {
+            return false;
+        }
+        if entity.category() == EntityCategory::Aircraft
+            && self
+                .object_type(entity.type_ref(), rules)
+                .is_some_and(|object| {
+                    crate::sim::combat::combat_weapon::weapon_for_index(
+                        object,
+                        entity.veterancy.rank(),
+                        0,
+                    )
+                    .and_then(|record| record.weapon_id)
+                    .is_some()
+                })
+            && entity.ammo().is_some_and(|ammo| ammo.current() == 0)
+        {
+            return false;
+        }
+        true
+    }
+
+    /// `TeamClass::Can_Add @ 0x006EA610`: whether `entity_id` may join team
+    /// `team_id`, and the TaskForce entry it counts against, the first of
+    /// its type. A `constrained` add (mind control's `0x006EA4F0`) skips the
+    /// type and count tests; with no entry of its type the answer is the
+    /// entry count.
+    ///
+    /// In order, it refuses: a member of this team; an object not active
+    /// (`+0x90`), at zero Health or in limbo (`+0x81`; `ScenarioInit` is 0
+    /// in play); another house's; one in radio contact, unless an
+    /// `AirportBound=` aircraft (`0x0065AE30`); one of no entry's type; one
+    /// on a mission MissionControl does not let recruit (`0x005B36E0`); one
+    /// whose map recruit byte (`+0x421`) is clear, for a TeamType that is
+    /// not `Autocreate=`; one whose team recruit byte (`+0x422`) is clear,
+    /// for an `Autocreate=` TeamType, unless an aircraft or the team's
+    /// current action is 8 (Unload); one seeking a building's entry
+    /// (`0x004E0080`, [`crate::sim::building_entry`]); one draining
+    /// (`+0x1CC`) or in a tank bunker (`+0x2E4`); a member of a team whose
+    /// TeamType's `Priority=` is not lower (signed); an armed aircraft out
+    /// of ammo (`+0x2FC`); one whose entry is full (signed); and one a
+    /// Magnetron holds (`+0x2B0`, `0x006EA841`).
+    pub(crate) fn team_can_add(
+        &self,
+        team_id: u64,
+        entity_id: u64,
+        constrained: bool,
+        rules: &RuleSet,
+    ) -> Option<usize> {
+        let vm = &self.team_script_vm;
+        let team = vm.teams.get(&team_id)?;
+        let current_team = vm.member_team.get(&entity_id).copied();
+        if current_team == Some(team_id) {
+            return None;
+        }
+        let entity = self.substrate.entities.get(entity_id)?;
+        if !entity.lifecycle.object_alive()
+            || entity.health.current() == 0
+            || (entity.lifecycle.in_limbo() && !self.object_placement_scope_active())
+            || entity.owner() != team.owner
+        {
+            return None;
+        }
+        let aircraft = entity.category() == EntityCategory::Aircraft;
+        let object = self.object_type(entity.type_ref(), rules)?;
+        if !entity.seldom.radio_contacts.is_empty() && !(aircraft && object.airport_bound) {
+            return None;
+        }
+        let entries = vm.task_force_entries(team);
+        let member_type = member_type_identity(entity);
+        let slot = entries
+            .iter()
+            .position(|entry| entry.member_type == member_type)
+            .unwrap_or(entries.len());
+        if slot == entries.len() && !constrained {
+            return None;
+        }
+        if !crate::sim::mission::control::mission_recruitable(rules, entity.mission.effective()) {
+            return None;
+        }
+        let metadata = team.team_type_id.and_then(|id| vm.team_type_ini.get(&id));
+        let autocreate = metadata.is_some_and(|metadata| metadata.autocreate);
+        if !entity.seldom.base_defense_response.recruitable_a() && !autocreate {
+            return None;
+        }
+        let unloading = script_action_at(vm.scripts.get(&team.script_id), team.cursor)
+            .is_some_and(|action| action.action_id == 8);
+        if !entity.seldom.base_defense_response.recruitable_b()
+            && autocreate
+            && !(unloading || aircraft)
+        {
+            return None;
+        }
+        // `0x006EA79B..0x006EA7A4`: one seeking a building's entry.
+        if entity.seldom.building_entry.seeking() {
+            return None;
+        }
+        if entity.drain.target().is_some() || entity.bunker.link().installed_in().is_some() {
+            return None;
+        }
+        if let Some(current) = current_team.and_then(|id| vm.teams.get(&id))
+            && vm.priority(current) >= vm.priority(team)
+        {
+            return None;
+        }
+        if aircraft
+            && crate::sim::combat::combat_weapon::weapon_for_index(
+                object,
+                entity.veterancy.rank(),
+                0,
+            )
+            .and_then(|record| record.weapon_id)
+            .is_some()
+            && entity.ammo().is_some_and(|ammo| ammo.current() == 0)
+        {
+            return None;
+        }
+        if !constrained && team.slot_counts[slot] >= entries[slot].count {
+            return None;
+        }
+        if entity.lift.source().is_some() {
+            return None;
+        }
+        Some(slot)
+    }
+
+    /// `TeamClass::Add_Member @ 0x006EA500`: after [`Self::team_can_add`],
+    /// the object leaves its old team, counts against its entry (not when
+    /// `constrained`), joins the head of the list, initiated only as the
+    /// first member (`+0x689`), gives the team a centre if it has none
+    /// (`Calc_Center`), marks the team altered (`+0x7D`/`+0x7E`) and takes
+    /// the TeamType's `AreTeamMembersRecruitable=` as its team recruit byte
+    /// (`+0x422`, which leaving does not restore).
+    pub(crate) fn team_add_member(
+        &mut self,
+        team_id: u64,
+        entity_id: u64,
+        constrained: bool,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> bool {
+        let Some(slot) = self.team_can_add(team_id, entity_id, constrained, rules) else {
+            return false;
+        };
+        if let Some(old_team) = self.team_script_vm.member_team.get(&entity_id).copied() {
+            self.team_remove_member(old_team, entity_id, false, rules, frame_effects);
+        }
+        let vm = &mut self.team_script_vm;
+        let (recruitable, on_trans_only) = vm
+            .teams
+            .get(&team_id)
+            .and_then(|team| team.team_type_id)
+            .and_then(|id| vm.team_type_ini.get(&id))
+            .map_or((true, false), |metadata| {
+                (
+                    metadata.are_team_members_recruitable,
+                    metadata.on_trans_only,
+                )
+            });
+        let Some(team) = vm.teams.get_mut(&team_id) else {
+            return false;
+        };
+        if !constrained {
+            team.slot_counts[slot] = team.slot_counts[slot].wrapping_add(1);
+        }
+        let initiated = team.members.is_empty();
+        let centreless = team.zone.is_none();
+        vm.link_member(
+            team_id,
+            TeamMember {
+                id: entity_id,
+                initiated,
+            },
+        );
+        // gamemd.exe Add_Member6EA500 stores Get_Group6F1870 at6EA57C,
+        // after linking and before Tag inheritance. Remove_Member retains it.
+        let group = vm.team_group(
+            vm.teams
+                .get(&team_id)
+                .expect("the member was linked to this Team just above"),
+        );
+        if let Some(entity) = self.substrate.entities.get_mut(entity_id) {
+            entity.assign_object_group(group);
+        }
+        //6EA58C..6EA5B0: B3=0 inherits a nonNULL Team Tag on every member;
+        //B3=1 requires signed Type+5E0 Passengers>0. The Tag owner preserves
+        //the Object attachment when Team+70 is NULL (6EA582..6EA587).
+        //Executed eight-way controls: tools/spatial_oracle/team_creation.
+        if !on_trans_only
+            || self
+                .substrate
+                .entities
+                .get(entity_id)
+                .and_then(|entity| self.object_type(entity.type_ref(), rules))
+                .is_some_and(|object| object.passengers > 0)
+        {
+            self.trigger_runtime
+                .attach_team_member_trigger_tag(team_id, entity_id);
+        }
+        if centreless {
+            self.team_calc_center(team_id, rules);
+        }
+        if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+            team.altered = true;
+            team.just_altered = true;
+        }
+        if let Some(entity) = self.substrate.entities.get_mut(entity_id) {
+            // `+0x422` (`0x006EA5F5`).
+            entity
+                .seldom
+                .base_defense_response
+                .set_team_recruitable(recruitable);
+        }
+        true
+    }
+
+    /// `TeamClass::Remove_Member @ 0x006EA870` of `entity_id` from team
+    /// `team_id` (a no-op for an object not in it): it stops counting
+    /// against the first entry of its type, leaves the list, drops its
+    /// suspended mission, destination and target (`+0xB0`, `+0x5A8`,
+    /// `+0x2B8`) and, active, not falling (`+0x425`), out of limbo and
+    /// unless `no_idle`, enters its idle mode (`vt+0x484(0, 1)`), which an
+    /// object-placement scope skips: `0x006EAA1E` tests `[0x00A8E7AC]` first.
+    /// If no member left is initiated, the head is, and the team loses its
+    /// centre. The team is marked altered.
+    pub(crate) fn team_remove_member(
+        &mut self,
+        team_id: u64,
+        entity_id: u64,
+        no_idle: bool,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+    ) {
+        if self.team_script_vm.member_team.get(&entity_id) != Some(&team_id) {
+            return;
+        }
+        //6EA892..6EA8B5 clears only this Team's Tag and only when the
+        //member has a House that IsControlledByHuman50B730 refuses.
+        if self
+            .substrate
+            .entities
+            .get(entity_id)
+            .and_then(|entity| self.houses.get(&entity.owner()))
+            .is_some_and(|house| !house.is_controlled_by_human(self.session.rule_policy()))
+        {
+            self.trigger_runtime
+                .clear_team_member_trigger_tag(team_id, entity_id);
+        }
+        let member_type = self
+            .substrate
+            .entities
+            .get(entity_id)
+            .map(member_type_identity);
+        let vm = &mut self.team_script_vm;
+        let Some(team) = vm.teams.get(&team_id) else {
+            return;
+        };
+        let slot = vm
+            .task_force_entries(team)
+            .iter()
+            .position(|entry| Some(entry.member_type) == member_type);
+        let other_initiated = team
+            .members
+            .iter()
+            .any(|member| member.id != entity_id && member.initiated);
+        if let Some(team) = vm.teams.get_mut(&team_id)
+            && let Some(slot) = slot
+        {
+            team.slot_counts[slot] = team.slot_counts[slot].wrapping_sub(1);
+        }
+        vm.unlink_member(team_id, entity_id);
+        let idles = self
+            .substrate
+            .entities
+            .get_mut(entity_id)
+            .is_some_and(|entity| {
+                entity.mission.clear_suspended();
+                entity.navigation.clear_suspended_nav_com();
+                entity.seldom.suspended_attack_target.clear();
+                entity.lifecycle.object_alive()
+                    && !entity.crash.is_crashing()
+                    && !entity.lifecycle.in_limbo()
+            });
+        if idles && !no_idle && !self.object_placement_scope_active() {
+            crate::sim::world::enter_idle_mode(
+                self,
+                entity_id,
+                rules,
+                Some(rules.overlay_registry()),
+                frame_effects,
+            );
+        }
+        if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+            if !other_initiated && let Some(head) = team.members.first_mut() {
+                head.initiated = true;
+                team.zone = None;
+            }
+            team.just_altered = true;
+            team.altered = true;
+        }
+    }
+
+    /// `TeamClass::Has_Entered_Map @ 0x006EC370`: no member of team `team_id`
+    /// is outside the playfield (`+0x3D5`); an empty team answers true.
+    pub(crate) fn team_has_entered_map(&self, team_id: u64) -> bool {
+        self.team_script_vm.team(team_id).is_none_or(|team| {
+            team.members().all(|member| {
+                self.substrate
+                    .entities
+                    .get(member)
+                    .is_some_and(|entity| entity.in_playfield())
+            })
+        })
+    }
+
+    /// Remove `entity_id` from whatever team it is in; the object side's
+    /// `if (Team) Team->Remove_Member(this, -1, no_idle)`.
+    pub(crate) fn leave_team(
+        &mut self,
+        entity_id: u64,
+        no_idle: bool,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+    ) {
+        if let Some(team_id) = self.team_script_vm.member_team.get(&entity_id).copied() {
+            self.team_remove_member(team_id, entity_id, no_idle, rules, frame_effects);
+        }
+    }
+
+    /// Remove every member of team `team_id`, head first, as the destructor
+    /// and the base-defense suspension do (`while (Member)
+    /// Remove_Member(Member, -1, 0)`).
+    fn team_remove_all_members(
+        &mut self,
+        team_id: u64,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+    ) {
+        while let Some(head) = self
+            .team_script_vm
+            .teams
+            .get(&team_id)
+            .and_then(|team| team.members.first())
+            .map(|member| member.id)
+        {
+            self.team_remove_member(team_id, head, false, rules, frame_effects);
+            // The member index and the lists change together, so the head
+            // left; a stale head would otherwise stop this loop.
+            let vm = &mut self.team_script_vm;
+            if vm
+                .teams
+                .get(&team_id)
+                .and_then(|team| team.members.first())
+                .is_some_and(|member| member.id == head)
+            {
+                debug_assert!(false, "team {team_id} kept member {head}");
+                vm.unlink_member(team_id, head);
+            }
+        }
+    }
+
+    /// `TeamClass::Recruit @ 0x006EAA90` for TaskForce entry `slot`: while
+    /// the entry is short (signed), the class array of the entry's type is
+    /// searched in construction order for the object nearest the team's
+    /// centre (`+0x34`, or the origin without one) that `Can_Add` admits,
+    /// by the wrapping i32 squared XY distance (`0x005F6560`), plus
+    /// `0x3200` outside the team's group; a candidate replaces the best only
+    /// when strictly nearer, or the best is still -1. A unit must also be
+    /// the team's house's and of the entry's own type; an infantryman or an
+    /// aircraft may be of any entry's type. The winner loses its target
+    /// (`vt+0x3C8`) and joins ([`Self::team_add_member`]). `walks` carries
+    /// the walk of the house's objects to the team's later short entries in
+    /// the same update.
+    pub(super) fn team_recruit(
+        &mut self,
+        team_id: u64,
+        slot: usize,
+        walks: &mut RecruitWalks,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> bool {
+        let vm = &self.team_script_vm;
+        let Some(team) = vm.teams.get(&team_id) else {
+            return false;
+        };
+        let waypoint = team
+            .team_type_id
+            .and_then(|id| vm.team_type_ini.get(&id))
+            .map_or(-1, |metadata| metadata.waypoint);
+        // Recruit6EAAAD first queries the retained zone. A nonempty packed
+        // waypoint then overrides it with literal XY/Z0 (6EAAFE..6EAB20),
+        // without Map lookup or terrain height; Empty keeps the zone.
+        let mut origin = team.zone.map_or([0, 0], |zone| self.team_target_xy(zone));
+        if let Some(cell) = (waypoint >= 0)
+            .then(|| self.session.waypoint_cell(waypoint))
+            .flatten()
+            && cell != (0, 0)
+        {
+            let center = crate::sim::cell_kernel::cell_center(cell.into(), 0);
+            origin = [center.x, center.y];
+        }
+        let entries = vm.task_force_entries(team);
+        let Some(&entry) = entries.get(slot) else {
+            return false;
+        };
+        if !entry_short(entry.count, team.slot_counts[slot]) {
+            return false;
+        }
+        let group = vm.team_group(team);
+        let recruiter = team
+            .team_type_id
+            .and_then(|id| vm.team_type_ini.get(&id))
+            .is_some_and(|metadata| metadata.recruiter);
+        let class = EntityCategory::from(entry.member_type.category);
+        if class == EntityCategory::Structure {
+            return false;
+        }
+        // VERA walks only the team's house's objects of the class, in the
+        // same order. Another house's object can neither win nor move the
+        // best key: the unit search's own house test fails it, and for an
+        // infantryman or aircraft `Can_Add` refuses it, before any write.
+        // Nor can an object of a type the search cannot take: a unit not of
+        // the entry's type fails the search's own type test, and `Can_Add`
+        // (`0x006EA610`) refuses an infantryman or aircraft of no entry's
+        // type, also before any write. VERA reads such an object's type and
+        // nothing more.
+        //
+        // A later short entry of the class in the same update weighs only
+        // the objects of a TaskForce type this walk found (`walks`), each
+        // read afresh, while the store lists the same objects for the house.
+        // Only `convert_techno_type` and `store_techno_type` write an object's
+        // type, and nothing a recruit reaches (`Add_Member`, the old team's
+        // `Remove_Member` and its idle mode) calls them, so no other object
+        // can have become one of a TaskForce type in between.
+        let entities = &self.substrate.entities;
+        let owned = entities.owned_ids(team.owner, class);
+        let of_task_force_type = |member_type: TeamMemberTypeIdentity| {
+            entries.iter().any(|entry| entry.member_type == member_type)
+        };
+        let weigh = |id: u64, entity: &GameEntity| {
+            let member_type = member_type_identity(entity);
+            let weighed = if class == EntityCategory::Unit {
+                member_type == entry.member_type
+            } else {
+                of_task_force_type(member_type)
+            };
+            weighed.then(|| RecruitCandidate {
+                id,
+                xy: position_world_xy(&entity.position),
+                // gamemd.exe Recruit6EAA90 reads Techno+214, including
+                // authored campaign groups (6EAC7A for Infantry).
+                group: entity.object_group(),
+                // The unit search's own house and type test: every object
+                // weighed is the team's house's, and a unit of the entry's
+                // type.
+                matches: true,
+            })
+        };
+        let can_add = |id| self.team_can_add(team_id, id, false, rules).is_some();
+        let winner = if let Some(typed) = walks.typed(class, owned) {
+            debug_assert!(
+                !crate::sim::touch_log::live_read_check_enabled()
+                    || typed.iter().copied().eq(entities
+                        .values()
+                        .filter(|entity| {
+                            entity.owner() == team.owner
+                                && entity.category() == class
+                                && of_task_force_type(member_type_identity(entity))
+                        })
+                        .map(GameEntity::stable_id)),
+                "a recruit walk outlived a change of its objects' types"
+            );
+            recruit_pick(
+                typed.iter().filter_map(|&id| weigh(id, entities.get(id)?)),
+                origin,
+                group,
+                recruiter,
+                can_add,
+                rules.ares(),
+                self.session.map_exceeds_original_size(),
+            )
+        } else {
+            // Kept only when a later entry of the class may search again.
+            let later = entries[slot + 1..]
+                .iter()
+                .any(|later| EntityCategory::from(later.member_type.category) == class);
+            let mut typed = Vec::new();
+            let winner = recruit_pick(
+                owned.iter().filter_map(|&id| {
+                    let entity = entities.get(id)?;
+                    if later && of_task_force_type(member_type_identity(entity)) {
+                        typed.push(id);
+                    }
+                    weigh(id, entity)
+                }),
+                origin,
+                group,
+                recruiter,
+                can_add,
+                rules.ares(),
+                self.session.map_exceeds_original_size(),
+            );
+            if later {
+                walks.keep(class, owned, typed);
+            }
+            winner
+        };
+        let Some(winner) = winner else {
+            return false;
+        };
+        self.team_member_clear_target(winner, rules);
+        self.team_add_member(team_id, winner, false, rules, frame_effects);
+        true
+    }
+
+    /// `TeamClass::~TeamClass @ 0x006E8DE0`, reached through the scalar
+    /// deleting destructor (`vt+0x20`): the team's AI triggers record its
+    /// outcome, then every member leaves, head first, and the team is gone.
+    /// The house's and TeamType's live-team counts (`+0x566C`, `+0xDC`) are
+    /// counted from the team list.
+    pub(crate) fn destroy_team(
+        &mut self,
+        team_id: u64,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+    ) {
+        let feedback_rules = AiTriggerFeedbackRules::new(&rules.general);
+        self.team_script_vm
+            .record_trigger_outcome(team_id, &feedback_rules);
+        self.team_remove_all_members(team_id, rules, frame_effects);
+        Self::clear_team_trigger_tag(&mut self.substrate, &mut self.trigger_runtime, team_id);
+        self.team_script_vm.teams.remove(&team_id);
+        self.team_script_vm.forget_team_to_rejoin(team_id);
+    }
+
+    /// TeamTypeClass::DestroyAll6F0A70, called by TAction5 at6DEB9A.
+    /// The original walks the live array forward and revisits the index
+    /// after deletion. Member release and AI feedback stay with destroy_team.
+    /// This caller adds no RNG draws, timer writes or object-detach calls.
+    pub(crate) fn destroy_teams_of_type(
+        &mut self,
+        team_type: crate::sim::intern::InternedId,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+    ) {
+        let mut index = 0;
+        loop {
+            let Some((id, type_id)) = self
+                .team_script_vm
+                .teams_in_order()
+                .nth(index)
+                .map(|team| (team.id, team.team_type_id()))
+            else {
+                break;
+            };
+            if type_id == Some(team_type) {
+                self.destroy_team(id, rules, frame_effects);
+            } else {
+                index += 1;
+            }
+        }
+    }
+
+    /// `0x006EC250`, called by `TechnoClass::RespondToBaseAttack @
+    /// 0x007081A9`: every team of `owner`, in team order, whose TeamType's
+    /// `Priority=` is below `priority` (signed) loses all its members, is
+    /// marked altered and is suspended (`+0x83`) for `duration` frames from
+    /// now (`+0x64`/`+0x6C`).
+    pub(crate) fn suspend_teams_for_base_defense(
+        &mut self,
+        owner: crate::sim::intern::InternedId,
+        priority: i32,
+        duration: i32,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+    ) {
+        let current_frame = self.session.binary_frame() as i32;
+        let vm = &self.team_script_vm;
+        let suspended: Vec<u64> = vm
+            .teams
+            .values()
+            .filter(|team| {
+                team.owner == owner
+                    && team
+                        .team_type_id
+                        .and_then(|id| vm.team_types.get(&id))
+                        .is_some_and(|definition| definition.priority < priority)
+            })
+            .map(|team| team.id)
+            .collect();
+        for team_id in suspended {
+            self.team_remove_all_members(team_id, rules, frame_effects);
+            if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                team.just_altered = true;
+                team.altered = true;
+                team.suspend_timer = crate::sim::timer::CdTimer::started(current_frame, duration);
+                team.suspended = true;
+            }
+        }
+    }
+}

@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original stock Scenario.Side retention, SetSide/cache and queued event-identity filename selection; bounded component histories, no device or whole savefile parity claim.",
+  "assumptions": [
+    "Existing ActionFixture, initialize_eva and ordered INI transport execute original753000 over one declared synthetic DialogList event and three distinct stock columns. The registry constructor and voice-list initialization prefix execute; a zeroed initialized stream shell and paused queue prior exclude backend/file/channel setup. Cold selected voice is the mapped PE zero-fill value0, not a captured complete startup.",
+    "The16 ordered EVA steps use original SetSide7534E0, GetFilename753380, QueueVoice752480 and ResetAll7535D0. Scenario-side-only mutation is explicitly supplied input, not an executed fresh scenario reader. Selection and direct lookup are distinct from queued event identity and later dequeue.",
+    "Two dequeue controls execute7527F8..75295C with EBX0 and existing fixture stack. They run FIFO removal, node event-pointer load, cached voice selection and filename copy/extension append. Prior OS availability, current-stream, end-time/gap and pause admission are supplied; execution stops before StreamPlayer::PlayFile407B60. Playback return, successful500ms write75296D and physical output are excluded.",
+    "Constructor6833DB calls SetDefaults683610, whose EBX0 at68365A feeds Scenario+34B8 store68389F. This mode executes only68389F..6838A5 with that explicit receiver/zero-register prior. Other constructor/reset fields, timer writes and complete fresh startup are not executed.",
+    "Existing native_id_snapshot.ScenarioFixture executes raw Scenario.Save689310/Load689470/post-read683560 with its stopped timer/empty-array and clock transport priors. Four signed Side inputs-1/0/1/2 are saved, overwritten99 and loaded. Actual restored values are passed to original SetSide in the EVA VM; full savefile, resource adoption, pointer swizzling and InitSideMixFiles534FA0 are not executed.",
+    "Original LoadContent67E745 loads Scenario before67E75B reads its saved+34B8 and67E761 binds through534FA0/7534E0. CurrentHouse is loaded by the later globals67F9C0. Vox.Load67F781/7533F0 later clears queues and preserves selection; ordinary Vox.Save67E410/7533B0 emits only its two tags. This caller/ordering boundary is instruction-level evidence, not a whole-load replay.",
+    "Three EVA-VM RNG streams are seeded31 by original65C6D0 before histories. Each step compares full existing state hashes and observes65C780/65C7E0 entries. Raw Scenario controls observe the same draw entries separately; their post-read initialization may reseed state and is not claimed unchanged. No detach call occurs in selected EVA bodies.",
+    "Four independent pending controls use the same original reader/VM/QueueVoice owner with no current event. Missing Type retains original constructor0; QUEUED_INTERRUPT reads3, QUEUE1, and priorities come from their declared INI strings. Interrupt and critical admitted dequeues discard a distinct pending node but leave its event state1; selected event becomes2 at7528E1. Direct ClearAllQueues752370 and ResetAll7535D0 controls include pending, interrupt, critical and regular nodes: explicit stores752391/7523C8/7523FE/752436 mark all their entries2. This differs from the pending raw-free branches752824/752855 in dequeue. No queued state or node is supplied by the host."
+  ],
+  "substitutions": [
+    "Reuse existing ActionFixture VM, heap/CRT/TLS/INI/cache and native_id_snapshot.ScenarioFixture IStream/clock transport. No second EVA VM implementation, parser, queue decision or supplied native selection/result.",
+    "Guest frame and admission boundary are supplied only where declared; no original reader, FIFO, selector, setter, reset or raw stream instruction is patched."
+  ],
+  "entry_points": {
+    "eva_registry": "0x00753000",
+    "set_side": "0x007534E0",
+    "filename": "0x00753380",
+    "queue_voice": "0x00752480",
+    "reset": "0x007535D0",
+    "dequeue_admitted": "0x007527F8",
+    "dequeue_stop": "0x0075295C",
+    "scenario_default_store": "0x0068389F",
+    "scenario_default_stop": "0x006838A5",
+    "scenario_save": "0x00689310",
+    "scenario_load": "0x00689470",
+    "scenario_post_read": "0x00683560",
+    "load_content_bind": "0x0067E761",
+    "clear_queues": "0x00752370",
+    "selected_entry_done": "0x007528E1",
+    "discarded_pending_interrupt": "0x00752824",
+    "discarded_pending_critical": "0x00752855"
+  },
+  "replay_command": "python -m tools.spatial_oracle.trigger_action_values --eva-selection",
+  "payload_sha256": "212cad127be2417677d03399386a0ac8377cbb30d6b390b5b04e51c4894e0cf3"
+}

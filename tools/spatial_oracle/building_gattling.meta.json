@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "The Gattling Cannon stage calls of BuildingClass::Mission_Attack 0x44ACF0, Mission_Guard 0x4496B0 and BuildingClass::Update 0x43FE5B..0x43FF91, their dispatch cadence, and TechnoClass::FireAt's report gate 0x6FF349..0x6FF394",
+  "assumptions": [
+    "building_guard_attack's fixture building made a gattling type with the retail [YAGGUN] stage table and six supplied WeaponTypes (ROF 16, 16, 16, 8, 16, 4) whose one-item Report= lists name their slot",
+    "g_MainRng seeded per row through RandomClass 0x65C6D0; the recorded draws name their stream, not their values",
+    "cadence rows run only BuildingClass::Update's mission pieces and the +0xC4 count with the dispatch (0x6FA646..0x6FA65A); the passive scan is replaced by the row's acquire and lose events"
+  ],
+  "substitutions": [
+    "GetFireError answered from the row or by the rearm test; FireAt answered with its rearm write at the fired weapon's ROF and LastFireFrame (+0x120, 0x6FF743); PlayAt 0x7509E0 and Release 0x406060 answered and recorded; building_guard_attack's other answers"
+  ],
+  "entry_points": {
+    "mission_attack": "0x0044ACF0",
+    "mission_guard": "0x004496B0",
+    "area_guard": "0x00449A40",
+    "idle_decay": "0x0043FE5B",
+    "ai_update_dispatch": "0x006FA646",
+    "report_gate": "0x006FF349",
+    "increase": "0x0070DE70",
+    "update": "0x0070E000"
+  },
+  "payload_sha256": "94f39e07840ab26a8039eada7e501c827ff555dfe5552bdf41e236db931c6cac"
+}

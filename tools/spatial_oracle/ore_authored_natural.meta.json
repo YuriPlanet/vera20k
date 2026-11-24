@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Physical XMP03T4 existing Riparius natural densification and same-frame spread, original ordered ore drivers frames0..660, native queue/RNG/timer/Mark/deferred lifecycle observations; not whole skirmish startup or full-frame RNG parity.",
+  "assumptions": [
+    "Same Inputs/Navigation physical readers, assets, Cell/TMP/Recalc/Terrain, seed0 and InitGrowth/InitSpread/final568BB0 setup as authored-init. No actors or other Logic systems; authored OverlayPack object lifetime and full Terrain Unlimbo/discovery remain excluded.",
+    "Opt-in original Resize5662AC..56633E field stores derive MapRect before Terrain placement. Physical raw LocalSize passes the existing original normalization owner. Original missing runtime registry vtables with4096 spare slots are supplied before Terrain; populated Abstract/IsoTile vector B0F670 is preserved.",
+    "Independent zero UI/session prior flags, selected speed1 and GameMode1 feed original5E7490..6B8B10; original687C16..687C2B copies its result into Scenario. Map pre-init flags and Basic growth reader remain distinct recorded inputs.",
+    "Actual722C40 then7221B0 run every frame0..660; frame increments before original725C70. All reached numeric RNG/heap/Cell/Overlay/ObjectMark/admission and destruction instructions execute. Timer padding+4 has explicit zero caller-stack prior. Live ore fails closed if the historical authored-bootstrap Anim421EA0 boundary is reached.",
+    "Full queue states retained only for selected due/boundary phases; intervening frames are internally asserted free of Cell writes, relevant gameplay calls and all3 RNG changes. Original target queries in observations are pure and retain no supplied gameplay result."
+  ],
+  "substitutions": [
+    "Existing bounded successful allocator/free, CRT/TLS/cache transport, rectangle/projection/radar/screen/shroud sinks; Windows SEH and checked IsBadReadPtr services. Authored pre-live tile animation constructor remains an inherited explicit bootstrap boundary, never accepted for live ore."
+  ],
+  "entry_points": {
+    "growth_driver": "0x00722C40",
+    "spread_driver": "0x007221B0",
+    "growth_processor": "0x00722F00",
+    "spread_processor": "0x00722440",
+    "grow_cell": "0x00483710",
+    "place": "0x00487190",
+    "object_mark": "0x005F5850",
+    "overlay_mark": "0x005FC570",
+    "resize_fields": "0x005662AC",
+    "session_flags": "0x005E7490",
+    "scenario_flags": "0x00687C16",
+    "deferred_drain": "0x00725C70",
+    "random": "0x0065C780",
+    "ranged": "0x0065C7E0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.ore_queue --authored-natural",
+  "payload_sha256": "dcdfd8043abcd9f8531e6d3222d0e5f75ca3b004438fad7f63b176782af716a5"
+}

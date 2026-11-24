@@ -1,0 +1,231 @@
+{
+  "additions": {
+    "artifact_checks": [
+      "all promoted Python parses",
+      "native result/metadata JSON have no workstation paths",
+      "all original hut function/class ASTs unchanged",
+      "published hut is exactly the declared projection of frozen raw payload",
+      "both original and promoted hash guards retained",
+      "frozen navigation source/artifact identities match"
+    ],
+    "common_manifest": "After this record is written, --manifest-only --write and independent --manifest-only --check bind all nine native payloads and the uncompressed Rust projection, addition receipts, imported sources, 24 local assets plus absent LANGRULE and five physical archives.",
+    "cursor": {
+      "boundaries": "Full587410 selected concrete-overlay path; direct query from both physical huts, original damage/repair preparations with inherited Resident seams. No UI/Engineer/structural-record/other-axis or Rust/production claim.",
+      "native_cases": 8,
+      "original_and_published_payload_sha256": "444a1e344b60a42e0a77028582d1708246cf6a4bcadcbcccae7dc8fbb0b832e9",
+      "original_external_write_and_independent_check_exit_codes": [
+        0,
+        0
+      ],
+      "promoted_write_and_independent_check_exit_codes": [
+        0,
+        0
+      ],
+      "receipt": "hut_cursor_receipt.json",
+      "receipt_sha256": "ba78474a388ca3e9738ae0cfe19ce9b073de5963cf18db604da7cc0a26137bc5",
+      "unchanged_function_class_asts": true
+    },
+    "hut_native_write_and_independent_check_exit_codes": [
+      0,
+      0
+    ],
+    "hut_original_files_unchanged": 14,
+    "hut_original_payload_sha256": "51a58c909583e7f362c6237257905df5148b4a850ffb03de4fd411f5230bbaa3",
+    "hut_published_payload_sha256": "a15bbe36b40348bbba40dee338cf07e575b64f0650cb8568a23321d076ce20fb",
+    "hut_receipt": "hut_receipt.json",
+    "hut_receipt_sha256": "3ad36a4ae8d8a853bc6da7957c28083ecfdf4068da65bd776e71b3dd7b086ab0",
+    "mtnk_attack_flh_correction": {
+      "actual_retail_resolved_art": "RULESMD[MTNK] Image=GTNK -> ART[GTNK] PrimaryFireFLH=150,0,100",
+      "mission_order_promoted": false,
+      "native_read_addresses": [
+        "0x005F9335",
+        "0x005F933B",
+        "0x00715D94..0x00715DCF"
+      ],
+      "source_external_packet": "anytown-damage-native/attack/mission_order",
+      "source_readme_sha256": "fd62a61793775ed27f1816fa2846c8410a87daecd8fb1058edf05c4d130056b7",
+      "unchanged_v1_supplied_art": "ART[MTNK] PrimaryFireFLH=190,25,120; Image reader omitted"
+    },
+    "native_hut_result_file_still_byte_identical": true,
+    "navigation_imported_sources_checked": 31,
+    "navigation_native_replay": "Existing owner receipt records successful independent write/check; integration did not rerun the unchanged expensive whole-map corpus.",
+    "navigation_production_comparison": "Existing saved concrete-v5 loaded/first-damaged/collapsed comparison retained byte-for-byte; no repaired export and no new production validation.",
+    "navigation_receipt": "navigation_receipt.json",
+    "navigation_receipt_and_all_nine_owned_files_unchanged": true,
+    "navigation_receipt_sha256": "06a0a3e87b04d82b7494b0da4a9683fac1465ec12ce6f7c0727e6ef8db23ea55",
+    "recorded_at_utc": "2026-09-27T19:25:52.967068+00:00",
+    "rust_hut_projection": {
+      "canonical_payload_sha256": "98d561c0979135e8a3136927e4932e5b26c876ee24db7d620d587f58f64251f2",
+      "file": "hut_test_vectors.json",
+      "keys": [
+        "cases[*].hut",
+        "cases[*].starting_stage",
+        "cases[*].result.rng_before",
+        "cases[*].result.rng_after",
+        "cases[*].result.final_bridge_cells",
+        "cases[*].result.animation_requests"
+      ],
+      "source": "hut_test_vectors.py",
+      "source_native_payload_hash_guard": true,
+      "write_and_independent_check_exit_codes": [
+        0,
+        0
+      ]
+    },
+    "scope": "Hut/cursor packaging, uncompressed native Rust projection and integration of independently frozen navigation. No mission_order promotion by this owner, Rust/Cargo/Git/Ghidra/CUA or new production run."
+  },
+  "artifact_checks": {
+    "compressed_result_bytes": 109164,
+    "lexical_inputs": "no copied sections/source_lines/art_lines/map_sections/physical dictionaries in compressed results",
+    "portable_paths": "no workstation paths in result or metadata JSON",
+    "python_syntax": "all promoted Python parsed"
+  },
+  "final_manifest": "After this validation record was added, --manifest-only --write and independent --manifest-only --check refresh/verify artifact hashes without repeating native execution.",
+  "mission_addition": {
+    "counter_historical_v7": true,
+    "final_common_manifest": "Run --manifest-only --write, then an independent --manifest-only --check after this record. Those commands check both pure Rust projections and all source/artifact/input hashes; they do not repeat the twelve native runners or production scene.",
+    "first_shot_v8": {
+      "full_main_mapgen_scenario_equal_at_first_tick_and_impact": true,
+      "native_terrain_body_executed": false,
+      "raw_words": 86,
+      "selected_actor_differences": 0,
+      "supplied_external_terrain_words": 80
+    },
+    "mission_receipt_sha256": "a33e8728299610c021e75c75732b9c6016ff17688a38494035050f396d3f3243",
+    "native_exit_codes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "native_write_and_independent_check": [
+      "mission",
+      "mission_counter",
+      "mission_interleaving"
+    ],
+    "navigation_refresh": {
+      "all_four_states_equal": true,
+      "comparison_sha256": "35df6a325ec9b85b5d461554bb93e45248666290e24c4bf759326b82d6f6be5f",
+      "native_runner_and_reference_unchanged": true,
+      "receipt_sha256": "06a0a3e87b04d82b7494b0da4a9683fac1465ec12ce6f7c0727e6ef8db23ea55",
+      "source": "concrete-v8 loaded/damaged/collapsed/repaired explicit exports"
+    },
+    "recorded_at_utc": "2026-09-27T20:00:42.813151+00:00",
+    "registration_refresh": {
+      "compressed_results_byte_identical": true,
+      "hut_cursor_receipt_sha256": "ba78474a388ca3e9738ae0cfe19ce9b073de5963cf18db604da7cc0a26137bc5",
+      "hut_receipt_sha256": "3ad36a4ae8d8a853bc6da7957c28083ecfdf4068da65bd776e71b3dd7b086ab0",
+      "native_hut_and_cursor_write_and_independent_check_exit_codes": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "reason": "Existing inputs() owner unchanged; new runner registration changes only hut/cursor source-provenance metadata."
+    },
+    "rust_projection_write_and_independent_check_exit_codes": [
+      0,
+      0
+    ],
+    "scope": "Three native mission witnesses plus pure Rust projection, supplied v8 first-shot/impact comparison and navigation four-state production comparison. No Cargo, Rust review, Ghidra or computer control."
+  },
+  "negative_guard": "Changing a native map-size output and calling --write raised OracleError before creating the requested output file.",
+  "original_payloads_retained": {
+    "anytown_admission.json": {
+      "original": "47dfe401f8f2ee7587c86fe4b004cfe50a181feff9ccbb51e89ddbb0e62e36ec",
+      "published": "3360c77c253e70751363379dc0bb3065215fefe7372de6c8db6fb230098b4317"
+    },
+    "anytown_geometry.json": {
+      "original": "e86df51f1ad34c7d80d60a7076976e689664b0ed316deecb85b21aa4c21bb164",
+      "published": "e86df51f1ad34c7d80d60a7076976e689664b0ed316deecb85b21aa4c21bb164"
+    },
+    "anytown_occupants.json": {
+      "original": "b57a73977a85dec4af63b9b7d91ac128b7641840825a881d1331afc7cae4aecf",
+      "published": "eb5622802a02672f3508bbdc959b7b27a904b65092cf694f5e4a25f9ec1cc0fb"
+    },
+    "anytown_resident.json": {
+      "original": "11b88bb7e8c5c90c5a457782e541396b11c8f8b9b13c079570de4f68a7f20876",
+      "published": "11b88bb7e8c5c90c5a457782e541396b11c8f8b9b13c079570de4f68a7f20876"
+    },
+    "mtnk_attack.json": {
+      "original": "7edb49921317df47f4a8835d2d8020475c9e0fa6925f0ba254b38752d43c3784",
+      "published": "d0467012cb3892212c1936128bc207478246d4ca636d06f51e560a948b4bf996"
+    },
+    "next_family_native.json": {
+      "original": "f450622324604253812702e7f4b7d6dc133ac3553a0fd9634c1f1283f0c1c85b",
+      "published": "f450622324604253812702e7f4b7d6dc133ac3553a0fd9634c1f1283f0c1c85b"
+    }
+  },
+  "originals_preserved": [
+    {
+      "path": "ground-wood-next/manifest.json",
+      "sha256": "3ca5dd3221c3212cd9284489b25f792f999f949df383e3a154adada4b2b089e2",
+      "unchanged_files": 22
+    },
+    {
+      "path": "anytown-damage-native/manifest.json",
+      "sha256": "15015b082a2ce06156acbc69d411e28bc8bfcab04f94d82f8a6e79807bdc77db",
+      "unchanged_files": 21
+    },
+    {
+      "path": "anytown-damage-native/attack/manifest.json",
+      "sha256": "4637c433593dae9babd557579c0a1f15eaef044a29ef60c93332fff8b7b34b05",
+      "unchanged_files": 18
+    },
+    {
+      "path": "anytown-occupants-native/receipt.json",
+      "sha256": "c9025c0358b13ad658958cbe369c93559587e7593f41dd6d1ad521a91555ea6b",
+      "unchanged_files": 6
+    }
+  ],
+  "recorded_at_utc": "2026-09-27T18:57:39.622944+00:00",
+  "retail_inputs": "24 exact physical files plus absent LANGRULE, bound through the two explicit environment directories; selected SHPs remain separate from the sparse bootstrap cache.",
+  "runs": {
+    "check": {
+      "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. python -m tools.spatial_oracle.anytown_damage.validate_packet --check",
+      "exit_code": 0,
+      "stdout": "next_family_native --check\nPASS next_family_native.json.gz: native outputs match; no files written\nanytown_geometry --check\nPASS anytown_geometry.json.gz: native outputs match; no files written\nanytown_resident --check\nPASS anytown_resident.json.gz: native outputs match; no files written\nanytown_admission --check\nPASS anytown_admission.json.gz: native outputs match; no files written\nanytown_occupants --check\nPASS anytown_occupants.json.gz: native outputs match; no files written\nmtnk_attack --check\nPASS mtnk_attack.json.gz: native outputs match; no files written\nPASS six native outputs and manifest; no files written.\n",
+      "stdout_sha256": "19add3d2ee0efb94976e2d5f2fcdc9172996389f9f6602c9957603b5b7449ce2"
+    },
+    "write": {
+      "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. python -m tools.spatial_oracle.anytown_damage.validate_packet --write",
+      "exit_code": 0,
+      "stdout": "next_family_native --write\nWROTE next_family_native.json.gz and next_family_native.meta.json; native values match frozen packet\nanytown_geometry --write\nWROTE anytown_geometry.json.gz and anytown_geometry.meta.json; native values match frozen packet\nanytown_resident --write\nWROTE anytown_resident.json.gz and anytown_resident.meta.json; native values match frozen packet\nanytown_admission --write\nWROTE anytown_admission.json.gz and anytown_admission.meta.json; native values match frozen packet\nanytown_occupants --write\nWROTE anytown_occupants.json.gz and anytown_occupants.meta.json; native values match frozen packet\nmtnk_attack --write\nWROTE mtnk_attack.json.gz and mtnk_attack.meta.json; native values match frozen packet\nWROTE receipt; run an independent --check before citing the packet.\n",
+      "stdout_sha256": "0ef2a9a3aa321a21e3bac01923ac1fcf6b68fcb874cf33e4595d51afbb7e56f0"
+    }
+  },
+  "schema": 1,
+  "scope": "Evidence packaging equivalence only. Six original native witnesses were independently replayed after promotion. No Cargo, Rust implementation review, Ghidra mutation, new production validation or computer control.",
+  "shared_helper_checks": {
+    "map_decode": [
+      {
+        "cells": 13515,
+        "equal": true,
+        "map": "XMP03T4.MAP",
+        "sha256": "7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e"
+      },
+      {
+        "cells": 13366,
+        "equal": true,
+        "map": "XShrapnel.MAP",
+        "sha256": "c32e412e938e1b9a0b29f89ff9bc0e6f410f75bc76701fb4acef6581fd19b438"
+      }
+    ],
+    "production_comparison_check": {
+      "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. python -m tools.spatial_oracle.shrapnel_repair.compare_production --check",
+      "exit_code": 0,
+      "scope": "Compares existing saved production/native records, not a new native graph replay.",
+      "setup_retry": "First invocation omitted VERA20K_SHRAPNEL_INPUTS and failed at the missing local MAP; explicit input binding then passed unchanged."
+    },
+    "shared_compressed_api_default_checks": 3,
+    "shrapnel_output_hashes": {
+      "hierarchy_composition.json.gz": "df407f7b2babdf2b083a79e5fdf6c657c74c938919095b5f2dc4ff41f00a34b9",
+      "production_comparison.json": "750cb2a89044472656ed2e05f9f222256573979821e48ec4b912cfc04233a90e",
+      "shrapnel_repair.json.gz": "c4cd94c99f567ac49672038cded92f4f3e2f1c7036447f87f3f2babf5769cbff",
+      "zone_composition.json.gz": "a7008b47ac8382f99c5add830485014ffdcbacfb4316bb0c550e2c0a766bfb51"
+    },
+    "shrapnel_physical_map_unchanged": true
+  }
+}

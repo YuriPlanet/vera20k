@@ -1,0 +1,110 @@
+{
+  "calls": [
+    {
+      "address": "0x0043896A",
+      "bytes": "e8b1c21300",
+      "expected_target": "0x00574C20",
+      "mnemonic": "call",
+      "operand": "0x574c20"
+    },
+    {
+      "address": "0x00438982",
+      "bytes": "e879b61300",
+      "expected_target": "0x00574000",
+      "mnemonic": "call",
+      "operand": "0x574000"
+    },
+    {
+      "address": "0x00440301",
+      "bytes": "e81a491300",
+      "expected_target": "0x00574C20",
+      "mnemonic": "call",
+      "operand": "0x574c20"
+    },
+    {
+      "address": "0x0044031B",
+      "bytes": "e8e03c1300",
+      "expected_target": "0x00574000",
+      "mnemonic": "call",
+      "operand": "0x574000"
+    },
+    {
+      "address": "0x0057408E",
+      "bytes": "e82d090000",
+      "expected_target": "0x005749C0",
+      "mnemonic": "call",
+      "operand": "0x5749c0"
+    },
+    {
+      "address": "0x00575B10",
+      "bytes": "e8db710000",
+      "expected_target": "0x0057CCF0",
+      "mnemonic": "call",
+      "operand": "0x57ccf0"
+    },
+    {
+      "address": "0x00575E42",
+      "bytes": "e8a96e0000",
+      "expected_target": "0x0057CCF0",
+      "mnemonic": "call",
+      "operand": "0x57ccf0"
+    },
+    {
+      "address": "0x00574483",
+      "bytes": "e8f82c0100",
+      "expected_target": "0x00587180",
+      "mnemonic": "call",
+      "operand": "0x587180"
+    },
+    {
+      "address": "0x0057459A",
+      "bytes": "e8e12b0100",
+      "expected_target": "0x00587180",
+      "mnemonic": "call",
+      "operand": "0x587180"
+    },
+    {
+      "address": "0x0058720A",
+      "bytes": "e8e15affff",
+      "expected_target": "0x0057CCF0",
+      "mnemonic": "call",
+      "operand": "0x57ccf0"
+    },
+    {
+      "address": "0x00575E0E",
+      "bytes": "e88dc0eaff",
+      "expected_target": "0x00421EA0",
+      "mnemonic": "call",
+      "operand": "0x421ea0"
+    },
+    {
+      "address": "0x00575D36",
+      "bytes": "e8a56a0e00",
+      "expected_target": "0x0065C7E0",
+      "mnemonic": "call",
+      "operand": "0x65c7e0"
+    },
+    {
+      "address": "0x00575D75",
+      "bytes": "e8666a0e00",
+      "expected_target": "0x0065C7E0",
+      "mnemonic": "call",
+      "operand": "0x65c7e0"
+    },
+    {
+      "address": "0x00575DC4",
+      "bytes": "e8176a0e00",
+      "expected_target": "0x0065C7E0",
+      "mnemonic": "call",
+      "operand": "0x65c7e0"
+    },
+    {
+      "address": "0x00575DE6",
+      "bytes": "e8f5690e00",
+      "expected_target": "0x0065C7E0",
+      "mnemonic": "call",
+      "operand": "0x65c7e0"
+    }
+  ],
+  "source": "Verified original PE mapped by tools.native_oracle.load_image; Capstone decodes at observed instruction boundaries."
+}

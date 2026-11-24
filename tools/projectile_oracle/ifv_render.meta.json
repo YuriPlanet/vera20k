@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original DRAGON frame getter and full physical shape drawing for125 independently rerun IFV flight states,5launch states,32direction centers and4clipping controls",
+  "assumptions": [
+    "ifv_launch.generate independently reexecutes original physical selected launch/flight; its explicit source/world admission, flatmap/structural flags and wholeProcess boundaries remain. Retained poststep XYZ/velocity feed frame/draw without Rust expectations. Impact endpoint is pre-retirement, not a Display scheduling claim.",
+    "Original Bullet constructor and native physical AAHeatSeeker2 readers provide image32frames24x16, inverseRotatesfalse, Shadowfalse. Original468000 uses4CAE30 atan2 and7C5F00 conversion. Direction centers are suppliedbinary64 inputs, not native movement-producer outputs.",
+    "Full original ObjectRender5F4B10/BulletDraw468090/shape4AED70/clip/rowwalker/leaves execute using unchanged physicalDRAGON bytes and independently initialized native palette Convert tables. Prepared64x96RGB565/circularA/Z buffers, backgroundFFFF,depth32768/oldFFFF,A127 and explicit bodypoint/camera remain fixture boundaries.",
+    "Native game x87PC53/truncate0E7F. No host atan2/fitted pixels, native Display traversal, GPU or whole-scene parity claim. Shared bridge_render_shape covers physical120MM geometry/depth; this addition covers selectedDRAGON rotation and image pixels."
+  ],
+  "substitutions": [
+    "Inherited native input/launch/palette transport boundaries. No frame/draw/clip/shape selector or pixel instruction replaced."
+  ],
+  "entry_points": {
+    "get_anim_frame": "0x00468000",
+    "atan2": "0x004CAE30",
+    "object_render": "0x005F4B10",
+    "bullet_draw": "0x00468090",
+    "shape": "0x004AED70",
+    "body_leaf": "0x00494B60"
+  },
+  "payload_sha256": "e176e053341a0d803ff6adb84e7ff7cfaaec4ac75304b5591c89a4030b210228"
+}

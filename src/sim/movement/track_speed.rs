@@ -1,0 +1,621 @@
+//! ProcessMovement publishes the class target; TrackProcess consumes it.
+//! Class targets and the speed prefix retain native binary64 values.
+
+use super::movement_bridge::{cell_transition_bridge_update, projected_on_bridge};
+use super::track_process::TrackFamily;
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::rules::locomotor_type::LocomotorKind;
+use crate::rules::object_type::ObjectType;
+use crate::rules::ruleset::RuleSet;
+use crate::sim::game_entity::GameEntity;
+use crate::sim::pathfinding::PathGrid;
+use crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig;
+#[cfg(test)]
+use crate::util::fixed_math::{SIM_ONE, SimFixed};
+use crate::util::native_x87::{NativeF64Bits, sqrt_approx_length};
+
+/// The native Process_Movement fresh arm's publication for its candidate
+/// Cell (`track_fresh`), with Road's row when the retained height is two or
+/// more levels from the Cell (`0x4B3C84`).
+pub(super) fn publish_fresh_track_target(
+    entity: &mut GameEntity,
+    strength: i32,
+    rules: &RuleSet,
+    terrain: &ResolvedTerrainGrid,
+    path_grid: Option<&PathGrid>,
+    terrain_speed: &TerrainSpeedConfig,
+    next_cell: (u16, u16),
+    road: bool,
+) {
+    let Some(loco) = entity.locomotor.as_ref() else {
+        return;
+    };
+    let speed_type = loco.speed_type();
+    let below_yellow = crate::sim::pathfinding::terrain_speed::is_at_or_below_condition_yellow(
+        entity.health.current(),
+        strength,
+        rules.general.condition_yellow,
+    );
+    let road_row = road.then(|| {
+        rules
+            .terrain_rules
+            .semantics_for_land_type(1)
+            .map_or(NativeF64Bits::ONE, |road| {
+                road.speed_costs.native_speed_multiplier_for(speed_type)
+            })
+    });
+    let xy = super::ground_pose::position_world_xy(&entity.position);
+    let on_bridge = entity.on_bridge();
+    // Admission publishes speed before the track applies its cell crossing.
+    // Project the candidate's layer without writing the actor's OnBridge flag.
+    let next_on_bridge = path_grid
+        .and_then(|grid| {
+            let src = grid.cell(entity.position.rx(), entity.position.ry())?;
+            let dst = grid.cell(next_cell.0, next_cell.1)?;
+            let deck = if dst.has_structural_bridge() {
+                terrain.corrected_high_bridge_deck_level(next_cell)
+            } else {
+                None
+            };
+            Some(projected_on_bridge(
+                on_bridge,
+                cell_transition_bridge_update(src, dst, deck),
+            ))
+        })
+        .unwrap_or(on_bridge);
+    let requested = crate::sim::pathfinding::terrain_speed::fresh_track_speed_fraction(
+        speed_type,
+        (xy[0], xy[1]),
+        next_cell,
+        [on_bridge, next_on_bridge],
+        road_row,
+        terrain,
+        terrain_speed,
+        below_yellow,
+    );
+    publish_target_fraction(entity, requested);
+}
+
+/// Drive4B3DFA..3E21 / Ship twin: a selector below 64 keeps the request on
+/// the class target (+50); otherwise it goes to the Foot setter
+/// (`SetSpeedFraction`4D3710) when it differs from the applied fraction.
+fn publish_target_fraction(entity: &mut GameEntity, requested: NativeF64Bits) {
+    let Some(loco) = entity.locomotor.as_mut() else {
+        return;
+    };
+    let Some(family) = TrackFamily::from_kind(loco.active_kind()) else {
+        return;
+    };
+    loco.ensure_installed_track_state();
+    let Some(progress) = loco.track_progress(family) else {
+        return;
+    };
+    let selector = progress.turn_index();
+    if selector < 64 {
+        loco.store_track_target_fraction_native(family, requested);
+    } else {
+        // 4B3E08 tests C3: Equal and Unordered skip the setter. The normal
+        // finite stock result is representable in the local double spill.
+        use crate::util::native_x87::{MaskedX87Chop53 as X, MaskedX87Ordering};
+        if matches!(
+            X::compare(
+                X::load_f64(requested),
+                X::load_f64(entity.foot_speed.native_applied_fraction())
+            ),
+            MaskedX87Ordering::Less | MaskedX87Ordering::Greater
+        ) {
+            entity
+                .foot_speed
+                .set_speed_fraction_native_bits(requested.bits());
+        }
+    }
+}
+
+/// Drive 0x004B0FBA..0x004B1087 / Ship 0x006A068A..0x006A0757: the 3-D
+/// distance from the raw Foot coordinate (+0x9C) to the class destination
+/// (+0x34). The destination's own Z is replaced (0x004B101D) by the ground
+/// under its XY (0x00578080, slope-interpolated) plus the bridge height when
+/// Map[destination] (0x00565730) has the structural flag 0x100. A null
+/// destination is looked up as (0, 0); there is no null check.
+///
+/// The distance is `(dz² + dy²) + dx²` of the Foot coordinate less the
+/// destination, through `Sqrt_Approx` (0x004CAC40) and `Math::ftol`
+/// ([`sqrt_approx_length`]).
+///
+/// Ship adds the global at 0xB0782C, Drive the one at 0x8A07C4. Each has one
+/// writer, a static initializer of 4 x its class height step (Ship 0x69EBD0,
+/// Drive 0x4AF4C0); both are taken as the deck height (the executed rows
+/// supply 416 for both; the height steps are not traced).
+fn braking_distance(
+    entity: &GameEntity,
+    destination: Option<crate::sim::components::DriveCoord>,
+    terrain: Option<&ResolvedTerrainGrid>,
+    grid: Option<&PathGrid>,
+) -> i32 {
+    let destination =
+        destination.unwrap_or(crate::sim::components::DriveCoord { x: 0, y: 0, z: 0 });
+    let structural = crate::sim::cell_rect::get_cellclass_fallback_leptons(
+        terrain,
+        destination.x,
+        destination.y,
+    )
+    .bridge_flags_0x1180()
+        & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
+        != 0;
+    // Headless fixtures without map cells read a level-0 ground.
+    let destination_z = super::ground_pose::ground_surface_z_at(
+        [destination.x, destination.y],
+        structural,
+        terrain,
+        grid,
+    )
+    .unwrap_or_else(|| super::ground_pose::z_at_height(0, 0, structural));
+    let current = super::ground_pose::object_location(entity, terrain);
+    sqrt_approx_length([
+        current.z.wrapping_sub(destination_z),
+        current.y.wrapping_sub(destination.y),
+        current.x.wrapping_sub(destination.x),
+    ])
+}
+
+/// One TrackProcess invocation consumes its retained class target, even when
+/// callbacks have changed the path, terrain, health, or destination request.
+/// Process_Drive_Track's speed prefix: Drive `0x004B0F20..0x004B1295`, Ship
+/// `0x006A05F0..0x006A095D`.
+pub(super) fn advance(
+    entity: &mut GameEntity,
+    object: Option<&ObjectType>,
+    rules: &RuleSet,
+    houses: &crate::sim::houses::Houses,
+    terrain: Option<&ResolvedTerrainGrid>,
+    grid: Option<&PathGrid>,
+) -> (i32, Option<u64>) {
+    let Some(loco) = entity.locomotor.as_ref() else {
+        return (0, None);
+    };
+    let kind = loco.active_kind();
+    if !matches!(kind, LocomotorKind::Drive | LocomotorKind::Ship) {
+        return (0, None);
+    }
+    let speed =
+        super::foot_speed::adjusted_speed(entity, object, rules.general.veteran_speed, houses);
+    let family = TrackFamily::from_kind(kind).unwrap();
+    let destination = loco.track_destination(family);
+    let selector = loco.track_progress(family).map_or(-1, |p| p.turn_index());
+    let retained_target = loco.track_target_fraction_native(family);
+    let prefix = super::drive_locomotion::TrackSpeedPrefix {
+        accelerates: entity.mover_facts.drive_accelerates(),
+        unit_passive: entity.category() == crate::map::entities::EntityCategory::Unit
+            && object.is_some_and(|object| object.passive),
+        selector,
+        // Drive's brake reads the object's max speed (vt+0x38C at
+        // `0x004B10AC`), a Tiberian Sun limpet's included
+        // (`sim::limpet::max_speed`); Ship's reads the type's.
+        raw_type_speed: object.map_or(0, |o| {
+            let speed = crate::util::fixed_math::ra2_speed_to_leptons_per_frame(o.speed);
+            if family == TrackFamily::Drive {
+                crate::sim::limpet::max_speed(entity, speed)
+            } else {
+                speed
+            }
+        }),
+        accel: object.map_or(NativeF64Bits::POSITIVE_ZERO, |o| o.accel_factor),
+        decel: object.map_or(NativeF64Bits::POSITIVE_ZERO, |o| o.decel_factor),
+        slowdown_distance: object.map_or(0, |o| o.slowdown_distance),
+        sinking: entity.sinking.is_active(),
+        crush_slowdown: entity.foot_speed.crush_slowdown(),
+    };
+    if let Some(target) = retained_target {
+        let step = super::drive_locomotion::track_speed_prefix(
+            &prefix,
+            || braking_distance(entity, destination, terrain, grid),
+            target,
+            entity.foot_speed.native_applied_fraction(),
+        );
+        if let Some(loco) = entity.locomotor.as_mut() {
+            loco.store_track_target_fraction_native(family, step.target);
+        }
+        if let Some(fraction) = step.set_fraction {
+            entity
+                .foot_speed
+                .set_speed_fraction_native_bits(fraction.bits());
+        }
+    }
+    // Process_Drive_Track 4B1218 / Ship 6A08E0 reaches the follower
+    // hand-off even on equality, when the setter above was skipped.
+    let first_car = if prefix.applies_acceleration()
+        && retained_target.is_some()
+        && entity.category() == crate::map::entities::EntityCategory::Unit
+    {
+        entity.unit_follower()
+    } else {
+        None
+    };
+    let budget = super::foot_speed::owner_current_speed_from_native_fraction(
+        speed,
+        entity.foot_speed.native_applied_fraction(),
+        entity.phobos_speed_multiplier(),
+    );
+    (budget, first_car)
+}
+
+#[cfg(all(test, tests_sim_movement))]
+mod tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::movement::locomotor::LocomotorState;
+
+    fn entity(kind: LocomotorKind, selector: i32, target: SimFixed) -> GameEntity {
+        let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 8, 8);
+        entity.locomotor = Some(LocomotorState::for_test_kind(kind));
+        let family = TrackFamily::from_kind(kind).unwrap();
+        let loco = entity.locomotor.as_mut().unwrap();
+        loco.ensure_installed_track_state();
+        let mut progress = loco.track_progress(family).unwrap();
+        progress.set_turn_index(selector);
+        loco.store_track_progress(family, progress);
+        loco.store_track_valid(family, true);
+        loco.store_track_target_fraction(family, target);
+        entity
+    }
+
+    fn retained(entity: &GameEntity) -> SimFixed {
+        let loco = entity.locomotor.as_ref().unwrap();
+        loco.track_target_fraction(TrackFamily::from_kind(loco.active_kind()).unwrap())
+            .unwrap()
+    }
+
+    #[test]
+    fn retained_track_reads_new_crate_factor_without_a_new_move_order() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=MTNK\n[MTNK]\nSpeed=4\nStrength=100\n",
+        ))
+        .unwrap();
+        let object = rules.object("MTNK").unwrap();
+        for kind in [LocomotorKind::Drive, LocomotorKind::Ship] {
+            let mut mover = entity(kind, 0, SIM_ONE);
+            mover.mover_facts.set_drive_accelerates_for_test(false);
+            assert_eq!(
+                advance(
+                    &mut mover,
+                    Some(object),
+                    &rules,
+                    &Default::default(),
+                    None,
+                    None
+                ),
+                (10, None)
+            );
+            assert!(mover.foot_speed.accept_speed_crate(
+                crate::util::native_x87::NativeF64Bits::from_bits(1.2_f64.to_bits())
+            ));
+            assert_eq!(
+                advance(
+                    &mut mover,
+                    Some(object),
+                    &rules,
+                    &Default::default(),
+                    None,
+                    None
+                ),
+                (11, None)
+            );
+        }
+    }
+
+    #[test]
+    fn fresh_track_speed_uses_deck_grade_over_a_ground_ramp() {
+        use crate::map::bridge_facts::{BRIDGE_FLAG_ANCHOR_SELF, BRIDGE_FLAG_STRUCTURAL};
+        use crate::map::resolved_terrain::test_flat_cell;
+
+        let mut src = test_flat_cell(0, 0);
+        src.level = 3;
+        src.slope_type = 1;
+        src.bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL | BRIDGE_FLAG_ANCHOR_SELF;
+        src.bridge_facts.fixed_deck_level = Some(9);
+        let mut deck = test_flat_cell(1, 0);
+        deck.level = 5;
+        deck.bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
+        let mut raised_deck = test_flat_cell(1, 1);
+        raised_deck.level = 1;
+        raised_deck.bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL | BRIDGE_FLAG_ANCHOR_SELF;
+        raised_deck.bridge_facts.fixed_deck_level = Some(10);
+        let mut approach = test_flat_cell(0, 1);
+        approach.level = 9;
+        let terrain = ResolvedTerrainGrid::from_cells(2, 2, vec![src, deck, approach, raised_deck]);
+        let grid = PathGrid::from_resolved_terrain(&terrain);
+
+        let rules = RuleSet::from_ini(&IniFile::from_str("[Road]\nTrack=50%\n")).unwrap();
+        let speed = TerrainSpeedConfig {
+            tracked_uphill: NativeF64Bits::from_bits(0.75_f64.to_bits()),
+            tracked_downhill: NativeF64Bits::from_bits(1.25_f64.to_bits()),
+            ..Default::default()
+        };
+        let mut mover = entity(LocomotorKind::Drive, 0, SIM_ONE);
+        let mut target = |xy, on_bridge, next, road| {
+            mover.position.put_world_xy(xy);
+            mover.set_on_bridge(on_bridge);
+            publish_fresh_track_target(
+                &mut mover,
+                100,
+                &rules,
+                &terrain,
+                Some(&grid),
+                &speed,
+                next,
+                road,
+            );
+            mover
+                .locomotor
+                .as_ref()
+                .unwrap()
+                .track_target_fraction_native(TrackFamily::Drive)
+                .unwrap()
+        };
+        let native = |value: f64| NativeF64Bits::from_bits(value.to_bits());
+        let deck_xy = [200, 200];
+        assert_eq!(
+            target(deck_xy, true, (1, 0), false),
+            native(1.0),
+            "level deck"
+        );
+        assert_eq!(
+            target(deck_xy, true, (1, 1), true),
+            native(0.375),
+            "uphill deck on Road"
+        );
+        assert_eq!(
+            target(deck_xy, true, (0, 1), false),
+            native(1.0),
+            "level exit"
+        );
+        assert_eq!(
+            target([128, 384], false, (0, 0), false),
+            native(1.0),
+            "level entry"
+        );
+        assert_eq!(
+            target(deck_xy, false, (1, 0), false),
+            native(0.75),
+            "underpass grade"
+        );
+    }
+
+    #[test]
+    fn track_budget_reads_the_live_type_speed() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=100\nSpeed=6\nAccelerates=no\n",
+        ))
+        .unwrap();
+        for kind in [LocomotorKind::Drive, LocomotorKind::Ship] {
+            let mut mover = entity(kind, 0, SIM_ONE);
+            mover.mover_facts.set_drive_accelerates_for_test(false);
+            assert_eq!(
+                advance(
+                    &mut mover,
+                    rules.object("MTNK"),
+                    &rules,
+                    &Default::default(),
+                    None,
+                    None
+                ),
+                (15, None)
+            );
+        }
+    }
+
+    #[test]
+    fn production_prefix_passive_special_and_nonaccelerating_gates_match_original() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/track_speed_native.json",
+        ))
+        .unwrap();
+        let fixed = |value: &serde_json::Value| {
+            let bits = u64::from_str_radix(value.as_str().unwrap(), 16).unwrap();
+            let native = f64::from_bits(bits);
+            let fixed = SimFixed::from_num(native);
+            assert_eq!(
+                fixed.to_num::<f64>(),
+                native,
+                "gate case must be exactly representable"
+            );
+            fixed
+        };
+        let mut compared = [0; 2];
+        for case in corpus["prefixes"].as_array().unwrap() {
+            let input = &case["input"];
+            let accelerates = input["accelerates"].as_bool().unwrap_or(true);
+            let passive = input["passive"].as_bool().unwrap_or(false);
+            let selector = input["selector"].as_i64().unwrap_or(1) as i32;
+            if accelerates && !passive && selector < 64 {
+                continue;
+            }
+            let kind = if input["family"] == "drive" {
+                LocomotorKind::Drive
+            } else {
+                LocomotorKind::Ship
+            };
+            let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+                "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=100\nSpeed=6\nPassive={}\n",
+                if passive { "yes" } else { "no" },
+            )))
+            .unwrap();
+            let mut entity = entity(kind, selector, fixed(&input["target_bits"]));
+            entity
+                .mover_facts
+                .set_drive_accelerates_for_test(accelerates);
+            entity
+                .foot_speed
+                .set_speed_fraction(fixed(&input["applied_bits"]));
+            advance(
+                &mut entity,
+                rules.object("MTNK"),
+                &rules,
+                &Default::default(),
+                None,
+                None,
+            );
+            assert_eq!(
+                retained(&entity),
+                fixed(&case["output"]["target_bits"]),
+                "{input}"
+            );
+            assert_eq!(
+                entity.foot_speed.applied_fraction(),
+                fixed(&case["output"]["applied_bits"]),
+                "{input}"
+            );
+            compared[usize::from(kind == LocomotorKind::Ship)] += 1;
+        }
+        assert_eq!(compared, [14, 14]);
+    }
+
+    /// Drive 0x004B1087 / Ship 0x006A0757 observed distances over a flat
+    /// level-2 map (ground 208), the destination cell structural when a row
+    /// says `bridge`. The destination's own Z never matters.
+    #[test]
+    fn braking_distance_matches_original_rows() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/track_speed_native.json",
+        ))
+        .unwrap();
+        let mut compared = 0;
+        for case in corpus["prefixes"].as_array().unwrap() {
+            let Some(native) = case["output"]["distance"].as_i64() else {
+                continue;
+            };
+            let input = &case["input"];
+            let current: [i32; 3] =
+                serde_json::from_value(input["current"].clone()).unwrap_or([2176, 2176, 208]);
+            let destination: [i32; 3] =
+                serde_json::from_value(input["destination"].clone()).unwrap_or([2688, 2176, -731]);
+            let bridge = input["bridge"].as_bool().unwrap_or(false);
+            let cells = (0..16)
+                .flat_map(|y| {
+                    (0..16).map(move |x| {
+                        let mut cell = crate::map::resolved_terrain::test_flat_cell(x, y);
+                        cell.level = 2;
+                        if bridge
+                            && (i32::from(x), i32::from(y))
+                                == (destination[0] / 256, destination[1] / 256)
+                        {
+                            cell.bridge_facts.raw_flags |=
+                                crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
+                        }
+                        cell
+                    })
+                })
+                .collect();
+            let terrain = ResolvedTerrainGrid::from_cells(16, 16, cells);
+            let mut mover = GameEntity::test_default(1, "MTNK", "Americans", 0, 0);
+            mover.position.put_world_xy([current[0], current[1]]);
+            mover
+                .position
+                .set_exact_z_leptons_for_test(Some(current[2]));
+            let destination = crate::sim::components::DriveCoord {
+                x: destination[0],
+                y: destination[1],
+                z: destination[2],
+            };
+            assert_eq!(
+                braking_distance(&mover, Some(destination), Some(&terrain), None),
+                native as i32,
+                "{input}"
+            );
+            compared += 1;
+        }
+        assert_eq!(compared, 90);
+    }
+
+    /// Every executed Drive/Ship prefix row through the one production port:
+    /// exact target/applied doubles, whether the setter ran, and the paid
+    /// invocation budget from the production getter of the resulting fraction.
+    #[test]
+    fn speed_prefix_matches_original_rows_exactly() {
+        use crate::sim::movement::drive_locomotion::{TrackSpeedPrefix, track_speed_prefix};
+        use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/track_speed_native.json",
+        ))
+        .unwrap();
+        let integer = |input: &serde_json::Value, key: &str, fallback: i32| {
+            input[key].as_i64().map_or(fallback, |value| value as i32)
+        };
+        let bits64 = |value: &serde_json::Value| {
+            NativeF64Bits::from_bits(u64::from_str_radix(value.as_str().unwrap(), 16).unwrap())
+        };
+        let mut compared = 0;
+        for case in corpus["prefixes"].as_array().unwrap() {
+            let input = &case["input"];
+            let getter = &case["getter"];
+            let expected = &case["output"];
+            let prefix = TrackSpeedPrefix {
+                accelerates: input["accelerates"].as_bool().unwrap_or(true),
+                unit_passive: input["passive"].as_bool().unwrap_or(false),
+                selector: integer(input, "selector", 1),
+                raw_type_speed: integer(getter, "raw", 17),
+                accel: bits64(&input["accel_bits"]),
+                decel: bits64(&input["decel_bits"]),
+                slowdown_distance: integer(input, "slowdown", 500),
+                sinking: input["sinking"].as_bool().unwrap_or(false),
+                crush_slowdown: input["crush"].as_bool().unwrap_or(false),
+            };
+            let mut measured = false;
+            let step = track_speed_prefix(
+                &prefix,
+                || {
+                    measured = true;
+                    expected["distance"].as_i64().unwrap() as i32
+                },
+                bits64(&input["target_bits"]),
+                bits64(&input["applied_bits"]),
+            );
+            assert_eq!(
+                measured,
+                !expected["distance"].is_null(),
+                "distance gate {input}"
+            );
+            assert_eq!(
+                usize::from(step.set_fraction.is_some()),
+                expected["setters"].as_u64().unwrap() as usize,
+                "setter {input}"
+            );
+            let applied = crate::sim::components::FootSpeedState::stored_speed_fraction(
+                step.set_fraction.unwrap_or(bits64(&input["applied_bits"])),
+            );
+            for (actual, key) in [(step.target, "target_bits"), (applied, "applied_bits")] {
+                assert_eq!(actual, bits64(&expected[key]), "{key}: {input}");
+            }
+            // The getter, as production runs it, on the native applied value.
+            let type_speed = crate::sim::combat::veterancy::current_type_speed(
+                integer(getter, "raw", 17),
+                NativeF32Bits::from_bits(
+                    u32::from_str_radix(getter["house_bits"].as_str().unwrap(), 16).unwrap(),
+                ),
+                bits64(&getter["crate_bits"]),
+                getter["faster"]
+                    .as_bool()
+                    .unwrap_or(false)
+                    .then(|| f64::from_bits(bits64(&getter["veteran_bits"]).bits())),
+            );
+            let mut owner = crate::sim::components::FootSpeedState::default();
+            owner.set_speed_fraction_native_bits(applied.bits());
+            let speed = super::super::foot_speed::owner_current_speed_from_native_fraction(
+                SimFixed::from_num(type_speed * 15),
+                owner.native_applied_fraction(),
+                1.0,
+            );
+            assert_eq!(
+                crate::sim::movement::track_process::invocation_budget(
+                    speed,
+                    integer(input, "residual", 7),
+                    input["retry"].as_bool().unwrap_or(false),
+                ),
+                integer(expected, "budget", 0),
+                "budget {input}"
+            );
+            compared += 1;
+        }
+        assert_eq!(compared, 118);
+    }
+}

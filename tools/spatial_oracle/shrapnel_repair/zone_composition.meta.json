@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original connectivity/hierarchy suffixes on supplied full Shrapnel cache planes.",
+  "assumptions": [
+    "Full class and height planes are frozen production inputs; original56C510 produces initial and final base IDs and13 raw movement rows, not a native scenario load.",
+    "Initial adjacency root and bucket headers follow original565800 construction;58AFF0 executes and finalvtable7ED540/growth20 stores supplied. No bridge/tube records: physical map has no raised bridge overlay or Tubes; production authority records empty.",
+    "Resident TMP, original retail readers, ordinary repair, MapGen, empty occupants and rectangle enumeration execute as described byshrapnel_repair."
+  ],
+  "substitutions": [
+    "Successful bounded allocation/free and presentation sinks. Hierarchy586990 remains recorded callback boundary in connectivity stage."
+  ],
+  "entry_points": {
+    "repair": "0x00570050",
+    "connectivity": "0x0056C510",
+    "flood": "0x0056CB90",
+    "pairs": "0x0056C6CB"
+  },
+  "payload_sha256": "a7008b47ac8382f99c5add830485014ffdcbacfb4316bb0c550e2c0a766bfb51",
+  "packaging": "canonical JSON; gzip mtime=0; copied lexical inputs replaced by SHA256"
+}

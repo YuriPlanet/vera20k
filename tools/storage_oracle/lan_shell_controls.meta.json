@@ -1,0 +1,11 @@
+{
+  "capture": "Six 455-byte packets captured once from an original LAN host's output, with the original game's transport replaced by the four substitutions below. The capture tool is retired and the repository cannot regenerate these packets; a rebuild needs a new capture.",
+  "substitutions": [
+    "53F540 socket-open success",
+    "541820 service success",
+    "5410F0 bounded captured send",
+    "541370 caller-bound scripted receive"
+  ],
+  "corpus": "six original455-byte outputs, decoded options consumed by production LAN capture driver; service names/host-change are declared inputs",
+  "map_metadata": "Captured17h field12 decoded by original7B83E0/caller5E4F97: The Alamo (2); field17 digest matches physical delivered map ReadString32 Digest/1. Successful native paced receive wrote83573bytes with transfer.source_sha256."
+}

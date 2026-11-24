@@ -1,0 +1,44 @@
+{
+  "program": "gamemd.exe",
+  "path": "/gamemd.exe",
+  "image_base": "0x00400000",
+  "corpus_sha256": "c111abac05443cd5d7d0d2dbf2ed9ccf1ffda7b3b9c037a5270e1c4af5e1d86e",
+  "original_spans": [
+    {
+      "address": "0x0051D6F0",
+      "length": 48,
+      "sha256": "5e00d6672ea214e2d9d961e8a41237ae0a41ae33fc114d35337cfdf014163aae"
+    },
+    {
+      "address": "0x00517AC2",
+      "length": 10,
+      "sha256": "c1630f318eab1ba6efed282a4fbd39660bb181d674ae85c985d746fe52997c4f"
+    },
+    {
+      "address": "0x0052440B",
+      "length": 100,
+      "sha256": "55a59d876ea6fe5b7c75cfbc3b99d98b05afadf64f3bdaaecd1767348e537c1c"
+    }
+  ],
+  "saved": true,
+  "exact_readback": true,
+  "plate_extension": "2026-09-30 wet-action constructor/reader extension, native executed: tools/spatial_oracle/infantry_water_action.{py,json,meta.json} reproduces356 entries (historical151 payloads unchanged;144 added action controls; original constructors,2 physical reader receipts and58 retail action controls). Infantry517AC2 initializes signed+6E8=2. Native E1 ReadINI produces MovementZone7; its real Ready receiver retains state2. Zone3 always queries physical packed Cell through vt+1B8/41BEA0 -> Map5657A0, including OnBridge poses. Water2/Beach6 offbridge map0/2->16,3/6->17,9->18,10->19,11->20,12->21,4/8->22; other requests retain their raw record. Only the requested count is checked, not the mapped count. At51D8B3 the old1->new0 request uses EnterWaterSound(+EA4); old0->new1 uses LeaveWaterSound(+EA8); constructor2 and other signed states request neither. The51D8B8 store precedes mapped equality/interruptibility refusal. Raw WetDie20/21 remain valid class records without a legacy presentation enum. Type523748/52374E initialize both sound indices-1. Original52440B/524447 ReadString128 and7514D0 name lookup retain the prior index for absent/empty/unregistered references. Physical GHOST/SEAL and TANY rules across RULESMD, absent LANGRULE, MPBattleMD and XMP03T4 plus fixed ARTMD produce all42 signed sequence records and named TanyaEntersWater/TanyaLeavesWater references. Four Health0 Die11/12 controls execute actual Stop_Driver re-entry and return accepted raw20/21 with Stage0/rate1. Bounds: supplied valid current Cell87,49,XYZ22272/12544/416 and land/bridge controls; GHOST/TANY Unlimbo, wet occupancy, whole death AI and sound playback are excluded. Original SoundList registration/name lookup execute, while original7509E0 executes through supplied disabled8464AC; Voc configuration/sampleIO excluded. All three complete RNG objects are unchanged; original text SHA2564cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc is pinned. This is bounded original receiver evidence, not whole water gameplay or audible/Rust parity.",
+  "eol_comments": [
+    {
+      "address": "0x00517AC2",
+      "comment": "Infantry constructor writes signed+6E8=2 (initial water-state sentinel), not0. Original517A50 executions for E1/GHOST/TANY and E1's non-zone3 Ready retention are saved in infantry_water_action.json constructors receipt. DoAction51D8B8 later writes0/1 only for MovementZone3; initial2 requests no enter/leave cue. Supplied House/OS setup and no GHOST/TANY Unlimbo claim."
+    },
+    {
+      "address": "0x0051D8B8",
+      "comment": "Pre-admission signed water-state store: new0 for Water2/Beach6 offbridge, otherwise1. Original7509E0 cue at51D8B3 observes old+6E8 and oldDoing: exactly1->0 uses EnterWaterSoundEA4; exactly0->1 uses LeaveWaterSoundEA8; ctor2 emits neither. This write survives later mapped-equality/interruptibility refusal. Zone3 map lookup executes even OnBridge. Native356-entry infantry_water_action corpus; audio disable gate suppliedfalse, playback excluded."
+    },
+    {
+      "address": "0x0052440B",
+      "comment": "Read exact EnterWaterSound (literal8259F0) with char[128], then7514D0 fixed Voc-name lookup at524418. Empty/missing ReadString or unregistered name(-1) retains prior+EA4; ctor523748 sets-1. EA4 store524441 occurs before the LeaveWaterSound read. Physical layered GHOST/TANY and original selected SOUNDMD registration captured in infantry_water_action.json retail_reader; Voc config/sample playback excluded."
+    },
+    {
+      "address": "0x00524447",
+      "comment": "Read exact LeaveWaterSound (literal8259E0) with char[128], then7514D0 fixed Voc-name lookup at524454. Empty/missing ReadString or unregistered name(-1) retains prior+EA8; ctor52374E sets-1. EA8 store52446F. Enter read precedes Leave within every actual type reader pass. Physical layered GHOST/TANY/ART plus fixed SoundList evidence: infantry_water_action.json retail_reader."
+    }
+  ]
+}

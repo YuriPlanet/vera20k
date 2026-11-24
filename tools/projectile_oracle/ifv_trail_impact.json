@@ -1,0 +1,1287 @@
+{
+  "row": {
+    "after_anim": {
+      "anim_count": 0,
+      "queue_count": 0
+    },
+    "after_drain": {
+      "alive": 0,
+      "anim_count": 1,
+      "bullet_count": 0,
+      "queue_count": 0
+    },
+    "anim_frames": [
+      {
+        "alive": 1,
+        "anim_frame": 0,
+        "delay": 0,
+        "frame": 2,
+        "queue_count": 0,
+        "timer_duration": 1,
+        "timer_start": 1
+      },
+      {
+        "alive": 1,
+        "anim_frame": 1,
+        "delay": 0,
+        "frame": 3,
+        "queue_count": 0,
+        "timer_duration": 1,
+        "timer_start": 3
+      },
+      {
+        "alive": 1,
+        "anim_frame": 2,
+        "delay": 0,
+        "frame": 4,
+        "queue_count": 0,
+        "timer_duration": 1,
+        "timer_start": 4
+      },
+      {
+        "alive": 1,
+        "anim_frame": 3,
+        "delay": 0,
+        "frame": 5,
+        "queue_count": 0,
+        "timer_duration": 1,
+        "timer_start": 5
+      },
+      {
+        "alive": 1,
+        "anim_frame": 4,
+        "delay": 0,
+        "frame": 6,
+        "queue_count": 0,
+        "timer_duration": 1,
+        "timer_start": 6
+      },
+      {
+        "alive": 1,
+        "anim_frame": 5,
+        "delay": 0,
+        "frame": 7,
+        "queue_count": 0,
+        "timer_duration": 1,
+        "timer_start": 7
+      },
+      {
+        "alive": 1,
+        "anim_frame": 6,
+        "delay": 0,
+        "frame": 8,
+        "queue_count": 0,
+        "timer_duration": 1,
+        "timer_start": 8
+      },
+      {
+        "alive": 1,
+        "anim_frame": 7,
+        "delay": 0,
+        "frame": 9,
+        "queue_count": 0,
+        "timer_duration": 1,
+        "timer_start": 9
+      },
+      {
+        "alive": 1,
+        "anim_frame": 8,
+        "delay": 0,
+        "frame": 10,
+        "queue_count": 0,
+        "timer_duration": 1,
+        "timer_start": 10
+      },
+      {
+        "alive": 1,
+        "anim_frame": 9,
+        "delay": 0,
+        "frame": 11,
+        "queue_count": 0,
+        "timer_duration": 1,
+        "timer_start": 11
+      },
+      {
+        "alive": 1,
+        "anim_frame": 10,
+        "delay": 0,
+        "frame": 12,
+        "queue_count": 0,
+        "timer_duration": 1,
+        "timer_start": 12
+      },
+      {
+        "alive": 1,
+        "anim_frame": 11,
+        "delay": 0,
+        "frame": 13,
+        "queue_count": 0,
+        "timer_duration": 1,
+        "timer_start": 13
+      },
+      {
+        "alive": 1,
+        "anim_frame": 12,
+        "delay": 0,
+        "frame": 14,
+        "queue_count": 0,
+        "timer_duration": 1,
+        "timer_start": 14
+      },
+      {
+        "alive": 0,
+        "anim_frame": 13,
+        "delay": 0,
+        "frame": 15,
+        "queue_count": 1,
+        "timer_duration": 1,
+        "timer_start": 15
+      }
+    ],
+    "before_drain": {
+      "alive": 0,
+      "anim_count": 1,
+      "bullet_count": 1,
+      "queue_count": 1
+    },
+    "events": [
+      {
+        "args": [
+          "0x1007fe18",
+          "0x1",
+          "0x0",
+          "0x1480"
+        ],
+        "ecx": "0x24092570",
+        "event": "Detonate",
+        "frame": 1,
+        "pc": "0x4690b0",
+        "return_pc": "0x469038"
+      },
+      {
+        "args": [
+          "0x2403c220",
+          "0x24025850",
+          "0x1",
+          "0x0"
+        ],
+        "damage": 25,
+        "ecx": "0x1007fe18",
+        "event": "AreaDamage",
+        "frame": 1,
+        "pc": "0x489280",
+        "position": [
+          2691,
+          5248,
+          1040
+        ],
+        "return_pc": "0x469a88",
+        "returned_eax": 1
+      },
+      {
+        "eax": 1,
+        "event": "AreaDamage_return",
+        "frame": 1,
+        "pc": "0x469a88"
+      },
+      {
+        "args": [
+          "0xffffffff",
+          "0x1007fd80",
+          "0x0",
+          "0x24092570"
+        ],
+        "damage": 25,
+        "ecx": "0x19",
+        "event": "SelectAnim",
+        "frame": 1,
+        "height_gate_unit": 104,
+        "land": -1,
+        "level_height": 0,
+        "pc": "0x48a4f0",
+        "position": [
+          2691,
+          5248,
+          1040
+        ],
+        "retained_bullet": [
+          2691,
+          5248,
+          1040
+        ],
+        "return_pc": "0x469bd4",
+        "returned_eax": 604232592
+      },
+      {
+        "eax": 604232592,
+        "event": "SelectAnim_return",
+        "frame": 1,
+        "pc": "0x469bd4",
+        "selected_name": "XGRYSML2"
+      },
+      {
+        "anim_type": "XGRYSML2",
+        "args": [
+          "0x2403db90",
+          "0x1007fdc4",
+          "0x0",
+          "0x1"
+        ],
+        "constructed_native_id": 30,
+        "ecx": "0x240929a0",
+        "event": "AnimCtor",
+        "frame": 1,
+        "pc": "0x421ea0",
+        "position": [
+          2691,
+          5248,
+          1040
+        ],
+        "return_pc": "0x469c98",
+        "returned_eax": 604580256
+      },
+      {
+        "args": [
+          "0x422042",
+          "0x240929a4",
+          "0x240929a0",
+          "0x24092570"
+        ],
+        "ecx": "0x24011980",
+        "event": "NextNativeId",
+        "frame": 1,
+        "pc": "0x68bcb0",
+        "return_pc": "0x41024b",
+        "returned_eax": 30
+      },
+      {
+        "eax": 30,
+        "event": "NextNativeId_return",
+        "frame": 1,
+        "pc": "0x41024b"
+      },
+      {
+        "args": [
+          "0x1007fdc4",
+          "0x0",
+          "0x240929a0",
+          "0x24092570"
+        ],
+        "ecx": "0x240929a0",
+        "event": "NativeUnlimbo",
+        "frame": 1,
+        "pc": "0x5f4ec0",
+        "position": [
+          2691,
+          5248,
+          1040
+        ],
+        "return_pc": "0x4222e5",
+        "returned_eax": 604232449
+      },
+      {
+        "args": [
+          "0x240929a0",
+          "0x24092ac8",
+          "0x240929a0",
+          "0x1007fd3c"
+        ],
+        "ecx": "0x87f7e8",
+        "event": "DisplaySubmit",
+        "frame": 1,
+        "pc": "0x4a9720",
+        "return_pc": "0x5f4fe7"
+      },
+      {
+        "args": [
+          "0x240929a0",
+          "0x1007fd3c",
+          "0x0",
+          "0x7e5144"
+        ],
+        "ecx": "0x24092900",
+        "event": "DetachAll",
+        "frame": 1,
+        "pc": "0x5f5210",
+        "return_pc": "0x24092ac8"
+      },
+      {
+        "admitted": true,
+        "eax": 604232449,
+        "event": "NativeUnlimbo_return",
+        "frame": 1,
+        "pc": "0x4222e5",
+        "retained": [
+          2691,
+          5248,
+          1040
+        ]
+      },
+      {
+        "args": [
+          "0x240929a0",
+          "0x24092570",
+          "0x2403db90",
+          "0x2403f2cb"
+        ],
+        "ecx": "0x240929a0",
+        "event": "AnimStart",
+        "frame": 1,
+        "pc": "0x424ce0",
+        "return_pc": "0x422707"
+      },
+      {
+        "alive": 1,
+        "anim_type": "XGRYSML2",
+        "eax": 604580256,
+        "event": "AnimCtor_return",
+        "frame": 1,
+        "native_id": 30,
+        "pc": "0x469c98"
+      },
+      {
+        "args": [
+          "0x100",
+          "0x200",
+          "0x1",
+          "0x0"
+        ],
+        "ecx": "0x24011b98",
+        "event": "RandomRanged",
+        "frame": 1,
+        "high": 512,
+        "low": 256,
+        "pc": "0x65c7e0",
+        "return_pc": "0x46905c",
+        "returned_eax": 422
+      },
+      {
+        "eax": 422,
+        "event": "RandomRanged_return",
+        "frame": 1,
+        "pc": "0x46905c"
+      },
+      {
+        "args": [
+          "0x0",
+          "0x24092570",
+          "0x24092570",
+          "0x0"
+        ],
+        "ecx": "0x24011b98",
+        "event": "RandomRaw",
+        "frame": 1,
+        "pc": "0x65c780",
+        "return_pc": "0x49f444",
+        "returned_eax": 107402731
+      },
+      {
+        "eax": 107402731,
+        "event": "RandomRaw_return",
+        "frame": 1,
+        "pc": "0x49f444"
+      },
+      {
+        "args": [
+          "0xffff0000",
+          "0x24092570",
+          "0x1007fffc",
+          "0x0"
+        ],
+        "ecx": "0x24092570",
+        "event": "UnInit",
+        "frame": 1,
+        "pc": "0x5f65f0",
+        "return_pc": "0x467fba"
+      },
+      {
+        "args": [
+          "0x0",
+          "0x467fba",
+          "0xffff0000",
+          "0x24092570"
+        ],
+        "ecx": "0x24092570",
+        "event": "PointerExpired",
+        "frame": 1,
+        "pc": "0x7258d0",
+        "return_pc": "0x5f661b"
+      },
+      {
+        "args": [
+          "0x0",
+          "0x467fba",
+          "0xffff0000",
+          "0x24092570"
+        ],
+        "ecx": "0x24092570",
+        "event": "Conceal",
+        "frame": 1,
+        "pc": "0x5f4d30",
+        "return_pc": "0x5f6625"
+      },
+      {
+        "args": [
+          "0x24092570",
+          "0x5f4d67",
+          "0x1",
+          "0x1"
+        ],
+        "ecx": "0x24092760",
+        "event": "DetachAllTrailCall",
+        "frame": 1,
+        "pc": "0x5f528e",
+        "return_pc": "0x24092570"
+      },
+      {
+        "args": [
+          "0x24092570",
+          "0x24092570",
+          "0x5f4d67",
+          "0x1"
+        ],
+        "ecx": "0x24092760",
+        "event": "TrailDetach",
+        "frame": 1,
+        "pc": "0x556b30",
+        "return_pc": "0x5f5293"
+      },
+      {
+        "args": [
+          "0x24092570",
+          "0x24092570",
+          "0x5f4d67",
+          "0x1"
+        ],
+        "ecx": "0x24092570",
+        "event": "PointerExpired",
+        "frame": 1,
+        "pc": "0x7258d0",
+        "return_pc": "0x5f5316"
+      },
+      {
+        "args": [
+          "0x24092570",
+          "0x1",
+          "0x24092570",
+          "0x1480"
+        ],
+        "ecx": "0x87f7e8",
+        "event": "DisplayRemove",
+        "frame": 1,
+        "pc": "0x4a9770",
+        "return_pc": "0x5f4d7e"
+      },
+      {
+        "args": [
+          "0x0",
+          "0x0",
+          "0x0",
+          "0x9c1"
+        ],
+        "ecx": "0x0",
+        "event": "Drain",
+        "frame": 1,
+        "pc": "0x725c70",
+        "return_pc": "0x30000000"
+      },
+      {
+        "event": "OSInterlockedDecrement",
+        "field": "0x2409258c",
+        "result": 0
+      },
+      {
+        "args": [
+          "0x0",
+          "0x46b020",
+          "0x1",
+          "0xffff0000"
+        ],
+        "ecx": "0x24092570",
+        "event": "BulletDtor",
+        "frame": 1,
+        "pc": "0x466560",
+        "return_pc": "0x46b5c8"
+      },
+      {
+        "args": [
+          "0x24092570",
+          "0x24092570",
+          "0x46b5c8",
+          "0x0"
+        ],
+        "ecx": "0x24092570",
+        "event": "PointerExpired",
+        "frame": 1,
+        "pc": "0x7258d0",
+        "return_pc": "0x466586"
+      },
+      {
+        "args": [
+          "0x24092570",
+          "0x24092570",
+          "0x46b5c8",
+          "0x0"
+        ],
+        "ecx": "0x24092570",
+        "event": "Conceal",
+        "frame": 1,
+        "pc": "0x5f4d30",
+        "return_pc": "0x4665e9"
+      },
+      {
+        "args": [
+          "0x24092570",
+          "0x24092570",
+          "0x46b5c8",
+          "0x0"
+        ],
+        "ecx": "0x24092570",
+        "event": "ObjectDtor",
+        "frame": 1,
+        "pc": "0x5f3b80",
+        "return_pc": "0x466657"
+      },
+      {
+        "args": [
+          "0xffff0000",
+          "0x24092570",
+          "0x1007fffc",
+          "0x0"
+        ],
+        "ecx": "0x240929a0",
+        "event": "AnimMiddle",
+        "frame": 8,
+        "pc": "0x424f00",
+        "return_pc": "0x42468c"
+      },
+      {
+        "args": [
+          "0xffff0000",
+          "0x24092570",
+          "0x1007fffc",
+          "0x0"
+        ],
+        "ecx": "0x240929a0",
+        "event": "AnimDestroy",
+        "frame": 15,
+        "pc": "0x4255b0",
+        "return_pc": "0x424b42"
+      },
+      {
+        "args": [
+          "0x240929a0",
+          "0x4238ba",
+          "0x2",
+          "0x42449b"
+        ],
+        "ecx": "0x240929a0",
+        "event": "UnInit",
+        "frame": 15,
+        "pc": "0x5f65f0",
+        "return_pc": "0x425624"
+      },
+      {
+        "args": [
+          "0x240929a0",
+          "0x425624",
+          "0x240929a0",
+          "0x4238ba"
+        ],
+        "ecx": "0x240929a0",
+        "event": "PointerExpired",
+        "frame": 15,
+        "pc": "0x7258d0",
+        "return_pc": "0x5f661b"
+      },
+      {
+        "args": [
+          "0x240929a0",
+          "0xffffffff",
+          "0xd",
+          "0x240929a0"
+        ],
+        "ecx": "0x240929a0",
+        "event": "Conceal",
+        "frame": 15,
+        "pc": "0x5f4d30",
+        "return_pc": "0x425591"
+      },
+      {
+        "args": [
+          "0x240929a0",
+          "0x240929a0",
+          "0x5f4d67",
+          "0x1"
+        ],
+        "ecx": "0x240929a0",
+        "event": "PointerExpired",
+        "frame": 15,
+        "pc": "0x7258d0",
+        "return_pc": "0x5f5316"
+      },
+      {
+        "args": [
+          "0x240929a0",
+          "0x0",
+          "0x240929a0",
+          "0xd"
+        ],
+        "ecx": "0x87f7e8",
+        "event": "DisplayRemove",
+        "frame": 15,
+        "pc": "0x4a9770",
+        "return_pc": "0x5f4d7e"
+      },
+      {
+        "args": [
+          "0x240929a0",
+          "0x240929a0",
+          "0xffffffff",
+          "0xd"
+        ],
+        "ecx": "0x87f7e8",
+        "event": "DisplayRemove",
+        "frame": 15,
+        "pc": "0x4a9770",
+        "return_pc": "0x4255a0"
+      },
+      {
+        "args": [
+          "0x0",
+          "0x0",
+          "0x0",
+          "0x9c1"
+        ],
+        "ecx": "0x0",
+        "event": "Drain",
+        "frame": 15,
+        "pc": "0x725c70",
+        "return_pc": "0x30000000"
+      },
+      {
+        "event": "OSIsBadReadPtr",
+        "length": 8,
+        "pointer": "0x8182c8",
+        "supplied_result": 0
+      },
+      {
+        "event": "OSIsBadReadPtr",
+        "length": 8,
+        "pointer": "0x8182c8",
+        "supplied_result": 0
+      },
+      {
+        "event": "OSIsBadReadPtr",
+        "length": 8,
+        "pointer": "0x8182c8",
+        "supplied_result": 0
+      },
+      {
+        "event": "OSIsBadReadPtr",
+        "length": 8,
+        "pointer": "0x8182c8",
+        "supplied_result": 0
+      },
+      {
+        "args": [
+          "0x1",
+          "0x24092570",
+          "0x240929a0",
+          "0x30000000"
+        ],
+        "ecx": "0x240929a0",
+        "event": "AnimScalarDtor",
+        "frame": 15,
+        "pc": "0x426590",
+        "return_pc": "0x725d7d"
+      },
+      {
+        "args": [
+          "0xffff0000",
+          "0x240929a0",
+          "0x10081000",
+          "0x0"
+        ],
+        "ecx": "0x240929a0",
+        "event": "PointerExpired",
+        "frame": 15,
+        "pc": "0x7258d0",
+        "return_pc": "0x42290b"
+      },
+      {
+        "args": [
+          "0xffff0000",
+          "0x240929a0",
+          "0x10081000",
+          "0x0"
+        ],
+        "ecx": "0x240929a0",
+        "event": "Conceal",
+        "frame": 15,
+        "pc": "0x5f4d30",
+        "return_pc": "0x4229c0"
+      },
+      {
+        "args": [
+          "0xffff0000",
+          "0x240929a0",
+          "0x10081000",
+          "0x0"
+        ],
+        "ecx": "0x240929a0",
+        "event": "ObjectDtor",
+        "frame": 15,
+        "pc": "0x5f3b80",
+        "return_pc": "0x422b15"
+      }
+    ],
+    "final_scenario_native_id": 30,
+    "frames": [
+      {
+        "alive": 0,
+        "frame": 1,
+        "position": [
+          2691,
+          5248,
+          1040
+        ],
+        "velocity": {
+          "bits": [
+            "400842c8e60c7bfe",
+            "8000000000000000",
+            "4004b70ee0000000"
+          ],
+          "value": [
+            3.032609746223442,
+            -0.0,
+            2.589383840560913
+          ]
+        }
+      }
+    ],
+    "initial": {
+      "bullet_ctor_unique_id": null,
+      "globals": {
+        "0x89de64": 416,
+        "0x89de70": 104,
+        "0x89e7b4": 416,
+        "0x89e7c0": 104,
+        "0xabef44": 416,
+        "0xabef50": 104
+      },
+      "impact_anim_art": [
+        {
+          "admitted": 1,
+          "assets": [
+            {
+              "bytes": 10968,
+              "header8_hex": "000094009e000f00",
+              "name": "XGRYSML1.SHP",
+              "sha256": "96383a62d5a51545e8a9f0e861842ca10a0312e669801e7002f183c24ef8fceb"
+            }
+          ],
+          "crater": false,
+          "end": 15,
+          "frame_count": 15,
+          "image_present": true,
+          "name": "XGRYSML1",
+          "num_particles": 0,
+          "rate": 1,
+          "report": -1,
+          "scorch": false,
+          "spawns_particle": -1
+        },
+        {
+          "admitted": 1,
+          "assets": [
+            {
+              "bytes": 9464,
+              "header8_hex": "000094009e000d00",
+              "name": "XGRYSML2.SHP",
+              "sha256": "310feb0b4756c35c6886cd853e3894383c9cc274ecb5f0253ac7fc3412cc7e34"
+            }
+          ],
+          "crater": false,
+          "end": 13,
+          "frame_count": 13,
+          "image_present": true,
+          "name": "XGRYSML2",
+          "num_particles": 0,
+          "rate": 1,
+          "report": -1,
+          "scorch": false,
+          "spawns_particle": -1
+        },
+        {
+          "admitted": 1,
+          "assets": [
+            {
+              "bytes": 12744,
+              "header8_hex": "000094009e000e00",
+              "name": "EXPLOSML.SHP",
+              "sha256": "aa622c6a6599b9ba97283af57daa88320e9acaea4b2d5b855b821fc8c7f8b66e"
+            }
+          ],
+          "crater": true,
+          "end": 14,
+          "frame_count": 14,
+          "image_present": true,
+          "name": "EXPLOSML",
+          "num_particles": 0,
+          "rate": 1,
+          "report": -1,
+          "scorch": true,
+          "spawns_particle": -1
+        },
+        {
+          "admitted": 1,
+          "assets": [
+            {
+              "bytes": 36608,
+              "header8_hex": "000094009e000f00",
+              "name": "XGRYMED1.SHP",
+              "sha256": "13ed19dff52ca97835e94f8062e778505ea8c11da86eb039e36f476831d3cd7d"
+            }
+          ],
+          "crater": false,
+          "end": 15,
+          "frame_count": 15,
+          "image_present": true,
+          "name": "XGRYMED1",
+          "num_particles": 0,
+          "rate": 1,
+          "report": -1,
+          "scorch": false,
+          "spawns_particle": -1
+        },
+        {
+          "admitted": 1,
+          "assets": [
+            {
+              "bytes": 32648,
+              "header8_hex": "000094009e000e00",
+              "name": "XGRYMED2.SHP",
+              "sha256": "569ad3c30616d28de6c8183e1bd277668cf7c5c6f5573fdba512b6511fc0c1b3"
+            }
+          ],
+          "crater": false,
+          "end": 14,
+          "frame_count": 14,
+          "image_present": true,
+          "name": "XGRYMED2",
+          "num_particles": 0,
+          "rate": 1,
+          "report": -1,
+          "scorch": false,
+          "spawns_particle": -1
+        },
+        {
+          "admitted": 1,
+          "assets": [
+            {
+              "bytes": 30800,
+              "header8_hex": "000094009e000f00",
+              "name": "EXPLOMED.SHP",
+              "sha256": "13839960e262b133d628e1720589c84b8fda0e4a250f042db00f065f8799555d"
+            }
+          ],
+          "crater": true,
+          "end": 15,
+          "frame_count": 15,
+          "image_present": true,
+          "name": "EXPLOMED",
+          "num_particles": 0,
+          "rate": 1,
+          "report": -1,
+          "scorch": true,
+          "spawns_particle": -1
+        },
+        {
+          "admitted": 1,
+          "assets": [
+            {
+              "bytes": 107928,
+              "header8_hex": "0000b6009e001500",
+              "name": "EXPLOLRG.SHP",
+              "sha256": "6666c6e194c163415eb1e7e71b4c06331ba76558c27cfca57381e73420756c52"
+            }
+          ],
+          "crater": true,
+          "end": 21,
+          "frame_count": 21,
+          "image_present": true,
+          "name": "EXPLOLRG",
+          "num_particles": 0,
+          "rate": 1,
+          "report": -1,
+          "scorch": true,
+          "spawns_particle": -1
+        },
+        {
+          "admitted": 1,
+          "assets": [
+            {
+              "bytes": 95472,
+              "header8_hex": "0000ba00c4001a00",
+              "name": "TWLT070.SHP",
+              "sha256": "2b48d44f23c91591f8b905fbbc9bfcb584e0069784d7472212d6a5e3df5fcd2f"
+            }
+          ],
+          "crater": true,
+          "end": 26,
+          "frame_count": 26,
+          "image_present": true,
+          "name": "TWLT070",
+          "num_particles": 0,
+          "rate": 1,
+          "report": -1,
+          "scorch": true,
+          "spawns_particle": -1
+        }
+      ],
+      "initializers": [
+        "0x4660d0",
+        "0x466100",
+        "0x466120",
+        "0x466140",
+        "0x466160",
+        "0x466180",
+        "0x4661a0",
+        "0x4661e0",
+        "0x466210",
+        "0x466240",
+        "0x466270",
+        "0x466280",
+        "0x4662a0",
+        "0x47b150",
+        "0x47b180",
+        "0x47b1a0",
+        "0x47b1c0",
+        "0x47b1e0",
+        "0x47b200",
+        "0x47b220",
+        "0x47b260",
+        "0x47b290",
+        "0x47b2c0",
+        "0x47b2f0",
+        "0x47b300",
+        "0x47b320",
+        "0x5b1f00",
+        "0x5b1f30",
+        "0x5b1f50",
+        "0x5b1f70",
+        "0x5b1f90",
+        "0x5b1fb0",
+        "0x5b1fd0",
+        "0x5b2010",
+        "0x5b2040",
+        "0x5b2070",
+        "0x5b20a0",
+        "0x5b20b0",
+        "0x5b20d0"
+      ],
+      "layers": [
+        {
+          "acceleration": 3,
+          "file": "RULESMD.INI",
+          "missile_rot_var": 0.25,
+          "rot": 60,
+          "safety_altitude": 750,
+          "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef",
+          "speed": 102
+        },
+        {
+          "absent": true,
+          "file": "LANGRULE.INI"
+        },
+        {
+          "acceleration": 3,
+          "file": "MPBattleMD.ini",
+          "missile_rot_var": 0.25,
+          "rot": 60,
+          "safety_altitude": 750,
+          "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963",
+          "speed": 102
+        },
+        {
+          "acceleration": 3,
+          "file": "Hills.map",
+          "missile_rot_var": 0.25,
+          "rot": 60,
+          "safety_altitude": 750,
+          "sha256": "780d5d6e6d3c81ac0d510a5df326848dd426b3d840ac290114f44faf8eab9e9e",
+          "speed": 102
+        }
+      ],
+      "selected_weapon_slot": 0,
+      "type_layers": [
+        {
+          "file": "RULESMD.INI",
+          "gunner": true,
+          "radial_fire_segments": 0,
+          "turret": true,
+          "turret_count": 4,
+          "weapon_count": 17,
+          "weapons": [
+            "HoverMissile",
+            "RepairBullet",
+            "CRM60",
+            "CRFlakGuyGun",
+            "CRMP5",
+            "AWPE",
+            "CRElectricBolt",
+            "CRNuke",
+            "CRMindControl",
+            "CRRadBeamWeapon",
+            "CRNeutronRifle",
+            "CRTerrorBomb",
+            "CowShot",
+            "CRPsychicJab",
+            "CRVirusGun",
+            "CRSuperMindBlast",
+            "CRMissileLauncher"
+          ]
+        },
+        {
+          "file": "MPBattleMD.ini",
+          "gunner": true,
+          "radial_fire_segments": 0,
+          "turret": true,
+          "turret_count": 4,
+          "weapon_count": 17,
+          "weapons": [
+            "HoverMissile",
+            "RepairBullet",
+            "CRM60",
+            "CRFlakGuyGun",
+            "CRMP5",
+            "AWPE",
+            "CRElectricBolt",
+            "CRNuke",
+            "CRMindControl",
+            "CRRadBeamWeapon",
+            "CRNeutronRifle",
+            "CRTerrorBomb",
+            "CowShot",
+            "CRPsychicJab",
+            "CRVirusGun",
+            "CRSuperMindBlast",
+            "CRMissileLauncher"
+          ]
+        },
+        {
+          "file": "Hills.map",
+          "gunner": true,
+          "radial_fire_segments": 0,
+          "turret": true,
+          "turret_count": 4,
+          "weapon_count": 17,
+          "weapons": [
+            "HoverMissile",
+            "RepairBullet",
+            "CRM60",
+            "CRFlakGuyGun",
+            "CRMP5",
+            "AWPE",
+            "CRElectricBolt",
+            "CRNuke",
+            "CRMindControl",
+            "CRRadBeamWeapon",
+            "CRNeutronRifle",
+            "CRTerrorBomb",
+            "CowShot",
+            "CRPsychicJab",
+            "CRVirusGun",
+            "CRSuperMindBlast",
+            "CRMissileLauncher"
+          ]
+        }
+      ],
+      "warhead_layers": [
+        {
+          "cell_spread_bits": "3f000000",
+          "em_effect": false,
+          "file": "RULESMD.INI",
+          "keys": {
+            "AnimList": "XGRYSML1,XGRYSML2,EXPLOSML,XGRYMED1,XGRYMED2,EXPLOMED,EXPLOLRG,TWLT070",
+            "CellSpread": ".5",
+            "Conventional": "yes",
+            "Deform": "10%",
+            "DeformThreshhold": "300",
+            "InfDeath": "2",
+            "PercentAtMax": ".5",
+            "ProneDamage": "70%",
+            "Rocker": "no",
+            "Sparky": "no",
+            "Tiberium": "yes",
+            "Verses": "100%,100%,100%,70%,70%,35%,75%,40%,20%,80%,100%",
+            "Wall": "yes",
+            "Wood": "yes"
+          },
+          "percent_at_max_bits": "3f000000",
+          "reader_admitted": true,
+          "wall": true
+        },
+        {
+          "cell_spread_bits": "3f000000",
+          "em_effect": false,
+          "file": "MPBattleMD.ini",
+          "keys": null,
+          "percent_at_max_bits": "3f000000",
+          "reader_admitted": false,
+          "wall": true
+        },
+        {
+          "cell_spread_bits": "3f000000",
+          "em_effect": false,
+          "file": "Hills.map",
+          "keys": null,
+          "percent_at_max_bits": "3f000000",
+          "reader_admitted": false,
+          "wall": true
+        }
+      ]
+    },
+    "launch": {
+      "calls": [
+        "0x410230",
+        "0x466380",
+        "0x4664c0",
+        "0x468670",
+        "0x46b050",
+        "0x4e1130",
+        "0x68bcb0",
+        "0x6c5090",
+        "0x70bcb0",
+        "0x740f80",
+        "0x773070"
+      ],
+      "course_frames": 0,
+      "course_locked": true,
+      "detector": {
+        "arm_duration": 2,
+        "arm_start": 0,
+        "distance_watermark": 1588,
+        "first_timer_duration": 2147483647,
+        "first_timer_start": 0,
+        "reference": [
+          4224,
+          5248,
+          624
+        ]
+      },
+      "get_speed": 102,
+      "launch_amount": 1,
+      "maximum_speed": 102,
+      "pitch": 18880,
+      "position": [
+        2688,
+        5248,
+        1030
+      ],
+      "scenario_id_after": 29,
+      "scenario_id_before": 28,
+      "supplied_calls": [
+        {
+          "call": "CoCreateInstance activation to original registered factory",
+          "clsid_hex": "c92d270e0f9cd111b70900a024ddafd1",
+          "iid_hex": "0000000000000000c000000000000046"
+        },
+        {
+          "call": "KERNEL32.InterlockedIncrement",
+          "com_refcount": 1
+        },
+        {
+          "call": "0x5f4ec0",
+          "supplied_world_admission": true
+        },
+        {
+          "call": "0x4a9770",
+          "supplied_world_admission": true
+        },
+        {
+          "call": "0x4a9720",
+          "supplied_world_admission": true
+        }
+      ],
+      "target": [
+        4224,
+        5248,
+        624
+      ],
+      "unique_id": 29,
+      "velocity": {
+        "bits": [
+          "3fef16cd6e17768b",
+          "8000000000000000",
+          "bfce56c9ffffffff"
+        ],
+        "value": [
+          0.9715335035541143,
+          -0.0,
+          -0.23702359199523923
+        ]
+      },
+      "warhead": "HE"
+    },
+    "raw_rng_words": [
+      {
+        "frame": 1,
+        "pc": "0x65c84b",
+        "word": 2026076499
+      },
+      {
+        "frame": 1,
+        "pc": "0x65c84b",
+        "word": 2287577493
+      },
+      {
+        "frame": 1,
+        "pc": "0x65c84b",
+        "word": 2225548056
+      },
+      {
+        "frame": 1,
+        "pc": "0x65c84b",
+        "word": 1502837926
+      },
+      {
+        "frame": 1,
+        "pc": "0x65c79d",
+        "word": 107402731
+      }
+    ],
+    "rng_state_sha256": "762dad4008d0e01f9d9a02bfaae324b100d0d7d721cff5661588102e5427d833",
+    "supplied": {
+      "between_frame_flag_changes": [],
+      "binary_frame": 0,
+      "live_bridge_cell": [
+        10,
+        20
+      ],
+      "origin": [
+        2688,
+        5248,
+        1030
+      ],
+      "source_flags": 0,
+      "source_heading": 16383,
+      "target_cell": [
+        16,
+        20
+      ],
+      "weapon_slot": 0
+    },
+    "trail_after": {
+      "owner": "0x0",
+      "owner_slot": "0x0",
+      "registry_count": 1
+    },
+    "trail_produced": {
+      "owner": "0x24092570",
+      "pointer": "0x24092760",
+      "registry_count": 1
+    }
+  }
+}

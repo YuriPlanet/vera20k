@@ -1,0 +1,80 @@
+{
+  "default_directory": "target/shrapnel-native-inputs/extract",
+  "directory_env": "VERA20K_SHRAPNEL_INPUTS",
+  "files": {
+    "LANGRULE.INI": {
+      "absent": true,
+      "catalog_lookup": "all mixes; neither winner nor catalog-only entry"
+    },
+    "MPBattleMD.ini": {
+      "archive": "ra2md.mix -> localmd.mix",
+      "bytes": 295,
+      "catalog_only_before_theater_binding": false,
+      "entry_id": "0xAF084179",
+      "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963"
+    },
+    "RULESMD.INI": {
+      "archive": "expandmd01.mix",
+      "bytes": 743215,
+      "catalog_only_before_theater_binding": false,
+      "entry_id": "0x8218F9F4",
+      "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+    },
+    "SNOWMD.INI": {
+      "archive": "ra2md.mix -> localmd.mix",
+      "bytes": 24258,
+      "catalog_only_before_theater_binding": false,
+      "entry_id": "0x00C74394",
+      "sha256": "8e357795fad0d6e3ad383a1044c09a7da0f710790b5992dd987a0a09cf12980f"
+    },
+    "Shore22.sno": {
+      "archive": "ra2.mix -> isosnow.mix",
+      "bytes": 11152,
+      "catalog_only_before_theater_binding": true,
+      "entry_id": "0x4B38CE23",
+      "sha256": "e06611e13442dd3ad3b5311d144bdd63db162bc3f9517f638c8bc5417c119247"
+    },
+    "Water02.sno": {
+      "archive": "ra2.mix -> isosnow.mix",
+      "bytes": 7440,
+      "catalog_only_before_theater_binding": true,
+      "entry_id": "0xC57DB765",
+      "sha256": "92faafb3e4874e39d86eae3fea58ab7120b9207d819342e01d092d7e72e131f2"
+    },
+    "Water03.sno": {
+      "archive": "ra2.mix -> isosnow.mix",
+      "bytes": 7440,
+      "catalog_only_before_theater_binding": true,
+      "entry_id": "0x0E2164C0",
+      "sha256": "799f910f007511bf083ddede9a15c70c5d75e44c87b50ce5635daef421f3975d"
+    },
+    "Water10.sno": {
+      "archive": "ra2.mix -> isosnow.mix",
+      "bytes": 1872,
+      "catalog_only_before_theater_binding": true,
+      "entry_id": "0x2EC21DDA",
+      "sha256": "357e48cdb791465e65480d934f29679e1654d6349417ddb60cafa04b27740bc3"
+    },
+    "Water11.sno": {
+      "archive": "ra2.mix -> isosnow.mix",
+      "bytes": 1872,
+      "catalog_only_before_theater_binding": true,
+      "entry_id": "0xE59ECE7F",
+      "sha256": "475969778f5b9a84f0dcc7201acacd40a05226b8150061060f86b0f1b62695d1"
+    },
+    "XShrapnel.MAP": {
+      "archive": "multimd.mix",
+      "bytes": 148622,
+      "catalog_only_before_theater_binding": false,
+      "entry_id": "0x38D73A35",
+      "sha256": "c32e412e938e1b9a0b29f89ff9bc0e6f410f75bc76701fb4acef6581fd19b438"
+    }
+  },
+  "prior_mode_alias": {
+    "evidence": "Frozen packet directly compared alias bytes with active MPBattleMD.ini; portable packet checks the active bytes against that retained hash.",
+    "name": "MPBattle.INI",
+    "needed_by_runner": false,
+    "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963"
+  },
+  "schema": 1
+}

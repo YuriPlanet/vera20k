@@ -1,0 +1,9 @@
+{
+  "results": {
+    "scalar.json": {
+      "published_payload_sha256": "37a35443a01cf13a82472d96ef7acb32a4a6800771ab893e558c0d8fa5cea6f9",
+      "original_file_sha256": "ccbc526862ed70b3ccf36ea73bb6b3b4171ec12afa534f21afd451f0e766c148",
+      "original_metadata_sha256": "f87dcdde647dc85e8137291e04b2f8b8c3a6d0d449a826b29d3ae14d5cccebcb"
+    }
+  }
+}

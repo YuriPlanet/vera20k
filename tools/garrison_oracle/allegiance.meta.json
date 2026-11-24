@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Whole original CheckAutoSellOrCivilian458200 decision and original458330 refresh selection with recorded supplied downstream calls; independent original Building::Update warp/alive/health/CanBeOccupied gate slices. No ejection, animation construction/lifecycle, transfer, notification or whole-frame implementation parity.",
+  "assumptions": [
+    "House and Side array order, names, HouseType Side+BC, TechLevel+634, health/strength/Red threshold and occupant vector order are supplied runtime inputs. No constructors or INI readers execute. Retail reachability needs separate production validation.",
+    "Original Building7E3EBC vtable, IsRedHP5F5CD0, GetType459EE0, GetOccupantCount4581F0, SideClass FindIndex6A46D0, CRT strcmpi7C8D20, IsHumanPlayer50B6F0 and GetMapCoords41BEA0 execute. C-locale globalB782A0=0 is supplied; ASCII side names only. Ambient x87PC53/chop FPCW0E7F, masked exceptions.",
+    "Original458200 uses first matching House side even if Side lookup returns-1; no matching House yields NULL. NULL ChangeOwner calls are recorded decisions only: the supplied scalar callback accepts NULL, while native Building::ChangeOwner may dereference it. These invalid-data controls do not establish successful gameplay ownership.",
+    "Whole decision runs balance the stack. Every executed PC belongs to declared original ranges or a recorded callback boundary, and original bytes are compared before/after every checked run. No source, vtable or native instruction is patched.",
+    "Caller slices execute43FD08..43FD2C/4403D4,43FE5B..43FE69/440573,440042..440076/4400F2,44019D..458200/4401B4 separately. Intermediate Building AI/mission/fire/power work and mutations are outside this corpus; all_gates_allow is only the conjunction of the four executed gate results.",
+    "refresh_rows executes whole458330, live GetHealthRatio5F5C60 and GetOccupantCount4581F0 for each currently present slot18,3,4,5,6. Supplied live slot pointers are only null/non-null inputs; the original refresh does not dereference Anim objects. ConditionYellow, names and retained6E6 are supplied. Selection executes damaged-before-garrison-before-normal, signed count>0, empty-name skip and live per-slot re-reads.",
+    "No RNG, timer write or detach call occurs in the executed decision/query bodies. Downstream SellBuilding can release/UnInit occupants; refresh458330 reconstructs animation slots; ChangeOwner includes mission timer, sight/detach, house tracking and dependent effects. Those bodies are supplied boundaries and their draws/timers/detach are not certified here."
+  ],
+  "substitutions": [
+    "SellBuilding457DE0 records both native args, supplies the explicit eject_retained_occupants vector and clears firing index+69C. It does not execute placement, ejection or death; retained controls demonstrate that458200 re-reads the count and index0 after the call.",
+    "Refresh458330 records the current owner/occupant vector and returns without anim work. ChangeOwner448260 records requested House and announce argument then supplies only owner+21C. Final *_after_callback fields describe this callback contract, not execution of the dependency.",
+    "Only in refresh_rows,458330 executes and CreateAnimForSlot451890 is the recorded boundary. It records native slot/name/damaged/garrisoned/delay without allocating. callback_mutations explicitly supply later slot removal/addition or health/count changes to expose live re-reads; these controls are not claims the native constructor performs those mutations.",
+    "PlayGlobal750920 records sound42, pan8192, volume and handle. Radar65FA70 records event15, original GetMapCoords cell and supplies radar_event_success. EVA752700 records the original EVA_StructureAbandoned literal; audio/UI bodies do not execute."
+  ],
+  "entry_points": {
+    "allegiance": "0x00458200",
+    "red": "0x005F5CD0",
+    "civilian_side": "0x006A46D0",
+    "human": "0x0050B6F0",
+    "occupant_count": "0x004581F0",
+    "refresh_selection": "0x00458330",
+    "health_ratio": "0x005F5C60",
+    "warp_gate": "0x0043FD08",
+    "alive_gate": "0x0043FE5B",
+    "health_gate": "0x00440042",
+    "occupiable_gate": "0x0044019D"
+  },
+  "commands": [
+    "python -m tools.garrison_oracle.allegiance --write",
+    "python -m tools.garrison_oracle.allegiance --check"
+  ],
+  "original_code_sha256": {
+    "00458200..0045832D": "d4403ac6e8ca3e4258c809c5de3104b44311a525044b5476cac7bd950e2b19be",
+    "004581F0..004581F7": "564ebb84ca6e79155f5bcbd5917cd3a80cf9908a34c6d218597ad274f50c971f",
+    "005F5CD0..005F5D1A": "115f81cf7a1e9ef4d71ea707ce92f93ad57ea5325611477b0c1d58ad737915fb",
+    "00458330..004585C0": "b3b6db8a21b652158ef4b4562ac88c7a59747246ef07fa5f0f211b1248ad2a64",
+    "005F5C60..005F5C80": "095a50e9e65fad30ddd3ce677f851db5066fd7a8a020e3b2df16bd35d632b953",
+    "00459EE0..00459EE7": "e14f94839512c1779785a7c447f5ebab5bc4995dddc9c24e2bc5b22aab8db3d0",
+    "006A46D0..006A470D": "c6a0e50a8a89bb2874cd64493dbff089fd70745840f6f457e046bc1b022d211f",
+    "007C8D20..007C8DF0": "70ad1528968cbb19b0811bdeb301f712f92d92162a92e17058e58b04476632b5",
+    "0050B6F0..0050B724": "c7ecb44d4693d3aec49b314238feff7755dd001f1d47d164e5836ba73e153988",
+    "0041BEA0..0041BEDD": "995f27a395cd57d2930b7df4d2fd341e5e27d5d4c0655c9c7d000bea8c97f2b6",
+    "0070C5B0..0070C5B7": "dc70faabde99871255277dda9a000f6611e1e612d8f4721bd81968541f4aa025",
+    "0070C5C0..0070C5C7": "b60bd174714a9043b6c8196bb29dd1365956025324736cd7948bd158e4f0a10f",
+    "0043FD08..0043FD2C": "ad24699ebe886f5d5b7650fbe2db5c6c5f97db678a61b95931d21fa87b247e47",
+    "0043FE5B..0043FE69": "62d33ff8acd9da7421cc38e8fea03b89f346704e13ec2177c654534c4970f9b0",
+    "00440042..00440076": "4a12677032b962bfd979dbeedc88b9b788b4dabe851bd6570f5352747c5de099",
+    "0044019D..004401B4": "efdb392749bf1b44973f01aee48d467553281d3fb4144d58164d52e1994f47fc"
+  },
+  "supplied_building_location": [
+    2688,
+    2944,
+    0
+  ],
+  "supplied_abandoned_sound": 42,
+  "payload_sha256": "8372fee3b2c42b179c4e79f177b7b605113c35583101a7d0c43bc06383b03e17",
+  "replay_command": "python -m tools.garrison_oracle.allegiance"
+}

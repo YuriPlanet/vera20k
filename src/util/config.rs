@@ -1,0 +1,1159 @@
+//! Game configuration and retail asset-root discovery.
+//!
+//! config.toml is machine-specific (contains the local RA2 install path)
+//! and is gitignored. A config.toml.example template is provided in the repo.
+//! The working-directory override takes precedence over a config beside the
+//! executable. The latter lets packaged apps launch without a particular cwd.
+//! Without either config, assets are resolved beside the executable.
+//!
+//! ## Dependency rules
+//! - config.rs is part of util/ â€” no dependencies on game modules.
+
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
+use std::path::{Path, PathBuf};
+
+use anyhow::{Context, Result, bail, ensure};
+
+/// Optional host override, in the working or executable directory.
+const CONFIG_FILE_NAME: &str = "config.toml";
+
+/// Top-level game configuration, read from config.toml.
+///
+/// Add new sections here as features are implemented (audio, game speed, etc.).
+#[derive(Debug)]
+pub struct GameConfig {
+    /// Root INI selection only; does not change archive or gameplay compatibility.
+    pub ini: crate::util::ini_roots::IniRootConfig,
+    /// File system paths (RA2 install directory).
+    pub paths: PathsConfig,
+    /// Graphics/window settings (all optional — sensible defaults provided).
+    pub graphics: GraphicsConfig,
+    /// Deterministic simulation settings.
+    pub gameplay: GameplayConfig,
+    /// Local player profile (name pre-filled into skirmish/multiplayer setup).
+    pub profile: ProfileConfig,
+}
+
+/// Local player profile settings.
+///
+/// `[profile]` may be omitted entirely. `name` is the persistent player handle
+/// the setup screen pre-fills into the name field; when unset the setup UI
+/// falls back to its own default. This mirrors the original reading the player
+/// name from a persistent profile source rather than a baked-in string.
+#[derive(Debug, Default)]
+pub struct ProfileConfig {
+    /// Player name shown/edited in skirmish setup. `None` (or empty) means use
+    /// the setup screen's built-in default.
+    pub name: Option<String>,
+}
+
+impl ProfileConfig {
+    /// The configured player name, trimmed; `None` when unset or blank so the
+    /// caller can apply its own default.
+    pub fn player_name(&self) -> Option<&str> {
+        self.name
+            .as_deref()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+    }
+}
+
+/// Paths to external resources (the player's RA2 installation).
+#[derive(Debug)]
+pub struct PathsConfig {
+    /// Path to the user's RA2 installation directory.
+    /// MIX files (ra2.mix, language.mix, theme.mix) are loaded from here.
+    /// Example: "C:/Program Files/EA Games/Command and Conquer Red Alert II"
+    pub ra2_dir: PathBuf,
+    /// Writable VERA profile root, always outside the retail asset folder.
+    settings_dir: PathBuf,
+    /// Previous profile location, read only during the first VERA.INI import.
+    legacy_settings_dir: PathBuf,
+    /// VERA: the folder in [`PathsConfig::mods_dir`] of the mod to play with,
+    /// from `[paths] mod`. The text as written: `app::mods` decides whether
+    /// it names a usable folder, so a wrong name never stops the config load.
+    mod_name: Option<String>,
+}
+
+impl PathsConfig {
+    /// VERA.INI and ancillary profile files belong to this writable root.
+    pub fn settings_dir(&self) -> &Path {
+        &self.settings_dir
+    }
+
+    pub fn legacy_settings_dir(&self) -> &Path {
+        &self.legacy_settings_dir
+    }
+
+    /// VERA's own folder for maps it downloads or receives and for the
+    /// random-map dialog's files, so nothing is written into the retail
+    /// installation (`map::source::keep_received_map`, `random_map_dir`).
+    pub fn downloaded_maps_dir(&self) -> PathBuf {
+        self.settings_dir.join("Maps")
+    }
+
+    /// VERA's folder of mods, one subfolder each (docs/modding.md).
+    pub fn mods_dir(&self) -> PathBuf {
+        // The browser build keeps mods apart from the saved profile: its page
+        // imports the one a launch plays (web.rs `import_mod_file`) and
+        // never stores it back.
+        if cfg!(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")) {
+            return PathBuf::from(WEB_MODS_DIR);
+        }
+        self.settings_dir.join("Mods")
+    }
+
+    /// The mod folder's name this launch asks for; `None` is the original game.
+    pub fn mod_name(&self) -> Option<&str> {
+        self.mod_name.as_deref().filter(|name| !name.is_empty())
+    }
+
+    /// VERA's own pictures of maps for the setup screens' previews, by each
+    /// map's SHA-256 (`app::map_picture`).
+    pub fn map_pictures_dir(&self) -> PathBuf {
+        self.settings_dir.join("MapPreviews")
+    }
+
+    /// VERA's folder of player-supplied background music. Files here are
+    /// auto-indexed for in-match theme playback when `musics/music.ini`
+    /// enables it (`audio::custom_music`). Kept beside VERA.INI, never in the
+    /// retail installation, like [`Self::downloaded_maps_dir`].
+    pub fn musics_dir(&self) -> PathBuf {
+        self.settings_dir.join("musics")
+    }
+
+    fn separate_settings_from_assets(&mut self) -> Result<()> {
+        if resolved_directory(&self.settings_dir).starts_with(resolved_directory(&self.ra2_dir)) {
+            self.settings_dir = default_settings_dir()?;
+        }
+        ensure!(
+            !resolved_directory(&self.settings_dir).starts_with(resolved_directory(&self.ra2_dir)),
+            "VERA settings must be outside the game folder; set [paths] settings_dir"
+        );
+        Ok(())
+    }
+}
+
+/// The browser build's Mods folder in its in-memory file system.
+pub const WEB_MODS_DIR: &str = "/mods";
+
+/// Shared by packaged and direct launches. No writable setting defaults to
+/// the retail installation, even when VERA's executable is installed there.
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+pub fn default_settings_dir() -> Result<PathBuf> {
+    // Browser VFS: keep the profile outside imported retail assets, within the
+    // launcher's existing persisted user-data namespace.
+    Ok(PathBuf::from("/saves/profile"))
+}
+
+#[cfg(target_os = "android")]
+pub fn default_settings_dir() -> Result<PathBuf> {
+    // Android has neither HOME nor a writable working directory at start-up;
+    // the cdylib hands its `internal_data_path` over before anything reads a
+    // setting, and that folder is also where config.toml, VERA.INI, saves and
+    // logs live once app_bundle has entered it.
+    crate::util::platform_dir::get()
+        .map(Path::to_path_buf)
+        .context("no Android data directory: android_main must call entry::adopt_android_data_dir")
+}
+
+#[cfg(not(any(
+    all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
+    target_os = "android"
+)))]
+pub fn default_settings_dir() -> Result<PathBuf> {
+    if cfg!(target_os = "windows") {
+        if let Some(path) = std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+        {
+            return Ok(path.join("VERA20k"));
+        }
+        let home =
+            std::env::var_os("USERPROFILE").context("Cannot locate VERA's user settings folder")?;
+        return Ok(PathBuf::from(home).join("AppData/Local/VERA20k"));
+    }
+    let home = PathBuf::from(
+        std::env::var_os("HOME").context("Cannot locate VERA's user settings folder")?,
+    );
+    if cfg!(target_os = "macos") {
+        Ok(home.join("Library/Application Support/VERA20k"))
+    } else {
+        Ok(linux_data_home(std::env::var_os("XDG_DATA_HOME"), &home).join("VERA20k"))
+    }
+}
+
+fn linux_data_home(xdg_data_home: Option<std::ffi::OsString>, home: &Path) -> PathBuf {
+    xdg_data_home
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .unwrap_or_else(|| home.join(".local/share"))
+}
+
+/// Resolve existing ancestors too, so a new subdirectory under a symlinked
+/// retail folder cannot become a writable profile root by accident.
+fn resolved_directory(path: &Path) -> PathBuf {
+    if let Ok(path) = path.canonicalize() {
+        return path;
+    }
+    match (path.parent(), path.file_name()) {
+        (Some(parent), Some(name)) => resolved_directory(parent).join(name),
+        _ => path.to_owned(),
+    }
+}
+
+/// Graphics settings.
+///
+/// Every field has a sensible default so `[graphics]` can be omitted entirely.
+/// Full screen, zoom and the original 4:3 shape are player choices on the
+/// Options page, saved in VERA.INI, not here. So is VSync
+/// (`[VERA] VSync=`), so an old config's `vsync` line is ignored.
+#[derive(Debug)]
+pub struct GraphicsConfig {
+    /// Enable cosmetic per-frame effects: water/ore sparkles. Also intended to
+    /// gate future cosmetic effects (laser beam pulses, particle systems, line
+    /// trails) per gamemd's "Extra Animations" option. Default ON to match
+    /// gamemd's default.
+    pub extra_animations: bool,
+    /// VERA presentation option: show terrain through translucent fog while
+    /// concealing unseen enemy objects. Off by default for the retail look.
+    pub translucent_fog: bool,
+    /// VERA presentation option: draw buildings on terrain level 15 and up at
+    /// their tile row (`locomotor_visual::building_terrain_correction`). Off
+    /// by default: the original game draws them 1-2 px lower.
+    pub high_terrain_building_lift: bool,
+}
+
+impl Default for GraphicsConfig {
+    fn default() -> Self {
+        Self {
+            extra_animations: true,
+            translucent_fog: false,
+            high_terrain_building_lift: false,
+        }
+    }
+}
+
+/// Simulation pacing and command scheduling settings.
+#[derive(Debug)]
+pub struct GameplayConfig {
+    /// Session MaxAhead, used by network scheduling and the local production
+    /// prediction clock. Offline commands retain their issue-frame stamp.
+    pub input_delay_ticks: u32,
+    /// Freeze a running match while the window is not the foreground, as
+    /// gamemd does when `WM_ACTIVATEAPP` clears. Off by default: the match
+    /// keeps simulating behind other windows, and only input stops. Audio is
+    /// silenced on a deactivated window either way, because gamemd stops its
+    /// primary output on that same edge with nothing configured behind it.
+    /// Local pacing policy; never read by the simulation.
+    pub pause_on_focus_loss: bool,
+}
+
+impl Default for GameplayConfig {
+    fn default() -> Self {
+        Self {
+            input_delay_ticks: default_input_delay_ticks(),
+            pause_on_focus_loss: false,
+        }
+    }
+}
+
+/// Session constructor6975C0 stores15 through the CRT initializer
+/// 8132F0 ->4E8035 ->6970A0 (active retail gamemd.exe). This is an initial
+/// value, not a permanent offline invariant: configuration and negotiated
+/// session updates retain authority over the current window.
+pub const fn default_input_delay_ticks() -> u32 {
+    15
+}
+
+impl GameConfig {
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    pub fn load() -> Result<Self> {
+        let path = Path::new("/config.toml");
+        Self::parse_from(&crate::util::file_system::read_to_string(path)?, path)
+    }
+
+    /// Load the optional host override, otherwise use the retail module directory.
+    ///
+    /// Retail provenance: Executable-root path discovery — `WinMain` @ `0x006BB9A0`.
+    /// Active `gamemd.exe` `WinMain @ 0x006BB9A0` calls
+    /// `GetModuleFileNameA`, splits/rebuilds its drive and directory, and calls
+    /// `SetCurrentDirectoryA` before opening `RA2MD.INI` or any MIX archive.
+    /// Rust keeps the resolved directory explicit instead of mutating the
+    /// process-wide current directory.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    pub fn load() -> Result<Self> {
+        let working_dir =
+            std::env::current_dir().context("Failed to locate the working directory")?;
+        let executable = std::env::current_exe()
+            .context("Failed to locate the running executable for retail asset discovery")?;
+        Self::load_from(&working_dir, &executable)
+    }
+
+    /// Explicit launch-local assets override; writable settings retain their
+    /// existing owner and must still remain outside the selected retail root.
+    pub fn with_retail_directory(mut self, directory: PathBuf) -> Result<Self> {
+        self.paths.ra2_dir = directory;
+        self.paths.separate_settings_from_assets()?;
+        Ok(self)
+    }
+
+    /// The config.toml this process reads, or where a new one belongs: for
+    /// messages that tell the player which file to edit.
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    pub fn path() -> Option<PathBuf> {
+        Some(PathBuf::from("/config.toml"))
+    }
+
+    /// The config.toml this process reads, or where a new one belongs: for
+    /// messages that tell the player which file to edit.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+    pub fn path() -> Option<PathBuf> {
+        let working_dir = std::env::current_dir().ok()?;
+        let executable = std::env::current_exe().ok()?;
+        Self::path_for(&working_dir, &executable).ok()
+    }
+
+    /// [`GameConfig::path`] for a process with this working directory and
+    /// executable: the first file [`GameConfig::load_from`] would read, else
+    /// the working directory's.
+    pub fn path_for(working_dir: &Path, executable: &Path) -> Result<PathBuf> {
+        let candidates = config_candidates(working_dir, executable)?;
+        Ok(candidates
+            .iter()
+            .find(|path| !matches!(crate::util::file_system::try_exists(path), Ok(false)))
+            .unwrap_or(&candidates[0])
+            .clone())
+    }
+
+    /// [`GameConfig::load`] for a process with this working directory and executable.
+    pub fn load_from(working_dir: &Path, executable: &Path) -> Result<Self> {
+        let mut config = 'load: {
+            for path in config_candidates(working_dir, executable)? {
+                match crate::util::file_system::read(&path) {
+                    Ok(bytes) => {
+                        let contents = String::from_utf8(bytes)
+                            .map_err(|error| {
+                                anyhow::anyhow!(
+                                    "the file is not UTF-8 text (invalid byte at offset {}); \
+                                     save it as UTF-8",
+                                    error.utf8_error().valid_up_to()
+                                )
+                            })
+                            .context(ConfigFileError::read(&path))?;
+                        break 'load Self::parse_from(&contents, &path)?;
+                    }
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(err) => return Err(err).context(ConfigFileError::read(&path)),
+                }
+            }
+            let root = retail_asset_root_from_executable(executable)?;
+            log::info!(
+                "No {}; using retail executable directory: {}",
+                CONFIG_FILE_NAME,
+                root.display()
+            );
+            Self::from_retail_asset_root(root)?
+        };
+        config.apply_ra2_launch();
+        Ok(config)
+    }
+
+    /// VERA: RA2 mode for this launch, once VERA.INI has been read: the
+    /// `-ra2` switch already recorded, or the player's saved Options choice
+    /// (`[VERA] RA2Mode=`, `saved_choice`). Either turns it on for the whole
+    /// process (`util::ra2_launch`) and selects its INI roots.
+    pub fn use_ra2_mode(&mut self, saved_choice: bool) {
+        if saved_choice {
+            crate::util::ra2_launch::set(true);
+        }
+        self.apply_ra2_launch();
+    }
+
+    /// RA2 mode replaces the whole `[ini]` policy with the fixed non-md roots.
+    /// It wins over anything in config.toml so a single switch is sufficient.
+    fn apply_ra2_launch(&mut self) {
+        if crate::util::ra2_launch::enabled() {
+            log::info!("-ra2 launch: selecting original RA2 non-md INI roots");
+            self.ini = crate::util::ini_roots::IniRootConfig {
+                profile: crate::util::ini_roots::IniProfile::Ra2,
+                ..Default::default()
+            };
+        }
+    }
+
+    fn parse_from(contents: &str, path: &Path) -> Result<Self> {
+        let mut config = Self::parse(contents).context(ConfigFileError {
+            path: path.to_owned(),
+            parse: true,
+        })?;
+
+        // A packaged config must mean the same thing after Finder changes cwd.
+        let directory = path.parent().unwrap_or_else(|| Path::new("."));
+        if config.paths.ra2_dir.is_relative() {
+            config.paths.ra2_dir = directory.join(&config.paths.ra2_dir);
+        }
+        for path in [
+            &mut config.paths.settings_dir,
+            &mut config.paths.legacy_settings_dir,
+        ] {
+            if path.is_relative() {
+                *path = directory.join(&*path);
+            }
+        }
+        config.paths.separate_settings_from_assets()?;
+
+        log::info!("Loaded config from {}", path.display());
+        log::info!("RA2 directory: {}", config.paths.ra2_dir.display());
+
+        Ok(config)
+    }
+
+    /// Read config.toml's subset of TOML: `[section]` headers, `key = value`
+    /// lines and `#` comments. The keys below take quoted strings, booleans or
+    /// whole numbers. Other keys and sections are skipped without reading their
+    /// values, so old configs with retired keys (`vsync`, `sim_tick_hz`) load.
+    fn parse(contents: &str) -> Result<Self> {
+        let mut ra2_dir = None;
+        let mut settings_dir = None;
+        let mut mod_name = None;
+        let mut graphics = GraphicsConfig::default();
+        let mut gameplay = GameplayConfig::default();
+        let mut profile = ProfileConfig::default();
+        let mut ini = crate::util::ini_roots::IniRootConfig::default();
+        let mut section = "";
+        let mut seen = std::collections::HashSet::new();
+        let contents = contents.strip_prefix('\u{feff}').unwrap_or(contents);
+        for (index, line) in contents.lines().enumerate() {
+            let line_number = index + 1;
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            if line.starts_with('[') {
+                section = section_name(line)
+                    .with_context(|| format!("line {line_number}: unterminated `[section]`"))?;
+                continue;
+            }
+            let (key, value) = line
+                .split_once('=')
+                .with_context(|| format!("line {line_number}: expected `key = value`"))?;
+            let key = key.trim();
+            ensure!(
+                seen.insert((section, key)),
+                "line {line_number}: duplicate key `{key}` in [{section}]"
+            );
+            let value = value.trim();
+            let read = match (section, key) {
+                ("paths", "ra2_dir") => {
+                    parse_string(value).map(|path| ra2_dir = Some(PathBuf::from(path)))
+                }
+                ("paths", "settings_dir") => {
+                    parse_string(value).map(|path| settings_dir = Some(PathBuf::from(path)))
+                }
+                ("paths", "mod") => parse_string(value).map(|name| mod_name = Some(name)),
+                ("graphics", "extra_animations") => {
+                    parse_bool(value).map(|on| graphics.extra_animations = on)
+                }
+                ("graphics", "translucent_fog") => {
+                    parse_bool(value).map(|on| graphics.translucent_fog = on)
+                }
+                ("graphics", "high_terrain_building_lift") => {
+                    parse_bool(value).map(|on| graphics.high_terrain_building_lift = on)
+                }
+                ("gameplay", "input_delay_ticks") => {
+                    parse_u32(value).map(|ticks| gameplay.input_delay_ticks = ticks)
+                }
+                ("gameplay", "pause_on_focus_loss") => {
+                    parse_bool(value).map(|on| gameplay.pause_on_focus_loss = on)
+                }
+                ("profile", "name") => parse_string(value).map(|name| profile.name = Some(name)),
+                ("ini", "profile") => parse_string(value).and_then(|name| {
+                    ini.profile = name.parse().map_err(anyhow::Error::msg)?;
+                    Ok(())
+                }),
+                ("ini", "rules") => parse_string(value).map(|name| ini.rules = Some(name)),
+                ("ini", "art") => parse_string(value).map(|name| ini.art = Some(name)),
+                ("ini", "ai") => parse_string(value).map(|name| ini.ai = Some(name)),
+                ("ini", "sound") => parse_string(value).map(|name| ini.sound = Some(name)),
+                ("ini", "eva") => parse_string(value).map(|name| ini.eva = Some(name)),
+                ("ini", "theater_suffix") => {
+                    parse_string(value).map(|suffix| ini.theater_suffix = Some(suffix))
+                }
+                ("ini", "theme") => parse_string(value).map(|name| ini.theme = Some(name)),
+                ("ini", "battle") => parse_string(value).map(|name| ini.battle = Some(name)),
+                ("ini", "mission") => parse_string(value).map(|name| ini.mission = Some(name)),
+                ("ini", "mapsel") => parse_string(value).map(|name| ini.mapsel = Some(name)),
+                ("ini", "modes") => parse_string(value).map(|name| ini.modes = Some(name)),
+                ("ini", "map_catalog") => {
+                    parse_string(value).map(|name| ini.map_catalog = Some(name))
+                }
+                _ => Ok(()),
+            };
+            read.with_context(|| format!("line {line_number}: [{section}] {key}"))?;
+        }
+        let ra2_dir = ra2_dir.context("missing `ra2_dir` in [paths]")?;
+        ini.validate().map_err(anyhow::Error::msg)?;
+        Ok(Self {
+            ini,
+            paths: PathsConfig {
+                legacy_settings_dir: settings_dir.clone().unwrap_or_else(|| ra2_dir.clone()),
+                ra2_dir,
+                settings_dir: settings_dir.map_or_else(default_settings_dir, Ok)?,
+                mod_name,
+            },
+            graphics,
+            gameplay,
+            profile,
+        })
+    }
+
+    fn from_retail_asset_root(ra2_dir: PathBuf) -> Result<Self> {
+        let mut config = Self {
+            ini: Default::default(),
+            paths: PathsConfig {
+                legacy_settings_dir: ra2_dir.clone(),
+                ra2_dir,
+                settings_dir: default_settings_dir()?,
+                mod_name: None,
+            },
+            graphics: GraphicsConfig::default(),
+            gameplay: GameplayConfig::default(),
+            profile: ProfileConfig::default(),
+        };
+        config.paths.separate_settings_from_assets()?;
+        Ok(config)
+    }
+}
+
+/// `contents` with `[paths] key` set to `value`, for code that writes a
+/// config: the key's line is replaced, else its commented-out example
+/// (`# key = …`), else the line goes under the first `[paths]` header, or into
+/// a new `[paths]` section at the end. Every other line is kept.
+pub fn set_paths_key(contents: &str, key: &str, value: &str) -> String {
+    let contents = contents.strip_prefix('\u{feff}').unwrap_or(contents);
+    let newline = if contents.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    let assigns = |line: &str| {
+        line.split_once('=')
+            .is_some_and(|(name, _)| name.trim() == key)
+    };
+    let mut lines: Vec<String> = contents.lines().map(str::to_owned).collect();
+    let (mut header, mut assigned, mut example) = (None, None, None);
+    let mut section = "";
+    for (index, line) in lines.iter().enumerate() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            section = section_name(line).unwrap_or_default();
+            if section == "paths" && header.is_none() {
+                header = Some(index);
+            }
+            continue;
+        }
+        if section != "paths" {
+            continue;
+        }
+        match line.strip_prefix('#') {
+            Some(comment) if example.is_none() && assigns(comment) => example = Some(index),
+            Some(_) => {}
+            None if assigns(line) => assigned = Some(index),
+            None => {}
+        }
+    }
+    let assignment = format!("{key} = {}", basic_string(value));
+    match (assigned.or(example), header) {
+        (Some(index), _) => lines[index] = assignment,
+        (None, Some(index)) => lines.insert(index + 1, assignment),
+        (None, None) => {
+            if lines.last().is_some_and(|line| !line.trim().is_empty()) {
+                lines.push(String::new());
+            }
+            lines.push("[paths]".to_owned());
+            lines.push(assignment);
+        }
+    }
+    let mut text = lines.join(newline);
+    text.push_str(newline);
+    text
+}
+
+/// The name in a `[section]` header line, or None when it is unterminated.
+fn section_name(line: &str) -> Option<&str> {
+    let header = line.split('#').next().unwrap_or_default().trim_end();
+    Some(header.strip_prefix('[')?.strip_suffix(']')?.trim())
+}
+
+/// `text` as a TOML basic string, the form [`parse_string`] reads back.
+fn basic_string(text: &str) -> String {
+    let mut quoted = String::from('"');
+    for c in text.chars() {
+        match c {
+            '"' => quoted.push_str("\\\""),
+            '\\' => quoted.push_str("\\\\"),
+            c if c.is_control() => quoted.push_str(&format!("\\u{:04X}", u32::from(c))),
+            c => quoted.push(c),
+        }
+    }
+    quoted.push('"');
+    quoted
+}
+
+/// A TOML basic string (`"…"`, with backslash escapes) or literal string
+/// (`'…'`, taken as written). Windows paths need `'C:\RA2'` or `"C:\\RA2"`.
+fn parse_string(value: &str) -> Result<String> {
+    if let Some(body) = value.strip_prefix('\'') {
+        let (text, rest) = body.split_once('\'').context("unterminated string")?;
+        expect_value_end(rest)?;
+        return Ok(text.to_owned());
+    }
+    let body = value
+        .strip_prefix('"')
+        .context("expected a quoted string")?;
+    let mut text = String::new();
+    let mut chars = body.char_indices();
+    while let Some((index, c)) = chars.next() {
+        match c {
+            '"' => {
+                expect_value_end(&body[index + 1..])?;
+                return Ok(text);
+            }
+            '\\' => {
+                let escaped = match chars.next().map(|(_, c)| c) {
+                    Some('"') => '"',
+                    Some('\\') => '\\',
+                    Some('n') => '\n',
+                    Some('t') => '\t',
+                    Some('r') => '\r',
+                    Some('b') => '\u{8}',
+                    Some('f') => '\u{c}',
+                    Some(kind @ ('u' | 'U')) => {
+                        let digits = if kind == 'u' { 4 } else { 8 };
+                        let hex: String = chars.by_ref().take(digits).map(|(_, c)| c).collect();
+                        u32::from_str_radix(&hex, 16)
+                            .ok()
+                            .filter(|_| hex.len() == digits)
+                            .and_then(char::from_u32)
+                            .with_context(|| format!("invalid escape `\\{kind}{hex}`"))?
+                    }
+                    Some(other) => bail!("invalid escape `\\{other}`"),
+                    None => bail!("unterminated string"),
+                };
+                text.push(escaped);
+            }
+            c => text.push(c),
+        }
+    }
+    bail!("unterminated string")
+}
+
+fn parse_bool(value: &str) -> Result<bool> {
+    match bare_value(value) {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        other => bail!("expected true or false, found `{other}`"),
+    }
+}
+
+fn parse_u32(value: &str) -> Result<u32> {
+    let number = bare_value(value);
+    // TOML allows `_` between digits.
+    number.replace('_', "").parse().with_context(|| {
+        format!(
+            "expected a whole number from 0 to {}, found `{number}`",
+            u32::MAX
+        )
+    })
+}
+
+/// An unquoted value: everything before a `#` comment.
+fn bare_value(value: &str) -> &str {
+    value.split('#').next().unwrap_or_default().trim_end()
+}
+
+/// Only whitespace and a `#` comment may follow a quoted value.
+fn expect_value_end(rest: &str) -> Result<()> {
+    let rest = rest.trim_start();
+    ensure!(
+        rest.is_empty() || rest.starts_with('#'),
+        "unexpected `{rest}` after the value"
+    );
+    Ok(())
+}
+
+/// config.toml could not be read or parsed. The context of those failures, so
+/// a caller can tell them from the settings folder's and name the file.
+#[derive(Debug)]
+pub struct ConfigFileError {
+    pub path: PathBuf,
+    parse: bool,
+}
+
+impl ConfigFileError {
+    fn read(path: &Path) -> Self {
+        Self {
+            path: path.to_owned(),
+            parse: false,
+        }
+    }
+}
+
+impl std::fmt::Display for ConfigFileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let verb = if self.parse { "parse" } else { "read" };
+        write!(f, "Failed to {verb} config file: {}", self.path.display())
+    }
+}
+
+/// Where [`GameConfig::load_from`] looks for config.toml, in order: the
+/// working directory, then beside the executable.
+fn config_candidates(working_dir: &Path, executable: &Path) -> Result<[PathBuf; 2]> {
+    let root = retail_asset_root_from_executable(executable)?;
+    Ok([
+        working_dir.join(CONFIG_FILE_NAME),
+        root.join(CONFIG_FILE_NAME),
+    ])
+}
+
+/// Return the directory that retail `WinMain` makes its file-search root.
+fn retail_asset_root_from_executable(executable: &Path) -> Result<PathBuf> {
+    executable
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .with_context(|| {
+            format!(
+                "Running executable has no containing directory: {}",
+                executable.display()
+            )
+        })
+}
+
+#[cfg(all(test, tests_util))]
+mod tests {
+    use super::*;
+    use crate::util::ini_roots::IniProfile;
+
+    #[test]
+    fn ini_roots_config_defaults_and_profiles_are_explicit() {
+        let base = "[paths]\nra2_dir='retail'\n";
+        assert_eq!(
+            GameConfig::parse(base).unwrap().ini.profile,
+            crate::util::ini_roots::IniProfile::Yr
+        );
+        let auto = GameConfig::parse(&format!("{base}[ini]\nprofile='auto'\n")).unwrap();
+        assert_eq!(auto.ini.profile, crate::util::ini_roots::IniProfile::Auto);
+        let custom = GameConfig::parse(&format!(
+            "{base}[ini]\nprofile='custom'\nrules='r.ini'\nart='a.ini'\nai='i.ini'\n"
+        ))
+        .unwrap();
+        let custom_roots = custom.ini.resolve(|_| true).unwrap();
+        assert_eq!(custom_roots.names(), ["r.ini", "a.ini", "i.ini"]);
+        assert_eq!(
+            (custom_roots.sound(), custom_roots.eva()),
+            ("soundmd.ini", "evamd.ini")
+        );
+        // Optional presentation roots for any profile; they keep the shared
+        // names when omitted.
+        let audio = GameConfig::parse(&format!(
+            "{base}[ini]\nsound='my-sound.ini'\neva='my-eva.ini'\n"
+        ))
+        .unwrap();
+        let audio_roots = audio.ini.resolve(|_| true).unwrap();
+        assert_eq!(
+            (audio_roots.sound(), audio_roots.eva()),
+            ("my-sound.ini", "my-eva.ini")
+        );
+        let theater = GameConfig::parse(&format!("{base}[ini]\ntheater_suffix='x2'\n")).unwrap();
+        let theater_roots = theater.ini.resolve(|_| true).unwrap();
+        assert_eq!(theater_roots.theater_ini("snow"), "snowx2.ini");
+        for bad in [
+            "profile='other'",
+            "profile='custom'\nrules='r.ini'",
+            "profile='yr'\nai='aimd.ini'",
+            "profile=yr",
+            "profile='custom'\nrules='../r.ini'\nart='a.ini'\nai='i.ini'",
+            "sound='../my-sound.ini'",
+            "eva='a.map'",
+            "theater_suffix='../custom'",
+        ] {
+            assert!(
+                GameConfig::parse(&format!("{base}[ini]\n{bad}\n")).is_err(),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn ra2_launch_flag_overrides_ini_policy() {
+        // A config that explicitly selects custom YR-ish roots; RA2 mode must
+        // win wholesale.
+        let mut config = GameConfig::parse(
+            "[paths]\nra2_dir='retail'\n[ini]\n\
+             profile='custom'\nrules='r.ini'\nart='a.ini'\nai='i.ini'\n",
+        )
+        .unwrap();
+        crate::util::ra2_launch::set(true);
+        config.apply_ra2_launch();
+        assert_eq!(config.ini.profile, IniProfile::Ra2);
+        let roots = config.ini.resolve(|_| true).unwrap();
+        assert_eq!(roots.names(), ["rules.ini", "art.ini", "ai.ini"]);
+        assert_eq!(roots.theater_ini("snow"), "snow.ini");
+        crate::util::ra2_launch::set(false);
+    }
+
+    #[test]
+    fn ini_roots_config_passes_generic_catalogs_to_the_root_owner() {
+        let config = GameConfig::parse(
+            "[paths]\nra2_dir='retail'\n[ini]\n\
+             theme='music.ini'\nbattle='campaigns.ini'\nmission='missions.ini'\n\
+             mapsel='stages.ini'\nmodes='modes.ini'\nmap_catalog='maps.pkt'\n",
+        )
+        .unwrap();
+        let roots = config.ini.resolve(|_| panic!("YR must not probe")).unwrap();
+        assert_eq!(
+            [
+                roots.theme(),
+                roots.battle(),
+                roots.mission(),
+                roots.mapsel()
+            ],
+            ["music.ini", "campaigns.ini", "missions.ini", "stages.ini"]
+        );
+        assert_eq!(roots.modes(), "modes.ini");
+        assert_eq!(roots.map_catalog(), "maps.pkt");
+    }
+
+    struct ConfigFixture(PathBuf);
+
+    impl ConfigFixture {
+        fn new() -> Self {
+            static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let root =
+                std::env::temp_dir().join(format!("vera20k-config-{}-{id}", std::process::id()));
+            std::fs::create_dir(&root).expect("unique config fixture");
+            std::fs::create_dir(root.join("launch")).unwrap();
+            std::fs::create_dir(root.join("app")).unwrap();
+            Self(root)
+        }
+
+        fn load(&self) -> Result<GameConfig> {
+            GameConfig::load_from(&self.0.join("launch"), &self.0.join("app/vera20k"))
+        }
+    }
+
+    impl Drop for ConfigFixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn packaged_config_loads_from_an_unrelated_working_directory() {
+        let fixture = ConfigFixture::new();
+        std::fs::write(
+            fixture.0.join("app/config.toml"),
+            "[paths]\nra2_dir = 'retail files'\n[profile]\nname = 'Packaged player'\n",
+        )
+        .unwrap();
+        let config = fixture.load().unwrap();
+        assert_eq!(config.paths.ra2_dir, fixture.0.join("app/retail files"));
+        assert_eq!(config.paths.settings_dir(), default_settings_dir().unwrap());
+        assert_eq!(config.profile.player_name(), Some("Packaged player"));
+    }
+
+    #[test]
+    fn relative_settings_root_is_resolved_beside_config_independently_of_assets() {
+        let fixture = ConfigFixture::new();
+        std::fs::write(
+            fixture.0.join("app/config.toml"),
+            "[paths]\nra2_dir = 'retail files'\nsettings_dir = 'client profile'\n",
+        )
+        .unwrap();
+        let config = fixture.load().unwrap();
+        assert_eq!(config.paths.ra2_dir, fixture.0.join("app/retail files"));
+        assert_eq!(
+            config.paths.settings_dir(),
+            fixture.0.join("app/client profile")
+        );
+    }
+
+    #[test]
+    fn working_directory_config_overrides_packaged_config() {
+        let fixture = ConfigFixture::new();
+        std::fs::write(fixture.0.join("app/config.toml"), "invalid package config").unwrap();
+        std::fs::write(
+            fixture.0.join("launch/config.toml"),
+            "[paths]\nra2_dir = 'local retail'\n",
+        )
+        .unwrap();
+        assert_eq!(
+            fixture.load().unwrap().paths.ra2_dir,
+            fixture.0.join("launch/local retail")
+        );
+    }
+
+    #[test]
+    fn invalid_override_is_reported_instead_of_silently_using_packaged_assets() {
+        let fixture = ConfigFixture::new();
+        let override_path = fixture.0.join("launch").join("config.toml");
+        std::fs::write(&override_path, "[broken").unwrap();
+        std::fs::write(
+            fixture.0.join("app/config.toml"),
+            "[paths]\nra2_dir = '.'\n",
+        )
+        .unwrap();
+        let message = format!("{:#}", fixture.load().unwrap_err());
+        assert!(message.contains(override_path.to_str().unwrap()));
+        assert!(message.contains("Failed to parse config"));
+    }
+
+    #[test]
+    fn a_config_that_is_not_utf8_is_named_as_such_and_as_the_file_to_edit() {
+        let fixture = ConfigFixture::new();
+        let path = fixture.0.join("launch/config.toml");
+        // A path with a German umlaut, saved as Windows-1252 rather than UTF-8.
+        std::fs::write(&path, b"[paths]\nra2_dir = 'C:/Gr\xfcn'\n").unwrap();
+        let error = fixture.load().unwrap_err();
+        let file = error
+            .downcast_ref::<ConfigFileError>()
+            .expect("a config.toml failure, not a settings or game-files one");
+        assert_eq!(file.path, path);
+        assert!(format!("{error:#}").contains("not UTF-8 text"));
+        assert_eq!(
+            GameConfig::path_for(&fixture.0.join("launch"), &fixture.0.join("app/vera20k"))
+                .unwrap(),
+            path
+        );
+    }
+
+    #[test]
+    fn missing_configs_keep_retail_executable_directory_discovery() {
+        let fixture = ConfigFixture::new();
+        let config = fixture.load().unwrap();
+        assert_eq!(config.paths.ra2_dir, fixture.0.join("app"));
+        assert_eq!(config.paths.settings_dir(), default_settings_dir().unwrap());
+    }
+
+    #[test]
+    fn old_profile_inside_retail_is_only_an_import_source() {
+        let fixture = ConfigFixture::new();
+        std::fs::create_dir(fixture.0.join("app/retail")).unwrap();
+        std::fs::write(
+            fixture.0.join("app/config.toml"),
+            "[paths]\nra2_dir='retail'\nsettings_dir='retail/old-profile'\n",
+        )
+        .unwrap();
+        let config = fixture.load().unwrap();
+        assert_eq!(config.paths.settings_dir(), default_settings_dir().unwrap());
+        assert_eq!(
+            config.paths.legacy_settings_dir(),
+            fixture.0.join("app/retail/old-profile")
+        );
+        assert!(!config.paths.legacy_settings_dir().exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_linux_data_folder_follows_xdg_data_home() {
+        use std::ffi::OsString;
+        let home = Path::new("/home/<you>");
+        assert_eq!(
+            linux_data_home(Some("/data/me".into()), home),
+            Path::new("/data/me")
+        );
+        for unusable in [None, Some(OsString::new()), Some("relative/data".into())] {
+            assert_eq!(
+                linux_data_home(unusable, home),
+                Path::new("/home/<you>/.local/share")
+            );
+        }
+    }
+
+    #[test]
+    fn set_paths_key_replaces_the_line_or_its_commented_example() {
+        let edited = "# mine\r\n[paths]\r\nra2_dir = 'old' # moved\r\n# settings_dir = \".\"\r\n\
+                      [profile]\r\nname = \"指挥官\"\r\n";
+        let folder = r#"C:\Games\"RA2""#;
+        let text = set_paths_key(
+            &set_paths_key(edited, "ra2_dir", folder),
+            "settings_dir",
+            ".",
+        );
+        assert_eq!(
+            text,
+            "# mine\r\n[paths]\r\nra2_dir = \"C:\\\\Games\\\\\\\"RA2\\\"\"\r\nsettings_dir = \".\"\r\n\
+             [profile]\r\nname = \"指挥官\"\r\n"
+        );
+        let config = GameConfig::parse(&text).unwrap();
+        assert_eq!(config.paths.ra2_dir, Path::new(folder));
+        assert_eq!(config.paths.settings_dir(), Path::new("."));
+        assert_eq!(config.profile.player_name(), Some("指挥官"));
+    }
+
+    #[test]
+    fn set_paths_key_adds_a_missing_key_or_section() {
+        assert_eq!(
+            set_paths_key(
+                "[other]\nra2_dir = 'keep'\n[paths]\nra2_dir = 'x'\n",
+                "settings_dir",
+                "."
+            ),
+            "[other]\nra2_dir = 'keep'\n[paths]\nsettings_dir = \".\"\nra2_dir = 'x'\n"
+        );
+        let text = set_paths_key(
+            "\u{feff}[profile]\nname = 'p'",
+            "ra2_dir",
+            "/Games/RA2\u{1}",
+        );
+        assert_eq!(
+            text,
+            "[profile]\nname = 'p'\n\n[paths]\nra2_dir = \"/Games/RA2\\u0001\"\n"
+        );
+        let config = GameConfig::parse(&text).unwrap();
+        assert_eq!(config.paths.ra2_dir, Path::new("/Games/RA2\u{1}"));
+        assert_eq!(config.profile.player_name(), Some("p"));
+    }
+
+    #[test]
+    fn an_old_vsync_line_still_loads() {
+        let toml_str = r#"
+[paths]
+ra2_dir = "C:/Westwood/RA2"
+
+[graphics]
+vsync = false
+extra_animations = false
+"#;
+        let config = GameConfig::parse(toml_str).expect("old configs keep loading");
+        assert!(!config.graphics.extra_animations);
+        assert!(!config.graphics.translucent_fog);
+        assert!(!config.graphics.high_terrain_building_lift);
+    }
+
+    #[test]
+    fn translucent_fog_is_an_explicit_graphics_option() {
+        let config =
+            GameConfig::parse("[paths]\nra2_dir = 'retail'\n[graphics]\ntranslucent_fog = true\n")
+                .unwrap();
+        assert!(config.graphics.translucent_fog);
+    }
+
+    #[test]
+    fn high_terrain_building_lift_is_an_explicit_graphics_option() {
+        let config = GameConfig::parse(
+            "[paths]\nra2_dir = 'retail'\n[graphics]\nhigh_terrain_building_lift = true\n",
+        )
+        .unwrap();
+        assert!(config.graphics.high_terrain_building_lift);
+    }
+
+    #[test]
+    fn the_mod_is_the_paths_key_and_blank_or_absent_is_the_original_game() {
+        let named = |line: &str| {
+            let text = format!("[paths]\nra2_dir = 'retail'\nsettings_dir = 'vera'\n{line}");
+            GameConfig::parse(&text).unwrap().paths
+        };
+        let paths = named("mod = \"Winter War\"\n");
+        assert_eq!(paths.mod_name(), Some("Winter War"));
+        assert_eq!(paths.mods_dir(), Path::new("vera").join("Mods"));
+        assert_eq!(named("mod = ''\n").mod_name(), None);
+        assert_eq!(named("").mod_name(), None);
+    }
+
+    #[test]
+    fn test_profile_player_name_trims_and_blank_is_none() {
+        let toml_str = r#"
+[paths]
+ra2_dir = "C:/Westwood/RA2"
+
+[profile]
+name = "  Commander  "
+"#;
+        let config = GameConfig::parse(toml_str).expect("Failed to parse test config");
+        assert_eq!(config.profile.player_name(), Some("Commander"));
+
+        let blank = r#"
+[paths]
+ra2_dir = "C:/Westwood/RA2"
+
+[profile]
+name = "   "
+"#;
+        let config = GameConfig::parse(blank).expect("Failed to parse test config");
+        assert_eq!(config.profile.player_name(), None);
+    }
+
+    #[test]
+    fn reads_comments_both_string_kinds_and_skips_unknown_keys() {
+        let text = "\u{feff}# comment\n[paths] # header comment\nra2_dir = 'C:\\RA2' # literal\n\n\
+                    [graphics]\nvsync = [1, 2]\nextra_animations = false # off\n\
+                    [gameplay]\ninput_delay_ticks = 1_0\n\
+                    [profile]\nname = \"Tab\\there \\u00E9 \\\"q\\\" # not a comment\"\n\
+                    [[unknown]]\nanything = { goes = 1 }\n";
+        let config = GameConfig::parse(text).unwrap();
+        assert_eq!(config.paths.ra2_dir, PathBuf::from("C:\\RA2"));
+        assert!(!config.graphics.extra_animations);
+        assert_eq!(config.gameplay.input_delay_ticks, 10);
+        assert_eq!(
+            config.profile.name.as_deref(),
+            Some("Tab\there é \"q\" # not a comment")
+        );
+    }
+
+    #[test]
+    fn rejects_values_toml_rejects() {
+        for text in [
+            "[paths]\nra2_dir = \"C:\\RA2\"\n",
+            "[paths]\nra2_dir = 'a'\nra2_dir = 'b'\n",
+            "[paths]\nra2_dir = 'a' b\n",
+            "[paths]\nra2_dir = \"a\n",
+            "[paths]\nra2_dir = a\n",
+            "[paths]\nra2_dir\n",
+            "[paths]\nra2_dir = 'a'\n[gameplay]\ninput_delay_ticks = -1\n",
+            "[paths]\nra2_dir = 'a'\n[graphics]\nextra_animations = yes\n",
+            "[graphics]\nextra_animations = true\n",
+        ] {
+            assert!(GameConfig::parse(text).is_err(), "{text:?}");
+        }
+    }
+
+    /// Host-native paths: `Path` only splits on the host's separators, so a
+    /// Windows literal has no parent on Linux or macOS.
+    fn host_path(windows: &str, unix: &str) -> PathBuf {
+        PathBuf::from(if cfg!(windows) { windows } else { unix })
+    }
+
+    #[test]
+    fn retail_asset_root_is_the_executable_directory() {
+        let directory = host_path(r"C:\Westwood\RA2", "/opt/westwood/ra2");
+        let executable = directory.join("gamemd.exe");
+        assert_eq!(
+            retail_asset_root_from_executable(&executable).expect("module directory"),
+            directory
+        );
+    }
+
+    #[test]
+    fn retail_asset_root_preserves_a_volume_root_boundary() {
+        let root = host_path(r"C:\", "/");
+        let executable = root.join("gamemd.exe");
+        assert_eq!(
+            retail_asset_root_from_executable(&executable).expect("volume root"),
+            root
+        );
+    }
+}

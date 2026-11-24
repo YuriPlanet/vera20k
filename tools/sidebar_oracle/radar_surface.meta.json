@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Three original stock radar assets, two sequential/reversal histories each, complete4912B0 stores after every frame; explicit initial A55A backing.",
+  "assumptions": [
+    "Row-decoded stock pixels are inputs, independently parsed by Rust retail test; all frames have full168x110 canvas.",
+    "Actual nativeN1 RGB565 tables from palette.py; ECX drawer+4 selects table.",
+    "Outer63FB20/653100/656EC0 caller evidence establishes persistent surface; minimap and wall timing are separate."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "N1_convert": "0x004BBB00",
+    "skip_zero_draw": "0x004912B0"
+  },
+  "payload_sha256": "3bcc22f86b8cc21f597662260229928996bcb51c8cce06289d3cf314d1956e30"
+}

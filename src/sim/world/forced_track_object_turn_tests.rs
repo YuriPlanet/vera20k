@@ -1,0 +1,313 @@
+//! Runtime/save coverage for the single retained forced-track authority.
+//! Admission/table parity is separately compared with the original binary in
+//! movement/track_force_tests.rs; these tests exercise the production object turn.
+
+use super::*;
+use crate::rules::{ini_parser::IniFile, locomotor_type::LocomotorKind};
+use crate::sim::components::DriveCoord;
+use crate::sim::game_entity::GameEntity;
+use crate::sim::movement::DriveLocomotionRuntime;
+use crate::sim::movement::{drive_track, locomotor::LocomotorState};
+use crate::sim::snapshot::GameSnapshot;
+use crate::util::fixed_math::{SIM_ONE, SimFixed};
+
+fn rules(speed: u32) -> RuleSet {
+    rules_with_cadence(speed, 1, 0)
+}
+
+fn rules_with_cadence(speed: u32, walk_rate: u32, idle_rate: u32) -> RuleSet {
+    RuleSet::from_ini(&IniFile::from_str(&format!(
+        "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=100\nSpeed={speed}\nAccelerates=no\nSensorsSight=1\nWalkRate={walk_rate}\nIdleRate={idle_rate}\n"
+    ))).unwrap()
+}
+
+fn fixture(selector: i32) -> Simulation {
+    // Native Scenario deserialization reseeds this RNG to zero. Using that
+    // same initial seed isolates track persistence from the separate RNG rule.
+    let mut sim = Simulation::with_seed(0);
+    sim.fog.set_width_for_test(32);
+    sim.fog.set_height_for_test(32);
+    let turn = drive_track::turn_track_at(selector as usize).unwrap();
+    let first = drive_track::raw_track_points(turn.normal_track)[0];
+    let (dx, dy, facing) =
+        drive_track::transform_track_point(first.x, first.y, first.facing, turn.flags);
+    let head = DriveCoord {
+        x: 10 * 256 + 128,
+        y: 10 * 256 + 128,
+        z: 0,
+    };
+    let x = head.x + i32::from(dx);
+    let y = head.y + i32::from(dy);
+    let mut entity =
+        GameEntity::test_default(1, "MTNK", "Americans", (x / 256) as u16, (y / 256) as u16);
+    entity.set_owner_for_test(sim.intern("Americans"));
+    entity.set_type_ref_for_test(sim.intern("MTNK"));
+    entity
+        .position
+        .set_sub_x_for_test(SimFixed::from_num(x % 256));
+    entity
+        .position
+        .set_sub_y_for_test(SimFixed::from_num(y % 256));
+    entity.position.set_exact_z_leptons_for_test(Some(0));
+    entity.body_facing.snap(u16::from(facing) << 8, 0);
+    entity.mover_facts.set_drive_accelerates_for_test(false);
+    entity.set_is_voxel_for_test(false);
+    entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
+    assert!(
+        entity
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .install_drive_state_for_test(Some(DriveLocomotionRuntime::default()))
+    );
+    sim.substrate.entities.insert(entity);
+    sim.set_next_stable_object_id_for_test(2);
+    assert!(matches!(
+        sim.reveal(1),
+        super::super::RevealOutcome::Revealed { .. }
+    ));
+    assert!(sim.force_track(
+        1,
+        selector,
+        head,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        None,
+        &mut crate::sim::world::FrameEffects::default()
+    ));
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .foot_speed
+        .set_speed_fraction(SIM_ONE);
+    sim
+}
+
+fn tick(sim: &mut Simulation, rules: &RuleSet, frame: u32) -> movement::MovementTickStats {
+    sim.session.set_tick_for_test(u64::from(frame));
+    sim.session.set_binary_frame_for_test(frame);
+    // The track end's own-cell request searches; a reloaded save carries no
+    // map inputs.
+    crate::sim::arena_fixture::supply_native_map(sim);
+    sim.advance_live_object_turn(1, rules, &mut techno_ai::ObjectAiCtx::default())
+        .unwrap()
+        .movement
+}
+
+#[test]
+fn every_bunker_selector_restores_before_first_point_midcurve_and_paid_sentinel() {
+    let rules = rules(1);
+    assert!(rules.object("MTNK").unwrap().move_sound.is_empty());
+    for selector in 0x43..=0x47 {
+        let mut sim = fixture(selector);
+        crate::sim::arena_fixture::supply_native_map(&mut sim);
+        assert!(sim.rebuild_dynamic_navigation(&rules));
+        let count = drive_track::raw_track_points(
+            drive_track::turn_track_at(selector as usize)
+                .unwrap()
+                .normal_track,
+        )
+        .len() as i32;
+        let mut observed = [false; 3];
+        let mut restored_probes: Vec<(usize, Simulation)> = Vec::new();
+        for frame in 0..180 {
+            let track = sim
+                .substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .locomotor
+                .as_ref()
+                .and_then(|l| l.selected_drive_runtime())
+                .and_then(|r| r.retained())
+                .unwrap()
+                .track();
+            if track.turn_index() < 0 {
+                break;
+            }
+            let stage = if track.cursor() == 0 {
+                0
+            } else if track.cursor() == count {
+                2
+            } else {
+                1
+            };
+            // Exercise the real restore coordinator, including cell lists and
+            // raw marks, at each of the three persisted execution boundaries.
+            if !observed[stage] {
+                observed[stage] = true;
+                let sound = sim.substrate.entities.get(1).unwrap().move_sound;
+                assert!(!sound.is_active());
+                assert_eq!(sound.countdown(), if stage == 0 { 0 } else { 3 });
+                let bytes = GameSnapshot::save(&sim, 0, 0, "forced-track", 0);
+                let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+                restored.restore_after_snapshot_load().unwrap();
+                let loaded_sound = restored.substrate.entities.get(1).unwrap().move_sound;
+                assert!(!loaded_sound.is_active());
+                assert_eq!(loaded_sound.countdown(), 0);
+                // FootLoad4DB60D..4DB624 clears +540 even for an inactive
+                // empty-list Foot, and Scenario load reseeds its RNG to zero
+                // (the Guard mission's dispatches draw from it). Apply only
+                // those documented load transitions to the control and earlier
+                // probes at each new save boundary. Their track, occupation,
+                // mission and facing state stay live.
+                sim.substrate.restore_move_sound_state_after_load(1);
+                sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+                for (_, probe) in &mut restored_probes {
+                    assert!(
+                        !probe
+                            .substrate
+                            .entities
+                            .get(1)
+                            .unwrap()
+                            .move_sound
+                            .is_active()
+                    );
+                    probe.substrate.restore_move_sound_state_after_load(1);
+                    probe.scenario_rng = crate::sim::rng::SimRng::new(0);
+                }
+                restored.rebuild_caches_after_load(
+                    sim.resolved_terrain.as_ref().unwrap().clone(),
+                    sim.terrain_speed_config.clone(),
+                    &rules,
+                );
+                assert!(restored.rebuild_dynamic_navigation(&rules));
+                assert_eq!(
+                    restored.state_hash(),
+                    sim.state_hash(),
+                    "selector={selector} stage={stage}"
+                );
+                restored_probes.push((stage, restored));
+            }
+            let before_cursor = track.cursor();
+            let stats = tick(&mut sim, &rules, frame);
+            // Compare every complete state after the explicit sound-reset
+            // boundary, through retirement. The control's non-audio authority
+            // is never reloaded, so dropped persisted movement state still fails.
+            for (saved_stage, restored) in &mut restored_probes {
+                tick(restored, &rules, frame);
+                assert_eq!(
+                    restored.state_hash(),
+                    sim.state_hash(),
+                    "selector={selector} saved_stage={saved_stage} frame={frame}"
+                );
+            }
+            let entity = sim.substrate.entities.get(1).unwrap();
+            // Only the track end's same-Process continuation requests a route:
+            // mid-track the Foot+5E0 queue stays empty.
+            assert!(
+                crate::sim::movement::track_head::committed_track_head(entity).is_none()
+                    || entity
+                        .navigation
+                        .path_replay()
+                        .remaining_directions()
+                        .is_empty()
+            );
+            assert!(stats.moved_steps <= 1, "Speed=1 cannot pay two points");
+            if frame == 0 {
+                assert_eq!(
+                    entity
+                        .locomotor
+                        .as_ref()
+                        .and_then(|l| l.selected_drive_runtime())
+                        .and_then(|r| r.retained())
+                        .unwrap()
+                        .track()
+                        .cursor(),
+                    before_cursor,
+                    "first visit retains an unpaid cursor"
+                );
+            }
+        }
+        assert_eq!(observed, [true; 3], "selector={selector}");
+        let entity = sim.substrate.entities.get(1).unwrap();
+        assert_eq!(
+            entity
+                .locomotor
+                .as_ref()
+                .and_then(|l| l.selected_drive_runtime())
+                .and_then(|r| r.retained())
+                .unwrap()
+                .track()
+                .turn_index(),
+            -1
+        );
+    }
+}
+
+#[test]
+fn forced_object_turn_queries_live_speed_and_advances_shp_once() {
+    let mut sim = fixture(0x43);
+    tick(&mut sim, &rules(1), 0);
+    let entity = sim.substrate.entities.get(1).unwrap();
+    let before = entity
+        .locomotor
+        .as_ref()
+        .and_then(|l| l.selected_drive_runtime())
+        .and_then(|r| r.retained())
+        .unwrap()
+        .track()
+        .cursor();
+    let before_body = entity.body_frame_counter.get();
+    let outcome = tick(&mut sim, &rules(6), 1);
+    let entity = sim.substrate.entities.get(1).unwrap();
+    assert!(
+        entity
+            .locomotor
+            .as_ref()
+            .and_then(|l| l.selected_drive_runtime())
+            .and_then(|r| r.retained())
+            .unwrap()
+            .track()
+            .cursor()
+            > before + 1
+    );
+    assert!(outcome.moved_steps > 1);
+    assert_eq!(entity.body_frame_counter.get(), before_body + 1);
+}
+
+/// The Foot body counter advances once per due frame. `0x004DA81A` asks
+/// the same predicate for the admission and for the counter it admits, so
+/// a walking foot whose WalkRate divides the frame advances the counter
+/// exactly once, and a frame the rate does not divide advances it not at
+/// all.
+#[test]
+fn foot_body_counter_advances_once_per_due_frame() {
+    let rules = rules_with_cadence(6, 4, 0);
+    let mut sim = fixture(0x43);
+    let mut before = sim
+        .substrate
+        .entities
+        .get(1)
+        .unwrap()
+        .body_frame_counter
+        .get();
+    let mut due_frames = 0;
+    for frame in 0..12 {
+        let walking = {
+            let entity = sim.substrate.entities.get(1).unwrap();
+            crate::sim::movement::motion_query::is_moving_now(
+                entity,
+                crate::sim::movement::SpeedRules::new(&rules, &sim.interner, &sim.houses),
+                frame,
+            )
+        };
+        tick(&mut sim, &rules, frame);
+        let after = sim
+            .substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .body_frame_counter
+            .get();
+        let due = walking && frame % 4 == 0;
+        assert_eq!(
+            after,
+            before + u32::from(due),
+            "frame {frame}: the counter advances once on a due frame"
+        );
+        due_frames += u32::from(due);
+        before = after;
+    }
+    assert!(due_frames > 0, "the foot walked on a due frame");
+}

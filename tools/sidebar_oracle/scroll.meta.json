@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "126 original ordinary local-player scroll availability cases over 21 native layouts.",
+  "assumptions": [
+    "PlayerPtr distinct from observer owner AC1198; selected strip0 with explicit item count.",
+    "Layout inputs are outputs of geometry.py original execution; initial disabled state is staged.",
+    "Original69DCF0 constructs both actual global SBGadget objects and original virtual invalidation executes."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "gadget_ctor": "0x0069DCF0",
+    "availability": "0x006A6610"
+  },
+  "payload_sha256": "4e042d84e88761510c5e8fd532f250f153e37e7bd1c1adb33ba4df475ec03596"
+}

@@ -1,0 +1,801 @@
+{
+  "schema_version": 1,
+  "test": "app::presentation::render::bridge_shadow_gpu_tests::retail_high_bridge_damage_and_repair_reach_shadow_pixels",
+  "result": "1 passed; 0 failed",
+  "adapter": "Apple M4 / Metal",
+  "map_identity_source": "bridge_shadow_render.production.json",
+  "scenes": [
+    {
+      "camera": [
+        -470.0,
+        1755.0
+      ],
+      "scene": "hills-wood",
+      "scope": "Physical high bridge, live HE receiver damage/collapse and ordinary Engineer repair, retained physical atlas, production shadow builder and GPU color/Z. Shadows isolated against white/clear depth. State hashes unchanged by rendering. Native caller parity is tested separately; no native whole-scene, projectile-launch or full lifecycle parity claim.",
+      "size": [
+        640,
+        360
+      ],
+      "stages": [
+        {
+          "cells": [
+            {
+              "coords": [
+                65,
+                67
+              ],
+              "flags": 70528,
+              "level": 6,
+              "overlay": 238,
+              "state": 9
+            },
+            {
+              "coords": [
+                65,
+                68
+              ],
+              "flags": 70528,
+              "level": 6,
+              "overlay": 238,
+              "state": 9
+            },
+            {
+              "coords": [
+                65,
+                69
+              ],
+              "flags": 70528,
+              "level": 6,
+              "overlay": 238,
+              "state": 9
+            },
+            {
+              "coords": [
+                65,
+                70
+              ],
+              "flags": 70528,
+              "level": 6,
+              "overlay": 238,
+              "state": 9
+            },
+            {
+              "coords": [
+                65,
+                71
+              ],
+              "flags": 70528,
+              "level": 6,
+              "overlay": 238,
+              "state": 9
+            }
+          ],
+          "changed_pixels": 14270,
+          "color_sha256": "c9c5c4149f5f13598536b4e887ca3a819ac23e2999d3e86cd772b6336bb50c55",
+          "depth_sha256": "83407ac2f2b5a814c3ee0be77711610b1fc1762e4a84c49cfa914d3277d99271",
+          "frame": 0,
+          "instance_sha256": "ce1f6c7cec62fc1814ab560def1c966d20170d93a21d4c015d6089a95f1ee63f",
+          "instances": 5,
+          "phase": "loaded",
+          "scene": "hills-wood",
+          "state_hash": "888507dd1e39b5b6"
+        },
+        {
+          "cells": [
+            {
+              "coords": [
+                65,
+                67
+              ],
+              "flags": 70528,
+              "level": 6,
+              "overlay": 238,
+              "state": 9
+            },
+            {
+              "coords": [
+                65,
+                68
+              ],
+              "flags": 70528,
+              "level": 6,
+              "overlay": 238,
+              "state": 13
+            },
+            {
+              "coords": [
+                65,
+                69
+              ],
+              "flags": 70528,
+              "level": 6,
+              "overlay": 238,
+              "state": 15
+            },
+            {
+              "coords": [
+                65,
+                70
+              ],
+              "flags": 70528,
+              "level": 6,
+              "overlay": 238,
+              "state": 14
+            },
+            {
+              "coords": [
+                65,
+                71
+              ],
+              "flags": 70528,
+              "level": 6,
+              "overlay": 238,
+              "state": 9
+            }
+          ],
+          "changed_pixels": 14897,
+          "color_sha256": "523ce2efbfb63706e15fa0aa04ff0a5302514262772547a8ea8ddf73b1545fe8",
+          "depth_sha256": "6a35739c8c7313832a9e75b091edfbcbff1b70ca5b22b9dea5a1314ec17ffbf8",
+          "frame": 0,
+          "instance_sha256": "b071cffa5e58eef06c34e467415edff77fa9bbbf30843bf2312675d5f0d34843",
+          "instances": 5,
+          "phase": "damaged",
+          "scene": "hills-wood",
+          "state_hash": "295521e4851b1acf"
+        },
+        {
+          "cells": [
+            {
+              "coords": [
+                65,
+                67
+              ],
+              "flags": 70528,
+              "level": 6,
+              "overlay": 238,
+              "state": 9
+            },
+            {
+              "coords": [
+                65,
+                68
+              ],
+              "flags": 70528,
+              "level": 6,
+              "overlay": 238,
+              "state": 16
+            },
+            {
+              "coords": [
+                65,
+                70
+              ],
+              "flags": 70528,
+              "level": 6,
+              "overlay": 238,
+              "state": 17
+            },
+            {
+              "coords": [
+                65,
+                71
+              ],
+              "flags": 70528,
+              "level": 6,
+              "overlay": 238,
+              "state": 9
+            }
+          ],
+          "changed_pixels": 9556,
+          "color_sha256": "e032a8188dde8315881fc44977c69059dc6edeeabab7fdc36c6ffab13dc86e71",
+          "depth_sha256": "89c49986b528899cad058755a2fdd19c852c265dcd7575e9854c9348a8c8ecb1",
+          "frame": 0,
+          "instance_sha256": "3140cf82b8d5f34f3a7e4d5a5d6278e6d1ee35105ed942295e05cce509abb806",
+          "instances": 4,
+          "phase": "collapsed",
+          "scene": "hills-wood",
+          "state_hash": "11805f8afe37122d"
+        },
+        {
+          "cells": [
+            {
+              "coords": [
+                65,
+                67
+              ],
+              "flags": 70528,
+              "level": 6,
+              "overlay": 238,
+              "state": 9
+            },
+            {
+              "coords": [
+                65,
+                68
+              ],
+              "flags": 70528,
+              "level": 6,
+              "overlay": 238,
+              "state": 9
+            },
+            {
+              "coords": [
+                65,
+                69
+              ],
+              "flags": 70528,
+              "level": 6,
+              "overlay": 238,
+              "state": 9
+            },
+            {
+              "coords": [
+                65,
+                70
+              ],
+              "flags": 70528,
+              "level": 6,
+              "overlay": 238,
+              "state": 9
+            },
+            {
+              "coords": [
+                65,
+                71
+              ],
+              "flags": 70528,
+              "level": 6,
+              "overlay": 238,
+              "state": 9
+            }
+          ],
+          "changed_pixels": 14270,
+          "color_sha256": "c9c5c4149f5f13598536b4e887ca3a819ac23e2999d3e86cd772b6336bb50c55",
+          "depth_sha256": "83407ac2f2b5a814c3ee0be77711610b1fc1762e4a84c49cfa914d3277d99271",
+          "frame": 78,
+          "instance_sha256": "ce1f6c7cec62fc1814ab560def1c966d20170d93a21d4c015d6089a95f1ee63f",
+          "instances": 5,
+          "phase": "repaired",
+          "scene": "hills-wood",
+          "state_hash": "97fd94883ccfd44c"
+        }
+      ]
+    },
+    {
+      "camera": [
+        -770.0,
+        2445.0
+      ],
+      "scene": "pacific-concrete",
+      "scope": "Physical high bridge, live HE receiver damage/collapse and ordinary Engineer repair, retained physical atlas, production shadow builder and GPU color/Z. Shadows isolated against white/clear depth. State hashes unchanged by rendering. Native caller parity is tested separately; no native whole-scene, projectile-launch or full lifecycle parity claim.",
+      "size": [
+        640,
+        360
+      ],
+      "stages": [
+        {
+          "cells": [
+            {
+              "coords": [
+                75,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                76,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                77,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                78,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                79,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                80,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                81,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                82,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                83,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                84,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                85,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                86,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            }
+          ],
+          "changed_pixels": 43200,
+          "color_sha256": "49e158fa3dc4ae6c39a8849749ef12f2a4d85a442d1c2c128698c9411cf46aad",
+          "depth_sha256": "049943b20cf0fa162e578ee6714da98c4e6062a8d5e116f1e011bde7c8205b01",
+          "frame": 0,
+          "instance_sha256": "201b20911dde5af9f47c32326bbb6e12af77297567d59592c994f583d6a95a72",
+          "instances": 12,
+          "phase": "loaded",
+          "scene": "pacific-concrete",
+          "state_hash": "3df61142faddffc9"
+        },
+        {
+          "cells": [
+            {
+              "coords": [
+                75,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                76,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                77,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                78,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                79,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                80,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 5
+            },
+            {
+              "coords": [
+                81,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 6
+            },
+            {
+              "coords": [
+                82,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 4
+            },
+            {
+              "coords": [
+                83,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                84,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                85,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                86,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            }
+          ],
+          "changed_pixels": 43200,
+          "color_sha256": "49e158fa3dc4ae6c39a8849749ef12f2a4d85a442d1c2c128698c9411cf46aad",
+          "depth_sha256": "049943b20cf0fa162e578ee6714da98c4e6062a8d5e116f1e011bde7c8205b01",
+          "frame": 0,
+          "instance_sha256": "e18445789c5003b6b49a80013a2e2f71a0a92d25e2a7cc5f2c6dbba8fb288ca7",
+          "instances": 12,
+          "phase": "damaged",
+          "scene": "pacific-concrete",
+          "state_hash": "06fbe289d1ed36fa"
+        },
+        {
+          "cells": [
+            {
+              "coords": [
+                75,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                76,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                77,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                78,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                79,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                80,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 8
+            },
+            {
+              "coords": [
+                82,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 7
+            },
+            {
+              "coords": [
+                83,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                84,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                85,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                86,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            }
+          ],
+          "changed_pixels": 39600,
+          "color_sha256": "155c7ba3aeaa01952cd2837774c85b6d014392c9551a9837df20604ee03a6238",
+          "depth_sha256": "28175795ec274b3a812d50d3a3776205b89ba9b00463796a9c9241fbb8d4a1c4",
+          "frame": 0,
+          "instance_sha256": "36d2fb7a464a272b29fe1124e14027b195d436810bfe05aedfac48cf8df6ae1d",
+          "instances": 11,
+          "phase": "collapsed",
+          "scene": "pacific-concrete",
+          "state_hash": "f8cae16b5a6f68ab"
+        },
+        {
+          "cells": [
+            {
+              "coords": [
+                75,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                76,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                77,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                78,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                79,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                80,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                81,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                82,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                83,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                84,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                85,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            },
+            {
+              "coords": [
+                86,
+                95
+              ],
+              "flags": 72576,
+              "level": 2,
+              "overlay": 24,
+              "state": 0
+            }
+          ],
+          "changed_pixels": 43200,
+          "color_sha256": "49e158fa3dc4ae6c39a8849749ef12f2a4d85a442d1c2c128698c9411cf46aad",
+          "depth_sha256": "049943b20cf0fa162e578ee6714da98c4e6062a8d5e116f1e011bde7c8205b01",
+          "frame": 78,
+          "instance_sha256": "201b20911dde5af9f47c32326bbb6e12af77297567d59592c994f583d6a95a72",
+          "instances": 12,
+          "phase": "repaired",
+          "scene": "pacific-concrete",
+          "state_hash": "ce31890a7bc1b3d7"
+        }
+      ]
+    }
+  ]
+}

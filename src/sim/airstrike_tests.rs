@@ -1,0 +1,816 @@
+use super::*;
+use crate::sim::combat::world_receiver;
+use crate::sim::projectile::{
+    ProjectileCoord, ProjectileDetonation, ProjectileDetonationReason, ProjectilePayload,
+    ProjectileTarget,
+};
+
+struct Fixture {
+    sim: Simulation,
+    rules: RuleSet,
+    boris: u64,
+    target: u64,
+}
+impl Fixture {
+    fn new() -> Option<Self> {
+        let rules = crate::rules::retail_ini_fixture::retail_battle_rules()?.rules;
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+        let boris = sim
+            .spawn_object("BORIS", "Americans", 12, 12, 0, &rules)
+            .unwrap();
+        let target = sim
+            .spawn_object("GAPOWR", "Russians", 15, 12, 0, &rules)
+            .unwrap();
+        Some(Self {
+            sim,
+            rules,
+            boris,
+            target,
+        })
+    }
+    fn hit(&mut self, firer: u64, target: u64) {
+        let weapon = self.rules.weapon("Flare").unwrap();
+        let c = crate::sim::movement::ground_pose::object_get_coords(
+            self.sim.substrate.entities.get(target).unwrap(),
+            self.sim.resolved_terrain.as_ref(),
+        );
+        let payload = ProjectilePayload::new(
+            weapon.damage,
+            self.sim.interner.intern(weapon.warhead.as_deref().unwrap()),
+            weapon
+                .projectile
+                .as_deref()
+                .map(|name| self.sim.interner.intern(name)),
+            weapon.bright,
+        )
+        .with_installed_weapon(Some(self.sim.interner.intern("Flare")));
+        world_receiver::commit_projectiles(
+            &mut self.sim,
+            &mut world_receiver::ReceiverRun::default(),
+            &[ProjectileDetonation {
+                projectile_id: 999,
+                source_id: firer,
+                target: ProjectileTarget::Entity(target),
+                impact: ProjectileCoord::new(c.x, c.y, c.z),
+                payload,
+                reason: ProjectileDetonationReason::ReachedTarget,
+            }],
+            &self.rules,
+            None,
+        );
+    }
+}
+
+/// Phobos `AirstrikeLineColor` through the production readers: the drawing
+/// techno type's `Nullable<ColorStruct>` wins, and a type text that
+/// `Parser<BYTE,3>` rejects (two channels, or one above 255), like an unknown
+/// techno, leaves `[AudioVisual]`'s value. `AirstrikeLineZAdjust` is read from
+/// `[AudioVisual]` too.
+#[cfg(feature = "phobos")]
+#[test]
+fn airstrike_line_color_resolves_from_the_owner_type_then_the_global() {
+    use crate::rules::ini_parser::IniFile;
+
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[AudioVisual]\nAirstrikeLineColor=0,64,0\nAirstrikeLineZAdjust=-5\n\
+         [InfantryTypes]\n0=BLUE\n1=SHORT\n2=WIDE\n\
+         [BLUE]\nAirstrikeLineColor=0,0,255\n[SHORT]\nAirstrikeLineColor=1,2\n\
+         [WIDE]\nAirstrikeLineColor=1,2,300\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::new();
+    for (id, name) in [(1, "BLUE"), (2, "SHORT"), (3, "WIDE")] {
+        let ty = sim.interner_mut_for_test().intern(name);
+        let mut techno = GameEntity::test_default(id, name, "Americans", 10, 10);
+        techno.set_type_ref_for_test(ty);
+        sim.entities_mut_for_test().insert(techno);
+    }
+    assert_eq!(sim.airstrike_line_color(1, &rules), [0, 0, 255]);
+    for id in [2, 3, 99] {
+        assert_eq!(sim.airstrike_line_color(id, &rules), [0, 64, 0], "{id}");
+    }
+    assert_eq!(rules.general.airstrike_line_z_adjust, -5);
+}
+
+#[test]
+fn retail_boris_building_attack_enters_designation_pose_and_starts_sortie() {
+    let Some(mut f) = Fixture::new() else { return };
+    let boris_type = f.rules.object("BORIS").unwrap();
+    assert_eq!(boris_type.primary(), Some("AKM"));
+    assert_eq!(boris_type.secondary(), Some("Flare"));
+    assert_eq!(boris_type.airstrike.normal_count, 2);
+    assert_eq!(boris_type.secondary_fire_frame, 0);
+    assert_eq!(
+        f.rules
+            .animation_sequence("BORIS")
+            .unwrap()
+            .infantry_action(40)
+            .unwrap()
+            .start_frame,
+        401
+    );
+    let health = f
+        .sim
+        .substrate
+        .entities
+        .get(f.target)
+        .unwrap()
+        .health
+        .current();
+    assert!(f.sim.apply_command_with_overlays(
+        None,
+        "Americans",
+        &crate::sim::command::Command::Attack {
+            attacker_id: f.boris,
+            target_id: f.target,
+        },
+        &f.rules,
+        None,
+        &mut FrameEffects::default(),
+    ));
+    f.sim.advance_tick(&[], Some(&f.rules), None, None, 67);
+    let boris = f.sim.substrate.entities.get(f.boris).unwrap();
+    // Original Infantry52083E..5208FE requests SecondaryFire on the first
+    // designation; the existing Doing40/41 alone admits the Stage-only restart.
+    assert_eq!(boris.mission_leaf.as_infantry().unwrap().doing(), 40);
+    assert_eq!(boris.infantry_sprite_pose(), Some((40, 0)));
+    for _ in 0..120 {
+        if f.sim.substrate.airstrike_manager(f.boris).unwrap().active {
+            break;
+        }
+        f.sim.advance_tick(&[], Some(&f.rules), None, None, 67);
+    }
+    let manager = f.sim.substrate.airstrike_manager(f.boris).unwrap();
+    assert!(manager.active && manager.busy);
+    assert_eq!(manager.target, Some(f.target));
+    assert_eq!(manager.aircraft.len(), 2);
+    assert!(
+        f.sim
+            .airstrike_designation_coordinates(f.boris, &f.rules)
+            .is_some()
+    );
+    assert_eq!(
+        f.sim
+            .substrate
+            .entities
+            .get(f.target)
+            .unwrap()
+            .health
+            .current(),
+        health
+    );
+    f.sim
+        .airstrike_clear_target(f.boris, &f.rules, &mut FrameEffects::default());
+    assert!(
+        f.sim
+            .airstrike_designation_coordinates(f.boris, &f.rules)
+            .is_none()
+    );
+}
+
+#[test]
+#[ignore = "slow; run when changing what it covers"]
+fn retail_flare_starts_two_aircraft_and_preserves_special_damage_suppression() {
+    let Some(mut f) = Fixture::new() else { return };
+    assert!(f.sim.substrate.airstrike_manager(f.boris).is_some());
+    let health = f
+        .sim
+        .substrate
+        .entities
+        .get(f.target)
+        .unwrap()
+        .health
+        .current();
+    f.hit(f.boris, f.target);
+    let m = f.sim.substrate.airstrike_manager(f.boris).unwrap();
+    assert!(m.busy && m.active);
+    assert_eq!(m.target, Some(f.target));
+    assert_eq!(m.aircraft.len(), 2);
+    assert_eq!(m.remaining, 2);
+    for &plane in &m.aircraft {
+        let e = f.sim.substrate.entities.get(plane).unwrap();
+        assert_eq!(f.sim.interner.resolve(e.type_ref()), "BPLN");
+        assert_eq!(e.airstrike_link(), Some(f.boris));
+        assert!(matches!(
+            e.attack_target.target(),
+            Some(TargetKind::Cell(_, _))
+        ));
+        assert_eq!(e.veterancy.rank_kind(), VeterancyRank::Rookie);
+    }
+    assert_eq!(
+        f.sim
+            .substrate
+            .entities
+            .get(f.target)
+            .unwrap()
+            .airstrike_link(),
+        Some(f.boris)
+    );
+    assert_eq!(
+        f.sim
+            .substrate
+            .entities
+            .get(f.target)
+            .unwrap()
+            .health
+            .current(),
+        health
+    );
+    assert!(f.sim.airstrike_tint_active(f.target));
+}
+
+#[test]
+#[ignore = "slow; run when changing what it covers"]
+fn last_departure_starts_recharge_without_erasing_target() {
+    let Some(mut f) = Fixture::new() else { return };
+    f.hit(f.boris, f.target);
+    let aircraft = f
+        .sim
+        .substrate
+        .airstrike_manager(f.boris)
+        .unwrap()
+        .aircraft
+        .clone();
+    f.sim.session.set_binary_frame_for_test(40);
+    crate::sim::world::Simulation::airstrike_remove_aircraft(
+        &f.sim.session,
+        &mut f.sim.substrate,
+        f.boris,
+        aircraft[0],
+    );
+    assert!(f.sim.substrate.airstrike_manager(f.boris).unwrap().busy);
+    crate::sim::world::Simulation::airstrike_remove_aircraft(
+        &f.sim.session,
+        &mut f.sim.substrate,
+        f.boris,
+        aircraft[1],
+    );
+    let m = f.sim.substrate.airstrike_manager(f.boris).unwrap();
+    assert!(!m.busy && !m.active);
+    assert_eq!(m.target, Some(f.target));
+    assert_eq!(m.returned_at, Some(40));
+    f.sim.session.set_binary_frame_for_test(139);
+    f.hit(f.boris, f.target);
+    assert!(!f.sim.substrate.airstrike_manager(f.boris).unwrap().busy);
+    f.sim.session.set_binary_frame_for_test(140);
+    f.hit(f.boris, f.target);
+    assert!(f.sim.substrate.airstrike_manager(f.boris).unwrap().busy);
+}
+
+#[test]
+#[ignore = "slow; run when changing what it covers"]
+fn unequal_ammo_retarget_cancels_and_empties_entire_sortie() {
+    let Some(mut f) = Fixture::new() else { return };
+    f.hit(f.boris, f.target);
+    let aircraft = f
+        .sim
+        .substrate
+        .airstrike_manager(f.boris)
+        .unwrap()
+        .aircraft
+        .clone();
+    f.sim
+        .substrate
+        .entities
+        .get_mut(aircraft[0])
+        .unwrap()
+        .ammo_mut()
+        .unwrap()
+        .empty();
+    let next = f
+        .sim
+        .spawn_object("GAPOWR", "Russians", 18, 12, 0, &f.rules)
+        .unwrap();
+    f.hit(f.boris, next);
+    let m = f.sim.substrate.airstrike_manager(f.boris).unwrap();
+    assert!(m.busy);
+    assert!(!m.active);
+    assert_eq!(m.target, None);
+    for id in aircraft {
+        let e = f.sim.substrate.entities.get(id).unwrap();
+        assert_eq!(e.ammo().unwrap().current(), 0);
+        assert_eq!(e.attack_target.target(), None);
+    }
+    assert_eq!(
+        f.sim
+            .substrate
+            .entities
+            .get(f.target)
+            .unwrap()
+            .airstrike_link(),
+        None
+    );
+}
+
+#[test]
+#[ignore = "slow; run when changing what it covers"]
+fn marker_restoration_uses_last_other_manager_even_after_its_sortie_finished() {
+    let Some(mut f) = Fixture::new() else { return };
+    f.hit(f.boris, f.target);
+    let second = f
+        .sim
+        .spawn_object("BORIS", "Americans", 12, 14, 0, &f.rules)
+        .unwrap();
+    f.hit(second, f.target);
+    let first_planes = f
+        .sim
+        .substrate
+        .airstrike_manager(f.boris)
+        .unwrap()
+        .aircraft
+        .clone();
+    for id in first_planes {
+        crate::sim::world::Simulation::airstrike_remove_aircraft(
+            &f.sim.session,
+            &mut f.sim.substrate,
+            f.boris,
+            id,
+        );
+    }
+    f.sim
+        .airstrike_clear_target(second, &f.rules, &mut FrameEffects::default());
+    assert_eq!(
+        f.sim
+            .substrate
+            .entities
+            .get(f.target)
+            .unwrap()
+            .airstrike_link(),
+        Some(f.boris)
+    );
+}
+
+#[test]
+#[ignore = "slow; run when changing what it covers"]
+fn live_target_expiry_preserves_strike_dead_target_expiry_cancels_it() {
+    let Some(mut f) = Fixture::new() else { return };
+    f.hit(f.boris, f.target);
+    f.sim
+        .airstrike_pointer_expired(f.boris, f.target, &f.rules, &mut FrameEffects::default());
+    assert_eq!(
+        f.sim.substrate.airstrike_manager(f.boris).unwrap().target,
+        Some(f.target)
+    );
+    f.sim
+        .substrate
+        .entities
+        .get_mut(f.target)
+        .unwrap()
+        .health
+        .set(0);
+    f.sim
+        .airstrike_pointer_expired(f.boris, f.target, &f.rules, &mut FrameEffects::default());
+    assert_eq!(
+        f.sim.substrate.airstrike_manager(f.boris).unwrap().target,
+        None
+    );
+}
+
+#[test]
+#[ignore = "slow; run when changing what it covers"]
+fn owner_target_change_cancels_but_leaves_planes_until_their_departure() {
+    let Some(mut f) = Fixture::new() else { return };
+    f.sim
+        .assign_target_represented(
+            f.boris,
+            Some(TargetKind::Entity(f.target)),
+            &f.rules,
+            &mut FrameEffects::default(),
+        )
+        .unwrap();
+    f.hit(f.boris, f.target);
+    f.sim
+        .assign_target_represented(f.boris, None, &f.rules, &mut FrameEffects::default())
+        .unwrap();
+    let m = f.sim.substrate.airstrike_manager(f.boris).unwrap();
+    assert!(m.busy);
+    assert_eq!(m.target, None);
+    assert_eq!(m.aircraft.len(), 2);
+}
+
+#[test]
+#[ignore = "slow; run when changing what it covers"]
+fn equal_ammo_retarget_transfers_marker_and_gives_planes_object_targets() {
+    let Some(mut f) = Fixture::new() else { return };
+    f.hit(f.boris, f.target);
+    let next = f
+        .sim
+        .spawn_object("GAPOWR", "Russians", 18, 12, 0, &f.rules)
+        .unwrap();
+    let original = f
+        .sim
+        .substrate
+        .airstrike_manager(f.boris)
+        .unwrap()
+        .aircraft
+        .clone();
+    f.hit(f.boris, next);
+    let m = f.sim.substrate.airstrike_manager(f.boris).unwrap();
+    assert_eq!(m.aircraft, original);
+    assert_eq!(m.target, Some(next));
+    assert_eq!(
+        f.sim
+            .substrate
+            .entities
+            .get(f.target)
+            .unwrap()
+            .airstrike_link(),
+        None
+    );
+    for plane in original {
+        assert_eq!(
+            f.sim
+                .substrate
+                .entities
+                .get(plane)
+                .unwrap()
+                .attack_target
+                .target(),
+            Some(TargetKind::Entity(next))
+        );
+    }
+}
+
+/// The abort voice's IsHumanPlayer (`0x0041D5A5`) accepts a campaign
+/// `PlayerControl=` house that is not the player.
+#[test]
+#[ignore = "slow; run when changing what it covers"]
+fn a_campaign_player_control_designators_abort_voice_plays() {
+    let Some(mut f) = Fixture::new() else { return };
+    let house = f.sim.substrate.entities.get(f.boris).unwrap().owner();
+    let state = f.sim.houses.get_mut(&house).unwrap();
+    state.set_is_human_for_test(false);
+    state.set_player_control_for_test(true);
+    f.hit(f.boris, f.target);
+    f.sim
+        .airstrike_pointer_expired(f.boris, f.boris, &f.rules, &mut FrameEffects::default());
+    assert!(f.sim.sound_events.iter().any(|event| matches!(event,
+        SimSoundEvent::VocAt { sound_id, audible_to: Some(houses), .. }
+            if sound_id.name_in(&f.rules) == "MIGMissionAborted" && *houses == [house, house]
+    )));
+}
+
+#[test]
+#[ignore = "slow; run when changing what it covers"]
+fn owner_expiry_unlinks_surviving_planes_and_clears_the_designation() {
+    let Some(mut f) = Fixture::new() else { return };
+    f.hit(f.boris, f.target);
+    let planes = f
+        .sim
+        .substrate
+        .airstrike_manager(f.boris)
+        .unwrap()
+        .aircraft
+        .clone();
+    f.sim
+        .airstrike_pointer_expired(f.boris, f.boris, &f.rules, &mut FrameEffects::default());
+    let house = f.sim.substrate.entities.get(f.boris).unwrap().owner();
+    assert!(f.sim.sound_events.iter().any(|event| matches!(event,
+        SimSoundEvent::VocAt { sound_id, audible_to: Some(houses), .. }
+            if sound_id.name_in(&f.rules) == "MIGMissionAborted" && *houses == [house, house]
+    )));
+    let m = f.sim.substrate.airstrike_manager(f.boris).unwrap();
+    assert!(m.aircraft.is_empty());
+    assert!(!m.busy && !m.active);
+    for id in planes {
+        assert_eq!(
+            f.sim.substrate.entities.get(id).unwrap().airstrike_link(),
+            None
+        );
+    }
+    assert_eq!(
+        f.sim
+            .substrate
+            .entities
+            .get(f.target)
+            .unwrap()
+            .airstrike_link(),
+        None
+    );
+}
+
+#[test]
+#[ignore = "slow; run when changing what it covers"]
+fn snapshot_preserves_cancelled_sortie_and_rejects_unresolved_manager_references() {
+    use crate::sim::snapshot::GameSnapshot;
+    let Some(mut f) = Fixture::new() else { return };
+    f.hit(f.boris, f.target);
+    f.sim
+        .airstrike_clear_target(f.boris, &f.rules, &mut FrameEffects::default());
+    // Scenario RNG intentionally reseeds on native-shaped load; compare the
+    // manager's retained state, not the whole pre-load simulation hash.
+    let before = f
+        .sim
+        .substrate
+        .entities
+        .get(f.boris)
+        .unwrap()
+        .seldom
+        .airstrike
+        .clone();
+    let bytes = GameSnapshot::save(&f.sim, 0, 0, "airstrike", 0);
+    let mut loaded = GameSnapshot::load(&bytes).unwrap().sim;
+    loaded.restore_after_snapshot_load().unwrap();
+    assert_eq!(
+        loaded
+            .substrate
+            .entities
+            .get(f.boris)
+            .unwrap()
+            .seldom
+            .airstrike,
+        before
+    );
+    let m = loaded.substrate.airstrike_manager(f.boris).unwrap();
+    assert!(m.busy);
+    assert!(!m.active);
+    assert!(m.target.is_none());
+    assert_eq!(m.aircraft.len(), 2);
+    for &plane in &m.aircraft {
+        assert_eq!(
+            loaded
+                .substrate
+                .entities
+                .get(plane)
+                .unwrap()
+                .airstrike_link(),
+            Some(f.boris)
+        );
+    }
+    f.sim
+        .substrate
+        .airstrike_manager_mut(f.boris)
+        .unwrap()
+        .aircraft
+        .push(u64::MAX);
+    let bytes = GameSnapshot::save(&f.sim, 0, 0, "invalid", 0);
+    let mut invalid = GameSnapshot::load(&bytes).unwrap().sim;
+    assert!(invalid.restore_after_snapshot_load().is_err());
+}
+
+#[test]
+#[ignore = "slow; run when changing what it covers"]
+fn live_detach_keeps_designator_and_aircraft_aimed_at_the_strike_target() {
+    let Some(mut f) = Fixture::new() else { return };
+    f.sim
+        .assign_target_represented(
+            f.boris,
+            Some(TargetKind::Entity(f.target)),
+            &f.rules,
+            &mut FrameEffects::default(),
+        )
+        .unwrap();
+    f.hit(f.boris, f.target);
+    f.sim
+        .stop_all_targeting_on_detach(f.target, &f.rules, &mut FrameEffects::default());
+    assert_eq!(
+        f.sim
+            .substrate
+            .entities
+            .get(f.boris)
+            .unwrap()
+            .attack_target
+            .target(),
+        Some(TargetKind::Entity(f.target))
+    );
+    assert!(f.sim.substrate.airstrike_manager(f.boris).unwrap().active);
+}
+
+#[test]
+#[ignore = "slow; run when changing what it covers"]
+fn elite_boris_selects_four_rookie_planes_and_the_shorter_recharge() {
+    let Some(mut f) = Fixture::new() else { return };
+    f.sim
+        .substrate
+        .entities
+        .get_mut(f.boris)
+        .unwrap()
+        .veterancy
+        .set_elite();
+    f.hit(f.boris, f.target);
+    let aircraft = f
+        .sim
+        .substrate
+        .airstrike_manager(f.boris)
+        .unwrap()
+        .aircraft
+        .clone();
+    assert_eq!(aircraft.len(), 4);
+    for &id in &aircraft {
+        assert_eq!(
+            f.sim
+                .substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .veterancy
+                .rank_kind(),
+            VeterancyRank::Rookie
+        );
+    }
+    f.sim.session.set_binary_frame_for_test(10);
+    for id in aircraft {
+        crate::sim::world::Simulation::airstrike_remove_aircraft(
+            &f.sim.session,
+            &mut f.sim.substrate,
+            f.boris,
+            id,
+        );
+    }
+    f.sim.session.set_binary_frame_for_test(59);
+    f.hit(f.boris, f.target);
+    assert!(!f.sim.substrate.airstrike_manager(f.boris).unwrap().busy);
+    f.sim.session.set_binary_frame_for_test(60);
+    f.hit(f.boris, f.target);
+    assert_eq!(
+        f.sim
+            .substrate
+            .airstrike_manager(f.boris)
+            .unwrap()
+            .aircraft
+            .len(),
+        4
+    );
+}
+
+#[test]
+#[ignore = "slow; run when changing what it covers"]
+fn a_different_target_is_admitted_before_same_target_recharge() {
+    let Some(mut f) = Fixture::new() else { return };
+    f.hit(f.boris, f.target);
+    let planes = f
+        .sim
+        .substrate
+        .airstrike_manager(f.boris)
+        .unwrap()
+        .aircraft
+        .clone();
+    f.sim.session.set_binary_frame_for_test(20);
+    for id in planes {
+        crate::sim::world::Simulation::airstrike_remove_aircraft(
+            &f.sim.session,
+            &mut f.sim.substrate,
+            f.boris,
+            id,
+        );
+    }
+    let other = f
+        .sim
+        .spawn_object("GAPOWR", "Russians", 18, 12, 0, &f.rules)
+        .unwrap();
+    f.hit(f.boris, other);
+    let m = f.sim.substrate.airstrike_manager(f.boris).unwrap();
+    assert!(m.busy);
+    assert_eq!(m.target, Some(other));
+}
+
+#[test]
+fn designation_coordinates_follow_the_existing_sortie_target_through_departure_and_clear() {
+    let Some(mut f) = Fixture::new() else { return };
+    assert!(
+        f.sim
+            .airstrike_designation_coordinates(f.boris, &f.rules)
+            .is_none()
+    );
+    assert_eq!(
+        f.rules.object("BORIS").unwrap().weapon_list[1].as_deref(),
+        Some("Flare")
+    );
+    let flare = f.rules.weapon("Flare").unwrap();
+    assert!(flare.is_line && flare.is_house_color && !flare.is_laser);
+    f.hit(f.boris, f.target);
+    let before = f.sim.rng_state();
+    let first = f
+        .sim
+        .airstrike_designation_coordinates(f.boris, &f.rules)
+        .unwrap();
+    assert_eq!(f.sim.rng_state(), before);
+    assert_eq!(
+        first[1],
+        crate::sim::movement::ground_pose::object_get_coords(
+            f.sim.substrate.entities.get(f.target).unwrap(),
+            f.sim.resolved_terrain.as_ref()
+        )
+    );
+    assert!(
+        f.sim
+            .airstrike_designation_coordinates(f.target, &f.rules)
+            .is_none(),
+        "borrowed marker link is not the manager owner"
+    );
+    let aircraft = f
+        .sim
+        .substrate
+        .airstrike_manager(f.boris)
+        .unwrap()
+        .aircraft
+        .clone();
+    for id in aircraft {
+        assert!(
+            f.sim
+                .airstrike_designation_coordinates(id, &f.rules)
+                .is_none()
+        );
+        crate::sim::world::Simulation::airstrike_remove_aircraft(
+            &f.sim.session,
+            &mut f.sim.substrate,
+            f.boris,
+            id,
+        );
+    }
+    assert!(!f.sim.substrate.airstrike_manager(f.boris).unwrap().active);
+    assert_eq!(
+        f.sim.airstrike_designation_coordinates(f.boris, &f.rules),
+        Some(first)
+    );
+    let next = f
+        .sim
+        .spawn_object("GAPOWR", "Russians", 18, 12, 0, &f.rules)
+        .unwrap();
+    f.hit(f.boris, next);
+    assert_ne!(
+        f.sim
+            .airstrike_designation_coordinates(f.boris, &f.rules)
+            .unwrap()[1],
+        first[1]
+    );
+    f.sim
+        .airstrike_clear_target(f.boris, &f.rules, &mut FrameEffects::default());
+    assert!(
+        f.sim
+            .airstrike_designation_coordinates(f.boris, &f.rules)
+            .is_none()
+    );
+    let unit = f
+        .sim
+        .spawn_object("HTNK", "Russians", 20, 12, 0, &f.rules)
+        .unwrap();
+    f.hit(f.boris, unit);
+    assert_eq!(
+        f.sim.substrate.airstrike_manager(f.boris).unwrap().target,
+        Some(unit)
+    );
+    // Phobos `DEFINE_JUMP(LJMP, 0x6D481D, 0x6D482D)` lets the flare reach a
+    // foot target; the vanilla Tactical beam only draws to a building.
+    #[cfg(not(feature = "phobos"))]
+    assert!(
+        f.sim
+            .airstrike_designation_coordinates(f.boris, &f.rules)
+            .is_none(),
+        "nonbuilding manager target has no Tactical beam"
+    );
+    #[cfg(feature = "phobos")]
+    assert_eq!(
+        f.sim
+            .airstrike_designation_coordinates(f.boris, &f.rules)
+            .unwrap()[1],
+        crate::sim::movement::ground_pose::object_get_coords(
+            f.sim.substrate.entities.get(unit).unwrap(),
+            f.sim.resolved_terrain.as_ref()
+        ),
+        "Phobos draws the Tactical beam to a foot target"
+    );
+}
+
+/// Ares AirstrikeClass_Fire_AirstrikeAttackVoice (10048D60, hook 0x41D940)
+/// and AirstrikeClass_PointerGotInvalid_AirstrikeAbortSound (10048DE0, hook
+/// 0x41D5AE): the first aircraft's `VoiceAirstrikeAttack`/`Abort` replaces
+/// the Rules sound, the designator's replaces that, and `none` silences it.
+#[test]
+fn ares_airstrike_voices_take_the_aircraft_then_the_designator() {
+    use crate::rules::ini_parser::IniFile;
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let ini = IniFile::from_str(
+        "[AudioVisual]\nAirstrikeAttackVoice=Rules\nAirstrikeAbortSound=Rules\n\
+         [InfantryTypes]\n0=SPOTTER\n1=PLAIN\n[AircraftTypes]\n0=JET\n1=OTHERJET\n\
+         [SPOTTER]\nVoiceAirstrikeAbort=none\n[PLAIN]\nStrength=1\n\
+         [JET]\nVoiceAirstrikeAttack=Jet\nVoiceAirstrikeAbort=Jet\n[OTHERJET]\nStrength=1\n",
+    );
+    let mut rules = RuleSet::from_ini(&ini).unwrap();
+    let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+        "[SoundList]\n0=Rules\n1=Jet\n",
+    ));
+    rules.bind_type_sound_references(&ini, &sounds);
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+    let mut spawn = |name, x| {
+        sim.spawn_object(name, "Americans", x, 5, 0, &rules)
+            .unwrap()
+    };
+    let [spotter, plain, jet, other] = [
+        spawn("SPOTTER", 4),
+        spawn("PLAIN", 6),
+        spawn("JET", 8),
+        spawn("OTHERJET", 10),
+    ];
+    assert_eq!(
+        sim.airstrike_voice(false, other, plain, &rules),
+        Some("Rules")
+    );
+    assert_eq!(sim.airstrike_voice(false, jet, plain, &rules), Some("Jet"));
+    assert_eq!(sim.airstrike_voice(true, jet, plain, &rules), Some("Jet"));
+    assert_eq!(sim.airstrike_voice(true, jet, spotter, &rules), None);
+    assert_eq!(
+        sim.airstrike_voice(false, other, spotter, &rules),
+        Some("Rules")
+    );
+}

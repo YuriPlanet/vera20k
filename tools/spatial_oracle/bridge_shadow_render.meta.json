@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "43 original high concrete and 20 affected high wood bridge Cell shadow callers through physical bridge.tem/bridgb.tem SHP, clip, selector, RLE rowwalker, shadow color and depth writes; 15 selected plain/RLE leaf controls; original two-sweep Tactical traversal suffix with visibility/map and draw sinks. No complete scene, map loader, GPU or gameplay parity.",
+  "assumptions": [
+    "Physical archives and lexical INI entries are supplied using existing archive/lexical owners. Original Overlay registry constructors, BRIDGE1/2 and BRIDGEB1/2 full rules readers, ART/image binding and Convert constructors execute. Selected RULESMD and MPBattleMD layers; no map overrides or LANGRULE are claimed.",
+    "Prepared live Cell level/state/flags, projected zero-height top-left cell point, dirty rectangle, viewport Y and RGB565 surfaces are explicit inputs. Original Get_Draw_Offset, shadow frame selection, shape clipping, selector, rowwalker and pixel leaves execute unchanged.",
+    "A/Z buffers use original BSurface virtual methods, baseline32768, A127. Packed output runs are lossless observations of original final colors/depth relative to the input background/oldZ.",
+    "All 18 selected retail shadow frames in each family use native format3; native shape selects gradient0, optional Zshape0 and the rowwalker fallback89C568, whose observed bytes are zero. shapes.mask_runs are obtained from native admitted shadow pixels at oldZ65535, translated into physical180x180 BRIDGE or253x242 BRIDGB canvas; there is no Python SHP pixel decoder or expected-color implementation. Woodrows use a supplied36,81 point to keep their wider shadow crop uncut.",
+    "Within each physical BRIDGE and BRIDGB family, shadow halves in all six theaters are byte-identical after excluding absolute frame-data offsets: exact frame crop/format metadata and compressed bytes compare equal, even where body bytes differ. This static source-equivalence witness does not execute the other five theater loaders.",
+    "pixel_rows invoke constructor-owned Convert selectors490B90/490E50 with4601 and their selected original leaf methods, using explicit input source indices, RGB565 destinations, signed candidate depths and optional signedZshape. Negative candidate controls show strict signed comparison precedes the low16 store; a negative repeated candidate can remain admitted after wrapping.",
+    "traversal starts at6D6E5B after the visible region bounds were calculated; supplied origin10,20/max diagonal2/three cells per diagonal, original coordinate arithmetic, projection and rectangle intersection execute. Original loops emit all body calls, then all shadow calls, descending cellX+cellY and ascending cellX within each diagonal. No native map visibility admission or full Display order outside this bounded suffix is claimed."
+  ],
+  "substitutions": [
+    "Existing PaletteReader allocator, TLS and archive-resource boundaries supply memory and physical named asset bytes. No reached bridge caller, shape, selector, rowwalker or shadow leaf is substituted.",
+    "Only traversal substitutes568300 map-bound admission(true),5657A0 cell lookup(prepared Cell with requested coordinates),47FB90/47FDE0 visibility rectangles(full target), and47F6A0/47F510 draw sinks recording arguments. These substitutions never apply to raster rows or pixel_rows."
+  ],
+  "entry_points": {
+    "cell_shadow": "0x0047F510",
+    "cell_draw_offset": "0x00480110",
+    "overlay_draw_offset": "0x005FDCC0",
+    "shape": "0x004AED70",
+    "overlay_type_ctor": "0x005FE250",
+    "overlay_type_read": "0x005FE770",
+    "convert_ctor": "0x0048E740",
+    "blitter_init": "0x0048EBF0",
+    "tactical_sweeps_begin": "0x006D6E5B",
+    "tactical_sweeps_end": "0x006D71D3",
+    "rle_selector": "0x00490E50",
+    "rle_rowwalker": "0x00437A10",
+    "plain_shadow_leaf": "0x00493830",
+    "rle_shadow_leaf": "0x00497390"
+  },
+  "payload_sha256": "5a4869726eb5ebfdfda1a4a420aec85898212b08b37ba8f8a6caa031e440ccce"
+}

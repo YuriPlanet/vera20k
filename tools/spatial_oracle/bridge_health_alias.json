@@ -1,0 +1,160 @@
+{
+  "cases": [
+    {
+      "calls": [
+        {
+          "arg6": 1,
+          "attacker": 0,
+          "damage_is_health": false,
+          "distance": 0,
+          "ignore_defenses": 1,
+          "source_house": 0,
+          "warhead_matches": true
+        }
+      ],
+      "damage": 0,
+      "health": 100,
+      "input_location": "value",
+      "name": "radiation_immune",
+      "result": 0,
+      "writes": [
+        {
+          "instruction": "00701C1C",
+          "location": "packet",
+          "size": 4,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arg6": 1,
+          "attacker": 0,
+          "damage_is_health": true,
+          "distance": 0,
+          "ignore_defenses": 1,
+          "source_house": 0,
+          "warhead_matches": true
+        }
+      ],
+      "damage": 0,
+      "health": 0,
+      "input_location": "health",
+      "name": "radiation_immune",
+      "result": 0,
+      "writes": [
+        {
+          "instruction": "00701C1C",
+          "location": "health",
+          "size": 4,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arg6": 1,
+          "attacker": 0,
+          "damage_is_health": false,
+          "distance": 0,
+          "ignore_defenses": 1,
+          "source_house": 0,
+          "warhead_matches": true
+        }
+      ],
+      "damage": 0,
+      "health": 100,
+      "input_location": "value",
+      "name": "psychic_damage_immune",
+      "result": 0,
+      "writes": [
+        {
+          "instruction": "00701C4F",
+          "location": "packet",
+          "size": 4,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arg6": 1,
+          "attacker": 0,
+          "damage_is_health": true,
+          "distance": 0,
+          "ignore_defenses": 1,
+          "source_house": 0,
+          "warhead_matches": true
+        }
+      ],
+      "damage": 0,
+      "health": 0,
+      "input_location": "health",
+      "name": "psychic_damage_immune",
+      "result": 0,
+      "writes": [
+        {
+          "instruction": "00701C4F",
+          "location": "health",
+          "size": 4,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arg6": 1,
+          "attacker": 0,
+          "damage_is_health": false,
+          "distance": 0,
+          "ignore_defenses": 1,
+          "source_house": 0,
+          "warhead_matches": true
+        }
+      ],
+      "damage": 0,
+      "health": 100,
+      "input_location": "value",
+      "name": "poison_immune",
+      "result": 0,
+      "writes": [
+        {
+          "instruction": "00701C82",
+          "location": "packet",
+          "size": 4,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "calls": [
+        {
+          "arg6": 1,
+          "attacker": 0,
+          "damage_is_health": true,
+          "distance": 0,
+          "ignore_defenses": 1,
+          "source_house": 0,
+          "warhead_matches": true
+        }
+      ],
+      "damage": 0,
+      "health": 0,
+      "input_location": "health",
+      "name": "poison_immune",
+      "result": 0,
+      "writes": [
+        {
+          "instruction": "00701C82",
+          "location": "health",
+          "size": 4,
+          "value": 0
+        }
+      ]
+    }
+  ]
+}

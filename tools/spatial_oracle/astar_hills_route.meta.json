@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original complete Pathfinder/A* over authentic already-stamped Hills Cells.\n\nOriginal bridge-record, connectivity, hierarchy, concrete MTNK admission,\nreconstruction and both finishing wrapper bodies execute. Direct Move=2 caller\nstate and admitted poses exclude command dispatch, whole Unlimbo, original map\nloader/world objects, scheduler and paid Drive movement. The occupied control\nuses original Foot Mark and an identical-owner stationary MTNK; executed branch\nreceipts establish that weapons and House indices/alliances are unread. No route,\ngraph ID, native admission answer or gameplay return is supplied. This leaf has\nno CLI; astar_structural_height owns publication.\n",
+  "assumptions": [
+    "Authentic Hills Cells/TMPs/high bridge stamps and MTNK native scalar readers reuse astar_hills_bridge_inputs.establish; original scenario/file loader, world objects and final map initialization are excluded.",
+    "Route is the common startup owner for its FootMark consumers: original Unit geometry initializers735180/735210/735230/735250/7352F0 execute from executable constants. Earlier receipts omitted these globals and therefore had a zero Unit occupancy bridge threshold; their stationary deck-only Mark case produced identical prior outputs, as checked before adding this receipt. Complete initializer bytes/calls/RNG states are recorded; CRT registration traversal is excluded.",
+    "Existing Navigation.finish_graphs executes original bridge-record scan, connectivity and hierarchy with its established vector constructor boundary; no Rust graph IDs, edges or routes supplied.",
+    "Original Pathfinder constructor/resize/scratch execute as in naval_head_producer. Original4CBC31 direct caller arguments and actor pose/Move2 are explicit inputs; full Foot Find_Path, command dispatch, scheduler and whole Unlimbo are excluded.",
+    "Occupied control creates another original MTNK constructor prefix and Drive, assigns identical House pointer and admitted deck pose, and executes original FootMark1/0. Same-pointer alliance short circuit is executed before House index/bits; full House initialization is excluded.",
+    "Target/navigation/facing and stationary Drive derive from constructor prefix with zero backing storage. Mission Move2 and Guard5 exercise the friendly stationary admission arm. Executed PCs prove Primary120mm, weapon getter and House index/alliance bytes unread in these cases. Enemy, attack/scatter, moving blocker and wall controls are excluded."
+  ],
+  "substitutions": [
+    "Inherited bounded allocator/free, CRT TLS/atexit and presentation/visibility sinks. No gameplay admission, bridge record, graph, path, height or RNG result replaced."
+  ],
+  "entry_points": {
+    "bridge_records": "0x0056D6E0",
+    "connectivity": "0x0056C510",
+    "hierarchy": "0x00581F90",
+    "pathfinder_ctor": "0x0042A6D0",
+    "map_resize": "0x0042AC00",
+    "scratch": "0x0042C1C0",
+    "pathfinder_find": "0x0042C900",
+    "astar": "0x00429A90",
+    "unit_entry": "0x0073F0A0",
+    "reconstruct": "0x0042AA90",
+    "corners": "0x0042B210",
+    "smooth": "0x0042B420",
+    "straight": "0x0042B7F0",
+    "straighten": "0x0042BE20",
+    "foot_mark": "0x004D3780"
+  },
+  "payload_sha256": "252e9e7c2a5c49ddaf3a1a21163c5c51589428839b8c7a4cd81cc1b42a267747"
+}

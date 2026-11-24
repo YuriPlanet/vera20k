@@ -1,0 +1,201 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original rally producer, projection/clipping and patterned RGB565 writes, stock GAPILE constructor/selected physical RULESMD/ARTMD readers, and two prepared crops from pinned release rally/Stop captures; prepared selection/map/House/ABuffer boundaries",
+  "assumptions": [
+    "Original binary, FPCW0E7F, RGB565; 160x120 surface with fixed initial destination",
+    "Native selected-object vector, object/type fields, House RGB, Camera and map cell state supplied; no selection/rally command or Scenario execution",
+    "Original default-black initializer and Building GetCoords/HasRallyPoint execute; foundation indices and factory enums are explicit fixture inputs; width/height getters and source coordinate return values are recorded",
+    "ABuffer values0,1,63,127,255 expose complementary passes; no native shroud producer in this corpus",
+    "Signed binary-frame wrap and clipped row-to-row mutation included; native Z is untouched by this mechanism",
+    "Four in-bounds two-factory controls at camera[-335,440] preserve reverse selection and per-object black/color/color row order, with overlapping lines, both passes and clear/mixed ABuffer; native selection production is still supplied",
+    "The original four camera[-320,440] overlap payloads are retained verbatim in clipping_rounding_controls. First row[-10,42]->[140,87] becomes[0,44]->[140,87] under original7BC2B0: chop53 produces44.99999999999999 before integer truncation. VERA host-nearest f64 produces45, a bounded one-pixel presentation residual; moving the separate ordering controls in bounds does not claim clipping equivalence",
+    "stock_type_inputs independently executes whole BuildingType45DD90 for GAPILE, then original Image5F92F9..5F9340, Factory46051A..46054B, UnitRepair460906..46092F, Cloning46094E..46097D and Foundation461225..46125D reader/store ranges. It records constructor defaults, exact reader arguments, before/after fields, code bytes and unchanged text. Width45EC90, Height45ECA0(0) and HasRallyPoint455DA0 consume the resulting native fields.",
+    "Physical base RULESMD/ARTMD file identities and literal selected key strings are pinned below. Existing lexical extraction supplies raw strings to the existing native CRC/INI-cache owner; original readers own numeric/enum/bool/Foundation parsing. Full physical INI loading, LANGRULE/mode/map layers and complete ReadINI are excluded. GAPILE has no Image override; its actual ART Foundation is3x2 (enum5), not2x3 (enum4).",
+    "The stock reader slices receive prepared interior frames. The Image slice includes the original retained-image default copy and25-byte ReadString. Interleaved pushes for the next reader remain and stack deltas are recorded. The Cloning prefix receives AL equal to the preceding unrelated field16AB constructor byte, preserving it while that reader remains outside this slice.",
+    "The stock type result does not establish Building object placement/physical Location, selection production, ArchiveTarget command timing, terrain loading, House color, A generation, object occlusion or a native full Scenario.",
+    "production_crop_cases execute the existing Rally owner with prepared state from the pinned valid release rally/Stop receipts below. Surface storage stays160x120; native crop camera equals production camera plus crop origin minus[0,15] at zoom1. All three full rows stay in bounds; targetless Archive=null draws nothing. Pixel comparison with the production captures is separate from this native corpus generation."
+  ],
+  "substitutions": [
+    "Original BSurface storage/lock/pitch helpers replace platform DirectDraw surface access; slot4C remains original4C0750",
+    "The existing HutTypeReader constructor fixture supplies bump allocation at7C8E17, no-op delete at7C8B3D and CRT TLS storage at7D140B. Reached constructor seams are recorded; no such seam or physical asset lookup is admitted during selected type reader slices."
+  ],
+  "entry_points": {
+    "rally": "0x006DA9D0",
+    "patterned_line": "0x004C0750",
+    "clip": "0x007BC2B0",
+    "source_coords": "0x00447AC0",
+    "rally_gate": "0x00455DA0",
+    "black_init": "0x004E8120",
+    "building_type_ctor": "0x0045DD90",
+    "image_reader": "0x00528A10",
+    "factory_reader": "0x00474FF0",
+    "factory_name_decoder": "0x0040DCE0",
+    "bool_reader": "0x005295F0",
+    "foundation_reader": "0x00474DA0",
+    "foundation_width": "0x0045EC90",
+    "foundation_height": "0x0045ECA0"
+  },
+  "stock_type_physical_inputs": {
+    "rules": {
+      "path": "ini/rulesmd.ini",
+      "bytes": 743215,
+      "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef",
+      "section": "GAPILE",
+      "keys": {
+        "Image": null,
+        "Factory": "InfantryType",
+        "UnitRepair": null,
+        "Cloning": null
+      }
+    },
+    "art": {
+      "path": "ini/artmd.ini",
+      "bytes": 336535,
+      "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31",
+      "section": "GAPILE",
+      "keys": {
+        "Foundation": "3x2"
+      }
+    }
+  },
+  "production_crop_reference": {
+    "captures": {
+      "rally-clear-v2": {
+        "profile": {
+          "path": "logs/procedural-drawing/rally-clear-v2/profile.json",
+          "source_path": "tools/map_observation.rally-drawing.example.json",
+          "bytes": 5621,
+          "sha256": "479a15285c4a2c4406c603cc1a5f267312329e09d2cca1876ccfea9e585a9318"
+        },
+        "receipt": {
+          "path": "logs/procedural-drawing/rally-clear-v2/child-output/capture.json",
+          "bytes": 20099715,
+          "sha256": "77a2ff4dfee9a68457f7dffb3a32ed1ede67ec71595c98734570d3ca63502851"
+        },
+        "run": {
+          "path": "logs/procedural-drawing/rally-clear-v2/run.json",
+          "bytes": 20096382,
+          "sha256": "125c833508911cd0b72aec5b0a6297f27f60647bb5b13b09dd206362d37f6adf"
+        },
+        "frame": {
+          "path": "logs/procedural-drawing/rally-clear-v2/child-output/frame.bgra",
+          "bytes": 1920000,
+          "sha256": "2c0d473797443e112299954f78f165313ff2b5085eee29741b4e0419cfa800df"
+        },
+        "observed_archive": {
+          "Cell": [
+            35,
+            89
+          ]
+        }
+      },
+      "rally-stop-v2": {
+        "profile": {
+          "path": "logs/procedural-drawing/rally-stop-v2/profile.json",
+          "bytes": 5781,
+          "sha256": "e16d3b457dc087940f647a8d45d741dfe805692f46a8c18d3990b16d9491d862"
+        },
+        "receipt": {
+          "path": "logs/procedural-drawing/rally-stop-v2/child-output/capture.json",
+          "bytes": 20099843,
+          "sha256": "5f3bf464dd02f8d3d848b55d844136f8ba569571512a8515b63a24feaee6e8a9"
+        },
+        "run": {
+          "path": "logs/procedural-drawing/rally-stop-v2/run.json",
+          "bytes": 20096417,
+          "sha256": "be48386482d94197cd094fb298addee1d15300292d440c20ef03e0d6b2a58cb6"
+        },
+        "frame": {
+          "path": "logs/procedural-drawing/rally-stop-v2/child-output/frame.bgra",
+          "bytes": 1920000,
+          "sha256": "e78f4e0027aadad78f2322071f644465a88ed960b7c2f56b4857624d8cf45dd7"
+        },
+        "observed_archive": null,
+        "stop_issue_after_step": 1490
+      }
+    },
+    "release_executable": {
+      "label": "procedural-rally-production-v2",
+      "bytes": 31708240,
+      "sha256": "edb373c72f58c45a6b79cdd4d74d7923425efecb5c03e70cbb56f52f3ae45e31"
+    },
+    "map_source": {
+      "logical_name": "XMP03T4.MAP",
+      "archive": "multimd.mix",
+      "bytes": 156269,
+      "sha256": "7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e"
+    },
+    "capture_state": {
+      "status": "COMPLETE",
+      "run_status": "VALID",
+      "binary_frame": 1500,
+      "simulation_tick": 1500,
+      "surface_format": "Bgra8UnormSrgb",
+      "pixel_layout": "BGRA8",
+      "row_stride": 3200,
+      "gpu_backend": "Metal",
+      "gpu_name": "Apple M4",
+      "camera_input_idle": true,
+      "static_default_cursor": true,
+      "loaded_shroud": false,
+      "loaded_fog_of_war": false,
+      "source_cell": {
+        "cell": [
+          31,
+          85
+        ],
+        "allocated": true,
+        "level": 4,
+        "slope": 0,
+        "raw_bridge_flags": 0,
+        "has_deck": false,
+        "tile": [
+          293,
+          2
+        ]
+      },
+      "target_cell": {
+        "cell": [
+          35,
+          89
+        ],
+        "allocated": true,
+        "level": 4,
+        "slope": 0,
+        "raw_bridge_flags": 0,
+        "has_deck": false,
+        "tile": [
+          493,
+          0
+        ]
+      },
+      "producer_type": {
+        "type_id": "GAPILE",
+        "interned_id": 275,
+        "active": true,
+        "in_limbo": false,
+        "actually_placed": true
+      }
+    },
+    "prerequisites": {
+      "type": "rally.json stock_type_inputs: original GAPILE constructor/readers establish resolved Image GAPILE, Factory16, Foundation5/3x2, UnitRepair0 and Cloning0",
+      "color": "house_color.json colors[Gold]: physical Colors Gold=43,239,255; original scalar/CMOV/MMX N53 row26 and House50B840/campaign extraction give RGB240,248,64 and RGB5650xF7C8. Profile color priority0 is supplied; the Rust production comparison must establish its scheme lookup.",
+      "stop": "factory_destination.json: original Stop destination/ArchiveTarget consumer evidence. These two drawing rows begin after the supplied Archive state, not at Stop command execution.",
+      "camera": "native_crop_camera = production_camera + crop_origin - [0,15] at integer zoom1. Existing native projection producer owns coordinates; no raster was fitted to the screenshot."
+    },
+    "limits": [
+      "The receipts establish VERA production actor, terrain, camera, binary frame, loaded options and command history. They do not establish native Scenario loading, building placement/construction, selection generation, SetRally timing or reveal history.",
+      "A127 is explicitly supplied for this disabled-shroud/fog view; no A plane is extracted from the release readback. House56F9 and type fields are supplied from the separate native prerequisite corpora, not serialized by the capture receipt.",
+      "Both native rows execute existing Rally6DA9D0/4C0750 with its original GetCoords, terrain, projection, clipping and raster leaves. The targetless row observes Archive=null from the Stop capture but does not execute Stop or whole native gameplay.",
+      "The constant native background is only a write-mask sentinel. Native draw order puts clear rally before object bodies, so replaying the writes onto a final Stop frame alone does not establish occlusion. Screenshot comparison must separately declare its unobstructed floor region and preserve packed RGB565 versus BGRA display conversion distinctions."
+    ]
+  },
+  "payload_sha256": "3f2c0b75c5c71e8655c076b73a004c0a21c2165533f6143e78694fb599ef85d2",
+  "replay_command": "python -m tools.procedural_drawing_oracle.rally"
+}

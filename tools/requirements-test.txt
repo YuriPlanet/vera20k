@@ -1,0 +1,7 @@
+# Python >= 3.12. Native-runner failure tests execute synthetic x86 bytes only.
+# Keep aligned with tools/native_oracle.md and saved native-run provenance.
+unicorn==2.1.4
+# Static native instruction inspection and synthetic scan tests.
+capstone==5.0.7
+# Image decoding and resampling for tools/end_game_cards.py and its tests.
+Pillow==13.0.0

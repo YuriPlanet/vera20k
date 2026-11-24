@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original FV continuation under declared identity/options and outside RNG calls.\n\nThe compact input contains no Rust motion, timer, projectile or bridge outcomes.\nOriginal Paid/Mission owners construct the FV and execute every selected-object\ndecision. Outside producers supply only their recorded raw-Next call schedule.\n",
+  "assumptions": [
+    "The input declares the Scenario identity cursor before actual FV construction, original GameOptions speed3, declared Scenario seed (default31) executed by original65C6D0 immediately before the actual FV ctor, command frame1, constructor RNG-boundary hashes and outside raw-Next prefix/suffix receipts. It contains no expected selected-object outcomes. Boundary hashes are checked, never imported.",
+    "Original constructor/placement/Event, Mission/Approach/Drive, MoveSound/FireAt, Bullet flight/impact/bridge damage, Anim AI and live-vector removal/append/deferred cleanup execute unchanged through the supplied bounded frame schedule. Full native states, raw calls/ranged requests/results, native IDs, velocity bytes, Anim runtime/config and ordered callbacks remain output.",
+    "The physical four-stage map is freshly produced by the existing owner and matches its frozen cells/navigation/hierarchies before selected execution. Compact production input provenance is preserved."
+  ],
+  "substitutions": [
+    "Whole native Scenario startup/population and other-world AI are not executed. Their recorded Next calls run original65C780 as explicit outside-world inputs. This is selected-owner native evidence conditional on incoming identity/options/RNG scheduling, not whole-world parity.",
+    "Shared Paid OS/assets/physical-world boundaries and MoveSound sound-device boundary remain. No selected RNG return, constructed object ID, movement, timer, projectile, damage or cleanup result is supplied."
+  ],
+  "entry_points": {
+    "drive_crt_dispatcher": "0x007CBED3",
+    "drive_height_initializer": "0x004AF400",
+    "scenario_constructor_seed": "0x0065C6D0",
+    "unit_ctor": "0x007353C0",
+    "unit_unlimbo": "0x00737BA0",
+    "event": "0x004C6CB0",
+    "live_logic": "0x0055B5FF",
+    "outside_raw_next": "0x0065C780",
+    "raw_word": "0x0065C79D",
+    "ranged_word": "0x0065C84B",
+    "anim_ai": "0x00423AC0"
+  },
+  "input_sha256": "1ca77474bf1caa94362e517a1814db1686d3f064ff791afd6ca89ba003de01d9",
+  "frozen_source_sha256": "54c0a72aebb39148f5612ceb9b756f5d626bd16c21bcce83529fec91776817a3",
+  "supersedes": "paid_conditional_drive_crt.json.gz",
+  "publication_changes": [
+    "Original selected execution uses the new sealed bridge-fv-current-v26 outside-call boundary. All six original declarations and horizons remain; prior conditional inputs and native packets are preserved. Drive CRT initialization remains enabled.",
+    "Copied lexical INI text is represented by SHA256 and checkout references become relative. Historical Rust input receipts stay sealed in the compact input."
+  ],
+  "payload_sha256": "bfe7cdfaf9740464984769f2fef28f65d5f2e908e8df81f6d6643a349247a953",
+  "packaging": "canonical JSON; gzip mtime=0; copied lexical inputs replaced by SHA256"
+}

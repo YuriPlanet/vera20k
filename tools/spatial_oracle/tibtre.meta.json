@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original TerrainClass71C730 idle probability/animation timer/midpoint producer through forced Cell483780 neighbor walk, admission4838E0, Place487190, Overlay constructor5FC380/Mark, native Cell RecalcAttributes and Tiberium growth queue7235A0. Selected original TerrainType constructor and RULES reader slices establish scalar inputs. Prepared map/objects/registries; dirty services bounded. No full scenario, physical INI/archive load, native pixels, or whole TIBTRE parity claim.",
+  "assumptions": [
+    "Stock TIBTRE01 physical RULESMD and ARTMD selected sections are lexically extracted by existing bridge_landing_inputs.physical_inputs; original scalar readers and float store execute. ART has Theater/Foundation only; measured SpawnsTiberium, IsAnimated, AnimationRate and AnimationProbability belong to RULES. Original TerrainType ctor71DA80 establishes defaults. Reader slices supply successful base-reader admission; unrelated adjacent store AL retained as declared constructor value.",
+    "Shared refinery_dock map/Scenario RNG fixture and harvest_field overlay/Tiberium queue tables, plus original startup direction49F2F0 and EmptyCell5FC310. Tree centers16,16 or18,16; shape header count22 supplied from pinned physical TIBTRE01/02/03 TEM and SNO bytes, decoded through existing stock.mix/mix_hash input preparation. Original instance constructor member/reset blocks71BB9E..71BBD1 and71BC86..71BCA5 establish fresh stage0, changedfalse, timerstart=currentframe, duration/rate0,step1. Full Terrain constructor/placement and whole Logic scheduler excluded. Timer+4 copies an uninitialized caller local; supplied caller stack zero makes this padding reproducible without assigning gameplay meaning. Silent alive on-map Terrain body/type state has no dying byte or other active effects.",
+    "Overlay/Tiberium prepared registry data: Riparius base102/main12/extra8, Cruentus base27/main12, maxstage12, growth/spread percentages0.1. Original Overlay constructors/Mark and queue insert bodies execute; empty original startup registries have supplied capacity128. GrowthAllowed land bytes for Clear0/Tiberium5 supplied. Map diamond width16,height16 is inherited from harvest_field.",
+    "Original Recalc47D2B0 executes with the existing terrain_recalc/bridge_constructor synthetic resident1x1 TMP:8x4 pixels, rawheight3, rawland11, slope0, supplied AllowTiberiumtrue; spare33x33 zone/level caches and allLAT bases-1. OverlayType Land5 for ore/gems. Native tile reader, overlay classification and zone-cache writes execute; physical TMP loading/relocation remain outside this corpus.",
+    "Native x87 control0x0E7F; original CRT float scanner initializer7C8F5E executes in reader fixture. No Python expected arithmetic implements probability, timer, queue priority, overlay selection or RNG. All RNG original Scenario seeded state; timelines invoke Terrain AI in explicit actor order once per frame.",
+    "Probability controls replace one data word in the original seeded Scenario RNG state so original Random65C780 XOR produces the recorded next_raw; no RNG function/caller result is hooked. Stock.003 boundaries2999/3000/3001, half.5 boundaries499999/500000/500001, zero, negative raw, INT_MIN and modulo wrap are executed independently. Direct spread seeds cover every native start direction0..7. Actor-order controls schedule two original AI objects in both orders; they do not execute whole Logic dispatch.",
+    "Adjacent Units reuse original-vtable/Drive constructed harvest_field.place_occupants fixtures. Ordinary Terrain uses original Terrain vtable with SpawnsTiberiumfalse. Building neighbors refer to the shared Building fixture, with explicit health and native flagsInvisible+C9A / InvisibleInGame+1701 controls. Fields are independently supplied retained-state branch probes: native InvisibleInGame post-read also forcesInvisibletrue andRadarVisiblefalse, but that full Building reader/layer reachability is not claimed here. These supplied object list entries exercise original CanGerminate gates, not complete legal object placement or building constructors."
+  ],
+  "substitutions": [
+    "Inherited shared fixtures substitute OS InterlockedIncrement/Decrement integer services during locomotor setup; no reached TIBTRE gameplay query substitutes its result.",
+    "Operator new7C8E17 supplies bounded arena storage; delete7C8B3D is a no-op. Full original Overlay constructor/Mark executes after allocation.",
+    "Cell47FDE0/47FB90/47FF80 rectangle queries return empty rectangles; Tactical6D2790 and Radar6551C0 record dirty effects and return0. These sinks do not supply admission, placement, density, timer, queue, classification or RNG decisions.",
+    "Type input reader inherits Landing bounded arena allocation/free and CRT TLS accessor7D140B setup. Physical lexical file loading, file layer admission and archive resources are supplied; selected original reader bodies/store instructions execute."
+  ],
+  "entry_points": {
+    "terrain_ai": "0x0071C730",
+    "stage_timer": "0x00426630",
+    "forced_spread": "0x00483780",
+    "can_germinate": "0x004838E0",
+    "place_tiberium": "0x00487190",
+    "overlay_ctor": "0x005FC380",
+    "overlay_mark": "0x005FC570",
+    "cell_recalc": "0x0047D2B0",
+    "growth_queue": "0x007235A0",
+    "random": "0x0065C780",
+    "random_ranged": "0x0065C7E0",
+    "terrain_type_ctor": "0x0071DA80",
+    "spawns_read": "0x0071DF27",
+    "instance_ctor_members": "0x0071BB9E",
+    "instance_ctor_reset": "0x0071BC86",
+    "animation_reads": "0x0071E014",
+    "probability_store": "0x0071E073"
+  },
+  "payload_sha256": "d9e857ee1cdbd72a3e0a8a04e10845d5530aad4c9bc2d3daa8f4e58bc65caf50",
+  "replay_command": "python -m tools.spatial_oracle.tibtre"
+}

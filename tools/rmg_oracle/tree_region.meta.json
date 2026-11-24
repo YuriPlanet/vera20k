@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "7 whole original PlaceTreeRegion calls: dense and sparse open regions, walls, prior objects, overlays and Rock land, a locked ring, the 25 * size node budget, a diamond-edge origin and cells an earlier region visited; every density, variant and jitter draw, the visited marks, the returned count and each tree name and cell",
+  "assumptions": [
+    "Existing CliffFixture, TiberiumFieldFixture and StartPointsFixture own original-constructed Cell backing, admission, the stride-33 scratch, the physical clear/cliff TMP registration and the guarded arena; bounds 16..48. Cells start tile 0, overlay -1, no object (+E4), land type Clear (+EC). Scratch +45 lock and +47 visited 0 unless declared.",
+    "Declared scene: CliffSet-base cells, a prior object pointer in +E4, overlay 0 in +44, land type 3 in +EC, +45 locks and +47 marks. Stack arguments: the origin Cell, the size and the density double. FPCW 0E7F. All streams seeded by original 65C6D0. Not a complete Generate prefix."
+  ],
+  "substitutions": [
+    "Existing PaletteReader CRT allocation/free/TLS, with guard bytes after each block that refuse a pool overrun; native code bytes unchanged. No draw, priority, mark or name is supplied.",
+    "TerrainTypeClass::Find_By_Name_Index 71DD80 records its original-formatted name and returns slot 0; the TerrainClass constructor 71BB90 records its cell and returns. Object construction and placement are not executed: within one region no walked cell is read again."
+  ],
+  "entry_points": {
+    "place_tree_region": "0x005A45E0",
+    "terrain_find": "0x0071DD80",
+    "terrain_ctor": "0x0071BB90",
+    "next": "0x0065C780"
+  },
+  "replay_command": "python -m tools.rmg_oracle.tree_region",
+  "payload_sha256": "fbdd4b4a19b0c952f6eab799e35f57fdcd63aec26de36519f3bedfc765d84fa3"
+}

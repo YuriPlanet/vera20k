@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Selected ground Unit Move and Attack action lines4DC060 ->7049C0, original RGB565 pixel leaves, timers, prepared Tactical admission/batches, existing Unit/Drive destination composition, twelve Move and four Attack production-input replays, prepared Attack pivot/live aim and zero-rocking origin controls; finite comparisons, not whole Scenario parity",
+  "assumptions": [
+    "Original gamemd.exe, FPCW0E7F, physical RA2/CACHE palette assets, RGB565160x120 BSurface, fixed background sentinel. Existing original palette initialization owns conversion; index3 middle row supplies Move green.",
+    "The first57 cases promote the saved ignored research corpus geometry and timer pairs. Map dimensions32x32 and original Foot bridge initializer chain are now explicit; prior flat outputs remain identical.",
+    "Actor Location, selected bit, owner, Target=null, NavCom and queued Cells, cell levels/slopes/flags, camera and viewport are prepared inputs. Actual Unit vtable is used. No whole MTNK constructor, scenario loading, selection generation or movement history is claimed.",
+    "Tactical gate controls execute original6D470D through exactly one gate exit or returned vt438 call, preceded by original House50B6F0 and Planning637AA0. The array, index, cached planning byte and owner/campaign state are supplied. No whole Tactical rendering or Techno-array lifetime is claimed.",
+    "Five batch controls execute original6D46DD..6D4912, including Planning637AA0, the complete forward Techno-array loop, House50B6F0 and every admitted Foot4DC060 ->7049C0 call.32/33/64 selected actors have supplied flat source/Cell state, local owner, health100, empty Target/queue, null capture-manager/temporal fields and planning off. Actor input array, separate Techno order, native actor pointers and observed call order are saved. This is the real loop, not a host-side replacement; preceding Tactical passes, object constructors and array lifecycle remain outside the executable boundary.",
+    "Six standalone compositing controls execute original7049C0 for2/33/64 ordered supplied XYZ pairs with alternating converted palette indices3/8 and reversed-order controls. Existing house_color.house_color executes original50B840 to unpack the unchanged original Convert row at each supplied lookup index. These rows prove finite opaque overwrite order for both colors; they do not claim Attack source, aim/lead, target or timer admission. The all-green batch reversals intentionally have identical final pixels while the observed producer order reverses.",
+    "Twelve production_cases reuse the same complete prepared Tactical loop with one captured MTNK1374 state, supplied local ownership, actual selected bit, NavCom or null, final binary frame and last gesture restart frame. Existing Rally accepts bounded optional160x160 dimensions within its unchanged64KiB color/A reservations. Every resulting native endpoint box and line is asserted unclipped. Production input/file identities, original MapSize evidence, exact crop origins and explicit state boundaries are recorded in production_cases and production_reference. The first277 original rows and all earlier top-level values remain unchanged.",
+    "Unit Extras order is original instruction evidence: object draw6D8DB0 calls Unit body then its later visible-Techno virtual110 sweep; Unit6F5190 rank and selected health/bracket/pip calls finish before Tactical effects/bandbox/second rally/action lines. GScreen orders Sidebar/MouseClass before Tactical pass2 and gadgets/tooltip/WWMouse cursor after it. These bodies are preserved as original bytes, not executed UI/body/status rendering; the current ordinary MTNK has no selected-building range-ring route.",
+    "Foot ground, slope and deck endpoint queries execute original Cell486840, bounds568300, map lookup565730 and height578080. Queue-only state with null NavCom is rejected by the real entry gate. Ground cell centers and source subcell/height controls are bounded samples.",
+    "Static timer initialization executes6F2AB0 through6F2AC9 before CRT atexit; successful-load timer reanchor executes685167 through6851A7 before the following unrelated call. Slice inputs and stack deltas are explicit. Whole successful load is not executed. Original global save/load stream ranges and their delegated globals helpers are preserved separately as instruction evidence.",
+    "Ordinary globals Save67F7E0/Load67F9C0 explicitly serialize named fields and vectors, including binary frame as the third dword; none of their ranges or delegated globals539890/539AE0 overlap B0EA80..88. Caller instructions show67D421 ->globals save,67E8B5 ->globals load, then outer67E659 ->scenario load and67E685 ->postload685120. Together with the literal timer-address scan this supports retaining process-global action timer state across the ordinary globals route, then reanchoring it. This is instruction-level stream-layout evidence, not an executed full save/load, object reconstruction, arbitrary alias proof or malformed-save guarantee.",
+    "Native start=-1 and signed wrapping timer arithmetic are sampled as supplied boundary controls, without claiming normal-game reachability. Timer middle dword is observed stack carry and has no elapsed-time role.",
+    "Destination controls reuse track_destination.make_destination_fixture in the same VM and execute Unit741970 ->Foot4D94B0/Drive4AFD40 before drawing. Empty radio/deploy/EMP/transport state and supplied type/rules are inherited fixture boundaries. Repeated NavCom and force flag controls establish setter admission; full click/event dispatch is instruction evidence, not executed here.",
+    "Solid and rectangle leaves run unchanged. Pixel cases cover finite directions, clipping and endpoint intersections; no exhaustive integer domain or native desktop/window proof. Existing bounded chop53 clipping residual remains separate from ordering correctness.",
+    "Move cases reject known RNG65C780/65C7E0 entries during observed drawing/setter phases. Existing setter fixture initializes Scenario RNG before these phases. Aircraft, jumpjet, transport, pathfinding, detach and downstream mission cadence are outside this pixel corpus.",
+    "The earlier Move physical MTNK/GTNK strings remain context evidence. Attack retail field/default/command evidence is generated separately by the same producer --attack-prerequisites mode.",
+    "Thirty-one Attack cases execute the original Foot TarCom-priority branch, source6F3D60, original Drive4AFF60/55A730, target70BCB0, actual Unit coordinate/current-weapon/Facing virtuals, live Foot4DB1A0, and the unchanged pixel leaves. Original Drive/Facing constructors and setters establish flat actors; type/House/weapon/position/Target/NavCom/queue values remain explicit prepared inputs. Physical Speed7 -> raw17 is independently recorded by the full retail Unit reader in the prerequisite packet; target fraction/rank/crate controls reuse track_speed_native.seed_getter_state.",
+    "Attack weapon_inputs supply stored speed95/ROT0/Floaterfalse/Gravity6, bound to the full physical105mm reader and postpass in the prerequisite packet. Authored Speed40 first reads102 through474810; the later7729F0 Range5 ballistic postpass produces95. speed_percent and range_cells retain that authorship, not a fitted inverse. The prepared raster fixture writes the stored value through its existing weapon setup; original773070 derives shot speed from distance and ROT0 does not consume the stored field. Offset80/body/turret controls distinguish body pivot from muzzle FLH; stock GTNK offset0 is independently read. No rocking, slope basis, damage producer or full Unit constructor is claimed for these prepared raster rows.",
+    "Prepared Unit deploy state6D8=-1 matches the existing track_destination input contract and the actual constructors recorded in the prerequisite packet. Original Drive Move_To executes for moving rows; a separate original Is_Moving call asserts the requested true/false state before every draw, so a declined movement gate cannot masquerade as a moving-target comparison.",
+    "Attack query snapshots compare every source/target actor byte0x700, both Drive0x70 ranges and all12 timer bytes. Known raw/ranged RNG, timer restart, world/abstract detach and UnInit entry guards remain empty during Foot drawing. Physical Convert middle-row index8 supplies red0xA800. Null Target controls reuse existing Move/empty admission without a competing raster owner.",
+    "Four attack_production_cases bind the opt-in getter inputs from matched stationary/moving release captures and unselected controls. The same ActionFixture and complete Tactical batch owner execute, retaining the actual actor/Drive back-pointer rather than copying an Attack actor. Exact original IsMoving/current-speed checks match source17/target0 and source5/target17. All320 prior rows and earlier top-level values are retained; production_reference remains the earlier Move boundary.",
+    "Attack production crops are192x160 inside the existing guarded64KiB surface. Original source6F3D60 and lead70BCB0 feed every unclipped endpoint/solid store. The captured fixed fraction19661/65536, direct native f32/f64 speed inputs, current105mm weapon and separate source/target headings remain explicit. Current input and native raster receipts do not substitute for a production pixel comparison.",
+    "No-rocking source-basis evidence reuses native_slope.slope_matrices and compares its21 original matrices with the existing ordinary_collision packet. All21 stable pivot controls and one active slope-timer zero-angle control preserve the raw source origin; original646980 instruction stores establish zero translation after differing-slope quaternion conversion. Half sizes15.5/20.5 are supplied for the arithmetic control; VXL reading and actual moving-cell slope history are not claimed. The exact raw actor coordinates, zero offset and absent rocking remain the production-input boundary."
+  ],
+  "substitutions": [
+    "Reuse original BSurface storage/lock/pitch methods instead of platform DirectDraw, through existing Rally fixture; original solid/fill leaves are unmodified.",
+    "Existing PaletteReader replaces asset lookup and platform allocation only; original palette initialization/Convert routines execute and physical inputs are pinned in payload.",
+    "Existing destination fixture substitutes only OS Interlocked increment/decrement; original class/COM/locomotor calls execute. No native gameplay instruction is patched or return value invented."
+  ],
+  "entry_points": {
+    "foot": "0x004DC060",
+    "action_line": "0x007049C0",
+    "restart_timer": "0x0070D150",
+    "timer_static": "0x006F2AB0",
+    "load_timer": "0x00685167",
+    "tactical_gate": "0x006D470D",
+    "human_player": "0x0050B6F0",
+    "planning": "0x00637AA0",
+    "cell_coords": "0x00486840",
+    "map_bounds": "0x00568300",
+    "ground_height": "0x00578080",
+    "unit_destination": "0x00741970",
+    "foot_destination": "0x004D94B0",
+    "drive_move": "0x004AFD40",
+    "solid_wrapper": "0x007BA5E0",
+    "solid_line": "0x007BA610",
+    "clip_line": "0x007BC2B0",
+    "intersect_rect": "0x00421B60",
+    "fill_endpoint": "0x007BB020"
+  },
+  "payload_sha256": "355bb4901eb049792496d1a84eaa9f6c49e03b806115258a8824cca60cd64730",
+  "replay_command": "python -m tools.procedural_drawing_oracle.action_lines"
+}

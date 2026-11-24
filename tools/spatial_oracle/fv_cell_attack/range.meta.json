@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Bounded FV Cell range/FireError composition over frozen native Anytown facts.\n\nRead-only research for the next chain. Runtime range, Cell getters, map queries,\ndistance arithmetic, GetWeapon, line-of-fire and Unit GetFireError execute the\noriginal image. Unit placement, sparse Cell projection and selected layer joining\nare explicit inputs, not native Scenario/Unit lifecycle proof.\n",
+  "assumptions": [
+    "Physical FV/HoverMissile/AAHeatSeeker2 constructors and retained readers come from existing composed owner; source Unit/House lifecycle is supplied.",
+    "Physical target/current Cell fields are projected from frozen full-native Anytown packet; this crop is not the full map loader. Native Cell constructor and coordinate/getter bodies execute.",
+    "Source placement is supplied at the original Cell GetCoords result; original5F3DB0 direction and4C9300 setters align the supplied stationary body/turret. One/two-lepton XY and raw100 rows are explicit controls.",
+    "Unit approach7414E0 executes through originalFoot4D5690 and its first6F77B0 call; stops immediately after the actual range return at4D570E. No whole pursuit, candidate search or production Rust execution is claimed.",
+    "Original CRT/WinMain floating-control fragments establish the measured FPCW; the intervening Windows startup and callback history are excluded. No runtime RNG/Detach/identity callable may be reached."
+  ],
+  "substitutions": [
+    "Inherited type/input/heap/OS preparation seams only; no range, Cell getter, source getter, weapon selection, FireError or line-of-fire result substitution."
+  ],
+  "entry_points": {
+    "range_source": "0x006F77B0",
+    "range": "0x006F7220",
+    "unit_fire_error": "0x00740FD0",
+    "techno_fire_error": "0x006FC0B0",
+    "T61": "0x006FCCEE",
+    "cell_low": "0x004867E0",
+    "cell_center": "0x00486840",
+    "unit_approach": "0x007414E0",
+    "approach_range_return": "0x004D570E"
+  },
+  "native_input_packet_sha256": "a2197179f0818a7b2c231c8956601b2269df164db04e05d856b99db380a15d35",
+  "payload_sha256": "2d416e7b00a81033be411b9f98e751758c00c0b23f14daec28251c432033e413",
+  "packaging": "canonical JSON; gzip mtime=0; copied lexical inputs replaced by SHA256"
+}

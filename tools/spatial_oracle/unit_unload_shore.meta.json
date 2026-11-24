@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Four bounded failed-FNPC handoffs through original Unit/Foot/Cell/Hover bodies.",
+  "assumptions": [
+    "Inherited dock VM supplied type/House/map prestates, original class vtables, constructed Hover linked to Unit with COM reference1; no radio contacts.",
+    "Stopped state0 Unload carrier at10,10 on Water, Passengers12, Harvesterfalse, NavComNULL; height120 or0. This branch does not inspect passenger links.",
+    "Supplied valid Normal MovementZone0; the direct CanReachDestination control probes the empty-cell rejection before any zone comparison.",
+    "All cells real except optional missing0,0 and missing9,10. Original Dummy constructor; later independent Map miss40,41 probes the retained target getter.",
+    "Timer comparisons use authoritative start/duration. Native middle ClockPad retains destinationY from compiler stack reuse and is recorded separately."
+  ],
+  "substitutions": [
+    "FNPC56DC20 alone returns supplied packed empty0,0. No search or full-map reachability claim; no gameplay setter/getter/MoveTo body replaced.",
+    "Inherited OS interlocked import substitutions. No whole match, global phases, locomotor Process history, passenger placement, rendering or audio execution."
+  ],
+  "entry_points": {
+    "unload": "0x0073D630",
+    "unit_destination": "0x00741970",
+    "foot_destination": "0x004D94B0",
+    "cell_coords": "0x00486840",
+    "hover_move_to": "0x00514D90",
+    "path_and_arrival": "0x005164D0",
+    "process_movement": "0x00514F70",
+    "can_reach_destination": "0x004D3810"
+  },
+  "replay_command": "python -m tools.spatial_oracle.unit_unload_shore",
+  "payload_sha256": "31f0dd20d4c0c8c77f0739e320c9a94345f545b389604e17b45c84b6179a8596"
+}

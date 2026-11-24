@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "50 unchanged original rows of the Chrono Miner (CMIN) refinery chain: 17 Unit setter (vt+0x480) calls through its Teleporter arm; 4 Teleport Move_To guard refusals; 6 Teleport Move_To arming runs followed by 12 Teleport Process frames (warp, chrono delay, delay-expiry tick), each with the FootClass::AI piggyback END step; 15 UnitClass::Mission_Harvest (states 0/2/3), 5 FootClass::Mission_Enter and 1 UnitClass::Mission_Unload dispatches with their return value; 2 Per_Cell_Process(2) Enter-arm snippets. Every nested receiver, COM call, occupy-bit write, transmit reply and Scenario draw is recorded in order. Three additive complete Drive instance histories measure ordinary fresh/reused/repeated Move, moving/permission/swap END refusals and successful END/final Release, plus the stopped and moving refinery-pad setter callers. They retain full raw Drive (108 bytes), Foot (0x700), Teleport (0x4C), all mapped-cell bytes and all three full RNG objects at the declared boundaries; actual call returns match return PC and ESP.",
+  "assumptions": [
+    "refinery_dock fixture (track_destination Unit and Drive, 32x32 map, House, Rules, refinery NW (6,9) with DockUnload and QueueingCell 4,1, a second refinery) made a CMIN: TechnoType +0xCD4 Teleporter 1, +0xE0E Harvester (0 in the non-harvester rows), +0x5B4 MovementZone 1 (Crusher, retail [CMIN]), +0x67C SpeedType 2 (fixture value distinct from it), +0x574/+0x578 ChronoIn/OutSound fixture indices 0x41/0x42.",
+    "Teleport from its original constructor at fixture memory, linked by the original Link_To_Object and installed at Foot+0x674 with one reference. drive_piggy rows run the original Drive Link_To_Object and IPiggyback Begin_Piggyback over the fixture Drive, so its stash holds the Teleport; both reference counts are then written as one.",
+    "Rules: ChronoDelay 60, ChronoDistanceFactor 48, ChronoTrigger yes, ChronoMinimumDelay 16, ChronoRangeMinimum 0 (100000 in warp_range_min), TiberiumLongScan 48 cells; ChronoHarvTooFarDistance 10 instead of the retail 50 so both sides of the threshold fit the map; WarpOut is a fixture anim type pointer. BridgeHeight 416 from its original initializer 0x7352F0 over the established level height 104. The miner is on the map (ObjectClass+0x74).",
+    "Process rows arm the Teleport with a direct Move_To to the cell centre (NavCom supplied), then per listed frame run Process and the FootClass::AI tail 0x4DAE5F..0x4DAEC6 plus its IPiggyback Release, not the rest of FootClass::AI. Per_Cell arm rows supply the prologue locals as refinery_dock does.",
+    "Only the three instance histories initialize main 0x886B88, Scenario+0x218 and mapgen 0xABE890 with original 0x65C6D0(seed=31), preserving all 1012 bytes per RNG. They supply physical Z 123 and independent Foot+0x578 binary64 speed bits 0x3FEC000000000000. Distinctive retained Drive inputs are declared raw writes, not claims of a paid Process history: previous/current slope dwords +0x20/+0x1C=9/7 (constructor4AF54D/4AF550; Process4B0523/4B052A/4B0533), timer start 197 and duration/total 3/3, residual 37, target bits 0x3FE4000000000000, selector/cursor 10/3 and bytes +0x60/+0x62/+0x63=1; the far history also supplies head [3013,2979,-347], then a settled physical XY/different-Z head and Foot+0x6AD refusal input. Constructor padding +0x12..0x14/+0x28..0x2C/+0x66..0x68 is guarded raw evidence; only selected new allocations are A5-poisoned. Fixture LOCO is constructed at inherited frame 100; Teleport and fresh Drives see 200, then repeated Move sees 201. Original text/vtables, allocation guards, stack cleanup and FPCW 0x0E7F are checked. Full mapped-cell baseline plus exact changed spans reconstructs all 0x90000 bytes; fixed y/x occupation/list words and touched object next pointers are retained independently. See tools/spatial_oracle/cmin_dock.md for receipt fields and limits."
+  ],
+  "substitutions": [
+    "CoCreateInstance wrapper 0x41C250 is recorded; it runs the original Drive constructor and ILocomotion AddRef on fixture memory, stores that ILocomotion and returns S_OK.",
+    "operator new answers the AnimClass allocation with fixture memory and operator delete is recorded without freeing. The AnimClass constructor 0x421EA0, VocClass::PlayAt 0x7509E0, crate pickup 0x481A00 and Unit Per_Cell_Process 0x739EC0 (inside Process) are recorded and return without effect, so WarpOut AnimClass RNG draws are not covered.",
+    "MapClass zone lookup 0x56D230 answers zone 7 (no map zone tables); Search_For_Tiberium 0x4DCFE0 answers the row value (the original also answers 0 while NavCom is set); refinery_dock keeps its supplied Find_Docking_Bay, Find_Nearby_Passable_Cell and Ready_To_Commence answers and its Scatter, Enter_Idle_Mode and refinery animation observers.",
+    "Instance histories use the same existing call/fixture/observer owners. The FootAI tail ends at 0x4DAEC6 and the helper runs its original IPiggyback Release corresponding to 0x4DAEFA..0x4DAEFD; intervening FootAI callbacks and the remaining AI continuation are outside coverage. Deleted Drive bytes remain readable fixture memory, not a live instance or evidence of CRT address reuse. These histories do not certify complete paid-track Process, native save/load, generic nested-BEGIN policy, Ship permission semantics or whole-game allocation. Unit setter raw EAX is not a return contract."
+  ],
+  "entry_points": {
+    "assign_destination": "0x00741970",
+    "foot_assign_destination": "0x004D94B0",
+    "teleport_constructor": "0x00718000",
+    "drive_constructor": "0x004AF540",
+    "link_to_object": "0x0055A710",
+    "bridge_height": "0x007352F0",
+    "teleport_move_to": "0x00718100",
+    "teleport_destination": "0x00718B70",
+    "teleport_process": "0x007192F0",
+    "teleport_stop_moving": "0x00718230",
+    "teleport_do_turn": "0x007192C0",
+    "teleport_delay_tick": "0x00719BF0",
+    "teleport_is_ok_to_end": "0x00719F30",
+    "drive_begin_piggyback": "0x004AF8E0",
+    "drive_end_piggyback": "0x004AF930",
+    "drive_is_ok_to_end": "0x004AF970",
+    "drive_move_to": "0x004AFD40",
+    "drive_stop_moving": "0x004AFE00",
+    "drive_is_moving": "0x004AFB80",
+    "drive_disable_end": "0x004B4BE0",
+    "drive_enable_end": "0x004B4BF0",
+    "random_seed": "0x0065C6D0",
+    "random_raw": "0x0065C780",
+    "can_enter_cell": "0x0073F0A0",
+    "set_occupy_bit": "0x007441B0",
+    "clear_occupy_bit": "0x00744210",
+    "mark": "0x004D3780",
+    "mission_harvest": "0x0073E5E0",
+    "mission_enter": "0x004D9290",
+    "mission_unload": "0x0073D630",
+    "per_cell_enter_arm": "0x0073A31F",
+    "foot_ai_piggyback_end": "0x004DAE5F",
+    "transmit": "0x0065A970",
+    "random_ranged": "0x0065C7E0",
+    "cocreate_wrapper": "0x0041C250"
+  },
+  "payload_sha256": "3005ea7c8db143b91f1a302c349dfe060e627ec3bfd842bb22250540109727e4"
+}

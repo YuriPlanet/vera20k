@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original42C927..42CA43 lookups,queries,retained projections then conditional mode1 endpoints",
+  "assumptions": [
+    "Explicit movement row0, supplied mover onBridge and final allowHS predicate",
+    "No typevirtual predicates, Team waypoint authority, Infantry precheck row override, cell AStar or retry loop",
+    "Supplied real-cell/record/raw-row state; constructor sentinel(0,0) from5618B0",
+    "Terminating projections with valid fallback exits; record[-1]/cyclic process domains excluded"
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "prepare": "0x0042C927",
+    "prepared_stop": "0x0042CA43",
+    "allowed_membership": "0x0042CAEE",
+    "denied_membership": "0x0042CB1D",
+    "gate_stop": "0x0042CB22"
+  },
+  "payload_sha256": "f8ed0216c9c3828fa1d104c0cbf45d5c9400148751c56841b6146273a8b6aecf"
+}

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Four grounded Unit Guard/Attack prefixes through failed re-anchor setter return.",
+  "assumptions": [
+    "Inherited track_destination supplied Unit/House/map prestates and original class vtables. Original Jumpjet constructor, linked Unit, phase0 and no NavCom.",
+    "Grounded HoverAttack1/SpeedTypeHover3/MovementZoneFly9, matching stock SHAD/SCHP fields; no BalloonHover, deployment in progress, bridge or queued mission.",
+    "Held Cell target, original Dummy constructor, optional unallocated0,0 and a supplied uniform retained zone cache. No physical type reader or landing history."
+  ],
+  "substitutions": [
+    "Only the two FNPC56DC20 results are supplied empty0,0: NearbyLocation and Jumpjet MoveTo placement. Search scanning is outside these controls.",
+    "Inherited OS interlocked import substitutions. No original destination, getter, placement, RNG or Jumpjet decision body replaced. Stop at4D5225/4D4E0D after setter return, before later mission/cadence work; no Process/full match."
+  ],
+  "entry_points": {
+    "unit_guard": "0x00740810",
+    "foot_attack": "0x004D4DC0",
+    "nearby_location": "0x00703590",
+    "unit_destination": "0x00741970",
+    "jumpjet_move_to": "0x0054B1C0",
+    "unit_placement": "0x0054D6D0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.hover_attack_reanchor",
+  "payload_sha256": "6974903d72deaaad4b9e8bbe28df83e8bf7dd7411434ddae92c9abcc6017b729"
+}

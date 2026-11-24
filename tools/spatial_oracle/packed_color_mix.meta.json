@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Twenty original packed-color mixer4BF650 controls for RGB565/RGB555; logical packed-word inputs and low-word outputs only.",
+  "assumptions": [
+    "The existing physical-archive and PaletteReader initialization owners supply the shared runtime. Original4BA9CD..4BAB06 derives shifts, losses and half/quarter masks from declared device descriptor masks; no host mask or color-mix implementation is used.",
+    "Declared source/amount controls include exact0/25/50/75/100 cases, adjacent default classifications, unsigned out-of-range and a zero source. RGB555 covers25/50/75 separately.",
+    "RGB565 ore/gem inputs use production-reader retail TIB01 RadarColor220,200,0 and GEM01 RadarColor140,0,140. Original641409..641470 packs those supplied RGBs. Ground input42282 is retained tmp_preview level0 Cell47BDB0 output; zero and native first-mix48549 inputs cover the following RMG operations. This mode does not rerun that gameplay caller."
+  ],
+  "substitutions": [
+    "Existing PaletteReader allocator/TLS/physical byte transport and conditional device descriptors only; native mask derivation, RGB packing and mixer instructions execute unchanged. No RMG, raster, RNG or gameplay lifecycle result is claimed."
+  ],
+  "entry_points": {
+    "mix": "0x004BF650",
+    "mask_derivation": "0x004BA9CD",
+    "mask_end": "0x004BAB06",
+    "retail_rgb_pack": "0x00641409"
+  },
+  "replay_command": "python -m tools.spatial_oracle.tmp_clear_render --packed-color-mix",
+  "payload_sha256": "90ddd866522b2f698ca23b13cccb253471e8708304f28713c02d3e1c56cb9958"
+}

@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original full61EF70 formatter for10 ordinary words,13 host Windows capture cases and12 host printable mappings",
+  "assumptions": [
+    "Formatter input is HKM word, not game encoded extended-bit identity",
+    "Host keyboard layout and Windows version are explicit fixture inputs; other hosts may differ",
+    "Original61ECA0 delegates nonpaint input to saved stock control procedure",
+    "Capture probe calls current Windows class, not original retail window or modal message pump",
+    "No focus traversal, IsDialogMessage interception, IME, non-ACP glyph or modifier-chord coverage"
+  ],
+  "substitutions": [
+    "Original formatter Win32 imports execute host MapVirtualKeyA/GetKeyNameTextA",
+    "7CA564 sole %hs conversion is supplied using the host ANSI codec",
+    "Hidden disposable hot-key HWND receives messages and supplied/restored thread-local keyboard state"
+  ],
+  "entry_points": {
+    "formatter": "0x0061EF70",
+    "control": "0x0061ECA0",
+    "capture_game_conversion": "0x005FB73A"
+  },
+  "payload_sha256": "f2a846d2c8b871c2c87a353232c2ffebf33fa6ec1c9e1cf5fdaf5591bc8c9e5c"
+}

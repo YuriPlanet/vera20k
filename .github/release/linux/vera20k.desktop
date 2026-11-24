@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=VERA20K
+GenericName=Real-time strategy game
+Comment=Free, open-source reimplementation of Command & Conquer: Yuri's Revenge
+Exec=vera20k
+Icon=vera20k
+Terminal=false
+Categories=Game;StrategyGame;
+StartupWMClass=vera20k

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "5 whole original HillsWaterAdjacencySeed calls each followed by a whole HillHeightRandomWalk call: flat maps at Ruggedness 50 and 100, a shore/cliff scene at Ruggedness 10 (no walk) and 11, and start locks; every seeded height and lock, Gaussian draw, height, velocity, the final rounding and the Gaussian cache",
+  "assumptions": [
+    "Existing CliffFixture, TiberiumFieldFixture and StartPointsFixture own original-constructed Cell backing, admission, the stride-33 scratch, the physical clear/cliff/shore TMP registration, the native theater tile-set globals and the guarded arena; bounds 16..48. Cells start tile 0. Scratch height and velocity 0, +45 lock 0 unless declared.",
+    "Declared scene: CliffSet-base and shore-piece-base cells and +45 locks; generator +0x44 Ruggedness. Gaussian cache empty with source 598000. FPCW 0E7F. All streams seeded by original 65C6D0. Not a complete Generate prefix."
+  ],
+  "substitutions": [
+    "Existing PaletteReader CRT allocation/free/TLS, with guard bytes after each block that refuse a pool overrun; native code bytes unchanged. No height, velocity, lock or RNG result is supplied."
+  ],
+  "entry_points": {
+    "water_seed": "0x005A33F0",
+    "height_walk": "0x005A2F50",
+    "gaussian": "0x005980C0",
+    "next": "0x0065C780"
+  },
+  "replay_command": "python -m tools.rmg_oracle.hill_walk",
+  "payload_sha256": "89815702db93de89fcb7ba72d9522df28e68e99d3c52f4aedd5b16169a19a5f8"
+}

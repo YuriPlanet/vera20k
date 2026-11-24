@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Five original FV guided launches and125 full Bullet AI visits through AreaDamage489280 entry",
+  "assumptions": [
+    "Physical HoverMissile and AAHeatSeeker2 full type readers and selected partial FV rules fields; source lifecycle, FLH/pose and fixed launch coordinates supplied",
+    "FV type here is base TechnoType only; do not extend this allocation to UnitType GetROF reads at+E48. Separate ifv_fire_coord executes actual UnitType and BurstDelay readers.",
+    "Original source empty-gunner constructor slice runs; slot0 HoverMissile selected by original6F3330/70E140",
+    "Original full HE reader executes; native sound registry is empty; world source admission/Unit AI/shot schedule/muzzle/report are outside this fixture",
+    "Mapped flat level6 Cell objects and live structural-bit100 changes supplied; native bridge collapse/repair drivers not executed",
+    "Original whole Bullet AI executes125 visits over5cases, stopping before AreaDamage; effects, impact animations and object retirement are covered separately",
+    "Partial fixture native cursor28 produces Bullet29; this is not a whole-scenario prefix guarantee. Native x87 PC53/chop0E7F."
+  ],
+  "substitutions": [
+    "Inherited BulletReader supplies CRC INI caches, allocation, CRT TLS and archive IO",
+    "COM activation dispatched to original6C5090 factory; Windows InterlockedIncrement supplied",
+    "ObjectUnlimbo and Display admission supplied; hooks observe flight and reject unexpected RNG/detach"
+  ],
+  "entry_points": {
+    "select_weapon": "0x006F3330",
+    "set_empty_gunner": "0x0070DC70",
+    "fireat_launch": "0x006FE4F2",
+    "com_factory": "0x006C5090",
+    "bullet_ctor": "0x00466380",
+    "bullet_ai": "0x004666E0",
+    "area_damage_entry": "0x00489280"
+  },
+  "physical_files": [
+    {
+      "name": "RULESMD.INI",
+      "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+    },
+    {
+      "name": "MPBattleMD.ini",
+      "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963"
+    },
+    {
+      "name": "Hills.map",
+      "sha256": "780d5d6e6d3c81ac0d510a5df326848dd426b3d840ac290114f44faf8eab9e9e"
+    },
+    {
+      "name": "ARTMD.INI",
+      "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31"
+    }
+  ],
+  "research_payload_sha256": "1082e8902b818465e5047e3517ed55808f49a24c0f9aba7d8a9035cd056c1a31",
+  "payload_sha256": "b9f52c9a86c4aeeef053707ed33a45413d80792f6afcc6c8c3f771a43202fc0a"
+}

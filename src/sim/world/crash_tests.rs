@@ -1,0 +1,2809 @@
+//! Crash, the Fly fall and its impact, and the crash smoke against the
+//! original executable (`tools/spatial_oracle/aircraft_crash.json`).
+
+use super::lifecycle_tests::{insert_entity, install_common_raw_terrain};
+use super::{PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest, Simulation};
+use crate::map::entities::EntityCategory;
+use crate::rules::{armor::armor_index, ini_parser::IniFile, ruleset::RuleSet};
+use crate::sim::components::DriveCoord;
+use crate::sim::movement::FacingClass;
+use crate::sim::movement::locomotor::LocomotorState;
+use crate::sim::rng::SimRng;
+use crate::util::fixed_math::SimFixed;
+
+/// Supplied post-Chronosphere arrival: native Chrono7199D2..7199DF puts an
+/// ORCA at height zero and Mark(DOWN). Rules/ART stay stock; the seven Water
+/// neighbours leave the NW cell as the dying transport's only adjacent exit.
+fn retail_aircraft_receiver_scene() -> Option<(Simulation, RuleSet, u64)> {
+    let rules = crate::rules::retail_ini_fixture::retail_battle_rules()?.rules;
+    let aircraft_type = rules.object("ORCA").unwrap();
+    assert!(aircraft_type.landable && !aircraft_type.crashable);
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 1);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    crate::sim::arena_fixture::flood(
+        &mut sim,
+        &rules,
+        32,
+        (14..=16).flat_map(|y| {
+            (14..=16)
+                .filter_map(move |x| (!matches!((x, y), (14, 14) | (15, 15))).then_some((x, y)))
+        }),
+    );
+    let aircraft = sim
+        .spawn_object("ORCA", "Americans", 14, 14, 0, &rules)
+        .unwrap();
+    assert!(sim.substrate.entities.get(aircraft).unwrap().is_voxel());
+    assert_eq!(
+        crate::sim::movement::air_movement::current_fly_height(
+            sim.substrate.entities.get(aircraft).unwrap(),
+            sim.resolved_terrain.as_ref(),
+        ),
+        0
+    );
+    assert_eq!(
+        sim.substrate.raw_cell_occupation.ground_bits(14, 14) & 0x40,
+        0x40
+    );
+    Some((sim, rules, aircraft))
+}
+
+/// Aircraft4166A3 UnInits before AreaDamage489AC1 advances to the next
+/// receiver. Its Cell raw CLEAR must precede Unit737F80's passenger Scatter.
+#[test]
+fn retail_landed_aircraft_clears_occupancy_before_the_next_victims_passenger_scatter() {
+    use crate::sim::combat::{RAD_NO_ATTACKER, world_receiver};
+    use crate::sim::components::NavTargetRef;
+    use crate::sim::passenger::{BoardingArm, board_passenger};
+    use crate::sim::projectile::ProjectileCoord;
+    use crate::sim::world::FrameEffects;
+
+    let Some((mut sim, rules, aircraft)) = retail_aircraft_receiver_scene() else {
+        return;
+    };
+    let transport = sim
+        .spawn_object("HTK", "Americans", 15, 15, 0, &rules)
+        .unwrap();
+    let passenger = sim
+        .spawn_object("E1", "Americans", 17, 15, 0, &rules)
+        .unwrap();
+    assert!(board_passenger(
+        &mut sim,
+        &rules,
+        passenger,
+        transport,
+        BoardingArm::InfantryTransport,
+        None,
+        &mut FrameEffects::default()
+    ));
+    let attacker_house = sim.interner.intern("Russians");
+    let warhead_id = sim.interner.intern("NUKE");
+    world_receiver::apply_area_damage(
+        &mut sim,
+        &rules,
+        None,
+        ProjectileCoord {
+            x: 3712,
+            y: 3712,
+            z: 0,
+        },
+        600,
+        rules.warhead("NUKE").unwrap(),
+        true,
+        (RAD_NO_ATTACKER, Some(attacker_house), warhead_id),
+        &mut FrameEffects::default(),
+    );
+    assert!(
+        !sim.substrate
+            .entities
+            .get(aircraft)
+            .unwrap()
+            .lifecycle
+            .object_alive()
+    );
+    let survivor = sim.substrate.entities.get(passenger).unwrap();
+    assert!(survivor.lifecycle.object_alive() && !survivor.lifecycle.in_limbo());
+    assert_eq!(
+        survivor.navigation.nav_com(),
+        Some(NavTargetRef::cell(14, 14))
+    );
+    let walk = survivor.locomotor.as_ref().unwrap();
+    assert_eq!(walk.walk_is_moving(), Some(true));
+    assert_eq!(
+        walk.walk_destination(),
+        Some(DriveCoord {
+            x: 3712,
+            y: 3712,
+            z: 0
+        })
+    );
+}
+
+/// A supplied impact boundary. C4 hurts the adjacent unarmored observer;
+/// Crush hurts none, and both leave the lightly armored falling owner alive
+/// until its notice explicitly UnInits it. This makes the first blast visible
+/// independently of the common second C4 blast and nested death effects.
+fn lifted_impact_scene(kind: &str, overrides: &str) -> (Simulation, RuleSet, u64, u64, u64) {
+    let mut ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[AircraftTypes]\n0=DROP_AIR\n[VehicleTypes]\n0=DROP_UNIT\n1=OBSERVER\n2=HOLDER\n\
+         [Warheads]\n0=DropC4\n1=DropCrush\n\
+         [DROP_AIR]\nStrength=150\nArmor=light\nSpeed=8\nLandable=yes\n\
+         Locomotor={4A582746-9839-11d1-B709-00A024DDAFD1}\nJumpjetCrash=10\n\
+         [DROP_UNIT]\nStrength=150\nArmor=light\nSpeed=5\n\
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+         [OBSERVER]\nStrength=2000\nArmor=none\nSpeed=5\n\
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+         [HOLDER]\nStrength=2000\nSpeed=5\nPrimary=DropWeapon\n\
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+         [CombatDamage]\nDeathWeapon=DropWeapon\nCrushWarhead=DropCrush\nC4Warhead=DropC4\n\
+         FallingDamageMultiplier=1\nCurrentStrengthDamage=yes\n\
+         [DropWeapon]\nDamage=1\nRange=1\nProjectile=Invisible\nWarhead=DropC4\n\
+         [Invisible]\nInviso=yes\n\
+         [DropC4]\nCellSpread=1\nPercentAtMax=1\n\
+         Verses=100%,0%,0%,0%,0%,0%,0%,0%,0%,0%,0%\n\
+         [DropCrush]\nCellSpread=1\nPercentAtMax=1\n\
+         Verses=0%,0%,0%,0%,0%,0%,0%,0%,0%,0%,0%\n\
+         [Clear]\nTrack=100%\nWheel=100%\nHover=100%\n",
+    );
+    ini.merge(&IniFile::from_str(overrides));
+    let rules = RuleSet::from_ini(&ini).unwrap();
+    // ReadCombatDamage follows the type readers. Its references alone would
+    // allocate unread constructor defaults in this single-pass fixture.
+    assert_eq!(
+        rules.weapon("DropWeapon").unwrap().projectile.as_deref(),
+        Some("Invisible")
+    );
+    for (name, verses) in [("DropC4", 1.0), ("DropCrush", 0.0)] {
+        let warhead = rules.warhead(name).unwrap();
+        assert_eq!(warhead.cell_spread_f64, 1.0);
+        assert_eq!(warhead.percent_at_max_f64, 1.0);
+        // Under Ares the native raw11 read is skipped and the extension owns
+        // Verses, so check the interaction a game read either way consults.
+        let multiplier = |armor| f64::from_bits(warhead.interaction(armor).multiplier().bits());
+        assert_eq!(multiplier(armor_index("none")), verses);
+        assert_eq!(multiplier(armor_index("light")), 0.0);
+    }
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    let falling = sim
+        .spawn_object(kind, "Russians", 10, 16, 0, &rules)
+        .unwrap();
+    let observer = sim
+        .spawn_object("OBSERVER", "Russians", 11, 16, 0, &rules)
+        .unwrap();
+    let holder = sim
+        .spawn_object("HOLDER", "Americans", 18, 16, 0, &rules)
+        .unwrap();
+    assert_eq!(
+        rules.combat_damage.death_weapon.as_deref(),
+        Some("DropWeapon")
+    );
+    (sim, rules, falling, observer, holder)
+}
+
+/// Original Aircraft41BC30 uses C4 for BOTH impacts; Unit746209 uses Crush
+/// then C4. Exercise the production damage/expiry transaction, not just the
+/// selected warhead identifier. The native no-6AD Aircraft control answers
+/// no notice and must not construct either bullet or remove the aircraft.
+#[test]
+fn lifted_aircraft_impact_uses_two_c4_blasts_and_unlifted_notice_is_empty() {
+    use crate::sim::world::FrameEffects;
+    for (kind, lifted, remaining) in [
+        ("DROP_AIR", true, 1700),
+        ("DROP_UNIT", true, 1850),
+        ("DROP_AIR", false, 2000),
+    ] {
+        let (mut sim, rules, falling, observer, holder) = lifted_impact_scene(kind, "");
+        let before_locomotor = sim
+            .substrate
+            .entities
+            .get(falling)
+            .unwrap()
+            .locomotor
+            .clone();
+        if lifted {
+            let entity = sim.substrate.entities.get_mut(falling).unwrap();
+            entity.lift.set_swap_active_for_test(true);
+            entity
+                .seldom
+                .drop_credit
+                .set_being_manipulated_for_test(true);
+            entity
+                .seldom
+                .drop_credit
+                .set_manipulated_by_for_test(Some(holder));
+        }
+        let next_id = sim.next_stable_object_id();
+        assert!(!sim.jumpjet_crash_impact(falling, &rules, None, &mut FrameEffects::default()));
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(observer)
+                .unwrap()
+                .health
+                .current(),
+            remaining,
+            "{kind}, lifted={lifted}: the first blast remains independently visible"
+        );
+        let entity = sim.substrate.entities.get(falling).unwrap();
+        assert_eq!(
+            entity.lifecycle.object_alive(),
+            !lifted,
+            "{kind}, lifted={lifted}"
+        );
+        assert!(
+            sim.projectiles.is_empty(),
+            "both temporary bullets were destroyed"
+        );
+        if !lifted {
+            assert_eq!(entity.health.current(), 150);
+            assert_eq!(sim.next_stable_object_id(), next_id);
+            assert_eq!(entity.locomotor, before_locomotor);
+        }
+    }
+}
+
+/// Replay the original notice's damage/guard inputs through real damage
+/// receivers. The native corpus observes the two bullet leaves; this scene
+/// supplies an adjacent ground observer outside the elevated second blast,
+/// so only the first C4 impact can reduce its health. XY is translated to
+/// the arena; native Z, strength, health and multiplier are retained.
+#[test]
+fn aircraft_lift_notice_damage_matches_original_controls() {
+    let corpus = crate::test_fixture::json("tools/spatial_oracle/magnetron_aircraft_lift.json");
+    let rows = corpus["impact_controls"].as_array().unwrap();
+    assert_eq!(rows.len(), 5);
+    for row in rows {
+        let input = &row["input"];
+        let name = input["name"].as_str().unwrap();
+        let overrides = format!(
+            "[CombatDamage]\nCurrentStrengthDamage={}\nFallingDamageMultiplier={}\n",
+            if input["current_strength_damage"].as_bool().unwrap() {
+                "yes"
+            } else {
+                "no"
+            },
+            input["multiplier"].as_f64().unwrap(),
+        );
+        let (mut sim, rules, falling, observer, holder) =
+            lifted_impact_scene("DROP_AIR", &overrides);
+        assert_eq!(
+            rules.object("DROP_AIR").unwrap().strength,
+            corpus["inputs"]["types"]["ORCA"]["strength"]
+        );
+        let lifted = input["lifted"].as_bool().unwrap();
+        sim.remove_entity_occupancy(falling);
+        let entity = sim.substrate.entities.get_mut(falling).unwrap();
+        entity
+            .health
+            .set_for_test(input["health"].as_i64().unwrap() as i32);
+        entity
+            .position
+            .set_exact_z_leptons_for_test(Some(input["z"].as_i64().unwrap() as i32));
+        entity.lift.set_swap_active_for_test(lifted);
+        if input["credit"].as_bool().unwrap() {
+            entity
+                .seldom
+                .drop_credit
+                .set_manipulated_by_for_test(Some(holder));
+        }
+        sim.add_entity_occupancy(falling);
+        let calls = row["calls"].as_array().unwrap();
+        let bullets: Vec<_> = calls
+            .iter()
+            .filter(|call| call["call"] == "create_bullet")
+            .collect();
+        assert_eq!(bullets.len(), if lifted { 2 } else { 0 }, "{name}");
+        assert!(
+            bullets.iter().all(|call| call["warhead"] == "rules_c4"),
+            "{name}"
+        );
+        let ground_damage = bullets
+            .first()
+            .map_or(0, |call| call["damage"].as_i64().unwrap() as i32);
+        assert!(!sim.jumpjet_crash_impact(
+            falling,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default()
+        ));
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(observer)
+                .unwrap()
+                .health
+                .current(),
+            2000 - ground_damage,
+            "{name}"
+        );
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(falling)
+                .unwrap()
+                .lifecycle
+                .object_alive(),
+            row["return_value"] == 0,
+            "{name}"
+        );
+        assert!(
+            sim.projectiles.is_empty(),
+            "{name}: synchronous bullets retire"
+        );
+    }
+}
+
+/// The original54CE26..54CE6A controls keep Aircraft Can_Enter_Cell at0,
+/// then differ only in the Wheel passability row. Their supplied cell has no
+/// raw occupation, although Imbue has enabled Foot occupation. The native
+/// crop omits State5's preceding Mark work. This synthetic Rust scene disables
+/// occupation solely to retain that measured empty-cell input across its
+/// low-altitude State5 prefix; it does not reproduce the native Foot flag or
+/// takeoff/Mark history. At the gate, clear reaches descent and refusal
+/// reaches the impact notice instead of silently landing.
+#[test]
+fn aircraft_drop_landing_uses_original_wheel_controls() {
+    use crate::rules::locomotor_type::LocomotorKind;
+    use crate::rules::terrain_rules::SpeedCostProfile;
+    use crate::sim::movement::jumpjet_movement::jumpjet_flight::{
+        STATE_CRASH, STATE_CRASHED, STATE_DESCEND,
+    };
+    let corpus = crate::test_fixture::json("tools/spatial_oracle/magnetron_aircraft_lift.json");
+    let rows = corpus["landing_controls"].as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    for row in rows {
+        let input = &row["input"];
+        let (mut sim, rules, falling, _, _) = lifted_impact_scene("DROP_AIR", "");
+        let speeds = input["speed_rows"].as_array().unwrap();
+        assert_eq!(speeds.len(), 9);
+        assert!(speeds.iter().all(|speed| speed == &speeds[0]));
+        let percent = (speeds[0].as_f64().unwrap() * 100.0) as u8;
+        let cell = sim
+            .resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cell_mut_for_test(10, 16)
+            .unwrap();
+        cell.land_type = input["land_type"].as_u64().unwrap() as u8;
+        cell.speed_costs = SpeedCostProfile {
+            foot: Some(crate::rules::terrain_rules::test_speed_percent(percent)),
+            track: Some(crate::rules::terrain_rules::test_speed_percent(percent)),
+            wheel: Some(crate::rules::terrain_rules::test_speed_percent(percent)),
+            float: Some(crate::rules::terrain_rules::test_speed_percent(percent)),
+            amphibious: Some(crate::rules::terrain_rules::test_speed_percent(percent)),
+            float_beach: Some(crate::rules::terrain_rules::test_speed_percent(percent)),
+            hover: Some(crate::rules::terrain_rules::test_speed_percent(percent)),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        };
+        cell.base_speed_costs = cell.speed_costs.clone();
+        assert_eq!(
+            sim.aircraft_can_enter(falling, (10, 16)),
+            row["can_enter_cell"]
+        );
+        sim.remove_entity_occupancy(falling);
+        let frame = sim.session.binary_frame();
+        let entity = sim.substrate.entities.get_mut(falling).unwrap();
+        entity.position.set_exact_z_leptons_for_test(Some(5));
+        entity.set_foot_occupation_enabled(false);
+        entity.lift.set_swap_active_for_test(true);
+        entity
+            .seldom
+            .drop_credit
+            .set_being_manipulated_for_test(true);
+        entity.crash.set_crashing_for_test(true);
+        let locomotor = entity.locomotor.as_mut().unwrap();
+        assert!(locomotor.begin_piggyback_linked(
+            LocomotorKind::Jumpjet,
+            rules.object("DROP_AIR").unwrap(),
+            frame,
+            None
+        ));
+        let runtime = locomotor.jumpjet_runtime_mut().unwrap();
+        *runtime = runtime
+            .clone()
+            .with_phase_for_test(STATE_CRASH)
+            .with_moving_for_test(false);
+        sim.add_entity_occupancy(falling);
+        assert_eq!(
+            sim.substrate.raw_cell_occupation.ground_bits(10, 16),
+            0,
+            "the supplied native gate cell has no raw occupation"
+        );
+        let stats = sim
+            .tick_air_movement_with_cell_lists_one(
+                falling,
+                &rules,
+                None,
+                &mut crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap();
+        let phase = sim
+            .substrate
+            .entities
+            .get(falling)
+            .unwrap()
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .jumpjet_runtime()
+            .unwrap()
+            .phase();
+        let admitted = row["entry"] == 0;
+        assert_eq!(row["wheel_clear"], admitted);
+        assert_eq!(
+            phase,
+            if admitted {
+                STATE_DESCEND
+            } else {
+                STATE_CRASHED
+            },
+            "{}",
+            input["name"]
+        );
+        assert_eq!(stats.impact, !admitted, "{}", input["name"]);
+    }
+}
+
+/// Original746100 executes both falling constructions and their complete
+/// Detonate/Release calls with a supplied Unit receiver. This comparison is
+/// deliberately the constructor/observer/destructor boundary; the real TELE
+/// drop in locomotor_lift_tests covers the full Unit death and nested effects.
+#[test]
+fn magnetron_temporary_bullet_state_matches_original_construction() {
+    use crate::sim::native_identity::NativeUniqueIdCursor;
+    use crate::sim::projectile::{ProjectileCoord, ProjectilePayload, ProjectileTarget};
+    use crate::sim::world::{FrameEffects, UninitContext};
+    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = fixture.rules;
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/magnetron_drop.json",
+    ))
+    .unwrap();
+    for row in corpus["cases"].as_array().unwrap() {
+        assert_eq!(
+            row["input"]["health"],
+            rules.object("MTNK").unwrap().strength
+        );
+        let weapon = rules
+            .weapon(rules.combat_damage.death_weapon.as_deref().unwrap())
+            .unwrap();
+        assert_eq!(weapon.projectile.as_deref(), Some("Invisible"));
+        assert!(!weapon.bright && weapon.rad_level == 0);
+        for (index, expected) in row["bullets"].as_array().unwrap().iter().enumerate() {
+            let state = &expected["constructed"];
+            let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
+            sim.resolved_terrain
+                .as_mut()
+                .unwrap()
+                .cell_mut_for_test(10, 20)
+                .unwrap()
+                .level = 6;
+            let falling = sim
+                .spawn_object("MTNK", "Russians", 10, 20, 0, &rules)
+                .unwrap();
+            let credit = sim
+                .spawn_object("TELE", "Americans", 15, 20, 0, &rules)
+                .unwrap();
+            let source = if row["input"]["source_self"] == true {
+                falling
+            } else {
+                credit
+            };
+            sim.session
+                .set_binary_frame_for_test(row["input"]["frame"].as_u64().unwrap() as u32);
+            sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+                state["native_id"].as_u64().unwrap() as u32 - 1,
+            ));
+            let warhead = if index == 0 {
+                &rules.bridge_warheads.crush_name
+            } else {
+                &rules.bridge_warheads.c4_name
+            };
+            let payload = ProjectilePayload::new(
+                rules.object("MTNK").unwrap().strength,
+                sim.interner.intern(warhead),
+                weapon
+                    .projectile
+                    .as_deref()
+                    .map(|name| sim.interner.intern(name)),
+                true,
+            );
+            let id = sim.construct_projectile(
+                source,
+                ProjectileTarget::Entity(falling),
+                payload,
+                &rules,
+            );
+            let bullet = sim.projectiles.get(id).unwrap();
+            assert_eq!(bullet.native_unique_id(), state["native_id"]);
+            assert_eq!(bullet.position(), ProjectileCoord::new(0, 0, 0));
+            assert_eq!(
+                serde_json::json!([
+                    bullet.position().x,
+                    bullet.position().y,
+                    bullet.position().z
+                ]),
+                state["location"]
+            );
+            assert_eq!(bullet.source_id(), source);
+            assert_eq!(bullet.target(), ProjectileTarget::Entity(falling));
+            assert_eq!(bullet.payload().base_damage, state["damage"]);
+            assert_eq!(
+                bullet.payload().damage_multiplier(),
+                state["damage_multiplier"]
+            );
+            assert_eq!(
+                sim.interner.resolve(bullet.payload().warhead),
+                state["warhead"]
+            );
+            assert_eq!(
+                sim.interner
+                    .resolve(bullet.payload().projectile_type().unwrap()),
+                state["projectile"]
+            );
+            assert_eq!(bullet.payload().bright(), state["bright"]);
+            assert!(
+                bullet.payload().installed_weapon().is_none()
+                    && state["installed_weapon"].is_null()
+            );
+            assert_eq!(
+                i32::from(bullet.speed_leptons_per_frame()),
+                state["maximum_speed"]
+            );
+            assert_eq!(bullet.arm_timer().start_frame(), state["timers"][2]);
+            assert_eq!(bullet.arm_timer().duration(), state["timers"][3]);
+            assert_eq!(bullet.proximity_reference(), ProjectileCoord::new(0, 0, 0));
+            assert_eq!(bullet.last_distance_half(), 0);
+            assert!(!bullet.in_logic_vector() && state["in_logic"] == false);
+            assert!(!bullet.on_bridge() && state["on_bridge"] == false);
+            assert_eq!(sim.substrate.display.layer_of(id), None);
+            assert!(
+                state["object_registered"] == true
+                    && state["bullet_registered"] == true
+                    && state["expiry_registered"] == true
+            );
+            if index == 0 {
+                sim.notify_pointer_expired(falling, UninitContext::new(&rules));
+                let repaired = sim.projectiles.get(id).unwrap();
+                assert_eq!(repaired.target(), ProjectileTarget::Cell { rx: 10, ry: 20 });
+                assert_eq!(expected["after_detonate"]["target"]["kind"], "cell");
+                assert_eq!(
+                    repaired.source_id() == crate::sim::combat::RAD_NO_ATTACKER,
+                    expected["after_detonate"]["source"].is_null()
+                );
+            }
+            sim.destroy_unfired_projectile(id, &rules, &mut FrameEffects::default());
+            assert!(sim.projectiles.get(id).is_none());
+            assert!(!sim.substrate.logic.as_slice().contains(&id));
+            assert_eq!(sim.substrate.display.layer_of(id), None);
+            assert!(
+                expected["destroyed"]["object_registered"] == false
+                    && expected["destroyed"]["bullet_registered"] == false
+                    && expected["destroyed"]["expiry_registered"] == false
+            );
+        }
+    }
+}
+
+/// The native Unit receiver is supplied and makes no RNG draws or effect
+/// births. An empty receiver boundary isolates the same two Detonate tails:
+/// real constructor -> scatter/light/Anim -> Release, without claiming the
+/// full Unit-death callback is represented by an empty cell. The actual TELE
+/// integration test above that boundary covers damage, credit and expiry.
+// Vanilla goldens: Phobos skips the Inviso scatter (`0x469AC1` ->
+// `0x469AF0`) and scatters each animation itself, which shifts the stream.
+#[cfg(not(feature = "phobos"))]
+#[test]
+fn magnetron_temporary_bullet_tails_match_original_rng_lights_and_ids() {
+    use crate::sim::combat::{CombatLightRequest, RAD_NO_ATTACKER};
+    use crate::sim::native_identity::NativeUniqueIdCursor;
+    use crate::sim::projectile::{
+        ProjectileCoord, ProjectileDetonation, ProjectileDetonationReason, ProjectilePayload,
+        ProjectileTarget,
+    };
+    use crate::sim::world::FrameEffects;
+    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let mut rules = fixture.rules;
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/projectile_oracle/magnetron_drop.json",
+    ))
+    .unwrap();
+    // Both native source cases execute identical tails. Source/target expiry
+    // differences are compared by the constructor/observer test separately.
+    let row = &corpus["cases"][0];
+    for input in row["effect_inputs"].as_array().unwrap() {
+        rules.bind_anim_frame_count_for_test(
+            input["name"].as_str().unwrap(),
+            input["frame_count"].as_i64().unwrap() as i32,
+        );
+    }
+    let mut sim = Simulation::with_seed(31);
+    crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+    for cell in sim.resolved_terrain.as_mut().unwrap().cells_mut_for_test() {
+        cell.level = 6;
+    }
+    sim.session
+        .set_binary_frame_for_test(row["input"]["frame"].as_u64().unwrap() as u32);
+    sim.main_rng =
+        SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
+    sim.scenario_rng =
+        SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
+    sim.mapgen_rng =
+        SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
+    sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+        row["native_id_before"].as_u64().unwrap() as u32,
+    ));
+    let native_lights: Vec<_> = row["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|event| event["kind"] == "combat_light")
+        .collect();
+    let native_anims: Vec<_> = row["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|event| event["kind"] == "anim_ctor")
+        .collect();
+    for (index, expected) in row["bullets"].as_array().unwrap().iter().enumerate() {
+        let state = &expected["constructed"];
+        let payload = ProjectilePayload::new(
+            state["damage"].as_i64().unwrap() as i32,
+            sim.interner.intern(state["warhead"].as_str().unwrap()),
+            Some(sim.interner.intern(state["projectile"].as_str().unwrap())),
+            state["bright"].as_bool().unwrap(),
+        );
+        let target = ProjectileTarget::Cell { rx: 10, ry: 20 };
+        let id = sim.construct_projectile(RAD_NO_ATTACKER, target, payload, &rules);
+        assert_eq!(
+            sim.projectiles.get(id).unwrap().native_unique_id(),
+            state["native_id"]
+        );
+        let impact = ProjectileCoord::new(
+            expected["impact"][0].as_i64().unwrap() as i32,
+            expected["impact"][1].as_i64().unwrap() as i32,
+            expected["impact"][2].as_i64().unwrap() as i32,
+        );
+        sim.commit_logic_projectile_detonations(
+            &rules,
+            None,
+            &[ProjectileDetonation {
+                projectile_id: id,
+                source_id: RAD_NO_ATTACKER,
+                target,
+                impact,
+                payload,
+                reason: ProjectileDetonationReason::DeathWeapon,
+            }],
+            &mut FrameEffects::default(),
+        );
+        assert_eq!(sim.combat_light_requests.len(), index + 1);
+        let CombatLightRequest::Impact {
+            target_id,
+            damage,
+            warhead_ref,
+            coord,
+            force_create,
+            flags,
+        } = &sim.combat_light_requests[index]
+        else {
+            panic!("native impact light");
+        };
+        let light = native_lights[index];
+        assert_eq!(*target_id, None);
+        assert_eq!(*damage, light["damage"]);
+        assert_eq!(sim.interner.resolve(*warhead_ref), light["warhead"]);
+        assert_eq!(
+            serde_json::json!([coord.x, coord.y, coord.z]),
+            light["location"]
+        );
+        assert_eq!(*force_create, light["force"] == 1);
+        assert_eq!(*flags, light["flags"]);
+        let anim = sim
+            .substrate
+            .anims
+            .iter()
+            .find(|(_, anim)| {
+                anim.native_unique_id() as u64 == native_anims[index]["native_id"].as_u64().unwrap()
+            })
+            .map(|(_, anim)| anim)
+            .expect("interleaved native Anim allocation");
+        assert_eq!(
+            sim.interner.resolve(anim.type_id()),
+            native_anims[index]["name"]
+        );
+        assert_eq!(
+            serde_json::json!([
+                anim.world_coord().x,
+                anim.world_coord().y,
+                anim.world_coord().z
+            ]),
+            native_anims[index]["location"]
+        );
+        assert_eq!(
+            sim.scenario_rng.native_state_hex(),
+            expected["rng_after"]["scenario"]
+        );
+        sim.destroy_unfired_projectile(id, &rules, &mut FrameEffects::default());
+        assert!(sim.projectiles.get(id).is_none());
+    }
+    assert_eq!(sim.substrate.anims.len(), native_anims.len());
+    assert_eq!(
+        sim.native_unique_ids.as_ref().unwrap().current_raw(),
+        row["native_id_after"]
+    );
+    assert_eq!(sim.main_rng.native_state_hex(), row["rng_after"]["main"]);
+    assert_eq!(
+        sim.scenario_rng.native_state_hex(),
+        row["rng_after"]["scenario"]
+    );
+    assert_eq!(
+        sim.mapgen_rng.native_state_hex(),
+        row["rng_after"]["mapgen"]
+    );
+}
+
+/// The oracle's aircraft stands at the centre of cell (52, 52).
+const START: i32 = 52 * 256 + 128;
+
+fn oracle() -> &'static serde_json::Value {
+    crate::test_fixture::json("tools/spatial_oracle/aircraft_crash.json")
+}
+
+fn int(input: &serde_json::Value, name: &str, default: i64) -> i64 {
+    input[name].as_i64().unwrap_or(default)
+}
+
+/// The oracle's sound indices, as named sounds: the type's land/water cues
+/// (12, 33) and the `[AudioVisual]` fallbacks (71, 70).
+fn sound_name(index: i64) -> &'static str {
+    match index {
+        12 => "TypeLand",
+        33 => "TypeWater",
+        70 => "RulesWater",
+        71 => "RulesLand",
+        other => panic!("unmapped oracle sound index {other}"),
+    }
+}
+
+fn rules_for(input: &serde_json::Value) -> RuleSet {
+    let mut sounds = String::new();
+    let land = int(input, "land_sound", 12);
+    if land != -1 {
+        sounds += &format!("ImpactLandSound={}\n", sound_name(land));
+    }
+    let water = int(input, "water_sound", -1);
+    if water != -1 {
+        sounds += &format!("ImpactWaterSound={}\n", sound_name(water));
+    }
+    let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+        "[General]\nFlightLevel=1500\n\
+         [AudioVisual]\nConditionRed=0.25\nImpactLandSound=RulesLand\nImpactWaterSound=RulesWater\n\
+         [AircraftTypes]\n0=TEST\n[VehicleTypes]\n0=VICTIM\n[Animations]\n0=SGRYSMK1\n\
+         [TEST]\nStrength={}\nSpeed={}\nLandable=yes\nPrimary=CrashGun\n\
+         Locomotor={{4A582746-9839-11D1-B709-00A024DDAFD1}}\n{sounds}{}\n\
+         [VICTIM]\nStrength=1000\nArmor=none\n\
+         [CrashGun]\nDamage=150\nWarhead=CrashWH\n\
+         [CrashWH]\nCellSpread=1\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+         [Clear]\nTrack=100%\n",
+        int(input, "strength", 150),
+        int(input, "ini_speed", 14),
+        input["type_extra"].as_str().unwrap_or(""),
+    )))
+    .unwrap();
+    // The oracle records Crash's Stun without running it. VERA's runs, and
+    // its Fly Stop_Moving asks Find_Attack_Cell for the cell under the
+    // aircraft; Track-passable Clear land is taken without a Scenario draw
+    // (aircraft_move's rows), so the stream compares past it.
+    // aircraft_crash.py supplies Rules+1708=0.25. Native ReadAudioVisual
+    // 0066B337..0066B35E owns this key; the constructor default is 0.5.
+    assert_eq!(
+        rules.general.condition_red, 0.25,
+        "oracle fixture threshold"
+    );
+    let mut art =
+        crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str("[SGRYSMK1]\nRate=100\n"));
+    art.bind_anim_frame_count_for_test("SGRYSMK1", 20);
+    rules.replace_art_registry_for_test(art);
+    rules
+}
+
+/// One aircraft in the oracle's airborne state over a flat 70x70 map whose
+/// MapSize is 64x64 (the oracle's `In_Bounds` diamond).
+fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
+    let mut rules = rules_for(input);
+    // The existing native crash component supplies an admitted voxel body;
+    // this headless fixture does not execute an asset loader.
+    rules.supply_loaded_voxel_for_test("TEST");
+    let mut sim = Simulation::with_seed(0);
+    let level = int(input, "level", 0) as u8;
+    install_common_raw_terrain(&mut sim, 70, 70, level, None);
+    {
+        let terrain = sim.resolved_terrain.as_mut().unwrap();
+        for ry in 44..68 {
+            for rx in 44..68 {
+                let cell = terrain.cell_mut_for_test(rx, ry).unwrap();
+                cell.land_type = int(input, "land_type", 0) as u8;
+                if input["bridge"].as_bool() == Some(true) {
+                    cell.bridge_facts.raw_flags |= 0x100;
+                }
+            }
+        }
+    }
+    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+        base: 64,
+        off_fc: 0,
+        off_100: 0,
+        off_104: 64,
+        off_108: 64,
+    });
+    sim.playfield_size_height = Some(64);
+    sim.session
+        .set_binary_frame_for_test(int(input, "frame", 1000) as u32);
+    sim.scenario_rng = SimRng::new(int(input, "seed", 1) as u64);
+    assert_eq!(sim.substrate.allocate_stable_id(), 1);
+    insert_entity(&mut sim, 1, EntityCategory::Aircraft);
+    sim.substrate.entities.get_mut(1).unwrap().locomotor = Some(LocomotorState::from_object_type(
+        rules.object("TEST").unwrap(),
+        0,
+    ));
+    assert!(matches!(
+        sim.try_reveal_entity(
+            1,
+            RevealRequest {
+                position: RevealPosition::new(
+                    52,
+                    52,
+                    level,
+                    None,
+                    SimFixed::from_num(128),
+                    SimFixed::from_num(128)
+                ),
+                placement: PlacementEvidence::MarkSucceeded,
+                logic_eligible: true,
+            }
+        ),
+        RevealOutcome::Revealed { .. }
+    ));
+    sim.remove_entity_occupancy(1);
+    let xyz = input["xyz"].as_array().map_or([START, START, 1500], |a| {
+        [0, 1, 2].map(|i| a[i].as_i64().unwrap() as i32)
+    });
+    assert_eq!((xyz[0], xyz[1]), (START, START));
+    let frame = sim.session.binary_frame();
+    let entity = sim.substrate.entities.get_mut(1).unwrap();
+    entity.position.set_exact_z_leptons_for_test(Some(xyz[2]));
+    entity.health.set_for_test(int(input, "health", 0) as i32);
+    entity
+        .crash
+        .set_crashing_for_test(int(input, "crashing", 1) != 0);
+    let mut facing = FacingClass::new(
+        int(input, "facing", 0x4000) as u16,
+        int(input, "rot", 5) as i32,
+    );
+    if let Some(turn_to) = input["turn_to"].as_i64() {
+        facing.set(turn_to as u16, frame - int(input, "turn_age", 0) as u32);
+    }
+    entity.body_facing = facing;
+    let loco = entity.locomotor.as_mut().unwrap();
+    loco.set_fly_target_height(int(input, "target_height", 1500) as i32);
+    loco.fly_runtime_mut()
+        .unwrap()
+        .set_current_speed_for_test(SimFixed::from_bits(int(input, "speed_bits", 65536) as i32));
+    if int(input, "moving", 1) != 0 {
+        let destination = input["destination"].as_array().map_or(
+            DriveCoord {
+                x: 64 * 256,
+                y: 52 * 256,
+                z: 1500,
+            },
+            |a| DriveCoord {
+                x: a[0].as_i64().unwrap() as i32,
+                y: a[1].as_i64().unwrap() as i32,
+                z: a[2].as_i64().unwrap() as i32,
+            },
+        );
+        loco.fly_runtime_mut()
+            .unwrap()
+            .retain_destination(destination, None, || 0);
+    }
+    sim.add_entity_occupancy(1);
+    (sim, rules)
+}
+
+fn f32_hex(value: &serde_json::Value) -> f64 {
+    f64::from(f32::from_bits(
+        u32::from_str_radix(value.as_str().unwrap(), 16).unwrap(),
+    ))
+}
+
+/// `FootClass::Crash @ 0x004DEBB0`: the ground refusal, the live prefix's
+/// Health 0, the latch and the three Scenario draws with their f32 rates and
+/// the stream's continuation, over ten seeds.
+#[test]
+fn crash_matches_native_rows() {
+    let rows = oracle()["crash"].as_array().unwrap().clone();
+    assert_eq!(rows.len(), 15);
+    let mut compared = 0;
+    for row in &rows {
+        let input = &row["input"];
+        if int(input, "i_know", 0) != 0 {
+            // `Unsorted::IKnowWhatImDoing` is raised only around building
+            // placement scopes that never reach a crash; VERA reads it as 0.
+            assert!(row["draws"].as_array().unwrap().is_empty());
+            continue;
+        }
+        let mut fixture_input = input.clone();
+        fixture_input["crashing"] = serde_json::json!(0);
+        let (mut sim, rules) = fixture(&fixture_input);
+        let returned = sim.foot_crash(
+            1,
+            None,
+            &rules,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
+        let name = input["name"].as_str().unwrap();
+        assert_eq!(returned, row["returned"].as_bool().unwrap(), "{name}");
+        let entity = sim.substrate.entities.get(1).unwrap();
+        assert_eq!(
+            entity.health.current(),
+            row["health"].as_i64().unwrap() as i32,
+            "{name}"
+        );
+        // The oracle's fixture pre-sets the latch only for rows that call
+        // Crash on an already-crashing object; a refused Crash writes nothing.
+        assert_eq!(entity.crash.is_crashing(), returned, "{name}");
+        let draws = row["draws"].as_array().unwrap().len();
+        if draws == 0 {
+            assert!(entity.rocking.is_none(), "{name}");
+        } else {
+            let rocking = entity.rocking.as_ref().unwrap();
+            for (actual, expected) in [
+                (rocking.vel_sideways(), &row["sideways_bits"]),
+                (rocking.vel_forwards(), &row["forwards_bits"]),
+            ] {
+                assert!(
+                    (actual.to_num::<f64>() - f32_hex(expected)).abs() <= 1.0 / 65536.0,
+                    "{name}: {actual} vs {}",
+                    f32_hex(expected)
+                );
+            }
+        }
+        // Count and stream: the next raw draw continues where native's did.
+        assert_eq!(
+            sim.scenario_rng.next_u32(),
+            row["next_random"].as_u64().unwrap() as u32,
+            "{name}"
+        );
+        compared += 1;
+    }
+    assert_eq!(compared, 14);
+}
+
+/// Live NULL Crash4DEC51 calls RecordKill once before zeroing Health4DEC72.
+/// Dead-Fly impact4CD89B calls UnInit5F65F0, which has no second kill callback.
+/// The native live_seed5 row records the first call; retirement must not add a
+/// compatibility fallback loss after the shared immediate accounting owner.
+#[test]
+fn live_null_crash_books_one_loss_through_impact_and_retirement() {
+    let native = oracle();
+    let row = native["crash"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["input"]["name"] == "live_seed5")
+        .unwrap();
+    let mut input = row["input"].clone();
+    input["crashing"] = serde_json::json!(0);
+    let (mut sim, rules) = fixture(&input);
+    let owner = sim.substrate.entities.get(1).unwrap().owner();
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
+    let callbacks = row["calls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|call| call["call"] == "record_kill")
+        .count() as u32;
+    assert_eq!(callbacks, 1);
+    assert!(sim.foot_crash(
+        1,
+        None,
+        &rules,
+        &mut crate::sim::world::FrameEffects::default(),
+    ));
+    assert_eq!(sim.houses[&owner].stats().units_lost(), callbacks);
+
+    let mut reached_impact = false;
+    for _ in 0..128 {
+        sim.session
+            .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+        if sim
+            .tick_air_movement_with_cell_lists_one(
+                1,
+                &rules,
+                None,
+                &mut crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap()
+            .impact
+        {
+            sim.fly_crash_impact(
+                1,
+                &rules,
+                None,
+                &mut crate::sim::world::FrameEffects::default(),
+            );
+            reached_impact = true;
+            break;
+        }
+    }
+    assert!(
+        reached_impact,
+        "the ordinary dead-Fly movement reaches ground"
+    );
+    assert!(!sim.substrate.entities.get(1).unwrap().is_active());
+    assert_eq!(
+        sim.houses[&owner].stats().units_lost(),
+        callbacks,
+        "impact UnInit does not add a second loss"
+    );
+    sim.process_pending_delete_with(
+        &rules,
+        &mut crate::sim::world::FrameEffects::default(),
+        1,
+        false,
+    );
+    assert!(!sim.substrate.entities.contains(1));
+    assert_eq!(sim.houses[&owner].stats().units_lost(), callbacks);
+}
+
+/// The whole fall of a dead crashing aircraft, frame by frame, through the
+/// production Fly transaction, to the impact frame: the XYZ after every frame,
+/// then the death weapon's blast at the impact point (a 1000-strength victim
+/// takes the 150-damage `Primary=`), the impact cue by LandType with its
+/// `[AudioVisual]` fallback, and the UnInit.
+#[test]
+fn crash_fall_matches_native_frames_to_the_impact() {
+    let rows = oracle()["fall"].as_array().unwrap().clone();
+    assert_eq!(rows.len(), 15);
+    for row in &rows {
+        let input = &row["input"];
+        let name = input["name"].as_str().unwrap();
+        let (mut sim, rules) = fixture(input);
+        let frames = row["frames"].as_array().unwrap();
+        let start = sim.session.binary_frame();
+        for (n, frame) in frames.iter().enumerate() {
+            sim.session.set_binary_frame_for_test(start + n as u32);
+            sim.sound_events.clear_for_test();
+            let impact = n + 1 == frames.len();
+            let expected: Vec<i32> = frame["xyz"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_i64().unwrap() as i32)
+                .collect();
+            if impact {
+                // A victim under the impact point takes the death weapon.
+                let victim = sim.substrate.allocate_stable_id();
+                let owner = sim.interner.intern("Soviets");
+                let type_ref = sim.interner.intern("VICTIM");
+                let mut entity = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
+                    victim,
+                    (expected[0] / 256) as u16,
+                    (expected[1] / 256) as u16,
+                    int(input, "level", 0) as u8,
+                    0,
+                    owner,
+                    crate::sim::combat::Health::new(1000),
+                    type_ref,
+                    EntityCategory::Unit,
+                    0,
+                    5,
+                    true,
+                );
+                entity.lifecycle.set_in_limbo_for_test(true);
+                sim.substrate.entities.insert(entity);
+                assert!(matches!(
+                    sim.try_reveal_entity(
+                        victim,
+                        RevealRequest {
+                            position: RevealPosition::new(
+                                (expected[0] / 256) as u16,
+                                (expected[1] / 256) as u16,
+                                int(input, "level", 0) as u8,
+                                None,
+                                SimFixed::from_num(expected[0] % 256),
+                                SimFixed::from_num(expected[1] % 256)
+                            ),
+                            placement: PlacementEvidence::MarkSucceeded,
+                            logic_eligible: true,
+                        }
+                    ),
+                    RevealOutcome::Revealed { .. }
+                ));
+                let stats = sim
+                    .tick_air_movement_with_cell_lists_one(
+                        1,
+                        &rules,
+                        None,
+                        &mut crate::sim::world::FrameEffects::default(),
+                    )
+                    .unwrap();
+                assert!(stats.impact, "{name}: impact frame {n}");
+                let entity = sim.substrate.entities.get(1).unwrap();
+                let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+                assert_eq!(
+                    [xy[0], xy[1]],
+                    [expected[0], expected[1]],
+                    "{name} impact xy"
+                );
+                sim.fly_crash_impact(
+                    1,
+                    &rules,
+                    None,
+                    &mut crate::sim::world::FrameEffects::default(),
+                );
+                assert!(
+                    sim.substrate
+                        .entities
+                        .get(1)
+                        .is_none_or(|e| !e.lifecycle.object_alive()),
+                    "{name}: UnInit at the impact"
+                );
+                assert_eq!(
+                    sim.substrate.entities.get(victim).unwrap().health.current(),
+                    1000 - 150,
+                    "{name}: the death weapon detonates at the impact point"
+                );
+                let calls = frame["calls"].as_array().unwrap();
+                let play = calls.iter().find(|c| c["call"] == "play_at").unwrap();
+                let expected_sound = sound_name(play["sound"].as_i64().unwrap());
+                let played: Vec<&str> = sim
+                    .sound_events
+                    .iter()
+                    .filter_map(|event| match event {
+                        super::SimSoundEvent::VocAt { sound_id, .. } => {
+                            Some(sound_id.name_in(&rules))
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                assert_eq!(played, [expected_sound], "{name}");
+                assert!(calls.iter().any(|c| c["call"] == "fire_death_weapon"));
+                assert!(calls.iter().any(|c| c["call"] == "uninit"));
+            } else {
+                let stats = sim
+                    .tick_air_movement_with_cell_lists_one(
+                        1,
+                        &rules,
+                        None,
+                        &mut crate::sim::world::FrameEffects::default(),
+                    )
+                    .unwrap();
+                assert!(!stats.impact, "{name}: early impact at frame {n}");
+                let entity = sim.substrate.entities.get(1).unwrap();
+                let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+                assert_eq!(
+                    [xy[0], xy[1], entity.position.exact_z_leptons().unwrap()],
+                    [expected[0], expected[1], expected[2]],
+                    "{name} frame {n}"
+                );
+                let counter = entity
+                    .locomotor
+                    .as_ref()
+                    .unwrap()
+                    .fly_runtime()
+                    .unwrap()
+                    .fall_counter();
+                assert_eq!(
+                    counter,
+                    frame["counter"].as_i64().unwrap() as i32,
+                    "{name} frame {n}"
+                );
+            }
+        }
+    }
+}
+
+/// A dead Fly's drop runs its own Mark(UP), SetLocation and Mark(DOWN)
+/// (`0x004CD766..0x004CD783`) ahead of the movement's pair, and on the impact
+/// frame its height of 0 makes its layer Ground (`0x004CFCF0`): the wreck is
+/// prepended to its cell's list, ahead of an object already there, before
+/// the impact's SetHeight(0) and death weapon.
+#[test]
+fn a_crash_fall_lists_the_wreck_in_its_impact_cell() {
+    use crate::sim::occupancy::CellObjectMember::Entity;
+    let rows = oracle()["fall"].as_array().unwrap().clone();
+    let row = &rows[0];
+    let (mut sim, rules) = fixture(&row["input"]);
+    let frames = row["frames"].as_array().unwrap();
+    let impact_xy: Vec<i32> = frames.last().unwrap()["xyz"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_i64().unwrap() as i32)
+        .collect();
+    let cell = ((impact_xy[0] / 256) as u16, (impact_xy[1] / 256) as u16);
+    let bystander = sim.substrate.allocate_stable_id();
+    insert_entity(&mut sim, bystander, EntityCategory::Unit);
+    assert!(matches!(
+        sim.try_reveal_entity(
+            bystander,
+            RevealRequest {
+                position: RevealPosition::new(
+                    cell.0,
+                    cell.1,
+                    0,
+                    None,
+                    SimFixed::from_num(128),
+                    SimFixed::from_num(128)
+                ),
+                placement: PlacementEvidence::MarkSucceeded,
+                logic_eligible: true,
+            }
+        ),
+        RevealOutcome::Revealed { .. }
+    ));
+    let start = sim.session.binary_frame();
+    for n in 0..frames.len() {
+        sim.session.set_binary_frame_for_test(start + n as u32);
+        let stats = sim
+            .tick_air_movement_with_cell_lists_one(
+                1,
+                &rules,
+                None,
+                &mut crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap();
+        assert_eq!(stats.impact, n + 1 == frames.len(), "frame {n}");
+    }
+    let wreck = sim.substrate.entities.get(1).unwrap();
+    assert!(wreck.lifecycle.cell_marked());
+    assert_eq!((wreck.position.rx(), wreck.position.ry()), cell);
+    assert!(sim.substrate.occupancy.contains_entity(cell.0, cell.1, 1));
+    assert_eq!(sim.next_cell_object(Entity(1)), Some(Entity(bystander)));
+}
+
+/// `AircraftClass::AI`'s smoke: strict red health (and no smoke at exactly
+/// ConditionRed or on the ground), one Scenario `RandomRanged(0, 99)`, and the
+/// 10/80 threshold, over three seeds.
+#[test]
+fn crash_smoke_matches_native_rows() {
+    let rows = oracle()["smoke"].as_array().unwrap().clone();
+    assert_eq!(rows.len(), 17);
+    for row in &rows {
+        let input = &row["input"];
+        let name = input["name"].as_str().unwrap();
+        let (mut sim, rules) = fixture(input);
+        let anims_before = sim.substrate.anims.len();
+        sim.aircraft_crash_smoke(1, &rules);
+        let smoked = sim.substrate.anims.len() > anims_before;
+        assert_eq!(smoked, row["smoke"].as_bool().unwrap(), "{name}");
+        assert_eq!(
+            sim.scenario_rng.next_u32(),
+            row["next_random"].as_u64().unwrap() as u32,
+            "{name}"
+        );
+    }
+}
+
+/// Ares AircraftClass_Update_DamageSmoke (Ares.dll 10047B60, hook
+/// 0x415085), over the native smoke rows: `Smoke.Anim=none` neither puffs
+/// nor draws, and `Smoke.ChanceRed`/`Smoke.ChanceDead` of 100 puff on every
+/// draw.
+#[test]
+fn ares_smoke_keys_replace_the_aircraft_smoke() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let smoke = |input: &serde_json::Value, extra: &str| {
+        let mut input = input.clone();
+        input["type_extra"] = serde_json::json!(extra);
+        let (mut sim, rules) = fixture(&input);
+        let anims_before = sim.substrate.anims.len();
+        let rng_before = sim.scenario_rng.state();
+        sim.aircraft_crash_smoke(1, &rules);
+        (
+            sim.substrate.anims.len() > anims_before,
+            sim.scenario_rng.state() != rng_before,
+        )
+    };
+    let mut drawn = 0;
+    for row in oracle()["smoke"].as_array().unwrap() {
+        let input = &row["input"];
+        let (_, drew) = smoke(input, "");
+        drawn += usize::from(drew);
+        assert_eq!(smoke(input, "Smoke.Anim=none"), (false, false));
+        assert_eq!(
+            smoke(input, "Smoke.ChanceRed=100\nSmoke.ChanceDead=100"),
+            (drew, drew)
+        );
+    }
+    assert!(drawn > 0);
+    // `0x10047BA6..0x10047BAA`: a 0/0 health ratio is unordered, which Ares
+    // does not take as red.
+    let unordered = serde_json::json!({"health": 0, "strength": 0, "name": "nan", "seed": 1});
+    assert_eq!(
+        smoke(&unordered, "Smoke.ChanceRed=100\nSmoke.ChanceDead=100"),
+        (false, false)
+    );
+}
+
+/// Ares FootClass_Crash_Spin (Ares.dll 10049050, hook 0x4DECAE):
+/// `CrashSpin=no` crashes without the spin and its three draws.
+#[test]
+fn ares_crash_spin_no_skips_the_spin_draws() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let row = oracle()["crash"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| {
+            row["draws"].as_array().unwrap().len() == 3 && int(&row["input"], "i_know", 0) == 0
+        })
+        .unwrap();
+    let mut input = row["input"].clone();
+    input["crashing"] = serde_json::json!(0);
+    input["type_extra"] = serde_json::json!("CrashSpin=no");
+    let (mut sim, rules) = fixture(&input);
+    let before = sim.scenario_rng.state();
+    assert!(sim.foot_crash(
+        1,
+        None,
+        &rules,
+        &mut crate::sim::world::FrameEffects::default(),
+    ));
+    assert!(sim.substrate.entities.get(1).unwrap().rocking.is_none());
+    assert_eq!(sim.scenario_rng.state(), before);
+}
+
+/// A save in mid-fall restores the latch, its seen edge, the fall counter and
+/// the spin: the loaded and the continuing worlds fall frame for frame to the
+/// same impact.
+#[test]
+fn a_crash_saved_in_mid_fall_lands_like_the_original() {
+    use crate::sim::combat::combat_aoe::AreaDamageReceiver;
+    use crate::sim::snapshot::GameSnapshot;
+    let (mut sim, rules) = fixture(&serde_json::json!({"health": 150, "crashing": 0}));
+    let soviets = sim.interner.intern("Soviets");
+    let warhead = sim.interner.intern("CrashWH");
+    let hit = crate::sim::combat::EntityDamageEvent::area(
+        1,
+        200,
+        0,
+        crate::sim::combat::RAD_NO_ATTACKER,
+        Some(soviets),
+        warhead,
+    );
+    sim.commit_noncombat_aoe_receivers(
+        &rules,
+        None,
+        &[AreaDamageReceiver::Entity(hit)],
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    assert!(sim.substrate.entities.get(1).unwrap().crash.is_crashing());
+    let grid = crate::sim::pathfinding::PathGrid::test_all_passable(70, 70);
+    let tick = |sim: &mut Simulation| {
+        sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
+    };
+    for _ in 0..10 {
+        tick(&mut sim);
+    }
+    assert!(sim.substrate.entities.get(1).unwrap().crash.seen());
+
+    sim.scenario_rng = SimRng::new(0);
+    let bytes = GameSnapshot::save(&sim, 0, 0, "crash in mid-fall", 0);
+    let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+    restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
+    restored.resolved_terrain = sim.resolved_terrain.clone();
+    restored.restore_after_snapshot_load().unwrap();
+    assert_eq!(restored.state_hash(), sim.state_hash());
+
+    let alive = |sim: &Simulation| {
+        sim.substrate
+            .entities
+            .get(1)
+            .is_some_and(|entity| entity.lifecycle.object_alive())
+    };
+    let mut frames = 0;
+    while alive(&sim) {
+        frames += 1;
+        assert!(frames < 60, "the fall reaches the ground");
+        tick(&mut sim);
+        tick(&mut restored);
+        assert_eq!(restored.state_hash(), sim.state_hash(), "frame {frames}");
+        assert_eq!(alive(&restored), alive(&sim));
+    }
+}
+
+/// `Fire_Death_Weapon` hands its bullet straight to `DetonateAtCoord`
+/// (`0x0070D782`). A BulletClass hit runs the cluster loop, which after every
+/// cluster, the last included, draws the next cluster's coordinate
+/// (`0x00469020..0x00469091`); the death weapon's single detonation draws
+/// nothing there.
+#[test]
+fn a_death_weapon_detonates_once_without_cluster_draws() {
+    use crate::sim::projectile::{
+        ProjectileCoord, ProjectileDetonation, ProjectileDetonationReason, ProjectilePayload,
+        ProjectileTarget,
+    };
+    let (mut sim, _) = fixture(&serde_json::json!({"health": 150}));
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[AircraftTypes]\n0=TEST\n[TEST]\nStrength=150\nPrimary=CrashGun\n\
+         [CrashGun]\nDamage=150\nWarhead=CrashWH\nProjectile=CrashProj\n\
+         [CrashProj]\nInviso=no\n\
+         [CrashWH]\nCellSpread=1\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ))
+    .unwrap();
+    sim.resolve_type_handles(&rules);
+    let payload = ProjectilePayload::new(
+        150,
+        sim.interner.intern("CrashWH"),
+        rules
+            .weapon("CrashGun")
+            .unwrap()
+            .projectile
+            .as_deref()
+            .map(|name| sim.interner.intern(name)),
+        rules.weapon("CrashGun").unwrap().bright,
+    )
+    .with_installed_weapon(Some(sim.interner.intern("CrashGun")));
+    let detonation = |reason| ProjectileDetonation {
+        projectile_id: 1,
+        source_id: 1,
+        target: ProjectileTarget::Cell { rx: 40, ry: 40 },
+        impact: ProjectileCoord {
+            x: 40 * 256 + 128,
+            y: 40 * 256 + 128,
+            z: 0,
+        },
+        payload,
+        reason,
+    };
+    let before = sim.scenario_rng.state();
+    sim.commit_logic_projectile_detonations(
+        &rules,
+        None,
+        &[detonation(ProjectileDetonationReason::DeathWeapon)],
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(sim.scenario_rng.state(), before, "no cluster draws");
+    sim.commit_logic_projectile_detonations(
+        &rules,
+        None,
+        &[detonation(ProjectileDetonationReason::ReachedTarget)],
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+    assert_ne!(
+        sim.scenario_rng.state(),
+        before,
+        "a bullet hit draws its next cluster"
+    );
+}
+
+/// A crashable Jumpjet unit: `TEST` flies the Nighthawk's type block with
+/// `BalloonHover=` as asked (a Kirov's impact fires its current weapon, any
+/// other type's plays its `Explosion=` once more) and seats two `RIDER`s. The
+/// type names an `ImpactLandSound=` the Jumpjet impact must not play.
+fn jumpjet_rules(balloon: bool, art: &str) -> RuleSet {
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(&format!(
+            "[General]\n\
+         [AudioVisual]\nConditionRed=0.25\nImpactLandSound=RulesLand\n\
+         [VehicleTypes]\n0=TEST\n1=VICTIM\n\
+         [InfantryTypes]\n0=RIDER\n\
+         [TEST]\nStrength=300\nArmor=none\nCrashable=yes\nBalloonHover={}\nPassengers=2\n\
+         Locomotor={{92612C46-F71F-11d1-AC9F-006008055BB5}}\nSpeedType=Hover\nMovementZone=Fly\n\
+         JumpjetHeight=500\n\
+         JumpjetClimb=10\nJumpjetCrash=40\nJumpjetSpeed=30\nJumpjetNoWobbles=yes\n\
+         Primary=CrashGun\nExplosion=BOOM\nCrashingSound=JJDie\nImpactLandSound=TypeLand\n\
+         [VICTIM]\nStrength=1000\nArmor=none\n\
+         [RIDER]\nStrength=100\nArmor=none\n\
+         [CrashGun]\nDamage=150\nRange=6\nWarhead=CrashWH\n\
+         [CrashWH]\nCellSpread=1\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+            if balloon { "yes" } else { "no" },
+        )),
+        &IniFile::from_str(art),
+    )
+    .unwrap();
+    assert_eq!(rules.general.condition_red, 0.25, "crash fixture threshold");
+    let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
+        "[BOOM]\nRate=100\n[SGRYSMK1]\nRate=100\n",
+    ));
+    art.bind_anim_frame_count_for_test("BOOM", 20);
+    art.bind_anim_frame_count_for_test("SGRYSMK1", 20);
+    rules.replace_art_registry_for_test(art);
+    rules
+}
+
+/// Unit 1 hovers at `JumpjetHeight=` over cell (52, 52) of the aircraft
+/// fixture's map, holding that cell's air slot with the moving byte set, as
+/// the native corpus's kill leaves a hovering Jumpjet; its two riders sit in
+/// its cargo, a `VICTIM` stands below and a Soviet shooter at (40, 40).
+/// Answers the victim's and the shooter's ids.
+fn jumpjet_fixture(balloon: bool) -> (Simulation, RuleSet, u64, u64) {
+    jumpjet_fixture_with_art(balloon, "")
+}
+
+fn jumpjet_fixture_with_art(balloon: bool, art: &str) -> (Simulation, RuleSet, u64, u64) {
+    use crate::sim::house_state::HouseState;
+    use crate::sim::passenger::{PassengerCargo, PassengerRole};
+    let mut rules = jumpjet_rules(balloon, art);
+    // Explicit loaded-main-VXL input for the native Jumpjet crash boundary.
+    rules.supply_loaded_voxel_for_test("TEST");
+    let mut sim = Simulation::with_seed(0);
+    install_common_raw_terrain(&mut sim, 70, 70, 0, None);
+    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+        base: 64,
+        off_fc: 0,
+        off_100: 0,
+        off_104: 64,
+        off_108: 64,
+    });
+    sim.playfield_size_height = Some(64);
+    sim.session.set_binary_frame_for_test(1000);
+    for (name, human) in [("Americans", true), ("Soviets", false)] {
+        let house = sim.interner.intern(name);
+        sim.houses
+            .register(HouseState::new(house, 0, None, human, 0, 10));
+    }
+    let reveal = |sim: &mut Simulation, id: u64, rx: u16, ry: u16| {
+        assert!(matches!(
+            sim.try_reveal_entity(
+                id,
+                RevealRequest {
+                    position: RevealPosition::new(
+                        rx,
+                        ry,
+                        0,
+                        None,
+                        SimFixed::from_num(128),
+                        SimFixed::from_num(128)
+                    ),
+                    placement: PlacementEvidence::MarkSucceeded,
+                    logic_eligible: true,
+                }
+            ),
+            RevealOutcome::Revealed { .. }
+        ));
+    };
+    assert_eq!(sim.substrate.allocate_stable_id(), 1);
+    insert_entity(&mut sim, 1, EntityCategory::Unit);
+    sim.substrate.entities.get_mut(1).unwrap().locomotor = Some(LocomotorState::from_object_type(
+        rules.object("TEST").unwrap(),
+        0,
+    ));
+    reveal(&mut sim, 1, 52, 52);
+    sim.remove_entity_occupancy(1);
+    {
+        let entity = sim.substrate.entities.get_mut(1).unwrap();
+        entity.health.set_for_test(300);
+        entity.position.set_exact_z_leptons_for_test(Some(500));
+        entity.body_facing = FacingClass::new(0x4000, 5);
+        let loco = entity.locomotor.as_mut().unwrap();
+        let runtime = loco.jumpjet_runtime_mut().unwrap();
+        let mut flight = runtime.flight();
+        flight.facing_mut().snap(0x4000, 1000);
+        flight.set_target_height_for_test(500);
+        *runtime = runtime
+            .clone()
+            .with_phase_for_test(crate::sim::movement::jumpjet_movement::jumpjet_flight::STATE_HOLD)
+            .with_moving_for_test(true)
+            .with_destination_for_test(DriveCoord {
+                x: START,
+                y: START,
+                z: 0,
+            })
+            .with_flight_for_test(flight);
+        entity.set_passenger_role_for_test(PassengerRole::transport(PassengerCargo::new(2, 0.0)));
+    }
+    sim.add_entity_occupancy(1);
+    // This held-aircraft midpoint follows native takeoff's tracker Add;
+    // marking a Jumpjet does not manufacture that retained registration.
+    Simulation::aircraft_tracker_add(&sim.session, &mut sim.substrate, 1);
+    assert!(sim.substrate.set_cell_air_slot((52, 52), Some(1)));
+    for _ in 0..2 {
+        let rider = sim
+            .construct_object_limbo_at_height(
+                "RIDER",
+                "Americans",
+                52,
+                52,
+                0,
+                0,
+                &rules,
+                &mut crate::sim::world::FrameEffects::default(),
+            )
+            .expect("rider");
+        sim.substrate
+            .entities
+            .get_mut(rider)
+            .unwrap()
+            .set_passenger_role_for_test(PassengerRole::inside_for_test(1, false));
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .passenger_role_mut_for_test()
+            .cargo_mut()
+            .unwrap()
+            .board_forced_chain(&[(rider, 1.0)]);
+    }
+    let spawn = |sim: &mut Simulation, owner: &str, rx: u16, ry: u16| {
+        let owner = sim.interner.intern(owner);
+        let type_ref = sim.interner.intern("VICTIM");
+        let id = sim.substrate.allocate_stable_id();
+        let mut entity = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
+            id,
+            rx,
+            ry,
+            0,
+            0,
+            owner,
+            crate::sim::combat::Health::new(1000),
+            type_ref,
+            EntityCategory::Unit,
+            0,
+            5,
+            true,
+        );
+        entity.lifecycle.set_in_limbo_for_test(true);
+        sim.substrate.entities.insert(entity);
+        reveal(sim, id, rx, ry);
+        id
+    };
+    let victim = spawn(&mut sim, "Americans", 52, 52);
+    let shooter = spawn(&mut sim, "Soviets", 40, 40);
+    (sim, rules, victim, shooter)
+}
+
+/// What a crashed Jumpjet's fall looked like through `advance_tick`.
+struct JumpjetFall {
+    /// The wreck's Z after each frame it survived.
+    heights: Vec<i32>,
+    /// The frame the impact UnInit it.
+    impact_frame: usize,
+    crash_sound_frames: Vec<usize>,
+    impact_sounds: usize,
+    /// `Explosion=` anims built in the impact frame.
+    impact_booms: usize,
+}
+
+fn fall_to_the_impact(sim: &mut Simulation, rules: &RuleSet) -> JumpjetFall {
+    let grid = crate::sim::pathfinding::PathGrid::test_all_passable(70, 70);
+    let boom = sim.interner.intern("BOOM");
+    let mut fall = JumpjetFall {
+        heights: Vec::new(),
+        impact_frame: 0,
+        crash_sound_frames: Vec::new(),
+        impact_sounds: 0,
+        impact_booms: 0,
+    };
+    for frame in 1..40 {
+        sim.sound_events.clear_for_test();
+        let booms_before = sim
+            .substrate
+            .anims
+            .iter()
+            .filter(|(_, anim)| anim.type_id() == boom)
+            .count();
+        sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
+        if sim.sound_events.iter().any(|event| {
+            matches!(
+                event,
+                super::SimSoundEvent::AnimationStarted { anim_id: 1, .. }
+            )
+        }) {
+            fall.crash_sound_frames.push(frame);
+        }
+        fall.impact_sounds += sim
+            .sound_events
+            .iter()
+            .filter(|event| {
+                matches!(event, super::SimSoundEvent::VocAt { sound_id, .. }
+                    if sound_id.name_in(&rules) == "TypeLand" || sound_id.name_in(&rules) == "RulesLand")
+            })
+            .count();
+        match sim.substrate.entities.get(1) {
+            Some(entity) if entity.lifecycle.object_alive() => {
+                assert!(entity.crash.is_crashing() && entity.health.current() == 0);
+                fall.heights
+                    .push(entity.position.exact_z_leptons().expect("exact Z"));
+            }
+            _ => {
+                fall.impact_frame = frame;
+                fall.impact_booms = sim
+                    .substrate
+                    .anims
+                    .iter()
+                    .filter(|(_, anim)| anim.type_id() == boom)
+                    .count()
+                    - booms_before;
+                return fall;
+            }
+        }
+    }
+    panic!("the wreck never reached the ground: {:?}", fall.heights);
+}
+
+/// Kill unit 1 through the production receiver: one area hit from the
+/// Soviet shooter.
+fn shoot_down(sim: &mut Simulation, rules: &RuleSet, shooter: u64) {
+    use crate::sim::combat::combat_aoe::AreaDamageReceiver;
+    let soviets = sim.interner.intern("Soviets");
+    let warhead = sim.interner.intern("CrashWH");
+    let hit =
+        crate::sim::combat::EntityDamageEvent::area(1, 400, 0, shooter, Some(soviets), warhead);
+    sim.commit_noncombat_aoe_receivers(
+        rules,
+        None,
+        &[AreaDamageReceiver::Entity(hit)],
+        &mut crate::sim::world::FrameEffects::default(),
+    );
+}
+
+/// Art `DeathFrames=` on a `Crashable=` Jumpjet: the kill skips
+/// `Death_Explosion` (`0x00737DDD`) and the wreck falls while its death count
+/// runs; Unit AI explodes and UnInits it once the count before a step has
+/// reached `MaxDeathCounter=` (`0x0073635B..0x007363A3`), ahead of its impact.
+#[test]
+fn a_death_frames_jumpjet_explodes_when_its_count_ends() {
+    let (mut sim, rules, _, shooter) = jumpjet_fixture_with_art(
+        false,
+        "[TEST]\nVoxel=yes\nDeathFrames=3\nMaxDeathCounter=2\n",
+    );
+    shoot_down(&mut sim, &rules, shooter);
+    assert_eq!(
+        sim.substrate.anims.iter().count(),
+        0,
+        "no Explosion= at the kill"
+    );
+    let wreck = sim
+        .substrate
+        .entities
+        .get(1)
+        .expect("a crashing unit stays");
+    assert!(wreck.crash.is_crashing());
+    assert_eq!(wreck.unit_death_counter.get(), 0);
+    let fall = fall_to_the_impact(&mut sim, &rules);
+    assert_eq!((fall.impact_frame, fall.impact_booms), (3, 1));
+}
+
+/// A drain link breaks at the killing hit (the Techno death arm,
+/// `0x0070206A..0x00702102`, here through Destroy's Detach_All broadcast): a
+/// Floating Disc-like `Crashable=` Jumpjet shot down while draining falls as
+/// a wreck with no link and no DrainAnim.
+#[test]
+fn a_shot_down_drainer_drops_its_link_and_ray_at_the_kill() {
+    let (mut sim, mut rules, victim, shooter) = jumpjet_fixture(false);
+    rules.combat_damage.drain_animation_type = Some("BOOM".to_string());
+    crate::sim::credit_income::link_for_test(&mut sim, 1, victim);
+    crate::sim::credit_income::attach_drain_anim(&mut sim, 1, &rules);
+    let ray = sim
+        .substrate
+        .entities
+        .get(1)
+        .unwrap()
+        .drain
+        .anim()
+        .expect("ray");
+    shoot_down(&mut sim, &rules, shooter);
+
+    let wreck = sim
+        .substrate
+        .entities
+        .get(1)
+        .expect("a crashing unit stays");
+    assert!(wreck.crash.is_crashing());
+    assert_eq!(wreck.drain.target(), None);
+    assert_eq!(wreck.drain.anim(), None);
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(victim)
+            .unwrap()
+            .drain
+            .draining_me(),
+        None
+    );
+    assert!(sim.anim(ray).is_none_or(|anim| {
+        !anim.in_logic_vector() && sim.substrate.pending_delete.contains_object(&ray)
+    }));
+}
+
+/// A hovering Nighthawk-like Jumpjet shot down through the production
+/// receiver: `UnitClass::ReceiveDamage` kills its riders with the shooter's
+/// credit above 0xD0 leptons and crashes it instead of its UnInit, and the
+/// kill's Stun re-targets it through `Stop_Moving`. Through `advance_tick` it
+/// then falls by `JumpjetClimb=` plus `JumpjetCrash=` a frame, plays
+/// `CrashingSound=` on the edge, and at the ground releases its air slot,
+/// plays its `Explosion=` once more and is UnInit, with no impact sound.
+#[test]
+fn a_shot_down_jumpjet_crashes_through_the_production_receiver() {
+    let (mut sim, rules, victim, shooter) = jumpjet_fixture(false);
+    let riders: Vec<u64> = sim
+        .substrate
+        .entities
+        .get(1)
+        .unwrap()
+        .passenger_role()
+        .cargo()
+        .unwrap()
+        .passengers()
+        .to_vec();
+    shoot_down(&mut sim, &rules, shooter);
+
+    let entity = sim
+        .substrate
+        .entities
+        .get(1)
+        .expect("a crashing unit stays");
+    assert!(
+        entity.crash.is_crashing() && entity.lifecycle.object_alive() && !entity.death.is_dying()
+    );
+    assert_eq!(entity.health.current(), 0);
+    assert!(
+        entity
+            .rocking
+            .as_ref()
+            .is_some_and(|r| r.vel_sideways() != SimFixed::ZERO),
+        "Crash drew the spin"
+    );
+    assert!(
+        entity
+            .passenger_role()
+            .cargo()
+            .unwrap()
+            .passengers()
+            .is_empty(),
+        "KillPassengers emptied the cargo"
+    );
+    for rider in riders {
+        assert!(
+            sim.substrate
+                .entities
+                .get(rider)
+                .is_none_or(|rider| !rider.lifecycle.object_alive()),
+            "rider {rider} died with the transport"
+        );
+    }
+    let soviets = sim.interner.intern("Soviets");
+    // Object5F579A records the transport before Destroy5F57AF; Unit's +E0
+    // dispatch744720 calls Techno702D40 (object_health.json pins callback
+    // order; naval_lifetime_controls.json executes the actual score owner).
+    // Unit737FAB then kills both riders: each gets RecordKill707CFF before
+    // UnInit707D09. Later Crash73846D sees HP0 and skips another RecordKill
+    // at Foot4DEBCD, as the shared FootCrash dead_seed1 execution records.
+    let native = oracle();
+    let dead_crash = native["crash"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["input"]["name"] == "dead_seed1")
+        .unwrap();
+    assert!(
+        dead_crash["calls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|call| call["call"] != "record_kill")
+    );
+    assert_eq!(
+        sim.houses[&soviets].stats().units_killed(),
+        3,
+        "the transport and both riders are credited before the wreck falls"
+    );
+
+    // The kill's Stop_Moving searched from the hover cell, which the victim's
+    // vehicle bit refuses (`CheckCellPassability @ 0x004834A0`), and
+    // re-targeted a free neighbour.
+    let entity = sim.substrate.entities.get(1).unwrap();
+    let runtime = entity
+        .locomotor
+        .as_ref()
+        .unwrap()
+        .jumpjet_runtime()
+        .unwrap();
+    assert!(runtime.moving());
+    assert_eq!(
+        runtime.destination(),
+        DriveCoord {
+            x: START - 256,
+            y: START - 256,
+            z: 0
+        }
+    );
+
+    let fall = fall_to_the_impact(&mut sim, &rules);
+    // Over a destination in another cell, the hold's Update reads the cell
+    // top, which the victim lifts by 85: the first frame climbs 10 before
+    // State 5 drops 40, then Update's descent and the crash take 50 a frame,
+    // and near the ground Update climbs against the drop again.
+    assert_eq!(
+        fall.heights,
+        vec![470, 420, 370, 320, 270, 220, 170, 120, 70, 40, 10]
+    );
+    assert_eq!(fall.impact_frame, 12);
+    assert_eq!(
+        fall.crash_sound_frames,
+        vec![1],
+        "CrashingSound= on the edge"
+    );
+    assert_eq!(fall.impact_sounds, 0, "a Jumpjet impact plays no sound");
+    assert_eq!(
+        fall.impact_booms, 1,
+        "Death_Explosion once more at the impact"
+    );
+    assert_eq!(sim.substrate.air_slots.holder(52, 52), None);
+    assert_eq!(
+        sim.substrate.entities.get(victim).unwrap().health.current(),
+        1000,
+        "an Explosion= anim deals no damage"
+    );
+    assert_eq!(
+        sim.houses[&soviets].stats().units_killed(),
+        3,
+        "impact UnInit does not repeat the transport's fatal callback"
+    );
+}
+
+/// Shot down one climb step above the ground in State 4, the kill's
+/// `Stop_Moving` lifts the descent back into State 1 (`0x0054B455..0x0054B467`),
+/// so the next frame's Update climbs and the latch still engages: the wreck
+/// crashes instead of touching down (the native corpus's `SHAD` touchdown row).
+#[test]
+fn a_jumpjet_shot_down_touching_down_still_crashes() {
+    let (mut sim, rules, _, shooter) = jumpjet_fixture(false);
+    {
+        let entity = sim.substrate.entities.get_mut(1).unwrap();
+        entity.position.set_exact_z_leptons_for_test(Some(10));
+        let loco = entity.locomotor.as_mut().unwrap();
+        let runtime = loco.jumpjet_runtime_mut().unwrap();
+        let mut flight = runtime.flight();
+        flight.set_target_height_for_test(0);
+        *runtime = runtime
+            .clone()
+            .with_phase_for_test(
+                crate::sim::movement::jumpjet_movement::jumpjet_flight::STATE_DESCEND,
+            )
+            .with_flight_for_test(flight)
+            .with_landing_latched_for_test(true);
+    }
+    shoot_down(&mut sim, &rules, shooter);
+    let entity = sim.substrate.entities.get(1).unwrap();
+    assert!(entity.crash.is_crashing());
+    let runtime = entity
+        .locomotor
+        .as_ref()
+        .unwrap()
+        .jumpjet_runtime()
+        .unwrap();
+    assert_eq!(
+        runtime.phase(),
+        crate::sim::movement::jumpjet_movement::jumpjet_flight::STATE_ASCEND
+    );
+    assert_eq!(runtime.flight().target_height(), 500);
+    assert!(runtime.moving() && !runtime.landing_latched());
+
+    let fall = fall_to_the_impact(&mut sim, &rules);
+    assert_eq!(
+        (fall.heights.len(), fall.impact_frame),
+        (0, 1),
+        "climbs to 20, then State 5's drop of 40 hits the ground"
+    );
+    assert_eq!(
+        fall.impact_booms, 1,
+        "Death_Explosion once more at the impact"
+    );
+}
+
+/// A wreck keeps the passive scan of its committed mission, which no handler
+/// changes at Health 0 (`MissionClass::AI @ 0x005B30A7`): shot down on Guard it
+/// scans and picks up the enemy beside it on the way down; shot down while
+/// committed to Attack (its target gone with the kill's Stun) it scans nothing,
+/// since the passive block admits Move, Harvest and Guard only (`0x006FA697`).
+#[test]
+fn a_jumpjet_wreck_scans_only_on_its_committed_guard() {
+    use crate::sim::mission::{MissionId, MissionType};
+    for (mission, scans) in [(MissionType::Guard, true), (MissionType::Attack, false)] {
+        let (mut sim, rules, _, shooter) = jumpjet_fixture(false);
+        let frame = sim.session.binary_frame();
+        sim.substrate
+            .mission_assign_exact(1, MissionId::from_known(mission), frame)
+            .unwrap();
+        // An enemy two cells east, inside `CrashGun`'s range.
+        let soviets = sim.interner.intern("Soviets");
+        let type_ref = sim.interner.intern("VICTIM");
+        let enemy = sim.substrate.allocate_stable_id();
+        let mut entity = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
+            enemy,
+            54,
+            52,
+            0,
+            0,
+            soviets,
+            crate::sim::combat::Health::new(1000),
+            type_ref,
+            EntityCategory::Unit,
+            0,
+            5,
+            true,
+        );
+        entity.lifecycle.set_in_limbo_for_test(true);
+        sim.substrate.entities.insert(entity);
+        assert!(matches!(
+            sim.try_reveal_entity(
+                enemy,
+                RevealRequest {
+                    position: RevealPosition::new(
+                        54,
+                        52,
+                        0,
+                        None,
+                        SimFixed::from_num(128),
+                        SimFixed::from_num(128)
+                    ),
+                    placement: PlacementEvidence::MarkSucceeded,
+                    logic_eligible: true,
+                }
+            ),
+            RevealOutcome::Revealed { .. }
+        ));
+        // The player has seen the enemy: the campaign scan gate needs +0x41B.
+        crate::sim::arena_fixture::discover(&mut sim, enemy);
+        shoot_down(&mut sim, &rules, shooter);
+        let grid = crate::sim::pathfinding::PathGrid::test_all_passable(70, 70);
+        let mut acquired = false;
+        for _ in 0..40 {
+            sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
+            let Some(wreck) = sim
+                .substrate
+                .entities
+                .get(1)
+                .filter(|wreck| wreck.lifecycle.object_alive())
+            else {
+                break;
+            };
+            assert_eq!(
+                wreck.mission.current(),
+                MissionId::from_known(mission),
+                "no handler changes a wreck's mission"
+            );
+            acquired |= wreck.attack_target.target().is_some() && wreck.passive_scan.acquired();
+        }
+        assert_eq!(acquired, scans, "{mission:?}");
+    }
+}
+
+/// Retail Dustbowl runtime, end to end through production: a Harrier ordered
+/// east across three flak tracks takes off, their `FlakTrackAAGun` volleys
+/// shoot it down, and it crashes. Ordinary Move orders keep it crossing the
+/// AA field instead of spending one Maverick and choosing a return arc. An
+/// Airforce Command remains available for idle mode (`0x004176F0`).
+/// `VoiceCrashing=`/`CrashingSound=` play on the edge,
+/// SGRYSMK1 smoke trails the spinning fall, whose frames are the original
+/// executable's to the impact, and there its current weapon detonates as the
+/// death weapon and `ImpactLandSound=` plays before it is UnInit. Ignored:
+/// needs the retail install (`RA2_DIR` or `config.toml`).
+#[test]
+#[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
+fn retail_dustbowl_flak_shoots_a_harrier_down() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    use crate::sim::house_state::HouseState;
+    use crate::sim::movement::air_movement::current_fly_height;
+    use std::collections::BTreeSet;
+
+    let dir = std::env::var("RA2_DIR")
+        .ok()
+        .filter(|path| !path.trim().is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            crate::test_fixture::game_config()
+                .expect("set RA2_DIR or provide config.toml for this ignored test")
+                .paths
+                .ra2_dir
+        });
+    let mut scenario =
+        crate::headless_scenario::load(&dir, "Dustbowl.mmx", 0x00C0_FFEE).expect("Dustbowl loads");
+    let crate::sim::runtime::SimRuntime {
+        simulation: sim,
+        resources,
+    } = &mut scenario.runtime;
+    for (name, side, human) in [("Americans", 0, true), ("Russians", 1, false)] {
+        let house = sim.interner.intern(name);
+        sim.houses.get_or_register_for_test(house, || {
+            HouseState::new(house, side, None, human, 10_000, 10)
+        });
+    }
+    // The Americans play this seat: in a network-mode game
+    // `HouseClass::IsHumanPlayer @ 0x0050B6F0` admits only CurrentPlayer,
+    // which gates `VoiceCrashing=` at `0x004DAD1F`.
+    let local = sim.interner.intern("Americans");
+    sim.session.install_current_house(Some(local));
+    // A Harrier on open level ground with three flak tracks eight and nine
+    // cells east: beyond their sight while it stands, inside their AA range
+    // once it lifts off. Each side keeps a power plant out of the fight, so
+    // neither house is defeated under the Battle mode's ShortGame.
+    let (harrier, _flak, start_cell) = (40..100_u16)
+        .flat_map(|y| (40..100_u16).map(move |x| (x, y)))
+        .find_map(|(x, y)| {
+            let grid = sim.path_grid()?;
+            let terrain = sim.resolved_terrain.as_ref()?;
+            let level = terrain.cell(x, y)?.level;
+            let open = (x.checked_sub(4)?..=x + 13).all(|cx| {
+                (y - 1..=y + 1).all(|cy| {
+                    terrain.cell(cx, cy).is_some_and(|cell| cell.level == level)
+                        && grid.cell(cx, cy).is_some_and(|cell| cell.ground_walkable)
+                })
+            });
+            if !open {
+                return None;
+            }
+            for (plant, owner, px) in [
+                ("GAPOWR", "Americans", x - 4),
+                ("NAPOWR", "Russians", x + 12),
+            ] {
+                sim.spawn_object(plant, owner, px, y - 1, 0, &resources.rules)?;
+            }
+            let harrier = sim.spawn_object("ORCA", "Americans", x, y, 64, &resources.rules)?;
+            let flak = [(x + 8, y - 1), (x + 8, y + 1), (x + 9, y)]
+                .into_iter()
+                .map(|(fx, fy)| sim.spawn_object("HTK", "Russians", fx, fy, 192, &resources.rules))
+                .collect::<Option<Vec<_>>>()?;
+            let airfield = resources.rules.object("GAAIRC")?;
+            let owner = sim.interner.intern("Americans");
+            let site = (x.checked_sub(12)?..=x - 6)
+                .flat_map(|ax| (y - 3..=y + 3).map(move |ay| (ax, ay)))
+                .find(|&(ax, ay)| {
+                    crate::sim::build_site::can_place_building_at(
+                        sim,
+                        &resources.rules,
+                        None,
+                        airfield,
+                        (ax as i16, ay as i16),
+                        Some(owner),
+                        None,
+                        None,
+                    )
+                })?;
+            sim.spawn_object("GAAIRC", "Americans", site.0, site.1, 0, &resources.rules)?;
+            Some((harrier, flak, (x, y)))
+        })
+        .expect("open level ground for the fight");
+    sim.resolve_type_handles(&resources.rules);
+    let americans = sim.interner.intern("Americans");
+    let russians = sim.interner.intern("Russians");
+    let smoke_type = sim.interner.intern("SGRYSMK1");
+    // The Harrier's death weapon is its current weapon, Maverick (ORCAAP).
+    let impact_anims: BTreeSet<_> = resources
+        .rules
+        .warhead("ORCAAP")
+        .expect("retail ORCAAP")
+        .anim_list
+        .iter()
+        .map(|name| sim.interner.intern(name))
+        .collect();
+    let destinations = [
+        (start_cell.0 + 24, start_cell.1),
+        (start_cell.0 - 12, start_cell.1),
+    ];
+    let mut direction = 0;
+    let order = CommandEnvelope::new(
+        americans,
+        sim.session.tick() + 1,
+        Command::Move {
+            entity_id: harrier,
+            target_rx: destinations[direction].0,
+            target_ry: destinations[direction].1,
+        },
+    );
+    scenario
+        .runtime
+        .advance_frame(
+            &[order],
+            crate::headless_scenario::SIM_TICK_MS,
+            super::TickLane::Ordinary,
+            &mut crate::sim::world::FrameEffects::default(),
+        )
+        .expect("the order frame");
+
+    let mut lifted = false;
+    let mut crash_frame = None;
+    let mut impact_frame = None;
+    let mut heights = Vec::new();
+    let mut track = Vec::new();
+    let mut spun = false;
+    let mut smoke = BTreeSet::new();
+    let mut sounds = Vec::new();
+    let mut impact_explosions = Vec::new();
+    for frame in 1..=900 {
+        // Turn before either distant destination can request arrival slowdown.
+        // Every reversal uses the same ordinary Move command as the first leg.
+        let reverse = scenario
+            .sim()
+            .substrate
+            .entities
+            .get(harrier)
+            .is_some_and(|entity| {
+                !entity.crash.is_crashing()
+                    && entity.health.current() > 0
+                    && if direction == 0 {
+                        entity.position.rx() >= start_cell.0 + 14
+                    } else {
+                        entity.position.rx() <= start_cell.0 + 2
+                    }
+            });
+        let orders = if reverse {
+            direction ^= 1;
+            vec![CommandEnvelope::new(
+                americans,
+                scenario.sim().session.tick() + 1,
+                Command::Move {
+                    entity_id: harrier,
+                    target_rx: destinations[direction].0,
+                    target_ry: destinations[direction].1,
+                },
+            )]
+        } else {
+            Vec::new()
+        };
+        let anims_before: BTreeSet<_> = scenario
+            .sim()
+            .substrate
+            .anims
+            .iter()
+            .map(|(id, _)| *id)
+            .collect();
+        let output = scenario
+            .runtime
+            .advance_frame(
+                &orders,
+                crate::headless_scenario::SIM_TICK_MS,
+                super::TickLane::Ordinary,
+                &mut crate::sim::world::FrameEffects::default(),
+            )
+            .expect("a retail frame");
+        let sim = scenario.sim();
+        for event in &output.sound_events {
+            match event {
+                super::SimSoundEvent::VocAt { sound_id, .. } => {
+                    sounds.push((
+                        frame,
+                        sound_id
+                            .name_in(&scenario.runtime.resources.rules)
+                            .to_string(),
+                    ));
+                }
+                super::SimSoundEvent::AnimationStarted {
+                    anim_id, sound_id, ..
+                } if *anim_id == harrier => {
+                    sounds.push((
+                        frame,
+                        sound_id
+                            .name_in(&scenario.runtime.resources.rules)
+                            .to_string(),
+                    ));
+                }
+                _ => {}
+            }
+        }
+        let Some(entity) = sim
+            .substrate
+            .entities
+            .get(harrier)
+            .filter(|entity| entity.lifecycle.object_alive())
+        else {
+            assert!(crash_frame.is_some(), "the Harrier left before crashing");
+            impact_frame = Some(frame);
+            impact_explosions = sim
+                .substrate
+                .anims
+                .iter()
+                .filter(|(id, anim)| {
+                    !anims_before.contains(id) && impact_anims.contains(&anim.type_id())
+                })
+                .map(|(_, anim)| sim.interner.resolve(anim.type_id()).to_string())
+                .collect();
+            break;
+        };
+        let height = current_fly_height(entity, sim.resolved_terrain.as_ref());
+        lifted |= height > 0;
+        if !entity.crash.is_crashing() && frame % 15 == 0 {
+            println!(
+                "frame {frame}: height {height}, health {}, mission {:?}",
+                entity.health.current(),
+                entity.mission.current().known()
+            );
+        }
+        if entity.crash.is_crashing() {
+            if crash_frame.is_none() {
+                crash_frame = Some(frame);
+                assert!(height > 0, "shot down in the air");
+                assert_eq!(entity.health.current(), 0);
+                assert_eq!(entity.seldom.kill_record.killer(), Some(russians));
+                assert_eq!(entity.ammo().map(|ammo| ammo.current()), Some(1));
+                assert_eq!(
+                    entity
+                        .locomotor
+                        .as_ref()
+                        .and_then(|loco| loco.fly_runtime())
+                        .expect("the Harrier uses Fly")
+                        .current_speed(),
+                    crate::util::native_x87::NativeF64Bits::ONE,
+                    "shot down at native full speed",
+                );
+            }
+            let rocking = entity.rocking.as_ref().expect("a crash spins");
+            spun |= rocking.angle_sideways() != SimFixed::ZERO;
+            heights.push(height);
+            let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+            track.push((xy[0], xy[1]));
+            println!(
+                "frame {frame}: height {height}, roll {:.4}, pitch {:.4}",
+                rocking.angle_sideways().to_num::<f64>(),
+                rocking.angle_forwards().to_num::<f64>()
+            );
+            for (id, anim) in sim.substrate.anims.iter() {
+                if anim.type_id() == smoke_type {
+                    smoke.insert(*id);
+                }
+            }
+        }
+    }
+    println!("sounds: {sounds:?}");
+    let crash_frame = crash_frame.expect("the flak shoots the Harrier down");
+    let impact_frame = impact_frame.expect("the crash reaches the ground");
+    println!(
+        "lifted, crashed at frame {crash_frame}, impact at frame {impact_frame}, {} smoke puffs, \
+         impact explosions {impact_explosions:?}",
+        smoke.len()
+    );
+    assert!(lifted);
+    // Killed cruising at FlightLevel and full speed, it falls exactly as the
+    // original executable's `cruise_1500_full_speed` row, to the impact.
+    let native = oracle()["fall"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["input"]["name"] == "cruise_1500_full_speed")
+        .expect("the oracle's cruise row")["frames"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|frame| frame["xyz"][2].as_i64().unwrap() as i32)
+        .collect::<Vec<_>>();
+    assert_eq!(heights[0], 1500);
+    assert_eq!(heights[1..], native[..native.len() - 1], "the fall frames");
+    assert_eq!(native.last(), Some(&0), "the native impact frame");
+    assert_eq!(impact_frame - crash_frame, native.len() as i32);
+    let steps: Vec<(i32, i32)> = track
+        .windows(2)
+        .map(|pair| (pair[1].0 - pair[0].0, pair[1].1 - pair[0].1))
+        .collect();
+    println!("fall steps: {steps:?}");
+    // The paid step keeps the frozen cruise speed (the native row steps 35
+    // leptons a frame); the heading finishes whatever turn was under way.
+    assert!(
+        steps.iter().all(|&(dx, dy)| {
+            let length = f64::from(dx * dx + dy * dy).sqrt();
+            (33.5..=36.5).contains(&length)
+        }),
+        "{steps:?}"
+    );
+    assert!(spun, "the crash spin turns the body");
+    assert!(!smoke.is_empty(), "the falling Harrier trails SGRYSMK1");
+    assert!(
+        !impact_explosions.is_empty(),
+        "its Maverick detonates at the impact"
+    );
+    let heard = |name: &str| {
+        sounds
+            .iter()
+            .filter(|(_, sound)| sound == name)
+            .map(|(frame, _)| *frame)
+            .collect::<Vec<_>>()
+    };
+    // The crash edge runs in the Harrier's own AI after the hit latched it;
+    // the impact cue on the frame its height reached zero.
+    assert_eq!(heard("IntruderVoiceDie").len(), 1, "{sounds:?}");
+    assert_eq!(heard("IntruderDie").len(), 1, "{sounds:?}");
+    assert_eq!(heard("GenAircraftCrash"), vec![impact_frame], "{sounds:?}");
+}
+
+/// Retail Dustbowl runtime, end to end through production: three flak tracks
+/// shoot down an Allied Nighthawk carrying two GIs and a Kirov left with 1
+/// Health as both fly over them. The Nighthawk's riders die with the flak's
+/// credit, and each wreck spins down under the Jumpjet State 5, a Nighthawk
+/// by `JumpjetClimb=` + `JumpjetCrash=` (50) a frame and a Kirov by 18,
+/// playing `CrashingSound=` and the owner's `VoiceCrashing=` on the edge.
+/// At the ground the Nighthawk plays its `Explosion=` once more and the Kirov
+/// drops its `BlimpBomb` as its death weapon; neither plays an impact sound.
+/// Ignored: needs the retail install (`RA2_DIR` or `config.toml`).
+#[test]
+#[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
+fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    use crate::sim::house_state::HouseState;
+    use crate::sim::movement::air_movement::current_fly_height;
+    use crate::sim::passenger::PassengerRole;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let dir = std::env::var("RA2_DIR")
+        .ok()
+        .filter(|path| !path.trim().is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            crate::test_fixture::game_config()
+                .expect("set RA2_DIR or provide config.toml for this ignored test")
+                .paths
+                .ra2_dir
+        });
+    let mut scenario =
+        crate::headless_scenario::load(&dir, "Dustbowl.mmx", 0x00C0_FFEE).expect("Dustbowl loads");
+    let crate::sim::runtime::SimRuntime {
+        simulation: sim,
+        resources,
+    } = &mut scenario.runtime;
+    for (name, side, human) in [("Americans", 0, true), ("Russians", 1, false)] {
+        let house = sim.interner.intern(name);
+        sim.houses.get_or_register_for_test(house, || {
+            HouseState::new(house, side, None, human, 10_000, 10)
+        });
+    }
+    // The Americans play this seat: in a network-mode game
+    // `HouseClass::IsHumanPlayer @ 0x0050B6F0` admits only CurrentPlayer,
+    // which gates `VoiceCrashing=` at `0x004DAD1F`.
+    let local = sim.interner.intern("Americans");
+    sim.session.install_current_house(Some(local));
+    // Open level ground: the Nighthawk and the Kirov land west of three flak
+    // tracks and are ordered past them. Each side keeps a power plant out of
+    // the fight, so neither house is defeated under the Battle mode's
+    // ShortGame.
+    let (nighthawk, kirov, destination) = (40..100_u16)
+        .flat_map(|y| (40..100_u16).map(move |x| (x, y)))
+        .find_map(|(x, y)| {
+            let grid = sim.path_grid()?;
+            let terrain = sim.resolved_terrain.as_ref()?;
+            let level = terrain.cell(x, y)?.level;
+            let open = (x - 4..=x + 16).all(|cx| {
+                (y - 2..=y + 3).all(|cy| {
+                    terrain.cell(cx, cy).is_some_and(|cell| cell.level == level)
+                        && grid.cell(cx, cy).is_some_and(|cell| cell.ground_walkable)
+                })
+            });
+            if !open {
+                return None;
+            }
+            for (plant, owner, px) in [
+                ("GAPOWR", "Americans", x - 4),
+                ("NAPOWR", "Russians", x + 14),
+            ] {
+                sim.spawn_object(plant, owner, px, y - 2, 0, &resources.rules)?;
+            }
+            let nighthawk = sim.spawn_object("SHAD", "Americans", x, y, 64, &resources.rules)?;
+            let kirov = sim.spawn_object("ZEP", "Americans", x, y + 2, 64, &resources.rules)?;
+            for (fx, fy) in [(x + 8, y - 1), (x + 8, y + 1), (x + 9, y)] {
+                sim.spawn_object("HTK", "Russians", fx, fy, 192, &resources.rules)?;
+            }
+            Some((nighthawk, kirov, (x + 12, y)))
+        })
+        .expect("open level ground for the fight");
+    let riders: Vec<u64> = (0..2)
+        .map(|_| {
+            let rider = sim
+                .construct_object_limbo_at_height(
+                    "E1",
+                    "Americans",
+                    0,
+                    0,
+                    0,
+                    0,
+                    &resources.rules,
+                    &mut crate::sim::world::FrameEffects::default(),
+                )
+                .expect("a GI");
+            sim.substrate
+                .entities
+                .get_mut(rider)
+                .unwrap()
+                .set_passenger_role_for_test(PassengerRole::inside_for_test(nighthawk, false));
+            sim.substrate
+                .entities
+                .get_mut(nighthawk)
+                .unwrap()
+                .passenger_role_mut_for_test()
+                .cargo_mut()
+                .expect("the Nighthawk carries")
+                .board_forced_chain(&[(rider, 1.0)]);
+            rider
+        })
+        .collect();
+    sim.substrate
+        .entities
+        .get_mut(kirov)
+        .unwrap()
+        .health
+        .set_for_test(1);
+    sim.resolve_type_handles(&resources.rules);
+    let americans = sim.interner.intern("Americans");
+    let russians = sim.interner.intern("Russians");
+    let intern_all = |sim: &mut Simulation, names: &[String]| -> BTreeSet<_> {
+        names.iter().map(|name| sim.interner.intern(name)).collect()
+    };
+    let explosions = intern_all(
+        sim,
+        &resources
+            .rules
+            .object("SHAD")
+            .expect("retail SHAD")
+            .explosion_anims,
+    );
+    let bomb_anims = intern_all(
+        sim,
+        &resources
+            .rules
+            .warhead("BlimpHE")
+            .expect("retail BlimpHE")
+            .anim_list,
+    );
+    let orders: Vec<_> = [nighthawk, kirov]
+        .into_iter()
+        .map(|entity_id| {
+            CommandEnvelope::new(
+                americans,
+                sim.session.tick() + 1,
+                Command::Move {
+                    entity_id,
+                    target_rx: destination.0,
+                    target_ry: destination.1,
+                },
+            )
+        })
+        .collect();
+    scenario
+        .runtime
+        .advance_frame(
+            &orders,
+            crate::headless_scenario::SIM_TICK_MS,
+            super::TickLane::Ordinary,
+            &mut crate::sim::world::FrameEffects::default(),
+        )
+        .expect("the order frame");
+    // The Kirov follows the Nighthawk in the Logic vector; see the skip below.
+    let logic = scenario.sim().substrate.logic.as_slice();
+    let slot = |id| logic.iter().position(|&live| live == id);
+    assert_eq!(slot(kirov), slot(nighthawk).map(|slot| slot + 1));
+
+    #[derive(Default)]
+    struct Wreck {
+        crash_frame: Option<i32>,
+        impact_frame: Option<i32>,
+        heights: Vec<i32>,
+        impact_anims: Vec<String>,
+    }
+    let mut wrecks: BTreeMap<u64, Wreck> = BTreeMap::new();
+    let mut sounds = Vec::new();
+    let mut riders_killed_by_crash = None;
+    for frame in 1..=1500 {
+        let anims_before: BTreeSet<_> = scenario
+            .sim()
+            .substrate
+            .anims
+            .iter()
+            .map(|(id, _)| *id)
+            .collect();
+        let output = scenario
+            .runtime
+            .advance_frame(
+                &[],
+                crate::headless_scenario::SIM_TICK_MS,
+                super::TickLane::Ordinary,
+                &mut crate::sim::world::FrameEffects::default(),
+            )
+            .expect("a retail frame");
+        let sim = scenario.sim();
+        for event in &output.sound_events {
+            match event {
+                super::SimSoundEvent::VocAt { sound_id, .. } => {
+                    sounds.push((
+                        frame,
+                        sound_id
+                            .name_in(&scenario.runtime.resources.rules)
+                            .to_string(),
+                    ));
+                }
+                super::SimSoundEvent::AnimationStarted {
+                    anim_id, sound_id, ..
+                } if *anim_id == nighthawk || *anim_id == kirov => {
+                    sounds.push((
+                        frame,
+                        sound_id
+                            .name_in(&scenario.runtime.resources.rules)
+                            .to_string(),
+                    ));
+                }
+                _ => {}
+            }
+        }
+        for id in [nighthawk, kirov] {
+            let wreck = wrecks.entry(id).or_default();
+            if wreck.impact_frame.is_some() {
+                continue;
+            }
+            let Some(entity) = sim
+                .substrate
+                .entities
+                .get(id)
+                .filter(|entity| entity.lifecycle.object_alive())
+            else {
+                assert!(wreck.crash_frame.is_some(), "{id} left before crashing");
+                wreck.impact_frame = Some(frame);
+                wreck.impact_anims = sim
+                    .substrate
+                    .anims
+                    .iter()
+                    .filter(|(anim_id, _)| !anims_before.contains(anim_id))
+                    .map(|(_, anim)| sim.interner.resolve(anim.type_id()).to_string())
+                    .collect();
+                continue;
+            };
+            if !entity.crash.is_crashing() {
+                continue;
+            }
+            let height = current_fly_height(entity, sim.resolved_terrain.as_ref());
+            if wreck.crash_frame.is_none() {
+                wreck.crash_frame = Some(frame);
+                assert!(height > 0, "{id} shot down in the air");
+                assert_eq!(entity.health.current(), 0);
+                assert_eq!(entity.seldom.kill_record.killer(), Some(russians));
+                if id == nighthawk {
+                    riders_killed_by_crash = Some(sim.houses[&russians].stats().units_killed());
+                    assert!(
+                        entity
+                            .passenger_role()
+                            .cargo()
+                            .is_some_and(|cargo| cargo.passengers().is_empty()),
+                        "the riders died with the Nighthawk"
+                    );
+                }
+            }
+            wreck.heights.push(height);
+        }
+        if wrecks.values().all(|wreck| wreck.impact_frame.is_some()) {
+            break;
+        }
+    }
+    println!("sounds: {sounds:?}");
+    let sim = scenario.sim();
+    for rider in &riders {
+        assert!(
+            sim.substrate
+                .entities
+                .get(*rider)
+                .is_none_or(|rider| !rider.lifecycle.object_alive())
+        );
+    }
+    assert!(
+        riders_killed_by_crash.is_some_and(|kills| kills >= 2),
+        "the flak holds both riders' kills at the Nighthawk's death"
+    );
+    // The Logic walk re-reads its count after every AI and never repairs its
+    // index (`0x0055B608..0x0055B619`). The Nighthawk's wreck leaves the
+    // vector inside its own AI: UnInit (`0x005F65F0`) calls Limbo, which calls
+    // `LogicClass::Remove @ 0x0055BAE0`. The Kirov, next in the vector, is
+    // skipped that frame and holds its height once.
+    let nighthawk_gone = wrecks[&nighthawk]
+        .impact_frame
+        .expect("the Nighthawk reached the ground");
+    for (id, drop, crashing, voice, impact_cue) in [
+        (
+            nighthawk,
+            50,
+            "BlackOpsDie",
+            "BlackOpsVoiceDie",
+            "GenAircraftCrash",
+        ),
+        (kirov, 18, "KirovDie", "KirovVoiceDie", "KirovCrash"),
+    ] {
+        let wreck = &wrecks[&id];
+        println!(
+            "{crashing}: crashed at {:?}, impact at {:?}, heights {:?}, impact anims {:?}",
+            wreck.crash_frame, wreck.impact_frame, wreck.heights, wreck.impact_anims
+        );
+        let crash_frame = wreck.crash_frame.expect("shot down");
+        let impact_frame = wreck.impact_frame.expect("reached the ground");
+        // After the frame the latch engages, every frame falls by climb plus
+        // crash until the impact takes the wreck, except a frame it is skipped.
+        for (index, pair) in wreck.heights.windows(2).enumerate().skip(1) {
+            let frame = crash_frame + index as i32 + 1;
+            let fell = if id == kirov && frame == nighthawk_gone {
+                0
+            } else {
+                drop
+            };
+            assert_eq!(pair[0] - pair[1], fell, "{crashing}: {:?}", wreck.heights);
+        }
+        assert!(wreck.heights.last().is_some_and(|&last| last <= drop));
+        let heard = |name: &str| {
+            sounds
+                .iter()
+                .filter(|(_, sound)| sound == name)
+                .map(|(frame, _)| *frame)
+                .collect::<Vec<_>>()
+        };
+        // The flak's bullet kills the wreck after the wreck's own AI ran this
+        // frame; its next AI sees the latch rise.
+        assert_eq!(heard(crashing), vec![crash_frame + 1], "{sounds:?}");
+        assert_eq!(heard(voice), vec![crash_frame + 1], "{sounds:?}");
+        assert!(heard(impact_cue).is_empty(), "no Jumpjet impact sound");
+        assert!(impact_frame > crash_frame);
+    }
+    let impact_anims = |id: u64, set: &BTreeSet<crate::sim::intern::InternedId>| {
+        wrecks[&id]
+            .impact_anims
+            .iter()
+            .filter(|name| {
+                sim.interner
+                    .get(name)
+                    .is_some_and(|name| set.contains(&name))
+            })
+            .count()
+    };
+    assert!(
+        impact_anims(nighthawk, &explosions) >= 1,
+        "the Nighthawk explodes once more"
+    );
+    assert!(
+        impact_anims(kirov, &bomb_anims) >= 1,
+        "the Kirov's BlimpBomb detonates at the impact"
+    );
+}
+
+/// `0x004DAD10..0x004DAD59`: the crash edge plays `VoiceCrashing=` for an
+/// owner `HouseClass::IsHumanPlayer @ 0x0050B6F0` admits, which in campaign
+/// includes a `PlayerControl=` house that is not `IsHuman` (`0x0050B703`), as
+/// an unfiltered positional `PlayAt @ 0x007509E0`.
+#[test]
+fn campaign_player_controlled_house_hears_voice_crashing() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[AircraftTypes]\n0=ORCA\n[ORCA]\nStrength=150\nVoiceCrashing=OrcaFalls\n",
+    ))
+    .unwrap();
+    let mut orca = crate::sim::game_entity::GameEntity::test_default_of_category(
+        1,
+        "ORCA",
+        "Americans",
+        10,
+        10,
+        EntityCategory::Aircraft,
+    );
+    orca.crash.set_crashing_for_test(true);
+    let mut sim = Simulation::with_seed(0);
+    sim.interner = crate::sim::intern::test_interner();
+    let mut house = crate::sim::house_state::HouseState::new(orca.owner(), 0, None, false, 0, 10);
+    house.set_player_control_for_test(true);
+    sim.houses.register(house);
+    sim.substrate.entities.insert(orca);
+    Simulation::crash_edge_sounds(
+        &sim.interner,
+        &mut sim.substrate,
+        &mut sim.sound_events,
+        &sim.session,
+        &sim.houses,
+        1,
+        &rules,
+    );
+    assert!(sim.sound_events.iter().any(|event| matches!(
+        event,
+        super::SimSoundEvent::VocAt { sound_id, audible_to: None, .. } if sound_id.name_in(&rules) == "OrcaFalls"
+    )));
+}

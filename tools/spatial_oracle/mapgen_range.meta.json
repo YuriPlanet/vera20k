@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original598030 with actual65C780,7C5F00, retained full0x3F4 MapGen state and ordered raw draws; low repair0..3 and declared boundary/ambient/range controls. No full game or Rust execution.",
+  "assumptions": [
+    "Original CRT precision tail7C8F55 starts after its OS CPU-feature query; original7CEAAF/_controlfp executes. WinMain6BBFB7..6BBFCE then selects chop and captures the resulting word. Initial reset-style FPCW037F and valid stack are supplied; not full Windows startup.",
+    "Unicorn reads0E3F after original control conversion; legacy0E7F differs only by reserved bit6. Both are explicit cases. No claim that all external runtime callbacks preserve the startup word.",
+    "Seeded rows execute original65C6D0. Adversarial rows supply all250 retained words, disabled byte, padding and indices; they are not claimed reachable from a retail seed.",
+    "Each range request retains complete before/after state and control; raw request/draw counts exclude the separately declared prefix advance. The native helper and Math_ftol determine rounding and retries.",
+    "Alternate ambient FPCW rows retain the native-produced cached chop word. They test a supplied disturbance before the first request, not an observed retail callback.",
+    "Bounded emulator execution; no hardware capture, audio, timer, renderer, map loading, repair walker or object lifecycle executed."
+  ],
+  "substitutions": [
+    "None: hooks only observe or reject unexpected writes; no original instructions, RNG, range result or conversion callback replaced."
+  ],
+  "entry_points": {
+    "crt_precision_tail": "0x007C8F55",
+    "crt_precision": "0x007CEAAF",
+    "winmain_rounding_block": "0x006BBFB7",
+    "cache_control": "0x007C5EE4",
+    "seed": "0x0065C6D0",
+    "range": "0x00598030",
+    "next": "0x0065C780",
+    "ftol": "0x007C5F00"
+  },
+  "payload_sha256": "78c6cbfd3eab81d3a48ba1022e4d587c472a4163c330d28fac8154d4f70d220e"
+}

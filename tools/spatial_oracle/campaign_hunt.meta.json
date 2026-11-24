@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Foot Mission_Hunt no-target join4D54EE through RET4D55B5, or stop before the existing idle owner4D5578. Live House base selection, empty-cell gate, optional empty SlaveManager reset, Unit/Foot/Drive destination, QueueMission and current-mission cadence with Scenario RNG. Separate existing ALL06 Action6/Team data establishes the stock producer; no full scanner, campaign or movement Process claim.",
+  "assumptions": [
+    "Fresh track_destination fixture per row: constructed Drive and Facing owners, original Unit/Cell/type vtables, 32x32 flat allocated cells and supplied Unit/House class fields. No Unit/House constructor, physical placement or map loading is claimed.",
+    "The unchanged Hunt prologue runs before execution resumes at its no-target join. Neither RetaliateAndScan nor StupidHunt admission runs. Human and noncampaign rows stop before invoking idle; their output is only the native branch boundary and unchanged prestate.",
+    "PlayerPtr is a separate House with different primary/alternate cells from the actor owner. Original static initializers4D30F0/4F50A0 establish the zero EmptyCell and alternate sentinel. Selected rates, mission/ready/queue, Unit deploying byte+6E1, manager state/frame and empty node vector are explicit inputs. Slave reset effects on live nodes belong to the existing slave_manager oracle.",
+    "Original Random Seed initializes Scenario RNG. Full before/after state is exported. Native text and class vtables remain byte-identical; returning rows preserve callee-save registers and native stack cleanup."
+  ],
+  "substitutions": [
+    "Inherited OS InterlockedIncrement/Decrement transports only. No gameplay return, class vtable slot or native instruction is replaced."
+  ],
+  "entry_points": {
+    "hunt": "0x004D5350",
+    "no_target": "0x004D54EE",
+    "human_gate": "0x0050B730",
+    "player_base": "0x0050DEF0",
+    "reset_manager": "0x006B0C80",
+    "unit_destination": "0x00741970",
+    "foot_destination": "0x004D94B0",
+    "drive_move_to": "0x004AFD40",
+    "queue": "0x005B35E0",
+    "unit_ready": "0x00744270",
+    "commence": "0x005B3570",
+    "mission_rate": "0x005B3A00",
+    "random_ranged": "0x0065C7E0",
+    "empty_cell_initializer": "0x004D30F0",
+    "alternate_cell_initializer": "0x004F50A0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.campaign_hunt",
+  "payload_sha256": "f8ab23ef46bde8a2b90c59ef0f95ffb32c6203de7d558e3def296be52afb693f"
+}

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original successful A* tail, from reconstruction through both finishing passes.\n\nCompanion to astar_structural_height's --finishing mode. Supplied parent chains\nand scalar Unit/Cell states are controls, not full A* or MTNK Scenario evidence.\nNo concrete admission, threat, path, height or RNG result is substituted.\n",
+  "assumptions": [
+    "Supplied parent descriptors and Unit/House/Cell scalar prestates. Original reconstruction and both passes execute in their original caller order, with original concrete Unit admission and Drive/COM methods.",
+    "This is not complete A* search, actor/type construction, native Scenario load, physical MTNK placement or blocked-repath marker production. Height/raw occupation/marker and threat controls have explicitly supplied state.",
+    "Existing unit_source_scatter live-entry fixture supplies original class vtables; its Queue/Set seams are asserted unreached. CRT atexit guard is already set; no atexit method executes.",
+    "Original CRT precision tail and WinMain chop selection execute through existing mapgen_range owner. Three original seed1 RNGs remain byte-identical; Unit body and original executable text are checked unchanged.",
+    "Cell table is a supplied allocated32x32 square in native512 stride. Guarded parent/path storage and adequate House130x130 threat data are inputs; geometry/occupants are not native-produced."
+  ],
+  "substitutions": [
+    "Existing fixture substitutes only OS InterlockedIncrement/Decrement. No path/admission/threat/height/RNG return or executable code is substituted."
+  ],
+  "entry_points": {
+    "successful_tail": "0x0042A3FE",
+    "stop": "0x0042A423",
+    "reconstruction": "0x0042AA90",
+    "corners": "0x0042B210",
+    "single_corner": "0x0042B420",
+    "straight": "0x0042B7F0",
+    "anchor": "0x0042BCA0",
+    "reroute": "0x0042BE20",
+    "unit_entry": "0x0073F0A0",
+    "threat": "0x0056BCD0"
+  },
+  "extended_bounds": [
+    "Historical first33 case payloads are frozen by canonical SHA256b5a9a3c9917110eb79fe11f6759d7ba5cf183253e2510f92b43eea6a9e756273. New cases only append.",
+    "Tube records/indexes and missing Map slots are supplied. Original reconstruction emits direction8 from distinct nonadjacent parent Cells; both finishing passes execute unchanged.",
+    "Wrap controls explicitly mismatch the supplied Tube exit and reconstruction parent coordinates to exercise finishing packed-word arithmetic. They do not establish valid AStar production of those raw-domain combinations.",
+    "Out-of-square parent Cells are distinct guarded descriptor-only inputs in a separate arena and are not inserted into the native Map table. Missing map queries retain the one native Dummy, supplied with empty Cell fields and -1 overlay/object/Tube indexes; new before/after receipts expose identity and nested entry writes.",
+    "Adjacent binary64 threshold controls are supplied finite coefficients. Original FPCW startup, FMUL and comparison instructions establish returned admission; no Python/Rust arithmetic supplies the result."
+  ],
+  "replay_command": "python -m tools.spatial_oracle.astar_structural_height --finishing",
+  "payload_sha256": "ed05b14941da568b3e084194c304af9bd89fd25bef8d40a3710dfd9958fb7915"
+}

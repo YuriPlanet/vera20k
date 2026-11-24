@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original physical HE SelectAnim and Bullet caller controls for damage bands, retained coordinates, height, water, bridge and building gates",
+  "assumptions": [
+    "Original48A4F0 executes in every row; caller rows start469AF0 and stop469BD4 after the selector. Native ObjectHeight5F5F40, mapped Cell/floor queries and original object type getter execute. Original startup gives89DE70=104 and89E870=104.",
+    "Physical HE full reader and SplashList constructor/layered reader execute. Conventional/EMEffect controls use the full original HE reader; incoming damage/XYZ/land/structural/OnBridge and caller direct-target local are explicit fixture inputs.",
+    "Prepared Unit/Building vtables are original, UnitType comes from original FV constructor; original Naval714A63 and Underwater714D6D reader blocks consume explicit yes/no keys. Cell+E4 membership remains supplied; no Unit occupancy lifecycle proof. Original Object deck constant416 supplied for OnBridge.",
+    "Original full Cell47BBF0 initializes fallback Land0; native565730 miss only stamps coord, preserving deliberately supplied Land2/7 controls. Reconstruct resets0; no gameplay Land mutation producer claimed.",
+    "Full native Scenario RNG independently seeded31 each row; every reached draw/raw transition and final state hash retained. No animation constructor or AreaDamage executes in this isolated selection corpus; joined impact fixtures establish their ordering."
+  ],
+  "substitutions": [
+    "Inherited native reader fixture archive/allocation/CRT/TLS transport only. No selector, caller, getter or RNG instruction replaced."
+  ],
+  "entry_points": {
+    "caller": "0x00469AF0",
+    "caller_after_select": "0x00469BD4",
+    "select_anim": "0x0048A4F0",
+    "object_height": "0x005F5F40",
+    "splash_ctor": "0x006665D5",
+    "splash_reader": "0x0066C184",
+    "warhead_reader": "0x0075D3A0",
+    "random_ranged": "0x0065C7E0"
+  },
+  "payload_sha256": "bec9c7ddbb75d385f8829a2053edf2d1d0f1d8ffb16c6f6924d6fd7402357546"
+}

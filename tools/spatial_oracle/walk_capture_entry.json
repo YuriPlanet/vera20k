@@ -1,0 +1,446 @@
+{
+  "cases": [
+    {
+      "boundary": "0x75bc13",
+      "bridge_mismatch": false,
+      "can_enter_class": 0,
+      "code_unchanged": true,
+      "input": {
+        "actor": {
+          "attack_is_hut": false,
+          "coord": [
+            2624,
+            2624,
+            1040
+          ],
+          "current_mission": 8,
+          "id": 1,
+          "in_playfield": true,
+          "is_train": false,
+          "nav_is_hut": true,
+          "queued_mission": -1,
+          "slave_owner": null,
+          "speed_type": 1,
+          "team": null,
+          "terrain_bypass": false
+        },
+        "bridge_list": false,
+        "candidate": [
+          11,
+          9
+        ],
+        "cells": [
+          {
+            "bridge_flags": 0,
+            "coord": [
+              10,
+              10
+            ],
+            "ground_objects": [],
+            "land": 7,
+            "level": 10,
+            "occupation": [
+              0,
+              0
+            ],
+            "occupation_owners": [
+              -1,
+              -1
+            ],
+            "overlay": -1,
+            "slope": 0,
+            "tube_index": -1,
+            "upper_objects": []
+          },
+          {
+            "bridge_flags": 0,
+            "coord": [
+              11,
+              9
+            ],
+            "ground_objects": [
+              2
+            ],
+            "land": 7,
+            "level": 10,
+            "occupation": [
+              0,
+              0
+            ],
+            "occupation_owners": [
+              -1,
+              -1
+            ],
+            "overlay": -1,
+            "slope": 0,
+            "tube_index": -1,
+            "upper_objects": []
+          }
+        ],
+        "direction": 1,
+        "frame": 112,
+        "from": [
+          10,
+          10
+        ],
+        "goal_height": 10,
+        "height": 10,
+        "hut": {
+          "coord": [
+            2944,
+            2432,
+            1040
+          ],
+          "id": 2,
+          "iron_curtain_duration": 0,
+          "iron_curtain_start": -1,
+          "warping_out": false
+        },
+        "local_size": [
+          0,
+          0,
+          8,
+          8
+        ],
+        "name": "synthetic_flat_capture",
+        "native_size": [
+          8,
+          8
+        ],
+        "origin": "Synthetic fixture control; not captured Hills gameplay",
+        "urgency": 0
+      },
+      "input_sha256": "0034cd9a19f3b31fad5ec603d55649dea363f45efd129c135463c5cf4aecf1c3",
+      "measured_substitutions": [],
+      "native_entry_arguments": [
+        {
+          "candidate": [
+            11,
+            9
+          ],
+          "direction": 1,
+          "flag": 1,
+          "height": 10,
+          "previous_null": true
+        }
+      ],
+      "native_layers": [
+        {
+          "file": "RULESMD.INI",
+          "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+        },
+        {
+          "absent": true,
+          "file": "LANGRULE.INI"
+        },
+        {
+          "file": "MPBattleMD.ini",
+          "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963"
+        },
+        {
+          "file": "Hills.map",
+          "sha256": "780d5d6e6d3c81ac0d510a5df326848dd426b3d840ac290114f44faf8eab9e9e"
+        }
+      ],
+      "occupation_owner_reads": [
+        {
+          "cell": [
+            11,
+            9
+          ],
+          "offset": 84,
+          "pc": "0x51bfd8",
+          "size": 4
+        }
+      ],
+      "outcome": "head_selection",
+      "prospective_xyz": [
+        2880,
+        2368,
+        1040
+      ],
+      "queries": [
+        {
+          "callee": "0x565730",
+          "caller": "0x75b647",
+          "coordinate": [
+            2880,
+            2368,
+            1040
+          ]
+        },
+        {
+          "callee": "0x565730",
+          "caller": "0x5f698f",
+          "coordinate": [
+            2624,
+            2624,
+            1040
+          ]
+        },
+        {
+          "callee": "0x565730",
+          "caller": "0x5f69b2",
+          "coordinate": [
+            2624,
+            2624,
+            1040
+          ]
+        },
+        {
+          "callee": "0x5657a0",
+          "caller": "0x75b68c",
+          "coordinate": [
+            11,
+            9
+          ]
+        },
+        {
+          "callee": "0x5657a0",
+          "caller": "0x481862",
+          "coordinate": [
+            10,
+            10
+          ]
+        },
+        {
+          "callee": "0x5657a0",
+          "caller": "0x4d9cba",
+          "coordinate": [
+            10,
+            10
+          ]
+        }
+      ],
+      "reached": [
+        "0x5f5f00",
+        "0x5f6960",
+        "0x51bf90",
+        "0x4d9c60"
+      ]
+    },
+    {
+      "boundary": "0x75b6a0",
+      "bridge_mismatch": false,
+      "can_enter_class": 7,
+      "code_unchanged": true,
+      "input": {
+        "actor": {
+          "attack_is_hut": false,
+          "coord": [
+            2624,
+            2624,
+            1040
+          ],
+          "current_mission": 8,
+          "id": 1,
+          "in_playfield": true,
+          "is_train": false,
+          "nav_is_hut": true,
+          "queued_mission": -1,
+          "slave_owner": null,
+          "speed_type": 1,
+          "team": null,
+          "terrain_bypass": false
+        },
+        "bridge_list": false,
+        "candidate": [
+          11,
+          9
+        ],
+        "cells": [
+          {
+            "bridge_flags": 0,
+            "coord": [
+              10,
+              10
+            ],
+            "ground_objects": [],
+            "land": 7,
+            "level": 10,
+            "occupation": [
+              0,
+              0
+            ],
+            "occupation_owners": [
+              -1,
+              -1
+            ],
+            "overlay": -1,
+            "slope": 0,
+            "tube_index": -1,
+            "upper_objects": []
+          },
+          {
+            "bridge_flags": 0,
+            "coord": [
+              11,
+              9
+            ],
+            "ground_objects": [
+              2
+            ],
+            "land": 7,
+            "level": 10,
+            "occupation": [
+              0,
+              0
+            ],
+            "occupation_owners": [
+              -1,
+              -1
+            ],
+            "overlay": -1,
+            "slope": 0,
+            "tube_index": -1,
+            "upper_objects": []
+          }
+        ],
+        "direction": 1,
+        "frame": 112,
+        "from": [
+          10,
+          10
+        ],
+        "goal_height": 10,
+        "height": 10,
+        "hut": {
+          "coord": [
+            2944,
+            2432,
+            1040
+          ],
+          "id": 2,
+          "iron_curtain_duration": 100,
+          "iron_curtain_start": 110,
+          "warping_out": false
+        },
+        "local_size": [
+          0,
+          0,
+          8,
+          8
+        ],
+        "name": "synthetic_iron_curtain_control",
+        "native_size": [
+          8,
+          8
+        ],
+        "origin": "Synthetic fixture control; not captured Hills gameplay",
+        "urgency": 0
+      },
+      "input_sha256": "123658ab2a03bb92cbe05868f011e54c208b6ff64e6e72e4177badbbf955a893",
+      "measured_substitutions": [],
+      "native_entry_arguments": [
+        {
+          "candidate": [
+            11,
+            9
+          ],
+          "direction": 1,
+          "flag": 1,
+          "height": 10,
+          "previous_null": true
+        }
+      ],
+      "native_layers": [
+        {
+          "file": "RULESMD.INI",
+          "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+        },
+        {
+          "absent": true,
+          "file": "LANGRULE.INI"
+        },
+        {
+          "file": "MPBattleMD.ini",
+          "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963"
+        },
+        {
+          "file": "Hills.map",
+          "sha256": "780d5d6e6d3c81ac0d510a5df326848dd426b3d840ac290114f44faf8eab9e9e"
+        }
+      ],
+      "occupation_owner_reads": [
+        {
+          "cell": [
+            11,
+            9
+          ],
+          "offset": 84,
+          "pc": "0x51bfd8",
+          "size": 4
+        }
+      ],
+      "outcome": "refusal_response",
+      "prospective_xyz": [
+        2880,
+        2368,
+        1040
+      ],
+      "queries": [
+        {
+          "callee": "0x565730",
+          "caller": "0x75b647",
+          "coordinate": [
+            2880,
+            2368,
+            1040
+          ]
+        },
+        {
+          "callee": "0x565730",
+          "caller": "0x5f698f",
+          "coordinate": [
+            2624,
+            2624,
+            1040
+          ]
+        },
+        {
+          "callee": "0x565730",
+          "caller": "0x5f69b2",
+          "coordinate": [
+            2624,
+            2624,
+            1040
+          ]
+        },
+        {
+          "callee": "0x5657a0",
+          "caller": "0x75b68c",
+          "coordinate": [
+            11,
+            9
+          ]
+        },
+        {
+          "callee": "0x5657a0",
+          "caller": "0x481862",
+          "coordinate": [
+            10,
+            10
+          ]
+        },
+        {
+          "callee": "0x5657a0",
+          "caller": "0x4d9cba",
+          "coordinate": [
+            10,
+            10
+          ]
+        }
+      ],
+      "reached": [
+        "0x5f5f00",
+        "0x5f6960",
+        "0x51bf90",
+        "0x4d9c60"
+      ]
+    }
+  ],
+  "schema_version": 1,
+  "scope": "Original Walk prospective-coordinate/height caller joined to Infantry entry.\n\nThe interior Walk frame, actor/type and cells are supplied. Original49F3A0\ninitializes direction vectors;75B59C..75B696 produces query arguments and runs\nconcrete51BF90. Stop before head selection/refusal response; no full route claim.\n",
+  "source": "explicit synthetic controls",
+  "source_sha256": null
+}
