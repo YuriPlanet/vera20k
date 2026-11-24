@@ -47,6 +47,7 @@ mod disk_laser_tests;
 pub(crate) mod entry_test_fixture;
 mod frame_channel;
 mod frame_effects;
+mod ice;
 mod idle_sleep;
 #[cfg(all(test, tests_sim_world_c_o))]
 mod idle_sleep_tests;
@@ -737,6 +738,11 @@ pub struct Simulation {
     /// gameplay state; saves occur at frame boundaries.
     #[serde(skip)]
     mission_spawned_entities: bool,
+    /// An ice run's Recalc_Ice changed land this frame; the frame tail
+    /// rebuilds the zones once (`ice`, docs/ts-ice.md). Derived frame
+    /// output, like `mission_spawned_entities`.
+    #[serde(skip)]
+    ice_zones_stale: bool,
     /// The shared ownership chokepoint's report, drained into the tick's
     /// `ownership_changed`, including changes outside the live object pass.
     /// Not saved or hashed.
@@ -907,6 +913,10 @@ pub struct Simulation {
     /// overlay/bridge/navigation reconstruction on restore.
     #[serde(default)]
     pub(crate) dynamic_terrain_cells: crate::map::resolved_terrain::DynamicTerrainCells,
+    /// Firestorm 2.0 MapClass+0x14C, the cracked ice waiting to freeze over
+    /// (`ice`, docs/ts-ice.md). Empty unless the map runs ice.
+    #[serde(default)]
+    ice_cracks: Vec<ice::CrackedIce>,
     pub(crate) bridge_state: Option<BridgeRuntimeState>,
     /// Resident Map+D4 ordered collapse coordinates. Independent of optional
     /// geometry so even standalone fallout/save retains its native publication.

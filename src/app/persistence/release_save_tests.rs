@@ -31,6 +31,7 @@ released_saves! {
     main_41f140f93: "main-41f140f93", 0xCB54_5137, Skirmish;
     main_6d6caa108: "main-6d6caa108", 0xCADF_6067, Skirmish;
     main_ffe8b25af: "main-ffe8b25af", 0xD6C7_5D57, Skirmish;
+    main_93ab2ce86: "main-93ab2ce86", 0xAFC7_F643, Skirmish;
 }
 
 const TUNNEL_FIXTURE: &str = "v0.3.9-tunnel";
@@ -392,8 +393,12 @@ pub(super) fn resume_player_file(
         let converted = repository.read(&path).unwrap();
         let converted_header = GameSnapshot::read_header(&converted).unwrap();
         assert_eq!(converted_header.description, name);
-        if matches!(header.layout, 0xFD30_A463 | 0x9BB2_0D64 | 0xFD54_FFFF) {
-            // Both newly saved flags default to false in historical worlds.
+        if matches!(
+            header.layout,
+            0xFD30_A463 | 0x9BB2_0D64 | 0xFD54_FFFF | 0xCADF_6067 | 0xD6C7_5D57
+        ) {
+            // Both newly saved flags default to false in historical worlds,
+            // as the ice timer, cracks and sinking flag read as none.
             // Every original body byte survives in order, including any
             // animation-listener flag already present in the eb05f451e layout.
             let original_body =

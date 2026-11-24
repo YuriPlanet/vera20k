@@ -310,6 +310,7 @@ impl super::GeneralRules {
                 self.lightning_sounds
                     .iter()
                     .chain(&self.credit_ticks)
+                    .chain(&self.ice.crack_sounds)
                     .map(String::as_str),
             )
     }

@@ -83,5 +83,6 @@ simulation, session and network command owners.
 - [Skirmish cheat codes](skirmish-cheats.md) let you grant credits, reveal the map and spawn vehicles in an offline match.
 - [Terrain deformation](terrain-deformation.md): the skirmish Game Options box that lets explosions dent the ground and nukes leave craters.
 - [Superweapon Limit](superweapon-limit.md): the skirmish Game Options slider that allows up to 20 of each superweapon, each charging its own shot, and the `SuperWeaponPerBuilding=` key.
+- [Tiberian Sun ice](ts-ice.md): Firestorm's ice that heavy units crack and break, for a snow theater that ships the ice tiles.
 - [Stock rules retail leaves off](dormant-stock-rules.md): `Assaulter=`, `CanDetonateTimeBomb=` and other gamemd keys only a mod or map switches on.
 - [Tiberian Sun Ion Cannon](ts-ion-cannon.md): `Type=IonCannon`, the Tiberian Sun superweapon that fires an ion blast at a cell, which a mod or map switches on by listing it.
