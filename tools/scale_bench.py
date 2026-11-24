@@ -159,7 +159,7 @@ def pool_name(threads: int | None) -> str:
 def time_sim(binary: Path, map_path: Path, args: argparse.Namespace) -> dict:
     extra = ['--ticks', str(args.ticks)] if args.ticks else []
     report = {}
-    for threads in POOLS:
+    for threads in args.pools:
         runs = []
         for _ in range(args.runs):
             with quiet_machine(args.wait_seconds):
@@ -197,6 +197,17 @@ def compare_hashes(binary: Path, map_path: Path, args: argparse.Namespace) -> di
     return {'ticks': ticks, 'pools': list(files), 'last_frame': frames[-1]}
 
 
+def pools(text: str) -> tuple[int | None, ...]:
+    """`--pools`: 'all,4' is every CPU thread, then four."""
+    try:
+        sizes = tuple(None if part == 'all' else int(part) for part in text.split(','))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f'{text!r}: sizes are "all" or thread counts, comma-separated') from None
+    if not sizes or any(size is not None and size < 1 for size in sizes):
+        raise argparse.ArgumentTypeError(f'{text!r}: a thread count is at least 1')
+    return sizes
+
+
 def machine() -> dict:
     name = platform.processor() or platform.machine()
     if sys.platform == 'darwin':
@@ -214,6 +225,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                         help='most the runs of one figure may differ, in percent (default 5)')
     parser.add_argument('--json', type=Path, help='also write the report to this file')
     parser.add_argument('--no-build', action='store_true', help='time the executables already built')
+    parser.add_argument('--pools', type=pools, default=POOLS, metavar='all,4',
+                        help="worker-pool sizes the tick is timed with: 'all' for every CPU thread, or a count "
+                             '(default all,4)')
     parser.add_argument('--wait-seconds', type=float, default=3600.0,
                         help='longest wait for a quiet machine before a run (default 3600)')
     args = parser.parse_args(argv)

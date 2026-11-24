@@ -58,6 +58,13 @@ class ScaleBenchTests(unittest.TestCase):
         self.assertTrue(steady['repeatable'])
         self.assertEqual((noisy['spread_percent'], noisy['repeatable']), (20.0, False))
 
+    def test_pools_reads_every_thread_and_counts(self):
+        self.assertEqual(scale_bench.pools('all,4'), (None, 4))
+        self.assertEqual(scale_bench.pools('4'), (4,))
+        for bad in ('', 'four', '0', 'all,-1'):
+            with self.assertRaises(scale_bench.argparse.ArgumentTypeError):
+                scale_bench.pools(bad)
+
     def test_the_launch_folder_is_one_human_against_29_computers_on_the_map(self):
         with tempfile.TemporaryDirectory() as scratch, \
                 mock.patch.dict(scale_bench_client.os.environ, {'RA2_DIR': '/retail "yr"'}):
