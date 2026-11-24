@@ -1031,6 +1031,24 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
         .map(|_| layout(state).rect(CHAT).unwrap_or_default())
 }
 
+/// The name the edit may hold: the native code page's bytes (a character it
+/// cannot carry becomes `?`, and one of two UTF-16 units stays out) within
+/// `NAME_LIMIT` bytes.
+fn name_text_within_limit(text: &str) -> String {
+    let mut out = String::new();
+    for ch in crate::ui::lan_shell::name_input(text).chars() {
+        let mut candidate = out.clone();
+        candidate.push(ch);
+        if crate::util::native_string::acp_encode(&candidate).len()
+            > crate::ui::lan_shell::NAME_LIMIT
+        {
+            break;
+        }
+        out = candidate;
+    }
+    out
+}
+
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
     let Some(runtime) = state.frontend.lan.as_mut() else {
         return;
@@ -1088,6 +1106,17 @@ pub(crate) fn sync_gui(state: &mut AppState) {
         controller.focus_control(PAGE.dialog, Some(CHAT));
     }
     let gui = controller.gui_mut();
+    // The name edit takes native code-page bytes only (`0x4D1` at `0x5DE0E3`,
+    // `0x61525E`): the input method may hand over anything, so the field is
+    // held to that rule on every frame, not only on the typed-key path.
+    if let Some(node) = gui.find_id(root, NAME.into()) {
+        if let Ok(Some(vera20k_gui::Value::Text(text))) = gui.get(node, Prop::Text) {
+            let kept = name_text_within_limit(&text);
+            if kept != *text {
+                let _ = gui.set(node, Prop::Text, vera20k_gui::Value::Text(kept));
+            }
+        }
+    }
     page::sync_rects(gui, root, |id| {
         if id == CHAT
             && let Some(rect) = layout.chat_text()

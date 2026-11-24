@@ -687,9 +687,13 @@ pub(crate) fn key(
 /// character it cannot hold); a character of two UTF-16 units, such as an
 /// emoji, stays out, so the edit's one-unit keys never split one.
 pub(crate) fn name_input(text: &str) -> String {
-    crate::util::native_string::acp_round_trip(text)
-        .chars()
+    // Native's `WideCharToMultiByte(CP_ACP, …)` with the default character:
+    // a character the code page cannot carry becomes `?`, and one of two
+    // UTF-16 units stays out. `acp_round_trip` is identity off Windows, so the
+    // byte rule is spelled here for every platform (Android included).
+    text.chars()
         .filter(|c| c.len_utf16() == 1)
+        .map(|c| if (c as u32) <= 0xFF { c } else { '?' })
         .collect()
 }
 
