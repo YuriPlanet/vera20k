@@ -39,12 +39,17 @@ pub(crate) struct ProcessAssets {
     /// The launch's Ares setting (`util::ares_launch::AresSetting`), kept as
     /// the mod folder is.
     ares_setting: crate::util::ares_launch::AresSetting,
+    /// The launch's Kratos setting (`util::kratos_launch::KratosSetting`),
+    /// kept so a rebuilt manager selects the same games.
+    kratos_setting: crate::util::kratos_launch::KratosSetting,
     /// Whether that setting on Auto mounts `ares.mix` for this game
     /// (`AssetManager::auto_mounts_ares`), and whether set to Off it keeps
     /// the startup Rules' own Ares keys from turning Ares on
     /// (`RuleSet::ares_kept_off`): kept with the Rules for
     /// [`Self::agreed_ares_setting`] while the manager is away at a load.
     auto_mounts_ares: bool,
+    /// Whether the resolved startup rules play Kratos, retained while assets are leased.
+    startup_kratos: bool,
     rules_keep_ares_off: bool,
     /// That folder's files, read once: the pre-match check compares their
     /// digest.
@@ -202,7 +207,9 @@ impl ProcessAssets {
         Self {
             media_archive_mode,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             auto_mounts_ares: false,
+            startup_kratos: false,
             rules_keep_ares_off: false,
             mod_files: Default::default(),
             mod_files_ahead: false,
@@ -261,6 +268,14 @@ impl ProcessAssets {
         self
     }
 
+    pub(crate) fn with_kratos_setting(
+        mut self,
+        setting: crate::util::kratos_launch::KratosSetting,
+    ) -> Self {
+        self.kratos_setting = setting;
+        self
+    }
+
     /// VERA: the launch's Ares setting where it decides which game this is,
     /// else Auto (`AresSetting::where_it_decides`), which other players'
     /// games must share: the rules digest counts it, the rules parts and the
@@ -277,6 +292,10 @@ impl ProcessAssets {
             None => (self.ares_setting, self.auto_mounts_ares),
         };
         setting.where_it_decides(auto_mounts, self.rules_keep_ares_off)
+    }
+
+    pub(crate) fn startup_kratos(&self) -> bool {
+        self.startup_kratos
     }
 
     /// The player opened a multiplayer menu: start reading the mod's files
@@ -415,7 +434,7 @@ impl ProcessAssets {
         &self,
         root: &std::path::Path,
     ) -> anyhow::Result<AssetManager> {
-        let assets = AssetManager::with_mod_and_ares(
+        let mut assets = AssetManager::with_mod_and_ares(
             root,
             self.resources.mod_folder.as_deref(),
             self.media_archive_mode,
@@ -423,6 +442,7 @@ impl ProcessAssets {
             &self.resources.archives,
         )?
         .with_mod_sources(&self.resources);
+        assets.set_kratos_setting(self.kratos_setting);
         Ok(if let Some(roots) = &self.selected_ini_roots {
             assets.with_selected_ini_roots(roots.clone())
         } else {
@@ -503,6 +523,7 @@ impl ProcessAssets {
         let (rules, projection, owner) = startup.into_parts();
         self.native_rules = Some(owner);
         self.auto_mounts_ares = assets.auto_mounts_ares();
+        self.startup_kratos = rules.as_ref().is_some_and(|rules| rules.kratos());
         self.rules_keep_ares_off = rules.as_ref().is_some_and(|rules| rules.ares_kept_off());
         Ok((rules, projection))
     }
@@ -696,6 +717,9 @@ impl ProcessAssets {
                 bytes.push(u8::from(assets.ares_mix_mounted()));
             }
             crate::util::ares_launch::AresSetting::Off => bytes.extend_from_slice(b"ares off\0"),
+        }
+        if self.startup_kratos {
+            bytes.extend_from_slice(b"kratos on\0");
         }
         // VERA: RA2 mode (docs/ra2-mode.md) also plays RA2's rules in the
         // simulation (`util::ra2_launch`), which its INI roots alone do not
@@ -935,6 +959,7 @@ impl ProcessAssets {
             // (its byte) or with a mod that ships it (`ships_ares`); without
             // a mod only On mounts it, and Off never does.
             ares_mix: assets.ares_mix_mounted(),
+            kratos: self.startup_kratos,
             ini_roots_stock: self.stock_ini_roots(),
             // As the digest counts it.
             ra2: crate::util::ra2_launch::enabled(),
@@ -1551,6 +1576,42 @@ mod tests {
         )
         .unwrap();
         assert_ne!(digest(false), original, "actual rule changes still differ");
+    }
+
+    #[test]
+    fn kratos_agreement_matches_the_game_and_names_it_in_the_rules_parts() {
+        use crate::assets::asset_manager::test_support::audio_test_install;
+        use crate::util::kratos_launch::KratosSetting::{Auto, Off, On};
+
+        let install = audio_test_install("kratos-agreement");
+        for (file, data) in [
+            ("rulesmd.ini", "[InfantryTypes]\n0=GI\n[GI]\nPrimary=GUN\nFearless=no\n"),
+            ("aimd.ini", "[AI]\nValue=1\n"),
+        ] {
+            std::fs::write(install.path().join(file), data).unwrap();
+        }
+        let game = |setting| {
+            let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
+                .with_kratos_setting(setting);
+            let assets = process.reconstruct_manager(install.path()).unwrap();
+            process.initialize_sources_if_needed(&assets).unwrap();
+            process.return_from_loading(assets);
+            let parts = process.multiplayer_rules_parts(&[""]).unwrap().remove(0);
+            let parts: serde_json::Value = serde_json::from_str(&parts.json()).unwrap();
+            (process.multiplayer_rules_digest("").unwrap(), parts["settings"].get("kratos").cloned())
+        };
+        let art = install.path().join("artmd.ini");
+        std::fs::write(&art, "[GI]\nPrimaryFireFLH=12,0,60\n").unwrap();
+        let stock = game(Auto);
+        assert_eq!(stock.1, None);
+        assert_eq!(game(Off), stock);
+        let enabled = game(On);
+        assert_ne!(enabled.0, stock.0);
+        assert_eq!(enabled.1, Some(serde_json::Value::Bool(true)));
+
+        std::fs::write(art, "[GI]\nPrimaryCrawlingFLH=17,0,20\n").unwrap();
+        assert_eq!(game(Auto), game(On));
+        assert_ne!(game(Auto).0, game(Off).0);
     }
 
     /// VERA: the Ares setting counts between players where it decides which

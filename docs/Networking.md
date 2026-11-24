@@ -999,6 +999,14 @@ is exchanged. A game from before this is another version and is refused by the b
 check first; a rollback compares the setting itself again, and one past the setting
 reads none and plays Auto.
 
+The launcher probe and the room compare whether the startup rules enable Kratos.
+The named rules part is `settings.kratos: true`. When Kratos is off both the agreement
+bytes and the rules parts keep their previous form. The final start also compares
+the loaded scenario, which can change the eligible infantry and their art. The client
+names Kratos when it is active. Older lobbies can ignore the optional `kratos` sign-in
+detail. Older clients and a rolled-back client keep the existing version and rules
+checks; a mismatch refuses the start.
+
 [RA2 Mode](ra2-mode.md) (`[VERA] RA2Mode=` or `-ra2`) is not a room rule either: each
 game reads it at start, and it adds its own words to the rules digest
 (`ProcessAssets::multiplayer_rules_digest`) and `ra2: true` to the rules parts, so a

@@ -419,6 +419,10 @@ pub struct AssetManager {
     /// VERA: the player's Ares setting this game opened with
     /// (`util::ares_launch::AresSetting`).
     ares_setting: crate::util::ares_launch::AresSetting,
+    /// VERA: the player's Kratos setting this game opened with
+    /// (`util::kratos_launch::KratosSetting`). It decides `RuleSet::kratos`
+    /// in every game whose rules this manager selects.
+    kratos_setting: crate::util::kratos_launch::KratosSetting,
     /// VERA: names every lookup reads from fixed archives alone
     /// ([`Self::pin_names`]); `None` reads all names as found.
     pinned_names: Option<PinnedNames>,
@@ -454,6 +458,7 @@ impl Clone for AssetManager {
             mod_dir: self.mod_dir.clone(),
             client_install: self.client_install.clone(),
             ares_setting: self.ares_setting,
+            kratos_setting: self.kratos_setting,
             pinned_names: self.pinned_names.clone(),
         }
     }
@@ -725,6 +730,18 @@ impl AssetManager {
         self.ares_setting
     }
 
+    /// The player's Kratos setting this game opened with.
+    pub fn kratos_setting(&self) -> crate::util::kratos_launch::KratosSetting {
+        self.kratos_setting
+    }
+
+    /// Read the launch's Kratos setting before the game's rules are selected.
+    /// A launch does this once, from the Options profile, as it sets the Ares
+    /// setting when it opens its archives.
+    pub fn set_kratos_setting(&mut self, setting: crate::util::kratos_launch::KratosSetting) {
+        self.kratos_setting = setting;
+    }
+
     /// Whether the Ares setting Auto mounts `ares.mix` for this game: a mod
     /// is selected and has one in reach, its own or the installation's. With
     /// it On opens the game Auto opens, and Off another
@@ -780,6 +797,7 @@ impl AssetManager {
                 .map(|dir| crate::util::mod_package::ModFolder::loose(dir.to_path_buf())),
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         })
     }
@@ -3290,6 +3308,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3379,6 +3398,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3458,6 +3478,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3505,6 +3526,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3550,6 +3572,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3596,6 +3619,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3638,6 +3662,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3700,6 +3725,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
