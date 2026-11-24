@@ -183,9 +183,10 @@ impl Simulation {
         let selected = self
             .scenario_rng
             .next_range_u32_inclusive(0, count as u32 - 1);
-        let selected = spark_systems()
-            .nth(selected as usize)
-            .expect("the roll stays below the count of the same list");
+        // The roll stays below the count of the same list; both draws are made.
+        let Some(selected) = spark_systems().nth(selected as usize) else {
+            return;
+        };
         // 6FAEBC..6FAED1: supplied target NULL, owner=this, zero fifth
         // Coord (B0EA90 initialized by6F2A50), owner House NULL. Native
         // constructor target/owner derivation remains centralized below.
