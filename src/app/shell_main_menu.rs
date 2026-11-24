@@ -920,18 +920,13 @@ impl App {
             dialog.set_labels(Self::launcher_options_labels(state));
         }
         match output.result {
-            // Retail slides D5 out before its Keyboard page (0x0055FD06);
-            // VERA's Options window is its own layout, and its Keyboard page
-            // opens in place like its other pages: no slide, no cue
-            // (`shell_transition::moves_in_place`).
-            Some(LauncherParentResult::Keyboard) => {
-                state.frontend.options_dialog = Some(dialog);
-                Self::commit_launcher_options_result(state, LauncherParentResult::Keyboard);
-            }
-            // 0x0055FD06 tears D5 down before every other continuation,
-            // including the final Main Menu return. VERA's Mods leaves the
-            // same way.
-            Some(result @ (LauncherParentResult::Back | LauncherParentResult::Mods)) => {
+            // 0x0055FD06 slides D5 out before opening Keyboard or returning
+            // to the main menu. VERA's Mods leaves the same way.
+            Some(
+                result @ (LauncherParentResult::Back
+                | LauncherParentResult::Keyboard
+                | LauncherParentResult::Mods),
+            ) => {
                 state.frontend.options_dialog = Some(dialog);
                 Self::leave_shell_dialog(state, ShellSlideKind::Options, move |state| {
                     App::commit_launcher_options_result(state, result)
