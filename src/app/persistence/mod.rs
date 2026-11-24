@@ -7,6 +7,7 @@
 
 pub(crate) mod account;
 pub(crate) mod autosave;
+pub(crate) mod chat_hint;
 pub(crate) mod commands;
 pub(crate) mod intro_play;
 pub(crate) mod options;

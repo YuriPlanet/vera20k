@@ -381,6 +381,9 @@ fn gui_key(state: &mut AppState, code: Option<winit::keyboard::KeyCode>, text: O
             crate::app::App::handle_wol_key(state, code, true, text)
         }
         GuiScreen::Skirmish => {
+            // The page's own key path takes a physical code; a soft keyboard's
+            // text goes through its text argument with Enter as the code.
+            let code = code.unwrap_or(winit::keyboard::KeyCode::Enter);
             crate::app::App::handle_skirmish_shell_key_input(state, code, text);
         }
         GuiScreen::ChooseMap => match code {

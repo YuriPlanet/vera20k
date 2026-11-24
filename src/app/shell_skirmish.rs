@@ -149,6 +149,16 @@ impl App {
         )
     }
 
+    /// Android: one Backspace in the chooser's search line, through the same
+    /// GUI input the desktop key reaches.
+    #[cfg(target_os = "android")]
+    pub(crate) fn choose_map_search_backspace(state: &mut AppState) -> bool {
+        Self::choose_map_search_input(
+            state,
+            vera20k_gui::InputEvent::Key(vera20k_gui::Key::Backspace),
+        )
+    }
+
     /// Apply committed input-method text to Choose Map's search line, as
     /// the ordinary key path does; its control characters are dropped.
     pub(super) fn choose_map_search_text(state: &mut AppState, text: &str) -> bool {

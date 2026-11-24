@@ -43,6 +43,17 @@ pub(crate) fn sync(state: &mut AppState) {
     super::player_card::sync(state);
 }
 
+/// The lobby's own dialog tree (`0x113` and its popups), while the lobby page
+/// takes the keys: `handle_wol_key` reaches [`key_press`] with no page dialog
+/// over it, so its edits are the ones the input method edits
+/// (`app::input::ime`).
+#[cfg(target_os = "android")]
+pub(crate) fn ime_gui(state: &AppState) -> Option<&vera20k_gui::Gui> {
+    lobby(state)
+        .filter(|lobby| lobby.interactive())
+        .map(|lobby| lobby.ui.gui())
+}
+
 /// The NewEdit that takes keys, for the input method (`app::input::ime`):
 /// `handle_wol_key` reaches [`key_press`] with the lobby page up, no page
 /// dialog and no popup. It is the chat edit while the chat shows, else VERA's
