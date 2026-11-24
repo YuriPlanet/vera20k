@@ -29,7 +29,7 @@ fn scene(rules: &RuleSet, kind: &str) -> (Simulation, u64) {
     let mut sim = Simulation::with_seed(0xC10A_A9E5);
     sim.fog.set_width_for_test(64);
     sim.fog.set_height_for_test(64);
-    sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
+    *sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
         64, 2, 2, 56, 52,
     ));
     let id = sim

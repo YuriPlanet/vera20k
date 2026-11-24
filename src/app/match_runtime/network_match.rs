@@ -396,7 +396,9 @@ pub(crate) fn recovery_notice(state: &AppState) -> Option<&'static str> {
         // The relay drops a lapsed pass, which only the lobby can renew: then
         // waiting cannot help. The ticket's expiry is lobby time, so the pass's
         // life is timed from its receipt, as its renewal is.
-        NetworkRecoveryStatus::Reconnecting if relay_pass_lapsed(state, now) => {
+        NetworkRecoveryStatus::Reconnecting
+            if relay_pass_lapsed(state.frontend.wol.as_ref(), now) =>
+        {
             "VERA:ReconnectPassLapsed"
         }
         NetworkRecoveryStatus::Reconnecting => "VERA:Reconnecting",
@@ -1070,7 +1072,10 @@ pub(crate) fn service_wait(state: &mut AppState, now_ms: u64) -> WaitPass {
             .is_some_and(|live| live.watch_over())
     {
         log::info!("The watched match is over");
-        crate::app::shell_wol::hold_problem_line(state, crate::i18n::tr("VERA:WatchedMatchOver"));
+        crate::app::shell_wol::hold_problem_line(
+            state.frontend.wol.as_mut(),
+            crate::i18n::tr("VERA:WatchedMatchOver"),
+        );
         state.match_state.network_wait.wait = None;
         return WaitPass::Leave;
     }

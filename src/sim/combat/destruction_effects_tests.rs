@@ -1067,9 +1067,9 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
             // Match the native control's complete ambient streams after
             // setup. The physical Super section above is parsed by the same
             // production reader; ignoreDefenses bypasses armor calculation.
-            sim.main_rng = SimRng::new(1);
-            sim.scenario_rng = SimRng::new(1);
-            sim.mapgen_rng = SimRng::new(1);
+            *sim.main_rng = SimRng::new(1);
+            *sim.scenario_rng = SimRng::new(1);
+            *sim.mapgen_rng = SimRng::new(1);
             replay = sim.scenario_rng.clone();
             for (stream, rng) in [
                 ("main", sim.main_rng.native_state_hex()),
@@ -1393,7 +1393,7 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
             assert!(smudges.cell(x, y).type_id.is_none() && field("smudge").is_none());
         }
         let marks_before = smudges.clone();
-        sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
+        *sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
         assert_eq!(
             sim.scenario_rng.native_state_hex(),
             row["rng_before"].as_str().unwrap()

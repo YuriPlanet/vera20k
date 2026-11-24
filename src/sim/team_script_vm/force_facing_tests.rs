@@ -89,7 +89,7 @@ fn script42_and_class_turns_match_original_controls() {
                 id
             })
             .collect();
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         let owner = sim.interner.intern("OWNER");
         let script = sim.interner.intern("SCRIPT");
         let argument = row["argument"].as_i64().unwrap() as i32;

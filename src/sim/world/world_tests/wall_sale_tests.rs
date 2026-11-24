@@ -23,7 +23,7 @@ fn wall_sale_detach_restores_without_resetting_the_archived_targets_burst() {
     let wall_owner = sim.interner.get("Americans").unwrap();
     let mut grid = crate::sim::overlay_grid::OverlayGrid::new(32, 32);
     grid.place_owned_wall(4, 4, overlays.id_for_name("GAWALL").unwrap(), 0, wall_owner);
-    sim.overlay_grid = Some(grid);
+    *sim.overlay_grid = Some(grid);
     let mut actors = Vec::new();
     for x in [2, 3] {
         let id = sim
@@ -148,8 +148,8 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
     // removes north first, then east, preserving each stale owner.
     grid.place_owned_wall(4, 3, 2, 0x24, wall_owner);
     grid.place_owned_wall(5, 4, 2, 0x28, wall_owner);
-    sim.overlay_grid = Some(grid);
-    sim.resolved_terrain = Some(terrain);
+    *sim.overlay_grid = Some(grid);
+    *sim.resolved_terrain = Some(terrain);
     {
         let grid = sim.overlay_grid.as_mut().unwrap();
         let terrain = sim.resolved_terrain.as_mut().unwrap();
@@ -185,7 +185,7 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
         expected_ground_zone,
         crate::sim::pathfinding::zone_map::ZONE_INVALID
     );
-    sim.path_grid = Some(std::sync::Arc::new(path.clone()));
+    *sim.path_grid = Some(std::sync::Arc::new(path.clone()));
 
     for (id, target) in [(10, (4, 4)), (20, (4, 3))] {
         let mut listener = GameEntity::test_default(id, "E1", "Receiver", 2, 2);
@@ -422,8 +422,8 @@ fn wall_sale_cleanup_reaches_fixed_stride_alias_and_reverses_that_source_only() 
             ry,
         );
     }
-    sim.overlay_grid = Some(grid);
-    sim.resolved_terrain = Some(terrain);
+    *sim.overlay_grid = Some(grid);
+    *sim.resolved_terrain = Some(terrain);
 
     assert!(sim.apply_command_with_overlays(
         None,
@@ -450,7 +450,7 @@ fn gsi_04_07_wall_sell_eligibility_gate_matrix_rejects_without_mutation() {
     let (rules, overlays) = gsi_04_07_wall_sell_rules(false, false);
     let mut sim = Simulation::new();
     let (wall_owner, _) = gsi_04_07_wall_sell_seed_houses(&mut sim);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(3, 3));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(3, 3));
 
     let sell = |sim: &mut Simulation, rules: &RuleSet| {
         sim.apply_command_with_overlays(
@@ -507,7 +507,7 @@ fn gsi_04_07_wall_sell_first_match_and_split_human_gate_are_exact() {
     let (wall_owner, _) = gsi_04_07_wall_sell_seed_houses(&mut sim);
     let mut grid = crate::sim::overlay_grid::OverlayGrid::new(3, 3);
     grid.place_owned_wall(0, 2, 2, 0, wall_owner);
-    sim.overlay_grid = Some(grid);
+    *sim.overlay_grid = Some(grid);
     assert!(!sim.apply_command_with_overlays(
         None,
         "Receiver",

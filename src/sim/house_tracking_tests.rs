@@ -674,7 +674,7 @@ fn naval_tracking_retains_limbo_capture_and_reload_deletion_authority() {
     );
 
     // Scenario RNG is reset to0 by the existing snapshot load contract.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let expected_hash = sim.state_hash();
     let bytes = GameSnapshot::save(&sim, 0, 0, "tracked-navy", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;

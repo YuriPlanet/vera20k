@@ -74,7 +74,7 @@ impl WolCapture {
                     && Self::page_settled(state, ShellSlideKind::WolWelcome) =>
             {
                 if self.target == WolTarget::WelcomeProfile {
-                    let texts = &App::wol_welcome_texts(state);
+                    let texts = &App::wol_welcome_texts(&state.frontend.shell_controller);
                     let text = |id: u16| {
                         texts
                             .iter()
@@ -587,15 +587,19 @@ impl WolCapture {
                         ansi: false,
                     },
                 );
-                let received = crate::app::shell_wol::page::page_received(state)
-                    .context("0x11E did not open")?;
+                let received =
+                    crate::app::shell_wol::page::page_received(state.frontend.wol.as_ref())
+                        .context("0x11E did not open")?;
                 ensure!(
                     received.reply_to == "Tanya" && received.lines.len() == 1,
                     "0x11E did not take the page: {:?}",
                     received.reply_to
                 );
                 self.event(frame, "page on 0x10E: 0x11E opened");
-                let layout = crate::app::shell_wol::page::received_layout(state);
+                let layout = crate::app::shell_wol::page::received_layout(
+                    &state.renderer,
+                    &state.frontend.screen,
+                );
                 match self.target {
                     WolTarget::PageReceivedReply => {
                         welcome_click(state, layout.rect_of(0x540).unwrap_or_default());
@@ -612,7 +616,8 @@ impl WolCapture {
                     WolTarget::PageReceivedBack => {
                         welcome_click(state, layout.rect_of(0x686).unwrap_or_default());
                         ensure!(
-                            crate::app::shell_wol::page::page_received(state).is_none(),
+                            crate::app::shell_wol::page::page_received(state.frontend.wol.as_ref())
+                                .is_none(),
                             "Back did not close 0x11E"
                         );
                         self.event(frame, "0x11E Back");
@@ -623,7 +628,8 @@ impl WolCapture {
             }
             WolPhase::PageReceivedAnswers => {
                 let received =
-                    crate::app::shell_wol::page::page_received(state).context("0x11E closed")?;
+                    crate::app::shell_wol::page::page_received(state.frontend.wol.as_ref())
+                        .context("0x11E closed")?;
                 let texts: Vec<String> = received
                     .lines
                     .iter()
@@ -685,7 +691,7 @@ impl WolCapture {
                     );
                     // 0x0077E7A0 at Create: the local hash and the slots
                     // WOL entry left (0x005E8B60): no AI, no observer slot.
-                    let hash = crate::app::shell_wol::lobby::local_ini_hash(state);
+                    let hash = crate::app::shell_wol::lobby::local_ini_hash(&state.process_assets);
                     ensure!(
                         hash.is_some()
                             && channel
@@ -789,8 +795,9 @@ impl WolCapture {
                             ],
                         "C2 Back did not leave the game channel first: {requests:?}"
                     );
-                    let game = crate::app::shell_wol::lobby::current_channel(state)
-                        .context("the game channel stays until its leave")?;
+                    let game =
+                        crate::app::shell_wol::lobby::current_channel(state.frontend.wol.as_ref())
+                            .context("the game channel stays until its leave")?;
                     service_event(state, WolServiceEvent::ChannelLeft);
                     let left = crate::assets::csf_file::format_csf(
                         &state.csf_label("TXT_YOULEFT", "TXT_YOULEFT"),
@@ -1186,7 +1193,11 @@ impl WolCapture {
                     // Ranked game says when the lobby ranks the room's games.
                     set_window_pointer_to_rect_center(state, create.ranked.context("Ranked game")?);
                     App::handle_wol_mouse_move(state);
-                    let help = crate::app::shell_wol::lobby::status_help(state);
+                    let help = crate::app::shell_wol::lobby::status_help(
+                        &state.frontend,
+                        &state.match_state.input,
+                        &state.process_assets,
+                    );
                     ensure!(
                         help == state.csf_label("VERA:RankedGameHelp", "VERA:RankedGameHelp"),
                         "Ranked game's help read {help:?}"
@@ -1206,7 +1217,11 @@ impl WolCapture {
                     let row = player_row_rect(state, "Tanya")?;
                     set_window_pointer_to_rect_center(state, row);
                     App::handle_wol_mouse_move(state);
-                    let help = crate::app::shell_wol::lobby::status_help(state);
+                    let help = crate::app::shell_wol::lobby::status_help(
+                        &state.frontend,
+                        &state.match_state.input,
+                        &state.process_assets,
+                    );
                     let label = |key: &str| state.csf_label(key, key);
                     let expected = crate::i18n::fill(
                         &label("VERA:PlayerHelp"),
@@ -1239,7 +1254,11 @@ impl WolCapture {
                     let card = crate::app::shell_wol::player_card::layout(state);
                     set_window_pointer_to_rect_center(state, card.message);
                     App::handle_wol_mouse_move(state);
-                    let help = crate::app::shell_wol::lobby::status_help(state);
+                    let help = crate::app::shell_wol::lobby::status_help(
+                        &state.frontend,
+                        &state.match_state.input,
+                        &state.process_assets,
+                    );
                     let expected = crate::i18n::fill(
                         &state.csf_label("VERA:MessageHelp", "VERA:MessageHelp"),
                         &[("name", &"Tanya")],
@@ -1263,7 +1282,11 @@ impl WolCapture {
                     let explained = label("VERA:SeasonHelp");
                     set_window_pointer_to_rect_center(state, card.rows[season].1);
                     App::handle_wol_mouse_move(state);
-                    let help = crate::app::shell_wol::lobby::status_help(state);
+                    let help = crate::app::shell_wol::lobby::status_help(
+                        &state.frontend,
+                        &state.match_state.input,
+                        &state.process_assets,
+                    );
                     ensure!(help == explained, "the season row's help read {help:?}");
                     self.event(frame, json!({"season row help": help}));
                     self.settle();
@@ -1322,7 +1345,8 @@ impl WolCapture {
                     if self.target.clan() {
                         // 0x78DF35: the clan box is enabled by the squad id.
                         ensure!(
-                            crate::app::shell_wol::lobby::squad_id(state) == 7,
+                            crate::app::shell_wol::lobby::squad_id(state.frontend.wol.as_ref())
+                                == 7,
                             "the stand-in squad did not reach [0xB77DE4]"
                         );
                         welcome_click(
@@ -2083,7 +2107,7 @@ impl WolCapture {
                 if rendered == PresentedShell::WolOptions
                     && Self::page_settled(state, ShellSlideKind::WolOptions) =>
             {
-                let checked = crate::app::shell_wol::options::shown(state)
+                let checked = crate::app::shell_wol::options::shown(&state.frontend)
                     .map(|(preferences, _)| preferences.checks());
                 ensure!(
                     checked == Some([false, true, true, true, true, true, true, true, false]),
@@ -2142,7 +2166,8 @@ impl WolCapture {
                 self.event(frame, json!({"0x130": verify.names, "box": message.body}));
                 if self.target.quick_match() {
                     ensure!(
-                        crate::app::shell_wol::quick_match::dialog(state).is_none()
+                        crate::app::shell_wol::quick_match::dialog(state.frontend.wol.as_ref())
+                            .is_none()
                             && state
                                 .match_state
                                 .session
@@ -2207,8 +2232,9 @@ impl WolCapture {
                 if !gone {
                     return Ok(());
                 }
-                let channel = crate::app::shell_wol::lobby::current_channel(state)
-                    .context("C2's game channel")?;
+                let channel =
+                    crate::app::shell_wol::lobby::current_channel(state.frontend.wol.as_ref())
+                        .context("C2's game channel")?;
                 let line = crate::assets::csf_file::format_csf(
                     &state.csf_label("TXT_USER_KICKED", "TXT_USER_KICKED"),
                     &[
@@ -2280,7 +2306,7 @@ impl WolCapture {
                 if rendered == PresentedShell::WolWelcome
                     && Self::page_settled(state, ShellSlideKind::WolWelcome) =>
             {
-                let texts = &App::wol_welcome_texts(state);
+                let texts = &App::wol_welcome_texts(&state.frontend.shell_controller);
                 ensure!(
                     texts
                         .iter()

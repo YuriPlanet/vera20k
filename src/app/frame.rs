@@ -199,6 +199,26 @@ impl App {
         catch_up_allowed: bool,
         wait_for_tick: bool,
     ) -> RuntimeServiceResult {
+        // A spawn test switch counts what the pass costs this thread.
+        let cost = crate::app::spawn_frame_cost::begin(state);
+        let result = Self::service_match_runtime_pass(
+            state,
+            event_loop,
+            simulation_allowed,
+            catch_up_allowed,
+            wait_for_tick,
+        );
+        crate::app::spawn_frame_cost::end_service(state, cost);
+        result
+    }
+
+    fn service_match_runtime_pass(
+        state: &mut AppState,
+        event_loop: &ActiveEventLoop,
+        simulation_allowed: bool,
+        catch_up_allowed: bool,
+        wait_for_tick: bool,
+    ) -> RuntimeServiceResult {
         if state.persistence.pending_load.is_some() {
             return RuntimeServiceResult::default();
         }
@@ -1050,6 +1070,7 @@ impl App {
         }
         let draw_started = Instant::now();
         state.diag.frame_timer.sample(draw_started);
+        let picture_cost = crate::app::spawn_frame_cost::begin(state);
 
         // A finished teardown slide destroys its dialog and runs the result
         // (`0x00622720` returns into PrepareSession) before the next dialog is
@@ -1668,6 +1689,7 @@ impl App {
             .encode_color_vision(&mut encoder, &output.texture);
         let submission = state.renderer.gpu.hand_off_frame(encoder, output);
         let presented_at = Instant::now();
+        crate::app::spawn_frame_cost::end_picture(state, picture_cost);
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         if screenshot_requested {
             // Browser hand-off submits/presents inline. Ask for the snapshot

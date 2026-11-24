@@ -723,7 +723,7 @@ impl Simulation {
                                 zone_grid: &mut self.zone_grid,
                                 path_grid: &mut self.path_grid,
                                 bridge_state: self.bridge_state.as_ref(),
-                                playfield_bounds: self.playfield_bounds,
+                                playfield_bounds: *self.playfield_bounds,
                             };
                             crate::sim::overlay_grid::damage_wall_overlay_with_runtime_host(
                                 grid,
@@ -755,7 +755,7 @@ impl Simulation {
 
         let terrain_navigation_changed_cells = run.finish();
         if let Some(terrain) = self.resolved_terrain.as_ref() {
-            self.real_cell_bridge_flags_0x1180 = terrain.capture_real_cell_bridge_flags_0x1180();
+            *self.real_cell_bridge_flags_0x1180 = terrain.capture_real_cell_bridge_flags_0x1180();
         }
         self.absorb_noncombat_damage_effects(
             rules,

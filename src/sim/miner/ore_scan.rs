@@ -468,12 +468,12 @@ mod tests {
             let input = &row["input"];
             let terrain = native::terrain(input);
             let mut sim = Simulation::new();
-            sim.zone_grid = Some(native::zones(&terrain, row).into());
-            sim.resolved_terrain = Some(terrain);
+            *sim.zone_grid = Some(native::zones(&terrain, row).into());
+            *sim.resolved_terrain = Some(terrain);
             sim.substrate
                 .entities
                 .insert(native::candidate(input, 1, "MINER"));
-            sim.interner = crate::sim::intern::test_interner();
+            *sim.interner = crate::sim::intern::test_interner();
             let reach = harvest_reach(&sim, &rules, 1).unwrap();
             assert_eq!(
                 serde_json::json!([reach.source.0, reach.source.1]),

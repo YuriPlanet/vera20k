@@ -326,7 +326,7 @@ fn script60_walks_to_the_grinder_refunds_once_and_resumes_after_save() {
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
     restored.restore_after_snapshot_load().unwrap();
     crate::sim::arena_fixture::flat_ground(&mut restored, &rules);
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let mut completed = false;
     for _ in 0..500 {
         let a = sim.advance_tick(&[], Some(&rules), None, None, 67);
@@ -809,7 +809,7 @@ fn arrival_callbacks_precede_refund_and_each_flush_precedes_the_next_list_draw()
     sim.attach_object_trigger_tag(civ, Some("DONE_TAG"));
     sim.clear_tag_dispatch_trace_for_test();
     sim.sound_events.clear_for_test();
-    sim.main_rng = crate::sim::rng::SimRng::new(60);
+    *sim.main_rng = crate::sim::rng::SimRng::new(60);
     let mut expected = crate::sim::rng::SimRng::new(60);
     let voice = ["VoiceA", "VoiceB"][(expected.next_u32() % 2) as usize];
     let voice_state = expected.logical_state();

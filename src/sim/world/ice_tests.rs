@@ -98,7 +98,7 @@ fn heavy_units_crack_then_break_the_ice_and_what_stood_there_sinks() {
     arrive(&mut sim, &rules, 1);
     assert!(TILES.is_cracked(tile(&sim, (5, 5)).0));
     assert_eq!(
-        sim.ice_cracks,
+        *sim.ice_cracks,
         [CrackedIce {
             cell: (5, 5),
             frame: 510

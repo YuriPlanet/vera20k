@@ -57,7 +57,7 @@ impl Scene {
         sim.session
             .set_map_name_for_test("Temporal Cargo clear arena".into());
         sim.session.game_options_mut_for_test().short_game = short_game;
-        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        *sim.fog = crate::sim::vision::FogState::new(32, 32);
         for name in ["Americans", "Russians"] {
             sim.fog
                 .reveal_all_for_owner(sim.interner.get(name).unwrap());

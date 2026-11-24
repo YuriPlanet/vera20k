@@ -62,7 +62,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         });
     sim.substrate.entities.insert(entity);
     sim.set_next_stable_object_id_for_test(2);
-    sim.interner = test_interner();
+    *sim.interner = test_interner();
     sim.set_logic_order_for_test(vec![1]);
     (sim, rules)
 }

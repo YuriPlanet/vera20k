@@ -46,7 +46,7 @@ fn player_at_thirtieth_slot_resolves_team_owner_through_start_mapping() {
         .insert(29, owner);
     let (vm, diagnostics) = TeamScriptVm::from_ini_registry(&registry, &mut sim.interner, &rules);
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
-    sim.team_script_vm = vm;
+    *sim.team_script_vm = vm;
     let team_type = sim.interner.get("TT").unwrap();
     assert_eq!(sim.house_by_trigger_selector(0x1198, &rules), Some(owner));
     assert_eq!(sim.house_by_trigger_selector(0x1199, &rules), None);
@@ -1301,15 +1301,15 @@ fn droppod_reinforcement_carrier_matches_original_constructor_cargo_and_orders()
     for row in rows {
         let input = &row["input"];
         let mut sim = reinforcement_world(&rules, &terrain_rules, input);
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(int(
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(int(
             &row["id_before"],
         )
             as u32));
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-        sim.main_rng =
+        *sim.main_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
-        sim.mapgen_rng =
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         let team_type = sim.interner.get("TT").unwrap();
         let (returned, review) = sim.spawn_team_reinforcements(
@@ -1678,15 +1678,15 @@ fn full_reinforcement_members_cargo_and_scalar_cleanup_match_original() {
     for row in rows {
         let input = &row["input"];
         let mut sim = reinforcement_world(&rules, &terrain_rules, input);
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(int(
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(int(
             &row["id_before"],
         )
             as u32));
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-        sim.main_rng =
+        *sim.main_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
-        sim.mapgen_rng =
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         let team_type = sim.interner.get("TT").unwrap();
         let placement_members = sim
@@ -1845,15 +1845,15 @@ fn action7_real_members_match_original_identity_rng_placement_and_cleanup() {
     for row in rows("reinforcement", 10) {
         let input = &row["input"];
         let mut sim = reinforcement_world(&rules, &terrain_rules, input);
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(int(
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(int(
             &row["id_before"],
         )
             as u32));
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-        sim.main_rng =
+        *sim.main_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
-        sim.mapgen_rng =
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
         let team_type = sim.interner.get("TT").unwrap();
         let (spawned, review) = sim.spawn_team_reinforcements(
@@ -2090,7 +2090,7 @@ fn script3_real_members_match_original_outside_move_and_rng_continuation() {
         .map(|member| int(&member["native_id"]))
         .min()
         .unwrap();
-    sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+    *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
         first_id.wrapping_sub(1) as u32,
     ));
     let team_type = sim.interner.get("TT").unwrap();
@@ -2135,11 +2135,11 @@ fn script3_real_members_match_original_outside_move_and_rng_continuation() {
     );
     assert_eq!(prior.cursor, int(&native_prior["cursor"]));
     waypoint(&mut sim, 4, (127, 127));
-    sim.scenario_rng =
+    *sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
-    sim.main_rng =
+    *sim.main_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
-    sim.mapgen_rng =
+    *sim.mapgen_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
     sim.run_team_ai_pass(&rules, Some(&overlay), &mut FrameEffects::default());
     assert_eq!(
@@ -2370,7 +2370,7 @@ fn place_full_team(
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     crate::sim::arena_fixture::flat_arena(&mut sim, rules);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     let owner = sim.interner.intern("Americans");
     sim.houses
         .register(HouseState::new(owner, 0, Some(owner), true, 0, 10));

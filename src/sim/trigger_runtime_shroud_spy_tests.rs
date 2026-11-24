@@ -389,7 +389,7 @@ fn retail_spy_house_entry_survives_restore_and_reaches_the_message_consumer() {
         histories.push((arrival_frame, messages));
     }
     assert_eq!(histories[0], histories[1]);
-    assert_eq!(sim.trigger_runtime, loaded.trigger_runtime);
+    assert_eq!(*sim.trigger_runtime, *loaded.trigger_runtime);
 }
 
 /// The forced type's PlayerPtr-side fallback (event 54, MakeupKit copies)
@@ -679,7 +679,7 @@ fn agent_arrival_delivers_cell_spy_event_after_snapshot_and_cleans_up_one_shot()
 #[test]
 fn grow_action_uses_current_map_then_known_objects_without_resetting_house_flags() {
     let (mut sim, rules, registry, houses) = fixture();
-    sim.fog = crate::sim::vision::FogState::new(33, 33);
+    *sim.fog = crate::sim::vision::FogState::new(33, 33);
     sim.session.set_current_house_for_test(Some(houses[0]));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));

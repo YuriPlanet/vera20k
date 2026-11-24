@@ -748,7 +748,7 @@ fn open_service_lobby(state: &mut AppState, dialog: SetupDialog) {
 
 fn abandon_host_setup(state: &mut AppState, dialog: SetupDialog) {
     if dialog.wol() {
-        crate::app::shell_wol::lobby::host_setup_left(state);
+        crate::app::shell_wol::lobby::host_setup_left(state.frontend.wol.as_mut());
     }
     open_service_lobby(state, dialog);
 }
@@ -790,7 +790,7 @@ impl App {
             state.frontend.skirmish_shell_state.trackbar_bounds,
             observe,
             if dialog.wol() {
-                crate::app::shell_wol::lobby::room(state)
+                crate::app::shell_wol::lobby::room(state.frontend.wol.as_ref())
             } else {
                 Default::default()
             },
@@ -809,7 +809,9 @@ impl App {
         // change in the room's Game Options. Quick Match plays the original
         // game; `MatchSession::network_personal_rules` decides what a match
         // plays.
-        if !(dialog.wol() && crate::app::shell_wol::lobby::quick_match_runner(state)) {
+        if !(dialog.wol()
+            && crate::app::shell_wol::lobby::quick_match_runner(state.frontend.wol.as_ref()))
+        {
             launch.options.host_rules =
                 crate::skirmish_launch::HostRules::from_own(state.process_assets.personal_rules());
         }
@@ -927,9 +929,10 @@ fn install_setup(
         .match_state
         .session
         .accept_network_setup(launch, host, observer_row, dialog.modern)?;
-    let quick_match = dialog.wol() && crate::app::shell_wol::quick_match::mode_active(state);
+    let quick_match = dialog.wol()
+        && crate::app::shell_wol::quick_match::mode_active(state.frontend.wol.as_ref());
     if dialog.wol() {
-        let room = crate::app::shell_wol::lobby::room(state);
+        let room = crate::app::shell_wol::lobby::room(state.frontend.wol.as_ref());
         state.match_state.session.set_network_room(room);
         // C2's lockout in a tournament or clan room, after the profile
         // restore (0x79132A..0x7913D1): Short Game and Bases on; the AI
@@ -1188,7 +1191,7 @@ pub(crate) fn local_map_metadata(
 pub(crate) fn commit_back(state: &mut AppState) {
     let dialog = leave_setup(state);
     if dialog.wol() && dialog.host {
-        crate::app::shell_wol::lobby::host_setup_left(state);
+        crate::app::shell_wol::lobby::host_setup_left(state.frontend.wol.as_mut());
     }
     open_service_lobby(state, dialog);
 }
@@ -1255,7 +1258,8 @@ fn leave_setup(state: &mut AppState) -> SetupDialog {
         .network_setup_protocol
         .as_ref()
         .is_some_and(|p| !p.locked);
-    if dialog.wol() && crate::app::shell_wol::quick_match::mode_active(state) {
+    if dialog.wol() && crate::app::shell_wol::quick_match::mode_active(state.frontend.wol.as_ref())
+    {
         // C2/C9's teardowns write the settings (0x6990A0, 0x5ED400); the
         // Quick Match path has neither and writes none.
     } else if unlocked && dialog.wol() && !dialog.host {

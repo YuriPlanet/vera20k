@@ -140,7 +140,7 @@ fn snapshot_roundtrip_factory_registry() {
         .set_score_for_test(12_345);
     // Native in-scenario load resets Scenario RNG; isolate factory persistence
     // by comparing against that same post-load baseline.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let before = sim.state_hash();
 
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "test_map", 0);

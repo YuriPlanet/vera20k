@@ -113,13 +113,13 @@ fn bridge_batch_simulation(case: &serde_json::Value) -> Simulation {
         label,
     );
     let mut sim = Simulation::with_seed(0x586990);
-    sim.playfield_bounds = Some(bounds);
-    sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain_with_map_size(
+    *sim.playfield_bounds = Some(bounds);
+    *sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain_with_map_size(
         &terrain, true, 300, size,
     ));
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(width, width));
-    sim.path_grid = Some(Arc::new(path));
-    sim.zone_grid = Some(zones.into());
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(width, width));
+    *sim.path_grid = Some(Arc::new(path));
+    *sim.zone_grid = Some(zones.into());
     sim.install_resolved_terrain_for_new_map(terrain);
     sim
 }
@@ -156,7 +156,7 @@ fn live_bridge_batch_matches_original_order_recalc_cache_and_hierarchy() {
             .zip(case["states"].as_array().unwrap())
         {
             if let Some(bounds) = action.get("bounds") {
-                sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+                *sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
                     base: size.0,
                     off_fc: bounds[0].as_i64().unwrap() as i32,
                     off_100: bounds[1].as_i64().unwrap() as i32,

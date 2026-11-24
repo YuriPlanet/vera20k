@@ -77,7 +77,7 @@ fn arena() -> (Simulation, RuleSet, Grid) {
     let americans = sim.interner.intern("Americans");
     sim.session.set_current_house_for_test(Some(americans));
     let grid = crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *sim.fog = crate::sim::vision::FogState::new(32, 32);
     (sim, rules, grid)
 }
 

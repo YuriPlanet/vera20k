@@ -185,7 +185,7 @@ impl Simulation {
                     listeners.extend(self.terrain_objects.objects().keys().map(|&id| (id, kind)));
                 }
                 ObjectKind::Smudge => {
-                    if let Some(grid) = &self.smudge_grid {
+                    if let Some(grid) = &*self.smudge_grid {
                         listeners.extend(grid.objects().map(|(id, _)| (id, kind)));
                     }
                 }

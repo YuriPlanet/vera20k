@@ -664,7 +664,7 @@ fn compare_snapshot_continuation(mut sim: Simulation, rules: &RuleSet, id: u64, 
     // Align these load transitions without changing the control's Jumpjet,
     // deployment or attached Anim state; full hashes still compare all of them.
     crate::sim::arena_fixture::flat_ground(&mut loaded, rules);
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let loaded_sound = loaded.substrate.entities.get(id).unwrap().move_sound;
     assert!(!loaded_sound.is_active());
     assert_eq!(loaded_sound.countdown(), 0);

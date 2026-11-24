@@ -26,9 +26,10 @@ fn categories() -> [(ObjectCategory, &'static str); 4] {
 }
 
 fn supply_rng(sim: &mut Simulation, states: &Value) {
-    sim.scenario_rng = SimRng::from_native_state_hex_for_test(states["scenario"].as_str().unwrap());
-    sim.main_rng = SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap());
-    sim.mapgen_rng = SimRng::from_native_state_hex_for_test(states["mapgen"].as_str().unwrap());
+    *sim.scenario_rng =
+        SimRng::from_native_state_hex_for_test(states["scenario"].as_str().unwrap());
+    *sim.main_rng = SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap());
+    *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(states["mapgen"].as_str().unwrap());
 }
 
 fn assert_rng(sim: &Simulation, states: &Value) {

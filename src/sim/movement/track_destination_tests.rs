@@ -271,7 +271,7 @@ fn destination_fixture(
     let mut entity = actor(input);
     entity.lifecycle.set_in_limbo_for_test(false);
     let mut sim = crate::sim::world::Simulation::new();
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     sim.session.set_binary_frame_for_test(100);
     sim.install_resolved_terrain_for_new_map(terrain(input["bridge"] == true));
     sim.install_fixture_path_grid(Some(&crate::sim::pathfinding::PathGrid::new(32, 32)));
@@ -1057,9 +1057,9 @@ fn noncell_foot_destinations_match_original_anytown_class_calls() {
             })
             .unwrap();
         let entry = &class["rng_at_entry"];
-        sim.main_rng = serde_json::from_value::<SimRng>(entry["main"].clone()).unwrap();
-        sim.scenario_rng = serde_json::from_value::<SimRng>(entry["scenario"].clone()).unwrap();
-        sim.mapgen_rng = serde_json::from_value::<SimRng>(entry["mapgen"].clone()).unwrap();
+        *sim.main_rng = serde_json::from_value::<SimRng>(entry["main"].clone()).unwrap();
+        *sim.scenario_rng = serde_json::from_value::<SimRng>(entry["scenario"].clone()).unwrap();
+        *sim.mapgen_rng = serde_json::from_value::<SimRng>(entry["mapgen"].clone()).unwrap();
         let requested = NavTargetRef::Object { id: 2 };
         if family == "E1" {
             assert!(sim.infantry_destination_inputs_available(

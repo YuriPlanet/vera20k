@@ -38,8 +38,8 @@ fn fixture_with_rules(
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.install_resolved_terrain_for_new_map(terrain);
-    sim.overlay_grid = Some(OverlayGrid::new(33, 33));
-    sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(1000));
+    *sim.overlay_grid = Some(OverlayGrid::new(33, 33));
+    *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(1000));
     (sim, rules, registry)
 }
 
@@ -321,10 +321,10 @@ fn constructor_side_admission_matches_original_foot_receiver() {
         }
         .construct_bridge_overlay((16, 16), 25, -1)
         .unwrap();
-        sim.playfield_bounds = Some(
+        *sim.playfield_bounds = Some(
             crate::map::playfield::PlayfieldBounds::from_normalized_local_size(16, 0, 0, 16, 16),
         );
-        sim.playfield_size_height = Some(16);
+        *sim.playfield_size_height = Some(16);
         sim.session
             .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
         // These native controls retain constructor25 topology, then supply
@@ -462,14 +462,14 @@ fn live_bridge_constructor_queue_respects_terminal_admission_and_other_objects()
     }
     let retained_cells = cells(&sim);
     let retained_dummy = dummy(&sim);
-    sim.quit_requested = true;
+    *sim.quit_requested = true;
     sim.advance_tick(&[], None, None, None, 67);
     assert_eq!(sim.substrate.pending_delete.overlay_count(), 2);
     assert_eq!(sim.load_objects.registry_counts(), [2; 5]);
     assert!(sim.substrate.entities.get(100).is_some());
     assert!(sim.substrate.pending_delete.contains_object(&100));
     assert!(sim.substrate.pending_delete.contains_object(&101));
-    sim.quit_requested = false;
+    *sim.quit_requested = false;
     sim.advance_tick(&[], None, None, None, 67);
     assert_eq!(sim.substrate.pending_delete.overlay_count(), 0);
     assert_eq!(sim.load_objects.registry_counts(), [0; 5]);
@@ -485,7 +485,7 @@ fn live_bridge_constructor_queue_respects_terminal_admission_and_other_objects()
 fn sparse_native_sight_indexes_real_cells_and_keeps_diagnostics_read_only() {
     let (mut sim, _, _) = fixture();
     sim.session.set_binary_frame_for_test(1);
-    sim.fog = crate::sim::vision::FogState::new(33, 33);
+    *sim.fog = crate::sim::vision::FogState::new(33, 33);
     let owner = sim.interner.intern("Americans");
     // A human player's house: its client map is the plane under test.
     sim.houses

@@ -165,7 +165,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) {
-        let vm = &mut self.team_script_vm;
+        let vm = &mut *self.team_script_vm;
         let Some(team) = vm.teams.get_mut(&team_id) else {
             return;
         };
@@ -2351,8 +2351,9 @@ impl Simulation {
         };
         self.team_assign_mission_target(team_id, None, rules, frame_effects);
         // FireAt rereads Foot+0x5D4 after the member setters return.
-        if let Some(team_id) = self.team_script_vm.member_team.get(&firer)
-            && let Some(team) = self.team_script_vm.teams.get_mut(team_id)
+        let vm = &mut *self.team_script_vm;
+        if let Some(team_id) = vm.member_team.get(&firer)
+            && let Some(team) = vm.teams.get_mut(team_id)
         {
             team.advance_pending = true;
         }
@@ -2416,7 +2417,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) {
-        let vm = &mut self.team_script_vm;
+        let vm = &mut *self.team_script_vm;
         let Some(team) = vm.teams.get_mut(&team_id) else {
             return;
         };

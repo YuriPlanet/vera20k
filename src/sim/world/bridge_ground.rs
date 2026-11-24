@@ -105,7 +105,7 @@ mod tests {
                 })
             })
             .collect();
-        sim.resolved_terrain =
+        *sim.resolved_terrain =
             Some(crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(8, 8, cells));
         sim
     }
@@ -523,7 +523,7 @@ mod tests {
                 })
             })
             .collect();
-        sim.resolved_terrain =
+        *sim.resolved_terrain =
             Some(crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(8, 8, cells));
         let mut create = |name, x, marked| {
             let id = sim

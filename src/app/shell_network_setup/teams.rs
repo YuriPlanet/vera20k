@@ -24,7 +24,7 @@ pub(super) fn set_teams(state: &mut AppState, teams: Option<u8>) -> anyhow::Resu
 
 /// Only a lobby known to predate watching may need a room rule omitted.
 pub(crate) fn lobby_refused_option(state: &mut AppState) -> Option<&'static str> {
-    let lobby_watches = crate::app::shell_wol::lobby_watches(state);
+    let lobby_watches = crate::app::shell_wol::lobby_watches(state.frontend.wol.as_ref());
     if lobby_watches == Some(false)
         && super::maps::generated_selection(&state.match_state.session)
         && state

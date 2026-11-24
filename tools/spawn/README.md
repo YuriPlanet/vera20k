@@ -63,6 +63,27 @@ it on a shared screen. `python3 -I tools/spawn/winwatch.py SECONDS`, run
 beside `run.sh`, samples the CoreGraphics on-screen window list for the client
 PIDs and prints any visible window.
 
+Two more test hooks time a match instead of testing its network, and are read
+by every `-SPAWN` launch, one human against computer houses included
+(`python -m tools.scale_bench client` uses both,
+[the scale benchmark](../../docs/scale-benchmark.md)):
+
+* `VERA20K_SPAWN_LEAVE_AT_FRAME=N` presses Leave once the match has reached
+  simulation frame N, then Continue on the score page, so the game ends by
+  itself after a set stretch of the match.
+* `VERA20K_SPAWN_FRAME_COST=N` counts, from simulation frame N on, what the
+  match costs the game's main thread, in that thread's own CPU time, so a wait
+  for the display or for a tick on the simulation thread costs nothing.
+  `spawn_result.json` then carries `frame_cost`: `draw_ms` (the mean drawn
+  picture, with `draw_p50_ms` and `draw_p99_ms`), `service_ms` (the match
+  service of one simulation frame: the finished tick's tail and the frame and
+  world copy the next tick leaves for drawing, without any tick it ran
+  itself), `frame_ms` (their sum: one picture of one simulation frame),
+  `tick_ms` and `tick_p99_ms` (a simulation frame's own wall time, on
+  whichever thread ran it), the counts `pictures`, `ticks` and `lent_ticks`
+  (ticks run on the simulation thread), and the frames it spans
+  (`first_frame`, `last_frame`).
+
 The test hook `VERA20K_SPAWN_LEAVE_AFTER_SECONDS=N` presses the abort box's
 Leave N seconds after the match appears. It is read only by external
 multiplayer launches (`-SPAWN` with `PlayerCount>1`). `run.sh` gives source 1

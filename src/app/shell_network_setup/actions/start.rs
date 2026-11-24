@@ -137,7 +137,10 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
                         .find(|human| human.raw_slot_index == Some(row) && human.is_observer())
                 })
                 .map(|human| human.name.clone());
-            if !crate::app::shell_wol::lobby::clan_teams_even(state, observer.as_deref()) {
+            if !crate::app::shell_wol::lobby::clan_teams_even(
+                state.frontend.wol.as_ref(),
+                observer.as_deref(),
+            ) {
                 message(state, "TXT_CLAN_NOSTART", &[]);
                 return Ok(());
             }
@@ -285,7 +288,7 @@ pub(in crate::app::shell_network_setup) fn request_campaign_start(
 ) -> anyhow::Result<()> {
     use super::super::campaign_room;
     let wol = super::super::dialog(state).wol();
-    if wol && !crate::app::shell_wol::lobby_campaign_rooms(state) {
+    if wol && !crate::app::shell_wol::lobby_campaign_rooms(state.frontend.wol.as_ref()) {
         message(state, "VERA:CampaignRoomOnlineUnsupported", &[]);
         return Ok(());
     }

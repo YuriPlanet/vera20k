@@ -146,7 +146,7 @@ fn a_computer_attacker_sees_a_blinking_mirage_only_on_its_detection_roll() {
     for (roll, admitted) in [(5, true), (6, false), (0, true), (99, false)] {
         let (mut sim, mirage, rhino) = scene(rules, "Americans");
         blink(&mut sim, mirage, 15);
-        sim.scenario_rng = SimRng::answering(0, 99, roll);
+        *sim.scenario_rng = SimRng::answering(0, 99, roll);
         let mut once = sim.scenario_rng.clone();
         once.next_range_i32_inclusive(0, 99);
         assert_eq!(
@@ -165,7 +165,7 @@ fn a_computer_attacker_sees_a_blinking_mirage_only_on_its_detection_roll() {
     let (mut sim, mirage, rhino) = scene(rules, "Americans");
     blink(&mut sim, mirage, 15);
     sim.session.set_binary_frame_for_test(115);
-    sim.scenario_rng = SimRng::answering(0, 99, 0);
+    *sim.scenario_rng = SimRng::answering(0, 99, 0);
     let before = sim.scenario_rng.logical_state();
     assert_eq!(pick(&mut sim, rhino), None);
     assert_eq!(sim.scenario_rng.logical_state(), before);
@@ -184,7 +184,7 @@ fn a_human_attacker_never_rolls_against_a_blinking_mirage() {
     // Mirage before the disguise test does.
     crate::sim::arena_fixture::discover(&mut sim, mirage);
     blink(&mut sim, mirage, 15);
-    sim.scenario_rng = SimRng::answering(0, 99, 0);
+    *sim.scenario_rng = SimRng::answering(0, 99, 0);
     let before = sim.scenario_rng.logical_state();
     assert_eq!(
         sim.greatest_threat_represented(rules, None, rhino, ScanMission::Guard, None)
@@ -227,7 +227,7 @@ fn a_side_by_side_hunt_walk_rolls_like_the_one_by_one_walk() {
         sim.session.set_binary_frame_for_test(100);
         sim.update_unit_disguise(mirage, rules).unwrap();
         blink(&mut sim, mirage, 15);
-        sim.scenario_rng = SimRng::answering(0, 99, 0);
+        *sim.scenario_rng = SimRng::answering(0, 99, 0);
         SERIAL_FLAT_SCORES.set(serial);
         let walks = FLAT_WALKS_SIDE_BY_SIDE.get();
         let pick = sim

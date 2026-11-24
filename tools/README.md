@@ -19,6 +19,7 @@ oracle families index their own fixtures and producers.
 | Compile and test one optional capability (`phobos`, `npatch`, diagnostic builds), or all of them | [capabilities](../docs/capabilities.md), `python -m tools.capability_tests` |
 | Run a committed test map headless or interactive, by scenario name | [capabilities](../docs/capabilities.md#test-maps), `python -m tools.run_test_map` |
 | Generate a large map, such as 500×500 with 30 starts | `python -m tools.scale_map large500.map --size 500 --starts 30` |
+| Time the 20,000-unit, 30-house battle: the simulation tick and the client frame, on the shipping profile | [the scale benchmark](../docs/scale-benchmark.md), `python -m tools.scale_bench` |
 | Find a built or preserved host executable for shell use | `python -m tools.cargo_run --resolve asset --profile release` (below) |
 | Run retail corpus checks or export a decoder-baseline candidate | [retail corpus](retail_corpus.md) |
 | Check hermetic gameplay fixtures against production-selected retail sources | [retail fixture contracts](retail_fixture_contracts.md), ordinary library tests with `RA2_DIR` |
@@ -228,6 +229,11 @@ python -m unittest tools.tests.test_cargo_run -v
 incrementally, so a play-test, capture or other run after an edit rebuilds in a fraction of the
 time. Keep timing and performance numbers on `--release`. The runner records, labels and
 resolves `fast` host executables as it does `release` and `debug` ones.
+
+A timing run needs the same quiet: `tools.scale_bench` takes the shared lock
+for each timed run (`cargo_run.build_lock`), so a cooperating build waits for
+it as it would for another build, and the run starts only once no Cargo or
+rustc is running.
 
 `--wait-seconds 60` bounds the wait (default one hour). Ctrl-C interrupts the
 runner. It does not kill other owners. Failed commands retain their exit code,

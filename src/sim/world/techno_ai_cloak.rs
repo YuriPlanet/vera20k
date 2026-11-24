@@ -762,7 +762,7 @@ pub(crate) fn uncloak_on_sensor_neighbour_after_cell_entry(
         // seam.
         if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
             (i32::from(nx), i32::from(ny)),
-            sim.playfield_bounds,
+            *sim.playfield_bounds,
             sim.resolved_terrain.as_ref(),
         ) {
             continue;

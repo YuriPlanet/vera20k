@@ -76,9 +76,9 @@ fn all03_inputs() -> Option<(RuleSet, MapFile)> {
 
 fn seeded_rngs(sim: &mut Simulation, data: &Value) {
     let seeds = &data["rng_seed_states"];
-    sim.main_rng = SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap());
-    sim.scenario_rng = SimRng::from_native_state_hex_for_test(seeds["scenario"].as_str().unwrap());
-    sim.mapgen_rng = SimRng::from_native_state_hex_for_test(seeds["mapgen"].as_str().unwrap());
+    *sim.main_rng = SimRng::from_native_state_hex_for_test(seeds["main"].as_str().unwrap());
+    *sim.scenario_rng = SimRng::from_native_state_hex_for_test(seeds["scenario"].as_str().unwrap());
+    *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(seeds["mapgen"].as_str().unwrap());
 }
 
 fn rng_hashes(sim: &Simulation) -> Value {

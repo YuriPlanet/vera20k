@@ -56,8 +56,8 @@ fn railgun_system_matches_native_lay_laser_and_particles_to_expiry() {
         sim.intern_rule_type_ids(rules);
         sim.resolve_type_handles(rules);
         sim.set_logic_order_for_test(Vec::new());
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(1000));
-        sim.scenario_rng =
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(1000));
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(case["initial_scenario_rng"].as_str().unwrap());
         let target = xyz(&case["target"]);
         let id = sim
