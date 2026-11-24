@@ -1,19 +1,16 @@
 //! Which listeners a pointer expiry reaches.
 //!
-//! `DispatchPointerExpiredCleanup @ 0x007258D0` calls every object's
-//! PointerExpired, and most objects hold nothing an expiry changes, so the
-//! broadcast passes over them. This index names, for an expiring id, the
-//! entities, anims, particle systems, bullets and waves that hold something,
-//! instead of asking every object at every expiry. What each holds is what
-//! its callback compares: [`Simulation::entity_expiry_holds`] for an entity,
-//! `expiry_names` for the others. A smudge's callback changes nothing, so no
-//! smudge is a listener. The index is derived from the stores alone and
-//! re-reads an object whenever its store has handed it out mutably (the
-//! store's touch log), so it answers as asking every object would
-//! ([`ExpiryListeners::asked_of_every`]). The anims it walks are the Anim
-//! array (`0x00A8E9A8`); a local anim lives outside it, so no expiry reaches
-//! it. Never saved, never hashed; a fresh, cloned or restored store makes it
-//! re-read that store's objects.
+//! When a Techno expires, `DispatchPointerExpiredCleanup @ 0x007258D0`
+//! walks registered listeners (`0x00B0F720`) and calls PointerExpired
+//! (`0x00725954`). Most listeners hold nothing the expiry changes.
+//! This index names the entities, anims, particle systems, bullets and
+//! waves whose callbacks use the expiring id. A smudge's callback changes
+//! nothing. [`Simulation::entity_expiry_holds`] and the other stores'
+//! `expiry_names` describe the fields each callback compares.
+//!
+//! The index re-reads objects from each store's touch log. A fresh, cloned or
+//! restored store triggers a full rebuild ([`ExpiryListeners::asked_of_every`]).
+//! The index is excluded from saves and from the simulation hash.
 
 use std::collections::BTreeSet;
 
@@ -112,13 +109,9 @@ impl ExpiryListeners {
         } = stores;
         self.refresh_entities(entities);
         let entities = &*entities;
-        // The Anim array (`0x00A8E9A8`) is what the broadcast
-        // (`DispatchPointerExpiredCleanup @ 0x007258D0`) walks. A local anim
-        // sits outside it: the LAN MoveFlash (the local list `0x00A83E00`)
-        // names no owner and no bullet, and a VERA presentation anim rides its
-        // owner and ends with the owner's UnInit instead
-        // (`AnimConstructorInput::Presentation`). No expiry reaches either,
-        // on either control, so the index reads the Anim array alone.
+        // A full scan visits shared anims. The touch log also names local
+        // anims, including VERA's presentation anims, which keep their owner
+        // link until UnInit. Use the same membership for incremental updates.
         let touched = match anims.take_touched(AnimTouchReader::ExpiryListeners) {
             Touched::Ids(ids) => Touched::Ids(
                 ids.into_iter()
