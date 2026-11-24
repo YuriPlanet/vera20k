@@ -590,28 +590,53 @@ pub(crate) fn update_super_timers(
     // red. Same-team is decided by the launch team (stable all match); the
     // green check uses the live alliance graph, which is the right source for
     // "are we allies right now" even though it must never decide grouping.
+    // Under the team-colours toggle an enemy team takes the colour the map
+    // gives it, so the timers agree with the units and the radar.
+    let team_colours = match_state.match_presentation.team_colors;
+    let enemy_palette = &rules.enemy_team_palette;
     let alliances = sim.house_alliances();
     let local_name = local.map(|house| sim.interner().resolve(house));
+    // The same rank the units and the radar use: lowest hostile team first,
+    // with a team already on the player's side skipped rather than taking a
+    // colour of its own.
+    let enemy_ranks = crate::rules::team_colors::enemy_team_ranks(
+        team_by_name.iter().filter_map(|(owner, team)| {
+            let friendly = sim.interner().get(owner).is_some_and(|house| {
+                local_name.is_some_and(|local| {
+                    is_allied_with(alliances.as_map(), local, sim.interner().resolve(house))
+                })
+            });
+            (!friendly).then_some(*team).flatten()
+        }),
+        None,
+    );
     let team_rgb = |row: &TeamSuperRow| {
         let same_team = match (row.team, local_team) {
             (TeamKey::Named(team), Some(own)) => team == own,
             (TeamKey::Unteamed, None) => true,
             _ => false,
         };
-        let relation = if same_team {
-            RELATION_SELF
-        } else if local_name.is_some_and(|name| {
+        if same_team {
+            return house_text_rgb(schemes, RELATION_SELF);
+        }
+        if local_name.is_some_and(|name| {
             is_allied_with(
                 alliances.as_map(),
                 name,
                 sim.interner().resolve(row.representative),
             )
         }) {
-            RELATION_ALLY
-        } else {
-            RELATION_ENEMY
-        };
-        house_text_rgb(schemes, relation)
+            return house_text_rgb(schemes, RELATION_ALLY);
+        }
+        if team_colours
+            && let TeamKey::Named(team) = row.team
+            && let Some(entry) = enemy_ranks
+                .get(&team)
+                .and_then(|rank| enemy_palette.team_color(*rank))
+        {
+            return house_text_rgb(schemes, entry);
+        }
+        house_text_rgb(schemes, RELATION_ENEMY)
     };
     let lines: Vec<(TimerLine, String, [u8; 3])> = lines
         .into_iter()

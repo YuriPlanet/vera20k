@@ -79,7 +79,7 @@ simulation, session and network command owners.
 - [Primary rotation](primary-rotation.md): select several factories and press I to have them take turns being the primary.
 - [Random map Extras](random-map-extras.md): share codes, presets and choices that add to a generated map, and `RMGMD.INI [Extras]` for a mod's own.
 - [External launches](spawn.md): `vera20k --probe` and `--generate-map`, which a launcher runs before a `-SPAWN` match, and the browser's `probe()` and `generate_map()`.
-- [Relation colours](relation-colours.md): press Alt+A to draw your side blue, your allies green and your enemies red.
+- [Relation colours](relation-colours.md): press Alt+A to draw your side blue, your allies green and your enemies red, or Alt+T to give each enemy team a colour of its own.
 - [SHP building turrets](ini-shp-turret-anims.md): the rules keys for a building turret drawn as a 32-frame animation.
 - [Sidebar build-list columns](sidebar-columns.md): the Options list that lays three to five build pictures a row inside the sidebar's own width.
 - [Skirmish cheat codes](skirmish-cheats.md) let you grant credits, reveal the map and spawn vehicles in an offline match.
