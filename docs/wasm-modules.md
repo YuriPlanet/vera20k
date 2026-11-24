@@ -19,7 +19,8 @@ in step with the match:
   cell's terrain), finds objects, houses and cells, and keeps its own variables.
 - It changes the game only through the game's own rules: actions (damage, create a
   unit, give money, launch a superweapon), property writes, modifiers (firepower,
-  armor, speed), orders for computer houses, and the map trigger actions.
+  armor, speed), missions for any object (a player's units too), house orders for
+  computer houses, and the map trigger actions.
 - It reacts to events through triggers, made in code or declared in INI.
 - It can edit the rules once, while they load (`on_rules`).
 
@@ -113,7 +114,10 @@ the source tree). Its Wasm verbs need no game install:
 - Searches: `Find::objects()`, `Find::houses()`, `Find::cells()`, narrowed with
   `near`, `within`, `of_type`, `owned_by` and `where_prop`, paged with `page`.
 - Changes: `Action::*` (one function per action), `set`, `Modifier::multiply` and
-  friends, `Var` and the `vars!` declarations, `House::order` for computer houses.
+  friends, `Var` and the `vars!` declarations. `Techno::set_mission` and
+  `Action::set_mission` give any object a mission through its own house, as its
+  player's click would, human or computer; `House::order` gives computer houses
+  orders for many units and production.
 - Triggers: `Trigger::on(Event::TAKE_DAMAGE).bind(..).where_prop(..).enqueue(..)`.
 
 ### Viewpoint properties
@@ -187,13 +191,16 @@ when it starts. A map's module binds its triggers in code (`Trigger::on(..).bind
 | --- | --- |
 | Module size | 8 MiB |
 | Memory | 32 MiB for a mod's module, 16 MiB for a map's |
-| Work per frame | 200,000 operations by default and at most; the mod sets its own and the map's |
+| Work per call | 200,000 operations by default and at most; the mod sets its own and the map's. A frame stays below three times that, plus decisions |
+| Over the frame's work | the first event batch still runs, later ones wait for the next frame; `on_frame` still runs with a whole budget; only a single call over the limit stops the module |
+| Decisions | 20,000 operations each, from half the frame budget on top of it (`Defeat` a quarter, `ProductionAllowed` the frame budget itself) |
+| `find` | 2 operations per candidate plus 6 per clause, 10 per result; at most 16,384 candidates a call and no more than half the budget's worth, so continue while `next` is not 0 (`first` does) |
 | Start-up calls (`init`, `on_rules`, `on_scenario_start`) | 5,000,000 operations each |
 | Functions, function size | 20,000 functions, 1 MiB per function body |
 | Search | 16 clauses per query |
 | Trigger chains | 8 deep and 256 firings per frame; the rest wait for the next frame (at most 4096) |
 | Deliveries | A module that leaves records waiting for more than 16 frames is stopped |
-| Orders | 64 orders and 4096 units per module per frame, computer houses only |
+| Orders | `House::order`: 64 orders and 4096 units per module per frame, computer houses only. Missions (`set_mission`) do not count here and work on every house |
 
 Hot paths should look names up once, read many values with `get_many`, and stagger
 work over frames (`on_frame!(every = 15, …)`, or by object).

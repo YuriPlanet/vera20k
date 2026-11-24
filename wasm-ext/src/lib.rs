@@ -101,9 +101,17 @@ pub const IMPORTS: &[(&str, &str)] = &[
 ];
 
 /// Operations charged per value `get_many` reads and per reference `find`
-/// returns, and per candidate `find` examines (RFC section 15).
+/// returns (RFC section 15).
 pub const ENTRY_COST: u64 = 10;
+/// Operations per candidate `find` examines, plus [`CLAUSE_COST`] for each
+/// clause of the query.
 pub const SCAN_COST: u64 = 2;
+pub const CLAUSE_COST: u64 = 6;
+/// Candidates one `find` examines at most (RFC 15.4); fewer where they
+/// would cost more than half the call's budget.
+pub const MAX_SCAN: u64 = 16_384;
+/// Keys passed over that hold no candidate (unallocated cells) per operation.
+pub const SKIPS_PER_OP: u64 = 8;
 
 /// Name kinds (appendix 8.1) and their count; `lookup` and `name_of` take
 /// kinds below [`NAME_KINDS`], anything else is invalid.
@@ -288,6 +296,9 @@ pub struct Query {
     /// Sort keys below this are skipped.
     pub after: i64,
     pub clauses: Vec<Clause>,
+    /// Candidates to examine at most: [`MAX_SCAN`], or the fewer the caller
+    /// can pay for.
+    pub max_scan: u64,
 }
 
 impl Query {
@@ -346,7 +357,13 @@ impl Query {
             viewpoint: le_i64(header, 40),
             after,
             clauses,
+            max_scan: MAX_SCAN,
         })
+    }
+
+    /// Operations for each candidate examined.
+    pub fn scan_cost(&self) -> u64 {
+        SCAN_COST + CLAUSE_COST * self.clauses.len() as u64
     }
 }
 
@@ -385,8 +402,36 @@ impl Clause {
 pub struct FindPage {
     /// (sort key, reference), in sort-key order, at most the page capacity.
     pub found: Vec<(i64, i64)>,
-    /// Candidates examined, charged at [`SCAN_COST`] each.
+    /// Candidates examined, charged at [`Query::scan_cost`] each.
     pub scanned: u64,
+    /// Keys passed over that hold no candidate, [`SKIPS_PER_OP`] an operation.
+    pub skipped: u64,
+    /// The first key left when a limit ended the scan.
+    pub resume: Option<i64>,
+}
+
+impl FindPage {
+    /// Counts candidate `key` as examined. False at the query's limit: the
+    /// page then ends before it.
+    pub fn examine(&mut self, key: i64, query: &Query) -> bool {
+        if self.scanned >= query.max_scan {
+            self.resume = Some(key);
+            return false;
+        }
+        self.scanned += 1;
+        true
+    }
+
+    /// Passes over `key`, which holds no candidate. False once one call has
+    /// passed over as many as it may: the page then ends before it.
+    pub fn skip(&mut self, key: i64) -> bool {
+        if self.skipped >= MAX_SCAN * SKIPS_PER_OP {
+            self.resume = Some(key);
+            return false;
+        }
+        self.skipped += 1;
+        true
+    }
 }
 
 fn le_i32(bytes: &[u8], at: usize) -> i32 {

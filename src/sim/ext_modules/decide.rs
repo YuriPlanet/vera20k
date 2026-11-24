@@ -58,9 +58,14 @@
 //! - `random` draws from a substream of (frame, subject creation serial,
 //!   event kind) per module; later requests for the same subject and kind
 //!   in the frame continue it. The module's main stream never moves.
-//! - Each call draws up to [`DECIDE_BUDGET`] operations from the module's
-//!   remaining frame budget. Running out during the call stops the module.
-//!   An exhausted module is skipped when admitting subsequent decisions.
+//! - Each call may use [`DECIDE_BUDGET`] operations. Exceeding that stops
+//!   the module. Calls start while their pool lasts (`Slot::decision_pool`):
+//!   `ProductionAllowed` uses the frame budget B, `Defeat` B/4 of its own,
+//!   the rest B/2 of their own, so module-phase work never lapses a veto.
+//!   Once a pool is used up its links are skipped and pass the previous
+//!   result on, with two exceptions: a skipped `ProductionAllowed` link
+//!   passes the pair's last refusal on, which a later link may overrule, and
+//!   a skipped `Defeat` defeats nobody this frame.
 //! - No reentry (RFC 5): while a module call runs, that module's slot is
 //!   out of the slot list (`Simulation::with_ext_module`), so a decision
 //!   the call causes (an `action` dealing damage, a `SetMission` write)
@@ -126,6 +131,21 @@ use crate::sim::world::{FrameEffects, Simulation};
 pub(super) struct DecideState {
     frame: u32,
     streams: Vec<(StreamKey, SimRng)>,
+}
+
+/// What one link of a decision chain did, when it was not passed over.
+enum Link {
+    Answered(i64),
+    /// Its decision pool was used up.
+    Unasked,
+}
+
+/// A decision chain's result.
+struct Decided {
+    /// The last accepted answer.
+    answer: Option<i64>,
+    /// Some link was [`Link::Unasked`].
+    unasked: bool,
 }
 
 /// (module, subject creation serial, event kind).
@@ -222,10 +242,31 @@ impl Simulation {
         native: i64,
         accept: impl Fn(i64) -> Option<i64>,
     ) -> Option<i64> {
+        self.decide_chain(rules, event, house, type_id, native, None, accept)
+            .answer
+    }
+
+    /// The chain; `cached` is the result a link that could not be asked
+    /// passes on in place of the previous one.
+    #[allow(clippy::too_many_arguments)]
+    fn decide_chain(
+        &mut self,
+        rules: &RuleSet,
+        event: &ModuleEvent,
+        house: Option<u32>,
+        type_id: Option<u32>,
+        native: i64,
+        cached: Option<i64>,
+        accept: impl Fn(i64) -> Option<i64>,
+    ) -> Decided {
+        let mut decided = Decided {
+            answer: None,
+            unasked: false,
+        };
         // No module to ask (or every one is in a call on the stack). A
         // calling module's own links find no slot below: no reentry.
         if self.ext_modules.slots.is_empty() {
-            return None;
+            return decided;
         }
         let triggers = self.trigger_runtime.module_triggers();
         let type_id = type_id.or_else(|| {
@@ -237,26 +278,23 @@ impl Simulation {
         let mut handles = triggers.deciders(event.kind, event.subject, type_id);
         // Mod first, then map; creation order within each (a stable sort).
         handles.sort_by_key(|handle| triggers.get(*handle).map(|t| t.source));
-        let mut previous = None;
         for handle in handles {
-            if let Some(answer) = self.ask_decider(
-                rules,
-                handle,
-                event,
-                house,
-                native,
-                previous.unwrap_or(native),
-            ) && let Some(result) = accept(answer)
-            {
-                previous = Some(result);
+            let previous = decided.answer.unwrap_or(native);
+            match self.ask_decider(rules, handle, event, house, native, previous) {
+                Some(Link::Answered(answer)) => decided.answer = accept(answer).or(decided.answer),
+                Some(Link::Unasked) => {
+                    decided.unasked = true;
+                    decided.answer = cached.or(decided.answer);
+                }
+                None => {}
             }
         }
-        previous
+        decided
     }
 
     /// One link: `None` when the trigger is off, its clauses fail, its
-    /// module is disabled or out of decision budget, or the handler leaves
-    /// `handled` 0 or faults (which stops the module).
+    /// module is disabled, or the handler leaves `handled` 0 or faults
+    /// (which stops the module).
     fn ask_decider(
         &mut self,
         rules: &RuleSet,
@@ -265,7 +303,7 @@ impl Simulation {
         house: Option<u32>,
         native: i64,
         previous: i64,
-    ) -> Option<i64> {
+    ) -> Option<Link> {
         let difficulty = self.trigger_difficulty();
         let trigger = self.trigger_runtime.module_triggers().get(handle)?;
         if !trigger.enabled || !trigger.admits_difficulty(difficulty) {
@@ -279,12 +317,7 @@ impl Simulation {
             .iter()
             .position(|slot| slot.source == source)?;
         let frame = self.session.binary_frame();
-        let slot = &mut self.ext_modules.slots[index];
-        if slot.disabled.is_some() {
-            return None;
-        }
-        let budget = slot.remaining_frame_ops(frame).min(DECIDE_BUDGET);
-        if budget == 0 {
+        if self.ext_modules.slots[index].disabled.is_some() {
             return None;
         }
         let house = house
@@ -292,6 +325,17 @@ impl Simulation {
             .or_else(|| self.module_trigger_house(rules, event.subject));
         if !self.module_clauses_hold(rules, source, &clauses, event, house) {
             return None;
+        }
+        let triggers = self.trigger_runtime.module_triggers();
+        if triggers.is_done(handle, event.subject) {
+            return None;
+        }
+        // After the clauses and a spent one-time trigger: only a link that
+        // would be asked counts as skipped. Before the latch: a skipped link
+        // has not fired.
+        let (used, pool) = self.ext_modules.slots[index].decision_pool(frame, event.kind);
+        if *used >= pool {
+            return Some(Link::Unasked);
         }
         // One event: the instance fires each time unless one-time and done.
         if !self
@@ -320,14 +364,16 @@ impl Simulation {
             Some(rules.overlay_registry()),
             &mut FrameEffects::empty(),
             index,
-            |module, host| module.decide(&record, budget, host),
+            |module, host| module.decide(&record, DECIDE_BUDGET, host),
         );
         std::mem::swap(&mut self.ext_modules.slots[index].rng, &mut stream);
         self.ext_modules.decide.streams.push((stream_key, stream));
         match result {
-            Ok((answer, used)) => {
-                self.ext_modules.slots[index].charge_frame_ops(used);
-                answer
+            Ok((answer, spent)) => {
+                *self.ext_modules.slots[index]
+                    .decision_pool(frame, event.kind)
+                    .0 += spent;
+                answer.map(Link::Answered)
             }
             Err(fault) => {
                 self.disable_ext_module(index, Export::Decide, fault);
@@ -361,7 +407,8 @@ impl Simulation {
             != Some(0)
     }
 
-    /// `Defeat` for `owner` (module docs): false when a decider vetoes.
+    /// `Defeat` for `owner` (module docs): false when a decider vetoes or
+    /// could not be asked; the gate asks again next frame.
     pub(crate) fn module_allows_defeat(&mut self, rules: &RuleSet, owner: InternedId) -> bool {
         if !self.trigger_runtime.module_decides(EVENT_DEFEAT) {
             return true;
@@ -370,7 +417,8 @@ impl Simulation {
             return true;
         };
         let event = ModuleEvent::new(EVENT_DEFEAT, 0);
-        self.decide_module_event(rules, &event, Some(house as u32), None, 1, allow) != Some(0)
+        let decided = self.decide_chain(rules, &event, Some(house as u32), None, 1, None, allow);
+        !decided.unasked && decided.answer != Some(0)
     }
 }
 
@@ -389,7 +437,7 @@ impl Simulation {
         }
         let types = triggers.decided_types(EVENT_PRODUCTION_ALLOWED);
         // `native` is CanBuild's own answer, with no module refusal kept.
-        triggers.set_production_refusals(BTreeSet::new());
+        let last = triggers.take_production_refusals();
         let houses: Vec<(u32, InternedId)> = self
             .houses
             .order()
@@ -410,17 +458,19 @@ impl Simulation {
                     id: type_id as i32,
                     ..ModuleEvent::new(EVENT_PRODUCTION_ALLOWED, 0)
                 };
-                let decided = self.decide_module_event(
+                let decided = self.decide_chain(
                     rules,
                     &event,
                     Some(house),
                     Some(type_id),
                     i64::from(native),
+                    // A refusal does not lapse because the budget did.
+                    last.contains(&(house, type_id)).then_some(0),
                     allow,
                 );
                 // The sidebar's native answer is the input to the decision.
                 // Only a module's veto is shared with other CanBuild routes.
-                if decided == Some(0) {
+                if decided.answer == Some(0) {
                     refusals.insert((house, type_id));
                 }
             }

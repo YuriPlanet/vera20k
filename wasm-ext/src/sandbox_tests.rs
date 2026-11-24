@@ -12,6 +12,7 @@ struct Recorder {
     vars: Vec<(i64, i32, i64)>,
     actions: Vec<(i32, i64, ActionParams)>,
     finds: usize,
+    scanned: u64,
 }
 
 /// The fake world's objects: sort keys 10, 20, ..., 50, reference = key.
@@ -48,14 +49,15 @@ impl SimHost for Recorder {
     }
     fn find(&mut self, query: &Query, cap: usize) -> Result<(FindPage, Status), Invalid> {
         self.finds += 1;
-        let found: Vec<(i64, i64)> = OBJECT_KEYS
-            .iter()
-            .filter(|key| **key >= query.after)
-            .take(cap)
-            .map(|key| (*key, *key))
-            .collect();
-        let scanned = found.len() as u64;
-        Ok((FindPage { found, scanned }, Status::Ok))
+        let mut page = FindPage::default();
+        for &key in OBJECT_KEYS.iter().filter(|key| **key >= query.after) {
+            if page.found.len() == cap || !page.examine(key, query) {
+                break;
+            }
+            page.found.push((key, key));
+        }
+        self.scanned += page.scanned;
+        Ok((page, Status::Ok))
     }
     fn var_get(&mut self, _scope: i64, var: i32) -> Result<(i64, Status), Invalid> {
         if var < 0 {
@@ -285,6 +287,56 @@ fn find_pages_by_sort_key_and_a_zero_capacity_query_scans_nothing() {
         module.call(Export::Frame, 100_000, &mut Recorder::default()),
         Err(Fault::Invalid(_))
     ));
+}
+
+#[test]
+fn find_examines_no_more_than_the_budget_pays_for() {
+    let wat = r#"(module
+      (import "vera:sim@1.0" "find" (func $find (param i32 i32 i32 i32 i32) (result i32)))
+      (memory (export "memory") 1)
+      (func (export "on_frame")
+        (drop (call $find (i32.const 0) (i32.const 64) (i32.const 256) (i32.const 5) (i32.const 512)))))"#;
+    let mut module = load(wat).expect("module loads");
+    let mut host = Recorder::default();
+    let spent = module
+        .call(Export::Frame, 100_000, &mut host)
+        .expect("call succeeds");
+    assert_eq!(host.scanned, 5);
+    let scans = 5 * (crate::SCAN_COST + crate::ENTRY_COST);
+    let mut short = Recorder::default();
+    // Enough for the call and two of the five candidates.
+    let budget = spent - scans + 2 * crate::SCAN_COST;
+    assert!(matches!(
+        module.call(Export::Frame, budget, &mut short),
+        Err(Fault::Budget)
+    ));
+    assert_eq!(short.scanned, 2);
+}
+
+#[test]
+fn a_scan_limit_pages_instead_of_stopping_the_module() {
+    // Sixteen clauses, so a candidate costs 98: half of 580 pays for two.
+    let wat = r#"(module
+      (import "vera:sim@1.0" "find" (func $find (param i32 i32 i32 i32 i32) (result i32)))
+      (memory (export "memory") 1)
+      (func (export "on_frame") (local $i i32)
+        (i32.store (i32.const 56) (i32.const 16))
+        (block $done (loop $clause
+          (br_if $done (i32.ge_u (local.get $i) (i32.const 16)))
+          (i32.store8 (i32.add (i32.const 64) (i32.shl (local.get $i) (i32.const 4))) (i32.const 3))
+          (local.set $i (i32.add (local.get $i) (i32.const 1)))
+          (br $clause)))
+        (drop (call $find (i32.const 0) (i32.const 320) (i32.const 400) (i32.const 5) (i32.const 512)))
+        (i64.store (i32.const 48) (i64.load (i32.const 520)))))"#;
+    let mut module = load(wat).expect("module loads");
+    let mut host = Recorder::default();
+    for (count, next) in [(2, 30), (2, 50), (1, 0)] {
+        module
+            .call(Export::Frame, 580, &mut host)
+            .expect("a page fits a call");
+        assert_eq!(i32_at(module.memory(), 512), count);
+        assert_eq!(i64_at(module.memory(), 520), next);
+    }
 }
 
 #[test]

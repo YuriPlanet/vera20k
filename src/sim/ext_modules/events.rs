@@ -84,9 +84,10 @@
 //! - Stock 19..22 read `value` as the class type index; the `id` form is
 //!   not read. Ares 77 compares the launched type's first 24 bytes with the
 //!   whole name of `id`.
-//! - Polls on type-bound triggers scan every object each frame for that
-//!   type (RFC 15.1 item 1 wants a side column); so does a type-bound
-//!   trigger's `Timer`.
+//! - Polls on type-bound triggers walk the object IDs on a frame something
+//!   is due and read the types of that phase's objects alone (RFC 15.1
+//!   item 1 wants a side column). A type-bound trigger's `Timer` reads every
+//!   object's type when due.
 //! - The other 4.3 events answer `Unsupported`: `HitByWarhead` and
 //!   `HitTarget` (no raise point apart from `TakeDamage` that knows the
 //!   immune hit or the shooter's weapon), `SpawnFire`, `TargetChanged`,
@@ -98,6 +99,7 @@
 use std::collections::BTreeSet;
 
 use vera20k_wasm_ext::triggers::{
+    ACTION_MODULE,
     EVENT_ATTACKED_BY, EVENT_BIRTH, EVENT_DISTANCE_POLL, EVENT_FATAL_DAMAGE, EVENT_FIRE,
     EVENT_HOUSE_POWER_POLL, EVENT_HOUSE_TRANSFERRED, EVENT_KILLED, EVENT_MODIFIER_COUNT_POLL,
     EVENT_MODIFIER_EXPIRE, EVENT_MODIFIER_STACKS, EVENT_MODIFIER_START, EVENT_PASSENGER_ADDED,
@@ -179,14 +181,56 @@ fn is_polled(kind: i32) -> bool {
         )
 }
 
-/// Whether a polling event's check falls on `frame`: every `interval` frames
-/// from `start`, an object's at its creation serial's phase (RFC 6a).
-fn poll_due(interval: i32, start: u32, frame: u32, holder: u64) -> bool {
-    let Some(interval) = u32::try_from(interval).ok().filter(|i| *i > 0) else {
-        return false;
-    };
-    let phase = (holder % u64::from(interval)) as u32;
-    frame > start && (frame - start) % interval == phase
+/// The share of holders whose check falls on one frame: every `interval`
+/// frames from the trigger's poll start, staggered by creation serial
+/// (appendix 4.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PollPhase {
+    interval: u32,
+    phase: u32,
+}
+
+impl PollPhase {
+    fn of(interval: i32, start: u32, frame: u32) -> Option<Self> {
+        let interval = u32::try_from(interval).ok().filter(|i| *i > 0)?;
+        (frame > start).then(|| Self {
+            interval,
+            phase: (frame - start) % interval,
+        })
+    }
+
+    fn holds(self, holder: u64) -> bool {
+        (holder % u64::from(self.interval)) as u32 == self.phase
+    }
+}
+
+/// The objects of each phase, with their TechnoTypes, as far as this frame's
+/// polls have needed them, so polls on one phase share one scan. An action
+/// may create, remove or convert objects, so the scans are dropped whenever
+/// a polled trigger with actions is offered an event.
+#[derive(Default)]
+struct PhaseScans(Vec<(PollPhase, Vec<(u64, u32)>)>);
+
+impl PhaseScans {
+    fn objects(&mut self, sim: &Simulation, rules: &RuleSet, due: PollPhase) -> &[(u64, u32)] {
+        let at = match self.0.iter().position(|(scanned, _)| *scanned == due) {
+            Some(at) => at,
+            None => {
+                let objects = sim
+                    .entities()
+                    .iter_sorted()
+                    .filter(|(id, _)| due.holds(*id))
+                    .filter_map(|(id, entity)| {
+                        let handle = sim.interner.type_handle(entity.type_ref(), rules)?;
+                        Some((id, handle.0))
+                    })
+                    .collect();
+                self.0.push((due, objects));
+                self.0.len() - 1
+            }
+        };
+        &self.0[at].1
+    }
 }
 
 /// The name of TechnoType or, for Ares 77, SuperWeaponType `def.id`, which
@@ -475,6 +519,7 @@ impl Simulation {
             return;
         }
         let frame = self.session.binary_frame();
+        let mut scans = PhaseScans::default();
         for handle in self.trigger_runtime.module_triggers().handles() {
             let Some(trigger) = self.trigger_runtime.module_triggers().get(handle) else {
                 continue;
@@ -485,6 +530,8 @@ impl Simulation {
             let (global, poll_start, source) =
                 (trigger.is_global(), trigger.poll_start, trigger.source);
             let fixed_house = trigger.house;
+            // Only a trigger's own actions change the objects during the polls.
+            let acts = trigger.actions.iter().any(|a| a.kind != ACTION_MODULE);
             let polls: Vec<(usize, EventDef)> = trigger
                 .events
                 .iter()
@@ -499,19 +546,25 @@ impl Simulation {
                         offered.push(def.kind);
                         let event = ModuleEvent::new(def.kind, 0);
                         self.offer_module_event(rules, frame_effects, handle, 0, &event);
+                        if acts {
+                            scans.0.clear();
+                        }
                     }
                     continue;
                 }
-                let holders = if global {
+                // The cadence first, so a frame with nothing due selects nothing.
+                let Some(due) = PollPhase::of(def.interval, poll_start, frame) else {
+                    continue;
+                };
+                let holders = if !global {
+                    self.due_poll_holders(rules, handle, due, &mut scans)
+                } else if due.holds(0) {
                     vec![0]
                 } else {
-                    self.module_poll_holders(rules, handle)
+                    continue;
                 };
                 let house = fixed_house.or_else(|| self.module_trigger_house(rules, 0));
                 for holder in holders {
-                    if !poll_due(def.interval, poll_start, frame, holder) {
-                        continue;
-                    }
                     let reading = self.module_poll_reading(rules, source, &def, holder, house);
                     let holds = reading.is_some_and(|reading| def.compares(reading));
                     if !self
@@ -527,9 +580,44 @@ impl Simulation {
                         ..ModuleEvent::new(def.kind, holder)
                     };
                     self.offer_module_event(rules, frame_effects, handle, holder, &event);
+                    if acts {
+                        scans.0.clear();
+                    }
                 }
             }
         }
+    }
+
+    /// The live objects of `due` that an object poll of `handle` checks:
+    /// [`Self::module_poll_holders`] of that phase, selected without reading
+    /// any other object's type.
+    fn due_poll_holders(
+        &self,
+        rules: &RuleSet,
+        handle: u64,
+        due: PollPhase,
+        scans: &mut PhaseScans,
+    ) -> Vec<u64> {
+        let triggers = self.trigger_runtime.module_triggers();
+        let mut holders: BTreeSet<u64> = triggers
+            .bound_objects(handle)
+            .into_iter()
+            .filter(|&id| due.holds(id))
+            .collect();
+        let types = triggers.bound_types(handle);
+        if !types.is_empty() {
+            holders.extend(
+                scans
+                    .objects(self, rules, due)
+                    .iter()
+                    .filter(|(_, kind)| types.contains(kind))
+                    .map(|&(id, _)| id),
+            );
+        }
+        holders
+            .into_iter()
+            .filter(|id| self.entities().get(*id).is_some())
+            .collect()
     }
 
     /// The live objects an object poll or an object trigger's `Timer`

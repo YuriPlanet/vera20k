@@ -134,8 +134,8 @@ module (merge timers into one function).
   Units that died or changed owner drop out; a defeated house's orders are dropped.
   Orders never enter the network stream.
 - Mod policy (`[VeraWasm]` in the mod's own `rulesmd.ini`): `Budget`, `MapBudget`
-  (clamped to 1..=200000 operations per simulation frame, shared by event delivery,
-  decisions and `on_frame`), `MapWasm=no` refusing maps with
+  (clamped to 1..=200000 operations: the most one call may use, and the frame's
+  use past which no more event batches start), `MapWasm=no` refusing maps with
   modules, `MapUI`, `Api`. A map's `[Basic] VeraMinVersion=` above this build refuses
   the map with a message; `version_serves` moved to `util::version` and serves mods
   and maps.
@@ -168,7 +168,8 @@ module (merge timers into one function).
   bindings; filter clauses on Subject/Other/House properties and variables; immediate
   actions are every kind `run_action` implements, with the trigger house for house 0
   (`trigger_create` checks the kind and SetVar's scope); `Module` actions queue 112-byte `EventRecord`s delivered to
-  `on_events` in subject order under the frame budget. Delivery drops records for
+  `on_events` in subject order, at most 16 a call. Each call has the whole
+  budget. The first call of a frame always starts, and another starts while the frame's use is below it. Delivery drops records for
   disabled or removed triggers and stops when the game ends. After up to 1024
   records are delivered, a backlog beyond 16384 records stops the module. Enqueueing a record beyond the 17408 pending
   records limit also stops the module before further delivery
@@ -211,9 +212,11 @@ module (merge timers into one function).
   Strength write), `ProductionQueued` (Begin_Production `0x004FA350`, Factory_AI start)
   and `Defeat` (house defeat gate before Blowup_All `0x004FC6D0`). `on_decide` runs
   synchronously, mod links then map links; every write import disables the module;
-  20,000 operations per call within the frame budget; `random` uses a substream of
+  20,000 operations per call from a pool of half the frame budget
+  (`ProductionAllowed` from the frame budget, keeping its last refusal when that
+  is used up; `Defeat` from a quarter of its own, vetoing when that is used up); `random` uses a substream of
   (seed, source, frame, subject, kind) and leaves the main stream. A decision raised
-  inside a module call can ask the other module while its budget lasts.
+  inside a module call can ask the other module while its pool lasts.
 - INI triggers: the mod's `rulesmd.ini` `Wasm.Tags` on TechnoTypes, tag sections and
   trigger sections (`Event`, `Where`, `Action` as `Wasm:name` or `name(target,…)`,
   `Decide=Wasm:name`, `House`, `Difficulty`, `Repeat`) become module triggers through
@@ -255,7 +258,8 @@ module (merge timers into one function).
     enum parameters; a match notice when a map sets `Wasm.Tags`; event names for the
     4.4 and 4.5 kinds.
   - Hash and checksum: module memory is digested per 64 KiB page and each page
-    re-digested on frames where `page ≡ frame (mod 15)` (plus grown pages); the hash
+    re-digested with XXH32 on frames where `page ≡ frame (mod 15)` (a new page
+    counts at once, with digest 0 until its turn); the hash
     and checksum read the digests (RFC 4/15). Digests are saved.
 
 - The `Seldom` size ceiling in `object_turn_lookup_tests.rs` is 832 bytes (was 824):
@@ -334,7 +338,8 @@ modules, external modders, freeze), and the later items (`Launch`,
   `Detonated`, `Commanded`, `Crushed`, `HouseTransfer`, `ProductionCancelled`
   (reasons in `events.rs`). `Birth` misses paradrops, spawned aircraft, crate units,
   survivors and starting objects; garrisons and non-departure cargo removal raise no
-  passenger events; type-bound timers and polls scan every object; `Timer` with only
+  passenger events; type-bound timers scan every object when due, and type-bound
+  polls walk the IDs, reading only the due phase's types; `Timer` with only
   weapon/projectile bindings never fires.
 - Decisions: decision triggers cannot have immediate actions; `ProductionAllowed`
   cannot lift CanBuild's own refusal and also asks Neutral/Special; `CommandAllowed`

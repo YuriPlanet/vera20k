@@ -221,6 +221,11 @@ impl ModuleTriggers {
         self.production_refusals.contains(&(house, type_id))
     }
 
+    /// Takes the `ProductionAllowed` refusals out for the next step.
+    pub(crate) fn take_production_refusals(&mut self) -> BTreeSet<(u32, u32)> {
+        std::mem::take(&mut self.production_refusals)
+    }
+
     /// Replaces the `ProductionAllowed` refusals with a step's answers.
     pub(crate) fn set_production_refusals(&mut self, refusals: BTreeSet<(u32, u32)>) {
         self.production_refusals = refusals;
@@ -466,6 +471,10 @@ impl ModuleTriggers {
         let Some(mask) = 1u32.checked_shl(bit as u32) else {
             return false;
         };
+        // An earlier holder's action may have removed the trigger.
+        if !self.triggers.contains_key(&handle) {
+            return false;
+        }
         let mut state = self
             .instances
             .get(&(handle, holder))
@@ -537,7 +546,12 @@ impl ModuleTriggers {
             return;
         }
         self.objects.remove(&object);
-        self.instances.retain(|(_, holder), _| *holder != object);
+        // Every instance is a live trigger's, so there is no table to scan.
+        if !self.instances.is_empty() {
+            for &handle in self.triggers.keys() {
+                self.instances.remove(&(handle, object));
+            }
+        }
     }
 
     /// The triggers with an event of `kind` bound to `subject`, to its
@@ -631,6 +645,13 @@ impl ModuleTriggers {
         }
         self.store_instance(handle, holder, state);
         fires
+    }
+
+    /// Whether a one-time trigger's instance has fired.
+    pub(crate) fn is_done(&self, handle: u64, holder: u64) -> bool {
+        self.instances
+            .get(&(handle, holder))
+            .is_some_and(|state| state.done)
     }
 
     pub(crate) fn enqueue(&mut self, source: ModuleSource, record: EventRecord) {

@@ -224,17 +224,21 @@ fn a_decision_halves_the_damage_a_hit_deals() {
 }
 
 #[test]
-fn a_decision_cannot_spend_more_than_the_remaining_frame_budget() {
+fn decisions_have_their_own_pool_and_skip_once_it_is_used_up() {
     let Some((mut scene, victim)) = decided_scene(HALVE) else {
         return;
     };
-    scene.runtime.simulation.ext_modules.slots[0].frame_budget = 1;
+    let frame = scene.sim().session.binary_frame();
+    let slot = &mut scene.runtime.simulation.ext_modules.slots[0];
+    slot.frame_budget = 2;
+    // The module phase spending the whole budget takes nothing from it.
+    slot.charge_frame_ops(frame, 2);
     let before = health(&scene, victim);
     hit(&mut scene, victim, 10);
-
-    assert_eq!(health(&scene, victim), before - 10);
-    let reason = scene.sim().ext_modules().status().remove(0).1;
-    assert!(reason.is_some_and(|reason| reason.contains("on_decide") && reason.contains("budget")));
+    assert_eq!(health(&scene, victim), before - 5, "a whole call");
+    hit(&mut scene, victim, 10);
+    assert_eq!(health(&scene, victim), before - 15, "the pool is used up");
+    assert_eq!(scene.sim().ext_modules().status()[0].1, None);
 }
 
 #[test]
@@ -331,6 +335,17 @@ fn a_production_allowed_refusal_makes_can_build_refuse_the_type() {
     );
     assert_eq!(&record[88..92], &(type_id as i32).to_le_bytes(), "id");
     assert_eq!(scene.sim().ext_modules().status()[0].1, None);
+
+    // A step with no budget left asks nobody and keeps the refusal.
+    let frame = scene.sim().session.binary_frame();
+    let sim = &mut scene.runtime.simulation;
+    sim.ext_modules.slots[0].frame_budget = 1;
+    sim.ext_modules.slots[0].charge_frame_ops(frame, 1);
+    sim.decide_production_allowed(rules);
+    assert_eq!(
+        can_build(sim, rules, owner, object, false, true),
+        CanBuild::No
+    );
 }
 
 #[test]
