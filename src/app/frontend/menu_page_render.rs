@@ -303,7 +303,19 @@ pub(crate) fn active_page_title_text(
             |browser| browser.game_title_label().0,
         ),
         ShellSlideKind::WolWelcome => crate::ui::wol_shell::WOL_WELCOME_PAGE.title_key,
-        ShellSlideKind::WolLogin => crate::ui::wol_login::PAGE.title_key,
+        // The online page's heading belongs to the spec the dialog draws
+        // (`LoginPolicy::page_spec`, resolved by the slide too): the legacy
+        // `PAGE` title is "Login Screen", while the entry chooser draws
+        // `VERA:OnlineTitle`. Taking the constant here would reveal as many
+        // characters as *its* text has and cut the drawn title short.
+        ShellSlideKind::WolLogin => state
+            .frontend
+            .wol
+            .as_ref()
+            .and_then(|visit| visit.login())
+            .map_or(crate::ui::wol_login::PAGE.title_key, |login| {
+                login.policy.page_spec().title_key
+            }),
         ShellSlideKind::WolLobby => crate::ui::wol_shell::WOL_LOBBY_TITLE_KEY,
         ShellSlideKind::WolOptions => crate::ui::wol_options::PAGE.title_key,
         ShellSlideKind::WolSoundOptions => crate::ui::shell::sound::SHELL_SOUND_PAGE.title_key,
@@ -606,6 +618,31 @@ pub(crate) fn encode_family_page(
 mod tests {
     use super::*;
     use crate::ui::single_player_shell::SINGLE_PLAYER_PAGE;
+
+    /// The online login's heading must name the page the dialog draws: the
+    /// reveal's target length comes from this text, while the drawn title is
+    /// the spec's, so a constant here cuts the title short (`VERA Onli`).
+    #[test]
+    fn the_wol_login_heading_comes_from_the_drawn_page() {
+        let source = include_str!("menu_page_render.rs");
+        let production = source
+            .split_once("#[cfg(test)]")
+            .expect("test module follows production renderer")
+            .0;
+        let heading_fn = production
+            .split_once("pub(crate) fn active_page_title_text")
+            .expect("heading resolver")
+            .1;
+        let arm = heading_fn
+            .split_once("ShellSlideKind::WolLogin =>")
+            .expect("WolLogin heading arm")
+            .1;
+        let arm = &arm[..arm.find("ShellSlideKind::WolLobby").expect("next arm")];
+        assert!(
+            arm.contains("page_spec().title_key"),
+            "the heading must follow the page spec: {arm}"
+        );
+    }
 
     #[test]
     fn status_help_includes_disabled_load() {
