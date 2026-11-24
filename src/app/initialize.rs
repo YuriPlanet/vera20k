@@ -391,6 +391,13 @@ impl App {
                     maps_dir.display()
                 );
             }
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            if crate::app::app_bundle::package_path().is_some()
+                && let Err(error) =
+                    crate::assets::ice_pack::install_editor_files(config.paths.settings_dir())
+            {
+                log::warn!("Could not copy the installed terrain files for the map editor: {error}");
+            }
             crate::map::source::set_downloaded_maps_dir(maps_dir);
             crate::render::locomotor_visual::set_high_terrain_building_lift(
                 config.graphics.high_terrain_building_lift,

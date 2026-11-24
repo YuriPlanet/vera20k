@@ -145,6 +145,7 @@ impl PreparedSavedGame {
             saved.map().uses_bundled_ice(),
             false,
         )
+        .map_err(|error| PreparedLoadError::Resources(format!("{error:#}")))?
         .ok_or_else(|| {
             PreparedLoadError::Resources(format!("cannot load theater {theater_name}"))
         })?;

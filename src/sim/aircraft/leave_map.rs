@@ -138,7 +138,7 @@ impl Simulation {
         {
             return false;
         }
-        match self.team_script_vm.team_for_member(id) {
+        match self.team_script_vm.team_of(id) {
             Some(_) => self.member_team_is_moving_outside_playfield(id),
             None => entity.is_mission_only(),
         }

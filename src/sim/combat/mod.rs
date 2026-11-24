@@ -140,6 +140,8 @@ mod screen_shake_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
 mod shrapnel_chain_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
+mod ts_web_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
 mod unit_damage_response_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
 mod walk_attack_tests;

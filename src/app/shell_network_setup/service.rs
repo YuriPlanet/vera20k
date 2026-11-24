@@ -165,11 +165,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             super::wol::clear_guest_acceptance(state)?;
             // Sink vt+0x28 plays [AudioVisual] PlayerJoined (0x750920) for a
             // remote game-channel join.
-            let sound = state
-                .rules()
-                .and_then(|rules| rules.general.player_joined_sound())
-                .map(str::to_owned);
-            App::play_shell_ui_sound_by_id(state, sound.as_deref());
+            App::play_shell_rules_sound(state, |rules| rules.general.player_joined_sound());
             if dialog.host {
                 // VERA: the host may wait in another window, which hears no
                 // sound (the activation edge stops the primary output).
@@ -226,11 +222,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             // Type3 admission5E0770 and accepted host type6 at5E1B32.
             // This adapter is the admitted setup (membership>=2); repeated
             // discovery packets never manufacture another participant/cue.
-            let sound = state
-                .rules()
-                .and_then(|rules| rules.general.player_joined_sound())
-                .map(str::to_owned);
-            App::play_shell_ui_sound_by_id(state, sound.as_deref());
+            App::play_shell_rules_sound(state, |rules| rules.general.player_joined_sound());
             if dialog.host {
                 // VERA: as in a WOL room, the host may be in another window.
                 state.platform.request_attention(false);
@@ -284,11 +276,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             // admitted setup (state2), not a participant-count predicate.
             // Host disappearance has already cleared native membership and
             // uses the separate silent HostLeft return below.
-            let sound = state
-                .rules()
-                .and_then(|rules| rules.general.player_left_sound())
-                .map(str::to_owned);
-            App::play_shell_ui_sound_by_id(state, sound.as_deref());
+            App::play_shell_rules_sound(state, |rules| rules.general.player_left_sound());
             super::cooperative::guest_left(state)?;
         }
         NetworkSetupEvent::PlayerChoices {

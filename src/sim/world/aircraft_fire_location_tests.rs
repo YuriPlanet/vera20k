@@ -621,6 +621,23 @@ fn fire_location_reads_restored_reservations_cargo_and_current_house() {
     }
 }
 
+/// A live object's Cell NavCom holds its cell against a landing aircraft
+/// (`0x00419BF1`): the cell is not free for landing, and a cell nobody
+/// holds stays free.
+#[test]
+fn a_live_objects_cell_nav_com_holds_its_cell_against_a_landing_aircraft() {
+    let input = json!({"name": "reserved_holds_its_cell", "reserved": [[59, 64]]});
+    let (sim, rules) = fixture(&input);
+    assert!(
+        !sim.aircraft_cell_free_for_landing(1, (59, 64), true, &rules, &mut None),
+        "the cell a live object's NavCom holds is not free for landing"
+    );
+    assert!(
+        sim.aircraft_cell_free_for_landing(1, (59, 62), true, &rules, &mut None),
+        "a cell nobody holds stays free"
+    );
+}
+
 /// Unit737E43 restores a fatally hit surface ship, then737F7A unmarks it.
 /// Aircraft419C13..419C22 ignores that hull even while it remains alive.
 /// The supplied sea has one structural bridge: its deck admits Track landing
@@ -789,7 +806,7 @@ fn retail_hornet_launch_move_ignores_an_unmarked_sinking_aegis() {
     assert!(!sim.substrate.pending_delete.contains_object(&ship));
     assert!(sim.aircraft_cell_free_for_landing(hornet, (59, 64), false, &rules, &mut None));
     assert!(
-        sim.foot_land_zone_clear(hornet, target.unwrap(), &rules),
+        sim.foot_land_zone_clear(hornet, target.unwrap(), &rules, None),
         "empty bridge deck"
     );
     let before = sim.scenario_rng.logical_state();

@@ -296,6 +296,7 @@ fn bound_saved_world(
 ) -> (SimRuntime, SavedMapMetadata, String) {
     let map = loaded.map;
     let theater = theater::load_scenario_theater(assets, &map.header.theater, &map.ini, false)
+        .unwrap()
         .expect("retail saved-world theater");
     let (mut rules, _, fixed_art, _) = owner
         .load_scenario(

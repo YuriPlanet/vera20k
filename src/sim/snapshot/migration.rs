@@ -39,10 +39,17 @@ const TS_LIMPETS: u32 = 0xF612_7DC1;
 const TS_ANIM_SOUNDS: u32 = 0x9441_E8D8;
 // Older writers stored neither Kratos inputs nor its infantry firing offsets.
 const KRATOS_FLH: u32 = 0x9F1B_D701;
+// Tiberian Sun webs (docs/ts-webs.md) store the frame an infantryman's web
+// runs out with a byte saying he was webbed, a warhead's web keys and an
+// infantry type's Struggle record. Older worlds hold none: no man was
+// webbed, end frame 0 has passed, no warhead webs and no type has Struggle
+// frames.
+const TS_WEBS: u32 = 0xF215_BF3A;
 // The next writer stores each processed rules layer's NPatch key reads, which
-// decide `RuleSet::npatch` (`rules::npatch_switch`). Older worlds ran no NPatch
-// switch: their rules keep every NPatch key dormant, as they played when saved.
-const NPATCH_INPUTS: u32 = 0xA859_5079;
+// decide `RuleSet::npatch` (`rules::npatch_switch`), beside the webs above.
+// Older worlds ran no NPatch switch: their rules keep every NPatch key
+// dormant, as they played when saved.
+const NPATCH_INPUTS: u32 = 0xE527_9FB2;
 
 /// The rules digest a converted save carries: the loader takes the rules the
 /// game has instead of proving the digest the old writer computed, whose
@@ -96,8 +103,12 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
     const ANIM_SOUNDS: (&str, &[&str]) = ("AnimTypeReferences", &["bounce_sound", "expire_sound"]);
     const KRATOS_INPUTS: (&str, &[&str]) = ("ProcessedRulesLayers", &["kratos_inputs"]);
     const KRATOS_OFFSETS: (&str, &[&str]) = ("WeaponOffsets", &["crawling", "elite_crawling"]);
-    // Older worlds also stored no NPatch key reads: their rules kept the
-    // switch off, which the all-zero empty read list restores.
+    const WEB: (&str, &[&str]) = ("InfantryRuntime", &["webbed"]);
+    const WEB_TIMER: (&str, &[&str]) = ("Seldom", &["web"]);
+    const WARHEAD_WEB: (&str, &[&str]) = ("WarheadAnimReadState", &["web"]);
+    const STRUGGLE: (&str, &[&str]) = ("InfantrySequenceBank", &["struggle"]);
+    // Worlds older than the NPatch switch stored no key reads either: their
+    // rules kept the switch off, which the all-zero empty read list restores.
     const NPATCH_KEYS: (&str, &[&str]) = ("ProcessedRulesLayers", &["npatch_inputs"]);
     let absent_fields: &'static [_] = match source {
         V0_3_8_AND_0_3_9 | V0_4_0 => &[
@@ -116,6 +127,10 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
             NPATCH_KEYS,
         ],
         ALPHA_SHAPE_LISTENER => &[
@@ -133,6 +148,10 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
             NPATCH_KEYS,
         ],
         ALTERNATE_THEATER_ART => &[
@@ -149,6 +168,10 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
             NPATCH_KEYS,
         ],
         BRIDGE_DECK_AND_FLY_SPIN => &[
@@ -162,6 +185,10 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
             NPATCH_KEYS,
         ],
         HOUSE_DEGRADES => &[
@@ -174,6 +201,10 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
             NPATCH_KEYS,
         ],
         TS_ICE => &[
@@ -183,6 +214,10 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
             NPATCH_KEYS,
         ],
         TERRAIN_DENT => &[
@@ -191,11 +226,33 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
             NPATCH_KEYS,
         ],
-        TS_LIMPETS => &[ANIM_SOUNDS, KRATOS_INPUTS, KRATOS_OFFSETS, NPATCH_KEYS],
-        TS_ANIM_SOUNDS => &[KRATOS_INPUTS, KRATOS_OFFSETS, NPATCH_KEYS],
-        KRATOS_FLH => &[NPATCH_KEYS],
+        TS_LIMPETS => &[
+            ANIM_SOUNDS,
+            KRATOS_INPUTS,
+            KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
+            NPATCH_KEYS,
+        ],
+        TS_ANIM_SOUNDS => &[
+            KRATOS_INPUTS,
+            KRATOS_OFFSETS,
+            WEB,
+            WEB_TIMER,
+            WARHEAD_WEB,
+            STRUGGLE,
+            NPATCH_KEYS,
+        ],
+        TS_WEBS => &[NPATCH_KEYS],
+        KRATOS_FLH => &[WEB, WEB_TIMER, WARHEAD_WEB, STRUGGLE, NPATCH_KEYS],
         _ => return None,
     };
     Some(save_codec::PreviousLayout {

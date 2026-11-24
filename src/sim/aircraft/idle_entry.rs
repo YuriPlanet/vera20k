@@ -506,14 +506,14 @@ impl IdleHost for WorldIdle<'_> {
     }
 
     fn team(&mut self) -> bool {
-        self.sim.team_script_vm.team_for_member(self.id).is_some()
+        self.sim.team_script_vm.team_of(self.id).is_some()
     }
 
     fn team_entered_map(&mut self) -> bool {
-        let (team, _) = self
+        let team = self
             .sim
             .team_script_vm
-            .team_for_member(self.id)
+            .team_of(self.id)
             .expect("asked of a team member");
         self.sim.team_has_entered_map(team)
     }

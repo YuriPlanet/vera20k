@@ -822,6 +822,10 @@ fn kick_out_ares_clones(
     else {
         return;
     };
+    // A copy of the House's Building vector, as `vat_ids` below: each
+    // clone's constructor and exit run through the whole simulation, whose
+    // callbacks (a Unlimbo's triggers among them) can add or remove buildings
+    // while it is walked.
     let sources: Vec<u64> = sim
         .houses
         .get(&owner)

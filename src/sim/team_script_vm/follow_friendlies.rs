@@ -108,19 +108,19 @@ impl Simulation {
             .teams
             .get(&team_id)
             .and_then(|team| team.members().next());
+        // Where the walk meets each member, while the list stays as it is.
+        let mut position = 0;
         while let Some(id) = member {
             let Some(team) = self.team_script_vm.teams.get(&team_id) else {
                 return;
             };
             member = team.next_member_after(id);
+            let initiated = team.member_initiated(position, id);
+            position += 1;
             let Some(entity) = self.substrate.entities.get(id) else {
                 continue;
             };
-            if !member_is_live_joined(
-                entity,
-                self.team_member_initiated(team_id, id),
-                self.object_placement_scope_active(),
-            ) {
+            if !member_is_live_joined(entity, initiated, self.object_placement_scope_active()) {
                 continue;
             }
             let Some(followed) = self.substrate.entities.get(friendly) else {

@@ -157,7 +157,7 @@ pub enum SpawnSlotState {
 }
 
 /// One pool slot (native `SpawnControl`, 0x18 bytes).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SpawnSlot {
     /// Stable id of the child, or `None` while regenerating.
     spawn: Option<u64>,
@@ -644,7 +644,10 @@ fn ai(host: &mut impl SpawnHost) {
 /// The per-node switch (jump table `0x006B7B6C`).
 fn visit_slot(host: &mut impl SpawnHost, index: usize, frame: i32) {
     use SpawnSlotState::*;
-    let slot = host.manager_ref().slots[index].clone();
+    // The slot as the visit read it: the arms below write the live slot
+    // through `host`, and their callbacks (launch, recall, pointer expiry)
+    // write it too.
+    let slot = host.manager_ref().slots[index];
     let Some(child) = slot.spawn else {
         // Only a regenerating node is without a unit.
         if slot.state == Regenerating && slot.timer.expired(frame) {
@@ -831,7 +834,8 @@ fn manager_status(host: &mut impl SpawnHost, frame: i32) {
             let mut pushed = false;
             let mut index = 0;
             while index < host.manager_ref().slots.len() {
-                let slot = host.manager_ref().slots[index].clone();
+                // Read before the host's calls below rewrite this slot.
+                let slot = host.manager_ref().slots[index];
                 index += 1;
                 let Some(child) = slot.spawn.filter(|_| slot.state == InFlight) else {
                     continue;
@@ -946,7 +950,8 @@ fn pointer_expired(host: &mut impl SpawnHost, expired: u64) {
 fn clear_all_targets(host: &mut impl SpawnHost) {
     let mut index = 0;
     while index < host.manager_ref().slots.len() {
-        let slot = host.manager_ref().slots[index].clone();
+        // Read before the host's calls below rewrite this slot.
+        let slot = host.manager_ref().slots[index];
         index += 1;
         let Some(child) = slot
             .spawn
@@ -993,7 +998,8 @@ fn kill_all_spawns(host: &mut impl SpawnHost) {
         host.manager_ref().regen_rate as i32
     };
     for index in (0..host.manager_ref().slots.len()).rev() {
-        let slot = host.manager_ref().slots[index].clone();
+        // Read before the arms below rewrite this slot.
+        let slot = host.manager_ref().slots[index];
         match (slot.state, slot.spawn) {
             (Regenerating, _) => continue,
             (ReadyDocked | Reloading, child) => {

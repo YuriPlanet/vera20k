@@ -83,6 +83,74 @@ impl PersistenceState {
         campaign && !self.initial_campaign_save_attempted
     }
 
+    /// `[VERA] HealthBars=`: the client health-strip policy. Presentation only;
+    /// the simulation never reads it.
+    pub(crate) fn health_bar_mode(&self) -> crate::ui::main_menu_dialogs::options::HealthBarMode {
+        self.options_profile.health_bars
+    }
+
+    /// `[VERA] ColorVisionMode=`: the final-frame colour filter. Presentation
+    /// only; the simulation never reads it, and the frame reads it live.
+    pub(crate) fn color_vision_mode(
+        &self,
+    ) -> crate::ui::main_menu_dialogs::options::ColorVisionMode {
+        self.options_profile.color_vision
+    }
+
+    /// This frame's matrix for the shared frame-output filter.
+    pub(crate) fn color_vision_matrix(&self) -> Option<crate::render::color_vision::Mat3> {
+        crate::app::state::color_vision_matrix_for(self.color_vision_mode())
+    }
+
+    /// Whether VERA's HD radar is on (`[VERA] HdRadar=`); a capture takes its
+    /// profile's choice (`PlatformState::capture_choices`).
+    pub(crate) fn hd_radar(
+        &self,
+        capture: Option<&crate::app::state::CapturePresentation>,
+    ) -> bool {
+        capture.map_or(self.options_profile.hd_radar, |capture| capture.hd_radar)
+    }
+
+    /// Whether VERA's smooth sidebar is on (`[VERA] SmoothSidebar=`); a
+    /// capture takes its profile's choice.
+    pub(crate) fn smooth_sidebar(
+        &self,
+        capture: Option<&crate::app::state::CapturePresentation>,
+    ) -> bool {
+        capture.map_or(self.options_profile.smooth_sidebar, |capture| {
+            capture.smooth_sidebar
+        })
+    }
+
+    /// The Sidebar size the match frame uses; a capture takes its own,
+    /// Normal unless its profile says.
+    pub(crate) fn sidebar_size(
+        &self,
+        capture: Option<&crate::app::state::CapturePresentation>,
+    ) -> crate::ui::main_menu_dialogs::options::SidebarSize {
+        capture.map_or(self.options_profile.sidebar, |capture| capture.sidebar)
+    }
+
+    /// Whether the setup screens show VERA's own map pictures
+    /// (`[VERA] HdMapPreviews=`, `app::map_picture`). Captures keep the map's
+    /// `[PreviewPack]` picture, which retail comparisons check, and the
+    /// browser build cannot start the hidden run that draws one.
+    pub(crate) fn hd_map_previews(
+        &self,
+        capture: Option<&crate::app::state::CapturePresentation>,
+    ) -> bool {
+        crate::ui::main_menu_dialogs::options::HAS_HD_MAP_PREVIEWS
+            && capture.is_none()
+            && self.options_profile.hd_map_previews
+    }
+
+    /// Whether VERA's online client draws its enlarged art smoothed
+    /// (`[VERA] SmoothOnlineMenus=`). The native-UI diagnostics, the only
+    /// sessions without that client, keep their art's own pixels.
+    pub(crate) fn smooth_online_menus(&self, native_shell_ui: bool) -> bool {
+        self.options_profile.smooth_online_menus && !native_shell_ui
+    }
+
     /// A one-shot production capture uses its own new directory, so the
     /// ordinary save command cannot replace a player's existing saves.
     pub(crate) fn isolate_capture_saves(&mut self, directory: &Path) -> std::io::Result<()> {

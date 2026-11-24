@@ -87,12 +87,12 @@ impl FireAtHost for Recorder {
     }
 
     /// The row's one client: the owner's, when it is the player.
-    fn player_clients(&mut self) -> Vec<InternedId> {
+    fn player_clients(&mut self) -> HumanPlayerClients {
         self.calls.push(json!(["owner_is_player"]));
         if self.input["player"].as_bool().unwrap() {
-            vec![crate::sim::intern::StringInterner::new().intern("Player")]
+            HumanPlayerClients::Own(crate::sim::intern::StringInterner::new().intern("Player"))
         } else {
-            Vec::new()
+            HumanPlayerClients::None
         }
     }
 

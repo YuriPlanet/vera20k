@@ -120,9 +120,8 @@ fn wall_sale_respects_the_admitted_player_control_rule_in_skirmish() {
     let stock = mode.stock_rule_policy(None);
     sim.install_session_admission(mode, None, stock);
     let sell = |sim: &mut Simulation| {
-        let receiver_name = sim.interner.resolve(receiver).to_owned();
         sim.sell_wall_at_cell(
-            &receiver_name,
+            receiver.into(),
             None,
             1,
             1,

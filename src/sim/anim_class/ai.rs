@@ -157,20 +157,27 @@ impl Simulation {
 
         // AnimAI4242A6/4242B0 gates only this producer on ObjectAlive and
         // inactive. Bounce above still runs before the retirement gate.
+        // The cadence test reads nothing of the anim, so it is asked before
+        // the delete queue (VERA-only, same answer).
         if let Some(trailer_name) = config.trailer_anim.as_deref()
             && !gates.inactive
-            && !self.substrate.pending_delete.contains_object(&id)
             && trailer_cadence_matches(
                 u64::from(self.session.binary_frame()),
                 config.trailer_seperation,
                 rules.ares(),
             )
+            && !self.substrate.pending_delete.contains_object(&id)
             && rules.art().anim_runtime_config(trailer_name).is_some()
         {
             // The trailer spawns at GetCoords after the body moved the anim.
             let Some(world_coord) = self.anim_absolute_coord(id) else {
                 return Ok(false);
             };
+            // Interned here, at the emission, not when the config is read:
+            // this can be the name's first use, and interned ids are saved
+            // and hashed in the order of their first use. The config holds
+            // `TrailerAnim=` as a name, so the gate above probes the art by
+            // it, uppercased on the stack.
             let trailer_type = self.interner.intern(trailer_name);
             let descriptor = AnimClassSpawnDescriptor {
                 type_name: trailer_type,
@@ -268,6 +275,18 @@ impl Simulation {
             return Ok(false);
         }
 
+        let current_frame = self.session.binary_frame() as i32;
+        //42449B: power pause follows first-AI/delay gates and precedes timer advance;
+        //4244A9: the Temporal erase pause (+11A) right after it.
+        let waits =
+            gates.paused || gates.rate_reload == 0 || !gates.frame_timer.expired(current_frame);
+        // VERA-only, results unchanged: the retirement test below and this
+        // wait both end the visit with nothing written, and only the
+        // animated-Tiberium compare stands between them. A waiting anim of
+        // any other type leaves here, before the delete queue is asked.
+        if waits && !config.is_animated_tiberium {
+            return Ok(false);
+        }
         // AnimAI4243AE..4243B6 checks Object+90 after first-AI/delay.
         // FlamingGuyAI can retire this receiver before the ordinary tail.
         if self.substrate.pending_delete.contains_object(&id) {
@@ -302,49 +321,47 @@ impl Simulation {
         }
         let mut action = VisitAction::None;
         let mut random_loop_delay = None;
-        let current_frame = self.session.binary_frame() as i32;
-        //42449B: power pause follows first-AI/delay gates and precedes timer advance;
-        //4244A9: the Temporal erase pause (+11A) right after it.
-        if gates.paused || gates.rate_reload == 0 || !gates.frame_timer.expired(current_frame) {
+        if waits {
             return Ok(false);
         }
-        {
-            let Some(anim) = self.substrate.anims.get_mut(id) else {
-                return Ok(false);
-            };
-            anim.runtime
-                .frame_timer
-                .start(current_frame, i32::from(anim.runtime.rate_reload));
-            anim.runtime.current_frame = anim
-                .runtime
-                .current_frame
-                .wrapping_add(anim.runtime.frame_step);
-        }
-        let bridge_state_changed =
-            self.anim_frame_damage(id, &config, rules, overlay_registry, frame_effects);
-        // AnimAI42464C checks only ObjectAlive after receiver callbacks.
-        // Ordinary Anim retirement queues retained storage; scalar deletion
-        // removes it. Owner expiry's inactive byte is a later-visit gate.
-        if self.anim(id).is_none() || self.substrate.pending_delete.contains_object(&id) {
-            return Ok(bridge_state_changed);
-        }
-        let middle = self.anim(id).is_some_and(|anim| {
-            // `0x0042465D..0x00424687`: the committed stage reaching the
-            // type's middle frame (`+0x298`, zero meaning Start already ran
-            // Middle) calls Middle unless the anim is bouncing (`+0x194`, the
-            // constructor's byte, which a `Next=` switch keeps), before the boundary
-            // tail.
-            middle_frame(&config).is_some_and(|middle| {
-                config.start.wrapping_add(anim.runtime.current_frame) == middle
-            }) && anim.bounce.is_none()
-        });
-        if middle {
-            self.anim_middle(id, &config, rules, overlay_registry);
-        }
         let Some(anim) = self.substrate.anims.get_mut(id) else {
-            return Ok(bridge_state_changed);
+            return Ok(false);
         };
-        let boundary = advance_anim_boundary(anim, &config);
+        anim.runtime
+            .frame_timer
+            .start(current_frame, i32::from(anim.runtime.rate_reload));
+        anim.runtime.current_frame = anim
+            .runtime
+            .current_frame
+            .wrapping_add(anim.runtime.frame_step);
+        // VERA-only, results unchanged: the damage step and Middle are the
+        // only callbacks between this commit and the boundary tail. A visit
+        // with neither reaches the tail on the anim it already holds. One
+        // with either reads the anim again after each, as a callback may
+        // have retired it.
+        let mut bridge_state_changed = false;
+        let boundary = if !deals_frame_damage(config, anim) && !reaches_middle(config, anim) {
+            advance_anim_boundary(anim, config)
+        } else {
+            bridge_state_changed =
+                self.anim_frame_damage(id, config, rules, overlay_registry, frame_effects);
+            // AnimAI42464C checks only ObjectAlive after receiver callbacks.
+            // Ordinary Anim retirement queues retained storage; scalar deletion
+            // removes it. Owner expiry's inactive byte is a later-visit gate.
+            if self.anim(id).is_none() || self.substrate.pending_delete.contains_object(&id) {
+                return Ok(bridge_state_changed);
+            }
+            let middle = self
+                .anim(id)
+                .is_some_and(|anim| reaches_middle(config, anim));
+            if middle {
+                self.anim_middle(id, config, rules, overlay_registry);
+            }
+            let Some(anim) = self.substrate.anims.get_mut(id) else {
+                return Ok(bridge_state_changed);
+            };
+            advance_anim_boundary(anim, config)
+        };
         match boundary {
             AnimBoundary::Continue | AnimBoundary::Bounce => return Ok(bridge_state_changed),
             AnimBoundary::Loop => {
@@ -414,11 +431,10 @@ impl Simulation {
         let Some(anim) = self.anim(id) else {
             return false;
         };
-        let damage = f64::from_bits(config.damage.bits());
-        //424513..424532 rejects zero/negative/unordered, then instance+194.
-        if !(damage > 0.0) || anim.bounce.is_some() {
+        if !deals_frame_damage(config, anim) {
             return false;
         }
+        let damage = f64::from_bits(config.damage.bits());
         // 0x00424538..0x0042455E: an owner whose WhatAmI is Terrain (0x24)
         // scales Damage by 5.0 (0x007E3568). A tree owner is kept in
         // `owner_terrain`, never in `owner_entity`.
@@ -1213,6 +1229,9 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), AnimSpawnError> {
+        // `Next=` is held as a name and interned only once its config is
+        // found: a switch can be the name's first use, and interned ids are
+        // saved and hashed in the order of their first use.
         let Some(config) = rules.art().anim_runtime_config(next) else {
             self.destroy_anim(id, rules);
             return Ok(());
@@ -1252,6 +1271,23 @@ impl Simulation {
         }
         self.anim_start(id, config, rules, overlay_registry, frame_effects)
     }
+}
+
+/// The damage step's gate (`AnimClass::AI 0x00424513..0x00424532`): the
+/// type's Damage is above zero (zero, negative and unordered are refused) and
+/// the anim does not bounce (`+0x194`).
+fn deals_frame_damage(config: &AnimTypeRuntimeConfig, anim: &AnimObject) -> bool {
+    f64::from_bits(config.damage.bits()) > 0.0 && anim.bounce.is_none()
+}
+
+/// `0x0042465D..0x00424687`: the committed stage reaching the type's middle
+/// frame (`+0x298`, zero meaning Start already ran Middle) calls Middle
+/// unless the anim is bouncing (`+0x194`, the constructor's byte, which a
+/// `Next=` switch keeps), before the boundary tail.
+fn reaches_middle(config: &AnimTypeRuntimeConfig, anim: &AnimObject) -> bool {
+    middle_frame(config)
+        .is_some_and(|middle| config.start.wrapping_add(anim.runtime.current_frame) == middle)
+        && anim.bounce.is_none()
 }
 
 /// `AnimClass::Middle @ 0x00424F00`'s height gate (`0x00425057`).

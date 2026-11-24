@@ -556,6 +556,19 @@ class CargoRunTests(unittest.TestCase):
             with self.assertRaisesRegex(OSError, 'volume unavailable'):
                 cargo_run.run(self.root, ['check'], None, 0)
 
+    def test_preserved_executable_keeps_its_terrain_when_the_checkout_changes(self):
+        source = self.root / 'Terrain'
+        source.mkdir()
+        for name in ('vera_ice.mix', 'vera_ice_tiles.ini'):
+            (source / name).write_text(name)
+        self.assertEqual(self.invoke(), 0)
+        label = self.root / '.git/owned-builds/artifacts/build-a'
+        entry, = json.loads((label / 'manifest.json').read_text())['artifacts']
+        preserved = (label / entry['file']).parent / 'Terrain'
+        (source / 'vera_ice.mix').write_text('next revision')
+        self.assertEqual((preserved / 'vera_ice.mix').read_text(), 'vera_ice.mix')
+        self.assertEqual((preserved / 'vera_ice_tiles.ini').read_text(), 'vera_ice_tiles.ini')
+
     def test_copies_only_emitted_executable_and_refuses_overwrite(self):
         self.assertEqual(self.invoke(), 0)
         output = self.root / '.git/owned-builds/artifacts/build-a'

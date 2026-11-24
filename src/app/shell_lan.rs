@@ -588,11 +588,7 @@ pub(crate) fn report_error(state: &mut AppState, key: &str) {
             color: u32::MAX,
         },
     );
-    let sound = state
-        .rules()
-        .and_then(|rules| rules.general.system_error_sound())
-        .map(str::to_owned);
-    App::play_shell_ui_sound_by_id(state, sound.as_deref());
+    App::play_shell_rules_sound(state, |rules| rules.general.system_error_sound());
 }
 
 pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
@@ -876,20 +872,19 @@ fn discovery_notice(state: &mut AppState, name: &str, open: bool, new_record: bo
         &state.csf_label(key, key),
         &[crate::assets::csf_file::CsfArg::Str(name)],
     );
-    let sound = state
-        .rules()
-        .and_then(|rules| {
+    let play = |state: &mut AppState| {
+        App::play_shell_rules_sound(state, |rules| {
             if open {
                 rules.general.game_forming_sound()
             } else {
                 rules.general.game_closed_sound()
             }
-        })
-        .map(str::to_owned);
+        });
+    };
     // Existing-row transitions play5E030A before chat5E031E; new open ads
     // append5E04C1 before playing5E04E0. Both run only in membership0/1 (BB).
     if !new_record {
-        App::play_shell_ui_sound_by_id(state, sound.as_deref());
+        play(state);
     }
     append_chat(
         state,
@@ -899,7 +894,7 @@ fn discovery_notice(state: &mut AppState, name: &str, open: bool, new_record: bo
         },
     );
     if new_record {
-        App::play_shell_ui_sound_by_id(state, sound.as_deref());
+        play(state);
     }
 }
 

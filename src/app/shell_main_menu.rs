@@ -874,11 +874,7 @@ impl App {
         state: &mut AppState,
         pick: impl FnOnce(&crate::rules::ruleset::GeneralRules) -> Option<&str>,
     ) {
-        let sound = state
-            .rules()
-            .and_then(|rules| pick(&rules.general))
-            .map(str::to_owned);
-        Self::play_shell_ui_sound_by_id(state, sound.as_deref());
+        Self::play_shell_rules_sound(state, |rules| pick(&rules.general));
     }
 
     pub(crate) fn native_launcher_options_active(state: &AppState) -> bool {
@@ -1491,11 +1487,16 @@ impl App {
         }
     }
 
-    pub(crate) fn play_shell_ui_sound_by_id(state: &mut AppState, sound_id: Option<&str>) {
-        let Some(sound_id) = sound_id else {
-            return;
-        };
-        let (Some(sfx), Some(catalog)) = (
+    /// Plays a UI cue the active rules name: `sound` picks it from them where
+    /// it plays, so no caller copies the name. Nothing plays while the cue is
+    /// unset or there are no rules, no sound player or no audio catalog.
+    pub(crate) fn play_shell_rules_sound(
+        state: &mut AppState,
+        sound: impl for<'r> FnOnce(&'r crate::rules::ruleset::RuleSet) -> Option<&'r str>,
+    ) {
+        let rules = crate::app::state::active_rules(&state.frontend, &state.match_state);
+        let (Some(sound_id), Some(sfx), Some(catalog)) = (
+            rules.and_then(sound),
             &mut state.audio.sfx_player,
             state.process_assets.audio_catalog(),
         ) else {

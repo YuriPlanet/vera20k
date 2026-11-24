@@ -818,6 +818,15 @@ impl RulesPassProcessor {
         for key in ["SmallFire", "LargeFire"] {
             let _ = self.resolve_scalar_from(section, key, RulesTypeFamily::Animation, 0x80);
         }
+        // Firestorm 2.0's WebbedInfantry (`docs/ts-webs.md`): ReadString into
+        // 0x80 bytes and AnimType FindOrMake (`0x005D39A0`), an empty value
+        // keeping the pointer. gamemd has no such read, so VERA reads it after
+        // every AudioVisual key gamemd reads: an INI without the key
+        // allocates nothing.
+        let webbed =
+            self.resolve_scalar_from(section, "WebbedInfantry", RulesTypeFamily::Animation, 0x80);
+        self.rules_type_references
+            .read_pointer("WebbedInfantry", webbed);
     }
 
     pub(super) fn process_special_weapons(&mut self, pass: &IniFile) {

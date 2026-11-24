@@ -1152,10 +1152,9 @@ fn post_message(state: &mut AppState, post: &crate::ui::messages::MessagePost<'_
         &|s| font.text_width(s) as i32,
     );
     if outcome.play_sound {
-        let sound = state
-            .rules()
-            .and_then(|r| r.general.incoming_message_sound().map(str::to_owned));
-        crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+        crate::app::App::play_shell_rules_sound(state, |rules| {
+            rules.general.incoming_message_sound()
+        });
     }
 }
 
@@ -1268,11 +1267,10 @@ pub(crate) fn advance_messages(state: &mut AppState) {
         .message_list
         .advance_reveal(wall_ms);
     if requests > 0 {
-        let sound = state
-            .rules()
-            .and_then(|rules| rules.general.message_char_typed_sound().map(str::to_owned));
         for _ in 0..requests {
-            crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+            crate::app::App::play_shell_rules_sound(state, |rules| {
+                rules.general.message_char_typed_sound()
+            });
         }
     }
 }

@@ -857,6 +857,10 @@ pub struct GeneralRules {
     /// the AnimType lookup at `0x0066A587..0x0066A5B1` over the constructor's
     /// null (`0x00665A10`). Retail leaves it unset.
     pub dig_anim: Option<String>,
+    /// Tiberian Sun Firestorm's `[AudioVisual] WebbedInfantry=` (Rules
+    /// `+0xF68`), the AnimType whose shapes a webbed infantryman's Struggle
+    /// frames come from (`docs/ts-webs.md`). gamemd has no such key.
+    pub webbed_infantry: Option<String>,
     /// `[General] NukeTakeOff=` (stock `NUKETO`), the AnimType at `Rules+0x98`
     /// (ReadString then the AnimType lookup, `0x0066D829..0x0066D850`;
     /// constructor null at `0x00665735`). `BuildingClass::Mission_Missile`
@@ -2070,6 +2074,7 @@ impl Default for GeneralRules {
             lightning_print_text: true,
             dig_sound: None,
             dig_anim: None,
+            webbed_infantry: None,
             nuke_take_off: String::new(),
             ai_super_defense_probability: Vec::new(),
             ai_super_defense_distance: 10,
@@ -3013,6 +3018,7 @@ impl GeneralRules {
             // Published by the Rules processor's `Dig` pointer
             // (`rules_type_references`).
             dig_anim: None,
+            webbed_infantry: None,
             nuke_take_off: defaults.nuke_take_off.clone(),
             ai_super_defense_probability: general
                 .read_int_list("AISuperDefenseProbability")

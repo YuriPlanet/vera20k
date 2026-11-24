@@ -689,9 +689,5 @@ pub(in crate::app::shell_wol) fn page_received(
     // 0x7A94ED..0x7A9510: with [0xB77E40] the pager gets the Quick Match
     // away text (API+0xEC).
     super::quick_match::page_reply(state, &from.name);
-    let sound = state
-        .rules()
-        .and_then(|rules| rules.general.incoming_message_sound())
-        .map(str::to_owned);
-    App::play_shell_ui_sound_by_id(state, sound.as_deref());
+    App::play_shell_rules_sound(state, |rules| rules.general.incoming_message_sound());
 }

@@ -1160,6 +1160,12 @@ impl ObjectType {
             stupid_hunt: section.read_bool("StupidHunt", false),
             default_to_guard_area: section.read_bool("DefaultToGuardArea", false),
             cyborg: section.read_bool("Cyborg", false),
+            // Firestorm 2.0 InfantryTypeClass::Read_INI 0x004DAB31..0x004DAB45
+            // reads it with the current value as its default, from the
+            // constructor's false (0x004DA229); the layered read keeps the
+            // current value across rules passes the same way.
+            is_web_immune: category == ObjectCategory::Infantry
+                && section.read_bool("IsWebImmune", false),
             damage_sparks: false,
             use_own_name: category == ObjectCategory::Infantry
                 && section.read_bool("UseOwnName", false),

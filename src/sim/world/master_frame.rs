@@ -471,28 +471,39 @@ impl Simulation {
             FrameStep::LocalAnims => {
                 // A visit can make and end local anims. The walk visits those
                 // that stood when it began, as a copy of the list would; an
-                // ended one's visit did nothing.
+                // ended one's visit did nothing. It reads the list a stretch
+                // at a time, so most anims cost it no search of the list.
                 let end = self.substrate.anims.local_id_end();
+                let mut stretch = [0; 64];
                 let mut cursor = None;
-                while let Some(id) = self.substrate.anims.next_local_id(cursor, end) {
-                    cursor = Some(id);
-                    // No expiry reaches a presentation anim, which nothing
-                    // lists: it ends with its owner's UnInit instead
-                    // (`AnimConstructorInput::Presentation`).
-                    if self.presentation_anim_orphaned(id) {
-                        self.destroy_anim(id, rules);
-                        continue;
+                loop {
+                    let count = self
+                        .substrate
+                        .anims
+                        .local_ids_after(cursor, end, &mut stretch);
+                    let Some(&last) = stretch[..count].last() else {
+                        break;
+                    };
+                    cursor = Some(last);
+                    for &id in &stretch[..count] {
+                        // No expiry reaches a presentation anim, which nothing
+                        // lists: it ends with its owner's UnInit instead
+                        // (`AnimConstructorInput::Presentation`).
+                        if self.presentation_anim_orphaned(id) {
+                            self.destroy_anim(id, rules);
+                            continue;
+                        }
+                        frame.bridge_state_changed |= self
+                            .visit_anim(id, rules, overlay_registry, effects)
+                            .map_err(|error| {
+                                FrameAdvanceError::new(
+                                    self.session.tick(),
+                                    self.session.binary_frame(),
+                                    id,
+                                    error.to_string(),
+                                )
+                            })?;
                     }
-                    frame.bridge_state_changed |= self
-                        .visit_anim(id, rules, overlay_registry, effects)
-                        .map_err(|error| {
-                            FrameAdvanceError::new(
-                                self.session.tick(),
-                                self.session.binary_frame(),
-                                id,
-                                error.to_string(),
-                            )
-                        })?;
                 }
             }
             // Follows the object loop.
@@ -783,8 +794,8 @@ impl Simulation {
 
         // Commit the wrapping native frame LATE, after every phase has observed
         // frame N. Stored-start timer consumers therefore capture N, and the
-        // next admitted advance begins on N+1. Host-provided milliseconds are
-        // retained for diagnostics only and never determine the frame.
+        // next admitted advance begins on N+1. The host's step paces the frame
+        // and never sets the session clock, which counts native frames.
         self.session.commit_native_frame(tick_ms);
         self.enter_frame_step(FrameStep::FrameCommit);
         #[cfg(any(test, feature = "test-support"))]

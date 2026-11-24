@@ -226,10 +226,9 @@ fn sidebar_cameo_press(
         && super::build_repeat::repeats(category);
     let repeat = &mut state.match_state.input.build_repeat;
     if ctrl_repeat && repeat.stop(type_id) {
-        let sound = state
-            .rules()
-            .and_then(|rules| rules.general.gui_build_sound.clone());
-        crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+        crate::app::App::play_shell_rules_sound(state, |rules| {
+            rules.general.gui_build_sound.as_deref()
+        });
         return;
     }
     match click.order {
@@ -248,10 +247,9 @@ fn sidebar_cameo_press(
         state.match_state.input.cancel_building_placement();
     }
     if click.sound {
-        let sound = state
-            .rules()
-            .and_then(|rules| rules.general.gui_build_sound.clone());
-        crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+        crate::app::App::play_shell_rules_sound(state, |rules| {
+            rules.general.gui_build_sound.as_deref()
+        });
     }
     if let Some(line) = click.eva {
         push_local_eva(state, line);
@@ -364,10 +362,9 @@ fn sidebar_cameo_press(
             suspend_build(state, type_id);
             // Select6AB1D4 plays GUIBuildSound again before this ABANDON.
             if let Some(all) = click.then_abandon {
-                let sound = state
-                    .rules()
-                    .and_then(|rules| rules.general.gui_build_sound.clone());
-                crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+                crate::app::App::play_shell_rules_sound(state, |rules| {
+                    rules.general.gui_build_sound.as_deref()
+                });
                 cancel_build_by_type(state, type_id, all);
             }
         }
