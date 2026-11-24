@@ -473,16 +473,18 @@ separate work):
 
 ## Cost without modules (2026-11-24)
 
-`sim-bench` release builds of 321733c62 (before INI registration and 6i) and
-19a777eab, no modules, retail Death.mmx: every final state hash is identical
-(skirmish 9000 ticks `9d2f3b9e068b45ec`, match 1800 ticks `89503a631feffc5c`,
-march 20000 units 150 ticks `fc907cef24f6b40f`). Skirmish 0.60 ms mean both;
-march 43.1 ms both; match 31.1 to 32.2 ms both, the spread of builds that change
-only module code (code layout) on a loaded machine (load average about 24). The
-paths without modules add only emptiness checks: `module_claims` (empty claim
-store), `module_listens` (empty kind list) before `Commanded`, `OrderRefused` and
-the garrison events, the seat budget loop over no slots. Rerun on an idle machine
-for a sub-percent figure.
+`sim-bench` release builds of 52857e028 (vera-mod-engine main before any extension
+code: no `wasm-ext`, the same non-extension engine commits) and bad49319b (phase 1,
+INI registration, 6i, browser runtime), no modules, retail Death.mmx, 5 interleaved
+runs each. Every final state hash is identical: skirmish 9000 ticks
+`9d2f3b9e068b45ec`, march 20000 units 150 ticks `fc907cef24f6b40f`, match 1800
+ticks `89503a631feffc5c`. Mean frame time, median of 5 (without / with extension):
+skirmish 0.61 / 0.60 ms, march 33.85 / 33.67 ms, match 31.74 / 31.42 ms; main-thread
+CPU likewise (match 22.05 / 21.74 ms). The machine was loaded (load average 15 to 43)
+but the runs were interleaved. Without modules the extension adds only emptiness
+checks: `module_claims` (empty claim store), `module_listens` (empty kind list)
+before `Commanded`, `OrderRefused`, garrison and other module events, the seat
+budget loop over no slots.
 
 ## Remaining in phase 1
 
