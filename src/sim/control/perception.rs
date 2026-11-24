@@ -45,7 +45,8 @@ impl Perception {
         Self::default()
     }
 
-    /// Take this frame's sightings, and forget what has aged out.
+    /// Take this frame's sightings, forget what has aged out and invalidate
+    /// last-seen positions which have been *visibly* disproved.
     ///
     /// `visible` is the projection's shroud test: the caller decides what the
     /// house can see, this only keeps the answer. A sighting that has gone out
@@ -71,8 +72,15 @@ impl Perception {
                 },
             );
         }
-        self.memory
-            .retain(|_, remembered| now.saturating_sub(remembered.seen_at) < MEMORY_FRAMES);
+        self.memory.retain(|_, remembered| {
+            // Seen this tick: the entity still exists at this position. Not
+            // seen this tick, but its last known tile is visible again: it
+            // has left, changed owner or died. Do not aim the next assault at
+            // a confirmed empty plot for another 450 frames. An unseen tile
+            // still retains the last known position until the normal expiry.
+            now.saturating_sub(remembered.seen_at) < MEMORY_FRAMES
+                && (remembered.seen_at == now || !visible(remembered.entity.cell))
+        });
         seen
     }
 
@@ -143,6 +151,27 @@ mod tests {
         // Past the term it is forgotten.
         perception.observe(MEMORY_FRAMES + 1, std::iter::empty(), |_| false);
         assert!(perception.enemies().is_empty());
+    }
+
+    /// A vanished target may remain in fog, but *not* after the army scouts
+    /// its previous position and finds the tile empty again.
+    #[test]
+    fn a_visible_empty_previous_position_invalidates_attack_memory() {
+        let mut perception = Perception::new();
+        perception.observe(10, [enemy(7, (10, 10))].into_iter(), |_| true);
+        perception.observe(11, std::iter::empty(), |_| false);
+        assert_eq!(perception.enemies().len(), 1);
+        perception.observe(12, std::iter::empty(), |cell| cell == (10, 10));
+        assert!(perception.enemies().is_empty());
+    }
+
+    #[test]
+    fn a_fresh_sighting_survives_a_visible_tile_and_replaces_stale_position() {
+        let mut perception = Perception::new();
+        perception.observe(10, [enemy(7, (10, 10))].into_iter(), |_| true);
+        perception.observe(11, [enemy(7, (14, 10))].into_iter(), |_| true);
+        assert_eq!(perception.enemies().first().map(|e| e.cell), Some((14, 10)));
+        assert_eq!(perception.remembered_only(11), 0);
     }
 
     /// Seeing it again refreshes the term and the cell.

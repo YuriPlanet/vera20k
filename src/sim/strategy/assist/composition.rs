@@ -179,14 +179,11 @@ pub(super) fn fill_lines(
     let a_soldier_would_reset_the_saving =
         saving_for_the_tank && budget.free >= vehicle_floor - INFANTRY_MIN_CREDITS;
     // A house holding many vehicles' worth of credits is not saving for a
-    // vehicle, it is rich, and the ceiling has no work to do.
-    //
-    // The ceiling exists for one reason: a soldier costs a tenth of a tank, so
-    // a barracks with the wallet to itself spends every credit the house earns
-    // and the price of a vehicle is never reached. That reason is void once the
-    // wallet already holds the price several times over — and past that point
-    // the ceiling is pure lost output, because the war factory cannot absorb
-    // the money on its own.
+    // vehicle; it may recruit a useful infantry screen in parallel. The old
+    // policy exempted *every* rich barracks cycle from the infantry ceiling,
+    // however, and long rich games accumulated an army of mostly riflemen.
+    // After a small screen and a reasonable infantry share, prioritise the
+    // armoured line, advanced technology and specialist recruitment instead.
     //
     // Measured at `--credits 100000`, Arena.mmx seed 0x5EED, 30000 ticks:
     // `infantry=72 / fighters=87` — 83% of the army was infantry, so the
@@ -199,7 +196,7 @@ pub(super) fn fill_lines(
     // carries, read against the price that matters instead of a constant: six
     // line vehicles in hand. At 2000 credits of free cash (the ordinary match)
     // this is false, so the ceiling keeps its documented behaviour; at 100000
-    // it is true from the first frame and the barracks keeps working.
+    // it is true from the first frame; the infantry mix still gets a cap.
     let rich = budget.free >= vehicle_floor.saturating_mul(RICH_VEHICLES);
     let infantry: usize = brain.census.tiers[Slot::Infantry.index()].iter().sum();
     let vehicles: usize = brain.census.tiers[Slot::Vehicle.index()].iter().sum();
@@ -207,8 +204,9 @@ pub(super) fn fill_lines(
     // barracks may swamp every future tank with low-cost infantry. At least
     // six infantry may always form the first screen; after that hold if the
     // line armour is still less than half the infantry count.
-    let rich_needs_armour = rich && infantry >= 6
-        && infantry_full && vehicles.saturating_mul(2) < infantry;
+    let rich_needs_armour = !brain.director.under_attack_now() && rich
+        && (infantry >= 6 && infantry_full && vehicles.saturating_mul(2) < infantry
+            || rich_infantry_saturated(infantry, brain.census.fighters));
     // During the opening, preserve cash for the first armored wave and the
     // lab. Percentages alone permit an army of twenty cheap infantry while
     // the war factory and research queue cannot be funded. Keep a small
@@ -295,7 +293,8 @@ pub(super) fn fill_lines(
             && !brain.director.recovering_income()
             && early_spy_infiltration(brain, rules, obs, budget.free).is_some();
         let urgent_capture = category == ProductionCategory::Infantry
-            && (urgent_engineer(brain, rules, obs, budget.free).is_some()
+            && (neutral_asset_engineer(brain, rules, obs, budget.free).is_some()
+                || urgent_engineer(brain, rules, obs, budget.free).is_some()
                 || maintenance_engineer(brain, rules, obs, budget.free).is_some());
         // A useful empty IFV or open-top fortress has a genuine capability
         // gap when no existing spare soldier can fill its fire port. Permit
@@ -379,6 +378,13 @@ fn infantry_above_ceiling(census: &Census) -> bool {
 /// its war factory waits for Rhino/Apocalypse money. Yuri's mind-control
 /// infantry is more valuable than a conscript, so its ceiling remains higher.
 /// The side numbers come from the rules' country side index, not unit names.
+/// Wealth does not make low-tier riflemen infinitely useful. Once a screen
+/// exists, leave the next barracks cycle to armour, tech and specialist tools
+/// instead of treating a six-vehicle wallet as unlimited infantry permission.
+fn rich_infantry_saturated(infantry: usize, fighters: usize) -> bool {
+    infantry >= 8 && infantry.saturating_mul(100) >= fighters.max(1).saturating_mul(35)
+}
+
 fn infantry_targets(side: Option<i32>) -> (usize, usize) {
     match side {
         Some(1) => (25, 42), // Soviet: keep vehicle money in the war factory
@@ -604,6 +610,44 @@ fn tool<'r>(
             )
         })
         .map(|(ty, id, _)| (ty, id))
+}
+
+/// Buy a small, bounded capture detail for **currently visible** neutral
+/// tech, abandoned yards, production plants and public infrastructure. The
+/// native engineer click still determines capture legality on arrival. We do
+/// not consult shrouded neutral structures to plan spending or navigation.
+fn neutral_asset_engineer<'r>(
+    brain: &AssistBrain, rules: &'r RuleSet, obs: &Observation<'_>, free: i32,
+) -> Option<(&'r ObjectType, InternedId)> {
+    // A large starting wallet or captured oil field can fund engineers
+    // before a conventional refinery exists; do not require harvesters when
+    // the purpose is unlocking an abandoned technology tree.
+    if free < 1_500 || (brain.census.refineries == 0 && free < 10_000)
+        || brain.director.under_attack_now() || brain.director.recovering_income()
+        || !brain.engineers.may_buy(obs.tick())
+    { return None; }
+    let objectives = obs.neutral_structures()
+        .filter(|site| obs.is_cell_visible(site.cell.0, site.cell.1))
+        .filter(|site| obs.object_type(rules, site.type_id).is_some_and(|ty|
+            ty.capturable && (ty.build_const_eligible()
+                || ty.factory_type().is_some()
+                || rules.build_tech_types.iter().any(|name| *name == ty.id)
+                || super::orders::strategic_public_asset(ty))))
+        .filter(|site| !obs.visible_enemy_entities().any(|enemy|
+            super::squared_distance(enemy.cell, site.cell) <= 8 * 8))
+        .take(12).count();
+    // V37 keeps a short, visible-object mission queue across production
+    // frames. A tech prize must not lose its engineer slot simply because
+    // ordinary production ran one frame before `orders::captures`.
+    let operations = brain.asset_ops.visible_opportunities(obs);
+    let objectives = objectives.max(operations);
+    if objectives == 0 { return None; }
+    let engineers = brain.census.units.iter().filter(|unit| unit.traits.engineer).count();
+    if engineers >= objectives.saturating_add(1).clamp(2, 4) { return None; }
+    build::class_types(rules, obs, ObjectCategory::Infantry)
+        .filter(|(ty, _)| census::Traits::of(rules, ty).engineer)
+        .filter(|(ty, _)| obs.cost_of(rules, ty) <= free)
+        .min_by_key(|(ty, id)| (obs.cost_of(rules, ty), *id))
 }
 
 /// A siege without any engineer can surround a capturable yard for minutes
@@ -991,6 +1035,16 @@ fn product_for<'r>(
     }
     if let Some(transport) = expedition_carrier(brain,rules,obs,category,budget.free) {
         return Some(transport);
+    }
+    // A revealed, defenseless civilian/abandoned yard or factory is a map
+    // objective, not merely a by-product of generic infantry recruitment.
+    // Ask before a native team suggestion consumes another barracks cycle.
+    if category == ProductionCategory::Infantry
+        && !brain.director.under_attack_now()
+        && !brain.director.recovering_income()
+        && let Some(engineer) = neutral_asset_engineer(brain, rules, obs, budget.free)
+    {
+        return Some(engineer);
     }
     // Reserve a real engineer for a visible, besieged capturable factory or
     // a repairable bridge. Native team preferences and generic infantry
@@ -2616,6 +2670,17 @@ mod tests {
         ledger.observe_outcomes(20, 1);
         assert!(!ledger.may_buy(20));
         assert!(ledger.may_buy(20 + ENGINEER_QUIET_FRAMES));
+    }
+
+    /// A rich side with eight riflemen and a balanced army must save its
+    /// barracks cycle for high-value technology, not wait until 50 infantry
+    /// have accumulated to enforce the original broad percentage ceiling.
+    #[test]
+    fn rich_mixed_armies_stop_mass_rifleman_recruitment() {
+        assert!(!rich_infantry_saturated(7, 10));
+        assert!(rich_infantry_saturated(8, 20));
+        assert!(!rich_infantry_saturated(8, 30));
+        assert!(rich_infantry_saturated(50, 60));
     }
 
     /// With fifty infantry and only ten tanks, wealth must fund armoured

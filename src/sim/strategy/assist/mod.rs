@@ -118,6 +118,7 @@ pub(crate) fn trace_enabled(name: &str) -> bool {
 
 
 pub(super) mod advance;
+pub(super) mod asset_ops;
 pub(super) mod advanced;
 pub(super) mod army;
 pub(super) mod avoidance;
@@ -134,11 +135,13 @@ mod frontier;
 pub(super) mod kite;
 pub(super) mod micro;
 pub(super) mod mission;
+pub(super) mod navigation;
 pub(super) mod orders;
 pub(super) mod ore;
 pub(super) mod pilots;
 pub(super) mod plan;
 pub(super) mod recycle;
+pub(super) mod recon;
 pub(super) mod squads;
 pub(super) mod strategy;
 pub(super) mod tactics;
@@ -236,6 +239,10 @@ pub struct AssistBrain {
     /// One campaign-wide commitment: keep the fist for a decisive operation
     /// while scouts, raiders, defenders and miners work uninterrupted.
     pub(super) campaign: campaign::Campaign,
+    /// V36: retained fog-safe sightings and deconflicted scout assignments.
+    pub(super) recon: recon::Director,
+    /// V37: durable ownership of strategic neutral / captured asset operations.
+    pub(super) asset_ops: asset_ops::Director,
     /// Throttle native grinder recycling so a controlled prize has time to
     /// reach the building without entering a new order auction every tick.
     pub(super) recycle_after: u64,
@@ -408,6 +415,10 @@ pub struct AssistBrain {
     /// Makers that must come home before anything else: a captured MCV, or one out
     /// of a crate. Sticky — see [`expand::deploy_yard_maker`].
     pub(super) retrieve_makers: std::collections::BTreeSet<u64>,
+    /// Foreign makers that have already reached home. A nearby alternate
+    /// foundation can lie outside the recall radius, but must not restart a
+    /// trip home after the maker begins its deployment journey.
+    pub(super) foreign_ready_makers: std::collections::BTreeSet<u64>,
     /// Makers already seen, so the first sighting is the one that decides where
     /// a maker came from: a house-made one appears at its own factory, a
     /// captured one appears in the enemy's base.
@@ -577,6 +588,8 @@ impl AssistBrain {
             squads: squads::Squads::new(),
             director: strategy::Director::default(),
             campaign: campaign::Campaign::default(),
+            recon: recon::Director::default(),
+            asset_ops: asset_ops::Director::default(),
             recycle_after: 0,
             escorts: BTreeMap::new(),
             site_jobs: BTreeMap::new(),
@@ -619,6 +632,7 @@ impl AssistBrain {
             sale_at: 0,
             sale_attempts: std::collections::BTreeMap::new(),
             retrieve_makers: std::collections::BTreeSet::new(),
+            foreign_ready_makers: std::collections::BTreeSet::new(),
             seen_makers: std::collections::BTreeSet::new(),
             yard_commit: std::collections::BTreeMap::new(),
             infiltrated: std::collections::BTreeSet::new(),
@@ -829,7 +843,9 @@ impl Brain for AssistBrain {
         // `revealed` means explored once and leaks live enemy coordinates when
         // an object moves through a previously explored but shrouded cell.
         self.perception
-            .observe(obs.tick(), obs.visible_enemy_entities(), |_| true);
+            .observe(obs.tick(), obs.visible_enemy_entities(), |cell| {
+                obs.is_cell_visible(cell.0, cell.1)
+            });
         if self.honest {
             self.census.enemies = self.perception.enemies();
             // The counter vector, structure counts and strike site counts must
@@ -854,6 +870,13 @@ impl Brain for AssistBrain {
             .filter_map(|enemy| obs.visible_enemy_house(enemy.entity_id))
             .collect();
         self.squads.regroup_focused(obs.tick(), &self.census, opponents.len() > 1);
+        if obs.forces_enabled() {
+            // Assets first: a stale sighting may request reconnaissance, but
+            // neither the director nor a scout may click an invisible object.
+            self.asset_ops.observe(rules, obs, &self.census, &self.tracked);
+            self.recon.prioritize_asset(self.asset_ops.recon_request(obs));
+            self.recon.observe(rules, obs, &self.census, &self.squads);
+        }
         let attack_members = self.squads.squad(squads::Role::Attack)
             .map_or(0, |squad| squad.members.len());
         let signals = strategy::Signals::read(
@@ -1103,6 +1126,9 @@ impl Brain for AssistBrain {
             orders::repair_garrisons(self, rules, obs, out);
             orders::supervise_specialists(self, rules, obs, out);
             orders::resume_specialist_jobs(self, rules, obs, out);
+            // A single spare defender may establish an observation/security
+            // post before the engineer's actual Capture is considered safe.
+            asset_ops::Director::muster(self, rules, obs, out);
             orders::captures(self, rules, obs, out);
             orders::protect_engineer_prizes(self, rules, obs, out);
         }
@@ -1141,6 +1167,9 @@ impl Brain for AssistBrain {
             // only when the native mission has settled and no fresher tactical
             // or specialist order already owns this unit's frame.
             mission::resume(self, rules, obs, out);
+            // Defensive long-range fire stays behind the local screening
+            // squad; the assault's own support formation runs in advance.
+            advance::fire_support::defend(self, rules, obs, out);
             if !advance::advance(self, rules, obs, out) {
                 orders::forces(self, rules, obs, out);
             }

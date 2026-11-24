@@ -223,7 +223,19 @@ pub(super) fn deploy_yard_maker(
             let Some(yard) = ty.deploys_into.as_deref().and_then(|name| rules.object(name))
             else { continue; };
             if super::build::foreign_yard(rules, obs, yard) {
-                brain.retrieve_makers.insert(unit.entity_id);
+                // Reaching home is a one-way transition. The chosen native
+                // foundation may be 7-18 cells away from the yard's centre;
+                // that is NOT a reason to send this MCV home again.
+                if brain.foreign_ready_makers.contains(&unit.entity_id) {
+                    brain.retrieve_makers.remove(&unit.entity_id);
+                } else if brain.census.base_cell.is_some_and(|home|
+                    cell_distance(home, unit.cell) <= RETRIEVE_ARRIVED_CELLS)
+                {
+                    brain.foreign_ready_makers.insert(unit.entity_id);
+                    brain.retrieve_makers.remove(&unit.entity_id);
+                } else {
+                    brain.retrieve_makers.insert(unit.entity_id);
+                }
             }
         }
     }
@@ -241,9 +253,14 @@ pub(super) fn deploy_yard_maker(
         })
         .collect();
     brain.maker_journeys.retain(|id, _| makers.iter().any(|maker| maker.0 == *id));
+    brain.foreign_ready_makers.retain(|id| makers.iter().any(|maker| maker.0 == *id));
     let picked = makers
         .iter()
-        .find(|(entity_id, _, _)| brain.retrieve_makers.contains(entity_id))
+        // Finish an already homed technology seed before recalling another
+        // MCV, otherwise a blocked distant retrieval can starve deployment.
+        .find(|(id, _, _)| brain.foreign_ready_makers.contains(id))
+        .or_else(|| makers.iter()
+            .find(|(entity_id, _, _)| brain.retrieve_makers.contains(entity_id)))
         .or_else(|| makers.first())
         .copied();
     let Some((entity_id, cell, yard)) = picked else {
@@ -336,9 +353,13 @@ pub(super) fn deploy_yard_maker(
             home.is_some_and(|home| cell_distance((dx, dy), home) > cell_distance(cell, home))
         });
         let foreign = super::build::foreign_yard(rules, obs, yard);
-        if foreign && (at_home || brain.maker_journeys.get(&entity_id)
-            .is_some_and(|(site,_,_)| home.is_some_and(|anchor|
-                cell_distance(*site,anchor) <= 12))) {
+        if foreign && (at_home || brain.foreign_ready_makers.contains(&entity_id)) {
+            // Once inside the recall radius the technology deployment phase
+            // owns the MCV until an actual construction yard replaces it.
+            // Never return to the recall/second-base branch merely because
+            // an available foundation lies beyond RETRIEVE_ARRIVED_CELLS.
+            brain.foreign_ready_makers.insert(entity_id);
+            brain.retrieve_makers.remove(&entity_id);
             // Once this other-side maker reaches home, it should become a
             // yard *here*, never an outpost in enemy territory. Keep a stable
             // deployment plot in the main base until it fits or stalls.
@@ -354,6 +375,11 @@ pub(super) fn deploy_yard_maker(
                         super::orders::issue(brain, out, rules, obs,
                             entity_id, Goal::Move { cell: site });
                     }
+                    return;
+                } else if cell != site && obs.destination(entity_id) == Some(site) {
+                    // The native Move is still closing its final one-cell
+                    // approach; do not select another pad under its wheels.
+                    brain.maker_journeys.insert(entity_id, (site, cell, progressed));
                     return;
                 } else {
                     brain.maker_journeys.remove(&entity_id);
@@ -375,12 +401,22 @@ pub(super) fn deploy_yard_maker(
             }
             // Consider only foundations still inside the original base
             // perimeter. Never fall back to a remote second-base probe.
-            let near = rings(cell).find(|site| {
-                cell_distance(*site, home.unwrap_or(cell)) <= 12
-                    && obs.deploy_admits_at(rules, entity_id, yard, *site)
+            // A crowded base may have no clear foundation within six cells
+            // of the current vehicle. Search around the home anchor as a
+            // second pass: it never authorizes expansion into enemy ground,
+            // but it can locate a genuine second build pad behind the walls.
+            let fits = |site: (u16, u16)| {
+                home.is_some_and(|anchor| cell_distance(site, anchor) <= 18)
+                    && !matches!(space.ground_at(site), super::terrain::Ground::Enemy)
+                    && obs.deploy_admits_at(rules, entity_id, yard, site)
                     && obs.entity_type(rules, entity_id).is_some_and(|ty|
-                        obs.can_reach(ty.movement_zone, cell, *site))
-            });
+                        obs.can_reach(ty.movement_zone, cell, site))
+            };
+            let near = rings(cell).find(|site| fits(*site))
+                // The wider search is throttled: it can examine >1,000
+                // cells, so do not run it on every 120-house brain tick.
+                .or_else(|| (obs.tick() % 60 == 0).then(|| home.and_then(|anchor|
+                    rings_to(anchor, 18).find(|site| fits(*site)))).flatten());
             if let Some(site) = near {
                 if super::orders::issue(brain, out, rules, obs,
                     entity_id, Goal::Move { cell: site }) {
@@ -614,7 +650,12 @@ fn nearest_deploy_site(
 /// Cells by rings outwards from `from`, bounded by [`DEPLOY_SITE_RINGS`], in the
 /// one order that makes the answer the same every frame.
 fn rings(from: (u16, u16)) -> impl Iterator<Item = (u16, u16)> {
-    (1..=DEPLOY_SITE_RINGS).flat_map(move |ring| {
+    rings_to(from, DEPLOY_SITE_RINGS)
+}
+
+/// Extended only for the technology yard that must settle near its home base.
+fn rings_to(from: (u16, u16), limit: i32) -> impl Iterator<Item = (u16, u16)> {
+    (1..=limit).flat_map(move |ring| {
         let mut cells = Vec::new();
         for dy in -ring..=ring {
             for dx in -ring..=ring {
@@ -1674,6 +1715,37 @@ mod tests {
             "and it does not deploy where it was captured: {:?}",
             out.orders
         );
+    }
+
+    /// A foreign MCV that has already reached the main base is in the
+    /// *deployment* stage permanently, even if its next clear foundation
+    /// requires walking outside the six-cell recall radius. Earlier sweeps
+    /// re-added it to retrieval on each tick, making it shuttle endlessly.
+    #[test]
+    fn a_homed_foreign_mcv_does_not_reenter_retrieval_outside_six_cells() {
+        let Some((mut sim, rules, owner)) = arena(0xF034) else {
+            return;
+        };
+        sim.spawn_object("GACNST", "Americans", 16, 16, 255, &rules)
+            .expect("home construction yard");
+        let maker = sim.spawn_object("SMCV", "Americans", 28, 16, 255, &rules)
+            .expect("foreign MCV with a deployment job");
+        let mut brain = AssistBrain::new(0xF034);
+        brain.foreign_ready_makers.insert(maker);
+        brain.retrieve_makers.insert(maker);
+        let obs = Observation::new(&sim, owner);
+        brain.rebuild_census(&rules, &obs);
+        assert!(brain.census.base_cell.is_some());
+        assert!(brain.census.base_cell.is_some_and(|home|
+            super::cell_distance(home, (28, 16)) > super::RETRIEVE_ARRIVED_CELLS));
+        let mut out = Outbox::default();
+        deploy_yard_maker(&mut brain, &rules, &obs, &mut out);
+        assert!(brain.foreign_ready_makers.contains(&maker));
+        assert!(!brain.retrieve_makers.contains(&maker),
+            "the foreign tech maker is deploying, never recalled twice");
+        assert!(out.orders.iter().all(|order| order.actor != maker
+            || !matches!(order.goal, Goal::Stop)),
+            "the homed maker must not be abandoned: {:?}", out.orders);
     }
 
     /// A second base goes to the ore it is meant to work, not to whichever patch

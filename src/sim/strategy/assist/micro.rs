@@ -640,45 +640,23 @@ pub(super) fn run(
             // known hostile is only the fallback once there is nothing left to
             // find.
             Role::Scout => {
-                // A crate collector has a short, explicit job. Do not replace
-                // the crate walk with a shroud walk one line later this frame.
-                // Engage/Dodge already ran and still outrank the collection.
+                // The reconnaissance director owns this scout's *persistent*
+                // destination. It divides unrevealed ground among scouts and
+                // sends them to safe observation posts around stale strategic
+                // sightings. Do not fall back to chasing a hidden enemy id.
                 if brain.crate_claims.contains_key(&item.entity_id)
                     || brain.crate_returns.contains_key(&item.entity_id) { continue; }
-                // A scout walks the leg it is on. The nearest unexplored cell
-                // changes sides as the dog moves — two cells at the same
-                // distance, and the tie-break follows the dog — so re-deciding
-                // every frame is a dog pacing between them instead of walking
-                // anywhere. It is re-aimed when the leg is finished, which is
-                // what the destination going away means.
-                if obs.destination(item.entity_id).is_some() {
-                    continue;
-                }
-                let Some(cell) = nearest_unexplored(obs, item.cell, item.zone).or_else(|| {
-                    // The fallback is a hostile, and the reachability question
-                    // the shroud grid answered above has to be asked here too:
-                    // a dog sent at an enemy behind a neutral wall walks into
-                    // the wall and the order is refused every frame.
-                    nearest(&brain.census.enemies, item.cell)
-                        .map(|(_, cell)| cell)
-                        .filter(|cell| obs.can_reach(item.zone, item.cell, *cell))
-                }) else {
+                let Some(cell) = brain.recon.destination(item.entity_id) else {
                     continue;
                 };
+                // The native nav target confirms the command is already on
+                // its way. A fresh assignment may replace an obsolete walk.
+                if obs.destination(item.entity_id) == Some(cell) { continue; }
                 if super::orders::issue_tracked(
-                    &mut brain.tracked,
-                    brain.trace,
-                    out,
-                    rules,
-                    obs,
-                    item.entity_id,
-                    TrackedKind::Move,
-                    None,
-                    Some(cell),
-                    Goal::Move { cell },
-                ) {
-                    issued += 1;
-                }
+                    &mut brain.tracked, brain.trace, out, rules, obs,
+                    item.entity_id, TrackedKind::Move,
+                    None, Some(cell), Goal::Move { cell },
+                ) { issued += 1; }
             }
         }
     }

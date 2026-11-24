@@ -474,6 +474,15 @@ pub(super) fn captures(
                 // `Repairable=` answers nothing at all. The list itself is the
                 // type-level candidate set; the click is per engineer.
                 .filter(|target| obs.can_take_building(rules, unit.entity_id, target.entity_id))
+                // Respect V37's recovery window even in the legacy fallback.
+                // Only the original claimant may continue an active capture.
+                .filter(|target| brain.asset_ops.permits_capture(
+                    unit.entity_id, target.entity_id))
+                // A visible neutral factory across an impassable cliff is not
+                // an engineer mission. Evaluate the building entrance, not
+                // its blocked footprint cell.
+                .filter(|target| building_approachable(
+                    obs, ty.movement_zone, unit.cell, target.cell))
                 .filter(|target| {
                     !brain.tracked.claimed_by_other(
                         tick,
@@ -491,6 +500,12 @@ pub(super) fn captures(
                 .filter(|job| job.kind == JobKind::Engineer)
                 .and_then(|job| free.iter().find(|target| Some(target.entity_id) == job.target)
                     .copied())
+                // V37: an operation retains its high-value objective across
+                // frames and engineers. It still passes this exact same native
+                // Capture, path/guard and TaskLedger admission pipeline.
+                .or_else(|| brain.asset_ops.preferred_target(
+                    obs, unit.entity_id, unit.cell, &free, &guards, &structures,
+                ))
                 .or_else(|| engineer_preference(
                     rules, obs, &free, &hostile, &guards, &structures,
                     unit.cell, brain.census.refineries < DERRICK_WORTH_REFINERIES,
@@ -578,6 +593,11 @@ pub(super) fn captures(
         brain.tracked.tasks.claim(tick, unit.entity_id,
             if ty.agent { JobKind::Spy } else { JobKind::Engineer },
             Some(target.entity_id), Some(target.cell), unit.cell);
+        if !ty.agent {
+            // Submitted is not ownership; V37 waits for the actual owned
+            // entity observation before celebrating or investing in its tech.
+            brain.asset_ops.submitted(tick, unit.entity_id, target.entity_id);
+        }
         // Remember the requested one-time infiltration class until the spy
         // disappears, then check the *actual* house effect before crediting it.
         // Death on the route must never count as a successful unlock.
@@ -1156,6 +1176,35 @@ fn ore_garrison_score(
 /// At least a meaningful ore cluster, not a single isolated tile.
 const ORE_GARRISON_MIN_CELLS: usize = 10;
 const ORE_GARRISON_REACH_CELLS: i32 = 40;
+/// Front-line cover is a deliberate objective, not merely a house a soldier
+/// happened to walk past on a Move mission.
+const FRONT_GARRISON_REACH_CELLS: i32 = 32;
+/// Surplus occupiers can establish map-wide outposts without stripping the
+/// mobile home screen. Only currently observed, reachable buildings qualify.
+const MAP_GARRISON_REACH_CELLS: i32 = 28;
+
+/// A Capture click targets the building's *occupied* cell. Zone connectivity
+/// at that coordinate often reports false even when an infantryman can reach
+/// the entrance. Require reachable, walkable ground adjacent to the footprint
+/// instead, including larger MOD foundations. This only rejects impossible
+/// walks; the native Capture action still decides final admission.
+fn building_approachable(
+    obs: &Observation<'_>, zone: MovementZone,
+    from: (u16, u16), building: (u16, u16),
+) -> bool {
+    if !obs.has_zone_grid() { return true; }
+    (1..=4).any(|ring: i32| {
+        (-ring..=ring).any(|dy| (-ring..=ring).any(|dx| {
+            if dx.abs().max(dy.abs()) != ring { return false; }
+            let (Ok(x), Ok(y)) = (
+                u16::try_from(i32::from(building.0) + dx),
+                u16::try_from(i32::from(building.1) + dy),
+            ) else { return false; };
+            obs.is_cell_in_playfield(x, y) && obs.is_ground_walkable(x, y)
+                && obs.can_reach(zone, from, (x, y))
+        }))
+    })
+}
 
 /// Idle `Occupier=` infantry garrison a building near the house's own base.
 ///
@@ -1184,6 +1233,16 @@ pub(super) fn garrison(
     // garrison that only ever answers inside the base is a garrison that never
     // leaves it — the base fills up and the army walks past every building it
     // could have held the street from.
+    // Defensive structures around the enemy's observed base are strategic
+    // garrison objectives even if no friendly soldier has reached them yet.
+    let enemy_buildings: Vec<(u16, u16)> = obs.visible_enemy_entities()
+        .filter(|enemy| obs.object_type(rules, enemy.type_id)
+            .is_some_and(|ty| ty.category == ObjectCategory::Building))
+        .map(|enemy| enemy.cell).collect();
+    let occupier_cells: Vec<(u16, u16)> = brain.census.units.iter()
+        .filter(|unit| unit.traits.occupier && unit.controllable()
+            && obs.inside_transport(unit.entity_id).is_none())
+        .map(|unit| unit.cell).collect();
     let anchors: Vec<(u16, u16)> = home_cells(brain)
         .chain(
             brain
@@ -1197,9 +1256,17 @@ pub(super) fn garrison(
     let ore_buckets = ore_garrison_buckets(&brain.ore_known);
     let billets: Vec<_> = obs
         .occupiable_buildings(rules)
-        .filter(|billet| obs.is_cell_revealed(billet.cell.0, billet.cell.1))
+        // Occupancy and ownership can change inside fog. A remembered house
+        // is not permission to query today's private seat count; once a
+        // Capture order is running, the task ledger can finish the trip.
+        .filter(|billet| obs.is_cell_visible(billet.cell.0, billet.cell.1))
         .filter(|billet| within(anchors.iter().copied(), billet.cell, HOME_REACH_CELLS)
-            || ore_garrison_score(&ore_buckets, billet.cell) >= ORE_GARRISON_MIN_CELLS)
+            || ore_garrison_score(&ore_buckets, billet.cell) >= ORE_GARRISON_MIN_CELLS
+            || enemy_buildings.iter().any(|enemy|
+                squared_distance(*enemy, billet.cell) <= 24 * 24)
+            || occupier_cells.iter().any(|cell|
+                squared_distance(*cell, billet.cell)
+                    <= MAP_GARRISON_REACH_CELLS * MAP_GARRISON_REACH_CELLS))
         .collect();
     if billets.is_empty() {
         return;
@@ -1228,15 +1295,24 @@ pub(super) fn garrison(
     // This is calculated once. Re-scanning every visible enemy for every
     // soldier × building combination becomes quadratic in large games.
     let enemy_cells: Vec<_> = obs.visible_enemy_entities().map(|enemy| enemy.cell).collect();
+    let enemy_front_ids: BTreeSet<u64> = billets.iter().filter(|billet|
+        enemy_buildings.iter().any(|enemy|
+            squared_distance(*enemy, billet.cell) <= 24 * 24))
+        .map(|billet| billet.building_id).collect();
     let front_ids: BTreeSet<u64> = billets.iter().filter(|billet| {
-        brain.census.base_cell.is_some_and(|home|
+        // Explicitly value houses screening a *visible* enemy production line
+        // even before the main army reaches it. Do not require a friendly
+        // occupier already standing by the building.
+        (enemy_front_ids.contains(&billet.building_id)
+            && brain.census.base_cell.is_some_and(|home|
+                squared_distance(home, billet.cell) >= 8 * 8))
+        || (brain.census.base_cell.is_some_and(|home|
             squared_distance(home, billet.cell) >= 18 * 18)
             && (enemy_cells.iter().any(|enemy|
                 squared_distance(*enemy, billet.cell) <= 20 * 20)
                 || ore_sites.contains_key(&billet.building_id)
-                || brain.census.units.iter().any(|unit| unit.traits.occupier
-                    && unit.controllable()
-                    && squared_distance(unit.cell, billet.cell) <= 7 * 7))
+                || occupier_cells.iter().any(|cell|
+                    squared_distance(*cell, billet.cell) <= 7 * 7)))
     }).map(|billet| billet.building_id).collect();
     let front_available = !front_ids.is_empty();
     // Garrison capacity belongs to *buildings*, not a global population cap.
@@ -1249,9 +1325,12 @@ pub(super) fn garrison(
                     JobKind::Garrison, billet.building_id));
             (billet.building_id, (billet.room as usize).saturating_sub(pending))
         }).collect();
-    let limit = garrison_budget(front_available, billets.iter()
+    let front_room = billets.iter()
         .filter(|billet| front_ids.contains(&billet.building_id))
-        .map(|billet| billet.room as usize).sum());
+        .map(|billet| billet.room as usize).sum();
+    let spare_occupiers = occupier_cells.len();
+    let limit = garrison_budget(front_available, front_room)
+        + spare_occupiers.saturating_sub(8).min(24);
     let mut issued = 0;
     let mut available_mobiles = brain.census.units.iter()
         .filter(|unit| unit.controllable() && unit.traits.combat
@@ -1265,7 +1344,7 @@ pub(super) fn garrison(
                 && squared_distance(unit.cell, billet.cell) <=
                     (if ore_sites.contains_key(&billet.building_id) {
                         ORE_GARRISON_REACH_CELLS * ORE_GARRISON_REACH_CELLS
-                    } else { 10 * 10 })
+                    } else { FRONT_GARRISON_REACH_CELLS * FRONT_GARRISON_REACH_CELLS })
         });
         // An infantryman walking past empty cover is not committed to a live
         // firefight; use the nearby building without stealing an actively firing unit.
@@ -1289,22 +1368,35 @@ pub(super) fn garrison(
             .filter(|billet| squared_distance(unit.cell, billet.cell) <=
                 (if ore_sites.contains_key(&billet.building_id) {
                     ORE_GARRISON_REACH_CELLS * ORE_GARRISON_REACH_CELLS
+                } else if front_ids.contains(&billet.building_id) {
+                    FRONT_GARRISON_REACH_CELLS * FRONT_GARRISON_REACH_CELLS
+                } else if spare_occupiers > 8 {
+                    MAP_GARRISON_REACH_CELLS * MAP_GARRISON_REACH_CELLS
                 } else { HOME_REACH_CELLS.pow(2) }))
             .filter(|billet| room_left.get(&billet.building_id).copied().unwrap_or(0) > 0)
             .filter(|billet| {
                 // Preserve a minimal mobile base defense while sending the
                 // paradropped/front-line infantry to available cover.
-                front_ids.contains(&billet.building_id) || available_mobiles > 3
+                // A distant outpost is optional; unlike a defended mineral
+                // choke or an active front, it needs a larger mobile reserve.
+                if front_ids.contains(&billet.building_id) { available_mobiles > 3 }
+                else if ore_sites.contains_key(&billet.building_id) { available_mobiles > 3 }
+                else if squared_distance(unit.cell, billet.cell) > HOME_REACH_CELLS.pow(2) {
+                    available_mobiles > 8
+                } else { available_mobiles > 3 }
             })
-            .filter(|billet| obs.can_garrison(rules, unit.entity_id, billet.building_id))
+            .filter(|billet| obs.can_garrison(rules, unit.entity_id, billet.building_id)
+                && obs.entity_type(rules, unit.entity_id).is_some_and(|ty|
+                    building_approachable(obs, ty.movement_zone, unit.cell, billet.cell)))
             .min_by_key(|billet| {
                 // Rich central cover first, then other defended approach
                 // lanes, then ordinary home houses. The final distance is a
                 // tie-break, not the whole strategy for a mineral chokepoint.
                 let ore = ore_sites.get(&billet.building_id).copied().unwrap_or(0);
-                let priority = if ore >= ORE_GARRISON_MIN_CELLS { 0 }
-                    else if front_ids.contains(&billet.building_id) { 1 }
-                    else { 2 };
+                let priority = if enemy_front_ids.contains(&billet.building_id) { 0 }
+                    else if ore >= ORE_GARRISON_MIN_CELLS { 1 }
+                    else if front_ids.contains(&billet.building_id) { 2 }
+                    else { 3 };
                 (priority, usize::MAX - ore,
                     squared_distance(unit.cell, billet.cell), billet.building_id)
             })
@@ -1742,9 +1834,16 @@ pub(super) fn reclamation_reserved(
 /// The ranking is what `HouseClass::Can_Build` reads, not a list of names: a
 /// captured building is a building the house holds, so a lab unlocks what a lab
 /// unlocks and a yard unlocks a side. The map's own buildings unlock nothing
-/// but they pay, and an oil derrick nobody is standing next to is the capture
-/// an engineer is most likely to come back from.
+/// but they pay. Abandoned capturable yards and factories outrank another
+/// derrick when engineers can reach them safely, because they unlock tech.
 fn capture_value(rules: &RuleSet, ty: &ObjectType, short_of_income: bool) -> u8 {
+    // A captured yard or production building is an entire additional tech
+    // branch, especially when it belongs to another side. A rich player
+    // should not send every available engineer to yet another oil derrick
+    // while an abandoned, undefended Construction Yard stands beside it.
+    if ty.build_const_eligible() { return 10; }
+    if ty.factory_type().is_some() { return 9; }
+    if rules.build_tech_types.iter().any(|name| *name == ty.id) { return 8; }
     if strategic_public_asset(ty) { return if short_of_income { 8 } else { 7 }; }
     let built = built_capture_value(rules, ty);
     if built > 0 {
@@ -4473,6 +4572,20 @@ mod v16_objective_tests {
         assert!(strategic_public_asset(oil));
         assert!(capture_value(&rules, oil, false) >= 7);
         assert!(capture_value(&rules, oil, true) >= 8);
+    }
+
+    #[test]
+    fn abandoned_yards_and_factories_outweigh_one_more_oil_well() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
+            return;
+        };
+        let (Some(yard), Some(factory), Some(oil)) = (
+            rules.object("NACNST"), rules.object("GAWEAP"), rules.object("CAOILD"),
+        ) else { return; };
+        assert!(yard.build_const_eligible());
+        assert!(factory.factory_type().is_some());
+        assert!(capture_value(&rules, yard, false) > capture_value(&rules, oil, false));
+        assert!(capture_value(&rules, factory, false) > capture_value(&rules, oil, false));
     }
 
     #[test]

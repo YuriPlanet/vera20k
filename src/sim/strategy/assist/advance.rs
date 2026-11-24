@@ -46,6 +46,7 @@ use super::census::{Census, Unit};
 use super::squared_distance;
 
 mod targets;
+pub(super) mod fire_support;
 
 /// How large the army has to be before it is worth pushing with: the teams'
 /// own number ([`super::squads::ARMY_TO_ATTACK`]), because "how big is big
@@ -349,6 +350,9 @@ pub(super) struct BlackoutOperation {
     pub(super) started: u64,
     pub(super) phase: BlackoutPhase,
     pub(super) off_since: Option<u64>,
+    /// The actual visible plant ordered during this blackout, retained so
+    /// withdrawal can cancel its native Attack even after it leaves vision.
+    pub(super) power_focus: Option<(u64, (u16, u16))>,
 }
 
 fn blackout_transition(phase: BlackoutPhase, visible: bool, operational: bool,
@@ -409,9 +413,62 @@ fn drive_blackout(
         // coordinated attack window. Do not infer blackout from fog or from a
         // missing spy, and do not send a single scout to test an active tower.
         if !seen || powered { brain.blackout = Some(plan); return true; }
+        // The outage is an *opportunity to kill generation*, not an order to
+        // remove the now-silent tower. Destroying a Powered=yes consumer
+        // reduces drain and can restore other guns. Use visible power plants
+        // from the *same observed owner* and a locally reachable firing lane;
+        // never inspect the opponent's hidden electricity totals.
+        let plant = obs.visible_enemy_house(plan.battery).and_then(|owner| {
+            obs.visible_enemy_entities().filter(|enemy| {
+                obs.visible_enemy_house(enemy.entity_id) == Some(owner)
+                    && cell_distance(enemy.cell, plan.cell) <= 28
+                    && obs.entity_type(rules, enemy.entity_id)
+                        .is_some_and(|ty| ty.category ==
+                            crate::rules::object_type::ObjectCategory::Building && ty.power > 0)
+                    && fighters.iter().any(|unit| unit.controllable()
+                        && !unit.in_service()
+                        && cell_distance(unit.cell, enemy.cell) <= 34
+                        && obs.can_hurt(rules, unit.entity_id, enemy.entity_id)
+                        && super::orders::reachable(rules, obs, unit.entity_id, enemy.cell))
+            }).min_by_key(|enemy| {
+                // Keep the current generator until it really disappears;
+                // changing to a newly seen small plant every frame restarts
+                // the entire native approach.
+                let persistent = plan.power_focus
+                    .is_none_or(|(id, _)| id != enemy.entity_id);
+                let output = obs.entity_type(rules, enemy.entity_id)
+                    .map_or(0, |ty| ty.power.max(0));
+                (persistent, std::cmp::Reverse(output),
+                    cell_distance(enemy.cell, plan.cell), enemy.entity_id)
+            })
+        });
+        // The previous plant id remains only as a withdrawal marker. If a
+        // generator disappeared while the outage persists, NEVER fall back
+        // to attacking the silent tower: destroying the power consumer may
+        // turn the rest of the defense grid back on. The regular campaign
+        // can resume when the bounded blackout operation ends.
+        let Some(plant) = plant else {
+            let mut issued = 0;
+            for unit in fighters {
+                if issued >= ADVANCE_ORDERS_PER_FRAME { break; }
+                if !unit.controllable() || unit.in_service()
+                    || obs.attack_target(unit.entity_id) != Some(plan.battery)
+                { continue; }
+                if out.want(unit.entity_id, 0, Goal::Stop) {
+                    brain.tracked.forget_primary(unit.entity_id);
+                    issued += 1;
+                }
+            }
+            brain.siege_charge = None;
+            brain.push_gate = "blackout-no-visible-generator";
+            brain.blackout = Some(plan);
+            return true;
+        };
+        plan.power_focus = Some((plant.entity_id, plant.cell));
+        let (victim, victim_cell) = (plant.entity_id, plant.cell);
         let available = fighters.iter().filter(|unit| unit.controllable()
-            && !unit.in_service() && cell_distance(unit.cell, plan.cell) <= 34
-            && obs.can_hurt(rules, unit.entity_id, plan.battery)).count();
+            && !unit.in_service() && cell_distance(unit.cell, victim_cell) <= 34
+            && obs.can_hurt(rules, unit.entity_id, victim)).count();
         if available < 3 {
             brain.push_gate = "blackout-awaiting-fist";
             brain.blackout = Some(plan);
@@ -421,16 +478,22 @@ fn drive_blackout(
         for unit in fighters {
             if issued >= ADVANCE_ORDERS_PER_FRAME { break; }
             if !unit.controllable() || unit.in_service()
-                || cell_distance(unit.cell, plan.cell) > 34
-                || !obs.can_hurt(rules, unit.entity_id, plan.battery)
-                || obs.attack_target(unit.entity_id) == Some(plan.battery)
+                || cell_distance(unit.cell, victim_cell) > 34
+                || !obs.can_hurt(rules, unit.entity_id, victim)
+                || obs.attack_target(unit.entity_id) == Some(victim)
             { continue; }
-            let goal = Goal::Attack { target: plan.battery };
+            // If other guns in this base remain operational, don't turn a
+            // temporary blackout raid into an unprotected rush through them.
+            if victim != plan.battery
+                && super::tactics::lethal_approach(
+                    rules, obs, unit.entity_id, unit.cell, victim_cell).is_some()
+            { continue; }
+            let goal = Goal::Attack { target: victim };
             if !super::orders::admits(rules, obs, unit.entity_id, &goal) { continue; }
             if out.want(unit.entity_id, 2, goal) {
                 brain.tracked.record_goal(tick, unit.entity_id,
                     super::tracked::TrackedKind::Attack,
-                    Some(plan.battery), Some(plan.cell), goal);
+                    Some(victim), Some(victim_cell), goal);
                 issued += 1;
             }
         }
@@ -448,10 +511,16 @@ fn drive_blackout(
         if !unit.controllable() || unit.in_service() || obs.is_deployed(unit.entity_id)
             || unit.slot == super::census::Slot::Aircraft
         { continue; }
-        let near = cell_distance(unit.cell, plan.cell) <= 24;
+        let near = cell_distance(unit.cell, plan.cell) <= 24
+            || plan.power_focus.is_some_and(|(_, cell)|
+                cell_distance(unit.cell, cell) <= 24);
         let charging = obs.attack_target(unit.entity_id) == Some(plan.battery)
+            || plan.power_focus.is_some_and(|(id, _)|
+                obs.attack_target(unit.entity_id) == Some(id))
             || obs.destination(unit.entity_id).is_some_and(|dest|
-                cell_distance(dest, plan.cell) <= 18);
+                cell_distance(dest, plan.cell) <= 18
+                    || plan.power_focus.is_some_and(|(_, cell)|
+                        cell_distance(dest, cell) <= 18));
         if !near && !charging { continue; }
         let reach = if seen { obs.entity_type(rules, plan.battery)
             .map_or(13, |ty| weapon_range_cells(rules, ty, false).max(5)) }
@@ -1333,6 +1402,7 @@ pub(super) fn advance(
         rules,
         obs,
         brain.campaign_house,
+        brain.recon.enemy_search_site(obs, anchor),
     );
     brain.push_progress = progress;
     let target = match answer {
@@ -1430,6 +1500,7 @@ pub(super) fn advance(
                     brain.blackout = Some(BlackoutOperation {
                         battery: battery.entity_id, cell: battery.cell,
                         started: tick, phase: BlackoutPhase::Staging, off_since: None,
+                        power_focus: None,
                     });
                     log::info!("auto play: coordinated blackout plan for battery {}",
                         battery.entity_id);
@@ -1535,6 +1606,16 @@ pub(super) fn advance(
         brain.armour_wave_wait = None;
     }
 
+    // A front with real armor/infantry screening can carry long-range guns
+    // behind it. This assigns actual Attack targets or safe rear staging posts
+    // before the generic fist march; the returned guns must never receive the
+    // same-frame AttackMove to the structure's centre.
+    let support_holds = fire_support::push(brain, rules, obs, out, &fighters, target_cell);
+    // This set makes a dead-target check one O(log N) lookup per soldier,
+    // rather than scanning every visible entity once for every soldier.
+    let live_hostile_ids: BTreeSet<u64> = obs.visible_enemy_entities()
+        .map(|enemy| enemy.entity_id).collect();
+
     // The frame's budget is a handful of orders and the rest of the list is
     // dropped, so the scan's order decides who is ever told anything at all:
     // the same leading units were served every frame and the rest of the army
@@ -1633,7 +1714,8 @@ pub(super) fn advance(
             let mut other = 0;
             for unit in &fighters {
                 let attack = unit.mission == MissionId::from_known(MissionType::Attack)
-                    && obs.attack_target(unit.entity_id).is_some();
+                    && obs.attack_target(unit.entity_id)
+                        .is_some_and(|target| live_hostile_ids.contains(&target));
                 let move_ = unit.mission == MissionId::from_known(MissionType::Move);
                 if obs.is_deployed(unit.entity_id) {
                     deployed += 1;
@@ -1726,6 +1808,11 @@ pub(super) fn advance(
                 issued += 1;
                 continue;
             }
+        }
+        if support_holds.contains(&unit.entity_id) {
+            // The artillery's own Attack or safe rear post is managed by
+            // fire_support, even if its native goal needs no new order today.
+            continue;
         }
         // A unit already fighting or walking is doing what this would ask. A
         // mission with nothing behind it is not: a unit left on Attack after
@@ -1882,8 +1969,13 @@ pub(super) fn advance(
                 // march decision run rather than parking the ambusher.
             }
         }
+        // Existing fire is worth preserving only while its target is still
+        // a *visible enemy*, not an already destroyed or captured structure.
+        // Lost sight does not authorize a new entity-id Attack either; the
+        // next legal order comes from a fresh observation or last-known cell.
         let attacking = unit.mission == MissionId::from_known(MissionType::Attack)
-            && obs.attack_target(unit.entity_id).is_some();
+            && obs.attack_target(unit.entity_id)
+                .is_some_and(|aim| live_hostile_ids.contains(&aim));
         // A destination from an old push is not proof that this unit is
         // advancing toward the *current* target. This used to leave entire
         // columns standing outside an enemy base after a target switch.

@@ -513,6 +513,7 @@ fn build_next(
         // The Defense factory is planned separately in the same frame.
         // A busy Defense strip must never hide a ready main construction strip.
         |item| item != Item::Defense && brain.director.permits_build(item),
+        brain.asset_ops.technology_window(tick),
     )) else {
         return;
     };
@@ -963,7 +964,7 @@ fn next_building<'r>(
     budget: &Budget,
     held: Option<usize>,
 ) -> Option<plan::Chosen<'r>> {
-    next_building_for(rules, obs, census, budget, held, |_| true)
+    next_building_for(rules, obs, census, budget, held, |_| true, false)
 }
 
 fn next_building_for<'r>(
@@ -973,6 +974,7 @@ fn next_building_for<'r>(
     budget: &Budget,
     held: Option<usize>,
     admits: impl Fn(Item) -> bool,
+    freshly_acquired: bool,
 ) -> Option<plan::Chosen<'r>> {
     // Power is a prerequisite and an outage disables the economy. A plant
     // that is already paid for is counted by `power_short` below.
@@ -1052,7 +1054,8 @@ fn next_building_for<'r>(
             }
         }
     }
-    let chosen = match foreign_tech_building(rules, obs, census, budget, &admits)
+    let chosen = match foreign_tech_building(rules, obs, census, budget, &admits,
+        freshly_acquired)
         .or_else(|| plan::answer_where(rules, obs, census, budget, held, admits)) {
         Some(found) => found,
         // Nothing the base wants is buildable yet, and the house has no plant:
@@ -1214,6 +1217,7 @@ pub(super) fn foreign_yard(rules: &RuleSet, obs: &Observation<'_>, yard: &Object
 fn foreign_tech_building<'r>(
     rules: &'r RuleSet, obs: &Observation<'_>, census: &Census,
     budget: &Budget, admits: &impl Fn(Item) -> bool,
+    freshly_acquired: bool,
 ) -> Option<plan::Chosen<'r>> {
     if census.refineries == 0 || census.harvesters == 0 || budget.free < 2_500 {
         return None;
@@ -1232,7 +1236,12 @@ fn foreign_tech_building<'r>(
     // dormant in ordinary 10K matches, even with an already captured yard.
     let established_mining = census.refineries >= 2 && census.harvesters >= 2
         && budget.income.is_none_or(|income| income >= 500);
-    let startup_reserve = if established_mining { 3_500 } else { 6_000 };
+    // Once V37 confirms ownership of a *foreign* yard, temporarily finance
+    // its first legal power/barracks/factory chain before surplus riflemen.
+    // The original income/harvester floor still applies, and this is never a
+    // bypass of native CanBuild or prerequisites.
+    let startup_reserve = if established_mining || freshly_acquired { 3_000 }
+        else { 6_000 };
     if !native_lab && budget.free < startup_reserve { return None; }
     let yards: Vec<_> = obs.own_entities().filter_map(|owned| {
         let yard = obs.object_type(rules, owned.type_id)?;

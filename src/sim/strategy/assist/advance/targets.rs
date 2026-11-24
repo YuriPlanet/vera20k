@@ -20,7 +20,7 @@
 //! order they were written rather than the order they matter in. They answer
 //! one question between them, so they live where the question is asked.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
@@ -77,7 +77,7 @@ pub(super) fn choose(
     obs: &Observation<'_>,
 ) -> (Answer, (u64, usize)) {
     choose_focused(census, tracked, tick, progress, anchor, fighters,
-        rules, obs, None)
+        rules, obs, None, None)
 }
 
 /// In multi-house games, concentrate on a single opponent's known buildings,
@@ -94,6 +94,7 @@ pub(super) fn choose_focused(
     rules: &RuleSet,
     obs: &Observation<'_>,
     preferred: Option<InternedId>,
+    remembered_search: Option<(u16,u16)>,
 ) -> (Answer, (u64, usize)) {
     // Structures, not units: a base is what a house loses with, and a
     // defending unit walks into the push on its own. Refineries first — a
@@ -104,9 +105,17 @@ pub(super) fn choose_focused(
     // is being taken whole, and shooting it destroys the prize the walk was
     // paid for. Capturing outranks destroying wherever both are possible, so
     // the fist goes for something else while the walk is under way.
+    // V36: The census can retain a **historic** enemy sighting for a while.
+    // Historic coordinates are search evidence, not authority to target an
+    // entity that is no longer in vision. Target selection must contain only
+    // the currently seen enemy ids. Recon supplies a coordinate-only search
+    // route when the live target list is empty.
+    let visible_ids: BTreeSet<u64> = obs.visible_enemy_entities()
+        .map(|enemy| enemy.entity_id).collect();
     let structures: Vec<(&ObjectType, EnemyEntity)> = census
         .enemies
         .iter()
+        .filter(|enemy| visible_ids.contains(&enemy.entity_id))
         .filter_map(|enemy| {
             obs.object_type(rules, enemy.type_id)
                 .filter(|ty| ty.category == ObjectCategory::Building)
@@ -170,6 +179,7 @@ pub(super) fn choose_focused(
             census
                 .enemies
                 .iter()
+                .filter(|enemy| visible_ids.contains(&enemy.entity_id))
                 .filter(|enemy| {
                     !structures
                         .iter()
@@ -184,7 +194,14 @@ pub(super) fn choose_focused(
         // them is clear, and what "everyone waits until the next target
         // appears" is missing. The cell is the nearest ground nobody has
         // seen yet, so the march is also the scouting pass.
-        let Some(cell) = searching_cell(obs, anchor) else {
+        // V36: a building sighted earlier is a more informative *search*
+        // destination than an arbitrary fog corner. Never click its old id:
+        // it may have been demolished or captured out of vision. Scout intel
+        // only supplies a coordinate for native AttackMove, and a reachable
+        // alternative takes priority over a stale site across a cliff.
+        let site = remembered_search.filter(|cell| fighters.iter().any(|unit|
+            super::super::orders::reachable(rules,obs,unit.entity_id,*cell)));
+        let Some(cell) = site.or_else(|| searching_cell(obs, anchor)) else {
             return (Answer::NowhereToLook, progress);
         };
         targets.push(EnemyEntity {
@@ -269,13 +286,51 @@ pub(super) fn choose_focused(
     // future superweapon before picking yet another nearby refinery. Do not
     // redirect the fist across the map: that would regress the proven v10
     // reachable/nearest target behaviour.
-    let campaign_target = structures.iter()
+    // A visible power-dependent tower that has gone off-line is not the
+    // objective to demolish first: doing so *reduces the enemy power drain*
+    // and can bring the rest of its defenses back online. When its actual
+    // owner and one of that owner's power producers are both in sight, attack
+    // the reachable generator instead. A spy blackout or low-power condition
+    // is an observation of this specific tower, never a read of hidden enemy
+    // economy. Restrict this to the *same* nearby assault lane.
+    let dark_tower = structures.iter().filter(|(ty, enemy)| {
+        powered_defense_dark(ty, obs.visible_enemy_building_operational(rules, enemy.entity_id))
+            && obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
+            && cell_distance(enemy.cell, nearest.cell) <= 12
+    }).min_by_key(|(_, enemy)| (cell_distance(anchor, enemy.cell), enemy.entity_id));
+    let power_pressure = dark_tower.and_then(|(_, tower)| {
+        let owner = obs.visible_enemy_house(tower.entity_id)?;
+        structures.iter().filter(|(ty, power)| {
+            ty.power > 0
+                && obs.visible_enemy_house(power.entity_id) == Some(owner)
+                && cell_distance(power.cell, tower.cell) <= 28
+                && cell_distance(power.cell, anchor) <= 36
+                && fighters.iter().any(|unit|
+                    obs.can_hurt(rules, unit.entity_id, power.entity_id)
+                        && super::super::orders::reachable(
+                            rules, obs, unit.entity_id, power.cell))
+        }).min_by_key(|(ty, power)| {
+            (power_target_rank(cell_distance(anchor, power.cell), ty.power),
+                power.entity_id)
+        }).map(|(_, power)| *power)
+    });
+    let campaign_target = power_pressure.unwrap_or_else(|| structures.iter()
         .filter(|(ty, enemy)| super::super::build::grants_a_strike(rules, ty)
             && obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
             && strike_on_approach(anchor, nearest.cell, enemy.cell))
         .min_by_key(|(_, enemy)| (cell_distance(enemy.cell, anchor), enemy.entity_id))
-        .map_or(nearest, |(_, enemy)| *enemy);
-    let target = match blocking_structure(&structures, anchor, campaign_target) {
+        .map_or(nearest, |(_, enemy)| *enemy));
+    let blockage = blocking_structure(&structures, anchor, campaign_target).filter(|blocker| {
+        // A disabled defensive tower is not a reason to cancel a power-plant
+        // raid. Its now-silent cell can be skirted; an operational gun or a
+        // solid wall along the route is still handled by normal cover rules.
+        power_pressure.is_none() || !structures.iter().any(|(ty, enemy)| {
+            enemy.entity_id == blocker.entity_id
+                && powered_defense_dark(ty,
+                    obs.visible_enemy_building_operational(rules, enemy.entity_id))
+        })
+    });
+    let target = match blockage {
         Some(blocker) => covering_defense(&structures, blocker, rules, obs).unwrap_or(blocker),
         None => covering_defense(&structures, campaign_target, rules, obs).unwrap_or(campaign_target),
     };
@@ -295,6 +350,41 @@ pub(super) fn choose_focused(
         progress,
     )
 }
+/// In native power assessment only `Powered=yes` with positive power drain
+/// loses its operation when power goes short. A zero-drain pillbox or an
+/// unpowered mod building must not trigger a false "grid blackout" campaign.
+fn powered_defense_dark(ty: &ObjectType, operational: bool) -> bool {
+    ty.is_base_defense && ty.powered && ty.power < 0 && !operational
+}
+
+/// A high-output reactor is worth some extra travel, but never an unlimited
+/// across-map redirect. The caller also enforces a local distance cap.
+fn power_target_rank(distance: i32, output: i32) -> i32 {
+    distance.saturating_sub((output.max(0) / 100).min(9))
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod power_suppression_tests {
+    use super::{power_target_rank, powered_defense_dark};
+
+    #[test]
+    fn only_power_dependent_defenses_signal_a_real_loss_of_power() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules()
+        else { return; };
+        let tesla = rules.object("TESLA").expect("retail Tesla coil");
+        let pillbox = rules.object("GAPILL").expect("retail pillbox");
+        assert!(powered_defense_dark(tesla, false));
+        assert!(!powered_defense_dark(tesla, true));
+        assert!(!powered_defense_dark(pillbox, false));
+    }
+
+    #[test]
+    fn a_nearby_plant_beats_a_far_reactor_but_output_matters_locally() {
+        assert!(power_target_rank(9, 200) < power_target_rank(30, 2_000));
+        assert!(power_target_rank(12, 2_000) < power_target_rank(10, 200));
+    }
+}
+
 /// A threat is urgent when it lies within the next local push, not merely
 /// anywhere on the map. The narrow distance condition protects v10's wins.
 fn strike_on_approach(anchor: (u16, u16), chosen: (u16, u16),

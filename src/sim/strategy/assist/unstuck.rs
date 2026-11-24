@@ -31,6 +31,9 @@ struct Motion {
     best_distance: i32,
     last_progress_at: u64,
     bounce: u8,
+    /// Number of failed escape cycles toward this same distant goal. Reverses
+    /// the preferred flank if a cliff or civilian block defeats the first.
+    escape_attempts: u8,
     cooldown_until: u64,
 }
 
@@ -53,7 +56,7 @@ impl Recovery {
             destination: dest, previous_destination: None, destination_flips: 0,
             last_cell: at, before_last: None,
             best_distance: distance, last_progress_at: now,
-            bounce: 0, cooldown_until: 0,
+            bounce: 0, escape_attempts: 0, cooldown_until: 0,
         });
         if sample.destination != dest {
             // Two nearby waypoints alternating while the unit stands in the
@@ -66,7 +69,8 @@ impl Recovery {
                     destination: dest, previous_destination: None,
                     destination_flips: 0, last_cell: at, before_last: None,
                     best_distance: distance, last_progress_at: now,
-                    bounce: 0, cooldown_until: now.saturating_add(30),
+                    bounce: 0, escape_attempts: 0,
+                    cooldown_until: now.saturating_add(30),
                 };
                 return false;
             }
@@ -84,6 +88,7 @@ impl Recovery {
             { return false; }
             sample.last_progress_at = now;
             sample.destination_flips = 0;
+            sample.escape_attempts = sample.escape_attempts.wrapping_add(1);
             sample.cooldown_until = now.saturating_add(ESCAPE_COOLDOWN_FRAMES);
             return true;
         }
@@ -98,6 +103,7 @@ impl Recovery {
             sample.last_progress_at = now;
             sample.bounce = 0;
             sample.destination_flips = 0;
+            sample.escape_attempts = 0;
         }
         if now < sample.cooldown_until {
             return false;
@@ -109,8 +115,13 @@ impl Recovery {
         }
         sample.last_progress_at = now;
         sample.bounce = 0;
+        sample.escape_attempts = sample.escape_attempts.wrapping_add(1);
         sample.cooldown_until = now.saturating_add(ESCAPE_COOLDOWN_FRAMES);
         true
+    }
+
+    fn escape_attempts(&self, id: u64) -> u8 {
+        self.motion.get(&id).map_or(0, |motion| motion.escape_attempts)
     }
 
     fn retain(&mut self, live: &BTreeSet<u64>) {
@@ -129,14 +140,17 @@ impl Recovery {
 /// reach them and today's *visible* guns cannot cover them.
 fn step_around(
     rules: &RuleSet, obs: &Observation<'_>, zone: MovementZone,
-    from: (u16,u16), to: (u16,u16), id: u64,
+    from: (u16,u16), to: (u16,u16), id: u64, attempt: u8,
 ) -> Option<(u16,u16)> {
     let dx = i32::from(to.0) - i32::from(from.0);
     let dy = i32::from(to.1) - i32::from(from.1);
     let offsets = [(1,0),(-1,0),(0,1),(0,-1),
         (1,1),(-1,1),(1,-1),(-1,-1)];
-    let mut best: Option<((i32,i32,i32,u16,u16),(u16,u16))> = None;
-    for distance in [3, 6, 9] {
+    let mut best: Option<((i32,u8,i32,i32,u16,u16),(u16,u16))> = None;
+    // A three-cell shuffle cannot clear a cliff or a block of neutral
+    // structures. Use larger *reachable* flank posts rather than marching
+    // toward the same blocked point, and alternate flanks on repeated stalls.
+    for distance in [3, 6, 9, 12, 16] {
         for (sx,sy) in offsets {
             // Do not just drive forward again into the same blocked approach.
             // A perpendicular side turn or a backward offset is a detour;
@@ -155,7 +169,9 @@ fn step_around(
                 || obs.visible_enemy_entities().any(|enemy|
                     super::squared_distance(enemy.cell,cell) <= 6*6)
             { continue; }
-            let key = (if cross > 0 {0} else {1},
+            let side = dx * sy - dy * sx;
+            let flank = if side == 0 { 2 } else if (side > 0) == (attempt % 2 == 0) { 0 } else { 1 };
+            let key = (if cross > 0 {0} else {1}, flank,
                 cell_distance(cell,to), distance, x, y);
             if best.is_none_or(|(current,_)|key<current) { best=Some((key,cell)); }
         }
@@ -175,7 +191,8 @@ pub(super) fn run(
         // Never interrupt anyone deliberately standing still or managed by
         // the player, the refinery or a specialist lifecycle.
         if super::advance::charge_member(brain, now, id)
-            || !unit.controllable() || !(unit.traits.combat || unit.traits.yard_maker)
+            || !unit.controllable() || !(unit.traits.combat || unit.traits.yard_maker
+                || unit.traits.engineer || unit.traits.spy)
             || unit.in_service() || obs.is_deployed(id)
             || brain.avoid_retreat_until.get(&id).is_some_and(|until| now < *until)
             || obs.attack_target(id).is_some()
@@ -217,7 +234,16 @@ pub(super) fn run(
             }
             continue;
         }
-        let Some(step) = step_around(rules, obs, ty.movement_zone, unit.cell, dest, id) else {
+        // First try a bounded real terrain route. A cliff or a broad block
+        // is not solved by oscillating left/right for 16 cells; a waypoint
+        // around its actual navigable corner is. Native locomotion continues
+        // to own the move and the original goal is retained by the tracker.
+        // When the route is outside our bounded search, fall back to the
+        // shorter lateral recovery rather than spending unbounded CPU.
+        let Some(step) = super::navigation::recovery_post(
+            rules, obs, id, ty.movement_zone, unit.cell, dest,
+        ).or_else(|| step_around(rules, obs, ty.movement_zone,
+            unit.cell, dest, id, brain.unstuck.escape_attempts(id))) else {
             continue;
         };
         // Do not side-step into an observed enemy. Avoidance and combat micro
@@ -251,6 +277,19 @@ mod tests {
         assert!(!recovery.observe(189, 7, (4, 4), (30, 4)));
         assert!(recovery.observe(190, 7, (4, 4), (30, 4)));
         assert!(!recovery.observe(191, 7, (4, 4), (30, 4)), "recovery has a cooldown");
+    }
+
+    #[test]
+    fn repeated_stalls_track_retry_number_and_real_progress_clears_it() {
+        let mut recovery = Recovery::default();
+        assert!(!recovery.observe(10, 51, (4, 4), (30, 4)));
+        assert!(recovery.observe(190, 51, (4, 4), (30, 4)));
+        assert_eq!(recovery.escape_attempts(51), 1);
+        assert!(!recovery.observe(489, 51, (4, 4), (30, 4)));
+        assert!(recovery.observe(490, 51, (4, 4), (30, 4)));
+        assert_eq!(recovery.escape_attempts(51), 2);
+        assert!(!recovery.observe(491, 51, (5, 4), (30, 4)));
+        assert_eq!(recovery.escape_attempts(51), 0);
     }
 
     #[test]
