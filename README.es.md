@@ -122,7 +122,9 @@ Ares, Phobos y muchos otros.
 
 Copyright © 2026 Halvor Nikolai Rusten y los colaboradores de VERA20K.
 Distribuido bajo la licencia [GPLv3](LICENSE-GPL) con [términos adicionales](LEGAL.md#additional-terms).
-Este repositorio no contiene archivos del juego.
+VERA20K incluye con permiso las losetas de nieve y hielo de Tiberian Sun: Firestorm,
+que siguen siendo propiedad de Electronic Arts. Cada jugador debe aportar los archivos
+de su propia copia de Red Alert 2: Yuri's Revenge.
 Command & Conquer y Red Alert son marcas comerciales de Electronic Arts Inc., y las capturas de
 pantalla y el icono de la aplicación, la estrella roja de Red Alert 2, muestran arte del juego
 propiedad de Electronic Arts. VERA20K no está afiliado a Electronic Arts ni cuenta con su respaldo.

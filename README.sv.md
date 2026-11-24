@@ -119,8 +119,10 @@ många andra.
 
 Copyright © 2026 Halvor Nikolai Rusten och VERA20K:s bidragsgivare.
 Licensierat under [GPLv3](LICENSE-GPL) med [ytterligare villkor](LEGAL.md#additional-terms).
-Det här repot innehåller inga spelfiler. Command &
-Conquer och Red Alert är varumärken som tillhör Electronic Arts Inc., och skärmbilderna och
+VERA20K innehåller med tillstånd snö- och isrutor från Tiberian Sun: Firestorm.
+Rutorna tillhör fortfarande Electronic Arts. Du behöver spelfilerna från ditt eget exemplar av
+Red Alert 2: Yuri's Revenge.
+Command & Conquer och Red Alert är varumärken som tillhör Electronic Arts Inc., och skärmbilderna och
 appikonen, Red Alert 2:s röda stjärna, visar spelgrafik som ägs av Electronic Arts. VERA20K har
 ingen koppling till och stöds inte av Electronic Arts.
 

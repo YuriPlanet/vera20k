@@ -119,7 +119,9 @@ nhiều dự án khác.
 
 Copyright © 2026 Halvor Nikolai Rusten và những người đóng góp cho VERA20K.
 Được cấp phép theo [GPLv3](LICENSE-GPL) kèm [các điều khoản bổ sung](LEGAL.md#additional-terms).
-Kho mã này không chứa tệp nào của trò chơi. Command & Conquer và Red Alert là thương hiệu của
+VERA20K đã được phép phân phối kèm các ô địa hình tuyết và băng từ Tiberian Sun: Firestorm.
+Các ô này vẫn thuộc sở hữu của Electronic Arts. Người chơi phải dùng tệp trò chơi từ bản
+Red Alert 2: Yuri's Revenge của mình. Command & Conquer và Red Alert là thương hiệu của
 Electronic Arts Inc., còn ảnh chụp màn hình và biểu tượng ứng dụng, ngôi sao đỏ của Red Alert 2,
 thể hiện hình ảnh trò chơi thuộc sở hữu của Electronic Arts. VERA20K không liên kết với Electronic
 Arts và không được Electronic Arts chứng thực.

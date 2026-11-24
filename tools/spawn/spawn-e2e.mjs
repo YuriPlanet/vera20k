@@ -11,8 +11,9 @@
 //   node tools/spawn/spawn-e2e.mjs direct --out DIR --ra2 RETAIL [--players 2] [--base-port 1300]
 //                                         [--ips A,B,...]
 // Both accept --ai N (computer houses after every human; relay mode admits
-// --players 1 with them), --spectators S,T (SourceIndex list, [IsSpectator]) and --speed N
-// (GameSpeed, default 2; one of the selectable speeds, 8 included).
+// --players 1 with them), --spectators S,T (SourceIndex list, [IsSpectator]), --speed N
+// (GameSpeed, default 2; one of the selectable speeds, 8 included) and --starts A,B,...
+// (each source's [SpawnLocations] start, -2 for none; humans on one start share its House).
 // --ips gives each source's address in the other files (default 127.0.0.1).
 // --cors ORIGIN answers the browser's CORS preflight for that page origin.
 // --gateway ORIGIN names the WebSocket gateway browser players reach the relay by.
@@ -56,6 +57,7 @@ function options(argv) {
   if (!LAUNCH_HZ.has(parsed.speed)) throw new Error(`--speed must be one of ${[...LAUNCH_HZ.keys()].join(', ')}`);
   parsed.spectatorSet = new Set(String(parsed.spectators).split(',').filter(Boolean).map(Number));
   parsed.ipList = String(parsed.ips).split(',').filter(Boolean);
+  parsed.startList = String(parsed.starts ?? '').split(',').filter(Boolean).map(Number);
   return parsed;
 }
 
@@ -80,6 +82,11 @@ function spawnIni(opts, local, extraSettings, otherKeys, relaySection) {
       `SourceIndex=${source}\n${otherKeys(source)}`;
   }
   if (spectators.length) text += `[IsSpectator]\n${spectators.join('\n')}\n`;
+  // [SpawnLocations] in this file's numbering too: local Multi1, then the others by source.
+  if (opts.startList.length) {
+    const order = [local, ...Array.from({ length: opts.players }, (_, source) => source).filter((source) => source !== local)];
+    text += `[SpawnLocations]\n${order.map((source, house) => `Multi${house + 1}=${opts.startList[source] ?? -2}`).join('\n')}\n`;
+  }
   // AI houses follow every human: Multi{PlayerCount+1}.. (docs/spawn.md).
   if (opts.ai) {
     const keys = Array.from({ length: opts.ai }, (_, index) => `Multi${opts.players + index + 1}`);

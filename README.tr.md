@@ -119,7 +119,9 @@ Ares, Phobos ve daha nicelerine teşekkürler.
 
 Telif hakkı © 2026 Halvor Nikolai Rusten ve VERA20K'ya katkıda bulunanlar.
 [Ek koşullarla](LEGAL.md#additional-terms) birlikte [GPLv3](LICENSE-GPL) ile lisanslanmıştır.
-Bu depo hiçbir oyun dosyası içermez.
+Tiberian Sun: Firestorm'daki kar ve buz karoları pakete izinle dahil edilmiştir.
+Bu karoların mülkiyeti Electronic Arts'a aittir. Oyuncular Red Alert 2: Yuri's Revenge
+dosyalarını kendi oyun kopyalarından sağlar.
 Command & Conquer ve Red Alert, Electronic Arts Inc. şirketinin ticari markalarıdır.
 Ekran görüntülerindeki ve uygulama simgesindeki (Red Alert 2'nin kırmızı yıldızı) oyun grafikleri
 Electronic Arts'a aittir. VERA20K, Electronic Arts ile bağlantılı değildir ve Electronic Arts

@@ -144,10 +144,11 @@ impl HeadlessScenario {
     }
 }
 
-/// Native logic-frame cadence (66 ms). NOTE: this does NOT match the
-/// client, which steps the sim at `app::types::SIM_TICK_MS` = 22 ms — a
-/// recorded 3x tooling divergence; headless digests are not tick-comparable
-/// to client runs until it is resolved.
+/// Native logic-frame cadence (66 ms), the step headless tools hand each
+/// frame. The client paces its frames at `app::types::SIM_TICK_MS` = 22 ms
+/// instead, and a relay paces them at `1000 / FPS`: a frame is one native
+/// logic frame either way, so frame counts, state hashes and
+/// `scenario_session::ScenarioSession::total_sim_ms` agree across all three.
 pub const SIM_TICK_MS: u32 = 1000 / crate::util::fixed_math::RA2_LOGIC_FRAMES_PER_SECOND;
 
 /// Load `map_file_name` from the retail install at `retail_dir` with a pinned seed.

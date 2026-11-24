@@ -4,7 +4,7 @@ Firestorm's snow maps had ice that gives way. A heavy unit driving onto ice crac
 a sound; a heavier one, or a unit on ice that is already cracked, breaks it and sinks, and
 so does every other vehicle standing there. A crack freezes over after a while, and open
 water the map marks for ice grows back. Yuri's Revenge still reads the rules keys but has
-no ice code. Choose **Ice Lake** in Skirmish to play with VERA's original ice tiles.
+no ice code. Choose **Ice Lake** in Skirmish to try the breakable ice.
 The two bases face each other across a frozen shortcut. Grizzlies crack fresh ice,
 Rhinos and Apocalypse tanks break through, and either shore gives a dry route
 around the lake.
@@ -76,7 +76,7 @@ In World-Altering Editor with a Yuri's Revenge profile:
    its central crossing should show ice on both banks and open pools away
    from the middle.
 4. Put the finished map in VERA's `Maps` folder. Share just the map file with
-   other players. VERA supplies the artwork when it loads the map.
+   other players. VERA supplies the artwork when it loads the map. The [game files notice](../LEGAL.md#game-files) covers the bundled tile art.
 
 The editor numbers tiles by their order in the theater and supports named MIX
 archives in its file-manager configuration.
