@@ -1044,13 +1044,21 @@ impl Simulation {
                         destination = None;
                     }
                     if unit_repair {
+                        // Firestorm 2.0 `UnitClass::Assign_Destination`
+                        // (`0x00657EA5..0x00657F45`) asks no health of a
+                        // unit bound for a busy depot. A unit with Tiberian
+                        // Sun limpets waits as a damaged one does
+                        // (`sim::limpet`): the depot's RepairTick takes them
+                        // off whatever its health.
                         let damaged = self
                             .substrate
                             .entities
                             .get(id)
                             .and_then(|unit| {
-                                self.entity_object_type(unit, rules)
-                                    .map(|object| !unit.health.is_full(object.strength))
+                                self.entity_object_type(unit, rules).map(|object| {
+                                    !unit.health.is_full(object.strength)
+                                        || unit.foot_speed.limpeted()
+                                })
                             })
                             .unwrap_or(false);
                         if damaged {

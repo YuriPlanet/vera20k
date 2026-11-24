@@ -685,6 +685,12 @@ pub(super) fn hash_entity_owed(
         0x284_u32.hash(hasher);
         entity.chrono_warp_delay().hash(hasher);
     }
+    // Tiberian Sun's limpets (`sim::limpet`), which Firestorm's sync CRC
+    // folds (`Object_CRC 0x00638F4E`); tagged like +0x1F8.
+    if entity.seldom.limpets.is_attached() {
+        b"ts-limpets-v1".hash(hasher);
+        entity.seldom.limpets.hash(hasher);
+    }
 
     if let Some(ref loco) = entity.locomotor {
         1u8.hash(hasher);

@@ -2860,6 +2860,9 @@ impl Simulation {
         // slot initialization. Otherwise full-health animations consume IDs/RNG
         // here and ActuallyPlaced suppresses the real completion callback.
         converted_health.apply(&mut destination);
+        if let Some(source) = self.substrate.entities.get(stable_id) {
+            crate::sim::limpet::carry(source, &mut destination);
+        }
         #[cfg(feature = "phobos")]
         {
             destination.invulnerability = self.curtain_to_carry(stable_id, rules);
@@ -3164,6 +3167,10 @@ impl Simulation {
             unit.invulnerability = self.curtain_to_carry(sid, rules);
             unit
         };
+        let mut unit = unit;
+        if let Some(building) = self.substrate.entities.get(sid) {
+            crate::sim::limpet::carry(building, &mut unit);
+        }
         let (new_sid, position) = self.store_with_constructor_managers(unit, rules, frame_effects);
         // Selling449E74/449E80 caches the building's refund before its Limbo
         // and the new Unit's Unlimbo. Those callbacks may change the owner.

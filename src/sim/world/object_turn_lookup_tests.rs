@@ -81,6 +81,9 @@ fn a_tanks_turn_and_a_load_store_no_building_state() {
 /// part. A new field that pushes either past its ceiling belongs behind a
 /// pointer or in the other part. The object's Ares state is one such
 /// pointer, so moving it into every build costs the seldom part 8 bytes.
+/// Tiberian Sun's limpets are another 8 there: every vehicle's speed query
+/// would read them each step, so a byte in the main part's padding
+/// (`FootSpeedState::limpeted`) says when to.
 #[cfg(all(
     target_pointer_width = "64",
     not(any(feature = "phobos", feature = "debug-tools"))
@@ -93,7 +96,7 @@ fn the_object_record_stays_under_its_ceiling() {
         std::mem::size_of::<Seldom>(),
     );
     assert!(
-        main <= 1208 && seldom <= 824,
+        main <= 1208 && seldom <= 832,
         "GameEntity is {main} bytes and Seldom {seldom}"
     );
 }

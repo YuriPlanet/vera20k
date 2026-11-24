@@ -517,7 +517,10 @@ pub(super) fn attack_action_with(
     if actor.category() == EntityCategory::Structure {
         // Building447366..4473C7 /4476F3..447749 inspect GetWeapon(0),
         // irrespective of SelectWeapon. These are class post-processing of
-        // Attack, not a replacement range owner.
+        // Attack, not a replacement range owner. A Tiberian Sun limpet mine
+        // takes no attack order either: Firestorm 2.0 `BuildingClass::
+        // What_Action` tests `IsLimpetMine=` in the same list (object
+        // `0x0042ECC6`, cell `0x0042EF65`; `sim::limpet`).
         if action == AttackAction::Attack
             && let Some(weapon) = crate::sim::combat::combat_weapon::get_weapon(
                 actor,
@@ -531,6 +534,7 @@ pub(super) fn attack_action_with(
                 .weapon_projectile(weapon)
                 .is_some_and(|projectile| !projectile.ag)
                 || kind.emp_pulse_cannon
+                || kind.is_limpet_mine
                 || actor.mission.current().known()
                     == Some(crate::sim::mission::MissionType::Selling))
         {

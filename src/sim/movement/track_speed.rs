@@ -188,8 +188,16 @@ pub(super) fn advance(
         unit_passive: entity.category() == crate::map::entities::EntityCategory::Unit
             && object.is_some_and(|object| object.passive),
         selector,
+        // Drive's brake reads the object's max speed (vt+0x38C at
+        // `0x004B10AC`), a Tiberian Sun limpet's included
+        // (`sim::limpet::max_speed`); Ship's reads the type's.
         raw_type_speed: object.map_or(0, |o| {
-            crate::util::fixed_math::ra2_speed_to_leptons_per_frame(o.speed)
+            let speed = crate::util::fixed_math::ra2_speed_to_leptons_per_frame(o.speed);
+            if family == TrackFamily::Drive {
+                crate::sim::limpet::max_speed(entity, speed)
+            } else {
+                speed
+            }
         }),
         accel: object.map_or(NativeF64Bits::POSITIVE_ZERO, |o| o.accel_factor),
         decel: object.map_or(NativeF64Bits::POSITIVE_ZERO, |o| o.decel_factor),

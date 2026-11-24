@@ -805,6 +805,10 @@ impl ObjectType {
             balloon_hover: section.read_bool("BalloonHover", false),
             target_laser: section.read_bool("TargetLaser", false),
             is_simple_deployer: section.read_bool("IsSimpleDeployer", false),
+            is_limpet_mine: category == ObjectCategory::Building
+                && section.read_bool("IsLimpetMine", false),
+            is_limpet_drone: category == ObjectCategory::Vehicle
+                && section.read_bool("IsLimpetDrone", false),
             small_visceroid: category == ObjectCategory::Vehicle
                 && section.read_bool("SmallVisceroid", false),
             large_visceroid: category == ObjectCategory::Vehicle

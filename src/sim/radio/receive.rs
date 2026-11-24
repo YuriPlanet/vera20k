@@ -555,10 +555,20 @@ fn building_docking(
     };
     // UnitRepair43C814..849 asks the existing contact whether its
     // signed Health/Strength is full before any HELLO or movement probe.
+    // Firestorm 2.0's depot asks it message 0x20 (`BuildingClass::
+    // Receive_Message` `0x00426B4A..0x00426B79`), which no Firestorm
+    // receiver answers, so it never refuses there. A contact with Tiberian
+    // Sun limpets is not asked (`sim::limpet`): the depot's RepairTick takes
+    // them off whatever its health.
     let unit_repair = object.unit_repair;
     let bunker = object.bunker;
     if unit_repair
         && building.seldom.radio_contacts.contains(from)
+        && !sim
+            .substrate
+            .entities
+            .get(from)
+            .is_some_and(|contact| contact.foot_speed.limpeted())
         && transmit(
             sim,
             building_id,
@@ -2197,6 +2207,10 @@ fn techno_repair_tick(
     rules: &RuleSet,
     effects: &mut FrameEffects<'_>,
 ) -> RadioResponse {
+    // Firestorm 2.0 `TechnoClass::Receive_Message` RADIO_REPAIR
+    // (`0x0062ABE1`) takes every Tiberian Sun limpet off before its health
+    // test (`sim::limpet`).
+    sim.clear_limpets(techno, rules, effects);
     let Some(entity) = sim.substrate.entities.get(techno) else {
         return RadioResponse::None;
     };

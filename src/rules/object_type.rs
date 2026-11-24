@@ -1703,6 +1703,20 @@ pub struct ObjectType {
     /// The Jumpjet cruise reads it on a Unit owner at arrival
     /// (`State3_Translate 0x0054C1FE`).
     pub is_simple_deployer: bool,
+    /// Tiberian Sun's `IsLimpetMine=` (docs/ts-limpets.md), a BuildingType
+    /// key: Firestorm 2.0 `BuildingTypeClass::Read_INI @ 0x00440A40` reads it
+    /// into BuildingType+0x890 with ReadBool over the current value
+    /// (`0x00440C27..0x00440C3B`); the constructor zeroes it (`0x0043F666`).
+    /// A limpet mine cannot be ordered to attack, and vehicles drive into
+    /// its cell (`sim::limpet`).
+    pub is_limpet_mine: bool,
+    /// Tiberian Sun's `IsLimpetDrone=` (docs/ts-limpets.md), a VehicleType
+    /// key: Firestorm 2.0 `UnitTypeClass::Read_INI @ 0x0065BBA0` reads it into
+    /// UnitType+0x4A2 with ReadBool over the current value
+    /// (`0x0065BE44..0x0065BE67`); the constructor zeroes it (`0x0065B764`).
+    /// Its readers run the Unit's Stage as a ten-frame loop and draw the
+    /// body from it (`sim::limpet::wrap_drone_stage`).
+    pub is_limpet_drone: bool,
     /// UnitType+E18/E19, original747862..747896: the Unit section's
     /// ReadBool SmallVisceroid/LargeVisceroid, distinct from General's type
     /// references with the same keys. Unit Unlimbo737BF5 reads these bytes.

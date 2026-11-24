@@ -86,3 +86,4 @@ simulation, session and network command owners.
 - [Tiberian Sun ice](ts-ice.md): Firestorm's ice that heavy units crack and break, for a snow theater that ships the ice tiles.
 - [Stock rules retail leaves off](dormant-stock-rules.md): `Assaulter=`, `CanDetonateTimeBomb=` and other gamemd keys only a mod or map switches on.
 - [Tiberian Sun Ion Cannon](ts-ion-cannon.md): `Type=IonCannon`, the Tiberian Sun superweapon that fires an ion blast at a cell, which a mod or map switches on by listing it.
+- [Tiberian Sun limpets](ts-limpets.md): `LimpetFactor=`, `AV=`, `IsLimpetMine=` and `IsLimpetDrone=`, Firestorm's limpet mines that slow a vehicle and let its attacker see through it.

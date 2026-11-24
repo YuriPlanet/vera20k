@@ -1523,6 +1523,11 @@ fn commit_entity(
         let mut receiver_event = *event;
         receiver_event.damage = caller_damage.read(world, rules);
         let event = &receiver_event;
+        // Firestorm 2.0 `TechnoClass::Take_Damage @ 0x006325A0` opens with a
+        // heal taking every Tiberian Sun limpet off (`sim::limpet`).
+        if event.damage < 0 {
+            world.clear_limpets(target_id, rules, run.effects());
+        }
         // Phobos `TechnoClass_ReceiveDamage @ 0x701900+0x6` runs the shield
         // before gamemd's receiver body and replaces `args->Damage` with the
         // surviving damage. The stage owns the mutation here, before the

@@ -23,6 +23,7 @@ and executes the saved command before it accepts the fixture.
 | `main-ffe8b25af.sav` | `ffe8b25af` (pre-release) | `skirmish` |
 | `main-93ab2ce86.sav` | `93ab2ce86` (pre-release) | `skirmish` |
 | `main-06789b62b.sav` | `06789b62b` (pre-release) | `skirmish` |
+| `main-8d55b4a73.sav` | `8d55b4a73` (pre-release) | `skirmish` |
 
 The ordinary worlds use `compat.map`, a flat 3×3 terrain and an authored
 APC type. At tick 91 the Americans player has 1,000 credits. The pending
