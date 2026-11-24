@@ -176,7 +176,7 @@ impl Simulation {
                     .and_then(|e| e.locomotor.as_ref())
                     .and_then(|l| l.fly_runtime())
                     .is_some_and(|s| s.taking_off())
-                && !self.foot_land_zone_clear(id, below, rules)
+                && !self.foot_land_zone_clear(id, below, rules, None)
             {
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
                     entity

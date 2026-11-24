@@ -12,8 +12,12 @@ use crate::sim::snapshot::GameSnapshot;
 use crate::util::fixed_math::{SIM_ONE, SimFixed};
 
 fn rules(speed: u32) -> RuleSet {
+    rules_with_cadence(speed, 1, 0)
+}
+
+fn rules_with_cadence(speed: u32, walk_rate: u32, idle_rate: u32) -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(&format!(
-        "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=100\nSpeed={speed}\nAccelerates=no\nSensorsSight=1\nWalkRate=1\nIdleRate=0\n"
+        "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=100\nSpeed={speed}\nAccelerates=no\nSensorsSight=1\nWalkRate={walk_rate}\nIdleRate={idle_rate}\n"
     ))).unwrap()
 }
 
@@ -260,4 +264,75 @@ fn forced_object_turn_queries_live_speed_and_advances_shp_once() {
     );
     assert!(outcome.moved_steps > 1);
     assert_eq!(entity.body_frame_counter.get(), before_body + 1);
+}
+
+/// The Foot body counter advances once per due frame. `0x004DA81A` asks
+/// the same predicate for the admission and for the counter it admits, so
+/// a walking foot whose WalkRate divides the frame advances the counter
+/// exactly once, and a frame the rate does not divide advances it not at
+/// all.
+#[test]
+fn foot_body_counter_advances_once_per_due_frame() {
+    let rules = rules_with_cadence(6, 4, 0);
+    let mut sim = fixture(0x43);
+    let mut before = sim
+        .substrate
+        .entities
+        .get(1)
+        .unwrap()
+        .body_frame_counter
+        .get();
+    let mut due_frames = 0;
+    for frame in 0..12 {
+        let walking = {
+            let entity = sim.substrate.entities.get(1).unwrap();
+            crate::sim::movement::motion_query::is_moving_now(
+                entity,
+                crate::sim::movement::SpeedRules::new(&rules, &sim.interner, &sim.houses),
+                frame,
+            )
+        };
+        tick(&mut sim, &rules, frame);
+        let after = sim
+            .substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .body_frame_counter
+            .get();
+        let due = walking && frame % 4 == 0;
+        assert_eq!(
+            after,
+            before + u32::from(due),
+            "frame {frame}: the counter advances once on a due frame"
+        );
+        due_frames += u32::from(due);
+        before = after;
+    }
+    assert!(due_frames > 0, "the foot walked on a due frame");
+}
+
+/// The Foot body-frame predicate is asked once per foot per frame: the
+/// Process asks it for the admission, and the counter that admission
+/// advances on that same answer. Asking it twice doubles the cost of the
+/// hottest per-frame loop for no change in the frame.
+#[test]
+fn foot_body_frame_predicate_is_asked_once_per_foot_frame() {
+    let rules = rules_with_cadence(6, 4, 0);
+    let mut sim = fixture(0x43);
+    let mut asked = 0;
+    for frame in 0..12 {
+        crate::sim::perf_probe::reset();
+        tick(&mut sim, &rules, frame);
+        let calls = crate::sim::perf_probe::foot_body_frame_due_calls();
+        assert!(
+            calls <= 1,
+            "frame {frame}: the foot's body-frame predicate is asked once per frame"
+        );
+        asked += calls;
+    }
+    assert_eq!(
+        asked, 12,
+        "the predicate was asked once in each of the frames"
+    );
 }
