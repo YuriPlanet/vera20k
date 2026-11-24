@@ -19,7 +19,10 @@ content as work lands; do not append a diary.
 
 | Piece | Where |
 | --- | --- |
-| Sandbox: Wasmtime engine, load checks, fuel, imports, `on_events` delivery, saves of memory/globals | `wasm-ext/src/native.rs` (desktop); `browser.rs` is a stub that refuses modules |
+| Sandbox: load checks, budgets, delivery, saves of memory/globals, one `SimModule` over a runtime | `wasm-ext/src/module.rs` |
+| Load-time rewrite every runtime runs: basic-block metering, bulk-memory charges, weighted call depth, NaN canonicalization, float globals stored as integer bits, memory maximum capped at the limit, exported mutable globals | `wasm-ext/src/instrument.rs` |
+| The `vera:sim` imports, written once over a `Guest` view and linked into both runtimes | `wasm-ext/src/host.rs` |
+| Runtimes: Wasmtime (desktop), the browser's own WebAssembly engine through js-sys (browser) | `wasm-ext/src/native.rs`, `wasm-ext/src/browser.rs`; rewrite tests in `rewrite_tests.rs` |
 | ABI types: import table, `Status`, `SimHost` trait, `PROPERTIES`, `Query`/`Clause` parsing | `wasm-ext/src/lib.rs` |
 | Action kind names and numbers (stock 0..149, atomic from 1000), `lookup`/`name_of(ActionKind)` | `wasm-ext/src/action_kinds.rs` |
 | `TriggerDef`/`EventDef`/`ActionDef` parsing, `EventRecord`, event and action numbers | `wasm-ext/src/triggers.rs` |
@@ -90,6 +93,29 @@ module (merge timers into one function).
 
 - Loading and validation, operation budgets, deterministic NaN, module random stream,
   disable-on-fault with an in-game notice, saves, state hash, MP checksum.
+- Browser runtime (open question 1): the browser build runs modules with the
+  browser's own WebAssembly engine (`WebAssembly.Module`/`Instance` through js-sys;
+  imports are wasm-bindgen closures into the engine, `i64` as BigInt). Measured in
+  headless Chrome on 2026-11-24 with 200,000-operation calls after the rewrite: per
+  call 0.025 ms computation, 0.045 ms calls (fib), 0.22 ms host calls (`get`),
+  against 0.9 / 2.4 / 0.4 ms for the wasmi 2 interpreter, which missed the 2 ms bar
+  on calls and was dropped. Both runtimes execute the same rewritten bytes
+  (`instrument.rs`, RFC sections 3 and 4): each basic block is charged in full
+  before it runs, one operation per original instruction; `memory.copy/fill/init`
+  and `table.copy/init` add one per 8 bytes of length; each function adds 4 +
+  parameters + declared locals to a depth counter capped at 8,192 slots (2,048
+  frames: a Chrome Web Worker held about 10,500 empty frames, the main thread
+  20,600); float results that may be NaN are replaced with the canonical NaN;
+  mutable float globals live as integer bits, so JavaScript reads them exactly; the
+  memory maximum is the module's limit, so `memory.grow` fails at the same size.
+  Wasmtime's fuel and Cranelift's NaN canonicalization are off. The instance is a
+  JavaScript object of the main thread, so a browser match with modules never lends
+  ticks to the simulation worker. Module memory is copied page by page for the
+  digests. Played together on 2026-11-24: a desktop client (`--no-default-features
+  --features wasm-net`, the build a browser package matches) and a browser page in
+  one relay match with VeteranFury and with MeteorStorm (`tools/spawn/run.sh browser`,
+  `BROWSERS=1 MOD=…`, one AI), 5,091 frames each, no desync, the page's module log
+  equal to the desktop's.
 - Map embedding, mod-folder `rules.wasm`, `asset` verbs.
 - Imports: `frame`, `random`, `log`, `has_kind`, `lookup`, `name_of`, `get`,
   `get_many`, `set`, `modify`, `unmodify`, `var_get`, `var_set`, `find`, `action`,
@@ -406,6 +432,14 @@ modules, external modders, freeze), and the later items (`Launch`,
   area, type or owner answer `Unsupported`.
 - The Rust SDK's delivery area is fixed at address 8 (9 records); one
   `named_actions!` and one `vars!` per module.
+- Call depth weighs parameters and declared locals, not operand stack height: a
+  function with a very deep expression stack and deep recursion could reach an
+  engine's own stack (Wasmtime's 512 KiB, a browser worker's) before the 8,192-slot
+  limit; the module then stops with "call stack exhausted" on that machine only.
+- Browser: speed measured in Chrome only (not Firefox, Safari or a slow device);
+  trap texts differ by browser (only "stopped" enters the state hash); Chrome
+  refuses synchronous compilation of a module over 8 MB on the main thread, so a
+  rewritten module near the 8 MB input limit fails to load there.
 
 ## Validation commands
 

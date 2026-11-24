@@ -169,7 +169,7 @@ fn a_module_names_its_actions_creates_a_trigger_and_receives_records() {
         .call(Export::ScenarioStart, 100_000, &mut host)
         .expect("call succeeds");
     assert_eq!(host.created.len(), 1);
-    let memory = module.memory();
+    let memory = &module.memory();
     assert_eq!(&memory[64..68], &7i32.to_le_bytes(), "lookup(ModuleAction)");
     assert_eq!(&memory[72..80], &99i64.to_le_bytes(), "trigger handle");
     let records = [
@@ -185,7 +185,7 @@ fn a_module_names_its_actions_creates_a_trigger_and_receives_records() {
     module
         .deliver(&records, 100_000, &mut host)
         .expect("on_events runs");
-    let memory = module.memory();
+    let memory = &module.memory();
     assert_eq!(&memory[80..88], &42i64.to_le_bytes());
     assert_eq!(&memory[88..92], &2i32.to_le_bytes());
     // More records than the area holds is the engine's error, not a trap.

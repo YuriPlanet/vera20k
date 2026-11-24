@@ -103,7 +103,7 @@ fn scene() -> Option<HeadlessScenario> {
     Some(scene)
 }
 
-fn memory(scene: &HeadlessScenario) -> &[u8] {
+fn memory(scene: &HeadlessScenario) -> Vec<u8> {
     scene.sim().ext_modules.slots[0].module.memory()
 }
 

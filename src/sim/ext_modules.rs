@@ -294,14 +294,18 @@ impl PageDigests {
         )
     }
 
-    /// Digests this frame's share of `memory` (see the type).
-    fn refresh(&mut self, memory: &[u8], frame: u32) {
-        let pages = memory.chunks(vera20k_wasm_ext::PAGE_BYTES);
-        self.0.resize(pages.len(), 0);
-        let due = self.0.iter_mut().zip(pages);
+    /// Digests this frame's share of a memory of `len` bytes (see the type),
+    /// copying only the pages due with `read(offset, page)`: a browser
+    /// module's memory lives outside the engine's.
+    fn refresh(&mut self, len: usize, frame: u32, mut read: impl FnMut(usize, &mut [u8]) -> bool) {
+        const PAGE: usize = vera20k_wasm_ext::PAGE_BYTES;
+        self.0.resize(len / PAGE, 0);
         let phase = frame as usize % DIGEST_ROTATION;
-        for (digest, page) in due.skip(phase).step_by(DIGEST_ROTATION) {
-            *digest = page_digest(page);
+        let mut page = vec![0u8; PAGE];
+        for (index, digest) in self.0.iter_mut().enumerate().skip(phase).step_by(DIGEST_ROTATION) {
+            if read(index * PAGE, &mut page) {
+                *digest = page_digest(&page);
+            }
         }
     }
 
@@ -2011,7 +2015,9 @@ impl Simulation {
         // This frame's share of every module's memory digests, a stopped
         // module's frozen memory included (RFC 15.1, item 7).
         for slot in &mut self.ext_modules.slots {
-            slot.digests.refresh(slot.module.memory(), frame);
+            let module = &slot.module;
+            slot.digests
+                .refresh(module.memory_len(), frame, |at, page| module.read_memory(at, page));
         }
     }
 

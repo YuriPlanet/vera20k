@@ -1940,9 +1940,15 @@ fn a_query_reads_viewpoint_and_passability_properties_for_its_viewpoint() {
 fn memory_digests_visit_every_page_within_fifteen_frames() {
     use super::PageDigests;
     let page = vera20k_wasm_ext::PAGE_BYTES;
+    let refresh = |digests: &mut PageDigests, memory: &[u8], frame| {
+        digests.refresh(memory.len(), frame, |at, out: &mut [u8]| {
+            out.copy_from_slice(&memory[at..at + out.len()]);
+            true
+        });
+    };
     let mut memory = vec![0u8; 20 * page];
     let mut digests = PageDigests::default();
-    digests.refresh(&memory, 0);
+    refresh(&mut digests, &memory, 0);
     assert_eq!(digests.0.len(), 20, "the page count shows at once");
     assert_eq!(digests.0[1], 0, "a new page waits for its turn");
     assert_ne!(digests.0[15], 0, "page 15 is frame 0's");
@@ -1950,23 +1956,23 @@ fn memory_digests_visit_every_page_within_fifteen_frames() {
     let before = digests.clone();
     memory[7 * page + 3] = 1;
     for frame in 1..7 {
-        digests.refresh(&memory, frame);
+        refresh(&mut digests, &memory, frame);
         assert_eq!(digests, before, "frame {frame}");
     }
-    digests.refresh(&memory, 7);
+    refresh(&mut digests, &memory, 7);
     assert_eq!(digests, PageDigests::of(&memory));
     // Page 19 comes round on frames 4, 19, 34, ...
     memory[19 * page] = 2;
     for frame in 8..19 {
-        digests.refresh(&memory, frame);
+        refresh(&mut digests, &memory, frame);
         assert_ne!(digests, PageDigests::of(&memory), "frame {frame}");
     }
-    digests.refresh(&memory, 19);
+    refresh(&mut digests, &memory, 19);
     assert_eq!(digests, PageDigests::of(&memory));
     memory.extend(std::iter::repeat_n(5u8, page));
-    digests.refresh(&memory, 19);
+    refresh(&mut digests, &memory, 19);
     assert_eq!(digests.0[20], 0, "a grown page waits");
-    digests.refresh(&memory, 20);
+    refresh(&mut digests, &memory, 20);
     assert_eq!(digests, PageDigests::of(&memory), "its turn");
 }
 
