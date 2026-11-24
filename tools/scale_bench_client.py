@@ -122,5 +122,6 @@ def time_client(map_path: Path, args, quiet_machine: Callable, summarize: Callab
             # A frame of this battle takes far longer than its 22 ms step
             # until the goal is met, so the bound is generous.
             runs.append(client_run(binary, folder, frames, timeout=1800.0))
+        scale_bench.note_run('client frame', runs[-1])
     keys: Sequence[str] = ('frame_ms', 'draw_ms', 'service_ms', 'tick_ms')
     return {'frame': summarize('client frame', runs, keys, args.spread)}

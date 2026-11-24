@@ -144,6 +144,14 @@ def summarize(name: str, runs: Sequence[dict], keys: Sequence[str], spread_limit
     return summary
 
 
+def note_run(figure: str, run: dict) -> None:
+    """Append one finished run to target/scale/runs.jsonl: a long benchmark
+    that fails late keeps what it measured."""
+    path = ROOT / 'target' / 'scale' / 'runs.jsonl'
+    with open(path, 'a', encoding='utf-8', newline='\n') as log:
+        log.write(json.dumps({'figure': figure, 'at': time.strftime('%Y-%m-%dT%H:%M:%S'), **run}) + '\n')
+
+
 def pool_name(threads: int | None) -> str:
     return 'all_threads' if threads is None else f'{threads}_threads'
 
@@ -156,6 +164,7 @@ def time_sim(binary: Path, map_path: Path, args: argparse.Namespace) -> dict:
         for _ in range(args.runs):
             with quiet_machine(args.wait_seconds):
                 runs.append(sim_run(binary, map_path, threads, extra))
+            note_run(f'sim tick, {pool_name(threads)}', runs[-1])
         hashes = {run['final_hash'] for run in runs}
         if len(hashes) != 1:
             raise BenchError(f'{pool_name(threads)}: runs ended in different states: {sorted(hashes)}')
@@ -232,10 +241,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             report['client_frame'] = scale_bench_client.time_client(map_path, args, quiet_machine, summarize)
     except BenchError as error:
         print(f'scale_bench: {error}', file=sys.stderr)
-        return 1
+        # What was timed before the failure is still worth reading.
+        report['failed'] = str(error)
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
         args.json.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8', newline='\n')
+    if 'failed' in report:
+        return 1
     unrepeatable = [name for section in ('sim_tick', 'client_frame')
                     for name, figure in report.get(section, {}).items()
                     if isinstance(figure, dict) and not figure.get('repeatable', True)]
