@@ -3289,6 +3289,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3378,6 +3379,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3457,6 +3459,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3504,6 +3507,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3549,6 +3553,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3595,6 +3600,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3637,6 +3643,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
@@ -3699,6 +3706,7 @@ mod tests {
             mod_dir: None,
             client_install: None,
             ares_setting: Default::default(),
+            kratos_setting: Default::default(),
             pinned_names: None,
         };
         manager.rebuild_indexes();
