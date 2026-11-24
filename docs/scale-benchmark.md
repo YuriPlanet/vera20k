@@ -114,5 +114,13 @@ four-thread tick and the client frame each at most half their baseline.
 Where the engine differs from gamemd to reach these numbers, the difference is
 recorded beside its code as a sim-scale deviation (AGENTS.md) and listed here.
 
-None yet: the changes made so far for this benchmark leave every result as
-it was.
+- **Path searches in jams**
+  ([path_batch.rs](../src/sim/movement/path_batch.rs)). When eight or more
+  blocked units ask in one frame for a way round every moving friendly, a
+  search stops at 4,096 expansions, where the original searches on, and its
+  unit waits BlockagePathDelay frames again, as a newly blocked unit does,
+  looking for a way through the traffic meanwhile. Blocked units' searches
+  also get a smaller budget each frame: 16,384 expansions for the ways round
+  and 32,768 for the ways through, instead of 65,527 each. In the battle's
+  busiest part this halves a frame's search work, and jammed units find
+  their way a little later.
