@@ -66,6 +66,11 @@ pub(crate) struct RulesSettings {
     /// without it has the parts it had before the switch was named here.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub(crate) building_production_queue: bool,
+    /// The per-frame Wasm module budget from VERA.INI (`[VERA] WasmBudget`,
+    /// RFC 0001); 0 for the mod's own. Left out at 0, so a game without it
+    /// has the parts it had before the setting was named here.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub(crate) wasm_budget: u32,
     /// The Ares setting where it decides which game this is, as the digest
     /// counts it (`ProcessAssets::agreed_ares_setting`): `on`, `off`, or
     /// `auto` for Auto and for a setting that opens the game Auto opens.
@@ -89,6 +94,10 @@ pub(crate) struct RulesSettings {
     pub(crate) resources: Option<ResourceSelection>,
     #[serde(rename = "mod")]
     pub(crate) mod_in_use: Option<ModIdentity>,
+}
+
+fn is_zero(value: &u32) -> bool {
+    *value == 0
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -211,6 +220,7 @@ impl RulesParts {
                 terrain_deformation: false,
                 superweapon_limit: 0,
                 building_production_queue: false,
+                wasm_budget: 0,
                 ares: "auto",
                 ares_mix: false,
                 kratos: false,
@@ -312,6 +322,7 @@ mod tests {
     fn every_personal_rules_switch_is_a_setting() {
         let mut all = settings();
         all.building_production_queue = true;
+        all.wasm_budget = 1;
         let settings = serde_json::to_value(&all).unwrap();
         let personal = serde_json::to_value(
             crate::rules::personal_rules::PersonalRules::default(),
