@@ -293,6 +293,16 @@ modders INI names.
 - `EventRecord` is 120 bytes (`args` 108, `target` 112), `DecideRecord` 160; the SDK
   delivery area holds 8 records. Registrations and strings are saved
   (`SavedExtModules::ini`) and in the state hash and checksum.
+- Demo mods, configured only in INI (`sdk/examples/ini-shield`, `ini-aura`,
+  `ini-counter`, `ini-academy`, each with `rulesmd.ini` and a Chinese README):
+  `ini_demo_mods_reach_their_marks` plays 3000 frames with each and checks its
+  `DEMO-OK` marks when `VERA20K_TEST_INI_DEMOS` lists
+  `module.wasm|rulesmd.ini|marks` entries (`;`-separated): shield
+  `entry,key,absorb,broken,restore`, aura `entry,key,apply,event,action`, counter
+  `entry,count,reward,event`, academy `entry,key,enter,promote,event,action`. All
+  pass (2026-11-24). Known gaps they found: `CreateObject` cannot target a factory
+  (rewards appear beside it), INI triggers cannot hear a global module event (only
+  code triggers), no stock evict action (the academy unloads by mission).
 - Rust SDK: `ini::{key, registry, event}`, `IniKeyRecord`, `IniEntryRecord`,
   `ModuleEventRecord`, `Trigger::on_module_event`, `Action::raise_event`,
   `ActionDef::module_with`, args helpers (`ini::split`, `ini::int`, `ini::ints`).
