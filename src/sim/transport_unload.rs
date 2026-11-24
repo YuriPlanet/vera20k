@@ -1379,7 +1379,7 @@ fn eject_from_aircraft(
         |sim, pax_id, effects| {
             // `0x0041552E`: with the head popped, the aircraft leaves its Cell
             // (`MapClass::Pick_Up`), taking its list entry and raw bit along.
-            sim.foot_pick_up(aircraft_id, rules, overlay_registry);
+            sim.foot_pick_up(aircraft_id, rules, overlay_registry, true);
             picked_up = true;
             let location = match sim.substrate.entities.get(aircraft_id) {
                 Some(aircraft) => aircraft.position,
@@ -1482,6 +1482,7 @@ fn eject_from_aircraft(
             overlay_registry,
             &mut |_, _| {},
             effects,
+            true,
         );
     }
     passenger.filter(|_| ejected)

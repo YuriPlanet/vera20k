@@ -383,19 +383,34 @@ impl Simulation {
             return Ok(false);
         }
         //4B345B..4B34D1: Mark0, Unit+1AC(cell, dir, height, 0, 1), Mark1.
-        self.foot_mark_remove(
-            id,
-            rules,
-            Some(call.rules.overlay_registry()),
-            &mut call.frame_effects,
-        );
-        let code = self.track_can_enter(call, cell, direction, height)?;
-        self.foot_mark_put(
-            id,
-            rules,
-            Some(call.rules.overlay_registry()),
-            &mut call.frame_effects,
-        );
+        // The pair scopes the entry question to the candidate Cell. When that
+        // Cell is not the one the mark holds, nothing reads the unmarked
+        // state, so the pair's two Recalcs only round-trip
+        // (`foot_mark_query_scope`).
+        let code = if coord_cell(location) == cell {
+            self.foot_mark_remove(
+                id,
+                rules,
+                Some(call.rules.overlay_registry()),
+                &mut call.frame_effects,
+            );
+            let code = self.track_can_enter(id, rules, cell, direction, height)?;
+            self.foot_mark_put(
+                id,
+                rules,
+                Some(call.rules.overlay_registry()),
+                &mut call.frame_effects,
+            );
+            code
+        } else {
+            self.foot_mark_query_scope(
+                id,
+                rules,
+                Some(call.rules.overlay_registry()),
+                &mut call.frame_effects,
+                |sim| sim.track_can_enter(id, rules, cell, direction, height),
+            )?
+        };
         let object = self.track_object(id, rules)?;
         let overlay = self.track_overlay(cell);
         //4B34D7..4B351D: the train and crusher coercions.
@@ -783,7 +798,7 @@ impl Simulation {
         let code = match forced_code {
             Some(code) => code,
             None => {
-                let code = self.track_can_enter(call, second_cell, second as u8, height2)?;
+                let code = self.track_can_enter(call.id, call.rules, second_cell, second as u8, height2)?;
                 let overlay = self.track_overlay(second_cell);
                 coerce_entry_code(
                     code,
@@ -967,7 +982,8 @@ impl Simulation {
     /// The live Unit+1AC answer for one candidate, arguments (cell, dir, h, 0, 1).
     fn track_can_enter(
         &self,
-        call: &mut FreshCall<'_>,
+        id: u64,
+        rules: &RuleSet,
         cell: (i16, i16),
         direction: u8,
         height: i32,
@@ -978,14 +994,14 @@ impl Simulation {
             .ok_or("Drive/Ship candidate query requires map cells")?;
         let native_cell = terrain.native_cell_identity(cell);
         self.foot_can_enter(
-            call.id,
+            id,
             native_cell,
             InfantryEntryArgs {
                 direction: i32::from(direction),
                 height,
                 previous_cell: None,
             },
-            call.rules,
+            rules,
         )
     }
 

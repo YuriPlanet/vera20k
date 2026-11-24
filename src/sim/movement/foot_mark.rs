@@ -263,8 +263,57 @@ impl Simulation {
             return false;
         }
         self.techno_mark_after_object(id, rules, frame_effects);
-        self.foot_pick_up(id, rules, registry);
+        self.foot_pick_up(id, rules, registry, true);
         true
+    }
+
+    /// Mark0, a query, Mark1: the fresh arm's `4B345B..4B34D1` asks the entry
+    /// question with its own mark dropped so the Cell answers without it.
+    /// `body` asks about a Cell other than the one the mark holds, so nothing
+    /// reads the unmarked state: the pair's two Recalcs (`47D2B0` after Mark0
+    /// and Mark1) would recompute the held Cell from the same occupancy (minus
+    /// list order, which the structure question ignores) and end where they
+    /// started. Skip just those two, and keep the Recalc a mark that really
+    /// moves a Foot still runs.
+    ///
+    /// Sim-scale deviation: native runs both Recalcs, so a replay that marks
+    /// and unmarks in this scope pays two Recalcs fewer than gamemd does. The
+    /// Cell they address is the one the mark held, and its attributes are
+    /// unchanged by the pair; a bridge Cell is the case that matters, and
+    /// `foot_mark::` tests cover it.
+    pub(crate) fn foot_mark_query_scope<R>(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
+        body: impl FnOnce(&mut Simulation) -> R,
+    ) -> R {
+        let marked = {
+            let Some(entity) = self.substrate.entities.get_mut(id) else {
+                return body(self);
+            };
+            if !entity.lifecycle.admit_mark_up() {
+                return body(self);
+            }
+            self.techno_mark_after_object(id, rules, frame_effects);
+            self.foot_pick_up(id, rules, registry, false);
+            true
+        };
+        let answer = body(self);
+        if marked {
+            let restores = {
+                let Some(entity) = self.substrate.entities.get_mut(id) else {
+                    return answer;
+                };
+                entity.lifecycle.admit_mark_down()
+            };
+            if restores {
+                self.techno_mark_after_object(id, rules, frame_effects);
+                self.foot_place_down(id, rules, registry, &mut |_, _| {}, frame_effects, false);
+            }
+        }
+        answer
     }
 
     /// `MapClass::Pick_Up` (`0x005687F0`) of a Foot: at the Cell and on the
@@ -277,6 +326,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
+        recalc: bool,
     ) {
         let Some((cell, layer)) = self.foot_mark_cell(id) else {
             return;
@@ -297,7 +347,9 @@ impl Simulation {
             #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationCleared);
         }
-        self.recalculate_track_cell(cell, rules, registry);
+        if recalc {
+            self.recalculate_track_cell(cell, rules, registry);
+        }
     }
 
     pub(crate) fn foot_mark_put(
@@ -328,7 +380,7 @@ impl Simulation {
             return false;
         }
         self.techno_mark_after_object(id, rules, frame_effects);
-        self.foot_place_down(id, rules, registry, receive, frame_effects);
+        self.foot_place_down(id, rules, registry, receive, frame_effects, true);
         #[cfg(any(test, feature = "test-support"))]
         self.trace_lifecycle_for_test(LifecycleTestEvent::CellMarked);
         true
@@ -348,6 +400,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         receive: &mut impl FnMut(&mut Simulation, u64),
         frame_effects: &mut FrameEffects<'_>,
+        recalc: bool,
     ) {
         let Some((cell, layer)) = self.foot_mark_cell(id) else {
             return;
@@ -381,7 +434,9 @@ impl Simulation {
             #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::RawOccupationMarked);
         }
-        self.recalculate_track_cell(cell, rules, registry);
+        if recalc {
+            self.recalculate_track_cell(cell, rules, registry);
+        }
     }
 
     /// The Cell Pick_Up/Place_Down address and the OnBridge list, or `None`
