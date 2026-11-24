@@ -59,9 +59,8 @@ impl ObjectType {
         self.weapon_offsets.weapon(index, use_elite)
     }
 
-    /// Kratos' crawling fire offsets for this type, if the piece read any
-    /// (`kratos_crawling_flh`).
-    pub(crate) fn kratos_crawling(&self) -> &crate::rules::kratos_crawling_flh::CrawlingFlh {
+    /// The Kratos crawling offsets retained by this type.
+    pub(crate) fn kratos_crawling(&self) -> crate::rules::kratos_crawling_flh::CrawlingFlh<'_> {
         self.weapon_offsets.kratos_crawling()
     }
 

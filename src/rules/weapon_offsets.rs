@@ -31,11 +31,11 @@ pub(crate) struct WeaponOffsets {
     // way fills them.
     extra_base: Vec<WeaponSlotGeometry>,
     extra_elite: Vec<WeaponSlotGeometry>,
-    /// Kratos PP's CrawlingFLH piece (`kratos_crawling_flh`): the coordinates a
-    /// prone or standing infantry fires its first two slots from. The piece owns
-    /// the keys and defaults; this record only retains its answer.
+    /// Kratos infantry firing offsets. Player saves trace both field names and types.
     #[serde(default)]
-    kratos_crawling: crate::rules::kratos_crawling_flh::CrawlingFlh,
+    crawling: [[i32; 3]; 4],
+    #[serde(default)]
+    elite_crawling: [[i32; 3]; 4],
 }
 
 impl WeaponOffsets {
@@ -185,12 +185,14 @@ impl WeaponOffsets {
     /// component always reads the *named* ART fields, including on a type
     /// whose stock weapon records use Weapon1FLH/Weapon2FLH.
     pub(crate) fn read_kratos_infantry_flh(&mut self, art: &IniSection) {
-        self.kratos_crawling.read(art);
+        super::kratos_crawling_flh::read(art, &mut self.crawling, &mut self.elite_crawling);
     }
 
-    /// The Kratos crawling piece this type reads.
-    pub(crate) fn kratos_crawling(&self) -> &crate::rules::kratos_crawling_flh::CrawlingFlh {
-        &self.kratos_crawling
+    pub(crate) fn kratos_crawling(&self) -> super::kratos_crawling_flh::CrawlingFlh<'_> {
+        super::kratos_crawling_flh::CrawlingFlh {
+            base: &self.crawling,
+            elite: &self.elite_crawling,
+        }
     }
 
     /// Ares Prism SupportWeapon reader `100103F0`: `slot` takes AlternateFLH0

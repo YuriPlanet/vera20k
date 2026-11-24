@@ -96,18 +96,12 @@ VERA20K 的 GPLv3 组合作品保留该许可证。
 
 ### 一个功能一个模块
 
-一个功能把它的键、默认值和自己的判定收在同一个 `src/rules/<扩展>_<功能>.rs` 里，测试放在旁边的
-`<功能>_tests.rs`：
+每项功能的键、默认值和判定都放在 `src/rules/<扩展>_<功能>.rs`，测试放在同目录的
+`<扩展>_<功能>_tests.rs`。读取逻辑遵循 Kratos 对应的 `Read` 方法，模拟在用到该值时调用此模块的判定。
 
-- 带类型的值，`#[serde(Serialize, Deserialize)]`，随存档一起保存；
-- `read(&mut self, art_or_rules)`，Kratos `Read` 的对应实现，也是它的键唯一出现的地方；
-- 纯判定做成值上的方法，例如 `flh(slot, elite, prone)`，这样规则只有一处实现，能和 Kratos 源码
-  逐行对照。
+例如，`kratos_crawling_flh.rs` 对应 `Ext/TechnoType/CrawlingFLHData.h`。读取器把两组坐标写入
+`WeaponOffsets.crawling` 和 `WeaponOffsets.elite_crawling`。`get_weapon_record` 通过借用这两个字段
+的视图调用 `flh(slot, elite, prone)`。玩家存档的布局记录字段名、类型和顺序，因此这两个字段保留原来的
+名称、类型和顺序。
 
-聚合结构只负责持有这个值：`WeaponOffsets` 和类型记录保存功能的答案，不持有它的键、也不写它的
-条件。`sim` 在原生的读取点调用判定，不重复条件；以后再有改动枪口的功能，调用同一个方法即可。
-`kratos_crawling_flh.rs` 是参照实现：它与 `Ext/TechnoType/CrawlingFLHData.h` 一一对应，
-`combat_weapon::get_weapon_record` 只负责问它。
-
-这条约定有两点不是：不要给功能建逐单位的扩展容器（Kratos 把组件挂在 gamemd 对象上，而 VERA 要跑
-2 万单位，类型数据放在 `RuleSet` 里共享），也不要为了对称把纯判定搬进 `sim`。
+类型数据保存在共享的 `RuleSet` 中，即使场上有两万个单位，同一类型的单位也共用一组偏移量。
