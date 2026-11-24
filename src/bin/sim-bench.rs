@@ -40,8 +40,10 @@
 //! `--scenario battle` is the scale benchmark's battle (docs/scale-benchmark.md):
 //! the map itself makes the armies. It loads as a skirmish does, and the
 //! launch's local house plays too, so every start fights. `tools.scale_map
-//! --battle` writes its map, whose triggers give every start house an army,
-//! send it to hunt and replace each object that dies. No command is issued.
+//! --battle` writes its map, whose triggers give every start's house an army
+//! in squads, send the squads to patrol the fronts between neighbouring
+//! starts and replace a squad when its marker dies (`tools/scale_battle.py`).
+//! No command is issued.
 //! `--ticks` defaults to [`BATTLE_TICKS`], of which the first
 //! [`BATTLE_WARMUP`] are left out of the measured window. Every
 //! `PROGRESS_EVERY` ticks it prints how many mobile objects live, how many
