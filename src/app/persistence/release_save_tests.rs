@@ -404,10 +404,11 @@ pub(super) fn resume_player_file(
                 | 0xD6C7_5D57
                 | 0xAFC7_F643
                 | 0x82C3_2EA4
+                | 0xF612_7DC1
         ) {
             // Both newly saved flags default to false in historical worlds,
-            // as the ice timer, cracks, sinking flag, pending dent and limpets
-            // read as none.
+            // as the ice timer, cracks, sinking flag, pending dent, limpets and
+            // debris sounds read as none.
             // Every original body byte survives in order, including any
             // animation-listener flag already present in the eb05f451e layout.
             let original_body =
