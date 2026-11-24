@@ -247,7 +247,9 @@ pub struct GeneralRules {
     /// ReadAI672AE0). Constructor666E09/666E1A stores the literal double
     /// 0.016; each reached AI pass retains its prior value as the default.
     /// Team Script16 uses the signed global frame modulo ftol(value*900),
-    /// without a clamp or a per-team timer. Source: Steam gamemd,
+    /// without a clamp or a per-team timer; with batched target scans each
+    /// team scans at its own phase of that period, a sim-scale deviation
+    /// (`team_action_patrol_waypoint`). Source: Steam gamemd,
     /// tools/team_recruit_oracle.py --patrol.
     pub patrol_scan_minutes: NativeF64Bits,
     /// `[General] AITriggerSuccessWeightDelta=` (`Rules+0xC0`, ReadDouble at

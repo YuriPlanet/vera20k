@@ -20,6 +20,7 @@
 use crate::map::entities::EntityCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::combat::ScanMission;
 use crate::sim::components::DriveCoord;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::trigger_runtime::TeamTagOrder;
@@ -182,7 +183,9 @@ impl TeamScriptState {
 impl Simulation {
     /// Every team's update, in team order (`LogicClass::AI @ 0x0055B502..
     /// 0x0055B59F`, over a copy of the team list: a team the house AI adds
-    /// later in the frame waits for the next one).
+    /// later in the frame waits for the next one). With batched target scans
+    /// the scans of the leaders whose patrol scan is due are answered side by
+    /// side first (`techno_ai::scan_batch`).
     pub(crate) fn run_team_ai_pass(
         &mut self,
         rules: &RuleSet,
@@ -194,6 +197,10 @@ impl Simulation {
             .rule_policy()
             .unfilled_team_timeout(rules.general.dissolve_unfilled_team_delay);
         let teams: Vec<u64> = self.team_script_vm.teams.keys().copied().collect();
+        if self.target_scans_batched() {
+            let leaders = self.due_patrol_leaders(rules);
+            self.answer_batched_direct_scans(&leaders, ScanMission::Guard, rules, registry);
+        }
         for team_id in teams {
             if self.team_script_vm.teams.contains_key(&team_id) {
                 self.team_ai(
@@ -205,6 +212,32 @@ impl Simulation {
                 );
             }
         }
+        self.finish_batched_scans();
+    }
+
+    /// The leaders whose patrol scan (Script16's, mask 1) this step reaches
+    /// as the teams stand before its first update: of a formed team neither
+    /// reforming nor under strength nor waiting out a suspension, which
+    /// [`Self::team_ai`] lets reach its script, on action 16 with no step
+    /// pending, whose scan is due ([`Self::patrol_scan_remainder`]). An
+    /// earlier update can still change that; an answer no scan takes is
+    /// dropped.
+    fn due_patrol_leaders(&self, rules: &RuleSet) -> Vec<u64> {
+        let frame = self.session.binary_frame() as i32;
+        let vm = &self.team_script_vm;
+        vm.teams
+            .iter()
+            .filter(|&(&id, team)| {
+                team.formed
+                    && !team.reforming
+                    && !team.under_strength
+                    && !(team.suspended && team.suspend_timer.remaining(frame) != 0)
+                    && !team.advance_pending
+                    && team.current_action(vm) == 16
+                    && self.patrol_scan_remainder(id, rules) == Some(0)
+            })
+            .filter_map(|(&id, _)| self.team_leader(id, rules))
+            .collect()
     }
 
     /// `TeamClass::AI @ 0x006E9140` up to its action dispatch.

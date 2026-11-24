@@ -590,6 +590,149 @@ fn patrol_scans_on_the_global_period_and_orders_members_to_attack() {
     }));
 }
 
+/// `teams` armed patrol teams on Script16, the fixture's and three-E1 copies
+/// four rows apart, each with an American E1 at (14, its row) that its scan
+/// finds. Answers the teams.
+fn patrol_scene(teams: u16) -> (Simulation, RuleSet, Vec<u64>) {
+    let (mut sim, rules, first, _) = patrol_team_fixture(true);
+    let russians = sim.interner.get("Russians").unwrap();
+    let script = sim.interner.get("BUILDING SCRIPT").unwrap();
+    let rows: Vec<u16> = (0..teams).map(|index| 10 + 4 * index).collect();
+    let mut ids = vec![first];
+    for &row in &rows[1..] {
+        let members = (10..=12)
+            .map(|rx| {
+                sim.spawn_object_at_height("E1", "Russians", rx, row, 0, 0, &rules)
+                    .unwrap()
+            })
+            .collect();
+        ids.push(sim.team_script_vm.create_team(russians, script, members, 0));
+    }
+    for &row in &rows {
+        crate::sim::vision::reveal_radius(&mut sim.fog, russians, 14, row, 8);
+        sim.spawn_object_at_height("E1", "Americans", 14, row, 0, 0, &rules)
+            .unwrap();
+    }
+    for team in &ids {
+        let state = sim.team_script_vm.teams.get_mut(team).unwrap();
+        state.cursor = 0;
+        state.advance_pending = false;
+    }
+    (sim, rules, ids)
+}
+
+/// Unbatched, every patrol team scans on the frames the period divides
+/// (`0x006ECD59..0x006ECD63`); batched, each scans once a period at its own
+/// phase.
+#[test]
+fn batched_scans_spread_the_patrol_scans_over_the_period() {
+    for batched in [false, true] {
+        let (mut sim, rules, teams) = patrol_scene(2);
+        if batched {
+            sim.batch_target_scans();
+        }
+        let period = rules.general.patrol_scan_frames() as u32;
+        let mut scans = vec![Vec::new(); teams.len()];
+        for frame in period..3 * period {
+            sim.session.set_binary_frame_for_test(frame);
+            for (scanned, &team) in scans.iter_mut().zip(&teams) {
+                let mut effects = FrameEffects::default();
+                let waypoint = Some(TeamTarget::Cell { x: 30, y: 20 });
+                sim.team_assign_mission_target(team, waypoint, &rules, &mut effects);
+                sim.team_step_script(team, &rules, None, &mut effects);
+                let target = sim.team_script_vm.team(team).unwrap().mission_target;
+                if matches!(target, Some(TeamTarget::Object(_))) {
+                    scanned.push(frame);
+                }
+            }
+        }
+        if batched {
+            for frames in &scans {
+                assert_eq!(frames.len(), 2, "{frames:?}");
+                assert_eq!(frames[1] - frames[0], period);
+            }
+            assert_ne!(scans[0], scans[1]);
+        } else {
+            assert_eq!(scans, vec![vec![period, 2 * period]; 2]);
+        }
+    }
+}
+
+/// A patrolling leader's batched answer is the scan it would run itself and
+/// is taken; once the leader turns, or another member leads, the team scans
+/// live and picks as it would have.
+#[test]
+fn a_patrol_takes_its_batched_answer_while_its_leader_stands() {
+    let changes: [fn(&mut Simulation, u64, u64); 3] = [
+        |_, _, _| {},
+        |sim, _, leader| {
+            let entity = sim.substrate.entities.get_mut(leader).unwrap();
+            let facing = &entity.body_facing;
+            entity.body_facing = crate::sim::movement::FacingClass::with_rate_of(
+                facing.destination().wrapping_add(0x4000),
+                facing,
+            );
+        },
+        |sim, team, _| {
+            let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
+            state.members[0].initiated = false;
+        },
+    ];
+    for (index, change) in changes.into_iter().enumerate() {
+        let run = |answered: bool| {
+            let (mut sim, rules, teams) = patrol_scene(1);
+            let team = teams[0];
+            sim.batch_target_scans();
+            let period = rules.general.patrol_scan_frames() as u32;
+            assert!((100..100 + period).any(|frame| {
+                sim.session.set_binary_frame_for_test(frame);
+                sim.patrol_scan_remainder(team, &rules) == Some(0)
+            }));
+            let leader = sim.team_leader(team, &rules).unwrap();
+            if answered {
+                sim.answer_batched_direct_scans(&[leader], ScanMission::Guard, &rules, None);
+            }
+            change(&mut sim, team, leader);
+            sim.team_step_script(team, &rules, None, &mut FrameEffects::default());
+            sim.finish_batched_scans();
+            let state = sim.team_script_vm.team(team).unwrap();
+            (state.mission_target, sim.batched_scans_used())
+        };
+        let (live, _) = run(false);
+        assert!(matches!(live, Some(TeamTarget::Object(_))), "{index}");
+        assert_eq!(run(true), (live, usize::from(index == 0)), "{index}");
+    }
+}
+
+/// Four patrol teams through the team step for a period: each frame's state
+/// hash, and the batched answers their scans took, are the same on one
+/// worker thread as on four.
+#[test]
+fn batched_patrol_answers_do_not_depend_on_the_thread_count() {
+    let run = |threads: usize| {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .unwrap();
+        pool.install(|| {
+            let (mut sim, rules, _) = patrol_scene(4);
+            sim.batch_target_scans();
+            let period = rules.general.patrol_scan_frames() as u32;
+            let hashes: Vec<u64> = (100..100 + period)
+                .map(|frame| {
+                    sim.session.set_binary_frame_for_test(frame);
+                    sim.run_team_ai_pass(&rules, None, &mut FrameEffects::default());
+                    sim.state_hash()
+                })
+                .collect();
+            (hashes, sim.batched_scans_used())
+        })
+    };
+    let four = run(4);
+    assert_eq!(four.1, 4, "each team's scan takes its answer once");
+    assert_eq!(run(1), four);
+}
+
 #[test]
 fn patrol_reuses_the_native_leadership_rating_member_selection() {
     let corpus = patrol_corpus();

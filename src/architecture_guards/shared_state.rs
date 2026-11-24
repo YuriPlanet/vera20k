@@ -149,6 +149,12 @@ const POOL_ENTRY_PINS: &[(&str, usize, &str)] = &[
          the old copy's drop; the copy's Dummy is then forked",
     ),
     (
+        "sim/world/techno_ai/scan_batch.rs",
+        1,
+        "detached: the team step's patrol scans. Each runs inside `detached_stamps`, \
+         and one that stamped is dropped for its team's update",
+    ),
+    (
         "sim/world/world_hash.rs",
         5,
         "never looks a cell up: the fog and entity digests and the retained-Dummy \
