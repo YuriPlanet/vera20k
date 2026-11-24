@@ -1,10 +1,11 @@
 # Android build
 
-**Status: initial Android support.** The contributor reported a debug APK playing
-the intro movie, reaching the main menu, and importing a retail installation on an
-Android 16 arm64 tablet (OnePlus Pad 2 Pro). The review fixes have not been built or
-tested on Android hardware; the earlier results below do not validate them. The
-open items at the bottom still separate this from a release.
+**Status: initial Android support, device-verified.** A debug APK plays the intro
+movie, reaches the shell, imports a retail installation, and takes text from the
+platform's keyboard everywhere the game has an edit; the LAN lobby and the LAN room
+send chat from a key of their own, and the in-match chat opens with a long press.
+All of it was exercised on an Android 16 arm64 tablet (OnePlus Pad 2 Pro). The open
+items at the bottom still separate this from a release.
 
 ## Layout
 
@@ -13,12 +14,13 @@ Everything Android-specific lives in `android/`: it is both the
 
 | Path | What it is |
 |---|---|
-| `android/Cargo.toml`, `android/src/lib.rs` | The `vera20k-android` cdylib: `android_main`, the working-directory fix, and the hand-off to `vera20k::entry::run_with_loop`. Body is `#![cfg(target_os = "android")]`, so desktop builds compile it empty. |
+| `android/Cargo.toml`, `android/src/lib.rs` | The `vera20k-android` cdylib: `android_main`, the working-directory fix, and the hand-off to `vera20k::entry::run_with_loop`. It installs the hooks the engine reaches through statics — the text-input bridge (`util::android_ime`), the display insets, the launcher icon, the device identity and the Wi-Fi binding — and the body is `#![cfg(target_os = "android")]`, so desktop builds compile it empty. |
 | `android/app/` | The only Gradle module: `VeraActivity`, `hasCode="true"`. |
 | `android/app/src/main/java/org/vera20k/VeraActivity.kt` | Starts the system folder picker and reads the selected tree through Android's `ContentResolver`. |
 | `android/app/src/main/java/org/vera20k/AssetImportJob.kt` | Owns import admission, cancellation, safe destination paths and atomic publication of the completed copy. Its filesystem tests run on the JVM. |
 | `android/app/src/main/jniLibs/` | Where `cargo ndk -o` writes `libvera20k_android.so`. Generated, git-ignored. |
 | `src/entry.rs` | Start-up shared with the desktop binary: logging, panic hook, banner, event loop, exit status. `main.rs` is now just the CLI switches plus a call into it. |
+| `src/util/display_insets.rs` | The screen's top-left cutout and rounded-corner inset. The activity measures both from the window insets in screen pixels; `frame_offset` converts them to render-frame units, and the message lane plus the performance panels move in by them. |
 
 The library name must stay in sync: the crate is `vera20k-android`, so the
 artifact is `libvera20k_android.so`, and the manifest's
@@ -58,6 +60,14 @@ cargo ndk -t arm64-v8a --platform 26 -o android\app\src\main\jniLibs build `
 #    sdk.dir=D\:\\Programming\\android-sdk
 android\gradlew.bat -p android :app:assembleDebug
 ```
+
+`For iteration build `--profile fast` and `:app:assembleDebug`; the recipe above
+(shipping plus a symbol strip) is for releases. Remove
+`android/app/build/outputs/apk` and `android/app/build/intermediates/merged_native_libs`
+when a rebuild must repackage the native library: Gradle otherwise keeps the
+previous `.so`. A `cargo check` that prints `Finished` in under a second means
+Cargo did not see the edit — touch the file and check again before trusting a
+device build.
 
 `x86_64` is only for the emulator; install `x86_64-linux-android` with `rustup`
 and add `-t x86_64` when you need it. Drop it for releases. On macOS/Linux, use
@@ -249,14 +259,17 @@ own right click) and sends with a tap on the lane. Text itself comes from the
 platform input method through `util::android_ime`: winit 0.30's Android backend
 delivers no `WindowEvent::Ime`, so the bridge reads the platform's text state each
 frame, seeds it from the focused edit and hands its changes to that screen's own
-input path. An open composition stays ours to draw until the GUI library carries
-`ImeEvent` (its `Preedit`/`Commit`/`Enabled` and `focus_rect` are specified but
-not yet used by the engine), so the chooser's search line and the setup room's
-chat still paint it themselves.
+input path. An open composition is drawn by the GUI library: `GuiStyle::ime`
+(default `true`) paints it for the page's focused `Edit`, which covers the
+chooser's search line and the setup room's chat. Only the in-game message lane,
+the one edit outside the GUI trees, still paints its own. The library's
+`ImeEvent` (`Preedit`/`Commit`/`Enabled`, `focus_rect`) is specified but not yet
+used by the engine, and replaces this once its owner wires it.
 
 The edits belong to the GUI library (`gui/`, `docs/gui-library-api.md`): each shell
 page keeps its `Edit` nodes in a `vera20k_gui` tree — the shell's one
-`DialogController`, the WOL lobby's own tree, and the saved-game browsers' — so the
+`DialogController`, the WOL lobby's own tree, the Setups page and the saved-seed
+browser, and the saved-game browsers' — so the
 bridge asks the tree the current page owns for its focused edit, and takes from it
 the text and caret to seed the platform buffer with, the node's rectangle for the
 candidate window, and `Prop::Password` for the input method's password flag. The
@@ -277,12 +290,49 @@ The bridge holds the input method's composing range back from those commits and
 draws it in the IME colour, so a pinyin run only reaches the game once it is
 committed. The password boxes report themselves
 (`TYPE_TEXT_VARIATION_PASSWORD`), so the keyboard's dictionary never learns them,
-and the name boxes drop units at or above `0x100` (`0x4D1(1)`), which keeps a
-Chinese name out of the single-byte roster row.
+and the name boxes are held to the code page (`0x4D1(1)`): a character above
+`0xFF` becomes `?` and a two-unit character is dropped in `ui::lan_shell::name_input`,
+and `app::shell_lan` re-applies the rule to the node every frame within its
+16-byte limit, so a Chinese name cannot reach the single-byte roster row whichever
+path the text arrived by.
 
 The engine needs an 8 MiB stack on the glue's game thread; `android/build.rs`
 links `-Wl,--wrap=pthread_create` and the wrapper raises the requested stack, so
 `android-activity` stays the crates.io 0.6.0 release.
+
+### Send keys on the LAN screens
+
+Neither the LAN lobby nor the LAN room has a native send button, and a phone has
+no Enter to press. Both put VERA's key where the online room's emote button sits,
+using that button's own square art: `atlas.wol_emote_images()`'s released frame
+(`wodact.pcx`, the `Picture::Emote` path), 26 x 23 authored pixels, six authored
+pixels right of the box and one pixel above it. A tap sends through the screen's
+own `Enter` path (`key_press`), so the chat, its length cap and its prefix behave
+as typed text does. The online room keeps its native emote button, so the key is
+LAN-only (`!view.dialog.wol()`). It is host-drawn rather than a GUI node, so it
+needs `!leaving` or it hangs over the next page's slide, and it answers the
+emote button's hint (`STT:EmoteButton`) in the status line while the pointer is
+on it.
+
+The room's chat box takes the online room's measured geometry: its width is the
+chat log's less the key and a six-pixel gap, and its row stays where the template
+puts it. The LAN lobby's row moves to the same spacing, five authored pixels under
+its log, and the key follows the row.
+
+### Display cutout and rounded corners
+
+The battlefield fills the window on Android, so the screen's punch-hole and
+corner arc cover the top-left of what the game draws there. `VeraActivity`
+records the cutout's safe inset and the top-left rounded corner's radius in its
+`updateDisplayInsets`; the Android crate reads them over JNI
+(`android/src/lib.rs::display_insets`), `util::display_insets::get` returns them in
+screen pixels, and `frame_offset` converts them to render-frame units through the
+window and render sizes. The message lane moves in by them, the
+in-match performance panel starts on the lane's line (its x is
+battlefield-local, so it scales by the zoom), and the menu and loading screens'
+panel uses the shell scale plus the same insets so one panel reads the same size
+in both places. Everywhere else the hooks stay uninstalled and the insets are
+zero.
 
 A long press elsewhere on the battlefield is the touch mapper's right click
 (`app::input::touch`, 400 ms), so it cancels whatever a right click cancels —
@@ -299,10 +349,13 @@ Residuals:
   platform-neutral (Android and wasm) is recorded in the local plan as a separate
   change.
 - Discoverability: the long press is invisible, so the first network match a
-  profile plays posts one localized line into the lane (`VERA:TouchToChat`, five
-  seconds in, white, expiring) and spends `[Android] ChatHint=no` the way
-  `[Intro] Play` is spent, like `persistence::chat_hint`. Later matches stay
-  silent until a fresh install.
+  profile plays posts one line into the lane (`VERA:TouchToChat`, five seconds
+  in, white, no prefix, gone after ten seconds) and spends `[Android]
+  ChatHint=no` the way `[Intro] Play` is spent (`app::persistence::chat_hint`,
+  per profile). One attempt per match, then an hour's backoff
+  (`match_state.input.chat_hint_due`); offline matches never trigger it, and
+  later matches stay silent until a fresh install. The key is translated in
+  every shipped language file.
 - The soft keyboard is not kept out of the way. On a phone it covers the online
   login's edited field, and the password box's dots are what the player cannot
   see; the text still reaches the game because the bridge reads the platform's
@@ -330,4 +383,6 @@ Residuals:
 
 ## TODO
 
-Save/Map files import/export, touch UI, audio focus, LAN locks, CI.
+Save/Map files import/export, the rest of the touch UI (the shell pages are still
+pointer-sized for a mouse), audio focus, LAN locks, CI, and the soft-keyboard
+insets that would lift a page above the keyboard.
