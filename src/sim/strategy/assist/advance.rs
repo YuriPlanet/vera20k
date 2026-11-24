@@ -151,16 +151,26 @@ pub(super) fn prepare_siege_charge(
             unit.entity_id == *id && cell_distance(unit.cell, enemy.cell) <= 24))
     }).max_by_key(|enemy| {
         let reach = obs.entity_type(rules, enemy.entity_id)
-            .map_or(0, |ty| weapon_range_cells(rules, ty, false));
+            .map_or(0, |ty| super::siege_counter::ground_reach(rules, ty));
         (reach, std::cmp::Reverse(enemy.entity_id))
     });
     let Some(battery) = battery else { return; };
+    // A factory that can produce a proper range counter (or a verified
+    // air approach) must not be bypassed by an ordinary tank charge before
+    // that counter is built. The earlier check saw only *existing* guns.
+    if super::siege_counter::has_specialist_answer(brain,rules,obs,battery.entity_id) {
+        return;
+    }
     let mut candidates: Vec<&Unit> = brain.census.units.iter().filter(|unit|
         squad.members.contains(&unit.entity_id) && unit.controllable()
             && !unit.in_service() && !unit.traits.yard_maker
             && !unit.traits.harvester && !unit.traits.irreplaceable
             && !unit.traits.carries && !unit.traits.suicide
-            && unit.health_permille >= 750 && armoured_fighter(unit, rules, obs)
+            && unit.health_permille >= 850 && armoured_fighter(unit, rules, obs)
+            // A mass assault on range-7+ batteries requires actual heavy
+            // armour, not six cheap line tanks thrown away together.
+            && obs.entity_type(rules,unit.entity_id)
+                .is_some_and(|ty| ty.strength >= 600)
             && obs.can_hurt(rules, unit.entity_id, battery.entity_id)
             && super::orders::reachable(rules, obs, unit.entity_id, battery.cell)
     ).collect();
@@ -232,7 +242,7 @@ fn execute_siege_charge(
 }
 
 fn isolated_battery_approach(
-    fighters: &[&Unit], rules: &RuleSet, obs: &Observation<'_>,
+    rules: &RuleSet, obs: &Observation<'_>,
     actor: u64, from: (u16,u16), to: (u16,u16),
 ) -> Option<((u16,u16), i32)> {
     use crate::rules::object_type::ObjectCategory;
@@ -247,15 +257,11 @@ fn isolated_battery_approach(
         let reach = super::tactics::effective_reach_against(
             rules, obs, enemy.entity_id, actor);
         if reach < 7 { return None; }
-        // Three nearby dogs are not a three-vehicle attack wave. Only units
-        // whose *current native weapons* can actually harm this emplacement
-        // qualify as nearby support. This remains unit-name agnostic for MODs.
-        let nearby = fighters.iter().filter(|friend| {
-            friend.controllable() && friend.traits.combat && !friend.in_service()
-                && cell_distance(friend.cell, from) <= 9
-                && obs.can_hurt(rules, friend.entity_id, enemy.entity_id)
-        }).count();
-        if battery_wave_ready(nearby) { return None; }
+        // A handful of ordinary tanks nearby does NOT make the approach
+        // safe. Actual synchronized, high-HP charges have their own one-shot
+        // `execute_siege_charge` branch, run before normal advance. An older
+        // `battery_wave_ready(3)` shortcut let three Grizzlies cross an 8/15
+        // cell prism/Grand-Cannon kill zone as if they were siege artillery.
         let in_lane = cell_distance(enemy.cell, from) <= reach + 2
             || cell_distance(enemy.cell, to) <= reach + 2
             || super::orders::path_crosses(&[enemy.cell], from, to, reach + 2);
@@ -887,7 +893,7 @@ fn stage_siege(
         if !ty.is_base_defense
             || !obs.visible_enemy_building_operational(rules, enemy.entity_id)
             || cell_distance(enemy.cell,target) > 14 { return None; }
-        let reach = weapon_range_cells(rules,ty,obs.is_deployed(enemy.entity_id));
+        let reach = super::siege_counter::ground_reach(rules,ty);
         (reach >= 4).then_some((enemy.entity_id,enemy.cell,reach))
     }).collect();
     let mut issued = 0;
@@ -956,9 +962,9 @@ fn stage_strategic_reserve(
         if !ty.is_base_defense
             || !obs.visible_enemy_building_operational(rules, enemy.entity_id)
         { return None; }
-        let reach = weapon_range_cells(rules, ty, false);
+        let reach = super::siege_counter::ground_reach(rules, ty);
         (reach > 0 && cell_distance(front, enemy.cell) <= 28)
-            .then_some((enemy.cell, reach))
+            .then_some((enemy.entity_id, enemy.cell, reach))
     }).collect();
     // Collect once, rather than walking the enemy store once per fighter.
     // On a 120-house map even visible-only queries must remain bounded.
@@ -967,7 +973,7 @@ fn stage_strategic_reserve(
             .is_some_and(|ty| ty.category ==
                 crate::rules::object_type::ObjectCategory::Building))
         .map(|enemy| enemy.entity_id).collect();
-    let distant_reach = guns.iter().map(|(_,r)| *r).max().unwrap_or(0);
+    let distant_reach = guns.iter().map(|(_,_,r)| *r).max().unwrap_or(0);
     let radius = (distant_reach + 5).max(20);
     let home = home.unwrap_or_else(|| fighters.first().map_or(front, |unit| unit.cell));
     let mut dx = (i32::from(home.0) - i32::from(front.0)).signum();
@@ -984,8 +990,26 @@ fn stage_strategic_reserve(
             || unit.slot == super::census::Slot::Aircraft
             || super::orders::ordered_this_frame(out, unit.entity_id)
         { continue; }
-        let mut post = None;
-        for range in [radius, radius + 4, radius + 8] {
+        // Unlike a short-range screen, an artillery unit can keep shelling
+        // during Stockpile if it has a safe actual firing annulus. Use a
+        // ground-reachable post relative to the *gun itself*, not merely the
+        // current strategic objective's centre, which may lie 14 cells away.
+        let artillery_post = guns.iter().filter_map(|(id,at,reach)| {
+            let own = super::tactics::effective_reach_against(
+                rules,obs,unit.entity_id,*id);
+            if own <= reach + 1 || !obs.can_hurt(rules,unit.entity_id,*id) {
+                return None;
+            }
+            let safe = super::tactics::siege_post(
+                rules,obs,unit.entity_id,unit.cell,*at,*reach)?;
+            (cell_distance(safe,*at) <= own
+                && cell_distance(safe,*at) > *reach + 1
+                && super::tactics::lethal_approach(rules,obs,
+                    unit.entity_id,unit.cell,safe).is_none())
+                .then_some((cell_distance(unit.cell,safe),safe))
+        }).min_by_key(|(distance,post)| (*distance,*post)).map(|(_,post)| post);
+        let mut post = artillery_post;
+        if post.is_none() { for range in [radius, radius + 4, radius + 8] {
             for shift in [0i32, 3, -3, 6, -6] {
                 let x = i32::from(front.0) + dx * range + lateral.0 * shift;
                 let y = i32::from(front.1) + dy * range + lateral.1 * shift;
@@ -995,7 +1019,7 @@ fn stage_strategic_reserve(
                     || !super::orders::reachable(rules,obs,unit.entity_id,cell)
                     || super::tactics::unsafe_post(rules,obs,unit.entity_id,cell)
                 { continue; }
-                if guns.iter().any(|(gun,reach)|
+                if guns.iter().any(|(_,gun,reach)|
                     (cell_distance(unit.cell,*gun) > *reach + 2)
                     && super::orders::path_crosses(&[*gun],unit.cell,cell,*reach + 2))
                 { continue; }
@@ -1003,11 +1027,24 @@ fn stage_strategic_reserve(
                 break;
             }
             if post.is_some() { break; }
-        }
-        let dangerous_old_attack = obs.attack_target(unit.entity_id)
+        } }
+        // An artillery unit legitimately shelling a gun at standoff range
+        // must not be stopped merely for holding an Attack mission on a
+        // building. Otherwise reserve formation cancels every second salvo.
+        let safe_battery_attack = guns.iter().any(|(id,at,reach)| {
+            obs.attack_target(unit.entity_id) == Some(*id)
+                && cell_distance(unit.cell,*at) > *reach + 1
+                && cell_distance(unit.cell,*at) <=
+                    super::tactics::effective_reach_against(
+                        rules,obs,unit.entity_id,*id)
+                && !super::tactics::unsafe_post(rules,obs,unit.entity_id,unit.cell)
+        });
+        if safe_battery_attack { continue; }
+        let dangerous_old_attack = !safe_battery_attack && (
+            obs.attack_target(unit.entity_id)
             .is_some_and(|id| visible_structures.contains(&id))
             || obs.destination(unit.entity_id).is_some_and(|cell|
-                cell_distance(cell,front) <= 10);
+                cell_distance(cell,front) <= 10));
         if let Some(post) = post {
             if cell_distance(unit.cell,post) <= 3 {
                 if dangerous_old_attack && super::orders::issue_tracked(
@@ -1291,7 +1328,10 @@ pub(super) fn advance(
         && !brain.crate_returns.contains_key(&unit.entity_id)
         && !brain.repair_ifv_pending.get(&unit.entity_id)
             .is_some_and(|until| *until > obs.tick())
-        && !super::advanced::repair_ifv_loaded(rules, obs, &brain.census, unit.entity_id));
+        && !super::advanced::repair_ifv_loaded(rules, obs, &brain.census, unit.entity_id)
+        // V38 security/escort detachments cannot receive a conflicting
+        // campaign march while the joint operation is active.
+        && !brain.joint_ops.reserves(unit.entity_id));
     if fighters.is_empty() { return false; }
     if drive_blackout(brain, rules, obs, out, &fighters) { return true; }
     if execute_siege_charge(brain, rules, obs, out) { return true; }
@@ -1885,7 +1925,7 @@ pub(super) fn advance(
         // artillery purchase window, this individual protection does not
         // expire into a guaranteed suicidal march.
         let isolated_battery = isolated_battery_approach(
-            &fighters, rules, obs, unit.entity_id, unit.cell, march_cell);
+            rules, obs, unit.entity_id, unit.cell, march_cell);
         if let Some((gun, reach)) = isolated_battery.or_else(||
             super::tactics::lethal_approach(
                 rules, obs, unit.entity_id, unit.cell, march_cell,
@@ -2020,10 +2060,23 @@ pub(super) fn advance(
         // anyway is the "sent at the enemy and wiped out for nothing" a play
         // test reports, and their attack-moves are also what made a squad
         // shuffle around a structure it could never damage.
-        // Searching: a march with the gun up, toward the ground nobody has
-        // looked at yet.
+        // A sniper or tank destroyer is an expensive specialist, not a
+        // default demolition team. If the newly selected visible structure
+        // is a poor weapon match, keep this unit for the next engagement.
+        // The general army can still search without an entity target.
+        if !searching && !super::doctrine::target_ok(
+            rules,obs,unit.entity_id,target_id) { continue; }
+        // Searching: selective weapons walk with the force rather than
+        // autonomously attack the first barely-damageable civilian wall.
         if searching {
-            let kind = super::tracked::TrackedKind::AttackMove;
+            let selective = obs.entity_type(rules,unit.entity_id).is_some_and(|ty|
+                matches!(super::doctrine::duty(rules,ty),
+                    super::doctrine::Duty::TankHunter |
+                        super::doctrine::Duty::Marksman |
+                        super::doctrine::Duty::Parasite |
+                        super::doctrine::Duty::Scout));
+            let kind = if selective { super::tracked::TrackedKind::Move }
+                else { super::tracked::TrackedKind::AttackMove };
             if !brain
                 .tracked
                 .admits(tick, unit.entity_id, kind, None, Some(march_cell))
@@ -2033,7 +2086,8 @@ pub(super) fn advance(
             if !super::orders::issue_tracked(
                 &mut brain.tracked, brain.trace, out, rules, obs, unit.entity_id,
                 kind, None, Some(march_cell),
-                Goal::AttackMove { cell: march_cell },
+                if selective { Goal::Move { cell: march_cell } }
+                else { Goal::AttackMove { cell: march_cell } },
             ) {
                 continue;
             }
@@ -2081,7 +2135,16 @@ pub(super) fn advance(
         let shootable = engagement == crate::sim::control::observation::Engage::Ready
             && obs.is_hostile(target_id);
 
-        let (kind, goal) = if shootable {
+        // Unlike a line tank's ordinary AttackMove, a selective weapon must
+        // close on its *chosen* valid target without changing to a random
+        // rifleman or wall along the route.
+        let selective = obs.entity_type(rules,unit.entity_id).is_some_and(|ty|
+            matches!(super::doctrine::duty(rules,ty),
+                super::doctrine::Duty::TankHunter |
+                    super::doctrine::Duty::Marksman |
+                    super::doctrine::Duty::Parasite |
+                    super::doctrine::Duty::Scout));
+        let (kind, goal) = if shootable || selective {
             (super::tracked::TrackedKind::Attack, attack)
         } else {
             (
@@ -2181,13 +2244,13 @@ pub(super) fn weapon_range_cells(rules: &RuleSet, ty: &ObjectType, deployed: boo
     weapon_of(rules,ty,deployed).map_or(0, weapon_reach_cells)
 }
 
-/// The native effective reach of a *particular* weapon. Siege selection must
-/// inspect the warhead and reach of the SAME slot, not accidentally combine a
-/// long-ranged AA gun with a short-ranged ground-damaging secondary weapon.
+/// The true maximum range of a *particular* weapon. `MinimumRange` is
+/// the inner radius of a legal firing annulus; subtracting it from `Range`
+/// incorrectly shortened a V3 from 18 to 13 and a Grand Cannon from 15
+/// to 12 in the planner. Minimum firing range must be checked separately
+/// when placing a gun, not subtracted from its maximum.
 pub(super) fn weapon_reach_cells(weapon: &crate::rules::weapon_type::WeaponType) -> i32 {
-    let per_cell = crate::util::lepton::LEPTONS_PER_CELL_I32;
-    let reach = (weapon.range_leptons - weapon.minimum_range_leptons.max(0)).max(0);
-    reach.div_euclid(per_cell) + i32::from(reach.rem_euclid(per_cell) != 0)
+    super::siege_counter::max_range_cells(weapon)
 }
 
 /// How many shots the type's weapon fires in one attack cycle: `Burst=` from

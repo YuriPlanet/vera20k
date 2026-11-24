@@ -16,14 +16,16 @@ use crate::sim::control::observation::{EnemyEntity, Observation};
 use super::super::AssistBrain;
 use super::super::census::{Slot, Unit};
 use super::super::squads::Role;
-use super::{cell_distance, weapon_range_cells, weapon_reach_cells};
+use super::{cell_distance, weapon_range_cells};
 
 const MIN_REAR_REACH: i32 = 7;
 const MAX_SUPPORT_ORDERS: usize = 6;
 
 /// Support capability comes from current live weapons, never a fixed unit ID
 /// or the hypothetical sum of every IFV Gunner slot.
-fn support_reach(rules: &RuleSet, obs: &Observation<'_>, unit: &Unit) -> i32 {
+pub(in crate::sim::strategy::assist) fn support_reach(
+    rules: &RuleSet, obs: &Observation<'_>, unit: &Unit,
+) -> i32 {
     if unit.slot != Slot::Vehicle || !unit.traits.combat || unit.traits.suicide
         || unit.traits.irreplaceable || unit.traits.carries || unit.traits.harvester
         || unit.traits.yard_maker || !unit.controllable() || unit.in_service()
@@ -33,9 +35,10 @@ fn support_reach(rules: &RuleSet, obs: &Observation<'_>, unit: &Unit) -> i32 {
         obs.active_gunner_weapon(rules, unit.entity_id)
             .filter(|weapon| !weapon.never_use && weapon.damage > 0
                 && !weapon.suicide)
-            .map_or(0, weapon_reach_cells)
+            .map_or(0, super::super::siege_counter::max_range_cells)
     } else {
-        weapon_range_cells(rules, ty, obs.is_deployed(unit.entity_id))
+        super::weapon_of(rules, ty, obs.is_deployed(unit.entity_id))
+            .map_or(0, super::super::siege_counter::max_range_cells)
     }
 }
 
@@ -154,12 +157,30 @@ fn pick_visible_target(
 /// Keep supported artillery out of the ordinary frontal AttackMove loop even
 /// when an existing native Attack needs no new order. Returned IDs are *only*
 /// those with a visible/frontline-backed artillery role this frame.
-pub(super) fn push(
+pub(in crate::sim::strategy::assist) fn push(
     brain: &mut AssistBrain, rules: &RuleSet, obs: &Observation<'_>,
     out: &mut Outbox, fighters: &[&Unit], objective: (u16,u16),
 ) -> BTreeSet<u64> {
+    push_impl(brain,rules,obs,out,fighters,objective,false)
+}
+
+/// Joint-operation guns are a separate, bounded commitment: their screens
+/// may act during the main fist's stockpile phase, but no other artillery is
+/// released from that stockpile.
+pub(in crate::sim::strategy::assist) fn push_coordinated(
+    brain: &mut AssistBrain, rules: &RuleSet, obs: &Observation<'_>,
+    out: &mut Outbox, fighters: &[&Unit], objective: (u16,u16),
+) -> BTreeSet<u64> {
+    push_impl(brain,rules,obs,out,fighters,objective,true)
+}
+
+fn push_impl(
+    brain: &mut AssistBrain, rules: &RuleSet, obs: &Observation<'_>,
+    out: &mut Outbox, fighters: &[&Unit], objective: (u16,u16),
+    joint_operation: bool,
+) -> BTreeSet<u64> {
     let mut held = BTreeSet::new();
-    if brain.campaign.holding_fist() { return held; }
+    if brain.campaign.holding_fist() && !joint_operation { return held; }
     let visible: Vec<_> = obs.visible_enemy_entities()
         .filter(|enemy| cell_distance(enemy.cell, objective) <= 16)
         .take(80).collect();

@@ -82,6 +82,7 @@ pub(in crate::sim::strategy::assist) fn admits(
                 && obs.visible_enemy_entities().any(|enemy| enemy.entity_id == target))
                 || obs.can_control_neutral(rules, unit, target))
                 && obs.can_engage(rules, unit, target)
+                && super::super::doctrine::target_ok(rules,obs,unit,target)
                 && (obs.can_control_neutral(rules, unit, target)
                     || obs.can_hurt(rules, unit, target)
                     || (obs.entity_type(rules, target)
@@ -90,6 +91,20 @@ pub(in crate::sim::strategy::assist) fn admits(
                             .is_some_and(|ty| ty.agent
                                 && super::has_disguise_weapon(rules, ty))))
         }
+        // Expendable and bomb-planting units cannot be given autonomous
+        // AttackMove/Guard. The native guard target scan may pick a rifleman
+        // in the middle of our own army and detonate there. Their explicit
+        // target orders are handled by orders::suicide_errand/bomb_errand.
+        Goal::AttackMove { .. } | Goal::Guard | Goal::GuardAt { .. }
+            if obs.entity_type(rules,unit).is_some_and(|ty| matches!(
+                super::super::doctrine::duty(rules,ty),
+                super::super::doctrine::Duty::Disposable |
+                    super::super::doctrine::Duty::BombPlanter)) => false,
+        Goal::AttackCell { .. }
+            if obs.entity_type(rules,unit).is_some_and(|ty| matches!(
+                super::super::doctrine::duty(rules,ty),
+                super::super::doctrine::Duty::Disposable |
+                    super::super::doctrine::Duty::BombPlanter)) => false,
         Goal::Capture { target } => {
             (!obs.is_hostile(target)
                 || obs.visible_enemy_entities().any(|enemy| enemy.entity_id == target))

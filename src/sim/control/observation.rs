@@ -1537,6 +1537,23 @@ impl<'a> Observation<'a> {
                 // even when the object lives in VehicleTypes.
                 return false;
             }
+            // `Spawner=yes` on a V3/Dreadnought/Boomer is only a rangefinder.
+            // Its `Warhead=Special` never damages the target: the spawned
+            // rocket explodes with `MissileSpawnRules::*Warhead` and real
+            // `*Damage`. Keep the targeting estimate faithful to the native
+            // missile instead of treating a rocket as an inert laser pointer.
+            if weapon.spawner {
+                if let Some(family) = unit_type.spawns.as_deref()
+                    .filter(|name| !name.is_empty())
+                    .and_then(|name| rules.missile_spawn.family_of(name))
+                {
+                    let missile = rules.missile_spawn.params(family);
+                    return missile.damage > 0 && rules.warhead(&missile.warhead)
+                        .is_some_and(|warhead|
+                            f64::from_bits(warhead.interaction(armour)
+                                .multiplier().bits()) != 0.0);
+                }
+            }
             // AA capability alone is not enough: a modded AA weapon may
             // have zero Verses against this particular airship's armour.
             // Apply the same real warhead check used against ground targets.

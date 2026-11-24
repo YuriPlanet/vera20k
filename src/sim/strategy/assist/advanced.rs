@@ -796,6 +796,7 @@ pub(super) fn siege_artillery(brain: &mut AssistBrain, rules: &RuleSet,
     obs: &Observation<'_>, out: &mut Outbox) {
     for unit in &brain.census.units {
         if !unit.controllable() || unit.in_service()
+            || brain.joint_ops.reserves(unit.entity_id)
             || ordered_this_frame(out, unit.entity_id) { continue; }
         let Some(ty) = obs.entity_type(rules, unit.entity_id) else { continue; };
         if !(ty.is_simple_deployer && ty.deploy_to_land) { continue; }

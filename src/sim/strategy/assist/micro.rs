@@ -296,6 +296,12 @@ pub(super) fn run(
                 (!brain.campaign.holding_fist() || item.role != Role::Attack
                     || !structures.contains(&target)
                     || aimed_at.get(&target) == Some(&item.entity_id))
+                    // The long-term siege plan is not allowed to fall apart
+                    // because micro sees a nearby operational prism tower.
+                    // Charge units are handled above by the wave commander.
+                    && (item.role != Role::Attack
+                        || !super::siege_counter::avoid_solo_tower_attack(
+                            rules, obs, item.entity_id, target))
                     && super::orders::admits(rules, obs, item.entity_id, &Goal::Attack { target })
                     && obs.can_hurt(rules, item.entity_id, target)
                     && (!super::tactics::unfavourable_vehicle_duel(
@@ -305,7 +311,9 @@ pub(super) fn run(
                             item.entity_id, target, item.cell))
             },
             |target| target_rank(
-                prefer(rules,obs,item.preference,target,personnel_specialist),
+                prefer(rules,obs,item.preference,target,personnel_specialist)
+                    .saturating_add(super::doctrine::preference_penalty(
+                        rules,obs,item.entity_id,target)),
                 liberators.contains(&target) || controllers.contains(&target),
                 economic_raiders.contains(&target),
                 focus_targets.contains(&target),
@@ -751,7 +759,11 @@ fn collect(
         });
         for unit in &brain.census.units {
             if !squad.members.contains(&unit.entity_id) || !unit.controllable()
-                || unit.traits.yard_maker {
+                || unit.traits.yard_maker
+                || obs.entity_type(rules,unit.entity_id).is_some_and(|ty| matches!(
+                    super::doctrine::duty(rules,ty),
+                    super::doctrine::Duty::Disposable |
+                        super::doctrine::Duty::BombPlanter)) {
                 continue;
             }
             // A unit already mid-fight is told nothing: its mission owns it,

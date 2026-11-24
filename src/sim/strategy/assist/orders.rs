@@ -505,6 +505,7 @@ pub(super) fn captures(
                 // Capture, path/guard and TaskLedger admission pipeline.
                 .or_else(|| brain.asset_ops.preferred_target(
                     obs, unit.entity_id, unit.cell, &free, &guards, &structures,
+                    brain.joint_ops.prize(),
                 ))
                 .or_else(|| engineer_preference(
                     rules, obs, &free, &hostile, &guards, &structures,
@@ -852,6 +853,37 @@ fn spy_recon_post(
     .min_by_key(|cell| (squared_distance(from, *cell), *cell))
 }
 
+/// A valid explosive order can become unsafe while its carrier walks: our
+/// own infantry may move into the blast ring, the target may change owners,
+/// or the building may be destroyed before the bomb arrives. Cancel that
+/// *existing* native Attack rather than merely refusing to issue a new one.
+/// A Stop is safety supervision, not evidence that detonation was avoided.
+pub(super) fn supervise_hazardous_attacks(
+    brain: &mut AssistBrain,
+    rules: &RuleSet,
+    obs: &Observation<'_>,
+    out: &mut Outbox,
+) {
+    let visible: std::collections::BTreeSet<u64> = obs.visible_enemy_entities()
+        .map(|enemy| enemy.entity_id).collect();
+    let mut cancelled = 0usize;
+    for unit in &brain.census.units {
+        if cancelled >= 4 { break; }
+        if !unit.controllable() || ordered_this_frame(out,unit.entity_id) { continue; }
+        let Some(ty) = obs.entity_type(rules,unit.entity_id) else { continue; };
+        if !matches!(super::doctrine::duty(rules,ty),
+            super::doctrine::Duty::Disposable | super::doctrine::Duty::BombPlanter)
+        { continue; }
+        let Some(target) = obs.attack_target(unit.entity_id) else { continue; };
+        if visible.contains(&target) && obs.is_hostile(target)
+            && super::doctrine::target_ok(rules,obs,unit.entity_id,target)
+        { continue; }
+        if issue_tracked(&mut brain.tracked,brain.trace,out,rules,obs,
+            unit.entity_id,TrackedKind::Avoid,None,None,Goal::Stop)
+        { cancelled += 1; }
+    }
+}
+
 /// Spend a unit whose weapon spends it on something worth more than it costs.
 ///
 /// The wishlist's "恐怖分子，自爆卡车，疯狂伊万，辐射工兵…有特殊攻击能力且存在
@@ -876,109 +908,63 @@ pub(super) fn suicide_errand(
     obs: &Observation<'_>,
     out: &mut Outbox,
 ) {
-    let tick = obs.tick();
-    if !brain
-        .census
-        .units
-        .iter()
-        .any(|unit| unit.traits.suicide && unit.orderable && !unit.hand)
-    {
-        return;
-    }
-    // What the house would rather not catch in its own blast.
-    let own: Vec<(u16, u16)> = brain
-        .census
-        .units
-        .iter()
-        .filter(|unit| !unit.traits.suicide)
-        .map(|unit| unit.cell)
-        .collect();
-    // The enemy's structures, which is what a one-shot body is worth spending on.
-    let targets: Vec<EnemyEntity> = obs
-        .visible_enemy_entities()
-        .filter(|enemy| {
-            obs.object_type(rules, enemy.type_id)
-                .is_some_and(|ty| ty.category == ObjectCategory::Building)
-        })
-        .collect();
-    if targets.is_empty() {
-        return;
-    }
+    let targets: Vec<EnemyEntity> = obs.visible_enemy_entities().take(128).collect();
     let mut issued = 0;
     for unit in &brain.census.units {
-        if issued >= FORCE_ORDERS_PER_FRAME {
-            break;
-        }
-        if !unit.traits.suicide || !unit.orderable || unit.hand {
-            continue;
-        }
-        if ordered_this_frame(out, unit.entity_id) {
-            continue;
-        }
-        let Some(ty) = obs.object_type(rules, unit.type_id) else {
-            continue;
-        };
-        // What it costs, in the census's own currency.
-        let cost = super::census::fight_points(ty, 1000);
-        let reach = super::advance::weapon_range_cells(rules, ty, false).max(1);
-        let chosen = targets
-            .iter()
-            .filter_map(|target| {
-                let value = obs
-                    .object_type(rules, target.type_id)
-                    .map_or(0, |target_ty| super::census::fight_points(target_ty, 1000));
-                // Only a trade: the blast has to be worth more than the body.
-                // Equal is not a trade — the house pays the walk as well.
-                if value <= cost {
-                    return None;
-                }
-                // Nothing of the house's inside the blast. `SPLASH_CELLS` is a
-                // stand-in for the warhead's `CellSpread=`, taken from the
-                // dearest of them: a bomb truck's is 8 and the desolator's
-                // eruption is 10, so the check is the pessimistic one.
-                let nearby = own.iter().any(|cell| {
-                    squared_distance(*cell, target.cell) <= SPLASH_CELLS * SPLASH_CELLS
-                });
-                if nearby {
-                    return None;
-                }
-                Some((
-                    std::cmp::Reverse(value),
-                    squared_distance(unit.cell, target.cell),
-                    target.entity_id,
-                    target.cell,
-                ))
-            })
-            .min_by_key(|(value, walk, id, _)| (*value, *walk, *id))
-            .map(|(_, _, id, cell)| (id, cell));
-        let Some((target, target_cell)) = chosen else {
-            continue;
-        };
-        // Out of reach it marches; in range it fires its one shot. Track
-        // the goal kind actually issued so an L2 rejection can roll it back.
-        let in_reach = super::advance::cell_distance(unit.cell, target_cell) <= reach;
-        let (kind, goal) = if in_reach {
-            (TrackedKind::Attack, Goal::Attack { target })
-        } else {
-            (TrackedKind::AttackMove, Goal::AttackMove { cell: target_cell })
-        };
-        if issue_tracked(
-            &mut brain.tracked, brain.trace, out, rules, obs,
-            unit.entity_id, kind, Some(target), Some(target_cell), goal,
-        ) {
-            issued += 1;
-        }
+        if issued >= 3 { break; }
+        if !unit.traits.suicide || !unit.controllable() || unit.in_service()
+            || ordered_this_frame(out,unit.entity_id) { continue; }
+        let chosen = targets.iter().filter(|enemy|
+            super::doctrine::target_ok(rules,obs,unit.entity_id,enemy.entity_id)
+                && obs.can_engage(rules,unit.entity_id,enemy.entity_id)
+                && super::advance::cell_distance(unit.cell,enemy.cell) <= 30)
+            .min_by_key(|enemy| (
+                squared_distance(unit.cell,enemy.cell),
+                std::cmp::Reverse(obs.entity_type(rules,enemy.entity_id)
+                    .map_or(0,|ty|ty.cost)),enemy.entity_id));
+        let Some(target) = chosen else { continue; };
+        // Native Attack retains one explicit victim while walking into firing
+        // range. AttackMove would autonomously select an unsafe target on the
+        // way, and its blast may take our own squad with it.
+        if issue_tracked(&mut brain.tracked,brain.trace,out,rules,obs,
+            unit.entity_id,TrackedKind::Attack,Some(target.entity_id),Some(target.cell),
+            Goal::Attack { target: target.entity_id }) { issued += 1; }
     }
 }
 
-/// How near the house's own units have to stand to a blast for it not to be
-/// worth firing, in cells.
-///
-/// The retail warheads that reach past their target are `TerrorBombWH 2`,
-/// `DemobombWH 8` and `RadEruptionWarhead 10`; the widest of them is the one
-/// that has to be safe, because the unit that carries it cannot know which it
-/// will fire.
-const SPLASH_CELLS: i32 = 10;
+/// A Crazy-Ivan-type weapon attaches a delayed bomb, rather than performing a
+/// normal rifle attack. Never let general-purpose micro or guard march this
+/// specialist into friendly troops. Require a currently visible, valuable
+/// target with a safety margin around the eventual bomb site; move only via
+/// the engine's explicit targeted Attack, not an autonomous AttackMove.
+pub(super) fn bomb_errand(
+    brain: &mut AssistBrain,
+    rules: &RuleSet,
+    obs: &Observation<'_>,
+    out: &mut Outbox,
+) {
+    let targets: Vec<EnemyEntity> = obs.visible_enemy_entities().take(128).collect();
+    let mut issued = 0;
+    for unit in &brain.census.units {
+        if issued >= 2 { break; }
+        if !unit.controllable() || unit.in_service()
+            || ordered_this_frame(out,unit.entity_id)
+            || !obs.entity_type(rules,unit.entity_id).is_some_and(|ty|
+                super::doctrine::duty(rules,ty) == super::doctrine::Duty::BombPlanter)
+        { continue; }
+        let chosen = targets.iter().filter(|enemy|
+            super::advance::cell_distance(unit.cell,enemy.cell) <= 12
+                && super::doctrine::target_ok(rules,obs,unit.entity_id,enemy.entity_id)
+                && obs.can_engage(rules,unit.entity_id,enemy.entity_id)
+                && !super::tactics::unsafe_post(rules,obs,unit.entity_id,enemy.cell))
+            .min_by_key(|enemy| (squared_distance(unit.cell,enemy.cell),enemy.entity_id));
+        if let Some(target) = chosen
+            && issue_tracked(&mut brain.tracked,brain.trace,out,rules,obs,
+                unit.entity_id,TrackedKind::Attack,Some(target.entity_id),Some(target.cell),
+                Goal::Attack { target: target.entity_id })
+        { issued += 1; }
+    }
+}
 
 /// Pack a captured yard and drive it home.
 ///
@@ -1354,6 +1340,7 @@ pub(super) fn garrison(
         });
         if !unit.traits.occupier
             || !unit.controllable()
+            || brain.joint_ops.reserves(unit.entity_id)
             || (holds_or_fights(unit.mission)
                 && !may_garrison_from_mission(
                     unit.mission, near_front || cover_nearby,
@@ -1954,6 +1941,10 @@ pub(super) fn forces(
         // A unit already given this frame's order — a step out of a shell — is
         // not told to guard where it was standing.
         if ordered_this_frame(out, unit.entity_id)
+            || unit.traits.suicide
+            || obs.entity_type(rules,unit.entity_id).is_some_and(|ty|
+                super::doctrine::duty(rules,ty) == super::doctrine::Duty::BombPlanter)
+            || brain.joint_ops.reserves(unit.entity_id)
             || brain.crate_claims.contains_key(&unit.entity_id)
             || brain.crate_returns.contains_key(&unit.entity_id)
         {
@@ -2025,7 +2016,8 @@ const DEPLOYS_PER_FRAME: usize = 4;
 /// already down stays down, and one that is standing stays up. Issuing it
 /// every frame would walk them in and out of the pose, and a deployed soldier
 /// that never stands up is a soldier that never takes ground.
-pub(super) fn deploy(brain: &mut AssistBrain, obs: &Observation<'_>, out: &mut Outbox) {
+pub(super) fn deploy(brain: &mut AssistBrain, rules: &RuleSet,
+    obs: &Observation<'_>, out: &mut Outbox) {
     let tick = obs.tick();
     // Forget the soldiers the house no longer has, so a recycled id cannot
     // inherit another soldier's pose.
@@ -2046,6 +2038,9 @@ pub(super) fn deploy(brain: &mut AssistBrain, obs: &Observation<'_>, out: &mut O
     }
     // Collected before anything is written: the toggle has to be recorded
     // against the soldier, and the ledger is borrowed while it is read.
+    // An old sighting cannot justify activating a permanent area hazard.
+    // Only truly visible enemy positions may trigger an infantry deploy.
+    let visible: Vec<EnemyEntity> = obs.visible_enemy_entities().take(256).collect();
     let wanted: Vec<(u64, i32)> = brain
         .census
         .units
@@ -2054,7 +2049,7 @@ pub(super) fn deploy(brain: &mut AssistBrain, obs: &Observation<'_>, out: &mut O
         .map(|unit| {
             (
                 unit.entity_id,
-                nearest_distance(&brain.census.enemies, unit.cell),
+                nearest_distance(&visible, unit.cell),
             )
         })
         .collect();
@@ -2064,9 +2059,18 @@ pub(super) fn deploy(brain: &mut AssistBrain, obs: &Observation<'_>, out: &mut O
             break;
         }
         let deployed = obs.is_deployed(entity_id);
-        let Some(down) = pose_to_take(deployed, distance) else {
-            continue;
-        };
+        let radiation = obs.entity_type(rules,entity_id)
+            .is_some_and(|ty| super::doctrine::radiation_deploy_radius(rules,ty) > 0);
+        let unsafe_radiation = radiation
+            && obs.object_cell_and_type(entity_id).is_some_and(|(cell,_)|
+                !super::doctrine::radiation_deploy_safe(rules,obs,entity_id,cell));
+        // Undeploy immediately when allies enter the affected area; refuse to
+        // turn a safe infantry screen into an irradiated friendly formation.
+        // Residual radiation can linger: prevent exposure before deployment.
+        let down = if unsafe_radiation {
+            if deployed { Some(false) } else { None }
+        } else { pose_to_take(deployed, distance) };
+        let Some(down) = down else { continue; };
         log::debug!(
             "auto play: deploy {} -> {} nearest={}",
             entity_id,
@@ -2968,6 +2972,7 @@ pub(super) fn crates(
                         && cells.iter().any(|cell|
                             squared_distance(unit.cell, *cell) <= 2 * 2)))
                 && !brain.crate_returns.contains_key(&unit.entity_id)
+                && !brain.joint_ops.reserves(unit.entity_id)
         })
         .filter_map(|unit| {
             let ty = obs.object_type(rules, unit.type_id);

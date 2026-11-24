@@ -128,11 +128,13 @@ pub(super) mod census;
 pub(super) mod composition;
 pub(super) mod combinations;
 pub(super) mod dodge;
+pub(super) mod doctrine;
 pub(super) mod economy;
 pub(super) mod escort;
 pub(super) mod expand;
 mod frontier;
 pub(super) mod kite;
+pub(super) mod joint_ops;
 pub(super) mod micro;
 pub(super) mod mission;
 pub(super) mod navigation;
@@ -142,6 +144,7 @@ pub(super) mod pilots;
 pub(super) mod plan;
 pub(super) mod recycle;
 pub(super) mod recon;
+pub(super) mod siege_counter;
 pub(super) mod squads;
 pub(super) mod strategy;
 pub(super) mod tactics;
@@ -243,6 +246,9 @@ pub struct AssistBrain {
     pub(super) recon: recon::Director,
     /// V37: durable ownership of strategic neutral / captured asset operations.
     pub(super) asset_ops: asset_ops::Director,
+    /// V38: a bounded cross-squad team takes one strategic prize, without
+    /// claiming the whole main fist or circumventing native Capture.
+    pub(super) joint_ops: joint_ops::Director,
     /// Throttle native grinder recycling so a controlled prize has time to
     /// reach the building without entering a new order auction every tick.
     pub(super) recycle_after: u64,
@@ -590,6 +596,7 @@ impl AssistBrain {
             campaign: campaign::Campaign::default(),
             recon: recon::Director::default(),
             asset_ops: asset_ops::Director::default(),
+            joint_ops: joint_ops::Director::default(),
             recycle_after: 0,
             escorts: BTreeMap::new(),
             site_jobs: BTreeMap::new(),
@@ -1151,6 +1158,13 @@ impl Brain for AssistBrain {
             dodge::run(self, rules, obs, out);
             kite::run(self, rules, obs, out);
             orders::crates(self, rules, obs, out);
+            // V40: a safe blast route can become unsafe when friends move.
+            // Check in-flight bombs *before* offering a new target.
+            orders::supervise_hazardous_attacks(self,rules,obs,out);
+            // Explicit safe targets for delayed bombs and one-shot units.
+            // Ordinary micro/Guard no longer decides their detonation target.
+            orders::suicide_errand(self, rules, obs, out);
+            orders::bomb_errand(self, rules, obs, out);
             micro::run(self, rules, obs, out);
             avoidance::run(self, rules, obs, out);
             // A capture can borrow one spare defender, without overruling
@@ -1170,6 +1184,12 @@ impl Brain for AssistBrain {
             // Defensive long-range fire stays behind the local screening
             // squad; the assault's own support formation runs in advance.
             advance::fire_support::defend(self, rules, obs, out);
+            siege_counter::air_strike(self, rules, obs, out);
+            siege_counter::standoff_strike(self, rules, obs, out);
+            // One small front + fire-support detachment may protect a
+            // currently observed strategic prize. Ordinary advance excludes
+            // its members until release, even when no new order is needed.
+            joint_ops::Director::run(self, rules, obs, out);
             if !advance::advance(self, rules, obs, out) {
                 orders::forces(self, rules, obs, out);
             }
@@ -1181,7 +1201,7 @@ impl Brain for AssistBrain {
         }
         if obs.forces_enabled() {
             orders::transports(self, rules, obs, out);
-            orders::deploy(self, obs, out);
+            orders::deploy(self, rules, obs, out);
         }
         // Every pass has had its say: the strongest request for each actor
         // survives. Losing requests are not L2 refusals: another accepted

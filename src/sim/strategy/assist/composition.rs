@@ -254,7 +254,8 @@ pub(super) fn fill_lines(
             ProductionCategory::Aircraft,
             ProductionCategory::Ship,
         ]
-    } else if establish_air_cover && budget.free >= COMBAT_MIN_CREDITS {
+    } else if super::siege_counter::prefers_air_line(brain,rules,obs)
+        || establish_air_cover && budget.free >= COMBAT_MIN_CREDITS {
         // Fill at most two aircraft per airfield before resuming the usual
         // tank-first spending. This is a one-time investment in air coverage,
         // not a permanent rule that starves the ground army.
@@ -306,11 +307,20 @@ pub(super) fn fill_lines(
         // by ordinary unit ranking, but an engineer or spy with a real mission
         // may still use its own specialist priority.
         let bank_for_tech = save_for_tech(brain, rules, obs, &budget);
+        // A *visible, active* heavy battery is an urgent production objective.
+        // The old saving gates skipped the vehicle and air lines completely
+        // and then purchased more cheap infantry while the army died at the
+        // tower. Let a native-buildable counter compete with ordinary saving;
+        // the yard's actual queued/committed money was already reserved above.
+        let siege_due = matches!(category,
+            ProductionCategory::Vehicle | ProductionCategory::Aircraft)
+            && super::siege_counter::purchase(
+                brain, rules, obs, category, budget.free).is_some();
         let heavy_cost = scarce_advanced_vehicle(brain,rules,obs,budget.income)
             .map(|(ty,_)|obs.cost_of(rules,ty));
         let bank_for_heavy = heavy_cost.is_some_and(|cost| budget.free < cost);
         if (bank_for_tech || bank_for_heavy)
-            && !urgent_infiltration && !urgent_capture { continue; }
+            && !urgent_infiltration && !urgent_capture && !siege_due { continue; }
         if barracks_holds && category == ProductionCategory::Infantry
             && !urgent_infiltration && !urgent_capture && !combo_due
         { continue; }
@@ -770,7 +780,8 @@ fn scarce_advanced_vehicle<'r>(
     { return None; }
     build::class_types(rules,obs,ObjectCategory::Vehicle)
         .filter(|(ty,_)| !ty.naval && !ty.resource_gatherer
-            && census::Traits::of(rules,ty).combat)
+            && census::Traits::of(rules,ty).combat
+            && super::doctrine::may_produce(brain,rules,obs,ty))
         .filter(|(ty,_)| (1_500..=3_400).contains(&obs.cost_of(rules,ty)))
         .min_by_key(|(ty,id)| (
             brain.census.type_count(*id),
@@ -825,76 +836,6 @@ fn expedition_carrier<'r>(
         .min_by_key(|(ty,id)|(obs.cost_of(rules,ty),*id))
 }
 
-
-/// A detected tower is a production requirement, not permission for a lone
-/// tank to test it again. Prefer a genuinely buildable, range-superior gun.
-/// If the mod supplies no standoff counter, choose a sturdy rules-legal
-/// vehicle for a simultaneous mass assault instead of a random cheap filler.
-/// `Some(None)` means the selected counter is legal but not yet affordable:
-/// leave the vehicle line idle to save for it rather than buying filler.
-fn battery_counter_product<'r>(
-    brain: &AssistBrain, rules: &'r RuleSet,
-    obs: &Observation<'_>, free: i32,
-) -> Option<Option<(&'r ObjectType, InternedId)>> {
-    if brain.push_gate != "need-siege" || brain.census.refineries == 0
-        || brain.census.harvesters == 0 || brain.director.under_attack_now()
-    { return None; }
-    let reach = brain.siege_reach?;
-    let focus = brain.push_target.map(|(_,_,cell)| cell)?;
-    let towers: Vec<_> = obs.visible_enemy_entities().filter_map(|enemy| {
-        let ty = obs.entity_type(rules, enemy.entity_id)?;
-        (ty.is_base_defense && obs.visible_enemy_building_operational(rules,enemy.entity_id)
-            && super::advance::cell_distance(enemy.cell,focus) <= 14)
-            .then_some(ty)
-    }).collect();
-    if towers.is_empty() { return None; }
-    let mut candidates: Vec<_> = build::class_types(rules, obs, ObjectCategory::Vehicle)
-        .filter(|(ty, _)| !ty.naval && ty.speed > 0 && ty.strength >= 300
-            && !ty.resource_gatherer && !ty.construction_yard
-            && !ty.is_base_defense && super::orders::is_combat_unit(rules,ty))
-        .filter_map(|(ty,id)| {
-            let mut best_range = 0;
-            let mut damage = 0i64;
-            for slot in 0..ty.weapon_record_count() {
-                let Some(weapon) = ty.weapon_at(slot).and_then(|name| rules.weapon(name))
-                else { continue; };
-                if weapon.never_use || weapon.damage <= 0
-                    || !rules.weapon_projectile(weapon).is_some_and(|shot| shot.ag)
-                { continue; }
-                let Some(head) = weapon.warhead.as_deref().and_then(|name| rules.warhead(name))
-                else { continue; };
-                let viable = towers.iter().any(|tower|
-                    f64::from_bits(head.interaction(tower.armor_id()).multiplier().bits()) > 0.0);
-                if !viable { continue; }
-                best_range = best_range.max(super::advance::weapon_reach_cells(weapon));
-                damage = damage.max(i64::from(weapon.damage)
-                    .saturating_mul(i64::from(weapon.burst.max(1)))
-                    .saturating_mul(90) / i64::from(weapon.rof.max(15)));
-            }
-            (best_range > 0).then_some((ty,id,obs.cost_of(rules,ty),best_range,damage))
-        }).collect();
-    if candidates.is_empty() { return None; }
-    let standoff = candidates.iter().any(|(_,_,_,range,_)| *range > reach+1);
-    if standoff {
-        candidates.retain(|(_,_,_,range,_)| *range > reach + 1);
-        // Highest matching reach first: a real cannon can be cheaper than a
-        // nominal long-range anti-air weapon, but only warhead-positive
-        // weapons reached this shortlist.
-        candidates.sort_by_key(|(_,id,cost,range,_)| (
-            std::cmp::Reverse(*range), brain.census.type_count(*id), *cost, *id));
-    } else {
-        // No long-range counter in the effective mod rules: favor vehicles
-        // which contribute real HP and damage to the synchronized wave.
-        // Use cost-normalized combat yield, not a hardcoded tank roster.
-        candidates.sort_by_key(|(ty,id,cost,_,dps)| {
-            let value = (i64::from(ty.strength.max(1)) + *dps)
-                .saturating_mul(1_000) / i64::from((*cost).max(1));
-            (std::cmp::Reverse(value), brain.census.type_count(*id), *id)
-        });
-    }
-    let (ty,id,price,_,_) = candidates[0];
-    Some((price <= free).then_some((ty,id)))
-}
 
 /// Fill one *currently empty* combat carrier by manufacturing a genuine
 /// rules-compatible passenger, only after the economy can afford a luxury
@@ -1020,8 +961,8 @@ fn product_for<'r>(
     {
         return Some(found);
     }
-    if category == ProductionCategory::Vehicle
-        && let Some(decision) = battery_counter_product(brain,rules,obs,budget.free)
+    if matches!(category, ProductionCategory::Vehicle | ProductionCategory::Aircraft)
+        && let Some(decision) = super::siege_counter::purchase(brain,rules,obs,category,budget.free)
     {
         // `None` intentionally holds the line for an unlocked counter it
         // cannot yet pay for; infantry/repair spending retain their own gates.
@@ -1120,7 +1061,7 @@ fn product_for<'r>(
     {
         return Some(specialist);
     }
-    if let Some(found) = chosen_product(rules, obs, category, budget.free)
+    if let Some(found) = chosen_product(brain, rules, obs, category, budget.free)
         && (category != ProductionCategory::Aircraft
             || airship_due(brain, rules, obs, found.0))
     {
@@ -1344,6 +1285,7 @@ fn national_signature<'r>(
         .filter(|(ty,_)| category != ObjectCategory::Vehicle || !ty.naval)
         .filter(|(ty,_)| super::orders::is_combat_unit(rules, ty))
         .filter(|(ty,_)| build::country_special(ty, &country))
+        .filter(|(ty,_)| super::doctrine::may_produce(brain,rules,obs,ty))
         .filter(|(ty,_)| obs.cost_of(rules, ty) <= credits)
         .min_by_key(|(ty,id)| (
             brain.census.type_count(*id),
@@ -1381,6 +1323,7 @@ fn mind_control_purchase<'r>(
         .filter(|(ty,_)| !ty.naval && super::orders::is_combat_unit(rules,ty))
         .filter(|(ty,_)| crate::rules::capabilities::Capabilities::of(rules, ty)
             .has(crate::rules::capabilities::Tag::MindControl))
+        .filter(|(ty,_)| super::doctrine::may_produce(brain,rules,obs,ty))
         .filter(|(ty,_)| obs.cost_of(rules, ty) <= credits)
         .min_by_key(|(ty,id)| (brain.census.type_count(*id),
             obs.cost_of(rules,ty), *id))
@@ -1399,6 +1342,7 @@ fn control_specialist_due(fighters: usize, controllers: usize) -> bool {
 /// count above is the economy's own owner, and the slot can still name one
 /// after the count is met.
 fn chosen_product<'r>(
+    brain: &AssistBrain,
     rules: &'r RuleSet,
     obs: &Observation<'_>,
     category: ProductionCategory,
@@ -1412,6 +1356,7 @@ fn chosen_product<'r>(
     };
     let (ty, type_id) = obs.chosen_product(rules, object_category)?;
     if ty.resource_gatherer
+        || !super::doctrine::may_produce(brain,rules,obs,ty)
         || obs.can_build(rules, ty, true) == crate::sim::production::CanBuild::No
         || credits < obs.cost_of(rules, ty)
     {
@@ -1588,6 +1533,7 @@ fn fighter<'r>(
     let affordable: Vec<(&ObjectType, InternedId, i32)> = build::class_types(rules, obs, category)
         .filter(|(ty, _)| naval.is_none_or(|wanted| ty.naval == wanted))
         .filter(|(ty, _)| super::orders::is_combat_unit(rules, ty))
+        .filter(|(ty, _)| super::doctrine::may_produce(brain,rules,obs,ty))
         .filter(|(ty, _)| category != ObjectCategory::Aircraft
             || airship_due(brain, rules, obs, ty))
         .filter_map(|(ty, type_id)| {

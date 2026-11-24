@@ -78,6 +78,19 @@ enum Phase {
     Owned,       // An owned entity with the same ID was actually observed.
 }
 
+/// A minimal, fog-safe contract for the joint-force commander. `Owned`
+/// means our *actual* property list contains the prize; sending Capture
+/// never produces this status. Unseen sightings authorize scouting only.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum CoalitionStatus {
+    Unseen,
+    Threatened,
+    Open,
+    Capturing,
+    Owned,
+    Unavailable,
+}
+
 #[derive(Clone, Copy, Debug)]
 struct Site {
     cell: (u16, u16),
@@ -138,6 +151,47 @@ pub(super) struct Director {
 impl Director {
     pub(super) fn technology_window(&self, now: u64) -> bool {
         now < self.foreign_tech_until
+    }
+
+    pub(super) fn has_muster(&self, actor: u64) -> bool {
+        self.musters.contains_key(&actor)
+    }
+
+    /// Select only *currently visible* valuable unowned sites that actually
+    /// need a security operation. Never interrogate hidden enemy ownership.
+    pub(super) fn coalition_target(&self, obs: &Observation<'_>,
+        home: (u16,u16), after: &BTreeMap<u64,u64>,
+    ) -> Option<(u64,(u16,u16))> {
+        let now = obs.tick();
+        self.sites.iter().filter(|(id,site)|
+            site.phase == Phase::Secure && !site.hostile
+                && site.value >= Value::Factory && now >= site.retry_after
+                && now >= after.get(*id).copied().unwrap_or(0)
+                && obs.is_cell_visible(site.cell.0,site.cell.1)
+        ).max_by_key(|(id,site)|
+            (site.value.score() * 200 - squared_distance(home,site.cell) / 12,
+                std::cmp::Reverse(**id))
+        ).map(|(id,site)| (*id,site.cell))
+    }
+
+    pub(super) fn coalition_status(&self, obs: &Observation<'_>,
+        id: u64,
+    ) -> CoalitionStatus {
+        let Some(site) = self.sites.get(&id) else {
+            return CoalitionStatus::Unavailable;
+        };
+        match site.phase {
+            Phase::Owned => CoalitionStatus::Owned,
+            Phase::Recon => CoalitionStatus::Unseen,
+            Phase::Secure if obs.is_cell_visible(site.cell.0,site.cell.1) =>
+                CoalitionStatus::Threatened,
+            Phase::Ready if obs.is_cell_visible(site.cell.0,site.cell.1) =>
+                CoalitionStatus::Open,
+            Phase::Capturing if obs.is_cell_visible(site.cell.0,site.cell.1) =>
+                CoalitionStatus::Capturing,
+            Phase::Secure | Phase::Ready | Phase::Capturing => CoalitionStatus::Unseen,
+            Phase::Cooldown => CoalitionStatus::Unavailable,
+        }
     }
 
     /// Never ask production to buy an engineer using an unseen neutral
@@ -268,7 +322,7 @@ impl Director {
     /// and native CanTakeBuilding checks are done by `orders::captures`.
     pub(super) fn preferred_target(&self, obs: &Observation<'_>,
         engineer: u64, from: (u16, u16), candidates: &[EnemyEntity],
-        guards: &[(u16,u16)], guns: &[(u16,u16)],
+        guards: &[(u16,u16)], guns: &[(u16,u16)], focus: Option<u64>,
     ) -> Option<EnemyEntity> {
         candidates.iter().filter(|target| {
             let Some(site) = self.sites.get(&target.entity_id) else { return false };
@@ -282,7 +336,8 @@ impl Director {
             let site = &self.sites[&target.entity_id];
             // Do not sacrifice the first income line chasing a distant
             // abandoned yard when the house cannot yet finance its army.
-            (site.value.score() * 100 - i32::from(site.hostile) * 1000
+            (site.value.score() * 100 + if focus == Some(target.entity_id) { 20_000 } else { 0 }
+                - i32::from(site.hostile) * 1000
                 + (if obs.credits() < 3_500 && site.value == Value::Public {
                     6_500
                 } else { 0 })
@@ -334,7 +389,7 @@ impl Director {
         // permanent missing defender in a 120-house game.
         let expired: Vec<_> = brain.asset_ops.musters.iter()
             .filter(|(guard, (target, _, deadline))|
-                now >= *deadline || home_raid || !defenders.contains(guard)
+                now >= *deadline || home_raid || !defenders.contains(*guard)
                     || brain.asset_ops.sites.get(target)
                         .is_none_or(|site| site.phase != Phase::Secure))
             .map(|(guard, _)| *guard).collect();

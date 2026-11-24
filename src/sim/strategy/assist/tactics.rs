@@ -146,7 +146,7 @@ pub(super) fn need_siege(
     rules: &RuleSet, obs: &Observation<'_>,
     target: (u16,u16), fighters: &[&super::census::Unit],
 ) -> Option<i32> {
-    let (defensive_reach, defense, defender_id) = obs.visible_enemy_entities()
+    let (defensive_reach, _defense, defender_id) = obs.visible_enemy_entities()
         .filter_map(|enemy| {
             let ty = obs.entity_type(rules,enemy.entity_id)?;
             if !ty.is_base_defense
@@ -158,37 +158,23 @@ pub(super) fn need_siege(
                 || !fighters.iter().any(|unit| distance(unit.cell,enemy.cell) <= 18
                     && obs.can_hurt(rules,enemy.entity_id,unit.entity_id))
             { return None; }
-            let reach = super::advance::weapon_range_cells(rules,ty,false);
+            let reach = super::siege_counter::ground_reach(rules,ty);
             (reach >= 4).then_some((reach,ty,enemy.entity_id))
         })
         .max_by_key(|(reach,ty,id)| (*reach,ty.strength,*id))?;
     if fighters.iter().any(|unit| {
         obs.entity_type(rules,unit.entity_id).is_some_and(|ty| {
-            super::advance::weapon_range_cells(rules,ty,obs.is_deployed(unit.entity_id))
-                > defensive_reach + 1
+            super::siege_counter::ground_reach(rules,ty) > defensive_reach + 1
                 && obs.can_hurt(rules,unit.entity_id,defender_id)
         })
     }) { return None; }
-    // A truly extreme battery is not a pillbox. Even where our factory
-    // cannot build a longer-ranged ground gun, keep a bounded preparation
-    // mission alive so spies can black out the defending house and aircraft
-    // can find an unprotected approach; never spend the whole army trading HP.
-    if defensive_reach >= 11 { return Some(defensive_reach); }
-    // Do not deadlock a faction whose current rules cannot build any standoff
-    // answer. It must keep the old v10 assault behaviour instead.
-    let buildable = super::build::class_types(rules,obs,
-        crate::rules::object_type::ObjectCategory::Vehicle)
-        .any(|(ty,_)| !ty.naval && super::orders::is_combat_unit(rules,ty)
-            && (0..ty.weapon_record_count()).any(|slot| {
-                let Some(weapon) = ty.weapon_at(slot).and_then(|name| rules.weapon(name))
-                else { return false; };
-                if weapon.never_use { return false; }
-                let Some(head) = weapon.warhead.as_deref().and_then(|name| rules.warhead(name))
-                else { return false; };
-                super::advance::weapon_reach_cells(weapon) > defensive_reach + 1
-                    && f64::from_bits(head.interaction(defense.armor_id()).multiplier().bits()) > 0.0
-            }));
-    buildable.then_some(defensive_reach)
+    // A live range-7+ battery is never a pillbox. If our currently legal
+    // tech does not yet produce a longer-ranged gun, keep the screen alive
+    // while tech/air/heavy procurement catches up. A truly concentrated
+    // *heavy* charge is separately authorized by `prepare_siege_charge`.
+    // This must also hold when a mod has no standoff type at all: blindly
+    // falling back to the old line-tank march caused the reported losses.
+    Some(defensive_reach)
 }
 
 
@@ -240,32 +226,27 @@ pub(super) fn effective_reach_against(
         && !obs.visible_enemy_building_operational(rules, attacker)
     { return 0; }
     let Some(target) = obs.entity_type(rules, victim) else { return 0; };
-    let air = target.category == ObjectCategory::Aircraft
+    let air = target.category == ObjectCategory::Aircraft || target.balloon_hover
         || (target.jumpjet && !obs.is_deployed(victim));
     if gun.gunner {
         let Some(weapon) = obs.active_gunner_weapon(rules, attacker) else { return 0; };
         if weapon.never_use { return 0; }
         let projectile_ok = rules.weapon_projectile(weapon).is_some_and(|p|
             if air { p.aa } else { p.ag });
-        let verses_ok = weapon.warhead.as_deref()
-            .and_then(|id| rules.warhead(id)).is_some_and(|head|
-                f64::from_bits(head.interaction(target.armor_id()).multiplier().bits()) > 0.0);
+        let verses_ok = super::siege_counter::effective_ground_warhead(
+            rules,gun,weapon,target);
         return if projectile_ok && verses_ok {
-            super::advance::weapon_reach_cells(weapon)
+            super::siege_counter::max_range_cells(weapon)
         } else { 0 };
     }
     (0..gun.weapon_record_count()).filter_map(|slot| {
         let weapon = rules.weapon(gun.weapon_at(slot)?)?;
         if weapon.never_use { return None; }
-        let viable = if air {
-            rules.weapon_projectile(weapon).is_some_and(|projectile| projectile.aa)
-        } else {
-            weapon.warhead.as_deref()
-                .and_then(|name| rules.warhead(name))
-                .is_some_and(|warhead| f64::from_bits(
-                    warhead.interaction(target.armor_id()).multiplier().bits()) > 0.0)
-        };
-        viable.then_some(super::advance::weapon_reach_cells(weapon))
+        let viable = rules.weapon_projectile(weapon).is_some_and(|projectile|
+            if air { projectile.aa } else { projectile.ag })
+            && super::siege_counter::effective_ground_warhead(
+                rules,gun,weapon,target);
+        viable.then_some(super::siege_counter::max_range_cells(weapon))
     }).max().unwrap_or(0)
 }
 
@@ -392,8 +373,7 @@ pub(super) fn lethal_approach(
     let actor_ty = obs.entity_type(rules, actor)?;
     let fragile = matches!(actor_ty.category,
         ObjectCategory::Infantry | ObjectCategory::Aircraft) || actor_ty.jumpjet;
-    let own_reach = super::advance::weapon_range_cells(
-        rules, actor_ty, obs.is_deployed(actor));
+
     obs.visible_enemy_entities().filter_map(|enemy| {
         let hostile = obs.entity_type(rules, enemy.entity_id)?;
         // A tank vs tank exchange is decided by micro, not by the siege gate.
@@ -403,6 +383,7 @@ pub(super) fn lethal_approach(
         let reach = effective_reach_against(rules, obs, enemy.entity_id, actor);
         if reach <= 0 { return None; }
         if reach < 4 || (!hostile.is_base_defense && reach < 6) { return None; }
+        let own_reach = effective_reach_against(rules, obs, actor, enemy.entity_id);
         if !loses_range_trade(own_reach, reach,
             obs.can_hurt(rules, actor, enemy.entity_id)) { return None; }
         let in_lane = distance(enemy.cell, destination) <= reach + 1
@@ -459,7 +440,10 @@ pub(super) fn siege_post(
     // Give adjacent units distinct lanes; one shared post would turn the
     // staging line into a traffic jam. Actor IDs break ties deterministically.
     let lane = (actor % 5) as i32 - 2;
-    for radius in [reach + 3, reach + 5, reach + 7] {
+    // The first safe annulus is Reach+2; Range is an OUTER radius and a
+    // Prism Tank (Range=10) can fire on a prism tower (Range=8) here.
+    // Starting at +3 made an otherwise winning gun park out of range.
+    for radius in [reach + 2, reach + 3, reach + 5, reach + 7] {
         for shift in [lane * 2, 0, -lane * 2] {
             let Some((x,y)) = standoff_lane(from,gun,radius,shift) else { continue; };
             let post = (x,y);
