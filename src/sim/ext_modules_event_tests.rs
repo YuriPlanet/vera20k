@@ -97,7 +97,7 @@ fn module(def: &[u8], target: i64, sections: &str) -> Vec<u8> {
     {bind})
   (func (export "on_events") (param $ptr i32) (param $count i32)
     (if (i32.eqz (i32.load (i32.const 80)))
-      (then (memory.copy (i32.const 512) (local.get $ptr) (i32.const 112))))
+      (then (memory.copy (i32.const 512) (local.get $ptr) (i32.const 120))))
     (i32.store (i32.const 80) (i32.add (i32.load (i32.const 80)) (local.get $count)))))"#,
         def = bytes(def),
         len = def.len(),

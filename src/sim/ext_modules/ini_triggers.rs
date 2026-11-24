@@ -35,7 +35,8 @@
 //! `name(op,interval,id,value)` (op `Eq`..`Ge` or `=`, `!=`, `<`, `<=`, `>`,
 //! `>=`). A clause is `Subject|Other|House.Property<op>value` or
 //! `Var(Global|Subject|Other|House,name)<op>value`. An action is
-//! `Wasm:name` (`Wasm:mod.name`, `Wasm:map.name`) or
+//! `Wasm:name` (`Wasm:mod.name`, `Wasm:map.name`), `Wasm:name(target,text)`
+//! (the text, commas and all, reaches the module as the record's `args`), or
 //! `name(target,params...)`: an `ActionTarget` name (empty for `Subject`),
 //! then the parameters of the appendix 5.2/5.3 row in table order, empty
 //! ones 0. With target `Cell`, a waypoint number comes first. An `id`
@@ -160,8 +161,16 @@ enum Whose {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ActionSpec {
-    /// `Wasm:name`; `None` addresses the mod module (RFC section 2).
-    Module(Option<ModuleSource>, String),
+    /// `Wasm:name` or `Wasm:name(target,text)`; a `None` source addresses
+    /// the mod module (RFC section 2). The text goes to the module as the
+    /// record's `args` (INI registration addendum, section 7).
+    Module {
+        source: Option<ModuleSource>,
+        name: String,
+        target: ActionTarget,
+        /// `None` without parentheses.
+        text: Option<String>,
+    },
     Kind {
         name: String,
         target: ActionTarget,
@@ -199,6 +208,8 @@ enum IdKind {
     Anim,
     VoxelAnim,
     ParticleSystem,
+    /// A registered module event's name (INI registration addendum).
+    ModuleEvent,
 }
 
 /// The appendix 8.3 enum an `arg` parameter holds; it takes a member name
@@ -373,7 +384,12 @@ impl TriggerSpec {
                 }
                 TriggerKey::Decide => {
                     spec.decide = match parse_action(value) {
-                        Ok(ActionSpec::Module(source, name)) => Some((source, name)),
+                        Ok(ActionSpec::Module {
+                            source,
+                            name,
+                            text: None,
+                            ..
+                        }) => Some((source, name)),
                         _ => return Err(fail_value("a decision handler is Wasm:name")),
                     };
                 }
@@ -637,35 +653,61 @@ fn parse_clause(text: &str) -> Result<ClauseSpec, String> {
     Ok(ClauseSpec { reads, op, value })
 }
 
+/// An `ActionTarget` by name; empty is `Subject`.
+fn parse_target(text: &str) -> Result<ActionTarget, String> {
+    if text.is_empty() {
+        return Ok(ActionTarget::Subject);
+    }
+    [
+        ("Subject", ActionTarget::Subject),
+        ("Other", ActionTarget::Other),
+        ("TagHolder", ActionTarget::TagHolder),
+        ("Projectile", ActionTarget::Projectile),
+        ("House", ActionTarget::House),
+        ("Cell", ActionTarget::Cell),
+    ]
+    .into_iter()
+    .find(|(n, _)| n.eq_ignore_ascii_case(text))
+    .map(|(_, target)| target)
+    .ok_or_else(|| format!("{text:?} is not an ActionTarget"))
+}
+
 fn parse_action(text: &str) -> Result<ActionSpec, String> {
-    if let Some(name) = strip_prefix_ci(text.trim(), "Wasm:") {
-        let name = name.trim();
+    if let Some(call) = strip_prefix_ci(text.trim(), "Wasm:") {
+        // `name(target,text)`: the text runs to the last `)` and keeps its
+        // commas.
+        let (name, target, text) = match call.split_once('(') {
+            None => (call.trim(), ActionTarget::Subject, None),
+            Some((name, rest)) => {
+                let inner = rest
+                    .trim_end()
+                    .strip_suffix(')')
+                    .ok_or_else(|| "a ( needs a closing )".to_owned())?;
+                let (target, text) = inner.split_once(',').unwrap_or((inner, ""));
+                (
+                    name.trim(),
+                    parse_target(target.trim())?,
+                    Some(text.trim().to_owned()),
+                )
+            }
+        };
         let (source, name) = match (strip_prefix_ci(name, "mod."), strip_prefix_ci(name, "map.")) {
             (Some(rest), _) => (Some(ModuleSource::Mod), rest),
             (_, Some(rest)) => (Some(ModuleSource::Map), rest),
             _ => (None, name),
         };
-        if name.is_empty() {
+        if name.is_empty() || name.contains([' ', ',', ')']) {
             return Err("Wasm: needs a module action name".into());
         }
-        return Ok(ActionSpec::Module(source, name.to_owned()));
+        return Ok(ActionSpec::Module {
+            source,
+            name: name.to_owned(),
+            target,
+            text,
+        });
     }
     let (name, mut args) = call(text)?;
-    let target = match args.first().map(String::as_str) {
-        None | Some("") => ActionTarget::Subject,
-        Some(target) => [
-            ("Subject", ActionTarget::Subject),
-            ("Other", ActionTarget::Other),
-            ("TagHolder", ActionTarget::TagHolder),
-            ("Projectile", ActionTarget::Projectile),
-            ("House", ActionTarget::House),
-            ("Cell", ActionTarget::Cell),
-        ]
-        .into_iter()
-        .find(|(n, _)| n.eq_ignore_ascii_case(target))
-        .map(|(_, target)| target)
-        .ok_or_else(|| format!("{target:?} is not an ActionTarget"))?,
-    };
+    let target = parse_target(args.first().map_or("", String::as_str))?;
     if !args.is_empty() {
         args.remove(0);
     }
@@ -712,6 +754,7 @@ fn action_params(kind: i32) -> Option<&'static [Param]> {
             "Convert" => &[Id(TechnoType), Value2],
             "Push" => &[Cell, Value],
             "CreateTeamUnlimited" => &[Id(TeamType)],
+            "RaiseEvent" => &[Id(ModuleEvent), Value, Value2],
             "CreateProjectile" | "Module" => return None,
             _ => &[],
         });
@@ -850,7 +893,7 @@ impl Simulation {
             .actions
             .iter()
             .filter_map(|(_, action)| match action {
-                ActionSpec::Module(source, _) => Some(source.unwrap_or(ModuleSource::Mod)),
+                ActionSpec::Module { source, .. } => Some(source.unwrap_or(ModuleSource::Mod)),
                 ActionSpec::Kind { .. } => None,
             })
             .chain(decide.map(|(source, _)| source))
@@ -878,6 +921,31 @@ impl Simulation {
         let mut events = Vec::with_capacity(spec.events.len());
         for event in &spec.events {
             let fail = |why: String| format!("[{section}] {}: {why}", event.key);
+            // `Event=Wasm:name`: a registered module event (INI
+            // registration addendum, section 6).
+            if let Some(name) = strip_prefix_ci(&event.name, "Wasm:") {
+                let id = self
+                    .ext_modules
+                    .ini
+                    .event_id(name.trim())
+                    .ok_or_else(|| fail(format!("no module registered the event {name}")))?;
+                let mut clauses = Vec::with_capacity(event.clauses.len());
+                for (key, clause) in &event.clauses {
+                    clauses.push(
+                        self.resolve_clause(rules, clause)
+                            .map_err(|why| format!("[{section}] {key}: {why}"))?,
+                    );
+                }
+                events.push(EventDef {
+                    kind: vera20k_wasm_ext::triggers::EVENT_MODULE,
+                    op: 0,
+                    interval: 0,
+                    id,
+                    value: 0,
+                    clauses,
+                });
+                continue;
+            }
             let kind = vera20k_wasm_ext::event_kind_id(&event.name)
                 .ok_or_else(|| fail(format!("no event kind {}", event.name)))?;
             if !super::events::raises(rules, kind)
@@ -1032,16 +1100,18 @@ impl Simulation {
         action: &ActionSpec,
     ) -> Result<Option<ActionDef>, String> {
         let (name, target, args) = match action {
-            ActionSpec::Module(_, name) => {
+            ActionSpec::Module {
+                name, target, text, ..
+            } => {
                 let key = self.module_action_key(source, name)?;
                 return Ok(Some(ActionDef {
                     kind: ACTION_MODULE,
-                    target: ActionTarget::Subject,
+                    target: *target,
                     params: ActionParams {
                         id: key,
                         ..ActionParams::default()
                     },
-                    text: String::new(),
+                    text: text.clone().unwrap_or_default(),
                 }));
             }
             ActionSpec::Kind { name, target, args } => (name, *target, args),
@@ -1104,12 +1174,19 @@ impl Simulation {
         if kind == IdKind::Variable {
             return self.ini_variable(text);
         }
+        if kind == IdKind::ModuleEvent {
+            return self
+                .ext_modules
+                .ini
+                .event_id(text)
+                .ok_or_else(|| format!("no module registered the event {text}"));
+        }
         if let Ok(number) = number(text) {
             return Ok(number);
         }
         let rules_name = |kind| super::rules_name_id(rules, kind, text).flatten();
         let found = match kind {
-            IdKind::Sound | IdKind::Variable => None,
+            IdKind::Sound | IdKind::Variable | IdKind::ModuleEvent => None,
             IdKind::TechnoType => rules_name(NAME_TECHNO_TYPE),
             IdKind::Weapon => rules_name(NAME_WEAPON),
             IdKind::Warhead => rules_name(NAME_WARHEAD),

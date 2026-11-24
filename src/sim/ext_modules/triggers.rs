@@ -243,6 +243,13 @@ impl Host<'_, '_> {
         {
             return Ok((0, Status::Refused));
         }
+        // A module action's parameter text becomes a string ID here, once,
+        // kept in its `value` (unused by `Module`), so a firing interns
+        // nothing (INI registration addendum, section 7).
+        let mut actions = def.actions.clone();
+        for action in actions.iter_mut().filter(|a| a.kind == ACTION_MODULE) {
+            action.params.value = i64::from(self.sim.ext_modules.ini.intern(&action.text));
+        }
         let handle = self.sim.substrate.allocate_stable_id();
         let trigger = ModuleTrigger {
             source: self.source,
@@ -255,7 +262,7 @@ impl Host<'_, '_> {
             poll_start: self.sim.session.binary_frame(),
             scope,
             events: def.events.clone(),
-            actions: def.actions.clone(),
+            actions,
             ini: false,
             decide_key: def.decide_key,
         };
@@ -741,6 +748,8 @@ impl Simulation {
                     source,
                     EventRecord {
                         key: action.params.id,
+                        args: action.params.value as i32,
+                        target: action.target as i32,
                         ..record
                     },
                 );
@@ -833,6 +842,8 @@ impl Simulation {
             x,
             y,
             z,
+            args: 0,
+            target: 0,
         }
     }
 

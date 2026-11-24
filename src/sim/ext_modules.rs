@@ -65,11 +65,11 @@ use std::hash::{Hash, Hasher};
 use vera20k_wasm_ext::decide::{EVENT_DEFEAT, EVENT_PRODUCTION_ALLOWED};
 use vera20k_wasm_ext::{
     ActionParams, Area, ClauseSubject, Export, Fault, FindPage, Invalid, Limits, ModuleState,
-    NAME_ACTION_KIND, NAME_ANIM, NAME_COUNTRY, NAME_PARTICLE_SYSTEM, NAME_PROJECTILE,
-    NAME_PROPERTY, NAME_SUPER_WEAPON, NAME_TEAM_TYPE, NAME_TECHNO_TYPE, NAME_VARIABLE,
-    NAME_VOXEL_ANIM, NAME_WARHEAD, NAME_WEAPON, Order, Query, SCOPE_CELLS, SCOPE_HOUSES,
-    SCOPE_MODIFIERS, SCOPE_OBJECTS, SimHost, SimModule, Status, TABLE_ACTION, TABLE_NAME_KIND,
-    TABLE_PROPERTY, TABLE_SCOPE, property_name,
+    NAME_ACTION_KIND, NAME_ANIM, NAME_COUNTRY, NAME_MODULE_EVENT, NAME_PARTICLE_SYSTEM,
+    NAME_PROJECTILE, NAME_PROPERTY, NAME_STRING, NAME_SUPER_WEAPON, NAME_TEAM_TYPE,
+    NAME_TECHNO_TYPE, NAME_VARIABLE, NAME_VOXEL_ANIM, NAME_WARHEAD, NAME_WEAPON, Order, Query,
+    SCOPE_CELLS, SCOPE_HOUSES, SCOPE_MODIFIERS, SCOPE_OBJECTS, SimHost, SimModule, Status,
+    TABLE_ACTION, TABLE_NAME_KIND, TABLE_PROPERTY, TABLE_SCOPE, property_name,
 };
 
 mod actions;
@@ -78,6 +78,8 @@ mod chains;
 mod decide;
 mod events;
 mod held;
+mod ini_names;
+mod ini_start;
 mod ini_triggers;
 pub(crate) mod modifiers;
 mod orders;
@@ -394,6 +396,8 @@ pub struct ExtModules {
     map_ui: MapUi,
     /// Decision `random` substreams of the current frame ([`decide`]); not saved.
     decide: decide::DecideState,
+    /// Registered INI names and the string table ([`ini_names`]).
+    ini: ini_names::IniNames,
 }
 
 /// What a save holds: the modules, the modifiers and the variable values
@@ -407,6 +411,8 @@ struct SavedExtModules {
     rules_ini: Option<IniFile>,
     #[serde(default)]
     held: held::ActionHeld,
+    #[serde(default)]
+    ini: ini_names::IniNames,
 }
 
 impl serde::Serialize for ExtModules {
@@ -433,6 +439,7 @@ impl serde::Serialize for ExtModules {
             vars: self.vars.values.clone(),
             rules_ini: self.rules_ini.clone(),
             held: self.held.clone(),
+            ini: self.ini.clone(),
         }
         .serialize(serializer)
     }
@@ -446,6 +453,7 @@ impl<'de> serde::Deserialize<'de> for ExtModules {
             modifiers: saved.modifiers,
             rules_ini: saved.rules_ini,
             held: saved.held,
+            ini: saved.ini,
             ..Self::default()
         };
         modules.vars.values = saved.vars;
@@ -540,7 +548,10 @@ impl ExtModules {
             || !values.global.is_empty()
             || !values.house.is_empty()
             || !values.object.is_empty();
-        modules.chain(held.then(|| fnv1a(self.held_state_bytes())))
+        let ini = (!self.ini.is_empty()).then(|| fnv1a(self.ini.state_bytes()));
+        modules
+            .chain(held.then(|| fnv1a(self.held_state_bytes())))
+            .chain(ini)
     }
 
     /// The modifiers and declared-variable values as checksum bytes.
@@ -602,6 +613,11 @@ impl ExtModules {
         self.vars.values.hash(hasher);
         if !self.held.is_empty() {
             self.held.hash(hasher);
+        }
+        if !self.ini.is_empty() {
+            for byte in self.ini.state_bytes() {
+                byte.hash(hasher);
+            }
         }
     }
 }
@@ -717,6 +733,11 @@ fn has_kind(rules: &RuleSet, table: i32, id: i32) -> bool {
         vera20k_wasm_ext::triggers::TABLE_EVENT => {
             events::raises(rules, id)
                 || vera20k_wasm_ext::decide::DECISION_ONLY_EVENTS.contains(&id)
+                || matches!(
+                    id,
+                    vera20k_wasm_ext::triggers::EVENT_INI_ENTRY
+                        | vera20k_wasm_ext::triggers::EVENT_INI_KEY
+                )
         }
         TABLE_ACTION => actions::has_action(id, rules),
         TABLE_PROPERTY => property_name(id)
@@ -736,6 +757,8 @@ fn has_kind(rules: &RuleSet, table: i32, id: i32) -> bool {
                 | NAME_VARIABLE
                 | NAME_PROPERTY
                 | NAME_ACTION_KIND
+                | NAME_STRING
+                | NAME_MODULE_EVENT
         ),
         TABLE_SCOPE => matches!(
             id,
@@ -815,6 +838,17 @@ fn name_answer(name: Option<&str>, kind: i32, id: i32) -> Result<(String, Status
 
 /// `name_of(Variable, id)`. The Red Alert 2 variables have numbers, not
 /// names.
+/// `name_of` for name kinds `String` and `ModuleEvent` ([`ini_names`]).
+fn ini_name_of(ini: &ini_names::IniNames, kind: i32, id: i32) -> (String, Status) {
+    let name = match kind {
+        NAME_STRING => ini.string(id),
+        _ => ini.event(id).map(|r| r.name.as_str()),
+    };
+    name.map_or((String::new(), Status::NotFound), |name| {
+        (name.to_owned(), Status::Ok)
+    })
+}
+
 fn variable_name(vars: &VarStore, id: i32) -> Result<(String, Status), Invalid> {
     if id < FIRST_DECLARED_VAR {
         return Ok((String::new(), Status::NotFound));
@@ -868,6 +902,8 @@ impl SimHost for Host<'_, '_> {
                 .stock_definition(crate::sim::trigger_runtime::StockReferenceKind::Team, name)
                 .map(|index| index as i32),
             NAME_VARIABLE => self.sim.ext_modules.vars.lookup(self.source, name),
+            NAME_STRING => self.sim.ext_modules.ini.string_id(name),
+            NAME_MODULE_EVENT => self.sim.ext_modules.ini.event_id(name),
             _ => match rules_name_id(self.rules, kind, name) {
                 Some(id) => id,
                 None => return Ok((-1, Status::Unsupported)),
@@ -879,6 +915,9 @@ impl SimHost for Host<'_, '_> {
     fn name_of(&mut self, kind: i32, id: i32) -> Result<(String, Status), Invalid> {
         let name = match kind {
             NAME_VARIABLE => return variable_name(&self.sim.ext_modules.vars, id),
+            NAME_STRING | NAME_MODULE_EVENT => {
+                return Ok(ini_name_of(&self.sim.ext_modules.ini, kind, id));
+            }
             NAME_TEAM_TYPE => usize::try_from(id)
                 .ok()
                 .and_then(|id| self.sim.stock_team_type_name(id)),
@@ -1074,6 +1113,19 @@ impl SimHost for Host<'_, '_> {
     /// question 11); the allowlist is empty.
     fn rules_set(&mut self, _section: &str, _key: &str, _value: &str) -> Result<Status, Invalid> {
         Ok(Status::Refused)
+    }
+
+    fn ini_register(
+        &mut self,
+        kind: i32,
+        section: i32,
+        name: &str,
+        key: i32,
+    ) -> Result<(i32, Status), Invalid> {
+        self.sim
+            .ext_modules
+            .ini
+            .register(self.source, kind, section, name, key)
     }
 
     fn order(&mut self, house: i64, order: &Order) -> Result<Status, Invalid> {
@@ -1780,7 +1832,11 @@ impl Simulation {
             log,
             notices,
             ini_triggers,
+            ini,
         } = prepared;
+        // Names the rules stage's `vera_init` calls registered; the other
+        // modules register below.
+        self.ext_modules.ini = ini;
         self.ext_modules.log.extend(log);
         for text in notices {
             log::warn!(target: "ext_module", "{text}");
@@ -1897,13 +1953,32 @@ impl Simulation {
             }
             if !self.ext_modules.slots[index].started {
                 self.ext_modules.slots[index].started = true;
+                // The INI start records come first and share the one-time
+                // budget (INI registration addendum, section 5).
+                let used = match self.deliver_ini_start_records(
+                    rules,
+                    overlay_registry,
+                    frame_effects,
+                    index,
+                    ONCE_BUDGET,
+                ) {
+                    Ok(used) => used,
+                    Err(fault) => {
+                        self.disable_ext_module(index, Export::Events, fault);
+                        continue;
+                    }
+                };
+                let Some(left) = ONCE_BUDGET.checked_sub(used).filter(|&left| left > 0) else {
+                    self.disable_ext_module(index, Export::ScenarioStart, Fault::Budget);
+                    continue;
+                };
                 if let Err(fault) = self.call_ext_module(
                     rules,
                     overlay_registry,
                     frame_effects,
                     index,
                     Export::ScenarioStart,
-                    ONCE_BUDGET,
+                    left,
                 ) {
                     self.disable_ext_module(index, Export::ScenarioStart, fault);
                     continue;
@@ -2045,3 +2120,7 @@ mod decide_tests;
 #[cfg(all(test, tests_sim_c_g))]
 #[path = "ext_modules_event_tests.rs"]
 mod event_tests;
+
+#[cfg(all(test, tests_sim_c_g))]
+#[path = "ext_modules_ini_register_tests.rs"]
+mod ini_register_tests;

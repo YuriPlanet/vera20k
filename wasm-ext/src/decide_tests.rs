@@ -55,21 +55,21 @@ impl SimHost for Host {
     }
 }
 
-/// A handler with a 152-byte delivery area at 1024. With key 1 it halves
+/// A handler with a 160-byte delivery area at 1024. With key 1 it halves
 /// `native` into `result` and sets `handled`; with key 2 it leaves the
 /// record alone; with key 3 it calls `var_set`. It copies the record it got
 /// to 256.
 const HANDLER: &str = r#"(module
   (import "vera:sim@1.0" "var_set" (func $var_set (param i64 i32 i64) (result i32)))
-  (@custom "vera.delivery" "\01\00\04\00\00\98\00\00\00")
+  (@custom "vera.delivery" "\01\00\04\00\00\a0\00\00\00")
   (memory (export "memory") 1)
   (func (export "on_decide") (param $ptr i32) (param $count i32)
-    (memory.copy (i32.const 256) (local.get $ptr) (i32.const 152))
+    (memory.copy (i32.const 256) (local.get $ptr) (i32.const 160))
     (if (i32.eq (i32.load (local.get $ptr)) (i32.const 1))
       (then
-        (i64.store offset=128 (local.get $ptr)
-          (i64.div_s (i64.load offset=112 (local.get $ptr)) (i64.const 2)))
-        (i32.store offset=136 (local.get $ptr) (i32.const 1))))
+        (i64.store offset=136 (local.get $ptr)
+          (i64.div_s (i64.load offset=120 (local.get $ptr)) (i64.const 2)))
+        (i32.store offset=144 (local.get $ptr) (i32.const 1))))
     (if (i32.eq (i32.load (local.get $ptr)) (i32.const 3))
       (then (drop (call $var_set (i64.const 0) (i32.const 3) (i64.const 1)))))))"#;
 
@@ -99,7 +99,7 @@ fn a_handler_reads_the_record_in_place_and_answers_through_handled() {
         .expect("on_decide runs");
     assert_eq!(answer, Some(20));
     assert!(used > 0);
-    assert_eq!(&module.memory()[256..408], &record(1).to_bytes());
+    assert_eq!(&module.memory()[256..416], &record(1).to_bytes());
     // `handled` left 0 keeps the previous result.
     let (answer, _) = module
         .decide(&record(2), DECIDE_BUDGET, &mut host)

@@ -99,12 +99,12 @@
 use std::collections::BTreeSet;
 
 use vera20k_wasm_ext::triggers::{
-    ACTION_MODULE,
-    EVENT_ATTACKED_BY, EVENT_BIRTH, EVENT_DISTANCE_POLL, EVENT_FATAL_DAMAGE, EVENT_FIRE,
-    EVENT_HOUSE_POWER_POLL, EVENT_HOUSE_TRANSFERRED, EVENT_KILLED, EVENT_MODIFIER_COUNT_POLL,
-    EVENT_MODIFIER_EXPIRE, EVENT_MODIFIER_STACKS, EVENT_MODIFIER_START, EVENT_PASSENGER_ADDED,
-    EVENT_PASSENGER_REMOVED, EVENT_PROPERTY_POLL, EVENT_SUPER_WEAPON_LAUNCHED, EVENT_TAKE_DAMAGE,
-    EVENT_TIMER, EVENT_TRANSPORT_ENTERED, EVENT_TRANSPORT_EXITED, EVENT_VARIABLE_POLL, EventDef,
+    ACTION_MODULE, EVENT_ATTACKED_BY, EVENT_BIRTH, EVENT_DISTANCE_POLL, EVENT_FATAL_DAMAGE,
+    EVENT_FIRE, EVENT_HOUSE_POWER_POLL, EVENT_HOUSE_TRANSFERRED, EVENT_INI_ENTRY, EVENT_INI_KEY,
+    EVENT_KILLED, EVENT_MODIFIER_COUNT_POLL, EVENT_MODIFIER_EXPIRE, EVENT_MODIFIER_STACKS,
+    EVENT_MODIFIER_START, EVENT_MODULE, EVENT_PASSENGER_ADDED, EVENT_PASSENGER_REMOVED,
+    EVENT_PROPERTY_POLL, EVENT_SUPER_WEAPON_LAUNCHED, EVENT_TAKE_DAMAGE, EVENT_TIMER,
+    EVENT_TRANSPORT_ENTERED, EVENT_TRANSPORT_EXITED, EVENT_VARIABLE_POLL, EventDef,
 };
 use vera20k_wasm_ext::{Invalid, Status, VarScope, property_id, property_name};
 
@@ -118,8 +118,9 @@ use crate::sim::trigger_runtime::{
 };
 use crate::sim::world::{FrameEffects, Simulation};
 
-/// New delivered events this engine raises (appendix 4.3).
-const DELIVERED: [i32; 16] = [
+/// New delivered events this engine raises (appendix 4.3, and the INI
+/// registration addendum's module event).
+const DELIVERED: [i32; 17] = [
     EVENT_TAKE_DAMAGE,
     EVENT_ATTACKED_BY,
     EVENT_FATAL_DAMAGE,
@@ -136,6 +137,7 @@ const DELIVERED: [i32; 16] = [
     EVENT_MODIFIER_START,
     EVENT_MODIFIER_EXPIRE,
     EVENT_MODIFIER_STACKS,
+    EVENT_MODULE,
 ];
 
 /// The polling events (appendix 4.4), every one of which this engine checks.
@@ -262,6 +264,16 @@ impl Host<'_, '_> {
         let scope = match def.kind {
             EVENT_TIMER | EVENT_SUPER_WEAPON_LAUNCHED | EVENT_HOUSE_POWER_POLL => {
                 TriggerScope::Global
+            }
+            // A registered module event: object or global as registered.
+            EVENT_MODULE => match self.sim.ext_modules.ini.event_is_global(def.id) {
+                Some(true) => TriggerScope::Global,
+                Some(false) => object,
+                None => return invalid(format!("no module event {}", def.id)),
+            },
+            // Start-of-match records only, never a trigger's.
+            EVENT_INI_ENTRY | EVENT_INI_KEY => {
+                return invalid("IniEntry and IniKey are not trigger events".into());
             }
             // Decision-only (appendix 4.5): Defeat asks about a house and
             // needs no binding; ProductionAllowed and ProductionQueued bind
@@ -396,6 +408,8 @@ impl Simulation {
     ) -> Option<Option<u32>> {
         match def.kind {
             kind if POLLS.contains(&kind) => (event.poll == Some(bit)).then_some(None),
+            // A module event trigger takes only its own event ID.
+            EVENT_MODULE => (def.id == event.id).then_some(None),
             kind if stock_class(kind).is_some() => {
                 let reading = StockReading {
                     def,

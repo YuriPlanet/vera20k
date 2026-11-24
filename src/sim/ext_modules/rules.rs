@@ -31,8 +31,8 @@
 //!   against a module's import version yet, and `MapUI` waits for phase 2.
 
 use vera20k_wasm_ext::{
-    ActionParams, Export, FindPage, Invalid, NAME_VARIABLE, Query, SimHost, SimModule, Status,
-    property_name,
+    ActionParams, Export, FindPage, Invalid, NAME_MODULE_EVENT, NAME_STRING, NAME_VARIABLE, Query,
+    SimHost, SimModule, Status, property_name,
 };
 
 use super::vars::VarStore;
@@ -127,6 +127,9 @@ pub struct PreparedExtModules {
     pub(super) notices: Vec<String>,
     /// The mod's INI triggers (`Wasm.Tags`), built at install.
     pub(super) ini_triggers: super::ini_triggers::IniTriggers,
+    /// What the modules' `vera_init` registered at the rules stage; the
+    /// simulation takes it over at install.
+    pub(super) ini: super::ini_names::IniNames,
 }
 
 impl PreparedExtModules {
@@ -192,6 +195,7 @@ impl PreparedExtModules {
             log: Vec::new(),
             notices: map_wasm_tags_notice(map).into_iter().collect(),
             ini_triggers,
+            ini: Default::default(),
         })
     }
 
@@ -275,6 +279,7 @@ impl ExtRulesHook for PreparedExtModules {
                 writes: &mut writes,
                 log: &mut self.log,
                 in_rules: false,
+                ini: &mut self.ini,
             };
             prepared
                 .module
@@ -340,6 +345,8 @@ struct RulesHost<'a> {
     log: &'a mut Vec<String>,
     /// Inside `on_rules` rather than `vera_init`.
     in_rules: bool,
+    /// INI names registered so far.
+    ini: &'a mut super::ini_names::IniNames,
 }
 
 impl SimHost for RulesHost<'_> {
@@ -363,6 +370,8 @@ impl SimHost for RulesHost<'_> {
     fn lookup(&mut self, kind: i32, name: &str) -> Result<(i32, Status), Invalid> {
         let id = match kind {
             NAME_VARIABLE => self.vars.lookup(self.source, name),
+            NAME_STRING => self.ini.string_id(name),
+            NAME_MODULE_EVENT => self.ini.event_id(name),
             _ => match super::rules_name_id(self.rules, kind, name) {
                 Some(id) => id,
                 None => return Ok((-1, Status::Unsupported)),
@@ -374,6 +383,7 @@ impl SimHost for RulesHost<'_> {
     fn name_of(&mut self, kind: i32, id: i32) -> Result<(String, Status), Invalid> {
         let name = match kind {
             NAME_VARIABLE => return super::variable_name(self.vars, id),
+            NAME_STRING | NAME_MODULE_EVENT => return Ok(super::ini_name_of(self.ini, kind, id)),
             _ => match super::rules_id_name(self.rules, kind, id) {
                 Some(name) => name,
                 None => return Ok((String::new(), Status::Unsupported)),
@@ -450,6 +460,16 @@ impl SimHost for RulesHost<'_> {
         self.writes
             .push((section.to_owned(), key.to_owned(), value.to_owned()));
         Ok(Status::Ok)
+    }
+
+    fn ini_register(
+        &mut self,
+        kind: i32,
+        section: i32,
+        name: &str,
+        key: i32,
+    ) -> Result<(i32, Status), Invalid> {
+        self.ini.register(self.source, kind, section, name, key)
     }
 
     fn order(&mut self, _house: i64, _order: &vera20k_wasm_ext::Order) -> Result<Status, Invalid> {

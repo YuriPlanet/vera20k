@@ -47,6 +47,15 @@ pub const EVENT_MODIFIER_COUNT_POLL: i32 = 1028;
 pub const EVENT_DISTANCE_POLL: i32 = 1029;
 pub const EVENT_VARIABLE_POLL: i32 = 1030;
 
+/// The INI registration addendum (`docs/rfcs/0001-ini-register.zh-CN.md`):
+/// the module event `RaiseEvent` raises (`EventDef.id` is the registered
+/// event ID), and the records the module phase hands a module before its
+/// `on_scenario_start`: one per registry entry and one per registered key
+/// found in the merged rules. The last two never appear in a trigger.
+pub const EVENT_MODULE: i32 = 1040;
+pub const EVENT_INI_ENTRY: i32 = 1041;
+pub const EVENT_INI_KEY: i32 = 1042;
+
 /// The stock event kinds (appendix 4.1).
 pub const STOCK_EVENTS: std::ops::RangeInclusive<i32> = 0..=61;
 
@@ -55,6 +64,8 @@ pub const STOCK_EVENTS: std::ops::RangeInclusive<i32> = 0..=61;
 /// `ACTION_ADD_MONEY`).
 pub const ACTION_SET_VAR: i32 = 1024;
 pub const ACTION_MODULE: i32 = 1036;
+/// `RaiseEvent` (INI registration addendum, entry 42).
+pub const ACTION_RAISE_EVENT: i32 = 1042;
 
 /// Name kind 17 (appendix 8.1): a name in this module's `vera.actions`,
 /// answered by the sandbox with its dispatch key.
@@ -351,7 +362,7 @@ impl<'a> Cursor<'a> {
     }
 }
 
-/// `EventRecord` (appendix "Fixed layouts"), 112 bytes little endian, read
+/// `EventRecord` (appendix "Fixed layouts"), 120 bytes little endian, read
 /// in place by `on_events`. Queued records travel in saves and the state
 /// hash.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -373,10 +384,18 @@ pub struct EventRecord {
     pub x: i32,
     pub y: i32,
     pub z: i32,
+    /// A string ID: a module action's parameter text, an `IniEntry`'s entry
+    /// name, an `IniKey`'s value; 0 for none. Saves from before the INI
+    /// registration addendum read 0.
+    #[serde(default)]
+    pub args: i32,
+    /// A module action's `ActionTarget` (appendix 5.1 order); 0 otherwise.
+    #[serde(default)]
+    pub target: i32,
 }
 
 impl EventRecord {
-    pub const SIZE: usize = 112;
+    pub const SIZE: usize = 120;
 
     /// A record of `kind` with every reference 0 and every unlisted integer
     /// −1, as the appendix asks.
@@ -399,6 +418,8 @@ impl EventRecord {
             x: -1,
             y: -1,
             z: -1,
+            args: 0,
+            target: 0,
         }
     }
 
@@ -422,7 +443,9 @@ impl EventRecord {
         put(96, &self.x.to_le_bytes());
         put(100, &self.y.to_le_bytes());
         put(104, &self.z.to_le_bytes());
-        // 108: reserved, always 0.
+        put(108, &self.args.to_le_bytes());
+        put(112, &self.target.to_le_bytes());
+        // 116: reserved, always 0.
         out
     }
 }

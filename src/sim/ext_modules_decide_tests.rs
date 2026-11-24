@@ -58,22 +58,22 @@ fn module(kind: i32, key: i32, target: i64) -> Vec<u8> {
   (import "vera:sim@1.0" "trigger_bind" (func $bind (param i64 i64) (result i32)))
   (import "vera:sim@1.0" "var_set" (func $var_set (param i64 i32 i64) (result i32)))
   (import "vera:sim@1.0" "random" (func $random (param i32 i32 i32) (result i32)))
-  (@custom "vera.delivery" "\01\00\04\00\00\98\00\00\00")
+  (@custom "vera.delivery" "\01\00\04\00\00\a0\00\00\00")
   (memory (export "memory") 1)
   (data (i32.const 2048) "{bytes}")
   (func $halve (param $ptr i32)
-    (i64.store offset=128 (local.get $ptr)
-      (i64.div_s (i64.load offset=112 (local.get $ptr)) (i64.const 2)))
-    (i32.store offset=136 (local.get $ptr) (i32.const 1)))
+    (i64.store offset=136 (local.get $ptr)
+      (i64.div_s (i64.load offset=120 (local.get $ptr)) (i64.const 2)))
+    (i32.store offset=144 (local.get $ptr) (i32.const 1)))
   (func $refuse (param $ptr i32)
-    (i64.store offset=128 (local.get $ptr) (i64.const 0))
-    (i32.store offset=136 (local.get $ptr) (i32.const 1)))
+    (i64.store offset=136 (local.get $ptr) (i64.const 0))
+    (i32.store offset=144 (local.get $ptr) (i32.const 1)))
   (func (export "on_scenario_start")
     (i32.store (i32.const 76) (call $create (i32.const 2048) (i32.const {len}) (i32.const 64)))
     (i32.store (i32.const 72) (call $bind (i64.load (i32.const 64)) (i64.const {target}))))
   (func (export "on_decide") (param $ptr i32) (param $count i32)
     (local $key i32)
-    (memory.copy (i32.const 512) (local.get $ptr) (i32.const 152))
+    (memory.copy (i32.const 512) (local.get $ptr) (i32.const 160))
     (local.set $key (i32.load (local.get $ptr)))
     (if (i32.eq (local.get $key) (i32.const {HALVE})) (then (call $halve (local.get $ptr))))
     (if (i32.eq (local.get $key) (i32.const {WRITE}))
@@ -206,7 +206,7 @@ fn a_decision_halves_the_damage_a_hit_deals() {
     hit(&mut scene, victim, 10);
     assert_eq!(health(&scene, victim), before - 5);
     // The handler saw native and previous 10, with the hit as its event.
-    let record = memory(&scene)[512..664].to_vec();
+    let record = memory(&scene)[512..672].to_vec();
     assert_eq!(
         &record[..8],
         &[HALVE.to_le_bytes(), EVENT_TAKE_DAMAGE.to_le_bytes()].concat()
@@ -215,8 +215,8 @@ fn a_decision_halves_the_damage_a_hit_deals() {
     assert_eq!(
         (
             i64_at(&record, 72),
-            i64_at(&record, 112),
-            i64_at(&record, 120)
+            i64_at(&record, 120),
+            i64_at(&record, 128)
         ),
         (10, 10, 10)
     );
@@ -328,7 +328,7 @@ fn a_production_allowed_refusal_makes_can_build_refuse_the_type() {
         can_build(scene.sim(), rules, owner, object, false, true),
         CanBuild::No
     );
-    let record = memory(&scene)[512..664].to_vec();
+    let record = memory(&scene)[512..672].to_vec();
     assert_eq!(
         &record[..8],
         &[REFUSE.to_le_bytes(), EVENT_PRODUCTION_ALLOWED.to_le_bytes()].concat()
@@ -404,7 +404,7 @@ fn a_command_allowed_refusal_stops_the_command() {
     );
     let stop = Command::Stop { entity_id: unit };
     assert!(!scene.runtime.apply_command_for_test(&owner, &stop));
-    let record = memory(&scene)[512..664].to_vec();
+    let record = memory(&scene)[512..672].to_vec();
     assert_eq!(
         &record[..8],
         &[
@@ -418,7 +418,7 @@ fn a_command_allowed_refusal_stops_the_command() {
         (
             i64_at(&record, 24),
             i64_at(&record, 72),
-            i64_at(&record, 112)
+            i64_at(&record, 120)
         ),
         (unit as i64, 2, 1)
     );
@@ -471,9 +471,9 @@ fn a_decision_inside_the_other_modules_call_asks_its_link() {
     );
     assert_eq!(&memory_of(&scene, 0)[8..12], &[0; 4], "Damage answers Ok");
     // The map module (slot 1, after the mod's) decided the hit.
-    let record = memory_of(&scene, 1)[512..664].to_vec();
+    let record = memory_of(&scene, 1)[512..672].to_vec();
     assert_eq!(i64_at(&record, 24), victim as i64, "subject");
-    let native = i64_at(&record, 112);
+    let native = i64_at(&record, 120);
     assert!(native >= 2, "the hit deals damage: {native}");
     assert_eq!(i64::from(before - health(&scene, victim)), native / 2);
 }
