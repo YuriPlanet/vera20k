@@ -775,6 +775,33 @@ impl Simulation {
         }
     }
 
+    /// `TransportEntered` on `occupant` and `PassengerAdded` on `building`
+    /// once an occupier garrisoned it (appendix 4.3: `value` the occupants
+    /// now inside, `value2` 1 for a garrison).
+    pub(crate) fn raise_module_garrison_entered(
+        &mut self,
+        rules: &RuleSet,
+        frame_effects: &mut FrameEffects<'_>,
+        building: u64,
+        occupant: u64,
+        occupants: i32,
+    ) {
+        for (kind, subject, other) in [
+            (EVENT_TRANSPORT_ENTERED, occupant, building),
+            (EVENT_PASSENGER_ADDED, building, occupant),
+        ] {
+            if self.trigger_runtime.module_listens(kind) {
+                let event = ModuleEvent {
+                    other,
+                    value: i64::from(occupants),
+                    value2: 1,
+                    ..ModuleEvent::new(kind, subject)
+                };
+                self.raise_module_event(rules, frame_effects, event);
+            }
+        }
+    }
+
     /// `TransportExited` on `passenger` and `PassengerRemoved` on `carrier`
     /// after a cargo departure placed the passenger; `value` is the size it
     /// occupied, `value2` 0 (a transport, not a garrison).
