@@ -124,7 +124,8 @@ It does not compile the game, access a signing token, or send fixtures to SignPa
 To retry signing an existing game build, set `reuse_run_id` to its original
 compilation run's ID. The helper requires a completed main-branch run of this workflow with a
 successful build, a retained unsigned payload, and a source commit ancestral
-to the current run. It validates the original payload and preserves its name,
+to the current run. Validation and installer assembly use that source commit’s
+file list, hash checks and Inno Setup script, preserving its payload, name,
 version and build time. The log records the original source commit: this is a
 test of that earlier build, not a fresh build of the current source. The new
 signing job still requires maintainer approval. Leave this input empty for a

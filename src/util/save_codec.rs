@@ -696,7 +696,9 @@ impl<'de> de::SeqAccess<'de> for HistoricalFields<'_, 'de, '_> {
         if let Some(previous) = &mut self.de.previous
             && lacks(previous.layout.absent_fields, self.name, field)
         {
-            const ZEROS: [u8; 16] = [0; 16];
+            // The widest absent field is a table of four three-component i32
+            // firing offsets. Each field is decoded independently.
+            const ZEROS: [u8; 48] = [0; 48];
             let mut zeros = Deserializer {
                 input: &ZEROS,
                 previous: None,

@@ -109,9 +109,10 @@ impl Simulation {
             })
     }
 
-    /// Project lockstep control for a prospective command before encoding or
-    /// showing its feedback. The receiver rechecks the same subjects against
-    /// the live state and its independently admitted source.
+    /// Project lockstep control and the receiver's slave gate for a
+    /// prospective command before encoding or showing its feedback. The
+    /// receiver rechecks the same subjects against the live state and its
+    /// independently admitted source.
     pub fn can_issue_local_command(&self, command: &Command, rules: &RuleSet) -> bool {
         self.can_issue_local_command_with(&self.control_projection(), command, rules)
     }
@@ -130,7 +131,7 @@ impl Simulation {
                     | Command::AssignControlGroup { .. }
             )
         {
-            return true;
+            return self.command_subject_can_receive_order(command, rules, None);
         }
         let Some((source, primary)) = control.source() else {
             return false;
@@ -159,7 +160,7 @@ impl Simulation {
             command,
             rules,
             Some(control),
-        )
+        ) && self.command_subject_can_receive_order(command, rules, Some(source))
     }
 
     pub(super) fn command_delegates_yard_redeploy(
@@ -178,6 +179,49 @@ impl Simulation {
                         == ControlScope::FullControl
             })
         })
+    }
+
+    /// No player order may act on an enslaved object. An enslaved unit's
+    /// `TechnoClass::IsControllable @ 0x00700C40` (vt+0xA0) is false — the
+    /// producer side already drops a slave through `techno_controllable_for`
+    /// (`SlaveOwner +0x2DC`). A command that reaches the receiver without that
+    /// producer (a replayed native record, a synchronized record, a captured
+    /// object) must not slip past it: the action is refused here regardless of
+    /// House, mode or source. A freed slave (`SlaveOwner` cleared) is an
+    /// ordinary unit again and stays orderable.
+    ///
+    /// `resolve_command_subject` is the one mapping of a command to the
+    /// objects it acts on, so this gate rides every path that reaches the
+    /// receiver, including decoded native MEGAMISSION records.
+    pub(super) fn command_subject_can_receive_order(
+        &self,
+        cmd: &Command,
+        rules: &RuleSet,
+        sender: Option<i8>,
+    ) -> bool {
+        let enslaved = |actor| {
+            self.substrate
+                .entities
+                .get(actor)
+                .is_some_and(|entity| entity.seldom.slave.owner().is_some())
+        };
+        match self.resolve_command_subject(cmd, rules) {
+            CommandSubject::Actor(actor, _) => !enslaved(actor),
+            // EjectBunker acts on the occupant (`issue_order(unit_id, ..)`),
+            // not on the bunker that names it in the command.
+            CommandSubject::Bunker(bunker) => !self
+                .substrate
+                .entities
+                .get(bunker)
+                .and_then(|building| building.bunker.occupant())
+                .is_some_and(enslaved),
+            CommandSubject::Actors(actors, _) => !actors.iter().copied().any(enslaved),
+            // The Ares transfer owns the actual moving occupants and their permissions.
+            CommandSubject::Trench(_, event) => {
+                self.ares_trench_redirect_admits(sender, &event, rules)
+            }
+            _ => true,
+        }
     }
 
     /// VERA-only network admission: an existing actor's current House must
@@ -262,11 +306,8 @@ impl Simulation {
                                 actor_refused(occupant, CommandCapability::Tactical)
                             })
             }
-            CommandSubject::Trench(actor, event) => {
-                actor_refused(actor, CommandCapability::Tactical)
-                    || granted_source.is_some_and(|(source, _)| {
-                        !self.ares_trench_redirect_admits(source, &event, rules)
-                    })
+            CommandSubject::Trench(building, _) => {
+                actor_refused(building, CommandCapability::Tactical)
             }
         }
     }
