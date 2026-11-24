@@ -15,7 +15,7 @@
 
 VERA20K, Red Alert 2: Yuri's Revenge için yeni bir oyun motorudur. Orijinali gibi oynanır;
 birimler, haritalar ve görünüm aynıdır. Windows, macOS ve Linux'ta çalışır. Daha büyük savaşlar
-için yapılmıştır: bir haritada 30 oyuncuya ve 20.000 birime kadar.
+için yapılmıştır: bir haritada 120 oyuncuya ve 20.000 birime kadar.
 
 VERA20K oyuncular tarafından, oyuncular için yapılıyor ve projenin nereye gideceğine son sözü
 oyuncular söylüyor.
@@ -33,7 +33,7 @@ Takıldınız mı? [Yardım sayfasına](https://vera20k.org/tr/help) göz atın.
 ## Projenin hedefleri
 
 1. Orijinal Red Alert 2: Yuri's Revenge'in oynanışını, görsellerini ve atmosferini korumak.
-2. 500×500 haritalarda **30 oyuncuya** ve **20.000 birime** kadar daha büyük savaşları desteklemek.
+2. 500×500 haritalarda **120 oyuncuya** ve **20.000 birime** kadar daha büyük savaşları desteklemek.
 3. Bilinen RTS özelliklerini ve daha önce hiç görülmemiş bazı özellikleri eklemek.
 4. Entegre çok oyunculu istemci
 

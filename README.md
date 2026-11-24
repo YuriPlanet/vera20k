@@ -17,7 +17,7 @@
 
 VERA20K is a new engine for Red Alert 2: Yuri's Revenge. It plays like the original, with the same
 units, maps and look, and runs on Windows, macOS and Linux. It's built for bigger battles, with up
-to 30 players and 20,000 units on one map.
+to 120 players and 20,000 units on one map.
 
 VERA20K is made by gamers, for gamers, and gamers have the final say in where it goes.
 
@@ -34,7 +34,7 @@ Stuck? See the [help page](https://vera20k.org/help).
 ## Project goals
 
 1. Keep the gameplay, visuals and atmosphere of the original Red Alert 2: Yuri's Revenge.
-2. Support bigger battles: up to **30 players** and **20,000 units** on 500×500 maps.
+2. Support bigger battles: up to **120 players** and **20,000 units** on 500×500 maps.
 3. Incorporate known RTS features and some never seen before.
 4. Integrated multiplayer client
 
