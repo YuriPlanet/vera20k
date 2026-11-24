@@ -517,6 +517,13 @@ pub struct AnimTypeRuntimeConfig {
     /// else `Report=`, and `StopSound=`, resolved against SOUNDMD.
     pub start_sound: Option<String>,
     pub stop_sound: Option<String>,
+    /// Tiberian Sun's `BounceSound=` and `ExpireSound=` (Firestorm 2.0
+    /// AnimType +180/+184), which a `Bouncer=` chunk plays where it bounces
+    /// and where it comes down on dry ground. gamemd reads neither, so only
+    /// an ART section that sets one plays it; the rules processor resolves
+    /// them as it does `StopSound=`. See docs/ts-anim-sounds.md.
+    pub bounce_sound: Option<String>,
+    pub expire_sound: Option<String>,
 }
 
 /// Every field folds in declaration order, as the derive did, and the Ares
@@ -606,6 +613,8 @@ impl std::hash::Hash for AnimTypeRuntimeConfig {
             reverse,
             start_sound,
             stop_sound,
+            bounce_sound,
+            expire_sound,
         } = self;
         art_body_read.hash(state);
         image.hash(state);
@@ -683,6 +692,11 @@ impl std::hash::Hash for AnimTypeRuntimeConfig {
         reverse.hash(state);
         start_sound.hash(state);
         stop_sound.hash(state);
+        // No retail ART sets the Tiberian Sun sounds.
+        if bounce_sound.is_some() || expire_sound.is_some() {
+            bounce_sound.hash(state);
+            expire_sound.hash(state);
+        }
         if *ares_make_infantry_owner != crate::rules::ares_warhead::HouseSelector::Invoker
             || ares_custom_palette.is_some()
             || *ares_spawns_particle_range != [0, 0]
@@ -1066,6 +1080,8 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         reverse: section.read_bool("Reverse", false),
         start_sound: None,
         stop_sound: None,
+        bounce_sound: None,
+        expire_sound: None,
     }
 }
 

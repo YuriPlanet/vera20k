@@ -33,6 +33,10 @@ const TERRAIN_DENT: u32 = 0x82C3_2EA4;
 // seldom part, and its foot speed a byte saying so. Older worlds hold none:
 // only a `LimpetFactor=` warhead, which no older writer read, attaches one.
 const TS_LIMPETS: u32 = 0xF612_7DC1;
+// Tiberian Sun's BounceSound and ExpireSound: each saved AnimType's
+// references gain both names. Older worlds had neither, which reads as None
+// and plays nothing (docs/ts-anim-sounds.md).
+const TS_ANIM_SOUNDS: u32 = 0x9441_E8D8;
 
 /// The rules digest a converted save carries: the loader takes the rules the
 /// game has instead of proving the digest the old writer computed, whose
@@ -66,7 +70,7 @@ pub fn supports(header: &GameSnapshotHeader) -> bool {
         && previous_layout(header.layout).is_some()
         && header.compatibility().matches_build()
         && SNAPSHOT_ENVELOPE_VERSION == MIGRATION_ENVELOPE_VERSION
-        && snapshot_layout() == TS_LIMPETS
+        && snapshot_layout() == TS_ANIM_SOUNDS
 }
 
 fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
@@ -83,6 +87,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
     const DENT: (&str, &[&str]) = ("Simulation", &["terrain_dent"]);
     const LIMPETS: (&str, &[&str]) = ("Seldom", &["limpets"]);
     const LIMPETED: (&str, &[&str]) = ("FootSpeedState", &["limpeted"]);
+    const ANIM_SOUNDS: (&str, &[&str]) = ("AnimTypeReferences", &["bounce_sound", "expire_sound"]);
     let absent_fields: &'static [_] = match source {
         V0_3_8_AND_0_3_9 | V0_4_0 => &[
             IMAGE_FLAGS,
@@ -97,6 +102,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             DENT,
             LIMPETS,
             LIMPETED,
+            ANIM_SOUNDS,
         ],
         ALPHA_SHAPE_LISTENER => &[
             IMAGE_FLAGS,
@@ -110,6 +116,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             DENT,
             LIMPETS,
             LIMPETED,
+            ANIM_SOUNDS,
         ],
         ALTERNATE_THEATER_ART => &[
             DECK,
@@ -122,13 +129,30 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             DENT,
             LIMPETS,
             LIMPETED,
+            ANIM_SOUNDS,
         ],
         BRIDGE_DECK_AND_FLY_SPIN => &[
-            DEGRADES, ICE_TIMER, ICE_CRACKS, ICE_SINK, DENT, LIMPETS, LIMPETED,
+            DEGRADES,
+            ICE_TIMER,
+            ICE_CRACKS,
+            ICE_SINK,
+            DENT,
+            LIMPETS,
+            LIMPETED,
+            ANIM_SOUNDS,
         ],
-        HOUSE_DEGRADES => &[ICE_TIMER, ICE_CRACKS, ICE_SINK, DENT, LIMPETS, LIMPETED],
-        TS_ICE => &[DENT, LIMPETS, LIMPETED],
-        TERRAIN_DENT => &[LIMPETS, LIMPETED],
+        HOUSE_DEGRADES => &[
+            ICE_TIMER,
+            ICE_CRACKS,
+            ICE_SINK,
+            DENT,
+            LIMPETS,
+            LIMPETED,
+            ANIM_SOUNDS,
+        ],
+        TS_ICE => &[DENT, LIMPETS, LIMPETED, ANIM_SOUNDS],
+        TERRAIN_DENT => &[LIMPETS, LIMPETED, ANIM_SOUNDS],
+        TS_LIMPETS => &[ANIM_SOUNDS],
         _ => return None,
     };
     Some(save_codec::PreviousLayout {
@@ -144,7 +168,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
 /// only its stock Arctic setting and latch. Keep both exactly as saved.
 pub fn migrate(bytes: &mut Vec<u8>) -> Result<(), MigrationError> {
     let target = snapshot_layout();
-    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != TS_LIMPETS {
+    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != TS_ANIM_SOUNDS {
         return Err(MigrationError::UnsupportedTarget(target));
     }
 
@@ -277,7 +301,7 @@ mod tests {
         let error = migrate(&mut bytes).unwrap_err();
         assert_eq!(bytes, original);
         if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION
-            || snapshot_layout() != TS_LIMPETS
+            || snapshot_layout() != TS_ANIM_SOUNDS
         {
             assert!(matches!(error, MigrationError::UnsupportedTarget(_)));
             return;

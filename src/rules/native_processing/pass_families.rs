@@ -56,6 +56,20 @@ impl RulesPassProcessor {
                     "StopSound",
                     member.anim_references.stop_sound.take(),
                 );
+                // Tiberian Sun's BounceSound= and ExpireSound=, read as
+                // Firestorm 2.0 reads them (0x00419181..0x00419216):
+                // ReadString 0x80 and VocClass::From_Name (0x00664ED0), an
+                // empty or unknown name keeping the slot. gamemd reads neither.
+                member.anim_references.bounce_sound = fixed_sounds.read_rules_reference(
+                    section,
+                    "BounceSound",
+                    member.anim_references.bounce_sound.take(),
+                );
+                member.anim_references.expire_sound = fixed_sounds.read_rules_reference(
+                    section,
+                    "ExpireSound",
+                    member.anim_references.expire_sound.take(),
+                );
                 // AnimTypeRead427D1B admits the inherited Object read, then
                 //427D9D..427DDD supplies its own theater flags and image call.
                 // This retains the existing fresh/unowned read projection;

@@ -162,14 +162,28 @@ impl RuleSet {
             self.art_registry
                 .anim_runtime_config(name)
                 .into_iter()
-                .flat_map(|config| [&config.start_sound, &config.stop_sound])
+                .flat_map(|config| {
+                    [
+                        &config.start_sound,
+                        &config.stop_sound,
+                        &config.bounce_sound,
+                        &config.expire_sound,
+                    ]
+                })
                 .flatten()
                 .map(String::as_str)
         });
         let voxel_anims = self
             .voxel_anim_types
             .iter()
-            .flat_map(|anim| [&anim.start_sound, &anim.stop_sound])
+            .flat_map(|anim| {
+                [
+                    &anim.start_sound,
+                    &anim.stop_sound,
+                    &anim.bounce_sound,
+                    &anim.expire_sound,
+                ]
+            })
             .flatten()
             .map(String::as_str);
         let super_weapons = self.super_weapon_order.iter().flat_map(|id| {
