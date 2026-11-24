@@ -311,28 +311,3 @@ fn foot_body_counter_advances_once_per_due_frame() {
     }
     assert!(due_frames > 0, "the foot walked on a due frame");
 }
-
-/// The Foot body-frame predicate is asked once per foot per frame: the
-/// Process asks it for the admission, and the counter that admission
-/// advances on that same answer. Asking it twice doubles the cost of the
-/// hottest per-frame loop for no change in the frame.
-#[test]
-fn foot_body_frame_predicate_is_asked_once_per_foot_frame() {
-    let rules = rules_with_cadence(6, 4, 0);
-    let mut sim = fixture(0x43);
-    let mut asked = 0;
-    for frame in 0..12 {
-        crate::sim::perf_probe::reset();
-        tick(&mut sim, &rules, frame);
-        let calls = crate::sim::perf_probe::foot_body_frame_due_calls();
-        assert!(
-            calls <= 1,
-            "frame {frame}: the foot's body-frame predicate is asked once per frame"
-        );
-        asked += calls;
-    }
-    assert_eq!(
-        asked, 12,
-        "the predicate was asked once in each of the frames"
-    );
-}

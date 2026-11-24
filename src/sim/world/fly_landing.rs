@@ -499,8 +499,6 @@ impl Simulation {
         let held = match aircraft_claims {
             Some(claims) => claims.holds(object, retained),
             None => self.substrate.entities.values().any(|other| {
-                #[cfg(test)]
-                crate::sim::perf_probe::note_aircraft_reservation_visit();
                 other.stable_id() != id
                     && other.category() == EntityCategory::Aircraft
                     && other.lifecycle.object_alive()

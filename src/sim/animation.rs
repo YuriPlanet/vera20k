@@ -460,8 +460,6 @@ pub(crate) fn foot_body_frame_due(
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
     binary_frame: u32,
 ) -> bool {
-    #[cfg(test)]
-    crate::sim::perf_probe::note_foot_body_frame_due();
     if !entity.category().is_foot()
         || entity.death.is_dying()
         || !entity.lifecycle.object_alive()

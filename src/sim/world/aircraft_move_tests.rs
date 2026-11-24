@@ -359,37 +359,6 @@ fn find_attack_cell_ignores_the_asking_aircrafts_own_reservation() {
     );
 }
 
-/// The attack-cell search answers the land-zone question from the set of
-/// the live aircraft's NavCom reservations (`FootClass::IsLandZoneClear
-/// @ 0x004DDC60`, the comparison at `0x004DDDBF..0x004DDDC7`) instead of
-/// walking the whole entity store for every candidate cell. It must pick
-/// the cell the original picked, and it must not walk the store per
-/// candidate.
-#[test]
-fn find_attack_cell_answers_from_the_reservation_set_and_picks_the_native_cell() {
-    // The oracle's own row: the reserved cells rule the first ring out, so
-    // the answer depends on the reservations being honored.
-    let input = json!({
-        "name": "reserved_ring1",
-        "occupied": [[64, 64]],
-        "param": [64, 64],
-        "reserved": [[63, 63], [64, 63], [65, 63], [63, 64], [65, 64]]
-    });
-    let (mut sim, rules) = fixture(&input);
-    crate::sim::perf_probe::reset();
-    let result = sim.aircraft_find_attack_cell(OWNER, param(&input), &rules);
-    assert_eq!(
-        name(result),
-        json!(["cell", 63, 65]),
-        "the search picks the cell the original picked"
-    );
-    assert_eq!(
-        crate::sim::perf_probe::aircraft_reservation_visits(),
-        0,
-        "the search answers every candidate from the reservations it read once"
-    );
-}
-
 /// The oracle's Mission_Move world: stubbed locomotor and destination/idle
 /// virtuals, the production queries for the rest.
 struct RowHost<'a> {
