@@ -379,9 +379,6 @@ pub(crate) struct CombatEmit {
     pub(crate) damage_events: Vec<combat_aoe::AreaDamageReceiver>,
     pub(crate) remove_attack: Vec<u64>,
     pub(crate) fire_events: Vec<SimFireEvent>,
-    /// Unit Facing outputs committed immediately at each live object slot.
-    /// Component fixtures retain them here for observation.
-    pub(crate) unit_facing: Vec<UnitFacingUpdate>,
     /// (parent_id, target) — a `Spawner=yes` weapon reached its fire point.
     /// gamemd's `Fire_At` hands the target to the parent's `SpawnManager` and
     /// returns NULL, so no bullet, damage or rearm follows.
