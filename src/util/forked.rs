@@ -21,6 +21,10 @@
 //! those of the content, and a clone is a full, independent value. A write
 //! through interior mutability goes through `Deref`: it is not noted, and on
 //! a shared value every fork sees it.
+//!
+//! Its own operations are associated functions, as `Arc`'s are
+//! (`Forked::share(&mut world.field)`): a method would hide the value's
+//! method of the same name, and `world.field.fork()` must stay the value's.
 
 use std::fmt;
 use std::ops::{Deref, DerefMut};
@@ -71,8 +75,8 @@ impl<T> Forked<T> {
 
     /// Move the value behind an `Arc`, unwritten, for a world about to be
     /// forked. A shared value stays as it is.
-    pub fn share(&mut self) {
-        *self = match std::mem::replace(self, Self::Moving) {
+    pub fn share(this: &mut Self) {
+        *this = match std::mem::replace(this, Self::Moving) {
             Self::Inline { value, .. } => Self::Shared(Arc::new(value)),
             shared => shared,
         };
@@ -84,16 +88,16 @@ impl<T> Forked<T> {
     /// # Panics
     /// When a fork still holds the shared value: the world was unshared too
     /// early.
-    pub fn unshare(&mut self) {
-        match self {
+    pub fn unshare(this: &mut Self) {
+        match this {
             Self::Inline { base, .. } => *base = None,
             Self::Moving => {}
             Self::Shared(_) => {
-                if let Self::Shared(shared) = std::mem::replace(self, Self::Moving) {
+                if let Self::Shared(shared) = std::mem::replace(this, Self::Moving) {
                     match Arc::try_unwrap(shared) {
-                        Ok(value) => *self = Self::new(value),
+                        Ok(value) => *this = Self::new(value),
                         Err(shared) => {
-                            *self = Self::Shared(shared);
+                            *this = Self::Shared(shared);
                             panic!("a fork still holds a shared {}", std::any::type_name::<T>());
                         }
                     }
@@ -105,14 +109,14 @@ impl<T> Forked<T> {
     /// Whether `DerefMut` handed the value out since the flag was last
     /// cleared, or since the value was shared. A shared value is not written.
     #[inline]
-    pub fn written(&self) -> bool {
-        matches!(self, Self::Inline { written: true, .. })
+    pub fn written(this: &Self) -> bool {
+        matches!(this, Self::Inline { written: true, .. })
     }
 
     /// Forget that the value was written.
     #[inline]
-    pub fn clear_written(&mut self) {
-        if let Self::Inline { written, .. } = self {
+    pub fn clear_written(this: &mut Self) {
+        if let Self::Inline { written, .. } = this {
             *written = false;
         }
     }
@@ -135,18 +139,18 @@ impl<T> Forked<T> {
 impl<T: Clone> Forked<T> {
     /// A fork's handle on this field: a shared value gives another handle on
     /// the same value, without a copy; an inline one gives a full copy.
-    pub fn fork(&self) -> Self {
-        match self {
+    pub fn fork(this: &Self) -> Self {
+        match this {
             Self::Shared(shared) => Self::Shared(Arc::clone(shared)),
-            Self::Inline { .. } | Self::Moving => self.clone(),
+            Self::Inline { .. } | Self::Moving => this.clone(),
         }
     }
 
     /// Become `base`'s fork again, dropping whatever this fork wrote. A fork
     /// of a shared `base` goes back to the handle it kept and leaves the
     /// `Arc`'s count alone.
-    pub fn restore_from(&mut self, base: &Self) {
-        let same_base = match (&*self, base) {
+    pub fn restore_from(this: &mut Self, base: &Self) {
+        let same_base = match (&*this, base) {
             (
                 Self::Shared(kept)
                 | Self::Inline {
@@ -157,18 +161,20 @@ impl<T: Clone> Forked<T> {
             _ => false,
         };
         if !same_base {
-            *self = base.fork();
-        } else if let Self::Inline { .. } = self
+            *this = Self::fork(base);
+        } else if let Self::Inline { .. } = this
             && let Self::Inline {
                 base: Some(kept), ..
-            } = std::mem::replace(self, Self::Moving)
+            } = std::mem::replace(this, Self::Moving)
         {
-            *self = Self::Shared(kept);
+            *this = Self::Shared(kept);
         }
     }
 
     /// The value itself, moved out of a world that is being taken apart. A
-    /// shared value is copied unless this is its last handle.
+    /// shared value is copied unless this is its last handle. A method, for
+    /// the fixtures that take a world apart field by field; no world value
+    /// has an `into_inner` of its own.
     pub fn into_inner(self) -> T {
         match self {
             Self::Inline { value, .. } => value,
@@ -278,38 +284,38 @@ mod tests {
     #[test]
     fn a_write_through_a_fork_copies_the_value_and_leaves_the_base_alone() {
         let mut base = Forked::new(vec![1, 2]);
-        base.share();
-        let mut fork = base.fork();
+        Forked::share(&mut base);
+        let mut fork = Forked::fork(&base);
         let Forked::Shared(shared) = &base else {
             panic!("a shared base")
         };
         assert!(matches!(&fork, Forked::Shared(handle) if Arc::ptr_eq(handle, shared)));
         fork.push(3);
         assert_eq!(*fork, [1, 2, 3]);
-        assert!(fork.written());
+        assert!(Forked::written(&fork));
         assert_eq!(*base, [1, 2]);
-        assert!(!base.written());
+        assert!(!Forked::written(&base));
         // The fork kept its base: going back to it takes no new handle.
         assert_eq!(Arc::strong_count(shared), 2);
-        fork.restore_from(&base);
+        Forked::restore_from(&mut fork, &base);
         assert!(matches!(&fork, Forked::Shared(handle) if Arc::ptr_eq(handle, shared)));
         assert_eq!(Arc::strong_count(shared), 2);
-        assert!(!fork.written());
+        assert!(!Forked::written(&fork));
     }
 
     #[test]
     fn deref_mut_notes_a_write_and_deref_does_not() {
         let mut value = Forked::new(7_u32);
         assert_eq!(*value, 7);
-        assert!(!value.written());
+        assert!(!Forked::written(&value));
         *value += 1;
-        assert!(value.written());
+        assert!(Forked::written(&value));
         // A clone is the value alone.
         let copy = value.clone();
         assert_eq!(*copy, 8);
-        assert!(!copy.written());
-        value.clear_written();
-        assert!(!value.written());
+        assert!(!Forked::written(&copy));
+        Forked::clear_written(&mut value);
+        assert!(!Forked::written(&value));
         assert_eq!(*value, 8);
     }
 
@@ -317,12 +323,12 @@ mod tests {
     fn a_shared_value_forks_without_a_copy_and_comes_back_inline() {
         let mut base = Forked::new(String::from("a"));
         base.push('b');
-        base.share();
-        assert!(!base.written());
-        let fork = base.fork();
+        Forked::share(&mut base);
+        assert!(!Forked::written(&base));
+        let fork = Forked::fork(&base);
         assert_eq!(*fork, "ab");
         drop(fork);
-        base.unshare();
+        Forked::unshare(&mut base);
         assert!(matches!(
             base,
             Forked::Inline {
@@ -333,22 +339,22 @@ mod tests {
         ));
         assert_eq!(*base, "ab");
         // An inline value forks as a full copy, and so restores as one.
-        let mut copy = base.fork();
+        let mut copy = Forked::fork(&base);
         copy.push('c');
         assert_eq!(*base, "ab");
-        copy.restore_from(&base);
+        Forked::restore_from(&mut copy, &base);
         assert_eq!(*copy, "ab");
-        assert!(!copy.written());
+        assert!(!Forked::written(&copy));
     }
 
     #[test]
     #[should_panic(expected = "a fork still holds a shared u8")]
     fn unsharing_a_value_a_fork_still_holds_panics() {
         let mut base = Forked::new(1_u8);
-        base.share();
-        let mut fork = base.fork();
+        Forked::share(&mut base);
+        let mut fork = Forked::fork(&base);
         *fork = 2;
-        base.unshare();
+        Forked::unshare(&mut base);
     }
 
     #[test]
@@ -357,7 +363,7 @@ mod tests {
         value.0 = 4;
         let bytes = save_codec::serialize(&value).unwrap();
         assert_eq!(bytes, save_codec::serialize(&(4_u16, "x")).unwrap());
-        value.share();
+        Forked::share(&mut value);
         assert_eq!(save_codec::serialize(&value).unwrap(), bytes);
         let loaded: Forked<(u16, String)> = save_codec::deserialize(&bytes).unwrap();
         assert!(matches!(

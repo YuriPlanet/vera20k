@@ -25,7 +25,7 @@ macro_rules! fork_helpers {
                 let $ty { $($(#[$cfg])* $($part)? $($field)?,)+ } = self;
                 $($(#[$cfg])* {
                     $($part.share_fields();)?
-                    $($field.share();)?
+                    $($crate::util::forked::Forked::share($field);)?
                 })+
             }
 
@@ -37,7 +37,7 @@ macro_rules! fork_helpers {
                 let $ty { $($(#[$cfg])* $($part)? $($field)?,)+ } = self;
                 $($(#[$cfg])* {
                     $($part.unshare_fields();)?
-                    $($field.unshare();)?
+                    $($crate::util::forked::Forked::unshare($field);)?
                 })+
             }
 
@@ -46,7 +46,7 @@ macro_rules! fork_helpers {
             pub(crate) fn fork(&self) -> Self {
                 let $ty { $($(#[$cfg])* $($part)? $($field)?,)+ } = self;
                 $ty {
-                    $($(#[$cfg])* $($part: $part.fork(),)? $($field: $field.fork(),)?)+
+                    $($(#[$cfg])* $($part: $part.fork(),)? $($field: $crate::util::forked::Forked::fork($field),)?)+
                 }
             }
 
@@ -56,7 +56,7 @@ macro_rules! fork_helpers {
                 let $ty { $($(#[$cfg])* $($part)? $($field)?,)+ } = self;
                 $($(#[$cfg])* {
                     $($part.push_written_fields(names);)?
-                    $(if $field.written() {
+                    $(if $crate::util::forked::Forked::written($field) {
                         names.push(concat!($prefix, stringify!($field)));
                     })?
                 })+
@@ -67,7 +67,7 @@ macro_rules! fork_helpers {
                 let $ty { $($(#[$cfg])* $($part)? $($field)?,)+ } = self;
                 $($(#[$cfg])* {
                     $($part.clear_written_fields();)?
-                    $($field.clear_written();)?
+                    $($crate::util::forked::Forked::clear_written($field);)?
                 })+
             }
 
@@ -77,8 +77,8 @@ macro_rules! fork_helpers {
                 let $ty { $($(#[$cfg])* $($part)? $($field)?,)+ } = self;
                 $($(#[$cfg])* {
                     $($part.restore_written_fields_from(&base.$part);)?
-                    $(if $field.written() {
-                        $field.restore_from(&base.$field);
+                    $(if $crate::util::forked::Forked::written($field) {
+                        $crate::util::forked::Forked::restore_from($field, &base.$field);
                     })?
                 })+
             }
