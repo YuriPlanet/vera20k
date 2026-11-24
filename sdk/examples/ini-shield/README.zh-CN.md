@@ -1,6 +1,6 @@
 # INI Shield（护盾）
 
-演示"模块注册 INI 名字"（[RFC 0001 增补](../../../docs/rfcs/0001-ini-register.zh-CN.md)）：modder 只写 INI，护盾机制由模块实现。
+演示"模块注册 INI 名字"（[RFC 0001 第 6h 节](../../../docs/rfcs/0001-wasm-extension-modules.zh-CN.md#6h-ini-注册)）：modder 只写 INI，护盾机制由模块实现。
 
 ## modder 写什么
 

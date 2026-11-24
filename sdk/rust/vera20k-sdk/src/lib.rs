@@ -1022,7 +1022,7 @@ impl Action {
         Self::run(Self::ADD_PASSENGER, transport.0, &params).map(drop)
     }
 
-    /// Raises module event `event` (RFC 0001 INI addendum, section 6) on
+    /// Raises module event `event` (RFC 0001 section 6h) on
     /// `target`: an object for an object event, anything (`Global`) for a
     /// global one. `other`, `value` and `value2` go into the record; its
     /// triggers' module actions are queued. Not in a decision handler.

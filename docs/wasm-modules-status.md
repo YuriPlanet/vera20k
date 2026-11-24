@@ -1,7 +1,7 @@
 # Wasm extension modules: development status
 
-The current checkpoint for implementing [RFC 0001](0001-wasm-extension-modules.md)
-(API in the [appendix](0001-wasm-extension-modules-api.md)). Replace this file's
+The current checkpoint for implementing [RFC 0001](rfcs/0001-wasm-extension-modules.md)
+(API in the [appendix](rfcs/0001-wasm-extension-modules-api.md)). Replace this file's
 content as work lands; do not append a diary.
 
 ## Where the work is
@@ -36,7 +36,7 @@ content as work lands; do not append a diary.
 | Property writes (`Health`, `Owner`, `Rank`, `Mission`, `Ammo`, `Online`) | `src/sim/ext_modules/writes.rs` |
 | Object, type and global property reads beyond the basics; viewpoint reads (`read_in`) | `src/sim/ext_modules/props.rs` |
 | Action state kept across frames: `AllowType` forbids, timed `Convert` reversions | `src/sim/ext_modules/held.rs` |
-| INI registration (addendum `0001-ini-register.zh-CN.md`): registered names, event IDs, string table | `src/sim/ext_modules/ini_names.rs`; start records `ini_start.rs`; `RaiseEvent` in `actions.rs`; `Event=Wasm:`, `Wasm:name(target,text)` in `ini_triggers.rs`; tests `ext_modules_ini_register_tests.rs`, demo smoke `ini_demo_mods_reach_their_marks` |
+| INI registration (RFC 0001 section 6h): registered names, event IDs, string table | `src/sim/ext_modules/ini_names.rs`; start records `ini_start.rs`; `RaiseEvent` in `actions.rs`; `Event=Wasm:`, `Wasm:name(target,text)` in `ini_triggers.rs`; tests `ext_modules_ini_register_tests.rs`, demo smoke `ini_demo_mods_reach_their_marks` |
 | Modder guide | `docs/wasm-modules.md` |
 | Tutorials (Chinese) | `docs/wasm-modules-tutorial.zh-CN.md` (Rust, builds and checks); `docs/wasm-modules-tutorial-ts.zh-CN.md` (TypeScript, written ahead of the SDK from RFC 5a and appendix 3 to review the planned API; nothing in it is compiled) |
 | The `action` import and trigger actions: `run_action` (atomic actions through their owners, stock actions mapped onto the map trigger executor) | `src/sim/ext_modules/actions.rs`; executor without a live trigger `src/sim/trigger_runtime/untriggered.rs` |
@@ -268,7 +268,7 @@ module (merge timers into one function).
 
 ## Done (phase 1b: INI registration)
 
-The addendum `docs/rfcs/0001-ini-register.zh-CN.md` (version 1): modules give
+RFC 0001 section 6h (0.0.21): modules give
 modders INI names.
 
 - `ini_register` (import 24, `vera_init` only; elsewhere invalid) registers a key on
@@ -346,6 +346,13 @@ modders INI names.
 - Variable IDs: 1000 on, mod module's declarations then the map's, in declaration order.
 
 ## Remaining in phase 1
+
+- RFC 0.0.21 section 6i (driving a house: `ControlDomains`, "mod AI" seats,
+  `OrderRefused`, `SimEvent`, `Visible`/`Engage` and the other read properties, the
+  500,000 default budget, `SeatBudget`, `VERA.INI` `WasmBudget`, memory per seat) is
+  specified but not implemented. The implementation still has the old budgets: map
+  default 200,000 (RFC 100,000) and values under 20,000 clamped to 1 (RFC: refuse the
+  start).
 
 Phase 1 is complete as far as this engine has owners for the RFC's tables; what is
 left is listed under residuals. Small follow-ups found by the playtest mods:

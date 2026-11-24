@@ -423,7 +423,7 @@ impl Run<'_, '_, '_, '_> {
     }
 
     /// An object target that exists; 0 or a removed object is `Gone`.
-    /// `RaiseEvent` (INI registration addendum, section 6): a registered
+    /// `RaiseEvent` (RFC 0001 section 6h): a registered
     /// module event, on the target object (object event) or for every
     /// global trigger with it (global event).
     fn raise_event(&mut self, target: i64) -> Act<i64> {

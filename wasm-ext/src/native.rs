@@ -1135,7 +1135,7 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
          out: i32|
          -> wasmtime::Result<i32> {
             // Only the initialization function registers (INI registration
-            // addendum, section 3).
+            // RFC 0001 section 6h).
             if !in_init(&caller) {
                 return Err(fail(
                     &mut caller,

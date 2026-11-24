@@ -245,7 +245,7 @@ impl Host<'_, '_> {
         }
         // A module action's parameter text becomes a string ID here, once,
         // kept in its `value` (unused by `Module`), so a firing interns
-        // nothing (INI registration addendum, section 7).
+        // nothing (RFC 0001 section 6h).
         let mut actions = def.actions.clone();
         for action in actions.iter_mut().filter(|a| a.kind == ACTION_MODULE) {
             action.params.value = i64::from(self.sim.ext_modules.ini.intern(&action.text));

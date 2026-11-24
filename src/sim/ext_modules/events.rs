@@ -119,7 +119,7 @@ use crate::sim::trigger_runtime::{
 use crate::sim::world::{FrameEffects, Simulation};
 
 /// New delivered events this engine raises (appendix 4.3, and the INI
-/// registration addendum's module event).
+/// module event of RFC 0001 section 6h).
 const DELIVERED: [i32; 17] = [
     EVENT_TAKE_DAMAGE,
     EVENT_ATTACKED_BY,
