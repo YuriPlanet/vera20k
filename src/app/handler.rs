@@ -1413,7 +1413,7 @@ impl ApplicationHandler for App {
         let replay = state.match_state.match_diagnostics.is_replay_playback();
         let watching = !replay
             && state.frontend.screen == GameScreen::InGame
-            && crate::app::match_runtime::watching::active(state);
+            && crate::app::match_runtime::watching::active(&state.match_state);
         if replay || watching {
             match &event {
                 WindowEvent::CloseRequested if replay => {

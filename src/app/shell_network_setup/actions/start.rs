@@ -175,7 +175,7 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .expect("validated setup")
         .clone();
     if !wol {
-        crate::app::lan_service::prepare_host_timing(state)?;
+        crate::app::lan_service::prepare_host_timing(&mut state.match_state)?;
     }
     let max_ahead_frames = if wol {
         // Start Game Now derives WOL timing after OnGameStart.
@@ -337,7 +337,7 @@ pub(in crate::app::shell_network_setup) fn request_campaign_start(
         if !all_ready(state) {
             return Ok(());
         }
-        crate::app::lan_service::prepare_host_timing(state)?;
+        crate::app::lan_service::prepare_host_timing(&mut state.match_state)?;
         let session = &state.match_state.session;
         let seed = session
             .network_start_seed()
@@ -409,7 +409,7 @@ pub(crate) fn begin_external_lan_go(state: &mut AppState) -> anyhow::Result<()> 
             .is_some_and(|protocol| !protocol.locked),
         "setup is locked"
     );
-    crate::app::lan_service::prepare_host_timing(state)?;
+    crate::app::lan_service::prepare_host_timing(&mut state.match_state)?;
     let max_ahead_frames = state
         .match_state
         .session

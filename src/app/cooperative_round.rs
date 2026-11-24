@@ -194,7 +194,7 @@ pub(crate) fn open_result(state: &mut AppState, victory: bool) {
         .flatten();
     // BC6 keeps the match's route; the shared teardown then finds no match
     // transport to return.
-    crate::app::lan_service::hold_transport_for_continuation(state);
+    crate::app::lan_service::hold_transport_for_continuation(&mut state.match_state);
     App::retire_finished_scenario(state);
     if let Err(error) = state.match_state.session.enter_cooperative_round(
         next_map,

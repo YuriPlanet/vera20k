@@ -93,7 +93,7 @@ impl App {
         state.match_state.input.planning.reset();
         let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         crate::app::radar_movie::retire(state, wall_ms);
-        crate::app::commander_feedback::retire(state);
+        crate::app::commander_feedback::retire(&mut state.match_state.match_presentation);
         crate::app::chrono_screen::retire(state, wall_ms);
         if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
             // Main_Game48CCC0 clears ScenarioStarted[A8ED5C] at48CEBF
@@ -261,7 +261,10 @@ impl App {
         if active {
             state.platform.clear_attention();
         }
-        let movie_active = crate::app::radar_movie::playback_active(state);
+        let movie_active = crate::app::radar_movie::playback_active(
+            &state.platform,
+            &state.match_state.match_presentation,
+        );
         state
             .match_state
             .match_presentation
@@ -431,7 +434,10 @@ impl App {
             }
         }
         state.match_state.match_presentation.in_game_menu = next;
-        let movie_active = crate::app::radar_movie::playback_active(state);
+        let movie_active = crate::app::radar_movie::playback_active(
+            &state.platform,
+            &state.match_state.match_presentation,
+        );
         state
             .match_state
             .match_presentation
@@ -485,7 +491,9 @@ impl App {
         // clip is decided, but the player may still want out of the clip: the
         // menu has to open for them. Leaving through it cuts the clip instead
         // of queueing an EXIT event the stopped world could never execute.
-        if crate::app::commander_feedback::verdict_is_waiting_for_clip(state) {
+        if crate::app::commander_feedback::verdict_is_waiting_for_clip(
+            &state.match_state.match_presentation,
+        ) {
             return true;
         }
         let sim = state
@@ -601,7 +609,9 @@ impl App {
         // the score before this point. Queueing the native EXIT event instead
         // would go nowhere: no frame runs after a published result, so the
         // event would never execute.
-        if crate::app::commander_feedback::verdict_is_waiting_for_clip(state) {
+        if crate::app::commander_feedback::verdict_is_waiting_for_clip(
+            &state.match_state.match_presentation,
+        ) {
             let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
             crate::app::commander_feedback::skip_verdict_clip(state, wall_ms);
             Self::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Closed);
@@ -706,7 +716,7 @@ impl App {
         Self::record_match_result(state, super::cncnet::ExternalMatchResult::Quit);
         //686570 clears the movie queue before its independent audio fade.
         crate::app::radar_movie::retire(state, wall_ms);
-        crate::app::commander_feedback::retire(state);
+        crate::app::commander_feedback::retire(&mut state.match_state.match_presentation);
         crate::app::chrono_screen::retire(state, wall_ms);
         let elapsed_seconds = state.match_state.scenario_elapsed_clock.stop(wall_ms);
         // gamemd provenance: battle abort teardown; verified
@@ -797,7 +807,7 @@ impl App {
     pub(super) fn start_quit_cascade(state: &mut AppState) {
         let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         crate::app::radar_movie::retire(state, wall_ms);
-        crate::app::commander_feedback::retire(state);
+        crate::app::commander_feedback::retire(&mut state.match_state.match_presentation);
         crate::app::chrono_screen::retire(state, wall_ms);
         state.audio.fade_out_theme(wall_ms);
         state.frontend.quit_cascade = Some(crate::app::frontend::quit_cascade::QuitCascade::start(

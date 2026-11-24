@@ -1077,7 +1077,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
     }
 
     let full_visibility = state.match_state.sandbox_full_visibility;
-    let beacon_draws = crate::app::match_runtime::beacons::draws(state);
+    let beacon_draws = crate::app::match_runtime::beacons::draws(&state.match_state);
     let presentation = &mut state.match_state.match_presentation;
     if let (Some(minimap), Some(runtime), Some(frame)) = (
         presentation.minimap.as_mut(),
@@ -1321,7 +1321,7 @@ fn build_beacon_instances(state: &AppState) -> Vec<Vec<SpriteInstance>> {
     };
     let mut rows = vec![Vec::new(); art.house_count()];
     let frame = runtime.simulation.session().binary_frame();
-    for beacon in crate::app::match_runtime::beacons::draws(state) {
+    for beacon in crate::app::match_runtime::beacons::draws(&state.match_state) {
         if let (Some(row), Some(instance)) = (
             rows.get_mut(beacon.house),
             art.tactical_instance(&beacon, frame),

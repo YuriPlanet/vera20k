@@ -13,16 +13,15 @@ use winit::event::MouseButton;
 use winit::keyboard::KeyCode;
 
 /// Whether this game watches its match instead of playing in it.
-pub(crate) fn active(state: &AppState) -> bool {
-    state.match_state.session.local_connection_watches() && state.match_state.live_network.is_some()
+pub(crate) fn active(match_state: &crate::app::match_runtime::state::MatchState) -> bool {
+    match_state.session.local_connection_watches() && match_state.live_network.is_some()
 }
 
 /// Whether this game watches and sees the whole map: on the observer's
 /// sidebar. On a player's view it sees what that player sees.
-pub(crate) fn whole_map(state: &AppState) -> bool {
-    active(state)
-        && state
-            .match_state
+pub(crate) fn whole_map(match_state: &crate::app::match_runtime::state::MatchState) -> bool {
+    active(match_state)
+        && match_state
             .sim_runtime
             .runtime()
             .is_some_and(|runtime| runtime.simulation.session().watcher_observes())
@@ -30,15 +29,17 @@ pub(crate) fn whole_map(state: &AppState) -> bool {
 
 /// A watcher still catching up to the match plays minutes of it at speed:
 /// its sounds stay off meanwhile, as a returning player's do.
-pub(crate) fn catching_up(state: &AppState, now_ms: u32) -> bool {
-    if !active(state) {
+pub(crate) fn catching_up(
+    match_state: &crate::app::match_runtime::state::MatchState,
+    now_ms: u32,
+) -> bool {
+    if !active(match_state) {
         return false;
     }
-    let Some(live) = state.match_state.live_network.as_ref() else {
+    let Some(live) = match_state.live_network.as_ref() else {
         return false;
     };
-    let frame = state
-        .match_state
+    let frame = match_state
         .sim_runtime
         .runtime()
         .map_or(0, |runtime| runtime.simulation.session().binary_frame());
@@ -146,7 +147,7 @@ pub(crate) fn begin_on_observers_view(state: &mut AppState) {
     switch_view(state, View::Observer);
     log::info!(
         "Watching from the observer's view: whole map {}",
-        whole_map(state)
+        whole_map(&state.match_state)
     );
 }
 
@@ -167,9 +168,10 @@ fn switch_view(state: &mut AppState, next: View) {
         .match_state
         .match_presentation
         .sidebar_projection
-        .model.reset_cameo_seed();
+        .model
+        .reset_cameo_seed();
     state.match_state.refresh_relation_colors();
-    show_sight(state);
+    show_sight(&mut state.match_state);
     // No House update reports the radar of the House now followed: its
     // housing opens or closes to that House's as a change there would.
     let available = crate::app::presentation::building_anim::local_has_radar(state);
@@ -181,9 +183,9 @@ fn switch_view(state: &mut AppState, next: View) {
 /// observer's sidebar ([`whole_map`]). Every House keeps its own fog in the
 /// shared world, so a new view only draws another's: the fog picture and the
 /// radar start again from it, as after a load (`match_runtime::restore`).
-fn show_sight(state: &mut AppState) {
-    state.match_state.sandbox_full_visibility = whole_map(state);
-    let presentation = &mut state.match_state.match_presentation;
+fn show_sight(match_state: &mut crate::app::match_runtime::state::MatchState) {
+    match_state.sandbox_full_visibility = whole_map(match_state);
+    let presentation = &mut match_state.match_presentation;
     if let Some(shroud) = presentation.shroud_buffer.as_mut() {
         shroud.mark_stale();
     }

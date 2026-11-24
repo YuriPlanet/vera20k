@@ -35,7 +35,7 @@ pub(super) fn enter_timed_start(
     }
     // A new match: no earlier one's result may stand for it.
     crate::app::App::clear_match_result(state);
-    crate::app::lan_service::apply_online_timing(state, pings)?;
+    crate::app::lan_service::apply_online_timing(&mut state.match_state, pings)?;
     let count = state
         .match_state
         .session
@@ -588,7 +588,7 @@ fn enter_restored_start(
     match_id: String,
     pings: &[i32],
 ) -> Result<()> {
-    crate::app::lan_service::mark_online_restore(state)?;
+    crate::app::lan_service::mark_online_restore(&mut state.match_state)?;
     let start = enter_timed_start(state, service, match_id, pings);
     if service.watching.is_none() {
         return start;
@@ -623,7 +623,7 @@ pub(super) fn poll_relay(state: &mut AppState, service: &mut LiveService) -> Res
         if transport.relay_ready() {
             let transport = pending.transport.take().expect("ready pending relay");
             crate::app::lan_service::install_online_transport(
-                state,
+                &mut state.match_state,
                 transport,
                 &pending.host_name,
             )?;
@@ -637,7 +637,7 @@ pub(super) fn poll_relay(state: &mut AppState, service: &mut LiveService) -> Res
         }
     }
     if pending.probes_started && !pending.latencies_reported {
-        if let Some(pings) = crate::app::lan_service::online_peer_round_trips(state) {
+        if let Some(pings) = crate::app::lan_service::online_peer_round_trips(&state.match_state) {
             let pings: Vec<_> = pings.into_iter().map(|(source_index, round_trip_ms)|
                 json!({"source_index":source_index,"round_trip_ms":round_trip_ms})).collect();
             let match_id = pending.match_id.clone();

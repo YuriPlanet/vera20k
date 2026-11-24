@@ -866,7 +866,7 @@ impl App {
         crate::web::request_exit(state.frontend.external_launch_error.as_deref());
         crate::app::shell_wol::discard_spawned_visit(&mut state.frontend);
         if state.match_state.lan_service.is_some() {
-            crate::app::lan_service::close(state);
+            crate::app::lan_service::close(&state.frontend, &mut state.match_state);
         }
         if state.match_state.session.network_return_context().is_some() {
             state.match_state.session.leave_network();
@@ -984,7 +984,10 @@ impl App {
                     || state.match_state.scenario_exit.is_some()
                     || state.match_state.scenario_outcome.is_some()
                     || Self::house_outcome_wait_pending(state)
-                    || crate::app::match_runtime::network_failure::pending(state)
+                    || crate::app::match_runtime::network_failure::pending(
+                        &state.frontend.screen,
+                        &state.match_state,
+                    )
                 {
                     return false;
                 }
@@ -1102,7 +1105,7 @@ impl App {
         // A watcher has no result: the followed player's is not its own.
         if (!state.frontend.external_launch && state.match_state.session_mode() != SessionMode::Wol)
             || state.frontend.match_result.is_some()
-            || crate::app::match_runtime::watching::active(state)
+            || crate::app::match_runtime::watching::active(&state.match_state)
         {
             return;
         }

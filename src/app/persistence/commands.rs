@@ -488,7 +488,11 @@ fn restore_save_file(
     // UI559DBC->69BB40->5BF450 precedes the lower load, including failure;
     // a failed load leaves the radar to wind its clip down itself.
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-    crate::app::radar_movie::retire_for_load(state, wall_ms);
+    crate::app::radar_movie::retire_for_load(
+        &mut state.match_state.match_presentation,
+        &mut state.audio,
+        wall_ms,
+    );
     crate::app::chrono_screen::retire(state, wall_ms);
     use crate::app::persistence::{PreparedLoadError, PreparedSavedGame, SavedGamePreparationView};
     let from_menu = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu;

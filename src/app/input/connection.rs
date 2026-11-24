@@ -92,9 +92,9 @@ fn pointer(state: &mut AppState, down: Option<bool>) {
             continue;
         };
         match button {
-            ConnectionButton::Quit => {
-                crate::app::match_runtime::network_match::request_leave(state)
-            }
+            ConnectionButton::Quit => crate::app::match_runtime::network_match::request_leave(
+                &mut state.match_state.network_wait,
+            ),
             ConnectionButton::Player(row) => {
                 crate::app::match_runtime::network_match::propose_kick(state, row)
             }

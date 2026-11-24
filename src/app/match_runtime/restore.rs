@@ -107,7 +107,7 @@ pub(crate) fn commit_prepared_load(
     state.match_state.scenario_elapsed_clock = committed.elapsed_clock;
     #[cfg(feature = "telemetry-dashboard")]
     crate::app::telemetry_capture::reset_observation(state);
-    super::scenario_pause::load_clock(state, wall_ms);
+    super::scenario_pause::load_clock(&mut state.match_state.match_presentation, wall_ms);
     let pause_effects = state
         .match_state
         .sim_runtime
@@ -119,7 +119,12 @@ pub(crate) fn commit_prepared_load(
             )
         });
     // Load rearms614; reapply physical audio without a new pause acquisition.
-    super::scenario_pause::resume(state, wall_ms);
+    super::scenario_pause::resume(
+        &state.frontend.screen,
+        &mut state.match_state,
+        &mut state.audio,
+        wall_ms,
+    );
     state.match_state.sandbox_full_visibility = false;
     let runtime = state
         .match_state

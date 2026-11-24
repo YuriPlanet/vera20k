@@ -112,7 +112,10 @@ pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
             .map(|name| bounded_text(name, TELEMETRY_MAX_NAME_BYTES));
     }
     let mut timing = state.match_state.telemetry_timing.summarize(
-        crate::app::match_runtime::network_match::game_frame_ms(state),
+        crate::app::match_runtime::network_match::game_frame_ms(
+            &state.platform,
+            &state.match_state,
+        ),
     );
     // Each rate keeps its own owner: FPS is the render loop's, tick_hz is the
     // committed-tick meter's.
@@ -385,7 +388,7 @@ fn encode_terrain_grid(
 /// The egui Terrain Debug panel's data, read from live cursor and selection.
 fn capture_debug(state: &AppState, sim: &Simulation) -> DebugPanel {
     let (cursor_rx, cursor_ry) = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-        state,
+        &state.match_state,
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );

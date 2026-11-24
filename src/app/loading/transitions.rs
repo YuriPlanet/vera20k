@@ -608,7 +608,9 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     // Retiring Radar may record a service input after the outgoing frame.
     // Publish that frame before the retire/reset sequence.
     crate::app::match_runtime::sim_tick::finish_threaded_frame(state);
-    crate::app::match_runtime::scenario_pause::reset_clock(state);
+    crate::app::match_runtime::scenario_pause::reset_clock(
+        &mut state.match_state.match_presentation,
+    );
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     crate::app::radar_movie::retire(state, wall_ms);
     crate::app::chrono_screen::retire(state, wall_ms);
@@ -995,7 +997,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
 /// only because a world needs a current House: it starts on the observer's
 /// sidebar (`watching::begin_on_observers_view`).
 fn install_watcher(state: &mut AppState) {
-    if !crate::app::match_runtime::watching::active(state) {
+    if !crate::app::match_runtime::watching::active(&state.match_state) {
         return;
     }
     if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {

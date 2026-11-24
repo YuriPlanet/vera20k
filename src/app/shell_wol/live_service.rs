@@ -729,12 +729,12 @@ pub(crate) fn relay_pass_lapsed(wol: Option<&WolVisit>, now_ms: u32) -> bool {
 /// relay departure; this observation owns no retry or membership state.
 pub(crate) fn online_cleanup_pending(state: &AppState) -> bool {
     state.frontend.online_cleanup.pending()
-        || crate::app::lan_service::online_retirement_pending(state)
+        || crate::app::lan_service::online_retirement_pending(&state.match_state)
 }
 
 pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
-    crate::app::lan_service::poll_online_retirement(state);
-    let relay_pending = crate::app::lan_service::online_retirement_pending(state);
+    crate::app::lan_service::poll_online_retirement(&mut state.match_state);
+    let relay_pending = crate::app::lan_service::online_retirement_pending(&state.match_state);
     let cleanup_deadline = state.frontend.online_cleanup.poll(Instant::now());
     for (lobby, name) in std::mem::take(&mut state.frontend.online_cleanup.deleted_accounts) {
         forget_deleted_account(
@@ -967,7 +967,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
             log::warn!("Could not watch the match: {error:#}");
             fail_watch(state, &mut service, "VERA:WatchCouldNotStart");
         }
-        if crate::app::lan_service::has_online_relay_route(state) {
+        if crate::app::lan_service::has_online_relay_route(&state.match_state) {
             service.poll_renewal(crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32);
         }
         if service.spawned {
@@ -1096,7 +1096,7 @@ fn cancel_pending(state: &mut AppState, service: &mut LiveService) {
     if service.pending.take().is_some() {
         // A Ready relay may already have moved into the shared transport owner.
         // Retire either ownership location when this start is canceled.
-        crate::app::lan_service::close(state);
+        crate::app::lan_service::close(&state.frontend, &mut state.match_state);
     }
 }
 
@@ -1180,7 +1180,7 @@ pub(super) fn leave_visit(state: &mut AppState) {
     if let Some(visit) = frontend.wol.as_mut() {
         frontend.online_cleanup.leave(visit, Instant::now());
     }
-    crate::app::lan_service::close(state);
+    crate::app::lan_service::close(&state.frontend, &mut state.match_state);
     state.frontend.wol_account.password.clear();
 }
 

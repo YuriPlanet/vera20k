@@ -146,7 +146,10 @@ pub(crate) fn handle_hotkey_pressed(
     resolution: HotkeyResolution,
     physical_code: winit::keyboard::KeyCode,
 ) {
-    if crate::app::match_runtime::network_failure::pending(state) {
+    if crate::app::match_runtime::network_failure::pending(
+        &state.frontend.screen,
+        &state.match_state,
+    ) {
         return;
     }
     handle_hotkey_pressed_inner(state, resolution, physical_code);
@@ -726,7 +729,9 @@ pub(super) fn open_pause_menu(state: &mut AppState) {
     // follows a published result). Both open the same dialog directly, so the
     // button and the Options hotkey keep working there.
     if state.match_state.multiplayer_paused()
-        || crate::app::commander_feedback::verdict_is_waiting_for_clip(state)
+        || crate::app::commander_feedback::verdict_is_waiting_for_clip(
+            &state.match_state.match_presentation,
+        )
     {
         // No future EventClass tail exists until the relay resumes. Open the
         // same local dialog directly so its shared Resume remains reachable.

@@ -506,7 +506,7 @@ fn tactical_tip_at_cursor(state: &AppState, view: crate::sim::runtime::SimView<'
         return String::new();
     };
     let world = crate::app::match_runtime::sim_tick::screen_point_to_world(
-        state,
+        &state.match_state.input,
         input.cursor_x,
         input.cursor_y,
     );

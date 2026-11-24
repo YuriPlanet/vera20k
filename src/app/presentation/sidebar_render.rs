@@ -1153,7 +1153,7 @@ fn refresh_radar_animation_source(state: &mut AppState) {
         let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         crate::app::radar_movie::retire(state, wall_ms);
         // No housing is left to settle and end the radar's static.
-        crate::app::radar_movie::end_radar_sound_loop(state);
+        crate::app::radar_movie::end_radar_sound_loop(&mut state.audio);
         let presentation = &mut state.match_state.match_presentation;
         presentation.radar_anim = None;
         presentation.radar_animation_source = None;
@@ -1214,7 +1214,7 @@ fn refresh_radar_animation_source(state: &mut AppState) {
     if presentation.radar_anim.is_none() {
         let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         crate::app::radar_movie::retire(state, wall_ms);
-        crate::app::radar_movie::end_radar_sound_loop(state);
+        crate::app::radar_movie::end_radar_sound_loop(&mut state.audio);
     }
 }
 

@@ -446,7 +446,7 @@ fn begin_formation_line(state: &mut AppState) -> bool {
         return false;
     }
     let world = crate::app::match_runtime::sim_tick::screen_point_to_world(
-        state,
+        &state.match_state.input,
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
@@ -492,7 +492,7 @@ fn left_up_branches(state: &mut AppState, click: LeftUp) {
     if let Some(type_id) = state.armed_building_type().map(str::to_owned) {
         let cell = match click {
             LeftUp::Tactical => crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-                state,
+                &state.match_state,
                 state.match_state.input.cursor_x,
                 state.match_state.input.cursor_y,
             ),
@@ -598,7 +598,7 @@ fn tactical_left_up(state: &mut AppState) {
     // the beacon (0x004AC033).
     if selection_empty && crate::app::input::beacon::mode_active(state) {
         let cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-            state,
+            &state.match_state,
             state.match_state.input.cursor_x,
             state.match_state.input.cursor_y,
         );
@@ -672,7 +672,11 @@ fn tactical_left_up(state: &mut AppState) {
     if let SelectAction::Click(sx, sy) = action
         && selection_empty
     {
-        let cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(state, sx, sy);
+        let cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
+            &state.match_state,
+            sx,
+            sy,
+        );
         if crate::app::input::beacon::beacon_at_cell(state, cell) {
             crate::app::input::beacon::select_at_cell(state, cell);
             return;
@@ -1158,7 +1162,7 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
     // battlefield like the band box's corner.
     if state.match_state.input.formation_line.drawing() {
         let world = crate::app::match_runtime::sim_tick::screen_point_to_world(
-            state,
+            &state.match_state.input,
             clamped_endpoint.0,
             clamped_endpoint.1,
         );

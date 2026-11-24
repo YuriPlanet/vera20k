@@ -554,7 +554,7 @@ pub(crate) fn render_game(
         .as_mut()
         .is_some_and(|radar| radar.tick(steps, times.radar_ms));
     if housing_settled {
-        crate::app::radar_movie::end_radar_sound_loop(state);
+        crate::app::radar_movie::end_radar_sound_loop(&mut state.audio);
     }
     // Ares DisplayCredits ages its labels in the same composite, unless the
     // chrono screen's 4F4480 interception suppresses it. Empty unless the
@@ -663,7 +663,7 @@ pub(crate) fn render_game(
     let armed_building = state.armed_building_type().map(str::to_owned);
     let cursor_cell = (armed_super_weapon.is_some() || armed_building.is_some()).then(|| {
         crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-            state,
+            &state.match_state,
             state.match_state.input.cursor_x,
             state.match_state.input.cursor_y,
         )

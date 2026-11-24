@@ -814,7 +814,7 @@ pub(super) fn try_commit_start(state: &mut AppState, agreed_seed: u32) -> anyhow
     } else if dialog.host {
         NetworkRoomReturn::LanHost
     } else {
-        crate::app::lan_service::admitted_host_room(state)
+        crate::app::lan_service::admitted_host_room(&state.match_state)
             .map(|(host, game_id)| NetworkRoomReturn::LanGuest {
                 host,
                 game_id,

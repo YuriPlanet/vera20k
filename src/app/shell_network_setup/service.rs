@@ -911,7 +911,9 @@ fn tell_moved(state: &mut AppState, mode_changed: bool) {
         .network_setup_protocol
         .as_ref()
         .and_then(|protocol| protocol.wol_host.clone())
-        .or_else(|| crate::app::lan_service::admitted_host_room(state).map(|(name, _)| name))
+        .or_else(|| {
+            crate::app::lan_service::admitted_host_room(&state.match_state).map(|(name, _)| name)
+        })
         .or_else(|| {
             launch
                 .humans

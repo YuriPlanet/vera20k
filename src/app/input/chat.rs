@@ -228,7 +228,7 @@ pub(crate) fn key_edge(state: &mut AppState, edge: &InGameKeyEdge<'_>) -> bool {
             return false;
         };
         // 0x0055E4E2: PlayerPtr's selected beacon picks the branch.
-        if beacons::own_selected(state) {
+        if beacons::own_selected(&state.match_state) {
             return open_beacon_edit(state);
         }
         return open_edit(state, target);
@@ -253,7 +253,7 @@ pub(crate) fn commit_text(state: &mut AppState, text: &str) {
     }
     // VERA: the label shows the committed text now (see the module notes).
     if state.match_state.match_presentation.chat.target != ChatTarget::Skirmish
-        && beacons::own_selected(state)
+        && beacons::own_selected(&state.match_state)
     {
         follow_label(state, None);
     }
@@ -292,7 +292,12 @@ fn follow_label(state: &mut AppState, typed: Option<Vec<u16>>) {
         .unwrap_or_default();
     text.extend(composition(state).unwrap_or_default());
     text.push(u16::from(b'_'));
-    beacons::edit_beacon_message(state, Some(&text), BeaconTarget::Selected, false);
+    beacons::edit_beacon_message(
+        &mut state.match_state,
+        Some(&text),
+        BeaconTarget::Selected,
+        false,
+    );
 }
 
 /// A right press or release (key 2 or `0x802`) ends an open edit; the game
@@ -352,7 +357,12 @@ fn open_beacon_edit(state: &mut AppState) -> bool {
         list.hide_edit();
     }
     let cursor = [u16::from(b'_')];
-    beacons::edit_beacon_message(state, Some(&cursor), BeaconTarget::Selected, false);
+    beacons::edit_beacon_message(
+        &mut state.match_state,
+        Some(&cursor),
+        BeaconTarget::Selected,
+        false,
+    );
     true
 }
 
@@ -406,7 +416,7 @@ fn apply_input(state: &mut AppState, key: EditKey) {
     // 0x0055E642..0x0055E734: result 1 with an own beacon selected, results
     // 2 and 4 and an open composition update the first selected beacon;
     // Escape clears and sends its label instead.
-    let own = beacons::own_selected(state);
+    let own = beacons::own_selected(&state.match_state);
     if (own && result == EditInput::Typed)
         || matches!(
             result,
@@ -415,7 +425,12 @@ fn apply_input(state: &mut AppState, key: EditKey) {
         || composition(state).is_some()
     {
         if key == EditKey::Escape {
-            beacons::edit_beacon_message(state, None, BeaconTarget::Selected, true);
+            beacons::edit_beacon_message(
+                &mut state.match_state,
+                None,
+                BeaconTarget::Selected,
+                true,
+            );
         } else {
             follow_label(state, Some(typed.clone()));
         }
@@ -423,7 +438,12 @@ fn apply_input(state: &mut AppState, key: EditKey) {
     // 0x0055E77B..0x0055E7AE: results 3 and 4 with an own beacon selected
     // send the buffer as its label, and no line.
     if matches!(result, EditInput::Sent(_) | EditInput::Overflowed(_)) && own {
-        beacons::edit_beacon_message(state, Some(&typed), BeaconTarget::Selected, true);
+        beacons::edit_beacon_message(
+            &mut state.match_state,
+            Some(&typed),
+            BeaconTarget::Selected,
+            true,
+        );
         if matches!(result, EditInput::Sent(_)) {
             state.match_state.match_presentation.chat.target = ChatTarget::None;
         }
@@ -651,7 +671,7 @@ fn apply_skirmish_cheat(
     use crate::app::match_runtime::{sim_host::SimWrite, sim_tick};
     use crate::i18n::{tr, tr_fill};
     use crate::sim::skirmish_cheats::CheatEffect;
-    sim_tick::prepare_replay_recording(state);
+    sim_tick::prepare_replay_recording(&mut state.match_state, &state.process_assets);
     let Some(rt) = state.match_state.sim_runtime.write_sim(SimWrite::Command) else {
         return Err("VERA:CheatUnavailable");
     };

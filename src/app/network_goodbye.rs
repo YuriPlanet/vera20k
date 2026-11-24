@@ -89,7 +89,7 @@ fn say_goodbye(state: &mut AppState) {
     }
     crate::app::shell_wol::retire_visit_for_exit(state);
     if state.match_state.lan_service.is_some() {
-        crate::app::lan_service::close(state);
+        crate::app::lan_service::close(&state.frontend, &mut state.match_state);
     }
     if let Some(live) = state.match_state.live_network.take() {
         live.into_transport()

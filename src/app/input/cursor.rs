@@ -211,7 +211,7 @@ fn find_cursor_feedback_kind(
             && let Some(sw_type) = runtime.simulation.interner().get(section)
         {
             let cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-                state,
+                &state.match_state,
                 state.match_state.input.cursor_x,
                 state.match_state.input.cursor_y,
             );
@@ -268,7 +268,7 @@ fn find_cursor_feedback_kind(
             .sidebar_gadget_state
             .repair_mode_on;
         let (wx, wy) = crate::app::match_runtime::sim_tick::screen_point_to_world(
-            state,
+            &state.match_state.input,
             state.match_state.input.cursor_x,
             state.match_state.input.cursor_y,
         );
@@ -342,7 +342,7 @@ fn find_cursor_feedback_kind(
             return Some(CursorFeedbackKind::PlaceBeacon);
         }
         let cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-            state,
+            &state.match_state,
             state.match_state.input.cursor_x,
             state.match_state.input.cursor_y,
         );
@@ -351,7 +351,7 @@ fn find_cursor_feedback_kind(
         }
     }
     let cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-        state,
+        &state.match_state,
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );

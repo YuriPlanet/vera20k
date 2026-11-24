@@ -253,7 +253,7 @@ impl App {
             .multiplayer_shell_runtime
             .persist_lan_preferences();
         state.frontend.lan = None;
-        crate::app::lan_service::close(state);
+        crate::app::lan_service::close(&state.frontend, &mut state.match_state);
         #[cfg(target_os = "android")]
         crate::util::lan_network::release();
         state.match_state.session.leave_network();
@@ -275,7 +275,9 @@ impl App {
             return;
         }
         match rematch {
-            NetworkRoomReturn::LanHost if !crate::app::lan_service::unavailable(state) => {
+            NetworkRoomReturn::LanHost
+                if !crate::app::lan_service::unavailable(&state.platform, &state.match_state) =>
+            {
                 let observe = state
                     .frontend
                     .multiplayer_shell_runtime
@@ -301,7 +303,7 @@ impl App {
     }
 
     pub(crate) fn commit_lan_create(state: &mut AppState, observe: bool) {
-        crate::app::lan_service::force_presence(state);
+        crate::app::lan_service::force_presence(&mut state.match_state);
         state.frontend.lan = None;
         Self::open_host_setup(state, observe);
     }
@@ -602,12 +604,12 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
     if matches!(
         action,
         LanLobbyAction::Create { .. } | LanLobbyAction::Join { .. }
-    ) && crate::app::lan_service::unavailable(state)
+    ) && crate::app::lan_service::unavailable(&state.platform, &state.match_state)
     {
         // Without its sockets the room would be one nobody sees: try them
         // again, and say why when they are still taken.
         crate::app::lan_service::open(state);
-        if crate::app::lan_service::unavailable(state) {
+        if crate::app::lan_service::unavailable(&state.platform, &state.match_state) {
             if let Some(runtime) = state.frontend.lan.as_mut() {
                 runtime.lobby.set_enabled(true);
             }

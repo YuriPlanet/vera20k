@@ -123,7 +123,11 @@ pub(crate) fn instances(
     for (house, _, beacon) in presentation.beacons.iter() {
         // 0x004302FB..0x00430309: a record with no label draws no box.
         if beacon.label().is_empty()
-            || !crate::app::match_runtime::beacons::visible_to_player(state, house, beacon)
+            || !crate::app::match_runtime::beacons::visible_to_player(
+                &state.match_state.sim_runtime,
+                house,
+                beacon,
+            )
         {
             continue;
         }

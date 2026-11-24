@@ -248,7 +248,7 @@ pub(super) struct LatencyCapture {
 
 impl LatencyCapture {
     pub(super) fn observe_setup(&mut self, state: &AppState) {
-        if let Some(rtt) = crate::app::lan_service::online_peer_round_trips(state) {
+        if let Some(rtt) = crate::app::lan_service::online_peer_round_trips(&state.match_state) {
             self.peer_rtt = Some(rtt);
         }
     }

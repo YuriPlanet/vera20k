@@ -967,7 +967,7 @@ pub(crate) fn drop_click(state: &mut AppState) -> bool {
     // click stays armed.
     if state.match_state.input.ferry.waypoint_click() {
         let clicked = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-            state,
+            &state.match_state,
             state.match_state.input.cursor_x,
             state.match_state.input.cursor_y,
         );
@@ -988,7 +988,7 @@ pub(crate) fn drop_click(state: &mut AppState) -> bool {
         return false;
     }
     let clicked = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-        state,
+        &state.match_state,
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
@@ -1083,7 +1083,7 @@ fn find_armed_preview(state: &AppState) -> Option<(Vec<Cell>, Cell, bool)> {
     let sim = &runtime.simulation;
     let owner = preferred_local_owner_name(state).and_then(|name| sim.interner().get(&name))?;
     let clicked = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-        state,
+        &state.match_state,
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );

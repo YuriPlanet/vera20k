@@ -260,14 +260,22 @@ fn queue_context_order(
     }
     let (target_rx, target_ry) = match target {
         ContextOrderTarget::ScreenPoint(x, y) => {
-            crate::app::match_runtime::sim_tick::screen_point_to_world_cell(state, x, y)
+            crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
+                &state.match_state,
+                x,
+                y,
+            )
         }
         ContextOrderTarget::Radar(target) => target.cell,
     };
     let world_point = match target {
-        ContextOrderTarget::ScreenPoint(x, y) => Some(
-            crate::app::match_runtime::sim_tick::screen_point_to_world(state, x, y),
-        ),
+        ContextOrderTarget::ScreenPoint(x, y) => {
+            Some(crate::app::match_runtime::sim_tick::screen_point_to_world(
+                &state.match_state.input,
+                x,
+                y,
+            ))
+        }
         ContextOrderTarget::Radar(_) => None,
     };
     // Retail modifier map: Ctrl = force fire, Alt = force move,
