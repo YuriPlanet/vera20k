@@ -25,7 +25,9 @@ pub use hit_test::{
     status_help_key_for_choose_map_hover, status_help_key_for_hover,
     status_help_key_for_random_map_setup,
 };
-pub use launch::{launch_session, pack_launch_session_without_start_validation};
+pub use launch::{
+    launch_session, pack_launch_session_without_start_validation, start_skips_side_gates,
+};
 pub use opponent_scroll::{opponent_scroll_geometry, opponent_scroll_rows};
 
 pub use choose_map::{

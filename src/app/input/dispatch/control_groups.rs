@@ -301,15 +301,17 @@ pub(super) fn handle_control_group_command(
     if action != GroupPressAction::Assign {
         // Recall731205, CenterCamera7313DE and AddTeam7314FD each START by
         // turning off every armed map mode on DisplayClass 0x87F7E8:
-        // SetTogglePowerMode(0) 0x4AC820 (unreachable in YR), SetWaypointMode
+        // SetTogglePowerMode(0) 0x4AC820 (0x7311D3, 0x7313AC, 0x7314CB; only
+        // Ares' TogglePower command arms it), SetWaypointMode
         // (0,0) 0x4AC700 — its +0x11B3 byte is never armed in YR, the only
         // write of 1 (0x004AC7A7) only ever runs with 0, see cursor.rs —
         // SetRepairMode(0) 0x4AC8C0 and SetSellMode(0) 0x4AC660, then
-        // SetPlaceBeaconMode(0) 0x4AC960. The repair/sell and beacon owners
-        // refuse these under a pending placement themselves. The PlanMgr
+        // SetPlaceBeaconMode(0) 0x4AC960. The mode owners refuse these under
+        // a pending placement themselves. The PlanMgr
         // planning mode is a separate owner these Display setters do not
         // cancel. TeamAssign 731060 is not evidenced to clear any mode, so
         // Assign keeps every armed mode as it is.
+        crate::app::input::power_mode::disable(state);
         state
             .match_state
             .match_presentation

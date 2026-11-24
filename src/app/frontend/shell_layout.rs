@@ -200,7 +200,21 @@ pub(crate) fn campaign_layout(state: &AppState) -> crate::ui::campaign_shell::Ca
 
 /// Single Player's Load Saved Game `0xB7`.
 pub(crate) fn load_saved_game_layout(state: &AppState) -> saved_games::MainMenuSavedGameLayout {
-    pick(state, saved_games::main_menu_saved_game_layout)
+    let mode = state
+        .frontend
+        .load_saved_game
+        .as_ref()
+        .map_or(SavedSeedMode::Load, |browser| browser.mode);
+    load_saved_game_layout_for_mode(state, mode)
+}
+
+pub(crate) fn load_saved_game_layout_for_mode(
+    state: &AppState,
+    mode: SavedSeedMode,
+) -> saved_games::MainMenuSavedGameLayout {
+    pick(state, |w, h| {
+        saved_games::main_menu_saved_game_layout(mode, w, h)
+    })
 }
 
 /// Movie list `0x129`, the page behind Movies & Credits' Play Movies.

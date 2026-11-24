@@ -84,6 +84,9 @@ pub(crate) enum AiFireArm {
     GeneticMutator,
     /// `0x00509A3E`: [`force_shield_target`].
     ForceShield,
+    /// VERA's Tiberian Sun Ion Cannon: Firestorm 2.0's House AI Super loop
+    /// (`0x4C9E20`) case 3, [`ion_cannon_target`].
+    IonCannon,
     /// `0x00509AD2`: Iron Curtain and the Chronosphere pair are left to team
     /// scripts.
     None,
@@ -110,6 +113,7 @@ impl AiFireArm {
             SuperWeaponKind::PsychicDominator => Self::PsychicDominator,
             SuperWeaponKind::GeneticConverter => Self::GeneticMutator,
             SuperWeaponKind::ForceShield => Self::ForceShield,
+            SuperWeaponKind::IonCannon => Self::IonCannon,
             SuperWeaponKind::GenericWarhead => Self::None,
             SuperWeaponKind::IronCurtain
             | SuperWeaponKind::ChronoSphere
@@ -250,6 +254,7 @@ pub(crate) fn try_fire(
             AiFireArm::ForceShield => sim.houses.get(&owner).and_then(|house| {
                 force_shield_target(house, rules, sim.session.binary_frame() as i32)
             }),
+            AiFireArm::IonCannon => ion_cannon_target(sim, rules, owner),
             AiFireArm::LightningStorm | AiFireArm::None => None,
         };
         if let Some(cell) = cell {
@@ -540,7 +545,7 @@ fn rally_target(
     let (x, y) = if kind == 1 {
         #[cfg(any(test, feature = "test-support"))]
         observe(AiFireEvent::BestRallyTarget);
-        find_best_rally_target(sim, rules, owner, enemy)
+        find_best_rally_target(sim, rules, owner, enemy, RallyLadder::BestRally)
     } else {
         find_team_target(sim, rules, owner, kind, registry)
     };
@@ -604,14 +609,16 @@ fn find_team_target(
     )
 }
 
-/// `HouseClass::AI_FindBestRallyTarget @ 0x0050CBF0`: every Techno of
+/// `HouseClass::AI_FindBestRallyTarget @ 0x0050CBF0`, or Firestorm 2.0's Ion
+/// Cannon walk (`0x4C9F30`) for [`RallyLadder::IonCannon`]: every Techno of
 /// TechnoClass::Array (stable-id order) read as a [`RallyEntry`], then
-/// [`pick_best_rally_target`].
+/// [`pick_best_rally_target`]. Ares hooks only gamemd's walk.
 fn find_best_rally_target(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner: InternedId,
     enemy: InternedId,
+    ladder: RallyLadder,
 ) -> (i16, i16) {
     let Some(house) = sim.houses.get(&owner) else {
         return NO_CELL;
@@ -620,9 +627,35 @@ fn find_best_rally_target(
         .substrate
         .entities
         .values()
-        .map(|entity| rally_entry(sim, rules, house, Some(enemy), entity))
+        .map(|entity| rally_entry(sim, rules, house, Some(enemy), entity, ladder))
         .collect();
-    pick_best_rally_target(&entries, &mut sim.scenario_rng, rules.ares_form())
+    let ares = ladder == RallyLadder::BestRally && rules.ares_form();
+    pick_best_rally_target(&entries, &mut sim.scenario_rng, ares)
+}
+
+/// VERA's Tiberian Sun Ion Cannon arm: Firestorm 2.0's House AI picker
+/// (`0x4C9F30`, from the Super loop `0x4C9E20` case 3). With an enemy
+/// (`+0x3F8`), [`find_best_rally_target`] values each of the enemy's Technos
+/// by [`ion_cannon_value`], with no playfield test and no scripted
+/// preference, and chooses as gamemd does: a cloaked Techno's Scenario draw
+/// `Random(0, best + 10)` (`0x4CA1DD..0x4CA212`), ties joined, then
+/// `Random(0, picks - 1)` (`0x4CA310`). The chosen Techno's Center_Coord
+/// (vt+0x4C, gamemd's GetCoords) over 256, toward zero, is the cell; the
+/// empty cell (`0x7E4AD0`) fires nothing (`0x4CA34F..0x4CA371`).
+///
+/// Firestorm calls this loop from its timed strategy function (`0x4C05B0`,
+/// at `0x4C0796`), gamemd AI_Building_Strategy's ancestor, behind the same
+/// gate as gamemd's caller. RESIDUAL: Firestorm then calls Discharge
+/// directly; VERA fires through Fire_SW, whose computer-house alert answers
+/// a type with `AIDefendAgainst=`.
+fn ion_cannon_target(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+) -> Option<(u16, u16)> {
+    let enemy = sim.houses.get(&owner)?.enemy_house()?;
+    let (x, y) = find_best_rally_target(sim, rules, owner, enemy, RallyLadder::IonCannon);
+    ((x, y) != NO_CELL).then_some((x as u16, y as u16))
 }
 
 /// Ares Hooks.Targeting.cpp: OffensiveTargetSelector/ PickIonCannonTarget.
@@ -645,7 +678,7 @@ fn offensive_target(
         if enemy.is_some_and(|enemy| entity.owner() != enemy) {
             continue;
         }
-        let entry = rally_entry(sim, rules, house, enemy, entity);
+        let entry = rally_entry(sim, rules, house, enemy, entity, RallyLadder::BestRally);
         let cell = (entry.cell.0 as u16, entry.cell.1 as u16);
         if !entry.candidate
             || !entry.in_playfield
@@ -745,28 +778,41 @@ struct RallyEntry {
     /// 0), one a running factory is building
     /// (`FactoryRegistry::is_building`, `0x0050CC98..0x0050CCDC`).
     candidate: bool,
-    /// [`rally_value`] for an enemy object, else 0.
+    /// The ladder's value for an enemy object ([`rally_value`], or
+    /// [`ion_cannon_value`] for the Ion Cannon walk), else 0.
     value: i32,
     /// GetCoords (vt+0x48) over 256, toward zero, as 16 bits
     /// (`0x0050CF44..0x0050CF6E`).
     cell: (i16, i16),
     /// `MapClass::IsCellInPlayfield(cell, 1) @ 0x00578460`; off it the value
-    /// is 0.
+    /// is 0. The Ion Cannon walk has no playfield test and is always true.
     in_playfield: bool,
     /// CloakState (`+0x220`) 2, or a Building faded out (`+0x6ED` 15,
     /// `0x0050CF99..0x0050CFA8`): the value becomes a Scenario draw.
     cloaked: bool,
 }
 
-/// What the walk reads of one object (`0x0050CC4E..0x0050CFA8`). Each one's
-/// cell goes through the playfield test, whose cell lookup stamps the shared
-/// dummy on a miss, as native.
+/// Whose walk reads the objects: gamemd's or Firestorm's Ion Cannon picker.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RallyLadder {
+    /// `AI_FindBestRallyTarget` ([`rally_value`], the playfield test).
+    BestRally,
+    /// Firestorm 2.0 `0x4C9F30` ([`ion_cannon_value`]); it has no playfield
+    /// test.
+    IonCannon,
+}
+
+/// What the walk reads of one object (`0x0050CC4E..0x0050CFA8`; Firestorm
+/// 2.0 `0x4C9F94..0x4CA21B` reads the same candidate test and cloak). For
+/// gamemd's walk each one's cell goes through the playfield test, whose cell
+/// lookup stamps the shared dummy on a miss, as native.
 fn rally_entry(
     sim: &Simulation,
     rules: &RuleSet,
     house: &HouseState,
     enemy: Option<InternedId>,
     entity: &crate::sim::game_entity::GameEntity,
+    ladder: RallyLadder,
 ) -> RallyEntry {
     let id = entity.stable_id();
     let (candidate, value) = if enemy.is_none_or(|enemy| entity.owner() == enemy) {
@@ -778,7 +824,13 @@ fn rally_entry(
             || (house.difficulty() == HouseDifficulty::Hard
                 && sim.production.factories().is_building(id));
         let ty = sim.interner.object_type(entity.type_ref(), rules);
-        (candidate, rally_value(entity.category(), ty, rules, house))
+        let value = match ladder {
+            RallyLadder::BestRally => rally_value(entity.category(), ty, rules, house),
+            RallyLadder::IonCannon => {
+                ion_cannon_value(entity.category(), ty, entity.health.current(), rules, house)
+            }
+        };
+        (candidate, value)
     } else {
         (false, 0)
     };
@@ -792,12 +844,13 @@ fn rally_entry(
         candidate,
         value,
         cell,
-        in_playfield: crate::sim::cell_rect::cell_is_in_playfield_height_aware_in_query(
-            (i32::from(cell.0), i32::from(cell.1)),
-            sim.playfield_bounds(),
-            sim.resolved_terrain.as_ref(),
-            None,
-        ),
+        in_playfield: ladder == RallyLadder::IonCannon
+            || crate::sim::cell_rect::cell_is_in_playfield_height_aware_in_query(
+                (i32::from(cell.0), i32::from(cell.1)),
+                sim.playfield_bounds(),
+                sim.resolved_terrain.as_ref(),
+                None,
+            ),
         cloaked: entity
             .cloak
             .as_ref()
@@ -867,12 +920,83 @@ fn rally_value(
     }
 }
 
+/// The value Firestorm 2.0's Ion Cannon picker gives an enemy object
+/// (`0x4CA025..0x4CA1D8`), by its WhatAmI (vt+0x2C): an object whose
+/// `strength` (ObjectClass `+0x28`) is above `[CombatDamage]
+/// IonCannonDamage=` (`Rules+0x280`, a signed compare) is worth 1, or 3 for a
+/// Building; otherwise its kind's `AIIonCannon*Value=` entry at the firing
+/// house's difficulty, tested in this order (an aircraft is worth 1):
+/// - Unit: Harvester=; DeploysInto= the first `[AI] BuildConst=` entry
+///   (MCV, `**(Rules+0x5B4)`); Passengers= above 0 (APC); else 2.
+/// - Building: Factory= BuildingType (ConYard); UnitType (WarFactory, with no
+///   Naval= test); Power= above its drain; IsBaseDefense=; IsPlug=;
+///   IsTemple=; HoverPad= (Helipad); else 4. No TechCenter step.
+/// - Infantry: Engineer=; VehicleThief= (Thief); else 2.
+fn ion_cannon_value(
+    category: EntityCategory,
+    ty: Option<&ObjectType>,
+    strength: i32,
+    rules: &RuleSet,
+    house: &HouseState,
+) -> i32 {
+    let values = &rules.general.ai_ion_cannon_values;
+    let value = |list: &[i32]| house.difficulty_value(list);
+    let Some(ty) = ty.filter(|_| category != EntityCategory::Aircraft) else {
+        return 1;
+    };
+    if strength > rules.general.ion_cannon_damage {
+        return if category == EntityCategory::Structure {
+            3
+        } else {
+            1
+        };
+    }
+    let first_build_const = rules
+        .build_const_types()
+        .first()
+        .and_then(|id| rules.object(id));
+    match category {
+        EntityCategory::Unit if ty.harvester => value(&values.harvester),
+        EntityCategory::Unit
+            if ty
+                .deploys_into
+                .as_deref()
+                .and_then(|name| rules.object(name))
+                .zip(first_build_const)
+                .is_some_and(|(building, yard)| building.id == yard.id) =>
+        {
+            value(&values.mcv)
+        }
+        EntityCategory::Unit if ty.passengers > 0 => value(&values.apc),
+        EntityCategory::Unit => 2,
+        EntityCategory::Structure => match ty.factory_type() {
+            Some(FactoryType::BuildingType) => value(&values.con_yard),
+            Some(FactoryType::UnitType) => value(&values.war_factory),
+            _ if ty.power.max(0)
+                > crate::sim::power_system::native_building_power_drain(ty.power) =>
+            {
+                value(&values.power)
+            }
+            _ if ty.is_base_defense => value(&values.base_defense),
+            _ if ty.is_plug => value(&values.plug),
+            _ if ty.is_temple => value(&values.temple),
+            _ if ty.hover_pad => value(&values.helipad),
+            _ => 4,
+        },
+        EntityCategory::Infantry if ty.engineer => value(&values.engineer),
+        EntityCategory::Infantry if ty.vehicle_thief => value(&values.thief),
+        EntityCategory::Infantry => 2,
+        EntityCategory::Aircraft => 1,
+    }
+}
+
 /// AI_FindBestRallyTarget's choice (`0x0050CF38..0x0050D16B`): in array
 /// order, an entry off the playfield is worth 0 and a cloaked one (of any
 /// house) a Scenario draw `RandomRanged(0, best + 10)`; candidates worth more
 /// than the best so far replace the picks, as much join them. The final
 /// Scenario draw `RandomRanged(0, picks - 1)` chooses; none is the empty cell.
-/// `ares` is [`RuleSet::ares`].
+/// `ares` is [`RuleSet::ares`] for the BestRally ladder, false for the Ion
+/// Cannon walk.
 fn pick_best_rally_target(entries: &[RallyEntry], rng: &mut SimRng, ares: bool) -> (i16, i16) {
     let mut best = 0i32;
     let mut picks: Vec<(i16, i16)> = Vec::new();

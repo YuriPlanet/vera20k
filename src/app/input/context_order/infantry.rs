@@ -379,31 +379,40 @@ pub(super) fn object_click_release(
     left_release(sim, rules, action.into(), Some(target_id))
 }
 
+/// What a selected Crazy Ivan's click on an own or allied object does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum FriendlyIvanAction {
+    /// IvanBomb, sent as Attack.
+    Bomb,
+    /// Ares' Grind over an allied Grinder ([`ares_ivan_grinds`]), sent as
+    /// mission Eaten.
+    Grind,
+}
+
 /// The selected Crazy Ivans whose click on the own or allied `target` plants a
-/// bomb. The canonical Techno grant and ILLEGAL test must already answer
-/// Attack ([`attack_action`], which the cursor asks too). Infantry51EB24..7E
-/// consumes that answer without repeating its type/weapon grants; the Ivan makes it
-/// IvanBomb ([`ivan_bomb_refused`], 0x0051EB24), and
-/// `FootClass::ClickedAction_Object` (0x004D74E0) sends that as Attack. A
-/// bombed friend stays a selection click. A lone selected Ivan over himself
-/// has the self action (4) instead; in a larger selection nothing stops him
-/// bombing himself, as natively. The count is the whole selection's
-/// (`[0xA8ECC8]`), berserk objects included.
-pub(super) fn friendly_bomb_ivans(
+/// bomb or, with Ares, walks into it as a Grinder ([`ares_ivan_grinds`],
+/// which answers ahead of the bomb test). The canonical Techno grant and
+/// ILLEGAL test must already answer Attack ([`attack_action`], which the
+/// cursor asks too). Infantry51EB24..7E consumes that answer without
+/// repeating its type/weapon grants; the Ivan makes it IvanBomb
+/// ([`ivan_bomb_refused`], 0x0051EB24), and `FootClass::ClickedAction_Object`
+/// (0x004D74E0) sends that as Attack. A bombed friend stays a selection
+/// click. A lone selected Ivan over himself has the self action (4) instead;
+/// in a larger selection nothing stops him bombing himself, as natively. The
+/// count is the whole selection's (`[0xA8ECC8]`), berserk objects included.
+pub(super) fn friendly_ivans(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     selected: &[u64],
     selection_count: usize,
     target: u64,
+    force_fire_key: bool,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-) -> Vec<u64> {
+) -> Vec<(u64, FriendlyIvanAction)> {
     let bombable = sim.entities().get(target).is_some_and(|entity| {
         let obj = sim.interner().object_type(entity.type_ref(), rules);
         !ivan_bomb_refused(entity, obj)
     });
-    if !bombable {
-        return Vec::new();
-    }
     let control = sim.control_projection();
     selected
         .iter()
@@ -425,7 +434,56 @@ pub(super) fn friendly_bomb_ivans(
                     overlay_registry,
                 ) == AttackAction::Attack
         })
+        .filter_map(|id| {
+            if ares_ivan_grinds(sim, rules, id, target, force_fire_key) {
+                Some((id, FriendlyIvanAction::Grind))
+            } else {
+                bombable.then_some((id, FriendlyIvanAction::Bomb))
+            }
+        })
         .collect()
+}
+
+/// Ares 3.0 InfantryClass_GetActionOnObject_IvanGrinder (Ares.dll
+/// `100254B0`, hook `0x0051EB48`, `Ext/Infantry/Hooks.cpp`), at the head of
+/// the Ivan arm, ahead of its bomb test: a Crazy Ivan (`+0xEAE`) over a
+/// `Grinding=` building (Type `+0x16AD`) of a House allied with his own
+/// (the same House or his ally bits, `+0x5788`) answers Grind (0xB) instead
+/// of IvanBomb or NoIvanBomb, unless the force-fire key is down
+/// (`InputManagerClass::IsForceFireKeyPressed`: the keys at `0x00A8EC00`
+/// and `0x00A8EC04`, which Shift does not cancel here as it does in the
+/// stock rows). Ares' stub (`10025410`) returns the answer from
+/// What_Action at once, and Foot ClickedAction (`0x004D74E0`) sends it as
+/// mission Eaten with the Grinder as Destination. The player's own Grinder
+/// is allied too.
+pub(in crate::app::input) fn ares_ivan_grinds(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    ivan_id: u64,
+    target_id: u64,
+    force_fire_key: bool,
+) -> bool {
+    if !rules.ares() || force_fire_key {
+        return false;
+    }
+    let (Some(ivan), Some(target)) = (sim.entities().get(ivan_id), sim.entities().get(target_id))
+    else {
+        return false;
+    };
+    sim.interner()
+        .object_type(ivan.type_ref(), rules)
+        .is_some_and(|object| object.ivan)
+        && target.category() == EntityCategory::Structure
+        && sim
+            .interner()
+            .object_type(target.type_ref(), rules)
+            .is_some_and(|object| object.grinding)
+        && crate::sim::combat::combat_weapon::is_ally_by_object(
+            Some(sim.house_alliances()),
+            sim.interner(),
+            ivan.owner(),
+            target.owner(),
+        )
 }
 
 /// `InfantryClass::What_Action_OnObject`'s Ivan arm

@@ -228,9 +228,15 @@ pub(crate) fn open(state: &mut AppState, parent: KeyboardParent) {
     // their rules switches are on, so the page does not list them otherwise.
     #[cfg(feature = "phobos")]
     let sw_sidebar_globals = state.rules().map(|rules| rules.sw_sidebar);
+    // Ares registers its commands at startup (hook 0x533058); VERA lists them
+    // for a game Ares plays.
+    let ares = state
+        .rules()
+        .is_some_and(crate::rules::ruleset::RuleSet::ares);
     let commands = registered_commands()
         .iter()
         .enumerate()
+        .filter(|(_, metadata)| ares || !hotkeys::catalog::is_ares_command(metadata.command))
         .filter(|(_, metadata)| {
             #[cfg(feature = "phobos")]
             {

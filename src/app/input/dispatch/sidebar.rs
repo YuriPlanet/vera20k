@@ -386,12 +386,13 @@ fn sidebar_cameo_press(
                 // Select6AB2CC reads this linked Factory's actual product;
                 // an older cameo can still refer to a rearmed Factory.
                 let (held_type, held) = linked_factory?.1?;
+                let builder = ready_cameo_factory(sim, rules, held)?;
                 Some((
                     owner_id,
                     held,
                     sim.interner().resolve(held_type).to_string(),
                     sim.entities().get(held)?.category() == EntityCategory::Structure,
-                    crate::sim::production::object_find_factory(sim, rules, held, false, false),
+                    builder,
                 ))
             });
             let Some((owner_id, held, held_type, is_building, builder)) = ready_target else {
@@ -442,6 +443,30 @@ fn sidebar_cameo_press(
                 gadgets.disable_cursor_modes();
             }
         }
+    }
+}
+
+/// The factory a ready cameo's click places `held` from: the product's
+/// `ObjectClass::FindFactory(0, 0)` (`0x005F5C20`, called at `0x006AB31A`),
+/// or with Ares `HouseExt::FindFactory(owner, type, 0, 1, 0, 1)`
+/// (SidebarClass_ProcessCameoClick_Power, Ares.dll `10025170`, hook
+/// `0x006AB312`). None where Ares ends the click because only factories
+/// without power fit (`0x006AB95A`): no abandon and no EVA follow.
+pub(in crate::app::input) fn ready_cameo_factory(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    held: u64,
+) -> Option<Option<u64>> {
+    use crate::sim::production::AresObjectFactory;
+    if !rules.ares_form() {
+        return Some(crate::sim::production::object_find_factory(
+            sim, rules, held, false, false,
+        ));
+    }
+    match crate::sim::production::ares_object_factory(sim, rules, held) {
+        AresObjectFactory::Unpowered => None,
+        AresObjectFactory::Missing => Some(None),
+        AresObjectFactory::Found(id) => Some(Some(id)),
     }
 }
 

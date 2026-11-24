@@ -152,6 +152,11 @@ impl ShellSlideKind {
                         .len() as u32
                 }
                 ShellSlideKind::Skirmish => spec.top_buttons + 2,
+                ShellSlideKind::LoadSavedGame => {
+                    crate::ui::shell::saved_games::LOAD_SAVED_GAME_PAGE
+                        .stacked
+                        .len() as u32
+                }
                 _ => spec.top_buttons,
             },
             |page| page.stacked.len() as u32,

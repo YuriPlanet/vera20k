@@ -112,7 +112,7 @@ impl App {
 
     fn apply_skirmish_setups_outcome(state: &mut AppState, outcome: SetupOutcome) {
         match outcome {
-            SavedSeedOutcome::Convert(_) => {}
+            SavedSeedOutcome::BeginConvert(_) => {}
             SetupOutcome::Close => Self::close_skirmish_setups(state),
             SetupOutcome::Save { description, .. } => {
                 let name = String::from_utf16_lossy(description.units());

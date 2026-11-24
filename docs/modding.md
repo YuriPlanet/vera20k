@@ -142,7 +142,7 @@ check a mod's terms before you use it here. VERA20k doesn't support such mods.
 | --- | --- |
 | A file named the same as a game file, such as `rulesmd.ini` or a `.shp` | Replaces the game's copy. It must be directly in the mod's folder, not in a subfolder. |
 | An archive named `expandmd50.mix` | Replaces the game's copies of the files inside it, except the ones in `langmd.mix` and `language.mix`, which the original game reads first. An Ares game reads the expansion archives before those two as well. The number can be 00 to 99, and higher numbers win. `[Archives]` can select another expansion prefix. An archive with the same name as one in the game folder takes that archive's place. |
-| `ares.mix` | With the Ares setting on Auto, a selected mod mounting this file becomes an [Ares](ares.md) game. It mounts after expansion archives and before the game's own. Its `ares.csf` and `ares_<language>.csf` add text. A mod can also declare an Ares requirement without shipping this archive. |
+| `ares.mix` | With the Ares setting on Auto, a selected mod mounting this file becomes an [Ares](ares.md) game. It mounts after expansion archives and before the game's own. Its `ares.csf` and `ares_<language>.csf` add text, and so do `stringtable00.csf` to `stringtable99.csf` in the mod, later files replacing a label's earlier text. A text written `NOSTR:text` where the game expects a label, such as `UIName=NOSTR:Heavy Tank`, shows as written. A mod can also declare an Ares requirement without shipping this archive. |
 | An archive whose name starts with `ecache` or `elocal`, such as `ecachemd01.mix` | Adds the files inside it, as the original game does. All `ecache` archives load before all `elocal` ones, each group by name. They load after the `expandmd` archives and the game's main, cache and local archives, which keep a file name they share, and before the game's art, cameo and theater archives, whose copies they replace. |
 | Maps | Adds them to the map list while the mod is in use. |
 | Only INI files the game doesn't read, such as an AI another author made | Adds them to the map of every Skirmish and online match. See [Add to every map](#add-to-every-map). |
@@ -307,7 +307,9 @@ a folder that is already there, and your original game isn't changed.
 Pick a mod in the Mods menu and press **Check Files**. The game reads every file in the
 mod's folder and tells you how many there are and their **code**, such as `4F2A-91C3`.
 For a mod distributed in parts, this checks the assembled files.
-Two copies with the same code hold the same compared data files. Also keep their
+Two copies with the same code hold the same compared data files: the code leaves out what
+[playing with others](#playing-with-others) leaves out, such as a translated `.csf`, though
+the list and the count name every file. Also keep their
 `mod.ini` loading declarations in sync; the display metadata can differ.
 
 A mod can carry a list of its files, `mod-files.txt`. With one, Check Files also says
@@ -457,7 +459,11 @@ Production Queue** don't need to match: a room plays its host's, and a match a l
 starts plays without the queue. With a mod in use,
 everyone also needs the same theater INIs (such as `snowmd.ini`) and terrain tiles, and the same
 files in the mod's folder: every file there is compared by
-its name and what it holds, except `mod.ini`, `veraui.ini` and `mod-files.txt`. The folder's own name
+its name and what it holds, except `mod.ini`, `veraui.ini` and `mod-files.txt`, and except files that
+only show, play or tell you something: text (`.csf`), fonts (`.fnt`), movies (`.bik`, `.vqa`), pictures
+only a screen draws (`.pcx`, `.png`, `.jpg`, `.jpeg`, `.bmp`, `.gif`, `.ico`, `mouse.sha`) and documents
+(`.txt`, `.md`, `.pdf`, `.rtf`, `.htm`, `.html`, `.url`, `.log`). So a mod with its text translated plays
+with the original. Sounds, music, palettes and every `.mix` archive are still compared. The folder's own name
 doesn't matter, and a file name with letters outside plain English counts only by what
 the file holds. Terrain tiles decide how high the ground is and where units can go, so a
 mod's are compared with the original game's. Without a mod, terrain files you put in the game

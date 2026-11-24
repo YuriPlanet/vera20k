@@ -154,13 +154,16 @@ fn open_music_sink(
     health: &crate::audio::output_health::OutputHealth,
 ) -> Result<MixerDeviceSink, rodio::DeviceSinkError> {
     // With no usable default device, rodio's own opener tries every other.
-    DeviceSinkBuilder::from_default_device()
+    let mut sink = DeviceSinkBuilder::from_default_device()
         .and_then(|builder| {
             builder
                 .with_error_callback(health.callback("Music"))
                 .open_sink_or_fallback()
         })
-        .or_else(|_| DeviceSinkBuilder::open_default_sink())
+        .or_else(|_| DeviceSinkBuilder::open_default_sink())?;
+    // Rodio's drop message can panic when stderr is a closed pipe.
+    sink.log_on_drop(false);
+    Ok(sink)
 }
 
 impl MusicPlayer {

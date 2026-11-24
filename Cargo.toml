@@ -1,6 +1,6 @@
 [package]
 name = "vera20k"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2024"
 description = "Vera20k Engine — a from-scratch Rust engine for Red Alert 2: Yuri's Revenge"
 autobins = false
@@ -199,6 +199,8 @@ image = { version = "0.25", default-features = false, features = ["png", "ico"] 
 rodio = { version = "0.22", default-features = false, features = ["playback"] }
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
+# Identify a selected save even through a hard link or symlink.
+same-file = "1.0.6"
 # platform-verifier: the updater trusts the system's certificates first
 # (src/app/updater/fetch.rs); the lobby's agents keep ureq's webpki roots.
 ureq = { version = "3.5", default-features = false, features = ["rustls", "json", "platform-verifier"] }
@@ -243,13 +245,14 @@ winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "
 
 # --- macOS application icon and game folder chooser ---
 # macOS has no per-window icon; the Dock shows NSApplication's icon image, which
-# `app::window_icon` sets at startup. The app bundle's first launch asks for the
-# game folder with NSAlert and NSOpenPanel (`app::app_bundle`). objc2 0.6 and Foundation 0.3
+# `app::window_icon` sets at startup. The title bar is near black with VERA's logo
+# after the window buttons (`app::mac_title_bar`). The app bundle's first launch asks for
+# the game folder with NSAlert and NSOpenPanel (`app::app_bundle`). objc2 0.6 and Foundation 0.3
 # are the versions already in the lock (via cpal), and AppKit 0.3 matches them;
 # default features are off because they enable every AppKit framework class.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSAlert", "NSApplication", "NSButton", "NSControl", "NSCursor", "NSImage", "NSOpenPanel", "NSPanel", "NSResponder", "NSSavePanel", "NSView", "NSWindow"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSAlert", "NSApplication", "NSBitmapImageRep", "NSButton", "NSColor", "NSControl", "NSCursor", "NSFont", "NSImage", "NSImageRep", "NSImageView", "NSOpenPanel", "NSPanel", "NSResponder", "NSSavePanel", "NSTextField", "NSView", "NSWindow", "objc2-core-foundation"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSGeometry", "NSLocale", "NSString", "NSURL", "objc2-core-foundation"] }
 
 # --- Clipboard ---
