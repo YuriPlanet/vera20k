@@ -61,6 +61,7 @@ offsets. Its saves convert with Kratos off, as those matches played. The
 the processed rules' NPatch key reads; its saves convert with no web and the
 switch off, as those matches played. The `30e9a0f38` writer's layout
 `0xF215BF3A` predates the NPatch reads; its saves convert with the switch off.
+The `2e67ebaa8` writer covers direct loading of layout `0xE5279FB2`.
 
 Run the menu and compatibility tests with this command.
 

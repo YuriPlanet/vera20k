@@ -27,9 +27,13 @@ and executes the saved command before it accepts the fixture.
 | `main-8852f7a76.sav` | `8852f7a76` (pre-release) | `skirmish` |
 | `main-bc55c35e7.sav` | `bc55c35e7` (pre-release) | `skirmish` |
 | `main-30e9a0f38.sav` | `30e9a0f38` (pre-release) | `skirmish` |
+| `main-2e67ebaa8.sav` | `2e67ebaa8` (pre-release merge) | `skirmish` |
 
 The Kratos writer revision is in PR #5080. In a fresh clone, fetch it with
-`git fetch origin pull/5080/head` before checking out `bc55c35e7`.
+`git fetch origin pull/5080/head` before checking out `bc55c35e7`. The
+`2e67ebaa8` row is the writer after NPatch left the build flags: its layout
+`0xE5279FB2` stores each processed rules layer's NPatch key reads beside
+Tiberian Sun's web fields, which `30e9a0f38` predated.
 
 The ordinary worlds use `compat.map`, a flat 3×3 terrain and an authored
 APC type. At tick 91 the Americans player has 1,000 credits. The pending
