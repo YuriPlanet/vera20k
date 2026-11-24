@@ -157,6 +157,7 @@ impl IceTiles {
 /// The 3x64 ice tiles' sub-tile 0 prototypes, set-major.
 #[derive(Debug, Clone)]
 pub(super) struct IceCatalog {
+    bundled: bool,
     tiles: IceTiles,
     prototypes: Vec<DynamicTilePrototype>,
 }
@@ -221,10 +222,21 @@ pub(super) fn build_ice_catalog(
             })
         })
         .collect::<Option<Vec<_>>>()?;
-    Some(IceCatalog { tiles, prototypes })
+    Some(IceCatalog {
+        bundled: td.uses_bundled_ice(),
+        tiles,
+        prototypes,
+    })
 }
 
 impl ResolvedTerrainGrid {
+    /// Whether a saved map needs VERA's embedded tiles when rebinding the theater.
+    pub(crate) fn uses_bundled_ice(&self) -> bool {
+        self.ice_catalog
+            .as_ref()
+            .is_some_and(|catalog| catalog.bundled)
+    }
+
     /// The ice tile bases when this map runs the Firestorm ice chain: a Snow
     /// theater with all three ice families. None keeps every ice path off.
     pub(crate) fn ice_tiles(&self) -> Option<IceTiles> {
@@ -335,6 +347,7 @@ impl ResolvedTerrainGrid {
             }
         };
         self.ice_catalog = Some(IceCatalog {
+            bundled: false,
             tiles,
             prototypes: (0..3)
                 .flat_map(|_| (0..ICE_SET_TILES).map(prototype))

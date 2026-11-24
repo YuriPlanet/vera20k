@@ -59,6 +59,11 @@ impl ObjectType {
         self.weapon_offsets.weapon(index, use_elite)
     }
 
+    /// The Kratos crawling offsets retained by this type.
+    pub(crate) fn kratos_crawling(&self) -> crate::rules::kratos_crawling_flh::CrawlingFlh<'_> {
+        self.weapon_offsets.kratos_crawling()
+    }
+
     /// GetFLH6F3AF5: an open transport lends its zero-based cargo port.
     pub fn alternate_fire_flh(&self, port: usize) -> crate::rules::flh::Flh {
         self.weapon_offsets.alternate(port)

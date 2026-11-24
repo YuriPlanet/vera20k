@@ -230,6 +230,9 @@ pub struct RetailRulesSources {
     ships_ares: bool,
     /// The player's Ares setting is Off: no Ares key turns Ares on.
     ares_keys_off: bool,
+    /// The player's Kratos setting (`AssetManager::kratos_setting`), which
+    /// every game this owner loads carries into `RuleSet::kratos`.
+    kratos_setting: crate::util::kratos_launch::KratosSetting,
 }
 
 impl RetailRulesSources {
@@ -267,6 +270,7 @@ impl RetailRulesSources {
             personal_rules: PersonalRules::default(),
             ships_ares,
             ares_keys_off: assets.ares_setting() == crate::util::ares_launch::AresSetting::Off,
+            kratos_setting: assets.kratos_setting(),
         })
     }
 
@@ -303,6 +307,7 @@ impl RetailRulesSources {
             self.personal_rules,
             self.ships_ares,
             self.ares_keys_off,
+            self.kratos_setting,
         )
         .map_err(|error| format!("Native rules cold startup failed: {error}"))?;
         Ok(owner)
@@ -585,19 +590,19 @@ impl<'a> ShippedInis<'a> {
     /// one; `None` when nothing supplies `name`.
     pub fn used(&self, name: &str) -> Option<UsedIni<'_>> {
         let name = name.trim();
-        let used = (!name.is_empty())
-            .then(|| self.assets.resolve_ref(name))
+        let (source, bytes) = (!name.is_empty())
+            .then(|| self.assets.installed_file(name))
             .flatten()?;
         let mut found = UsedIni {
-            source: used.source_archive,
-            bytes: used.bytes,
+            source,
+            bytes,
             shipped: ShippedCopy::Same,
         };
-        if shipped_source(used.source_archive) {
+        if shipped_source(source) {
             return Some(found);
         }
         let shipped = self.shipped(name);
-        if !shipped.is_some_and(|shipped| same_entries(shipped, used.bytes)) {
+        if !shipped.is_some_and(|shipped| same_entries(shipped, bytes)) {
             found.shipped = ShippedCopy::Changed(shipped);
         }
         Some(found)

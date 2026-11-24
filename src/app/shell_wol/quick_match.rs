@@ -393,6 +393,7 @@ fn original_game_refusal(
         OriginalGameChange::Ra2 => "VERA:QuickMatchRa2Mode",
         OriginalGameChange::IniRoots => "VERA:QuickMatchIniProfile",
         OriginalGameChange::Ares(_) => "VERA:QuickMatchAresSetting",
+        OriginalGameChange::Kratos => "VERA:QuickMatchKratos",
         OriginalGameChange::ChangedFiles(_) => CHANGED_FILES,
     })
 }

@@ -84,7 +84,12 @@ impl App {
                 return None;
             }
         };
-        let Some(theater) = crate::map::theater::load_theater(assets, &map.header.theater) else {
+        let Some(theater) = crate::map::theater::load_scenario_theater(
+            assets,
+            &map.header.theater,
+            &map.ini,
+            false,
+        ) else {
             log::warn!(
                 "Team Starts measures straight lines: theater {} unavailable",
                 map.header.theater

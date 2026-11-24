@@ -1437,7 +1437,24 @@ pub(crate) fn get_weapon_record<'r>(
         )?;
         return occupant_weapon_record(kind, occupant.veterancy.rank());
     }
-    weapon_for_index(obj, entity.veterancy.rank(), index)
+    let mut record = weapon_for_index(obj, entity.veterancy.rank(), index)?;
+    // Kratos PP v0.2.4 CrawlingFLH::OnUpdate, dispatched at the entry to
+    // TechnoClass::AI 0x006F9E50 (stock prologue resumes at 0x006F9E55),
+    // selects by the man's rank even when GetWeapon 0x0070E140 falls back to
+    // his normal gun. Resolve per shooter at the GetFLH 0x006F3B28 read so
+    // infantry sharing a type cannot overwrite each other's muzzle position.
+    if rules.kratos()
+        && entity.category() == EntityCategory::Infantry
+        && !obj.fearless
+        && let Some(infantry) = entity.infantry
+        && (0..=1).contains(&index)
+    {
+        let elite = entity.veterancy.rank() >= RANK_ELITE_U16;
+        record.flh = obj
+            .kratos_crawling()
+            .flh(index as usize, elite, infantry.is_prone());
+    }
+    Some(record)
 }
 
 #[cfg(all(test, tests_sim_combat_a_c))]
@@ -2111,6 +2128,98 @@ mod tests {
             Some(expected),
             "a transport-arm rider reaches its OpenTopped carrier's controller"
         );
+    }
+
+    // ---- Kratos prone firing offset ----------------------------------------
+
+    fn infantry_muzzle(
+        rules: &RuleSet,
+        unit: &str,
+        slot: i32,
+        prone: bool,
+        elite: bool,
+    ) -> [i32; 3] {
+        let world = Simulation::new();
+        let mut entity = GameEntity::test_default_of_category(
+            1,
+            unit,
+            "Americans",
+            5,
+            5,
+            EntityCategory::Infantry,
+        );
+        entity
+            .infantry
+            .as_mut()
+            .unwrap()
+            .set_is_prone_for_test(prone);
+        if elite {
+            entity.veterancy.set_rank_for_test(RANK_ELITE_U16);
+        }
+        get_weapon_record(
+            &entity,
+            rules.object(unit).unwrap(),
+            slot,
+            &world.substrate.entities,
+            rules,
+            &world.interner,
+        )
+        .unwrap()
+        .flh
+        .into()
+    }
+
+    #[test]
+    fn kratos_crawling_flh_replaces_the_fire_flh_only_while_prone() {
+        let roster = IniFile::from_str(
+            "[InfantryTypes]\n0=GI\n1=HERO\n[GI]\nPrimary=GUN\n[HERO]\nPrimary=GUN\nFearless=yes",
+        );
+        let stock = RuleSet::from_ini_with_fixed_art_for_test(
+            &roster,
+            &IniFile::from_str("[GI]\nPrimaryFireFLH=80,0,105"),
+        )
+        .unwrap();
+        assert!(!stock.kratos());
+        assert_eq!(infantry_muzzle(&stock, "GI", 0, true, false), [80, 0, 105]);
+
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &roster,
+            &IniFile::from_str(
+                "[GI]\nPrimaryFireFLH=80,0,105\nSecondaryCrawlingFLH=7,8,9\n\
+                [HERO]\nPrimaryFireFLH=60,0,101\nPrimaryCrawlingFLH=1,2,3",
+            ),
+        )
+        .unwrap();
+        assert!(rules.kratos());
+        assert_eq!(infantry_muzzle(&rules, "GI", 0, false, false), [80, 0, 105]);
+        assert_eq!(infantry_muzzle(&rules, "GI", 0, true, false), [80, 0, 20]);
+        assert_eq!(
+            infantry_muzzle(&rules, "HERO", 0, true, false),
+            [60, 0, 101]
+        );
+    }
+
+    #[test]
+    fn kratos_elite_muzzles_follow_rank_with_normal_weapons() {
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str("[InfantryTypes]\n0=GI\n[GI]\nPrimary=GUN\nSecondary=GUN"),
+            &IniFile::from_str(
+                "[GI]\nPrimaryFireFLH=20,0,80\nElitePrimaryFireFLH=90,0,99\n\
+                ElitePrimaryCrawlingFLH=1Eh,4\nSecondaryCrawlingFLH=4,5,6\n\
+                EliteSecondaryFireFLH=8,9,72\nEliteSecondaryCrawlingFLH=77,88,99",
+            ),
+        )
+        .unwrap();
+        assert!(rules.kratos());
+        let gi = rules.object("GI").unwrap();
+        assert_eq!(gi.elite_weapon_at(0), None);
+        assert_eq!(gi.elite_weapon_at(1), None);
+        assert_eq!(infantry_muzzle(&rules, "GI", 0, false, true), [90, 0, 99]);
+        // Kratos's integer parser accepts a hex suffix and zero-fills the missing Z.
+        assert_eq!(infantry_muzzle(&rules, "GI", 0, true, true), [30, 4, 0]);
+        assert_eq!(infantry_muzzle(&rules, "GI", 1, true, false), [4, 5, 6]);
+        // v0.2.4 reads EliteSecondaryFireFLH for both stances.
+        assert_eq!(infantry_muzzle(&rules, "GI", 1, true, true), [8, 9, 72]);
     }
 
     // ---- Garrison ----------------------------------------------------------

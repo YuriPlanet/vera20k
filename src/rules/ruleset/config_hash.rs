@@ -248,6 +248,18 @@ impl RuleSet {
             b"phobos-super-availability-v1".hash(&mut hasher);
             self.phobos_super_weapon_metadata.hash(&mut hasher);
         }
+        if self.kratos {
+            b"kratos-infantry-flh-v1".hash(&mut hasher);
+            Self::by_upper_id(
+                self.object_list
+                    .iter()
+                    .filter(|object| {
+                        object.category == ObjectCategory::Infantry && !object.fearless
+                    })
+                    .map(|object| (&object.id, object.kratos_crawling().arrays())),
+            )
+            .hash(&mut hasher);
+        }
         if self.phobos {
             self.parallel_ai_queues.hash_into(&mut hasher);
         }
