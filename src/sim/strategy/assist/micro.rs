@@ -39,10 +39,9 @@ use super::squared_distance;
 use super::tracked::TrackedKind;
 use crate::sim::control::Goal;
 
-/// How many engagements one frame may start. The board drops what is past its
-/// own budget, and a frame that spends everything on the first squad it looked
-/// at has none left for the squad under attack.
-const MICRO_ORDERS_PER_FRAME: usize = 8;
+/// How many engagements this pass may begin in one frame. Round-robin work
+/// ordering and per-actor terms keep this bounded without an eight-unit cliff.
+const MICRO_ORDERS_PER_FRAME: usize = 24;
 
 /// How far past its own reach a unit will still take a fight, in cells. One:
 /// the cell it is about to step into, so a closing hostile is met rather than
@@ -171,6 +170,15 @@ pub(super) fn run(
         }
         // A step out of a shell's landing point is this frame's answer for the
         // unit; an engage order on top of it would walk it back into the blast.
+        // A courier is not a new solo raiding squad after collecting its box.
+        // Only allow immediate self-defence here, never a proactive target.
+        if (brain.crate_claims.contains_key(&item.entity_id)
+                || brain.crate_returns.contains_key(&item.entity_id))
+            && !brain.census.enemies.iter().any(|enemy| {
+                obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
+                    && obs.attack_target(enemy.entity_id) == Some(item.entity_id)
+            })
+        { continue; }
         if super::orders::ordered_this_frame(out, item.entity_id)
             || brain.avoid_retreat_until.get(&item.entity_id)
                 .is_some_and(|until| tick < *until)
@@ -571,7 +579,8 @@ pub(super) fn run(
                 // A crate collector has a short, explicit job. Do not replace
                 // the crate walk with a shroud walk one line later this frame.
                 // Engage/Dodge already ran and still outrank the collection.
-                if brain.crate_claims.contains_key(&item.entity_id) { continue; }
+                if brain.crate_claims.contains_key(&item.entity_id)
+                    || brain.crate_returns.contains_key(&item.entity_id) { continue; }
                 // A scout walks the leg it is on. The nearest unexplored cell
                 // changes sides as the dog moves — two cells at the same
                 // distance, and the tie-break follows the dog — so re-deciding

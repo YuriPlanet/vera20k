@@ -349,6 +349,21 @@ pub(super) fn deploy_yard_maker(
         deploy_second_yard(brain, rules, obs, out, entity_id, cell, yard);
         return;
     }
+    // At skirmish start all the gifted infantry may spawn around the MCV.
+    // Clear the *existing* foundation first, before moving the MCV to another
+    // plot: the MCV could legally deploy right here once the infantry step off.
+    // This runs only when there is no yard yet and when our own mobile infantry
+    // are currently beside the maker, not on a blocked enemy/remote plot.
+    if !yard_stands(&brain.census)
+        && !obs.deploy_site_admits(rules, entity_id, yard)
+        && obs.destination(entity_id).is_none()
+        && brain.census.units.iter().any(|inf| inf.traits.combat
+            && inf.slot == super::census::Slot::Infantry && inf.controllable()
+            && super::squared_distance(inf.cell, cell) <= 3 * 3)
+        && clear_mcv_foundation(brain, rules, obs, out, cell, entity_id) > 0
+    {
+        return;
+    }
     if obs.deploy_site_admits(rules, entity_id, yard) {
         // The one guard the pack also runs: a yard the house only just packed
         // home is inside its term, and deploying it again is the round trip the
@@ -778,10 +793,13 @@ fn clear_mcv_foundation(
     brain: &mut AssistBrain, rules: &RuleSet,
     obs: &Observation<'_>, out: &mut Outbox,
     site: (u16,u16), maker: u64,
-) {
+) -> usize {
     let mut moved = 0;
+    // A new match may start with ten or more infantry blocking the only yard.
+    // Clear them in one bounded batch, rather than two per long task period.
+    let limit = if yard_stands(&brain.census) { 2 } else { 16 };
     for infantry in &brain.census.units {
-        if moved >= 2 { break; }
+        if moved >= limit { break; }
         if infantry.entity_id == maker
             || infantry.slot != super::census::Slot::Infantry
             || !infantry.controllable() || infantry.in_service()
@@ -809,6 +827,7 @@ fn clear_mcv_foundation(
             super::tracked::TrackedKind::Avoid, None, Some(target),
             Goal::Move { cell: target }) { moved += 1; }
     }
+    moved
 }
 
 /// A unit blocking the foundation on a single frame is not a good reason to

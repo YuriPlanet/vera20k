@@ -1256,8 +1256,9 @@ impl<'a> Observation<'a> {
             // Only examine a few mobile, controllable units to keep this cheap.
             for own in self.own_entities()
                 .filter(|e| self.object_type(rules, e.type_id)
-                    .is_some_and(|ty| ty.speed >= 5 && ty.category != ObjectCategory::Building))
-                .take(32)
+                    .is_some_and(|ty| ty.speed > 0
+                        && ty.category != ObjectCategory::Building))
+                .take(128)
             {
                 for dy in -3i32..=3 {
                     for dx in -3i32..=3 {

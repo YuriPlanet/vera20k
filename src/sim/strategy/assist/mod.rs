@@ -287,6 +287,9 @@ pub struct AssistBrain {
     /// At most two cheap mobile units may leave their routine for visible
     /// distant crates. A durable claim stops two units chasing the same box.
     pub(super) crate_claims: BTreeMap<u64, ((u16,u16), u64)>,
+    /// Courier -> (safe regroup cell, deadline). Once a box disappears, the
+    /// collector is recalled instead of being dispatched alone at enemy HQ.
+    pub(super) crate_returns: BTreeMap<u64, ((u16,u16), u64)>,
     /// Last *visible* crate sightings, including those now under fog. Never
     /// populate this from hidden global crate slots.
     pub(super) crate_sightings: BTreeMap<(u16, u16), u64>,
@@ -408,6 +411,9 @@ pub struct AssistBrain {
     pub(super) spy_attempts: BTreeMap<u64, (u64, (u16, u16), u64)>,
     pub(super) spy_target_retry: BTreeMap<u64, u64>,
     pub(super) spy_still: BTreeMap<u64, ((u16, u16), u64)>,
+    /// Agent -> (uniform specimen id, next legal attempt frame). An L3 request
+    /// does not prove the native shot fired, so retries are bounded and logged.
+    pub(super) spy_uniform_retry: BTreeMap<u64, (u64, u64)>,
     /// One repair IFV command per short interval: re-aiming every tick
     /// cancels its Guard healer scan just as movement cancels weapon fire.
     pub(super) repair_ifv_after: BTreeMap<u64, u64>,
@@ -529,6 +535,7 @@ impl AssistBrain {
             super_at: BTreeMap::new(),
             chrono_trip: None,
             crate_claims: BTreeMap::new(),
+            crate_returns: BTreeMap::new(),
             crate_sightings: BTreeMap::new(),
             siege_wait: None,
             assault_wait: None,
@@ -557,6 +564,7 @@ impl AssistBrain {
             spy_attempts: BTreeMap::new(),
             spy_target_retry: BTreeMap::new(),
             spy_still: BTreeMap::new(),
+            spy_uniform_retry: BTreeMap::new(),
             repair_ifv_after: BTreeMap::new(),
             next_spy_purchase: 0,
             garrison_release_after: BTreeMap::new(),

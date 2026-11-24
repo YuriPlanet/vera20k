@@ -36,6 +36,51 @@ pub(super) fn controller_covering(
     }).min_by_key(|(id, origin, _)| (distance(*origin, cell), *id))
 }
 
+/// Whether a straight proposed march enters a Chebyshev weapon box.
+/// Checking only its endpoint missed the common case of an army marching
+/// *through* a Yuri's control radius to reach the next base. Clip the line
+/// segment to the actual square instead of sampling a handful of tiles.
+fn path_enters_control_box(
+    from: (u16, u16), to: (u16, u16), at: (u16, u16), radius: i32,
+) -> bool {
+    let mut first = 0.0_f64;
+    let mut last = 1.0_f64;
+    for (a, b, center) in [
+        (from.0, to.0, at.0),
+        (from.1, to.1, at.1),
+    ] {
+        let start = f64::from(a);
+        let change = f64::from(b) - start;
+        let low = f64::from(center) - f64::from(radius);
+        let high = f64::from(center) + f64::from(radius);
+        if change == 0.0 {
+            if start < low || start > high { return false; }
+        } else {
+            let near = ((low - start) / change).min((high - start) / change);
+            let far = ((low - start) / change).max((high - start) / change);
+            first = first.max(near);
+            last = last.min(far);
+            if first > last { return false; }
+        }
+    }
+    first <= last
+}
+
+/// A controller currently visible to this house which would control the
+/// proposed route, even if neither end of the march is in its radius.
+/// Never peek at controllers inside fog or at future world state.
+pub(super) fn controller_covering_path(
+    rules: &RuleSet, obs: &Observation<'_>,
+    from: (u16, u16), to: (u16, u16),
+) -> Option<(u64, (u16, u16), i32)> {
+    obs.visible_enemy_entities().filter_map(|enemy| {
+        let ty = obs.entity_type(rules, enemy.entity_id)?;
+        let reach = mind_control_reach(rules, ty)?;
+        path_enters_control_box(from, to, enemy.cell, reach + 2)
+            .then_some((enemy.entity_id, enemy.cell, reach))
+    }).min_by_key(|(id, cell, _)| (distance(from, *cell), *id))
+}
+
 /// Walk a short distance away from the controller instead of charging into
 /// the same fire again. All candidates use native movement-zone connectivity.
 pub(super) fn evade_controller(
@@ -45,20 +90,30 @@ pub(super) fn evade_controller(
     let zone = obs.entity_type(rules, actor)?.movement_zone;
     let dx = (i32::from(at.0) - i32::from(threat.0)).signum();
     let dy = (i32::from(at.1) - i32::from(threat.1)).signum();
-    if dx == 0 && dy == 0 { return None; }
-    // A psychic tower may reach six or more cells: three-cell sidesteps
-    // remain inside its control radius. Try real disengagement first.
-    for step in [12, 10, 8, 6, 4, 3, 2] {
-        let (Ok(x), Ok(y)) = (u16::try_from(i32::from(at.0) + dx * step),
-            u16::try_from(i32::from(at.1) + dy * step)) else { continue; };
-        let cell = (x,y);
-        if obs.is_ground_walkable(x,y) && obs.can_reach(zone,at,cell)
-            && controller_covering(rules,obs,cell).is_none()
-        {
-            return Some(cell);
+    // The nearest wall may block the direct escape. Try all eight directions
+    // at increasing standoff distances; prefer paths moving *away* from the
+    // controller over sideways retreats, and reject every destination still
+    // covered by any currently visible controller.
+    let mut candidates = Vec::new();
+    for step in [6, 8, 10, 12, 14] {
+        for (sx, sy) in [(-1,-1), (-1,0), (-1,1), (0,-1),
+                         (0,1), (1,-1), (1,0), (1,1)] {
+            let (Ok(x), Ok(y)) = (
+                u16::try_from(i32::from(at.0) + sx * step),
+                u16::try_from(i32::from(at.1) + sy * step),
+            ) else { continue; };
+            let cell = (x, y);
+            if distance(cell, threat) <= distance(at, threat)
+                || !obs.is_ground_walkable(x, y)
+                || !obs.can_reach(zone, at, cell)
+                || controller_covering(rules, obs, cell).is_some()
+            { continue; }
+            let alignment = (sx - dx).abs() + (sy - dy).abs();
+            candidates.push((alignment, step, cell));
         }
     }
-    None
+    candidates.sort_unstable_by_key(|(alignment, step, cell)| (*alignment, *step, *cell));
+    candidates.first().map(|(_, _, cell)| *cell)
 }
 
 /// Defensive fire is not merely more hit points: short-ranged infantry can
@@ -484,5 +539,24 @@ mod v18_commit_tests {
         assert!(!overwhelming_armor_commit(true, 500, 900, 300));
         assert!(!overwhelming_armor_commit(true, 900, 899, 300));
         assert!(!overwhelming_armor_commit(true, 900, 900, 0));
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v23_mind_control_route_tests {
+    use super::path_enters_control_box;
+
+    #[test]
+    fn march_crosses_controller_even_when_both_endpoints_are_safe() {
+        assert!(path_enters_control_box((2, 10), (40, 10), (22, 13), 4));
+        assert!(!path_enters_control_box((2, 10), (40, 10), (22, 18), 4));
+    }
+
+    #[test]
+    fn zero_length_and_diagonal_routes_handle_square_boundaries() {
+        assert!(path_enters_control_box((14, 14), (14, 14), (16, 16), 2));
+        assert!(!path_enters_control_box((14, 14), (14, 14), (17, 17), 2));
+        assert!(path_enters_control_box((0, 0), (20, 20), (12, 12), 1));
+        assert!(!path_enters_control_box((0, 0), (20, 20), (12, 18), 1));
     }
 }

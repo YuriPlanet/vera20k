@@ -55,10 +55,9 @@ mod targets;
 /// walks into the enemy's pre-placed garrison is a house that has traded its
 /// base for nothing — which is why the surplus goes harassing instead.
 
-/// How many units one frame may re-task. The board's per-frame budget drops
-/// everything past its own limit, so a larger number here would only spend the
-/// frame on orders that never leave.
-const ADVANCE_ORDERS_PER_FRAME: usize = 8;
+/// Bound the strategic retask batch without leaving half a starting army idle.
+/// The interactive L2 command budget is 512; eight was a stale L3 bottleneck.
+const ADVANCE_ORDERS_PER_FRAME: usize = 24;
 /// Hold a dispersed armoured fist briefly rather than launching a single
 /// heavy tank as each factory completes it. A dead economy must not stall
 /// an otherwise viable attack forever.
@@ -461,6 +460,63 @@ fn stage_siege(
     issued
 }
 
+/// An outgunned front should not be an inert front. A small number of
+/// visible enemy units/towers may be traded with safely by standoff pieces
+/// even while the rest of the army waits for reinforcements. This is not an
+/// all-army push: only units whose *actual* weapon outranges the target and
+/// can damage it are allowed to step forward. It also prioritises psychic
+/// controllers, which are much more dangerous than their nominal DPS.
+fn limited_front_skirmish(
+    tracker: &mut super::tracked::Tracker, trace: Option<u64>,
+    fighters: &[&Unit], rules: &RuleSet, obs: &Observation<'_>,
+    out: &mut Outbox, front: (u16,u16),
+) -> bool {
+    let visible: Vec<_> = obs.visible_enemy_entities()
+        .filter(|enemy| cell_distance(enemy.cell, front) <= 18)
+        .collect();
+    let mut active = false;
+    let mut issued = 0;
+    for unit in fighters.iter().take(128) {
+        if !unit.controllable() || unit.in_service() || unit.traits.aircraft
+            || unit.slot == super::census::Slot::Ship
+            || super::orders::ordered_this_frame(out,unit.entity_id)
+            || super::orders::committed_garrison_entry(tracker,rules,obs,unit.entity_id)
+        { continue; }
+        let picked = visible.iter().filter_map(|enemy| {
+            if !obs.can_hurt(rules,unit.entity_id,enemy.entity_id)
+                || !super::orders::admits(rules,obs,unit.entity_id,
+                    &Goal::Attack { target: enemy.entity_id })
+            { return None; }
+            let ours = super::tactics::actual_threat_reach(
+                rules,obs,unit.entity_id,enemy.entity_id);
+            let theirs = super::tactics::actual_threat_reach(
+                rules,obs,enemy.entity_id,unit.entity_id);
+            if ours < 5 || ours <= theirs + 1
+                || cell_distance(unit.cell,enemy.cell) > 26
+                || super::tactics::unfavourable_vehicle_duel(
+                    rules,obs,unit.entity_id,enemy.entity_id)
+            { return None; }
+            let control = obs.entity_type(rules,enemy.entity_id)
+                .is_some_and(|ty| super::tactics::mind_control_reach(rules,ty).is_some());
+            Some((!control, cell_distance(unit.cell,enemy.cell), enemy.entity_id,
+                enemy.cell))
+        }).min_by_key(|(not_control,distance,id,_)| (*not_control,*distance,*id));
+        let Some((_, _, target, cell)) = picked else { continue; };
+        if obs.attack_target(unit.entity_id) == Some(target) {
+            active = true;
+            continue;
+        }
+        if issued >= 3 { continue; }
+        if super::orders::issue_tracked(tracker,trace,out,rules,obs,
+            unit.entity_id,super::tracked::TrackedKind::Attack,
+            Some(target),Some(cell),Goal::Attack { target }) {
+            active = true;
+            issued += 1;
+        }
+    }
+    active
+}
+
 /// A range trade qualifies as safe battery fire only when the *same*
 /// effective ground weapon can actually hurt the tower.
 fn standoff_can_breach(own: i32, enemy: i32, can_damage: bool) -> bool {
@@ -638,7 +694,10 @@ pub(super) fn advance(
     // "保护英雄单位". They hold at home, which is where the defence step already
     // sends them, and the retreat line walks them out well before the ordinary
     // one when they are caught.
-    fighters.retain(|unit| !unit.traits.irreplaceable);
+    fighters.retain(|unit| !unit.traits.irreplaceable
+        && !brain.crate_claims.contains_key(&unit.entity_id)
+        && !brain.crate_returns.contains_key(&unit.entity_id));
+    if fighters.is_empty() { return false; }
     // No exclusion for a unit whose weapon spends it. It was here with a
     // matching errand of its own, and together they cost fourfold on two seeds
     // (see the note where the errand used to be called). The tag itself is
@@ -829,6 +888,16 @@ pub(super) fn advance(
         // army is walking past can turn the answer for a second and back.
         brain.push_gate = "outgunned";
         brain.push_rest = (obs.tick(), "outgunned");
+        // When the fist cannot win a frontal assault, standoff units can
+        // still dismantle exposed guards and controllers at the doorway.
+        // The weaker tanks remain behind the line instead of repeatedly
+        // charging and being lost to the same guns.
+        if limited_front_skirmish(&mut brain.tracked,brain.trace,&fighters,
+            rules,obs,out,target_cell)
+        {
+            brain.push_gate = "standoff-skirmish";
+            return true;
+        }
         return false;
     }
 
@@ -1010,6 +1079,7 @@ pub(super) fn advance(
         // neither is an attack squad's next march instruction.
         if brain.avoid_retreat_until.get(&unit.entity_id).is_some_and(|until| tick < *until)
             || brain.crate_claims.contains_key(&unit.entity_id)
+            || brain.crate_returns.contains_key(&unit.entity_id)
         { continue; }
         if let Some(since) = brain.armour_wave_wait
             && armour_wave_missing(
@@ -1030,7 +1100,8 @@ pub(super) fn advance(
                     super::tracked::TrackedKind::Move, None, Some(cell),
                     Goal::Move { cell })
                 { issued += 1; }
-            } else if obs.destination(unit.entity_id).is_some()
+            } else if (obs.destination(unit.entity_id).is_some()
+                || obs.attack_target(unit.entity_id).is_some())
                 && out.want(unit.entity_id, 0, Goal::Stop)
             {
                 brain.tracked.forget_primary(unit.entity_id);
@@ -1080,32 +1151,50 @@ pub(super) fn advance(
         // beyond current sight never enter the decision.
         if unit.traits.combat && !unit.traits.aircraft
             && let Some((controller, position, reach)) =
-                super::tactics::controller_covering(rules,obs,march_cell)
+                super::tactics::controller_covering_path(
+                    rules, obs, unit.cell, march_cell)
         {
             let own_reach = obs.entity_type(rules,unit.entity_id)
                 .map_or(0,|ty| weapon_range_cells(rules,ty,obs.is_deployed(unit.entity_id)));
-            if own_reach <= reach + 1 {
-                let existing = super::tactics::controller_covering(rules,obs,unit.cell);
-                if existing.is_some() {
-                    if let Some(safe) = super::tactics::evade_controller(
-                        rules,obs,unit.entity_id,unit.cell,position)
-                    {
-                        if super::orders::issue_tracked(
-                            &mut brain.tracked,brain.trace,out,rules,obs,
-                            unit.entity_id,super::tracked::TrackedKind::Dodge,
-                            None,Some(safe),Goal::Move { cell: safe },
-                        ) { issued += 1; }
-                    }
-                } else if super::orders::issue_tracked(
+            // A Prism/V3-style weapon must actually fire on the controller;
+            // waiting to shoot the remote main base wastes its sole advantage.
+            if own_reach > reach + 1
+                && obs.can_hurt(rules, unit.entity_id, controller)
+                && super::orders::admits(rules,obs,unit.entity_id,
+                    &Goal::Attack { target: controller })
+            {
+                if obs.attack_target(unit.entity_id) != Some(controller)
+                    && super::orders::issue_tracked(
+                        &mut brain.tracked,brain.trace,out,rules,obs,
+                        unit.entity_id,super::tracked::TrackedKind::Attack,
+                        Some(controller),Some(position),Goal::Attack { target: controller },
+                    ) { issued += 1; }
+                continue;
+            }
+            if super::tactics::controller_covering(rules,obs,unit.cell).is_some() {
+                if let Some(safe) = super::tactics::evade_controller(
+                    rules,obs,unit.entity_id,unit.cell,position)
+                {
+                    if super::orders::issue_tracked(
+                        &mut brain.tracked,brain.trace,out,rules,obs,
+                        unit.entity_id,super::tracked::TrackedKind::Dodge,
+                        None,Some(safe),Goal::Move { cell: safe },
+                    ) { issued += 1; }
+                }
+            } else if (obs.destination(unit.entity_id).is_some()
+                || obs.attack_target(unit.entity_id).is_some())
+                && super::orders::issue_tracked(
                     &mut brain.tracked,brain.trace,out,rules,obs,
-                    // Guard has a lower priority than an old AttackMove:
-                    // it would be rejected while the native tank kept driving
-                    // into the controller. Engage is an expiring override.
+                    // Stop the *existing* AttackMove; merely choosing not to
+                    // reissue it would let native navigation charge on.
                     unit.entity_id,super::tracked::TrackedKind::Engage,
                     Some(controller),None,Goal::Guard,
                 ) { issued += 1; }
-                continue;
+            if super::trace_enabled("AUTOPLAY_TRACE_PUSH") && tick % 150 == 0 {
+                log::info!("auto play: hold control line unit={} controller={} from={:?} destination={:?}",
+                    unit.entity_id, controller, unit.cell, march_cell);
             }
+            continue;
         }
         // Different units face different counters. A rocket soldier has no
         // business following a tank into anti-air fire, and an infantryman

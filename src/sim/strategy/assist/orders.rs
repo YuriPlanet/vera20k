@@ -65,15 +65,16 @@ mod common;
 
 /// The admission half, re-exported so every caller keeps the path it had.
 pub(in crate::sim::strategy::assist) use common::{
-    admits, already_attacking, committed_garrison_entry, issue, issue_tracked, on_map,
-    ordered_this_frame, reachable,
+    admits, already_attacking, committed_garrison_entry, issue, issue_tracked,
+    on_map, ordered_this_frame, reachable,
 };
 
-/// How many new unit orders one frame may carry. The board drops everything
-/// past its own per-frame budget, so asking for more would only spend the frame
-/// on orders that never leave; this keeps the surviving orders to the newest
-/// units first, in storage order.
-const FORCE_ORDERS_PER_FRAME: usize = 8;
+/// Bound the work of a single task per frame, not the total units controlled.
+/// The interactive host accepts 512 commands per frame; eight here was a
+/// separate L3 choke point. With ten starting infantry near the MCV, two were
+/// untouched until the next task refresh and could obstruct its foundation.
+/// A moderate cap still avoids flooding a 20k-unit match with low-value orders.
+const FORCE_ORDERS_PER_FRAME: usize = 24;
 
 /// The intents that mean a unit is already on its way somewhere: the advance
 /// step owns those, and a guard here would pull it back out of the push.
@@ -158,6 +159,7 @@ pub(super) fn captures(
     }
     brain.spy_target_retry.retain(|_,until| *until > tick);
     brain.spy_still.retain(|agent,_| alive.contains(agent));
+    brain.spy_uniform_retry.retain(|agent,_| alive.contains(agent));
     brain.captured_assets.retain(|id,_| obs.own_entities().any(|e| e.entity_id == *id));
     let visible_spy_cells: BTreeSet<(u16, u16)> = obs.spyable_buildings(rules)
         .filter(|e| obs.is_cell_visible(e.cell.0, e.cell.1))
@@ -252,7 +254,10 @@ pub(super) fn captures(
         })
         .map(|entity| entity.cell)
         .collect();
-    let spy_targets: Vec<(EnemyEntity, u8)> = obs
+    // The *disguise* specimen is decided before the infiltration-route veto.
+    // A dog beside a refinery makes the infiltration unsafe, but that must
+    // not prevent a remote MakeupKit shot at a Conscript elsewhere on the map.
+    let disguise_sites: Vec<(EnemyEntity, u8)> = obs
         .spyable_buildings(rules)
         .filter(|target| obs.is_cell_visible(target.cell.0, target.cell.1))
         .filter_map(|target| {
@@ -267,6 +272,8 @@ pub(super) fn captures(
             }
             Some((target, infiltration_value(rules, ty, obs.credits())))
         })
+        .collect();
+    let spy_targets: Vec<(EnemyEntity, u8)> = disguise_sites.iter().copied()
         .filter(|(target, _)| !spy_route_blocked(obs, rules, target.cell, &watchers))
         // A second spy should choose another live target briefly after the
         // first disappears, but never mark money/power as one-time effects.
@@ -339,45 +346,71 @@ pub(super) fn captures(
         // Simulation disguise state. Only click an actually visible enemy
         // infantryman from the house whose building we intend to infiltrate.
         if ty.agent && has_disguise_weapon(rules, ty) {
-            let desired = spy_targets.iter()
+            // Retail MakeupKit has Range=-2: its native shot changes clothes
+            // without walking to the specimen. The old 18-cell and straight
+            // path safety checks excluded exactly the useful distant soldiers
+            // before L2 ever saw Attack. Modded positive-range kits retain a
+            // conservative approach check; no teleport or sim-state write.
+            let remote = disguise_shot_is_remote(rules, ty);
+            let desired = disguise_sites.iter()
                 .filter(|(site, _)| obs.can_take_building(
                     rules, unit.entity_id, site.entity_id))
+                .filter(|(site, _)| !obs.disguised_to_visible_enemy(
+                    unit.entity_id, site.entity_id))
                 .max_by_key(|(site, value)| (*value,
                     -squared_distance(unit.cell, site.cell)));
-            if let Some((site, _)) = desired
-                && !obs.disguised_to_visible_enemy(unit.entity_id, site.entity_id)
-            {
-                let uniform = obs.visible_enemy_entities()
-                    .filter(|enemy| obs.visible_enemy_same_owner(
-                        enemy.entity_id, site.entity_id))
-                    .filter(|enemy| obs.entity_type(rules, enemy.entity_id)
-                        .is_some_and(|inf| inf.category == ObjectCategory::Infantry
-                            && !inf.agent && !mind_controls(rules, inf)
-                            && !super::kite::carries_parasite(rules, inf)
-                            && !super::census::Traits::of(rules, inf).scout))
-                    .filter(|enemy| squared_distance(unit.cell, enemy.cell) <= 18 * 18)
-                    .filter(|enemy| !path_crosses(&watchers, unit.cell, enemy.cell,
-                        SPY_WATCH_CELLS))
-                    .filter(|enemy| !spy_gun_crossfire_except(rules, obs,
-                        unit.entity_id, unit.cell, enemy.cell, Some(enemy.entity_id)))
-                    .min_by_key(|enemy| (squared_distance(unit.cell, enemy.cell), enemy.entity_id));
-                if let Some(infantry) = uniform {
-                    // A prior Attack is already in progress; do not restart
-                    // the native weapon every tick and lose its disguise shot.
-                    if obs.attack_target(unit.entity_id) == Some(infantry.entity_id) {
-                        continue;
-                    }
-                    if issue_tracked(&mut brain.tracked, brain.trace, out,
-                        rules, obs, unit.entity_id, TrackedKind::Engage,
-                        Some(infantry.entity_id), Some(infantry.cell),
-                        Goal::Attack { target: infantry.entity_id }) {
-                        issued += 1;
-                        continue;
-                    }
+            // A spy can change uniform *before* the dog discovers a refinery.
+            // Requiring a currently visible Spyable building to fire the
+            // MakeupKit was a needless dependency: enemy infantry can be
+            // visible long before their factory is. When a site is visible,
+            // insist on that house's uniform; otherwise take any safe visible
+            // hostile infantry specimen and save the long walk for later.
+            let uniform = obs.visible_enemy_entities()
+                .filter(|enemy| desired.map_or(true, |(site, _)|
+                    obs.visible_enemy_same_owner(enemy.entity_id, site.entity_id)))
+                .filter(|enemy| obs.entity_type(rules, enemy.entity_id)
+                    .is_some_and(|inf| inf.category == ObjectCategory::Infantry
+                        && !inf.agent && !mind_controls(rules, inf)
+                        && !super::kite::carries_parasite(rules, inf)
+                        && !super::census::Traits::of(rules, inf).scout))
+                .filter(|enemy| !obs.disguised_to_visible_enemy(
+                    unit.entity_id, enemy.entity_id))
+                .filter(|enemy| remote
+                    || (squared_distance(unit.cell, enemy.cell) <= 18 * 18
+                        && !path_crosses(&watchers, unit.cell, enemy.cell,
+                            SPY_WATCH_CELLS)
+                        && !spy_gun_crossfire_except(rules, obs,
+                            unit.entity_id, unit.cell, enemy.cell, Some(enemy.entity_id))))
+                // A legal fire error is necessary, but does not by itself
+                // prove that the projectile hit or the uniform changed.
+                .filter(|enemy| admits(rules, obs, unit.entity_id,
+                    &Goal::Attack { target: enemy.entity_id }))
+                .min_by_key(|enemy| (squared_distance(unit.cell, enemy.cell), enemy.entity_id));
+            if let Some(infantry) = uniform {
+                if obs.attack_target(unit.entity_id) == Some(infantry.entity_id) {
+                    continue;
                 }
-                // No safely approachable enemy soldier: keep the spy, or
-                // scout a remembered location; do not mistake our initial
-                // PermaDisguise for immunity to this house's sentries.
+                if brain.spy_uniform_retry.get(&unit.entity_id)
+                    .is_some_and(|(specimen, until)|
+                        *specimen == infantry.entity_id && tick < *until)
+                {
+                    continue;
+                }
+                if issue_tracked(&mut brain.tracked, brain.trace, out,
+                    rules, obs, unit.entity_id, TrackedKind::Engage,
+                    Some(infantry.entity_id), Some(infantry.cell),
+                    Goal::Attack { target: infantry.entity_id }) {
+                    brain.spy_uniform_retry.insert(unit.entity_id,
+                        (infantry.entity_id, tick.saturating_add(75)));
+                    log::info!("auto play: spy {} issued disguise Attack on enemy infantry {} (remote={remote}) targeted site={:?}",
+                        unit.entity_id, infantry.entity_id,
+                        desired.map(|(site, _)| site.entity_id));
+                    issued += 1;
+                    continue;
+                }
+            } else if tick % 150 == 0 {
+                log::info!("auto play: spy {} no legal uniform specimen (remote={remote}, site={:?}); awaiting visibility",
+                    unit.entity_id, desired.map(|(site, _)| site.entity_id));
             }
         }
         // A spy takes what is worth most; anyone else takes what is nearest.
@@ -919,6 +952,37 @@ pub(super) fn bridges(
     }
 }
 
+/// Dense, *previously discovered* mineral fields are worth a forward
+/// foothold even when no soldier has marched beside their central buildings.
+/// Count ore once into 8-cell buckets, then evaluate each garrison with only
+/// nine lookups: a giant procedural map cannot afford to scan every ore cell
+/// for every building on every brain tick.
+fn ore_garrison_buckets(
+    known: &std::collections::BTreeMap<(u16, u16), u8>,
+) -> std::collections::BTreeMap<(u16, u16), usize> {
+    let mut buckets = std::collections::BTreeMap::new();
+    for &(x, y) in known.keys() {
+        *buckets.entry((x / 8, y / 8)).or_insert(0) += 1;
+    }
+    buckets
+}
+
+fn ore_garrison_score(
+    buckets: &std::collections::BTreeMap<(u16, u16), usize>,
+    cell: (u16, u16),
+) -> usize {
+    let (cx, cy) = (i32::from(cell.0 / 8), i32::from(cell.1 / 8));
+    (-1..=1).flat_map(|dx| (-1..=1).filter_map(move |dy| {
+        let (Ok(x), Ok(y)) = (u16::try_from(cx + dx), u16::try_from(cy + dy))
+            else { return None; };
+        buckets.get(&(x, y)).copied()
+    })).sum()
+}
+
+/// At least a meaningful ore cluster, not a single isolated tile.
+const ORE_GARRISON_MIN_CELLS: usize = 10;
+const ORE_GARRISON_REACH_CELLS: i32 = 40;
+
 /// Idle `Occupier=` infantry garrison a building near the house's own base.
 ///
 /// `BuildingClass::CanBeOccupiedBy` decides whether this infantryman may walk
@@ -956,14 +1020,24 @@ pub(super) fn garrison(
                 .map(|unit| unit.cell),
         )
         .collect();
+    let ore_buckets = ore_garrison_buckets(&brain.ore_known);
     let billets: Vec<_> = obs
         .occupiable_buildings(rules)
         .filter(|billet| obs.is_cell_revealed(billet.cell.0, billet.cell.1))
-        .filter(|billet| within(anchors.iter().copied(), billet.cell, HOME_REACH_CELLS))
+        .filter(|billet| within(anchors.iter().copied(), billet.cell, HOME_REACH_CELLS)
+            || ore_garrison_score(&ore_buckets, billet.cell) >= ORE_GARRISON_MIN_CELLS)
         .collect();
     if billets.is_empty() {
         return;
     }
+    // Do not give up a central ore chokepoint just because the initial
+    // riflemen spawned on the map's edge. This value is independent of the
+    // order in which occupiable buildings were enumerated.
+    let ore_sites: std::collections::BTreeMap<u64, usize> = billets.iter()
+        .map(|billet| (billet.building_id,
+            ore_garrison_score(&ore_buckets, billet.cell)))
+        .filter(|(_, score)| *score >= ORE_GARRISON_MIN_CELLS)
+        .collect();
     // The count is exact, not a guess from the census: a garrisoned unit is a
     // passenger of the building it walked into (`Observation::inside_transport`),
     // so a rifleman still in his factory's limbo is not mistaken for one.
@@ -985,6 +1059,7 @@ pub(super) fn garrison(
             squared_distance(home, billet.cell) >= 18 * 18)
             && (enemy_cells.iter().any(|enemy|
                 squared_distance(*enemy, billet.cell) <= 20 * 20)
+                || ore_sites.contains_key(&billet.building_id)
                 || brain.census.units.iter().any(|unit| unit.traits.occupier
                     && unit.controllable()
                     && squared_distance(unit.cell, billet.cell) <= 7 * 7))
@@ -1012,7 +1087,10 @@ pub(super) fn garrison(
         }
         let near_front = billets.iter().any(|billet| {
             front_ids.contains(&billet.building_id)
-                && squared_distance(unit.cell, billet.cell) <= 10 * 10
+                && squared_distance(unit.cell, billet.cell) <=
+                    (if ore_sites.contains_key(&billet.building_id) {
+                        ORE_GARRISON_REACH_CELLS * ORE_GARRISON_REACH_CELLS
+                    } else { 10 * 10 })
         });
         // An infantryman walking past empty cover is not committed to a live
         // firefight; use the nearby building without stealing an actively firing unit.
@@ -1033,7 +1111,10 @@ pub(super) fn garrison(
         }
         let Some(billet) = billets
             .iter()
-            .filter(|billet| squared_distance(unit.cell, billet.cell) <= HOME_REACH_CELLS.pow(2))
+            .filter(|billet| squared_distance(unit.cell, billet.cell) <=
+                (if ore_sites.contains_key(&billet.building_id) {
+                    ORE_GARRISON_REACH_CELLS * ORE_GARRISON_REACH_CELLS
+                } else { HOME_REACH_CELLS.pow(2) }))
             .filter(|billet| room_left.get(&billet.building_id).copied().unwrap_or(0) > 0)
             .filter(|billet| {
                 // Preserve a minimal mobile base defense while sending the
@@ -1042,8 +1123,15 @@ pub(super) fn garrison(
             })
             .filter(|billet| obs.can_garrison(rules, unit.entity_id, billet.building_id))
             .min_by_key(|billet| {
-                let at_front = front_ids.contains(&billet.building_id);
-                (!at_front, squared_distance(unit.cell, billet.cell), billet.building_id)
+                // Rich central cover first, then other defended approach
+                // lanes, then ordinary home houses. The final distance is a
+                // tie-break, not the whole strategy for a mineral chokepoint.
+                let ore = ore_sites.get(&billet.building_id).copied().unwrap_or(0);
+                let priority = if ore >= ORE_GARRISON_MIN_CELLS { 0 }
+                    else if front_ids.contains(&billet.building_id) { 1 }
+                    else { 2 };
+                (priority, usize::MAX - ore,
+                    squared_distance(unit.cell, billet.cell), billet.building_id)
             })
         else {
             continue;
@@ -1511,7 +1599,10 @@ pub(super) fn forces(
         }
         // A unit already given this frame's order — a step out of a shell — is
         // not told to guard where it was standing.
-        if ordered_this_frame(out, unit.entity_id) {
+        if ordered_this_frame(out, unit.entity_id)
+            || brain.crate_claims.contains_key(&unit.entity_id)
+            || brain.crate_returns.contains_key(&unit.entity_id)
+        {
             continue;
         }
         // A unit that is already holding or fighting is doing exactly this, and
@@ -2092,6 +2183,18 @@ fn has_disguise_weapon(rules: &RuleSet, ty: &ObjectType) -> bool {
     })
 }
 
+/// A negative range is the original MakeupKit's special fire-from-anywhere
+/// convention. This is an *attack* through L2, not a move toward the specimen.
+fn disguise_shot_is_remote(rules: &RuleSet, ty: &ObjectType) -> bool {
+    (0..ty.weapon_record_count()).any(|slot| {
+        ty.weapon_at(slot).and_then(|name| rules.weapon(name))
+            .filter(|weapon| !weapon.never_use && weapon.range_leptons < 0)
+            .and_then(|weapon| weapon.warhead.as_deref()
+                .and_then(|name| rules.warhead(name)))
+            .is_some_and(|head| head.makes_disguise)
+    })
+}
+
 fn spy_route_blocked(
     obs: &Observation<'_>,
     rules: &RuleSet,
@@ -2151,11 +2254,58 @@ pub(super) fn crates(
                 || obs.visible_crate_at(rules, *cell))
     });
     let cells: Vec<(u16, u16)> = brain.crate_sightings.keys().copied().collect();
-    let live = &brain.tracked;
-    brain.crate_claims.retain(|id, (cell, until)| {
-        *until > tick && cells.contains(cell)
-            && live.primary_goal(*id) == Some(Goal::Move { cell: *cell })
+    // A collection run must *end*. An idle scout that picked up a crate at
+    // the front was otherwise immediately made an independent assault member,
+    // where one dog or fast IFV attacked a base alone and died. Keep a brief
+    // regroup order, never a permanent exclusion from the army.
+    let live: BTreeSet<u64> = brain.census.units.iter()
+        .map(|unit| unit.entity_id).collect();
+    brain.crate_returns.retain(|id, (post, until)| {
+        live.contains(id) && tick < *until
+            && brain.census.units.iter().any(|unit| unit.entity_id == *id
+                && squared_distance(unit.cell, *post) > 4 * 4)
     });
+    let finished: Vec<u64> = brain.crate_claims.iter()
+        .filter(|(id, (cell, until))| !live.contains(id)
+            || *until <= tick || !cells.contains(cell)
+            || brain.tracked.primary_goal(**id) != Some(Goal::Move { cell: *cell }))
+        .map(|(id, _)| *id).collect();
+    for id in finished {
+        brain.crate_claims.remove(&id);
+        brain.tracked.void(id, TrackedKind::Move);
+        brain.tracked.forget_primary(id);
+        // Returning alone to a home 100 cells away may be more dangerous
+        // than the original box errand. Regroup with a *nearby friendly
+        // formation* first; fall back to the base when nobody is close.
+        if let Some(unit) = brain.census.units.iter().find(|unit| unit.entity_id == id) {
+            let nearby = brain.census.units.iter()
+                .filter(|other| other.entity_id != id && other.traits.combat
+                    && other.controllable() && !other.in_service()
+                    && !brain.crate_claims.contains_key(&other.entity_id)
+                    && !brain.crate_returns.contains_key(&other.entity_id)
+                    && squared_distance(unit.cell, other.cell) <= 26 * 26)
+                .min_by_key(|other| (squared_distance(unit.cell, other.cell), other.entity_id))
+                .map(|other| other.cell);
+            let post = nearby.filter(|cell| super::orders::reachable(rules, obs, id, *cell)
+                && !super::tactics::unsafe_post(rules, obs, id, *cell))
+                .or(brain.census.rally.or(brain.census.base_cell)
+                    .filter(|cell| super::orders::reachable(rules, obs, id, *cell)
+                        && !super::tactics::unsafe_post(rules, obs, id, *cell)));
+            if let Some(post) = post
+                && squared_distance(unit.cell, post) > 4 * 4
+            {
+                brain.crate_returns.insert(id, (post, tick.saturating_add(1_200)));
+                log::debug!("auto play: crate courier {id} regroups at {post:?}");
+            }
+        }
+    }
+    for (&id, &(post, _)) in &brain.crate_returns {
+        if out.ordered_this_frame(id) || obs.destination(id) == Some(post) { continue; }
+        if issue_tracked(&mut brain.tracked, brain.trace, out, rules, obs,
+            id, TrackedKind::Avoid, None, Some(post), Goal::Move { cell: post }) {
+            log::debug!("auto play: crate courier {id} returning to {post:?}");
+        }
+    }
     if cells.is_empty() { return; }
     // A crate is a bonus and not a job, and the unit that takes it is one
     // with nothing else to do: not a unit the push owns, not a unit that is
@@ -2184,7 +2334,10 @@ pub(super) fn crates(
                 // A scout on an ordinary exploration Move is still the
                 // dedicated crate runner. Combat units may only be borrowed
                 // when idle: never interrupt a tank's attack for a box.
-                && (unit.traits.scout || !holds_or_fights(unit.mission))
+                && (unit.traits.scout || !holds_or_fights(unit.mission)
+                    || (obs.attack_target(unit.entity_id).is_none()
+                        && obs.destination(unit.entity_id).is_none()))
+                && !brain.crate_returns.contains_key(&unit.entity_id)
         })
         .filter_map(|unit| {
             let ty = obs.object_type(rules, unit.type_id);
@@ -2192,7 +2345,11 @@ pub(super) fn crates(
             let speed = ty.map_or(0, |ty| i32::from(ty.speed));
             Some((unit.entity_id, unit.cell, zone, speed))
         })
-        .filter(|(_, _, _, speed)| *speed >= CRATE_RUNNER_SPEED)
+        // Nearby crates belong to *any* mobile spare infantryman, even a
+        // Speed=4 GI. The remote detail still uses the fast-runner threshold.
+        .filter(|(_, cell, _, speed)| *speed >= CRATE_RUNNER_SPEED
+            || cells.iter().any(|crate_cell|
+                squared_distance(*cell, *crate_cell) <= 3 * 3))
         .collect();
     // Quickest first, so the detail is the same units every frame rather than
     // whichever the store yields first.
@@ -2218,11 +2375,26 @@ pub(super) fn crates(
         .or(brain.census.base_cell)
         .unwrap_or((0, 0));
     let mut crates = cells;
-    crates.sort_by_key(|cell| (squared_distance(anchor, *cell), *cell));
+    // A box at a soldier's feet must not wait behind four distant jobs simply
+    // because those boxes are closer to the old home anchor.
+    crates.sort_by_key(|cell| {
+        let closest = idle.iter().map(|(_, from, _, _, speed)|
+            squared_distance(*from, *cell) / (*speed).max(1)).min()
+            .unwrap_or(i32::MAX);
+        let adjacent = idle.iter().any(|(_, from, _, _, _)|
+            squared_distance(*from, *cell) <= 3 * 3);
+        (!adjacent, closest, squared_distance(anchor, *cell), *cell)
+    });
     let mut sent: BTreeSet<u64> = BTreeSet::new();
     for cell in crates {
-        if !crate_runner_available(brain.crate_claims.len(), CRATE_RUNNERS) {
-            break;
+        // Two extra slots are reserved for boxes appearing *under our feet*.
+        // Otherwise four distant claimants can lock out a free soldier who
+        // could collect a fresh trigger crate in the next two steps.
+        let immediately_reachable = idle.iter().any(|(_, from, _, _, _)|
+            squared_distance(*from, cell) <= 3 * 3);
+        let cap = CRATE_RUNNERS + if immediately_reachable { 2 } else { 0 };
+        if !crate_runner_available(brain.crate_claims.len(), cap) {
+            continue;
         }
         // Each site is a firsthand or time-limited remembered sighting.
         // Never read the current hidden global crate slots at assignment time.
@@ -2245,11 +2417,17 @@ pub(super) fn crates(
                 squared_distance(unit.1, cell), range)
                 && obs.can_reach(unit.2, unit.1, cell)
                 && !brain.census.enemies.iter().any(|enemy| {
+                    // Unarmed enemy factories are not a lethal gun line.
+                    // Only currently observed *armed/operational* threats
+                    // disqualify a route, not every harmless building.
                     obs.is_cell_visible(enemy.cell.0,enemy.cell.1)
-                        && (squared_distance(enemy.cell,cell) <= 12 * 12
-                            || (obs.entity_type(rules,enemy.entity_id)
-                                .is_some_and(|ty| ty.category == ObjectCategory::Building)
-                                && path_crosses(&[enemy.cell],unit.1,cell,7)))
+                        && obs.entity_type(rules, enemy.entity_id).is_some_and(|ty|
+                            ty.category != ObjectCategory::Building
+                                || (ty.is_base_defense
+                                    && obs.visible_enemy_building_operational(
+                                        rules, enemy.entity_id)))
+                        && (squared_distance(enemy.cell,cell) <= 9 * 9
+                            || path_crosses(&[enemy.cell],unit.1,cell,6))
                 })
         };
         // The soonest arrival, not the nearest body. The walk is the entire cost
@@ -2272,21 +2450,21 @@ pub(super) fn crates(
         let picked = idle
             .iter()
             .filter(|(id, _, _, _, _)| !sent.contains(id)
-                && !brain.crate_claims.contains_key(id))
+                && !brain.crate_claims.contains_key(id)
+                && !out.ordered_this_frame(*id)
+                && brain.tracked.admits(tick, *id, TrackedKind::Move,
+                    None, Some(cell)))
             .filter(|unit| reachable(unit, CRATE_SEEK_CELLS))
             .min_by_key(|unit| (arrival(unit), unit.0))
             .copied();
         let Some((id, from, zone, _, _)) = picked else {
             continue;
         };
-        sent.insert(id);
-        if ordered_this_frame(out, id) {
-            continue;
-        }
         if issue_tracked(
             &mut brain.tracked, brain.trace, out, rules, obs,
             id, TrackedKind::Move, None, Some(cell), Goal::Move { cell },
         ) {
+            sent.insert(id);
             brain.crate_claims.insert(id,(cell,tick.saturating_add(CRATE_CLAIM_FRAMES)));
             log::info!(
                 "auto play: unit {id} goes for the crate at {cell:?} taken={}",
@@ -3559,5 +3737,43 @@ mod v22_spy_disguise_rules_tests {
             "the spy should disguise by a native attack/detonation");
         assert!(!has_disguise_weapon(&rules, infantry),
             "ordinary infantry must not borrow the disguise exception");
+        assert!(disguise_shot_is_remote(&rules, spy),
+            "retail MakeupKit has a negative range: approaching infantry to fire is wrong");
+        assert!(!disguise_shot_is_remote(&rules, infantry));
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v23_garrison_ore_priority_tests {
+    use super::{ore_garrison_buckets, ore_garrison_score, ORE_GARRISON_MIN_CELLS};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn center_mineral_garrison_beats_edge_house_without_hidden_ore() {
+        let known: BTreeMap<(u16, u16), u8> = (0..16)
+            .map(|i| ((50 + i % 4, 50 + i / 4), 1))
+            .collect();
+        let buckets = ore_garrison_buckets(&known);
+        assert!(ore_garrison_score(&buckets, (53, 53)) >= ORE_GARRISON_MIN_CELLS);
+        assert_eq!(ore_garrison_score(&buckets, (4, 4)), 0);
+        assert_eq!(ore_garrison_score(&ore_garrison_buckets(&BTreeMap::new()),
+            (53, 53)), 0);
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v23_initial_army_and_crate_tests {
+    use super::{crate_runner_available, FORCE_ORDERS_PER_FRAME, CRATE_RUNNERS};
+
+    #[test]
+    fn opening_ten_infantry_are_not_truncated_by_the_old_eight_order_cap() {
+        assert!(FORCE_ORDERS_PER_FRAME >= 10);
+    }
+
+    #[test]
+    fn immediate_crates_get_two_extra_claim_slots_over_distant_ones() {
+        assert!(!crate_runner_available(CRATE_RUNNERS, CRATE_RUNNERS));
+        assert!(crate_runner_available(CRATE_RUNNERS, CRATE_RUNNERS + 2));
+        assert!(!crate_runner_available(CRATE_RUNNERS + 2, CRATE_RUNNERS + 2));
     }
 }
