@@ -28,6 +28,7 @@
 //! - the `action` import ([`actions`]): atomic actions and stock trigger
 //!   actions through their owners, for direct calls and trigger actions;
 //! - cell and global properties and `find` over cells ([`cells`]);
+//! - superweapon properties and `find` over superweapons ([`supers`]);
 //! - house orders for computer houses ([`orders`]);
 //! - `rules_get`, and `rules_set` and `on_rules` while the rules are
 //!   processed ([`rules`]).
@@ -48,8 +49,9 @@
 //! Residuals before this leaves preview:
 //! - The in-game notices of a stopped module and of a map's ignored
 //!   `Wasm.Tags` are English only.
-//! - House references use a provisional encoding ([`house_ref`]); the RFC
-//!   puts houses on the objects' creation counter (see there).
+//! - House and superweapon references use provisional encodings
+//!   ([`house_ref`], [`super_ref`]); the RFC puts both on the objects'
+//!   creation counter (see there).
 //! - TechnoType IDs are the rules' registry handles (`TypeHandle`), found by
 //!   name; a type whose ID two categories share reads as the first.
 //! - `set` writes `Health` (1 up to the type's Strength; a write of 0 or
@@ -68,8 +70,8 @@ use vera20k_wasm_ext::{
     NAME_ACTION_KIND, NAME_ANIM, NAME_COUNTRY, NAME_MODULE_EVENT, NAME_PARTICLE_SYSTEM,
     NAME_PROJECTILE, NAME_PROPERTY, NAME_STRING, NAME_SUPER_WEAPON, NAME_TEAM_TYPE,
     NAME_TECHNO_TYPE, NAME_VARIABLE, NAME_VOXEL_ANIM, NAME_WARHEAD, NAME_WEAPON, Order, Query,
-    SCOPE_CELLS, SCOPE_HOUSES, SCOPE_MODIFIERS, SCOPE_OBJECTS, SimHost, SimModule, Status,
-    TABLE_ACTION, TABLE_NAME_KIND, TABLE_PROPERTY, TABLE_SCOPE, property_name,
+    SCOPE_CELLS, SCOPE_HOUSES, SCOPE_MODIFIERS, SCOPE_OBJECTS, SCOPE_SUPER_WEAPONS, SimHost,
+    SimModule, Status, TABLE_ACTION, TABLE_NAME_KIND, TABLE_PROPERTY, TABLE_SCOPE, property_name,
 };
 
 mod actions;
@@ -86,6 +88,7 @@ pub(crate) mod modifiers;
 mod orders;
 mod props;
 mod rules;
+mod supers;
 pub(crate) mod vars;
 mod writes;
 
@@ -153,6 +156,17 @@ const HOUSE_REF_BIT: i64 = 1 << 47;
 
 pub const fn house_ref(index: usize) -> i64 {
     HOUSE_REF_BIT | index as i64
+}
+
+/// Superweapon references: bit 46 over (house index << 16) | the
+/// `[SuperWeaponTypes]` index ([`supers`]). A House's Supers are fixed for
+/// the match, so for the reasons given at [`HOUSE_REF_BIT`] they stay off
+/// the creation counter as well; unique against every serial (far below
+/// 2^46) and every house reference (bit 47 clear).
+const SUPER_REF_BIT: i64 = 1 << 46;
+
+const fn super_ref(house: usize, index: usize) -> i64 {
+    SUPER_REF_BIT | ((house as i64) << 16) | index as i64
 }
 
 /// Where a module came from (RFC section 2); mod modules run first.
@@ -675,6 +689,11 @@ const fn cell_ref(x: u16, y: u16) -> i64 {
 enum Ref {
     Object(u64),
     House(usize),
+    /// House `house`'s Super of `[SuperWeaponTypes]` entry `index`.
+    SuperWeapon {
+        house: usize,
+        index: usize,
+    },
     Type {
         kind: i32,
         id: u32,
@@ -701,6 +720,10 @@ fn decode_ref(reference: i64) -> Result<Option<Ref>, Invalid> {
     let payload = reference & ((1 << REF_KIND_SHIFT) - 1);
     Ok(Some(match reference >> REF_KIND_SHIFT {
         0 if reference & HOUSE_REF_BIT != 0 => Ref::House((payload & !HOUSE_REF_BIT) as usize),
+        0 if reference & SUPER_REF_BIT != 0 => Ref::SuperWeapon {
+            house: ((payload & !SUPER_REF_BIT) >> 16) as usize,
+            index: (payload & 0xFFFF) as usize,
+        },
         0 => Ref::Object(payload as u64),
         REF_TYPE => Ref::Type {
             kind: (payload >> 32) as i32,
@@ -784,7 +807,7 @@ fn has_kind(rules: &RuleSet, table: i32, id: i32) -> bool {
         ),
         TABLE_SCOPE => matches!(
             id,
-            SCOPE_OBJECTS | SCOPE_HOUSES | SCOPE_CELLS | SCOPE_MODIFIERS
+            SCOPE_OBJECTS | SCOPE_HOUSES | SCOPE_CELLS | SCOPE_MODIFIERS | SCOPE_SUPER_WEAPONS
         ),
         _ => false,
     }
@@ -963,10 +986,8 @@ impl SimHost for Host<'_, '_> {
             return Ok(status);
         }
         let name = property_name(prop).unwrap_or_default();
-        if name == "ControlDomains"
-            && let Some(Ref::House(index)) = decode_ref(reference)?
-        {
-            return self.write_control_domains(index, value);
+        if let Some(Ref::SuperWeapon { house, index }) = decode_ref(reference)? {
+            return self.write_super_weapon(house, index, name, value);
         }
         if let Some(Ref::Object(id)) = decode_ref(reference)?
             && self.sim.entities().get(id).is_some()
@@ -1080,6 +1101,7 @@ impl SimHost for Host<'_, '_> {
             SCOPE_HOUSES => self.find_houses(query, cap),
             SCOPE_CELLS => self.find_cells(query, cap),
             SCOPE_MODIFIERS => self.find_modifiers(query, cap),
+            SCOPE_SUPER_WEAPONS => self.find_super_weapons(query, cap),
             _ => Ok((FindPage::default(), Status::Unsupported)),
         }
     }
@@ -1209,14 +1231,48 @@ const READABLE: &[&str] = &[
     "Facing",
     "TurretFacing",
     "Armor",
+    // Objects for driving a house (props.rs, RFC 0001 6i).
+    "Destination",
+    "WeaponReady",
+    "Deployed",
+    "UnderConstruction",
+    "Parasite",
     // Viewpoint properties: in filter clauses and queries only.
     "Relation",
     "Revealed",
     "Placeable",
+    "Visible",
+    "Engage",
     // Houses.
     "TechLevel",
     "Country",
-    "ControlDomains",
+    "Factory.Building.Type",
+    "Factory.Building.Progress",
+    "Factory.Building.Ready",
+    "Factory.Building.Queued",
+    "Factory.Defense.Type",
+    "Factory.Defense.Progress",
+    "Factory.Defense.Ready",
+    "Factory.Defense.Queued",
+    "Factory.Infantry.Type",
+    "Factory.Infantry.Progress",
+    "Factory.Infantry.Ready",
+    "Factory.Infantry.Queued",
+    "Factory.Vehicle.Type",
+    "Factory.Vehicle.Progress",
+    "Factory.Vehicle.Ready",
+    "Factory.Vehicle.Queued",
+    "Factory.Naval.Type",
+    "Factory.Naval.Progress",
+    "Factory.Naval.Ready",
+    "Factory.Naval.Queued",
+    "Factory.Aircraft.Type",
+    "Factory.Aircraft.Progress",
+    "Factory.Aircraft.Ready",
+    "Factory.Aircraft.Queued",
+    // Superweapons (supers.rs).
+    "Ready",
+    "ChargePercent",
     // Types and rules (props.rs).
     "Soylent",
     "Speed",
@@ -1249,7 +1305,22 @@ const READABLE: &[&str] = &[
     "MissionTimerRunning",
     "AmbientLight",
     "IonStormActive",
-    // Cells: Passable.<SpeedType>.
+    "AutomationAllowed",
+    // Cells (cells.rs): Zone.<MovementZone>, Obstructed, Passable.<SpeedType>.
+    "Zone.Normal",
+    "Zone.Crusher",
+    "Zone.Destroyer",
+    "Zone.AmphibiousDestroyer",
+    "Zone.AmphibiousCrusher",
+    "Zone.Amphibious",
+    "Zone.Subterrannean",
+    "Zone.Infantry",
+    "Zone.InfantryDestroyer",
+    "Zone.Fly",
+    "Zone.Water",
+    "Zone.WaterBeach",
+    "Zone.CrusherAll",
+    "Obstructed",
     "Passable.Foot",
     "Passable.Track",
     "Passable.Wheel",
@@ -1285,9 +1356,10 @@ impl Host<'_, '_> {
     }
 
     /// A property read for `view` (appendix 7, "Viewpoint"): a filter
-    /// clause reads for the trigger house, a query for its `viewpoint`. A
-    /// direct `get` has none, and the viewpoint properties answer
-    /// `Unsupported` there.
+    /// clause reads for the trigger house, a query for its `viewpoint` (a
+    /// house, or an object: `Engage` reads for it, the house properties for
+    /// its owner). A direct `get` has none, and the viewpoint properties
+    /// answer `Unsupported` there.
     fn read_in(&self, reference: i64, prop: i32, view: View) -> Result<(i64, Status), Invalid> {
         let name = property_name(prop).unwrap_or_default();
         let Some(reference) = decode_ref(reference)? else {
@@ -1295,8 +1367,12 @@ impl Host<'_, '_> {
         };
         Ok(match reference {
             Ref::Object(id) => match self.sim.entities().get(id) {
-                Some(entity) if name == "Relation" => self.relation(entity.owner(), view),
-                Some(entity) => self.object_property(entity, name),
+                Some(entity) => match name {
+                    "Relation" => self.relation(entity.owner(), view),
+                    "Visible" => self.visible(entity, view),
+                    "Engage" => self.engage(id, view),
+                    _ => self.object_property(entity, name),
+                },
                 None => match self.sim.ext_modules.modifiers.get(id) {
                     Some(modifier) => modifier
                         .property(name, self.sim.session.binary_frame())
@@ -1311,6 +1387,7 @@ impl Host<'_, '_> {
                 }
             }
             Ref::House(index) => self.house_property(index, name),
+            Ref::SuperWeapon { house, index } => self.super_weapon_property(house, index, name),
             Ref::Type { kind, id } => type_property(self.rules, kind, id, name)?,
             Ref::Cell { x, y } => self.cell_property(x, y, name, view),
             Ref::Waypoint(number) => match self.waypoint_cell(number) {
@@ -1432,7 +1509,7 @@ impl Host<'_, '_> {
                 Some(country) => type_ref(NAME_COUNTRY, u32::from(country.0)),
                 None => return (0, Status::NotFound),
             },
-            _ => return (0, Status::Unsupported),
+            _ => return self.factory_property(id, name),
         };
         (value, Status::Ok)
     }
@@ -2158,5 +2235,5 @@ mod event_tests;
 mod ini_register_tests;
 
 #[cfg(all(test, tests_sim_c_g))]
-#[path = "ext_modules_claim_tests.rs"]
-mod claim_tests;
+#[path = "ext_modules_drive_tests.rs"]
+mod drive_tests;

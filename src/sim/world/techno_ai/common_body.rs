@@ -1228,8 +1228,25 @@ fn screen_visual_character(
     entity: &crate::sim::game_entity::GameEntity,
     rules: &RuleSet,
 ) -> u8 {
+    screen_visual_character_for(
+        sim,
+        entity,
+        rules,
+        sim.session.current_house(),
+        sim.shared_owned_by_current_house(entity),
+    )
+}
+
+/// [`screen_visual_character`] for `viewer`, with `owned_by_viewer` as the
+/// `+0x41A` byte that house would hold.
+fn screen_visual_character_for(
+    sim: &Simulation,
+    entity: &crate::sim::game_entity::GameEntity,
+    rules: &RuleSet,
+    viewer: Option<crate::sim::intern::InternedId>,
+    owned_by_viewer: bool,
+) -> u8 {
     use crate::sim::combat::combat_weapon::is_ally_by_object;
-    let viewer = sim.session.current_house();
     let owner = entity.owner();
     let allied = |a, b| is_ally_by_object(Some(&sim.house_alliances), &sim.interner, a, b);
     let object = sim.interner.object_type(entity.type_ref(), rules);
@@ -1242,7 +1259,7 @@ fn screen_visual_character(
             object.cloaking_stages(rules.general.cloaking_stages)
         }),
         invisible,
-        sim.shared_owned_by_current_house(entity),
+        owned_by_viewer,
         crate::sim::cloak_disguise::VisualCharacterQuery::screen(
             true,
             viewer.is_some(),
@@ -1252,6 +1269,41 @@ fn screen_visual_character(
             false,
         ),
     )
+}
+
+impl Simulation {
+    /// Whether `viewer` sees the object at this moment as that house's
+    /// screen would show it (RFC 0001 `Visible`): alive and out of limbo;
+    /// the viewer's own or an ally's, or on a cell the viewer's fog shows
+    /// objects on ([`FogState::shows_objects_to`], current sight under
+    /// FogOfWar, as the translucent fog draws); and not Hidden (5) to the
+    /// screen GetVisualState (`0x00703860`) asked for the viewer, which
+    /// covers cloaking, sensors, `Invisible=` and the tunnel ripple.
+    ///
+    /// [`FogState::shows_objects_to`]: crate::sim::vision::FogState::shows_objects_to
+    pub(crate) fn object_seen_by(
+        &self,
+        rules: &RuleSet,
+        entity: &crate::sim::game_entity::GameEntity,
+        viewer: crate::sim::intern::InternedId,
+    ) -> bool {
+        if !entity.lifecycle.object_alive() || entity.lifecycle.in_limbo() {
+            return false;
+        }
+        let owner = entity.owner();
+        let own = owner == viewer;
+        let shown = own
+            || self
+                .house_alliances
+                .is_allied(&self.interner, viewer, owner)
+            || self.fog.shows_objects_to(
+                viewer,
+                entity.position.rx(),
+                entity.position.ry(),
+                self.session.game_options().fog_of_war,
+            );
+        shown && screen_visual_character_for(self, entity, rules, Some(viewer), own) != 5
+    }
 }
 
 /// `TechnoClass::AI_Update @ 0x006FA9D8..0x006FAAEF`, after the spawn manager

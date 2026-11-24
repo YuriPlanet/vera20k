@@ -8,7 +8,7 @@ use crate::rules::ini_parser::IniFile;
 const MAP: &str = "XMP03T4.MAP";
 const SEED: u32 = 0x1269;
 
-fn scenario() -> Option<HeadlessScenario> {
+pub(super) fn scenario() -> Option<HeadlessScenario> {
     let (retail, _) = crate::rules::retail_ini_fixture::retail_assets()?;
     Some(crate::headless_scenario::load(&retail, MAP, SEED).expect("retail scenario loads"))
 }
@@ -610,7 +610,7 @@ fn muster_field_ends_when_the_last_banner_falls() {
 
 /// Spawns a Grizzly for the first computer house beside its base.
 /// Returns (house index, tank, its cell).
-fn computer_tank(scene: &mut HeadlessScenario) -> (usize, u64, (u16, u16)) {
+pub(super) fn computer_tank(scene: &mut HeadlessScenario) -> (usize, u64, (u16, u16)) {
     spawn_for_computer(scene, "MTNK")
 }
 
@@ -1042,7 +1042,7 @@ pub(super) fn mem_i32(scene: &HeadlessScenario, slot: usize, at: usize) -> i32 {
     i32::from_le_bytes(memory_at(scene, slot, at))
 }
 
-fn mem_i64(scene: &HeadlessScenario, slot: usize, at: usize) -> i64 {
+pub(super) fn mem_i64(scene: &HeadlessScenario, slot: usize, at: usize) -> i64 {
     i64::from_le_bytes(memory_at(scene, slot, at))
 }
 
@@ -1553,7 +1553,7 @@ fn a_rust_built_modifier_module_runs() {
 
 /// `ActionParams` with `id`, `arg`, `value` and `house` set, as WAT stores
 /// at `at` (appendix "Fixed layouts").
-fn params_wat(at: u32, id: i32, arg: i32, value: i64, house: i64) -> String {
+pub(super) fn params_wat(at: u32, id: i32, arg: i32, value: i64, house: i64) -> String {
     format!(
         "(i32.store (i32.const {at}) (i32.const {id})) (i32.store (i32.const {}) (i32.const {arg})) \
          (i64.store (i32.const {}) (i64.const {value})) (i64.store (i32.const {}) (i64.const {house}))",
@@ -1822,7 +1822,7 @@ fn a_module_reads_object_type_and_global_properties_through_their_owners() {
 
 /// Query bytes: `scope`, area 0 or a 1x1 rectangle at `cell`, `owner`,
 /// `viewpoint`, and property clauses `(property, Eq, value)`.
-fn query_wat(
+pub(super) fn query_wat(
     at: u32,
     scope: i32,
     cell: Option<i64>,

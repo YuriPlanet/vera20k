@@ -10,6 +10,9 @@
 //! | `MissionTimer`, `MissionTimerRunning` | the scenario countdown (TAction 23..27): frames left, also while stopped, and whether it runs |
 //! | `AmbientLight` | the scenario lighting's current ambient level |
 //! | `IonStormActive` | `lightning_storm::raging` (LightningStorm::IsActive `0x0053A100`) |
+//! | `Zone.<MovementZone>` | `ZoneGrid::get_zone_id_native` (MapClass::GetZoneID `0x0056D230`, bridge check off): the connected area the pathfinder's zone precheck compares; `Unsupported` before the zones are built |
+//! | `Obstructed` | a building in the cell's ground list (`OccupancyGrid::first_building_on_layer`, Look_up_building_in_cell `0x0047C520`), or an overlay RecalcZoneType (`0x00483C80`) makes Wall or Impassable (`overlay_reduced_zone_type`: walls, rocks, wheel speed 0) |
+//! | `AutomationAllowed` | 0: the room switch "Allow automation" comes with phase 2 (client modules) |
 //!
 //! Residuals:
 //! - `CellTag` reads 0 for a cell without a tag; a tagged cell answers
@@ -18,12 +21,38 @@
 //!   kept yet.
 //! - A cell `find` with an owner answers `Unsupported`; its type serves only
 //!   `Placeable`.
+//! - `Zone.<MovementZone>` reads the cell's own (ground) zone: a bridge deck
+//!   cell answers the zone below it, not the deck's.
+//! - `Obstructed` leaves out trees and other terrain objects, units and
+//!   impassable land (`Passable.<SpeedType>` reads the land).
 
 use vera20k_wasm_ext::{Area, FindPage, Invalid, NAME_OVERLAY, NAME_TECHNO_TYPE, Query, Status};
 
 use super::{Host, Ref, View, cell_ref, decode_ref, techno_type, type_ref};
-use crate::rules::locomotor_type::SpeedType;
+use crate::map::resolved_terrain::{overlay_reduced_zone_type, zone_class};
+use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::object_type::ObjectCategory;
+use crate::sim::movement::locomotor::MovementLayer;
+
+/// The MovementZone a `Zone.<MovementZone>` property names.
+fn zone_movement_zone(name: &str) -> Option<MovementZone> {
+    Some(match name.strip_prefix("Zone.")? {
+        "Normal" => MovementZone::Normal,
+        "Crusher" => MovementZone::Crusher,
+        "Destroyer" => MovementZone::Destroyer,
+        "AmphibiousDestroyer" => MovementZone::AmphibiousDestroyer,
+        "AmphibiousCrusher" => MovementZone::AmphibiousCrusher,
+        "Amphibious" => MovementZone::Amphibious,
+        "Subterrannean" => MovementZone::Subterranean,
+        "Infantry" => MovementZone::Infantry,
+        "InfantryDestroyer" => MovementZone::InfantryDestroyer,
+        "Fly" => MovementZone::Fly,
+        "Water" => MovementZone::Water,
+        "WaterBeach" => MovementZone::WaterBeach,
+        "CrusherAll" => MovementZone::CrusherAll,
+        _ => return None,
+    })
+}
 
 /// The SpeedType a `Passable.<SpeedType>` property names.
 fn passable_speed_type(name: &str) -> Option<SpeedType> {
@@ -89,6 +118,30 @@ impl Host<'_, '_> {
                 Err(status) => return (0, status),
             },
             "Placeable" => return self.placeable(x, y, view),
+            "Obstructed" => {
+                let building = self
+                    .sim
+                    .occupancy()
+                    .first_building_on_layer(x, y, MovementLayer::Ground)
+                    .is_some();
+                let blocking_overlay = overlay()
+                    .and_then(|cell| cell.overlay_id)
+                    .and_then(|id| self.rules.overlay_registry().flags(id))
+                    .and_then(|flags| overlay_reduced_zone_type(Some(flags)))
+                    .is_some_and(|zone| matches!(zone, zone_class::WALL | zone_class::IMPASSABLE));
+                i64::from(building || blocking_overlay)
+            }
+            _ if name.starts_with("Zone.") => {
+                let (Some(movement_zone), Some(zones)) =
+                    (zone_movement_zone(name), self.sim.zone_grid.as_ref())
+                else {
+                    return (0, Status::Unsupported);
+                };
+                match zones.get_zone_id_native(terrain, (x, y), movement_zone, false) {
+                    Some(zone) => i64::from(zone),
+                    None => return (0, Status::Unsupported),
+                }
+            }
             _ => match passable_speed_type(name) {
                 Some(speed) => i64::from(
                     terrain
@@ -153,6 +206,9 @@ impl Host<'_, '_> {
             "IonStormActive" => {
                 i64::from(crate::sim::superweapon::lightning_storm::raging(self.sim))
             }
+            // The room switch "Allow automation" (RFC 0001 6i) arrives with
+            // client modules; until then no room allows automation.
+            "AutomationAllowed" => 0,
             _ => return (0, Status::Unsupported),
         };
         (value, Status::Ok)
