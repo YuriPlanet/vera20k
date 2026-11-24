@@ -70,6 +70,10 @@ pub(crate) struct ProbeReport {
     /// (`SKIRMISH_MAX_SLOT_COUNT`); every other launch seats at most thirty.
     /// An older build's report lacks the field, and that build seats thirty.
     pub max_offline_houses: u8,
+    /// This build reads players who share an explicit `[SpawnLocations]`
+    /// start as one House (docs/spawn.md, "Shared starts"). An older build's
+    /// report lacks the field, and that build refuses a shared start.
+    pub shared_starts: bool,
 }
 
 /// One `[Battles]` campaign of the game data, as the campaign startup reads it.
@@ -395,6 +399,7 @@ pub(crate) fn probe(
         campaigns,
         generate_map: true,
         max_offline_houses: crate::skirmish_launch::SKIRMISH_MAX_SLOT_COUNT as u8,
+        shared_starts: true,
     })
 }
 
@@ -852,6 +857,7 @@ mod tests {
             }],
             generate_map: true,
             max_offline_houses: 120,
+            shared_starts: true,
         };
         let value = serde_json::to_value(&report).unwrap();
         let mut keys: Vec<_> = value.as_object().unwrap().keys().cloned().collect();
@@ -870,6 +876,7 @@ mod tests {
                 "max_start_waypoints",
                 "rules_digest",
                 "rules_parts",
+                "shared_starts",
                 "version"
             ]
         );
@@ -897,6 +904,7 @@ mod tests {
         );
         assert!(value["version"].is_string());
         assert_eq!(value["generate_map"], true);
+        assert_eq!(value["shared_starts"], true);
         let none = ProbeReport {
             map: None,
             max_start_waypoints: None,
