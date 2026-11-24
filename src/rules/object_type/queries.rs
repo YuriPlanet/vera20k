@@ -59,10 +59,10 @@ impl ObjectType {
         self.weapon_offsets.weapon(index, use_elite)
     }
 
-    /// Kratos firing offsets at normal and elite rank. In each group the first
-    /// pair is prone primary/secondary, the second standing primary/secondary.
-    pub(crate) fn kratos_weapon_offsets(&self) -> [&[[i32; 3]; 4]; 2] {
-        self.weapon_offsets.kratos_weapon_offsets()
+    /// Kratos' crawling fire offsets for this type, if the piece read any
+    /// (`kratos_crawling_flh`).
+    pub(crate) fn kratos_crawling(&self) -> &crate::rules::kratos_crawling_flh::CrawlingFlh {
+        self.weapon_offsets.kratos_crawling()
     }
 
     /// GetFLH6F3AF5: an open transport lends its zero-based cargo port.
