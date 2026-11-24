@@ -22,7 +22,7 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
   [ares-attach-effect.md](ares-attach-effect.md)). `ares-src/report/ini_coverage.tsv` is
   not exhaustive; use the key scan under Tools.
 - Hooks: Ares 3.0 installs 1448 (`report/hooks.tsv` also lists 234 0.A hooks that 3.0
-  removed). The engine source cites 1021; the chain docs give 361 more a disposition
+  removed). The engine source cites 1022 and the chain docs give 360 more a disposition
   (ported elsewhere, equivalent, not applicable, skipped or residual); 66 are
   untouched, listed at the end with `0x5F3D65`, whose address the engine quotes only
   for the stock destructor. A residual disposition is still a gap: every
@@ -46,7 +46,6 @@ first; the Ares part is then small. None of them is reachable with retail YR dat
 | Ares feature (keys, hooks) | Needs this stock gamemd logic | Retail |
 |---|---|---|
 | `NoSelfGuardArea` (0x51E748) | The healer's self-GuardArea arm of the infantry input ladder (0x51E710..0x51E748) | Healers never self-guard |
-| Gate placement selling walls (0x440709, 100156F0) | The hook's wall test in BuildingClass::Unlimbo's Gate arm; the stock arm is ported with the stock wall ids | A mod `Wall=` overlay stays under a gate |
 | Tunnel entry by an absorber click (0x44351A, 100172F0) | The absorber click that sends radio 0x10 | Ares tunnels are mod-only |
 
 Stock gap found in passing, with no Ares dependency: Generate_Starting_Units (0x5D6D80)

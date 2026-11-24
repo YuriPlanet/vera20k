@@ -13,23 +13,26 @@ use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::world::Simulation;
 
 const RULES: &str = "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
-     [BuildingTypes]\n0=TOWER\n1=GAWALL\n2=GATE\n3=POST\n4=FENCE\n\
-     [OverlayTypes]\n0=GASAND\n1=CYCL\n2=GAWALL\n\
+     [BuildingTypes]\n0=TOWER\n1=GAWALL\n2=GATE\n3=POST\n4=FENCE\n5=MODWALL\n\
+     [OverlayTypes]\n0=GASAND\n1=CYCL\n2=GAWALL\n3=MODWALL\n\
      [General]\nWallTower=TOWER\nGDIGateOne=GATE\n\
      [TOWER]\nStrength=500\n\
      [GATE]\nStrength=500\nGate=yes\n\
      [POST]\nStrength=500\nLaserFencePost=yes\n\
      [FENCE]\nStrength=300\nLaserFence=yes\n\
      [GASAND]\nWall=yes\n[CYCL]\n[GAWALL]\nStrength=300\nWall=yes\n\
+     [MODWALL]\nStrength=300\nWall=yes\n\
      [Clear]\nBuildable=yes\nFloat=0%\n";
 
 const ART: &str = "[TOWER]\nFoundation=1x1\n[GATE]\nFoundation=1x1\n[POST]\nFoundation=1x1\n\
-     [FENCE]\nFoundation=1x1\n[GAWALL]\nFoundation=1x1\nToOverlay=GAWALL\n";
+     [FENCE]\nFoundation=1x1\n[GAWALL]\nFoundation=1x1\nToOverlay=GAWALL\n\
+     [MODWALL]\nFoundation=1x1\nToOverlay=MODWALL\n";
 
 const GAWALL: u8 = 2;
+const MODWALL: u8 = 3;
 
-fn arena() -> (Simulation, RuleSet, OverlayTypeRegistry) {
-    let ini = IniFile::from_str(RULES);
+fn arena(rules_ini: &str) -> (Simulation, RuleSet, OverlayTypeRegistry) {
+    let ini = IniFile::from_str(rules_ini);
     let art = IniFile::from_str(ART);
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("fixture rules");
     rules.install_art_data(ArtRegistry::from_ini(&art));
@@ -42,7 +45,7 @@ fn arena() -> (Simulation, RuleSet, OverlayTypeRegistry) {
 /// Places `ty` for the human house on its own GAWALL at (10, 10), beside a
 /// second own wall at (11, 10), and returns the two cells' overlays.
 fn overlays_after_placing_on_own_wall(ty: &str) -> [Option<u8>; 2] {
-    let (mut sim, rules, registry) = arena();
+    let (mut sim, rules, registry) = arena(RULES);
     let owner = sim.interner.get("Americans").unwrap();
     let grid = sim.overlay_grid.as_mut().unwrap();
     grid.place_owned_wall(10, 10, GAWALL, 0, owner);
@@ -70,8 +73,26 @@ fn a_gate_sells_its_owners_walls_under_its_foundation() {
 }
 
 #[test]
+fn an_ares_gate_sells_its_owners_mod_wall_under_it() {
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+    let rules_ini = RULES.replace("[General]\n", "[General]\nDegrade.Enabled=no\n");
+    let (mut sim, rules, registry) = arena(&rules_ini);
+    assert!(rules.ares_form());
+    let owner = sim.interner.get("Americans").unwrap();
+    let grid = sim.overlay_grid.as_mut().unwrap();
+    grid.place_owned_wall(10, 10, MODWALL, 0, owner);
+    grid.place_owned_wall(11, 10, MODWALL, 0, owner);
+    sim.spawn_object_with_overlay_registry("GATE", "Americans", 10, 10, 0, &rules, &registry)
+        .expect("an Ares gate stands on its owner's wall");
+    let grid = sim.overlay_grid.as_ref().unwrap();
+    assert_eq!(grid.cell(10, 10).overlay_id, None);
+    assert_eq!(grid.cell(10, 10).wall_owner, None);
+    assert_eq!(grid.cell(11, 10).overlay_id, Some(MODWALL));
+}
+
+#[test]
 fn a_laser_fence_post_removes_its_owners_fence_building_in_its_cell() {
-    let (mut sim, rules, registry) = arena();
+    let (mut sim, rules, registry) = arena(RULES);
     let spawn = |sim: &mut Simulation, ty: &str| {
         sim.spawn_object_with_overlay_registry(ty, "Americans", 10, 10, 0, &rules, &registry)
     };
