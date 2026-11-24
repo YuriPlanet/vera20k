@@ -330,7 +330,7 @@ impl crate::sim::aircraft::carryall::CarryallMoveHost for WorldMove<'_> {
         move_mission::MoveHost::assign_attack_cell(self);
         // `0x00416EE4..0x00416EF5` rereads the team and the NavCom after the
         // destination setter.
-        if let Some((team, _)) = self.sim.team_script_vm.team_for_member(self.id) {
+        if let Some(team) = self.sim.team_script_vm.team_of(self.id) {
             let target = self
                 .nav()
                 .map(|nav| crate::sim::combat::TargetKind::from(nav).into());

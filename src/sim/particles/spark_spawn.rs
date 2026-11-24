@@ -284,7 +284,13 @@ fn construct_spark_particle(
         rules,
         particle_type_id,
         system_coords,
-        |sim, x, y| Ok(super::spark_world::constructor_ground_height(sim, x, y)?),
+        |sim, x, y| {
+            Ok(super::spark_world::constructor_ground_height(
+                sim.resolved_terrain.as_ref(),
+                x,
+                y,
+            )?)
+        },
     )
 }
 

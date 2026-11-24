@@ -1110,7 +1110,7 @@ fn infantry_idle_guard_pick(sim: &Simulation, id: u64, rules: &RuleSet) -> Missi
     };
     let house = sim.houses.get(&entity.owner());
     let human = house.is_none_or(|house| house.is_controlled_by_human(sim.session.rule_policy()));
-    let teamed = sim.team_script_vm.team_for_member(id).is_some();
+    let teamed = sim.team_script_vm.team_of(id).is_some();
     let object = sim.entity_object_type(entity, rules);
     let area_guard = if !human && !teamed {
         house.is_some_and(|house| house.current_iq() >= rules.general.iq_guard_area)

@@ -97,11 +97,11 @@ fn ground_height_for_selection(
 /// CellClass::GetGroundHeight @ 0x00578080 once for the comparison and again
 /// only when the input Z is at or below the first result.
 pub(super) fn constructor_ground_height(
-    sim: &Simulation,
+    terrain: Option<&ResolvedTerrainGrid>,
     world_x: i32,
     world_y: i32,
 ) -> Result<Option<i32>, SparkWorldError> {
-    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+    let Some(terrain) = terrain else {
         return Ok(None);
     };
     let selected = select_cell(terrain, SparkCellSelectionRole::Ground, world_x, world_y);
@@ -124,11 +124,12 @@ fn selected_bridge_z(
 
 /// SmokeMove62D3F0 queries the OLD cell and reads ground only if that
 /// selected real/dummy cell has a live structural bridge. No overlay lookup.
+/// Without terrain (fixtures) there is no deck.
 pub(super) fn smoke_bridge_deck(
-    sim: &Simulation,
+    terrain: Option<&ResolvedTerrainGrid>,
     coords: IVec3,
 ) -> Result<Option<i32>, SparkWorldError> {
-    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+    let Some(terrain) = terrain else {
         return Ok(None);
     };
     let cell = select_cell(terrain, SparkCellSelectionRole::Cell, coords.x, coords.y);
@@ -893,7 +894,7 @@ pub(super) mod tests {
         assert_eq!(collision.committed_coords.z, 1040);
         assert!(ares_spark_dies(&sim, &rules, motion.old_coords, motion.candidate_coords).unwrap());
         assert_eq!(
-            smoke_bridge_deck(&sim, motion.old_coords).unwrap(),
+            smoke_bridge_deck(sim.resolved_terrain.as_ref(), motion.old_coords).unwrap(),
             Some(1040)
         );
     }
