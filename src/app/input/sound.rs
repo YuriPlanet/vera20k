@@ -100,7 +100,11 @@ pub(crate) fn open(state: &mut AppState) {
 pub(crate) fn apply_back_volumes(state: &mut AppState, positions: [u8; 3]) {
     for id in SoundSlider::ALL {
         apply_volume(
-            state,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence.options_profile,
             channel(id),
             (f64::from(positions[id as usize]) * 0.1) as f32,
             false,
@@ -121,7 +125,16 @@ pub(crate) fn volume_positions(state: &AppState) -> [u8; 3] {
 
 /// A changed slider applies live (`WM_HSCROLL`).
 pub(crate) fn apply_slider_volume(state: &mut AppState, id: SoundSlider, volume: f32) {
-    apply_volume(state, channel(id), volume, true);
+    apply_volume(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+        &mut state.persistence.options_profile,
+        channel(id),
+        volume,
+        true,
+    );
 }
 
 fn back(state: &mut AppState) {
@@ -236,7 +249,16 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
     state.platform.window.request_redraw();
     for event in events {
         if let Some((id, volume)) = sound::shell_sound_volume(&event) {
-            apply_volume(state, channel(id), volume, true);
+            apply_volume(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence.options_profile,
+                channel(id),
+                volume,
+                true,
+            );
             continue;
         }
         let (PageEvent::Activated(id) | PageEvent::Toggled(id, _)) = event else {

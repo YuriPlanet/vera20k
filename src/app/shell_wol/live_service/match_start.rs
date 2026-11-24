@@ -34,7 +34,7 @@ pub(super) fn enter_timed_start(
         service.relay_renewal_due = Some(now_ms);
     }
     // A new match: no earlier one's result may stand for it.
-    crate::app::App::clear_match_result(state);
+    crate::app::App::clear_match_result(&mut state.frontend);
     crate::app::lan_service::apply_online_timing(&mut state.match_state, pings)?;
     let count = state
         .match_state
@@ -552,7 +552,7 @@ pub(crate) fn end_spawned_match(wol: Option<&mut WolVisit>) -> bool {
 /// `finish` with the result after a match, else `leave` for a failed
 /// admission; the process quits on its acknowledgement or the deadline.
 pub(super) fn poll_spawned_exit(state: &mut AppState, service: &mut LiveService) {
-    let result = crate::app::App::match_result(state)
+    let result = crate::app::App::match_result(&state.frontend)
         .unwrap_or(crate::app::cncnet::ExternalMatchResult::Quit);
     let opponents_left = state.frontend.external_progress.opponents_left;
     let Some(spawned) = spawned_visit_mut(state.frontend.wol.as_mut()) else {

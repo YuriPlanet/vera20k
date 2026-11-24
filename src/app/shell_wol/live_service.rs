@@ -439,7 +439,7 @@ fn update_required_text(message: Option<&str>) -> String {
 /// ([`crate::app::updater::lobby_outdated`]).
 fn lobby_says_outdated(state: &mut AppState) {
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    crate::app::updater::lobby_outdated(state);
+    crate::app::updater::lobby_outdated(&mut state.frontend);
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     let _ = state;
 }
@@ -1136,9 +1136,10 @@ type MatchReport = (Option<&'static str>, Option<Vec<String>>, Option<Instant>);
 
 fn match_report(state: &AppState) -> MatchReport {
     (
-        crate::app::App::match_result(state).map(crate::app::cncnet::ExternalMatchResult::as_str),
-        crate::app::App::match_winners(state).map(<[String]>::to_vec),
-        crate::app::App::match_result_at(state),
+        crate::app::App::match_result(&state.frontend)
+            .map(crate::app::cncnet::ExternalMatchResult::as_str),
+        crate::app::App::match_winners(&state.frontend).map(<[String]>::to_vec),
+        crate::app::App::match_result_at(&state.frontend),
     )
 }
 
@@ -1207,7 +1208,11 @@ pub(crate) fn retire_visit_for_exit(state: &mut AppState) {
         .as_ref()
         .is_some_and(LiveService::match_unfinished)
     {
-        crate::app::App::record_match_result(state, crate::app::cncnet::ExternalMatchResult::Quit);
+        crate::app::App::record_match_result(
+            &mut state.frontend,
+            &state.match_state,
+            crate::app::cncnet::ExternalMatchResult::Quit,
+        );
         let report = match_report(state);
         if let Some(visit) = state.frontend.wol.as_mut() {
             visit.match_left_for_exit(report, Instant::now());

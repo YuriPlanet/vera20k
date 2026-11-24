@@ -240,7 +240,11 @@ impl App {
                     .and_then(|browser| browser.selected_entry())
                     .is_none_or(|row| row.loadable);
                 if loadable {
-                    crate::app::persistence::commands::request_saved_game_load(state, path);
+                    crate::app::persistence::commands::request_saved_game_load(
+                        &state.platform,
+                        &mut state.persistence,
+                        path,
+                    );
                 } else {
                     Self::show_saved_game_prompt(
                         state,

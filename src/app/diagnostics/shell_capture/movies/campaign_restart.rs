@@ -1016,7 +1016,8 @@ impl RestartCapture {
                 }
             }
             Step::AwaitRestartedLive => {
-                if let Some(startup) = crate::app::loading::pump::loading_campaign_startup(state)
+                if let Some(startup) =
+                    crate::app::loading::pump::loading_campaign_startup(&state.frontend)
                     && self.observed_restart_loading.is_none()
                 {
                     if let Some(win) = self.win_movie.as_mut() {

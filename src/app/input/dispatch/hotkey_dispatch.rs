@@ -480,7 +480,10 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
                 .persistence
                 .options_profile
                 .superweapon_building_timers = on;
-            crate::app::persistence::options::persist_options_profile(state);
+            crate::app::persistence::options::persist_options_profile(
+                &state.platform,
+                &state.persistence.options_profile,
+            );
             log::info!(
                 "Super weapon building timers: {}",
                 if on { "shown" } else { "hidden" }
@@ -496,7 +499,10 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
             let on = *help;
             state.persistence.options_profile.convenience_help = on;
             state.match_state.sim_runtime.show_status_rows(on);
-            crate::app::persistence::options::persist_options_profile(state);
+            crate::app::persistence::options::persist_options_profile(
+                &state.platform,
+                &state.persistence.options_profile,
+            );
             log::info!("Convenience help: {}", if on { "shown" } else { "hidden" });
         }
         // A held key: `input::keyboard::in_game_key_edge` tracks it.

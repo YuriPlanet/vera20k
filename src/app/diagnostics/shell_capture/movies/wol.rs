@@ -1124,7 +1124,7 @@ impl WolCapture {
                 "the WOL handoff became offline"
             );
             return Ok(state.frontend.screen == GameScreen::Loading
-                && crate::app::loading::pump::next_native_loading_frame(state)
+                && crate::app::loading::pump::next_native_loading_frame(&state.frontend)
                     == Some(crate::app::loading::pump::NextLoadingFrame::First));
         }
         // Behind a box `0x10E`/`0x10F` is gone, and with it the status line;

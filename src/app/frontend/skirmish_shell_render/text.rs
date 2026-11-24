@@ -700,7 +700,9 @@ fn choose_map_empty_text(
     } else if modal.random_maps_selected() && modal.search.is_empty() {
         Some(tr("VERA:NoRandomMaps"))
     } else if modal.online_maps_selected() {
-        Some(crate::app::map_library::empty_online_maps_text(state))
+        Some(crate::app::map_library::empty_online_maps_text(
+            &state.frontend,
+        ))
     } else if modal.favorites_selected() && modal.search.is_empty() {
         Some(tr(if modal.favorites.is_empty() {
             "VERA:NoFavorites"
@@ -842,7 +844,7 @@ pub(super) fn choose_map_prompt_labels(
             &[("size", &bytes.div_ceil(1024)), ("name", &name)],
         ),
         (ChooseMapPromptKind::Downloading, Some((name, ..))) => {
-            match crate::app::map_library::download_progress(state) {
+            match crate::app::map_library::download_progress(&state.frontend) {
                 Some((received, length)) => tr_fill(
                     "VERA:DownloadingMapPercent",
                     &[

@@ -503,14 +503,19 @@ pub(super) fn ensure_map_preview_texture(
             decode_preview_for_map_entry(entry, ra2_dir, state.process_assets.manager())
         })
         // A bundled or downloadable row carries preview bytes outside the install folder.
-        .or_else(|| crate::app::map_library::catalog_preview(state, selected_map_idx));
+        .or_else(|| crate::app::map_library::catalog_preview(&state.frontend, selected_map_idx));
     // VERA's own picture of the map, once one is kept, shrunk here by area to
     // the size the box shows it at: it is up to eight times that size, and the
     // GPU's linear filter, which reads four texels, would alias the shrink.
     if hd_setting
         && selected_entry.is_some()
         && !selected_is_random_sentinel
-        && let Some(picture) = crate::app::map_picture::picture_for_map(state, selected_map_idx)
+        && let Some(picture) = crate::app::map_picture::picture_for_map(
+            &state.platform,
+            &mut state.frontend,
+            &state.process_assets,
+            selected_map_idx,
+        )
         && preview_fits_texture(
             picture.width,
             picture.height,
@@ -689,7 +694,12 @@ pub(super) fn ensure_zoom_texture(
         .filter(|_| shown)
         .map(|preview| {
             let briefing = preview.briefing.get_or_init(|| {
-                crate::app::map_library::briefing(shared, preview.selected_map_idx)
+                crate::app::map_library::briefing(
+                    &shared.platform,
+                    &shared.frontend,
+                    &shared.process_assets,
+                    preview.selected_map_idx,
+                )
             });
             zoom_layout(
                 area,

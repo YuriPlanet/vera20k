@@ -224,7 +224,7 @@ pub(super) fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keybo
             crate::app::persistence::commands::quicksave(state);
         }
         KeyCode::KeyN => {
-            crate::app::persistence::commands::quickload(state);
+            crate::app::persistence::commands::quickload(&state.platform, &mut state.persistence);
         }
         KeyCode::F5 => {
             // Diagnostic shortcut shares the retail browser and modal owner.
@@ -278,7 +278,9 @@ pub(super) fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keybo
             }
         }
         #[cfg(feature = "debug-tools")]
-        KeyCode::KeyX => crate::app::debug_tools::toggle_inspector(state),
+        KeyCode::KeyX => {
+            crate::app::debug_tools::toggle_inspector(&mut state.match_state.sim_runtime)
+        }
         KeyCode::F8 => {
             report_black_cell_causes(state);
         }

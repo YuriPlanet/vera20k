@@ -28,16 +28,11 @@ const CLEAR_COLOR: wgpu::Color = wgpu::Color {
 /// replaces the app's live match (fresh-map handoff and in-scenario load),
 /// after a local change, and before BBB's init or the LAN host's options read
 /// it, since another player's speed event changes only the world.
-pub(crate) fn sync_in_game_options_speed_from_sim(state: &mut AppState) {
-    let world = state
-        .match_state
-        .sim_runtime
-        .runtime()
-        .map(|rt| &rt.simulation);
-    mirror_world_speed(
-        &mut state.match_state.match_presentation.in_game_options,
-        world,
-    );
+pub(crate) fn sync_in_game_options_speed_from_sim(
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) {
+    let world = match_state.sim_runtime.runtime().map(|rt| &rt.simulation);
+    mirror_world_speed(&mut match_state.match_presentation.in_game_options, world);
 }
 
 /// [`sync_in_game_options_speed_from_sim`] on `options`: `world`'s speed after
@@ -230,7 +225,7 @@ pub(crate) fn install_world_presentation(
         .match_presentation
         .super_timer_dock
         .reset();
-    sync_in_game_options_speed_from_sim(state);
+    sync_in_game_options_speed_from_sim(&mut state.match_state);
 
     state.match_state.match_presentation.tile_atlas = assets.tile_atlas;
     state.match_state.match_presentation.building_zshape = assets.building_zshape;
@@ -593,7 +588,11 @@ pub(crate) fn finish_fresh_scenario_read(state: &mut AppState, mut result: init:
         if let Some(manager) = result.asset_manager.take() {
             state.process_assets.return_from_loading(manager);
         }
-        crate::app::loading::pump::clear_loading_state(state);
+        crate::app::loading::pump::clear_loading_state(
+            &mut state.renderer,
+            &mut state.frontend,
+            &mut state.process_assets,
+        );
         crate::app::App::start_fullscreen_movie(
             state,
             &movie,
@@ -613,7 +612,12 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     );
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     crate::app::radar_movie::retire(state, wall_ms);
-    crate::app::chrono_screen::retire(state, wall_ms);
+    crate::app::chrono_screen::retire(
+        &state.frontend.screen,
+        &mut state.match_state,
+        &mut state.audio,
+        wall_ms,
+    );
     crate::app::input::dispatch::selection_navigation::reset_for_world_replacement(
         &mut state.match_state.input,
     );
@@ -629,8 +633,12 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     // A loaded world is not timed until the launch handoff reaches InGame.
     state.match_state.scenario_elapsed_clock.reset();
     #[cfg(feature = "telemetry-dashboard")]
-    crate::app::telemetry_capture::reset_observation(state);
-    crate::app::loading::pump::clear_loading_state(state);
+    crate::app::telemetry_capture::reset_observation(&mut state.diag, &mut state.match_state);
+    crate::app::loading::pump::clear_loading_state(
+        &mut state.renderer,
+        &mut state.frontend,
+        &mut state.process_assets,
+    );
 
     // Close the outgoing diagnostic timeline before replacing its runtime.
     crate::app::match_runtime::sim_tick::close_replay_segment_for_new_timeline(state);
@@ -689,7 +697,10 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             .session
             .hand_mode_to_world(runtime.simulation.session().game_mode());
     }
-    crate::app::audio_runtime::bind_match_eva_context(state);
+    crate::app::audio_runtime::bind_match_eva_context(
+        &state.match_state.sim_runtime,
+        &mut state.audio,
+    );
     // Only an actually-carried lease returns. A fallback result must not wipe
     // the process-sticky manager already restored by its failure path.
     if let Some(manager) = result.asset_manager {
@@ -839,7 +850,11 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     // once the fade lands. Theme AI borrows the installed process Main cursor;
     // `Is_Allowed`'s `Side=` gate compares the local player's side.
     let music_now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-    crate::app::audio_runtime::bind_match_theme_context(state);
+    crate::app::audio_runtime::bind_match_theme_context(
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio,
+    );
     if let Some(assets) = state.process_assets.manager() {
         state.audio.request_scenario_theme(
             state.match_state.map_basic.theme.as_deref(),

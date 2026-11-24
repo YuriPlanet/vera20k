@@ -374,7 +374,11 @@ impl App {
         let saved_score_volume = state.persistence.options_profile.score_volume;
         if saved_score_volume == 0.0 {
             crate::app::persistence::options::audio::apply_volume(
-                state,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence.options_profile,
                 crate::app::persistence::options::audio::AudioVolume::Score,
                 CREDITS_SILENT_SCORE_VOLUME,
                 false,
@@ -410,7 +414,11 @@ impl App {
         };
         state.audio.stop_theme();
         crate::app::persistence::options::audio::apply_volume(
-            state,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence.options_profile,
             crate::app::persistence::options::audio::AudioVolume::Score,
             session.saved_score_volume,
             false,

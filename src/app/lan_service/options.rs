@@ -45,7 +45,7 @@ pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
     // The room carries the applied speed, the world's while one is installed:
     // another player's speed event in the last match changed only the world.
     // Build_Options_String reads that global, [0xA8EB60], at 0x005DBC68.
-    crate::app::loading::transitions::sync_in_game_options_speed_from_sim(state);
+    crate::app::loading::transitions::sync_in_game_options_speed_from_sim(&mut state.match_state);
     let session = &state.match_state.session;
     ensure!(session.host(), "only the host publishes full LAN options");
     let current_speed = state

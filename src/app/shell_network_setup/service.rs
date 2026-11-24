@@ -1492,7 +1492,13 @@ fn point_out_briefing(state: &mut AppState) {
         .multiplayer_setup
         .as_mut()
         .is_some_and(|ui| ui.first_briefing_check(&record.file_name))
-        || crate::app::map_library::briefing(state, index).is_none()
+        || crate::app::map_library::briefing(
+            &state.platform,
+            &state.frontend,
+            &state.process_assets,
+            index,
+        )
+        .is_none()
     {
         return;
     }

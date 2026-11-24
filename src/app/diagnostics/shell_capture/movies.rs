@@ -522,7 +522,9 @@ impl MoviesCapture {
             "movies capture encountered the shell fallback"
         );
         if starting_campaign {
-            if let Some(startup) = crate::app::loading::pump::loading_campaign_startup(state) {
+            if let Some(startup) =
+                crate::app::loading::pump::loading_campaign_startup(&state.frontend)
+            {
                 let observed = campaign_startup_receipt(startup);
                 if let Some(prior) = self.observed_campaign_startup.as_ref() {
                     ensure!(
@@ -1534,7 +1536,8 @@ impl MoviesCapture {
                 return Ok(false);
             }
             if target.explicit_scenario().is_none()
-                && let Some(startup) = crate::app::loading::pump::loading_campaign_startup(state)
+                && let Some(startup) =
+                    crate::app::loading::pump::loading_campaign_startup(&state.frontend)
             {
                 ensure!(
                     startup
@@ -1547,11 +1550,12 @@ impl MoviesCapture {
             return match target {
                 CampaignStartTarget::LoadingFirst => {
                     let ready = state.frontend.screen == GameScreen::Loading
-                        && crate::app::loading::pump::next_native_loading_frame(state)
+                        && crate::app::loading::pump::next_native_loading_frame(&state.frontend)
                             == Some(crate::app::loading::pump::NextLoadingFrame::First);
                     if ready {
                         ensure!(
-                            crate::app::loading::pump::loading_campaign_startup(state).is_some(),
+                            crate::app::loading::pump::loading_campaign_startup(&state.frontend)
+                                .is_some(),
                             "first loading frame has no campaign request"
                         );
                     }
@@ -1815,13 +1819,13 @@ impl MoviesCapture {
             });
         }
         if let MoviesTarget::CampaignStart { target, .. } = self.target {
-            let startup = crate::app::loading::pump::loading_campaign_startup(state)
+            let startup = crate::app::loading::pump::loading_campaign_startup(&state.frontend)
                 .map(campaign_startup_receipt)
                 .or_else(|| self.observed_campaign_startup.clone())
                 .context("campaign startup receipt missing at readback")?;
             let map_source = match target {
                 CampaignStartTarget::LoadingFirst => {
-                    crate::app::loading::pump::loading_map_source(state)
+                    crate::app::loading::pump::loading_map_source(&state.frontend)
                 }
                 CampaignStartTarget::FirstLive
                 | CampaignStartTarget::InitialSaved
@@ -2170,7 +2174,7 @@ fn campaign_abort_cleanup_receipt(state: &AppState) -> Result<Value> {
     );
     ensure!(
         state.frontend.loading_session.is_none()
-            && crate::app::loading::pump::loading_campaign_startup(state).is_none()
+            && crate::app::loading::pump::loading_campaign_startup(&state.frontend).is_none()
             && state.match_state.startup.startup().is_none()
             && state.match_state.startup.receipt().is_none()
             && !state.match_state.startup.campaign_installed()
@@ -2212,7 +2216,7 @@ fn campaign_abort_cleanup_receipt(state: &AppState) -> Result<Value> {
     Ok(json!({
         "screen": format!("{:?}", state.frontend.screen), "route": format!("{:?}", state.frontend.shell_route),
         "loading_session_present": state.frontend.loading_session.is_some(),
-        "loading_campaign_startup_present": crate::app::loading::pump::loading_campaign_startup(state).is_some(),
+        "loading_campaign_startup_present": crate::app::loading::pump::loading_campaign_startup(&state.frontend).is_some(),
         "accepted_match_startup_present": state.match_state.startup.startup().is_some(),
         "match_startup_receipt_present": state.match_state.startup.receipt().is_some(),
         "campaign_installation_present": state.match_state.startup.campaign_installed(),

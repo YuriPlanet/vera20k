@@ -1437,7 +1437,7 @@ pub(crate) fn poll(state: &mut AppState, now_ms: u64) {
             if accepts_online_application_packet(
                 &incoming.payload,
                 state.match_state.live_network.is_some(),
-                super::loading::pump::network_loading_active(state),
+                super::loading::pump::network_loading_active(&state.frontend),
             ) {
                 if let Err(error) = receive(state, incoming, now) {
                     log::debug!("Ignored online match packet: {error:#}");
@@ -1727,7 +1727,12 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 payload: &incoming.payload,
             },
         )? {
-            super::loading::pump::accept_network_loading_progress(state, source, percent);
+            super::loading::pump::accept_network_loading_progress(
+                &mut state.frontend,
+                &state.match_state.session,
+                source,
+                percent,
+            );
         }
         return Ok(());
     }
@@ -1743,7 +1748,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
         return Ok(());
     }
     let message = LanMessage::decode(&incoming.payload)?;
-    if super::loading::pump::network_loading_active(state)
+    if super::loading::pump::network_loading_active(&state.frontend)
         && let Some(departed) = state.match_state.lan_service.as_ref().and_then(|service| {
             service
                 .loading_departure_source(&state.match_state.session, incoming.source, &message)

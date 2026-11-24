@@ -118,21 +118,22 @@ pub(crate) fn apply_in_game_speed(state: &mut AppState) {
         }
         // Native network Options retains the old speed when its OutList
         // insertion fails. Reflect only the accepted pending/current value.
-        crate::app::loading::transitions::sync_in_game_options_speed_from_sim(state);
+        crate::app::loading::transitions::sync_in_game_options_speed_from_sim(
+            &mut state.match_state,
+        );
     }
 }
 
 /// Commit the retained complete profile. A settings error is non-fatal for both
 /// dialog close and quit.
-pub(crate) fn persist_options_profile(state: &AppState) {
-    let Some(config) = state.platform.game_config.as_ref() else {
+pub(crate) fn persist_options_profile(
+    platform: &crate::app::PlatformState,
+    profile: &crate::app::persistence::options_profile::RetailOptionsProfile,
+) {
+    let Some(config) = platform.game_config.as_ref() else {
         return;
     };
-    if let Err(error) = state
-        .persistence
-        .options_profile
-        .commit_settings(config.paths.settings_dir())
-    {
+    if let Err(error) = profile.commit_settings(config.paths.settings_dir()) {
         log::warn!("Failed to persist Options profile to VERA.INI: {error}");
     }
 }

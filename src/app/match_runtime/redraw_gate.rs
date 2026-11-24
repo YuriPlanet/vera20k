@@ -150,7 +150,7 @@ pub(crate) fn still_frame(
         && state.frontend.quit_cascade.is_none()
         && state.match_state.scenario_exit.is_none()
         && state.match_state.scenario_outcome.is_none()
-        && !crate::app::App::house_outcome_wait_pending(state)
+        && !crate::app::App::house_outcome_wait_pending(&state.match_state.sim_runtime)
         && !input.tactical_mouse.left_held()
         && !input.tactical_mouse.right_held()
         && !simulation.is_some_and(|sim| {

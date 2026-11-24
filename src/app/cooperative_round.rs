@@ -36,12 +36,11 @@ use crate::ui::lan_shell::LanChatLine;
 
 /// A network Cooperative match: the router calls the mode's `+0xA0`
 /// before GameExit (`0x0055D0C5..0x0055D0E2`, GameMode 3 or 4).
-pub(crate) fn applies(state: &AppState) -> bool {
+pub(crate) fn applies(match_state: &crate::app::match_runtime::state::MatchState) -> bool {
     runs_cooperative_progress(
-        &state.match_state.session,
-        state.match_state.session_mode(),
-        state
-            .match_state
+        &match_state.session,
+        match_state.session_mode(),
+        match_state
             .sim_runtime
             .runtime()
             .and_then(|runtime| runtime.simulation.session().multiplayer_mode_class()),
@@ -748,7 +747,7 @@ pub(crate) fn campaign_end_continue(state: &mut AppState) {
 fn leave_result(state: &mut AppState) {
     state.frontend.coop_score_page = None;
     state.frontend.campaign_score_art = None;
-    App::persist_returned_session_toggles(state);
+    App::persist_returned_session_toggles(&mut state.frontend, &state.match_state);
     state.frontend.screen = GameScreen::MainMenu;
     App::resume_shell_after_match(state);
 }

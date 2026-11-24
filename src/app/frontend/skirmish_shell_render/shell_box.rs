@@ -298,7 +298,7 @@ pub(crate) fn choose_map_prompt_box(
     });
     let mut paint = HudPaint::default();
     if let (Some(atlas), Kind::Downloading) = (atlas, prompt.kind)
-        && let Some(progress) = crate::app::map_library::download_progress(state)
+        && let Some(progress) = crate::app::map_library::download_progress(&state.frontend)
     {
         let track = parts.progress_track();
         let depth = BoxLook::skirmish(None).depths.button;

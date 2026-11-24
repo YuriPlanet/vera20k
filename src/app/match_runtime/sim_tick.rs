@@ -270,7 +270,8 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
         crate::app::match_runtime::scenario_exit::outcome_title(outcome)
     );
     crate::app::App::record_match_result(
-        state,
+        &mut state.frontend,
+        &state.match_state,
         match outcome {
             crate::sim::house_state::HouseOutcomeKind::Victory => {
                 crate::app::cncnet::ExternalMatchResult::Won
@@ -285,7 +286,12 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
     // the verdict below is the first thing said after the loser. With the
     // switch off, this cuts a clip still playing.
     crate::app::radar_movie::retire(state, wall_ms);
-    crate::app::chrono_screen::retire(state, wall_ms);
+    crate::app::chrono_screen::retire(
+        &state.frontend.screen,
+        &mut state.match_state,
+        &mut state.audio,
+        wall_ms,
+    );
     // The result's own line, when a clip was still in its way.
     //
     // The simulation emitted it on the kill frame (`Flag_To_Win 0x004FCBA9` /
@@ -314,7 +320,7 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
         .stop_buckets(wall_ms);
     let elapsed_seconds = elapsed_score_ticks / 60;
     // 0x0055D0C5: the router runs the mode's +0xA0 before GameExit.
-    let cooperative = crate::app::cooperative_round::applies(state);
+    let cooperative = crate::app::cooperative_round::applies(&state.match_state);
     if cooperative {
         crate::app::cooperative_round::mission_ended(state, elapsed_score_ticks);
     }
@@ -1264,7 +1270,7 @@ fn advance_in_game_runtime_mode(
         super::network_failure::show(state);
         return false;
     }
-    if crate::app::App::house_outcome_wait_pending(state) {
+    if crate::app::App::house_outcome_wait_pending(&state.match_state.sim_runtime) {
         // House4F8649/4F8772 services48D080 inside this Main_Tick;
         // it never re-enters55D7C2's timed-pause/Chrono/input prelude.
         let completed = advance_one_simulation_frame(
@@ -1533,7 +1539,7 @@ fn advance_in_game_runtime_mode(
                 || state.match_state.scenario_outcome.is_some()
                 || state.match_state.scenario_exit.is_some()
                 || crate::app::App::local_outcome_exit_ready(state)
-                || crate::app::App::house_outcome_wait_pending(state)
+                || crate::app::App::house_outcome_wait_pending(&state.match_state.sim_runtime)
             {
                 break;
             }
@@ -1560,7 +1566,7 @@ fn advance_in_game_runtime_mode(
         state
             .match_state
             .sync_multiplayer_pause_clock(crate::app::match_runtime::frame_pacer::wall_clock_ms());
-        if crate::app::App::house_outcome_wait_pending(state) {
+        if crate::app::App::house_outcome_wait_pending(&state.match_state.sim_runtime) {
             return false;
         }
         if super::network_failure::pending(&state.frontend.screen, &state.match_state) {
@@ -1636,7 +1642,7 @@ pub(crate) fn finish_threaded_frame(state: &mut AppState) {
         return;
     };
     // As after an inline frame: an outcome wait or a failure holds the rest.
-    if crate::app::App::house_outcome_wait_pending(state)
+    if crate::app::App::house_outcome_wait_pending(&state.match_state.sim_runtime)
         || super::network_failure::pending(&state.frontend.screen, &state.match_state)
     {
         return;
@@ -2037,7 +2043,7 @@ fn advance_one_simulation_frame(
         mouse_scroll
     };
     if threaded_finished.is_some()
-        && (crate::app::App::house_outcome_wait_pending(state)
+        && (crate::app::App::house_outcome_wait_pending(&state.match_state.sim_runtime)
             || super::network_failure::pending(&state.frontend.screen, &state.match_state)
             || state.match_state.frame_stopped
             || pending_network_wait(&state.match_state.sim_runtime))
@@ -2151,7 +2157,7 @@ fn advance_one_simulation_frame(
         drain_radar_terrain_marks(&mut state.match_state);
     }
     let hash_interval = play_hash_interval(state.match_state.live_network.is_some());
-    let slow_tick = crate::app::cncnet::SpawnSlowPc::of(state).tick;
+    let slow_tick = crate::app::cncnet::SpawnSlowPc::of(&state.frontend).tick;
     // A spawn test switch counts a tick this thread runs itself apart from
     // the service around it (`spawn_frame_cost`).
     let inline_cost = crate::app::spawn_frame_cost::begin(state);
@@ -3293,7 +3299,13 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
                 state.audio.queue_theme(request, wall_ms);
             }
             TriggerEffect::ChronoScreen { command } => {
-                crate::app::chrono_screen::apply(state, *command);
+                crate::app::chrono_screen::apply(
+                    &state.frontend.screen,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    *command,
+                );
             }
             TriggerEffect::RadarMovie {
                 index,
@@ -3644,12 +3656,12 @@ pub(crate) fn publish_entity_atlas_growth(
     }
 }
 
-/// Upsert authoritative occupied-overlay entries into `state.overlays`.
+/// Upsert authoritative occupied-overlay entries into `presentation.overlays`.
 ///
-/// Background: the overlay renderer iterates `state.overlays`, the static list
+/// Background: the overlay renderer iterates `presentation.overlays`, the static list
 /// loaded from the map's `[OverlayPack]`. Sim-side mutations that create new
 /// overlay cells (TIBTRE ore spawn, ore_growth spread) update `OverlayGrid`
-/// but never touched `state.overlays`, so the new cells were invisible even
+/// but never touched `presentation.overlays`, so the new cells were invisible even
 /// though their sim state and pathfinding were correct. A coordinate can also
 /// be cleared and later receive a different overlay variant; the renderer only
 /// accepts live data when the cached identity matches. This sync therefore

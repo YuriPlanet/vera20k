@@ -480,7 +480,7 @@ fn skirmish_input_available(state: &AppState) -> bool {
         && !state.match_state.frame_stopped
         && !state.match_state.paused()
         && !crate::app::input::campaign_input::is_locked(state)
-        && !crate::app::App::house_outcome_wait_pending(state)
+        && !crate::app::App::house_outcome_wait_pending(&state.match_state.sim_runtime)
 }
 
 #[derive(Debug, PartialEq, Eq)]

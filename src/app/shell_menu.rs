@@ -161,7 +161,10 @@ impl App {
                     settings.set_labels(option_labels);
                 }
             }
-            crate::app::persistence::options::persist_options_profile(state);
+            crate::app::persistence::options::persist_options_profile(
+                &state.platform,
+                &state.persistence.options_profile,
+            );
         }
     }
 
@@ -177,7 +180,10 @@ impl App {
         };
         settings.sync_full_screen(full_screen);
         if changed {
-            crate::app::persistence::options::persist_options_profile(state);
+            crate::app::persistence::options::persist_options_profile(
+                &state.platform,
+                &state.persistence.options_profile,
+            );
         }
     }
 

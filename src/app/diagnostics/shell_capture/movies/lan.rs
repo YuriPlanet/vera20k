@@ -992,7 +992,10 @@ impl LanCapture {
                 for index in &peers {
                     ensure!(
                         crate::app::loading::pump::accept_network_loading_progress(
-                            state, *index, terminal,
+                            &mut state.frontend,
+                            &state.match_state.session,
+                            *index,
+                            terminal,
                         ),
                         "controlled peer completion was refused"
                     );
@@ -2308,17 +2311,27 @@ impl LanCapture {
             LanPhase::Loading
                 if state.frontend.screen == GameScreen::Loading
                     && self.target == LanTarget::RemoteLoadingProgress
-                    && crate::app::loading::pump::next_native_loading_frame(state)
+                    && crate::app::loading::pump::next_native_loading_frame(&state.frontend)
                         == Some(crate::app::loading::pump::NextLoadingFrame::First) =>
             {
                 // The original renderer has now created its immutable source
                 // rows. Supply only the remote service milestone, never local progress.
                 ensure!(
-                    crate::app::loading::pump::accept_network_loading_progress(state, 1, 50),
+                    crate::app::loading::pump::accept_network_loading_progress(
+                        &mut state.frontend,
+                        &state.match_state.session,
+                        1,
+                        50
+                    ),
                     "remote loading service input refused"
                 );
                 ensure!(
-                    !crate::app::loading::pump::accept_network_loading_progress(state, 0, 50),
+                    !crate::app::loading::pump::accept_network_loading_progress(
+                        &mut state.frontend,
+                        &state.match_state.session,
+                        0,
+                        50
+                    ),
                     "local loading progress accepted remote input"
                 );
                 self.event(
@@ -3455,7 +3468,7 @@ impl LanCapture {
         }
         if self.phase == LanPhase::CoopNextLoading {
             return Ok(state.frontend.screen == GameScreen::Loading
-                && crate::app::loading::pump::next_native_loading_frame(state)
+                && crate::app::loading::pump::next_native_loading_frame(&state.frontend)
                     == Some(crate::app::loading::pump::NextLoadingFrame::First));
         }
         if self.phase == LanPhase::RemoteProgress {
@@ -3475,7 +3488,7 @@ impl LanCapture {
                 "network handoff became offline"
             );
             return Ok(state.frontend.screen == GameScreen::Loading
-                && crate::app::loading::pump::next_native_loading_frame(state)
+                && crate::app::loading::pump::next_native_loading_frame(&state.frontend)
                     == Some(crate::app::loading::pump::NextLoadingFrame::First));
         }
         Ok(self.phase == LanPhase::Settle(0)
@@ -3490,7 +3503,7 @@ impl LanCapture {
         if let Some(live) = &self.live {
             return live.receipt(state);
         }
-        let presentation = crate::app::loading::pump::network_loading_presentation(state);
+        let presentation = crate::app::loading::pump::network_loading_presentation(&state.frontend);
         if self.target == LanTarget::HostObserverGo {
             use crate::render::loading_screen_chrome::LoadingArtVariant;
             let loading = presentation
