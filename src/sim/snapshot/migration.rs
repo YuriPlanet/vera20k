@@ -355,7 +355,9 @@ mod tests {
         let original = bytes.clone();
         let error = migrate(&mut bytes).unwrap_err();
         assert_eq!(bytes, original);
-        if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || snapshot_layout() != TS_WEBS {
+        if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION
+            || snapshot_layout() != WASM_MODULES
+        {
             assert!(matches!(error, MigrationError::UnsupportedTarget(_)));
             return;
         }
