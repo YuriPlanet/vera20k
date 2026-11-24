@@ -64,6 +64,25 @@ VERA resolves the offset for each shooter when calculating its projectile, muzzl
 animation and positioned report sound. Infantry sharing a type can stand and crawl
 independently. [Upstream stance and rank selection](https://github.com/ra2diy/KratosPP/blob/v0.2.4/src/Ext/TechnoType/CrawlingFLH.cpp#L17-L90)
 
+## Weapon money gate
+
+`NoMoneyNoTalk` on a `[WeaponType]` keeps the shot from starting until the firing house holds
+that much money; a negative value refuses while the house holds more than its magnitude:
+
+```ini
+[GoldShell]
+NoMoneyNoTalk=1000
+```
+
+`DontNeedMoney=yes` on the same section skips the test. The value is read every time the shot
+is asked for, so a house that earns the money can fire on the next attempt.
+
+Kratos runs it in `TechnoStatus::CanFire_CheckWeapon` at its `TechnoClass::CanFire` hook
+(`0x6FC339`, refusal `0x6FCB7E` = ILLEGAL), and its AE can supply the value instead
+(`src/Ext/TechnoType/Status/CanFireCheck.cpp`). VERA reads the two weapon keys inside
+`kratos_read` and answers them in `sim::combat::fire_error` beside the other arms of that
+hook. The AttachEffect that supplies a value is not ported: only the weapon's own key counts.
+
 ## Original project and authors
 
 VERA20K implements the behavior in Rust. It does not load `Kratos.dll` and does not redistribute
@@ -83,13 +102,16 @@ The features ported here originate with:
 
 - Infantry firing offsets (`CrawlingFLH`) -
   **双杀步枪 (ChrisLv_CN)**, `src/Ext/TechnoType/CrawlingFLH.cpp` and `CrawlingFLHData.h`.
+- Weapon money gate (`NoMoneyNoTalk`) -
+  **双杀步枪 (ChrisLv_CN)**, `src/Ext/TechnoType/Status/CanFireCheck.cpp`.
 
 ## VERA20K porting credits
 
 The Rust ports are individual VERA20K contributions; GitHub usernames name the merged pull
 requests that carried each chain:
 
-- **1372704087** — the Kratos switch and the prone firing offset (`CrawlingFLH`).
+- **1372704087** — the Kratos switch, the prone firing offset (`CrawlingFLH`) and the weapon
+  money gate (`NoMoneyNoTalk`).
 
 简体中文：[Kratos 扩展支持](zh-CN/kratos.md) · [扩展支持与原作者](zh-CN/credits.md).
 

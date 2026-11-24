@@ -47,6 +47,7 @@ pub(crate) struct FireSubject<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FirerPart {
     ares: bool,
+    kratos: bool,
     class: FirerClass,
     frame: i32,
     /// Every link to the target unset: [`Self::facts`] sets them.
@@ -87,6 +88,7 @@ impl FirerPart {
         firer.temporal = self.temporal_target.map(link);
         FireFacts {
             ares: self.ares,
+            kratos: self.kratos,
             class: self.class,
             frame: self.frame,
             weapon_index,
@@ -209,6 +211,8 @@ impl<'a> FireSubject<'a> {
             fire_in_transport: weapon.fire_in_transport,
             area_fire: weapon.area_fire,
             is_mag_beam: weapon.is_mag_beam,
+            no_money_no_talk: weapon.no_money_no_talk,
+            dont_need_money: weapon.dont_need_money,
             warhead: warhead.map(|warhead| WarheadFacts {
                 mind_control: warhead.mind_control,
                 ivan_bomb: warhead.ivan_bomb,
@@ -439,6 +443,7 @@ impl<'a> FireSubject<'a> {
         };
         FirerPart {
             ares: self.rules.ares(),
+            kratos: self.rules.kratos(),
             class,
             frame: frame as i32,
             firer: firer_facts,
@@ -959,6 +964,13 @@ impl FireQuery for WorldQuery<'_, '_> {
         self.subject
             .terrain()
             .is_some_and(|terrain| in_range::is_on_bridge_for_firing(self.subject.firer, terrain))
+    }
+
+    fn available_money(&mut self) -> i32 {
+        crate::sim::credit_income::available_money(
+            &self.subject.world.houses,
+            self.subject.firer.owner(),
+        )
     }
 
     fn can_infect(&mut self) -> bool {
