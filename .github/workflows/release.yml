@@ -417,6 +417,8 @@ jobs:
           }
           $mapFile = 'Arctic_Circle_16_Ice_Passages.map'
           $map = Join-Path $app "Maps\$mapFile"
+          $receipt = Join-Path $app 'Maps\.Arctic_Circle_16_Ice_Passages.installed'
+          if (-not (Test-Path $receipt -PathType Leaf)) { throw 'setup did not record the installed map' }
           if ((Get-FileHash $map).Hash -ne (Get-FileHash "maps\$mapFile").Hash) {
             throw 'setup did not install the release skirmish map'
           }
@@ -510,11 +512,13 @@ jobs:
           # even while another detected installation passes validation.
           if ((Install $steamGame) -eq 0) { throw 'setup ignored the invalid explicit /GAMEDIR' }
           Assert-Found $eaGame
+          Remove-Item $map
           # A damaged previous choice must not hide another valid install.
           Copy-Item '.github\release\windows\test-game\cameomd.mix' $steamGame
           Remove-Item (Join-Path $eaGame 'ra2.mix')
           $code = Install ''
           if ($code -ne 0) { Get-Content $log; throw "setup failed to recommend Steam: exit code $code" }
+          if (Test-Path $map) { throw 'upgrade restored a map the player deleted' }
           Assert-Found $steamGame
           Copy-Item '.github\release\windows\test-game\ra2.mix' $eaGame
           # Without the game there, setup recommends the EA app's folder.

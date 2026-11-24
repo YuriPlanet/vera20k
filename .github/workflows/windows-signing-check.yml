@@ -69,6 +69,7 @@ jobs:
       version: ${{ steps.package.outputs.version }}
       name: ${{ steps.package.outputs.name }}
       artifact: ${{ steps.upload.outputs.artifact-id }}
+      recipe_sha: ${{ steps.reuse.outputs.source_sha || github.sha }}
     steps:
       - run: git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -88,6 +89,13 @@ jobs:
           set -euo pipefail
           python .github/release/windows/signing.py reuse-info --run-id "$SOURCE_RUN_ID" \
             --current-sha "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      # Use the original layout and hashes for a payload from an older release.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: inputs.reuse_run_id != ''
+        with:
+          ref: ${{ steps.reuse.outputs.source_sha }}
+          sparse-checkout: .github/release/windows
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: inputs.reuse_run_id != ''
         with:
@@ -165,6 +173,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: inputs.reuse_run_id != ''
+        with:
+          ref: ${{ needs.build.outputs.recipe_sha }}
+          path: saved-recipe
+          sparse-checkout: .github/release/windows
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.12'
@@ -200,8 +215,10 @@ jobs:
             version: "${{ needs.build.outputs.version }}"
       - name: Build the installer from the signed payload
         shell: pwsh
+        env:
+          RECIPE: ${{ inputs.reuse_run_id != '' && 'saved-recipe' || '.' }}
         run: |
-          python .github/release/windows/signing.py package --signed-payload signed-payload `
+          python "$env:RECIPE/.github/release/windows/signing.py" package --signed-payload signed-payload `
             --original-payload original-payload `
             --output unsigned-installer --iscc "$env:INNO_SETUP_ISCC" `
             --fingerprint "$env:TEST_CERTIFICATE_SHA256"
