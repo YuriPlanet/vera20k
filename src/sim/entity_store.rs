@@ -243,6 +243,23 @@ impl EntityStore {
         self.touched.take(reader as usize)
     }
 
+    /// Whether `reader`'s touch log keeps only buildings' hand-outs from now
+    /// on ([`TouchLogs::set_narrow`]): the blocker plane's, while only
+    /// buildings are its sources. A store hands out most objects through
+    /// [`Self::get_mut`], [`Self::get_mut_if`] and [`EntryMut::into_mut`],
+    /// which say which are buildings; any other hand-out is noted in every log.
+    pub(crate) fn narrow_touched(&mut self, reader: TouchReader, narrow: bool) {
+        self.touched.set_narrow(reader as usize, narrow);
+    }
+
+    /// Note the hand-out of `stable_id`, stored in `slot`, in the touch logs,
+    /// where every object but a building is broad ([`Self::narrow_touched`]).
+    #[inline]
+    fn note_hand_out(&mut self, stable_id: u64, slot: usize) {
+        let broad = self.categories[slot] != EntityCategory::Structure;
+        self.touched.note_kind(stable_id, broad, self.slot_of.len());
+    }
+
     /// Take the look log, leaving it empty.
     pub(crate) fn take_looks(&mut self) -> Touched {
         self.looks.take(0)
@@ -740,7 +757,7 @@ impl EntityStore {
     /// the owning lifecycle instead so its indexes and registrations are updated.
     pub(super) fn get_mut(&mut self, stable_id: u64) -> Option<&mut GameEntity> {
         let slot = self.slot(stable_id)?;
-        self.touched.note(stable_id, self.slot_of.len());
+        self.note_hand_out(stable_id, slot as usize);
         self.wake_slot(slot as usize);
         self.entities[slot as usize].as_deref_mut()
     }
@@ -765,7 +782,7 @@ impl EntityStore {
         if !admit(self.entities[slot].as_deref()?) {
             return None;
         }
-        self.touched.note(stable_id, self.slot_of.len());
+        self.note_hand_out(stable_id, slot);
         self.wake_slot(slot);
         self.entities[slot].as_deref_mut()
     }
@@ -1399,7 +1416,7 @@ impl<'a> EntryMut<'a> {
     /// noted in the touch logs and woken first.
     pub(super) fn into_mut(self) -> &'a mut GameEntity {
         let id = self.id();
-        self.store.touched.note(id, self.store.slot_of.len());
+        self.store.note_hand_out(id, self.slot);
         self.store.wake_slot(self.slot);
         self.store.entities[self.slot]
             .as_deref_mut()
@@ -1724,6 +1741,45 @@ mod tests {
             Touched::All
         );
         assert_eq!(store.take_touched(TouchReader::BlockerPlane), Touched::All);
+    }
+
+    /// A narrowed log names only the buildings handed out, and a removal,
+    /// while the other reader's names every hand-out; widened, it names every
+    /// hand-out again.
+    #[test]
+    fn a_narrowed_touch_log_names_only_buildings() {
+        let mut store = EntityStore::new();
+        store.insert(make_entity(1));
+        store.insert(GameEntity::test_default_of_category(
+            2,
+            "GAPOWR",
+            "Americans",
+            10,
+            10,
+            EntityCategory::Structure,
+        ));
+        store.insert(make_entity(3));
+        let _ = store.take_touched(TouchReader::BlockerPlane);
+        let _ = store.take_touched(TouchReader::ExpiryListeners);
+        store.narrow_touched(TouchReader::BlockerPlane, true);
+        store.get_mut(1);
+        store.get_mut(2);
+        let _ = store.get_mut_if(3, |_| true);
+        store.remove(3);
+        assert_eq!(
+            store.take_touched(TouchReader::BlockerPlane),
+            Touched::Ids(vec![2, 3])
+        );
+        assert_eq!(
+            store.take_touched(TouchReader::ExpiryListeners),
+            Touched::Ids(vec![1, 2, 3])
+        );
+        store.narrow_touched(TouchReader::BlockerPlane, false);
+        store.get_mut(1);
+        assert_eq!(
+            store.take_touched(TouchReader::BlockerPlane),
+            Touched::Ids(vec![1])
+        );
     }
 
     /// Insert, remove and lookup answer as the former `BTreeMap` storage did,

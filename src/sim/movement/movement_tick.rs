@@ -675,6 +675,11 @@ impl MovementPassCache {
             Touched::All => None,
             Touched::Ids(ids) => Some(ids),
         };
+        // With the retained Foot bytes only buildings are sources, so until
+        // the next call the log need not name anything else. A call under
+        // another key rebuilds, so a narrowed log is read only by a plane
+        // that retains them.
+        entities.narrow_touched(TouchReader::BlockerPlane, retained_foot);
         match blocker
             .entry
             .as_mut()
@@ -704,14 +709,17 @@ impl MovementPassCache {
                     // With the retained Foot bytes only a building is a
                     // source (`blocker_plane_source`), and a stored object's
                     // category never changes: a touched object of another
-                    // category without a source still has none. The category
-                    // column says so without loading the entity.
+                    // category has none. The category column says so
+                    // without loading the entity.
                     if retained_foot
                         && entities
                             .category_of(id)
                             .is_some_and(|category| category != EntityCategory::Structure)
-                        && !entry.sources.contains_key(&id)
                     {
+                        debug_assert!(
+                            !entry.sources.contains_key(&id),
+                            "object {id} is a blocker plane source but no building"
+                        );
                         continue;
                     }
                     let now = entities.get(id).and_then(|entity| {
