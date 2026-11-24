@@ -39,6 +39,10 @@ const TS_LIMPETS: u32 = 0xF612_7DC1;
 const TS_ANIM_SOUNDS: u32 = 0x9441_E8D8;
 // Older writers stored neither Kratos inputs nor its infantry firing offsets.
 const KRATOS_FLH: u32 = 0x9F1B_D701;
+// The next writer stores each processed rules layer's NPatch key reads, which
+// decide `RuleSet::npatch` (`rules::npatch_switch`). Older worlds ran no NPatch
+// switch: their rules keep every NPatch key dormant, as they played when saved.
+const NPATCH_INPUTS: u32 = 0xA859_5079;
 
 /// The rules digest a converted save carries: the loader takes the rules the
 /// game has instead of proving the digest the old writer computed, whose
@@ -72,7 +76,7 @@ pub fn supports(header: &GameSnapshotHeader) -> bool {
         && previous_layout(header.layout).is_some()
         && header.compatibility().matches_build()
         && SNAPSHOT_ENVELOPE_VERSION == MIGRATION_ENVELOPE_VERSION
-        && snapshot_layout() == KRATOS_FLH
+        && snapshot_layout() == NPATCH_INPUTS
 }
 
 fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
@@ -92,6 +96,9 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
     const ANIM_SOUNDS: (&str, &[&str]) = ("AnimTypeReferences", &["bounce_sound", "expire_sound"]);
     const KRATOS_INPUTS: (&str, &[&str]) = ("ProcessedRulesLayers", &["kratos_inputs"]);
     const KRATOS_OFFSETS: (&str, &[&str]) = ("WeaponOffsets", &["crawling", "elite_crawling"]);
+    // Older worlds also stored no NPatch key reads: their rules kept the
+    // switch off, which the all-zero empty read list restores.
+    const NPATCH_KEYS: (&str, &[&str]) = ("ProcessedRulesLayers", &["npatch_inputs"]);
     let absent_fields: &'static [_] = match source {
         V0_3_8_AND_0_3_9 | V0_4_0 => &[
             IMAGE_FLAGS,
@@ -109,6 +116,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            NPATCH_KEYS,
         ],
         ALPHA_SHAPE_LISTENER => &[
             IMAGE_FLAGS,
@@ -125,6 +133,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            NPATCH_KEYS,
         ],
         ALTERNATE_THEATER_ART => &[
             DECK,
@@ -140,6 +149,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            NPATCH_KEYS,
         ],
         BRIDGE_DECK_AND_FLY_SPIN => &[
             DEGRADES,
@@ -152,6 +162,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            NPATCH_KEYS,
         ],
         HOUSE_DEGRADES => &[
             ICE_TIMER,
@@ -163,6 +174,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            NPATCH_KEYS,
         ],
         TS_ICE => &[
             DENT,
@@ -171,6 +183,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            NPATCH_KEYS,
         ],
         TERRAIN_DENT => &[
             LIMPETS,
@@ -178,9 +191,11 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
             ANIM_SOUNDS,
             KRATOS_INPUTS,
             KRATOS_OFFSETS,
+            NPATCH_KEYS,
         ],
-        TS_LIMPETS => &[ANIM_SOUNDS, KRATOS_INPUTS, KRATOS_OFFSETS],
-        TS_ANIM_SOUNDS => &[KRATOS_INPUTS, KRATOS_OFFSETS],
+        TS_LIMPETS => &[ANIM_SOUNDS, KRATOS_INPUTS, KRATOS_OFFSETS, NPATCH_KEYS],
+        TS_ANIM_SOUNDS => &[KRATOS_INPUTS, KRATOS_OFFSETS, NPATCH_KEYS],
+        KRATOS_FLH => &[NPATCH_KEYS],
         _ => return None,
     };
     Some(save_codec::PreviousLayout {
@@ -196,7 +211,7 @@ fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
 /// only its stock Arctic setting and latch. Keep both exactly as saved.
 pub fn migrate(bytes: &mut Vec<u8>) -> Result<(), MigrationError> {
     let target = snapshot_layout();
-    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != KRATOS_FLH {
+    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != NPATCH_INPUTS {
         return Err(MigrationError::UnsupportedTarget(target));
     }
 
@@ -329,7 +344,7 @@ mod tests {
         let error = migrate(&mut bytes).unwrap_err();
         assert_eq!(bytes, original);
         if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION
-            || snapshot_layout() != KRATOS_FLH
+            || snapshot_layout() != NPATCH_INPUTS
         {
             assert!(matches!(error, MigrationError::UnsupportedTarget(_)));
             return;

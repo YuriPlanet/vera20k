@@ -859,6 +859,14 @@ impl RuleSet {
         self.kratos
     }
 
+    /// Whether NPatch plays in this game: its Rules layers or map hold a key
+    /// of an NPatch piece that runs in every build
+    /// (`rules::npatch_switch`). Sim and presentation read this one answer.
+    #[inline]
+    pub fn npatch(&self) -> bool {
+        self.npatch
+    }
+
     /// VERA: whether this game plays RA2 Mode (docs/ra2-mode.md): original
     /// Red Alert 2's rules where they differ from Yuri's Revenge. Sim and
     /// rules read this one answer; app, asset and INI-root code read the

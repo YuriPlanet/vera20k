@@ -80,12 +80,9 @@ wasm = ["dep:web-time", "dep:getrandom", "dep:js-sys"]
 wasm-net = ["wasm", "dep:wasm-bindgen"]
 wasm-lan = ["wasm-net"]
 wasm-threads = ["wasm", "dep:rayon", "dep:wasm_sync"]
-# Compile the supported Phobos behavior; INIs cannot enable an absent capability.
-# Ares needs no feature: it switches on from a game's data in every build
-# (`rules::ares_switch`).
+# Ares and NPatch need no feature: they switch on from a game's data in every
+# build (`rules::ares_switch`, `rules::npatch_switch`).
 phobos = []
-# Placeholder: NPatch-specific readers land with their first chain.
-npatch = []
 # VERA20K's own first-party extension capability.
 verax = []
 # VERA20K's opt-in bug-fix extension adopting the NPExt changelog corrections;

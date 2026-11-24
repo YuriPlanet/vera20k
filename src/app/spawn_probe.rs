@@ -216,7 +216,8 @@ pub(crate) fn build_identity() -> BuildIdentity {
         package_version: env!("CARGO_PKG_VERSION").to_owned(),
         network_build: env!("VERA20K_NETWORK_BUILD").to_owned(),
         phobos: crate::rules::PHOBOS_ENABLED,
-        npatch: crate::rules::NPATCH_ENABLED,
+        // Every build carries NPatch; the game's data decides whether it plays.
+        npatch: true,
         verax: crate::rules::VERAX_ENABLED,
         target: if cfg!(all(target_arch = "wasm32", target_os = "unknown")) {
             "wasm32"

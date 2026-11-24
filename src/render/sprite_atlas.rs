@@ -2786,7 +2786,7 @@ pub(crate) fn prepare_sprite_atlas(
     let mut parachutes: Vec<&str> = Vec::new();
     if let Some(rules) = rules.filter(|_| previous_atlas.is_none()) {
         parachutes.extend(rules.general.parachute_shp.as_deref());
-        if crate::rules::NPATCH_ENABLED {
+        if rules.npatch() {
             parachutes.extend(rules.general.vehicle_parachute.as_deref());
         }
     }

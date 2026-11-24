@@ -464,12 +464,7 @@ mod tests;
 #[cfg(all(
     test,
     tests_app,
-    not(any(
-        feature = "phobos",
-        feature = "npatch",
-        feature = "verax",
-        feature = "npbug"
-    ))
+    not(any(feature = "phobos", feature = "verax", feature = "npbug"))
 ))]
 #[path = "release_save_tests.rs"]
 mod release_save_tests;

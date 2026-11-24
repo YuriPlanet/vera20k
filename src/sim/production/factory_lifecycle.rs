@@ -420,12 +420,13 @@ pub(super) fn settle_abandoned(
     // NPSE 2.0 AbandonProduction C2EFB4..C2F06D releases the held
     // object's House before refund, even for human factories or while the
     // switch is off. Later choice cleanup keeps the Factory's own House.
-    #[cfg(feature = "npatch")]
-    if let Some((owner, category, naval)) = abandoned.entity_id.and_then(|id| {
-        let entity = sim.substrate.entities.get(id)?;
-        let ty = sim.entity_object_type(entity, rules)?;
-        Some((entity.owner(), ty.category, ty.naval))
-    }) && let Some(house) = sim.houses.get_mut(&owner)
+    if rules.npatch()
+        && let Some((owner, category, naval)) = abandoned.entity_id.and_then(|id| {
+            let entity = sim.substrate.entities.get(id)?;
+            let ty = sim.entity_object_type(entity, rules)?;
+            Some((entity.owner(), ty.category, ty.naval))
+        })
+        && let Some(house) = sim.houses.get_mut(&owner)
     {
         house.ai_production_mut().release_parallel(category, naval);
     }
@@ -450,7 +451,7 @@ pub(super) fn settle_abandoned(
         && let Some(house) = sim.houses.get_mut(&owner_id)
         && !house.is_controlled_by_human(sim.session.rule_policy())
     {
-        match UnitChoiceKind::of(category, naval) {
+        match UnitChoiceKind::of(category, naval, rules.npatch()) {
             Some(kind) => house.ai_unit_choices_mut().clear(kind),
             None => house.ai_production_mut().clear_building_choice(),
         }

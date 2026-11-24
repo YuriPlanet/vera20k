@@ -987,6 +987,10 @@ pub struct RuleSet {
     /// processed rules and projection made by `rules::kratos_switch`. Read
     /// through [`Self::kratos`].
     kratos: bool,
+    /// Whether NPatch plays in this game, decided once from the reads its
+    /// processed rules and projection made by `rules::npatch_switch`. Read
+    /// through [`Self::npatch`].
+    npatch: bool,
     /// VERA: whether this game plays RA2 Mode (docs/ra2-mode.md), decided once
     /// at load from the launch's choice (`util::ra2_launch`). Read through
     /// [`Self::ra2`].

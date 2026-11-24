@@ -1334,7 +1334,7 @@ impl RuleSet {
             }
         }
         let general = &self.general;
-        if crate::rules::NPATCH_ENABLED {
+        if self.npatch() {
             general.vehicle_parachute.hash(&mut hasher);
         }
         (

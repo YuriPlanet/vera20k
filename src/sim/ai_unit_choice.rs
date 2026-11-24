@@ -73,11 +73,11 @@ impl UnitChoiceKind {
     }
 
     /// The choice a produced object of `category` fills; none for a building.
-    pub(crate) const fn of(category: ObjectCategory, naval: bool) -> Option<Self> {
+    /// `npatch` splits vehicles into land and naval choices
+    /// ([`RuleSet::npatch`](crate::rules::ruleset::RuleSet::npatch)).
+    pub(crate) const fn of(category: ObjectCategory, naval: bool, npatch: bool) -> Option<Self> {
         match category {
-            ObjectCategory::Vehicle if crate::rules::NPATCH_ENABLED && naval => {
-                Some(Self::NavalUnit)
-            }
+            ObjectCategory::Vehicle if npatch && naval => Some(Self::NavalUnit),
             ObjectCategory::Vehicle => Some(Self::Unit),
             ObjectCategory::Infantry => Some(Self::Infantry),
             ObjectCategory::Aircraft => Some(Self::Aircraft),
@@ -194,7 +194,7 @@ pub(crate) fn choose(
     {
         // NPSE 2.0 C339D0..C33A34 returns from the harvester branch even
         // for the other channel's type: no team fallback or chooser RNG.
-        Some(index) => (!crate::rules::NPATCH_ENABLED
+        Some(index) => (!rules.npatch()
             || rules
                 .type_array_at(ObjectCategory::Vehicle, index)
                 .is_some_and(|ty| ty.naval == (kind == UnitChoiceKind::NavalUnit)))
@@ -351,7 +351,7 @@ fn candidates(
             // NPSE 2.0 C33B30 filters needed vehicle types before their
             // recruitment, CanBuild, cost and random-choice consumers.
             .filter(|&index| {
-                !crate::rules::NPATCH_ENABLED
+                !rules.npatch()
                     || category != ObjectCategory::Vehicle
                     || rules
                         .type_array_at(category, index)

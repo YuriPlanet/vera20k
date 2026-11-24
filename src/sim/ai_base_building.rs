@@ -199,7 +199,6 @@ impl AiFactorySlot {
 }
 
 impl HouseAiProduction {
-    #[cfg(feature = "npatch")]
     fn parallel_slot_mut(&mut self, category: ObjectCategory, naval: bool) -> &mut i32 {
         let index = match category {
             ObjectCategory::Aircraft => 0,
@@ -219,7 +218,6 @@ impl HouseAiProduction {
     /// NPSE 2.0 Factory_AI C2F07C..C2F11F reserves before naval
     /// compatibility, allocation and StartProduction. Only vehicles split
     /// on Naval. Failure and PointerExpired do not compensate this write.
-    #[cfg(feature = "npatch")]
     pub(crate) fn reserve_parallel(&mut self, category: ObjectCategory, naval: bool) -> bool {
         let counter = self.parallel_slot_mut(category, naval);
         if *counter > 0 {
@@ -233,7 +231,6 @@ impl HouseAiProduction {
     /// and AbandonProduction C2EFB4..C2F06D decrement unconditionally,
     /// then clamp signed negatives to zero. Callers own the admission phase
     /// and House identity; no per-object reservation flag changes that rule.
-    #[cfg(feature = "npatch")]
     pub(crate) fn release_parallel(&mut self, category: ObjectCategory, naval: bool) {
         let counter = self.parallel_slot_mut(category, naval);
         *counter = counter.wrapping_sub(1).max(0);
@@ -421,7 +418,7 @@ pub(crate) fn update_production_choices(
             // NPSE 2.0 House::Update's C33AB0 wrapper (4F90F2/4F9252)
             // always asks land, then naval. Mode-2 admission below still
             // reads the original three choices only.
-            if crate::rules::NPATCH_ENABLED && kind == UnitChoiceKind::Unit {
+            if rules.npatch() && kind == UnitChoiceKind::Unit {
                 ai_unit_choice::choose(sim, rules, owner, UnitChoiceKind::NavalUnit);
             }
         }
@@ -1113,8 +1110,9 @@ fn place_building(
         }
         // NPSE 2.0 building Exit_Object C2F1A3 releases only after
         // Unlimbo succeeds, including a wall that deleted its own object.
-        #[cfg(feature = "npatch")]
-        if let Some(house) = sim.houses.get_mut(&owner) {
+        if rules.npatch()
+            && let Some(house) = sim.houses.get_mut(&owner)
+        {
             house
                 .ai_production_mut()
                 .release_parallel(ObjectCategory::Building, false);
@@ -1140,8 +1138,9 @@ fn place_building(
     }
     // NPSE 2.0 building Exit_Object C2F1A3 precedes slave handoff and
     // mission callbacks after successful Unlimbo; failed placement retains it.
-    #[cfg(feature = "npatch")]
-    if let Some(house) = sim.houses.get_mut(&owner) {
+    if rules.npatch()
+        && let Some(house) = sim.houses.get_mut(&owner)
+    {
         house
             .ai_production_mut()
             .release_parallel(ObjectCategory::Building, false);
@@ -1262,9 +1261,11 @@ pub(crate) fn suggest_new_object<'r>(
     // FindFactory's exact class comparison. Other RTTIs return null.
     match FactoryType::for_production_rtti(factory_rtti)? {
         FactoryType::BuildingType => rules.building_type_at(house.ai_production().building_choice),
-        FactoryType::UnitType => {
-            unit_choice(UnitChoiceKind::of(ObjectCategory::Vehicle, producer_naval)?)
-        }
+        FactoryType::UnitType => unit_choice(UnitChoiceKind::of(
+            ObjectCategory::Vehicle,
+            producer_naval,
+            rules.npatch(),
+        )?),
         FactoryType::InfantryType => unit_choice(UnitChoiceKind::Infantry),
         FactoryType::AircraftType => unit_choice(UnitChoiceKind::Aircraft),
     }

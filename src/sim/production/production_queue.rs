@@ -270,7 +270,8 @@ pub(in crate::sim) fn exit_produced_object(
     };
     // NPSE 2.0 Exit_Object C33940..C33998 reads the producer's Naval,
     // unlike capped starts and abandonment, which read the product's type.
-    let Some(kind) = UnitChoiceKind::of(product_type.category, producer_type.naval) else {
+    let Some(kind) = UnitChoiceKind::of(product_type.category, producer_type.naval, rules.npatch())
+    else {
         return BuildingExit::Failed;
     };
     //444096..4440D7 skips FreeRadio65ADC0 for Hospital, Armory and WeaponsFactory.
@@ -329,10 +330,11 @@ pub(in crate::sim) fn exit_produced_object(
             // NPSE 2.0 C2EF95 (aircraft), C3395E/C3397F (vehicle),
             // C2F184 (infantry): release at this prefix, before later
             // placement/FreeRadio retries can leave the object held.
-            #[cfg(feature = "npatch")]
-            house
-                .ai_production_mut()
-                .release_parallel(product_type.category, producer_type.naval);
+            if rules.npatch() {
+                house
+                    .ai_production_mut()
+                    .release_parallel(product_type.category, producer_type.naval);
+            }
         }
     }
     if kind == UnitChoiceKind::Aircraft {

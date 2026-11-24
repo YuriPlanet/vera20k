@@ -17,12 +17,7 @@ const SAVED_ELAPSED_BUCKETS: u32 = 180;
 const MISSING_FOLLOW_ID: u64 = 0xBAD_F011;
 
 /// Optional local replay of a player's save with their installed retail assets.
-#[cfg(not(any(
-    feature = "phobos",
-    feature = "npatch",
-    feature = "verax",
-    feature = "npbug"
-)))]
+#[cfg(not(any(feature = "phobos", feature = "verax", feature = "npbug")))]
 #[test]
 #[ignore = "requires VERA20K_VERIFY_PLAYER_SAVE and its matching RA2_DIR"]
 fn external_player_save_resumes_and_saves_again() {
