@@ -9,7 +9,7 @@ use crate::app::shell_route::ShellRoute;
 use crate::ui::campaign_shell::CampaignSide;
 use serde_json::{Value, json};
 
-mod abort_return;
+pub(super) mod abort_return;
 mod campaign_restart;
 pub(super) use campaign_restart::RestartTarget;
 mod lan;
@@ -342,8 +342,6 @@ impl MoviesCapture {
         let (geometry, view) = crate::app::frontend::movies_credits_render::family_list_view(
             state,
             crate::ui::mods_shell::DIALOG,
-            layout.list,
-            layout.page.scale,
         )
         .context("the Mods page has no list")?;
         // The list opens with the row in use in view: pick from what shows.
@@ -403,7 +401,7 @@ impl MoviesCapture {
         Ok(())
     }
 
-    fn restore_neutral_pointer(state: &mut AppState) {
+    pub(super) fn restore_neutral_pointer(state: &mut AppState) {
         let config = &state.renderer.gpu.config;
         // A scaled window (VERA's room's capture) rests it at its centre.
         let (x, y) = match (config.width, config.height) {
@@ -575,6 +573,10 @@ impl MoviesCapture {
                     state,
                     &mut self.route,
                     frame,
+                    abort_return::AbortGoal::Choose(Some(
+                        crate::ui::shell::abort::AbortButton::Leave,
+                    )),
+                    true,
                 )?);
                 self.phase = Phase::CampaignAbortMenu;
             }
@@ -2093,6 +2095,46 @@ fn set_window_pointer_to_rect_center(
     point
 }
 
+/// Move the pointer to `rect`'s centre through the in-game window handler's
+/// CursorMoved path, then press the left button. The caller releases it, on
+/// this frame or a later presented one. Returns the window point.
+pub(super) fn press_in_game(
+    state: &mut AppState,
+    rect: crate::ui::shell::geom::RectPx,
+) -> [i32; 2] {
+    let point = set_window_pointer_to_rect_center(state, rect);
+    crate::app::input::dispatch::handle_cursor_moved_in_game(state);
+    crate::app::input::dispatch::handle_mouse_input(
+        state,
+        winit::event::MouseButton::Left,
+        winit::event::ElementState::Pressed,
+    );
+    point
+}
+
+/// A press and release at `rect`'s centre through the multiplayer setup
+/// page's (and the WOL pages') own pointer handlers.
+fn setup_click(state: &mut AppState, rect: crate::ui::shell::geom::RectPx) {
+    set_window_pointer_to_rect_center(state, rect);
+    crate::app::input::multiplayer_setup::cursor_moved(state);
+    crate::app::input::multiplayer_setup::mouse(state, winit::event::MouseButton::Left, true);
+    crate::app::input::multiplayer_setup::mouse(state, winit::event::MouseButton::Left, false);
+}
+
+/// [`press_in_game`] and its release on the same frame.
+pub(super) fn click_in_game(
+    state: &mut AppState,
+    rect: crate::ui::shell::geom::RectPx,
+) -> [i32; 2] {
+    let point = press_in_game(state, rect);
+    crate::app::input::dispatch::handle_mouse_input(
+        state,
+        winit::event::MouseButton::Left,
+        winit::event::ElementState::Released,
+    );
+    point
+}
+
 fn campaign_startup_receipt(
     startup: &crate::app::match_bootstrap::PreparedCampaignStartup,
 ) -> Value {
@@ -2237,7 +2279,7 @@ fn initial_save_receipt(state: &AppState, directory: &Path) -> Result<Value> {
         "automatic save retained already-consumed Options input"
     );
     let browser =
-        App::open_saved_game_rows(state, crate::ui::skirmish_shell::SavedSeedMode::Save, 8);
+        App::open_saved_game_rows(state, crate::ui::skirmish_shell::SavedSeedMode::Save, 8, None);
     ensure!(
         browser
             .selected_entry()

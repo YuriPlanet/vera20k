@@ -6,6 +6,7 @@ use crate::ui::shell::geom::{
 };
 use crate::ui::shell::layout_data;
 use vera20k_gui::scaled_rects;
+use vera20k_gui::shell::list::ListMetrics;
 
 pub const SHELL_BASE_W: i32 = 800;
 pub const SHELL_BASE_H: i32 = 600;
@@ -51,9 +52,8 @@ fn row_column<const N: usize>(first: usize, x: i32, w: i32, h: i32) -> [RectPx; 
     })
 }
 pub use vera20k_gui::shell::combobox::{
-    COMBO_ARROW_RESERVE_W, COMBO_DROPDOWN_ROW_H, COMBO_DROPDOWN_SCROLLBAR_BUTTON_H,
-    COMBO_DROPDOWN_SCROLLBAR_MIN_THUMB_H, COMBO_DROPDOWN_SCROLLBAR_W, COMBO_FACE_H,
-    DropdownMetrics, combo_arrow_hit_rect, combo_face_rect,
+    COMBO_ARROW_RESERVE_W, COMBO_DROPDOWN_ROW_H, COMBO_FACE_H, combo_arrow_hit_rect,
+    combo_face_rect,
 };
 pub const COMBO_ARROW_X_FROM_RIGHT: i32 = 19;
 pub const COMBO_ARROW_Y: i32 = 1;
@@ -62,9 +62,9 @@ pub const COMBO_SWATCH_INSET: i32 = 2;
 
 /// Visible row `visible_row` of an open combo dropdown, on the one row grid the
 /// item text, the highlight, the colour swatches and both pointer hit tests
-/// share: [`DropdownMetrics::row_h`] steps from the content top.
+/// share: [`ListMetrics::combo`]'s row height steps from the content top.
 pub fn combo_dropdown_row_rect(content: RectPx, scale: ShellScale, visible_row: usize) -> RectPx {
-    let row_h = DropdownMetrics::scaled(scale).row_h;
+    let row_h = ListMetrics::combo(scale).row_h;
     RectPx::new(
         content.x,
         content.y + visible_row as i32 * row_h,
@@ -323,7 +323,7 @@ impl AdvancedField {
         RectPx::new(
             first.x + first.w + 4,
             first.y,
-            DropdownMetrics::scaled(layout.scale).scrollbar_w,
+            ListMetrics::scaled(layout.scale).scrollbar_w,
             last.y + last.h - first.y,
         )
     }
@@ -598,7 +598,7 @@ fn opponent_scrollbar_rect(rows: &SkirmishRowRects, shown: usize) -> RectPx {
     RectPx::new(
         first.x + first.w + OPPONENT_SCROLLBAR_GAP,
         top,
-        vera20k_gui::shell::list::ListMetrics::RETAIL.scrollbar_w + 2,
+        ListMetrics::RETAIL.scrollbar_w + 2,
         bottom - top,
     )
 }
@@ -708,7 +708,7 @@ pub fn random_map_setup_dropdown_rect(
 ) -> RectPx {
     let face = combo_face_rect(layout.control_rects[row], layout.scale);
     let top = face.y + face.h;
-    let mut bottom = top + DropdownMetrics::scaled(layout.scale).row_h * item_count as i32;
+    let mut bottom = top + ListMetrics::combo(layout.scale).row_h * item_count as i32;
     // VERA: a list longer than the original's four rows (Archipelago, the added
     // theaters) can end inside a lower row's text; it then runs on to that
     // text's bottom so the row is hidden whole, never cut. The original lists
@@ -789,6 +789,8 @@ pub struct SavedSeedLayout {
     /// Present only in Save mode.
     pub name_edit: Option<RectPx>,
     pub action: RectPx,
+    /// Player saved-game Load screens offer a separate conversion action.
+    pub convert: Option<RectPx>,
     /// VERA's Setups page only: Load and Delete under the action, Save.
     pub load: Option<RectPx>,
     pub delete: Option<RectPx>,
@@ -819,6 +821,7 @@ pub fn compute_saved_seed_layout(
         list: at(list),
         name_edit: rects.get(0x526),
         action: at(action),
+        convert: None,
         load: None,
         delete: None,
         back: at(0x686),
@@ -856,7 +859,7 @@ scaled_rects!(RandomMapSetupLayout {
 });
 scaled_rects!(SavedSeedLayout {
     [scale, screen]
-    dialog, title, prompt, list, name_edit, action, load, delete, back, blank
+    dialog, title, prompt, list, name_edit, action, convert, load, delete, back, blank
 });
 
 /// The `0x102` common shell on the mapping a page already holds: the retail

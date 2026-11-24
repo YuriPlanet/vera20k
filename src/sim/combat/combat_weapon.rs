@@ -669,10 +669,20 @@ fn projectile_aa(rules: &RuleSet, weapon: &WeaponType) -> bool {
 /// ORs `0xB8`. A weapon naming no projectile section reads the reader's
 /// defaults (AA=no, AG=yes), as weapon selection does; retail weapons always
 /// name one.
+///
+/// Tiberian Sun's `AV=` (docs/ts-limpets.md) comes first: Firestorm 2.0
+/// `WeaponTypeClass::Allowable_Threat @ 0x00681150` answers only `0x10`
+/// (vehicles, the same bit in gamemd's mask) for an AV projectile
+/// (`0x00681153..0x00681162`), whatever its AA and AG say.
 fn weapon_class_bits(rules: &RuleSet, weapon: &WeaponType) -> u32 {
-    let (aa, ag) = rules
+    let (aa, ag, av) = rules
         .weapon_projectile(weapon)
-        .map_or((false, true), |projectile| (projectile.aa, projectile.ag));
+        .map_or((false, true, false), |projectile| {
+            (projectile.aa, projectile.ag, projectile.av)
+        });
+    if av {
+        return 0x10;
+    }
     let mut bits = 0;
     if aa {
         bits = 4;

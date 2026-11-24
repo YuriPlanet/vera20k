@@ -16,11 +16,11 @@ use crate::app::frontend::state::ShellMessageBoxPurpose;
 use crate::app::mod_import_picker;
 use crate::i18n::{tr, tr_fill};
 use crate::ui::shell::descriptor::DialogResourceId;
-use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::modal::{BoxParts, Footer, ShellBox, control};
 use crate::util::mod_package::{ModImport, PreparedModImport};
 use crate::util::time::{Duration, Instant};
-use vera20k_gui::shell::list::{ListMetrics, ListScrollPart, ROW_HEIGHT, ShellListGeometry};
+use vera20k_gui::shell::list::ROW_HEIGHT;
 use vera20k_gui::{NodeId, NodeKind, Prop, Value};
 
 use super::{App, AppState};
@@ -37,6 +37,9 @@ pub(crate) struct Selection {
     plan: Option<ModImport>,
     // The plan owns the parts. These labels give the scrollable preview their order.
     rows: Vec<String>,
+    /// The text width the list's `Items` were last cut to from `rows`;
+    /// `None` once the rows change ([`sync`] writes them again).
+    listed: Option<u32>,
     /// The list's selected row and top, kept while its box is rebuilt.
     selected: Option<usize>,
     top: usize,
@@ -67,6 +70,7 @@ impl Selection {
         Self {
             plan: None,
             rows: Vec::new(),
+            listed: None,
             selected: None,
             top: 0,
             can_browse: mod_import_picker::available(),
@@ -129,6 +133,7 @@ impl Selection {
             .enumerate()
             .map(|(index, name)| format!("{}. {}", index + 1, name.to_string_lossy()))
             .collect();
+        self.listed = None;
         self.selected = (selected < self.rows.len()).then_some(selected);
     }
 
@@ -296,16 +301,30 @@ fn list_node(state: &AppState, dialog: DialogResourceId) -> Option<NodeId> {
         .find(|node| gui.tree().kind(*node) == Ok(NodeKind::List))
 }
 
-/// Builds the preview's parts list in its box once (with no id, so the
-/// box's buttons still build), from the selection's rows, selected row and
-/// top, the selected row in view; keeps it on its rect and row count.
+/// The parts list's host id: past the box's 16-bit control ids, so the
+/// box's rect sync leaves its window alone and no press names it (the
+/// update offer's list is `0x1_0001`).
+pub(crate) const LIST_ID: i32 = 0x1_0002;
+
+/// The open preview's parts list node, if built.
+pub(crate) fn node(state: &AppState) -> Option<NodeId> {
+    let (_, _, dialog) = preview_box(state)?;
+    list_node(state, dialog)
+}
+
+/// Builds the preview's parts list in its box once, after the box's
+/// buttons (its id counts as built), from the selection's rows, selected
+/// row and top, the selected row in view; keeps it on its rect and its
+/// rows' text cut to the row.
 pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
     let (selection, layout, dialog) = preview_box(state)?;
     let rect = list_rect(&layout);
     let (rows, selected, top) = (selection.rows.len(), selection.selected, selection.top);
     let scale = layout.scale;
     let built = list_node(state, dialog);
-    let controller = &mut state.frontend.shell_controller;
+    let frontend = &mut state.frontend;
+    let shell_box = &frontend.shell_message_box.as_ref()?.shell_box;
+    let controller = &mut frontend.shell_controller;
     // The list's metrics follow the box's scale, as its paint does.
     controller.set_scale_in(dialog, scale);
     let root = controller.root_in(dialog)?;
@@ -314,8 +333,14 @@ pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
     let node = match built {
         Some(node) => node,
         None => {
+            crate::ui::shell::page::ensure_built(gui, root, || shell_box.nodes());
             let node = gui.create(NodeKind::List, Some(root)).ok()?;
-            let _ = gui.set(node, Prop::RowCount, int(rows));
+            let _ = gui.set(node, Prop::Id, Value::Int(LIST_ID));
+            // Each row's text inset from both ends.
+            let inset = RectPx::new(ROW_TEXT_INSET, 0, ROW_TEXT_INSET, 0);
+            let _ = gui.set(node, Prop::TextInset, Value::Rect(inset));
+            // Blank rows until [`list_rows`] writes their text below.
+            let _ = gui.set(node, Prop::Items, Value::Items(vec![String::new(); rows]));
             let _ = gui.set(node, Prop::Rect, Value::Rect(rect));
             let _ = gui.set(node, Prop::Top, int(top));
             let _ = gui.set(node, Prop::Selected, selected.map_or(Value::Int(-1), int));
@@ -325,9 +350,52 @@ pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
             node
         }
     };
-    let _ = gui.set(node, Prop::RowCount, int(rows));
     let _ = gui.set(node, Prop::Rect, Value::Rect(rect));
+    let width = row_text_width(gui, node, scale);
+    list_rows(state, node, width, built.is_none());
     Some(node)
+}
+
+/// Every row's text width in 800x600 pixels: the first row's, less the
+/// list's text insets.
+fn row_text_width(gui: &vera20k_gui::Gui, node: NodeId, scale: ShellScale) -> u32 {
+    gui.list_geometry(node).map_or(0, |geometry| {
+        let row = geometry.row(0);
+        let inset = match gui.get(node, Prop::TextInset) {
+            Ok(Some(Value::Rect(inset))) => *inset,
+            _ => RectPx::default(),
+        };
+        let text = scale.derive_rect(row, |row| {
+            RectPx::new(row.x + inset.x, row.y, row.w - inset.x - inset.w, row.h)
+        });
+        scale.base_rect(text).w.max(0) as u32
+    })
+}
+
+/// The selection's rows into the list's `Items`, each cut to `width`: only
+/// when the list is new, the rows changed or the width did, so a steady
+/// frame copies no text.
+fn list_rows(state: &mut AppState, node: NodeId, width: u32, new: bool) {
+    let font = &state.renderer.bit_font;
+    let frontend = &mut state.frontend;
+    let Some(message) = frontend.shell_message_box.as_mut() else {
+        return;
+    };
+    let ShellMessageBoxPurpose::ModImport(dialog) = &mut message.purpose else {
+        return;
+    };
+    let Dialog::Select(selection) = dialog.as_mut() else {
+        return;
+    };
+    if !new && selection.listed == Some(width) {
+        return;
+    }
+    selection.listed = Some(width);
+    let items = (selection.rows.iter())
+        .map(|name| font.truncate_to_width(name, width).into_owned())
+        .collect();
+    let gui = frontend.shell_controller.gui_mut();
+    let _ = gui.set(node, Prop::Items, Value::Items(items));
 }
 
 /// The selection's own change of its rows or selected row: the list takes
@@ -377,35 +445,6 @@ pub(crate) fn follow_list(state: &mut AppState) {
             button.enabled = !disabled;
         }
     }
-}
-
-/// What the open preview's list paints: its geometry, its rows, top and
-/// selected row, and the scrollbar part shown pushed.
-pub(crate) struct PartsView<'a> {
-    pub(crate) geometry: ShellListGeometry,
-    pub(crate) rows: &'a [String],
-    pub(crate) top: usize,
-    pub(crate) selected: Option<usize>,
-    pub(crate) pressed: Option<ListScrollPart>,
-    /// Each row's text inset, in 800x600 pixels.
-    pub(crate) text_inset: i32,
-}
-
-pub(crate) fn parts_view(state: &AppState) -> Option<PartsView<'_>> {
-    let (selection, layout, dialog) = preview_box(state)?;
-    let view = list_node(state, dialog)
-        .and_then(|node| state.frontend.shell_controller.gui().list_view(node));
-    let top = view.map_or(selection.top, |view| view.top);
-    let selected = view.map_or(selection.selected, |view| view.selected);
-    let metrics = ListMetrics::scaled(layout.scale);
-    Some(PartsView {
-        geometry: ShellListGeometry::new(list_rect(&layout), selection.rows.len(), top, metrics),
-        rows: &selection.rows,
-        top,
-        selected,
-        pressed: view.and_then(|view| view.pressed),
-        text_inset: ROW_TEXT_INSET,
-    })
 }
 
 /// The box's own input reaches the parts list through the gui; this only

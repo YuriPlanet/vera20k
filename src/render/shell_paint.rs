@@ -8,11 +8,11 @@
 //! owns the render pass, the camera, the buffers, and the parent-compose order:
 //! it submits the buffers this pass returns in the verified C8 sequence.
 //!
-//! Slice 5 adds `paint_modal_shp`: the shared mode-2 SHP modal emitter (PUDLGBGN
-//! frame 0 background + MNBTTN owner-draw type-3 button + body/OK labels). It is
+//! Slice 5 adds `paint_modal_sprites`: the shared mode-2 SHP modal emitter
+//! (PUDLGBGN frame 0 background + MNBTTN owner-draw type-3 buttons). It is
 //! source-atlas-neutral — the caller passes the resolved chrome entries (the modal
-//! art lives in the skirmish chrome atlas today) so the emitter stays a pure
-//! composition the quit-confirm and validation modals both delegate to.
+//! art lives in the skirmish chrome atlas today). The boxes' texts are their
+//! widgets' (`app::frontend::skirmish_shell_render::shell_box`).
 
 use std::borrow::Cow;
 
@@ -78,14 +78,29 @@ fn entry_sprite(
     size: [f32; 2],
     depth: f32,
 ) -> SpriteInstance {
+    quad([x, y], size, (entry.uv_origin, entry.uv_size), [1.0; 3], 1.0, depth)
+}
+
+/// One quad on the target: `size` pixels from `position`, sampling `uv`
+/// (origin, size) in `tint` and `alpha` at `depth`. Every shell skin's
+/// picture and solid fill (a white texel) is one, and so is each of the
+/// HUD paint's fills and pictures (`HudPaint::build`).
+pub fn quad(
+    position: [f32; 2],
+    size: [f32; 2],
+    (uv_origin, uv_size): ([f32; 2], [f32; 2]),
+    tint: [f32; 3],
+    alpha: f32,
+    depth: f32,
+) -> SpriteInstance {
     SpriteInstance {
-        position: [x, y],
+        position,
         size,
-        uv_origin: entry.uv_origin,
-        uv_size: entry.uv_size,
+        uv_origin,
+        uv_size,
         depth,
-        tint: [1.0, 1.0, 1.0],
-        alpha: 1.0,
+        tint,
+        alpha,
         ..Default::default()
     }
 }
@@ -136,16 +151,8 @@ pub fn push_tinted_entry(
     tint: [f32; 3],
     depth: f32,
 ) {
-    out.push(SpriteInstance {
-        tint,
-        ..entry_sprite(
-            entry,
-            rect.x as f32,
-            rect.y as f32,
-            [rect.w as f32, rect.h as f32],
-            depth,
-        )
-    });
+    let (position, size) = ([rect.x as f32, rect.y as f32], [rect.w as f32, rect.h as f32]);
+    out.push(quad(position, size, (entry.uv_origin, entry.uv_size), tint, 1.0, depth));
 }
 
 /// One chrome atlas entry at its native size, top-left at `(x, y)`.
@@ -881,23 +888,6 @@ pub fn paint_modal_sprites(
     out
 }
 
-/// Compose the full mode-2 SHP modal: [`paint_modal_sprites`] plus the body/button
-/// labels at the modal's front-most text depth, all using the layout's scale.
-pub fn paint_modal_shp(
-    font: &BitFont,
-    background: Option<SkirmishShellChromeEntry>,
-    button_frames: ModalButtonFrames,
-    dialog: RectPx,
-    buttons: &[ModalButton],
-    labels: &[PaintLabel<'_>],
-    scale: ShellScale,
-    depths: ModalDepths,
-) -> ModalDraw {
-    let sprites = paint_modal_sprites(background, button_frames, dialog, buttons, scale, depths);
-    let text = paint_labels_at_depth_scaled(font, labels, depths.text, scale.factor());
-    ModalDraw { sprites, text }
-}
-
 /// Center the button art, grown by `scale`, on its control rect (matches the
 /// existing modal button placement: integer-halved gaps on each axis).
 fn modal_button_centered_position(
@@ -1087,22 +1077,23 @@ mod tests {
         let font = crate::render::bit_font::tests::make_test_font(&[(b'A' as u16, 6)], 4);
         let draw = |scale: ShellScale| {
             let rect = scale.scale_rect(RectPx::new(175, 137, 451, 326));
-            paint_modal_shp(
-                &font,
+            let sprites = paint_modal_sprites(
                 Some(fake_skirmish_entry([0.0; 2], [1.0; 2], [451.0, 326.0])),
                 ModalButtonFrames::default(),
                 rect,
                 &[],
-                &[PaintLabel {
-                    text: "A".into(),
-                    rect,
-                    align: ShellAlign::NONE,
-                    rgb: SHELL_TEXT_RGB_ENABLED,
-                    path_a_reveal: None,
-                }],
                 scale,
                 MODAL_DEPTHS,
-            )
+            );
+            let label = PaintLabel {
+                text: "A".into(),
+                rect,
+                align: ShellAlign::NONE,
+                rgb: SHELL_TEXT_RGB_ENABLED,
+                path_a_reveal: None,
+            };
+            let text = paint_labels_at_depth_scaled(&font, &[label], MODAL_DEPTHS.text, scale.factor());
+            ModalDraw { sprites, text }
         };
         let retail = draw(crate::ui::shell::geom::RETAIL_SCALE);
         let fitted = draw(crate::ui::shell::geom::shell_scale(1600, 1200));

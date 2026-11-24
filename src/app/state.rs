@@ -205,10 +205,12 @@ impl AppState {
         // The side's layout decides how wide the column is and where it and
         // the bar sit.
         let spec = self.match_state.match_presentation.sidebar_layout_spec;
-        crate::ui::sidebar::SidebarFrame::new(width, height, size.percent(width, height))
-            .with_column_width(spec.sidebar_width as u32)
-            .with_band_height(spec.side_height as u32)
-            .with_places(spec.places)
+        crate::ui::sidebar::SidebarFrame::for_layout(
+            width,
+            height,
+            size.percent(width, height),
+            &spec,
+        )
     }
 
     /// The zoom pass a match frame goes through: the battlefield and the

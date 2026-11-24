@@ -1533,6 +1533,15 @@ pub(super) fn emit_admitted_fire(
     // that launch no bullet.
     #[cfg(feature = "phobos")]
     world.record_phobos_attach_firing(snap.stable_id, rules);
+    // Firestorm 2.0 `TechnoClass::Fire_At @ 0x006301A0` takes a Tiberian Sun
+    // limpet shot (`LimpetFactor=`) before any other work, returning NULL
+    // (`sim::limpet`). gamemd has no such arm; it is here, past FireAt's
+    // limbo gate, so a target in limbo takes no limpet.
+    if let TargetKind::Entity(target) = snap.target
+        && world.limpet_fire_at(rules, snap.stable_id, target, weapon, effects)
+    {
+        return None;
+    }
     if weapon.suicide {
         // Techno6FDDC0..6FDE0E: the local packet is type Strength, not
         // current Health or weapon Damage. The real self receiver completes

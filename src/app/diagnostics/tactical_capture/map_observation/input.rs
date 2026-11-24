@@ -584,19 +584,11 @@ pub(super) struct MapCommandBarThumbState {
 }
 
 impl MapCommandBarThumbState {
-    pub(super) fn capture(
-        state: &AppState,
-        handle: crate::ui::gadget::GadgetHandle,
-    ) -> Result<Self> {
+    pub(super) fn capture(state: &AppState, handle: vera20k_gui::NodeId) -> Result<Self> {
         let presentation = &state.match_state.match_presentation;
-        let gadgets = &presentation.in_game_gadgets;
-        let gadget = gadgets
-            .list
-            .get(handle)
-            .context("thumb control disappeared")?;
-        let crate::ui::gadget::list::GadgetBehavior::Button(button) = gadget.behavior else {
-            bail!("thumb control is not a button");
-        };
+        let (gui, nodes) =
+            crate::app::input::chrome_input::chrome(state).context("thumb control disappeared")?;
+        let control = ChromeControl::read(gui, handle).context("thumb control disappeared")?;
         let sim = &state
             .match_state
             .sim_runtime
@@ -607,12 +599,12 @@ impl MapCommandBarThumbState {
         let house = owner.and_then(|owner| sim.houses().get(&owner));
         Ok(Self {
             closed: presentation.sidebar_gadget_state.command_bar_closed,
-            pressed: button.is_pressed,
-            sticky: gadgets.focus.sticky == Some(handle),
+            pressed: gui.shows_pressed_in(nodes.layer, handle),
+            sticky: gui.pressed_in(nodes.layer) == Some(handle),
             left_held: state.match_state.input.tactical_mouse.left_held(),
-            gadget_id: gadget.id,
-            rect: [gadget.rect.x, gadget.rect.y, gadget.rect.w, gadget.rect.h],
-            disabled: gadget.is_disabled,
+            gadget_id: control.id,
+            rect: [control.rect.x, control.rect.y, control.rect.w, control.rect.h],
+            disabled: control.disabled,
             current_house: owner.map(|owner| sim.interner().resolve(owner).to_owned()),
             side_index: house.map(|house| house.side_index()),
             local_player_defeated: sim.local_player_defeated(),
@@ -625,12 +617,36 @@ impl MapCommandBarThumbState {
     }
 }
 
+/// What the chrome did with the edge at this control: it took the edge, and
+/// fired it (by the right button or not).
 #[derive(Debug, Serialize)]
 struct MapCommandBarDispatchObservation {
-    masked_flags: u16,
-    modifier: u8,
-    key_after: u16,
-    action_result: u32,
+    fired: bool,
+    right: bool,
+}
+
+/// A chrome control as the observation reads it.
+struct ChromeControl {
+    id: u16,
+    rect: vera20k_gui::Rect,
+    disabled: bool,
+}
+
+impl ChromeControl {
+    fn read(gui: &vera20k_gui::Gui, node: vera20k_gui::NodeId) -> Option<Self> {
+        use vera20k_gui::{Prop, Value};
+        // Where the cursor hits it; its `Rect` is where its picture draws.
+        let rect = match gui.get(node, Prop::HitRect).ok()? {
+            Some(Value::Rect(rect)) => *rect,
+            _ => vera20k_gui::Rect::default(),
+        };
+        let disabled = matches!(gui.get(node, Prop::Enabled), Ok(Some(Value::Bool(false))));
+        Some(Self {
+            id: u16::try_from(gui.id_of(node)?).ok()?,
+            rect,
+            disabled,
+        })
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -640,33 +656,19 @@ pub(super) struct MapCommandBarThumbEdge {
 }
 
 impl MapCommandBarThumbEdge {
-    pub(super) fn capture(
-        state: &AppState,
-        handle: crate::ui::gadget::GadgetHandle,
-    ) -> Result<Self> {
+    pub(super) fn capture(state: &AppState, handle: vera20k_gui::NodeId) -> Result<Self> {
         let snapshot = MapCommandBarThumbState::capture(state, handle)?;
-        // Both ordinary input ingress and the gadget handler return before
-        // ticking while Scenario input is locked. Do not mistake retained
-        // output from an earlier tick for a dispatch of this blocked edge.
-        let dispatch = (!snapshot.input_locked)
-            .then(|| {
-                state
-                    .match_state
-                    .match_presentation
-                    .in_game_gadgets
-                    .out
-                    .dispatches
-                    .iter()
-                    .rev()
-                    .find(|record| record.handle == handle)
-                    .map(|record| MapCommandBarDispatchObservation {
-                        masked_flags: record.masked_flags,
-                        modifier: record.modifier,
-                        key_after: record.key_after,
-                        action_result: record.action_result,
-                    })
-            })
-            .flatten();
+        // Both ordinary input ingress and the chrome return before routing
+        // while Scenario input is locked. Do not mistake the record of an
+        // earlier edge for a dispatch of this blocked edge.
+        let chrome = &state.match_state.match_presentation.in_game_chrome;
+        let dispatch = (!snapshot.input_locked && chrome.last_route == Some(handle)).then(|| {
+            let fired = chrome.last_fired.filter(|(node, _)| *node == handle);
+            MapCommandBarDispatchObservation {
+                fired: fired.is_some(),
+                right: fired.is_some_and(|(_, right)| right),
+            }
+        });
         Ok(Self {
             state: snapshot,
             dispatch,
@@ -703,18 +705,17 @@ impl MapCommandBarGestureReceipt {
         })
     }
 
-    pub(super) fn capture(
-        state: &AppState,
-        command: &str,
-    ) -> Result<(Self, crate::ui::gadget::GadgetHandle)> {
+    pub(super) fn capture(state: &AppState, command: &str) -> Result<(Self, vera20k_gui::NodeId)> {
         let (layout, slots) =
             crate::app::presentation::sidebar_build::command_bar::layout_and_slots(state)
                 .context("command-bar layout is absent")?;
+        let (gui, nodes) = crate::app::input::chrome_input::chrome(state)
+            .context("command-bar controls are absent")?;
         let (mut receipt, handle) = Self::resolve(
             command,
             layout,
             &slots,
-            &state.match_state.match_presentation.in_game_gadgets,
+            (gui, nodes.command_bar),
             [state.render_width(), state.render_height()],
         )?;
         if command == "Thumb" {
@@ -738,9 +739,9 @@ impl MapCommandBarGestureReceipt {
         command: &str,
         layout: crate::ui::sidebar::command_bar::CommandBarLayout,
         slots: &[Option<usize>],
-        gadgets: &crate::app::input::gadget_input::InGameGadgets,
+        (gui, bar): (&vera20k_gui::Gui, [vera20k_gui::NodeId; 12]),
         extent: [u32; 2],
-    ) -> Result<(Self, crate::ui::gadget::GadgetHandle)> {
+    ) -> Result<(Self, vera20k_gui::NodeId)> {
         let command_index = command_bar_index(command)?;
         let slot = if command_index == 11 {
             None
@@ -758,24 +759,20 @@ impl MapCommandBarGestureReceipt {
                 .context("requested command-bar slot is closed or clipped")?,
             None => layout.left_cap,
         };
-        let handle = gadgets
-            .command_bar
-            .context("command-bar controls are absent")?[command_index];
-        let gadget = gadgets
-            .list
-            .get(handle)
-            .context("requested command-bar control is absent")?;
-        let rect = [gadget.rect.x, gadget.rect.y, gadget.rect.w, gadget.rect.h].map(|v| v as f32);
+        let handle = bar[command_index];
+        let control =
+            ChromeControl::read(gui, handle).context("requested command-bar control is absent")?;
+        let rect = [control.rect.x, control.rect.y, control.rect.w, control.rect.h].map(|v| v as f32);
         ensure!(
             rect == [layout_rect.x, layout_rect.y, layout_rect.w, layout_rect.h],
             "command-bar control differs from its current layout"
         );
-        let resolved_position = control_center(rect, gadget.is_disabled, extent)?;
+        let resolved_position = control_center(rect, control.disabled, extent)?;
         Ok((
             Self {
                 command: command.to_owned(),
                 slot,
-                gadget_id: gadget.id,
+                gadget_id: control.id,
                 rect,
                 resolved_position,
                 thumb: None,

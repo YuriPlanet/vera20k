@@ -116,7 +116,7 @@ impl App {
     /// gamemd's capture-changed case drops the button-held byte and tears the
     /// band rectangle down; without this the right-drag pan keeps applying its
     /// anchor-relative step every frame and edge scroll stays inhibited until
-    /// the player right-clicks again. The gadget substrate keeps its own
+    /// the player right-clicks again. The match's chrome keeps its own
     /// sticky capture and must die on the same edge, or the next click is still
     /// routed to the region that captured it (the release that would free it
     /// was lost).
@@ -133,11 +133,7 @@ impl App {
         // inhibit, so it dies on the same edge as the rest of the pointer
         // state.
         state.match_state.input.touch_mapper.reset();
-        state
-            .match_state
-            .match_presentation
-            .in_game_gadgets
-            .cancel_pointer_capture();
+        crate::app::input::chrome_input::cancel(state);
         let presentation = &mut state.match_state.match_presentation;
         presentation.dialog_ui.gui_mut().cancel_pointer();
         presentation.diplomacy_page = Default::default();
@@ -827,11 +823,9 @@ impl App {
             ScreenPage::Wol => {
                 return Self::handle_wol_key(state, Some(code), pressed, event.text.as_deref());
             }
-            // The message box takes Enter/Escape; the page ignores
-            // IDOK/IDCANCEL (0x00558A30).
             ScreenPage::LoadSavedGame => {
                 if pressed {
-                    Self::handle_load_saved_game_key(state, code);
+                    Self::handle_load_saved_game_key(state, Some(code), event.text.as_deref());
                 }
                 return;
             }

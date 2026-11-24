@@ -626,10 +626,37 @@ impl ProcessAssets {
     /// ships and no tiles, and leaves its folder's terrain files to each
     /// match (`Self::agreed_inis`, `Self::match_terrain_digest`).
     /// The legacy advertisement CRC remains a separate native UI value.
+    /// This is the digest of a game, with the AI INI its folder supplies: a
+    /// launcher compares it before it seats anyone (docs/spawn.md). A match's
+    /// is [`Self::multiplayer_match_rules_digest`].
     pub(crate) fn multiplayer_rules_digest(&self, mode: &str) -> Result<String, String> {
+        self.rules_digest_reading(mode, crate::rules::retail_sources::AiFile::GameFolder)
+    }
+
+    /// VERA: [`Self::multiplayer_rules_digest`] of a network match, with the
+    /// AI INI it reads (`retail_sources::match_ai_file`): the original one
+    /// when it seats no computer (`seats_computers`), so players whose game
+    /// folders hold other AI files agree until a computer is seated.
+    pub(crate) fn multiplayer_match_rules_digest(
+        &self,
+        mode: &str,
+        seats_computers: bool,
+    ) -> Result<String, String> {
+        let (_, assets) = self.rules_and_sources()?;
+        self.rules_digest_reading(
+            mode,
+            crate::rules::retail_sources::match_ai_file(assets, true, seats_computers),
+        )
+    }
+
+    fn rules_digest_reading(
+        &self,
+        mode: &str,
+        ai_file: crate::rules::retail_sources::AiFile,
+    ) -> Result<String, String> {
         let (rules, assets) = self.rules_and_sources()?;
         let mut digests: Vec<Option<String>> = self
-            .agreed_inis(rules, assets, &[mode], true)?
+            .agreed_inis(rules, assets, &[mode], true, ai_file)?
             .into_iter()
             .flatten()
             .map(|ini| ini.digest)
@@ -809,17 +836,19 @@ impl ProcessAssets {
     /// INI, then each theater's INI: as `map::theater::load_theater` reads it
     /// with a mod selected, else the copy a retail install ships.
     /// One list per mode in `modes`; what no mode changes is read once.
+    /// AIMD is the copy `ai_file` names (`retail_sources::select_ai_ini`).
     fn agreed_inis(
         &self,
         rules: &crate::rules::process_owner::NativeRulesProcessOwner,
         assets: &AssetManager,
         modes: &[&str],
         switches: bool,
+        ai_file: crate::rules::retail_sources::AiFile,
     ) -> Result<Vec<Vec<AgreedIni>>, String> {
         use crate::rules::ini_parser::IniFile;
-        use crate::rules::retail_sources::{select_ini, select_mode_ini};
+        use crate::rules::retail_sources::{select_ai_ini, select_mode_ini};
         let roots = assets.ini_roots();
-        let ai = select_ini(assets, roots.ai())?;
+        let ai = select_ai_ini(assets, ai_file)?;
         let [root, langrule, art] = rules.multiplayer_source_digests();
         let root = if switches {
             root
@@ -836,7 +865,7 @@ impl ProcessAssets {
             ini("rules", roots.rules(), root, false),
             ini("langrule", "langrule.ini", langrule, true),
             ini("art", roots.art(), art, false),
-            ini("ai", roots.ai(), Some(ai.ini.multiplayer_digest()), false),
+            ini("ai", roots.ai(), Some(ai.multiplayer_digest()), false),
         ];
         // VERA: a theater INI's tilesets decide every cell's land and height.
         // One that is absent or does not parse fails that theater's load.
@@ -987,7 +1016,9 @@ impl ProcessAssets {
         let tiles = (!original).then(|| self.changed_tiles(assets));
         let tiles_digest = tiles.and_then(|tiles| tiles.digest.as_deref());
         let additions = self.map_additions(assets)?;
-        self.agreed_inis(rules, assets, modes, false)?
+        // The game's parts, as a launcher reads them: the folder's AI INI.
+        let ai_file = crate::rules::retail_sources::AiFile::GameFolder;
+        self.agreed_inis(rules, assets, modes, false, ai_file)?
             .into_iter()
             .map(|inis| {
                 let mut files: Vec<RulesFile> = inis
@@ -1102,8 +1133,9 @@ impl ProcessAssets {
         &mut self,
         mode: &str,
         options: &crate::map::rmg::RmgOptions,
+        seats_computers: bool,
     ) -> Result<String, String> {
-        let rules = self.multiplayer_rules_digest(mode)?;
+        let rules = self.multiplayer_match_rules_digest(mode, seats_computers)?;
         let assets = self.manager.as_mut().ok_or("retail sources are loading")?;
         let mode_rules = crate::rules::retail_sources::select_mode_ini(assets, Some(mode))?;
         // VERA: the preparation loads a theater, which pins the terrain files
@@ -1211,8 +1243,15 @@ impl ProcessAssets {
         let Some(rules) = self.native_rules.as_ref() else {
             return;
         };
-        let ai = match select_ini(assets, assets.ini_roots().ai()) {
-            Ok(selected) => selected.ini,
+        // VERA: a room is joined before it is known whether it seats a
+        // computer, so the join compares the AI INI a match without one
+        // reads: the original game's, whatever the folder supplies
+        // (`retail_sources::match_ai_file`). A room that seats a computer
+        // compares the folder's in its rules digest
+        // (`Self::multiplayer_match_rules_digest`).
+        let joined = crate::rules::retail_sources::match_ai_file(assets, true, false);
+        let ai = match crate::rules::retail_sources::select_ai_ini(assets, joined) {
+            Ok(ai) => ai,
             Err(error) => {
                 log::warn!("No INI hashes without the AI root: {error}");
                 return;
@@ -1623,7 +1662,11 @@ mod tests {
             process.initialize_sources_if_needed(&assets).unwrap();
             process.return_from_loading(assets);
             process
-                .multiplayer_generated_rules_digest("", &crate::map::rmg::RmgOptions::default())
+                .multiplayer_generated_rules_digest(
+                    "",
+                    &crate::map::rmg::RmgOptions::default(),
+                    true,
+                )
                 .unwrap()
         };
         let original = digest();
@@ -1665,7 +1708,7 @@ mod tests {
             ..Default::default()
         };
         process
-            .multiplayer_generated_rules_digest("", &snow)
+            .multiplayer_generated_rules_digest("", &snow, true)
             .unwrap();
         assert_eq!(process.match_terrain_digest().unwrap(), terrain);
     }
@@ -2048,6 +2091,54 @@ mod tests {
         assert_eq!(deformed["files"], stock["files"]);
         assert_eq!(deformed["settings"]["terrain_deformation"], true);
         assert_ne!(deformed["digest"], stock["digest"]);
+    }
+
+    /// VERA: a room that seats no computer agrees on the original AI INI,
+    /// and so does its join, whatever AI INI a game folder holds. A room
+    /// that seats one compares the folder's, as a launcher's digest does.
+    #[test]
+    fn a_room_compares_the_folders_ai_ini_only_when_it_seats_a_computer() {
+        use crate::map::source::test_support::make_new_format_mix_bytes;
+        let dir =
+            crate::assets::asset_manager::test_support::audio_test_install("ai-file-agreement");
+        let local = make_new_format_mix_bytes(&[
+            ("rulesmd.ini", b"[General]\nBuildSpeed=.7\n"),
+            ("artmd.ini", b"[UNIT]\nVoxel=yes\n"),
+            ("aimd.ini", b"[AI]\nValue=1\n"),
+        ]);
+        std::fs::remove_file(dir.path().join("localmd.mix")).unwrap();
+        std::fs::write(
+            dir.path().join("ra2md.mix"),
+            make_new_format_mix_bytes(&[("localmd.mix", &local)]),
+        )
+        .unwrap();
+        let start = || {
+            let assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+            let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
+            process.initialize_sources_if_needed(&assets).unwrap();
+            process.install_native_ini_hashes(&assets, &[]);
+            process.return_from_loading(assets);
+            process
+        };
+        let room = |process: &ProcessAssets, computers| {
+            process
+                .multiplayer_match_rules_digest("", computers)
+                .unwrap()
+        };
+        let original = start();
+        std::fs::write(dir.path().join("aimd.ini"), b"[AI]\nValue=2\n").unwrap();
+        let changed = start();
+        assert_eq!(changed.changed_game_files(), ["aimd.ini"]);
+
+        assert_eq!(room(&original, false), room(&changed, false));
+        assert_eq!(original.native_ini_hashes(), changed.native_ini_hashes());
+        assert_ne!(room(&original, true), room(&changed, true));
+        // The original game has one digest, whoever is seated.
+        assert_eq!(room(&original, false), room(&original, true));
+        assert_eq!(
+            room(&changed, true),
+            changed.multiplayer_rules_digest("").unwrap()
+        );
     }
 
     #[test]

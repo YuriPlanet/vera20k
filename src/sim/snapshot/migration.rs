@@ -6,21 +6,56 @@ use super::{
 };
 
 const MIGRATION_ENVELOPE_VERSION: u32 = 2;
-const V0_3_9: u32 = 0xFD30_A463;
+// The stock desktop v0.3.8 and v0.3.9 writers share this layout.
+const V0_3_8_AND_0_3_9: u32 = 0xFD30_A463;
 const V0_4_0: u32 = 0x9BB2_0D64;
+// The next desktop writer stores an AlphaShape's Anim expiry listener.
+const ALPHA_SHAPE_LISTENER: u32 = 0xFD54_FFFF;
+// d00f8183c added the Ares alternate-theater flag to each retained object image.
+const ALTERNATE_THEATER_ART: u32 = 0xCB54_5137;
+// 08e1424eb (#5002) stores a high bridge's fixed deck level, and 26b2f9464
+// Fly's Ares EMP spin. Older worlds hold neither: no fixed deck, so a converted
+// bridge keeps its saved per-cell height until it is stamped again, and no
+// spin, whose rate is read only while spinning.
+const BRIDGE_DECK_AND_FLY_SPIN: u32 = 0xCADF_6067;
+// The next writer stores a map House's Ares `Degrades=` (HouseExt, read at
+// hook 0x0050114D). Older worlds hold none: their Houses convert with it
+// unset and keep their country's answer, as they played when saved.
+const HOUSE_DEGRADES: u32 = 0xD6C7_5D57;
+// The Firestorm ice chain (docs/ts-ice.md) stores its Scenario growth timer,
+// its solidify list and each unit's ice-sinking flag. Older worlds ran no
+// ice: no timer, no cracks and no unit sinking through ice.
+const TS_ICE: u32 = 0xAFC7_F643;
+// The next writer stores terrain deformation's pending second dent step.
+// Older worlds have none pending.
+const TERRAIN_DENT: u32 = 0x82C3_2EA4;
+// Each object stores the Tiberian Sun limpets on it (`sim::limpet`) in its
+// seldom part, and its foot speed a byte saying so. Older worlds hold none:
+// only a `LimpetFactor=` warhead, which no older writer read, attaches one.
+const TS_LIMPETS: u32 = 0xF612_7DC1;
+// Tiberian Sun's BounceSound and ExpireSound: each saved AnimType's
+// references gain both names. Older worlds had neither, which reads as None
+// and plays nothing (docs/ts-anim-sounds.md).
+const TS_ANIM_SOUNDS: u32 = 0x9441_E8D8;
+
+/// The rules digest a converted save carries: the loader takes the rules the
+/// game has instead of proving the digest the old writer computed, whose
+/// recipe changes with most rules ports. The world keeps its saved processed
+/// rules; the next ordinary save records the current digest.
+pub const CONVERTED_RULES_HASH: u64 = 0;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MigrationError {
-    #[error("this build cannot write v0.4.0 migration output (layout {0:#010x})")]
+    #[error("this build cannot write the audited migration target (layout {0:#010x})")]
     UnsupportedTarget(u32),
-    #[error("the save uses layout {0:#010x}; conversion expects a v0.3.9 save")]
+    #[error("the save uses an unsupported source layout {0:#010x}")]
     UnsupportedSource(u32),
-    #[error("the save is already in the v0.4.0 layout")]
+    #[error("the save is already in the current layout")]
     AlreadyCurrent,
     #[error("unexpected bytes after the saved world")]
     TrailingBytes,
-    #[error("entity {0} was saved in a map tunnel; finish transit in v0.3.9 and save again")]
-    TunnelTransit(u64),
+    #[error("entity {0} has an invalid saved map tunnel or path cursor")]
+    InvalidTunnelTransit(u64),
     #[error(transparent)]
     HeaderOrState(#[from] SnapshotError),
     #[error(transparent)]
@@ -32,59 +67,198 @@ pub enum MigrationError {
 pub fn supports(header: &GameSnapshotHeader) -> bool {
     header.product_magic == SNAPSHOT_PRODUCT_MAGIC
         && header.envelope_version == MIGRATION_ENVELOPE_VERSION
-        && header.layout == V0_3_9
+        && previous_layout(header.layout).is_some()
         && header.compatibility().matches_build()
         && SNAPSHOT_ENVELOPE_VERSION == MIGRATION_ENVELOPE_VERSION
-        && snapshot_layout() == V0_4_0
+        && snapshot_layout() == TS_ANIM_SOUNDS
 }
 
-/// Convert a v0.3.9 player save to the v0.4.0 layout in memory.
-///
-/// Appending `Mech` to `LocomotorKind` preserves the existing variant tags.
-/// Keep the world bytes verbatim after decoding all of them with the target
-/// reader. Tunnel movement changed meaning in v0.4.0, so refuse any saved
-/// actor in transit. The game still checks the rules and assets on restore.
-pub fn migrate(bytes: &mut [u8]) -> Result<(), MigrationError> {
+fn previous_layout(source: u32) -> Option<save_codec::PreviousLayout> {
+    const IMAGE_FLAGS: (&str, &[&str]) = ("ObjectImageState", &["alternate_theater_art"]);
+    const ALPHA_LISTENER: (&str, &[&str]) = ("AlphaShape", &["anim_listener"]);
+    const DECK: (&str, &[&str]) = ("BridgeCellFacts", &["fixed_deck_level"]);
+    // The pending cell was a bare (x, y) point, the struct's first field.
+    const PENDING_DECK: (&str, &[&str]) = ("PendingBridgeCell", &["corrected_deck_level"]);
+    const SPIN: (&str, &[&str]) = ("FlyRuntime", &["spinning", "spin_rate"]);
+    const DEGRADES: (&str, &[&str]) = ("HouseState", &["ares_degrades"]);
+    const ICE_TIMER: (&str, &[&str]) = ("ScenarioSession", &["ice_growth_timer"]);
+    const ICE_CRACKS: (&str, &[&str]) = ("Simulation", &["ice_cracks"]);
+    const ICE_SINK: (&str, &[&str]) = ("SinkingState", &["ice"]);
+    const DENT: (&str, &[&str]) = ("Simulation", &["terrain_dent"]);
+    const LIMPETS: (&str, &[&str]) = ("Seldom", &["limpets"]);
+    const LIMPETED: (&str, &[&str]) = ("FootSpeedState", &["limpeted"]);
+    const ANIM_SOUNDS: (&str, &[&str]) = ("AnimTypeReferences", &["bounce_sound", "expire_sound"]);
+    let absent_fields: &'static [_] = match source {
+        V0_3_8_AND_0_3_9 | V0_4_0 => &[
+            IMAGE_FLAGS,
+            ALPHA_LISTENER,
+            DECK,
+            PENDING_DECK,
+            SPIN,
+            DEGRADES,
+            ICE_TIMER,
+            ICE_CRACKS,
+            ICE_SINK,
+            DENT,
+            LIMPETS,
+            LIMPETED,
+            ANIM_SOUNDS,
+        ],
+        ALPHA_SHAPE_LISTENER => &[
+            IMAGE_FLAGS,
+            DECK,
+            PENDING_DECK,
+            SPIN,
+            DEGRADES,
+            ICE_TIMER,
+            ICE_CRACKS,
+            ICE_SINK,
+            DENT,
+            LIMPETS,
+            LIMPETED,
+            ANIM_SOUNDS,
+        ],
+        ALTERNATE_THEATER_ART => &[
+            DECK,
+            PENDING_DECK,
+            SPIN,
+            DEGRADES,
+            ICE_TIMER,
+            ICE_CRACKS,
+            ICE_SINK,
+            DENT,
+            LIMPETS,
+            LIMPETED,
+            ANIM_SOUNDS,
+        ],
+        BRIDGE_DECK_AND_FLY_SPIN => &[
+            DEGRADES,
+            ICE_TIMER,
+            ICE_CRACKS,
+            ICE_SINK,
+            DENT,
+            LIMPETS,
+            LIMPETED,
+            ANIM_SOUNDS,
+        ],
+        HOUSE_DEGRADES => &[
+            ICE_TIMER,
+            ICE_CRACKS,
+            ICE_SINK,
+            DENT,
+            LIMPETS,
+            LIMPETED,
+            ANIM_SOUNDS,
+        ],
+        TS_ICE => &[DENT, LIMPETS, LIMPETED, ANIM_SOUNDS],
+        TERRAIN_DENT => &[LIMPETS, LIMPETED, ANIM_SOUNDS],
+        TS_LIMPETS => &[ANIM_SOUNDS],
+        _ => return None,
+    };
+    Some(save_codec::PreviousLayout {
+        absent_fields,
+        // v0.4.0 appended Mech without changing the earlier discriminants.
+        absent_variant: (source == V0_3_8_AND_0_3_9).then_some(("LocomotorKind", "Mech")),
+    })
+}
+
+/// Decode the entire historical world, then publish only the audited wire
+/// changes. Older AlphaShapes belonged to Technos and never listened for
+/// Anim expiry. Before alternate-theater art support, each retained image had
+/// only its stock Arctic setting and latch. Keep both exactly as saved.
+pub fn migrate(bytes: &mut Vec<u8>) -> Result<(), MigrationError> {
     let target = snapshot_layout();
-    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != V0_4_0 {
+    if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || target != TS_ANIM_SOUNDS {
         return Err(MigrationError::UnsupportedTarget(target));
     }
 
     let preamble = GameSnapshot::read_preamble(bytes)?;
     GameSnapshot::validate_version(preamble.envelope_version)?;
-    match preamble.layout {
-        V0_4_0 => return Err(MigrationError::AlreadyCurrent),
-        V0_3_9 => {}
-        layout => return Err(MigrationError::UnsupportedSource(layout)),
+    if preamble.layout == target {
+        return Err(MigrationError::AlreadyCurrent);
     }
+    let previous = previous_layout(preamble.layout)
+        .ok_or(MigrationError::UnsupportedSource(preamble.layout))?;
     GameSnapshot::read_compatible_header(bytes)?;
 
-    let (mut snapshot, remainder): (GameSnapshot, _) =
-        save_codec::deserialize_with_remainder(bytes)?;
-    if !remainder.is_empty() {
-        return Err(MigrationError::TrailingBytes);
-    }
-    GameSnapshot::validate_admitted(&mut snapshot)?;
-    snapshot.require_player_resources()?;
-    if let Some((id, _)) = snapshot
-        .sim
-        .substrate
-        .entities
-        .iter_sorted()
-        .find(|(_, entity)| entity.low_bridge_tube_state.is_some())
+    let mut missing_fields = Vec::new();
     {
-        return Err(MigrationError::TunnelTransit(id));
+        let (mut snapshot, remainder): (GameSnapshot, _) =
+            save_codec::deserialize_previous(bytes, previous, &mut missing_fields)?;
+        if !remainder.is_empty() {
+            return Err(MigrationError::TrailingBytes);
+        }
+        GameSnapshot::validate_admitted(&mut snapshot)?;
+        let resources = snapshot.require_player_resources()?;
+        if preamble.layout == V0_3_8_AND_0_3_9 {
+            for (id, entity) in snapshot.sim.substrate.entities.iter_sorted() {
+                if let Some(transit) = entity.low_bridge_tube_state
+                    && !valid_old_transit(transit, resources.terrain())
+                {
+                    return Err(MigrationError::InvalidTunnelTransit(id));
+                }
+            }
+        }
     }
 
     let target_preamble = save_codec::serialize(&GameSnapshotPreamble {
         layout: target,
         ..preamble
     })?;
-    let output = bytes
+    // Offsets are produced by the successful sequential decoder. Back-fill
+    // in a single pass so each original byte moves at most once.
+    let added: usize = missing_fields.iter().map(|&(_, width)| width).sum();
+    let mut end = bytes.len();
+    bytes
+        .try_reserve_exact(added)
+        .map_err(|error| save_codec::Error::Custom(error.to_string()))?;
+    bytes.resize(end + added, 0);
+    // `shift` is the width inserted at or before the current field.
+    let mut shift = added;
+    for &(offset, width) in missing_fields.iter().rev() {
+        bytes.copy_within(offset..end, offset + shift);
+        shift -= width;
+        bytes[offset + shift..offset + shift + width].fill(0);
+        end = offset;
+    }
+    bytes
         .get_mut(..target_preamble.len())
-        .ok_or(save_codec::Error::UnexpectedEnd)?;
-    output.copy_from_slice(&target_preamble);
+        .ok_or(save_codec::Error::UnexpectedEnd)?
+        .copy_from_slice(&target_preamble);
     Ok(())
+}
+
+/// Convert the world, then replace its variable-length browser description.
+/// Keep all bytes following the metadata, including state the runtime resets
+/// when a player loads the result.
+pub fn migrate_named(mut bytes: Vec<u8>, description: &str) -> Result<Vec<u8>, MigrationError> {
+    migrate(&mut bytes)?;
+    let (mut header, world): (GameSnapshotHeader, _) =
+        save_codec::deserialize_with_remainder(&bytes)?;
+    let header_len = bytes.len() - world.len();
+    header.description = description.to_owned();
+    header.rules_hash = CONVERTED_RULES_HASH;
+    let replacement = save_codec::serialize(&header)?;
+    // A longer name needs only a few extra bytes, even for a very large world.
+    bytes.reserve_exact(replacement.len().saturating_sub(header_len));
+    bytes.splice(..header_len, replacement);
+    Ok(bytes)
+}
+
+// v0.3.8 and v0.3.9's tube_word admitted only IDs 0..=127 and explicit
+// nonempty paths. UnitClass::TubeMovement (0x007359F0) and its infantry
+// counterpart (0x0051B350) still consume the same cursor and target XYZ.
+// A blocked exit legitimately holds cursor == path length between turns.
+fn valid_old_transit(
+    state: crate::sim::movement::tube_movement::LowBridgeTubeMovementState,
+    terrain: &crate::map::resolved_terrain::SavedTerrainTemplate,
+) -> bool {
+    state.tube_id().0 <= i8::MAX as u16
+        && terrain.tube(state.tube_id()).is_some_and(|tube| {
+            tube.source == crate::map::tube_facts::TubeSource::ExplicitMap
+                && tube.path_len() > 0
+                && usize::from(state.cursor()) <= tube.path_len()
+        })
 }
 
 #[cfg(all(test, tests_sim_p_s))]
@@ -93,8 +267,30 @@ mod tests {
     use crate::sim::world::Simulation;
 
     #[test]
+    fn old_tunnel_cursor_may_wait_at_the_exit_but_not_pass_it() {
+        use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_loader_clear_cell};
+        use crate::map::tube_facts::{TubeFact, TubeId};
+        use crate::sim::components::DriveCoord;
+        use crate::sim::movement::tube_movement::LowBridgeTubeMovementState;
+
+        let terrain = ResolvedTerrainGrid::from_cells_with_tubes(
+            2,
+            1,
+            vec![test_loader_clear_cell(0, 0), test_loader_clear_cell(1, 0)],
+            vec![TubeFact::explicit((0, 0), (1, 0), 2, vec![2])],
+        )
+        .capture_saved_template()
+        .unwrap();
+        let target = DriveCoord::cell(1, 0, 0);
+        let state = |id, cursor| LowBridgeTubeMovementState::for_test(TubeId(id), cursor, target);
+        assert!(valid_old_transit(state(0, 1), &terrain));
+        assert!(!valid_old_transit(state(0, 2), &terrain));
+        assert!(!valid_old_transit(state(1, 0), &terrain));
+    }
+
+    #[test]
     fn migration_leaves_unsupported_and_invalid_snapshots_byte_exact() {
-        let wrong_layout = V0_3_9 ^ 1;
+        let wrong_layout = V0_3_8_AND_0_3_9 ^ 1;
         let mut bytes = save_codec::serialize(&GameSnapshotPreamble {
             product_magic: SNAPSHOT_PRODUCT_MAGIC,
             envelope_version: SNAPSHOT_ENVELOPE_VERSION,
@@ -104,7 +300,9 @@ mod tests {
         let original = bytes.clone();
         let error = migrate(&mut bytes).unwrap_err();
         assert_eq!(bytes, original);
-        if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION || snapshot_layout() != V0_4_0 {
+        if SNAPSHOT_ENVELOPE_VERSION != MIGRATION_ENVELOPE_VERSION
+            || snapshot_layout() != TS_ANIM_SOUNDS
+        {
             assert!(matches!(error, MigrationError::UnsupportedTarget(_)));
             return;
         }
@@ -112,11 +310,17 @@ mod tests {
             matches!(error, MigrationError::UnsupportedSource(layout) if layout == wrong_layout)
         );
 
-        let mut bytes = GameSnapshot::save_validated(&Simulation::new(), 0, 0, "migration", 0);
+        // The empty world as the v0.3.8 writer wrote it, without the fields
+        // that writer lacked.
+        let current = GameSnapshot::save_validated(&Simulation::new(), 0, 0, "migration", 0);
+        let snapshot: GameSnapshot = save_codec::deserialize(&current).unwrap();
+        let mut bytes =
+            save_codec::serialize_previous(&snapshot, &previous_layout(V0_3_8_AND_0_3_9).unwrap())
+                .unwrap();
         let old_preamble = save_codec::serialize(&GameSnapshotPreamble {
             product_magic: SNAPSHOT_PRODUCT_MAGIC,
             envelope_version: SNAPSHOT_ENVELOPE_VERSION,
-            layout: V0_3_9,
+            layout: V0_3_8_AND_0_3_9,
         })
         .unwrap();
         bytes[..old_preamble.len()].copy_from_slice(&old_preamble);
@@ -137,5 +341,76 @@ mod tests {
             Err(MigrationError::TrailingBytes)
         ));
         assert_eq!(bytes, before);
+    }
+
+    #[test]
+    fn old_image_keeps_the_arctic_setting_and_applied_latch() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::object_image::{ImageTheater, ObjectImageKind, ObjectImageState};
+
+        let ini = IniFile::from_str("[TREE]\nAlternateArcticArt=yes\n");
+        let mut image = ObjectImageState::new("TREE");
+        image.read_ini(
+            ini.section("TREE").unwrap(),
+            &ini,
+            ObjectImageKind::Ordinary,
+            ImageTheater::Snow,
+        );
+        assert_eq!(image.image(), "TREEA");
+
+        // The eb05f451e writer put two true bytes immediately after ImageFile:
+        // AlternateArcticArt and the latch that had applied its 'A' suffix.
+        let mut bytes = save_codec::serialize(&image).unwrap();
+        let after_image = 8 + image.image().len();
+        assert_eq!(&bytes[after_image..after_image + 3], &[1, 0, 1]);
+        bytes.remove(after_image + 1);
+        let mut offsets = Vec::new();
+        let (restored, rest) = save_codec::deserialize_previous::<ObjectImageState>(
+            &bytes,
+            previous_layout(ALPHA_SHAPE_LISTENER).unwrap(),
+            &mut offsets,
+        )
+        .unwrap();
+        assert_eq!(restored, image);
+        assert!(rest.is_empty());
+        assert_eq!(offsets, [(after_image + 1, 1)]);
+    }
+
+    #[test]
+    fn spin_fields_insert_a_false_byte_and_a_zero_rate() {
+        use crate::sim::movement::fly_height::FlyRuntime;
+
+        // The 41f140f93 writer ended FlyRuntime with fall_counter and the two
+        // speed words; spinning and spin_rate now sit between them.
+        let fly = FlyRuntime::default();
+        let mut bytes = save_codec::serialize(&fly).unwrap();
+        let speeds = bytes.len() - 16;
+        assert_eq!(&bytes[speeds - 5..speeds], &[0; 5]);
+        bytes.drain(speeds - 5..speeds);
+        let mut fields = Vec::new();
+        let (restored, rest) = save_codec::deserialize_previous::<FlyRuntime>(
+            &bytes,
+            previous_layout(ALTERNATE_THEATER_ART).unwrap(),
+            &mut fields,
+        )
+        .unwrap();
+        assert_eq!(restored, fly);
+        assert!(rest.is_empty());
+        assert_eq!(fields, [(speeds - 5, 1), (speeds - 5, 4)]);
+    }
+
+    #[test]
+    fn mech_tag_is_valid_only_from_v0_4_0() {
+        use crate::rules::locomotor_type::LocomotorKind;
+        let bytes = save_codec::serialize(&LocomotorKind::Mech).unwrap();
+        let decode = |layout| {
+            save_codec::deserialize_previous::<LocomotorKind>(
+                &bytes,
+                previous_layout(layout).unwrap(),
+                &mut Vec::new(),
+            )
+        };
+        assert!(decode(V0_3_8_AND_0_3_9).is_err());
+        assert_eq!(decode(V0_4_0).unwrap(), (LocomotorKind::Mech, &[][..]));
     }
 }

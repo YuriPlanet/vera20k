@@ -33,7 +33,7 @@ impl NewEdit {
     /// limit, control-character gate and optional byte-only input (<0x100).
     /// One unit lets callers run their native EN_CHANGE handler after each
     /// admitted WM_CHAR instead of applying that handler after a pasted batch.
-    pub fn insert_unit_filtered(
+    pub(crate) fn insert_unit_filtered(
         &mut self,
         unit: u16,
         limit: usize,
@@ -156,7 +156,7 @@ impl NewEdit {
     }
 
     /// Keep the insertion point visible using the active font's measured width.
-    pub fn scroll_to_caret(&mut self, available: u32, measure: impl Fn(&str) -> u32) {
+    pub(crate) fn scroll_to_caret(&mut self, available: u32, measure: impl Fn(&str) -> u32) {
         self.first_visible_unit = self.first_visible_unit.min(self.caret);
         while self.first_visible_unit < self.caret {
             let prefix = self.painted_range(self.first_visible_unit, self.caret);
@@ -166,12 +166,6 @@ impl NewEdit {
             self.first_visible_unit += 1;
         }
     }
-}
-
-/// NewEdit's caret: shown in the first of each two seconds of focus (every
-/// screen's `caret_visible`). Milliseconds on the host's UI clock.
-pub fn caret_visible(focused_at_ms: u64, now_ms: u64) -> bool {
-    now_ms.saturating_sub(focused_at_ms) / 1000 % 2 == 0
 }
 
 #[cfg(test)]

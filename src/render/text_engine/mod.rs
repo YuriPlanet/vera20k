@@ -454,6 +454,13 @@ impl TextEngine {
             if index > 0 {
                 x = ((x / tab).floor() + 1.0) * tab;
             }
+            // Before a leading tab, after a trailing one and between two in a
+            // row there is nothing to draw. parley lays out empty text as a
+            // space, whose line range then runs past the empty segment.
+            if segment.is_empty() {
+                offset += 1;
+                continue;
+            }
             let mut segment_lines = Vec::new();
             self.shape_paragraph(segment, offset, 0, fit, &mut segment_lines);
             for segment_line in segment_lines {
@@ -1179,6 +1186,50 @@ mod tests {
             assert_eq!(&text[pair[0].end..pair[1].start], " ");
         }
         assert_eq!(shaped.lines.last().unwrap().end, text.len());
+    }
+
+    /// A tab at either end of a line, or two in a row, leaves an empty
+    /// segment: it draws nothing, and the tab stops still advance.
+    #[test]
+    fn empty_tab_segments_draw_nothing_and_keep_the_tab_stops() {
+        let tab = crate::render::bit_font::TAB_WIDTH as f32;
+        let stop = |x: f32| ((x / tab).floor() + 1.0) * tab;
+        let close = |a: f32, b: f32| (a - b).abs() < 1e-3;
+        let mut engine = engine_with_tiny_fnt();
+        let plain = engine.shape("A", 0, Fit::NONE);
+        let plain = &plain.lines[0];
+        assert_eq!(plain.glyphs.len(), 1);
+
+        let leading = engine.shape("\tA", 0, Fit::NONE);
+        assert_eq!(leading.lines.len(), 1);
+        let line = &leading.lines[0];
+        assert_eq!(line.glyphs.len(), 1);
+        assert!(close(line.glyphs[0].x, tab + plain.glyphs[0].x), "{line:?}");
+        assert_eq!(line.glyphs[0].cluster, 1);
+        assert!(close(line.width, tab + plain.width), "{line:?}");
+
+        let trailing = engine.shape("A\t", 0, Fit::NONE);
+        assert_eq!(trailing.lines.len(), 1);
+        let line = &trailing.lines[0];
+        assert_eq!(line.glyphs.len(), 1);
+        assert!(close(line.glyphs[0].x, plain.glyphs[0].x), "{line:?}");
+        assert!(close(line.width, stop(plain.width)), "{line:?}");
+
+        let doubled = engine.shape("A\t\tA", 0, Fit::NONE);
+        assert_eq!(doubled.lines.len(), 1);
+        let line = &doubled.lines[0];
+        assert_eq!(line.glyphs.len(), 2);
+        let second = stop(stop(plain.width));
+        assert!(close(line.glyphs[1].x, second + plain.glyphs[0].x), "{line:?}");
+        assert_eq!(line.glyphs[1].cluster, 3);
+        assert!(close(line.width, second + plain.width), "{line:?}");
+
+        let only = engine.shape("\t", 0, Fit::NONE);
+        assert_eq!(only.lines.len(), 1);
+        let line = &only.lines[0];
+        assert!(line.glyphs.is_empty(), "{line:?}");
+        assert_eq!((line.start, line.end), (0, 1));
+        assert!(close(line.width, tab), "{line:?}");
     }
 
     /// The bundled fonts with `file`'s bytes held back, as the browser build

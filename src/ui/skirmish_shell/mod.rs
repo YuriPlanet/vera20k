@@ -14,9 +14,8 @@ pub(crate) use statics::SkirmishStatics;
 
 pub use layout::{
     AdvancedField, CHOOSE_MAP_AUTHOR, CHOOSE_MAP_TITLE_KEY,
-    COMBO_ARROW_RESERVE_W, COMBO_DROPDOWN_ROW_H, COMBO_DROPDOWN_SCROLLBAR_BUTTON_H,
-    COMBO_DROPDOWN_SCROLLBAR_MIN_THUMB_H, COMBO_DROPDOWN_SCROLLBAR_W, COMBO_FACE_H,
-    COMBO_TEXT_LEFT_INSET, ChooseMapModalButton, ChooseMapModalLayout, DropdownMetrics,
+    COMBO_ARROW_RESERVE_W, COMBO_DROPDOWN_ROW_H, COMBO_FACE_H,
+    COMBO_TEXT_LEFT_INSET, ChooseMapModalButton, ChooseMapModalLayout,
     RANDOM_MAP_TITLE_KEY, RIGHT_PANEL_WIDTH, RandomMapSetupControl,
     RandomMapSetupLayout, RectPx, SKIRMISH_LONG_ROW_COUNT, SKIRMISH_ROW_COUNT, SavedSeedLayout,
     SavedSeedMode, SkirmishCheckboxId,
@@ -50,6 +49,7 @@ pub use state::{
     opponent_scroll_rows, pack_launch_session_without_start_validation, player_name_from_profile,
     player_row_visible, repair_teams_for_selected_mode,
     selected_combo_item, selected_combo_item_index, selected_player_rows, setup_combo_items,
+    start_skips_side_gates,
     starts_by_team, MenuPick, apply_seat_action, apply_team_colors, apply_team_preset,
     apply_team_starts, balance_teams_by_strength, team_start_seats, skirmish_session_options,
     status_help_key_for_choose_map_hover,

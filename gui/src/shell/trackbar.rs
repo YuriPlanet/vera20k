@@ -16,7 +16,7 @@ pub const THUMB_W: i32 = 12;
 
 /// gamemd-derived: `ShellTrackbar__WndProc @ 0x0061D950` uses the literal
 /// reserve/13/12/6 geometry and `(range + 1)` integer partition below.
-pub fn trackbar_position_from_x(
+fn trackbar_position_from_x(
     raw_mouse_x: i32,
     client_width: i32,
     plaque_reserve: i32,
@@ -53,7 +53,7 @@ pub enum TrackbarPress {
 /// 0x0061D950` (`0x0061E4CE..0x0061E598`): it takes the capture, then admits
 /// only `y > bottom - 18`; there a press on the thumb starts a drag without a
 /// jump, and a press beside it jumps once.
-pub fn trackbar_press(
+fn trackbar_press(
     position: i32,
     local_x: i32,
     local_y: i32,
@@ -77,11 +77,11 @@ pub fn trackbar_press(
 
 /// Whether a press at window-relative `local_y` lands in the strip the
 /// trackbar admits: `y > bottom - 18` (`0x0061E4F5..0x0061E512`).
-pub const fn admits_press_y(local_y: i32, height: i32) -> bool {
+const fn admits_press_y(local_y: i32, height: i32) -> bool {
     local_y > height - 18 && local_y < height
 }
 
-pub fn thumb_left(position: i32, client_width: i32, reserve: i32, range: i32) -> i32 {
+fn thumb_left(position: i32, client_width: i32, reserve: i32, range: i32) -> i32 {
     let usable_span = (client_width - reserve - 13).max(1);
     // Original 0x0061E486..0x0061E4A8 (TBM_SETPOS) and
     // 0x0061DC44..0x0061DC58 (drag) divide the painted offset by range.
@@ -96,18 +96,18 @@ pub fn thumb_left(position: i32, client_width: i32, reserve: i32, range: i32) ->
 /// paint and input sides then agree on where the track ends and the plaque
 /// begins.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AuthoredTrack {
+struct AuthoredTrack {
     /// Cursor x relative to the window's left edge.
-    pub local_x: i32,
+    local_x: i32,
     /// Cursor y relative to the window's top edge.
-    pub local_y: i32,
-    pub width: i32,
-    pub height: i32,
+    local_y: i32,
+    width: i32,
+    height: i32,
 }
 
 /// [`AuthoredTrack`] for a device `window` with an absolute device `cursor`.
 /// Identity on an unscaled mapping.
-pub fn authored_track(window: RectPx, cursor: (i32, i32), scale: ShellScale) -> AuthoredTrack {
+fn authored_track(window: RectPx, cursor: (i32, i32), scale: ShellScale) -> AuthoredTrack {
     let base = scale.base_rect(window);
     let (x, y) = scale.base_point(cursor.0, cursor.1);
     AuthoredTrack {
@@ -121,7 +121,7 @@ pub fn authored_track(window: RectPx, cursor: (i32, i32), scale: ShellScale) -> 
 /// The device offset from a stretched `window`'s left edge to the thumb at
 /// `position`: [`thumb_left`] on the authored width, then stretched. It matches
 /// the plaque [`authored_track`] admits.
-pub fn thumb_left_at(
+fn thumb_left_at(
     position: i32,
     window: RectPx,
     reserve: i32,

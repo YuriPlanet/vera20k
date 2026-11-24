@@ -1095,56 +1095,79 @@ fn upload_to_gpu(
     // tooltip (O10). Prepare once: nonsilent TextLabel72A4A0 advances its
     // raw-wall reveal and requests typing audio once per successful paint.
     // Keep the row's existing opaque black background behind its glyphs.
-    let (message_fill, message_text) = crate::app::input::messages::build_message_instances(state);
+    crate::app::input::messages::advance_messages(state);
+    let mut message_hud = std::mem::take(&mut state.match_state.match_presentation.message_hud);
+    let (message_fill, message_text) =
+        crate::app::input::messages::build_message_instances(state, &mut message_hud);
+    state.match_state.match_presentation.message_hud = message_hud;
     let verdict = crate::app::presentation::outcome_banner::visible_verdict(state);
-    let (outcome_shape, outcome_text) = verdict
-        .map(|kind| crate::app::presentation::outcome_banner::instances(state, kind))
-        .unwrap_or_default();
+    let mut banner_huds =
+        std::mem::take(&mut state.match_state.match_presentation.outcome_banner_huds);
+    let (outcome_shape, outcome_text) = match verdict {
+        Some(kind) => {
+            crate::app::presentation::outcome_banner::instances(state, kind, &mut banner_huds)
+        }
+        None => {
+            banner_huds.clear();
+            Default::default()
+        }
+    };
+    state.match_state.match_presentation.outcome_banner_huds = banner_huds;
     let rendered_verdict = verdict.filter(|_| !outcome_shape.is_empty() || !outcome_text.is_empty());
 
     // A4 in-game tooltip: built before the pool borrow (it reads &AppState);
     // fill (darken texture) + text (GAME.FNT atlas), drawn after the chat
     // overlay and before the software cursor (O10).
+    let mut tooltip_hud = std::mem::take(&mut state.match_state.match_presentation.tooltip_hud);
     let (mut tooltip_fill, mut tooltip_border, mut tooltip_text) =
-        crate::app::input::tooltips::build_tooltip_instances(state);
+        crate::app::input::tooltips::build_tooltip_instances(state, &mut tooltip_hud);
+    state.match_state.match_presentation.tooltip_hud = tooltip_hud;
     // The layout edit mode's outlines and names share the tooltip's lanes:
     // over the whole frame, sidebar included.
     {
-        let (fills, borders, texts) = crate::app::input::layout_edit::instances(state);
+        let mut edit_hud =
+            std::mem::take(&mut state.match_state.match_presentation.layout_edit_hud);
+        let (fills, borders, texts) =
+            crate::app::input::layout_edit::instances(state, &mut edit_hud);
+        state.match_state.match_presentation.layout_edit_hud = edit_hud;
         tooltip_fill.extend(fills);
         tooltip_border.extend(borders);
         tooltip_text.extend(texts);
     }
 
-    // TacticalClass::Draw's timer lines, which follow the PixelFX sparkles;
-    // built before the pool borrow (they step the Supers' blinks).
+    // TacticalClass::Draw's timer lines, which follow the PixelFX sparkles:
+    // their step (the Supers' blinks, the dock's rows and hit areas) runs
+    // first, then the drawing reads it.
+    crate::app::presentation::super_timers::update_super_timers(state);
+    let mut timer_hud = std::mem::take(&mut state.match_state.match_presentation.super_timer_hud);
     let (mut super_timer_fill, mut super_timer_text) =
-        crate::app::presentation::super_timers::build_super_timer_instances(state);
+        crate::app::presentation::super_timers::build_super_timer_instances(state, &mut timer_hud);
+    state.match_state.match_presentation.super_timer_hud = timer_hud;
+    // Ares' release note and FPS counter follow the timer lines (hook
+    // 0x6D4B25) in their lanes: black boxes, then text.
+    {
+        let (boxes, texts) = crate::app::presentation::ares_tactical_text::build_instances(state);
+        super_timer_fill.extend(boxes);
+        super_timer_text.extend(texts);
+    }
     // The buttons and texts the side's layout adds over the battlefield
     // share the timers' lanes: white boxes, then text, inside its clip.
     {
-        let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
-        let (boxes, texts) = crate::app::presentation::layout_parts::instances(
-            state,
-            crate::ui::added_parts::Holder::Field,
-            crate::render::sidebar_text::native_radar_outline_color(theme),
+        let side_text = state.match_state.match_presentation.sidebar_layout_spec.side_text;
+        let placed = crate::app::presentation::layout_parts::placed(state);
+        let layout_parts = &mut state.match_state.match_presentation.added_part_huds.field;
+        layout_parts.draw(
+            &placed,
+            crate::render::sidebar_text::native_outline_from(side_text),
             [
                 state.match_state.input.camera_x,
                 state.match_state.input.camera_y,
             ],
+            &state.renderer.bit_font,
         );
-        super_timer_fill.extend(boxes);
-        super_timer_text.extend(texts);
+        super_timer_fill.extend_from_slice(layout_parts.boxes());
+        super_timer_text.extend_from_slice(layout_parts.texts());
     }
-    // Their pictures come from the sidebar's atlas and zoom with the frame.
-    let layout_field_art = crate::app::presentation::layout_parts::pictures(
-        state,
-        crate::ui::added_parts::Holder::Field,
-        [
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
-        ],
-    );
 
     // GScreenClass_DrawText's Phobos build description, the tactical view's
     // top-right identity box; empty outside Phobos builds.
@@ -1253,7 +1276,16 @@ fn upload_to_gpu(
 
     // Residual effects keep their existing uploads and pass ownership.
     pool.upload("cell_sparkles", &world.cell_sparkles);
-    pool.upload("layout_field_art", &layout_field_art);
+    // The parts' pictures come from the sidebar's atlas and zoom with the frame.
+    pool.upload(
+        "layout_field_art",
+        state
+            .match_state
+            .match_presentation
+            .added_part_huds
+            .field
+            .pictures(),
+    );
     pool.upload("super_timer_fill", &super_timer_fill);
     pool.upload("super_timer_text", &super_timer_text);
     pool.upload("build_text_fill", &build_text_fill);

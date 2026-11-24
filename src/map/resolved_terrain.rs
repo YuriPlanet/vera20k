@@ -56,6 +56,7 @@ mod build;
 mod cell_recalc;
 mod cliffs;
 mod deformation;
+mod ice;
 mod mutation;
 mod native_cell;
 mod pavement;
@@ -83,6 +84,7 @@ pub(crate) use cell_recalc::{
     LoadCellRecalcOutcome, LoadCellRecalcState, is_behind_cliff,
 };
 use cliffs::DestroyableCliffCatalog;
+pub(crate) use ice::IceTiles;
 pub(crate) use native_cell::SavedSharedCellDummy;
 pub(crate) use native_cell::{
     CellClassProjectionView, NativeAllocatedCellCursor, NativeLocalCellCursor,
@@ -888,6 +890,8 @@ pub struct ResolvedTerrainGrid {
     /// Immutable active-theater clear and ramp stamps for terrain
     /// deformation.
     deformation_catalog: Option<deformation::DeformationCatalog>,
+    /// Immutable active-theater Firestorm ice tiles; None runs no ice.
+    ice_catalog: Option<ice::IceCatalog>,
     /// Whether the scenario's rules switched terrain deformation on
     /// (`[CombatDamage] TerrainDeformation=`); see
     /// [`Self::set_terrain_deformation`].
@@ -1271,6 +1275,7 @@ impl ResolvedTerrainGrid {
             tile_animations: Vec::new(),
             destroyable_cliff_catalog: None,
             deformation_catalog: None,
+            ice_catalog: None,
             deformation_enabled: false,
             bridge_recalc_catalog: None,
             allocation_caches: Default::default(),

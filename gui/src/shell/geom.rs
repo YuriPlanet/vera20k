@@ -22,15 +22,38 @@ impl RectPx {
 
     pub const fn translate(self, dx: i32, dy: i32) -> Self {
         Self {
-            x: self.x + dx,
-            y: self.y + dy,
+            x: self.x.saturating_add(dx),
+            y: self.y.saturating_add(dy),
             w: self.w,
             h: self.h,
         }
     }
 
     pub fn contains(self, x: i32, y: i32) -> bool {
-        x >= self.x && y >= self.y && x < self.x + self.w && y < self.y + self.h
+        // Widened: the far edge of a rect at the end of i32 is past it.
+        x >= self.x
+            && y >= self.y
+            && i64::from(x) < i64::from(self.x) + i64::from(self.w)
+            && i64::from(y) < i64::from(self.y) + i64::from(self.h)
+    }
+
+    /// Without a negative size, the far edges saturated so that `x + w` and
+    /// `y + h` fit an i32.
+    pub fn bounded(self) -> Self {
+        Self::new(
+            self.x,
+            self.y,
+            self.w.clamp(0, i32::MAX - self.x.max(0)),
+            self.h.clamp(0, i32::MAX - self.y.max(0)),
+        )
+    }
+
+    /// What both share; of zero size where they share nothing.
+    pub fn intersect(self, other: Self) -> Self {
+        let (x, y) = (self.x.max(other.x), self.y.max(other.y));
+        let right = self.x.saturating_add(self.w).min(other.x.saturating_add(other.w));
+        let bottom = self.y.saturating_add(self.h).min(other.y.saturating_add(other.h));
+        Self::new(x, y, right.saturating_sub(x).max(0), bottom.saturating_sub(y).max(0))
     }
 }
 
@@ -178,7 +201,7 @@ impl ShellScale {
     /// The base-space point a scaled device point came from: the point
     /// form of [`Self::base_rect`]. A cursor mapped through it lets pointer
     /// arithmetic run on the authored pixels the paint path used.
-    pub fn base_point(self, x: i32, y: i32) -> (i32, i32) {
+    pub(crate) fn base_point(self, x: i32, y: i32) -> (i32, i32) {
         let origin = self.dialog_rect();
         let factor = self.factor();
         let back = |offset: i32| (offset as f32 / factor).round() as i32;

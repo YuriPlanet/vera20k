@@ -81,6 +81,13 @@ pub enum SuperWeaponKind {
     /// `DropPod.Types` units around the cell in drop pods
     /// (`sim::superweapon::drop_pod`).
     DropPod,
+    /// Tiberian Sun `Type=IonCannon` (docs/ts-ion-cannon.md), a VERA feature:
+    /// Firestorm 2.0's name list (0x70FED4, index 3) holds it and gamemd's
+    /// does not. Retail RULESMD.INI keeps Tiberian Sun's `[IonCannonSpecial]`
+    /// with this Type but lists it in no `[SuperWeaponTypes]`, so only a mod
+    /// or map that lists such a type plays it. One ion blast at the cell
+    /// (`sim::superweapon::ion_cannon`).
+    IonCannon,
     /// Constructor Type=-1: no recognized name has replaced it. Launch's
     /// unsigned guard6CC3AC returns without a case; ordinary ClickFire still
     /// consumes readiness or its one-time grant. This is not an extension.
@@ -208,6 +215,8 @@ impl SuperWeaponKind {
             Self::EMPulse => 0x106,
             Self::Firestorm => 0x107,
             Self::DropPod => 0x108,
+            // VERA's tag, past gamemd's twelve slots and the Ares tags.
+            Self::IonCannon => 0x201,
             Self::GenericWarhead => -1,
             Self::NoEffect => -1,
         }
@@ -241,6 +250,10 @@ impl SuperWeaponKind {
             "firestorm" if ares => Some(Self::Firestorm),
             // SW_DropPod::GetTypeString 1006D7C0.
             "droppod" if ares => Some(Self::DropPod),
+            // Firestorm 2.0 SuperWeaponTypeClass::Read_INI 0x60D215..0x60D280
+            // reads Type= the same way (ReadString 0x28, a case-insensitive
+            // compare). No gamemd, Ares or Phobos Type has this name.
+            "ioncannon" => Some(Self::IonCannon),
             _ => None,
         }
     }
@@ -918,6 +931,12 @@ impl SuperWeaponType {
             // keeps its 0x20-byte ReadString (`0x00474EE0`), which a stock-way
             // read uses for every Type.
             action: match kind {
+                // Firestorm 2.0 ReadAction 0x44AB90 (called at 0x60D1F6) knows
+                // the IonCannon action (its table 0x6CCC70, index 37), which
+                // gamemd's lacks; this type reads it beside gamemd's names.
+                SuperWeaponKind::IonCannon => section
+                    .read_action_name_with("Action", Some("IonCannon"))
+                    .map(str::to_string),
                 _ if !ares_way => section.read_action_name("Action").map(str::to_string),
                 SuperWeaponKind::GenericWarhead => Some("Attack".to_string()),
                 // SW_HunterSeeker::Initialize clears Action (10072A16) after
@@ -975,6 +994,11 @@ impl SuperWeaponType {
                 SuperWeaponKind::GeneticConverter => Some("GeneticConverter".to_string()),
                 // SW_PsychicDominator::Initialize10070990: its cursor.
                 SuperWeaponKind::PsychicDominator => Some("PsychicDominator".to_string()),
+                // Ares SWTypeExt::LoadFromRulesFile (0x1003332A) arms both redirects;
+                // SW_ParaDrop::Initialize (0x10073F52) sets their ParaDrop cursor.
+                SuperWeaponKind::ParaDrop | SuperWeaponKind::AmerParaDrop => {
+                    Some("ParaDrop".to_string())
+                }
                 // SW_SpyPlane::Initialize10075800: the SpyPlane cursor.
                 SuperWeaponKind::SpyPlane => Some("SpyPlane".to_string()),
                 // SW_LightningStorm::Initialize10072C50: SW_Cursor 0x32.

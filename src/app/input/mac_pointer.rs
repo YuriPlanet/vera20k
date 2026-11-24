@@ -89,7 +89,7 @@ pub(crate) fn set_cursor_rects_enabled(window: &Window, enabled: bool) {
 }
 
 /// winit's content view of `window`, on the main thread only.
-fn content_view(window: &Window) -> Option<&NSView> {
+pub(crate) fn content_view(window: &Window) -> Option<&NSView> {
     MainThreadMarker::new()?;
     let handle = window.window_handle().ok()?;
     let RawWindowHandle::AppKit(handle) = handle.as_raw() else {

@@ -231,8 +231,24 @@ impl TeamAiIniRegistry {
         scenario: &IniFile,
         rule_policy: RulePolicy,
     ) -> Result<Self, String> {
+        Self::load_for_match(
+            assets,
+            scenario,
+            rule_policy,
+            crate::rules::retail_sources::AiFile::GameFolder,
+        )
+    }
+
+    /// [`Self::load_retail`] from the AI INI a match reads
+    /// (`retail_sources::match_ai_file`).
+    pub fn load_for_match(
+        assets: &AssetManager,
+        scenario: &IniFile,
+        rule_policy: RulePolicy,
+        file: crate::rules::retail_sources::AiFile,
+    ) -> Result<Self, String> {
         let name = assets.ini_roots().ai();
-        let mut fixed = crate::rules::retail_sources::select_ini(assets, name)?.ini;
+        let mut fixed = crate::rules::retail_sources::select_ai_ini(assets, file)?;
         // Load_Game_Rules52D378 reads AIMD through ReadCCFile4741F0 with
         // checkDigest=1 before Full_Init68797F..6879DA consumes its registries.
         // Raw source inspection and metadata keep their unchecked INI view.

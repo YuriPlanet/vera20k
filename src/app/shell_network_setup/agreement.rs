@@ -29,10 +29,13 @@ pub(crate) fn local(state: &mut AppState) -> Result<MultiplayerAgreement> {
         .ok_or_else(|| anyhow!("no setup"))?
         .map_err(|error| anyhow!("the host's rules do not read: {error}"))?;
     state.process_assets.use_personal_rules(rules);
+    // VERA: a match that seats no computer reads the original AI INI, as its
+    // load does (`LoadingStartup::ai_file`).
+    let seats_computers = session.network_seats_computers();
     if session.campaign_room().is_some() {
         let rules_digest = state
             .process_assets
-            .multiplayer_rules_digest("")
+            .multiplayer_match_rules_digest("", seats_computers)
             .map_err(anyhow::Error::msg)?;
         return Ok(MultiplayerAgreement {
             version: version(),
@@ -81,9 +84,11 @@ pub(crate) fn local(state: &mut AppState) -> Result<MultiplayerAgreement> {
     let digest = if let Some(options) = seed_options.as_ref() {
         state
             .process_assets
-            .multiplayer_generated_rules_digest(&mode, options)
+            .multiplayer_generated_rules_digest(&mode, options, seats_computers)
     } else {
-        state.process_assets.multiplayer_rules_digest(&mode)
+        state
+            .process_assets
+            .multiplayer_match_rules_digest(&mode, seats_computers)
     }
     .map_err(anyhow::Error::msg)?;
     Ok(MultiplayerAgreement {

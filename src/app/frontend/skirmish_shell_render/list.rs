@@ -1,6 +1,7 @@
 //! The owner-draw list `0x00618D40` (paint `0x00619230`) and its scrollbar
 //! child (`0x0061C690`) on the Skirmish-family atlas.
 use super::*;
+use crate::render::skirmish_shell_chrome::SkirmishShellChromeEntry;
 use crate::ui::shell::geom::ShellScale;
 use vera20k_gui::shell::list::{
     ListFrameTone, ListScrollPart, ShellListGeometry, list_frame_lines, scrollbar_edge_lines,
@@ -18,10 +19,19 @@ pub(crate) fn paint_list_frame(
     atlas: &SkirmishShellChromeAtlas,
     window: RectPx,
 ) {
+    paint_list_frame_px(out, atlas.white_pixel, window);
+}
+
+/// [`paint_list_frame`] with the atlas's white pixel.
+pub(crate) fn paint_list_frame_px(
+    out: &mut Vec<SpriteInstance>,
+    white_pixel: Option<SkirmishShellChromeEntry>,
+    window: RectPx,
+) {
     for (line, tone) in list_frame_lines(window) {
-        push_solid_rect(
+        push_solid_rect_px(
             out,
-            atlas,
+            white_pixel,
             line,
             tone_rgb(tone),
             SHELL_DROPDOWN_DEPTH - 0.00012,

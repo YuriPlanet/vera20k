@@ -668,6 +668,23 @@ fn retail_lunar_water_family_uses_the_original_postpass() {
     assert!(TileIds::resolve(&theater).is_water_shore_or_waterfall(0));
 }
 
+/// Retail SNOWMD.INI names Ice1Set..IceShoreSet but gives those sets no
+/// tiles, so the retail snow theater runs no ice (docs/ts-ice.md).
+#[test]
+fn retail_snow_theater_runs_no_ice() {
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let theater = load_theater(&mut assets, "SNOW").expect("load retail snow theater");
+    let ini = IniFile::from_bytes(&theater.ini_data).expect("SNOWMD.INI");
+    let general = ini.section("General").expect("[General]");
+    for key in ["Ice1Set", "Ice2Set", "Ice3Set", "IceShoreSet"] {
+        let set = usize::try_from(general.read_int(key, -1)).expect(key);
+        assert_eq!(theater.lookup.bounds()[set].count, 0, "{key}");
+    }
+    assert_eq!(theater.ice_sets, None);
+}
+
 #[test]
 fn selected_retail_temperate_rmg_roles_reach_tile_ids() {
     use crate::map::rmg::tiles::TileIds;
@@ -1261,6 +1278,7 @@ fn synthetic_theater_with_bridge_keys(
         automatic_tube_bases: [-1; 4],
         cliff_ranges: TheaterCliffRanges::default(),
         rmg_tiles: super::RmgTileKeys::default(),
+        ice_sets: None,
     }
 }
 

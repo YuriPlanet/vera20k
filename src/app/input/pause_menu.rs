@@ -432,8 +432,7 @@ pub(crate) fn on_open(state: &mut AppState) {
     let options = &state.match_state.match_presentation.in_game_options;
     let (context, game_speed_shown) = (options.speed_context, !options.game_speed_hidden);
     let speed_position = u8::try_from(options.game_speed_position()).unwrap_or(0);
-    let csf = state.process_assets.csf.as_ref();
-    let label = |key: &str, fallback: &str| crate::i18n::label(csf, key, fallback);
+    let label = |key: &str, fallback: &str| state.csf_label(key, fallback);
     let speed_names = (0..=crate::ui::shell::game_speed::MAX_POSITION)
         .map(|position| label(context.label_key(context.stored_speed(position)), ""))
         .collect();
@@ -512,10 +511,11 @@ pub(crate) fn button_states(state: &AppState) -> [PauseMenuButtonState; 8] {
     })
 }
 
-/// The status-line help for the control under the pointer.
-/// A string-table or `VERA:` key.
+/// The status-line help for the control under the pointer: the Options
+/// page's, else the menu's ([`super::dialog_page::help`]; a held trackbar
+/// keeps the help it showed at the press, FF's pointer moves going only to
+/// it until the release). A string-table or `VERA:` key.
 pub(crate) fn hovered_help(state: &AppState) -> Option<&str> {
-    let template = current_template(state);
     let presentation = &state.match_state.match_presentation;
     if let Some(help) = presentation
         .options_page
@@ -524,18 +524,67 @@ pub(crate) fn hovered_help(state: &AppState) -> Option<&str> {
     {
         return Some(help);
     }
-    // A held trackbar keeps the help it showed at the press: FF's pointer
-    // moves go only to it until the release.
-    let ui = &presentation.dialog_ui;
-    let hovered =
-        super::dialog_page::held_trackbar(ui).or_else(|| super::dialog_page::hovered(ui))?;
-    if let Some(slider) = InternetSlider::from_id(hovered) {
-        return Some(slider.help());
+    super::dialog_page::help(&presentation.dialog_ui, None)
+}
+
+/// Puts the menu's live values on its nodes: each button's enable and lit
+/// look (`states`), FF's trackbar positions.
+fn sync_values(
+    gui: &mut vera20k_gui::Gui,
+    root: vera20k_gui::NodeId,
+    template: PauseMenuTemplate,
+    states: &[PauseMenuButtonState; 8],
+    positions: [i32; 2],
+) {
+    use crate::ui::shell::page::set;
+    use vera20k_gui::{Prop, Value};
+    // A button the template lacks has id 0 and no node.
+    for button in PauseMenuButton::ALL
+        .into_iter()
+        .filter(|b| template.id(*b) != 0)
+    {
+        let (id, look) = (template.id(button), states[button as usize]);
+        set(gui, root, id, Prop::Enabled, Value::Bool(look.enabled));
+        set(gui, root, id, Prop::Toggled, Value::Bool(look.highlighted));
     }
-    match template.button(hovered)? {
-        PauseMenuButton::Keyboard => Some(IN_GAME_KEYBOARD_HELP),
-        button => template.control(button)?.help,
+    for slider in InternetSlider::ALL {
+        let position = Value::Int(positions[slider as usize]);
+        set(gui, root, slider.id(), Prop::Pos, position);
     }
+}
+
+/// Makes the menu's nodes current without input, every button on its rect
+/// (a disabled one too, which paints in the side's dark colour) in its
+/// `states`: its renderer's call every drawn frame before it paints from
+/// them. The pointer's own sync hides the disabled buttons, so they neither
+/// hover nor take a press. The open Options page's tree is brought in line
+/// with its layout too, which it returns.
+pub(crate) fn sync(
+    state: &mut AppState,
+    states: &[PauseMenuButtonState; 8],
+) -> Option<(PauseMenuLayout, Option<LauncherOptionsLayout>)> {
+    let layout = current_layout(state)?;
+    let page_layout = options_page_layout(state);
+    if let (Some(page_layout), Some(page)) = (
+        &page_layout,
+        state.match_state.match_presentation.options_page.as_mut(),
+    ) {
+        page.dialog.shell_sync(page_layout);
+    }
+    let template = layout.template;
+    let positions = state
+        .match_state
+        .match_presentation
+        .internet_pause
+        .positions;
+    super::dialog_page::sync_dialog(
+        &mut state.match_state.match_presentation.dialog_ui,
+        template.dialog(),
+        || pause_menu::spec(template, positions, IN_GAME_KEYBOARD_HELP),
+        |id| layout.rect(id),
+        |gui, root| sync_values(gui, root, template, states, positions),
+    );
+    Some((layout, page_layout))
 }
 
 /// One pointer message on the menu (`down`: `None` moves). The Options page
@@ -567,7 +616,7 @@ pub(super) fn pointer(state: &mut AppState, down: Option<bool>) {
         template.dialog(),
         || pause_menu::spec(template, positions, IN_GAME_KEYBOARD_HELP),
         rect,
-        super::dialog_page::no_sync,
+        |gui, root| sync_values(gui, root, template, &states, positions),
         event,
     );
     // Owner-draw button-down: GUIMainButtonSound (Rules+0x188,

@@ -177,7 +177,11 @@ impl Simulation {
             ),
             (
                 "terrain_cells",
-                digest(|h| self.dynamic_terrain_cells.hash_simulation(h)),
+                digest(|h| {
+                    self.dynamic_terrain_cells.hash_simulation(h);
+                    self.hash_ice_cracks(h);
+                    self.hash_terrain_dent(h);
+                }),
             ),
             (
                 "burrowing",
@@ -405,6 +409,8 @@ impl Simulation {
         self.real_cell_bridge_flags_0x1180.hash(hasher);
         b"dynamic-terrain-cells-v2".hash(hasher);
         self.dynamic_terrain_cells.hash_simulation(hasher);
+        self.hash_ice_cracks(hasher);
+        self.hash_terrain_dent(hasher);
         if let Some(terrain) = &self.resolved_terrain {
             terrain.hash_burrowing_permissions(hasher);
         }

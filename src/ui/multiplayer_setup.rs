@@ -10,7 +10,9 @@ use vera20k_gui::{Gui, NodeId, NodeKind, NodeSpec, Prop, Value};
 use crate::ui::lan_shell::LanChatState;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::descriptor::DialogResourceId;
-use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window};
+use crate::ui::shell::geom::{
+    RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellAlign, ShellScale, child_window,
+};
 use crate::ui::shell::layout::Placer;
 use crate::ui::shell::layout_data;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
@@ -35,6 +37,8 @@ pub(crate) const MAP_OFFER_DOWNLOAD: u16 = 0x7F04;
 pub(crate) const MAP_OFFER_LEAVE: u16 = 0x7F05;
 /// The offer's text, a static.
 pub(crate) const MAP_OFFER_BODY: u16 = 0x7F34;
+/// The offer's download bar under its text, while the map comes.
+pub(crate) const MAP_OFFER_PROGRESS: u16 = 0x7F36;
 /// VERA-only, in the team bar under the roster: the Teams count and the
 /// host's Quick Team Setup and Bulk Seat Actions lists
 /// ([`crate::ui::team_tools`]).
@@ -756,9 +760,6 @@ impl SetupTrackbar {
     pub(crate) fn window_range(&self) -> TrackbarRange {
         self.range.with_plaque(self.id != DIFFICULTY)
     }
-    pub(crate) fn thumb_left(&self, rect: RectPx, scale: ShellScale) -> i32 {
-        self.window_range().thumb_left_in(self.value, rect, scale)
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -832,6 +833,51 @@ const ROW_DRAG_START: i32 = 6;
 /// VERA's roster's group boxes, a row's drop targets: the box whose header
 /// is page row `row` is `GROUP_BOX + row`.
 pub(crate) const GROUP_BOX: u16 = 0x7F40;
+
+/// The room's own texts, boxes and pictures, statics that take no pointer
+/// ([`page_spec`]), each painted from its node; the per-row ones are
+/// `first + row` of page row `row`. The column labels over the cells
+/// (`COLUMN_LABEL + index` of [`MultiplayerSetupLayout::labels`]).
+pub(crate) const COLUMN_LABEL: u16 = 0x7F80;
+/// "Players 1-8 of 12" between Previous and Next.
+pub(crate) const ROSTER_PAGE_LINE: u16 = 0x7F8A;
+/// VERA's team bar's box and its trackbars' captions.
+pub(crate) const TEAM_BAR_BOX: u16 = 0x7F8B;
+pub(crate) const TEAMS_CAPTION: u16 = 0x7F8C;
+pub(crate) const ROOM_SIZE_CAPTION: u16 = 0x7F8D;
+/// A cooperative map's description, and the Difficulty trackbar's three
+/// words (`DIFFICULTY_LABEL + 0..3`).
+pub(crate) const COOPERATIVE_TEXT: u16 = 0x7F8E;
+pub(crate) const DIFFICULTY_LABEL: u16 = 0x7F90;
+/// The panels that hold them, painted whole: the column labels, the
+/// roster's headers (caption and Join per row), the local player's band,
+/// the rows' pictures, and the cooperative texts.
+pub(crate) const ROOM_LABELS: u16 = 0x7F93;
+pub(crate) const ROOM_HEADERS: u16 = 0x7F94;
+pub(crate) const ROOM_BANDS: u16 = 0x7F95;
+pub(crate) const ROOM_ICONS: u16 = 0x7F96;
+pub(crate) const ROOM_NOTES: u16 = 0x7F97;
+pub(crate) const ROOM_BOXES: u16 = 0x7F98;
+pub(crate) const ROOM_TEAM_BAR: u16 = 0x7F99;
+/// A roster header's caption, over its Player cell.
+pub(crate) const HEADER_CAPTION: u16 = 0x7200;
+/// A roster header's Join (or Watch) caption, at its band's right end.
+pub(crate) const JOIN_CAPTION: u16 = 0x7240;
+/// The dark band behind the local player's roster row.
+pub(crate) const OWN_ROW: u16 = 0x7280;
+/// A player's badge in front of their name (VERA's online room).
+pub(crate) const BADGE: u16 = 0x72C0;
+/// gamemd's rooms: a row's country flag and its host or accepted icon.
+pub(crate) const ROW_FLAG: u16 = 0x7300;
+pub(crate) const ROW_STATUS: u16 = 0x7340;
+/// The Difficulty trackbar's words and where they stand (800x600).
+const DIFFICULTY_WORDS: [(&str, i32); 3] =
+    [("TXT_Easy", 170), ("TXT_Normal", 295), ("TXT_Hard", 430)];
+
+/// The page row of the per-row painted node `id` in the family `first`.
+pub(crate) fn painted_row(id: u16, first: u16) -> Option<usize> {
+    page_row(id, first)
+}
 
 /// A page of VERA's Game Options box over the room.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1122,6 +1168,8 @@ pub(crate) struct MultiplayerSetupState {
     /// The maps whose briefing VERA's room has looked for, by file name, so
     /// it points each one out once while the room stays open.
     briefings_checked: Vec<String>,
+    /// The room's painted nodes, found when its page was built.
+    pub(crate) room_nodes: std::cell::Cell<RoomNodes>,
 }
 impl Default for MultiplayerSetupState {
     fn default() -> Self {
@@ -1139,6 +1187,7 @@ impl Default for MultiplayerSetupState {
             game_options_page: RoomBox::GameOptions,
             map_offer: None,
             briefings_checked: Vec::new(),
+            room_nodes: std::cell::Cell::default(),
         }
     }
 }
@@ -1233,7 +1282,10 @@ impl MultiplayerSetupState {
             self.accept_flash_started = None;
             return false;
         }
-        vera20k_gui::shell::button::flash_phase(*self.accept_flash_started.get_or_insert(now), now)
+        // 612B70's 4DC timer highlight, from the first frame it is armed.
+        let started = *self.accept_flash_started.get_or_insert(now);
+        let elapsed = now.saturating_duration_since(started).as_millis() as u64;
+        vera20k_gui::time::blink_phase(0, elapsed)
     }
 }
 
@@ -1700,17 +1752,6 @@ impl MultiplayerSetupLayout {
         (self.roster && name.x > band.x)
             .then(|| RectPx::new(band.x, name.y, name.x - band.x, name.h))
     }
-    /// VERA's roster: the Player cell whose badge stands at `x`, `y`; the
-    /// badge is painted art, no control, and only names its player in the
-    /// status help.
-    pub(crate) fn badge_at(&self, view: &SetupView, x: i32, y: i32) -> Option<u16> {
-        (0..MODERN_SETUP_ROWS)
-            .map(|row| SetupColumn::Player.control(row))
-            .find(|&id| {
-                self.badge_rect(view, id)
-                    .is_some_and(|rect| rect.contains(x, y))
-            })
-    }
     /// Make room for navigation only on an extended roster. Resource placement
     /// of all ordinary <=8-player dialogs remains unchanged.
     pub(crate) fn arrange_extended_rows(&mut self) {
@@ -1785,6 +1826,7 @@ impl MultiplayerSetupLayout {
             SEAT_MENU => self.seat_menu,
             MAP_OFFER_DOWNLOAD => Some(self.map_offer.button(0)),
             MAP_OFFER_BODY => Some(self.map_offer.body),
+            MAP_OFFER_PROGRESS => Some(self.map_offer.progress_track()),
             crate::ui::shell::modal::control::OK => Some(self.notice_ok),
             MAP_OFFER_LEAVE => Some(self.map_offer.button(1)),
             _ => self.page.button_rect(id),
@@ -1911,8 +1953,19 @@ fn page_spec(dialog: SetupDialog) -> NodeSpec {
     let native = move |ids: &'static [u16]| ids.iter().copied().filter(move |_| !modern);
     let trackbars = native(&OPTION_TRACKBARS).chain([DIFFICULTY, TEAM_COUNT, ROOM_SIZE]);
     NodeSpec::new(NodeKind::Dialog)
+        // A badge's status help names its player, over Join's box too; a
+        // press goes through it.
+        .child(icons_spec(dialog))
         .children(combos.chain(lists).map(|id| {
-            node(NodeKind::Combo, id).with(Prop::OpenAnywhere, Value::Bool(dialog.modern))
+            let combo =
+                node(NodeKind::Combo, id).with(Prop::OpenAnywhere, Value::Bool(dialog.modern));
+            // VERA's roster's Start and Team cells centre their value.
+            match SetupColumn::decode(id) {
+                Some((SetupColumn::Start | SetupColumn::Team, _)) => {
+                    combo.with(Prop::Align, centred())
+                }
+                _ => combo,
+            }
         }))
         .children(option_spec(native(&CHECKBOXES), trackbars))
         .children(buttons.map(button))
@@ -1926,9 +1979,232 @@ fn page_spec(dialog: SetupDialog) -> NodeSpec {
         .child(crate::ui::shell::menu_page::hover_target(MAP_PREVIEW, ""))
         .child(node(NodeKind::Text, ROSTER_AREA).tooltip(""))
         // Each group's box takes a carried roster row (no press).
-        .children((0..MODERN_SETUP_ROWS as u16).map(|row| {
-            node(NodeKind::Text, GROUP_BOX + row).with(Prop::DropTarget, Value::Bool(true))
-        }))
+        .child(
+            node(NodeKind::Panel, ROOM_BOXES).children((0..MODERN_SETUP_ROWS as u16).map(|row| {
+                node(NodeKind::Text, GROUP_BOX + row).with(Prop::DropTarget, Value::Bool(true))
+            })),
+        )
+        .child(node(NodeKind::Text, ROSTER_PAGE_LINE).with(Prop::Align, centred()))
+        .children(painted_spec(dialog))
+}
+
+/// The rows' pictures: VERA's roster's badges, which hover with their
+/// player's help, or gamemd's flags and status icons.
+fn icons_spec(dialog: SetupDialog) -> NodeSpec {
+    let rows = 0..dialog.rows_per_page() as u16;
+    let icons = rows.flat_map(move |row| match dialog.modern {
+        true => vec![
+            node(NodeKind::Image, BADGE + row)
+                .tooltip("")
+                .with(Prop::PressThrough, Value::Bool(true)),
+        ],
+        false => vec![
+            node(NodeKind::Image, ROW_FLAG + row),
+            node(NodeKind::Image, ROW_STATUS + row),
+        ],
+    });
+    node(NodeKind::Panel, ROOM_ICONS).children(icons)
+}
+
+fn centred() -> Value {
+    Value::Int(i32::from((ShellAlign::H_CENTER | ShellAlign::V_CENTER).0))
+}
+
+/// The room's painted statics ([`COLUMN_LABEL`]..): Text and Image nodes
+/// that take no pointer, in panels in the order they paint, VERA's
+/// roster's per-row ones for its rows and gamemd's flags for its own.
+fn painted_spec(dialog: SetupDialog) -> impl Iterator<Item = NodeSpec> {
+    let modern = dialog.modern;
+    let rows = 0..dialog.rows_per_page() as u16;
+    let align = |align: ShellAlign| Value::Int(i32::from(align.0));
+    // Over VERA's roster, the narrow cells' labels centre on them.
+    let labels = (0..2 * LABELS.len() as u16).map(move |index| {
+        let narrow = modern && usize::from(index) % LABELS.len() >= 2;
+        let at = if narrow {
+            ShellAlign::H_CENTER
+        } else {
+            ShellAlign::NONE
+        };
+        node(NodeKind::Text, COLUMN_LABEL + index).with(Prop::Align, align(at))
+    });
+    let headers = rows.clone().filter(move |_| modern).flat_map(move |row| {
+        let join = ShellAlign::H_RIGHT | ShellAlign::V_CENTER;
+        [
+            node(NodeKind::Text, HEADER_CAPTION + row),
+            node(NodeKind::Text, JOIN_CAPTION + row).with(Prop::Align, align(join)),
+        ]
+    });
+    let bands = rows
+        .filter(move |_| modern)
+        .map(|row| node(NodeKind::Text, OWN_ROW + row));
+    let notes =
+        std::iter::once(node(NodeKind::Text, COOPERATIVE_TEXT).with(Prop::Align, Value::Int(0)))
+            .chain((0..DIFFICULTY_WORDS.len() as u16).map(move |index| {
+                let (key, _) = DIFFICULTY_WORDS[usize::from(index)];
+                node(NodeKind::Text, DIFFICULTY_LABEL + index)
+                    .label(key)
+                    .with(Prop::Align, align(ShellAlign::H_CENTER))
+            }));
+    [
+        node(NodeKind::Panel, ROOM_LABELS).children(labels),
+        node(NodeKind::Panel, ROOM_HEADERS).children(headers),
+        node(NodeKind::Panel, ROOM_BANDS).children(bands),
+        node(NodeKind::Panel, ROOM_NOTES).children(notes),
+        node(NodeKind::Panel, ROOM_TEAM_BAR).children([
+            node(NodeKind::Text, TEAM_BAR_BOX),
+            node(NodeKind::Text, TEAMS_CAPTION),
+            node(NodeKind::Text, ROOM_SIZE_CAPTION),
+        ]),
+    ]
+    .into_iter()
+}
+
+/// The room's painted nodes and the roster's boxes, found once when its
+/// page is built ([`sync`]), so a frame paints them without a search.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct RoomNodes {
+    pub(crate) root: Option<NodeId>,
+    pub(crate) labels: Option<NodeId>,
+    pub(crate) headers: Option<NodeId>,
+    pub(crate) boxes: Option<NodeId>,
+    pub(crate) bands: Option<NodeId>,
+    pub(crate) icons: Option<NodeId>,
+    pub(crate) notes: Option<NodeId>,
+    pub(crate) team_bar: Option<NodeId>,
+    pub(crate) page_line: Option<NodeId>,
+    pub(crate) scroll: Option<NodeId>,
+    pub(crate) chat: Option<NodeId>,
+    pub(crate) emote: Option<NodeId>,
+}
+
+impl RoomNodes {
+    /// `root`'s children by id, in one pass.
+    fn find(gui: &Gui, root: NodeId) -> Self {
+        let mut nodes = RoomNodes {
+            root: Some(root),
+            ..RoomNodes::default()
+        };
+        for &child in gui.tree().children(root).unwrap_or_default() {
+            let Some(id) = gui.id_of(child).and_then(|id| u16::try_from(id).ok()) else {
+                continue;
+            };
+            let slot = match id {
+                ROOM_LABELS => &mut nodes.labels,
+                ROOM_HEADERS => &mut nodes.headers,
+                ROOM_BOXES => &mut nodes.boxes,
+                ROOM_BANDS => &mut nodes.bands,
+                ROOM_ICONS => &mut nodes.icons,
+                ROOM_NOTES => &mut nodes.notes,
+                ROOM_TEAM_BAR => &mut nodes.team_bar,
+                ROSTER_PAGE_LINE => &mut nodes.page_line,
+                ROSTER_SCROLL => &mut nodes.scroll,
+                CHAT => &mut nodes.chat,
+                EMOTE => &mut nodes.emote,
+                _ => continue,
+            };
+            *slot = Some(child);
+        }
+        nodes
+    }
+}
+
+/// The room's painted statics and their panels, which take no session
+/// state ([`props`]).
+fn painted(id: u16) -> bool {
+    (COLUMN_LABEL..=ROOM_TEAM_BAR).contains(&id)
+        || (HEADER_CAPTION..ROW_STATUS + MODERN_SETUP_ROWS as u16).contains(&id)
+}
+
+/// The column label `index` of `layout`'s, as the room words it: its key
+/// (Side is a campaign's role), `None` where the room shows none (Team
+/// without teams, a campaign's Colour, Start and Team).
+pub(crate) fn column_label(
+    view: &SetupView,
+    layout: &MultiplayerSetupLayout,
+    index: usize,
+) -> Option<(&'static str, RectPx)> {
+    let (key, rect) = *layout.labels.get(index)?;
+    if !view.team_header && key == "GUI:Team" {
+        return None;
+    }
+    let key = match (view.campaign, key) {
+        (true, "GUI:Side") => "VERA:CampaignRole",
+        (true, "GUI:Color" | "GUI:StartPosition" | "GUI:Team") => return None,
+        _ => key,
+    };
+    Some((key, rect))
+}
+
+/// Where the room's painted static `id` stands while it shows (the outer
+/// `None` for any other control).
+fn painted_rect(
+    view: &SetupView,
+    layout: &MultiplayerSetupLayout,
+    id: u16,
+) -> Option<Option<RectPx>> {
+    if matches!(
+        id,
+        ROOM_LABELS
+            | ROOM_HEADERS
+            | ROOM_BANDS
+            | ROOM_ICONS
+            | ROOM_NOTES
+            | ROOM_BOXES
+            | ROOM_TEAM_BAR
+    ) {
+        return Some(Some(RectPx::default()));
+    }
+    let bar = |caption: u16| {
+        let shown = view
+            .trackbars
+            .iter()
+            .any(|bar| bar.id == caption && bar.visible);
+        layout.team_bar.filter(|_| view.team_bar() && shown)
+    };
+    let header = |row: usize| view.headers[row].as_ref().filter(|_| layout.roster);
+    let icon = |row: usize| view.row_icons[row].as_ref();
+    let rect = match id {
+        ROSTER_PAGE_LINE => (view.pages.len() > 1).then_some(layout.roster_page_label),
+        TEAM_BAR_BOX => layout.team_bar.filter(|_| view.team_bar()),
+        TEAMS_CAPTION => bar(TEAM_COUNT).map(|_| layout.teams_label),
+        ROOM_SIZE_CAPTION => bar(ROOM_SIZE).map(|_| layout.room_size_label),
+        COOPERATIVE_TEXT => view
+            .cooperative_description
+            .as_ref()
+            .map(|_| layout.cooperative_description),
+        id if (COLUMN_LABEL..COLUMN_LABEL + 2 * LABELS.len() as u16).contains(&id) => {
+            column_label(view, layout, usize::from(id - COLUMN_LABEL)).map(|(_, rect)| rect)
+        }
+        id if (DIFFICULTY_LABEL..DIFFICULTY_LABEL + DIFFICULTY_WORDS.len() as u16)
+            .contains(&id) =>
+        {
+            let (_, x) = DIFFICULTY_WORDS[usize::from(id - DIFFICULTY_LABEL)];
+            (view.cooperative || view.campaign)
+                .then(|| layout.page.scale.scale_rect(RectPx::new(x, 190, 75, 20)))
+        }
+        id => {
+            if let Some(row) = page_row(id, HEADER_CAPTION) {
+                header(row).map(|_| layout.combos[row][0])
+            } else if let Some(row) = page_row(id, JOIN_CAPTION) {
+                header(row)
+                    .filter(|header| header.join.is_some())
+                    .map(|_| layout.header_controls[row].0)
+            } else if let Some(row) = page_row(id, OWN_ROW) {
+                (layout.roster && icon(row).is_some_and(|icon| icon.local))
+                    .then_some(layout.roster_rows[row])
+            } else if let Some(row) = page_row(id, BADGE) {
+                layout.badge_rect(view, SetupColumn::Player.control(row))
+            } else if let Some(row) = page_row(id, ROW_FLAG) {
+                (!layout.roster && icon(row).is_some_and(|icon| icon.country.is_some()))
+                    .then_some(layout.flags[row])
+            } else if let Some(row) = page_row(id, ROW_STATUS) {
+                (!layout.roster && icon(row).is_some()).then_some(layout.acceptance[row])
+            } else {
+                return None;
+            }
+        }
+    };
+    Some(rect)
 }
 
 /// The option trackbars' captions, statics that take no pointer.
@@ -1999,14 +2275,15 @@ fn game_options_spec() -> NodeSpec {
         ))
 }
 
-/// VERA's missing-map offer: its text, Download (greyed in [0xAC1CB4]
-/// while the map comes) and Leave.
+/// VERA's missing-map offer, in paint order: its text, Download (greyed
+/// in [0xAC1CB4] while the map comes), Leave and the download bar.
 fn map_offer_spec() -> NodeSpec {
     let grey = Value::Rgba(vera20k_gui::Rgba(0x9F, 0, 0, 0xFF));
     NodeSpec::new(NodeKind::Dialog)
+        .child(node(NodeKind::Text, MAP_OFFER_BODY).with(Prop::Align, Value::Int(0)))
         .child(node(NodeKind::Button, MAP_OFFER_DOWNLOAD).with(Prop::DisabledColor, grey))
         .child(node(NodeKind::Button, MAP_OFFER_LEAVE))
-        .child(node(NodeKind::Text, MAP_OFFER_BODY).with(Prop::Align, Value::Int(0)))
+        .child(node(NodeKind::Text, MAP_OFFER_PROGRESS))
 }
 
 /// Control `id`'s rect while it shows: a combo for a shown row (the team
@@ -2014,6 +2291,9 @@ fn map_offer_spec() -> NodeSpec {
 /// one, Previous and Next on a roster of pages while they lead to
 /// one, and VERA's roster's scrollbar.
 fn control_rect(view: &SetupView, layout: &MultiplayerSetupLayout, id: u16) -> Option<RectPx> {
+    if let Some(rect) = painted_rect(view, layout, id) {
+        return rect;
+    }
     let shows = match id {
         ROSTER_SCROLL | ROSTER_AREA => return layout.roster.then_some(layout.roster_area),
         id if (GROUP_BOX..GROUP_BOX + MODERN_SETUP_ROWS as u16).contains(&id) => {
@@ -2099,7 +2379,8 @@ pub(crate) fn sync(
             .into_iter()
             .filter_map(|node| Some((node, u16::try_from(gui.id_of(node)?).ok()?)))
             .collect();
-        for (node, id) in nodes {
+        // The painted statics and their panels take no session state.
+        for (node, id) in nodes.into_iter().filter(|(_, id)| !painted(*id)) {
             for (prop, value) in props(ui, view, layout, id) {
                 let _ = gui.set(node, prop, value);
             }
@@ -2107,6 +2388,28 @@ pub(crate) fn sync(
             // new lines at the bottom.
             if dialog == page && id == CHAT_LOG {
                 let _ = gui.log_rows(node, ui.chat.lines.len(), 0);
+            }
+        }
+        if dialog == page {
+            if built || ui.room_nodes.get().root != Some(root) {
+                ui.room_nodes.set(RoomNodes::find(gui, root));
+            }
+            // gamemd's rooms show a row's flag by its country's PCX, each
+            // row's flag first of its two pictures.
+            if let Some(icons) = ui.room_nodes.get().icons.filter(|_| !room.modern) {
+                let rows = view.row_icons.iter().take(room.rows_per_page());
+                for (row, icon) in rows.enumerate() {
+                    let flag = gui
+                        .tree()
+                        .children(icons)
+                        .ok()
+                        .and_then(|c| c.get(2 * row).copied());
+                    if let (Some(flag), Some(country)) =
+                        (flag, icon.as_ref().and_then(|icon| icon.country.as_deref()))
+                    {
+                        page_nodes::set_node_text(gui, flag, Prop::Art, country);
+                    }
+                }
             }
         }
         // The chat edit holds the room's focus from the start, its caret
@@ -2906,8 +3209,6 @@ mod tests {
             "{badge:?} {cell:?}"
         );
         assert_eq!((badge.y, badge.h), (cell.y, cell.h));
-        let (x, y) = (badge.x + badge.w / 2, badge.y + badge.h / 2);
-        assert_eq!(layout.badge_at(&view, x, y), Some(name));
         assert_eq!(
             layout.badge_rect(&view, SetupColumn::Player.control(2)),
             None

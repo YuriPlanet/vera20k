@@ -45,13 +45,27 @@ fn launch_color_index(
     }
 }
 
+/// Whether Start skips the "at least two players" and "more than one team"
+/// gates ([`launch_session`]'s `allow_single_team`): `[VERA] SoloSkirmish=`,
+/// or a front end Ares plays in. Ares_AllowSinglePlay (hook `0x006AD0ED`,
+/// Ares.dll `10003AD0`) jumps from after the capacity check over both
+/// (`TXT_NEED_AT_LEAST_TWO_PLAYERS`, `TXT_CANNOT_ALLY`) to `0x006AD2BA`.
+/// `frontend_rules` are the shell's Rules, whose
+/// [`ares`](crate::rules::ruleset::RuleSet::ares) answers for the front end.
+pub fn start_skips_side_gates(
+    solo_skirmish: bool,
+    frontend_rules: Option<&crate::rules::ruleset::RuleSet>,
+) -> bool {
+    solo_skirmish || frontend_rules.is_some_and(crate::rules::ruleset::RuleSet::ares)
+}
+
 /// Pack the current controls into a Start session, or refuse a match that has
 /// fewer than two sides.
 ///
-/// `allow_single_team` is `[VERA] SoloSkirmish=`: it accepts an undisturbed
-/// test match, both with no opponent at all and with every active AI on the
-/// local player's own explicit team. Retail keeps both the "at least two
-/// players" and the "more than one team" gates.
+/// `allow_single_team` ([`start_skips_side_gates`]) accepts a match with no
+/// opponent at all and one with every active AI on the local player's own
+/// explicit team. Retail keeps both the "at least two players" and the "more
+/// than one team" gates.
 pub fn launch_session(
     state: &SkirmishShellState,
     maps: &[MapMenuEntry],

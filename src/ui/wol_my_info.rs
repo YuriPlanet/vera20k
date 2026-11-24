@@ -497,6 +497,8 @@ pub(crate) fn spec() -> NodeSpec {
         .children(combos)
         .children(boxes)
         .children(texts)
+        // The group box's frame, which takes nothing.
+        .child(NodeSpec::new(NodeKind::Text).id(GROUP_BOX.into()))
 }
 
 /// The drop list's rows: country `0x4DE(0, 7)` (`0x004E3A36`), colour

@@ -2551,11 +2551,12 @@ impl LanCapture {
                     LanTarget::HostObserveOffered => None,
                     _ => Some(crate::ui::shell::abort::AbortButton::Leave),
                 };
-                self.abort_input = Some(abort_return::AbortReturnInput::begin_choosing(
+                self.abort_input = Some(abort_return::AbortReturnInput::begin(
                     state,
                     &mut self.route,
                     frame,
-                    choice,
+                    abort_return::AbortGoal::Choose(choice),
+                    true,
                 )?);
                 self.phase = LanPhase::AbortInput;
             }
@@ -2626,11 +2627,12 @@ impl LanCapture {
                         "tick":tick,"latch":state.match_state.match_presentation.modal_latch,
                         "message_rows":rows}),
                     );
-                    self.abort_input = Some(abort_return::AbortReturnInput::begin_choosing(
+                    self.abort_input = Some(abort_return::AbortReturnInput::begin(
                         state,
                         &mut self.route,
                         frame,
-                        None,
+                        abort_return::AbortGoal::Choose(None),
+                        true,
                     )?);
                     self.phase = LanPhase::ObservedAbort;
                 }
@@ -3043,34 +3045,14 @@ impl LanCapture {
                     before.enabled && !before.checked && !before.partner,
                     "peer Allies box {before:?}"
                 );
-                let point = set_window_pointer_to_rect_center(
-                    state,
-                    layout.control_rect(DiplomacyControl::Allies(1)),
-                );
-                crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                for edge in [
-                    winit::event::ElementState::Pressed,
-                    winit::event::ElementState::Released,
-                ] {
-                    crate::app::input::dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-                }
+                let point = click_in_game(state, layout.control_rect(DiplomacyControl::Allies(1)));
                 ensure!(
                     row(state) == Some(before),
                     "the box changed before the event executed"
                 );
                 // The open dialog runs network-modal frames, which hold the
                 // queued event; Return lets it execute.
-                let back = set_window_pointer_to_rect_center(
-                    state,
-                    layout.control_rect(DiplomacyControl::Return),
-                );
-                crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                for edge in [
-                    winit::event::ElementState::Pressed,
-                    winit::event::ElementState::Released,
-                ] {
-                    crate::app::input::dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-                }
+                let back = click_in_game(state, layout.control_rect(DiplomacyControl::Return));
                 self.route
                     .push(json!({"frame":frame,"action":"Allies box pressed, Return",
                     "point":point,"return":back}));
@@ -3169,17 +3151,6 @@ impl LanCapture {
                 .map(|message| message.text.clone())
                 .collect()
         };
-        let click = |state: &mut AppState, rect: RectPx| {
-            let point = set_window_pointer_to_rect_center(state, rect);
-            crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-            for edge in [
-                winit::event::ElementState::Pressed,
-                winit::event::ElementState::Released,
-            ] {
-                crate::app::input::dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-            }
-            point
-        };
         match step {
             0 => {
                 let color = state
@@ -3210,12 +3181,12 @@ impl LanCapture {
                         .map(|chat| chat.checked)
                 };
                 ensure!(checked(state) == Some(true), "peer chat box not checked");
-                let point = click(state, layout.control_rect(DiplomacyControl::Chat(1)));
+                let point = click_in_game(state, layout.control_rect(DiplomacyControl::Chat(1)));
                 ensure!(
                     checked(state) == Some(false),
                     "the chat box click left it checked"
                 );
-                click(state, layout.control_rect(DiplomacyControl::Return));
+                click_in_game(state, layout.control_rect(DiplomacyControl::Return));
                 self.route
                     .push(json!({"frame":frame,"action":"peer chat box cleared","point":point}));
                 self.phase = LanPhase::Chat(2);
@@ -3392,29 +3363,14 @@ impl LanCapture {
                     "TauntsOn is not shown checked"
                 );
                 let layout = diplomacy::layout(state).context("0x73 has no hit geometry")?;
-                let click = |state: &mut AppState, rect: RectPx| {
-                    let point = set_window_pointer_to_rect_center(state, rect);
-                    crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                    for edge in [
-                        winit::event::ElementState::Pressed,
-                        winit::event::ElementState::Released,
-                    ] {
-                        crate::app::input::dispatch::handle_mouse_input(
-                            state,
-                            MouseButton::Left,
-                            edge,
-                        );
-                    }
-                    point
-                };
                 // A press on the caption is outside the 18x18 icon.
                 let rect = layout.control_rect(DiplomacyControl::Taunts);
-                click(state, RectPx::new(rect.x + 40, rect.y, rect.w - 40, rect.h));
+                click_in_game(state, RectPx::new(rect.x + 40, rect.y, rect.w - 40, rect.h));
                 ensure!(
                     diplomacy::view(state).taunts == Some(true),
                     "a caption press toggled TauntsOn"
                 );
-                let point = click(
+                let point = click_in_game(
                     state,
                     crate::ui::skirmish_shell::checkbox_icon_rect(
                         rect,
@@ -3597,7 +3553,7 @@ fn click_cooperative_mode(state: &mut AppState) -> Result<Vec<String>> {
         .position(|mode| mode.id == mode_id)
         .context("Cooperative listed on the network")?;
     let point = list_row_point(modal.mode_geometry(&layout), row, modal.mode_top_index);
-    chooser_press(state, point);
+    super::super::skirmish::click_chooser(state, point);
     let modal = state
         .frontend
         .skirmish_shell_state
@@ -3635,7 +3591,7 @@ fn use_chooser_row(state: &mut AppState, row: usize) -> Result<()> {
         .as_ref()
         .context("chooser")?;
     let point = list_row_point(modal.map_geometry(&layout), row, modal.map_top_index);
-    chooser_press(state, point);
+    super::super::skirmish::click_chooser(state, point);
     ensure!(
         state
             .frontend
@@ -3646,7 +3602,10 @@ fn use_chooser_row(state: &mut AppState, row: usize) -> Result<()> {
         "chooser row {row} was not selected"
     );
     let button = layout.rect(0x6C5);
-    chooser_press(state, (button.x + button.w / 2, button.y + button.h / 2));
+    super::super::skirmish::click_chooser(
+        state,
+        (button.x + button.w / 2, button.y + button.h / 2),
+    );
     Ok(())
 }
 
@@ -3661,14 +3620,6 @@ fn list_row_point(
         geometry.content.x + 4,
         geometry.content.y + (row.saturating_sub(top) as i32) * row_h + row_h / 2,
     )
-}
-
-/// A press and release on the chooser through its production handlers.
-fn chooser_press(state: &mut AppState, (x, y): (i32, i32)) {
-    state.match_state.input.cursor_x = x as f32;
-    state.match_state.input.cursor_y = y as f32;
-    App::handle_choose_map_modal_mouse_down(state);
-    App::handle_choose_map_modal_mouse_up(state);
 }
 
 fn session_receipt(state: &AppState) -> Value {
@@ -3847,12 +3798,6 @@ fn lobby_click(state: &mut AppState, rect: RectPx) {
     lobby::cursor_moved(state);
     lobby::mouse(state, MouseButton::Left, true);
     lobby::mouse(state, MouseButton::Left, false);
-}
-fn setup_click(state: &mut AppState, rect: RectPx) {
-    set_window_pointer_to_rect_center(state, rect);
-    setup_input::cursor_moved(state);
-    setup_input::mouse(state, MouseButton::Left, true);
-    setup_input::mouse(state, MouseButton::Left, false);
 }
 /// New, then OK in VERA's Create Game box, keeping the host's last limits.
 fn create_lan_game(state: &mut AppState) -> Result<()> {

@@ -450,6 +450,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         Some(seed_name),
         Some("MPBattleMD.ini"),
         crate::app::match_runtime::session::SessionMode::Skirmish,
+        crate::rules::retail_sources::AiFile::GameFolder,
         false,
         None,
         &mut SilentProgress,

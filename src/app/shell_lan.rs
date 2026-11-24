@@ -1058,7 +1058,7 @@ pub(crate) fn sync_gui(state: &mut AppState) {
         controller.focus_control(PAGE.dialog, Some(CHAT));
     }
     let gui = controller.gui_mut();
-    page::sync_rects(gui, root, |id| layout.rect(id));
+    page::sync_rects(gui, root, |id| layout.widget_rect(id));
     let lobby = &mut runtime.lobby;
     let _ = gui.set(root, Prop::Enabled, Value::Bool(lobby.enabled));
     // The observer image `0x75F` toggles like its box, anywhere on it.

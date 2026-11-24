@@ -1064,7 +1064,7 @@ impl GameSnapshot {
         Ok(snapshot)
     }
 
-    fn require_player_resources(&self) -> Result<(), SnapshotError> {
+    fn require_player_resources(&self) -> Result<&SavedScenarioResources, SnapshotError> {
         let resources = self
             .scenario_resources
             .as_ref()
@@ -1078,7 +1078,7 @@ impl GameSnapshot {
         if self.local_view.is_none() {
             return Err(SnapshotError::MissingLocalView);
         }
-        Ok(())
+        Ok(resources)
     }
 
     fn deserialize_admitted(bytes: &[u8]) -> Result<GameSnapshot, SnapshotError> {

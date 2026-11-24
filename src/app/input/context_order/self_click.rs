@@ -168,10 +168,10 @@ pub(in crate::app::input) fn ares_emp_deployer_refuses_itself(
 ///   caller's; the other two reach [`left_release`], so no object receives
 ///   an order.
 ///
-/// None without Ares. Residual: the click asks Shift's ToggleSelect before
-/// this, while these hooks precede Techno's Shift rung (`0x00700107`), so a
-/// Shift click here toggles the target where gamemd takes the hook's
-/// answer; the cursor asks them in native order.
+/// None without Ares. These hooks precede Techno's Shift rung
+/// (`0x00700107`), for the click ([`super::queue::head_release`]) as for the cursor,
+/// and a Select or 0 under Shift still clears the selection first
+/// ([`super::ContextClick::Select`]).
 pub(super) fn ares_head_hook_selection_click(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,

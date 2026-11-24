@@ -416,6 +416,12 @@ impl Simulation {
         if promote {
             self.mission_host_promote(id, self.session.binary_frame(), rules);
         }
+        // Firestorm 2.0 UnitClass::Per_Cell_Process 0x651890..0x651975 runs
+        // the ice chain after its promotion: a heavy unit cracks or breaks
+        // the ice it arrives on (docs/ts-ice.md).
+        if reason == PerCellReason::Arrival {
+            self.unit_arrival_ice(id, rules, registry, effects);
+        }
         // 0x0073ACD7..0x0073ADC4: a harvester (or weeder) off Enter/Unload
         // drops a refinery (weeder) contact at every track end.
         if reason == PerCellReason::Arrival {

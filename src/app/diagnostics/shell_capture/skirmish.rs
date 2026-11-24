@@ -64,6 +64,8 @@ enum Phase {
     Scoring,
     /// Tab opened Diplomacy `0x73` over the running game.
     Diplomacy,
+    /// Escape opened the in-game menu; the route reaches its dialog there.
+    InGameMenu,
     /// Continue was pressed on the settled score page.
     Continuing,
 }
@@ -86,7 +88,46 @@ pub(super) enum LoadingTarget {
     /// The game runs [`QUIT_AFTER_FRAMES`] frames, then Tab opens the
     /// Diplomacy dialog `0x73` through the production key path; it settled.
     Diplomacy,
+    /// The game runs [`QUIT_AFTER_FRAMES`] frames, then Escape opens the
+    /// offline in-game menu B5 and the route opens one of its dialogs; it
+    /// settled with the pointer at rest.
+    InGameMenu(InGameMenuTarget),
 }
+
+/// Which of the offline in-game menu's dialogs a skirmish checkpoint captures.
+/// Each opens through the ordinary key and pointer path, never by setting the
+/// menu state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InGameMenuTarget {
+    /// Escape: B5 on the page it opens on, Game Controls.
+    Menu,
+    /// B5's Options button: the Options column with its first category's
+    /// page.
+    Options,
+    /// The Game Controls page's Sound button: B8.
+    Sound,
+    /// B5's Keyboard button (the Game Controls page's on a sidebar with no row
+    /// for it): A3.
+    Keyboard,
+    /// B5's Abort: the abort confirmation B6.
+    AbortConfirm,
+}
+
+impl InGameMenuTarget {
+    /// The menu state the captured dialog shows.
+    fn state(self) -> crate::ui::pause_menu::InGameMenuState {
+        use crate::ui::pause_menu::InGameMenuState;
+        match self {
+            Self::Menu | Self::Options => InGameMenuState::Menu,
+            Self::Sound => InGameMenuState::Sound,
+            Self::Keyboard => InGameMenuState::Keyboard,
+            Self::AbortConfirm => InGameMenuState::AbortConfirm,
+        }
+    }
+}
+
+/// Presented frames an in-game menu dialog shows before its capture.
+const IN_GAME_MENU_SETTLE_FRAMES: u32 = 2;
 
 /// In-game frames before the quit route presses Leave.
 const QUIT_AFTER_FRAMES: u32 = 30;
@@ -201,6 +242,12 @@ pub(super) struct SkirmishCapture {
     in_game_frames: u32,
     /// Frames Diplomacy has presented.
     diplomacy_frames: u32,
+    /// The in-game menu routes' Escape (and B6's Abort) input owner.
+    menu_input: Option<super::movies::abort_return::AbortReturnInput>,
+    /// The menu presented and the route opened its dialog.
+    menu_opened: bool,
+    /// Frames that dialog has presented since.
+    menu_frames: u32,
     deploy_sent: bool,
     sell_sent: bool,
 }
@@ -243,8 +290,17 @@ fn guard(
     chooser: Option<ChooserTarget>,
     loading: bool,
     expected_cursor: (f32, f32),
+    keyboard_open: bool,
 ) -> Result<()> {
     let shell = &state.frontend.skirmish_shell_state;
+    // `main_menu_dialog_open` also counts the shared Keyboard dialog A3,
+    // which the in-game Keyboard route opens on purpose; its other two
+    // dialogs still count there.
+    let main_menu_dialog = if keyboard_open {
+        state.frontend.shell_message_box.is_some() || state.frontend.options_dialog.is_some()
+    } else {
+        state.main_menu_dialog_open()
+    };
     CaptureGuard {
         main_menu_screen: state.frontend.screen == GameScreen::MainMenu
             || (loading
@@ -267,7 +323,7 @@ fn guard(
             )
         },
         expected_cursor,
-        interaction_active: state.main_menu_dialog_open()
+        interaction_active: main_menu_dialog
             || state.frontend.quit_cascade.is_some()
             || (shell.choose_map_modal.is_some() && chooser.is_none())
             || (shell.random_map_setup_modal.is_some()
@@ -308,6 +364,44 @@ fn guard(
                 == Some(0x6A0),
     }
     .validate()
+}
+
+/// The match a Start Game route launches: the player America in colour 0
+/// at start 0, one Easy AI as Russia in colour 1 at start 1, no teams and
+/// no other computer row. A profile's Random country, colour or start would
+/// otherwise draw anew each run and change the loading screen and every
+/// in-game dialog that lists the players. The map, name and game options
+/// stay the profile's; the manifest's selection records them.
+fn pin_match_setup(state: &mut AppState) {
+    use crate::skirmish_launch::{AiDifficulty, LaunchCountry, LaunchStartPosition};
+    use crate::ui::skirmish_shell::SkirmishAiRowType;
+    let shell = &mut state.frontend.skirmish_shell_state;
+    shell.player_country = LaunchCountry::America;
+    shell.player_country_random = false;
+    shell.player_color_index = 0;
+    shell.player_color_claimed = true;
+    shell.player_start_position = LaunchStartPosition::Position(0);
+    shell.player_team = -2;
+    for (index, row) in shell.opponents.iter_mut().enumerate() {
+        if index == 0 {
+            row.enabled = true;
+            row.row_type = SkirmishAiRowType::Easy;
+            row.difficulty = AiDifficulty::Easy;
+            row.country = LaunchCountry::Russia;
+            row.country_random = false;
+            row.color_index = 1;
+            row.color_claimed = true;
+            row.start_position = LaunchStartPosition::Position(1);
+            row.team = -2;
+        } else {
+            // An inactive row, as a fresh profile's rows 2.. are.
+            row.enabled = false;
+            row.row_type = SkirmishAiRowType::None;
+            row.country_random = true;
+            row.color_claimed = false;
+            row.start_position = LaunchStartPosition::Auto;
+        }
+    }
 }
 
 fn selected_scene(state: &AppState) -> Result<Value> {
@@ -456,18 +550,21 @@ impl SkirmishCapture {
                     | Phase::Scoring
                     | Phase::Continuing
                     | Phase::Diplomacy
+                    | Phase::InGameMenu
             ),
             (rest.0 as f32, rest.1 as f32),
+            self.keyboard_open(state),
         )
     }
 
-    /// A press and release at `point` through the chooser's production
-    /// handlers.
-    fn click_chooser(state: &mut AppState, point: (i32, i32)) {
-        state.match_state.input.cursor_x = point.0 as f32;
-        state.match_state.input.cursor_y = point.1 as f32;
-        App::handle_choose_map_modal_mouse_down(state);
-        App::handle_choose_map_modal_mouse_up(state);
+    /// The Keyboard route's A3 is up over the running game: the one shell
+    /// dialog the guard admits, only on that route and only while the
+    /// in-game menu state is A3's.
+    fn keyboard_open(&self, state: &AppState) -> bool {
+        self.loading == Some(LoadingTarget::InGameMenu(InGameMenuTarget::Keyboard))
+            && self.phase == Phase::InGameMenu
+            && state.match_state.match_presentation.in_game_menu
+                == crate::ui::pause_menu::InGameMenuState::Keyboard
     }
 
     /// Track press above the map list's thumb (scrolls to the top), a press
@@ -489,11 +586,11 @@ impl SkirmishCapture {
         let bar = map_list(state)?
             .scrollbar
             .context("the map list needs a scrollbar")?;
-        Self::click_chooser(state, (bar.x + 10, bar.y + 24));
+        click_chooser(state, (bar.x + 10, bar.y + 24));
         let row = map_list(state)?.row(0);
-        Self::click_chooser(state, (row.x + 4, row.y + 4));
+        click_chooser(state, (row.x + 4, row.y + 4));
         let button = layout.rect(0x6C5);
-        Self::click_chooser(state, (button.x + button.w / 2, button.y + button.h / 2));
+        click_chooser(state, (button.x + button.w / 2, button.y + button.h / 2));
         state.match_state.input.cursor_x = EXPECTED_CURSOR_X as f32;
         state.match_state.input.cursor_y = EXPECTED_CURSOR_Y as f32;
         ensure!(
@@ -619,6 +716,7 @@ impl SkirmishCapture {
                     | LoadingTarget::DefeatScore
                     | LoadingTarget::DefeatContinue
                     | LoadingTarget::Diplomacy
+                    | LoadingTarget::InGameMenu(_)
             )
         ) {
             std::time::Duration::from_secs(180)
@@ -1104,6 +1202,10 @@ impl SkirmishCapture {
                 {
                     self.check_short_game(state, frame)?;
                 } else if self.selected_scene.is_some() && self.loading.is_some() {
+                    pin_match_setup(state);
+                    self.selected_scene = Some(selected_scene(state)?);
+                    self.route.push(json!({"dialog": 0x102, "frame": frame,
+                        "action": "pin match setup", "selection": self.selected_scene}));
                     // The pointer moves onto Start Game (`0x617`), whose help
                     // reaches the status line as it would before a click,
                     // then the production action runs and the pointer rests
@@ -1201,7 +1303,7 @@ impl SkirmishCapture {
                     }
                     Some(ChooserTarget::RandomMap(_)) if Self::chooser_settled(state) => {
                         // Through the chooser's production press and release.
-                        Self::click_chooser(state, CREATE_RANDOM_MAP_POINT);
+                        click_chooser(state, CREATE_RANDOM_MAP_POINT);
                         Self::set_pointer(state, self.rest_point());
                         ensure!(
                             state.frontend.shell_exit.is_some(),
@@ -1448,6 +1550,35 @@ impl SkirmishCapture {
                 self.diplomacy_frames += 1;
             }
             (Phase::Starting, _)
+                if matches!(self.loading, Some(LoadingTarget::InGameMenu(_)))
+                    && state.frontend.screen == GameScreen::InGame =>
+            {
+                self.in_game_frames += 1;
+                if self.in_game_frames == QUIT_AFTER_FRAMES {
+                    let Some(LoadingTarget::InGameMenu(target)) = self.loading else {
+                        bail!("the in-game menu route runs only for menu targets");
+                    };
+                    // Ordinary Escape queues Options and the frame loop's
+                    // next tick opens B5 (the shell-started match has no
+                    // exact-step owner); for B6 the same owner then presses
+                    // and releases Abort and stops once B6 presents.
+                    use super::movies::abort_return::{AbortGoal, AbortReturnInput};
+                    self.menu_input = Some(AbortReturnInput::begin(
+                        state,
+                        &mut self.route,
+                        frame,
+                        if target == InGameMenuTarget::AbortConfirm {
+                            AbortGoal::Choose(None)
+                        } else {
+                            AbortGoal::Menu
+                        },
+                        false,
+                    )?);
+                    self.phase = Phase::InGameMenu;
+                }
+            }
+            (Phase::InGameMenu, _) => self.in_game_menu_step(state, frame)?,
+            (Phase::Starting, _)
                 if self.defeat_route() && state.frontend.screen == GameScreen::InGame =>
             {
                 self.in_game_frames += 1;
@@ -1494,6 +1625,96 @@ impl SkirmishCapture {
             }
             _ => {}
         }
+        Ok(())
+    }
+
+    /// Once B5 (or B6) has presented, open the target's dialog through its
+    /// button, then rest the pointer at the neutral point through an ordinary
+    /// move so no control keeps the hover; later frames count the settled
+    /// dialog.
+    fn in_game_menu_step(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        use crate::ui::main_menu_dialogs::options::{Category, LauncherButton};
+        use crate::ui::shell::pause_menu::PauseMenuButton;
+        let Some(LoadingTarget::InGameMenu(target)) = self.loading else {
+            bail!("the in-game menu phase runs only for menu targets");
+        };
+        if self.menu_opened {
+            ensure!(
+                state.match_state.match_presentation.in_game_menu == target.state()
+                    && crate::app::frontend::skirmish_shell_render::native_in_game_shell_active(
+                        state
+                    ),
+                "{target:?} did not present with its required loaded artwork"
+            );
+            self.menu_frames += 1;
+            return Ok(());
+        }
+        if !self
+            .menu_input
+            .as_mut()
+            .context("in-game menu input owner")?
+            .after_present(state, &mut self.route, frame)?
+        {
+            return Ok(());
+        }
+        match target {
+            InGameMenuTarget::Menu | InGameMenuTarget::AbortConfirm => {}
+            InGameMenuTarget::Options => {
+                let rect = *crate::app::input::pause_menu::current_layout(state)
+                    .context("B5 has no loaded hit geometry")?
+                    .page_column()
+                    .first()
+                    .context("B5 shows no Options button")?;
+                let point = super::movies::click_in_game(state, rect);
+                self.route.push(
+                    json!({"frame": frame, "action": "Options", "dialog": 0xb5, "point": point}),
+                );
+                ensure!(
+                    state
+                        .match_state
+                        .match_presentation
+                        .options_page
+                        .as_ref()
+                        .is_some_and(|page| page.dialog.category() != Category::GameControls),
+                    "B5's Options did not show the Options column"
+                );
+            }
+            InGameMenuTarget::Sound => {
+                let rect = crate::app::input::pause_menu::options_page_layout(state)
+                    .context("Game Controls has no loaded page geometry")?
+                    .button_rect(LauncherButton::InGameSound)
+                    .context("Game Controls shows no Sound button")?;
+                let point = super::movies::click_in_game(state, rect);
+                self.route.push(
+                    json!({"frame": frame, "action": "Sound", "dialog": 0xb5, "point": point}),
+                );
+            }
+            InGameMenuTarget::Keyboard => {
+                // The sidebar row under Options, or the page's own button
+                // where the sidebar has no row for it.
+                let rect = match crate::app::input::pause_menu::current_layout(state)
+                    .and_then(|layout| layout.button(PauseMenuButton::Keyboard))
+                {
+                    Some(rect) => rect,
+                    None => crate::app::input::pause_menu::options_page_layout(state)
+                        .and_then(|layout| layout.button_rect(LauncherButton::InGameKeyboard))
+                        .context("B5 shows no Keyboard button")?,
+                };
+                let point = super::movies::click_in_game(state, rect);
+                self.route.push(
+                    json!({"frame": frame, "action": "Keyboard", "dialog": 0xb5, "point": point}),
+                );
+            }
+        }
+        ensure!(
+            state.match_state.match_presentation.in_game_menu == target.state(),
+            "{target:?} did not open through its button (Sound needs launcher audio)"
+        );
+        super::movies::MoviesCapture::restore_neutral_pointer(state);
+        crate::app::input::dispatch::handle_cursor_moved_in_game(state);
+        self.route.push(json!({"frame": frame, "action": "pointer rests",
+            "point": [state.match_state.input.cursor_x, state.match_state.input.cursor_y]}));
+        self.menu_opened = true;
         Ok(())
     }
 
@@ -1645,6 +1866,19 @@ impl SkirmishCapture {
         if self.loading == Some(LoadingTarget::Diplomacy) {
             return Ok(self.phase == Phase::Diplomacy && self.diplomacy_frames >= 2);
         }
+        if let Some(LoadingTarget::InGameMenu(target)) = self.loading {
+            // A3's heading types in once it is up.
+            let revealed = target != InGameMenuTarget::Keyboard
+                || state
+                    .frontend
+                    .keyboard_dialog
+                    .as_ref()
+                    .is_some_and(|dialog| dialog.title.is_terminal());
+            return Ok(self.phase == Phase::InGameMenu
+                && self.menu_opened
+                && self.menu_frames >= IN_GAME_MENU_SETTLE_FRAMES
+                && revealed);
+        }
         if self.loading == Some(LoadingTarget::AfterQuit) {
             return Ok(self.phase == Phase::Quitting
                 && state.frontend.screen == GameScreen::MainMenu
@@ -1662,7 +1896,10 @@ impl SkirmishCapture {
                 | LoadingTarget::AfterQuit
                 | LoadingTarget::DefeatScore
                 | LoadingTarget::DefeatContinue
-                | LoadingTarget::Diplomacy => crate::app::loading::pump::NextLoadingFrame::First,
+                | LoadingTarget::Diplomacy
+                | LoadingTarget::InGameMenu(_) => {
+                    crate::app::loading::pump::NextLoadingFrame::First
+                }
             };
             return Ok(self.phase == Phase::Starting
                 && state.frontend.screen == GameScreen::Loading
@@ -1808,6 +2045,15 @@ mod tests {
             assert!(invalid.validate().is_err());
         }
     }
+}
+
+/// A press and release at `point` through the chooser's production
+/// handlers.
+pub(super) fn click_chooser(state: &mut AppState, point: (i32, i32)) {
+    state.match_state.input.cursor_x = point.0 as f32;
+    state.match_state.input.cursor_y = point.1 as f32;
+    App::handle_choose_map_modal_mouse_down(state);
+    App::handle_choose_map_modal_mouse_up(state);
 }
 
 /// Tab through the ordinary key edge: the binding lookup falls back to

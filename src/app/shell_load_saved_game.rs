@@ -11,11 +11,9 @@ use winit::keyboard::KeyCode;
 use super::{App, AppState};
 use crate::app::frontend::shell_layout::load_saved_game_layout;
 use crate::app::shell_route::ShellRoute;
-use crate::ui::shell::saved_file_input::{self, BrowserInputResult};
+use crate::ui::shell::saved_file_input;
 use crate::ui::shell::saved_games::LOAD_SAVED_GAME_PAGE;
-use crate::ui::skirmish_shell::{
-    SavedSeedBrowserState, SavedSeedMode, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
-};
+use crate::ui::skirmish_shell::{SavedSeedBrowserState, SavedSeedMode, SavedSeedPromptPurpose};
 
 impl App {
     /// State 9: `0x00558F2E` creates `0xB7` with the rows `0x005596A0`
@@ -26,7 +24,7 @@ impl App {
         let _ = Self::ensure_skirmish_shell_chrome(state);
         let rows =
             super::shell_saved_seeds::saved_browser_rows(&load_saved_game_layout(state).browser);
-        let browser = Self::open_saved_game_rows(state, SavedSeedMode::Load, rows);
+        let browser = Self::open_saved_game_rows(state, SavedSeedMode::Load, rows, None);
         state.frontend.load_saved_game = Some(browser);
         // The status help is the cursor's from the first frame.
         Self::load_saved_game_pointer(state, None);
@@ -52,7 +50,7 @@ impl App {
         if let Some(browser) = state.frontend.load_saved_game.as_mut() {
             let results =
                 saved_file_input::pointer(browser, &layout.browser, extent, pointer, down);
-            Self::apply_load_saved_game_input(state, results);
+            Self::apply_saved_game_input(state, results);
         }
     }
 
@@ -66,17 +64,23 @@ impl App {
         state.frontend.shell_status_line.repaint();
     }
 
-    /// VERA's Esc menu (`app::shell_menu`): the error box keeps Esc.
+    /// The name edit and its error box get Escape before the shell menu.
     pub(super) fn load_saved_game_leaves_escape(state: &AppState) -> bool {
-        (state.frontend.load_saved_game.as_ref()).is_some_and(|browser| browser.prompt.is_none())
+        state
+            .frontend
+            .load_saved_game
+            .as_ref()
+            .is_some_and(|browser| browser.prompt.is_none() && !browser.is_naming_conversion())
     }
 
-    /// Enter and Escape reach the proc as IDOK/IDCANCEL, which it ignores;
-    /// they answer the error message box while it is up.
-    pub(super) fn handle_load_saved_game_key(state: &mut AppState, code: KeyCode) {
+    pub(super) fn handle_load_saved_game_key(
+        state: &mut AppState,
+        code: Option<KeyCode>,
+        text: Option<&str>,
+    ) {
         if let Some(browser) = state.frontend.load_saved_game.as_mut() {
-            let results = saved_file_input::key(browser, Some(code), None);
-            Self::apply_load_saved_game_input(state, results);
+            let results = saved_file_input::key(browser, code, text);
+            Self::apply_saved_game_input(state, results);
         }
     }
 
@@ -95,113 +99,20 @@ impl App {
         }
     }
 
-    fn show_load_saved_game_error(state: &mut AppState, body: String) {
-        let affirmative = state.csf_label("TXT_OK", "OK");
-        if let Some(browser) = state.frontend.load_saved_game.as_mut() {
-            let purpose = SavedSeedPromptPurpose::Error;
-            let negative = None;
-            browser.show_prompt(SavedSeedPrompt {
-                purpose,
-                body,
-                affirmative,
-                negative,
-            });
-        }
-    }
-
-    fn apply_load_saved_game_input(
-        state: &mut AppState,
-        results: Vec<BrowserInputResult<PathBuf>>,
-    ) {
-        for result in results {
-            match result {
-                // Owner-draw buttons play GUIMainButtonSound on the press
-                // (0x00613667..0x00613771); a row press GenericClick.
-                BrowserInputResult::Cue(cue) => Self::play_page_cue(state, cue),
-                // The page's status help follows the cursor again at once.
-                BrowserInputResult::PromptAnswer(_) => {
-                    if let Some(browser) = state.frontend.load_saved_game.as_mut() {
-                        browser.take_prompt();
-                    }
-                    Self::load_saved_game_pointer(state, None);
-                }
-                BrowserInputResult::Outcome(SavedSeedOutcome::Close) => {
-                    let slide =
-                        crate::app::frontend::shell_transition::ShellSlideKind::LoadSavedGame;
-                    Self::leave_shell_dialog(state, slide, App::commit_load_saved_game_back)
-                }
-                BrowserInputResult::Outcome(SavedSeedOutcome::Load(path)) => {
-                    let browser = state.frontend.load_saved_game.as_ref();
-                    let row = browser.and_then(|browser| browser.selected_entry());
-                    if row.is_none_or(|row| row.loadable) {
-                        crate::app::persistence::commands::request_saved_game_load(state, path)
-                    } else {
-                        Self::show_load_saved_game_error(
-                            state,
-                            crate::i18n::tr("VERA:SaveFromOtherVersionText"),
-                        );
-                    }
-                }
-                BrowserInputResult::Outcome(SavedSeedOutcome::Convert(path)) => {
-                    crate::app::persistence::commands::request_saved_game_conversion(state, path);
-                }
-                BrowserInputResult::Outcome(_) => {}
-            }
-        }
-    }
-
-    /// 559D60 shares Load67E440 with the in-game browser. Ordinary failure keeps
-    /// these rows. After a conversion the new file is available for retry.
+    /// 559D60 shares Load67E440 with the in-game browser. Failure keeps the
+    /// current browser rows and selection.
     pub(crate) fn finish_load_saved_game_from_menu(
         state: &mut AppState,
         path: &Path,
         result: Result<(), crate::app::persistence::PreparedLoadError>,
-        was_converted: bool,
     ) {
         let Err(error) = result else {
             state.frontend.load_saved_game = None;
             return;
         };
         log::warn!("Load Saved Game: {}: {error}", path.display());
-        if was_converted {
-            let rows = super::shell_saved_seeds::saved_browser_rows(
-                &load_saved_game_layout(state).browser,
-            );
-            state.frontend.load_saved_game =
-                Some(Self::open_converted_save_for_retry(state, path, rows));
-        }
-        let body = Self::saved_game_load_error_message(state, &error, was_converted);
-        Self::show_load_saved_game_error(state, body);
-    }
-
-    pub(super) fn saved_game_load_error_message(
-        state: &AppState,
-        error: &crate::app::persistence::PreparedLoadError,
-        was_converted: bool,
-    ) -> String {
-        if was_converted {
-            return crate::i18n::tr("VERA:SaveConvertedLoadFailed");
-        }
-        match error.migration_message_key() {
-            Some(key) => crate::i18n::tr(key),
-            None => state.csf_label("TXT_ERROR_LOADING_GAME", "Error loading game."),
-        }
-    }
-
-    pub(super) fn open_converted_save_for_retry(
-        state: &AppState,
-        path: &Path,
-        visible_rows: usize,
-    ) -> SavedSeedBrowserState<PathBuf> {
-        let mut browser = Self::open_saved_game_rows(state, SavedSeedMode::Load, visible_rows);
-        if let Some(index) = browser
-            .entries
-            .iter()
-            .position(|row| row.file_name.as_deref() == Some(path))
-        {
-            browser.select(index);
-        }
-        browser
+        let body = state.csf_label("TXT_ERROR_LOADING_GAME", "Error loading game.");
+        Self::show_saved_game_prompt(state, SavedSeedPromptPurpose::Error, body, false);
     }
 
     /// Status help of the control under the cursor (`0x006040B0`): the list,
@@ -228,27 +139,43 @@ impl App {
         state: &AppState,
         mode: SavedSeedMode,
         visible_rows: usize,
+        conversion_source: Option<PathBuf>,
     ) -> SavedSeedBrowserState<PathBuf> {
         let other_version = crate::i18n::tr("VERA:SaveFromOtherVersion");
+        let mut description = if conversion_source.is_some() {
+            String::new()
+        } else {
+            Self::current_save_description(state)
+        };
         let entries = state
             .persistence
             .repository
             .browser_entries()
             .into_iter()
             .map(|(entry, last_write_time)| {
-                saved_game_row(entry, last_write_time, mode, &other_version)
+                if conversion_source.as_ref() == Some(&entry.path) {
+                    description = entry.header.description.clone();
+                }
+                let mut row = saved_game_row(entry, last_write_time, mode, &other_version);
+                // The conversion chooser lists old saves as read-only alongside writable slots.
+                row.visible |= conversion_source.is_some();
+                row
             })
             .collect();
         // Existing rows still keep their own saved descriptions.
         let empty = state.csf_label("TXT_EMPTY_SLOT", "[EMPTY SLOT]");
-        SavedSeedBrowserState::open_rows(
+        let mut browser = SavedSeedBrowserState::open_rows(
             mode,
             entries,
-            Self::current_save_description(state).into(),
+            description.into(),
             empty.into(),
             crate::map::rmg::saved_seeds::new_slot_file_time(crate::util::time::SystemTime::now()),
             visible_rows,
-        )
+        );
+        if let Some(source) = conversion_source {
+            browser.set_conversion_source(source, visible_rows);
+        }
+        browser
     }
 }
 

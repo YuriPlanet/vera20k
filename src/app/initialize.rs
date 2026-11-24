@@ -533,10 +533,16 @@ impl App {
         // them at the edges the player scrolls against, where the system would
         // draw its own cursor over the game's. winit applies this to its own
         // set_fullscreen only, not to full screen from the title-bar button.
+        // The title bar draws no material of its own, so it shows the window's
+        // background, which `mac_title_bar::style` sets near black; the dark
+        // appearance keeps the window buttons and title text light on it.
         #[cfg(target_os = "macos")]
         {
             use winit::platform::macos::WindowAttributesExtMacOS;
-            window_attrs = window_attrs.with_borderless_game(true);
+            window_attrs = window_attrs
+                .with_borderless_game(true)
+                .with_titlebar_transparent(true)
+                .with_theme(Some(winit::window::Theme::Dark));
         }
         // Capture windows stay hidden, so only a visible session shows the icon.
         let window_icon = window_visible
@@ -578,8 +584,11 @@ impl App {
             window.set_visible(true);
         }
         #[cfg(target_os = "macos")]
-        if let Some(icon) = &window_icon {
-            icon.set_dock_icon();
+        {
+            super::mac_title_bar::style(&window);
+            if let Some(icon) = &window_icon {
+                icon.set_dock_icon();
+            }
         }
         // An invisible spawn test window renders into the same offscreen
         // target as a hidden capture: it has no presentable swapchain.
@@ -1157,7 +1166,7 @@ impl App {
                     power_bar_anim: crate::ui::sidebar::PowerBarAnimState::new(),
                     sidebar_gadget_state: crate::ui::sidebar::gadget_flash::SidebarGadgetState::new(
                     ),
-                    in_game_gadgets: crate::app::input::gadget_input::InGameGadgets::new(),
+                    in_game_chrome: Default::default(),
                     sidebar_projection: Default::default(),
                     active_sidebar_tab: SidebarTab::default_active_tab(),
                     sidebar_layout_spec,
@@ -1166,6 +1175,11 @@ impl App {
                     player_layout_text: Vec::new(),
                     layout_edit: None,
                     added_parts: Default::default(),
+                    stock_parts: Default::default(),
+                    added_part_huds: Default::default(),
+                    chrome_paint: Default::default(),
+                    sidebar_huds: Default::default(),
+                    minimap_hud: Default::default(),
                     added_grid_scroll: Vec::new(),
                     tooltips: startup_tooltips,
                     tooltip_epoch: Instant::now(),
@@ -1203,11 +1217,18 @@ impl App {
                     placement_range_pulse: Default::default(),
                     superweapon_range_pulse: Default::default(),
                     detail: Default::default(),
+                    ares_fps_counter: false,
                     pixel_fx: Default::default(),
                     hidden_super_anims: Default::default(),
                     super_timer_blinks: Default::default(),
                     super_timer_next_flip_ms: None,
                     super_timer_dock: Default::default(),
+                    super_timer_frame: Default::default(),
+                    super_timer_hud: crate::app::presentation::text_hud::TextHud::named("Timers"),
+                    message_hud: crate::app::presentation::text_hud::TextHud::named("Messages"),
+                    tooltip_hud: Default::default(),
+                    layout_edit_hud: Default::default(),
+                    outcome_banner_huds: Default::default(),
                     minimap: None,
                     radar_anim: None,
                     radar_movies: Default::default(),
@@ -1275,6 +1296,7 @@ impl App {
                     sidebar_chrome: None,
                     outcome_banner_side_art: None,
                     ares_status_texts: None,
+                    status_texts: Default::default(),
                     end_game_banner: None,
                     outcome_banner_presentation: Default::default(),
                     software_cursor: startup_software_cursor,
@@ -1367,6 +1389,8 @@ impl App {
                 shell_status_line: crate::ui::shell::static_reveal::PresentedKind1Static::new(
                     crate::ui::shell::static_reveal::STATUS_LINE_KIND1,
                 ),
+                panel_statics: Default::default(),
+                loading_box: Default::default(),
                 shell_exit: None,
                 quit_cascade: None,
                 startup_splash,

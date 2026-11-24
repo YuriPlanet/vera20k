@@ -196,20 +196,88 @@ fn layout_and_pointer(state: &AppState) -> Option<(KeyboardLayout, (i32, i32))> 
         pointer,
     ))
 }
-/// A command's name, category or description. VERA's own (`VERA:`) come from
-/// its language files; the game's from the CSF, else the key itself.
+/// Makes A3's nodes current without input (rects, the category's popup
+/// rows, the texts its statics show): its renderer's call every drawn frame
+/// before it paints from them. Texts allocate only when they change.
+pub(crate) fn sync(state: &mut AppState) -> Option<KeyboardLayout> {
+    let layout = layout(state)?;
+    let dialog = state.frontend.keyboard_dialog.as_ref()?;
+    let catalog = registered_commands();
+    let bindings = &state.match_state.input.hotkey_bindings;
+    let selected = dialog
+        .selected()
+        .and_then(|row| dialog.rows.get(row).copied());
+    let shortcut = selected
+        .and_then(|row| catalog.get(dialog.commands[row].command_index))
+        .map(|metadata| {
+            bindings
+                .first_key(metadata.command)
+                .map(key_name)
+                .unwrap_or_default()
+        })
+        .unwrap_or_default();
+    let owner = bindings
+        .command_at(dialog.captured)
+        .filter(|_| dialog.current_owner_visible)
+        .and_then(|owner| {
+            dialog.commands.iter().position(|row| {
+                catalog
+                    .get(row.command_index)
+                    .is_some_and(|metadata| metadata.command == owner)
+            })
+        });
+    let capture = key_name(dialog.captured);
+    let error = dialog.error.map(|key| state.csf_label(key, key));
+    let dialog = state.frontend.keyboard_dialog.as_mut()?;
+    let rows = Value::Rect(layout.category_rows(dialog.categories.len()));
+    dialog.ui.set_scale(layout.scale);
+    let KeyboardState {
+        ui,
+        commands,
+        categories,
+        category,
+        title,
+        ..
+    } = dialog;
+    super::dialog_page::sync_dialog(
+        ui,
+        KEYBOARD_PAGE.dialog,
+        // KeyboardState::new built A3's controls.
+        || vera20k_gui::NodeSpec::new(vera20k_gui::NodeKind::Dialog),
+        |id| layout.rect(id),
+        |gui, root| {
+            use crate::ui::shell::page::{set, set_text};
+            // The heading's text as `refresh_title` resolved it; the page
+            // shows it once its reveal starts.
+            let heading = crate::ui::shell::in_game_shell::TITLE;
+            set_text(gui, root, heading, Prop::Text, title.text());
+            let face = KeyboardControl::Category.id();
+            set(gui, root, face, Prop::PopupRect, rows);
+            let name = categories.get(*category).map_or("", String::as_str);
+            set_text(gui, root, face, Prop::Text, name);
+            let description = selected.map_or("", |row| commands[row].description.as_str());
+            set_text(gui, root, DESCRIPTION_TEXT, Prop::Text, description);
+            let id = KeyboardControl::CurrentShortcut.id();
+            set_text(gui, root, id, Prop::Text, &shortcut);
+            let name = owner.map_or("", |row| commands[row].name.as_str());
+            set_text(
+                gui,
+                root,
+                KeyboardControl::CurrentOwner.id(),
+                Prop::Text,
+                name,
+            );
+            set_text(gui, root, CAPTURE_TEXT, Prop::Text, &capture);
+            let error = error.as_deref().unwrap_or("");
+            set_text(gui, root, KeyboardControl::Error.id(), Prop::Text, error);
+        },
+    );
+    Some(layout)
+}
+
+/// A command's name, category or description ([`AppState::csf_label`]).
 fn localized(state: &AppState, key: &str, parameter: Option<u8>) -> String {
-    let text = if key.starts_with("VERA:") {
-        crate::i18n::tr(key)
-    } else {
-        state
-            .process_assets
-            .csf
-            .as_ref()
-            .and_then(|csf| csf.get(key))
-            .unwrap_or(key)
-            .to_owned()
-    };
+    let text = state.csf_label(key, key);
     match parameter {
         Some(value) => text
             .replace("%2d", &format!("{value:2}"))
@@ -228,9 +296,15 @@ pub(crate) fn open(state: &mut AppState, parent: KeyboardParent) {
     // their rules switches are on, so the page does not list them otherwise.
     #[cfg(feature = "phobos")]
     let sw_sidebar_globals = state.rules().map(|rules| rules.sw_sidebar);
+    // Ares registers its commands at startup (hook 0x533058); VERA lists them
+    // for a game Ares plays.
+    let ares = state
+        .rules()
+        .is_some_and(crate::rules::ruleset::RuleSet::ares);
     let commands = registered_commands()
         .iter()
         .enumerate()
+        .filter(|(_, metadata)| ares || !hotkeys::catalog::is_ares_command(metadata.command))
         .filter(|(_, metadata)| {
             #[cfg(feature = "phobos")]
             {
@@ -258,7 +332,16 @@ pub(crate) fn open(state: &mut AppState, parent: KeyboardParent) {
         commands,
         vec![localized(state, hotkeys::catalog::VERA_CATEGORY_KEY, None)],
     ));
+    refresh_title(state);
     state.platform.window.request_redraw();
+}
+/// Resolve the open page's heading into its static, as it opens and after
+/// the string table's labels change; the page paints it from there.
+pub(crate) fn refresh_title(state: &mut AppState) {
+    let text = state.csf_label(KEYBOARD_PAGE.title_key, "Keyboard Options");
+    if let Some(dialog) = state.frontend.keyboard_dialog.as_mut() {
+        dialog.title.set_text(&text, Instant::now());
+    }
 }
 fn reload(state: &mut AppState, reset: bool) {
     let Some(config) = state.platform.game_config.as_ref() else {
@@ -465,7 +548,8 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
 }
 
 pub(crate) fn wheel(state: &mut AppState, lines: f32) {
-    let Some(layout) = layout(state) else {
+    // A dialog's wheel goes to its hovered list; the point is the pointer's.
+    let Some((layout, (x, y))) = layout_and_pointer(state) else {
         return;
     };
     let Some(dialog) = state.frontend.keyboard_dialog.as_mut() else {
@@ -478,7 +562,7 @@ pub(crate) fn wheel(state: &mut AppState, lines: f32) {
         false => (lines * 3.0) as i32,
     };
     dialog.ui.set_scale(layout.scale);
-    dialog.ui.on_input(vera20k_gui::InputEvent::Wheel { lines });
+    dialog.ui.on_input(vera20k_gui::InputEvent::Wheel { lines, x, y });
     let events = dialog.ui.drain_events();
     let events = crate::ui::shell::page::page_events(dialog.ui.gui(), events);
     apply(state, events);

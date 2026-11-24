@@ -1576,7 +1576,10 @@ pub(crate) fn superweapon_launch_cue<'a>(
         | K::SonarPulse
         | K::EMPulse
         | K::Firestorm
-        | K::DropPod => SuperWeaponLaunchCue::default(),
+        | K::DropPod
+        // Firestorm 2.0 SuperClass::Place case 3 (0x60BE21..0x60BEC6) plays
+        // nothing either.
+        | K::IonCannon => SuperWeaponLaunchCue::default(),
     }
 }
 

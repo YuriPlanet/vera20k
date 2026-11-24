@@ -4,6 +4,7 @@
 //! `Stale`; only container kinds hold children; a prop takes one value type.
 
 use std::collections::BTreeMap;
+use std::ops::ControlFlow;
 
 use crate::Rect;
 
@@ -20,6 +21,8 @@ pub enum Refused {
     Stale,
     WrongKind,
     Limit,
+    /// The caller's origin may not do this ([`crate::Origin`]).
+    Denied,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -36,6 +39,13 @@ pub enum NodeKind {
     /// A lone vertical scrollbar over rows its host lays out
     /// ([`crate::widget::scrollbar`]).
     ScrollBar,
+    /// A picture named by `Prop::Art` ([`crate::Gui::paint`]).
+    Image,
+    /// A proportional bar, `Prop::Fill` percent full ([`crate::Gui::paint`]).
+    Bar,
+    /// An area the host fills itself (a map, a video), named by `Prop::Art`
+    /// ([`crate::Gui::paint`]).
+    External,
 }
 
 impl NodeKind {
@@ -61,6 +71,16 @@ impl NodeKind {
 /// the rest of the §2.3 table is added with the screen that needs it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Prop {
+    // The props [`crate::Gui::paint`] and [`crate::Gui::find`] read.
+    /// The node's name among its origin's nodes ([`crate::Gui::find`]).
+    Name,
+    /// 0..=100.
+    Fill,
+    /// A picture or surface name; the host resolves it.
+    Art,
+    /// The subtree is clipped to the node's rect.
+    Clip,
+    Background,
     /// The host's own integer id for the node (a dialog resource id).
     Id,
     Visible,
@@ -219,6 +239,26 @@ pub enum Prop {
     /// only when the text is not empty once its trailing CR/LF go (the
     /// owner's 0x501 handler clicks Send then, `0xCF`/`0x11E`).
     Multiline,
+    /// A node of the chrome layer ([`crate::Gui::push_chrome`]): the mouse
+    /// buttons it takes, bit 1 the left and bit 2 the right (the left alone
+    /// unless set). A press or release of a button it does not take passes
+    /// on to the next node under the pointer.
+    Buttons,
+    /// Chrome button: it activates on the press edge (`Activated` for the
+    /// left button, `RightActivated` for the right) and takes no capture,
+    /// so its release passes on.
+    PressActivates,
+    /// Chrome button: a catcher the host handles itself. It takes and holds
+    /// the pointer as a button does but activates nothing; the input it
+    /// takes reports it in [`crate::InputResult::passthrough`], unconsumed.
+    Passthrough,
+    /// Chrome button: a release that activates it with the pointer inside
+    /// its rect flips `Toggled` (1) or turns it on (2).
+    ToggleOnRelease,
+    /// Chrome button: nothing under it sees a press or release over it that
+    /// it does not act on (a button it does not take, a release it holds no
+    /// capture for); it consumes them and does nothing.
+    Opaque,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -270,20 +310,26 @@ impl Prop {
             | Prop::RehoverOnRelease
             | Prop::BlurOnPress
             | Prop::Multiline
+            | Prop::PressActivates
+            | Prop::Passthrough
+            | Prop::Opaque
             | Prop::WheelPicks
             | Prop::SelectOnFocus
             | Prop::AllSelected
+            | Prop::Clip
             | Prop::ByteOnly => ValueType::Bool,
             Prop::Items | Prop::Swatches | Prop::SelectedRows => ValueType::Items,
             Prop::Text
             | Prop::Label
             | Prop::Tooltip
+            | Prop::Name
+            | Prop::Art
             | Prop::Rejected
             | Prop::Allowed => {
                 ValueType::Text
             }
             Prop::Rect | Prop::HitRect | Prop::PopupRect | Prop::ScaleScreen | Prop::TextInset => ValueType::Rect,
-            Prop::Color | Prop::DisabledColor => ValueType::Rgba,
+            Prop::Color | Prop::DisabledColor | Prop::Background => ValueType::Rgba,
             Prop::Id
             | Prop::Selected
             | Prop::Pos
@@ -303,15 +349,24 @@ impl Prop {
             | Prop::PopupFlipBelow
             | Prop::RowHeight
             | Prop::FocusTarget
+            | Prop::Fill
+            | Prop::Buttons
+            | Prop::ToggleOnRelease
             | Prop::WheelStep => ValueType::Int,
         }
     }
 
     fn allowed_on(self, kind: NodeKind) -> bool {
         match self {
-            Prop::Toggled | Prop::Default | Prop::Cancel | Prop::ReleaseActivates => {
-                kind == NodeKind::Button
-            }
+            Prop::Toggled
+            | Prop::Default
+            | Prop::Cancel
+            | Prop::ReleaseActivates
+            | Prop::Buttons
+            | Prop::PressActivates
+            | Prop::Passthrough
+            | Prop::Opaque
+            | Prop::ToggleOnRelease => kind == NodeKind::Button,
             Prop::TabStop => kind.is_focusable(),
             Prop::KeepsBlink | Prop::BlurOnPress | Prop::Multiline => kind == NodeKind::Edit,
             Prop::FocusOnPress => !kind.is_container() && kind != NodeKind::Edit,
@@ -330,6 +385,8 @@ impl Prop {
             Prop::ScaleScreen => kind == NodeKind::Trackbar,
             Prop::Min | Prop::Step => kind == NodeKind::Trackbar,
             Prop::Max => matches!(kind, NodeKind::Trackbar | NodeKind::ScrollBar),
+            Prop::Fill => kind == NodeKind::Bar,
+            Prop::Clip => kind.is_container(),
             _ => true,
         }
     }
@@ -373,6 +430,19 @@ impl Node {
         }
     }
 
+    /// A list's or combo's rows: its `Items`, else its `RowCount`.
+    pub fn row_count(&self) -> usize {
+        match self.props.get(&Prop::Items) {
+            Some(Value::Items(items)) => items.len(),
+            _ => self.int_prop(Prop::RowCount, 0).max(0) as usize,
+        }
+    }
+
+    /// A list's or combo's selected row; `-1` or absent is none.
+    pub fn selected(&self) -> Option<usize> {
+        usize::try_from(self.int_prop(Prop::Selected, -1)).ok()
+    }
+
     pub fn text_prop(&self, prop: Prop) -> Option<&str> {
         match self.props.get(&prop) {
             Some(Value::Text(s)) => Some(s),
@@ -405,7 +475,10 @@ impl Tree {
         Tree { slots: Vec::new(), free: Vec::new(), live: 0, max_nodes }
     }
 
-    #[cfg(test)]
+    pub(crate) fn max_nodes(&self) -> usize {
+        self.max_nodes
+    }
+
     pub fn live_count(&self) -> usize {
         self.live
     }
@@ -448,14 +521,42 @@ impl Tree {
         Ok(())
     }
 
+    /// Removes the nodes with their subtrees, in the order given, going over
+    /// each parent's children once.
+    pub(crate) fn remove_all(&mut self, ids: &[NodeId]) {
+        let mut parents = Vec::new();
+        for &id in ids {
+            let Ok(node) = self.node(id) else { continue };
+            parents.extend(node.parent);
+            self.remove_subtree(id);
+        }
+        parents.sort_unstable();
+        parents.dedup();
+        for parent in parents {
+            let Ok(node) = self.node_mut(parent) else {
+                continue;
+            };
+            let mut children = std::mem::take(&mut node.children);
+            children.retain(|child| self.node(*child).is_ok());
+            if let Ok(node) = self.node_mut(parent) {
+                node.children = children;
+            }
+        }
+    }
+
+    /// No recursion: a caller may nest as deep as the node limit.
     fn remove_subtree(&mut self, id: NodeId) {
-        let slot = &mut self.slots[id.idx as usize];
-        let Some(node) = slot.node.take() else { return };
-        slot.generation = slot.generation.wrapping_add(1);
-        self.free.push(id.idx);
-        self.live -= 1;
-        for c in node.children {
-            self.remove_subtree(c);
+        let mut pending = vec![id];
+        while let Some(id) = pending.pop() {
+            let slot = &mut self.slots[id.idx as usize];
+            let Some(node) = slot.node.take() else { continue };
+            // A slot out of generations is retired: reused, it would revive a stale id.
+            if let Some(next) = slot.generation.checked_add(1) {
+                slot.generation = next;
+                self.free.push(id.idx);
+            }
+            self.live -= 1;
+            pending.extend(node.children.into_iter().rev());
         }
     }
 
@@ -468,12 +569,32 @@ impl Tree {
         Ok(())
     }
 
+    /// Back to the prop's default; whether it was set.
+    pub fn clear(&mut self, id: NodeId, prop: Prop) -> Result<bool, Refused> {
+        Ok(self.node_mut(id)?.props.remove(&prop).is_some())
+    }
+
     pub fn get(&self, id: NodeId, prop: Prop) -> Result<Option<&Value>, Refused> {
         Ok(self.node(id)?.props.get(&prop))
     }
 
     pub fn kind(&self, id: NodeId) -> Result<NodeKind, Refused> {
         Ok(self.node(id)?.kind)
+    }
+
+    /// Visits `id` and its subtree in tree order, each node before its
+    /// children, until `f` breaks; the break's value.
+    pub fn walk<B>(
+        &self,
+        id: NodeId,
+        f: &mut impl FnMut(NodeId, NodeKind) -> ControlFlow<B>,
+    ) -> ControlFlow<B> {
+        let Ok(node) = self.node(id) else { return ControlFlow::Continue(()) };
+        f(id, node.kind)?;
+        for child in &node.children {
+            self.walk(*child, f)?;
+        }
+        ControlFlow::Continue(())
     }
 
     pub fn children(&self, id: NodeId) -> Result<&[NodeId], Refused> {
@@ -541,6 +662,19 @@ mod tests {
         assert_eq!(t.get(child, Prop::Text), Err(Refused::Stale));
         assert!(t.get(again, Prop::Text).is_ok());
         assert_eq!(t.live_count(), 1);
+    }
+
+    #[test]
+    fn a_slot_out_of_generations_is_retired() {
+        let mut t = Tree::new(1);
+        let first = t.create(NodeKind::Button, None).unwrap();
+        t.remove(first).unwrap();
+        t.slots[0].generation = u32::MAX;
+        let last = t.create(NodeKind::Button, None).unwrap();
+        t.remove(last).unwrap();
+        let next = t.create(NodeKind::Button, None).unwrap();
+        assert_ne!(next.idx, last.idx);
+        assert_eq!(t.get(last, Prop::Text), Err(Refused::Stale));
     }
 
     #[test]

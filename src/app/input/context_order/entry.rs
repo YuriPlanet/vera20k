@@ -38,7 +38,7 @@ pub(in crate::app::input) fn infantry_garrisons(
     )
 }
 
-fn infantry_garrisons_with(
+pub(super) fn infantry_garrisons_with(
     sim: &crate::sim::world::Simulation,
     control: &ControlProjection<'_>,
     rules: &crate::rules::ruleset::RuleSet,

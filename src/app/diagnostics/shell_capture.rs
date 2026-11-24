@@ -181,6 +181,18 @@ const CHECKPOINT_SKIRMISH_AFTER_QUIT: &str = "skirmish-after-quit";
 const CHECKPOINT_SKIRMISH_DEFEAT_SCORE: &str = "skirmish-defeat-score";
 const CHECKPOINT_SKIRMISH_DEFEAT_CONTINUE: &str = "skirmish-defeat-continue";
 const CHECKPOINT_SKIRMISH_DIPLOMACY: &str = "skirmish-diplomacy";
+/// A skirmish's in-game menu dialogs, each opened through the ordinary key
+/// and pointer path from the offline menu B5 and captured settled with the
+/// pointer at rest: B5 itself (Escape), its Options column, the Game
+/// Controls page's Sound (B8), B5's Keyboard (A3) and Abort's confirmation
+/// (B6, without the campaign's Restart).
+const SKIRMISH_IN_GAME_MENU_CHECKPOINTS: [(&str, skirmish::InGameMenuTarget); 5] = [
+    ("skirmish-pause-menu", skirmish::InGameMenuTarget::Menu),
+    ("skirmish-pause-options", skirmish::InGameMenuTarget::Options),
+    ("skirmish-pause-sound", skirmish::InGameMenuTarget::Sound),
+    ("skirmish-pause-keyboard", skirmish::InGameMenuTarget::Keyboard),
+    ("skirmish-abort-confirm", skirmish::InGameMenuTarget::AbortConfirm),
+];
 const CHECKPOINT_SCORE_0X108_STEADY: &str = "score-0x108-steady";
 const CHECKPOINT_CAMPAIGN_SCORE_0X103_STEADY: &str = "campaign-score-0x103-steady";
 const CHECKPOINT_CAMPAIGN_SCORE_0X103_ANIMATION_SEQUENCE: &str =
@@ -369,6 +381,9 @@ pub enum ShellCaptureCheckpoint {
     /// The same, then Continue: the new `0x102`, settled.
     SkirmishDefeatContinue,
     SkirmishDiplomacy,
+    /// An in-game menu dialog over a running skirmish
+    /// ([`SKIRMISH_IN_GAME_MENU_CHECKPOINTS`]).
+    SkirmishInGameMenu(skirmish::InGameMenuTarget),
     /// The score dialog `0x108` with the retail comparison game's values,
     /// settled.
     Score0x108Steady,
@@ -804,6 +819,12 @@ impl ShellCaptureCheckpoint {
                 {
                     return Ok(Self::Skirmish0x105Hover(index));
                 }
+                if let Some((_, target)) = SKIRMISH_IN_GAME_MENU_CHECKPOINTS
+                    .iter()
+                    .find(|(name, _)| *name == value)
+                {
+                    return Ok(Self::SkirmishInGameMenu(*target));
+                }
                 bail!("unsupported shell-capture checkpoint {value:?}")
             }
         }
@@ -1046,6 +1067,11 @@ impl ShellCaptureCheckpoint {
             Self::SkirmishDefeatScore => CHECKPOINT_SKIRMISH_DEFEAT_SCORE,
             Self::SkirmishDefeatContinue => CHECKPOINT_SKIRMISH_DEFEAT_CONTINUE,
             Self::SkirmishDiplomacy => CHECKPOINT_SKIRMISH_DIPLOMACY,
+            Self::SkirmishInGameMenu(target) => SKIRMISH_IN_GAME_MENU_CHECKPOINTS
+                .into_iter()
+                .find(|(_, listed)| *listed == target)
+                .map(|(name, _)| name)
+                .expect("every in-game menu target has a checkpoint name"),
             Self::Score0x108Steady => CHECKPOINT_SCORE_0X108_STEADY,
             Self::CampaignScore0x103Steady => CHECKPOINT_CAMPAIGN_SCORE_0X103_STEADY,
             Self::CampaignScore0x103AnimationSequence => {
@@ -2302,6 +2328,9 @@ impl ShellCaptureSession {
             ShellCaptureCheckpoint::SkirmishDiplomacy => Some(skirmish::SkirmishCapture::loading(
                 skirmish::LoadingTarget::Diplomacy,
             )),
+            ShellCaptureCheckpoint::SkirmishInGameMenu(target) => Some(
+                skirmish::SkirmishCapture::loading(skirmish::LoadingTarget::InGameMenu(target)),
+            ),
             ShellCaptureCheckpoint::Skirmish0x102Entry(tick) => {
                 Some(skirmish::SkirmishCapture::entry(tick))
             }
@@ -2572,11 +2601,9 @@ impl ShellCaptureSession {
         if self.is_entry_sequence() {
             return Ok(false);
         }
-        if self
-            .campaign_score
-            .as_ref()
-            .is_some_and(score::CampaignScoreCapture::is_animation_sequence)
-        {
+        // The campaign page's stills are selected after its render
+        // ([`Self::should_capture_after_render`]).
+        if self.campaign_score.is_some() {
             return Ok(false);
         }
 
@@ -2591,27 +2618,27 @@ impl ShellCaptureSession {
         Ok(ready)
     }
 
-    /// Animation samples are selected after the production renderer has
-    /// polled and drawn its page-local SCRA frame, so the stored index matches
-    /// the final swapchain bytes submitted for readback.
+    /// The campaign page's stills (the animation samples and the steady
+    /// still) are selected after the production renderer has polled and drawn
+    /// its page-local SCRA frame, so the index checked matches the final
+    /// swapchain bytes submitted for readback.
     pub(crate) fn should_capture_after_render(
         &mut self,
         state: &AppState,
         rendered: PresentedShell,
     ) -> Result<bool> {
-        let Some(capture) = self
-            .campaign_score
-            .as_mut()
-            .filter(|capture| capture.is_animation_sequence())
-        else {
+        let Some(capture) = self.campaign_score.as_mut() else {
             return Ok(false);
         };
         ensure!(
             !self.readback_started,
-            "campaign animation sequence requested overlapping readbacks"
+            "campaign score capture requested overlapping readbacks"
         );
-        let should_capture =
-            capture.should_capture_animation_frame(state, rendered, self.frames_seen)?;
+        let should_capture = if capture.is_animation_sequence() {
+            capture.should_capture_animation_frame(state, rendered, self.frames_seen)?
+        } else {
+            capture.should_capture_steady_frame(state)?
+        };
         self.readback_started = should_capture;
         Ok(should_capture)
     }
@@ -3825,6 +3852,24 @@ mod tests {
             );
             assert!(ShellCaptureCheckpoint::parse(&format!("{prefix}18")).is_err());
         }
+    }
+
+    #[test]
+    fn skirmish_in_game_menu_checkpoints_round_trip_with_the_game_budget() {
+        for (name, target) in SKIRMISH_IN_GAME_MENU_CHECKPOINTS {
+            let checkpoint = ShellCaptureCheckpoint::parse(name).expect("in-game menu checkpoint");
+            assert_eq!(checkpoint, ShellCaptureCheckpoint::SkirmishInGameMenu(target));
+            assert_eq!(checkpoint.as_str(), name);
+        }
+        let output = new_output_path("skirmish-pause-menu");
+        let mut values = valid_args(&output);
+        values[1] = OsString::from("skirmish-pause-sound");
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values).expect("parse") else {
+            panic!("expected capture");
+        };
+        let session = ShellCaptureSession::new(request);
+        assert!(session.skirmish.is_some());
+        assert_eq!(session.timeout(), Duration::from_secs(180));
     }
 
     #[test]
