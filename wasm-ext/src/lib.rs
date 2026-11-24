@@ -104,7 +104,7 @@ pub const IMPORTS: &[(&str, &str)] = &[
     ),
 ];
 
-/// `IniKind` (INI registration addendum, enum 23): what `ini_register`
+/// `IniKind` (RFC 0001 appendix 8.3, enum 23): what `ini_register`
 /// registers.
 pub const INI_KEY: i32 = 0;
 pub const INI_REGISTRY: i32 = 1;
@@ -163,12 +163,12 @@ pub const NAME_COUNTRY: i32 = 11;
 pub const NAME_TEAM_TYPE: i32 = 12;
 pub const NAME_VARIABLE: i32 = 15;
 /// Engine-held strings: parameter texts and the INI start records' names
-/// and values (INI registration addendum, section 7).
+/// and values (RFC 0001 section 6h).
 pub const NAME_STRING: i32 = 18;
 pub const NAME_PROPERTY: i32 = 19;
 /// Answered by the sandbox from [`STOCK_ACTIONS`] and [`ATOMIC_ACTIONS`].
 pub const NAME_ACTION_KIND: i32 = 21;
-/// Registered module events (INI registration addendum).
+/// Registered module events (RFC 0001 section 6h).
 pub const NAME_MODULE_EVENT: i32 = 24;
 pub const NAME_KINDS: i32 = 25;
 

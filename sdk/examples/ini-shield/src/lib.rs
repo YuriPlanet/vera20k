@@ -1,5 +1,5 @@
 //! "INI Shield", a demo `rules.wasm` for INI names a module registers
-//! (RFC 0001 INI addendum). The modder configures everything in the mod's
+//! (RFC 0001 section 6h). The modder configures everything in the mod's
 //! `rulesmd.ini`; the module only implements it:
 //!
 //! - `[Demo.ShieldTypes]`, a registry: each entry is a section with

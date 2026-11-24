@@ -1,4 +1,4 @@
-//! INI names a module registers (`docs/rfcs/0001-ini-register.zh-CN.md`) on a
+//! INI names a module registers (RFC 0001 section 6h) on a
 //! retail map: `vera_init` registers a registry, a key and an event; the
 //! first module phase hands over `IniEntry` and `IniKey` before
 //! `on_scenario_start`; an INI trigger raises the module event with

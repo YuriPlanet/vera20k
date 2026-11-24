@@ -515,7 +515,7 @@ MapBudget=50000   ; 地图模块每帧可用的运算量
 
 - [模块指南（英文）](wasm-modules.md)：功能总览和 INI 语法
 - [RFC 0001](rfcs/0001-wasm-extension-modules.md)：设计说明，[附录](rfcs/0001-wasm-extension-modules-api.md)：全部接口、事件、动作、属性
-- [开发进度](rfcs/0001-wasm-extension-modules-status.md)：当前版本实现了哪些、还缺什么
+- [开发进度](wasm-modules-status.md)：当前版本实现了哪些、还缺什么
 - 示例模块（`sdk/examples/`）：
 
   | 示例 | 演示 |

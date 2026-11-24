@@ -67,7 +67,7 @@ unsafe extern "C" {
     ) -> i32;
     pub fn send_notify(to: i64, id: i32, ptr: *const u8, len: i32) -> i32;
     pub fn order(house: i64, ptr: *const u8, len: i32) -> i32;
-    /// Only inside `vera_init` (RFC 0001 INI addendum, section 3).
+    /// Only inside `vera_init` (RFC 0001 section 6h).
     pub fn ini_register(
         kind: i32,
         section: i32,
@@ -224,7 +224,7 @@ const _: () = {
     assert!(size_of::<ActionDef>() == 80);
     assert!(size_of::<EventRecord>() == 120);
     assert!(size_of::<DecideRecord>() == 160);
-    // The offsets the engine writes (RFC 0001 INI addendum, section 8).
+    // The offsets the engine writes (RFC 0001 appendix, fixed layouts).
     assert!(core::mem::offset_of!(EventRecord, args) == 108);
     assert!(core::mem::offset_of!(EventRecord, target) == 112);
     assert!(core::mem::offset_of!(DecideRecord, native) == 120);

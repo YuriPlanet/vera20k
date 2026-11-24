@@ -1,5 +1,5 @@
 //! "IniCounter", a demo mod for the INI names a module registers
-//! (docs/rfcs/0001-ini-register.zh-CN.md): the modder writes INI, the
+//! (RFC 0001 section 6h): the modder writes INI, the
 //! module implements it.
 //!
 //! A community idea, made generic: "while the house owns a radar, every 10
@@ -175,7 +175,7 @@ fn init() {
 }
 
 /// Stops the module with a message naming the section and key, as a
-/// handler should for a bad value (addendum section 5).
+/// handler should for a bad value (RFC 0001 section 6h).
 fn stop(section: &str, key: &str, why: &str) -> ! {
     Line::new()
         .text("IniCounter: [")

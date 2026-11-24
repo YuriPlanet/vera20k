@@ -1,6 +1,6 @@
 # IniCounter：模块注册 INI 的示例
 
-演示[模块注册 INI](../../../docs/rfcs/0001-ini-register.zh-CN.md)：modder 只写 INI，模块实现功能。
+演示[模块注册 INI](../../../docs/rfcs/0001-wasm-extension-modules.zh-CN.md#6h-ini-注册)：modder 只写 INI，模块实现功能。
 
 社区里的一个想法："拥有雷达时，每训练 10 个动员兵，就从战车工厂免费送一辆犀牛坦克"。模块把它做成通用的计数器，全部在 `rulesmd.ini` 里配置：
 

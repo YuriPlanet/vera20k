@@ -1,5 +1,5 @@
-//! The start-of-match records of the INI registration addendum
-//! (`docs/rfcs/0001-ini-register.zh-CN.md`, section 5): before a module's
+//! The start-of-match records of RFC 0001 section 6h (INI registration):
+//! before a module's
 //! `on_scenario_start`, every entry of its registries (`IniEntry`), then
 //! every section that carries one of its keys (`IniKey`), each in
 //! registration order, read from the merged rules text after every layer.

@@ -1,5 +1,5 @@
-//! "IniAura", a demo `rules.wasm` for the INI registration addendum
-//! (`docs/rfcs/0001-ini-register.zh-CN.md`): the module supplies building
+//! "IniAura", a demo `rules.wasm` for RFC 0001 section 6h
+//! (RFC 0001 section 6h): the module supplies building
 //! blocks, the modder writes every aura in INI. Nothing about a particular
 //! aura is in this code.
 //!
@@ -681,7 +681,7 @@ fn bad(section: &str, key: &str, why: &str) -> Line {
 }
 
 /// Logs `line` and stops the module: a wrong INI value stops it, as the
-/// addendum asks (section 5).
+/// RFC 0001 section 6h asks.
 fn stop(line: Line) -> ! {
     line.log();
     #[cfg(target_arch = "wasm32")]

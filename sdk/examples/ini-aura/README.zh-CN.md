@@ -1,6 +1,6 @@
 # IniAura：用 INI 配置光环
 
-演示"模块注册 INI"（[RFC 0001 增补](../../../docs/rfcs/0001-ini-register.zh-CN.md)）：模块只提供积木，光环全部由 modder 在 INI 里写，代码里没有任何写死的光环。
+演示"模块注册 INI"（[RFC 0001 第 6h 节](../../../docs/rfcs/0001-wasm-extension-modules.zh-CN.md#6h-ini-注册)）：模块只提供积木，光环全部由 modder 在 INI 里写，代码里没有任何写死的光环。
 
 ## 模块注册的名字
 

@@ -47,7 +47,7 @@ pub const EVENT_MODIFIER_COUNT_POLL: i32 = 1028;
 pub const EVENT_DISTANCE_POLL: i32 = 1029;
 pub const EVENT_VARIABLE_POLL: i32 = 1030;
 
-/// The INI registration addendum (`docs/rfcs/0001-ini-register.zh-CN.md`):
+/// INI registration (RFC 0001 section 6h):
 /// the module event `RaiseEvent` raises (`EventDef.id` is the registered
 /// event ID), and the records the module phase hands a module before its
 /// `on_scenario_start`: one per registry entry and one per registered key
@@ -64,7 +64,7 @@ pub const STOCK_EVENTS: std::ops::RangeInclusive<i32> = 0..=61;
 /// `ACTION_ADD_MONEY`).
 pub const ACTION_SET_VAR: i32 = 1024;
 pub const ACTION_MODULE: i32 = 1036;
-/// `RaiseEvent` (INI registration addendum, entry 42).
+/// `RaiseEvent` (RFC 0001 appendix 5.3).
 pub const ACTION_RAISE_EVENT: i32 = 1042;
 
 /// Name kind 17 (appendix 8.1): a name in this module's `vera.actions`,
@@ -386,7 +386,7 @@ pub struct EventRecord {
     pub z: i32,
     /// A string ID: a module action's parameter text, an `IniEntry`'s entry
     /// name, an `IniKey`'s value; 0 for none. Saves from before the INI
-    /// registration addendum read 0.
+    /// registration (RFC 0001 0.0.21) read 0.
     #[serde(default)]
     pub args: i32,
     /// A module action's `ActionTarget` (appendix 5.1 order); 0 otherwise.

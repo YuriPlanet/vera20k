@@ -178,7 +178,7 @@ impl Event {
     /// object or type binding. Asked for each command on a bound object.
     pub const COMMAND_ALLOWED: i32 = 1034;
 
-    // Module INI (RFC 0001 INI addendum, sections 5 and 6).
+    // Module INI (RFC 0001 section 6h).
     /// A module event ([`crate::ini::event`]): the trigger's `id` is the
     /// event ID; [`Trigger::on_module_event`] sets both.
     pub const MODULE_EVENT: i32 = 1040;

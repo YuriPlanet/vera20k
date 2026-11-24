@@ -1954,7 +1954,7 @@ impl Simulation {
             if !self.ext_modules.slots[index].started {
                 self.ext_modules.slots[index].started = true;
                 // The INI start records come first and share the one-time
-                // budget (INI registration addendum, section 5).
+                // budget (RFC 0001 section 6h).
                 let used = match self.deliver_ini_start_records(
                     rules,
                     overlay_registry,
