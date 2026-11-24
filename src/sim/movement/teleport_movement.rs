@@ -235,7 +235,7 @@ impl ChronoWarpDelay {
 /// write. Native keeps the bytes on the Techno; only the Teleport's states
 /// write them, and End_Piggyback waits until all are clear
 /// (`0x00719F30`), so they live and die with this Teleport.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ChronoWarp {
     /// Teleport `+0x38`.
     state: u8,

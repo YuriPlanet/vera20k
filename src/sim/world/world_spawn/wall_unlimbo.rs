@@ -430,7 +430,6 @@ impl Simulation {
         } else {
             return;
         };
-        let house = self.resolve(owner).to_owned();
         for (dx, dy) in offsets {
             let (Ok(x), Ok(y)) = (
                 u16::try_from(i32::from(rx) + i32::from(dx)),
@@ -453,7 +452,14 @@ impl Simulation {
             if owned {
                 //44065C/440720 ignore House4FCE80's answer; only the cue is suppressed.
                 self.sell_wall_at_cell(
-                    &house, None, x as i16, y as i16, true, rules, registry, effects,
+                    owner.into(),
+                    None,
+                    x as i16,
+                    y as i16,
+                    true,
+                    rules,
+                    registry,
+                    effects,
                 );
             }
         }

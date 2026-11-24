@@ -918,17 +918,15 @@ fn apply_cameo_hover_tooltip(state: &mut AppState, before: Option<NodeId>) {
 /// [AudioVisual] GUITabSound — played on every consumed tab click, including
 /// a click on the tab that is already active (Sidebar Action `0x006A7A66`).
 fn play_gui_tab_sound(state: &mut AppState) {
-    let sound = state.rules().and_then(|r| r.general.gui_tab_sound.clone());
-    crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+    crate::app::App::play_shell_rules_sound(state, |rules| rules.general.gui_tab_sound.as_deref());
 }
 
 /// [AudioVisual] GUIMainButtonSound — the in-game Repair/Sell toggle click
 /// sound (the same event the main-menu shell buttons play).
 pub(crate) fn play_gui_main_button_sound(state: &mut AppState) {
-    let sound = state
-        .rules()
-        .and_then(|r| r.general.gui_main_button_sound.clone());
-    crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+    crate::app::App::play_shell_rules_sound(state, |rules| {
+        rules.general.gui_main_button_sound.as_deref()
+    });
 }
 
 /// Map a fired control id onto the existing app actions; `right` is the
@@ -1006,14 +1004,13 @@ fn apply_result(state: &mut AppState, id: u16, right: bool) {
                 side2_tiles,
                 side2_tiles,
             );
-            let sound = state.rules().and_then(|rules| {
+            crate::app::App::play_shell_rules_sound(state, |rules| {
                 if queued {
-                    rules.general.gui_tab_sound.clone()
+                    rules.general.gui_tab_sound.as_deref()
                 } else {
-                    rules.general.scold_sound.clone()
+                    rules.general.scold_sound.as_deref()
                 }
             });
-            crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
         }
         // Cameo press (A2): map the fired id back to its SidebarItem and run the
         // cameo action. The right marker selects the right button and Shift

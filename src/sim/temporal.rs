@@ -156,7 +156,7 @@ const SPARKLE_OFFSET_LEPTONS: i32 = 0x78;
 pub(crate) const PORT_ANIM_Z_ADJUST: i32 = -200;
 
 /// One `TemporalClass`, owned by the attacker that fires it.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TemporalLink {
     /// `+0x28` the object being warped.
     target: Option<u64>,
@@ -669,7 +669,9 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: &mut FrameEffects<'_>,
     ) {
-        let Some(link) = Self::temporal_link(&self.substrate, head).cloned() else {
+        // The head's link as this update read it: the release and warp below
+        // rewrite it through `&mut self`.
+        let Some(link) = Self::temporal_link(&self.substrate, head).copied() else {
             return;
         };
         // 0x0071A76B..0x0071A790: a head with a predecessor releases everyone.
@@ -1166,7 +1168,9 @@ impl Simulation {
         attacker: u64,
         ares: bool,
     ) {
-        let Some(link) = Self::temporal_link(substrate, attacker).cloned() else {
+        // The link as the let-go read it: the walk below rewrites it and its
+        // neighbours through `substrate`.
+        let Some(link) = Self::temporal_link(substrate, attacker).copied() else {
             return;
         };
         match link.prev {
@@ -1544,8 +1548,7 @@ impl Simulation {
             y: location.y.wrapping_add(offset),
             z: location.z,
         };
-        let name = rules.general.chrono_sparkle1.name.clone();
-        self.spawn_once_anim(&name, coord, None, rules);
+        self.spawn_once_anim(&rules.general.chrono_sparkle1.name, coord, None, rules);
     }
 
     /// A frozen building's sparkle (`0x004403D4..0x0044055D`): a type with
@@ -1562,11 +1565,11 @@ impl Simulation {
         };
         let frame = self.session.binary_frame();
         let location = location_coord(entity);
-        let name = rules.general.chrono_sparkle1.name.clone();
+        let name = &rules.general.chrono_sparkle1.name;
         let ports = object.max_number_occupants;
         if ports == 0 {
             if sparkle_frame(frame, 0) {
-                self.spawn_once_anim(&name, location, None, rules);
+                self.spawn_once_anim(name, location, None, rules);
             }
             return;
         }
@@ -1575,7 +1578,7 @@ impl Simulation {
                 continue;
             }
             if let Some(coord) = self.occupant_port_coord(id, port as usize, rules) {
-                self.spawn_once_anim(&name, coord, Some(PORT_ANIM_Z_ADJUST), rules);
+                self.spawn_once_anim(name, coord, Some(PORT_ANIM_Z_ADJUST), rules);
             }
         }
     }

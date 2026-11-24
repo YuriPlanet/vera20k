@@ -147,15 +147,13 @@ pub(super) fn apply(state: &mut AppState, id: u16, right: bool) -> bool {
         // 6D0860/6D091A call750920 with Rules+198/+194, even when the
         // existing bar state already matches. Programmatic6D1610/6D1660
         // remain separate soundless paths. Reuse the fixed catalog/player.
-        let sound = state.rules().and_then(|rules| {
+        crate::app::App::play_shell_rules_sound(state, |rules| {
             if opening {
                 rules.general.gui_open_sound()
             } else {
                 rules.general.gui_close_sound()
             }
-            .map(str::to_owned)
         });
-        crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
         state
             .match_state
             .match_presentation

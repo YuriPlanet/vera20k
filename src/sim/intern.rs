@@ -306,6 +306,23 @@ impl StringInterner {
         }
     }
 
+    /// `key`'s id without adding one: an id as it is, a name as
+    /// [`Self::get`] finds it.
+    pub fn key_id(&self, key: InternKey<'_>) -> Option<InternedId> {
+        match key {
+            InternKey::Id(id) => Some(id),
+            InternKey::Name(name) => self.get(name),
+        }
+    }
+
+    /// `key`'s text: a name as given, an id as [`Self::resolve`] reads it.
+    pub fn key_name<'a>(&'a self, key: InternKey<'a>) -> &'a str {
+        match key {
+            InternKey::Id(id) => self.resolve(id),
+            InternKey::Name(name) => name,
+        }
+    }
+
     /// The object type `key` names in `rules`: [`Self::object_type`] for an
     /// id, `rules.object(name)` for a name, which adds no id.
     pub fn key_object_type<'r>(

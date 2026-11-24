@@ -713,14 +713,14 @@ impl Simulation {
         if next == old || object.turret_anim_is_voxel {
             return;
         }
-        let image = object.image.clone();
+        let image = &object.image;
         self.clear_building_anim_slot(id, 9);
         if next == -1 {
             //45153A also skips the variant store (raw old=-2). Normal
             //constructor/cycling state stays in -1..=2.
             return;
         }
-        self.allocate_wall_tower_art(id, &image, next, rules);
+        self.allocate_wall_tower_art(id, image, next, rules);
         self.substrate
             .entities
             .get_mut(id)
@@ -764,11 +764,10 @@ impl Simulation {
         }
         let variant = entity.building_art.wall_tower_variant;
         if variant != -1 {
-            let image = object.image.clone();
             self.clear_building_anim_slot(id, 9);
-            self.allocate_wall_tower_art(id, &image, variant, rules);
-        } else if let Some(name) = object.turret_anim.clone() {
-            self.allocate_building_anim_slot(id, 9, &name, false, 0, None, rules);
+            self.allocate_wall_tower_art(id, &object.image, variant, rules);
+        } else if let Some(name) = object.turret_anim.as_deref() {
+            self.allocate_building_anim_slot(id, 9, name, false, 0, None, rules);
         }
         self.aim_building_turret_anim(id, true);
     }

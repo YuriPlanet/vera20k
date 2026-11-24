@@ -754,7 +754,10 @@ fn place_building(
         sim,
         rules,
         owner,
-        ProductionPlacement::Building { type_id, cell },
+        ProductionPlacement::Building {
+            type_id: type_id.into(),
+            cell,
+        },
         overlays,
         &mut crate::sim::world::FrameEffects::default(),
     )

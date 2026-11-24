@@ -193,7 +193,7 @@ fn factory_flip_determinism_over_scripted_commands() {
                         &rules,
                         "Americans",
                         crate::sim::production::ProductionCancellation::Type {
-                            type_id: "BEAG",
+                            type_id: "BEAG".into(),
                             naval: false,
                         },
                         false,

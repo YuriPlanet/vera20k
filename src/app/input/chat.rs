@@ -835,10 +835,7 @@ fn route_houses(
 pub(crate) fn receive_packet(state: &mut AppState, name: &str, color: i32, text: &str) {
     let rgb = crate::app::input::messages::packet_player_line_rgb(state, color);
     crate::app::input::messages::post_chat_line(state, name, text, rgb);
-    let sound = state
-        .rules()
-        .and_then(|rules| rules.general.incoming_message_sound().map(str::to_owned));
-    crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+    crate::app::App::play_shell_rules_sound(state, |rules| rules.general.incoming_message_sound());
     let units: Vec<u16> = text.encode_utf16().collect();
     crate::app::shell_wol::translation::received(
         state,

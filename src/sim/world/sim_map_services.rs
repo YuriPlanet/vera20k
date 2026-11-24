@@ -541,9 +541,9 @@ impl Simulation {
                     && entity.is_active()
                     && !entity.lifecycle.in_limbo();
                 let clients = if see {
-                    self.human_player_clients(entity.owner())
+                    self.human_player_client_set(entity.owner())
                 } else {
-                    Vec::new()
+                    super::HumanPlayerClients::None
                 };
                 (stable_id, member, clients)
             })
@@ -563,7 +563,7 @@ impl Simulation {
         let network = self.session.execution_topology().is_lockstep();
         for (stable_id, _, clients) in membership_updates {
             if network {
-                for client in clients {
+                for &client in clients.iter() {
                     self.reveal_uncached_object_sight(
                         stable_id,
                         false,
