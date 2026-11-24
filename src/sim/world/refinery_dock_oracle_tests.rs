@@ -251,10 +251,7 @@ fn virtual_purifiers_use_admitted_rules_and_the_raw_human_byte() {
         let mut house = HouseState::new(owner, 0, None, human, 0, 10);
         house.set_player_control_for_test(true);
         sim.houses.register(house);
-        assert_eq!(
-            effective_purifier_count(&sim, &rules, "Americans"),
-            expected
-        );
+        assert_eq!(effective_purifier_count(&sim, &rules, owner), expected);
     }
 }
 
@@ -279,7 +276,7 @@ fn virtual_purifier_wrap_and_saved_payment_use_native_inputs() {
         crate::sim::miner::miner_system::effective_purifier_count(
             &scene.sim,
             &scene.rules,
-            "Americans"
+            scene.sim.interner.get("Americans").unwrap()
         ),
         i32::MIN
     );

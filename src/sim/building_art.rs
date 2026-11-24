@@ -684,16 +684,16 @@ impl Simulation {
     ) -> Option<u64> {
         let config = self.building_anim_config(id, slot, rules)?;
         let name = if damaged {
-            config.damaged_variant.as_ref()?.anim_type.clone()
+            &config.damaged_variant.as_ref()?.anim_type
         } else if garrisoned {
-            config.garrisoned_variant.as_ref()?.anim_type.clone()
+            &config.garrisoned_variant.as_ref()?.anim_type
         } else {
-            config.anim_type.clone()
+            &config.anim_type
         };
         if name.is_empty() {
             return None;
         }
-        self.allocate_building_anim_slot(id, slot, &name, damaged, delay, Some(config), rules)
+        self.allocate_building_anim_slot(id, slot, name, damaged, delay, Some(&config), rules)
     }
 
     /// Original45150B..4515D1 (PowerUp451400), after HP/art recovery.
@@ -817,22 +817,34 @@ impl Simulation {
         name: &str,
         damaged: bool,
         delay: u16,
-        config: Option<BuildingAnimConfig>,
+        config: Option<&BuildingAnimConfig>,
         rules: &RuleSet,
     ) -> Option<u64> {
         self.set_building_damage_state(id, damaged, rules);
         //427CB0 scans existing types; an art section alone is not a type.
-        let canonical = name.to_ascii_uppercase();
-        if !rules.anim_type_names.contains(&canonical) {
+        if !crate::util::native_string::with_ascii_uppercase(name, |canonical| {
+            rules.anim_type_names.contains(canonical)
+        }) {
             return None;
         }
         //451750 callers retain their already-selected config across the
         // recursive damage refresh. Direct451890 callers have no name gate;
         // resolve their config only after the native AnimType lookup succeeds.
-        let config = config.or_else(|| self.building_anim_config(id, slot, rules))?;
+        let fetched;
+        let config = match config {
+            Some(config) => config,
+            None => {
+                fetched = self.building_anim_config(id, slot, rules)?;
+                &fetched
+            }
+        };
         // Building render coordinate virtual459EF0 precedes the slot offset.
-        let world = self.building_anim_world_coord(id, &config)?;
-        let type_name = self.interner.intern(&name.to_ascii_uppercase());
+        let world = self.building_anim_world_coord(id, config)?;
+        // A name new to the interner is held as its uppercase spelling.
+        let type_name = match self.interner.get(name) {
+            Some(type_name) => type_name,
+            None => self.interner.intern(&name.to_ascii_uppercase()),
+        };
         let mut descriptor = crate::sim::components::AnimClassSpawnDescriptor::new(
             type_name,
             0,
@@ -852,7 +864,10 @@ impl Simulation {
                 // AnimType, the shared asset binder represents a missing
                 // SHP with Some(0) frame metadata, which admits construction.
                 // AnimClass owns that object's loop/effect/expiry behavior.
-                log::debug!("building {id} slot {slot} animation [{canonical}] not shown: {error}");
+                log::debug!(
+                    "building {id} slot {slot} animation [{}] not shown: {error}",
+                    name.to_ascii_uppercase()
+                );
                 self.clear_building_anim_slot(id, slot);
                 return None;
             }

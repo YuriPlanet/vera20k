@@ -594,6 +594,7 @@ impl Simulation {
                 &request,
                 &mut ctx.effects,
             );
+            self.waves.return_damage_cells(request);
         }
         let context =
             self.wave_update_context(self.waves.get(id).expect("represented Wave"), rules);
@@ -614,6 +615,7 @@ impl Simulation {
                 &request,
                 &mut ctx.effects,
             );
+            self.waves.return_damage_cells(request);
         }
         if !result.alive {
             let retired = self.retire_non_entity_object(

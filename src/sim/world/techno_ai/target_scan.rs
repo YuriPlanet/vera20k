@@ -614,10 +614,18 @@ pub(crate) fn weapon_at_index<'r>(
     id: u64,
     index: i32,
 ) -> Option<&'r WeaponType> {
-    let subject = fire_subject(sim, rules, id, None, index)?;
-    // `weapon_at` borrows the subject; re-resolve through the rules so the
-    // weapon outlives it.
-    rules.weapon(&subject.weapon_at(index)?.id)
+    // The record `FireSubject::weapon_at` reads, taken here so the weapon
+    // keeps the rules' lifetime rather than the subject's.
+    let firer = sim.substrate.entities.get(id)?;
+    let obj = sim.interner.object_type(firer.type_ref(), rules)?;
+    combat_weapon::get_weapon(
+        firer,
+        obj,
+        index,
+        &sim.substrate.entities,
+        rules,
+        &sim.interner,
+    )
 }
 
 /// SelectWeapon (vt+0x2E4) for `target`.

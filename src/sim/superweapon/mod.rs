@@ -2419,19 +2419,19 @@ pub fn building_super_charges(
     let Some(object) = sim.object_type(building.type_ref(), rules) else {
         return Vec::new();
     };
+    let mut supers = type_super_weapons(object).peekable();
+    if supers.peek().is_none() {
+        return Vec::new();
+    }
     let Some(held) = sim.super_weapons.get(&building.owner()) else {
         return Vec::new();
     };
     let frame = sim.session.binary_frame() as i32;
-    let draws_all = match sim.session.current_house() {
-        None => true,
-        Some(house) => crate::map::houses::is_allied_with(
-            sim.house_alliances().as_map(),
-            sim.interner.resolve(house),
-            sim.interner.resolve(building.owner()),
-        ),
-    };
-    type_super_weapons(object)
+    let draws_all = sim.session.current_house().is_none_or(|house| {
+        sim.house_alliances()
+            .is_allied(&sim.interner, house, building.owner())
+    });
+    supers
         .filter_map(|name| {
             let id = sim.interner.get(name)?;
             let instance = held.get(&id)?;
