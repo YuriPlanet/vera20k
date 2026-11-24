@@ -10,6 +10,7 @@
 //! in the private `tests` child.
 
 mod render;
+pub(crate) use render::push_progress_meter;
 
 #[cfg(all(test, tests_app))]
 mod tests;
