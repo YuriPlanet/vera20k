@@ -142,6 +142,11 @@ pub const ENTRY_COST: u64 = 10;
 /// clause of the query.
 pub const SCAN_COST: u64 = 2;
 pub const CLAUSE_COST: u64 = 6;
+/// What a clause on a "derived, high" property (appendix 7: a fire or range
+/// check per candidate) adds to [`CLAUSE_COST`].
+pub const HIGH_CLAUSE_COST: u64 = 60;
+/// The "derived, high" properties a host evaluates.
+pub const HIGH_COST_PROPERTIES: &[&str] = &["Engage"];
 /// Candidates one `find` examines at most (RFC 15.4); fewer where they
 /// would cost more than half the call's budget.
 pub const MAX_SCAN: u64 = 16_384;
@@ -183,6 +188,7 @@ pub const SCOPE_OBJECTS: i32 = 0;
 pub const SCOPE_HOUSES: i32 = 1;
 pub const SCOPE_CELLS: i32 = 2;
 pub const SCOPE_MODIFIERS: i32 = 7;
+pub const SCOPE_SUPER_WEAPONS: i32 = 8;
 pub const SCOPES: i32 = 9;
 
 /// Every property name of appendix section 7, deduplicated (properties with
@@ -458,9 +464,17 @@ impl Query {
         })
     }
 
-    /// Operations for each candidate examined.
+    /// Operations for each candidate examined: [`HIGH_CLAUSE_COST`] more
+    /// for each clause on a [`HIGH_COST_PROPERTIES`] property.
     pub fn scan_cost(&self) -> u64 {
-        SCAN_COST + CLAUSE_COST * self.clauses.len() as u64
+        self.clauses.iter().fold(SCAN_COST, |cost, clause| {
+            let high = matches!(
+                clause.subject,
+                ClauseSubject::Property(prop)
+                    if property_name(prop).is_some_and(|name| HIGH_COST_PROPERTIES.contains(&name))
+            );
+            cost + CLAUSE_COST + if high { HIGH_CLAUSE_COST } else { 0 }
+        })
     }
 }
 
