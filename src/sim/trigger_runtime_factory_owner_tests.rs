@@ -468,4 +468,8 @@ fn production_commands_and_named_anims_keep_the_interned_names_in_order() {
         after[before.len()..],
         ["GACNST_B", "Dummy", "GAPILE_A", "TWLT070", "NotAnAnimType"]
     );
+    // A caller that holds the id interns nothing more.
+    let held = sim.interner.get("TWLT070").unwrap();
+    let _ = sim.spawn_named_anim(&rules, held, coord, 0, 0x600, 0);
+    assert_eq!(names(&sim), after);
 }

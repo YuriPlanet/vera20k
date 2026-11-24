@@ -1487,21 +1487,9 @@ impl App {
         }
     }
 
-    pub(crate) fn play_shell_ui_sound_by_id(state: &mut AppState, sound_id: Option<&str>) {
-        let Some(sound_id) = sound_id else {
-            return;
-        };
-        let (Some(sfx), Some(catalog)) = (
-            &mut state.audio.sfx_player,
-            state.process_assets.audio_catalog(),
-        ) else {
-            return;
-        };
-        sfx.play_sound(sound_id, catalog.sounds());
-    }
-
-    /// [`Self::play_shell_ui_sound_by_id`] for a cue the active rules name:
-    /// `sound` picks it from them where it plays, so no caller copies it.
+    /// Plays a UI cue the active rules name: `sound` picks it from them where
+    /// it plays, so no caller copies the name. Nothing plays while the cue is
+    /// unset or there are no rules, no sound player or no audio catalog.
     pub(crate) fn play_shell_rules_sound(
         state: &mut AppState,
         sound: impl for<'r> FnOnce(&'r crate::rules::ruleset::RuleSet) -> Option<&'r str>,

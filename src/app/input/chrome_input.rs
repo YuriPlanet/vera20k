@@ -924,7 +924,9 @@ fn play_gui_tab_sound(state: &mut AppState) {
 /// [AudioVisual] GUIMainButtonSound — the in-game Repair/Sell toggle click
 /// sound (the same event the main-menu shell buttons play).
 pub(crate) fn play_gui_main_button_sound(state: &mut AppState) {
-    crate::app::App::play_shell_rules_sound(state, |rules| rules.general.gui_main_button_sound.as_deref());
+    crate::app::App::play_shell_rules_sound(state, |rules| {
+        rules.general.gui_main_button_sound.as_deref()
+    });
 }
 
 /// Map a fired control id onto the existing app actions; `right` is the

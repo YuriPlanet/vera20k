@@ -1862,7 +1862,9 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
         }
         if let Some(line) = chat_line(&local_name(state), &message, &chat) {
             super::shell_lan::append_chat(state, line);
-            super::App::play_shell_rules_sound(state, |rules| rules.general.incoming_message_sound());
+            super::App::play_shell_rules_sound(state, |rules| {
+                rules.general.incoming_message_sound()
+            });
         }
         return Ok(());
     }
