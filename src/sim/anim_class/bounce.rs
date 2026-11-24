@@ -148,33 +148,39 @@ impl Simulation {
             return Ok(Some(false));
         }
         let position = body.position_leptons();
+        let location = AnimWorldCoord {
+            x: position.x,
+            y: position.y,
+            z: position.z,
+        };
+        // A chunk still in the air runs nothing between the body's store and
+        // the Location's (`0x00423AA8`), so one read of the anim takes both.
+        let falling = outcome == BounceOutcome::Falling;
         if let Some(anim) = self.substrate.anims.get_mut(id) {
             anim.bounce = Some(body);
+            if falling {
+                anim.world_coord = location;
+            }
+        }
+        if falling {
+            return Ok(None);
         }
         let mut bridge_state_changed = false;
-        match outcome {
-            BounceOutcome::Falling => {}
-            BounceOutcome::Bounced => {
-                bridge_state_changed |= self.anim_bounce_contact(
-                    id,
-                    config,
-                    rules,
-                    overlay_registry,
-                    position,
-                    frame_effects,
-                );
-            }
-            BounceOutcome::Stopped => self.destroy_anim(id, rules),
+        if outcome == BounceOutcome::Bounced {
+            bridge_state_changed |= self.anim_bounce_contact(
+                id,
+                config,
+                rules,
+                overlay_registry,
+                position,
+                frame_effects,
+            );
+        } else {
+            // Stopped (`0x00423976`).
+            self.destroy_anim(id, rules);
         }
         if let Some(anim) = self.substrate.anims.get_mut(id) {
-            anim.world_coord = AnimWorldCoord {
-                x: position.x,
-                y: position.y,
-                z: position.z,
-            };
-        }
-        if outcome == BounceOutcome::Falling {
-            return Ok(None);
+            anim.world_coord = location;
         }
         bridge_state_changed |=
             self.anim_bounce_landing(config, rules, overlay_registry, position, frame_effects)?;

@@ -5,11 +5,13 @@
 //! that same system; Spark and Railgun temporarily take/reinsert their owned
 //! body.
 
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::particle_system_type::ParticleSystemBehavesLike;
-use crate::rules::particle_type::ParticleBehavesLike;
+use crate::rules::particle_type::{ParticleBehavesLike, ParticleType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::particles::ParticleSystem;
+use crate::sim::rng::SimRng;
 use crate::sim::world::Simulation;
 use thiserror::Error;
 
@@ -110,7 +112,8 @@ where
         // but still reaches the shared RemainingEC decrement at62CE86.
         ParticleBehavesLike::Unknown => {}
         ParticleBehavesLike::Smoke => {
-            super::smoke::tick_particle(p, pt, sim.session.binary_frame(), sim.particle_rng())
+            tick_smoke_particle(p, pt, sim.session.binary_frame(), sim.particle_rng());
+            return Ok(()); // The Smoke arm's owner runs the lifetime tail.
         }
         // gamemd.exe ParticleClass::AI_Gas (0x0062BD50), 62C2C2..62C2DC:
         // read the parent system's +FC source House regardless of its own
@@ -156,6 +159,20 @@ where
     Ok(())
 }
 
+/// The Smoke arm of `ParticleClass::AI_Dispatch @ 0x0062CE40` with the shared
+/// lifetime tail (`0x0062CE86`). AI_Smoke (`0x0062C540`) reads only the
+/// particle, its type, the frame and the Scenario stream, so a system runs it
+/// on the child where it is stored (VERA-only, same writes and draws).
+pub(super) fn tick_smoke_particle(
+    p: &mut super::Particle,
+    pt: &ParticleType,
+    frame: u32,
+    rng: &mut SimRng,
+) {
+    super::smoke::tick_particle(p, pt, frame, rng);
+    finish_lifetime(p);
+}
+
 /// `ParticleClass::Move_Dispatch @ 0x0062D5E0`, which AI_Gas, AI_Smoke and
 /// AI_Fire call for each particle, by the particle's own behavior: Gas
 /// (`0x0062D2A0`), Smoke (`0x0062D3F0`) or Fire (`0x0062D609`). Spark and
@@ -163,22 +180,85 @@ where
 /// where it is and marks it; like a move's own bridge-deck mark, the next
 /// destroy walk removes it.
 pub(super) fn move_dispatch(p: &mut super::Particle, sim: &Simulation, rules: &RuleSet) {
+    let frame = sim.session.binary_frame();
+    if !move_in_place(p, rules, frame, sim.resolved_terrain.as_ref()) {
+        super::fire::move_fire(p, sim);
+    }
+}
+
+/// [`move_dispatch`] for every behavior but Fire: those moves read only the
+/// frame and the terrain, so a system moves the child where it is stored
+/// (VERA-only, same writes). Answers false, with nothing done, for a Fire
+/// particle, whose move the caller gives the whole world.
+pub(super) fn move_in_place(
+    p: &mut super::Particle,
+    rules: &RuleSet,
+    frame: u32,
+    terrain: Option<&ResolvedTerrainGrid>,
+) -> bool {
     let pt = rules.particle_type(p.type_id);
+    let wind = rules.general.wind_direction();
     let moved = match pt.behaves_like {
-        ParticleBehavesLike::Gas => super::gas::move_gas(p, sim, rules),
-        ParticleBehavesLike::Smoke => {
-            super::smoke::move_smoke(p, pt, rules.general.wind_direction(), sim)
-        }
-        ParticleBehavesLike::Fire => {
-            super::fire::move_fire(p, sim);
-            Ok(())
-        }
+        ParticleBehavesLike::Gas => super::gas::move_gas(p, pt, wind, frame, terrain),
+        ParticleBehavesLike::Smoke => super::smoke::move_smoke(p, pt, wind, terrain),
+        ParticleBehavesLike::Fire => return false,
         ParticleBehavesLike::Spark
         | ParticleBehavesLike::Railgun
         | ParticleBehavesLike::Unknown => Ok(()),
     };
     if let Err(error) = moved {
         retire_refused(p, &error);
+    }
+    true
+}
+
+/// The Move and destroy walk AI_Smoke (`0x0062EDE0`) and AI_Gas
+/// (`0x0062E6D0`) end with: over the first `count` children, last first, an
+/// unmarked child takes [`move_dispatch`] and a marked one `destroy`, which
+/// adds its successors, takes it out of the system and retires it. Children
+/// added during the walk wait for the next visit.
+///
+/// VERA-only, results unchanged: the system is found once for each run of
+/// unmarked children, which move where they are stored. A marked child, and
+/// an unmarked Fire one, takes a copy, and the system is found again after
+/// it.
+pub(super) fn move_or_destroy_children(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    system: u64,
+    count: usize,
+    mut destroy: impl FnMut(&mut Simulation, &super::Particle),
+) {
+    let frame = sim.session.binary_frame();
+    let mut index = count;
+    while index > 0 {
+        let Some(sys) = sim.substrate.particle_systems.get_mut(system) else {
+            return;
+        };
+        let terrain = sim.resolved_terrain.as_ref();
+        while index > 0
+            && let Some(p) = sys.particles.get_mut(index - 1)
+        {
+            if p.marked_for_deletion || !move_in_place(p, rules, frame, terrain) {
+                break;
+            }
+            index -= 1;
+        }
+        if index == 0 {
+            return;
+        }
+        index -= 1;
+        let Some(mut p) = sys.particles.get(index).cloned() else {
+            continue;
+        };
+        if p.marked_for_deletion {
+            destroy(sim, &p);
+        } else {
+            move_dispatch(&mut p, sim, rules);
+            sim.substrate
+                .particle_systems
+                .commit_particle_tick(system, index, p);
+        }
     }
 }
 
@@ -198,8 +278,11 @@ pub(crate) fn tick_particle_system(
     };
     let behavior = rules.particle_system_type(sys.type_id).behaves_like;
     let ares = sys.ares.is_some();
-    // AI_Railgun reads the done byte first (`0x0062F242`).
-    apply_fire_link_release(sim, id);
+    // AI_Railgun reads the done byte first (`0x0062F242`). Only a system
+    // FireAt linked has a slot to lose; the others are not handed out.
+    if sys.owner_fire_link {
+        apply_fire_link_release(sim, id);
+    }
     // Ares 3.0 ParticleSystemClass_Update (Ares.dll 100290D0, hook 0x62FD60
     // at the AI's entry, returning to its `ret` at 0x62FE43): ExtData::Update
     // (10026C70) runs Ares' own Spark, Railgun or Smoke update, then the same
@@ -244,10 +327,11 @@ pub(super) fn finish_system_visit(
     id: u64,
     context: crate::sim::world::UninitContext<'_>,
 ) {
-    apply_fire_link_release(sim, id);
-    let Some(sys) = sim.substrate.particle_systems.get_mut(id) else {
+    let substrate = &mut sim.substrate;
+    let Some(sys) = substrate.particle_systems.get_mut(id) else {
         return;
     };
+    sys.apply_fire_link_release(&substrate.entities);
 
     // `ParticleSystemClass::AI @ 0x0062FD60`: decrement `+0xEC`, and when the
     // decremented value is exactly zero call vtable `+0xF8` — an entry
@@ -923,6 +1007,66 @@ SpawnSparkPercentage=1
         let mut particle = Particle::test_fixture(ParticleTypeId(0), IVec3::new(0, 0, 100));
         particle.lifetime_remaining = 1;
         assert!(smoke_host_retires_with(&rules, particle));
+    }
+
+    /// A Smoke host runs its Smoke children where they are stored and any
+    /// other child on a copy. Either way each child takes its AI in vector
+    /// order and its move last first, on the same draws: Smoke and Railgun
+    /// children both draw on an odd frame.
+    #[test]
+    fn smoke_host_runs_mixed_children_in_vector_order() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nWindDirection=1\n[AudioVisual]\nGravity=6\n\
+             [ParticleSystems]\n0=Host\n[Host]\nBehavesLike=Smoke\n\
+             [Particles]\n0=S\n1=R\n\
+             [S]\nBehavesLike=Smoke\nMaxEC=80\nVelocity=9.0\nDeacc=.05\n\
+             EndStateAI=20\nStateAIAdvance=4\nWindEffect=2\n\
+             [R]\nBehavesLike=Railgun\nMaxEC=70\nVelocity=2.0\n\
+             ColorList=(200,200,200),(150,150,150)\nColorSpeed=.03\n",
+        ))
+        .unwrap();
+        let children = |sim: &mut Simulation| -> Vec<Particle> {
+            ["S", "R", "S", "S", "R"]
+                .iter()
+                .enumerate()
+                .map(|(n, name)| {
+                    let kind = rules.p_type_id_by_name(name).unwrap();
+                    let at = IVec3::new(1000 + 300 * n as i32, 2000, 50);
+                    Particle::new(kind, at, IVec3::new(4000, 2000, 50), &rules, sim)
+                })
+                .collect()
+        };
+        let mut sim = Simulation::with_seed(31);
+        let mut system = fake_system(ParticleSystemTypeId(0), -1);
+        system.done_spawning = true;
+        system.particles = children(&mut sim);
+        let host = insert_live_system(&mut sim, system);
+        // Each child through the one-particle owners, on the same seed.
+        let mut alone = Simulation::with_seed(31);
+        let mut expected = children(&mut alone);
+        for frame in 1..=3 {
+            sim.session.set_binary_frame_for_test(frame);
+            alone.session.set_binary_frame_for_test(frame);
+            tick_particle_system(
+                &mut sim,
+                &rules,
+                host,
+                crate::sim::world::UninitContext::new(&rules),
+            );
+            for p in &mut expected {
+                tick_particle(p, &mut alone, &rules, None, None);
+            }
+            for p in expected.iter_mut().rev() {
+                move_dispatch(p, &alone, &rules);
+            }
+        }
+        let held = sim.particle_systems().get(host).unwrap().particles();
+        assert_eq!(held.len(), expected.len());
+        assert_eq!(
+            serde_json::to_value(held).unwrap(),
+            serde_json::to_value(&expected).unwrap()
+        );
+        assert_eq!(sim.rng_state().scenario, alone.rng_state().scenario);
     }
 
     #[test]

@@ -307,16 +307,26 @@ impl AnimStore {
         self.next_local
     }
 
-    /// The first local anim after `after` (from the first with `None`) and
-    /// before `end`, in the local list's order: a cursor over the list that
-    /// skips an anim removed since the walk began. Local ids are never given
-    /// out twice, so the walk meets the anims a copy of the list would hold.
-    pub(crate) fn next_local_id(&self, after: Option<AnimId>, end: AnimId) -> Option<AnimId> {
+    /// The local anims after `after` (from the first with `None`) and before
+    /// `end`, in the local list's order, as many as `ids` holds: the next
+    /// stretch of a walk over the list. Returns how many it wrote. Local ids
+    /// are never given out twice, so the walk meets the anims a copy of the
+    /// list would hold; one removed after its stretch was read is no longer
+    /// stored when the walk asks for it.
+    pub(crate) fn local_ids_after(
+        &self,
+        after: Option<AnimId>,
+        end: AnimId,
+        ids: &mut [AnimId],
+    ) -> usize {
         let from = after.map_or(std::ops::Bound::Unbounded, std::ops::Bound::Excluded);
-        self.local
-            .range((from, std::ops::Bound::Excluded(end)))
-            .next()
-            .map(|(&id, _)| id)
+        let stretch = self.local.range((from, std::ops::Bound::Excluded(end)));
+        let mut count = 0;
+        for (slot, (&id, _)) in ids.iter_mut().zip(stretch) {
+            *slot = id;
+            count += 1;
+        }
+        count
     }
 
     /// The local anims and their ids, in the local list's order.
