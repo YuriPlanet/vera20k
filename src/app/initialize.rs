@@ -382,7 +382,16 @@ impl App {
             });
         let mut game_config = startup_asset_or_error(game_config, &mut main_menu_shell_error);
         if let Some(config) = &game_config {
-            crate::map::source::set_downloaded_maps_dir(config.paths.downloaded_maps_dir());
+            let maps_dir = config.paths.downloaded_maps_dir();
+            #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
+            if let Err(error) = crate::map::installed::install_desktop_map(&maps_dir) {
+                log::warn!(
+                    "Could not install {} in {}: {error}",
+                    crate::map::installed::ARCTIC_MAP,
+                    maps_dir.display()
+                );
+            }
+            crate::map::source::set_downloaded_maps_dir(maps_dir);
             crate::render::locomotor_visual::set_high_terrain_building_lift(
                 config.graphics.high_terrain_building_lift,
             );
