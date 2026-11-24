@@ -460,13 +460,13 @@ fn native_frame_and_house_override_carrier_metadata() {
 }
 
 #[test]
-fn group_move_spreads_owned_units_and_excludes_a_transferred_unit() {
+fn group_move_spreads_only_units_that_can_receive_the_order() {
     use crate::sim::command::CommandRecord;
     use crate::sim::components::NavTargetRef;
     use crate::sim::world::TickLane;
     use std::cell::RefCell;
 
-    let run = |transfer_second| {
+    let run = |transfer_second, enslave_second| {
         let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
             "[VehicleTypes]\n0=MOVER\n[MOVER]\nStrength=100\nSpeed=8\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
         );
@@ -512,6 +512,10 @@ fn group_move_spreads_owned_units_and_excludes_a_transferred_unit() {
                 &mut FrameEffects::default(),
             );
         }
+        if enslave_second {
+            sim.entity_mut_for_test(units[1]).unwrap().seldom.slave =
+                crate::sim::slave_manager::SlaveLink::for_test(Some(units[0]), Vec::new());
+        }
         let observed = RefCell::new(Vec::new());
         let mut observe =
             |_: &Simulation, _: &CommandRecord, applied| observed.borrow_mut().push(applied);
@@ -525,12 +529,15 @@ fn group_move_spreads_owned_units_and_excludes_a_transferred_unit() {
             &mut FrameEffects::default().with_command_applied(&mut observe),
         )
         .unwrap();
-        assert_eq!(observed.into_inner(), [true, !transfer_second]);
+        assert_eq!(
+            observed.into_inner(),
+            [true, !(transfer_second || enslave_second)]
+        );
         units.map(|id| sim.entities().get(id).unwrap().navigation.nav_com())
     };
 
     assert_eq!(
-        run(false),
+        run(false, false),
         [
             Some(NavTargetRef::cell(20, 17)),
             Some(NavTargetRef::cell(19, 17))
@@ -538,9 +545,14 @@ fn group_move_spreads_owned_units_and_excludes_a_transferred_unit() {
         "both owned units get distinct group destinations",
     );
     assert_eq!(
-        run(true),
+        run(true, false),
         [Some(NavTargetRef::cell(19, 17)), None],
         "the remaining unit keeps the clicked destination",
+    );
+    assert_eq!(
+        run(false, true),
+        [Some(NavTargetRef::cell(19, 17)), None],
+        "a slave contributes no formation slot",
     );
 }
 
@@ -1261,9 +1273,10 @@ fn a_shared_house_survives_one_players_surrender() {
 #[test]
 fn a_repair_order_obeys_click_repairable_at_the_receiver() {
     let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
-        "[BuildingTypes]\n0=NO\n1=YES\n2=WHOLE\n[NO]\nStrength=100\nClickRepairable=no\n\
+        "[BuildingTypes]\n0=NO\n1=YES\n2=WHOLE\n3=DEPLOYED\n[VehicleTypes]\n0=MOBILE\n[NO]\nStrength=100\nClickRepairable=no\n\
          [YES]\nStrength=100\nClickRepairable=yes\n\
-         [WHOLE]\nStrength=100\nClickRepairable=yes\n",
+         [WHOLE]\nStrength=100\nClickRepairable=yes\n\
+         [DEPLOYED]\nStrength=100\nClickRepairable=yes\nUndeploysInto=MOBILE\n",
     ))
     .unwrap();
     let name = "Americans";
@@ -1271,7 +1284,12 @@ fn a_repair_order_obeys_click_repairable_at_the_receiver() {
     let owner = sim.interner.intern(name);
     sim.houses
         .register(HouseState::new(owner, 0, None, true, 0, 10));
-    for (id, kind, health) in [(1, "NO", 50), (2, "YES", 50), (3, "WHOLE", 100)] {
+    for (id, kind, health) in [
+        (1, "NO", 50),
+        (2, "YES", 50),
+        (3, "WHOLE", 100),
+        (4, "DEPLOYED", 50),
+    ] {
         let kind = sim.interner.intern(kind);
         sim.substrate.entities.insert(
             crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
@@ -1298,6 +1316,8 @@ fn a_repair_order_obeys_click_repairable_at_the_receiver() {
     // The native receiver admits a whole building too; the gate is the
     // wrench's type permission, not the per-frame `can_repair_building` test.
     assert!(sim.apply_command(name, &repair(3), Some(&rules)));
+    assert!(!sim.apply_command(name, &repair(4), Some(&rules)));
+    assert!(!sim.entities().get(4).unwrap().building.repairing.is_on());
 }
 
 /// `TechnoClass::IsControllable @ 0x00700C40` (vt+0xA0) is false for an
@@ -1306,7 +1326,7 @@ fn a_repair_order_obeys_click_repairable_at_the_receiver() {
 /// record or an injected order — must still be refused. A freed slave is a
 /// normal unit and stays orderable.
 #[test]
-fn orders_to_an_enslaved_unit_are_refused_but_a_freed_one_obeys() {
+fn an_enslaved_unit_refuses_its_own_orders_and_bunker_ejection() {
     let (mut sim, rules, _registry) = super::super::entry_test_fixture::fixture_with_rules("");
     let owner = sim.interner.intern("Americans");
     sim.houses

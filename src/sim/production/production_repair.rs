@@ -290,45 +290,35 @@ pub(crate) fn engineer_repair(sim: &mut Simulation, rules: &RuleSet, id: u64) ->
     true
 }
 
-/// The static wrench permission of the building `id`: `ClickRepairable=`
-/// (`BuildingType +0x157A`) and `Repairable=` (TechnoType `+0xCCC`), both read
-/// by `BuildingClass::Can_Repair @ 0x00452630`. Shared by the click/AI owner
-/// and the REPAIR receiver gate so they agree on which types may be repaired.
-fn wrench_type<'a>(sim: &'a Simulation, rules: &'a RuleSet, id: u64) -> Option<&'a ObjectType> {
-    let entity = sim.substrate.entities.get(id)?;
-    if entity.category() != EntityCategory::Structure || entity.health.current() == 0 {
-        return None;
-    }
-    let object = sim.object_type(entity.type_ref(), rules)?;
-    (object.click_repairable && object.repairable).then_some(object)
-}
-
-/// Whether the REPAIR receiver may toggle `id`'s repair byte at all. This is
-/// only the type permission: `EventClass::Execute 0x004C6ED2..0x004C6F01`
-/// admits a live building without asking `Can_Repair`, so a full-health one
-/// is a legitimate REPAIR target too (the repair step stops it immediately).
-/// An event that skipped the wrench cursor must still not reach a type the
-/// wrench never offers; [`can_repair_building`] owns the wider, per-frame
-/// decision for the click producer and the computer's auto repair.
-pub fn player_repair_type_admits(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
-    wrench_type(sim, rules, id).is_some()
-}
-
-/// `BuildingClass::Can_Repair @ 0x00452630` (vt+0x94): a building with
-/// Health (`+0x6C`), of a `ClickRepairable=` type (`+0x157A`) that is not a
-/// 1x1 `UndeploysInto=` type (`BuildingTypeClass 0x00465D40`), whose
-/// `Repairable=` type (TechnoType `+0xCCC`) has it below Strength
-/// (`0x00701140`). Every building of a computer house asks each frame, so
-/// the undeploy test's type lookup runs last.
-pub fn can_repair_building(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
+/// The wrench's type permission. `BuildingClass::Can_Repair @ 0x00452630`
+/// tests ClickRepairable (+0x157A) and the one-cell undeploy restriction
+/// (0x00465D40); its TechnoClass base (0x00701140) tests Repairable (+0xCCC).
+fn wrench_admits(sim: &Simulation, rules: &RuleSet, id: u64, require_damage: bool) -> bool {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return false;
     };
-    let Some(object) = wrench_type(sim, rules, id) else {
+    if entity.category() != EntityCategory::Structure || entity.health.current() == 0 {
+        return false;
+    }
+    let Some(object) = sim.entity_object_type(entity, rules) else {
         return false;
     };
-    entity.health.current() != object.strength
+    object.click_repairable
+        && object.repairable
+        && (!require_damage || entity.health.current() != object.strength)
         && !(object.foundation.dimensions() == (1, 1) && undeploys(rules, object))
+}
+
+/// VERA checks the wrench's static permission at the REPAIR receiver. The
+/// native receiver (0x004C6ED2) accepts an alive full-health building too.
+pub fn player_repair_type_admits(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
+    wrench_admits(sim, rules, id, false)
+}
+
+/// `BuildingClass::Can_Repair @ 0x00452630`: the wrench and the computer only
+/// offer to repair a permitted building whose health differs from Strength.
+pub fn can_repair_building(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
+    wrench_admits(sim, rules, id, true)
 }
 
 /// VERA Auto Repair (`docs/auto-repair.md`): `owner`'s buildings a player

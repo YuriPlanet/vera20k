@@ -344,7 +344,7 @@ impl Simulation {
             sender.and_then(|source| self.resolve_command_grant_source(command_owner, source));
         if (has_grants && sender.is_some() && granted_source.is_none())
             || self.network_command_actor_foreign(command_owner, granted_source, cmd, rules, None)
-            || self.command_actor_is_enslaved(cmd, rules)
+            || !self.command_subject_can_receive_order(cmd, rules, sender)
         {
             return false;
         }
