@@ -47,8 +47,10 @@
 //! `PROGRESS_EVERY` ticks it prints how many mobile objects live, how many
 //! were lost and made since the last line and how many objects of any kind
 //! (shots and anims too) the frames made; the run fails when a window of the
-//! measured part loses nothing or the battle falls under [`BATTLE_UNITS`]
-//! mobile objects, so a timing never comes from a battle that stopped.
+//! measured part loses nothing or the battle falls under `--battle-units`
+//! mobile objects ([`BATTLE_UNITS`] by default), so a timing never comes from
+//! a battle that stopped. A smaller map of the same kind takes a smaller
+//! floor.
 //!
 //! `--watchers N` (skirmish only) plays the match VERA's room starts when
 //! everyone in it watches while only AI play: the launch seats N watching
@@ -168,8 +170,9 @@ const SKIRMISH_TICKS: u64 = 9000;
 const BATTLE_TICKS: u64 = BATTLE_WARMUP + 2700;
 /// The battle's first contacts, before every front fights.
 const BATTLE_WARMUP: u64 = 300;
-/// The fewest mobile objects the battle may hold in its measured window.
-const BATTLE_UNITS: usize = 19_000;
+/// The fewest mobile objects the benchmark's battle may hold in its measured
+/// window.
+const BATTLE_UNITS: usize = 20_000;
 /// `--lan`'s MaxAhead: a LAN host's protocol-2 floor
 /// (`net::lockstep::initial_multiplayer_max_ahead`).
 const LAN_MAX_AHEAD: i32 = 10;
@@ -208,6 +211,7 @@ struct Args {
     client_timing: bool,
     presentation_frame: bool,
     threads: Option<usize>,
+    battle_units: usize,
     isolation_report: Option<PathBuf>,
     prior_maps: Vec<String>,
     isolation_mode: Option<ScenarioGameMode>,
@@ -258,6 +262,7 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
         client_timing: false,
         presentation_frame: false,
         threads: None,
+        battle_units: BATTLE_UNITS,
         isolation_report: None,
         prior_maps: Vec::new(),
         isolation_mode: None,
@@ -321,6 +326,7 @@ fn parse_args_from(mut argv: impl Iterator<Item = String>) -> Result<Args, Strin
             "--no-sleep" => args.no_sleep = true,
             "--sleep-check" => args.sleep_check = true,
             "--presentation-frame" => args.presentation_frame = true,
+            "--battle-units" => args.battle_units = number(value()?)? as usize,
             "--threads" => {
                 args.threads = Some(
                     usize::try_from(number(value()?)?)
@@ -598,6 +604,9 @@ struct Battle {
     made: u64,
     /// A measured window that lost no mobile object.
     quiet_window: Option<u64>,
+    /// `--battle-units`: the fewest mobile objects a measured window may end
+    /// with.
+    floor: usize,
 }
 
 /// The ids of the mobile objects on the map, ascending.
@@ -617,10 +626,11 @@ fn mobile_ids(runtime: &SimRuntime) -> Vec<u64> {
 }
 
 impl Battle {
-    fn start(runtime: &SimRuntime) -> Self {
+    fn start(runtime: &SimRuntime, floor: usize) -> Self {
         Self {
             mobile: mobile_ids(runtime),
             next_id: runtime.simulation.next_stable_object_id(),
+            floor,
             ..Self::default()
         }
     }
@@ -671,8 +681,9 @@ impl Battle {
             ));
         }
         match self.fewest {
-            Some(fewest) if fewest < BATTLE_UNITS => Err(format!(
-                "the battle shrank to {fewest} mobile objects, under {BATTLE_UNITS}"
+            Some(fewest) if fewest < self.floor => Err(format!(
+                "the battle shrank to {fewest} mobile objects, under {}",
+                self.floor
             )),
             _ => Ok(()),
         }
@@ -1061,7 +1072,7 @@ fn main() -> Result<(), String> {
                  [--types E1,E2,MTNK,HTNK] [--order-spread 30] [--return-at T] (march) \
                  [--hash-every N] [--frame-hash-every 15] [--csv <path>] [--serial-paths] [--serial-scans] \
                  [--frame-profile] [--lan] [--watchers N (skirmish)] [--frame-hashes <path>] \
-                 [--client-timing] [--threads N] \
+                 [--client-timing] [--threads N] [--battle-units 20000 (battle)] \
                  [--state-isolation-report <new.json> --prior-map <map> \
                  --isolation-mode lan|wol --isolation-humans 1|2]"
             );
@@ -1162,7 +1173,7 @@ fn main() -> Result<(), String> {
             // The local house plays: its start's army fights as the others do.
             let houses = scenario.runtime.simulation.houses().order().len();
             let ticks = args.ticks.map_or(BATTLE_TICKS, NonZeroU64::get);
-            let battle = Battle::start(&scenario.runtime);
+            let battle = Battle::start(&scenario.runtime, args.battle_units);
             (houses, 0, Plan::Battle(battle), ticks)
         }
     };
