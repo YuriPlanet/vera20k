@@ -1031,9 +1031,7 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
         .map(|_| layout(state).rect(CHAT).unwrap_or_default())
 }
 
-/// The name the edit may hold: the native code page's bytes (a character it
-/// cannot carry becomes `?`, and one of two UTF-16 units stays out) within
-/// `NAME_LIMIT` bytes.
+/// The name the edit may hold: its ASCII characters within `NAME_LIMIT` bytes.
 fn name_text_within_limit(text: &str) -> String {
     let mut out = String::new();
     for ch in crate::ui::lan_shell::name_input(text).chars() {

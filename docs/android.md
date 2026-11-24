@@ -290,11 +290,12 @@ The bridge holds the input method's composing range back from those commits and
 draws it in the IME colour, so a pinyin run only reaches the game once it is
 committed. The password boxes report themselves
 (`TYPE_TEXT_VARIATION_PASSWORD`), so the keyboard's dictionary never learns them,
-and the name boxes are held to the code page (`0x4D1(1)`): a character above
-`0xFF` becomes `?` and a two-unit character is dropped in `ui::lan_shell::name_input`,
-and `app::shell_lan` re-applies the rule to the node every frame within its
-16-byte limit, so a Chinese name cannot reach the single-byte roster row whichever
-path the text arrived by.
+and the name boxes are byte-only (`0x4D1(1)`): `ui::lan_shell::name_input` drops
+every character above `0x7F` — the same rule VERA's account forms apply, and what
+the native edit's own filter does with units from `0x100` up — and
+`app::shell_lan` re-applies it to the node every frame within its 16-byte limit,
+so a Chinese name cannot reach the single-byte roster row whichever path the text
+arrived by.
 
 The engine needs an 8 MiB stack on the glue's game thread; `android/build.rs`
 links `-Wl,--wrap=pthread_create` and the wrapper raises the requested stack, so

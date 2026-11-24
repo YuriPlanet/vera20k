@@ -620,11 +620,10 @@ impl LanLobbyState {
     /// (`0x4D1` at `0x5DE0E3`), which drops units from 0x100 up
     /// (`0x61525E..0x61526A`). Typed keys reach gamemd, an ANSI program, as
     /// code-page bytes and get in, but input-method characters arrive widened
-    /// (`0x6151F6..0x61520C`) and stay out; VERA offers no input method here
-    /// either. VERA gets keys as text, so the edit keeps the text (typed
-    /// through the code page, [`name_input`]) and admits a character while
-    /// the name's code-page bytes fit in 16 (`MaxBytes`); commas stay out
-    /// (`Rejected`). BB narrows its edit's units by their low byte
+    /// (`0x6151F6..0x61520C`) and stay out. VERA gets keys as text, so
+    /// [`name_input`] keeps the ASCII ones and drops the rest, and the edit
+    /// admits a character while the name fits in 16 bytes (`MaxBytes`); commas
+    /// stay out (`Rejected`). BB narrows its edit's units by their low byte
     /// (`0x5DDE07`), which gives back the code-page bytes its ANSI edit was
     /// typed in; the app saves the text through the code page instead.
     pub(crate) fn name_edited(&mut self, text: &str) -> (Option<String>, Option<LanLobbyAction>) {
@@ -687,14 +686,11 @@ pub(crate) fn key(
 /// character it cannot hold); a character of two UTF-16 units, such as an
 /// emoji, stays out, so the edit's one-unit keys never split one.
 pub(crate) fn name_input(text: &str) -> String {
-    // Native's `WideCharToMultiByte(CP_ACP, …)` with the default character:
-    // a character the code page cannot carry becomes `?`, and one of two
-    // UTF-16 units stays out. `acp_round_trip` is identity off Windows, so the
-    // byte rule is spelled here for every platform (Android included).
-    text.chars()
-        .filter(|c| c.len_utf16() == 1)
-        .map(|c| if (c as u32) <= 0xFF { c } else { '?' })
-        .collect()
+    // The name edit is byte-only (`0x4D1` at `0x5DE0E3`, `0x61525E`), and
+    // VERA's account forms take ASCII alone, so a character above `0x7F` is
+    // dropped here rather than substituted: a dropped key leaves the name as
+    // it was, while `?` would litter it.
+    text.chars().filter(char::is_ascii).collect()
 }
 
 /// One port of the shared5EDD00 chat-length prepass (BB/BC/BD and WOL).
@@ -973,7 +969,7 @@ mod tests {
         );
         assert_eq!(controller.focused_control(PAGE.dialog), Some(NAME));
         type_text(&mut controller, &mut lobby, "  A,é€B");
-        assert_eq!(controller.text(PAGE.dialog, NAME), "Aé€B");
+        assert_eq!(controller.text(PAGE.dialog, NAME), "AB");
         type_text(&mut controller, &mut lobby, "12345678901234567890");
         let saved = crate::util::native_string::acp_encode(&controller.text(PAGE.dialog, NAME));
         assert_eq!(saved.len(), 16);
