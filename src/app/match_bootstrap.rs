@@ -1134,6 +1134,7 @@ mod tests {
                 start_position: LaunchStartPosition::Position(1),
                 team: LaunchTeam::None,
                 difficulty: AiDifficulty::Easy,
+                bot: None,
             }],
             SkirmishLaunchOptions::default(),
         )

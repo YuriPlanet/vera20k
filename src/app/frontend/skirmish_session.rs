@@ -642,6 +642,7 @@ impl MultiplayerShellRuntime {
                         LaunchTeam::None
                     },
                     difficulty,
+                    bot: None,
                 });
             } else if persisted.row_type == 3 {
                 vacancies[usize::from(row)] = NetworkVacancy::Closed;
@@ -2078,6 +2079,8 @@ fn ai_row_type_from_persisted(value: i32) -> SkirmishAiRowType {
         4 => SkirmishAiRowType::Hard,
         5 => SkirmishAiRowType::Normal,
         6 => SkirmishAiRowType::Easy,
+        // VERA: past gamemd's codes.
+        7 => SkirmishAiRowType::Vanguard,
         _ => SkirmishAiRowType::None,
     }
 }
@@ -2088,6 +2091,7 @@ fn persisted_row_type(value: SkirmishAiRowType) -> i32 {
         SkirmishAiRowType::Hard => 4,
         SkirmishAiRowType::Normal => 5,
         SkirmishAiRowType::Easy => 6,
+        SkirmishAiRowType::Vanguard => 7,
     }
 }
 
@@ -2777,6 +2781,7 @@ mod tests {
                 start_position: LaunchStartPosition::Auto,
                 team: LaunchTeam::Team(3),
                 difficulty: AiDifficulty::Hard,
+                bot: None,
             };
             launch.opponents = vec![
                 ai.clone(),
@@ -3173,6 +3178,7 @@ mod tests {
                 start_position: LaunchStartPosition::Auto,
                 team: LaunchTeam::None,
                 difficulty: AiDifficulty::Easy,
+                bot: None,
             }],
             SkirmishLaunchOptions::default(),
         )

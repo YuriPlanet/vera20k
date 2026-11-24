@@ -44,6 +44,7 @@ pub mod attach_effect;
 pub(crate) mod base_plan;
 pub(crate) mod base_plan_generation;
 pub mod bomb;
+pub mod bot;
 pub mod bounty;
 pub mod build_site;
 pub mod building_art;

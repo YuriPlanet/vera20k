@@ -858,6 +858,7 @@ pub(crate) fn prepare_ai(
             start_position: LaunchStartPosition::Auto,
             team: LaunchTeam::None,
             difficulty,
+            bot: None,
         });
     }
     effect.opponents = Some(opponents);
@@ -1835,6 +1836,7 @@ mod tests {
                 start_position: LaunchStartPosition::Position(1),
                 team: LaunchTeam::Team(2),
                 difficulty: AiDifficulty::Hard,
+                bot: None,
             }];
             let progress = CooperativeProgressRecord {
                 valid: true,

@@ -570,6 +570,7 @@ fn multiple_humans_including_observer_apply_layered_comp_easy_bonus_before_house
             start_position: LaunchStartPosition::Auto,
             team: LaunchTeam::None,
             difficulty: crate::skirmish_launch::AiDifficulty::Normal,
+            bot: None,
         });
 
     let descriptor = MatchLaunchDescriptor::from_resolved(session).unwrap();
@@ -689,6 +690,7 @@ fn observers_ahead_of_only_ai_leave_each_ai_a_start() {
             start_position: LaunchStartPosition::Auto,
             team: LaunchTeam::None,
             difficulty: crate::skirmish_launch::AiDifficulty::Normal,
+            bot: None,
         })
         .collect();
     session.ai_player_count = 2;
@@ -2004,6 +2006,7 @@ fn current_house_precedes_map_objects_and_survives_failed_starting_mcv() {
                     start_position: LaunchStartPosition::Auto,
                     team: LaunchTeam::None,
                     difficulty: crate::skirmish_launch::AiDifficulty::Easy,
+                    bot: None,
                 });
             launch.session.ai_player_count = 1;
 
@@ -2433,6 +2436,7 @@ fn techno_constructor_extra_unit_selection_precedes_constructor_word() {
         handle: None,
         difficulty: HouseDifficulty::Normal,
         commander: None,
+        bot: None,
     }];
     let mut expected = SimRng::new(seed);
     let blocker_word = (expected.next_u32() & 0xFFFF) as u16;
@@ -2661,6 +2665,7 @@ fn scenario_prefix_runs_two_identical_house_passes_before_fill() {
             start_position: LaunchStartPosition::Position(index + 1),
             team: LaunchTeam::None,
             difficulty: AiDifficulty::Easy,
+            bot: None,
         })
         .collect();
     session.ai_player_count = session.opponents.len() as i32;
@@ -3738,6 +3743,7 @@ fn quick_coop_session(
                 start_position,
                 team: LaunchTeam::None,
                 difficulty: crate::skirmish_launch::AiDifficulty::Easy,
+                bot: None,
             },
         )
         .collect();
@@ -4061,4 +4067,42 @@ fn gather_refuses_a_map_with_no_room_for_a_missing_start() {
             required: 1,
         }
     );
+}
+
+/// VERA: a bot row is created as a computer House, then played by the bot
+/// as a human House, so Post_Map_Init grants it no computer money.
+#[test]
+fn a_bot_launch_row_is_a_bot_house_without_ai_money() {
+    let mut session = crate::headless_scenario::battle_session(
+        "bot.map",
+        &[
+            (
+                LaunchCountry::Russia,
+                crate::skirmish_launch::AiDifficulty::Normal,
+            ),
+            (
+                LaunchCountry::Russia,
+                crate::skirmish_launch::AiDifficulty::Hard,
+            ),
+        ],
+    );
+    session.opponents[0].bot = crate::sim::bot::kind_by_name("vanguard");
+    let launch = MatchLaunchDescriptor::from_resolved(session).unwrap();
+    let mut rules = RuleSet::from_ini(&launch_fixture_ini("")).unwrap();
+    rules.general.multiplayer_ai_cm = vec![400, 0, 0];
+    let mut sim = Simulation::new();
+    initialize_skirmish_launch_houses(&mut sim, &HouseRoster::default(), &rules, &launch);
+    let bot = sim.interner.get("Computer1").unwrap();
+    let stock = sim.interner.get("Computer2").unwrap();
+    assert_eq!(
+        sim.house_bots().kind_of(bot),
+        crate::sim::bot::kind_by_name("vanguard")
+    );
+    assert!(sim.houses[&bot].is_human());
+    assert_eq!(sim.house_bots().kind_of(stock), None);
+    assert!(!sim.houses[&stock].is_human());
+    let before = sim.houses[&bot].economy().available_money();
+    apply_skirmish_ai_opening_credits(&mut sim.houses, &rules);
+    assert_eq!(sim.houses[&bot].economy().available_money(), before);
+    assert!(sim.houses[&stock].economy().available_money() > before);
 }

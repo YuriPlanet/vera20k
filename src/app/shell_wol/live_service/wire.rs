@@ -648,6 +648,7 @@ mod tests {
             start_position: LaunchStartPosition::Position(29),
             team: LaunchTeam::None,
             difficulty: AiDifficulty::Hard,
+            bot: None,
         };
         let seed_map = map(
             crate::map::skirmish_scenarios::RANDMAP_SED,
