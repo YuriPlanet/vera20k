@@ -165,6 +165,7 @@ impl Simulation {
             command,
             rules,
             Some(control),
+            false,
         ) && self.command_subject_can_receive_order(command, rules, Some(source))
     }
 
@@ -258,6 +259,9 @@ impl Simulation {
     ///   no bomb and belongs to another House, is dropped, where retail clears
     ///   the carrier's planning tokens and sets off whatever bomb it holds.
     ///
+    /// A Wasm module's `house_order` (RFC 0001 6g) is its house's own
+    /// sender: under custom control grants its house-wide commands
+    /// (production, placement, superweapons) need no granted source.
     pub(super) fn network_command_actor_foreign(
         &self,
         command_owner: InternKey<'_>,
@@ -265,6 +269,7 @@ impl Simulation {
         cmd: &Command,
         rules: &RuleSet,
         control: Option<&super::super::ControlProjection<'_>>,
+        house_order: bool,
     ) -> bool {
         if !self.session.execution_topology().is_lockstep() {
             return false;
@@ -287,6 +292,7 @@ impl Simulation {
             CommandSubject::Local => false,
             CommandSubject::Primary(capability) => {
                 self.session.has_custom_control_grants()
+                    && !house_order
                     && granted_source.is_none_or(|(_, house)| house_refused(house, capability))
             }
             CommandSubject::House(house, capability) => house_refused(house, capability),

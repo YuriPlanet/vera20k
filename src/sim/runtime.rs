@@ -272,14 +272,16 @@ impl SimRuntime {
         owner: &str,
         command: &crate::sim::command::Command,
     ) -> bool {
-        self.simulation.apply_command_with_overlays(
-            None,
-            owner,
-            command,
-            &self.resources.rules,
-            Some(self.resources.rules.overlay_registry()),
-            &mut crate::sim::world::FrameEffects::default(),
-        )
+        self.simulation
+            .apply_command_with_overlays(
+                crate::sim::command::CommandSender::Player(None),
+                owner,
+                command,
+                &self.resources.rules,
+                Some(self.resources.rules.overlay_registry()),
+                &mut crate::sim::world::FrameEffects::default(),
+            )
+            .is_ok()
     }
 
     /// Replace a same-content restored simulation in place. Resource ownership

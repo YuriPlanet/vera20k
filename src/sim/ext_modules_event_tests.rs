@@ -21,7 +21,7 @@ const KEY: i32 = 7;
 const ACTION_DAMAGE: i32 = 1006;
 
 /// One `EventDef` without clauses.
-struct Ev {
+pub(super) struct Ev {
     kind: i32,
     op: i32,
     interval: i32,
@@ -30,7 +30,7 @@ struct Ev {
 }
 
 impl Ev {
-    const fn on(kind: i32) -> Self {
+    pub(super) const fn on(kind: i32) -> Self {
         Self {
             kind,
             op: 0,
@@ -48,7 +48,12 @@ fn i32s(values: &[i32]) -> Vec<u8> {
 /// A `TriggerDef` for every difficulty: `house`, `repeat`, `events`, a
 /// `Module` action (key [`KEY`]) and then `actions` as (kind, target, id,
 /// value).
-fn def(house: i64, repeat: i32, events: &[Ev], actions: &[(i32, i32, i32, i64)]) -> Vec<u8> {
+pub(super) fn def(
+    house: i64,
+    repeat: i32,
+    events: &[Ev],
+    actions: &[(i32, i32, i32, i64)],
+) -> Vec<u8> {
     let mut out = house.to_le_bytes().to_vec();
     out.extend(i32s(&[
         repeat,

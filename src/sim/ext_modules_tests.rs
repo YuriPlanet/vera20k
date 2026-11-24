@@ -25,7 +25,7 @@ fn session_with_computer() -> crate::skirmish_launch::SkirmishLaunchSession {
 }
 
 /// [`scenario`] against one computer house.
-fn scenario_with_computer() -> Option<HeadlessScenario> {
+pub(super) fn scenario_with_computer() -> Option<HeadlessScenario> {
     let (retail, _) = crate::rules::retail_ini_fixture::retail_assets()?;
     Some(
         crate::headless_scenario::load_session(&retail, MAP, SEED, session_with_computer())
@@ -615,7 +615,10 @@ fn computer_tank(scene: &mut HeadlessScenario) -> (usize, u64, (u16, u16)) {
 }
 
 /// Spawns `type_name` for the first computer house beside its base.
-fn spawn_for_computer(scene: &mut HeadlessScenario, type_name: &str) -> (usize, u64, (u16, u16)) {
+pub(super) fn spawn_for_computer(
+    scene: &mut HeadlessScenario,
+    type_name: &str,
+) -> (usize, u64, (u16, u16)) {
     let rules = &scene.runtime.resources.rules;
     let sim = &mut scene.runtime.simulation;
     let (index, house) = sim
