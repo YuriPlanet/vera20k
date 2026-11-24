@@ -17,6 +17,10 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) {
+        crate::sim::frame_profile::note_count(crate::sim::frame_profile::count::RECALC_ENTRY, 1);
+        let _span = crate::sim::frame_profile::Span::start(
+            crate::sim::frame_profile::subphase::RECALC,
+        );
         let Some(registry) = registry else {
             return;
         };
@@ -51,6 +55,7 @@ impl Simulation {
                         })
                 });
         let terrain = self.resolved_terrain.as_mut().unwrap();
+        crate::sim::frame_profile::note_count(crate::sim::frame_profile::count::RECALC_RUN, 1);
         let outcome = match terrain.recalc_resident_bridge_cell(
             index,
             overlay,

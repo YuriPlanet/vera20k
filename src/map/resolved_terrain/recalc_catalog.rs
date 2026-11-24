@@ -748,22 +748,46 @@ impl ResolvedTerrainGrid {
         overlay_types: &OverlayTypeRegistry,
         current_bounds: Option<PlayfieldBounds>,
     ) -> Result<LoadCellRecalcOutcome, LoadCellRecalcError<&'static str>> {
-        let catalog = self
-            .bridge_recalc_catalog
-            .clone()
-            .ok_or(LoadCellRecalcError::MissingResidentInputs)?;
+        // The Recalc state borrows the catalog for the call, and every foot
+        // mark's Recalc reaches this: lend it instead of cloning its maps,
+        // per-tile boxed files and registered names for each cell.
+        let Some(catalog) = self.bridge_recalc_catalog.take() else {
+            return Err(LoadCellRecalcError::MissingResidentInputs);
+        };
+        let outcome = self.recalc_resident_bridge_cell_with(
+            &catalog,
+            index,
+            overlay,
+            level_override,
+            overlay_types,
+            current_bounds,
+        );
+        self.bridge_recalc_catalog = Some(catalog);
+        outcome
+    }
+
+    fn recalc_resident_bridge_cell_with(
+        &mut self,
+        catalog: &BridgeRecalcCatalog,
+        index: usize,
+        overlay: FinalizedOverlayCell,
+        level_override: i32,
+        overlay_types: &OverlayTypeRegistry,
+        current_bounds: Option<PlayfieldBounds>,
+    ) -> Result<LoadCellRecalcOutcome, LoadCellRecalcError<&'static str>> {
         let cell = self
             .cells
             .get(index)
             .ok_or(LoadCellRecalcError::CellIndexOutOfBounds { index })?;
+        let (final_tile_index, final_sub_tile) = (cell.final_tile_index, cell.final_sub_tile);
         // The early-overlay branch writes land before querying pristine TMP
         // slope. Reject missing/unadmitted resident inputs before that write;
         // native invalid/sparse inputs remain admitted fallback cases.
         catalog
-            .metadata(cell.final_tile_index, cell.final_sub_tile)
+            .metadata(final_tile_index, final_sub_tile)
             .map_err(LoadCellRecalcError::ResidentInput)?;
         let mut state =
-            LoadCellRecalcState::for_resident_bridge(&catalog, overlay_types, current_bounds);
+            LoadCellRecalcState::for_resident_bridge(catalog, overlay_types, current_bounds);
         self.recalc_cell_attributes(
             &mut state,
             index,

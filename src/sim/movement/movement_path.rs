@@ -25,6 +25,36 @@ pub(super) enum MovePathFailure {
     Search(zone_search::PathSearchFailure),
 }
 
+/// Notes one [`find_move_path`] once it returns, however it returns: the
+/// expansions it made, the wall clock it took, and how much of it was the A*
+/// and how much the finishing passes. Neither persisted nor state-hashed,
+/// nothing in the simulation reads it, and a shipping build reads no clock.
+#[cfg(feature = "telemetry")]
+struct InlineSearch<'a> {
+    base: u64,
+    started: std::time::Instant,
+    /// The A* and the finishing passes so far, in nanoseconds.
+    parts: &'a std::cell::Cell<(u64, u64)>,
+}
+
+#[cfg(feature = "telemetry")]
+impl Drop for InlineSearch<'_> {
+    fn drop(&mut self) {
+        let (search_ns, finish_ns) = self.parts.get();
+        crate::sim::pathfinding::note_inline_search(
+            crate::sim::pathfinding::search_steps().saturating_sub(self.base),
+            u64::try_from(self.started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+            search_ns,
+            finish_ns,
+        );
+    }
+}
+
+#[cfg(feature = "telemetry")]
+fn elapsed_ns(started: std::time::Instant) -> u64 {
+    u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
+}
+
 /// The core search of `FootClass::Find_Path` (`0x004D3920`) for every Foot
 /// class: `FootClass::Run_AStar` (`0x004CBBA0`, called only at `0x004D3E4B`)
 /// runs `AStar_pathfind_search` (`0x0042C900`) once, from `start_layer`, the
@@ -47,12 +77,22 @@ pub(super) fn find_move_path(
     foot_entry: &dyn crate::sim::pathfinding::SearchFootEntry,
 ) -> Result<Vec<i32>, MovePathFailure> {
     let _area = crate::sim::frame_profile::area(crate::sim::frame_profile::phase::PATHFINDING);
+    #[cfg(feature = "telemetry")]
+    let parts = std::cell::Cell::new((0u64, 0u64));
+    #[cfg(feature = "telemetry")]
+    let _inline = InlineSearch {
+        base: crate::sim::pathfinding::search_steps(),
+        started: std::time::Instant::now(),
+        parts: &parts,
+    };
     let facts = crate::sim::pathfinding::MoverSearchFacts {
         urgency,
         foot_entry,
     };
     let grid = ctx.path_grid.ok_or(MovePathFailure::MissingGrid)?;
     let zone_grid = ctx.zone_grid;
+    #[cfg(feature = "telemetry")]
+    let search_started = std::time::Instant::now();
     let path = zone_search::find_layered_path_zoned_marker_detailed(
         grid,
         start,
@@ -69,6 +109,8 @@ pub(super) fn find_move_path(
         ctx.playfield_bounds,
     )
     .map_err(MovePathFailure::Search)?;
+    #[cfg(feature = "telemetry")]
+    parts.set((elapsed_ns(search_started), 0));
     log::trace!(
         "find_move_path: A* succeeded ({:?}→{:?}), {} steps",
         start,
@@ -77,9 +119,15 @@ pub(super) fn find_move_path(
     );
     // The whole route: Find_Path's copy (`FootPathQueue::install_directions`) owns the
     // window.
-    path_finishing::finish(path, ctx, grid, foot_entry, marker_overlay).map_err(|cause| {
-        MovePathFailure::Search(zone_search::PathSearchFailure::CellEntryUnavailable(cause))
-    })
+    #[cfg(feature = "telemetry")]
+    let finish_started = std::time::Instant::now();
+    let finished =
+        path_finishing::finish(path, ctx, grid, foot_entry, marker_overlay).map_err(|cause| {
+            MovePathFailure::Search(zone_search::PathSearchFailure::CellEntryUnavailable(cause))
+        });
+    #[cfg(feature = "telemetry")]
+    parts.set((parts.get().0, elapsed_ns(finish_started)));
+    finished
 }
 
 #[cfg(all(test, tests_sim_movement))]

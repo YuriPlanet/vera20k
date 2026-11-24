@@ -138,6 +138,35 @@ thread_local! {
     /// The expansions this thread's finished searches ([`astar_search`])
     /// have made, for [`search_steps`].
     static SEARCH_STEPS: Cell<u64> = const { Cell::new(0) };
+    /// The inline searches this thread ran since its last [`take_inline_search`]:
+    /// how many, their expansions, their wall clock, and of that the search
+    /// and the finishing passes each.
+    static INLINE_SEARCHES: Cell<(u64, u64, u64, u64, u64)> =
+        const { Cell::new((0, 0, 0, 0, 0)) };
+}
+
+/// Note one search a Foot ran outside the path batch, as it ran
+/// ([`crate::sim::movement::movement_path`] does): `steps` expansions in
+/// `ns`, of which `search_ns` were the A* and `finish_ns` the finishing
+/// passes. VERA-only: the batch reports what a frame spent this way.
+pub(crate) fn note_inline_search(steps: u64, ns: u64, search_ns: u64, finish_ns: u64) {
+    INLINE_SEARCHES.with(|cell| {
+        let (count, total_steps, total_ns, total_search_ns, total_finish_ns) = cell.get();
+        cell.set((
+            count + 1,
+            total_steps + steps,
+            total_ns + ns,
+            total_search_ns + search_ns,
+            total_finish_ns + finish_ns,
+        ));
+    });
+}
+
+/// This thread's inline searches since the last call: how many, their
+/// expansions, their wall clock, and of that the A* and the finishing passes.
+/// VERA-only.
+pub(crate) fn take_inline_search() -> (u64, u64, u64, u64, u64) {
+    INLINE_SEARCHES.with(|cell| cell.replace((0, 0, 0, 0, 0)))
 }
 
 /// The expansions this thread's finished searches have made. VERA-only: the

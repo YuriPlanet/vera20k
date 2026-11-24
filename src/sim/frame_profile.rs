@@ -128,6 +128,179 @@ pub(crate) fn area(slot: usize) -> Area {
     }
 }
 
+/// Parts of the object pass that the phase ledger folds into `UNIT_AI` or
+/// `MOVEMENT`: the mission AI visit of one object's turn, and the ground
+/// locomotor's Process. VERA-only observation for the bench; nothing in the
+/// simulation reads it.
+pub mod subphase {
+    pub const AI_VISIT: usize = 0;
+    pub const GROUND_PROCESS: usize = 1;
+    /// Of the ground Process: the mover visit's setup, the locomotion step
+    /// itself, and the pass's finish.
+    pub const BEGIN_MOVEMENT: usize = 2;
+    pub const TRACK_PROCESS: usize = 3;
+    pub const FINISH_PASS: usize = 4;
+    /// The whole of one mover's path request: its key, the defer test and the
+    /// path's install, besides the search [`super::subphase`] already counts.
+    pub const PATH_REQUEST: usize = 5;
+    /// The rest of the ground Process: its pending-work loop, and everything
+    /// after it (per-cell, boundary, finish and the rest tail).
+    pub const MOVEMENT_LOOP: usize = 6;
+    pub const MOVEMENT_TAIL: usize = 7;
+    /// Of `ground_process_ms`, outside the pending-work loop: the track/turn
+    /// gate before it, the track-end continuation and the mover re-entry the
+    /// loop runs.
+    pub const TRACK_TURN: usize = 8;
+    pub const TRACK_END_CONT: usize = 9;
+    pub const REENTER: usize = 10;
+    /// Of `ground_process_ms`, the rest of the pending-work loop: the
+    /// Drive/Ship Process_Movement, a FootPath re-entry and walk admission.
+    pub const TRACK_MOVEMENT: usize = 11;
+    pub const FOOTPATH_REENTER: usize = 12;
+    pub const WALK_ADMISSION: usize = 13;
+    /// Of `track_movement_ms`, one fresh arm: the gate question, the mark-scoped
+    /// entry query and the accepted step.
+    pub const GATE: usize = 14;
+    pub const CAN_ENTER: usize = 15;
+    pub const ACCEPT: usize = 16;
+    /// Of `track_movement_ms`: the turn the heading gate asks for, and
+    /// `track_process_movement`'s head/destination gates before the arm.
+    pub const TURN: usize = 17;
+    pub const PREAMBLE: usize = 18;
+    /// Of `track_movement_ms`: the no-path-word arm, whose request the batch
+    /// holds (`path_batch`).
+    pub const NO_QUEUE: usize = 19;
+    /// The whole of one object's entry in the live-object pass, including the
+    /// sleeper question and the sleep/quiet notes after its turn; and the
+    /// turn alone, from its first lookup to its return. Their difference is
+    /// the per-object bookkeeping around the turn, and `TURN_TOTAL` against
+    /// the slots above is the turn's own unmeasured part.
+    pub const PASS_OBJECT: usize = 20;
+    pub const TURN_TOTAL: usize = 21;
+    /// Of `can_enter_ms`: the cell Recalc a foot mark runs on its own cell,
+    /// once per mark side that admits it.
+    pub const RECALC: usize = 22;
+    pub const COUNT: usize = 23;
+}
+
+thread_local! {
+    static SUBPHASE_NS: std::cell::Cell<[u64; subphase::COUNT]> =
+        const { std::cell::Cell::new([0; subphase::COUNT]) };
+}
+
+/// Note `ns` spent in `slot` ([`subphase`]) since the last drain.
+pub(crate) fn note_subphase(slot: usize, ns: u64) {
+    SUBPHASE_NS.with(|cell| {
+        let mut spent = cell.get();
+        spent[slot] = spent[slot].saturating_add(ns);
+        cell.set(spent);
+    });
+}
+
+/// A clock read that only a build carrying the bench's `telemetry` makes; a
+/// shipping build times nothing, so its object pass pays no `Instant::now`.
+pub(crate) struct Timer {
+    #[cfg(feature = "telemetry")]
+    started: crate::util::time::Instant,
+}
+
+impl Timer {
+    #[inline]
+    pub(crate) fn start() -> Self {
+        Self {
+            #[cfg(feature = "telemetry")]
+            started: crate::util::time::Instant::now(),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn note(self, slot: usize) {
+        #[cfg(feature = "telemetry")]
+        {
+            let now = crate::util::time::Instant::now();
+            note_subphase(
+                slot,
+                u64::try_from(now.duration_since(self.started).as_nanos()).unwrap_or(u64::MAX),
+            );
+        }
+        #[cfg(not(feature = "telemetry"))]
+        let _ = slot;
+    }
+}
+
+/// [`Timer`] that notes on drop, for a span with early returns.
+pub(crate) struct Span {
+    slot: usize,
+    #[cfg(feature = "telemetry")]
+    started: crate::util::time::Instant,
+}
+
+impl Span {
+    #[inline]
+    pub(crate) fn start(slot: usize) -> Self {
+        Self {
+            slot,
+            #[cfg(feature = "telemetry")]
+            started: crate::util::time::Instant::now(),
+        }
+    }
+}
+
+impl Drop for Span {
+    fn drop(&mut self) {
+        #[cfg(feature = "telemetry")]
+        {
+            let now = crate::util::time::Instant::now();
+            note_subphase(
+                self.slot,
+                u64::try_from(now.duration_since(self.started).as_nanos()).unwrap_or(u64::MAX),
+            );
+        }
+        #[cfg(not(feature = "telemetry"))]
+        let _ = self.slot;
+    }
+}
+
+/// The nanoseconds each [`subphase`] took since the last call.
+pub(crate) fn take_subphases() -> [u64; subphase::COUNT] {
+    SUBPHASE_NS.with(|cell| cell.replace([0; subphase::COUNT]))
+}
+
+/// How many objects the object pass walked, how many it skipped as asleep, and
+/// how many reached their mission AI visit and their ground locomotor's
+/// Process. VERA-only observation for the bench, counted without a clock.
+pub mod count {
+    pub const VISITED: usize = 0;
+    pub const SLEPT: usize = 1;
+    pub const AI_VISIT: usize = 2;
+    pub const GROUND_PROCESS: usize = 3;
+    /// Foot marks' cell Recalc: calls of `recalculate_track_cell`, and of those
+    /// the ones that reach the terrain Recalc and its catalog clone.
+    pub const RECALC_ENTRY: usize = 4;
+    pub const RECALC_RUN: usize = 5;
+    pub const COUNT: usize = 6;
+}
+
+thread_local! {
+    static COUNTS: std::cell::Cell<[u64; count::COUNT]> =
+        const { std::cell::Cell::new([0; count::COUNT]) };
+}
+
+/// Count `n` more objects in `slot` ([`count`]).
+#[inline]
+pub(crate) fn note_count(slot: usize, n: u64) {
+    COUNTS.with(|cell| {
+        let mut counts = cell.get();
+        counts[slot] = counts[slot].saturating_add(n);
+        cell.set(counts);
+    });
+}
+
+/// The [`count`] totals since the last call.
+pub(crate) fn take_counts() -> [u64; count::COUNT] {
+    COUNTS.with(|cell| cell.replace([0; count::COUNT]))
+}
+
 /// Slots in the per-frame ledger, in the order `advance_master_frame` runs
 /// them, except that `TEAM_AI` runs between the two stretches `BOMBS` folds
 /// (Kamikaze, then the Disk walk), and that `UNIT_AI` through `EFFECTS` are

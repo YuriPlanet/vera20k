@@ -639,7 +639,10 @@ impl Simulation {
                 loco.set_walk_processing(true);
                 true
             });
+        let process_timer = crate::sim::frame_profile::Timer::start();
         let result = self.process_ground_movement(stable_id, rules, overlay_registry, effects);
+        process_timer.note(crate::sim::frame_profile::subphase::GROUND_PROCESS);
+        crate::sim::frame_profile::note_count(crate::sim::frame_profile::count::GROUND_PROCESS, 1);
         if guard_walk
             && let Some(loco) = self
                 .substrate
@@ -685,13 +688,16 @@ impl Simulation {
                 sim.session.binary_frame(),
             );
         }
-        match sim.process_track_turn(
+        let turn_timer = crate::sim::frame_profile::Timer::start();
+        let track_entry = sim.process_track_turn(
             stable_id,
             rules,
             overlay_registry,
             effects,
             &mut outcome.bridge_state_changed,
-        )? {
+        )?;
+        turn_timer.note(crate::sim::frame_profile::subphase::TRACK_TURN);
+        match track_entry {
             movement::track_turn::TrackProcessEntry::Movement => {}
             movement::track_turn::TrackProcessEntry::Tail => {
                 sim.track_process_rest_tail(stable_id, rules, effects);
@@ -701,6 +707,7 @@ impl Simulation {
         }
         // The grid is borrowed in place, beside the other fields: a snapshot
         // would count a shared handle up and down for every mover's visit.
+        let begin_timer = crate::sim::frame_profile::Timer::start();
         let mut pending_movement = movement::movement_tick::begin_movement(
             &mut sim.substrate.entities,
             stable_id,
@@ -712,6 +719,7 @@ impl Simulation {
             rules,
             &sim.houses,
         );
+        begin_timer.note(crate::sim::frame_profile::subphase::BEGIN_MOVEMENT);
         // Process_Movement's no-queue request and the Process_Track after it.
         // When the active-track Process_Track(0) ends its track, the same
         // Process continues into Process_Movement and Process_Track(1)
@@ -725,23 +733,30 @@ impl Simulation {
         };
         let mut retry = false;
         let mut process_tail = true;
+        let loop_timer = crate::sim::frame_profile::Timer::start();
         loop {
             if let Some(mut request) = pending_movement.take_foot_path_request() {
+                let request_timer = crate::sim::frame_profile::Timer::start();
                 let outcome = sim
                     .run_foot_path_request(&mut request, rules, overlay_registry, effects)
                     .map_err(|cause| frame_error(sim, cause))?;
+                request_timer.note(crate::sim::frame_profile::subphase::PATH_REQUEST);
                 if outcome == movement::FootPathOutcome::Resume {
+                    let reenter_timer = crate::sim::frame_profile::Timer::start();
                     pending_movement.reenter_mover(
                         sim,
                         movement::movement_tick::MoverReentry::FootPath(request),
                         rules,
                     );
+                    reenter_timer.note(crate::sim::frame_profile::subphase::FOOTPATH_REENTER);
                 }
             }
             if let Some(request) = pending_movement.take_walk_admission_request() {
+                let admit_timer = crate::sim::frame_profile::Timer::start();
                 let retry = sim
                     .run_walk_admission_request(request, rules, overlay_registry, effects)
                     .map_err(|cause| frame_error(sim, cause))?;
+                admit_timer.note(crate::sim::frame_profile::subphase::WALK_ADMISSION);
                 if let Some(request) = retry {
                     //75B716/75BABB/75BC04: one recursive Process(0),
                     //with the already prepared mover visit retained.
@@ -754,6 +769,7 @@ impl Simulation {
             // follows unless the out byte is set or the Foot died
             // (4B0A7E..4B0AAA, 4B064C..4B0667).
             if let Some((id, family)) = pending_movement.take_track_movement() {
+                let movement_timer = crate::sim::frame_profile::Timer::start();
                 let out = sim
                     .run_track_process_movement(
                         id,
@@ -763,6 +779,7 @@ impl Simulation {
                         effects,
                     )
                     .map_err(|cause| frame_error(sim, cause))?;
+                movement_timer.note(crate::sim::frame_profile::subphase::TRACK_MOVEMENT);
                 // Drive4B0A7E/4B064C: the out byte returns the Process
                 // immediately; it must not run the common rest-speed tail.
                 if out {
@@ -798,9 +815,11 @@ impl Simulation {
                 retry,
                 ..invocation
             };
+            let track_timer = crate::sim::frame_profile::Timer::start();
             let pass = sim
                 .run_track_process(invocation, rules, overlay_registry, effects)
                 .map_err(|cause| frame_error(sim, cause))?;
+            track_timer.note(crate::sim::frame_profile::subphase::TRACK_PROCESS);
             outcome.bridge_state_changed |= pass.bridge_state_changed;
             pending_movement.record_track_movement(pass.moved);
             // Only the FIRST, active-track call tests Process_Track's AL
@@ -813,24 +832,33 @@ impl Simulation {
             if retry || !invocation.active_gate {
                 break;
             }
-            if !sim
+            if !invocation.active_gate {
+                break;
+            }
+            let end_timer = crate::sim::frame_profile::Timer::start();
+            let continues = sim
                 .begin_track_end_continuation(
                     invocation.entity_id,
                     invocation.family,
                     rules,
                     effects,
                 )
-                .map_err(|cause| frame_error(sim, cause))?
-            {
+                .map_err(|cause| frame_error(sim, cause))?;
+            end_timer.note(crate::sim::frame_profile::subphase::TRACK_END_CONT);
+            if !continues {
                 break;
             }
+            let reenter_timer = crate::sim::frame_profile::Timer::start();
             pending_movement.reenter_mover(
                 sim,
                 movement::movement_tick::MoverReentry::AfterTrackEnd(invocation.entity_id),
                 rules,
             );
+            reenter_timer.note(crate::sim::frame_profile::subphase::REENTER);
             retry = true;
         }
+        loop_timer.note(crate::sim::frame_profile::subphase::MOVEMENT_LOOP);
+        let tail_timer = crate::sim::frame_profile::Timer::start();
         if let Some((id, head)) = pending_movement.take_walk_per_cell() {
             outcome.bridge_state_changed |=
                 sim.run_completed_walk_step(id, head, rules, overlay_registry, effects)?;
@@ -840,14 +868,14 @@ impl Simulation {
             pending_movement.record_track_movement(1);
         }
 
-        outcome
-            .movement
-            .merge(movement::movement_tick::finish_movement_pass(
-                pending_movement,
-            ));
+        let finish_timer = crate::sim::frame_profile::Timer::start();
+        let finished = movement::movement_tick::finish_movement_pass(pending_movement);
+        finish_timer.note(crate::sim::frame_profile::subphase::FINISH_PASS);
+        outcome.movement.merge(finished);
         if process_tail {
             sim.track_process_rest_tail(stable_id, rules, effects);
         }
+        tail_timer.note(crate::sim::frame_profile::subphase::MOVEMENT_TAIL);
         Ok(outcome)
     }
 
@@ -978,6 +1006,9 @@ impl Simulation {
         // unchanged).
         self.interner.cover_types(rules);
         let walked = self.try_for_each_live_object::<super::FrameAdvanceError>(|sim, stable_id| {
+            let _pass_span = crate::sim::frame_profile::Span::start(
+                crate::sim::frame_profile::subphase::PASS_OBJECT,
+            );
             #[cfg(feature = "debug-tools")]
             let debug_before = sim
                 .substrate
@@ -985,8 +1016,15 @@ impl Simulation {
                 .get(stable_id)
                 .and_then(crate::sim::debug_event_log::DebugObservation::capture);
             // A sleeping object's visit is counted, not run (`idle_sleep`).
+            crate::sim::frame_profile::note_count(crate::sim::frame_profile::count::VISITED, 1);
             let check = match sim.visit_sleeper(stable_id, rules, &mut object_ctx.effects) {
-                super::idle_sleep::SleepVisit::Counted => return Ok(()),
+                super::idle_sleep::SleepVisit::Counted => {
+                    crate::sim::frame_profile::note_count(
+                        crate::sim::frame_profile::count::SLEPT,
+                        1,
+                    );
+                    return Ok(());
+                }
                 super::idle_sleep::SleepVisit::Awake => None,
                 super::idle_sleep::SleepVisit::Check(check) => Some(check),
             };
@@ -1026,6 +1064,9 @@ impl Simulation {
         object_ctx: &mut techno_ai::ObjectAiCtx<'_>,
     ) -> Result<ObjectTurnOutcome, super::FrameAdvanceError> {
         let sim = self;
+        let _turn_span = crate::sim::frame_profile::Span::start(
+            crate::sim::frame_profile::subphase::TURN_TOTAL,
+        );
         let overlay_registry = object_ctx.overlay_registry;
         let mut outcome = ObjectTurnOutcome::default();
         // The turn looks this object up by id about a hundred times; from
@@ -1057,7 +1098,10 @@ impl Simulation {
         }
         let _building_area = was_structure
             .then(|| crate::sim::frame_profile::area(crate::sim::frame_profile::phase::BUILDINGS));
+        let ai_timer = crate::sim::frame_profile::Timer::start();
         let mut ai = sim.object_ai_visit_one_with_effects(stable_id, rules, object_ctx);
+        ai_timer.note(crate::sim::frame_profile::subphase::AI_VISIT);
+        crate::sim::frame_profile::note_count(crate::sim::frame_profile::count::AI_VISIT, 1);
         if let Some(error) = ai.frame_error.take() {
             return Err(error);
         }

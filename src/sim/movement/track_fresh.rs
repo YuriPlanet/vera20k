@@ -166,6 +166,7 @@ impl Simulation {
 
     fn track_process_movement(&mut self, call: &mut FreshCall<'_>) -> Result<bool, String> {
         let id = call.id;
+        let prep_timer = crate::sim::frame_profile::Timer::start();
         let actor = self
             .substrate
             .entities
@@ -229,9 +230,15 @@ impl Simulation {
         } else {
             None
         };
+        prep_timer.note(crate::sim::frame_profile::subphase::PREAMBLE);
         match head {
             //4B281C: the no-queue arm and its continuations (track_path).
-            None => self.track_no_queue_arm(call),
+            None => {
+                let queue_timer = crate::sim::frame_profile::Timer::start();
+                let out = self.track_no_queue_arm(call);
+                queue_timer.note(crate::sim::frame_profile::subphase::NO_QUEUE);
+                out
+            }
             Some(direction) => self.track_fresh_arm(call, direction),
         }
     }
@@ -358,12 +365,15 @@ impl Simulation {
             return Ok(false);
         }
         //4B33B3..4B33FA: an allied gate that is not open yet holds the Foot.
-        if !crate::sim::gate_runtime::request_gate_open_for_cell(
+        let gate_timer = crate::sim::frame_profile::Timer::start();
+        let gate_open = crate::sim::gate_runtime::request_gate_open_for_cell(
             self,
             (cell.0 as u16, cell.1 as u16),
             id,
             rules,
-        ) {
+        );
+        gate_timer.note(crate::sim::frame_profile::subphase::GATE);
+        if !gate_open {
             return Ok(false);
         }
         //4B3408..4B3458: the exact body facing gate; a mismatch turns
@@ -374,28 +384,47 @@ impl Simulation {
             .get(id)
             .ok_or("retired Drive/Ship fresh owner")?;
         if !fresh_heading_ready(actor.body_facing_current(frame), direction) {
+            let turn_timer = crate::sim::frame_profile::Timer::start();
             Self::track_do_turn(
                 &self.session,
                 &mut self.substrate,
                 id,
                 u16::from(direction) << 13,
             );
+            turn_timer.note(crate::sim::frame_profile::subphase::TURN);
             return Ok(false);
         }
         //4B345B..4B34D1: Mark0, Unit+1AC(cell, dir, height, 0, 1), Mark1.
-        self.foot_mark_remove(
-            id,
-            rules,
-            Some(call.rules.overlay_registry()),
-            &mut call.frame_effects,
-        );
-        let code = self.track_can_enter(call, cell, direction, height)?;
-        self.foot_mark_put(
-            id,
-            rules,
-            Some(call.rules.overlay_registry()),
-            &mut call.frame_effects,
-        );
+        let enter_timer = crate::sim::frame_profile::Timer::start();
+        // The pair scopes the entry question to the candidate Cell. When that
+        // Cell is not the one the mark holds, nothing reads the unmarked
+        // state, so the pair's two Recalcs only round-trip
+        // (`foot_mark_query_scope`).
+        let code = if coord_cell(location) == cell {
+            self.foot_mark_remove(
+                id,
+                rules,
+                Some(call.rules.overlay_registry()),
+                &mut call.frame_effects,
+            );
+            let code = self.track_can_enter(id, rules, cell, direction, height)?;
+            self.foot_mark_put(
+                id,
+                rules,
+                Some(call.rules.overlay_registry()),
+                &mut call.frame_effects,
+            );
+            code
+        } else {
+            self.foot_mark_query_scope(
+                id,
+                rules,
+                Some(call.rules.overlay_registry()),
+                &mut call.frame_effects,
+                |sim| sim.track_can_enter(id, rules, cell, direction, height),
+            )?
+        };
+        enter_timer.note(crate::sim::frame_profile::subphase::CAN_ENTER);
         let object = self.track_object(id, rules)?;
         let overlay = self.track_overlay(cell);
         //4B34D7..4B351D: the train and crusher coercions.
@@ -419,7 +448,11 @@ impl Simulation {
             .ok_or("fresh dispatch outside 0..7")?;
         match dispatch {
             FreshDispatch::Accept => {
-                self.track_fresh_accept(call, direction, candidate, cell, height, crush_overlay)
+                let accept_timer = crate::sim::frame_profile::Timer::start();
+                let accepted =
+                    self.track_fresh_accept(call, direction, candidate, cell, height, crush_overlay);
+                accept_timer.note(crate::sim::frame_profile::subphase::ACCEPT);
+                accepted
             }
             FreshDispatch::UncloakContacts { retry } => {
                 //4B394D..4B3984: ground contact callbacks, then recursion.
@@ -783,7 +816,8 @@ impl Simulation {
         let code = match forced_code {
             Some(code) => code,
             None => {
-                let code = self.track_can_enter(call, second_cell, second as u8, height2)?;
+                let code =
+                    self.track_can_enter(call.id, call.rules, second_cell, second as u8, height2)?;
                 let overlay = self.track_overlay(second_cell);
                 coerce_entry_code(
                     code,
@@ -967,7 +1001,8 @@ impl Simulation {
     /// The live Unit+1AC answer for one candidate, arguments (cell, dir, h, 0, 1).
     fn track_can_enter(
         &self,
-        call: &mut FreshCall<'_>,
+        id: u64,
+        rules: &RuleSet,
         cell: (i16, i16),
         direction: u8,
         height: i32,
@@ -978,14 +1013,14 @@ impl Simulation {
             .ok_or("Drive/Ship candidate query requires map cells")?;
         let native_cell = terrain.native_cell_identity(cell);
         self.foot_can_enter(
-            call.id,
+            id,
             native_cell,
             InfantryEntryArgs {
                 direction: i32::from(direction),
                 height,
                 previous_cell: None,
             },
-            call.rules,
+            rules,
         )
     }
 

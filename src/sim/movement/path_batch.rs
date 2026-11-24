@@ -215,9 +215,10 @@ const PASS_WINDOW: usize = 64;
 pub struct PathBatchStats {
     /// Registrations waiting when the latest pass started.
     pub waiting: u32,
-    /// Registrations the latest pass searched: after the per-pass cap, before
-    /// the re-path budgets' cuts drop answers.
+    /// Registrations the latest pass took into its turns, before the per-pass cap.
     pub searched: u32,
+    /// Registrations it ran a search for, before the cuts drop answers.
+    pub started: u32,
     /// Registrations it answered, whether or not the Foot took the answer.
     pub answered: u32,
     /// Registrations it left with no answer, so they register again next
@@ -230,9 +231,110 @@ pub struct PathBatchStats {
     /// Of those, the urgency-1 re-paths' expansions.
     #[serde(default)]
     pub urgency1_steps: u64,
-    /// Milliseconds the latest pass took, and the mean and slowest over the
-    /// kept window.
+    /// Milliseconds the latest pass took, the blocker plane's share of it and
+    /// the searches' share; and the mean and slowest over the kept window.
     pub last_ms: f64,
+    /// Of `last_ms`, the blocker plane's rebuild.
+    pub plane_ms: f64,
+    /// Of `last_ms`, the searches themselves.
+    pub search_ms: f64,
+    /// Of `last_ms`, the per-pass entry-fact reset.
+    pub facts_ms: f64,
+    /// Searches Foots ran outside the batch since the last pass, those
+    /// expansions and their wall clock; a frame's inline work lands in the
+    /// next pass's report.
+    #[serde(default)]
+    pub inline_searches: u32,
+    #[serde(default)]
+    pub inline_steps: u64,
+    #[serde(default)]
+    pub inline_ms: f64,
+    /// Of `inline_ms`, the A* and the finishing passes.
+    #[serde(default)]
+    pub inline_search_ms: f64,
+    #[serde(default)]
+    pub inline_finish_ms: f64,
+    /// Of the frame's object pass: the mission AI visit of every turn, and the
+    /// ground locomotor's Process. The phase ledger folds both into `UNIT_AI`
+    /// and `MOVEMENT`.
+    #[serde(default)]
+    pub ai_visit_ms: f64,
+    #[serde(default)]
+    pub ground_process_ms: f64,
+    /// Of `ground_process_ms`, the mover visit's setup, the locomotion step
+    /// and the pass's finish.
+    #[serde(default)]
+    pub begin_movement_ms: f64,
+    #[serde(default)]
+    pub track_process_ms: f64,
+    #[serde(default)]
+    pub finish_pass_ms: f64,
+    /// Of `ground_process_ms`, the movers' whole path requests: keys, defer
+    /// tests and installs, besides the searches `inline_search_ms` counts.
+    #[serde(default)]
+    pub path_request_ms: f64,
+    /// Of `ground_process_ms`, its pending-work loop and everything after it.
+    #[serde(default)]
+    pub movement_loop_ms: f64,
+    #[serde(default)]
+    pub movement_tail_ms: f64,
+    /// Of `ground_process_ms`, outside that loop: the track/turn gate, the
+    /// track-end continuation and the mover re-entry the loop runs.
+    #[serde(default)]
+    pub track_turn_ms: f64,
+    #[serde(default)]
+    pub track_end_ms: f64,
+    #[serde(default)]
+    pub reenter_ms: f64,
+    /// Of `ground_process_ms`, the rest of the pending-work loop: the Drive/Ship
+    /// Process_Movement, a FootPath re-entry and walk admission.
+    #[serde(default)]
+    pub track_movement_ms: f64,
+    #[serde(default)]
+    pub footpath_reenter_ms: f64,
+    #[serde(default)]
+    pub walk_admission_ms: f64,
+    /// Of `track_movement_ms`, one fresh arm: the gate question, the mark-scoped
+    /// entry query and the accepted step.
+    #[serde(default)]
+    pub gate_ms: f64,
+    #[serde(default)]
+    pub can_enter_ms: f64,
+    #[serde(default)]
+    pub accept_ms: f64,
+    /// Of `track_movement_ms`: the turn the heading gate asks for, and
+    /// `track_process_movement`'s head/destination gates before the arm.
+    #[serde(default)]
+    pub turn_ms: f64,
+    #[serde(default)]
+    pub preamble_ms: f64,
+    #[serde(default)]
+    pub no_queue_ms: f64,
+    /// One object's whole entry in the pass, and its turn alone; the first
+    /// minus the second is the bookkeeping around the turn.
+    #[serde(default)]
+    pub pass_object_ms: f64,
+    #[serde(default)]
+    pub turn_total_ms: f64,
+    /// Of the frame's object pass: the objects it walked, how many it skipped
+    /// as asleep, and how many reached their mission AI visit and their ground
+    /// locomotor's Process.
+    #[serde(default)]
+    pub objects_visited: u32,
+    #[serde(default)]
+    pub objects_slept: u32,
+    #[serde(default)]
+    pub ai_visits: u32,
+    #[serde(default)]
+    pub ground_processes: u32,
+    /// Foot marks' Recalc calls this pass elected, and how many reached the
+    /// terrain Recalc.
+    #[serde(default)]
+    pub recalc_entries: u32,
+    #[serde(default)]
+    pub recalc_runs: u32,
+    #[serde(default)]
+    pub recalc_ms: f64,
     pub mean_ms: f64,
     pub peak_ms: f64,
     /// Passes the window holds.
@@ -244,11 +346,25 @@ pub struct PathBatchStats {
 struct PassWindow {
     waiting: u32,
     searched: u32,
+    started: u32,
     answered: u32,
     steps: u64,
     urgency2_steps: u64,
     urgency1_steps: u64,
     last_ns: u64,
+    plane_ns: u64,
+    facts_ns: u64,
+    search_ns: u64,
+    inline_searches: u32,
+    inline_steps: u64,
+    inline_ns: u64,
+    inline_search_ns: u64,
+    inline_finish_ns: u64,
+    /// The object pass's own split and counts since the last pass, by
+    /// [`crate::sim::frame_profile::subphase`] and
+    /// [`crate::sim::frame_profile::count`] slot.
+    subphase: [u64; crate::sim::frame_profile::subphase::COUNT],
+    counts: [u64; crate::sim::frame_profile::count::COUNT],
     ns: [u64; PASS_WINDOW],
     next: usize,
     filled: usize,
@@ -259,11 +375,22 @@ impl Default for PassWindow {
         Self {
             waiting: 0,
             searched: 0,
+            started: 0,
             answered: 0,
             steps: 0,
             urgency2_steps: 0,
             urgency1_steps: 0,
             last_ns: 0,
+            plane_ns: 0,
+            facts_ns: 0,
+            search_ns: 0,
+            inline_searches: 0,
+            inline_steps: 0,
+            inline_ns: 0,
+            inline_search_ns: 0,
+            inline_finish_ns: 0,
+            subphase: [0; crate::sim::frame_profile::subphase::COUNT],
+            counts: [0; crate::sim::frame_profile::count::COUNT],
             ns: [0; PASS_WINDOW],
             next: 0,
             filled: 0,
@@ -277,18 +404,35 @@ impl PassWindow {
         took: Duration,
         waiting: usize,
         searched: usize,
+        started: usize,
         answered: usize,
         steps: u64,
         [urgency2_steps, urgency1_steps]: [u64; 2],
+        [plane_ns, facts_ns, search_ns]: [u64; 3],
+        [inline_searches, inline_steps, inline_ns]: [u64; 3],
+        [inline_search_ns, inline_finish_ns]: [u64; 2],
+        subphase: [u64; crate::sim::frame_profile::subphase::COUNT],
+        counts: [u64; crate::sim::frame_profile::count::COUNT],
     ) {
         let cast = |count: usize| u32::try_from(count).unwrap_or(u32::MAX);
         self.waiting = cast(waiting);
         self.searched = cast(searched);
+        self.started = cast(started);
         self.answered = cast(answered);
         self.steps = steps;
         self.urgency2_steps = urgency2_steps;
         self.urgency1_steps = urgency1_steps;
         self.last_ns = u64::try_from(took.as_nanos()).unwrap_or(u64::MAX);
+        self.plane_ns = plane_ns;
+        self.facts_ns = facts_ns;
+        self.search_ns = search_ns;
+        self.inline_searches = cast(inline_searches as usize);
+        self.inline_steps = inline_steps;
+        self.inline_ns = inline_ns;
+        self.inline_search_ns = inline_search_ns;
+        self.inline_finish_ns = inline_finish_ns;
+        self.subphase = subphase;
+        self.counts = counts;
         self.ns[self.next] = self.last_ns;
         self.next = (self.next + 1) % PASS_WINDOW;
         if self.filled < PASS_WINDOW {
@@ -297,18 +441,59 @@ impl PassWindow {
     }
 
     fn stats(&self) -> PathBatchStats {
+        use crate::sim::frame_profile::{count, subphase};
         let ms = |ns: u64| ns as f64 / 1.0e6;
+        let at = |slot: usize| ms(self.subphase[slot]);
         let window = &self.ns[..self.filled];
         let total_ns: u64 = window.iter().sum();
         PathBatchStats {
             waiting: self.waiting,
             searched: self.searched,
+            started: self.started,
             answered: self.answered,
             left_out: self.waiting.saturating_sub(self.answered),
             steps: self.steps,
             urgency2_steps: self.urgency2_steps,
             urgency1_steps: self.urgency1_steps,
             last_ms: ms(self.last_ns),
+            plane_ms: ms(self.plane_ns),
+            search_ms: ms(self.search_ns),
+            facts_ms: ms(self.facts_ns),
+            inline_searches: self.inline_searches,
+            inline_steps: self.inline_steps,
+            inline_ms: ms(self.inline_ns),
+            inline_search_ms: ms(self.inline_search_ns),
+            inline_finish_ms: ms(self.inline_finish_ns),
+            ai_visit_ms: at(subphase::AI_VISIT),
+            ground_process_ms: at(subphase::GROUND_PROCESS),
+            begin_movement_ms: at(subphase::BEGIN_MOVEMENT),
+            track_process_ms: at(subphase::TRACK_PROCESS),
+            finish_pass_ms: at(subphase::FINISH_PASS),
+            path_request_ms: at(subphase::PATH_REQUEST),
+            movement_loop_ms: at(subphase::MOVEMENT_LOOP),
+            movement_tail_ms: at(subphase::MOVEMENT_TAIL),
+            track_turn_ms: at(subphase::TRACK_TURN),
+            track_end_ms: at(subphase::TRACK_END_CONT),
+            reenter_ms: at(subphase::REENTER),
+            track_movement_ms: at(subphase::TRACK_MOVEMENT),
+            footpath_reenter_ms: at(subphase::FOOTPATH_REENTER),
+            walk_admission_ms: at(subphase::WALK_ADMISSION),
+            gate_ms: at(subphase::GATE),
+            can_enter_ms: at(subphase::CAN_ENTER),
+            accept_ms: at(subphase::ACCEPT),
+            turn_ms: at(subphase::TURN),
+            preamble_ms: at(subphase::PREAMBLE),
+            no_queue_ms: at(subphase::NO_QUEUE),
+            pass_object_ms: at(subphase::PASS_OBJECT),
+            turn_total_ms: at(subphase::TURN_TOTAL),
+            objects_visited: u32::try_from(self.counts[count::VISITED]).unwrap_or(u32::MAX),
+            objects_slept: u32::try_from(self.counts[count::SLEPT]).unwrap_or(u32::MAX),
+            ai_visits: u32::try_from(self.counts[count::AI_VISIT]).unwrap_or(u32::MAX),
+            ground_processes: u32::try_from(self.counts[count::GROUND_PROCESS])
+                .unwrap_or(u32::MAX),
+            recalc_entries: u32::try_from(self.counts[count::RECALC_ENTRY]).unwrap_or(u32::MAX),
+            recalc_runs: u32::try_from(self.counts[count::RECALC_RUN]).unwrap_or(u32::MAX),
+            recalc_ms: at(subphase::RECALC),
             mean_ms: if window.is_empty() {
                 0.0
             } else {
@@ -738,6 +923,16 @@ impl Simulation {
             return;
         };
         let started = Instant::now();
+        // What Foots searched outside the batch since the last pass: the inline
+        // work of the frame that just ended.
+        let [inline_searches, inline_steps, inline_ns, inline_search_ns, inline_finish_ns] = {
+            let (searches, steps, ns, search_ns, finish_ns) =
+                crate::sim::pathfinding::take_inline_search();
+            [searches, steps, ns, search_ns, finish_ns]
+        };
+        // And the object pass's own split and counts since the last pass.
+        let subphase = crate::sim::frame_profile::take_subphases();
+        let counts = crate::sim::frame_profile::take_counts();
         batch.ready.clear();
         #[cfg(any(test, feature = "test-support"))]
         batch.answered.clear();
@@ -746,7 +941,13 @@ impl Simulation {
         batch.left_out_code2.clear();
         batch.left_out_recursions.clear();
         if pending.is_empty() {
-            batch.stats.finish(started.elapsed(), 0, 0, 0, 0, [0; 2]);
+            batch
+                .stats
+                .finish(started.elapsed(), 0, 0, 0, 0, 0, [0; 2], [0; 3], [
+                    inline_searches,
+                    inline_steps,
+                    inline_ns,
+                ], [inline_search_ns, inline_finish_ns], subphase, counts);
             return;
         }
         // A Foot's latest registration this frame stands: its latest state
@@ -788,12 +989,16 @@ impl Simulation {
             .collect();
         turn.extend(others);
         let searched = turn.len();
-        let (turns, expanded, repaths_made) = match self.path_grid_snapshot() {
+        let (turns, expanded, repaths_made, parts_ns) = match self.path_grid_snapshot() {
             Some(grid) if self.overlay_grid.is_some() && self.resolved_terrain.is_some() => {
                 self.search_batch(&turn, repaths, repath_steps, rules, &grid)
             }
-            _ => (Vec::new(), 0, [0; 2]),
+            _ => (Vec::new(), 0, [0; 2], [0; 3]),
         };
+        let ran = turns
+            .iter()
+            .filter(|turn| matches!(turn, Turn::Searched(_)))
+            .count();
         let mut turns = turns.into_iter();
         let batch = self.path_batch.as_mut().expect("batching is on");
         let mut cut = [false; 2];
@@ -829,9 +1034,15 @@ impl Simulation {
             started.elapsed(),
             waiting,
             searched,
+            ran,
             answered,
             expanded,
             repaths_made,
+            parts_ns,
+            [inline_searches, inline_steps, inline_ns],
+            [inline_search_ns, inline_finish_ns],
+            subphase,
+            counts,
         );
     }
 
@@ -896,10 +1107,11 @@ impl Simulation {
         repath_steps: u64,
         rules: &RuleSet,
         grid: &PathGrid,
-    ) -> (Vec<Turn>, u64, [u64; 2]) {
+    ) -> (Vec<Turn>, u64, [u64; 2], [u64; 3]) {
         // One blocker plane for every search. With an overlay grid movers
         // reach it through their Foot+55C counters, which Mark0 leaves alone,
         // so it is the plane each Find_Path would read after its Mark0.
+        let plane_start = Instant::now();
         self.movement_pass_cache.blocker_plane(
             &mut self.substrate.entities,
             grid,
@@ -909,9 +1121,12 @@ impl Simulation {
             &self.interner,
             rules,
         );
+        let plane_ns = u64::try_from(plane_start.elapsed().as_nanos()).unwrap_or(u64::MAX);
         // Every search reads the same world, so a cell's or blocker's entry
         // facts and a cell's code-2 chain are read once a batch and shared.
+        let facts_start = Instant::now();
         self.empty_entry_facts(true);
+        let facts_ns = u64::try_from(facts_start.elapsed().as_nanos()).unwrap_or(u64::MAX);
         let sim = &*self;
         let counts = sim.movement_pass_cache.current_blocker_plane();
         let facts = sim.entry_facts().expect("batching is on");
@@ -936,6 +1151,7 @@ impl Simulation {
         // count there.
         let budgeted = repaths[0] + repaths[1];
         let made: Vec<AtomicU64> = (0..budgeted).map(|_| AtomicU64::new(0)).collect();
+        let search_start = Instant::now();
         let mut searched = crate::sim::parallel::map_in_order(turn, |index, &(id, request)| {
             // The re-paths before this one in its turn.
             let start = if index < repaths[0] { 0 } else { repaths[0] };
@@ -977,6 +1193,7 @@ impl Simulation {
             made[index].store(steps, Ordering::Relaxed);
             Some((answer, steps, stopped.get()))
         });
+        let search_ns = u64::try_from(search_start.elapsed().as_nanos()).unwrap_or(u64::MAX);
         #[cfg(any(test, feature = "test-support"))]
         assert_eq!(rng, sim.rng_state(), "batched searches draw no RNG");
         // Expansions the pass actually made, counted before the cut drops the
@@ -1013,7 +1230,7 @@ impl Simulation {
                 searched.map_or(Turn::OverBudget, |(answer, ..)| Turn::Searched(answer))
             })
             .collect();
-        (turns, expanded, repaths_made)
+        (turns, expanded, repaths_made, [plane_ns, facts_ns, search_ns])
     }
 
     /// `id`'s search as its `request`'s Find_Path would run it now, without

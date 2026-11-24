@@ -664,6 +664,10 @@ fn watched_session(
 struct PathTotals {
     passes: u64,
     waiting: u64,
+    /// Registrations the passes took into their turns, before the caps.
+    searched: u64,
+    /// Registrations they ran a search for, before the cuts.
+    started: u64,
     answered: u64,
     left_out: u64,
     /// Passes that left any registration for a later one.
@@ -672,6 +676,45 @@ struct PathTotals {
     steps: u64,
     urgency2_steps: u64,
     urgency1_steps: u64,
+    plane_ms: f64,
+    facts_ms: f64,
+    search_ms: f64,
+    /// Inline searches Foots ran outside the batch, their expansions and wall
+    /// clock, per pass.
+    inline_searches: u64,
+    inline_steps: u64,
+    inline_ms: f64,
+    inline_search_ms: f64,
+    inline_finish_ms: f64,
+    ai_visit_ms: f64,
+    ground_process_ms: f64,
+    begin_movement_ms: f64,
+    track_process_ms: f64,
+    finish_pass_ms: f64,
+    path_request_ms: f64,
+    movement_loop_ms: f64,
+    movement_tail_ms: f64,
+    track_turn_ms: f64,
+    track_end_ms: f64,
+    reenter_ms: f64,
+    track_movement_ms: f64,
+    footpath_reenter_ms: f64,
+    walk_admission_ms: f64,
+    gate_ms: f64,
+    can_enter_ms: f64,
+    accept_ms: f64,
+    turn_ms: f64,
+    preamble_ms: f64,
+    no_queue_ms: f64,
+    pass_object_ms: f64,
+    turn_total_ms: f64,
+    objects_visited: u64,
+    objects_slept: u64,
+    ai_visits: u64,
+    ground_processes: u64,
+    recalc_entries: u64,
+    recalc_runs: u64,
+    recalc_ms: f64,
     peak_pass_ms: f64,
 }
 
@@ -679,6 +722,8 @@ impl PathTotals {
     fn add(&mut self, pass: PathBatchStats) {
         self.passes += 1;
         self.waiting += u64::from(pass.waiting);
+        self.searched += u64::from(pass.searched);
+        self.started += u64::from(pass.started);
         self.answered += u64::from(pass.answered);
         self.left_out += u64::from(pass.left_out);
         self.left_out_passes += u64::from(pass.left_out > 0);
@@ -686,6 +731,43 @@ impl PathTotals {
         self.steps += pass.steps;
         self.urgency2_steps += pass.urgency2_steps;
         self.urgency1_steps += pass.urgency1_steps;
+        self.plane_ms += pass.plane_ms;
+        self.facts_ms += pass.facts_ms;
+        self.search_ms += pass.search_ms;
+        self.inline_searches += u64::from(pass.inline_searches);
+        self.inline_steps += pass.inline_steps;
+        self.inline_ms += pass.inline_ms;
+        self.inline_search_ms += pass.inline_search_ms;
+        self.inline_finish_ms += pass.inline_finish_ms;
+        self.ai_visit_ms += pass.ai_visit_ms;
+        self.ground_process_ms += pass.ground_process_ms;
+        self.begin_movement_ms += pass.begin_movement_ms;
+        self.track_process_ms += pass.track_process_ms;
+        self.finish_pass_ms += pass.finish_pass_ms;
+        self.path_request_ms += pass.path_request_ms;
+        self.movement_loop_ms += pass.movement_loop_ms;
+        self.movement_tail_ms += pass.movement_tail_ms;
+        self.track_turn_ms += pass.track_turn_ms;
+        self.track_end_ms += pass.track_end_ms;
+        self.reenter_ms += pass.reenter_ms;
+        self.track_movement_ms += pass.track_movement_ms;
+        self.footpath_reenter_ms += pass.footpath_reenter_ms;
+        self.walk_admission_ms += pass.walk_admission_ms;
+        self.gate_ms += pass.gate_ms;
+        self.can_enter_ms += pass.can_enter_ms;
+        self.accept_ms += pass.accept_ms;
+        self.turn_ms += pass.turn_ms;
+        self.preamble_ms += pass.preamble_ms;
+        self.no_queue_ms += pass.no_queue_ms;
+        self.pass_object_ms += pass.pass_object_ms;
+        self.turn_total_ms += pass.turn_total_ms;
+        self.objects_visited += u64::from(pass.objects_visited);
+        self.objects_slept += u64::from(pass.objects_slept);
+        self.ai_visits += u64::from(pass.ai_visits);
+        self.ground_processes += u64::from(pass.ground_processes);
+        self.recalc_entries += u64::from(pass.recalc_entries);
+        self.recalc_runs += u64::from(pass.recalc_runs);
+        self.recalc_ms += pass.recalc_ms;
         self.peak_pass_ms = self.peak_pass_ms.max(pass.last_ms);
     }
 }
@@ -1054,11 +1136,23 @@ fn main() -> Result<(), String> {
     report(&mut std::io::stdout().lock(), &measured, warmup).map_err(|error| error.to_string())?;
     if paths.passes > 0 {
         println!(
-            "path_batch passes={} waiting={} answered={} left_out={} left_out_passes={} \
-             peak_left_out={} steps={} urgency2_steps={} urgency1_steps={} \
-             peak_pass_ms={:.2}",
+            "path_batch passes={} waiting={} searched={} started={} answered={} left_out={} \
+             left_out_passes={} peak_left_out={} steps={} urgency2_steps={} \
+             urgency1_steps={} other_steps={} plane_ms={:.2} facts_ms={:.2} \
+             search_ms={:.2} inline_searches={:.1} inline_steps={} inline_ms={:.2} \
+             inline_search_ms={:.2} inline_finish_ms={:.2} ai_visit_ms={:.2} \
+             ground_process_ms={:.2} begin_movement_ms={:.2} track_process_ms={:.2} \
+             finish_pass_ms={:.2} path_request_ms={:.2} movement_loop_ms={:.2} \
+             movement_tail_ms={:.2} track_turn_ms={:.2} track_end_ms={:.2} \
+             reenter_ms={:.2} track_movement_ms={:.2} footpath_reenter_ms={:.2} \
+             walk_admission_ms={:.2} gate_ms={:.2} can_enter_ms={:.2} accept_ms={:.2} \
+             turn_ms={:.2} preamble_ms={:.2} no_queue_ms={:.2} pass_object_ms={:.2} turn_total_ms={:.2} \
+             visited={:.0} slept={:.0} ai_visits={:.0} \
+             ground_processes={:.0} recalc_entries={:.0} recalc_runs={:.0} recalc_ms={:.2} peak_pass_ms={:.2}",
             paths.passes,
             paths.waiting,
+            paths.searched,
+            paths.started,
             paths.answered,
             paths.left_out,
             paths.left_out_passes,
@@ -1066,6 +1160,45 @@ fn main() -> Result<(), String> {
             paths.steps,
             paths.urgency2_steps,
             paths.urgency1_steps,
+            paths.steps
+                .saturating_sub(paths.urgency2_steps + paths.urgency1_steps),
+            paths.plane_ms / paths.passes as f64,
+            paths.facts_ms / paths.passes as f64,
+            paths.search_ms / paths.passes as f64,
+            paths.inline_searches as f64 / paths.passes as f64,
+            paths.inline_steps / paths.passes,
+            paths.inline_ms / paths.passes as f64,
+            paths.inline_search_ms / paths.passes as f64,
+            paths.inline_finish_ms / paths.passes as f64,
+            paths.ai_visit_ms / paths.passes as f64,
+            paths.ground_process_ms / paths.passes as f64,
+            paths.begin_movement_ms / paths.passes as f64,
+            paths.track_process_ms / paths.passes as f64,
+            paths.finish_pass_ms / paths.passes as f64,
+            paths.path_request_ms / paths.passes as f64,
+            paths.movement_loop_ms / paths.passes as f64,
+            paths.movement_tail_ms / paths.passes as f64,
+            paths.track_turn_ms / paths.passes as f64,
+            paths.track_end_ms / paths.passes as f64,
+            paths.reenter_ms / paths.passes as f64,
+            paths.track_movement_ms / paths.passes as f64,
+            paths.footpath_reenter_ms / paths.passes as f64,
+            paths.walk_admission_ms / paths.passes as f64,
+            paths.gate_ms / paths.passes as f64,
+            paths.can_enter_ms / paths.passes as f64,
+            paths.accept_ms / paths.passes as f64,
+            paths.turn_ms / paths.passes as f64,
+            paths.preamble_ms / paths.passes as f64,
+            paths.no_queue_ms / paths.passes as f64,
+            paths.pass_object_ms / paths.passes as f64,
+            paths.turn_total_ms / paths.passes as f64,
+            paths.objects_visited as f64 / paths.passes as f64,
+            paths.objects_slept as f64 / paths.passes as f64,
+            paths.ai_visits as f64 / paths.passes as f64,
+            paths.ground_processes as f64 / paths.passes as f64,
+            paths.recalc_entries as f64 / paths.passes as f64,
+            paths.recalc_runs as f64 / paths.passes as f64,
+            paths.recalc_ms / paths.passes as f64,
             paths.peak_pass_ms,
         );
     }
