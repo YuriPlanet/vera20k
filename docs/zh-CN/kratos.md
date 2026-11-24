@@ -93,3 +93,21 @@ VERA20K 的 GPLv3 组合作品保留该许可证。
 已移植的功能把它的键放在 `kratos_read` 里读取，这些读取会被标记为 Kratos 读取器；开关只统计没有
 被其它读取器读到的键。键名、默认值和钳制值来自 Kratos PP 以及 Kratos 所挂钩的 `gamemd.exe`，
 不是凭清单猜的；原生地址写在 Rust 代码旁。没有该键的游戏保持原版路径。
+
+### 一个功能一个模块
+
+一个功能把它的键、默认值和自己的判定收在同一个 `src/rules/<扩展>_<功能>.rs` 里，测试放在旁边的
+`<功能>_tests.rs`：
+
+- 带类型的值，`#[serde(Serialize, Deserialize)]`，随存档一起保存；
+- `read(&mut self, art_or_rules)`，Kratos `Read` 的对应实现，也是它的键唯一出现的地方；
+- 纯判定做成值上的方法，例如 `flh(slot, elite, prone)`，这样规则只有一处实现，能和 Kratos 源码
+  逐行对照。
+
+聚合结构只负责持有这个值：`WeaponOffsets` 和类型记录保存功能的答案，不持有它的键、也不写它的
+条件。`sim` 在原生的读取点调用判定，不重复条件；以后再有改动枪口的功能，调用同一个方法即可。
+`kratos_crawling_flh.rs` 是参照实现：它与 `Ext/TechnoType/CrawlingFLHData.h` 一一对应，
+`combat_weapon::get_weapon_record` 只负责问它。
+
+这条约定有两点不是：不要给功能建逐单位的扩展容器（Kratos 把组件挂在 gamemd 对象上，而 VERA 要跑
+2 万单位，类型数据放在 `RuleSet` 里共享），也不要为了对称把纯判定搬进 `sim`。

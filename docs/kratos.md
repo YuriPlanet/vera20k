@@ -100,3 +100,24 @@ reader's; the switch then counts a key that no other reader found. The keys, the
 and their clamps come from Kratos PP and from `gamemd.exe` where Kratos hooks it, not from a
 list; the address of the native site goes next to the Rust. A game without the key keeps the
 native path.
+
+### One piece, one module
+
+A piece keeps its keys, their defaults and its own decision in one
+`src/rules/<ext>_<feature>.rs`, with the tests beside it in `<feature>_tests.rs`:
+
+- the typed value, `#[serde(Serialize, Deserialize)]` so a save carries it;
+- `read(&mut self, art_or_rules)`, the Kratos `Read` port, which is the only place its keys
+  appear;
+- the pure decision as a method on the value, such as `flh(slot, elite, prone)`, so the rule
+  has one implementation to read against Kratos' source.
+
+Aggregates only hold the value: `WeaponOffsets` and the type records keep the piece's answer,
+they do not own its keys or its condition. `sim` calls the decision at the native read and
+does not repeat the condition, so a later piece that also changes the muzzle calls the same
+method. `kratos_crawling_flh.rs` is the reference: it lines up with
+`Ext/TechnoType/CrawlingFLHData.h`, and `combat_weapon::get_weapon_record` only asks it.
+
+Two things this convention does not mean: do not give a piece a per-unit extension container
+(Kratos hangs its components on gamemd objects; VERA shares type data in `RuleSet` because it
+runs 20,000 units), and do not move a pure decision into `sim` for symmetry.
