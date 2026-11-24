@@ -284,6 +284,60 @@ fn playtest_modules_keep_running() {
     }
 }
 
+/// The INI demo mods (`sdk/examples/ini-*`) when `VERA20K_TEST_INI_DEMOS`
+/// lists them, `;`-separated, each `module.wasm|rulesmd.ini|MARK1,MARK2`:
+/// the module installs (its `vera_init` registers its INI names), the mod's
+/// INI becomes the merged rules text and its `Wasm.Tags` triggers are built,
+/// then 3000 frames of a Battle against one computer house run. The module
+/// must still be running, nothing may be refused, and its log must hold a
+/// line `DEMO-OK <MARK>` for every listed mark. Prints each log
+/// (`--nocapture`).
+#[test]
+fn ini_demo_mods_reach_their_marks() {
+    let Some(demos) = std::env::var("VERA20K_TEST_INI_DEMOS").ok() else {
+        return;
+    };
+    for demo in demos.split(';').filter(|d| !d.trim().is_empty()) {
+        let mut parts = demo.split('|');
+        let (Some(wasm), Some(ini), marks) = (parts.next(), parts.next(), parts.next()) else {
+            panic!("{demo}: expected module.wasm|rulesmd.ini|MARKS");
+        };
+        let Some(mut scene) = scenario_with_computer() else {
+            return;
+        };
+        let bytes = std::fs::read(wasm.trim()).expect("module file reads");
+        let text = std::fs::read_to_string(ini.trim()).expect("rulesmd.ini reads");
+        let mod_ini = crate::rules::ini_parser::IniFile::from_str(&text);
+        let rules = &scene.runtime.resources.rules;
+        let sim = &mut scene.runtime.simulation;
+        sim.install_ext_module(rules, ModuleSource::Mod, &bytes)
+            .expect("module installs");
+        sim.ext_modules.rules_ini = Some(mod_ini.clone());
+        let triggers = super::ini_triggers::IniTriggers::read(&mod_ini)
+            .unwrap_or_else(|e| panic!("{ini}: {e}"));
+        sim.install_ini_triggers(rules, &triggers)
+            .unwrap_or_else(|e| panic!("{ini}: {e}"));
+        for _ in 0..3000 {
+            scene.tick();
+        }
+        let status = scene.sim().ext_modules().status();
+        let log = scene.runtime.simulation.ext_modules_mut().take_log();
+        eprintln!("== {wasm}");
+        for line in &log {
+            eprintln!("   {line}");
+        }
+        assert_eq!(status[0].1, None, "{wasm} stopped; log {log:?}");
+        assert!(!log.iter().any(|l| l.contains("refused")), "{wasm}: {log:?}");
+        for mark in marks.unwrap_or("").split(',').map(str::trim).filter(|m| !m.is_empty()) {
+            let line = format!("DEMO-OK {mark}");
+            assert!(
+                log.iter().any(|l| l.contains(&line)),
+                "{wasm}: no `{line}` in {log:?}"
+            );
+        }
+    }
+}
+
 /// The player's units in Muster Field's camp, by cell: (id, cell, type).
 type CampUnits = Vec<(u64, (u16, u16), String)>;
 
