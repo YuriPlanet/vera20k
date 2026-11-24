@@ -198,6 +198,8 @@ Source: "LICENSE-DXC.txt"; DestDir: "{app}"; Flags: ignoreversion
 ; Every language but English and the fonts behind them. Deleting a language's
 ; files removes it from the game until the next update.
 Source: "languages\*"; DestDir: "{app}\languages"; Flags: ignoreversion
+Source: "Terrain\vera_ice.mix"; DestDir: "{app}\Terrain"; Flags: ignoreversion
+Source: "Terrain\vera_ice_tiles.ini"; DestDir: "{app}\Terrain"; Flags: ignoreversion
 ; The player's map folder can already contain an edited copy.
 Source: "Maps\Arctic_Circle_16_Ice_Passages.map"; DestDir: "{app}\Maps"; Flags: onlyifdoesntexist uninsneveruninstall; Check: NeedsArcticMap
 
@@ -884,7 +886,8 @@ begin
   AppendReadySection(Result, CustomMessage('ReadyFiles') + NewLine +
     Space + 'vera20k.exe, dxcompiler.dll, config.toml.example, README.txt' + NewLine +
     Space + 'LICENSE-GPL, LICENSE-DXC.txt, THIRD_PARTY_LICENSES.html, languages' + NewLine +
-    Space + 'Maps\Arctic_Circle_16_Ice_Passages.map', NewLine);
+    Space + 'Maps\Arctic_Circle_16_Ice_Passages.map' + NewLine +
+    Space + 'Terrain\vera_ice.mix, Terrain\vera_ice_tiles.ini', NewLine);
   if FileExists(AddBackslash(WizardDirValue()) + 'config.toml') then
     ConfigInfo := CustomMessage('ReadyConfigExisting')
   else

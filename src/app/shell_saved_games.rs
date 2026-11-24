@@ -286,12 +286,22 @@ impl App {
                 state.match_state.match_presentation.saved_game_browser = None;
                 Self::enter_in_game_menu_state(state, InGameMenuState::Closed);
             }
-            Err(error) => {
-                log::warn!("Load browser: {}: {error}", path.display());
-                let body = state.csf_label("TXT_ERROR_LOADING_GAME", "Error loading game.");
-                Self::show_saved_game_prompt(state, SavedSeedPromptPurpose::Error, body, false);
-            }
+            Err(error) => Self::report_saved_game_load_error(state, path, &error),
         }
+    }
+
+    pub(super) fn report_saved_game_load_error(
+        state: &mut AppState,
+        path: &std::path::Path,
+        error: &crate::app::persistence::PreparedLoadError,
+    ) {
+        log::warn!("Load Saved Game: {}: {error}", path.display());
+        let mut body = state.csf_label("TXT_ERROR_LOADING_GAME", "Error loading game.");
+        if let crate::app::persistence::PreparedLoadError::Resources(detail) = error {
+            body.push_str("\n\n");
+            body.push_str(detail);
+        }
+        Self::show_saved_game_prompt(state, SavedSeedPromptPurpose::Error, body, false);
     }
 
     pub(super) fn apply_saved_game_input(

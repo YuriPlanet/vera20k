@@ -56,6 +56,14 @@ class WasmBuildTests(unittest.TestCase):
             self.assertEqual((root / 'output' / 'Maps' / name).read_bytes(),
                              (ROOT / 'maps' / name).read_bytes())
 
+    def test_engine_package_ships_the_ice_terrain_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            stage = Path(directory)
+            package_host(stage, stage / 'out', False)
+            for name in ('vera_ice.mix', 'vera_ice_tiles.ini'):
+                self.assertEqual((stage / 'out/pkg/Terrain' / name).read_bytes(),
+                                 (ROOT / 'Terrain' / name).read_bytes())
+
     def test_package_carries_the_files_the_engine_fetches_before_starting(self):
         # src/render/text_engine/web_fonts.rs PRELOADS: the engine embeds neither.
         with tempfile.TemporaryDirectory() as directory:

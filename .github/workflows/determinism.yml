@@ -126,7 +126,7 @@ jobs:
           mkdir -p hashes
           for map in $MAPS; do
             node tools/wasm/wasi_run.mjs target/wasm32-wasip1/release/sim-bench.wasm \
-              --dir "/game=$RA2_DIR" --dir "/out=$PWD/hashes" -- \
+              --dir "/game=$RA2_DIR" --dir "/Terrain=$PWD/Terrain" --dir "/out=$PWD/hashes" -- \
               --ra2-dir /game --scenario skirmish --lan \
               --map "$map" --ticks "$TICKS" --frame-hashes "/out/$map.txt"
           done

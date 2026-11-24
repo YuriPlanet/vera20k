@@ -1530,6 +1530,7 @@ mod tests {
                 "VERA20K.app/Contents/Resources/languages",
             ),
             ("AppDir/usr/bin", "AppDir/usr/share/vera20k/languages"),
+            ("Launcher/usr/bin", "Launcher/usr/lib/VERA20K/languages"),
         ] {
             let program = root.join(program);
             let folder = root.join(folder);
