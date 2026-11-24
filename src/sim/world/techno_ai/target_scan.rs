@@ -33,6 +33,7 @@ use crate::sim::mission::timer::MissionTimer;
 use crate::sim::rng::SimRng;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
+use crate::util::forked::Forked;
 
 /// Committed mission id of Area Guard (`+0xAC == 0xB`, `0x0070983A`).
 const AREA_GUARD_MISSION: i32 = 0xB;
@@ -935,9 +936,10 @@ impl Simulation {
     }
 
     /// A scan's writes to its scanner, in the order the adapter commits them,
-    /// and its pick.
+    /// and its pick. The Scenario stream is written only by a scan that drew
+    /// (`util::forked`).
     fn commit_threat_scan(
-        scenario_rng: &mut SimRng,
+        scenario_rng: &mut Forked<SimRng>,
         substrate: &mut ObjectSubstrate,
         id: u64,
         mut result: crate::sim::combat::greatest_threat::ThreatScanOutcome,
@@ -945,7 +947,7 @@ impl Simulation {
         // The computer's disguise detection draws during the scan
         // (Evaluate_Candidate 0x006F851C).
         if let Some(rng) = result.take_scenario_rng() {
-            *scenario_rng = rng;
+            **scenario_rng = rng;
         }
         if let Some(collected) = result.take_collected()
             && let Some(entity) = substrate.entities.get_mut(id)
