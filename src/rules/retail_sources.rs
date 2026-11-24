@@ -585,19 +585,19 @@ impl<'a> ShippedInis<'a> {
     /// one; `None` when nothing supplies `name`.
     pub fn used(&self, name: &str) -> Option<UsedIni<'_>> {
         let name = name.trim();
-        let used = (!name.is_empty())
-            .then(|| self.assets.resolve_ref(name))
+        let (source, bytes) = (!name.is_empty())
+            .then(|| self.assets.installed_file(name))
             .flatten()?;
         let mut found = UsedIni {
-            source: used.source_archive,
-            bytes: used.bytes,
+            source,
+            bytes,
             shipped: ShippedCopy::Same,
         };
-        if shipped_source(used.source_archive) {
+        if shipped_source(source) {
             return Some(found);
         }
         let shipped = self.shipped(name);
-        if !shipped.is_some_and(|shipped| same_entries(shipped, used.bytes)) {
+        if !shipped.is_some_and(|shipped| same_entries(shipped, bytes)) {
             found.shipped = ShippedCopy::Changed(shipped);
         }
         Some(found)

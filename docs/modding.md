@@ -433,11 +433,14 @@ map can change any rule for that match.
 New map exports and downloads use `.map`. If you already have an identical
 copy, VERA20k reuses it under its existing name, including `.yrm` and `.mpr` files.
 
-VERA20k adds two things. Open the map in a text editor to set them:
+VERA20k also supports these map settings:
 
 - **Bigger maps:** under `[Map]`, the width and height in `Size=` can add up to 1024.
 - **More players:** under `[Basic]`, add `MaxPlayers=` with a number from 9 to 30. The
   map needs a start waypoint for every player, numbered from 0.
+- **Breakable ice.** Set `VeraIce=yes` under `[Map]` on a snow map, then paint
+  the crossing with the bundled ice tiles. Players only need your map file.
+  See [ice tile numbers, editor setup and Ice Lake](ts-ice.md#use-the-bundled-ice-in-a-map).
 
 If you write a map editor or tool, the [map format](map-format.md) has the details.
 

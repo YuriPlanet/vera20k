@@ -462,6 +462,7 @@ impl Clone for AssetManager {
 /// Reversible current-resolution authority for a fallible VERA save candidate.
 /// Archive bytes remain shared through MixArchive's retained backing storage.
 struct SavedLoadLookupAuthority {
+    pinned_names: Option<PinnedNames>,
     archives: Vec<NamedArchive>,
     active_theater: Option<String>,
     active_theater_archives: Vec<String>,
@@ -686,7 +687,7 @@ impl AssetManager {
     /// selected mod's folder rather than the installation's.
     pub fn from_mod_folder(&self, file: &str) -> bool {
         self.mod_dir.as_deref().is_some_and(|dir| {
-            self.loose_asset(file)
+            self.installed_loose_asset(file)
                 .is_some_and(|asset| asset.path.starts_with(dir))
         })
     }
@@ -1518,6 +1519,7 @@ impl AssetManager {
         prepare: impl FnOnce(&mut Self) -> Result<T, E>,
     ) -> Result<T, E> {
         let previous = SavedLoadLookupAuthority {
+            pinned_names: self.pinned_names.clone(),
             archives: self.archives.clone(),
             active_theater: self.active_theater.clone(),
             active_theater_archives: self.active_theater_archives.clone(),
@@ -1553,6 +1555,7 @@ impl AssetManager {
             }
             self.archive_catalog
                 .retain(|cached| !previous.archives.iter().any(|old| old.name == cached.name));
+            self.pinned_names = previous.pinned_names;
             self.archives = previous.archives;
             self.active_theater = previous.active_theater;
             self.active_theater_archives = previous.active_theater_archives;
@@ -1740,19 +1743,27 @@ impl AssetManager {
         found
     }
 
-    /// VERA: what [`Self::resolve_ref`] would read for `name` with `unmounted`
-    /// (from [`Self::theater_archives_unmounted`]) mounted after the registered
-    /// archives: a loose file, else the first archive whose index lists the
-    /// name, even one that cannot read it, as `lookup_index` decides.
+    /// The installed file (mod folders included), independent of the active
+    /// map's terrain pins. Lobby agreement compares this same installation
+    /// before and after a map preview or match.
+    pub fn installed_file(&self, name: &str) -> Option<(&str, &[u8])> {
+        self.resolve_ref_with_unmounted(name, &[])
+    }
+
+    /// VERA: compare installed files with this theater's archives searched
+    /// after the registered archives. A loose file wins, else the first MIX
+    /// whose index lists the name, even one that cannot read it.
     pub fn resolve_ref_with_unmounted<'a>(
         &'a self,
         name: &str,
         unmounted: &'a [UnmountedArchive<'a>],
     ) -> Option<(&'a str, &'a [u8])> {
-        if let Some((loose, bytes)) = self.loose_bytes(name) {
+        if let Some(loose) = self.installed_loose_asset(name)
+            && let Some(bytes) = loose.bytes()
+        {
             return Some((loose.source_name.as_str(), bytes));
         }
-        if let Some((named, entry_id)) = self.lookup_asset_entry(name) {
+        if let Some((named, entry_id)) = self.lookup_registered_entry(name) {
             return named
                 .archive
                 .get_by_id(entry_id)
@@ -1829,6 +1840,10 @@ impl AssetManager {
         if let Some((pinned, id)) = self.pinned(name) {
             return Some((&pinned.archives[*pinned.found.get(&id)?], id));
         }
+        self.lookup_registered_entry(name)
+    }
+
+    fn lookup_registered_entry(&self, name: &str) -> Option<(&NamedArchive, i32)> {
         let location = self.lookup_location_for_name(name)?;
         let archive = self.archives.get(location.archive_index)?;
         Some((archive, location.entry_id))
@@ -2375,6 +2390,10 @@ impl AssetManager {
         if self.pinned(name).is_some() {
             return None;
         }
+        self.installed_loose_asset(name)
+    }
+
+    fn installed_loose_asset(&self, name: &str) -> Option<&LooseAsset> {
         let key = loose_lookup_key(name)?;
         self.loose_files.get(&key)
     }
