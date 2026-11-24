@@ -193,10 +193,9 @@ impl Host<'_, '_> {
             return Err(Invalid(format!("{house:#x} names no house")));
         };
         // RFC 6g "Houses": only a computer house that is not defeated.
-        if state.is_human()
-            || state.is_defeated()
-            || self.sim.session.current_house() == Some(owner)
-        {
+        // `is_human` covers the local player's house; the local house
+        // itself is per-client and never decides lockstep state.
+        if state.is_human() || state.is_defeated() {
             return Ok(Status::Refused);
         }
         let Some((target_spec, value_spec, takes_units)) = command_spec(order.kind) else {

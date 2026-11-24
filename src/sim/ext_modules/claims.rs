@@ -275,10 +275,9 @@ impl Host<'_, '_> {
             return Ok(Status::Gone);
         };
         // RFC 6i "Claims": the condition `order` uses (6g "Houses").
-        if state.is_human()
-            || state.is_defeated()
-            || self.sim.session.current_house() == Some(owner)
-        {
+        // `is_human` covers the local player's house; the local house
+        // itself is per-client and never decides lockstep state.
+        if state.is_human() || state.is_defeated() {
             return Ok(Status::Refused);
         }
         let Ok(index) = u32::try_from(index) else {
