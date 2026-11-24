@@ -964,6 +964,12 @@ pub struct SkirmishLaunchSession {
     /// do not describe. Ordinary setups always derive them from current rows.
     recorded_house_roster: Option<Box<RecordedHouseRoster>>,
     pub options: SkirmishLaunchOptions,
+    /// VERA: the computer seats (their `raw_slot_index`) the room gave to
+    /// the mod's AI module ("mod AI", RFC 0001 section 6i). Such a house
+    /// starts with every domain claimed by the mod module when the mod is a
+    /// controller; otherwise the native AI plays it. Left out while empty,
+    /// so a launch without such seats serializes as before.
+    pub mod_ai_slots: Vec<u8>,
 }
 
 #[derive(Debug, Clone)]
@@ -988,6 +994,18 @@ struct LaunchSessionView<'a> {
     opponents: &'a [SkirmishAiSlot],
     pre_fill_house_roster: Cow<'a, PreFillHouseRoster>,
     options: &'a SkirmishLaunchOptions,
+    #[serde(skip_serializing_if = "no_mod_ai_slots")]
+    mod_ai_slots: &'a [u8],
+}
+
+fn no_mod_ai_slots(slots: &&[u8]) -> bool {
+    slots.is_empty()
+}
+
+/// The name the launch gives the house of opponent `index` (in
+/// [`SkirmishLaunchSession::opponents`] order): `Computer<index + 1>`.
+pub fn computer_house_name(index: usize) -> String {
+    format!("Computer{}", index + 1)
 }
 
 impl Serialize for SkirmishLaunchSession {
@@ -1024,6 +1042,8 @@ struct SkirmishLaunchSessionInput {
     opponents: Vec<SkirmishAiSlot>,
     pre_fill_house_roster: PreFillHouseRoster,
     options: SkirmishLaunchOptions,
+    #[serde(default)]
+    mod_ai_slots: Vec<u8>,
 }
 
 impl TryFrom<SkirmishLaunchSessionInput> for SkirmishLaunchSession {
@@ -1085,6 +1105,7 @@ impl TryFrom<SkirmishLaunchSessionInput> for SkirmishLaunchSession {
             session.ai_player_count = declared_ai;
         }
         session.retain_recorded_house_roster(input.pre_fill_house_roster);
+        session.mod_ai_slots = input.mod_ai_slots;
         Ok(session)
     }
 }
@@ -1247,6 +1268,7 @@ impl SkirmishLaunchSession {
             opponents,
             recorded_house_roster: None,
             options,
+            mod_ai_slots: Vec::new(),
         }
     }
 
@@ -1260,6 +1282,18 @@ impl SkirmishLaunchSession {
             || self.mode.class == crate::skirmish_modes::MpModeClass::Cooperative
     }
 
+    /// The houses of the "mod AI" seats ([`Self::mod_ai_slots`]), by the
+    /// name the launch gives each computer house (`Computer<n>`, in
+    /// opponent order).
+    pub fn mod_ai_house_names(&self) -> Vec<String> {
+        self.opponents
+            .iter()
+            .enumerate()
+            .filter(|(_, opponent)| self.mod_ai_slots.contains(&opponent.raw_slot_index))
+            .map(|(index, _)| computer_house_name(index))
+            .collect()
+    }
+
     fn view(&self) -> LaunchSessionView<'_> {
         LaunchSessionView {
             mode: &self.mode,
@@ -1270,6 +1304,7 @@ impl SkirmishLaunchSession {
             opponents: &self.opponents,
             pre_fill_house_roster: self.pre_fill_house_roster(),
             options: &self.options,
+            mod_ai_slots: &self.mod_ai_slots,
         }
     }
 

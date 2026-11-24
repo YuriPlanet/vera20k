@@ -784,7 +784,15 @@ pub(crate) fn dispatch_foot_mission(
                     .substrate
                     .entities
                     .get(id)
-                    .is_some_and(|actor| !sim.owner_is_human(actor.owner())) =>
+                    .is_some_and(|actor| {
+                        // VERA: not for a house whose `Abilities` a Wasm
+                        // module claimed (RFC 0001 6i).
+                        !sim.owner_is_human(actor.owner())
+                            && !sim.module_claims(
+                                actor.owner(),
+                                vera20k_wasm_ext::DOMAIN_ABILITIES,
+                            )
+                    }) =>
         {
             if let Err(cause) = sim.infantry_do_action(
                 id,
@@ -1002,7 +1010,10 @@ fn infantry_automatic_guard_delay(
     ) else {
         return -1;
     };
+    // VERA: a house whose `Abilities` a Wasm module claimed deploys by order
+    // (RFC 0001 6i, `sim::ext_modules::claims`).
     if house.is_controlled_by_human(sim.session.rule_policy())
+        || sim.module_claims(actor.owner(), vera20k_wasm_ext::DOMAIN_ABILITIES)
         || !object.deployer
         || !object.deploy_fire
         || object.undeploy_delay > -1
@@ -1735,7 +1746,12 @@ fn infantry_computer_capture(
 /// ([`Simulation::infiltrator_target_building`]).
 fn computer_capture_building(sim: &Simulation, id: u64, rules: &RuleSet) -> Option<u64> {
     let entity = sim.substrate.entities.get(id)?;
-    if sim.owner_is_human(entity.owner()) {
+    // VERA: nor for a house whose `Abilities` a Wasm module claimed: its
+    // module captures, infiltrates and garrisons by order (RFC 0001 6i,
+    // `sim::ext_modules::claims`).
+    if sim.owner_is_human(entity.owner())
+        || sim.module_claims(entity.owner(), vera20k_wasm_ext::DOMAIN_ABILITIES)
+    {
         return None;
     }
     let crate::sim::combat::TargetKind::Entity(building) = entity.attack_target.target()? else {

@@ -14,7 +14,7 @@ fn scenario() -> Option<HeadlessScenario> {
 }
 
 /// The Battle on [`MAP`] against one computer house.
-fn session_with_computer() -> crate::skirmish_launch::SkirmishLaunchSession {
+pub(super) fn session_with_computer() -> crate::skirmish_launch::SkirmishLaunchSession {
     crate::headless_scenario::battle_session(
         MAP,
         &[(
@@ -25,7 +25,7 @@ fn session_with_computer() -> crate::skirmish_launch::SkirmishLaunchSession {
 }
 
 /// [`scenario`] against one computer house.
-fn scenario_with_computer() -> Option<HeadlessScenario> {
+pub(super) fn scenario_with_computer() -> Option<HeadlessScenario> {
     let (retail, _) = crate::rules::retail_ini_fixture::retail_assets()?;
     Some(
         crate::headless_scenario::load_session(&retail, MAP, SEED, session_with_computer())
@@ -1020,11 +1020,11 @@ fn a_module_finds_a_houses_objects_and_reads_them() {
     assert!(scene.sim().trigger_runtime.local_variable_is_set(6));
 }
 
-fn prop(name: &str) -> i32 {
+pub(super) fn prop(name: &str) -> i32 {
     vera20k_wasm_ext::property_id(name).expect("known property")
 }
 
-fn install(scene: &mut HeadlessScenario, source: ModuleSource, module: &[u8]) {
+pub(super) fn install(scene: &mut HeadlessScenario, source: ModuleSource, module: &[u8]) {
     scene
         .runtime
         .simulation
@@ -1038,7 +1038,7 @@ fn memory_at<const N: usize>(scene: &HeadlessScenario, slot: usize, at: usize) -
     memory[at..at + N].try_into().expect("in memory")
 }
 
-fn mem_i32(scene: &HeadlessScenario, slot: usize, at: usize) -> i32 {
+pub(super) fn mem_i32(scene: &HeadlessScenario, slot: usize, at: usize) -> i32 {
     i32::from_le_bytes(memory_at(scene, slot, at))
 }
 
@@ -1047,7 +1047,7 @@ fn mem_i64(scene: &HeadlessScenario, slot: usize, at: usize) -> i64 {
 }
 
 /// The modules' share of the state hash: modules, modifiers and variables.
-fn ext_hash(scene: &HeadlessScenario) -> u64 {
+pub(super) fn ext_hash(scene: &HeadlessScenario) -> u64 {
     use std::hash::Hasher;
     let mut hasher = std::hash::DefaultHasher::new();
     scene.sim().ext_modules.hash_state(&mut hasher);
@@ -1056,7 +1056,7 @@ fn ext_hash(scene: &HeadlessScenario) -> u64 {
 
 /// A save of `live` loaded into a fresh scenario, as the existing save test
 /// does it.
-fn saved_and_loaded(live: &HeadlessScenario) -> HeadlessScenario {
+pub(super) fn saved_and_loaded(live: &HeadlessScenario) -> HeadlessScenario {
     use crate::sim::snapshot::GameSnapshot;
     let rules = &live.runtime.resources.rules;
     let bytes = GameSnapshot::save_validated(
