@@ -46,7 +46,9 @@ pub(super) fn evade_controller(
     let dx = (i32::from(at.0) - i32::from(threat.0)).signum();
     let dy = (i32::from(at.1) - i32::from(threat.1)).signum();
     if dx == 0 && dy == 0 { return None; }
-    for step in [3, 2, 4] {
+    // A psychic tower may reach six or more cells: three-cell sidesteps
+    // remain inside its control radius. Try real disengagement first.
+    for step in [12, 10, 8, 6, 4, 3, 2] {
         let (Ok(x), Ok(y)) = (u16::try_from(i32::from(at.0) + dx * step),
             u16::try_from(i32::from(at.1) + dy * step)) else { continue; };
         let cell = (x,y);
@@ -177,6 +179,69 @@ pub(super) fn actual_threat_reach(
     rules: &RuleSet, obs: &Observation<'_>, attacker: u64, victim: u64,
 ) -> i32 {
     effective_reach_against(rules, obs, attacker, victim)
+}
+
+/// Best rule-driven sustained damage against a vehicle, using the actual
+/// weapon's warhead/armor multiplier and rate of fire. Avoid evaluating only
+/// nominal damage: an IFV's small rocket cannot trade evenly with heavy armor.
+fn vehicle_exchange_output(rules: &RuleSet, attacker: &ObjectType, defender: &ObjectType) -> i64 {
+    (0..attacker.weapon_record_count()).filter_map(|slot| {
+        let weapon = rules.weapon(attacker.weapon_at(slot)?)?;
+        if weapon.never_use || weapon.damage <= 0 { return None; }
+        let head = rules.warhead(weapon.warhead.as_deref()?)?;
+        let multiplier = f64::from_bits(
+            head.interaction(defender.armor_id()).multiplier().bits());
+        if multiplier <= 0.0 { return None; }
+        // Bounded output prevents modded weapon values from overflowing a
+        // tactical comparison; the engine still resolves real damage itself.
+        let burst = i64::from(weapon.burst.max(1));
+        let hit = ((f64::from(weapon.damage) * multiplier).clamp(0.0, 100_000.0)) as i64;
+        Some(hit.saturating_mul(burst).saturating_mul(90) /
+            i64::from(weapon.rof.max(15)))
+    }).max().unwrap_or(0)
+}
+
+/// True only for a *pronounced* losing solo exchange, not an equal fight.
+/// An overwhelming allied tank group can still make a good coordinated push.
+fn losing_vehicle_trade(our_dps: i64, their_dps: i64, our_hp: i32, their_hp: i32,
+    our_reach: i32, their_reach: i32) -> bool {
+    if their_dps <= 0 || our_hp <= 0 || their_hp <= 0 { return false; }
+    if our_reach >= their_reach + 3 { return false; } // can standoff
+    if our_dps <= 0 { return true; }
+    // Time to kill them / time for them to kill us >= 1.8.
+    i64::from(their_hp).saturating_mul(their_dps).saturating_mul(10)
+        >= i64::from(our_hp).saturating_mul(our_dps).saturating_mul(18)
+}
+
+pub(super) fn unfavourable_vehicle_duel(
+    rules: &RuleSet, obs: &Observation<'_>, actor: u64, enemy: u64,
+) -> bool {
+    use crate::rules::object_type::ObjectCategory;
+    let (Some(ours), Some(theirs)) =
+        (obs.entity_type(rules, actor), obs.entity_type(rules, enemy))
+    else { return false; };
+    if ours.category != ObjectCategory::Vehicle || theirs.category != ObjectCategory::Vehicle
+        || !obs.can_hurt(rules, enemy, actor) { return false; }
+    let (Some(own_hp), Some(enemy_hp)) = (obs.health(actor), obs.health(enemy))
+    else { return false; };
+    losing_vehicle_trade(
+        vehicle_exchange_output(rules, ours, theirs),
+        vehicle_exchange_output(rules, theirs, ours), own_hp, enemy_hp,
+        effective_reach_against(rules, obs, actor, enemy),
+        effective_reach_against(rules, obs, enemy, actor),
+    )
+}
+
+pub(super) fn armored_support(
+    census: &super::census::Census, rules: &RuleSet,
+    obs: &Observation<'_>, actor: u64, enemy: u64, at: (u16, u16),
+) -> bool {
+    census.units.iter().filter(|unit| {
+        unit.entity_id != actor && unit.controllable()
+            && unit.slot == super::census::Slot::Vehicle && unit.traits.combat
+            && !unit.in_service() && distance(unit.cell, at) <= 9
+            && obs.can_hurt(rules, unit.entity_id, enemy)
+    }).take(2).count() >= 2
 }
 
 /// A short-ranged unit must not march through a visible weapon envelope
@@ -340,6 +405,19 @@ pub(super) fn waiting_for_support(
 #[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_light_vehicle_does_not_trade_its_life_for_heavy_armor() {
+        assert!(losing_vehicle_trade(12, 50, 200, 400, 5, 5));
+        assert!(!losing_vehicle_trade(100, 100, 400, 200, 5, 5));
+        assert!(!losing_vehicle_trade(12, 50, 200, 400, 12, 5));
+    }
+
+    #[test]
+    fn a_weaponless_vehicle_must_not_challenge_an_armed_tank() {
+        assert!(losing_vehicle_trade(0, 60, 250, 300, 5, 5));
+        assert!(!losing_vehicle_trade(0, 0, 250, 300, 5, 5));
+    }
 
     #[test]
     fn damaged_elites_leave_before_an_imminent_second_volley() {

@@ -159,7 +159,9 @@ pub(super) fn run(
         // the player, the refinery or a specialist lifecycle.
         if !unit.controllable() || !(unit.traits.combat || unit.traits.yard_maker)
             || unit.in_service() || obs.is_deployed(id)
+            || brain.avoid_retreat_until.get(&id).is_some_and(|until| now < *until)
             || obs.attack_target(id).is_some()
+            || super::orders::committed_garrison_entry(&brain.tracked, rules, obs, id)
         {
             continue;
         }
@@ -177,6 +179,24 @@ pub(super) fn run(
             || issued >= MAX_ESCAPES_PER_FRAME
             || out.ordered_this_frame(id)
         {
+            continue;
+        }
+        // A six-way lateral shuffle is not an escape from a prism/tesla gun.
+        // If a long walk has made no progress *inside* a visible weapon band,
+        // abandon that goal for a safe rally and cool down the attack orders.
+        // A standalone retreat still uses the normal L2 gate, not a sim write.
+        if super::tactics::unsafe_post(rules, obs, id, unit.cell) {
+            let safe = brain.census.rally.or(brain.census.base_cell)
+                .filter(|cell| *cell != unit.cell
+                    && super::orders::reachable(rules, obs, id, *cell)
+                    && !super::tactics::unsafe_post(rules, obs, id, *cell));
+            let goal = safe.map_or(Goal::Stop, |cell| Goal::Move { cell });
+            if out.want(id, 0, goal) {
+                brain.tracked.forget_primary(id);
+                brain.avoid_retreat_until.insert(id, now.saturating_add(450));
+                issued += 1;
+                log::debug!("auto play: stalled {} inside hostile guns; reset {:?}", id, goal);
+            }
             continue;
         }
         let Some(step) = step_around(obs, ty.movement_zone, unit.cell, dest, id) else {

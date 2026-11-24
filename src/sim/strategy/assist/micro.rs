@@ -129,6 +129,10 @@ pub(super) fn run(
     let liberators: BTreeSet<u64> = brain.census.enemies.iter()
         .filter_map(|enemy| obs.visible_liberation_target(enemy.entity_id))
         .collect();
+    let controllers: BTreeSet<u64> = obs.visible_enemy_entities()
+        .filter(|enemy| obs.entity_type(rules, enemy.entity_id)
+            .is_some_and(|ty| super::tactics::mind_control_reach(rules, ty).is_some()))
+        .map(|enemy| enemy.entity_id).collect();
     // An enemy shooting an ore carrier, a refinery, or the yard is a real
     // economic emergency. The spare guns in reach should focus that raider
     // rather than independently choosing nearer scenery. An attacker shooting
@@ -167,7 +171,65 @@ pub(super) fn run(
         }
         // A step out of a shell's landing point is this frame's answer for the
         // unit; an engage order on top of it would walk it back into the blast.
-        if super::orders::ordered_this_frame(out, item.entity_id) {
+        if super::orders::ordered_this_frame(out, item.entity_id)
+            || brain.avoid_retreat_until.get(&item.entity_id)
+                .is_some_and(|until| tick < *until)
+        { continue; }
+        // An exposed light vehicle must break an already losing native Attack
+        // mission before it can be sent into another duel. A nearby armored
+        // escort may change the trade; a lone IFV should save itself instead.
+        if let Some(enemy) = obs.attack_target(item.entity_id)
+            && visible_enemies.contains(&enemy)
+            && super::tactics::unfavourable_vehicle_duel(rules, obs, item.entity_id, enemy)
+            && !super::tactics::armored_support(&brain.census, rules, obs,
+                item.entity_id, enemy, item.cell)
+        {
+            let home = brain.census.rally.or(brain.census.base_cell)
+                .filter(|cell| super::orders::reachable(rules, obs, item.entity_id, *cell)
+                    && !super::tactics::unsafe_post(rules, obs, item.entity_id, *cell));
+            if let Some(cell) = home
+                && super::orders::issue_tracked(&mut brain.tracked, brain.trace,
+                    out, rules, obs, item.entity_id, super::tracked::TrackedKind::Avoid,
+                    None, Some(cell), Goal::Move { cell })
+            {
+                brain.avoid_retreat_until.insert(item.entity_id, tick.saturating_add(225));
+                issued += 1;
+                continue;
+            }
+        }
+        // A single mind-controller can turn a whole squad against itself.
+        // Current visibility only: long-range guns may concentrate on the
+        // controller, but short-range infantry/vehicles must not chase some
+        // nearer rifleman and wander into the controller's range.
+        if !item.deployed
+            && obs.entity_type(rules, item.entity_id).is_some_and(|ty|
+                ty.category != ObjectCategory::Aircraft && !ty.naval)
+            && let Some((controller, position, enemy_reach)) =
+                super::tactics::controller_covering(rules, obs, item.cell)
+        {
+            if item.reach > enemy_reach + 1
+                && super::orders::admits(rules, obs, item.entity_id,
+                    &Goal::Attack { target: controller })
+            {
+                if super::orders::issue_tracked(&mut brain.tracked,
+                    brain.trace, out, rules, obs, item.entity_id,
+                    TrackedKind::Engage, Some(controller), Some(position),
+                    Goal::Attack { target: controller }) {
+                    issued += 1;
+                }
+                continue;
+            }
+            if let Some(cell) = super::tactics::evade_controller(
+                rules, obs, item.entity_id, item.cell, position)
+            {
+                if super::orders::issue_tracked(&mut brain.tracked, brain.trace,
+                    out, rules, obs, item.entity_id, TrackedKind::Dodge,
+                    None, Some(cell), Goal::Move { cell }) {
+                    brain.avoid_retreat_until.insert(item.entity_id,
+                        tick.saturating_add(150));
+                    issued += 1;
+                }
+            }
             continue;
         }
         // What is in reach now outranks where the unit was going: this is the
@@ -180,7 +242,7 @@ pub(super) fn run(
                 // target. Do not spend this cycle killing the captured tank.
                 .filter(|enemy| visible_enemies.contains(&enemy.entity_id))
                 .filter(|enemy| !super::orders::reclamation_reserved(
-                    rules, obs, &brain.census, **enemy))
+                    rules, obs, &brain.census, &brain.tracked, **enemy))
                 .filter(|enemy| obs.visible_liberation_target(enemy.entity_id).is_none())
                 .map(|enemy| {
                 (
@@ -200,10 +262,16 @@ pub(super) fn run(
                 // the infantry behind it walked past.
                 super::orders::admits(rules, obs, item.entity_id, &Goal::Attack { target })
                     && obs.can_hurt(rules, item.entity_id, target)
+                    && (!super::tactics::unfavourable_vehicle_duel(
+                        rules, obs, item.entity_id, target)
+                        || aimed_at.get(&target) == Some(&item.entity_id)
+                        || super::tactics::armored_support(&brain.census, rules, obs,
+                            item.entity_id, target, item.cell))
             },
             |target| target_rank(
                 prefer(rules,obs,item.preference,target),
-                liberators.contains(&target), economic_raiders.contains(&target),
+                liberators.contains(&target) || controllers.contains(&target),
+                economic_raiders.contains(&target),
                 focus_targets.contains(&target),
             ),
         ) {
@@ -341,7 +409,11 @@ pub(super) fn run(
         // against, and what stands inside the yard, where it blocks the
         // factories' own lanes; a village the army walks past is not a
         // demolition order.
-        if let Some((blocker, _)) = neutral_in_the_way(brain, rules, obs, item.entity_id, item.cell) {
+        if let Some((blocker, _)) = neutral_in_the_way(brain, rules, obs, item.entity_id, item.cell)
+            && !brain.census.enemies.iter().any(|enemy| enemy.entity_id == blocker
+                && super::orders::engineer_claimed(
+                    rules, obs, &brain.census, &brain.tracked, *enemy))
+        {
             if super::orders::admits(
                 rules,
                 obs,
@@ -390,7 +462,34 @@ pub(super) fn run(
         }
         // Nothing in reach: the role says where to be.
         match item.role {
-            // The fist is the advance step's; this layer does not walk it.
+            // Ships need a *water* battle, not the main land army's march
+            // target. Keep their own nearest visible reachable naval foe;
+            // coastal targets may be attacked only within the ship's present
+            // weapon reach, without a blind order to cross dry land.
+            Role::Attack if obs.entity_type(rules, item.entity_id)
+                .is_some_and(|ty| ty.naval) => {
+                let naval_target = brain.census.enemies.iter()
+                    .filter(|enemy| visible_enemies.contains(&enemy.entity_id))
+                    .filter(|enemy| super::orders::admits(rules, obs,
+                        item.entity_id, &Goal::Attack { target: enemy.entity_id }))
+                    .filter(|enemy| obs.entity_type(rules, enemy.entity_id)
+                        .is_some_and(|ty| ty.naval)
+                        && obs.can_reach(item.zone, item.cell, enemy.cell)
+                        || squared_distance(item.cell, enemy.cell)
+                            <= (item.reach + 1).pow(2))
+                    .min_by_key(|enemy|
+                        (squared_distance(item.cell, enemy.cell), enemy.entity_id));
+                if let Some(enemy) = naval_target
+                    && super::orders::issue_tracked(&mut brain.tracked,
+                        brain.trace, out, rules, obs, item.entity_id,
+                        TrackedKind::Attack, Some(enemy.entity_id), Some(enemy.cell),
+                        Goal::Attack { target: enemy.entity_id }) {
+                    issued += 1;
+                }
+                continue;
+            }
+            // The land fist is the advance step's; it should not pull ships
+            // through a factory or order an ocean fleet into a city street.
             Role::Attack => continue,
             Role::Defend => {
                 let Some((target, cell)) = item.squad_target else {
@@ -631,9 +730,14 @@ fn collect(
             // Preserve an ongoing attack unless the unit is *being hit* by a
             // reachable hostile. An attack on a neutral wall is not such a
             // commitment: the hostile taking shots at us must come first.
-            if preserve_existing_attack(fighting,
+            let losing_duel = current_target.is_some_and(|enemy| {
+                super::tactics::unfavourable_vehicle_duel(rules, obs, unit.entity_id, enemy)
+                    && !super::tactics::armored_support(&brain.census, rules, obs,
+                        unit.entity_id, enemy, unit.cell)
+            });
+            if (preserve_existing_attack(fighting,
                 current_target.is_some_and(|id| obs.is_hostile(id)), under_fire)
-                || unit.in_service()
+                && !losing_duel) || unit.in_service()
             {
                 continue;
             }

@@ -308,6 +308,12 @@ pub struct AssistBrain {
     /// change between frames, so without a cursor the units at its end would
     /// never be looked at at all.
     pub(super) avoid_cursor: usize,
+    /// Repeated detour attempts that cannot reach a cell outside *all* known
+    /// hostile guns. Keyed by actor: (objective, first blocked tick).
+    pub(super) avoid_deadends: BTreeMap<u64, ((u16, u16), u64)>,
+    /// After abandoning an impossible route, keep the push from sending the
+    /// same actor straight back into that crossfire for a short interval.
+    pub(super) avoid_retreat_until: BTreeMap<u64, u64>,
     /// The cell the second base's maker was last sent to, and the frame the
     /// search that found it ran.    ///
     /// The search is a walk over the map's ground asking the deploy's own
@@ -462,6 +468,10 @@ pub struct AssistBrain {
     /// and the army goes anyway. Killing units does not count: a trade in the
     /// field that never reaches the base is exactly the stalemate this reads.
     pub(super) push_progress: (u64, usize),
+    /// When a scarce, dispersed armoured fist began waiting to assemble.
+    /// Unlike a target-specific timer, this survives target switches so a
+    /// drifting target choice cannot restart a perpetual 900-frame hold.
+    pub(super) armour_wave_wait: Option<u64>,
     /// The object whose orders are traced, from AUTOPLAY_TRACE: a diagnostic
     /// switch read once at construction, never a decision input. "Why did this
     /// unit do that" is the question every play test asks, and until now the
@@ -525,6 +535,8 @@ impl AssistBrain {
             siege_reach: None,
             income: plan::IncomeMeter::new(),
             avoid_cursor: 0,
+            avoid_deadends: BTreeMap::new(),
+            avoid_retreat_until: BTreeMap::new(),
             expansion_probe: None,
             blocked_expansion_sites: BTreeMap::new(),
             maker_obstructed: BTreeMap::new(),
@@ -560,6 +572,7 @@ impl AssistBrain {
             breaches: Vec::new(),
             blocked_goals: BTreeMap::new(),
             push_progress: (0, usize::MAX),
+            armour_wave_wait: None,
             trace: std::env::var("AUTOPLAY_TRACE")
                 .ok()
                 .and_then(|raw| raw.trim().parse::<u64>().ok()),
@@ -738,6 +751,13 @@ impl Brain for AssistBrain {
         // Before anything decides: an intent the object's own mission no longer
         // shows is an intent that did not take, and the layers below must be
         // free to ask again now rather than on its term.
+        // On large maps a legal multi-minute Move is not a 450-frame mistake.
+        // Preserve it only when the native destination is unchanged AND the
+        // actor is making observable progress; stuck walkers still expire.
+        for unit in &self.census.units {
+            self.tracked.observe_travel_progress(obs.tick(), unit.entity_id,
+                unit.cell, obs.destination(unit.entity_id));
+        }
         self.void_orders_the_world_does_not_show();
         // What each unit is *for*, before anything decides what it does: the
         // membership is rebuilt on its own term, not every frame.
@@ -962,6 +982,7 @@ impl Brain for AssistBrain {
         if obs.forces_enabled() {
             orders::bridges(self, rules, obs, out);
             orders::captures(self, rules, obs, out);
+            orders::protect_engineer_prizes(self, rules, obs, out);
         }
         if obs.production_enabled() {
             orders::pack_captured_yard(self, rules, obs, out);

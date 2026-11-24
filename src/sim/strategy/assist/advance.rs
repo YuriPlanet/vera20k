@@ -59,6 +59,23 @@ mod targets;
 /// everything past its own limit, so a larger number here would only spend the
 /// frame on orders that never leave.
 const ADVANCE_ORDERS_PER_FRAME: usize = 8;
+/// Hold a dispersed armoured fist briefly rather than launching a single
+/// heavy tank as each factory completes it. A dead economy must not stall
+/// an otherwise viable attack forever.
+const ARMOUR_ASSEMBLE_FRAMES: u64 = 900;
+const ARMOUR_WAVE_MIN: usize = 3;
+
+fn armoured_fighter(unit: &Unit, rules: &RuleSet, obs: &Observation<'_>) -> bool {
+    unit.slot == super::census::Slot::Vehicle && unit.traits.combat
+        && obs.object_type(rules, unit.type_id).is_some_and(|ty| {
+            ty.category == crate::rules::object_type::ObjectCategory::Vehicle
+                && ty.strength >= 300 && !ty.resource_gatherer
+        })
+}
+
+fn armour_wave_missing(close: usize, waiting: u64) -> bool {
+    close < ARMOUR_WAVE_MIN && waiting < ARMOUR_ASSEMBLE_FRAMES
+}
 
 /// How far behind the leading fighter a unit may fall before the push takes it
 /// again, in cells. A unit that has nothing to walk to keeps whatever it was
@@ -838,6 +855,22 @@ pub(super) fn advance(
         brain.assault_wait = None;
     }
 
+    // A tank built in a rich stalemate is not a tank committed to battle.
+    // Wait for three real armoured vehicles within twelve cells of one
+    // another. All tanks use one finite global timer, not a per-target timer
+    // that can be reset every time the target selector changes its mind.
+    let armour: Vec<&Unit> = fighters.iter().copied()
+        .filter(|unit| armoured_fighter(unit, rules, obs)).collect();
+    let broken_wave = armour.iter().any(|unit| {
+        armour.iter().filter(|other| cell_distance(unit.cell, other.cell) <= 12)
+            .count() < ARMOUR_WAVE_MIN
+    });
+    if !raided && !mopping_up && !searching && broken_wave {
+        brain.armour_wave_wait.get_or_insert(tick);
+    } else {
+        brain.armour_wave_wait = None;
+    }
+
     // The frame's budget is a handful of orders and the rest of the list is
     // dropped, so the scan's order decides who is ever told anything at all:
     // the same leading units were served every frame and the rest of the army
@@ -969,6 +1002,65 @@ pub(super) fn advance(
         if issued >= ADVANCE_ORDERS_PER_FRAME {
             break;
         }
+        // Watercraft are owned by micro's separate naval target selector.
+        // A land campaign coordinate cannot be used as an ocean waypoint.
+        if unit.slot == super::census::Slot::Ship { continue; }
+        // The avoider owns a failed-route withdrawal for this finite interval.
+        // The crate detail also owns its travel until the visible prize is taken;
+        // neither is an attack squad's next march instruction.
+        if brain.avoid_retreat_until.get(&unit.entity_id).is_some_and(|until| tick < *until)
+            || brain.crate_claims.contains_key(&unit.entity_id)
+        { continue; }
+        if let Some(since) = brain.armour_wave_wait
+            && armour_wave_missing(
+                armour.iter().filter(|other| cell_distance(unit.cell, other.cell) <= 12)
+                    .count(), tick.saturating_sub(since))
+            && armoured_fighter(unit, rules, obs)
+            && obs.attack_target(unit.entity_id).is_none()
+            && !super::tactics::unsafe_post(rules, obs, unit.entity_id, unit.cell)
+        {
+            let safe_rally = brain.census.rally.or(brain.census.base_cell)
+                .filter(|cell| super::orders::reachable(rules, obs, unit.entity_id, *cell)
+                    && !super::tactics::unsafe_post(rules, obs, unit.entity_id, *cell));
+            if let Some(cell) = safe_rally
+                && cell_distance(unit.cell, cell) > 4
+            {
+                if super::orders::issue_tracked(&mut brain.tracked, brain.trace,
+                    out, rules, obs, unit.entity_id,
+                    super::tracked::TrackedKind::Move, None, Some(cell),
+                    Goal::Move { cell })
+                { issued += 1; }
+            } else if obs.destination(unit.entity_id).is_some()
+                && out.want(unit.entity_id, 0, Goal::Stop)
+            {
+                brain.tracked.forget_primary(unit.entity_id);
+                issued += 1;
+            }
+            continue;
+        }
+        if unit.slot == super::census::Slot::Vehicle
+            && let Some(enemy) = brain.census.enemies.iter().find(|enemy| {
+                obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
+                    && cell_distance(unit.cell, enemy.cell) <= 9
+                    && super::tactics::unfavourable_vehicle_duel(
+                        rules, obs, unit.entity_id, enemy.entity_id)
+                    && !super::tactics::armored_support(&brain.census, rules, obs,
+                        unit.entity_id, enemy.entity_id, unit.cell)
+            })
+        {
+            let home = brain.census.rally.or(brain.census.base_cell)
+                .filter(|post| super::orders::reachable(rules, obs, unit.entity_id, *post)
+                    && !super::tactics::unsafe_post(rules, obs, unit.entity_id, *post));
+            if let Some(cell) = home
+                && super::orders::issue_tracked(&mut brain.tracked, brain.trace,
+                    out, rules, obs, unit.entity_id, super::tracked::TrackedKind::Avoid,
+                    Some(enemy.entity_id), Some(cell), Goal::Move { cell })
+            {
+                brain.avoid_retreat_until.insert(unit.entity_id, tick.saturating_add(225));
+                issued += 1;
+                continue;
+            }
+        }
         // A unit already fighting or walking is doing what this would ask. A
         // mission with nothing behind it is not: a unit left on Attack after
         // its target died was skipped here, in `micro` and in the guard step,
@@ -986,7 +1078,7 @@ pub(super) fn advance(
         // has the reach; otherwise preserve the unit and let infantry or
         // artillery deal with the controller. This is not omniscient: threats
         // beyond current sight never enter the decision.
-        if unit.slot == super::census::Slot::Vehicle && unit.traits.combat
+        if unit.traits.combat && !unit.traits.aircraft
             && let Some((controller, position, reach)) =
                 super::tactics::controller_covering(rules,obs,march_cell)
         {
@@ -1354,6 +1446,14 @@ mod tests {
     /// 就僵持在这了。发动攻击后总会剩下敌人的建筑不再打了". `ARMY_TO_ATTACK` is an
     /// opening number and had no bypass, so nine fighters against two buildings
     // read `too-small` for the rest of the match.
+    #[test]
+    fn armour_assembles_three_tanks_but_never_holds_a_dead_end_forever() {
+        assert!(armour_wave_missing(1, 0));
+        assert!(armour_wave_missing(2, 400));
+        assert!(!armour_wave_missing(3, 20));
+        assert!(!armour_wave_missing(1, ARMOUR_ASSEMBLE_FRAMES));
+    }
+
     #[test]
     fn a_household_army_finishes_an_enemy_with_nothing_left() {
         let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules()

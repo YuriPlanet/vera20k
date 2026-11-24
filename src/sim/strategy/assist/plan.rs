@@ -731,17 +731,20 @@ fn open(
         // ([`super::economy::TECH_START_CREDITS`]): the
         // stage is decided there, and what it still needs is held back from
         // the lines rather than waited for.
-        // The tech stage: the wallet past the cheapest thing it buys, and an army
-        // worth unlocking types for. The second half is what the doc above
-        // promises and what was missing. A house that unlocks the tree on the
-        // opening's money pays for the whole army at the opening's tech level,
-        // and one that unlocks it before it has an army has bought a key to a
-        // room with nothing in it.
-        Gate::Tech => {
-            budget.free >= super::economy::TECH_START_CREDITS
-                && census.fighters >= super::squads::ARMY_TO_ATTACK
-        }
+        // Tech belongs before the second factory: a ten-unit prerequisite
+        // kept even a solvent opening on low-tier troops for too long.
+        // Preserve the first refinery, miner and a modest protective screen;
+        // large starting credits can unlock the lab even earlier.
+        Gate::Tech => budget.free >= super::economy::TECH_START_CREDITS
+            && tech_force_ready(census, budget.free),
     }
+}
+
+/// Cash-rich starts should unlock the tree after a small screen; a normal
+/// 10K game must keep one working miner and enough bodies to defend it.
+fn tech_force_ready(census: &Census, free: i32) -> bool {
+    census.refineries >= 1 && census.harvesters >= 1
+        && (census.fighters >= 6 || (free >= 6_000 && census.fighters >= 3))
 }
 
 /// How many of `item` the house has.
@@ -811,6 +814,26 @@ fn pick<'r>(
 #[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tech_unlocks_before_a_second_factory_with_three_rich_or_six_normal_fighters() {
+        let mut census = Census::default();
+        census.refineries = 1;
+        census.harvesters = 1;
+        census.fighters = 3;
+        assert!(!tech_force_ready(&census, 5_999));
+        assert!(tech_force_ready(&census, 6_000));
+        census.fighters = 6;
+        assert!(tech_force_ready(&census, 2_000));
+        census.harvesters = 0;
+        assert!(!tech_force_ready(&census, 100_000));
+        let lab = STEPS.iter().position(|step| step.item == Item::Tech)
+            .expect("tech step exists");
+        let second_factory = STEPS.iter().position(|step|
+            step.item == Item::Weapons && step.want > 1)
+            .expect("extra factory step exists");
+        assert!(lab < second_factory);
+    }
 
     #[test]
     fn tower_quota_tracks_operational_income_not_just_war_size() {

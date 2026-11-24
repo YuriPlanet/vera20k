@@ -220,6 +220,9 @@ pub(super) struct UnitRuntime {
     /// without it a unit whose every order is dropped looks like a unit that
     /// chose to stand still.
     pub(super) refusals: u8,
+    /// Last observed cell while travelling. A moving long-map order remains
+    /// in progress; a stationary actor must eventually time out and replan.
+    observed_cell: Option<(u16, u16)>,
 }
 
 /// How far a target may move before an otherwise-valid intent is worth
@@ -557,8 +560,27 @@ impl Tracker {
                 until: now.saturating_add(kind.term()),
                 issued_at: now,
                 refusals: 0,
+                observed_cell: None,
             },
         );
+    }
+
+    /// Extend a long-distance native navigation order only while the unit is
+    /// *actually changing cells* toward the same destination. An unconditional
+    /// 450-tick lease is too short for a huge map, but blindly making it 5000
+    /// would trap stuck units. Stationary orders keep their original expiry.
+    pub(super) fn observe_travel_progress(
+        &mut self, now: u64, unit: u64, at: (u16, u16),
+        native_destination: Option<(u16, u16)>,
+    ) {
+        let Some(intent) = self.intents.get_mut(&unit) else { return; };
+        if !matches!(intent.kind, TrackedKind::Move | TrackedKind::AttackMove)
+            || intent.cell != native_destination || native_destination.is_none()
+        { return; }
+        if intent.observed_cell.is_some_and(|cell| cell != at) {
+            intent.until = intent.until.max(now.saturating_add(180));
+        }
+        intent.observed_cell = Some(at);
     }
 
     /// Drop the units the house no longer has, so the table stays the size of
@@ -955,5 +977,31 @@ mod v18_garrison_lease_tests {
         tracker.void(7, TrackedKind::Capture);
         assert_eq!(tracker.pending_captures(102, 42).collect::<Vec<_>>(), vec![8]);
         assert!(tracker.pending_captures(100_000, 42).next().is_none());
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v22_long_map_progress_tests {
+    use super::*;
+
+    #[test]
+    fn progressing_march_keeps_intent_but_stationary_march_expires() {
+        let mut moving = Tracker::new();
+        moving.record_goal(0, 7, TrackedKind::Move, None, Some((180, 180)),
+            Goal::Move { cell: (180, 180) });
+        moving.observe_travel_progress(100, 7, (20, 20), Some((180, 180)));
+        moving.observe_travel_progress(400, 7, (80, 80), Some((180, 180)));
+        assert!(!moving.admits(451, 7, TrackedKind::Move,
+            None, Some((180, 180))), "real movement extends the live order");
+        assert!(moving.admits(590, 7, TrackedKind::Move,
+            None, Some((180, 180))), "it must expire if progress stops");
+
+        let mut stuck = Tracker::new();
+        stuck.record_goal(0, 8, TrackedKind::Move, None, Some((180, 180)),
+            Goal::Move { cell: (180, 180) });
+        stuck.observe_travel_progress(400, 8, (20, 20), Some((180, 180)));
+        stuck.observe_travel_progress(500, 8, (20, 20), Some((180, 180)));
+        assert!(stuck.admits(500, 8, TrackedKind::Move,
+            None, Some((180, 180))), "standing still cannot renew a march");
     }
 }

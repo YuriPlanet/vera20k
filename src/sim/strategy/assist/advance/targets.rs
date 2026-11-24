@@ -94,7 +94,7 @@ pub(super) fn choose(
         // engineer is approaching. Without this, one tank destroyed the
         // very asset that the capture planner was trying to win back.
         .filter(|(_, enemy)| !super::super::orders::reclamation_reserved(
-            rules, obs, census, *enemy))
+            rules, obs, census, tracked, *enemy))
         .filter(|(_, enemy)| {
             !tracked.claimed_by_other(
                 tick,
@@ -183,6 +183,31 @@ pub(super) fn choose(
     let Some(nearest) = reachable_target(&targets, anchor, fighters, rules, obs) else {
         return (Answer::NoTarget, progress);
     };
+    // A hostile forward base within reach of our ore chain is a defence
+    // problem *now*, even if the army's first member stands nearer the
+    // opponent's main yard. A nearby refinery/armed factory threatening our
+    // miners outranks a distant base. Use only currently visible positions,
+    // and only targets our fighters can actually reach.
+    let local_raider = structures.iter()
+        .filter(|(ty, enemy)| {
+            obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
+                && (ty.resource_destination || ty.weapons_factory
+                    || ty.is_base_defense || ty.build_const_eligible())
+        })
+        .filter_map(|(_, enemy)| {
+            let distance = census.refinery_cells.iter().map(|cell|
+                    cell_distance(*cell, enemy.cell))
+                .chain(census.units.iter().filter(|unit| unit.traits.harvester)
+                    .map(|unit| cell_distance(unit.cell, enemy.cell)))
+                .min()?;
+            (distance <= 22 && fighters.iter().any(|unit|
+                super::super::orders::reachable(rules, obs, unit.entity_id, enemy.cell)))
+                .then_some((distance, *enemy))
+        })
+        .min_by_key(|(distance, enemy)| (*distance,
+            cell_distance(anchor, enemy.cell), enemy.entity_id))
+        .map(|(_, enemy)| enemy);
+    let nearest = local_raider.unwrap_or(nearest);
     // The enemy's defenses before its economy while they cover the target: a
     // tesla coil or a pillbox in range of the structure the fist walks at is
     // what kills the fist before it fires a shot, and a spy's blackout only

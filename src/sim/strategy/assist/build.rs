@@ -650,9 +650,23 @@ fn queue_defense_in_parallel(
     brain: &mut AssistBrain, rules: &RuleSet, obs: &Observation<'_>,
     budget: &Budget, out: &mut Outbox,
 ) {
+    // An approaching aircraft is a base survival problem, even while the
+    // long-term director saves for a lab. A free native Defense strip can
+    // answer it without cancelling the Building strip. Never spend the last
+    // mining capacity or break an energy reserve for the emergency.
+    let sites: Vec<_> = brain.census.yard_cells.iter()
+        .chain(brain.census.refinery_cells.iter()).copied().collect();
+    let approaching_air = obs.visible_enemy_entities().filter(|enemy| {
+        obs.entity_type(rules,enemy.entity_id).is_some_and(|ty|
+            ty.category == ObjectCategory::Aircraft || ty.jumpjet)
+            && sites.iter().any(|site|
+                super::squared_distance(*site, enemy.cell) <= 32 * 32)
+    }).count();
+    let (aa, _) = armed_defenses(rules, obs, &brain.census);
+    let urgent_air = approaching_air > 0 && aa < if approaching_air >= 2 { 2 } else { 1 };
     if brain.census.line(ProductionCategory::Defense).busy()
         || brain.census.refineries == 0 || brain.census.harvesters == 0
-        || !brain.director.permits_build(Item::Defense)
+        || (!urgent_air && !brain.director.permits_build(Item::Defense))
         || plan::power_short(rules, obs, &brain.census)
     { return; }
     let already_queued = out.intents.iter().any(|intent| {
@@ -677,8 +691,16 @@ fn queue_defense_in_parallel(
     // Respect the normal defense quota/gates instead of blindly filling the
     // second strip. When a remote guard point is needed, preserve its site
     // anchor through the same placement mission as other frontier buildings.
-    let focused = frontier.as_ref().map(|(_, anchor)| *anchor);
-    let Some(chosen) = frontier.map(|(plan, _)| plan).or_else(||
+    let focused = if urgent_air { None }
+        else { frontier.as_ref().map(|(_, anchor)| *anchor) };
+    let emergency = if urgent_air {
+        defense_building(rules, obs, &brain.census)
+            .filter(|(ty, _)| armament(rules, ty).anti_air)
+            .map(|(ty, type_id)| plan::Chosen {
+                step: None, item: Item::Defense, ty, type_id,
+            })
+    } else { None };
+    let Some(chosen) = emergency.or_else(|| frontier.map(|(plan, _)| plan)).or_else(||
         plan::answer_where(rules, obs, &brain.census, budget, None,
             |item| item == Item::Defense)
     ) else { return; };
@@ -974,7 +996,19 @@ pub(super) fn house_owns(rules: &RuleSet, obs: &Observation<'_>, ty: &ObjectType
         // Names the rules do not know are not a refusal.
         return true;
     }
-    mask & rules.country_owner_mask(&country) != 0
+    if mask & rules.country_owner_mask(&country) != 0 { return true; }
+    // The owner-country selector is appropriate while a house has only its
+    // starting tech. After an engineer captures an enemy construction yard or
+    // factory, native CanBuild/prerequisite checks can enable the other side's
+    // technology. Let the actually-held foreign production structure grant
+    // the corresponding Owner= group; never unlock a foreign roster merely
+    // because we have seen that building through the fog.
+    obs.own_entities().any(|own| {
+        let Some(plant) = obs.object_type(rules, own.type_id) else { return false; };
+        (plant.build_const_eligible() || plant.factory_type().is_some())
+            && !plant.owner.is_empty()
+            && (rules.house_type_mask(&plant.owner) & mask) != 0
+    })
 }
 
 /// The type from `names` the house may build now, in list order.
@@ -2411,5 +2445,28 @@ mod v18_dual_strip_tests {
         assert!(!two_strip_budget_admits(3_000, 2_000, 1_500));
         assert!(!two_strip_budget_admits(1_000, 0, 1_200));
         assert!(two_strip_budget_admits(3_000, 2_000, 1_000));
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v22_captured_foreign_factory_tests {
+    use super::*;
+
+    #[test]
+    fn capturing_foreign_construction_yard_unlocks_foreign_owner_candidates() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules()
+            else { return; };
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0xA17);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let owner = sim.interner.intern("Americans");
+        let foreign_power = rules.object("NAPOWR").expect("Soviet power plant");
+        let before = Observation::new(&sim, owner);
+        assert!(!house_owns(&rules, &before, foreign_power));
+        sim.spawn_object("NACNST", "Americans", 20, 20, 255, &rules)
+            .expect("a captured Soviet yard owned by the allied player");
+        let after = Observation::new(&sim, owner);
+        assert!(house_owns(&rules, &after, foreign_power),
+            "native CanBuild still checks power, prerequisites and limits");
     }
 }

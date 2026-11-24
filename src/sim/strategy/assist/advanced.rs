@@ -17,7 +17,14 @@ use super::tracked::TrackedKind;
 use super::squared_distance;
 
 const BASE_ALERT_RADIUS: i32 = 17;
-const DEFENDER_REACH: i32 = 22;
+const AIR_ALERT_RADIUS: i32 = 32;
+const DEFENDER_REACH: i32 = 33;
+
+/// Air threats enter the alarm perimeter before reaching the yard: a slow
+/// bomber must be engaged on approach, not only after its first bomb lands.
+fn alarm_radius(airborne: bool) -> i32 {
+    if airborne { AIR_ALERT_RADIUS } else { BASE_ALERT_RADIUS }
+}
 const CARRIER_BOARD_RANGE: i32 = 4;
 const CARRIER_RETRY: u64 = 90;
 const SIEGE_DEPLOY_RANGE: i32 = 12;
@@ -37,9 +44,12 @@ pub(super) fn protect_base(brain: &mut AssistBrain, rules: &RuleSet,
             .is_some_and(|ty| ty.category != ObjectCategory::Building
                 || ((0..8).any(|slot| ty.weapon_at(slot).is_some())
                     && obs.attack_target(enemy.entity_id).is_some())))
-        .filter(|enemy| sites.iter().any(|site|
-            squared_distance(*site, enemy.cell) <= BASE_ALERT_RADIUS * BASE_ALERT_RADIUS)
-            || brain.census.units.iter().any(|miner| miner.traits.harvester
+        .filter(|enemy| sites.iter().any(|site| {
+            let air = obs.entity_type(rules, enemy.entity_id).is_some_and(|ty|
+                ty.category == ObjectCategory::Aircraft || (ty.jumpjet && !obs.is_deployed(enemy.entity_id)));
+            let radius = alarm_radius(air);
+            squared_distance(*site, enemy.cell) <= radius * radius
+        }) || brain.census.units.iter().any(|miner| miner.traits.harvester
                 && squared_distance(miner.cell, enemy.cell) <= 8 * 8))
         .collect();
     if threats.is_empty() { return; }
@@ -54,7 +64,7 @@ pub(super) fn protect_base(brain: &mut AssistBrain, rules: &RuleSet,
         // to the attacking fist. This is especially important against air:
         // the Defense role may contain only anti-ground units.
         let local = sites.iter().any(|site|
-            squared_distance(*site, defender.cell) <= 14 * 14);
+            squared_distance(*site, defender.cell) <= 17 * 17);
         let local_reserve = !attackers.contains(&defender.entity_id)
             && local && obs.attack_target(defender.entity_id).is_none();
         // A soldier assigned to Attack but still standing *inside* the base
@@ -63,14 +73,26 @@ pub(super) fn protect_base(brain: &mut AssistBrain, rules: &RuleSet,
         // attacking fist or overwrite an ongoing firefight.
         let emergency_loan = attackers.contains(&defender.entity_id)
             && local && obs.attack_target(defender.entity_id).is_none()
-            && threats.iter().any(|enemy| sites.iter().any(|site|
-                squared_distance(*site, enemy.cell) <= 10 * 10));
-        if !(defenders.contains(&defender.entity_id) || local_reserve || emergency_loan)
+            && threats.iter().any(|enemy| sites.iter().any(|site| {
+                let air = obs.entity_type(rules, enemy.entity_id).is_some_and(|ty|
+                    ty.category == ObjectCategory::Aircraft || ty.jumpjet);
+                squared_distance(*site, enemy.cell) <= alarm_radius(air).pow(2)
+            }));
+        // Anti-air must interrupt even an already fighting base garrison when
+        // a bomber approaches; ground-only fighters are not diverted to sky.
+        let air_emergency = local && threats.iter().any(|enemy| {
+            obs.entity_type(rules,enemy.entity_id).is_some_and(|ty|
+                ty.category == ObjectCategory::Aircraft || ty.jumpjet)
+                && obs.can_engage(rules, defender.entity_id, enemy.entity_id)
+                && obs.can_hurt(rules, defender.entity_id, enemy.entity_id)
+        });
+        if !(defenders.contains(&defender.entity_id) || local_reserve
+            || emergency_loan || air_emergency)
             || !defender.controllable()
             || defender.in_service() || !defender.traits.combat
             || ordered_this_frame(out, defender.entity_id)
             || (brain.tracked.held(obs.tick(), defender.entity_id)
-                && !emergency_loan
+                && !emergency_loan && !air_emergency
                 && !(local && obs.attack_target(defender.entity_id).is_none()))
         { continue; }
         let target = threats.iter()
@@ -92,7 +114,9 @@ pub(super) fn protect_base(brain: &mut AssistBrain, rules: &RuleSet,
                         .filter_map(|name| rules.warhead(name))
                         .any(|warhead| warhead.parasite)
                 });
-                (!parasite_weapon, !attacks_asset, sites.iter()
+                let airborne = obs.entity_type(rules, enemy.entity_id).is_some_and(|ty|
+                    ty.category == ObjectCategory::Aircraft || ty.jumpjet);
+                (!airborne, !parasite_weapon, !attacks_asset, sites.iter()
                     .map(|site| squared_distance(*site, enemy.cell)).min().unwrap_or(i32::MAX),
                     enemy.entity_id)
             });
@@ -484,6 +508,13 @@ pub(super) fn siege_artillery(brain: &mut AssistBrain, rules: &RuleSet,
 #[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn aircraft_trigger_home_alert_before_ground_units() {
+        assert_eq!(alarm_radius(false), BASE_ALERT_RADIUS);
+        assert_eq!(alarm_radius(true), AIR_ALERT_RADIUS);
+        assert!(alarm_radius(true) > alarm_radius(false));
+    }
 
     #[test]
     fn retail_gunner_and_open_topped_vehicles_use_native_passenger_modes() {

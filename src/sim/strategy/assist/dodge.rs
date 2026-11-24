@@ -205,6 +205,15 @@ pub(super) fn run(
         let Some(ty) = obs.object_type(rules, unit.type_id) else {
             continue;
         };
+        // Heavy hovering bombers pay for each Move by resetting their slow
+        // attack approach; unlike fighters they cannot weave around missiles.
+        // Keep their native Attack mission firing rather than dancing beneath
+        // repeated AA salvos. Avoidance/retreat still owns truly bad fronts.
+        if ty.category == ObjectCategory::Aircraft && ty.balloon_hover
+            && !ty.airport_bound && ty.strength >= 500
+        {
+            continue;
+        }
         // An airframe dodges in the third dimension: it is not held to the
         // ground, a step costs it nothing, and a guided missile that has to
         // turn is a missile it can outfly. Everything else takes the guided

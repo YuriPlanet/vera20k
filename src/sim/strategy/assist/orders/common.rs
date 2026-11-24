@@ -81,7 +81,12 @@ pub(in crate::sim::strategy::assist) fn admits(
             obs.is_hostile(target)
                 && obs.visible_enemy_entities().any(|enemy| enemy.entity_id == target)
                 && obs.can_engage(rules, unit, target)
-                && obs.can_hurt(rules, unit, target)
+                && (obs.can_hurt(rules, unit, target)
+                    || (obs.entity_type(rules, target)
+                        .is_some_and(|ty| ty.category == ObjectCategory::Infantry)
+                        && obs.entity_type(rules, unit)
+                            .is_some_and(|ty| ty.agent
+                                && super::has_disguise_weapon(rules, ty))))
         }
         Goal::Capture { target } => {
             (!obs.is_hostile(target)
@@ -208,6 +213,23 @@ pub(in crate::sim::strategy::assist) fn issue(
     issue_at_rank(brain.trace, rank, out, rules, obs, unit, goal)
 }
 
+/// A real, still-active order to enter a garrisonable building. This is
+/// shared by the ordinary order gate and the exceptional low-level retreat
+/// passes: otherwise a tactical `Stop` can still kill the Capture mission
+/// even when every normal attack/micro request is blocked.
+pub(in crate::sim::strategy::assist) fn committed_garrison_entry(
+    tracker: &super::super::tracked::Tracker,
+    rules: &RuleSet, obs: &Observation<'_>, unit: u64,
+) -> bool {
+    let Some(Goal::Capture { target }) = tracker.primary_goal(unit) else {
+        return false;
+    };
+    tracker.confirmed_capture(obs.tick(), unit, target)
+        && obs.inside_transport(unit).is_none()
+        && obs.entity_type(rules, target)
+            .is_some_and(|ty| ty.category == ObjectCategory::Building && ty.can_be_occupied)
+}
+
 /// Check and issue a tracked order as one transaction: a failed ask cannot
 /// replace a standing intent, and cannot claim a unit for an order the engine
 /// will never see. The frame may still reject the accepted ask later; in that
@@ -225,6 +247,17 @@ pub(in crate::sim::strategy::assist) fn issue_tracked(
     goal: Goal,
 ) -> bool {
     let tick = obs.tick();
+    // A confirmed Capture into a civilian house owns the pedestrian until
+    // the entrance is reached. A later tactical Attack/Move/Dodge must not
+    // delete that native Capture while he is exposed outside the door. This
+    // is deliberately bounded by the tracked 300-tick term; stuck infantry
+    // become eligible for re-planning instead of being frozen forever.
+    if committed_garrison_entry(tracker, rules, obs, unit)
+        && !matches!(goal, Goal::Capture { target }
+            if tracker.primary_goal(unit) == Some(Goal::Capture { target }))
+    {
+        return false;
+    }
     if !tracker.admits(tick, unit, kind, target, cell) {
         return false;
     }

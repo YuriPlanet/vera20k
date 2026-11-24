@@ -201,6 +201,14 @@ pub(super) fn fill_lines(
     // this is false, so the ceiling keeps its documented behaviour; at 100000
     // it is true from the first frame and the barracks keeps working.
     let rich = budget.free >= vehicle_floor.saturating_mul(RICH_VEHICLES);
+    let infantry: usize = brain.census.tiers[Slot::Infantry.index()].iter().sum();
+    let vehicles: usize = brain.census.tiers[Slot::Vehicle.index()].iter().sum();
+    // More money means we can build both branches, not that an unchecked
+    // barracks may swamp every future tank with low-cost infantry. At least
+    // six infantry may always form the first screen; after that hold if the
+    // line armour is still less than half the infantry count.
+    let rich_needs_armour = rich && infantry >= 6
+        && infantry_full && vehicles.saturating_mul(2) < infantry;
     // During the opening, preserve cash for the first armored wave and the
     // lab. Percentages alone permit an army of twenty cheap infantry while
     // the war factory and research queue cannot be funded. Keep a small
@@ -209,9 +217,9 @@ pub(super) fn fill_lines(
     let fragile_opening = brain.census.refineries <= 1
         && infantry >= 5 && budget.free < vehicle_floor.saturating_mul(3)
         && !brain.director.under_attack_now();
-    let barracks_holds = fragile_opening || (infantry_full
-        && !rich
-        && (budget.free >= vehicle_floor || a_soldier_would_reset_the_saving));
+    let barracks_holds = fragile_opening || rich_needs_armour
+        || (infantry_full && !rich
+            && (budget.free >= vehicle_floor || a_soldier_would_reset_the_saving));
     // Why the infantry line kept running: the ceiling is only as good as the
     // three numbers it reads. Traced like the build list's own line, so a
     // roster that is four fifths infantry can be attributed instead of guessed.
@@ -236,7 +244,7 @@ pub(super) fn fill_lines(
         })
     }).count();
     let aircraft_count: usize = brain.census.tiers[Slot::Aircraft.index()].iter().sum();
-    let establish_air_cover = airport_count > 0
+    let establish_air_cover = airport_count > 0 && vehicles >= 4
         && aircraft_count < airport_count.saturating_mul(2)
         && !brain.director.recovering_income()
         && brain.census.refineries > 0
@@ -278,9 +286,17 @@ pub(super) fn fill_lines(
         // so the wallet can reach a vehicle — unless the wallet is so far under
         // that price that one soldier would not set the saving back. Then the
         // barracks keeps turning rather than leaving both lines idle.
-        if barracks_holds && category == ProductionCategory::Infantry {
-            continue;
-        }
+        // Savings forbid another mass rifleman purchase, not a single spy
+        // against an actually observed infiltration opportunity. Otherwise
+        // the opening's five-infantry cap silently blocks every spy when a
+        // one-refinery house most needs enemy cash.
+        let urgent_infiltration = category == ProductionCategory::Infantry
+            && !brain.director.under_attack_now()
+            && !brain.director.recovering_income()
+            && early_spy_infiltration(brain, rules, obs, budget.free).is_some();
+        if barracks_holds && category == ProductionCategory::Infantry
+            && !urgent_infiltration
+        { continue; }
         // A line holding a product, a queue or a finished object is working and
         // is not given another request; a line with nothing in it — including
         // one the house has not used yet — can be started. Whether the house
@@ -501,9 +517,14 @@ fn tool<'r>(
                     .is_some_and(|ty| ty.category != ObjectCategory::Building)
                     && super::squared_distance(enemy.cell, target.cell) <= 7 * 7
             })
-    }).take(4).count();
-    let engineer_want = if census.refineries >= 2 && credits >= 4_000
-        && clear_sites >= 3 { 4 } else if credits >= 2_000 && clear_sites >= 2 { 3 }
+    }).take(12).count();
+    // Generated maps can hold six or more genuinely capturable abandoned
+    // factories and yards. A two-engineer ceiling leaves them standing while
+    // the opposing side develops. Scale only with *revealed, locally safe*
+    // opportunities and cash, never with omniscient hidden neutral sites.
+    let engineer_want = if clear_sites >= 6 && credits >= 2_500 { 6 }
+        else if clear_sites >= 3 && credits >= 1_500 { 4 }
+        else if clear_sites >= 2 && credits >= 900 { 3 }
         else { ENGINEER_WANT };
     let want_engineer = engineers < engineer_want && may_buy_capturers;
     let visible_spy_target = obs.spyable_buildings(rules).any(|target| {
@@ -519,7 +540,7 @@ fn tool<'r>(
     // A dog sighting remains useful for a later spy even after fog closes.
     // The site authorizes *reconnaissance only*, never a blind Capture click.
     let want_spy = spies < SPY_WANT && spy_ready
-        && (visible_spy_target || (known_spy_site && credits >= 1_500)
+        && (visible_spy_target || (known_spy_site && credits >= 900)
             || spy_preparation);
     // Once the first scout and engineer are available, a visible infiltration
     // opportunity deserves a slot before another engineer is purchased.
@@ -607,7 +628,7 @@ fn product_for<'r>(
     // native infantry suggestion: it can keep choosing riflemen every frame.
     // This is just the purchase, not permission to run through hostile fire.
     if category == ProductionCategory::Infantry
-        && !brain.director.protecting_base()
+        && !brain.director.under_attack_now()
         && !brain.director.recovering_income()
         && let Some(found) = early_spy_infiltration(brain, rules, obs, budget.free)
     {
@@ -616,6 +637,7 @@ fn product_for<'r>(
     if category == ProductionCategory::Aircraft
         && let Some(signature) = national_signature(brain, rules, obs,
             ObjectCategory::Aircraft, budget.free)
+        && airship_due(brain, rules, obs, signature.0)
     {
         return Some(signature);
     }
@@ -643,7 +665,10 @@ fn product_for<'r>(
     {
         return Some(specialist);
     }
-    if let Some(found) = chosen_product(rules, obs, category, budget.free) {
+    if let Some(found) = chosen_product(rules, obs, category, budget.free)
+        && (category != ProductionCategory::Aircraft
+            || airship_due(brain, rules, obs, found.0))
+    {
         let traits = census::Traits::of(rules, found.0);
         if !(brain.director.protecting_base() || brain.director.recovering_income())
             || !(traits.engineer || traits.spy)
@@ -698,7 +723,7 @@ fn product_for<'r>(
     // outright and refuses a spy for carrying no weapon. Correctly: neither is
     // what the fist is made of. So the want is stated here, in numbers.
     if category == ProductionCategory::Infantry
-        && !brain.director.protecting_base()
+        && !brain.director.under_attack_now()
         && !brain.director.recovering_income()
         && let Some(found) = tool(rules, obs, &brain.census, budget.free, &brain.engineers,
             obs.tick() >= brain.next_spy_purchase,
@@ -815,7 +840,7 @@ fn early_spy_infiltration<'r>(
     obs: &Observation<'_>,
     credits: i32,
 ) -> Option<(&'r ObjectType, InternedId)> {
-    if credits < 1_500 || brain.census.refineries == 0
+    if credits < 900 || brain.census.refineries == 0
         || brain.census.harvesters == 0
         || obs.tick() < brain.next_spy_purchase
         || brain.census.units.iter().any(|unit| unit.traits.spy)
@@ -940,6 +965,34 @@ fn chosen_product<'r>(
     Some((ty, type_id))
 }
 
+/// Slow, unbound, armoured hover aircraft are strategic siege investments,
+/// not airfield filler. A limited ratio to the **ground** army stops a rich
+/// house producing nothing but airships while its tanks leave one by one.
+/// Tactical identity is derived from rules properties rather than type names.
+fn heavy_airship(ty: &ObjectType) -> bool {
+    ty.category == ObjectCategory::Aircraft && ty.balloon_hover
+        && !ty.airport_bound && ty.strength >= 500
+}
+
+fn airship_ratio_allows(ground_vehicles: usize, airships: usize) -> bool {
+    ground_vehicles >= 6 && airships < (ground_vehicles / 8).max(1).min(3)
+}
+
+fn airship_due(
+    brain: &AssistBrain, rules: &RuleSet, obs: &Observation<'_>,
+    candidate: &ObjectType,
+) -> bool {
+    if !heavy_airship(candidate) { return true; }
+    if brain.director.recovering_income() || brain.director.protecting_base()
+        || brain.census.refineries < 2 || brain.census.harvesters < 2
+    { return false; }
+    let ground = brain.census.tiers[Slot::Vehicle.index()].iter().sum();
+    let airships = brain.census.units.iter().filter(|unit| {
+        obs.object_type(rules, unit.type_id).is_some_and(heavy_airship)
+    }).count();
+    airship_ratio_allows(ground, airships)
+}
+
 /// High-value adversaries are different problems, not one army-points number.
 /// Use the live rules: an airship needs a projectile with AA capability, a
 /// standoff tank needs a real ground weapon reaching it, and an armoured tank
@@ -1062,6 +1115,8 @@ fn fighter<'r>(
     let affordable: Vec<(&ObjectType, InternedId, i32)> = build::class_types(rules, obs, category)
         .filter(|(ty, _)| naval.is_none_or(|wanted| ty.naval == wanted))
         .filter(|(ty, _)| super::orders::is_combat_unit(rules, ty))
+        .filter(|(ty, _)| category != ObjectCategory::Aircraft
+            || airship_due(brain, rules, obs, ty))
         .filter_map(|(ty, type_id)| {
             let cost = obs.cost_of(rules, ty);
             (cost <= ceiling).then_some((ty, type_id, cost))
@@ -2094,15 +2149,11 @@ mod tests {
         assert!(ledger.may_buy(20 + ENGINEER_QUIET_FRAMES));
     }
 
-    /// A rich house keeps the barracks working past the infantry ceiling.
-    ///
-    /// The ceiling protects the wallet's climb to a vehicle's price. A house
-    /// already holding many vehicles' worth of credits has no climb left to
-    /// protect, and stopping the barracks then is lost output the war factory
-    /// cannot make up: measured at `--credits 100000`, 30000 ticks, 83% of the
-    /// army was infantry with 38306 credits unspent at the end.
+    /// With fifty infantry and only ten tanks, wealth must fund armoured
+    /// capacity instead of allowing even more cheap riflemen. Earlier policy
+    /// ignored its ratio ceiling at 100K; that drowned the armoured line.
     #[test]
-    fn a_rich_wallet_keeps_the_barracks_turning_past_the_ceiling() {
+    fn a_rich_wallet_holds_excess_infantry_until_armour_catches_up() {
         let Some((mut sim, rules)) = arena(0xA17) else {
             return;
         };
@@ -2157,7 +2208,8 @@ mod tests {
             "a wallet of one vehicle's price still saves: {ordinary_queued:?}"
         );
 
-        // Riches: the same army and the same ceiling, and the barracks fires.
+        // Riches: enough to buy many tanks, but not permission to flood
+        // a force that is already 83% infantry.
         let mut brain = AssistBrain::new(0xA17);
         brain.census = ledger(&rules, &sim, owner);
         brain.census.fighters = 60;
@@ -2172,10 +2224,14 @@ mod tests {
         fill_lines(&mut brain, &rules, &obs, &rich, &mut out);
         let rich_queued = queued(&sim, &out);
         assert!(
-            rich_queued.iter().any(
-                |name| rules.object(name).expect("a type").category == ObjectCategory::Infantry
+            rich_queued.iter().all(
+                |name| rules.object(name).expect("a type").category != ObjectCategory::Infantry
+                    || rules.object(name).is_some_and(|ty| {
+                        super::census::Traits::of(&rules, ty).engineer
+                            || super::census::Traits::of(&rules, ty).spy
+                    })
             ),
-            "a rich house does not idle its barracks: {rich_queued:?}"
+            "rich money should not buy more riflemen before tanks: {rich_queued:?}"
         );
     }
 }
@@ -2183,6 +2239,31 @@ mod tests {
 #[cfg(all(test, tests_sim_p_s))]
 mod v17_faction_tests {
     use super::*;
+
+    #[test]
+    fn airships_require_a_ground_screen_and_remain_a_minority() {
+        assert!(!airship_ratio_allows(0, 0));
+        assert!(!airship_ratio_allows(5, 0));
+        assert!(airship_ratio_allows(6, 0));
+        assert!(!airship_ratio_allows(6, 1));
+        assert!(airship_ratio_allows(16, 1));
+        assert!(!airship_ratio_allows(16, 2));
+        assert!(airship_ratio_allows(24, 2));
+        assert!(!airship_ratio_allows(80, 3));
+    }
+
+    #[test]
+    fn the_retail_heavy_airship_is_derived_from_type_data() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
+            return;
+        };
+        if let Some(zeppelin) = rules.object("ZEP") {
+            assert!(heavy_airship(zeppelin));
+        }
+        if let Some(jet) = rules.object("ORCA") {
+            assert!(!heavy_airship(jet));
+        }
+    }
 
     #[test]
     fn each_side_keeps_a_different_infantry_budget() {

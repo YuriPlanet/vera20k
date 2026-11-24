@@ -155,7 +155,7 @@ pub(super) fn chebyshev(a: (u16, u16), b: (u16, u16)) -> i32 {
 /// The flag is the warhead's, not the type's: in the retail rules a terror
 /// drone's jaw and a squid's tentacles carry it and nothing else does, and a
 /// mod that puts one on a tank is answered without a name list here.
-fn carries_parasite(rules: &RuleSet, ty: &crate::rules::object_type::ObjectType) -> bool {
+pub(super) fn carries_parasite(rules: &RuleSet, ty: &crate::rules::object_type::ObjectType) -> bool {
     (0..8)
         .filter_map(|slot| ty.weapon_at(slot))
         .filter_map(|name| rules.weapon(name))

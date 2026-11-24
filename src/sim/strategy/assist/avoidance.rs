@@ -112,6 +112,10 @@ const CORNER_MARGIN: i32 = 1;
 /// building's own arc, which is the widest thing a player walks around rather
 /// than shoots; a wall past six either side encloses something.
 const WALL_WAY_CELLS: i32 = 6;
+/// A route that failed to find a safe detour for six simulated seconds gives
+/// up on this objective rather than losing a scout to repeated side changes.
+const DETOUR_GIVE_UP_FRAMES: u64 = 90;
+const DETOUR_REPLAN_FRAMES: u64 = 450;
 
 use super::threats::{BUCKET_CELLS, Threat, ThreatIndex, bucket_of, distance};
 
@@ -396,6 +400,42 @@ impl FriendIndex {
     }
 }
 
+/// A geometric detour is not safe merely because its final cell is clear:
+/// the direct leg may pass through a *second* visible turret's fire. Check
+/// sample cells using only the same currently observed threat ledger.
+fn safe_leg_from_other_guns(
+    index: &ThreatIndex, from: (u16, u16), to: (u16, u16), ignore: u64,
+) -> bool {
+    let steps = distance(from, to);
+    if steps > 48 { return false; }
+    if steps == 0 { return true; }
+    (1..=steps).all(|step| {
+        let x = i32::from(from.0) +
+            (i32::from(to.0) - i32::from(from.0)) * step / steps;
+        let y = i32::from(from.1) +
+            (i32::from(to.1) - i32::from(from.1)) * step / steps;
+        let cell = (x as u16, y as u16);
+        !index.covering(cell, LOOK_CELLS).iter()
+            .any(|threat| threat.entity_id != ignore)
+    })
+}
+
+/// After the lateral leg, the pathfinder must still turn towards the goal.
+/// Reject a corner whose first few forward steps feed a neighbouring gun.
+fn safe_exit_from_other_guns(
+    index: &ThreatIndex, corner: (u16, u16), objective: (u16, u16), ignore: u64,
+) -> bool {
+    let mut current = corner;
+    for _ in 0..4 {
+        if current == objective { break; }
+        current = step_toward(current, objective);
+        if index.covering(current, LOOK_CELLS).iter()
+            .any(|threat| threat.entity_id != ignore)
+        { return false; }
+    }
+    true
+}
+
 /// Route every walking unit around the fights it would lose on the way.
 pub(super) fn run(
     brain: &mut AssistBrain,
@@ -404,6 +444,7 @@ pub(super) fn run(
     out: &mut Outbox,
 ) {
     let tick = obs.tick();
+    brain.avoid_retreat_until.retain(|_, until| *until > tick);
     if brain.census.enemies.is_empty() {
         return;
     }
@@ -481,9 +522,16 @@ pub(super) fn run(
         // routine owns are not this pass's. The spawned ones are the report
         // this pass earned: a `Move` around a "wall" the cargo plane could not
         // walk was an order that ended the paradrop's own route.
-        if !unit.controllable() || brain.tracked.held(tick, unit.entity_id) {
+        if !unit.controllable() || brain.tracked.held(tick, unit.entity_id)
+            || brain.avoid_retreat_until.contains_key(&unit.entity_id) {
             continue;
         }
+        // The civilian house's entrance is a high-priority primary task.
+        // Do not invalidate a confirmed garrison order with a direct retreat
+        // or detour, even though this pass can bypass issue_tracked.
+        if super::orders::committed_garrison_entry(
+            &brain.tracked, rules, obs, unit.entity_id)
+        { continue; }
         if !walking(unit.mission, obs.is_deployed(unit.entity_id)) {
             continue;
         }
@@ -495,6 +543,16 @@ pub(super) fn run(
             continue;
         };
         if ty.category == ObjectCategory::Aircraft {
+            continue;
+        }
+        // A spy whose *enemy-facing* disguise is valid need not weave around
+        // every ordinary tower: those detours caused an endless perimeter
+        // dance. Capture's watcher recheck still aborts on dogs, parasites,
+        // psychic weapons or a disguise which ceases to fool this enemy.
+        if ty.agent
+            && let Some(Goal::Capture { target }) = brain.tracked.primary_goal(unit.entity_id)
+            && obs.disguised_to_visible_enemy(unit.entity_id, target)
+        {
             continue;
         }
         let Some(objective) = objective(brain, obs, unit.entity_id, unit.cell, &squad_targets)
@@ -604,13 +662,12 @@ pub(super) fn run(
             } else {
                 obs.structure_at(rules, heading)
                     .filter(|(id, mine)| {
-                        !mine
-                            && !brain.tracked.claimed_by_other(
-                                tick,
-                                TrackedKind::Capture,
-                                *id,
-                                unit.entity_id,
-                            )
+                        !mine && !brain.tracked.claimed_by_other(
+                            tick, TrackedKind::Capture, *id, unit.entity_id)
+                            && !brain.census.enemies.iter().any(|enemy| {
+                                enemy.entity_id == *id && super::orders::engineer_claimed(
+                                    rules, obs, &brain.census, &brain.tracked, *enemy)
+                            })
                     })
                     .map(|(id, _)| Goal::Attack { target: id })
             };
@@ -710,15 +767,41 @@ pub(super) fn run(
                 continue;
             };
             if obs.is_ground_walkable(cell.0, cell.1)
-                && !threats.iter().any(|threat| threat.covers(cell))
+                && obs.can_reach(ty.movement_zone, unit.cell, cell)
+                && safe_leg_from_other_guns(&index, unit.cell, cell, blocker.entity_id)
+                && safe_exit_from_other_guns(&index, cell, objective, blocker.entity_id)
+                && index.covering(cell, LOOK_CELLS).is_empty()
             {
                 chosen = Some(cell);
                 break;
             }
         }
         let Some(cell) = chosen else {
+            let blocked_since = brain.avoid_deadends.entry(unit.entity_id)
+                .or_insert((objective, tick));
+            if blocked_since.0 != objective { *blocked_since = (objective, tick); }
+            if tick.saturating_sub(blocked_since.1) >= DETOUR_GIVE_UP_FRAMES {
+                // Pull back only to reachable, observed-safe ground. Stop if
+                // there is no such post: don't "retreat" through another gun.
+                let home = brain.census.rally.or(brain.census.base_cell);
+                let safe = home.filter(|post| {
+                    obs.can_reach(ty.movement_zone, unit.cell, *post)
+                        && !super::tactics::unsafe_post(rules, obs, unit.entity_id, *post)
+                        && index.covering(*post, LOOK_CELLS).is_empty()
+                });
+                let goal = safe.map_or(Goal::Stop, |cell| Goal::Move { cell });
+                if out.want(unit.entity_id, 0, goal) {
+                    brain.tracked.forget_primary(unit.entity_id);
+                    brain.avoid_retreat_until.insert(unit.entity_id,
+                        tick.saturating_add(DETOUR_REPLAN_FRAMES));
+                    log::info!("auto play: {} abandons unsafe route {:?}; fallback {:?}",
+                        unit.entity_id, objective, goal);
+                }
+                brain.avoid_deadends.remove(&unit.entity_id);
+            }
             continue;
         };
+        brain.avoid_deadends.remove(&unit.entity_id);
         if super::orders::issue_tracked(
             &mut brain.tracked,
             brain.trace,
@@ -1005,7 +1088,13 @@ fn answer_breaches(
         // answers with nothing. The house's own structure is never opened.
         let goal = match obs.structure_at(rules, cell) {
             Some((_, true)) => continue,
-            Some((id, false)) => Goal::Attack { target: id },
+            Some((id, false)) => {
+                if brain.census.enemies.iter().any(|enemy| {
+                    enemy.entity_id == id && super::orders::engineer_claimed(
+                        rules, obs, &brain.census, &brain.tracked, *enemy)
+                }) { continue; }
+                Goal::Attack { target: id }
+            },
             None => Goal::AttackCell { cell },
         };
         brain
@@ -1056,6 +1145,24 @@ fn objective(
 #[cfg(all(test, tests_sim_p_s))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_second_turret_blocks_a_seemingly_clear_side_route() {
+        let mut threats = ThreatIndex::new();
+        threats.insert(Threat::gun(1, (16, 10), 5));
+        assert!(safe_leg_from_other_guns(&threats, (8,10), (14,10), 1));
+        threats.insert(Threat::gun(2, (11, 12), 2));
+        assert!(!safe_leg_from_other_guns(&threats, (8,10), (14,10), 1));
+    }
+
+    #[test]
+    fn a_corner_with_a_second_gun_ahead_is_not_a_safe_exit() {
+        let mut threats = ThreatIndex::new();
+        threats.insert(Threat::gun(1, (16,10), 5));
+        threats.insert(Threat::gun(2, (16,18), 2));
+        assert!(!safe_exit_from_other_guns(&threats, (12,18), (24,18), 1));
+        assert!(safe_exit_from_other_guns(&threats, (12,22), (24,22), 1));
+    }
 
     /// A defence structure's guns, as the pass weighs them: `[GAPILL]`
     /// `Strength=400` with a five-cell `Vulcan`.

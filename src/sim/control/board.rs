@@ -768,7 +768,8 @@ fn admits(sim: &Simulation, owner: &str, command: &Command) -> bool {
             };
             sim.entities()
                 .get(entity_id)
-                .is_some_and(|entity| entity.owner() == owner_id)
+                .is_some_and(|entity| entity.owner() == owner_id
+                    && entity.seldom.slave.owner().is_none())
                 && sim.order_actor_admits(entity_id)
         }
     }

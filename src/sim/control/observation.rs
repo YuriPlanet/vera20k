@@ -433,7 +433,11 @@ impl<'a> Observation<'a> {
                 cell: (entity.position.rx(), entity.position.ry()),
                 health: entity.health.current(),
                 mission: entity.mission.effective(),
-                orderable: self.sim.order_actor_admits(entity.stable_id()),
+                // Bound miner slaves are a parent-driven lifecycle, not player
+                // infantry. A slave becomes independent once the master is
+                // destroyed; only then may the assistant command it.
+                orderable: self.sim.order_actor_admits(entity.stable_id())
+                    && entity.seldom.slave.owner().is_none(),
             })
     }
 
@@ -659,7 +663,13 @@ impl<'a> Observation<'a> {
                 return None;
             }
             let target = houses.get(&owner)?;
-            if target.multiplay_passive() || allied(self.sim.interner().resolve(owner)) {
+            // A passive civilian or animal becomes a local defensive target
+            // only while it is *visibly attacking our house*. Do not declare
+            // war on the other neutral inhabitants or use unseen retaliation.
+            if allied(self.sim.interner().resolve(owner))
+                || (target.multiplay_passive()
+                    && !self.visible_neutral_aggressor(entity.stable_id()))
+            {
                 return None;
             }
             Some(EnemyEntity {
@@ -668,6 +678,36 @@ impl<'a> Observation<'a> {
                 cell: (entity.position.rx(), entity.position.ry()),
             })
         })
+    }
+
+    /// Passive animals and civilians are not default opponents. Only a
+    /// currently visible passive entity whose native attack target is one of
+    /// our living objects may be treated as a defensive enemy. In particular,
+    /// an unseen animal with a target must not enter strategic target lists.
+    fn visible_neutral_aggressor(&self, id: u64) -> bool {
+        let Some(entity) = self.sim.entities().get(id) else { return false; };
+        if !self.is_cell_visible(entity.position.rx(), entity.position.ry()) {
+            return false;
+        }
+        self.attack_target(id).is_some_and(|victim| {
+            self.sim.entities().get(victim).is_some_and(|own| {
+                own.owner() == self.house && !own.lifecycle.in_limbo()
+                    && own.health.current() > 0
+            })
+        })
+    }
+
+    /// Two *currently visible* enemy objects belong to the same owner.
+    /// Used to choose the actual uniform a spy must steal, without reading
+    /// a hidden infantryman's identity or inferring a faction from an ID.
+    pub fn visible_enemy_same_owner(&self, a: u64, b: u64) -> bool {
+        let Some(first) = self.sim.entities().get(a) else { return false; };
+        let Some(second) = self.sim.entities().get(b) else { return false; };
+        self.is_cell_visible(first.position.rx(), first.position.ry())
+            && self.is_cell_visible(second.position.rx(), second.position.ry())
+            && first.owner() == second.owner()
+            && first.owner() != self.house
+            && self.is_hostile(a) && self.is_hostile(b)
     }
 
     /// The enemy objects [`Self::enemy_entities`] returns narrowed to what the
@@ -683,6 +723,27 @@ impl<'a> Observation<'a> {
         let fog = self.sim.fog();
         self.enemy_entities()
             .filter(move |enemy| fog.is_cell_visible(house, enemy.cell.0, enemy.cell.1))
+    }
+
+    /// Whether our actor is *effectively* disguised to this currently visible
+    /// enemy, according to the native per-observer predicate (including the
+    /// house its uniform represents and disguise detection). `disguised` alone
+    /// cannot answer this: a spy dressed as its own side remains hostile.
+    /// Unseen observers cannot be queried through the strategy boundary.
+    pub fn disguised_to_visible_enemy(&self, actor: u64, observer: u64) -> bool {
+        let Some(observer_entity) = self.sim.entities().get(observer) else {
+            return false;
+        };
+        if !self.visible_enemy_entities().any(|enemy| enemy.entity_id == observer) {
+            return false;
+        }
+        self.sim.entities().get(actor).is_some_and(|entity| {
+            entity.owner() == self.house
+                && entity.is_disguised_to(
+                    observer_entity.owner(), Some(self.sim.fog()),
+                    Some(&self.sim.house_alliances), self.sim.interner(),
+                )
+        })
     }
 
     /// Buildings owned by a `MultiplayPassive` house — the neutral and civilian
@@ -843,7 +904,7 @@ impl<'a> Observation<'a> {
             return false;
         };
         if house.multiplay_passive() {
-            return false;
+            return self.visible_neutral_aggressor(entity_id);
         }
         let allied = crate::map::houses::ally_test(
             self.sim.house_alliances.as_map(),
@@ -1162,28 +1223,76 @@ impl<'a> Observation<'a> {
     /// Without an overlay grid there is no overlay to read, and the slots are
     /// the whole of what is known.
     pub fn crate_cells(&self, rules: &RuleSet) -> Vec<(u16, u16)> {
-        let registry = rules.overlay_registry();
-        self.sim
-            .crate_authority()
-            .slots()
-            .iter()
-            .filter(|slot| !slot.is_empty())
-            .filter_map(|slot| {
-                let cell = (
-                    u16::try_from(slot.cell_x).ok()?,
-                    u16::try_from(slot.cell_y).ok()?,
-                );
-                let crate_here = match self.sim.overlay_grid.as_ref() {
-                    Some(grid) => grid
-                        .cell(cell.0, cell.1)
-                        .overlay_id
-                        .and_then(|id| registry.flags(id))
-                        .is_some_and(|flags| flags.crate_type),
-                    None => true,
-                };
-                crate_here.then_some(cell)
-            })
-            .collect()
+        let mut found = BTreeSet::new();
+        // Ordinary random crates are in the authority's slot table. A map
+        // trigger can also create a crate overlay directly, without a slot;
+        // the native PickupCrate reads the overlay itself. Neither source is
+        // permission to discover a crate behind the house's current fog.
+        for slot in self.sim.crate_authority().slots().iter().filter(|slot| !slot.is_empty()) {
+            let (Ok(x), Ok(y)) = (u16::try_from(slot.cell_x), u16::try_from(slot.cell_y))
+                else { continue; };
+            if self.is_cell_visible(x, y) && self.visible_crate_at(rules, (x, y)) {
+                found.insert((x, y));
+            }
+        }
+        let Some(grid) = self.sim.overlay_grid.as_ref() else {
+            return found.into_iter().collect();
+        };
+        // A full revealed-area scan once every 12 simulation frames catches
+        // trigger overlays anywhere the player can actually see them. Avoid
+        // scanning a 512x512 overlay every tick on a 20k-unit map.
+        if self.tick() % 12 == 0 {
+            for y in 0..grid.height() {
+                for x in 0..grid.width() {
+                    if self.is_cell_visible(x, y)
+                        && self.visible_crate_at(rules, (x, y)) {
+                        found.insert((x, y));
+                    }
+                }
+            }
+        } else {
+            // An explorer who walks beside a newly spawned trigger crate
+            // should take it now, not after the next periodic map-wide scan.
+            // Only examine a few mobile, controllable units to keep this cheap.
+            for own in self.own_entities()
+                .filter(|e| self.object_type(rules, e.type_id)
+                    .is_some_and(|ty| ty.speed >= 5 && ty.category != ObjectCategory::Building))
+                .take(32)
+            {
+                for dy in -3i32..=3 {
+                    for dx in -3i32..=3 {
+                        let (Ok(x), Ok(y)) = (
+                            u16::try_from(i32::from(own.cell.0) + dx),
+                            u16::try_from(i32::from(own.cell.1) + dy),
+                        ) else { continue; };
+                        if x < grid.width() && y < grid.height()
+                            && self.is_cell_visible(x, y)
+                            && self.visible_crate_at(rules, (x, y)) {
+                            found.insert((x, y));
+                        }
+                    }
+                }
+            }
+        }
+        found.into_iter().collect()
+    }
+
+    /// The visible live overlay, not a remembered crate slot. Used to confirm
+    /// that a previously sighted trigger-created crate has truly disappeared.
+    pub fn visible_crate_at(&self, rules: &RuleSet, cell: (u16, u16)) -> bool {
+        if !self.is_cell_visible(cell.0, cell.1) { return false; }
+        match self.sim.overlay_grid.as_ref() {
+            Some(grid) if cell.0 < grid.width() && cell.1 < grid.height() => {
+                grid.cell(cell.0, cell.1).overlay_id
+                    .and_then(|id| rules.overlay_registry().flags(id))
+                    .is_some_and(|flags| flags.crate_type)
+            }
+            Some(_) => false,
+            None => self.sim.crate_authority().slots().iter().any(|slot| {
+                !slot.is_empty() && i32::from(cell.0) == i32::from(slot.cell_x)
+                    && i32::from(cell.1) == i32::from(slot.cell_y)
+            }),
+        }
     }
 
     /// Whether `firer` may be sent at `target` at all:
@@ -2209,5 +2318,65 @@ mod vision_tests {
             obs.can_hurt(&rules, ifv, harrier),
             "the IFV's own weapon answers air"
         );
+    }
+}
+
+#[cfg(all(test, tests_sim_c_g))]
+mod v22_observation_regressions {
+    use super::*;
+
+    #[test]
+    fn a_trigger_created_overlay_crate_is_seen_without_an_authority_slot() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules()
+            else { return; };
+        let Some(crate_id) = (0..=u8::MAX)
+            .find(|id| rules.overlay_registry().flags(*id)
+                .is_some_and(|flags| flags.crate_type))
+        else { return; };
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0xA17);
+        sim.session.set_tick_for_test(0);
+        let owner = sim.interner.intern("Americans");
+        *sim.overlay_grid_mut_for_test() =
+            Some(crate::sim::overlay_grid::OverlayGrid::new(64, 64));
+        sim.overlay_grid_mut_for_test().as_mut().unwrap()
+            .place_overlay(10, 10, crate_id, 0);
+        sim.fog = crate::sim::vision::FogState::new(64, 64);
+        sim.fog.reveal_cells_for_owner(owner, [(10, 10)]);
+        let seen = Observation::new(&sim, owner);
+        assert!(seen.visible_crate_at(&rules, (10, 10)));
+        assert!(seen.crate_cells(&rules).contains(&(10, 10)),
+            "a trigger overlay should not need a random-crate authority slot");
+        sim.fog = crate::sim::vision::FogState::new(64, 64);
+        let hidden = Observation::new(&sim, owner);
+        assert!(!hidden.visible_crate_at(&rules, (10, 10)),
+            "a newly spawned crate must not be discovered through fog");
+    }
+
+    #[test]
+    fn hostile_civilian_is_only_a_target_while_it_visibly_attacks_our_house() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules()
+            else { return; };
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0xA17);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let owner = sim.interner.intern("Americans");
+        // The rival fixture may not instantiate Civilian as a house. In that
+        // case the meaningful part of this test is exercised by the regular
+        // map/scenario fixtures, not by inventing an alliance in this test.
+        let Some(civilian) = sim.spawn_object("CIV1", "Civilian", 12, 12, 255, &rules)
+            else { return; };
+        let own = sim.spawn_object("E1", "Americans", 13, 12, 255, &rules)
+            .expect("our infantry");
+        let mut fog = crate::sim::vision::FogState::new(64, 64);
+        fog.reveal_cells_for_owner(owner, [(12, 12), (13, 12)]);
+        sim.fog = fog;
+        let peaceful = Observation::new(&sim, owner);
+        assert!(!peaceful.is_hostile(civilian),
+            "idle civilians remain peaceful even when standing near our unit");
+        sim.entities_mut_for_test().get_mut(civilian).unwrap().attack_target
+            .set_for_test(Some(crate::sim::combat::TargetKind::Entity(own)));
+        let attacking = Observation::new(&sim, owner);
+        assert!(attacking.is_hostile(civilian),
+            "a neutral actively targeting our units deserves retaliation");
     }
 }

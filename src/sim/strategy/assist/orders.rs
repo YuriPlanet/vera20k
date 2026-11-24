@@ -65,7 +65,8 @@ mod common;
 
 /// The admission half, re-exported so every caller keeps the path it had.
 pub(in crate::sim::strategy::assist) use common::{
-    admits, already_attacking, issue, issue_tracked, on_map, ordered_this_frame, reachable,
+    admits, already_attacking, committed_garrison_entry, issue, issue_tracked, on_map,
+    ordered_this_frame, reachable,
 };
 
 /// How many new unit orders one frame may carry. The board drops everything
@@ -90,6 +91,8 @@ const HOME_REACH_CELLS: i32 = 12;
 
 /// How many of the house's soldiers may be inside buildings at once.
 ///
+/// This home reserve still leaves mobile guards outside. Front-line houses
+/// add their actual open seats to the ceiling, up to a separate bounded cap.
 /// A garrisoned rifleman is in limbo: `order_actor_admits` refuses it, and no
 /// step here brings it back out, so every unit sent in leaves the army for
 /// good. Measured on Death.mmx (America, seed 24301, 36000 ticks) the uncapped
@@ -97,7 +100,7 @@ const HOME_REACH_CELLS: i32 = 12;
 /// which is where the 56-unit gap between the old `fighters=99` and the 50
 /// units the brain could actually move came from. Retail's own base-defence
 /// teams hold a handful of structures; the rest of the army stays outside.
-const GARRISON_MAX: usize = 4;
+const GARRISON_MAX: usize = 10;
 
 // Why there is no boarding step here. Wiring one — an idle rifleman climbing
 // into his own empty carrier, a correct Enter click (`Goal::Enter` and
@@ -222,18 +225,16 @@ pub(super) fn captures(
         })
         .map(|entity| entity.cell)
         .collect();
-    // Where the enemy's own buildings stand. A walk that passes through their
-    // base is a walk through the guns that defend it, whatever the target's own
-    // clearance says: the engineer that went *through* a construction yard to
-    // reach a neutral derrick was reading a straight line that said "clear".
-    let structures: Vec<(u16, u16)> = obs
-        .visible_enemy_entities()
-        .filter(|entity| {
-            obs.object_type(rules, entity.type_id)
-                .is_some_and(|ty| ty.category == ObjectCategory::Building)
-        })
-        .map(|entity| entity.cell)
-        .collect();
+    // Only real, currently operational gun emplacements obstruct a safe
+    // engineer approach. A *defenceless* captured construction yard, factory
+    // or tech lab must not count as a gun and forever exclude itself or the
+    // abandoned factory standing behind it from all engineer missions.
+    let structures: Vec<(u16, u16)> = obs.visible_enemy_entities()
+        .filter(|entity| obs.object_type(rules, entity.type_id).is_some_and(|ty| {
+            ty.category == ObjectCategory::Building && ty.is_base_defense
+                && obs.visible_enemy_building_operational(rules, entity.entity_id)
+        }))
+        .map(|entity| entity.cell).collect();
     // What can see a spy coming. The retail rules mark no `Detector=` key on any
     // type, and the dog's own section (`[DOG] NotHuman=yes`, `Natural=yes`)
     // carries nothing about spies either: the reveal is engine behaviour, and the
@@ -244,7 +245,9 @@ pub(super) fn captures(
         .visible_enemy_entities()
         .filter(|entity| {
             obs.object_type(rules, entity.type_id).is_some_and(|ty| {
-                super::census::Traits::of(rules, ty).scout || mind_controls(rules, ty)
+                super::census::Traits::of(rules, ty).scout
+                    || mind_controls(rules, ty)
+                    || super::kite::carries_parasite(rules, ty)
             })
         })
         .map(|entity| entity.cell)
@@ -330,6 +333,53 @@ pub(super) fn captures(
                     unit.entity_id, building);
             }
         }
+        // Retail [SPY]'s MakeupKit carries MakesDisguise: the same ordinary
+        // Attack click the player uses makes the spy wear the *victim's* enemy
+        // house uniform. Use the native fire/detonation path; never edit
+        // Simulation disguise state. Only click an actually visible enemy
+        // infantryman from the house whose building we intend to infiltrate.
+        if ty.agent && has_disguise_weapon(rules, ty) {
+            let desired = spy_targets.iter()
+                .filter(|(site, _)| obs.can_take_building(
+                    rules, unit.entity_id, site.entity_id))
+                .max_by_key(|(site, value)| (*value,
+                    -squared_distance(unit.cell, site.cell)));
+            if let Some((site, _)) = desired
+                && !obs.disguised_to_visible_enemy(unit.entity_id, site.entity_id)
+            {
+                let uniform = obs.visible_enemy_entities()
+                    .filter(|enemy| obs.visible_enemy_same_owner(
+                        enemy.entity_id, site.entity_id))
+                    .filter(|enemy| obs.entity_type(rules, enemy.entity_id)
+                        .is_some_and(|inf| inf.category == ObjectCategory::Infantry
+                            && !inf.agent && !mind_controls(rules, inf)
+                            && !super::kite::carries_parasite(rules, inf)
+                            && !super::census::Traits::of(rules, inf).scout))
+                    .filter(|enemy| squared_distance(unit.cell, enemy.cell) <= 18 * 18)
+                    .filter(|enemy| !path_crosses(&watchers, unit.cell, enemy.cell,
+                        SPY_WATCH_CELLS))
+                    .filter(|enemy| !spy_gun_crossfire_except(rules, obs,
+                        unit.entity_id, unit.cell, enemy.cell, Some(enemy.entity_id)))
+                    .min_by_key(|enemy| (squared_distance(unit.cell, enemy.cell), enemy.entity_id));
+                if let Some(infantry) = uniform {
+                    // A prior Attack is already in progress; do not restart
+                    // the native weapon every tick and lose its disguise shot.
+                    if obs.attack_target(unit.entity_id) == Some(infantry.entity_id) {
+                        continue;
+                    }
+                    if issue_tracked(&mut brain.tracked, brain.trace, out,
+                        rules, obs, unit.entity_id, TrackedKind::Engage,
+                        Some(infantry.entity_id), Some(infantry.cell),
+                        Goal::Attack { target: infantry.entity_id }) {
+                        issued += 1;
+                        continue;
+                    }
+                }
+                // No safely approachable enemy soldier: keep the spy, or
+                // scout a remembered location; do not mistake our initial
+                // PermaDisguise for immunity to this house's sentries.
+            }
+        }
         // A spy takes what is worth most; anyone else takes what is nearest.
         let chosen = if ty.agent {
             spy_targets
@@ -343,6 +393,15 @@ pub(super) fn captures(
                 // another opportunity instead of consuming it for nothing.
                 .filter(|(target, _)| !path_crosses(
                     &watchers, unit.cell, target.cell, SPY_WATCH_CELLS))
+                // The engine seeds PermaDisguise wearing our own house, not
+                // necessarily a uniform that fools *this* enemy. Until the
+                // native command path can change uniform, treat unmasked spies
+                // like fragile infantry: a turret-covered approach waits.
+                .filter(|(target, _)| {
+                    obs.disguised_to_visible_enemy(unit.entity_id, target.entity_id)
+                        || !spy_gun_crossfire(rules, obs, unit.entity_id,
+                            unit.cell, target.cell)
+                })
                 .max_by_key(|(target, value)| {
                     let blackout_opportunity = brain.siege_wait.is_some()
                         && obs.object_type(rules, target.type_id)
@@ -419,13 +478,20 @@ pub(super) fn captures(
         // avoid every hostile rifle; spies avoid the actual detector/psychic
         // watchers only. Applying the engineer's guard list here aborted every
         // cash theft as soon as a refinery came into a normal garrison's view.
-        let route_threats = capture_route_threats(ty.agent, &guards, &watchers);
+        let wearing_enemy_uniform = ty.agent
+            && obs.disguised_to_visible_enemy(unit.entity_id, target.entity_id);
+        let route_threats = capture_route_threats(wearing_enemy_uniform, &guards, &watchers);
+        // The aim is not 'ignore towers' but 'ignore towers that truly regard
+        // this spy as friendly'. A native disguise rejected by the observer
+        // makes all regular weapons dangerous along the route.
+        let guns_unsafe = ty.agent && !wearing_enemy_uniform
+            && spy_gun_crossfire(rules, obs, unit.entity_id, unit.cell, target.cell);
         let close = route_threats.iter().any(|cell| {
             squared_distance(*cell, unit.cell) <= CAPTURE_CLEAR_CELLS * CAPTURE_CLEAR_CELLS
         });
         let crossed = tick % CAPTURE_RECHECK_FRAMES == 0
             && path_crosses(route_threats, unit.cell, target.cell, PATH_CLEAR_CELLS);
-        if close || crossed {
+        if close || crossed || guns_unsafe {
             brain.tracked.void(unit.entity_id, TrackedKind::Capture);
             // The walk is no longer safe: it is an abort, not a
             // temporary dodge that should later restore Capture. Clear
@@ -463,14 +529,77 @@ pub(super) fn captures(
     }
 }
 
-/// A disguised spy needs to avoid detectors, not ordinary riflemen. A
-/// regular engineer needs clearance from every visible hostile. Keep this
-/// distinction in both the initial Capture and its cross-frame rechecks.
+/// The attack was accepted on an earlier frame, before an engineer booked
+/// the objective. Filtering future target choices alone does not stop that
+/// existing native Attack mission. Issue one urgent Stop; the normal target
+/// selectors are already prevented from acquiring this engineer's prize.
+pub(super) fn protect_engineer_prizes(
+    brain: &mut AssistBrain, rules: &RuleSet,
+    obs: &Observation<'_>, out: &mut Outbox,
+) {
+    let mut stopped = 0;
+    for unit in &brain.census.units {
+        if stopped >= FORCE_ORDERS_PER_FRAME { break; }
+        if !unit.controllable() || !unit.traits.combat
+            || ordered_this_frame(out, unit.entity_id) { continue; }
+        let Some(target) = obs.attack_target(unit.entity_id) else { continue; };
+        let Some(enemy) = brain.census.enemies.iter()
+            .find(|enemy| enemy.entity_id == target) else { continue; };
+        if !reclamation_reserved(rules, obs, &brain.census, &brain.tracked, *enemy) {
+            continue;
+        }
+        // L2's per-frame priority also prevents the later micro and advance
+        // passes from replacing this emergency ceasefire with a new Attack.
+        if out.want(unit.entity_id, 0, Goal::Stop) {
+            brain.tracked.void(unit.entity_id, TrackedKind::Attack);
+            brain.tracked.void(unit.entity_id, TrackedKind::Engage);
+            brain.tracked.forget_primary(unit.entity_id);
+            stopped += 1;
+            log::info!("auto play: cease fire on engineer prize {} by {}",
+                target, unit.entity_id);
+        }
+    }
+}
+
+/// Only a spy *effectively disguised to that enemy* may ignore ordinary
+/// guards. Both an unmasked spy and an engineer avoid visible hostiles.
+/// Detector, parasite, and control coverage is handled separately.
 fn capture_route_threats<'a>(
     spy: bool, general_guards: &'a [(u16, u16)],
     spy_watchers: &'a [(u16, u16)],
 ) -> &'a [(u16, u16)] {
     if spy { spy_watchers } else { general_guards }
+}
+
+/// Does the straight-line approach to an enemy spy target cross an active
+/// hostile weapon's envelope? Used only when the real per-observer disguise
+/// query is false; an actually masked spy can walk past ordinary guns but
+/// still avoids the separate detector/parasite/psychic watcher set.
+fn spy_gun_crossfire(
+    rules: &RuleSet, obs: &Observation<'_>, spy: u64,
+    from: (u16, u16), to: (u16, u16),
+) -> bool {
+    spy_gun_crossfire_except(rules, obs, spy, from, to, None)
+}
+
+/// The soldier used as a disguise specimen is an unavoidable close-range
+/// encounter, not *by itself* proof that no specimen is approachable. Other
+/// currently visible hostile fire still blocks the attempted disguise.
+fn spy_gun_crossfire_except(
+    rules: &RuleSet, obs: &Observation<'_>, spy: u64,
+    from: (u16, u16), to: (u16, u16), spared: Option<u64>,
+) -> bool {
+    obs.visible_enemy_entities().filter(|enemy| Some(enemy.entity_id) != spared).any(|enemy| {
+        let Some(ty) = obs.object_type(rules, enemy.type_id) else {
+            return false;
+        };
+        if !obs.can_hurt(rules, enemy.entity_id, spy) {
+            return false;
+        }
+        let reach = super::advance::weapon_range_cells(
+            rules, ty, obs.is_deployed(enemy.entity_id));
+        reach > 0 && path_crosses(&[enemy.cell], from, to, reach.saturating_add(1))
+    })
 }
 
 /// A fogged spy target is an old sighting, *not* an entity we may click.
@@ -497,7 +626,7 @@ fn spy_recon_post(
     .filter(|cell| !obs.visible_enemy_entities().any(|enemy| {
         obs.entity_type(rules, enemy.entity_id)
             .is_some_and(|ty| super::census::Traits::of(rules, ty).scout
-                || mind_controls(rules, ty))
+                || mind_controls(rules, ty) || super::kite::carries_parasite(rules, ty))
             && squared_distance(enemy.cell, *cell) <= SPY_WATCH_CELLS * SPY_WATCH_CELLS
     }))
     .min_by_key(|cell| (squared_distance(from, *cell), *cell))
@@ -854,8 +983,11 @@ pub(super) fn garrison(
     let front_ids: BTreeSet<u64> = billets.iter().filter(|billet| {
         brain.census.base_cell.is_some_and(|home|
             squared_distance(home, billet.cell) >= 18 * 18)
-            && enemy_cells.iter().any(|enemy|
+            && (enemy_cells.iter().any(|enemy|
                 squared_distance(*enemy, billet.cell) <= 20 * 20)
+                || brain.census.units.iter().any(|unit| unit.traits.occupier
+                    && unit.controllable()
+                    && squared_distance(unit.cell, billet.cell) <= 7 * 7))
     }).map(|billet| billet.building_id).collect();
     let front_available = !front_ids.is_empty();
     // Garrison capacity belongs to *buildings*, not a global population cap.
@@ -882,11 +1014,17 @@ pub(super) fn garrison(
             front_ids.contains(&billet.building_id)
                 && squared_distance(unit.cell, billet.cell) <= 10 * 10
         });
+        // An infantryman walking past empty cover is not committed to a live
+        // firefight; use the nearby building without stealing an actively firing unit.
+        let cover_nearby = billets.iter().any(|billet| {
+            squared_distance(unit.cell, billet.cell) <= 6 * 6
+                && room_left.get(&billet.building_id).copied().unwrap_or(0) > 0
+        });
         if !unit.traits.occupier
             || !unit.controllable()
             || (holds_or_fights(unit.mission)
                 && !may_garrison_from_mission(
-                    unit.mission, near_front,
+                    unit.mission, near_front || cover_nearby,
                     super::micro::firing(obs, unit.mission, unit.entity_id),
                 ))
             || ordered_this_frame(out, unit.entity_id)
@@ -940,7 +1078,7 @@ fn may_garrison_from_mission(mission: MissionId, near_front: bool, firing: bool)
 /// Keep a small home contingent while front-line infantry fill the actual
 /// remaining seats, subject to the shared order budget.
 fn garrison_budget(front_available: bool, front_room: usize) -> usize {
-    // The four home slots are a *base* reserve, not a global population cap.
+    // The home slots are a *base* reserve, not a global population cap.
     // A city block near the enemy can be filled to its own real capacity.
     GARRISON_MAX + if front_available { front_room.min(32) } else { 0 }
 }
@@ -1188,38 +1326,68 @@ pub(super) fn strategic_public_asset(ty: &ObjectType) -> bool {
 ///
 /// Do not protect indefinitely a distant asset with no available engineer:
 /// the ordinary push must remain able to finish an enemy base.
+/// An engineer with a live primary Capture owns this building even when a
+/// momentary dodge has replaced its latest tactical intent. This is the same
+/// claim that the production/capture layers use, now visible to *all* guns.
+/// A claimant must still exist and be legally able to capture the target;
+/// an expired, killed or manually controlled engineer cannot freeze a match.
+pub(super) fn engineer_claimed(
+    rules: &RuleSet, obs: &Observation<'_>, census: &super::census::Census,
+    tracked: &super::tracked::Tracker, target: EnemyEntity,
+) -> bool {
+    if !obs.is_cell_visible(target.cell.0, target.cell.1)
+        || obs.object_type(rules, target.type_id).is_none_or(|ty| !ty.capturable)
+    { return false; }
+    census.units.iter().any(|unit| {
+        unit.traits.engineer && unit.controllable()
+            && obs.can_take_building(rules, unit.entity_id, target.entity_id)
+            && (tracked.pending_captures(obs.tick(), target.entity_id)
+                .any(|id| id == unit.entity_id)
+                || tracked.primary_goal(unit.entity_id)
+                    == Some(Goal::Capture { target: target.entity_id }))
+    })
+}
+
 pub(super) fn reclamation_reserved(
     rules: &RuleSet, obs: &Observation<'_>,
-    census: &super::census::Census, target: EnemyEntity,
+    census: &super::census::Census, tracked: &super::tracked::Tracker,
+    target: EnemyEntity,
 ) -> bool {
+    // Protect *every* rule-capturable enemy building with an active engineer
+    // mission: enemy-owned civilian tech, factories and captured laboratories
+    // included. The previous public-only filter allowed friendly tanks to
+    // destroy a lab while its engineer was already inside the last approach.
+    if engineer_claimed(rules, obs, census, tracked, target) { return true; }
     let Some(ty) = obs.object_type(rules, target.type_id) else { return false; };
-    // Civilian infrastructure has a repeatable strategic value even after an
-    // enemy captured it. Do not grant this protection to hostile nuclear
-    // silos/tech labs/weapon plants just because they happen to be capturable:
-    // those remain valid attack objectives in an emergency.
-    let public_prize = ty.capturable
-        && (ty.produce_cash_amount > 0 || ty.hospital || ty.unit_repair);
-    if !public_prize || !obs.is_cell_visible(target.cell.0, target.cell.1) {
+    if !ty.capturable || !obs.is_cell_visible(target.cell.0, target.cell.1) {
         return false;
     }
-    // Reserve the asset as soon as an engineer can take it, or while the
-    // enemy still has other live targets that should be cleared first. If
-    // *only* an enemy oil derrick remains and no engineer can reach it, let
-    // the ordinary final clean-up path finish the game instead of stalling.
-    let engineer_arriving = census.units.iter().any(|engineer| {
+    // A defenceless foreign yard, barracks, factory or battle lab is a new
+    // production tree, not disposable rubble. Protect strategic capturable
+    // buildings BEFORE an engineer happens to acquire a Capture intent.
+    // This also protects harmless enemy-owned former neutral tech structures.
+    let value = built_capture_value(rules, ty);
+    let worth_capturing = strategic_public_asset(ty) || value >= 3;
+    if !worth_capturing { return false; }
+    let engineer_available = census.units.iter().any(|engineer| {
         engineer.traits.engineer && engineer.controllable()
-            && squared_distance(engineer.cell, target.cell) <= 45 * 45
+            && squared_distance(engineer.cell, target.cell) <= 70 * 70
             && obs.can_take_building(rules, engineer.entity_id, target.entity_id)
     });
-    engineer_arriving || census.enemies.iter().any(|enemy| {
+    if engineer_available { return true; }
+    // If we can make another engineer and there is still other hostile
+    // material to neutralize, preserve the valuable prize while we prepare
+    // the capture. When it is the *last* enemy object and there is no
+    // engineering option, do not make the match impossible to finish.
+    census.enemies.iter().any(|enemy| {
         enemy.entity_id != target.entity_id
             && obs.is_cell_visible(enemy.cell.0, enemy.cell.1)
             && obs.object_type(rules, enemy.type_id).is_some_and(|other| {
                 other.category != ObjectCategory::Building
-                    || !(other.capturable && (other.produce_cash_amount > 0
-                        || other.hospital || other.unit_repair))
+                    || !other.capturable || built_capture_value(rules, other) < 3
             })
     })
+
 }
 
 /// What a building is worth to the house that captures it, in the same
@@ -1914,6 +2082,16 @@ fn spy_class_open(
 ///
 /// A spy is revealed before it arrives, and a spy taken by mind control is worse
 /// than one shot: it walks into the enemy's own base afterwards.
+fn has_disguise_weapon(rules: &RuleSet, ty: &ObjectType) -> bool {
+    (0..ty.weapon_record_count()).any(|slot| {
+        ty.weapon_at(slot).and_then(|name| rules.weapon(name))
+            .filter(|weapon| !weapon.never_use)
+            .and_then(|weapon| weapon.warhead.as_deref()
+                .and_then(|name| rules.warhead(name)))
+            .is_some_and(|head| head.makes_disguise)
+    })
+}
+
 fn spy_route_blocked(
     obs: &Observation<'_>,
     rules: &RuleSet,
@@ -1941,7 +2119,7 @@ const SPY_SITE_MEMORY_FRAMES: u64 = 7_200;
 const CRATE_SEEK_CELLS: i32 = 8;
 /// A seen distant crate is worth a scout's whole-map journey, not a tank
 /// attack group. Re-check sightings only with the house's actual vision.
-const CRATE_MEMORY_FRAMES: u64 = 900;
+const CRATE_MEMORY_FRAMES: u64 = 2_700;
 const CRATE_CLAIM_FRAMES: u64 = 1_800;
 
 /// Give an available scout a visible crate collection errand.
@@ -1969,7 +2147,8 @@ pub(super) fn crates(
     brain.crate_sightings.retain(|cell, seen| {
         (tick.saturating_sub(*seen) <= CRATE_MEMORY_FRAMES
             || claimed_cells.contains(cell))
-            && (!obs.is_cell_visible(cell.0, cell.1) || visible_cells.contains(cell))
+            && (!obs.is_cell_visible(cell.0, cell.1)
+                || obs.visible_crate_at(rules, *cell))
     });
     let cells: Vec<(u16, u16)> = brain.crate_sightings.keys().copied().collect();
     let live = &brain.tracked;
@@ -1992,6 +2171,8 @@ pub(super) fn crates(
     // one does not, with no type named here.
     let scouts: BTreeSet<u64> = brain.census.units.iter()
         .filter(|unit| unit.traits.scout).map(|unit| unit.entity_id).collect();
+    let attackers: BTreeSet<u64> = brain.squads.squad(super::squads::Role::Attack)
+        .map(|squad| squad.members.iter().copied().collect()).unwrap_or_default();
     let mut detail: Vec<(u64, (u16, u16), MovementZone, i32)> = brain
         .census
         .units
@@ -2058,13 +2239,17 @@ pub(super) fn crates(
         let reachable = |unit: &(u64, (u16, u16), MovementZone, bool, i32), range: i32| {
             // Dedicated scouts can cross the entire *known* map for a prize.
             // Combat units remain limited to their short detour range.
-            let remote_scout = scouts.contains(&unit.0);
-            crate_runner_in_range(remote_scout,
+            let remote_runner = remote_crate_runner(
+                scouts.contains(&unit.0), unit.4, attackers.contains(&unit.0));
+            crate_runner_in_range(remote_runner,
                 squared_distance(unit.1, cell), range)
                 && obs.can_reach(unit.2, unit.1, cell)
                 && !brain.census.enemies.iter().any(|enemy| {
                     obs.is_cell_visible(enemy.cell.0,enemy.cell.1)
-                        && squared_distance(enemy.cell,cell) <= 8 * 8
+                        && (squared_distance(enemy.cell,cell) <= 12 * 12
+                            || (obs.entity_type(rules,enemy.entity_id)
+                                .is_some_and(|ty| ty.category == ObjectCategory::Building)
+                                && path_crosses(&[enemy.cell],unit.1,cell,7)))
                 })
         };
         // The soonest arrival, not the nearest body. The walk is the entire cost
@@ -2128,8 +2313,12 @@ const CRATE_RUNNER_SPEED: i32 = 6;
 /// The dedicated scout detail travels to already-seen crates across the
 /// entire reachable map; ordinary fighters are constrained to short detours.
 /// Visibility and zone connectivity are checked separately at assignment.
-fn crate_runner_in_range(scout: bool, distance_squared: i32, near: i32) -> bool {
-    scout || distance_squared <= near.saturating_mul(near)
+fn crate_runner_in_range(remote: bool, distance_squared: i32, near: i32) -> bool {
+    remote || distance_squared <= near.saturating_mul(near)
+}
+
+fn remote_crate_runner(scout: bool, speed: i32, in_attack: bool) -> bool {
+    scout || (speed >= 9 && !in_attack)
 }
 
 const CRATE_RUNNERS: usize = 4;
@@ -2156,6 +2345,10 @@ const REPAIR_REARM_FRAMES: u64 = 900;
 /// asking twice turns a repair *off* — the brain therefore remembers the
 /// buildings it has already switched on, and forgets one only when it is whole
 /// again. Nothing about the click is per-frame, so nothing here is either.
+fn repair_wrench_allowed(ty: &ObjectType) -> bool {
+    ty.category == ObjectCategory::Building && ty.repairable && !ty.can_be_occupied
+}
+
 pub(super) fn repairs(
     brain: &mut AssistBrain,
     rules: &RuleSet,
@@ -2169,7 +2362,9 @@ pub(super) fn repairs(
         let Some(ty) = obs.object_type(rules, entity.type_id) else {
             continue;
         };
-        if ty.category != ObjectCategory::Building {
+        // An occupied civilian building is maintained with an engineer, not
+        // a native sidebar wrench. The toggle is refused or wastes orders.
+        if !repair_wrench_allowed(ty) {
             continue;
         }
         let Some(full) = obs
@@ -3295,7 +3490,19 @@ mod v18_execution_tests {
     use super::*;
 
     #[test]
-    fn a_spy_crosses_ordinary_soldiers_but_avoids_detectors() {
+    fn repair_toggle_excludes_houses_that_need_an_engineer() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
+            return;
+        };
+        let Some(plant) = rules.object("GAPOWR") else { return; };
+        assert!(repair_wrench_allowed(plant));
+        if let Some(house) = rules.all_objects().find(|obj| obj.can_be_occupied) {
+            assert!(!repair_wrench_allowed(house));
+        }
+    }
+
+    #[test]
+    fn only_a_truly_disguised_spy_ignores_ordinary_soldiers() {
         let guards = [(10, 10), (15, 15)];
         let watchers = [(15, 15)];
         assert_eq!(capture_route_threats(false, &guards, &watchers), &guards);
@@ -3304,6 +3511,14 @@ mod v18_execution_tests {
             (0, 10), (20, 10), 2));
         assert!(path_crosses(capture_route_threats(false, &guards, &watchers),
             (0, 10), (20, 10), 2));
+    }
+
+    #[test]
+    fn fast_reserve_collects_remote_crates_but_attack_tanks_do_not() {
+        assert!(remote_crate_runner(true, 6, false));
+        assert!(remote_crate_runner(false, 9, false));
+        assert!(!remote_crate_runner(false, 8, false));
+        assert!(!remote_crate_runner(false, 9, true));
     }
 
     #[test]
@@ -3327,5 +3542,22 @@ mod v18_execution_tests {
         let Some(oil) = rules.object("CAOILD") else { return; };
         assert!(strategic_public_asset(oil));
         assert!(capture_value(&rules, oil, true) > 0);
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v22_spy_disguise_rules_tests {
+    use super::*;
+
+    #[test]
+    fn spy_attack_uses_a_real_makes_disguise_weapon_not_a_simulation_cheat() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules()
+            else { return; };
+        let spy = rules.object("SPY").expect("retail spy exists");
+        let infantry = rules.object("E1").expect("retail infantry exists");
+        assert!(has_disguise_weapon(&rules, spy),
+            "the spy should disguise by a native attack/detonation");
+        assert!(!has_disguise_weapon(&rules, infantry),
+            "ordinary infantry must not borrow the disguise exception");
     }
 }
