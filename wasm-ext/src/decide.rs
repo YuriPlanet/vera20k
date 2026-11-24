@@ -50,7 +50,8 @@ pub const DECISION_ONLY_EVENTS: [i32; 4] = [
 /// loops. A call that runs out stops the module.
 pub const DECIDE_BUDGET: u64 = 20_000;
 
-/// `DecideRecord` (appendix "Fixed layouts"), 152 bytes little endian.
+/// `DecideRecord` (appendix "Fixed layouts"), 160 bytes little endian
+/// (the INI registration addendum grew `EventRecord` to 120).
 ///
 /// Result areas (`area`, `area_cap`, `previous_len`) are always 0: of the
 /// kinds with a result area in appendix 4.3 and 4.5 (`Fire`'s shot plan,
@@ -66,23 +67,23 @@ pub struct DecideRecord {
 }
 
 impl DecideRecord {
-    pub const SIZE: usize = 152;
+    pub const SIZE: usize = 160;
 
     /// The record as `on_decide` receives it: `result` starts as
     /// `previous` and `handled` as 0.
     pub fn to_bytes(&self) -> [u8; Self::SIZE] {
         let mut out = [0u8; Self::SIZE];
         out[..EventRecord::SIZE].copy_from_slice(&self.event.to_bytes());
-        out[112..120].copy_from_slice(&self.native.to_le_bytes());
-        out[120..128].copy_from_slice(&self.previous.to_le_bytes());
+        out[120..128].copy_from_slice(&self.native.to_le_bytes());
         out[128..136].copy_from_slice(&self.previous.to_le_bytes());
+        out[136..144].copy_from_slice(&self.previous.to_le_bytes());
         out
     }
 
     /// The handler's answer in a record it returned: `result` when it set
     /// `handled`, else `None` (the previous result stands).
     pub fn answer(bytes: &[u8; Self::SIZE]) -> Option<i64> {
-        let handled = crate::le_i32(bytes, 136);
-        (handled != 0).then(|| crate::le_i64(bytes, 128))
+        let handled = crate::le_i32(bytes, 144);
+        (handled != 0).then(|| crate::le_i64(bytes, 136))
     }
 }

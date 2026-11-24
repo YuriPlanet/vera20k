@@ -66,6 +66,8 @@ pub const ATOMIC_ACTIONS: &[&str] = &[
     "DetonateWeapon", "DetonateWarhead", "CreateProjectile", "DetonateProjectile",
     "RemoveProjectile", "EndFor", "SetScore", "AddScore", "Log", "Convert", "Push", "Module",
     "CreateTeamUnlimited", "DisbandTeam", "AddTeamMember", "RemoveTeamMember",
+    // 1041 is reserved; 1042 comes from the INI registration addendum
+    "ApplyEffect", "RaiseEvent",
 ];
 
 /// An action kind's ID by name, ASCII case-insensitive.

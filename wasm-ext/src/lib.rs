@@ -5,7 +5,7 @@
 //! covers `frame`, `random`, `log`, `has_kind`, `lookup`, `name_of`, `get`,
 //! `get_many`, `set`, `modify`, `unmodify`, `var_get`, `var_set`, `find`,
 //! `action`, the four `trigger_*` imports, `rules_get`, `rules_set` and
-//! `order`, calls `on_rules`, delivers `on_events` batches ([`triggers`]),
+//! `order` and `ini_register`, calls `on_rules`, delivers `on_events` batches ([`triggers`]),
 //! asks `on_decide` for decisions ([`decide`]) and
 //! reads the `vera.vars`, `vera.actions` and `vera.delivery` sections
 //! ([`sections`]); the other `vera:sim` imports, the client world and the
@@ -98,7 +98,42 @@ pub const IMPORTS: &[(&str, &str)] = &[
         "(sec: ptr, sec_len: i32, key: ptr, key_len: i32, val: ptr, val_len: i32) -> status",
     ),
     ("order", "(house: i64, ptr, len: i32) -> status"),
+    (
+        "ini_register",
+        "(kind: i32, section: i32, name: ptr, len: i32, key: i32, out: ptr) -> status",
+    ),
 ];
+
+/// `IniKind` (INI registration addendum, enum 23): what `ini_register`
+/// registers.
+pub const INI_KEY: i32 = 0;
+pub const INI_REGISTRY: i32 = 1;
+pub const INI_EVENT: i32 = 2;
+
+/// `IniSection` (enum 24): the sections a registered key is read from.
+pub const INI_SECTIONS: [&str; 7] = [
+    "TechnoType",
+    "Weapon",
+    "Warhead",
+    "Projectile",
+    "SuperWeapon",
+    "Country",
+    "General",
+];
+
+/// Registrations one module may make.
+pub const MAX_INI_REGISTRATIONS: usize = 4096;
+/// Longest registered name in bytes.
+pub const MAX_INI_NAME: usize = 63;
+
+/// Whether `name` may be registered: 1 to [`MAX_INI_NAME`] ASCII letters,
+/// digits, `.` and `_`.
+pub fn ini_name_valid(name: &str) -> bool {
+    (1..=MAX_INI_NAME).contains(&name.len())
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'_')
+}
 
 /// Operations charged per value `get_many` reads and per reference `find`
 /// returns (RFC section 15).
@@ -127,10 +162,15 @@ pub const NAME_OVERLAY: i32 = 9;
 pub const NAME_COUNTRY: i32 = 11;
 pub const NAME_TEAM_TYPE: i32 = 12;
 pub const NAME_VARIABLE: i32 = 15;
+/// Engine-held strings: parameter texts and the INI start records' names
+/// and values (INI registration addendum, section 7).
+pub const NAME_STRING: i32 = 18;
 pub const NAME_PROPERTY: i32 = 19;
 /// Answered by the sandbox from [`STOCK_ACTIONS`] and [`ATOMIC_ACTIONS`].
 pub const NAME_ACTION_KIND: i32 = 21;
-pub const NAME_KINDS: i32 = 23;
+/// Registered module events (INI registration addendum).
+pub const NAME_MODULE_EVENT: i32 = 24;
+pub const NAME_KINDS: i32 = 25;
 
 /// `has_kind` tables (appendix 8.3 `Table`).
 pub const TABLE_ACTION: i32 = 1;
@@ -670,6 +710,18 @@ pub trait SimHost {
     /// Queues `order` for computer house `house` (RFC 6g).
     fn order(&mut self, _house: i64, _order: &Order) -> Result<Status, Invalid> {
         Ok(Status::Unsupported)
+    }
+    /// Registers an INI name (`ini_register`, only from `vera_init`, which
+    /// the sandbox checks along with the name's form): returns the event
+    /// ID for an event, else 0, and the status.
+    fn ini_register(
+        &mut self,
+        _kind: i32,
+        _section: i32,
+        _name: &str,
+        _key: i32,
+    ) -> Result<(i32, Status), Invalid> {
+        Ok((0, Status::Unsupported))
     }
 }
 

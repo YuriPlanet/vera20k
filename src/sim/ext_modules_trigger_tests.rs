@@ -82,7 +82,7 @@ fn module(def: &[u8], target: u64, sections: &str) -> Vec<u8> {
     (i32.store (i32.const 72) (call $bind (i64.load (i32.const 64)) (i64.const {target}))))
   (func (export "on_events") (param $ptr i32) (param $count i32)
     (if (i32.eqz (i32.load (i32.const 80)))
-      (then (memory.copy (i32.const 512) (local.get $ptr) (i32.const 112))))
+      (then (memory.copy (i32.const 512) (local.get $ptr) (i32.const 120))))
     (i32.store (i32.const 80) (i32.add (i32.load (i32.const 80)) (local.get $count)))))"#,
         def = bytes(def),
         len = def.len(),
@@ -205,7 +205,7 @@ fn a_hit_fires_the_bound_trigger_and_on_events_gets_its_record() {
     };
     scene.tick();
     assert_eq!(received(&scene), 1);
-    assert_eq!(&memory(&scene)[512..624], &expected.to_bytes());
+    assert_eq!(&memory(&scene)[512..632], &expected.to_bytes());
     assert_eq!(scene.sim().ext_modules().status()[0].1, None);
 }
 
@@ -324,7 +324,7 @@ fn a_queued_record_is_hashed_and_survives_a_save() {
     live.tick();
     resumed.tick();
     assert_eq!(received(&resumed), 1);
-    assert_eq!(memory(&resumed)[512..624], memory(&live)[512..624]);
+    assert_eq!(memory(&resumed)[512..632], memory(&live)[512..632]);
     assert_eq!(triggers_hash(&resumed), triggers_hash(&live));
 }
 

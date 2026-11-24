@@ -108,7 +108,7 @@ fn wat_bytes(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("\\{b:02x}")).collect()
 }
 
-/// `vera.actions` names `Panic` (key 7); `vera.delivery` is 224 bytes at
+/// `vera.actions` names `Panic` (key 7); `vera.delivery` is 240 bytes at
 /// 1024. `on_scenario_start` looks the name up into 64 and creates the
 /// trigger from 2048; `on_events` sums each record's `value` into 80 and
 /// counts records into 88.
@@ -131,7 +131,7 @@ fn module(actions: &[u8], delivery: &[u8]) -> Vec<u8> {
       (i64.store (i32.const 80) (i64.add (i64.load (i32.const 80))
         (i64.load offset=72 (local.get $ptr))))
       (i32.store (i32.const 88) (i32.add (i32.load (i32.const 88)) (i32.const 1)))
-      (local.set $ptr (i32.add (local.get $ptr) (i32.const 112)))
+      (local.set $ptr (i32.add (local.get $ptr) (i32.const 120)))
       (br_if $l (local.tee $count (i32.sub (local.get $count) (i32.const 1)))))))"#,
         actions = wat_bytes(actions),
         delivery = wat_bytes(delivery),
@@ -161,7 +161,7 @@ fn delivery(offset: u32, bytes: u32) -> Vec<u8> {
 
 #[test]
 fn a_module_names_its_actions_creates_a_trigger_and_receives_records() {
-    let bytes = module(&actions(&[("Panic", 7)]), &delivery(1024, 224));
+    let bytes = module(&actions(&[("Panic", 7)]), &delivery(1024, 240));
     let mut module = SimModule::load(&bytes, Limits::MAP).expect("module loads");
     assert_eq!(module.batch_capacity(), 2);
     let mut host = Triggers::default();
@@ -198,7 +198,7 @@ fn a_module_names_its_actions_creates_a_trigger_and_receives_records() {
 
 #[test]
 fn malformed_custom_sections_reject_the_module() {
-    let good = delivery(1024, 224);
+    let good = delivery(1024, 240);
     let cases = [
         (
             actions(&[("Panic", 7), ("PANIC", 8)]),
@@ -212,8 +212,8 @@ fn malformed_custom_sections_reject_the_module() {
             "trailing",
         ),
         (vec![2, 0, 0, 0, 0], good.clone(), "format"),
-        (actions(&[]), delivery(65_504, 224), "past"),
-        (actions(&[]), delivery(1020, 224), "unaligned"),
+        (actions(&[]), delivery(65_504, 240), "past"),
+        (actions(&[]), delivery(1020, 240), "unaligned"),
     ];
     for (actions, delivery, why) in cases {
         let error = SimModule::load(&module(&actions, &delivery), Limits::MAP)

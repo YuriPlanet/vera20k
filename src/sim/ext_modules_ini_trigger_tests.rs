@@ -41,7 +41,7 @@ fn module() -> Vec<u8> {
   (memory (export "memory") 1)
   (func (export "on_events") (param $ptr i32) (param $count i32)
     (if (i32.eqz (i32.load (i32.const 80)))
-      (then (memory.copy (i32.const 512) (local.get $ptr) (i32.const 112))))
+      (then (memory.copy (i32.const 512) (local.get $ptr) (i32.const 120))))
     (i32.store (i32.const 80) (i32.add (i32.load (i32.const 80)) (local.get $count)))))"#,
     )
     .expect("test module parses")
@@ -182,7 +182,7 @@ fn an_e1_tag_trigger_runs_its_stock_action_and_delivers_a_filtered_hit() {
     );
     scene.tick();
     assert_eq!(received(&scene), 1);
-    let record = &memory(&scene)[512..624];
+    let record = &memory(&scene)[512..632];
     let trigger = e1_trigger(&scene, e1);
     assert_eq!(&record[..4], &KEY.to_le_bytes());
     assert_eq!(&record[4..8], &EVENT_TAKE_DAMAGE.to_le_bytes());

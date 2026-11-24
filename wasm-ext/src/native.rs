@@ -21,10 +21,11 @@ use crate::decide::DecideRecord;
 use crate::sections::{Delivery, Sections};
 use crate::triggers::{ActionDef, NAME_MODULE_ACTION, TriggerDef};
 use crate::{
-    ActionParams, ENTRY_COST, EventRecord, Export, Fault, HOST_CALL_COST, IMPORTS, Invalid, Limits,
-    LoadError, MAX_SCAN, ModuleState, NAME_ACTION_KIND, NAME_KINDS, NAME_PROPERTY, Order,
-    PAGE_BYTES, Query, SIM_IMPORT_MODULE, SKIPS_PER_OP, SimHost, Status, VarDecl, action_kind_id,
-    action_kind_name, property_id, property_name,
+    ActionParams, ENTRY_COST, EventRecord, Export, Fault, HOST_CALL_COST, IMPORTS, INI_EVENT,
+    INI_KEY, INI_REGISTRY, INI_SECTIONS, Invalid, Limits, LoadError, MAX_SCAN, ModuleState,
+    NAME_ACTION_KIND, NAME_KINDS, NAME_PROPERTY, Order, PAGE_BYTES, Query, SIM_IMPORT_MODULE,
+    SKIPS_PER_OP, SimHost, Status, VarDecl, action_kind_id, action_kind_name, ini_name_valid,
+    property_id, property_name,
 };
 
 /// Most records one `on_events` call receives (RFC 15.4), within what the
@@ -1120,6 +1121,58 @@ fn linker(engine: &Engine) -> Linker<Ctx> {
                 Order::parse(&memory.data(&caller)[range]).map_err(|e| fail(&mut caller, e))?;
             let result = host(&mut caller)?.order(house, &order);
             Ok(result.map_err(|e| fail(&mut caller, e))? as i32)
+        },
+    ));
+    wire(linker.func_wrap(
+        m,
+        "ini_register",
+        |mut caller: Caller<'_, Ctx>,
+         kind: i32,
+         section: i32,
+         ptr: i32,
+         len: i32,
+         key: i32,
+         out: i32|
+         -> wasmtime::Result<i32> {
+            // Only the initialization function registers (INI registration
+            // addendum, section 3).
+            if !in_init(&caller) {
+                return Err(fail(
+                    &mut caller,
+                    Invalid("ini_register outside vera_init".into()),
+                ));
+            }
+            check_buffer(&mut caller, out, 1, 4).map_err(|e| fail(&mut caller, e))?;
+            charge(&mut caller, HOST_CALL_COST)?;
+            let name = read_str(&mut caller, ptr, len)?;
+            let sections = match kind {
+                INI_KEY => INI_SECTIONS.len() as i32,
+                INI_EVENT => 2,
+                INI_REGISTRY => 1,
+                _ => {
+                    return Err(fail(
+                        &mut caller,
+                        Invalid(format!("unknown IniKind {kind}")),
+                    ));
+                }
+            };
+            if !(0..sections).contains(&section) {
+                return Err(fail(
+                    &mut caller,
+                    Invalid(format!("IniKind {kind} takes no section {section}")),
+                ));
+            }
+            if !ini_name_valid(&name) {
+                return Err(fail(
+                    &mut caller,
+                    Invalid(format!("{name:?} is not a registrable INI name")),
+                ));
+            }
+            let result = host(&mut caller)?.ini_register(kind, section, &name, key);
+            let (id, status) = result.map_err(|e| fail(&mut caller, e))?;
+            let id = if status == Status::Ok { id } else { 0 };
+            write_bytes(&mut caller, out, &id.to_le_bytes()).map_err(|e| fail(&mut caller, e))?;
+            Ok(status as i32)
         },
     ));
     linker

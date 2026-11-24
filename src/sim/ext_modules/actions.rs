@@ -39,6 +39,7 @@
 //! | 1031 | `SetScore` | `Economy::set_score` (`+0x54E8`) |
 //! | 1032 | `AddScore` | `Economy::add_score`, the kill and capture awards' writer |
 //! | 1033 | `Log` | the module log |
+//! | 1042 | `RaiseEvent` | `Simulation::raise_module_event` for an object event, `offer_module_event` to each global trigger for a global one (`ini_names`) |
 //! | 1034 | `Convert` | `Simulation::convert_techno_type` (Ares ConvertToType `0x10043650`); a positive `value2` converts back through it after that many frames (`held::ActionHeld`) |
 //!
 //! Every other atomic action answers `(0, Unsupported)` and `has_kind`
@@ -169,8 +170,9 @@ pub const SET_SCORE: i32 = 1031;
 pub const ADD_SCORE: i32 = 1032;
 pub const LOG: i32 = 1033;
 pub const CONVERT: i32 = 1034;
+pub const RAISE_EVENT: i32 = vera20k_wasm_ext::triggers::ACTION_RAISE_EVENT;
 
-const ATOMIC: [i32; 31] = [
+const ATOMIC: [i32; 32] = [
     FIRE_WEAPON,
     LAUNCH_SUPER_WEAPON,
     SPAWN_ANIM,
@@ -202,6 +204,7 @@ const ATOMIC: [i32; 31] = [
     ADD_SCORE,
     LOG,
     CONVERT,
+    RAISE_EVENT,
 ];
 
 /// `Mission` "none" for `CreateObject`: keep the constructor's mission.
@@ -420,6 +423,52 @@ impl Run<'_, '_, '_, '_> {
     }
 
     /// An object target that exists; 0 or a removed object is `Gone`.
+    /// `RaiseEvent` (INI registration addendum, section 6): a registered
+    /// module event, on the target object (object event) or for every
+    /// global trigger with it (global event).
+    fn raise_event(&mut self, target: i64) -> Act<i64> {
+        use super::triggers::ModuleEvent;
+        use vera20k_wasm_ext::triggers::EVENT_MODULE;
+        let id = self.params.id;
+        let Some(global) = self.sim.ext_modules.ini.event_is_global(id) else {
+            return invalid(format!("no module event {id}"));
+        };
+        let subject = if global { 0 } else { self.object(target)? };
+        let other = self.source()?.unwrap_or(0);
+        let house = match decode(self.params.house)? {
+            Target::None => None,
+            Target::House(index) if index < self.sim.houses.order().len() => Some(index as u32),
+            other => return invalid(format!("{other:?} is not a house")),
+        };
+        if !self.sim.trigger_runtime.module_listens(EVENT_MODULE) {
+            return Ok(0);
+        }
+        let event = ModuleEvent {
+            other,
+            value: self.params.value,
+            value2: self.params.value2,
+            id,
+            house,
+            ..ModuleEvent::new(EVENT_MODULE, subject)
+        };
+        let rules = self.ctx.rules;
+        if global {
+            for handle in self
+                .sim
+                .trigger_runtime
+                .module_triggers()
+                .global(EVENT_MODULE)
+            {
+                self.sim
+                    .offer_module_event(rules, self.ctx.frame_effects, handle, 0, &event);
+            }
+        } else {
+            self.sim
+                .raise_module_event(rules, self.ctx.frame_effects, event);
+        }
+        Ok(0)
+    }
+
     fn object(&self, reference: i64) -> Act<u64> {
         match decode(reference)? {
             Target::None => status(Status::Gone),
@@ -558,6 +607,7 @@ impl Run<'_, '_, '_, '_> {
 
     fn atomic(&mut self, kind: i32, target: i64) -> Act<i64> {
         match kind {
+            RAISE_EVENT => self.raise_event(target),
             ADD_MONEY => {
                 let owner = self.house(target)?;
                 let amount = self.value_i32("AddMoney amount")?;
