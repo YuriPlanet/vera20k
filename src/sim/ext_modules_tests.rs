@@ -781,14 +781,14 @@ fn a_mod_can_refuse_map_modules_and_a_map_can_need_a_newer_game() {
     let map = IniFile::from_str(&map);
     let stock = IniFile::from_str("[General]\n");
     let refusing = IniFile::from_str("[VeraWasm]\nMapWasm=no\n");
-    let allowed = super::PreparedExtModules::load(&stock, None, &map).expect("stock allows it");
+    let allowed = super::PreparedExtModules::load(&stock, None, &map, 0).expect("stock allows it");
     assert_eq!(allowed.modules.len(), 1);
-    let refused = super::PreparedExtModules::load(&refusing, None, &map)
+    let refused = super::PreparedExtModules::load(&refusing, None, &map, 0)
         .err()
         .expect("the mod refuses map modules");
     assert!(refused.contains("MapWasm=no"), "{refused}");
     let newer = IniFile::from_str("[Basic]\nVeraMinVersion=999.0\n");
-    let refused = super::PreparedExtModules::load(&stock, None, &newer)
+    let refused = super::PreparedExtModules::load(&stock, None, &newer, 0)
         .err()
         .expect("the map needs a newer game");
     assert!(refused.contains("999.0"), "{refused}");
@@ -2043,9 +2043,32 @@ fn ini_triggers_bind_weapons_and_take_enum_names() {
         &IniFile::empty(),
         None,
         &IniFile::from_str("[E1]\nWasm.Tags=MapTag\n"),
+        0,
     )
     .expect("the map loads")
     .notices;
     assert_eq!(notice.len(), 1);
     assert!(notice[0].contains("[E1]"), "{notice:?}");
+}
+
+
+/// RFC 15.4 (0.0.21): budget defaults, the ceiling, the room's
+/// `WasmBudget=` and the floor that refuses the match.
+#[test]
+fn wasm_budgets_default_clamp_and_refuse() {
+    use super::rules::WasmPolicy;
+    let policy = WasmPolicy::read(&IniFile::empty(), 0).expect("defaults read");
+    assert_eq!(
+        (policy.budget, policy.map_budget, policy.seat_budget),
+        (super::FRAME_BUDGET, super::MAP_FRAME_BUDGET, super::SEAT_BUDGET)
+    );
+    let high = IniFile::from_str("[VeraWasm]\nBudget=9000000\nMapBudget=300000\n");
+    let policy = WasmPolicy::read(&high, 0).expect("reads");
+    assert_eq!((policy.budget, policy.map_budget), (500_000, 300_000));
+    let room = WasmPolicy::read(&high, 250_000).expect("reads");
+    assert_eq!(room.budget, 250_000, "the room's WasmBudget replaces Budget");
+    let low = IniFile::from_str("[VeraWasm]\nMapBudget=5000\n");
+    let error = WasmPolicy::read(&low, 0).expect_err("below the floor");
+    assert!(error.contains("MapBudget=5000"), "{error}");
+    assert!(WasmPolicy::read(&IniFile::empty(), 100).is_err());
 }
