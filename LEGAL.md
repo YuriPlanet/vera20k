@@ -117,6 +117,16 @@ VERA20K. Keep their credit when you share them.
 
 This product includes software developed by the Phobos Developers.
 
+## Code from Kratos
+
+Parts of the Kratos support are ported from
+[Kratos PP](https://github.com/ChrisLv-CN/KratosPP), which its author
+**双杀步枪 (ChrisLv_CN)** licenses under the LGPLv3. VERA20K conveys the port as part of its
+GPLv3 work, which the LGPLv3 allows; keep the credit and
+[its license](LICENSES/KratosPP.txt) when you share it.
+
+This product includes software developed by the Kratos PP author.
+
 ## Game files
 
 VERA20K contains none of the game's files. They belong to Electronic Arts, and no VERA20K

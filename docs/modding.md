@@ -13,7 +13,7 @@ extension features VERA20k supports.
 | Game files | MIX, INI, SHP, VXL, CSF and maps | The same files, searched in the same order |
 | DLL mods and exe patches | Run inside the game | Can't run |
 | Map size | Width plus height up to 512 | Up to 1024 |
-| Players | 8 | Up to 30, on maps made for it |
+| Players | 8 | Up to 120 player slots in offline Skirmish and up to 30 in LAN or online matches, on maps with enough starts |
 | Player colours | 8 | 30, and a mod can [list its own](skirmish-colors.md) |
 | Playing online | With the original game | Only with other VERA20k players |
 
@@ -31,7 +31,7 @@ to 512 and `[AI] AIBaseSpacing` to −16 through 16 cells.
 - Add new units, buildings and weapons.
 - Replace pictures, models, sounds and music.
 - Change the AI, the game modes and the game's text.
-- Make your own maps, including bigger ones and maps for up to 30 players.
+- Make larger maps with up to 120 starting positions. Offline Skirmish can use all 120. LAN and online matches can use up to 30.
 - Play your mod online, if everyone has the same files.
 
 **Only partly:**
@@ -215,6 +215,8 @@ Ares=yes
   Without the section, the mod inherits the host's `[ini]` settings.
 - `[Archives]` replaces names in existing startup slots, preserving their order and
   fallback rules. Omitted keys keep stock names. It does not scan for other archives.
+- `[Extensions] Kratos=yes` makes this launch play Kratos, as if the mod shipped it. With the
+  player's Kratos setting Off, VERA20k refuses the mod and says how to turn Kratos back on.
 - `[Extensions] Ares=yes` requires Ares reading from startup. With the player's Ares
   setting on Auto, it enables that reading for this launch without changing the saved
   setting. With Off, VERA20k refuses the mod and tells the player how to enable it.
@@ -433,11 +435,14 @@ map can change any rule for that match.
 New map exports and downloads use `.map`. If you already have an identical
 copy, VERA20k reuses it under its existing name, including `.yrm` and `.mpr` files.
 
-VERA20k adds two things. Open the map in a text editor to set them:
+VERA20k also supports these map settings:
 
 - **Bigger maps:** under `[Map]`, the width and height in `Size=` can add up to 1024.
 - **More players:** under `[Basic]`, add `MaxPlayers=` with a number from 9 to 30. The
   map needs a start waypoint for every player, numbered from 0.
+- **Breakable ice.** Set `VeraIce=yes` under `[Map]` on a snow map, then paint
+  the crossing with the bundled ice tiles. Players only need your map file.
+  See [ice tile numbers, editor setup and Ice Lake](ts-ice.md#use-the-bundled-ice-in-a-map).
 
 If you write a map editor or tool, the [map format](map-format.md) has the details.
 
@@ -500,9 +505,10 @@ don't matter: its matches read the original terrain.
 
 - [INI roots and archive names](ini-roots.md): select your own resource filenames.
 - [Interface layout](interface-layout.md): lay out the match screen with `veraui.ini`.
-- [Ares](ares.md), [Phobos](phobos.md), [NPatch](npatch.md) and [VeraX](verax.md): what
-  each extension covers and how to turn it on or build VERA20k with it. The official
-  downloads hold all of Ares, which a game's data turns on, and none of the others.
+- [Ares](ares.md), [Phobos](phobos.md), [NPatch](npatch.md), [VeraX](verax.md) and
+  [Kratos](kratos.md): what each extension covers and how to turn it on or build VERA20k with
+  it. The official downloads hold all of Ares, which a game's data turns on, and none of the
+  others. Kratos is at its first pieces: the per-game switch and the prone firing offset.
 
 ## Something wrong?
 

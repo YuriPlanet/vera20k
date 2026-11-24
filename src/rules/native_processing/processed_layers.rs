@@ -35,6 +35,10 @@ impl ProcessedRulesLayers {
         &self.ares_inputs
     }
 
+    pub(crate) fn kratos_inputs(&self) -> &crate::rules::kratos_switch::KratosInputs {
+        &self.kratos_inputs
+    }
+
     pub(crate) fn ares_global_controls(&self) -> &AresGlobalControls {
         &self
             .native_type_construction_trace

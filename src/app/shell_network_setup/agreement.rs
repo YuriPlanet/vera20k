@@ -154,6 +154,8 @@ pub(crate) enum OriginalGameChange<'a> {
     /// The Ares setting where it decides which game this is
     /// (`ProcessAssets::agreed_ares_setting`), never Auto.
     Ares(crate::util::ares_launch::AresSetting),
+    /// The rules enable Kratos (forced or detected from ART).
+    Kratos,
     /// The game-folder files that change the original game.
     ChangedFiles(&'a [String]),
 }
@@ -182,6 +184,9 @@ pub(crate) fn original_game_changes<'a>(
         (!ra2 && !assets.stock_ini_roots()).then_some(OriginalGameChange::IniRoots),
         (ares != crate::util::ares_launch::AresSetting::Auto)
             .then_some(OriginalGameChange::Ares(ares)),
+        assets
+            .startup_kratos()
+            .then_some(OriginalGameChange::Kratos),
         (!files.is_empty()).then_some(OriginalGameChange::ChangedFiles(files)),
     ]
     .into_iter()
@@ -228,6 +233,9 @@ pub(crate) fn changes_header(changes: &[OriginalGameChange]) -> String {
                 header.insert("ares".into(), "off".into());
             }
             OriginalGameChange::Ares(AresSetting::Auto) => {}
+            OriginalGameChange::Kratos => {
+                header.insert("kratos".into(), true.into());
+            }
             OriginalGameChange::ChangedFiles(files) => {
                 let named: Vec<Value> = files
                     .iter()
@@ -280,6 +288,11 @@ pub(crate) fn start_rules(
     }
     if rules.ares() {
         rules_digest.push_str(" ares");
+    }
+    // Kratos' switch follows the same data and the player's setting, so two
+    // peers whose games differ by it must not start together.
+    if rules.kratos() {
+        rules_digest.push_str(" kratos");
     }
     rules_digest
 }
@@ -359,6 +372,15 @@ pub(crate) fn start_changes_text(state: &AppState) -> Option<String> {
             OriginalGameChange::Ares(crate::util::ares_launch::AresSetting::Off),
         );
     }
+    if !assets.startup_kratos()
+        && state
+            .match_state
+            .sim_runtime
+            .runtime()
+            .is_some_and(|runtime| runtime.resources.rules.kratos())
+    {
+        changes.push(OriginalGameChange::Kratos);
+    }
     let read = assets
         .match_terrain_files()
         .iter()
@@ -387,6 +409,7 @@ fn changes_text(changes: Vec<OriginalGameChange<'_>>) -> Option<String> {
                     &crate::ui::main_menu_dialogs::options::ares_label(setting),
                 )],
             ),
+            OriginalGameChange::Kratos => tr("VERA:RulesChangeKratos"),
             OriginalGameChange::ChangedFiles(files) => changed_files_text(files),
         })
         .collect();

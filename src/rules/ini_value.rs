@@ -613,6 +613,19 @@ impl IniSection {
         })
     }
 
+    /// Kratos PP v0.2.4 INIBuffer::GetParsed<CoordStruct> zeroes its three
+    /// integers and accepts any nonzero count from Parser<int, 3>::Parse.
+    pub(crate) fn read_kratos_coord3(&self, key: &str, default: [i32; 3]) -> [i32; 3] {
+        self.read_string_with(key, 2048, default, |previous, value| {
+            let mut coords = [0; 3];
+            if scan_ares_fields(value, &mut coords) > 0 {
+                coords
+            } else {
+                previous
+            }
+        })
+    }
+
     /// Ares `Nullable<Vector3D<int>>::Read` 10055C70 over the same
     /// coordinate reader 100406D0 as [`Self::read_ares_coord3`]: a read
     /// that converts sets the value and its presence, anything else retains

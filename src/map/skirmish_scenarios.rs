@@ -47,8 +47,12 @@ pub enum SkirmishScenarioSource {
     LoosePkt(String),
     LooseYro(String),
     LooseMap(String),
+    /// An installed archive member selected by filename without a PKT record.
+    ArchiveMap,
     /// A map listed by the selected mod's client catalog.
     ClientCatalog,
+    /// A first-party scenario included in the game.
+    Bundled,
     /// VERA: a map only in the lobby's online map library, by SHA-256. Its
     /// row comes from the library's copy of the map's header; Choose Map
     /// downloads the map into VERA's own Maps folder before using it.
@@ -210,7 +214,7 @@ fn source_for_file_name(file_name: &str) -> SkirmishScenarioSource {
         .map(str::to_ascii_lowercase);
     match ext.as_deref() {
         Some("yro") => SkirmishScenarioSource::LooseYro(file_name.to_string()),
-        Some("yrm" | "mpr") => SkirmishScenarioSource::LooseMap(file_name.to_string()),
+        Some("map" | "yrm" | "mpr") => SkirmishScenarioSource::LooseMap(file_name.to_string()),
         Some("pkt") => SkirmishScenarioSource::LoosePkt(file_name.to_string()),
         _ => SkirmishScenarioSource::Synthetic,
     }

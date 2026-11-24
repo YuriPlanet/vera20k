@@ -151,8 +151,9 @@ impl Mods {
         &mut self,
         base: &IniRootConfig,
         setting: AresSetting,
-    ) -> (ResourceConfig, AresSetting) {
-        match resources_for(self.active.as_ref(), base, setting) {
+        kratos: crate::util::kratos_launch::KratosSetting,
+    ) -> (ResourceConfig, AresSetting, crate::util::kratos_launch::KratosSetting) {
+        match resources_for(self.active.as_ref(), base, setting, kratos) {
             Ok(selected) => selected,
             Err(error) => {
                 self.notice = Some(format!("{error}\n\nThis start uses the original game."));
@@ -160,7 +161,7 @@ impl Mods {
                 if let Some(record) = self.record.take() {
                     record.clear();
                 }
-                (ResourceConfig::from_ini(base.clone()), setting)
+                (ResourceConfig::from_ini(base.clone()), setting, kratos)
             }
         }
     }
@@ -384,7 +385,15 @@ pub(crate) fn resources_for(
     active: Option<&ActiveMod>,
     base: &IniRootConfig,
     setting: AresSetting,
-) -> Result<(ResourceConfig, AresSetting), String> {
+    kratos: crate::util::kratos_launch::KratosSetting,
+) -> Result<
+    (
+        ResourceConfig,
+        AresSetting,
+        crate::util::kratos_launch::KratosSetting,
+    ),
+    String,
+> {
     let resources = match active {
         Some(active) => {
             crate::assets::asset_manager::mod_resources(&active.dir, &active.definition, base)
@@ -398,7 +407,13 @@ pub(crate) fn resources_for(
             Some(active) => format!("{}: {error}", active.title),
             None => error,
         })?;
-    Ok((resources, setting))
+    let kratos = resources
+        .effective_kratos(kratos)
+        .map_err(|error| match active {
+            Some(active) => format!("{}: {error}", active.title),
+            None => error,
+        })?;
+    Ok((resources, setting, kratos))
 }
 
 /// One line of the Mods screen: a folder in `Mods`, or the original game.
@@ -1111,7 +1126,11 @@ mod tests {
             crate::util::config::GameConfig::load_from(&root, &root.join("vera20k")).unwrap();
         config.paths.ra2_dir = retail.path().to_owned();
         let mut startup = begin(&config.paths, None, false);
-        let (selected, ares) = startup.select_resources(&config.ini, AresSetting::Auto);
+        let (selected, ares, _) = startup.select_resources(
+            &config.ini,
+            AresSetting::Auto,
+            crate::util::kratos_launch::KratosSetting::Auto,
+        );
         assert_eq!(ares, AresSetting::On);
         let (mut process, _, _) = crate::app::spawn_probe::load_process_sources(
             &config,
@@ -1119,6 +1138,7 @@ mod tests {
             MediaArchiveMode::STOCK_DIGITAL,
             launch_mod(&config.paths, None).unwrap(),
             AresSetting::Auto,
+            crate::util::kratos_launch::KratosSetting::Auto,
             false,
         )
         .unwrap();
@@ -1182,6 +1202,7 @@ mod tests {
             MediaArchiveMode::STOCK_DIGITAL,
             launch_mod(&config.paths, None).unwrap(),
             AresSetting::Auto,
+            crate::util::kratos_launch::KratosSetting::Auto,
             false,
         )
         .unwrap();
@@ -1216,7 +1237,11 @@ mod tests {
         )
         .unwrap();
         let mut selected = begin(&paths, None, false);
-        let (resources, setting) = selected.select_resources(&base, AresSetting::Off);
+        let (resources, setting, _) = selected.select_resources(
+            &base,
+            AresSetting::Off,
+            crate::util::kratos_launch::KratosSetting::Auto,
+        );
         assert!(selected.active.is_none());
         assert!(
             selected
@@ -1229,8 +1254,13 @@ mod tests {
         assert_eq!(resources, ResourceConfig::from_ini(base.clone()));
         assert_eq!(setting, AresSetting::Off);
         let selected = launch_mod(&paths, None).unwrap();
-        let (resources, setting) =
-            resources_for(selected.as_ref(), &base, AresSetting::Auto).unwrap();
+        let (resources, setting, _) = resources_for(
+            selected.as_ref(),
+            &base,
+            AresSetting::Auto,
+            crate::util::kratos_launch::KratosSetting::Auto,
+        )
+        .unwrap();
         assert_eq!(setting, AresSetting::On);
         assert_eq!(
             resources.ini.sound, None,
@@ -1238,16 +1268,29 @@ mod tests {
         );
         let mut original = begin(&paths, Some(&ModSwitch::NoMod), true);
         assert_eq!(
-            original.select_resources(&base, AresSetting::Auto),
-            (ResourceConfig::from_ini(base.clone()), AresSetting::Auto)
+            original.select_resources(
+                &base,
+                AresSetting::Auto,
+                crate::util::kratos_launch::KratosSetting::Auto
+            ),
+            (
+                ResourceConfig::from_ini(base.clone()),
+                AresSetting::Auto,
+                crate::util::kratos_launch::KratosSetting::Auto
+            )
         );
         std::fs::write(&manifest, "[Mod]\nName=Metadata only\n").unwrap();
         let selected = launch_mod(&paths, None).unwrap();
         assert_eq!(
-            resources_for(selected.as_ref(), &base, AresSetting::Auto)
-                .unwrap()
-                .0
-                .ini,
+            resources_for(
+                selected.as_ref(),
+                &base,
+                AresSetting::Auto,
+                crate::util::kratos_launch::KratosSetting::Auto
+            )
+            .unwrap()
+            .0
+            .ini,
             base
         );
         std::fs::write(&manifest, "[Files]\nRules=../outside.ini\n").unwrap();
@@ -1286,6 +1329,7 @@ mod tests {
                 MediaArchiveMode::STOCK_DIGITAL,
                 launch_mod(&config.paths, None).unwrap(),
                 AresSetting::Auto,
+                crate::util::kratos_launch::KratosSetting::Auto,
                 false,
             )
             .unwrap()

@@ -502,8 +502,8 @@ pub(super) fn ensure_map_preview_texture(
         .and_then(|entry| {
             decode_preview_for_map_entry(entry, ra2_dir, state.process_assets.manager())
         })
-        // An online library row has no file: its catalog header holds it.
-        .or_else(|| crate::app::map_library::online_preview(state, selected_map_idx));
+        // A bundled or downloadable row carries preview bytes outside the install folder.
+        .or_else(|| crate::app::map_library::catalog_preview(state, selected_map_idx));
     // VERA's own picture of the map, once one is kept, shrunk here by area to
     // the size the box shows it at: it is up to eight times that size, and the
     // GPU's linear filter, which reads four texels, would alias the shrink.

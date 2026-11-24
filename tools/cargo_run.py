@@ -482,6 +482,13 @@ def test_runner_config(record: Path) -> str:
 TEST_SUMMARY = re.compile(rb'^test result: \S+ (\d+) passed; (\d+) failed; (\d+) ignored;')
 
 
+def reap_recorded_test(child: subprocess.Popen) -> None:
+    """Close the pipe and reap the child before the checkout lock is released."""
+    with child:
+        if child.poll() is None:
+            child.kill()
+
+
 def run_recorded_tests(record: Path) -> int:
     """Start the recorded test executables together; report them in Cargo's order.
 
@@ -504,9 +511,11 @@ def run_recorded_tests(record: Path) -> int:
         for i, call in enumerate(calls):
             print(f'Running {call["command"][0]} (build lock released)', file=sys.stderr, flush=True)
             output = outputs.enter_context(tempfile.TemporaryFile()) if i else None
-            children.append((call['command'][0], output, subprocess.Popen(
+            child = subprocess.Popen(
                 call['command'], cwd=call['cwd'], env=call['env'], stdout=output or subprocess.PIPE,
-                stderr=subprocess.STDOUT if output else None)))
+                stderr=subprocess.STDOUT if output else None)
+            outputs.callback(reap_recorded_test, child)
+            children.append((call['command'][0], output, child))
         for executable, output, child in children:
             # The first executable's lines pass through as they arrive.
             sys.stdout.flush()

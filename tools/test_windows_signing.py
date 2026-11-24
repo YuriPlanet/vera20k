@@ -45,6 +45,8 @@ def signed_fixture(data):
 
 def package_fixture(package):
     (package / signing.LANGUAGES).mkdir(parents=True)
+    (package / "Maps").mkdir()
+    (package / "Maps/Arctic_Circle_16_Ice_Passages.map").write_bytes(b"ice crossings")
     for filename in signing.PACKAGE_FILES:
         (package / filename).write_bytes(pe_fixture() if filename.endswith(".exe") else b"text")
     (package / signing.LANGUAGES / "vera20k.vi.ini").write_bytes(b"language")
@@ -132,6 +134,8 @@ class WindowsSigningTests(unittest.TestCase):
                 self.assertEqual((package / "vera20k.exe").read_bytes(),
                                  (signed / "vera20k.exe").read_bytes())
                 self.assertEqual((package / "languages/vera20k.vi.ini").read_bytes(), b"language")
+                self.assertEqual((package / "Maps/Arctic_Circle_16_Ice_Passages.map").read_bytes(),
+                                 b"ice crossings")
                 output.mkdir()
                 (output / f"{name}-setup.exe").write_bytes(b"setup")
                 return subprocess.CompletedProcess([], 0, b"", b"")
@@ -159,7 +163,7 @@ class WindowsSigningTests(unittest.TestCase):
             self.assertEqual({path: path.read_bytes() for path in staging.rglob("*") if path.is_file()},
                              original_bytes)
 
-    def test_the_languages_are_checked_like_the_other_package_files(self):
+    def test_the_maps_and_languages_are_checked_like_the_other_package_files(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             package = root / "package"
@@ -173,6 +177,11 @@ class WindowsSigningTests(unittest.TestCase):
                 signing.prepare(package, staging, "0.2.5", "20261102-120000", "vera20k-check", "ISCC")
             signed = root / "signed"
             shutil.copytree(staging, signed)
+            map_file = signed / "Maps/Arctic_Circle_16_Ice_Passages.map"
+            map_file.write_bytes(b"changed")
+            with self.assertRaisesRegex(RuntimeError, "changed the package contents: Maps/Arctic"):
+                signing.check_payload(signed, staging)
+            map_file.write_bytes(b"ice crossings")
             language = signed / "languages/vera20k.vi.ini"
             language.write_bytes(b"changed")
             with self.assertRaisesRegex(RuntimeError, "changed the package contents: languages/vera20k.vi.ini"):
