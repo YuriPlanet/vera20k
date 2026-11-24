@@ -1285,6 +1285,10 @@ pub enum Command {
     Scatter = 23,
     TogglePrimaryFactory = 24,
     Enter = 25,
+    /// Cell target, harvester units.
+    Harvest = 26,
+    /// No units; `value` is a factory kind index (`FACTORY_KINDS`, 2..5).
+    TakeProduct = 27,
 }
 
 /// Most units one [`Order`] sent through [`House::order`] carries.

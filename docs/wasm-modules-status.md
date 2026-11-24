@@ -129,13 +129,35 @@ module (merge timers into one function).
   answers `Refused` (empty allowlist).
 - House orders (6g): `order` for a computer house that is not defeated and not the
   local player's; the command table (appendix 8.3) checks target and value kinds,
-  units must be object references, at most 64 orders and 4096 unit entries per module
+  units must be object references, at most 256 orders and 4096 unit entries per module
   per frame. Orders queue in the module's slot (saved, hashed, cleared when the module
   stops) and execute in the next frame's command step, after the player commands
   (`run_ext_module_orders` in `run_network_command_tail`), as the player commands the
   house's player would send, through the same receiver (`apply_one_due_command`).
   Units that died or changed owner drop out; a defeated house's orders are dropped.
-  Orders never enter the network stream.
+  Orders never enter the network stream. Every command of the table but `EjectBunker`
+  runs: `Guard` with a cell is the area-guard click, `Harvest` the harvest click,
+  `Enter` the entry click's MEGAMISSION (Eaten at a Grinder), `SuspendProduction`
+  SUSPEND for the type's production category, `TakeProduct` the mobile PLACE of the
+  factory kind (Infantry, Vehicle, Naval, Aircraft). A module order is its house's own
+  sender (`CommandSender::HouseOrder`): custom control grants do not refuse its
+  house-wide commands, and its `QueueProduction` asks the prerequisites the house's
+  player would be asked (`production::buildable_by_player`).
+- Order results (6i): `Commanded` (1016, object) on each actor of a command the
+  receiver applied, `value` the 8.3 number, `other`/`cell` the target, `value2` a serial
+  shared by one module order or by consecutive same-target commands of one house (a
+  click); `OrderRefused` (1043, global) for a refused command, once per actor or once
+  with subject 0 and `id` the type for a house-wide command, `house` the issuer, `value2`
+  the `RefuseReason`. Both for player commands and module orders, raised after the
+  receiver in `apply_one_due_command`, and only when a module trigger listens. The
+  receiver (`apply_command_with_overlays`) returns `Result<(), CommandRefusal>`:
+  MEGAMISSION actor gate `Gone`, token gate `IllegalTarget`; `CommandAllowed` and
+  `ProductionQueued` vetoes `Vetoed`; PRODUCE without a factory (or, for a module
+  order, without the player's prerequisites) `Prerequisite`, a refused append or a busy
+  building factory `QueueFull`; PLACE without a finished product `NotReady`, a refused
+  placement or exit `CannotPlace`; a superweapon not granted `Prerequisite`, not charged
+  `NotReady`; every other refusal `Other`, read as `Gone` when its actor is no longer
+  alive.
 - Mod policy (`[VeraWasm]` in the mod's own `rulesmd.ini`): `Budget`, `MapBudget`
   (clamped to 1..=200000 operations: the most one call may use, and the frame's
   use past which no more event batches start), `MapWasm=no` refusing maps with
@@ -343,7 +365,7 @@ separate work):
 - New events from 1000 in appendix order, 4.3 then 4.4 then 4.5: `TakeDamage` =
   1000, `Killed` = 1004, `Fire` = 1005, `Birth` = 1011, `TransportEntered` = 1012,
   `PassengerAdded` = 1014, `HouseTransferred` = 1019, `Timer` = 1023,
-  `SuperWeaponLaunched` = 1024; polls 1026..1030 (`PropertyPoll`, `HousePowerPoll`,
+  `SuperWeaponLaunched` = 1024, `Commanded` = 1016, `OrderRefused` = 1043; polls 1026..1030 (`PropertyPoll`, `HousePowerPoll`,
   `ModifierCountPoll`, `DistancePoll`, `VariablePoll`); decision-only 1031..1036
   (`ProductionAllowed` 1031, `ProductionQueued` 1032, `Defeat` 1033, `CommandAllowed`
   1034; `Launch` and `ProjectileFrame` reserved). Stock events keep 0..88. One name
@@ -379,9 +401,9 @@ separate work):
 ## Remaining in phase 1
 
 - RFC 0.0.21 section 6i (driving a house: `ControlDomains`, "mod AI" seats,
-  `OrderRefused`, `SimEvent`, the 500,000 default budget, `SeatBudget`, `VERA.INI`
-  `WasmBudget`, memory per seat) is specified but not implemented; its read
-  properties are (phase 1c above). The implementation still has the old budgets: map
+  `SimEvent`, `Visible`/`Engage` and the other read properties, the
+  500,000 default budget, `SeatBudget`, `VERA.INI` `WasmBudget`, memory per seat) is
+  specified but not implemented. The implementation still has the old budgets: map
   default 200,000 (RFC 100,000) and values under 20,000 clamped to 1 (RFC: refuse the
   start).
 
@@ -415,7 +437,7 @@ modules, external modders, freeze), and the later items (`Launch`,
   reason inside it is English only.
 - Events not raised: stock 0, 2, 3, 24, 31, 33, 51, 53, 54, 59, Ares 87, 88; 4.3
   `HitByWarhead`, `SpawnFire`, `HitTarget`, `TargetChanged`, `ProjectileIncoming`,
-  `Detonated`, `Commanded`, `Crushed`, `HouseTransfer`, `ProductionCancelled`
+  `Detonated`, `Crushed`, `HouseTransfer`, `ProductionCancelled`
   (reasons in `events.rs`). `Birth` misses paradrops, spawned aircraft, crate units,
   survivors and starting objects; a garrison entry raises `TransportEntered` and
   `PassengerAdded` with `value2` 1, but garrison exits and non-departure cargo removal
@@ -447,8 +469,14 @@ modules, external modders, freeze), and the later items (`Launch`,
 - Rules stage: `random` writes 0 with `Ok`; `set` on a type reference in `on_rules`
   answers `Unsupported`; the merged rules text is saved with every module save;
   `MapUI` is not saved; the lobby compares neither `on_rules` results nor `Api=`.
-- Orders: custom control grants refuse house-wide module orders; `IgnoreOrders` is
-  not honoured; `SuspendProduction`, `EjectBunker`, `Enter` answer `Unsupported`.
+- Orders: `IgnoreOrders` is not honoured (no `IgnoresOrders` refusal) and no receiver
+  refuses for credits (no `CannotAfford`); `EjectBunker` answers `Unsupported`;
+  `Enter` skips the entry click's What_Action rows (they read the local player's
+  control view); native AI gives missions without commands, so its units raise no
+  `Commanded`; a rally point `CommandAllowed` narrowed still raises `Commanded` on
+  every producer named; a player's SUSPEND, mobile PLACE and wall sale refusals carry
+  `id` -1; a MEGAMISSION record carrying NavComAux, Planning Mode records and Ares'
+  paid two-stage superweapon commands raise neither result event.
 - INI: sounds take numbers only; the map `Wasm.Tags` warning is a match notice, not
   a lobby warning; one module per trigger's `Wasm:` actions.
 - 6i reads: `Engage` uses the target type's own armor (no `TargetArmor`), and a
