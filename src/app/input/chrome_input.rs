@@ -80,6 +80,7 @@ const LAYOUT_BUTTONS_MAX: usize = 0xE0;
 /// button, past the cameo ids.
 const ID_SW_TOGGLE: u16 = 0x0600;
 const ID_SW_BASE: u16 = 0x0700;
+#[cfg(feature = "phobos")]
 const SW_BUTTONS_MAX: usize = 0x100;
 /// Hit-test best-area seed: the fixed 1024×768 constants, NOT live
 /// resolution (G14). A node larger than 786,432 px² never hovers.
@@ -848,6 +849,7 @@ pub(crate) fn hovered_cameo(state: &AppState) -> Option<usize> {
 
 /// The `sw_sidebar.entries` index of the superweapon button the chrome
 /// hovers.
+#[cfg(feature = "phobos")]
 pub(crate) fn hovered_sw_button(state: &AppState) -> Option<usize> {
     let (gui, nodes) = chrome(state)?;
     let hovered = gui.hovered_in(nodes.layer)?;

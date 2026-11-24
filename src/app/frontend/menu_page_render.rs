@@ -411,9 +411,10 @@ pub(crate) fn active_page_title_text(
         ShellSlideKind::MovieList => crate::ui::movies_credits_shell::MOVIE_LIST_PAGE.title_key,
         ShellSlideKind::Mods => crate::ui::mods_shell::PAGE.title_key,
         ShellSlideKind::Campaign => crate::ui::campaign_shell::CAMPAIGN_PAGE.title_key,
-        ShellSlideKind::LoadSavedGame => {
-            crate::ui::shell::saved_games::LOAD_SAVED_GAME_PAGE.title_key
-        }
+        ShellSlideKind::LoadSavedGame => state.frontend.load_saved_game.as_ref().map_or(
+            crate::ui::shell::saved_games::LOAD_SAVED_GAME_PAGE.title_key,
+            |browser| browser.game_title_label().0,
+        ),
         ShellSlideKind::WolWelcome => crate::ui::wol_shell::WOL_WELCOME_PAGE.title_key,
         ShellSlideKind::WolLogin => crate::ui::wol_login::PAGE.title_key,
         ShellSlideKind::WolLobby => crate::ui::wol_shell::WOL_LOBBY_TITLE_KEY,

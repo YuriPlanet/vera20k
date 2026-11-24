@@ -106,6 +106,7 @@ impl ShellGui {
         self.gui.input(event, now.as_millis() as u64);
     }
 
+    #[cfg(all(test, tests_ui))]
     fn node(&self, control: Control) -> Option<NodeId> {
         self.built
             .iter()
@@ -667,6 +668,7 @@ impl LauncherOptionsLayout {
     }
 
     /// The page's buttons, the column's first.
+    #[cfg(all(test, tests_ui))]
     pub(crate) fn buttons(&self) -> impl Iterator<Item = (LauncherButton, RectPx)> + '_ {
         self.controls
             .iter()

@@ -773,7 +773,9 @@ pub(crate) fn refresh_sidebar_cameo_draw_state(state: &mut AppState) {
 /// and for buildings that undeploy). [`SidebarCameoAtlas::cameo`] keeps the
 /// plain cameo when no alternate image loaded.
 ///
-/// Ares1003D800 additionally admits the current Country's retained lists.
+/// With Ares, TechnoTypeClass_GetCameo (hook `0x712045`, Ares.dll
+/// `1005E480`) replaces the choice with CameoIsElite (`1003D800`), which
+/// additionally admits the current Country's retained lists.
 /// An undeploying Building uses the Unit-list branch, comparing its own
 /// BuildingType pointer, not UndeploysInto; that cannot match an INI-produced
 /// UnitType list. Its spy arms read HouseState's stock flags and the Ares

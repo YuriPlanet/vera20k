@@ -1143,6 +1143,13 @@ fn upload_to_gpu(
     let (mut super_timer_fill, mut super_timer_text) =
         crate::app::presentation::super_timers::build_super_timer_instances(state, &mut timer_hud);
     state.match_state.match_presentation.super_timer_hud = timer_hud;
+    // Ares' release note and FPS counter follow the timer lines (hook
+    // 0x6D4B25) in their lanes: black boxes, then text.
+    {
+        let (boxes, texts) = crate::app::presentation::ares_tactical_text::build_instances(state);
+        super_timer_fill.extend(boxes);
+        super_timer_text.extend(texts);
+    }
     // The buttons and texts the side's layout adds over the battlefield
     // share the timers' lanes: white boxes, then text, inside its clip.
     {

@@ -100,8 +100,6 @@ impl PersistenceState {
 pub(crate) enum PreparedLoadError {
     #[error("could not read save file: {0}")]
     ReadFile(#[source] std::io::Error),
-    #[error(transparent)]
-    SaveMigration(#[from] save_migration::SaveMigrationError),
     #[error("a network match cannot load a saved game")]
     NetworkMatch,
     // The three `#[cfg(test)]` variants belong to the headless same-content
@@ -137,15 +135,6 @@ pub(crate) enum PreparedLoadError {
     LocalView(#[from] crate::sim::snapshot::saved_local_view::SavedLocalViewError),
     #[error(transparent)]
     RadarEvents(#[from] crate::render::radar::SavedRadarEventsError),
-}
-
-impl PreparedLoadError {
-    pub(crate) fn migration_message_key(&self) -> Option<&'static str> {
-        match self {
-            Self::SaveMigration(error) => Some(error.message_key()),
-            _ => None,
-        }
-    }
 }
 
 impl From<SnapshotRestoreError> for PreparedLoadError {
@@ -459,6 +448,46 @@ impl SaveRepository {
         crate::util::file_system::read(path)
     }
 
+    /// A slot's display description is stored verbatim. Only its generated
+    /// filename trims whitespace, replaces reserved characters and caps length.
+    fn filename_part(description: &str) -> Option<String> {
+        let trimmed = description.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        Some(
+            trimmed
+                .chars()
+                .take(64)
+                .map(|ch| match ch {
+                    '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+                    ch if ch.is_control() => '_',
+                    ch => ch,
+                })
+                .collect(),
+        )
+    }
+
+    /// Shared destination policy for ordinary saves and converted saves.
+    fn write_player_slot(
+        &self,
+        overwrite: Option<&Path>,
+        filename_part: Option<&str>,
+        tick: u64,
+        timestamp: u64,
+        bytes: &[u8],
+    ) -> Result<PathBuf, SaveWriteError> {
+        if let Some(path) = overwrite {
+            self.overwrite_existing(path, bytes)?;
+            return Ok(path.to_owned());
+        }
+        let filename = match filename_part {
+            Some(name) => format!("save_{name}_tick{tick}_{timestamp}.bin"),
+            None => format!("save_tick{tick}_{timestamp}.bin"),
+        };
+        self.write_named(&filename, bytes)
+    }
+
     pub(crate) fn write_named(
         &self,
         file_name: &str,
@@ -472,7 +501,7 @@ impl SaveRepository {
             }
         })?;
         let path = self.directory.join(file_name);
-        self.create_new_file(&path, bytes)?;
+        crate::util::file_system::write_new(&path, bytes).map_err(SaveWriteError::write_file)?;
         Ok(path)
     }
 
@@ -509,29 +538,36 @@ impl SaveRepository {
         path: &Path,
         bytes: &[u8],
     ) -> Result<(), SaveWriteError> {
-        if path.parent() != Some(self.directory.as_path()) || !Self::is_save_file(path) {
+        if !self.contains_save_path(path) {
             return Err(SaveWriteError::write_file(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "overwrite target is not a save in this repository",
             )));
         }
-        self.validate_existing_save(path)?;
-        self.replace_file(path, bytes)
+        self.replace_file(path, bytes, GameSnapshotHeader::is_compatible)
     }
 
-    fn validate_existing_save(&self, path: &Path) -> Result<(), SaveWriteError> {
-        let previous = self.read(path).map_err(SaveWriteError::write_file)?;
-        // SaveGame67CF42 replaces the slot; an old VERA body's load layout
-        // must not prevent replacement of its recognizable product metadata.
-        GameSnapshot::read_metadata(&previous).map_err(|error| {
-            SaveWriteError::write_file(std::io::Error::new(std::io::ErrorKind::InvalidData, error))
-        })?;
-        Ok(())
-    }
-
-    fn replace_file(&self, path: &Path, bytes: &[u8]) -> Result<(), SaveWriteError> {
+    fn replace_file(
+        &self,
+        path: &Path,
+        bytes: &[u8],
+        eligible: impl FnOnce(&GameSnapshotHeader) -> bool,
+    ) -> Result<(), SaveWriteError> {
+        // Re-read the selected row immediately before publishing. It may
+        // have changed while the dialog was open or the snapshot was staged.
+        let validate = || {
+            if eligible(&Self::file_header(path)?) {
+                Ok(())
+            } else {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "the selected save is no longer compatible",
+                ))
+            }
+        };
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
         {
+            validate().map_err(SaveWriteError::write_file)?;
             crate::util::file_system::write(path, bytes).map_err(SaveWriteError::write_file)
         }
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
@@ -553,7 +589,7 @@ impl SaveRepository {
                     Err(error) => return Err(error),
                 }
             };
-            let result = std::fs::rename(&stage, path);
+            let result = validate().and_then(|()| std::fs::rename(&stage, path));
             if result.is_err() {
                 let _ = crate::util::file_system::remove_file(&stage);
             }
@@ -594,8 +630,8 @@ impl SaveRepository {
         })?;
         let path = self.directory.join(file);
         if crate::util::file_system::exists(&path) {
-            self.validate_existing_save(&path)?;
-            self.replace_file(&path, bytes)?;
+            // SaveGame67CF42 can replace this mission's own older VERA slot.
+            self.replace_file(&path, bytes, |_| true)?;
         } else {
             self.create_new_file(&path, bytes)?;
         }
@@ -607,6 +643,10 @@ impl SaveRepository {
             path.extension().and_then(|ext| ext.to_str()),
             Some("bin" | "sav")
         )
+    }
+
+    fn contains_save_path(&self, path: &Path) -> bool {
+        path.parent() == Some(self.directory.as_path()) && Self::is_save_file(path)
     }
 
     pub(crate) fn delete(&self, path: &Path) -> std::io::Result<()> {
@@ -630,6 +670,14 @@ impl SaveRepository {
     /// loadable) where gamemd hides it.
     pub(crate) fn has_browser_entry(&self) -> bool {
         self.readable_entries().next().is_some()
+    }
+
+    fn file_header(path: &Path) -> std::io::Result<GameSnapshotHeader> {
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let reader = std::fs::File::open(path)?;
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        let reader = std::io::Cursor::new(crate::util::file_system::read_shared(path)?);
+        Self::read_browser_metadata(reader)
     }
 
     /// SaveInfo681840/559ED0 needs metadata, not the simulation body. Reuse
@@ -670,12 +718,7 @@ impl SaveRepository {
                 if !metadata.is_file() {
                     return None;
                 }
-                #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-                let reader = std::fs::File::open(&path).ok()?;
-                #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-                let reader =
-                    std::io::Cursor::new(crate::util::file_system::read_shared(&path).ok()?);
-                let header = Self::read_browser_metadata(reader).ok()?;
+                let header = Self::file_header(&path).ok()?;
                 let ticks = crate::map::rmg::saved_seeds::system_time_to_file_time(
                     metadata.modified().ok()?,
                 );

@@ -92,7 +92,10 @@ pub(crate) use self::can_build::ares_build_limit_remaining;
 pub(crate) use self::can_build::owns_prerequisites;
 pub use self::can_build::{CanBuild, can_build, primary_factory_category};
 pub(crate) use self::can_build::{RequirementStatus, requirements_met};
-pub use self::can_build::{can_select_factory_primary, find_factory, object_find_factory};
+pub use self::can_build::{
+    AresObjectFactory, ares_object_factory, can_select_factory_primary, find_factory,
+    object_find_factory,
+};
 pub(crate) use self::can_build::{initialize_factory_primary, toggle_factory_primary};
 pub(crate) use self::factory_ai::{
     AiPlacementTimer, detach_all as detach_building_factory, factory_ai,

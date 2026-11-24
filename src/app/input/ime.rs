@@ -16,8 +16,9 @@
 //! VERA20k takes the composition and the finished text from winit's `Ime`
 //! events, and asks for an input method only while an edit takes keys:
 //! the in-game line, the WOL lobby (`0x10F`), the WOL game room and LAN setup
-//! (C2/C9, BC/BD), the LAN lobby (BB), and Choose Map's search line. Finished
-//! text goes through each screen's own text path, as WM_IME_CHAR does.
+//! (C2/C9, BC/BD), the LAN lobby (BB), Choose Map's search line, and VERA's
+//! converted-save name edit. Finished text goes through each screen's own
+//! text path, as WM_IME_CHAR does.
 //!
 //! Player-name edits take no input method: NewEdit `0x00614B30` drops units at
 //! or above 0x100 from them (`0x00615226..0x0061527A`, the byte-only filter),
@@ -38,7 +39,10 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-use crate::app::AppState;
+use crate::app::input::precedence::{InputLayer, ScreenPage};
+use crate::app::{App, AppState, GameScreen};
+use crate::render::shell_text::{ScissorRect, TextRect};
+use crate::ui::pause_menu::InGameMenuState;
 use crate::ui::shell::geom::RectPx;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::Ime;
@@ -55,6 +59,8 @@ pub(crate) enum ImeTarget {
     SetupChat,
     LanLobbyChat,
     ChooseMapSearch,
+    MainMenuConversionName,
+    InGameConversionName,
 }
 
 /// Process-local input-method state. Presentation-only: never serialized or
@@ -107,6 +113,44 @@ fn target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
         || crate::app::frontend::preview_zoom::is_open(state)
     {
         return None;
+    }
+    // The conversion edit owns the keys when a battlefield chat edit is
+    // underneath it; a prompt over the name keeps the IME closed.
+    let saved_browser = match state.frontend.screen {
+        GameScreen::MainMenu => state.frontend.load_saved_game.as_ref(),
+        GameScreen::InGame => state
+            .match_state
+            .match_presentation
+            .saved_game_browser
+            .as_ref(),
+        _ => None,
+    };
+    if let Some(browser) = saved_browser.filter(|browser| browser.is_naming_conversion()) {
+        if !browser.edit().focused {
+            return None;
+        }
+        let (target, layout) = match crate::app::input::precedence::input_layer(state) {
+            InputLayer::Screen(ScreenPage::LoadSavedGame) => (
+                ImeTarget::MainMenuConversionName,
+                crate::app::frontend::shell_layout::load_saved_game_layout(state).browser,
+            ),
+            InputLayer::Screen(ScreenPage::InGameShell(InGameMenuState::SavedGame(_))) => (
+                ImeTarget::InGameConversionName,
+                App::saved_game_layout(state, browser.mode)?,
+            ),
+            _ => return None,
+        };
+        let rect = layout.name_edit?;
+        // The launcher is in window pixels. An active-game shell's edit
+        // shares the text's sidebar and match zoom before it reaches them.
+        let rect = match crate::app::presentation::window_ui::shell_raster(state, true) {
+            Some(raster) => {
+                let at = ScissorRect::of(TextRect::of(rect), raster);
+                RectPx::new(at.x as i32, at.y as i32, at.w as i32, at.h as i32)
+            }
+            None => rect,
+        };
+        return Some((target, rect));
     }
     [
         (
@@ -214,6 +258,10 @@ fn commit(state: &mut AppState, text: &str) {
         Some(ImeTarget::ChooseMapSearch) => {
             crate::app::App::choose_map_search_text(state, text);
         }
+        Some(ImeTarget::MainMenuConversionName) => {
+            App::handle_load_saved_game_key(state, None, Some(text));
+        }
+        Some(ImeTarget::InGameConversionName) => App::saved_game_key(state, None, Some(text)),
         None => {}
     }
 }

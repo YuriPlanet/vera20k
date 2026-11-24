@@ -14,8 +14,8 @@ use super::chrome::{
 };
 use super::draw_order::{GenericBackgroundRole, generic_background_role};
 use super::{
-    OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68, SHELL_DROPDOWN_DEPTH, SHELL_LABEL_TEXT_RGB,
-    SHELL_MODAL_BG_RGB, SHELL_PARENT_BACKGROUND_DEPTH,
+    OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68, SHELL_DROPDOWN_DEPTH, SHELL_MODAL_BG_RGB,
+    SHELL_PARENT_BACKGROUND_DEPTH,
 };
 
 const VALIDATION_MODAL_SPRITE_DEPTHS: shell_paint::ModalDepths = shell_paint::ModalDepths {

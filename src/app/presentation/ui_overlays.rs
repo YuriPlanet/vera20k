@@ -496,6 +496,7 @@ fn health_strip_widened(
 /// Reuse the body admission owner for lifecycle/cloak instead of adding another
 /// fog interpretation here. Native dispatch controls: health_hover.json.
 /// `ares` is the game's `RuleSet::ares` ([`health_strip_visibility`]).
+#[cfg(any(test, feature = "phobos"))]
 pub(crate) fn health_bar_drawable(
     sim: &crate::sim::world::Simulation,
     entity: &ObjectRecord,

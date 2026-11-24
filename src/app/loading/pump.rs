@@ -464,6 +464,7 @@ impl LoadingRequest {
                 .launch_session()
                 .map(|launch| launch.mode.override_file.as_str()),
             self.startup().session_mode(),
+            self.startup().ai_file(asset_manager),
             self.the_team_enabled,
             self.startup().match_seed(),
             progress,

@@ -760,9 +760,6 @@ impl SetupTrackbar {
     pub(crate) fn window_range(&self) -> TrackbarRange {
         self.range.with_plaque(self.id != DIFFICULTY)
     }
-    pub(crate) fn thumb_left(&self, rect: RectPx, scale: ShellScale) -> i32 {
-        self.window_range().thumb_left_in(self.value, rect, scale)
-    }
 }
 
 #[derive(Debug, Clone)]

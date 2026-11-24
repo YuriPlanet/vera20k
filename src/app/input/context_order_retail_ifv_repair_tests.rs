@@ -1410,6 +1410,74 @@ fn a_stock_healer_infantryman_heals_a_hurt_infantryman_and_selects_the_rest() {
     );
 }
 
+/// The healer arm's tail keeps a Move base action (`0x0051E77F`): in a
+/// campaign Foot's shroud rung (`0x004DDED0`) makes the base action over an
+/// ally whose coordinate the player's map shrouds Move, so the healer moves
+/// there, cursor and click alike, where in a skirmish it selects.
+#[test]
+fn a_healer_keeps_the_campaign_shroud_move_over_an_ally() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &crate::rules::ini_parser::IniFile::from_str(HEALER_PATCH),
+    ) else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut arena = HealerArena::new(rules);
+    let medic = arena
+        .sim
+        .spawn_object("CIV1", OWNER, 9, 9, 0, rules)
+        .unwrap();
+    let tank = arena
+        .sim
+        .spawn_object("MTNK", OWNER, 11, 11, 0, rules)
+        .unwrap();
+    let centre = arena.sim.object_coords_cell(tank).unwrap();
+    *arena.sim.fog_mut_for_test() = crate::sim::vision::FogState::new(32, 32);
+    arena.sim.fog_mut_for_test().reveal_cells_for_owner(
+        arena.owner,
+        (0..32)
+            .flat_map(|y| (0..32).map(move |x| (x, y)))
+            .filter(|&cell| cell != centre),
+    );
+    let friendly = HoverTargetKind::FriendlyUnit;
+    assert_eq!(
+        arena.cursor(rules, &[medic], tank, friendly, OrderModifier::Normal),
+        CursorFeedbackKind::FriendlyUnit
+    );
+
+    arena
+        .sim
+        .session_mut_for_test()
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Campaign);
+    assert_eq!(
+        arena.cursor(rules, &[medic], tank, friendly, OrderModifier::Normal),
+        CursorFeedbackKind::Move
+    );
+    // The arm leaves the receiver to the later click branches, which move it.
+    let healer_branch = arena.click(rules, medic, tank, friendly, OrderModifier::Normal);
+    assert!(!healer_branch.selects && healer_branch.receivers.is_empty());
+    let click = object_attack_click_command(
+        &arena.sim,
+        rules,
+        &crate::rules::overlay_types::OverlayTypeRegistry::empty(),
+        arena.owner,
+        OrderMode::Move,
+        OrderModifier::Normal,
+        false,
+        medic,
+        tank,
+    );
+    assert!(
+        matches!(
+            click,
+            Some(Command::Move { entity_id, .. } | Command::MoveToObject { entity_id, .. })
+                if entity_id == medic
+        ),
+        "{click:?}"
+    );
+}
+
 /// Over an object of a house it is not allied with, a tree's null House
 /// included, a healer infantryman answers AttackSupport (`0x0051E797`): the
 /// arrow, and Foot's case 0x3B (`0x004D74E0`) puts the healer on Area Guard
@@ -1474,6 +1542,106 @@ fn a_healer_infantryman_guards_itself_over_an_enemy_or_a_tree() {
         &registry,
     );
     assert_eq!(click.commands, [guard]);
+}
+
+/// A healer whose Secondary heals but whose Primary does not (their average
+/// is negative, `0x006F3970`) answers AttackSupport too, and Foot's case
+/// 0x3B puts it on Guard of itself, not Area Guard (`0x004D7C93`). Over a
+/// tree the arm (`0x0051E797`) replaces Alt's Move and Ctrl+Alt's
+/// GuardArea, the arrow and the same Guard; Shift's ToggleSelect returns
+/// before it.
+#[test]
+fn a_secondary_healer_guards_itself_and_its_arm_outranks_alt_over_a_tree() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &crate::rules::ini_parser::IniFile::from_str(
+            "[CIV1]\nPrimary=Poke\nElitePrimary=Poke\nSecondary=Heal\nEliteSecondary=Heal\n\
+             [Heal]\nDamage=-50\nProjectile=Invisible\nWarhead=Organic\nRange=2\n\
+             [Poke]\nDamage=10\nProjectile=Invisible\nWarhead=SA\nRange=2\n",
+        ),
+    ) else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut arena = HealerArena::new(rules);
+    let medic = arena
+        .sim
+        .spawn_object("CIV1", OWNER, 9, 9, 0, rules)
+        .unwrap();
+    let enemy = arena
+        .sim
+        .spawn_object("E1", "Russians", 11, 9, 0, rules)
+        .unwrap();
+    assert_eq!(
+        crate::sim::terrain_spawn::construct_terrain_objects(
+            &mut arena.sim,
+            &[crate::map::overlay::TerrainObject {
+                rx: 9,
+                ry: 12,
+                name: "TREE01".into(),
+            }],
+            rules,
+            false,
+        ),
+        1
+    );
+    let tree = arena.sim.terrain_objects().id_at((9, 12)).unwrap();
+    let guard = Command::MegaMission {
+        entity_id: medic,
+        mission: crate::sim::mission::MissionType::Guard,
+        target: Some(crate::sim::combat::TargetKind::Entity(medic)),
+        destination: None,
+    };
+    let click = arena.click(
+        rules,
+        medic,
+        enemy,
+        HoverTargetKind::EnemyUnit,
+        OrderModifier::Normal,
+    );
+    assert_eq!(click.commands, [guard.clone()]);
+
+    let selected = [medic];
+    for (modifier, alt, cursor) in [
+        (OrderModifier::ForceMove, true, CursorFeedbackKind::Default),
+        (OrderModifier::GuardArea, true, CursorFeedbackKind::Default),
+        (OrderModifier::Shift, false, CursorFeedbackKind::Select),
+    ] {
+        let query = crate::app::input::cursor::ActionQuery {
+            sim: &arena.sim,
+            rules: Some(rules),
+            overlays: None,
+            viewer: Some(arena.owner),
+            selected: &selected,
+            modifier,
+            force_move_key: alt,
+            force_fire_key: modifier == OrderModifier::GuardArea,
+            order_mode: OrderMode::Move,
+            planning: false,
+            mouse_over: true,
+            full_visibility: true,
+        };
+        assert_eq!(
+            query
+                .selection_action((9, 12), Some(HoverObject::Terrain(tree)))
+                .0,
+            Some(cursor),
+            "{modifier:?}"
+        );
+        assert_eq!(
+            healer_terrain_key_order(
+                &arena.sim,
+                &arena.sim.control_projection(),
+                rules,
+                medic,
+                tree,
+                modifier,
+                alt,
+            ),
+            (modifier != OrderModifier::Shift).then(|| guard.clone()),
+            "{modifier:?}"
+        );
+    }
 }
 
 /// A healing Engineer among several selected objects answers NoMove under

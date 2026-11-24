@@ -480,6 +480,42 @@ pub(super) fn prepared_campaign() -> crate::app::match_bootstrap::PreparedCampai
     .expect("synthetic campaign catalog admits a selected campaign")
 }
 
+/// VERA: a network match that seats no computer loads the original AI INI,
+/// and one that seats a computer the game folder's; its room's rules
+/// agreement asks the same of the same launch.
+#[test]
+fn a_network_load_reads_the_original_ai_ini_only_without_computers() {
+    use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext};
+    use crate::rules::retail_sources::AiFile;
+    let dir = crate::map::source::test_support::TestDirectory::new("load-ai-file");
+    let assets = AssetManager::from_loose_root_for_test(dir.path());
+    let started = |computers: bool| {
+        let mut launch = test_launch_session(LaunchCountry::America);
+        if !computers {
+            launch.opponents.clear();
+            launch.ai_player_count = 0;
+        }
+        let mut guest = launch.humans[0].clone();
+        guest.name = "Guest".into();
+        guest.raw_slot_index = Some(2);
+        guest.slot.color_index = 2;
+        guest.slot.start_position = LaunchStartPosition::Position(2);
+        launch.humans.push(guest);
+        let mut session = MatchSession::default();
+        session.enter_network(NetworkReturnContext::LanLobby);
+        session
+            .accept_network_setup(launch, false, Some(7), false)
+            .unwrap();
+        let room = session.network_seats_computers();
+        session.prepare_network_timing(2, || 0).unwrap();
+        let startup = session.freeze_network_start(0xabc123, None).unwrap();
+        assert_eq!(session.network_seats_computers(), room);
+        (room, startup.ai_file(&assets))
+    };
+    assert_eq!(started(false), (false, AiFile::Original));
+    assert_eq!(started(true), (true, AiFile::GameFolder));
+}
+
 #[test]
 fn admitted_network_start_preserves_canonical_humans_and_host_seed_in_fresh_loading() {
     use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext, SessionMode};

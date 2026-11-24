@@ -81,6 +81,7 @@ use crate::ui::skirmish_shell::{
 };
 
 use self::chrome::*;
+#[cfg(all(test, tests_app_frontend))]
 use self::controls::*;
 use self::draw_order::ShellDialogChromeProfile;
 #[cfg(test)]

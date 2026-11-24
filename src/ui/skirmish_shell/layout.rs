@@ -789,6 +789,8 @@ pub struct SavedSeedLayout {
     /// Present only in Save mode.
     pub name_edit: Option<RectPx>,
     pub action: RectPx,
+    /// Player saved-game Load screens offer a separate conversion action.
+    pub convert: Option<RectPx>,
     /// VERA's Setups page only: Load and Delete under the action, Save.
     pub load: Option<RectPx>,
     pub delete: Option<RectPx>,
@@ -819,6 +821,7 @@ pub fn compute_saved_seed_layout(
         list: at(list),
         name_edit: rects.get(0x526),
         action: at(action),
+        convert: None,
         load: None,
         delete: None,
         back: at(0x686),
@@ -856,7 +859,7 @@ scaled_rects!(RandomMapSetupLayout {
 });
 scaled_rects!(SavedSeedLayout {
     [scale, screen]
-    dialog, title, prompt, list, name_edit, action, load, delete, back, blank
+    dialog, title, prompt, list, name_edit, action, convert, load, delete, back, blank
 });
 
 /// The `0x102` common shell on the mapping a page already holds: the retail

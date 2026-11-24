@@ -523,10 +523,16 @@ impl App {
         // them at the edges the player scrolls against, where the system would
         // draw its own cursor over the game's. winit applies this to its own
         // set_fullscreen only, not to full screen from the title-bar button.
+        // The title bar draws no material of its own, so it shows the window's
+        // background, which `mac_title_bar::style` sets near black; the dark
+        // appearance keeps the window buttons and title text light on it.
         #[cfg(target_os = "macos")]
         {
             use winit::platform::macos::WindowAttributesExtMacOS;
-            window_attrs = window_attrs.with_borderless_game(true);
+            window_attrs = window_attrs
+                .with_borderless_game(true)
+                .with_titlebar_transparent(true)
+                .with_theme(Some(winit::window::Theme::Dark));
         }
         // Capture windows stay hidden, so only a visible session shows the icon.
         let window_icon = window_visible
@@ -568,8 +574,11 @@ impl App {
             window.set_visible(true);
         }
         #[cfg(target_os = "macos")]
-        if let Some(icon) = &window_icon {
-            icon.set_dock_icon();
+        {
+            super::mac_title_bar::style(&window);
+            if let Some(icon) = &window_icon {
+                icon.set_dock_icon();
+            }
         }
         // An invisible spawn test window renders into the same offscreen
         // target as a hidden capture: it has no presentable swapchain.
@@ -1195,6 +1204,7 @@ impl App {
                     placement_range_pulse: Default::default(),
                     superweapon_range_pulse: Default::default(),
                     detail: Default::default(),
+                    ares_fps_counter: false,
                     pixel_fx: Default::default(),
                     hidden_super_anims: Default::default(),
                     super_timer_blinks: Default::default(),

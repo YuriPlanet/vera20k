@@ -17,7 +17,7 @@ use crate::ui::shell::page::{self, PageEvent};
 use crate::ui::wol_shell::BOX_OK;
 use crate::util::time::Instant;
 use std::ops::Range;
-use vera20k_gui::shell::list::{ListMetrics, ListScrollPart, ShellListGeometry};
+use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
 
 /// VERA's room shows `0x130` only once the connection check has taken this
 /// long, so a quick check does not flash a box before the loading screen.
@@ -153,10 +153,6 @@ impl WolVerifyDialog {
         })
     }
 
-    /// The scrollbar arrow drawn pushed.
-    pub fn pressed_scroll_part(&self) -> Option<ListScrollPart> {
-        self.list()?.pressed
-    }
 
     /// Whether the mismatch box's OK shows pushed (captured and under the
     /// pointer, 612B70).

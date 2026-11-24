@@ -219,7 +219,6 @@ pub(crate) fn render_credits_roll(
 
 #[cfg(all(test, tests_app_frontend))]
 mod tests {
-    use super::*;
     use crate::ui::main_menu_shell::RectPx;
     use vera20k_gui::shell::list::{ListMetrics, list_box_geometry};
 

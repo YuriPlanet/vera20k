@@ -481,7 +481,10 @@ impl App {
             &state.frontend.skirmish_shell_state,
             state.frontend.scenario_catalog.shell_maps(),
             &state.frontend.skirmish_modes,
-            state.persistence.options_profile.solo_skirmish,
+            crate::ui::skirmish_shell::start_skips_side_gates(
+                state.persistence.options_profile.solo_skirmish,
+                state.frontend.frontend_rules.as_ref(),
+            ),
         ) {
             Ok(raw_session) => {
                 match state

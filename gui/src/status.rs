@@ -1125,13 +1125,11 @@ mod tests {
                             ..object(&values)
                         };
                         for cmd in status(&world, &[seen]) {
-                            if let WorldOp::Rect { rect, .. }
+                            let (WorldOp::Rect { rect, .. }
                             | WorldOp::Image { rect, .. }
-                            | WorldOp::Number { rect, .. } = cmd.op
-                            {
-                                assert!(rect.w >= 0 && rect.x.checked_add(rect.w).is_some());
-                                assert!(rect.h >= 0 && rect.y.checked_add(rect.h).is_some());
-                            }
+                            | WorldOp::Number { rect, .. }) = cmd.op;
+                            assert!(rect.w >= 0 && rect.x.checked_add(rect.w).is_some());
+                            assert!(rect.h >= 0 && rect.y.checked_add(rect.h).is_some());
                             if let WorldOp::Rect { rect, color: A } = cmd.op {
                                 assert!((1..=edge).contains(&rect.w), "{value}/{max} in {edge}");
                             }

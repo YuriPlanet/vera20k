@@ -1244,7 +1244,8 @@ pub(super) fn dispatch_draw_passes(
     // --- Step 10.6: timer lines ---
     // TacticalClass::Draw's Scenario, Super and blackout timers
     // (`0x006D4941..0x006D4B25`) follow the sparkles: black boxes, then text,
-    // screen-fixed but clipped to the tactical view.
+    // screen-fixed but clipped to the tactical view. Ares' bottom-left lines
+    // (hook `0x006D4B25`) follow them in the same lanes.
     if text_in_frame {
         draw_pooled_ui_passthrough(
             &mut pass,
