@@ -8,8 +8,10 @@
 //! `order` and `ini_register`, calls `on_rules`, delivers `on_events` batches ([`triggers`]),
 //! asks `on_decide` for decisions ([`decide`]) and
 //! reads the `vera.vars`, `vera.actions` and `vera.delivery` sections
-//! ([`sections`]); the other `vera:sim` imports, the client world and the
-//! browser runtime come later.
+//! ([`sections`]); the other `vera:sim` imports and the client world come
+//! later. Desktop builds run modules with Wasmtime, the browser build with
+//! the browser's own WebAssembly engine, both after the same load-time
+//! rewrite.
 //!
 //! ABI deviation from RFC 0.0.14: an import that returns a value and a status
 //! takes a trailing `out` pointer for the value and returns the status. Stable
@@ -19,8 +21,15 @@
 //! value directly. See [`IMPORTS`].
 
 mod action_kinds;
+mod host;
+mod instrument;
+mod module;
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 mod native;
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+mod browser;
+
+pub use module::{MAX_BATCH, SimModuleOn};
 
 pub mod sections;
 pub use sections::{VarDecl, VarScope, Visibility};
@@ -32,14 +41,13 @@ pub use action_kinds::{
 mod event_kinds;
 pub use event_kinds::{DELIVERED_EVENTS, FIRST_DELIVERED_EVENT, STOCK_EVENTS, event_kind_id};
 
+/// A simulation module on this platform's runtime: Wasmtime on the
+/// desktop, the browser's own WebAssembly engine in the browser. Both run
+/// the same rewritten bytes ([`instrument`]) and give identical results.
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-pub use native::SimModule;
-
+pub type SimModule = SimModuleOn<native::Wasmtime>;
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-mod browser;
-
-#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-pub use browser::SimModule;
+pub type SimModule = SimModuleOn<browser::Browser>;
 
 pub mod triggers;
 
@@ -748,15 +756,12 @@ impl Limits {
 pub enum LoadError {
     /// The module breaks a load rule (RFC section 3).
     Invalid(String),
-    /// This build cannot run modules (the browser build, for now).
-    Unsupported(String),
 }
 
 impl std::fmt::Display for LoadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Invalid(why) => write!(f, "invalid module: {why}"),
-            Self::Unsupported(why) => write!(f, "modules unsupported: {why}"),
         }
     }
 }
@@ -834,3 +839,6 @@ mod trigger_tests;
 
 #[cfg(test)]
 mod decide_tests;
+
+#[cfg(test)]
+mod rewrite_tests;

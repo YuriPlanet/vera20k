@@ -10,9 +10,6 @@
 //! declaration blocks reach the engine as one section with trailing bytes
 //! and are rejected: a module declares each section in one place.
 
-// The browser build loads no modules, so only the types are used there.
-#![cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), allow(dead_code))]
-
 /// The custom sections' names.
 pub const VARS: &str = "vera.vars";
 pub const ACTIONS: &str = "vera.actions";
@@ -70,7 +67,6 @@ pub struct Sections {
 impl Sections {
     /// Reads every `vera.vars`, `vera.actions` and `vera.delivery` section
     /// of a module that already passed validation.
-    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     pub fn read(module: &[u8]) -> Result<Self, String> {
         let mut sections = Self::default();
         let (mut saw_vars, mut saw_actions, mut saw_delivery) = (false, false, false);

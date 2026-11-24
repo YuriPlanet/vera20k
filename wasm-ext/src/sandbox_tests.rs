@@ -205,7 +205,7 @@ fn get_many_reads_row_major_and_empties_a_gone_row() {
     module
         .call(Export::Frame, 100_000, &mut Recorder::default())
         .expect("call succeeds");
-    let memory = module.memory();
+    let memory = &module.memory();
     assert_eq!(i32_at(memory, 300), Status::Ok as i32);
     let health = crate::property_id("Health").expect("Health is a property");
     assert_eq!(i32_at(memory, 64), health);
@@ -232,11 +232,11 @@ fn get_many_meters_property_reads_with_no_references() {
         module.call(Export::Frame, 100, &mut host),
         Err(Fault::Budget)
     );
-    assert_eq!(i32_at(module.memory(), 260), 1);
+    assert_eq!(i32_at(&module.memory(), 260), 1);
     module
         .call(Export::Frame, 1_000, &mut host)
         .expect("call succeeds");
-    assert_eq!(i32_at(module.memory(), 260), 0);
+    assert_eq!(i32_at(&module.memory(), 260), 0);
 }
 
 #[test]
@@ -258,13 +258,13 @@ fn find_pages_by_sort_key_and_a_zero_capacity_query_scans_nothing() {
         .call(Export::Init, 100_000, &mut host)
         .expect("call succeeds");
     assert_eq!(host.finds, 0);
-    assert_eq!(i64_at(module.memory(), 520), 0);
+    assert_eq!(i64_at(&module.memory(), 520), 0);
     let mut pages = Vec::new();
     for _ in 0..3 {
         module
             .call(Export::Frame, 100_000, &mut host)
             .expect("call succeeds");
-        let memory = module.memory();
+        let memory = &module.memory();
         assert_eq!(i32_at(memory, 600), Status::Ok as i32);
         let count = i32_at(memory, 512) as usize;
         let refs: Vec<i64> = (0..count).map(|i| i64_at(memory, 256 + i * 8)).collect();
@@ -334,8 +334,8 @@ fn a_scan_limit_pages_instead_of_stopping_the_module() {
         module
             .call(Export::Frame, 580, &mut host)
             .expect("a page fits a call");
-        assert_eq!(i32_at(module.memory(), 512), count);
-        assert_eq!(i64_at(module.memory(), 520), next);
+        assert_eq!(i32_at(&module.memory(), 512), count);
+        assert_eq!(i64_at(&module.memory(), 520), next);
     }
 }
 

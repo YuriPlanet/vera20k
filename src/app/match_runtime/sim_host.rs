@@ -159,13 +159,30 @@ impl SimHost {
             target_arch = "wasm32",
             target_os = "unknown"
         ))]
-        return sim_thread_available() && self.worker.as_ref().is_some_and(|worker| worker.running);
+        return sim_thread_available()
+            && self.worker.as_ref().is_some_and(|worker| worker.running)
+            && !self.has_ext_modules();
         #[cfg(not(all(
             feature = "wasm-threads",
             target_arch = "wasm32",
             target_os = "unknown"
         )))]
         sim_thread_available()
+    }
+
+    /// Whether the match runs Wasm extension modules. In the browser each
+    /// one is a JavaScript instance of the main thread (wasm-ext
+    /// `browser.rs`), so such a match never lends a tick to the worker. A
+    /// lent runtime has none: it was lent because it had none.
+    #[cfg(all(
+        feature = "wasm-threads",
+        target_arch = "wasm32",
+        target_os = "unknown"
+    ))]
+    fn has_ext_modules(&self) -> bool {
+        self.runtime
+            .as_ref()
+            .is_some_and(|runtime| !runtime.simulation.ext_modules().is_empty())
     }
 
     /// The start of a frame-loop pass: whether it may go on. A pass goes on

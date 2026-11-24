@@ -3795,7 +3795,9 @@ dependencies = [
 name = "vera20k-wasm-ext"
 version = "0.1.0"
 dependencies = [
+ "js-sys",
  "serde",
+ "wasm-bindgen",
  "wasm-encoder 0.245.1",
  "wasmparser 0.245.1",
  "wasmtime",
