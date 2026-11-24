@@ -212,6 +212,21 @@ pub(super) fn deploy_yard_maker(
             );
         }
     }
+    // A foreign-side maker is a strategic tech seed, not an expendable
+    // expansion vehicle. It must come home even when a crate produced it on
+    // safe neutral ground, and must not be sent out again after arriving.
+    // Own-side MCVs keep their separate second-base behavior.
+    if brain.census.base_cell.is_some() {
+        for unit in &brain.census.units {
+            if !unit.traits.yard_maker || unit.hand || !unit.orderable { continue; }
+            let Some(ty) = obs.object_type(rules, unit.type_id) else { continue; };
+            let Some(yard) = ty.deploys_into.as_deref().and_then(|name| rules.object(name))
+            else { continue; };
+            if super::build::foreign_yard(rules, obs, yard) {
+                brain.retrieve_makers.insert(unit.entity_id);
+            }
+        }
+    }
     // Prefer a maker under recall: with two of them the one already heading
     // home must not be re-aimed while the other is still sitting there.
     let makers: Vec<(u64, (u16, u16), &ObjectType)> = brain
@@ -312,6 +327,55 @@ pub(super) fn deploy_yard_maker(
         let walking_away = dest.is_some_and(|(dx, dy)| {
             home.is_some_and(|home| cell_distance((dx, dy), home) > cell_distance(cell, home))
         });
+        let foreign = super::build::foreign_yard(rules, obs, yard);
+        if foreign && (at_home || brain.maker_journeys.get(&entity_id)
+            .is_some_and(|(site,_,_)| home.is_some_and(|anchor|
+                cell_distance(*site,anchor) <= 12))) {
+            // Once this other-side maker reaches home, it should become a
+            // yard *here*, never an outpost in enemy territory. Keep a stable
+            // deployment plot in the main base until it fits or stalls.
+            if let Some((site, old, progress)) = brain.maker_journeys.get(&entity_id).copied() {
+                let progressed = if old != cell { obs.tick() } else { progress };
+                if maker_trip_stalled(obs.tick(), progressed)
+                    || !obs.entity_type(rules, entity_id).is_some_and(|ty|
+                        obs.can_reach(ty.movement_zone, cell, site)) {
+                    brain.maker_journeys.remove(&entity_id);
+                } else if cell_distance(cell, site) > 1 {
+                    brain.maker_journeys.insert(entity_id, (site, cell, progressed));
+                    if obs.destination(entity_id).is_none() {
+                        super::orders::issue(brain, out, rules, obs,
+                            entity_id, Goal::Move { cell: site });
+                    }
+                    return;
+                } else {
+                    brain.maker_journeys.remove(&entity_id);
+                }
+            }
+            if obs.deploy_site_admits(rules, entity_id, yard) {
+                if super::orders::issue(brain, out, rules, obs, entity_id, Goal::Deploy) {
+                    brain.yard_commit.insert(entity_id, obs.tick());
+                    brain.retrieve_makers.remove(&entity_id);
+                }
+                return;
+            }
+            // Consider only foundations still inside the original base
+            // perimeter. Never fall back to a remote second-base probe.
+            let near = rings(cell).find(|site| {
+                cell_distance(*site, home.unwrap_or(cell)) <= 12
+                    && obs.deploy_admits_at(rules, entity_id, yard, *site)
+                    && obs.entity_type(rules, entity_id).is_some_and(|ty|
+                        obs.can_reach(ty.movement_zone, cell, *site))
+            });
+            if let Some(site) = near {
+                if super::orders::issue(brain, out, rules, obs,
+                    entity_id, Goal::Move { cell: site }) {
+                    brain.maker_journeys.insert(entity_id, (site, cell, obs.tick()));
+                }
+            } else {
+                clear_mcv_foundation(brain, rules, obs, out, cell, entity_id);
+            }
+            return;
+        }
         if brain.retrieve_makers.contains(&entity_id) {
             let Some(home) = home else {
                 // No base to come home to: the maker waits rather than deploying

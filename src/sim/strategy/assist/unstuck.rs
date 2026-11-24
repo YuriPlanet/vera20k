@@ -174,7 +174,8 @@ pub(super) fn run(
         let id = unit.entity_id;
         // Never interrupt anyone deliberately standing still or managed by
         // the player, the refinery or a specialist lifecycle.
-        if !unit.controllable() || !(unit.traits.combat || unit.traits.yard_maker)
+        if super::advance::charge_member(brain, now, id)
+            || !unit.controllable() || !(unit.traits.combat || unit.traits.yard_maker)
             || unit.in_service() || obs.is_deployed(id)
             || brain.avoid_retreat_until.get(&id).is_some_and(|until| now < *until)
             || obs.attack_target(id).is_some()

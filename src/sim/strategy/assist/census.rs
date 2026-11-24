@@ -356,7 +356,10 @@ impl Traits {
             }
         }
         let captures = ty.engineer || ty.infiltrate;
-        let carries = ty.passengers >= TRANSPORT_SEATS;
+        // A firing platform with OpenTopped=yes belongs in the attack army,
+        // even with transport-sized seating. Its boarding is still handled
+        // by combat_carriers, rather than by the ordinary taxi transport job.
+        let carries = ty.passengers >= TRANSPORT_SEATS && !ty.open_topped;
         // `DeployFireWeapon=` names the slot, defaulting to the secondary: the
         // G.I. stands up with `M60` (slot 0) and digs in with `Para` (slot 1).
         let deploy_slot = ty
@@ -479,6 +482,8 @@ impl Unit {
 pub(super) struct TypeFacts {
     /// Infantry, vehicle, aircraft, ship or building.
     pub(super) category: ObjectCategory,
+    /// Movement speed from the effective ruleset, for mobile raid recruitment.
+    pub(super) speed: i32,
     /// Its weight in each of the seven jobs, against the best answer the same
     /// rule set offers. `0.0` means "does not do that job".
     pub(super) weights: RoleWeights,
@@ -816,6 +821,7 @@ impl Census {
                 entity.type_id,
                 TypeFacts {
                     category: ty.category,
+                    speed: ty.speed,
                     weights,
                 },
             );
@@ -1538,5 +1544,24 @@ mod tests {
             Some((16, 16)),
             "and the anchor is the yard it started with, not the one met last"
         );
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v30_open_topped_tests {
+    use super::*;
+
+    #[test]
+    fn firing_open_topped_carrier_is_an_army_unit_not_an_unarmed_taxi() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules()
+        else { return; };
+        let fortress = rules.object("BFRT").expect("battle fortress");
+        let heli = rules.object("SHAD").expect("passenger helicopter");
+        assert!(fortress.open_topped && fortress.passengers >= TRANSPORT_SEATS);
+        assert!(crate::rules::unit_role::is_army(&rules, fortress));
+        let traits = Traits::of(&rules, fortress);
+        assert!(traits.combat && traits.open_topped && !traits.carries);
+        assert!(!crate::rules::unit_role::is_army(&rules, heli));
+        assert!(Traits::of(&rules, heli).carries);
     }
 }

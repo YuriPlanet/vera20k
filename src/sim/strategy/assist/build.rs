@@ -1052,7 +1052,8 @@ fn next_building_for<'r>(
             }
         }
     }
-    let chosen = match plan::answer_where(rules, obs, census, budget, held, admits) {
+    let chosen = match foreign_tech_building(rules, obs, census, budget, &admits)
+        .or_else(|| plan::answer_where(rules, obs, census, budget, held, admits)) {
         Some(found) => found,
         // Nothing the base wants is buildable yet, and the house has no plant:
         // `Power=` plants are the prerequisite most structures hang off in the
@@ -1172,9 +1173,115 @@ pub(super) fn house_owns(rules: &RuleSet, obs: &Observation<'_>, ty: &ObjectType
     obs.own_entities().any(|own| {
         let Some(plant) = obs.object_type(rules, own.type_id) else { return false; };
         (plant.build_const_eligible() || plant.factory_type().is_some())
-            && !plant.owner.is_empty()
-            && (rules.house_type_mask(&plant.owner) & mask) != 0
+            && (producer_tech_mask(rules, plant) & mask) != 0
     })
+}
+
+/// A factory's `Owner=` usually lists *all countries* in retail rules; it
+/// cannot identify which side's vehicles a captured factory produces. Its
+/// direct ConstructionYard prerequisite does. Construction yards themselves
+/// do have side-specific Owner= masks. Mod factories with no identifiable yard
+/// grant no additional roster rather than silently unlocking every faction.
+fn producer_tech_mask(rules: &RuleSet, plant: &ObjectType) -> u32 {
+    if plant.build_const_eligible() {
+        return rules.house_type_mask(&plant.owner);
+    }
+    if plant.factory_type().is_none() { return 0; }
+    plant.prerequisite.iter().filter_map(|requirement| {
+        let crate::rules::prerequisite::Prerequisite::Building(index) = requirement else {
+            return None;
+        };
+        let yard = rules.type_array_at(ObjectCategory::Building, *index)?;
+        yard.build_const_eligible().then_some(rules.house_type_mask(&yard.owner))
+    }).fold(0, |mask, side| mask | side)
+}
+
+/// A yard's country mask is more precise than its owner's display name.
+/// An MCV from a crate keeps this identity after changing hands. Unknown
+/// owner masks do not guess that the vehicle is foreign.
+pub(super) fn foreign_yard(rules: &RuleSet, obs: &Observation<'_>, yard: &ObjectType) -> bool {
+    if !yard.build_const_eligible() { return false; }
+    let Some(country) = obs.country() else { return false; };
+    let mask = rules.house_type_mask(&yard.owner);
+    mask != 0 && (mask & rules.country_owner_mask(&country)) == 0
+}
+
+/// The standard AI build list counts *all* powers, barracks, radars, labs
+/// together. That is correct for one yard but causes a captured other-side
+/// yard to stop at the first factory of the starting side. Walk each owned
+/// foreign yard's chain by its direct `Prerequisite=...YARD` link instead.
+/// No IDs or sides are hardcoded, and native CanBuild remains the authority.
+fn foreign_tech_building<'r>(
+    rules: &'r RuleSet, obs: &Observation<'_>, census: &Census,
+    budget: &Budget, admits: &impl Fn(Item) -> bool,
+) -> Option<plan::Chosen<'r>> {
+    if census.refineries == 0 || census.harvesters == 0 || budget.free < 2_500 {
+        return None;
+    }
+    // Never finance another technology tree while the home economy is
+    // collapsing. In early games build the starting tech first, except when
+    // the wallet is already large enough to develop both in parallel.
+    let native_lab = obs.own_entities().any(|owned| {
+        let Some(ty) = obs.object_type(rules, owned.type_id) else { return false; };
+        rules.build_tech_types.iter().any(|name| *name == ty.id)
+            && !foreign_tech_for_yard(rules, ty, obs)
+    });
+    // Once the home economy has two independent mining lines, a captured
+    // yard can start its own cheap power/barracks chain before our first lab.
+    // Requiring 6000 credits unconditionally kept the foreign tech line
+    // dormant in ordinary 10K matches, even with an already captured yard.
+    let established_mining = census.refineries >= 2 && census.harvesters >= 2
+        && budget.income.is_none_or(|income| income >= 500);
+    let startup_reserve = if established_mining { 3_500 } else { 6_000 };
+    if !native_lab && budget.free < startup_reserve { return None; }
+    let yards: Vec<_> = obs.own_entities().filter_map(|owned| {
+        let yard = obs.object_type(rules, owned.type_id)?;
+        if !foreign_yard(rules, obs, yard) { return None; }
+        // Reuse the RuleSet's canonical native BuildingTypes index rather
+        // than walking names with an independent indexing convention.
+        rules.type_array_index(ObjectCategory::Building, &yard.id)
+    }).collect();
+    for yard_index in yards {
+        for (item, names) in [
+            (Item::Power, &rules.build_power_types),
+            (Item::Barracks, &rules.build_barracks_types),
+            (Item::Refinery, &rules.build_refinery_types),
+            (Item::Weapons, &rules.build_weapons_types),
+            (Item::Radar, &rules.build_radar_types),
+            (Item::Tech, &rules.build_tech_types),
+        ] {
+            if !admits(item) { continue; }
+            let candidates = names.iter().filter_map(|name| {
+                let ty = rules.object(name)?;
+                let id = obs.type_id(name)?;
+                ty.prerequisite.iter().any(|requirement| {
+                    matches!(requirement,
+                        crate::rules::prerequisite::Prerequisite::Building(index)
+                            if *index == yard_index)
+                }).then_some((ty, id))
+            });
+            for (ty, id) in candidates {
+                if obs.own_entities().any(|own| own.type_id == id)
+                    || obs.ready_buildings().any(|ready| ready.type_id == id) {
+                    continue;
+                }
+                if obs.can_build(rules, ty, true) == CanBuild::No { continue; }
+                return Some(plan::Chosen { step: None, item, ty, type_id: id });
+            }
+        }
+    }
+    None
+}
+
+fn foreign_tech_for_yard(rules: &RuleSet, ty: &ObjectType, obs: &Observation<'_>) -> bool {
+    let Some(country) = obs.country() else { return false; };
+    ty.prerequisite.iter().filter_map(|required| {
+        let crate::rules::prerequisite::Prerequisite::Building(index) = required else {
+            return None;
+        };
+        let yard = rules.type_array_at(ObjectCategory::Building, *index)?;
+        yard.build_const_eligible().then_some(rules.house_type_mask(&yard.owner))
+    }).any(|mask| mask != 0 && (mask & rules.country_owner_mask(&country)) == 0)
 }
 
 /// The type from `names` the house may build now, in list order.
@@ -2650,5 +2757,41 @@ mod v22_captured_foreign_factory_tests {
         let after = Observation::new(&sim, owner);
         assert!(house_owns(&rules, &after, foreign_power),
             "native CanBuild still checks power, prerequisites and limits");
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v30_foreign_tech_tests {
+    use super::*;
+
+    #[test]
+    fn foreign_factory_side_is_its_yard_prerequisite_not_owner_list() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules()
+        else { return; };
+        let allied = rules.object("GACNST").expect("allied yard");
+        let soviet = rules.object("NACNST").expect("soviet yard");
+        let allied_factory = rules.object("GAWEAP").expect("allied factory");
+        let soviet_factory = rules.object("NAWEAP").expect("soviet factory");
+        let allied_mask = rules.house_type_mask(&allied.owner);
+        let soviet_mask = rules.house_type_mask(&soviet.owner);
+        assert_ne!(allied_mask, soviet_mask);
+        assert_eq!(producer_tech_mask(&rules, allied_factory), allied_mask);
+        assert_eq!(producer_tech_mask(&rules, soviet_factory), soviet_mask);
+        assert_ne!(rules.house_type_mask(&allied_factory.owner), allied_mask,
+            "retail factory Owner= includes every side and cannot grant all tech");
+    }
+
+    #[test]
+    fn foreign_tech_chain_is_linked_directly_to_its_own_yard() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules()
+        else { return; };
+        let yard_id = rules.type_array_index(ObjectCategory::Building, "NACNST")
+            .expect("soviet construction yard index");
+        for name in ["NAPOWR", "NAHAND", "NAREFN", "NAWEAP", "NARADR", "NATECH"] {
+            let ty = rules.object(name).expect("soviet tech step");
+            assert!(ty.prerequisite.iter().any(|req| matches!(req,
+                crate::rules::prerequisite::Prerequisite::Building(idx)
+                    if *idx == yard_id)), "{name} must depend on the captured yard");
+        }
     }
 }

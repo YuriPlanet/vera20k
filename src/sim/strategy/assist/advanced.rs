@@ -31,13 +31,89 @@ const SIEGE_DEPLOY_RANGE: i32 = 12;
 const SIEGE_DANGER_RANGE: i32 = 4;
 const SIEGE_LOCK_FRAMES: u64 = 300;
 
+/// Whether the unit is a live airborne threat, regardless of whether a
+/// mod listed it in VehicleTypes or AircraftTypes. A deployed helicopter is
+/// on the ground; a balloon-hoverer is always aloft.
+fn airborne(ty: &crate::rules::object_type::ObjectType, deployed: bool) -> bool {
+    ty.category == ObjectCategory::Aircraft || ty.balloon_hover
+        || (ty.jumpjet && !deployed)
+}
+
+/// Native Iron Curtain/Force Shield is a timer, not an unusually thick armor.
+/// Shooting such a unit wastes the defense window. Mobile units directly in
+/// its path retreat to a reachable safe cell and retry after the timer ends.
+/// Only enemy states already exposed in the player's current vision are read.
+pub(super) fn avoid_invulnerable_assault(
+    brain: &mut AssistBrain, rules: &RuleSet,
+    obs: &Observation<'_>, out: &mut Outbox,
+) {
+    let dangers: Vec<_> = obs.visible_enemy_entities()
+        .filter(|enemy| obs.visible_enemy_invulnerable(enemy.entity_id))
+        .filter(|enemy| obs.entity_type(rules,enemy.entity_id)
+            .is_some_and(|ty| ty.category != ObjectCategory::Building))
+        .filter(|enemy| brain.census.base_cell.is_some_and(|home|
+            squared_distance(home, enemy.cell) <= 36 * 36)
+            || brain.census.units.iter().any(|unit|
+                unit.traits.combat && squared_distance(unit.cell,enemy.cell) <= 12 * 12))
+        .collect();
+    let mut issued = 0;
+    for enemy in dangers {
+        for unit in &brain.census.units {
+            if issued >= 8 { return; }
+            if !unit.controllable() || !unit.traits.combat || unit.in_service()
+                || ordered_this_frame(out,unit.entity_id)
+                || squared_distance(unit.cell,enemy.cell) > 12 * 12
+                || super::orders::committed_garrison_entry(
+                    &brain.tracked,rules,obs,unit.entity_id)
+            { continue; }
+            let Some(ty) = obs.entity_type(rules,unit.entity_id) else { continue; };
+            // Offset along eight rays *away* from the invulnerable tank.
+            // Do not retreat toward a second gun or a cell the unit cannot reach.
+            // A retreat must actually leave the engagement perimeter. At
+            // 12 cells, a soldier already touching the shielded tank could
+            // only travel to distance 12-14, failing the >14 safety test and
+            // receiving no move at all. Search farther rings instead; the
+            // native reachability and known-gun safety gates still apply.
+            let offsets = [(-20,0),(20,0),(0,-20),(0,20),
+                (-16,-16),(-16,16),(16,-16),(16,16),
+                (-24,0),(24,0),(0,-24),(0,24)];
+            let safe = offsets.iter().filter_map(|(dx,dy)| {
+                let x = u16::try_from(i32::from(unit.cell.0)+dx).ok()?;
+                let y = u16::try_from(i32::from(unit.cell.1)+dy).ok()?;
+                let cell=(x,y);
+                (obs.is_cell_in_playfield(x,y)
+                    && obs.can_reach(ty.movement_zone,unit.cell,cell)
+                    && squared_distance(cell,enemy.cell) > 14 * 14
+                    && !super::tactics::unsafe_post(rules,obs,unit.entity_id,cell))
+                    .then_some(cell)
+            }).min_by_key(|cell| (squared_distance(unit.cell,*cell),*cell));
+            if let Some(safe)=safe
+                && issue_tracked(&mut brain.tracked,brain.trace,out,rules,obs,
+                    unit.entity_id,TrackedKind::Avoid,None,Some(safe),
+                    Goal::Move { cell: safe })
+            {
+                issued+=1;
+            }
+        }
+    }
+}
+
 /// Highest priority local response, without pulling the remote attack squad
 /// away from its objective. Defenders choose a visible target that actually
 /// threatens a yard, mine or harvester; they do not shoot neutral property.
 pub(super) fn protect_base(brain: &mut AssistBrain, rules: &RuleSet,
     obs: &Observation<'_>, out: &mut Outbox) {
-    let sites: Vec<(u16, u16)> = brain.census.yard_cells.iter()
+    let mut sites: Vec<(u16, u16)> = brain.census.yard_cells.iter()
         .chain(brain.census.refinery_cells.iter()).copied().collect();
+    // A foreign-side mobile yard is 3,000 credits' worth of future technology.
+    // Treat it as a temporary protected base asset on the entire trip home,
+    // including when it was found outside any existing base perimeter.
+    sites.extend(brain.census.units.iter().filter_map(|unit| {
+        if !unit.traits.yard_maker || !unit.controllable() { return None; }
+        let ty = obs.object_type(rules,unit.type_id)?;
+        let yard = rules.object(ty.deploys_into.as_deref()?)?;
+        super::build::foreign_yard(rules,obs,yard).then_some(unit.cell)
+    }));
     if sites.is_empty() { return; }
     let threats: Vec<_> = obs.visible_enemy_entities()
         .filter(|enemy| obs.entity_type(rules, enemy.entity_id)
@@ -46,13 +122,15 @@ pub(super) fn protect_base(brain: &mut AssistBrain, rules: &RuleSet,
                     && obs.attack_target(enemy.entity_id).is_some())))
         .filter(|enemy| sites.iter().any(|site| {
             let air = obs.entity_type(rules, enemy.entity_id).is_some_and(|ty|
-                ty.category == ObjectCategory::Aircraft || (ty.jumpjet && !obs.is_deployed(enemy.entity_id)));
+                airborne(ty,obs.is_deployed(enemy.entity_id)));
             // A mind-controller creeping toward the yard is an emergency
             // before it enters ordinary tank weapon range; once it has stolen
             // a defender, the stolen tank is a threat of its own.
             let psychic = obs.entity_type(rules, enemy.entity_id).is_some_and(|ty|
                 super::tactics::mind_control_reach(rules, ty).is_some());
-            let radius = if psychic { alarm_radius(air).max(24) }
+            let urgent = obs.entity_type(rules, enemy.entity_id).is_some_and(|ty|
+                super::tactics::emergency_threat_score(rules,ty) >= 900);
+            let radius = if psychic || urgent { alarm_radius(air).max(28) }
                 else { alarm_radius(air) };
             squared_distance(*site, enemy.cell) <= radius * radius
         }) || brain.census.units.iter().any(|miner| miner.traits.harvester
@@ -81,30 +159,38 @@ pub(super) fn protect_base(brain: &mut AssistBrain, rules: &RuleSet,
             && local && obs.attack_target(defender.entity_id).is_none()
             && threats.iter().any(|enemy| sites.iter().any(|site| {
                 let air = obs.entity_type(rules, enemy.entity_id).is_some_and(|ty|
-                    ty.category == ObjectCategory::Aircraft || ty.jumpjet);
+                    airborne(ty,obs.is_deployed(enemy.entity_id)));
                 squared_distance(*site, enemy.cell) <= alarm_radius(air).pow(2)
             }));
         // Anti-air must interrupt even an already fighting base garrison when
         // a bomber approaches; ground-only fighters are not diverted to sky.
         let air_emergency = local && threats.iter().any(|enemy| {
             obs.entity_type(rules,enemy.entity_id).is_some_and(|ty|
-                ty.category == ObjectCategory::Aircraft || ty.jumpjet)
+                airborne(ty,obs.is_deployed(enemy.entity_id)))
+                && obs.can_engage(rules, defender.entity_id, enemy.entity_id)
+                && obs.can_hurt(rules, defender.entity_id, enemy.entity_id)
+        });
+        let critical_emergency = local && threats.iter().any(|enemy| {
+            !obs.visible_enemy_invulnerable(enemy.entity_id)
+                && obs.entity_type(rules,enemy.entity_id).is_some_and(|ty|
+                    super::tactics::emergency_threat_score(rules,ty) >= 900)
                 && obs.can_engage(rules, defender.entity_id, enemy.entity_id)
                 && obs.can_hurt(rules, defender.entity_id, enemy.entity_id)
         });
         if !(defenders.contains(&defender.entity_id) || local_reserve
-            || emergency_loan || air_emergency)
+            || emergency_loan || air_emergency || critical_emergency)
             || !defender.controllable()
             || defender.in_service() || !defender.traits.combat
             || ordered_this_frame(out, defender.entity_id)
             || (brain.tracked.held(obs.tick(), defender.entity_id)
-                && !emergency_loan && !air_emergency
+                && !emergency_loan && !air_emergency && !critical_emergency
                 && !(local && obs.attack_target(defender.entity_id).is_none()))
         { continue; }
         let target = threats.iter()
             .filter(|enemy| squared_distance(defender.cell, enemy.cell)
                 <= DEFENDER_REACH * DEFENDER_REACH)
-            .filter(|enemy| obs.can_engage(rules, defender.entity_id, enemy.entity_id)
+            .filter(|enemy| !obs.visible_enemy_invulnerable(enemy.entity_id)
+                && obs.can_engage(rules, defender.entity_id, enemy.entity_id)
                 && obs.can_hurt(rules, defender.entity_id, enemy.entity_id))
             .min_by_key(|enemy| {
                 // Attacks directly aimed at income assets take precedence.
@@ -120,13 +206,14 @@ pub(super) fn protect_base(brain: &mut AssistBrain, rules: &RuleSet,
                         .filter_map(|name| rules.warhead(name))
                         .any(|warhead| warhead.parasite)
                 });
-                let (airborne, controller) = obs.entity_type(rules, enemy.entity_id)
-                    .map(|ty| (ty.category == ObjectCategory::Aircraft || ty.jumpjet,
-                        super::tactics::mind_control_reach(rules, ty).is_some()))
-                    .unwrap_or((false, false));
-                (!airborne, !controller, !parasite_weapon, !attacks_asset, sites.iter()
-                    .map(|site| squared_distance(*site, enemy.cell)).min().unwrap_or(i32::MAX),
-                    enemy.entity_id)
+                let (airborne, controller, urgency) = obs.entity_type(rules, enemy.entity_id)
+                    .map(|ty| (airborne(ty,obs.is_deployed(enemy.entity_id)),
+                        super::tactics::mind_control_reach(rules, ty).is_some(),
+                        super::tactics::emergency_threat_score(rules,ty)))
+                    .unwrap_or((false, false, 0));
+                (-urgency, !airborne, !controller, !parasite_weapon, !attacks_asset,
+                    sites.iter().map(|site| squared_distance(*site,enemy.cell))
+                        .min().unwrap_or(i32::MAX),enemy.entity_id)
             });
         let Some(target) = target else { continue; };
         if issue_tracked(&mut brain.tracked, brain.trace, out, rules, obs,
@@ -549,6 +636,39 @@ pub(super) fn combat_carriers(brain: &mut AssistBrain, rules: &RuleSet,
         if selected_repair_carrier || brain.repair_ifv_pending.contains_key(&carrier.entity_id) {
             continue;
         }
+        // A Battle-Fortress style platform gets no firepower from seats that
+        // never fill. Bring the *vehicle* to nearby reserved infantry while
+        // safe, then use the native Enter order in range. Never march an
+        // unsupported rifleman across an active battle to a front-line hull.
+        if ty.open_topped && obs.passengers(carrier.entity_id) < ty.passengers as usize
+            && !brain.director.under_attack_now()
+            && brain.census.base_cell.is_some_and(|home|
+                squared_distance(home, carrier.cell) <= 20 * 20)
+            && !brain.tracked.held(obs.tick(), carrier.entity_id)
+        {
+            let rendezvous = brain.census.units.iter()
+                .filter(|inf| inf.slot == super::census::Slot::Infantry
+                    && reserves.contains(&inf.entity_id) && inf.controllable()
+                    && inf.traits.combat && !inf.in_service()
+                    && !ordered_this_frame(out, inf.entity_id)
+                    && !brain.tracked.held(obs.tick(), inf.entity_id)
+                    && obs.can_enter_transport(rules, inf.entity_id, carrier.entity_id)
+                    && squared_distance(inf.cell, carrier.cell) <= 18 * 18
+                    && squared_distance(inf.cell, carrier.cell) >
+                        CARRIER_BOARD_RANGE * CARRIER_BOARD_RANGE)
+                .filter(|inf| !obs.visible_enemy_entities().any(|enemy|
+                    squared_distance(inf.cell, enemy.cell) <= 10 * 10))
+                .filter(|inf| obs.can_reach(ty.movement_zone, carrier.cell, inf.cell))
+                .min_by_key(|inf| (squared_distance(inf.cell, carrier.cell), inf.entity_id));
+            if let Some(inf) = rendezvous
+                && issue_tracked(&mut brain.tracked, brain.trace, out, rules, obs,
+                    carrier.entity_id, TrackedKind::Move, None, Some(inf.cell),
+                    Goal::Move { cell: inf.cell })
+            {
+                brain.combat_board_after = obs.tick().saturating_add(CARRIER_RETRY);
+                continue;
+            }
+        }
         let soldiers = brain.census.units.iter()
             .filter(|unit| unit.slot == super::census::Slot::Infantry
                 && reserves.contains(&unit.entity_id) && unit.controllable()
@@ -743,5 +863,23 @@ mod tests {
         assert!(SIEGE_LOCK_FRAMES > CARRIER_RETRY);
         assert!(BASE_ALERT_RADIUS < DEFENDER_REACH);
         assert!(CARRIER_BOARD_RANGE < DEFENDER_REACH);
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v30_airborne_detection_tests {
+    use super::*;
+
+    #[test]
+    fn balloon_hover_is_anti_air_even_when_declared_as_vehicle() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules()
+        else { return; };
+        let kirov = rules.object("ZEP").expect("kirov");
+        let tank = rules.object("APOC").expect("apocalypse tank");
+        assert!(airborne(kirov, false));
+        assert!(!airborne(tank, false));
+        assert!(super::super::tactics::emergency_threat_score(&rules, kirov) >= 900);
+        assert!(super::super::tactics::emergency_threat_score(
+            &rules, rules.object("TANY").expect("C4 commando")) >= 900);
     }
 }

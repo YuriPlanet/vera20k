@@ -106,7 +106,10 @@ pub fn is_army(rules: &RuleSet, ty: &ObjectType) -> bool {
         && !ty.infiltrate
         && !ty.harvester
         && !ty.resource_gatherer
-        && ty.passengers < TRANSPORT_SEATS
+        // OpenTopped carriers with a real onboard weapon (Battle Fortress,
+        // modded gun-trucks) are fighters *and* troop platforms, not passive
+        // airlifts. The passengers are their actual combat armament.
+        && (ty.passengers < TRANSPORT_SEATS || ty.open_topped)
         && !ty.spawned
         && !ty
             .deploys_into

@@ -528,7 +528,8 @@ pub(super) fn run(
         // routine owns are not this pass's. The spawned ones are the report
         // this pass earned: a `Move` around a "wall" the cargo plane could not
         // walk was an order that ended the paradrop's own route.
-        if !unit.controllable() || brain.tracked.held(tick, unit.entity_id)
+        if super::advance::charge_member(brain, tick, unit.entity_id)
+            || !unit.controllable() || brain.tracked.held(tick, unit.entity_id)
             || brain.avoid_retreat_until.contains_key(&unit.entity_id) {
             continue;
         }

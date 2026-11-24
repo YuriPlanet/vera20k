@@ -80,6 +80,19 @@ pub(super) fn run(
     out: &mut Outbox,
 ) {
     let tick = obs.tick();
+    emergency_raid_retreat(brain, rules, obs, out);
+    let raiders: Vec<super::census::Unit> = brain.squads.squad(Role::Harass)
+        .into_iter().flat_map(|team| brain.census.units.iter().filter(move |unit|
+            team.members.contains(&unit.entity_id) && unit.controllable()
+                && !unit.in_service()).copied()).collect();
+    let raid_target = mining_raid_objective(rules, obs, brain, &raiders);
+    if let Some((id, _)) = raid_target {
+        let since = brain.harass_focus.filter(|(old, until)|
+            *old == id && tick < *until);
+        brain.harass_focus = Some(since.unwrap_or((id, tick.saturating_add(900))));
+    } else {
+        brain.harass_focus = None;
+    }
     // Snapshotted: the ledger and the teams are borrowed while they are read,
     // and the intent table is written below.
     let mut work = collect(brain, rules, obs, tick);
@@ -184,7 +197,8 @@ pub(super) fn run(
                     && obs.attack_target(enemy.entity_id) == Some(item.entity_id)
             })
         { continue; }
-        if super::orders::ordered_this_frame(out, item.entity_id)
+        if super::advance::charge_member(brain, tick, item.entity_id)
+            || super::orders::ordered_this_frame(out, item.entity_id)
             || brain.avoid_retreat_until.get(&item.entity_id)
                 .is_some_and(|until| tick < *until)
         { continue; }
@@ -546,32 +560,60 @@ pub(super) fn run(
                 // base because the enemy's ore is unknown is the "it never
                 // scouts" a play test reports, and it is the same walk a
                 // player makes with the first few tanks.
-                let cell = match enemy_economy(rules, obs, &brain.census, item.cell) {
-                    Some((_, cell)) => cell,
-                    None => {
-                        let Some(cell) = nearest_unexplored(obs, item.cell, item.zone) else {
+                if brain.avoid_retreat_until.get(&item.entity_id)
+                    .is_some_and(|until| tick < *until)
+                { continue; }
+                if let Some((victim, cell)) = raid_target {
+                    if safe_mining_raid_leg(rules, obs, item.entity_id, item.cell, cell)
+                        && super::orders::admits(rules, obs, item.entity_id,
+                            &Goal::Attack { target: victim })
+                    {
+                        // Never commit the lead vehicle alone: two real
+                        // mobile raiders must have made it to the same front.
+                        let gathered = raiders.iter().filter(|friend|
+                            super::advance::cell_distance(friend.cell, item.cell) <= 9
+                                && safe_mining_raid_leg(rules, obs,
+                                    friend.entity_id, friend.cell, cell)
+                        ).count();
+                        if gathered >= 2 {
+                            if obs.attack_target(item.entity_id) != Some(victim)
+                                && super::orders::issue_tracked(
+                                    &mut brain.tracked, brain.trace, out, rules, obs,
+                                    item.entity_id, TrackedKind::Attack,
+                                    Some(victim), Some(cell), Goal::Attack { target: victim },
+                                ) { issued += 1; }
                             continue;
-                        };
-                        cell
+                        }
+                        if let Some(post) = raiders.iter()
+                            .filter(|friend| friend.entity_id != item.entity_id)
+                            .min_by_key(|friend| super::squared_distance(friend.cell,item.cell))
+                            .map(|friend| friend.cell)
+                            .filter(|post| super::orders::reachable(rules,obs,
+                                item.entity_id,*post)
+                                && safe_mining_raid_leg(rules,obs,
+                                    item.entity_id,item.cell,*post))
+                        {
+                            if super::orders::issue_tracked(
+                                &mut brain.tracked,brain.trace,out,rules,obs,
+                                item.entity_id,TrackedKind::Move,None,Some(post),
+                                Goal::Move { cell: post },
+                            ) { issued += 1; }
+                        }
+                        continue;
                     }
-                };
-                // Attack-move, not attack: the walk is the point, and what
-                // stands in the way on the way is dealt with by the engage
-                // branch above.
-                if super::orders::issue_tracked(
-                    &mut brain.tracked,
-                    brain.trace,
-                    out,
-                    rules,
-                    obs,
-                    item.entity_id,
-                    TrackedKind::AttackMove,
-                    None,
-                    Some(cell),
-                    Goal::AttackMove { cell },
-                ) {
-                    issued += 1;
                 }
+                // No vulnerable *visible* harvester: explore a legal, safe
+                // frontier. Don't attack-move into the last known refinery's
+                // tower network on an obsolete economic sighting.
+                let Some(cell) = nearest_unexplored(obs, item.cell, item.zone)
+                    .filter(|cell| safe_mining_raid_leg(
+                        rules, obs, item.entity_id, item.cell, *cell))
+                else { continue; };
+                if super::orders::issue_tracked(
+                    &mut brain.tracked, brain.trace, out, rules, obs,
+                    item.entity_id, TrackedKind::Move,
+                    None, Some(cell), Goal::Move { cell },
+                ) { issued += 1; }
             }
             // A scout is sent to look, not to fight: a walk, so it does not
             // stop to bite every tank it passes on the way to the map.
@@ -943,6 +985,7 @@ const RECON_STEP_CELLS: u16 = 6;
 /// What is worth raiding, nearest first: an ore carrier before the bay it
 /// unloads into, because the carrier is worth the load it is carrying and the
 /// bay is a building that can be rebuilt.
+#[allow(dead_code)]
 fn enemy_economy(
     rules: &RuleSet,
     obs: &Observation<'_>,
@@ -974,6 +1017,134 @@ fn enemy_economy(
         }
     }
     best.map(|(_, _, id, cell)| (id, cell))
+}
+
+
+/// The value of a mining raid is denying deliveries, not trading our own
+/// expensive units under the opponent's fixed defences. Every test below is
+/// grounded in a currently visible weapon, its real reach and a native path.
+fn safe_mining_raid_leg(
+    rules: &RuleSet, obs: &Observation<'_>, actor: u64,
+    from: (u16, u16), to: (u16, u16),
+) -> bool {
+    if super::tactics::controller_covering_path(rules, obs, from, to).is_some() {
+        return false;
+    }
+    !obs.visible_enemy_entities().any(|defender| {
+        let Some(ty) = obs.entity_type(rules, defender.entity_id) else { return false; };
+        if !ty.is_base_defense || !obs.visible_enemy_building_operational(
+            rules, defender.entity_id)
+        { return false; }
+        let reach = super::tactics::effective_reach_against(
+            rules, obs, defender.entity_id, actor,
+        );
+        reach > 0 && (super::advance::cell_distance(defender.cell, from) <= reach + 1
+            || super::advance::cell_distance(defender.cell, to) <= reach + 1
+            || super::orders::path_crosses(&[defender.cell], from, to, reach + 1))
+    })
+}
+
+/// A small mobile raiding group can exhaust the enemy economy without needing
+/// a costly frontal siege. Target only *currently visible* harvesters or their
+/// unloading bays, and require more than a single fighter to have a safe
+/// native attack route. The target is shared across the squad.
+fn mining_raid_objective(
+    rules: &RuleSet, obs: &Observation<'_>, brain: &AssistBrain,
+    actors: &[super::census::Unit],
+) -> Option<(u64, (u16, u16))> {
+    if actors.len() < 2 { return None; }
+    let center = {
+        let count = i64::try_from(actors.len()).unwrap_or(1).max(1);
+        let x = actors.iter().map(|u| i64::from(u.cell.0)).sum::<i64>() / count;
+        let y = actors.iter().map(|u| i64::from(u.cell.1)).sum::<i64>() / count;
+        (u16::try_from(x).unwrap_or(0), u16::try_from(y).unwrap_or(0))
+    };
+    let ours = actors.iter().fold(0i32, |total, unit|
+        total.saturating_add(unit.points));
+    let until = brain.harass_focus;
+    obs.visible_enemy_entities().filter_map(|enemy| {
+        let ty = obs.entity_type(rules, enemy.entity_id)?;
+        let traits = super::census::Traits::of(rules, ty);
+        let rank = if traits.harvester { 0u8 } else if traits.refinery { 1 } else { return None; };
+        let safe = actors.iter().filter(|unit|
+            obs.can_hurt(rules, unit.entity_id, enemy.entity_id)
+                && super::orders::reachable(rules, obs, unit.entity_id, enemy.cell)
+                && safe_mining_raid_leg(rules, obs,
+                    unit.entity_id, unit.cell, enemy.cell)
+        ).count();
+        if safe < 2 || brain.census.enemy_points(rules, obs, enemy.cell, 10)
+            > ours.saturating_mul(2) / 3
+        { return None; }
+        let held = until.is_some_and(|(id, limit)| id == enemy.entity_id
+            && obs.tick() < limit);
+        Some((!held, rank, super::squared_distance(center, enemy.cell),
+            enemy.entity_id, enemy.cell))
+    }).min_by_key(|(not_held, rank, distance, id, _)|
+        (*not_held, *rank, *distance, *id))
+        .map(|(_, _, _, id, cell)| (id, cell))
+}
+
+/// Never chase a harvester all the way into a turret's coverage. The most
+/// valuable raid is one that can leave and be repeated.
+fn emergency_raid_retreat(
+    brain: &mut AssistBrain, rules: &RuleSet, obs: &Observation<'_>, out: &mut Outbox,
+) {
+    let Some(team) = brain.squads.squad(Role::Harass) else { return; };
+    let ids: Vec<u64> = team.members.iter().copied().collect();
+    for id in ids {
+        let Some(unit) = brain.census.units.iter().find(|unit|
+            unit.entity_id == id && unit.controllable() && !unit.in_service())
+        else { continue; };
+        let objective = obs.attack_target(id)
+            .and_then(|target| obs.visible_enemy_entities().find(|enemy|
+                enemy.entity_id == target).map(|enemy| enemy.cell))
+            .or_else(|| obs.destination(id));
+        // A harasser that has *already* wandered under an operational tower
+        // must retreat even when its native Attack target has disappeared.
+        // Previously, no destination meant no retreat and the micro combat
+        // pass could turn it into a solo sacrifice against the tower.
+        let standing_safe = safe_mining_raid_leg(rules, obs,
+            id, unit.cell, unit.cell);
+        let pursuit_safe = objective.is_none_or(|to|
+            safe_mining_raid_leg(rules, obs, id, unit.cell, to));
+        if standing_safe && pursuit_safe { continue; }
+        let Some(home) = brain.census.rally.or(brain.census.base_cell) else { continue; };
+        if !super::orders::reachable(rules, obs, id, home)
+            || super::tactics::unsafe_post(rules, obs, id, home)
+        { continue; }
+        let order = Goal::Move { cell: home };
+        // A real emergency fallback must replace a native Attack still
+        // chasing the moving victim. Simply skipping the next order leaves
+        // the old mission and the raider dies under the battery.
+        if super::orders::admits(rules, obs, id, &order)
+            && out.want(id, 2, order)
+        {
+            brain.tracked.forget_primary(id);
+            brain.harass_focus = None;
+            brain.avoid_retreat_until.insert(id, obs.tick().saturating_add(330));
+            log::debug!("auto play: raid member {id} withdraws from visible battery");
+        }
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v29_raid_policy_tests {
+    use super::safe_mining_raid_leg;
+    use crate::rules::ruleset::RuleSet;
+    use crate::sim::control::observation::Observation;
+
+    #[test]
+    fn a_clear_retreat_path_is_not_an_automatic_combat_order() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
+            return;
+        };
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let owner = sim.interner.intern("Americans");
+        let obs = Observation::new(&sim, owner);
+        assert!(safe_mining_raid_leg(&rules, &obs, 10, (2, 2), (5, 5)));
+    }
 }
 
 /// The nearest cell the house has not revealed, sampled on that grid.

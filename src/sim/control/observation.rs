@@ -734,6 +734,20 @@ impl<'a> Observation<'a> {
             .filter(move |enemy| fog.is_cell_visible(house, enemy.cell.0, enemy.cell.1))
     }
 
+    /// Whether an enemy currently visible to this house has an active
+    /// invulnerability timer (Iron Curtain, Force Shield or mod equivalent).
+    /// Never leak an unseen target's timer through a strategy query.
+    pub fn visible_enemy_invulnerable(&self, target: u64) -> bool {
+        let Some(entity) = self.sim.entities().get(target) else { return false; };
+        // This query is used inside targeting loops on huge maps: check one
+        // entity directly rather than walking every visible enemy each time.
+        self.is_hostile(target)
+            && self.is_cell_visible(entity.position.rx(), entity.position.ry())
+            && crate::sim::superweapon::invulnerability::is_invulnerable(
+                entity.invulnerability.as_ref(), self.sim.session().binary_frame() as u32,
+            )
+    }
+
     /// Whether our actor is *effectively* disguised to this currently visible
     /// enemy, according to the native per-observer predicate (including the
     /// house its uniform represents and disguise detection). `disguised` alone
@@ -1393,25 +1407,27 @@ impl<'a> Observation<'a> {
     /// mod that gives a rifle an AA-capable weapon is answered by the same key
     /// the sim will fire on.
     pub fn can_hurt(&self, rules: &RuleSet, unit: u64, target: u64) -> bool {
+        // A current Iron Curtain nullifies the damage whatever the shell's
+        // normal Verses are. Do not drain the squad into a temporary shield.
+        if self.visible_enemy_invulnerable(target) { return false; }
         let (Some(unit_entity), Some(target_entity)) = (
             self.sim.entities().get(unit),
             self.sim.entities().get(target),
         ) else {
             return false;
         };
-        let air = target_entity.category() == EntityCategory::Aircraft;
-        let (Some(unit_type), target_type) = (
-            self.sim.object_type(unit_entity.type_ref(), rules),
-            if air {
-                None
-            } else {
-                self.sim.object_type(target_entity.type_ref(), rules)
-            },
-        ) else {
+        let target_type = self.sim.object_type(target_entity.type_ref(), rules);
+        // BalloonHover and Jumpjet types may live in the VehicleTypes array
+        // (retail Kirov does). ObjectCategory::Aircraft alone misses them and
+        // mistakenly asks an anti-ground-only gun to shoot a flying airship.
+        let air = target_entity.category() == EntityCategory::Aircraft
+            || target_type.is_some_and(|ty| ty.balloon_hover
+                || (ty.jumpjet && !self.is_deployed(target)));
+        let Some(unit_type) = self.sim.object_type(unit_entity.type_ref(), rules) else {
             return false;
         };
-        let armour =
-            target_type.map_or(crate::rules::armor::ArmorId::default(), |ty| ty.armor_id());
+        let armour = target_type.map_or(
+            crate::rules::armor::ArmorId::default(), |ty| ty.armor_id());
         (0..unit_type.weapon_record_count()).any(|slot| {
             let Some(name) = unit_type.weapon_at(slot) else {
                 return false;
@@ -1422,14 +1438,16 @@ impl<'a> Observation<'a> {
             if weapon.never_use {
                 return false;
             }
-            if air {
-                // A missing projectile answers `AG` in the sim's own reading
-                // (`combat_weapon::weapon_class_bits`), so it does not answer
-                // air here either.
-                return rules
-                    .weapon_projectile(weapon)
-                    .is_some_and(|projectile| projectile.aa);
+            if air && !rules.weapon_projectile(weapon)
+                .is_some_and(|projectile| projectile.aa)
+            {
+                // A projectile with no AA flag cannot hit a flying Kirov,
+                // even when the object lives in VehicleTypes.
+                return false;
             }
+            // AA capability alone is not enough: a modded AA weapon may
+            // have zero Verses against this particular airship's armour.
+            // Apply the same real warhead check used against ground targets.
             let Some(warhead) = weapon
                 .warhead
                 .as_deref()

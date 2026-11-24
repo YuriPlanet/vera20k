@@ -510,6 +510,12 @@ pub struct AssistBrain {
     /// Unlike a target-specific timer, this survives target switches so a
     /// drifting target choice cannot restart a perpetual 900-frame hold.
     pub(super) armour_wave_wait: Option<u64>,
+    /// A coherent armoured breach against one visible powered battery.
+    /// Avoid/kite/dodge do not split the cohort during its brief assault.
+    pub(super) siege_charge: Option<advance::SiegeCharge>,
+    /// A visible economic victim is locked for a bounded raid, preventing
+    /// the detachment from changing miners whenever positions change.
+    pub(super) harass_focus: Option<(u64, u64)>,
     /// The object whose orders are traced, from AUTOPLAY_TRACE: a diagnostic
     /// switch read once at construction, never a decision input. "Why did this
     /// unit do that" is the question every play test asks, and until now the
@@ -625,6 +631,8 @@ impl AssistBrain {
             blocked_goals: BTreeMap::new(),
             push_progress: (0, usize::MAX),
             armour_wave_wait: None,
+            siege_charge: None,
+            harass_focus: None,
             trace: std::env::var("AUTOPLAY_TRACE")
                 .ok()
                 .and_then(|raw| raw.trim().parse::<u64>().ok()),
@@ -821,6 +829,9 @@ impl Brain for AssistBrain {
             .filter_map(|enemy| obs.visible_enemy_house(enemy.entity_id))
             .collect();
         self.squads.regroup_focused(obs.tick(), &self.census, opponents.len() > 1);
+        // Before micro/dodge own the frame, preserve a truly synchronized
+        // siege charge already committed against a visible live battery.
+        advance::prepare_siege_charge(self, rules, obs);
         let attack_members = self.squads.squad(squads::Role::Attack)
             .map_or(0, |squad| squad.members.len());
         let signals = strategy::Signals::read(
@@ -1054,6 +1065,7 @@ impl Brain for AssistBrain {
             orders::pack_captured_yard(self, rules, obs, out);
         }
         if obs.forces_enabled() {
+            advanced::avoid_invulnerable_assault(self, rules, obs, out);
             advanced::protect_base(self, rules, obs, out);
             advanced::station_home_reserve(self, rules, obs, out);
             advanced::secure_outpost(self, rules, obs, out);

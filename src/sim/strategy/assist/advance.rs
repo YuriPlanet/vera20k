@@ -83,6 +83,144 @@ fn battery_wave_ready(nearby: usize) -> bool {
     nearby >= ARMOUR_WAVE_MIN
 }
 
+/// A bounded, actual same-frame cohort, not a siege timer that lets one tank
+/// decide to walk at a Prism Tower after the rest of the column went home.
+#[derive(Debug, Clone)]
+pub(super) struct SiegeCharge {
+    pub(super) target: u64,
+    pub(super) until: u64,
+    pub(super) members: BTreeSet<u64>,
+}
+
+/// Every participating vehicle must be concentrated, healthy and capable of
+/// damaging the battery. Overall army points elsewhere on the map are not a
+/// substitute. Standoff artillery takes precedence if it can safely shoot.
+fn mass_charge_ready(ready: usize, guns: usize, ours: i32, enemy: i32,
+    has_standoff: bool) -> bool {
+    let required = (6usize.saturating_add(guns.saturating_mul(2))).min(18);
+    !has_standoff && ready >= required && ours >= 4_000
+        && ours >= enemy.max(1).saturating_mul(2)
+}
+
+/// Continue a coherent charge as a unit operation. Retreat/micro are allowed
+/// outside the short window; a dead or invisible target cancels the order.
+pub(super) fn charge_member(brain: &AssistBrain, tick: u64, actor: u64) -> bool {
+    brain.siege_charge.as_ref().is_some_and(|wave|
+        tick < wave.until && wave.members.contains(&actor))
+}
+
+/// Called before tactical passes so a charged cohort is not scattered by
+/// dodge/kite. The decision reads only currently visible, operational guns.
+pub(super) fn prepare_siege_charge(
+    brain: &mut AssistBrain, rules: &RuleSet, obs: &Observation<'_>,
+) {
+    let tick = obs.tick();
+    if let Some(wave) = &brain.siege_charge {
+        if tick < wave.until && obs.visible_enemy_entities().any(|enemy|
+            enemy.entity_id == wave.target
+                && obs.visible_enemy_building_operational(rules, enemy.entity_id))
+        { return; }
+        brain.siege_charge = None;
+    }
+    if tick % super::tracked::MICRO_FRAMES != 0 { return; }
+    if brain.census.base_cell.is_some_and(|home|
+        brain.census.enemies_near(home, THREAT_RADIUS) > 0)
+    { return; }
+    let Some((_, _, campaign_cell)) = brain.push_target else { return; };
+    let Some(squad) = brain.squads.squad(super::squads::Role::Attack) else { return; };
+    let towers: Vec<_> = obs.visible_enemy_entities().filter(|enemy|
+        obs.entity_type(rules, enemy.entity_id).is_some_and(|ty| ty.is_base_defense)
+            && obs.visible_enemy_building_operational(rules, enemy.entity_id)
+            && cell_distance(enemy.cell, campaign_cell) <= 14
+    ).collect();
+    // The current attacker must be near enough for a charge to be a real
+    // coordinated engagement, not a remote all-map command.
+    let battery = towers.iter().copied().filter(|enemy| {
+        squad.members.iter().any(|id| brain.census.units.iter().any(|unit|
+            unit.entity_id == *id && cell_distance(unit.cell, enemy.cell) <= 24))
+    }).max_by_key(|enemy| {
+        let reach = obs.entity_type(rules, enemy.entity_id)
+            .map_or(0, |ty| weapon_range_cells(rules, ty, false));
+        (reach, std::cmp::Reverse(enemy.entity_id))
+    });
+    let Some(battery) = battery else { return; };
+    let mut candidates: Vec<&Unit> = brain.census.units.iter().filter(|unit|
+        squad.members.contains(&unit.entity_id) && unit.controllable()
+            && !unit.in_service() && !unit.traits.yard_maker
+            && !unit.traits.harvester && !unit.traits.irreplaceable
+            && !unit.traits.carries && !unit.traits.suicide
+            && unit.health_permille >= 750 && armoured_fighter(unit, rules, obs)
+            && obs.can_hurt(rules, unit.entity_id, battery.entity_id)
+            && super::orders::reachable(rules, obs, unit.entity_id, battery.cell)
+    ).collect();
+    if candidates.is_empty() { return; }
+    let tower_reach = candidates.iter().map(|unit|
+        super::tactics::effective_reach_against(rules, obs, battery.entity_id, unit.entity_id)
+    ).max().unwrap_or(0);
+    if tower_reach < 7 { return; }
+    let has_standoff = brain.census.units.iter().filter(|unit|
+        squad.members.contains(&unit.entity_id) && unit.controllable()
+    ).any(|unit| obs.can_hurt(rules, unit.entity_id, battery.entity_id)
+        && super::tactics::effective_reach_against(rules, obs,
+            unit.entity_id, battery.entity_id) > tower_reach + 1);
+    // Form a single real platoon around its foremost tank. A far-away army
+    // counted as support is the original source of solo tower probes.
+    candidates.sort_by_key(|unit| (cell_distance(unit.cell, battery.cell), unit.entity_id));
+    let leader = candidates[0].cell;
+    let mut ready: Vec<&Unit> = candidates.into_iter().filter(|unit|
+        cell_distance(unit.cell, leader) <= 9
+            && cell_distance(unit.cell, battery.cell) <= tower_reach + 11
+    ).collect();
+    ready.sort_by_key(|unit| unit.entity_id);
+    let our_points = ready.iter().fold(0i32, |total, unit|
+        total.saturating_add(unit.points));
+    let enemy_points = brain.census.enemy_points(rules, obs, battery.cell, 16);
+    if !mass_charge_ready(ready.len(), towers.len(), our_points,
+        enemy_points, has_standoff)
+    { return; }
+    let members = ready.into_iter().take(24).map(|unit| unit.entity_id).collect();
+    brain.siege_charge = Some(SiegeCharge {
+        target: battery.entity_id, until: tick.saturating_add(360), members,
+    });
+    log::info!("auto play: concentrated armoured battery assault target={} at {:?}",
+        battery.entity_id, battery.cell);
+}
+
+fn execute_siege_charge(
+    siege_charge: &Option<SiegeCharge>, census: &Census,
+    tracked: &mut super::tracked::Tracker, push_gate: &mut &'static str,
+    rules: &RuleSet, obs: &Observation<'_>, out: &mut Outbox,
+) -> bool {
+    let Some(wave) = siege_charge.as_ref() else { return false; };
+    if obs.tick() >= wave.until { return false; }
+    let target = wave.target;
+    let members: Vec<u64> = wave.members.iter().copied().collect();
+    let Some(enemy) = obs.visible_enemy_entities().find(|enemy|
+        enemy.entity_id == target && obs.visible_enemy_building_operational(rules, target))
+    else { return false; };
+    let mut issued = 0;
+    for id in members {
+        if issued >= ADVANCE_ORDERS_PER_FRAME { break; }
+        let Some(unit) = census.units.iter().find(|unit|
+            unit.entity_id == id && unit.controllable() && !unit.in_service())
+        else { continue; };
+        if !obs.can_hurt(rules, id, target)
+            || obs.attack_target(id) == Some(target) { continue; }
+        let goal = Goal::Attack { target };
+        if !super::orders::admits(rules, obs, id, &goal) { continue; }
+        // One synchronized charge uses a rank above the ordinary firing
+        // cycle. This is a native Attack command, never a direct sim write.
+        if out.want(id, 2, goal) {
+            tracked.record_goal(obs.tick(), id,
+                super::tracked::TrackedKind::Attack,
+                Some(target), Some(enemy.cell), goal);
+            issued += 1;
+        }
+    }
+    *push_gate = "siege-mass-charge";
+    true
+}
+
 fn isolated_battery_approach(
     fighters: &[&Unit], rules: &RuleSet, obs: &Observation<'_>,
     actor: u64, from: (u16,u16), to: (u16,u16),
@@ -503,7 +641,6 @@ fn stage_siege(
         if issued >= 5 { break; }
         if !unit.controllable() || unit.in_service() || obs.is_deployed(unit.entity_id)
             || unit.slot == super::census::Slot::Aircraft
-            || super::micro::firing(obs,unit.mission,unit.entity_id)
             || super::orders::ordered_this_frame(out,unit.entity_id)
         { continue; }
         let Some((id,gun,reach)) = gunline.iter().copied()
@@ -519,9 +656,25 @@ fn stage_siege(
         let Some(post) = super::tactics::siege_post(
             rules,obs,unit.entity_id,unit.cell,gun,reach)
         else { continue; };
-        if cell_distance(unit.cell,post) <= 2
-            || obs.destination(unit.entity_id) == Some(post)
-        { continue; }
+        let still_charging = obs.attack_target(unit.entity_id) == Some(id)
+            || obs.destination(unit.entity_id).is_some_and(|destination|
+                cell_distance(destination, gun) <= reach + 1
+                    || super::orders::path_crosses(
+                        &[gun], unit.cell, destination, reach + 1));
+        // A *native* Attack/AttackMove from an earlier planning cycle can
+        // survive while the strategic gate now says "wait for artillery".
+        // Staging without cancelling that mission left tanks walking to their
+        // deaths, even after the visible new plan looked defensive.
+        if cell_distance(unit.cell, post) <= 2
+            && cell_distance(unit.cell, gun) > reach + 1
+        {
+            if still_charging && super::orders::issue_tracked(
+                tracker, trace, out, rules, obs, unit.entity_id,
+                super::tracked::TrackedKind::Avoid, None, Some(post), Goal::Stop,
+            ) { issued += 1; }
+            continue;
+        }
+        if obs.destination(unit.entity_id) == Some(post) { continue; }
         if super::orders::issue_tracked(
             tracker,trace,out,rules,obs,unit.entity_id,
             super::tracked::TrackedKind::Avoid,None,Some(post),Goal::Move { cell: post },
@@ -718,6 +871,7 @@ fn stage_reinforcements(
 /// Permit a stalled, well-supported heavy tank column to breach a visible
 /// gunline even when the perfect counter is not affordable. No infantry or
 /// damaged lone vehicles are authorized to trade against multiple towers.
+#[allow(dead_code)]
 fn forced_armor_commit(armored: bool, health_permille: u16, own: i32, enemy: i32) -> bool {
     armored && health_permille >= 780 && own >= 2_000
         && own >= enemy.max(1).saturating_mul(2)
@@ -794,6 +948,10 @@ pub(super) fn advance(
             .is_some_and(|until| *until > obs.tick())
         && !super::advanced::repair_ifv_loaded(rules, obs, &brain.census, unit.entity_id));
     if fighters.is_empty() { return false; }
+    if execute_siege_charge(
+        &brain.siege_charge, &brain.census, &mut brain.tracked, &mut brain.push_gate,
+        rules, obs, out,
+    ) { return true; }
     // No exclusion for a unit whose weapon spends it. It was here with a
     // matching errand of its own, and together they cost fourfold on two seeds
     // (see the note where the errand used to be called). The tag itself is
@@ -907,28 +1065,25 @@ pub(super) fn advance(
     brain.push_target = Some((target.nearest.0, tick, target.nearest.1));
     let mopping_up = target.mopping_up;
     let (target_id, target_cell) = (target.entity_id, target.cell);
-    let siege_reach = if !mopping_up && target_id != 0 {
+    let siege_reach = if target_id != 0 {
         super::tactics::need_siege(rules,obs,target_cell,&fighters)
     } else { None };
     brain.siege_reach = siege_reach;
     // Real standoff batteries must be allowed to fire while the shorter-range
     // screen holds outside the enemy gun line. This is a bounded *breach*, not
     // another request to make more artillery when one already exists.
-    if siege_reach.is_none() && !mopping_up && target_id != 0
+    if siege_reach.is_none() && target_id != 0
         && assign_breach_battery(
             &mut brain.tracked, brain.trace, &fighters, rules, obs, out, target_cell,
         )
     {
-        let start = match brain.siege_wait {
-            Some((id, since)) if id == target_id => since,
-            _ => tick,
-        };
-        brain.siege_wait = Some((target_id, start));
-        if tick.saturating_sub(start) < 750 {
-            brain.push_gate = "battery-breach";
-            stage_siege(&mut brain.tracked, brain.trace, &fighters, rules, obs, out, target_cell);
-            return true;
-        }
+        brain.siege_wait.get_or_insert((target_id, tick));
+        // An artillery unit has an actual winning range trade. Do not let
+        // the arbitrary waiting deadline turn the screen into isolated tower
+        // probes while that weapon is working toward the live battery.
+        brain.push_gate = "battery-breach";
+        stage_siege(&mut brain.tracked, brain.trace, &fighters, rules, obs, out, target_cell);
+        return true;
     }
     if let Some(reach) = siege_reach {
         // Keep a bounded artillery preparation window for one enemy target.
@@ -939,14 +1094,10 @@ pub(super) fn advance(
             _ => tick,
         };
         brain.siege_wait = Some((target_id, start));
-        // Artillery preparation is finite: a faction unable to fund its
-        // next lab cannot wait outside prism towers until its economy dies.
-        // After the preparation period, only healthy heavy armor with local
-        // fire superiority may volunteer to breach. Infantry, aircraft and
-        // units facing psychic control retain their original vetoes.
-        brain.push_gate = if tick.saturating_sub(start) >= 1_350 {
-            "siege-forced-breach"
-        } else { "need-siege" };
+        // There is no clock-based lone-tank breach against an operational
+        // battery. Either a real assembled wave commits (above), or we stage
+        // for standoff artillery/spy blackout while the raiders hit income.
+        brain.push_gate = "need-siege";
         let spy_power_attempt_live = brain.spy_attempts.iter().any(|(agent, (plant, _, _))| {
             brain.census.units.iter().any(|unit|
                 unit.entity_id == *agent && unit.traits.spy)
@@ -961,15 +1112,13 @@ pub(super) fn advance(
         // Visibility and the native Capture intent, not a guessed effect,
         // justify the wait; after 1,500 frames it must not deadlock the army.
         let blackout_window = siege_blackout_wait(start, tick, spy_power_attempt_live);
-        if tick.saturating_sub(start) < 600 || blackout_window {
-            if blackout_window { brain.push_gate = "spy-blackout-staging"; }
-            // Waiting must be an actual manoeuvre, not just a label. A tank
-            // already walking into the pillbox will keep that native order
-            // unless we deliberately move it back out of the gunline.
-            stage_siege(&mut brain.tracked,brain.trace,&fighters,rules,obs,out,target_cell);
-            log::debug!("auto play: stage for siege reach>{reach} at {target_cell:?}");
-            return true;
-        }
+        if blackout_window { brain.push_gate = "spy-blackout-staging"; }
+        // Waiting must be an actual manoeuvre, not just a label. A tank
+        // already walking into the pillbox will keep that native order
+        // unless we deliberately move it back out of the gunline.
+        stage_siege(&mut brain.tracked,brain.trace,&fighters,rules,obs,out,target_cell);
+        log::debug!("auto play: stage for siege reach>{reach} at {target_cell:?}");
+        return true;
     } else {
         brain.siege_wait = None;
     }
@@ -1341,11 +1490,6 @@ pub(super) fn advance(
             let can_hit_gun = obs.visible_enemy_entities().any(|enemy| {
                 enemy.cell == *gun && obs.can_hurt(rules, unit.entity_id, enemy.entity_id)
             });
-            let forced_breach = brain.push_gate == "siege-forced-breach"
-                && forced_armor_commit(
-                    unit.slot == super::census::Slot::Vehicle,
-                    unit.health_permille, ours, theirs,
-                );
             // Huge fixed batteries cannot be overrun by simply having more
             // hit points: the vehicles may die before the first shot.
             let own_reach = obs.entity_type(rules, unit.entity_id)
@@ -1356,7 +1500,7 @@ pub(super) fn advance(
                 || !(can_hit_gun && (super::tactics::overwhelming_armor_commit(
                 unit.slot == super::census::Slot::Vehicle,
                 unit.health_permille, ours, theirs,
-            ) || forced_breach))
+            )))
         }) {
             let safe = super::tactics::siege_post(
                 rules, obs, unit.entity_id, unit.cell, gun, reach,
@@ -2261,5 +2405,28 @@ mod v16_artillery_tests {
         assert!(!standoff_can_breach(8, 8, true));
         assert!(!standoff_can_breach(12, 8, false));
         assert!(!standoff_can_breach(4, 2, true));
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v29_mass_siege_tests {
+    use super::mass_charge_ready;
+
+    #[test]
+    fn one_or_two_tanks_never_count_as_a_prism_breach() {
+        assert!(!mass_charge_ready(1, 1, 12_000, 1_000, false));
+        assert!(!mass_charge_ready(3, 1, 12_000, 1_000, false));
+        assert!(!mass_charge_ready(7, 1, 12_000, 1_000, false));
+    }
+
+    #[test]
+    fn a_single_concentrated_armour_wave_may_commit_if_no_standoff_exists() {
+        assert!(mass_charge_ready(8, 1, 8_000, 3_500, false));
+        assert!(!mass_charge_ready(8, 1, 8_000, 4_100, false));
+        assert!(!mass_charge_ready(8, 1, 8_000, 3_500, true));
+        // Overlapping towers need a larger *local* platoon, not a stronger
+        // force stationed on the other side of the map.
+        assert!(!mass_charge_ready(8, 2, 8_000, 3_500, false));
+        assert!(mass_charge_ready(10, 2, 8_000, 3_500, false));
     }
 }

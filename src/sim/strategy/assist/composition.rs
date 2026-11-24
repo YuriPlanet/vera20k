@@ -775,6 +775,77 @@ fn expedition_carrier<'r>(
         .min_by_key(|(ty,id)|(obs.cost_of(rules,ty),*id))
 }
 
+
+/// A detected tower is a production requirement, not permission for a lone
+/// tank to test it again. Prefer a genuinely buildable, range-superior gun.
+/// If the mod supplies no standoff counter, choose a sturdy rules-legal
+/// vehicle for a simultaneous mass assault instead of a random cheap filler.
+/// `Some(None)` means the selected counter is legal but not yet affordable:
+/// leave the vehicle line idle to save for it rather than buying filler.
+fn battery_counter_product<'r>(
+    brain: &AssistBrain, rules: &'r RuleSet,
+    obs: &Observation<'_>, free: i32,
+) -> Option<Option<(&'r ObjectType, InternedId)>> {
+    if brain.push_gate != "need-siege" || brain.census.refineries == 0
+        || brain.census.harvesters == 0 || brain.director.under_attack_now()
+    { return None; }
+    let reach = brain.siege_reach?;
+    let focus = brain.push_target.map(|(_,_,cell)| cell)?;
+    let towers: Vec<_> = obs.visible_enemy_entities().filter_map(|enemy| {
+        let ty = obs.entity_type(rules, enemy.entity_id)?;
+        (ty.is_base_defense && obs.visible_enemy_building_operational(rules,enemy.entity_id)
+            && super::advance::cell_distance(enemy.cell,focus) <= 14)
+            .then_some(ty)
+    }).collect();
+    if towers.is_empty() { return None; }
+    let mut candidates: Vec<_> = build::class_types(rules, obs, ObjectCategory::Vehicle)
+        .filter(|(ty, _)| !ty.naval && ty.speed > 0 && ty.strength >= 300
+            && !ty.resource_gatherer && !ty.construction_yard
+            && !ty.is_base_defense && super::orders::is_combat_unit(rules,ty))
+        .filter_map(|(ty,id)| {
+            let mut best_range = 0;
+            let mut damage = 0i64;
+            for slot in 0..ty.weapon_record_count() {
+                let Some(weapon) = ty.weapon_at(slot).and_then(|name| rules.weapon(name))
+                else { continue; };
+                if weapon.never_use || weapon.damage <= 0
+                    || !rules.weapon_projectile(weapon).is_some_and(|shot| shot.ag)
+                { continue; }
+                let Some(head) = weapon.warhead.as_deref().and_then(|name| rules.warhead(name))
+                else { continue; };
+                let viable = towers.iter().any(|tower|
+                    f64::from_bits(head.interaction(tower.armor_id()).multiplier().bits()) > 0.0);
+                if !viable { continue; }
+                best_range = best_range.max(super::advance::weapon_reach_cells(weapon));
+                damage = damage.max(i64::from(weapon.damage)
+                    .saturating_mul(i64::from(weapon.burst.max(1)))
+                    .saturating_mul(90) / i64::from(weapon.rof.max(15)));
+            }
+            (best_range > 0).then_some((ty,id,obs.cost_of(rules,ty),best_range,damage))
+        }).collect();
+    if candidates.is_empty() { return None; }
+    let standoff = candidates.iter().any(|(_,_,_,range,_)| *range > reach+1);
+    if standoff {
+        candidates.retain(|(_,_,_,range,_)| *range > reach + 1);
+        // Highest matching reach first: a real cannon can be cheaper than a
+        // nominal long-range anti-air weapon, but only warhead-positive
+        // weapons reached this shortlist.
+        candidates.sort_by_key(|(_,id,cost,range,_)| (
+            std::cmp::Reverse(*range), brain.census.type_count(*id), *cost, *id));
+    } else {
+        // No long-range counter in the effective mod rules: favor vehicles
+        // which contribute real HP and damage to the synchronized wave.
+        // Use cost-normalized combat yield, not a hardcoded tank roster.
+        candidates.sort_by_key(|(ty,id,cost,_,dps)| {
+            let value = (i64::from(ty.strength.max(1)) + *dps)
+                .saturating_mul(1_000) / i64::from((*cost).max(1));
+            (std::cmp::Reverse(value), brain.census.type_count(*id), *id)
+        });
+    }
+    let (ty,id,price,_,_) = candidates[0];
+    Some((price <= free).then_some((ty,id)))
+}
+
 /// What one idle line starts next.
 fn product_for<'r>(
     brain: &mut AssistBrain,
@@ -843,6 +914,13 @@ fn product_for<'r>(
             .min_by_key(|(ty,_)| (obs.cost_of(rules, ty), ty.id.clone()))
     {
         return Some(found);
+    }
+    if category == ProductionCategory::Vehicle
+        && let Some(decision) = battery_counter_product(brain,rules,obs,budget.free)
+    {
+        // `None` intentionally holds the line for an unlocked counter it
+        // cannot yet pay for; infantry/repair spending retain their own gates.
+        return decision;
     }
     if category == ProductionCategory::Vehicle
         && let Some((ty,id)) = scarce_advanced_vehicle(brain,rules,obs,budget.income)
@@ -1253,11 +1331,21 @@ fn airship_due(
 /// needs positive verses against its armour. A Kirov, Prism or Apocalypse in
 /// a mod with a new name retains its tactical properties.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ThreatClass { Airborne, Standoff, HeavyArmour }
+enum ThreatClass { Airborne, Saboteur, Explosive, Standoff, HeavyArmour }
 
 fn threat_class(rules: &RuleSet, ty: &ObjectType) -> Option<ThreatClass> {
-    if ty.category == ObjectCategory::Aircraft && ty.strength >= 500 {
+    // Most retail bombers including the Kirov are VehicleTypes, not
+    // AircraftTypes. Effective flight is a movement rule, not an array slot.
+    if (ty.category == ObjectCategory::Aircraft || ty.balloon_hover || ty.jumpjet)
+        && ty.strength >= 500 {
         return Some(ThreatClass::Airborne);
+    }
+    if ty.c4 { return Some(ThreatClass::Saboteur); }
+    if (0..ty.weapon_record_count()).any(|slot|
+        ty.weapon_at(slot).and_then(|name| rules.weapon(name))
+            .is_some_and(|weapon| weapon.suicide))
+        || (ty.explodes && ty.death_weapon.is_some()) {
+        return Some(ThreatClass::Explosive);
     }
     if ty.category != ObjectCategory::Vehicle { return None; }
     let reach = (0..ty.weapon_record_count()).filter_map(|slot| {
@@ -1280,7 +1368,8 @@ fn counter_quality(
         let projectile = rules.weapon_projectile(weapon)?;
         let valid = match kind {
             ThreatClass::Airborne => projectile.aa,
-            ThreatClass::Standoff | ThreatClass::HeavyArmour => projectile.ag,
+            ThreatClass::Saboteur | ThreatClass::Explosive
+                | ThreatClass::Standoff | ThreatClass::HeavyArmour => projectile.ag,
         };
         if !valid { return None; }
         let head = weapon.warhead.as_deref().and_then(|name| rules.warhead(name))?;
@@ -1288,6 +1377,10 @@ fn counter_quality(
         if mult <= 0.0 { return None; }
         let reach = super::advance::weapon_reach_cells(weapon);
         if kind == ThreatClass::Standoff && reach + 2 < hostile_reach { return None; }
+        // An explosive truck must be intercepted *before* its detonation
+        // radius. A point-blank gun is not an economic counter even when its
+        // theoretical DPS is high.
+        if kind == ThreatClass::Explosive && reach < 5 { return None; }
         let damage = (f64::from(weapon.damage) * mult).clamp(0.0, 8_000.0) as i32;
         let output = damage.saturating_mul(90) / weapon.rof.max(15);
         Some(output.saturating_add(reach.saturating_mul(4)))
@@ -1315,8 +1408,11 @@ fn emergency_counter<'r>(
             Some((ty, kind))
         })
         .max_by_key(|(ty,kind)| (
-            match kind { ThreatClass::Airborne => 3, ThreatClass::Standoff => 2,
-                ThreatClass::HeavyArmour => 1 },ty.strength))?;
+            match kind {
+                ThreatClass::Explosive => 5, ThreatClass::Saboteur => 4,
+                ThreatClass::Airborne => 3, ThreatClass::Standoff => 2,
+                ThreatClass::HeavyArmour => 1,
+            },ty.strength))?;
     let (enemy, kind) = threat;
     // If the house already fields two real counters per visible dangerous
     // target, do not build nothing but anti-air trucks all match.
@@ -2563,5 +2659,23 @@ mod v17_faction_tests {
             assert!(!build::country_special(ty, "Americans"),
                 "{unit} is not an American generic unit");
         }
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v30_emergency_counter_tests {
+    use super::*;
+
+    #[test]
+    fn retail_vehicle_array_kirov_is_an_airborne_counter_target() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules()
+        else { return; };
+        let kirov = rules.object("ZEP").expect("balloon hover bomber");
+        assert_eq!(kirov.category, ObjectCategory::Vehicle);
+        assert_eq!(threat_class(&rules, kirov), Some(ThreatClass::Airborne));
+        let seal = rules.object("GHOST").expect("navy seal");
+        assert_eq!(threat_class(&rules, seal), Some(ThreatClass::Saboteur));
+        let demo = rules.object("DTRUCK").expect("demolition truck");
+        assert_eq!(threat_class(&rules, demo), Some(ThreatClass::Explosive));
     }
 }

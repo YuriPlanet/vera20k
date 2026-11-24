@@ -107,6 +107,17 @@ pub(super) const ARMY_TO_ATTACK: usize = 10;
 /// A few, not the rest: a raid on the ore is worth a handful of units, and the
 /// house still needs something at home for the raid that answers it.
 const HARASS_MAX: usize = 4;
+const HARASS_MIN: usize = 2;
+
+fn harass_allocation(fighters: usize, garrison_and_scouts: usize) -> usize {
+    // Before the first ten fighters, raiding is an alternative to a push;
+    // afterwards preserve six fighting bodies and scale the raiders only
+    // from the genuine surplus. The old all-or-four rule stayed silent at
+    // 11–16 fighters, exactly the 1v1 window in which mining matters most.
+    let keep = if fighters < ARMY_TO_ATTACK { 0 } else { 6 };
+    let surplus = fighters.saturating_sub(garrison_and_scouts.saturating_add(keep));
+    if surplus < HARASS_MIN { 0 } else { surplus.min(HARASS_MAX) }
+}
 
 /// How much stronger than what stands at the target the army has to be before
 /// it walks there, in permille: a fifth again.
@@ -431,8 +442,9 @@ impl Squads {
         //
         // Not the whole army either way — a raid is worth a handful, and the
         // house still needs something at home for the raid that answers it.
-        let fist_needs = usize::from(census.fighters >= ARMY_TO_ATTACK) * ARMY_TO_ATTACK;
-        if !multiple_houses && census.fighters >= taken.len() + fist_needs + HARASS_MAX {
+        let harass_count = if multiple_houses { 0 }
+            else { harass_allocation(census.fighters, taken.len()) };
+        if harass_count >= HARASS_MIN {
             let mut nearest: Vec<&Unit> = census
                 .units
                 .iter()
@@ -446,17 +458,21 @@ impl Squads {
             nearest.sort_by_key(|unit| {
                 (
                     !old_harass.contains(&unit.entity_id),
+                    // Mobile vehicles with good rule-defined speed suit a
+                    // mining raid better than slow, costly siege assets.
+                    unit.slot != super::census::Slot::Vehicle,
+                    std::cmp::Reverse(census.facts(unit.type_id).map_or(0, |ty| ty.speed)),
                     squared_distance(unit.cell, enemy_anchor(census)),
                     unit.entity_id,
                 )
             });
             let members: BTreeSet<u64> = nearest
                 .into_iter()
-                .take(HARASS_MAX)
+                .take(harass_count)
                 .map(|unit| unit.entity_id)
                 .collect();
             taken.extend(members.iter().copied());
-            let state = if members.len() >= HARASS_MAX {
+            let state = if members.len() >= harass_count {
                 SquadState::Ready
             } else {
                 SquadState::Muster
@@ -466,7 +482,7 @@ impl Squads {
                 members,
                 target: None,
                 lock_until: tick.saturating_add(TARGET_LOCK_FRAMES),
-                want: HARASS_MAX,
+                want: harass_count,
                 state,
             });
         }
@@ -968,5 +984,24 @@ mod tests {
         // dissolved under a unit that is walking towards it.
         squads.regroup(REGROUP_FRAMES - 1, &census);
         assert_eq!(squads.squad(Role::Attack).map_or(0, |s| s.members.len()), 0);
+    }
+}
+
+#[cfg(all(test, tests_sim_p_s))]
+mod v29_raid_allocation_tests {
+    use super::harass_allocation;
+
+    #[test]
+    fn one_versus_one_raids_can_start_before_a_full_base_assault() {
+        assert_eq!(harass_allocation(11, 2), 3);
+        assert_eq!(harass_allocation(13, 2), 4);
+        assert_eq!(harass_allocation(30, 5), 4);
+    }
+
+    #[test]
+    fn a_small_home_force_is_not_exhausted_by_a_mining_raid() {
+        assert_eq!(harass_allocation(10, 6), 0);
+        assert_eq!(harass_allocation(11, 5), 0);
+        assert_eq!(harass_allocation(12, 5), 0);
     }
 }

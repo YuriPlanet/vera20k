@@ -230,6 +230,9 @@ pub(super) fn run(
     }
 
     for unit in &brain.census.units {
+        if super::advance::charge_member(brain, obs.tick(), unit.entity_id) {
+            continue;
+        }
         if !unit.traits.combat || !unit.controllable() {
             continue;
         }

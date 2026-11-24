@@ -2,7 +2,7 @@
 //! is not ordinary damage: a captured tank joins the enemy and starts shooting
 //! us. Only current sight and live rule-defined warheads enter this analysis.
 
-use crate::rules::object_type::ObjectType;
+use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::control::observation::Observation;
 
@@ -10,6 +10,28 @@ use super::threats::distance;
 
 /// The longest weapon range which may mind-control its victim, in cells.
 /// `None` means the type has no such weapon, not that it is safe to shoot.
+/// Non-DPS urgency of a **visible** threat. Suicide explosions, C4, mind
+/// control and high-altitude bombers can destroy an economy before their
+/// ordinary per-shot score becomes large. Read behaviors from actual rules;
+/// do not special-case retail names. Time-limited invulnerability is an
+/// instance state and is evaluated separately through Observation.
+pub(super) fn emergency_threat_score(rules: &RuleSet, ty: &ObjectType) -> i32 {
+    let suicide_weapon = (0..ty.weapon_record_count()).any(|slot| {
+        ty.weapon_at(slot).and_then(|name| rules.weapon(name))
+            .is_some_and(|weapon| weapon.suicide)
+    });
+    let bomb = suicide_weapon || (ty.explodes && ty.death_weapon.is_some());
+    let air = ty.category == ObjectCategory::Aircraft || ty.balloon_hover || ty.jumpjet;
+    let mind = mind_control_reach(rules, ty).is_some();
+    if bomb { 1_200 }
+    else if ty.c4 { 1_100 }
+    else if mind { 1_050 }
+    else if air && ty.strength >= 500 { 1_000 }
+    else if air { 550 }
+    else if ty.strength >= 700 { 330 }
+    else { 0 }
+}
+
 pub(super) fn mind_control_reach(rules: &RuleSet, ty: &ObjectType) -> Option<i32> {
     (0..ty.weapon_record_count()).filter_map(|slot| {
         let weapon = rules.weapon(ty.weapon_at(slot)?)?;
