@@ -424,6 +424,19 @@ separate work):
   (`allocate_stable_id`), as the RFC asks.
 - Variable IDs: 1000 on, mod module's declarations then the map's, in declaration order.
 
+## Cost without modules (2026-11-24)
+
+`sim-bench` release builds of 321733c62 (before INI registration and 6i) and
+19a777eab, no modules, retail Death.mmx: every final state hash is identical
+(skirmish 9000 ticks `9d2f3b9e068b45ec`, match 1800 ticks `89503a631feffc5c`,
+march 20000 units 150 ticks `fc907cef24f6b40f`). Skirmish 0.60 ms mean both;
+march 43.1 ms both; match 31.1 to 32.2 ms both, the spread of builds that change
+only module code (code layout) on a loaded machine (load average about 24). The
+paths without modules add only emptiness checks: `module_claims` (empty claim
+store), `module_listens` (empty kind list) before `Commanded`, `OrderRefused` and
+the garrison events, the seat budget loop over no slots. Rerun on an idle machine
+for a sub-percent figure.
+
 ## Remaining in phase 1
 
 - RFC 0.0.21 section 6i (driving a house: `ControlDomains`, "mod AI" seats,
