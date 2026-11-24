@@ -1115,7 +1115,7 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
     // The chrome's hover and its held button's pushed look follow the
     // cursor (G7, G22 rows 2/3), the layout edit mode included.
     if !state.match_state.paused() {
-        crate::app::input::chrome_input::pointer_moved(state);
+        crate::app::input::chrome_input::refresh_pointer(state);
     }
     // VERA: a part grabbed in the layout edit mode follows the cursor.
     if crate::app::input::layout_edit::active(state) && !state.match_state.paused() {

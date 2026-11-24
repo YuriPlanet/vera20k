@@ -48,6 +48,8 @@ pub(super) struct Written {
 pub(super) struct Node {
     pub name: String,
     pub keys: Vec<(String, Vec<Written>)>,
+    /// The built-in file defines this node under its own name.
+    built_in: bool,
 }
 
 impl Node {
@@ -82,9 +84,7 @@ impl Node {
 
     /// Whether a built-in node: the original interface has it.
     pub fn built_in(&self) -> bool {
-        self.keys
-            .iter()
-            .any(|(_, values)| values.iter().any(|value| !value.own))
+        self.built_in
     }
 
     /// The section that wrote the node, as messages name it: its first own
@@ -167,10 +167,13 @@ impl Tree {
                             tree.nodes.push(Node {
                                 name: node.to_owned(),
                                 keys: Vec::new(),
+                                built_in: false,
                             });
                             tree.nodes.len() - 1
                         }
                     };
+                    let node = &mut tree.nodes[index];
+                    node.built_in |= layer == 0;
                     for key in section.keys() {
                         let text = section.read_name(key, VALUE_CAPACITY).unwrap_or_default();
                         let (key, theme) = match key.split_once('@') {
@@ -189,7 +192,7 @@ impl Tree {
                                 }
                             },
                         };
-                        tree.nodes[index].write(
+                        node.write(
                             key.trim(),
                             Written {
                                 theme,
@@ -258,7 +261,12 @@ fn chain(
     let mut chain: Vec<String> = Vec::new();
     let mut next = Some(layout.to_owned());
     while let Some(name) = next.take() {
-        if chain.iter().any(|seen| seen.eq_ignore_ascii_case(&name)) || chain.len() > MOST_BASES {
+        // The two stock tables can still supply defaults at the depth limit
+        // (Nod itself starts from GDI). Each can enter the chain only once.
+        let a_table = is_table(&name);
+        if chain.iter().any(|seen| seen.eq_ignore_ascii_case(&name))
+            || (!a_table && chain.len() > MOST_BASES)
+        {
             problems.push(TreeProblem::Loop {
                 section: chain.last().cloned().unwrap_or_default(),
             });
@@ -279,7 +287,6 @@ fn chain(
                         .map(|base| base.trim().to_owned())
                 })
         });
-        let a_table = is_table(&name);
         next = match base {
             Some(base) if exists(files, &base) => Some(base),
             // A base there is none of: the layout starts as if it named none.

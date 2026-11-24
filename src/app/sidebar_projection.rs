@@ -90,6 +90,9 @@ pub(crate) struct SidebarProjectionState {
     /// Counts changes of `current_view`, so a standing picture can tell its
     /// sidebar is unchanged without keeping a copy (`redraw_gate`).
     view_revision: u64,
+    /// Last revision at which replacing the view could change its hit regions.
+    /// Refreshing progress and cameo art in place leaves the controls alone.
+    placement_revision: u64,
     /// The cameo candidates of one frame's inputs, for the owner and the
     /// right strip's superweapons they were derived with.
     kept_cameos: Option<KeptCameos>,
@@ -331,6 +334,10 @@ impl SidebarProjectionState {
         self.view_revision
     }
 
+    pub(crate) fn placement_revision(&self) -> u64 {
+        self.placement_revision
+    }
+
     /// The retained view while it is still the one at `revision`, so a reader
     /// that noted the revision can find that view again without a copy.
     pub(crate) fn view_at(&self, revision: u64) -> Option<&SidebarView> {
@@ -365,6 +372,7 @@ impl SidebarProjectionState {
         self.view_basis = None;
         if self.current_view != view {
             self.view_revision = self.view_revision.wrapping_add(1);
+            self.placement_revision = self.view_revision;
         }
         self.current_view = view;
     }

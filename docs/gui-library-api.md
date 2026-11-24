@@ -2,10 +2,10 @@
 
 状态：草案 v6。相对 v5 的变更见 §18。v6 补齐 v5 盲评留下的类型与属性表缺口，并为每条规则与设计空白各定一条决定。
 
-实现现状（2026-11-24，以 `gui/src/` 为准）：已实现的 `Gui` 是本草案的一个子集，签名与本文不同（例如 `create(kind, parent)`
-没有 `Owner`，事件坐标是整数）。对局界面的输入走 `Gui` 的 chrome 层（§8.10），这一节写的就是现有代码。
-绘制用的 `vera20k_gui::hud::Hud` 只有节点、布局、绘制列表与状态模板（见 [HUD 方案](gui-hud-design.zh-CN.md)），
-它的输入路由、锚点与行列布局、列表接口已删除；本文不再描述它们。
+当前实现见 [`vera20k-gui`](../gui/src/lib.rs)。游戏由 `Gui` 管理节点树和各层的布局。宿主用
+[`HudPaint`](../src/render/hud_paint.rs) 把绘制命令转换为渲染实例。单位状态条由
+[状态模板](../gui/src/status.rs) 和[游戏侧的数据适配器](../src/app/presentation/health_templates.rs)生成。
+对局控件的命中与指针路由见 §8.10。其余章节给出设计草案；实际的 Rust 接口以源码为准。
 
 本库从 vera20k 抽离出来，用保留式节点树描述界面，覆盖当前引擎的全部界面功能。它与两处已有设计保持一致：
 
@@ -701,7 +701,7 @@ pub enum UiEvent { /* … */ RightActivated { node: NodeId }, /* … */ }
 - 滚轮：交给 `(x, y)` 处的节点；`Passthrough` 节点交回宿主，其它节点消费。对话框中的滚轮仍交给悬停节点（§8.8）。
 - 键与文字不经 chrome 层。
 
-引擎侧的使用见 `src/app/input/chrome_input.rs`，测试见 `gui/src/chrome_tests.rs`。
+侧边栏与命令栏的按下顺序由宿主保留，以便在按钮图像重叠时选中正确的控件。见[对局输入路由](../src/app/input/chrome_input.rs)和[命中测试](../gui/src/chrome_tests.rs)。
 
 ## 9. 动画与时间
 

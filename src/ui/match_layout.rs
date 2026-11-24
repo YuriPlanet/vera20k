@@ -2485,6 +2485,50 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_deep_layout_chain_keeps_the_side_table_and_reports_the_cutoff() {
+        use std::fmt::Write;
+
+        let mut ini = String::from("[Layouts]\nGDI=Level0\n[Level0.Radar]\nY=70\n");
+        for level in 0..18 {
+            writeln!(ini, "[Level{level}]\nBase=Level{}", level + 1).unwrap();
+        }
+        let file = MatchLayoutFile::from_bytes(ini.as_bytes());
+        assert_eq!(
+            problems(&file),
+            expect(&[("[Level16] Base", LayoutProblemKind::Loop)])
+        );
+
+        for (gdi, diplomacy_x) in [(true, "11"), (false, "14")] {
+            let layout = file.for_side(Some("GDI"), gdi).unwrap();
+            let text = |part, key| layout.text(part, key, SidebarTheme::Allied);
+            assert_eq!(text(SidebarPart::Radar, "Y"), Some("70"));
+            assert_eq!(text(SidebarPart::Diplomacy, "X"), Some(diplomacy_x));
+            assert_eq!(text(SidebarPart::Diplomacy, "Art"), Some("diplobtn.shp"));
+        }
+    }
+
+    #[test]
+    fn a_mod_button_can_inherit_the_stock_diplomacy_button() {
+        let file = MatchLayoutFile::from_bytes(
+            b"[Layouts]\nGDI=Hud\n[Hud.Side]\nParts=Top,Halt\n\
+              [Hud.Halt]\nBase=Diplomacy\nCommand=StopObject\n",
+        );
+        assert!(file.problems().is_empty(), "{:?}", file.problems());
+        let [halt] = file.for_side(Some("GDI"), true).unwrap().added().as_ref() else {
+            panic!("the sidebar should contain one added button");
+        };
+        assert_eq!(halt.holder, Holder::Side);
+        assert_eq!(
+            halt.kind,
+            AddedKind::Button {
+                command: "StopObject".to_owned(),
+                label: "StopObject".to_owned(),
+                art: Some("diplobtn.shp".to_owned()),
+            }
+        );
+    }
+
     /// The sidebar's pictures come from the built-in file: each part's
     /// file, Yuri's own radar and palette, and the frames each part uses.
     #[test]

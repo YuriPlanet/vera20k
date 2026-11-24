@@ -59,6 +59,31 @@ X=33
 This moves the Allied radar 4 pixels down and the Repair button to where the Soviets
 have it. Everything else stays as it was.
 
+## Updating an older layout
+
+The game reads existing files without converting them. If your mod or hand-edited
+player file uses the older keys, update the sections under its existing layout name.
+The examples here use `Mine`.
+
+| In the older file | What to write now |
+| --- | --- |
+| `[Mine] Version=1` | Remove `Version`. To require a game version for your mod, use `Needs=` in `mod.ini`. |
+| `[Mine] Parts=Field,Side` | Move `Parts=Field,Side` to `[Mine.Screen]` to keep the command bar hidden. |
+| `[Mine.Radar] MapX`, `MapY`, `MapWidth`, `MapHeight` | Move those values to `X`, `Y`, `Width`, `Height` in `[Mine.Minimap]`. Keep the radar frame's own `X` and `Y` in `[Mine.Radar]`. |
+| `[Mine.Tabs] Step` | Keep the tab group's `X` and `Y`. Set `X` in `Mine.Buildings`, `Mine.Defenses`, `Mine.Infantry` and `Mine.Vehicles` to 0, one step, two steps and three steps. For `Step=-29` those values are `0`, `-29`, `-58` and `-87`. |
+| `[Mine.Cameos] ScrollX`, `ScrollY`, `ScrollStep` | In `[Mine.ScrollDown]` set `X` to `ScrollX`. In `[Mine.ScrollUp]` set `X` to `ScrollX + ScrollStep`. Set both buttons' `Y` to `ScrollY`. The old defaults were `ScrollX=39`, `ScrollY=7` and a step of 46 for Allied positions or 45 for Soviet and Yuri positions. |
+| `[Mine.Field] Parts` | Include `Tooltip` in an explicit list. For the former `Parts=None`, use `Parts=Tooltip`. |
+| An added button with `Label=Stop` | Use `Label=GUI:Stop` to show the translated word. A literal `Stop` with no matching string-table entry displays as `MISSING:'Stop'`. |
+
+If you wrote `Type` on the original parts, you can omit it and inherit their types.
+If a part you added has the same name as a new built-in part, such as `Minimap` or
+`Vehicles`, rename it in both its section and its parent's `Parts` list.
+
+Positions saved by the old **Edit Layout** command are already `X` and `Y` under
+the part's name, for example `[OwnGDI.Radar]`. They still apply when the layout and
+part keep their names. If a mod renames either, update that section in your player
+file or drag the part again and save.
+
 ## Which side gets which layout
 
 `[Layouts]` has one line for each side: the side's name, then the name you give its

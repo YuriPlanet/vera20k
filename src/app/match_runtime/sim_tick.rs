@@ -1699,6 +1699,7 @@ fn after_simulation_pass(
         && !crate::app::input::campaign_input::is_locked(state)
     {
         crate::app::presentation::sidebar_render::republish_sidebar_projection(state);
+        crate::app::input::chrome_input::refresh_pointer(state);
     }
     // The audio service is NOT gated on the simulation. gamemd's
     // `AudioSystem::Pump @ 0x00406F70` hangs off `Network_ServiceLoop @

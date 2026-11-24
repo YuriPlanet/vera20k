@@ -36,9 +36,8 @@
 //! order, the thumb last).
 //!
 //! The nodes take their rects from the sidebar view, the frame and the
-//! layout at a pointer message: at every button edge, as the gadget driver
-//! synced before each, and at a move only when the view's revision or what
-//! else places them changed. Nothing runs per frame.
+//! layout before each pointer edge. A change of places also updates hover
+//! and the held button's pushed look under a stationary cursor.
 //!
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
@@ -76,12 +75,10 @@ const ID_TIMER_DOCK: u16 = 0x0200;
 /// the layout's order, below the tooltip ids at 999.
 const ID_LAYOUT_BASE: u16 = 0x0300;
 const LAYOUT_BUTTONS_MAX: usize = 0xE0;
-/// VERA's ids for Phobos' SuperWeaponSidebar: its toggle and one per
-/// button, past the cameo ids.
+/// Phobos control labels for diagnostics. A superweapon's action is resolved
+/// from its GUI node, since a mod's added cameo slots can have the same id.
 const ID_SW_TOGGLE: u16 = 0x0600;
 const ID_SW_BASE: u16 = 0x0700;
-#[cfg(feature = "phobos")]
-const SW_BUTTONS_MAX: usize = 0x100;
 /// Hit-test best-area seed: the fixed 1024×768 constants, NOT live
 /// resolution (G14). A node larger than 786,432 px² never hovers.
 pub(crate) const HIT_SEED_AREA: i64 = 1024 * 768;
@@ -169,6 +166,11 @@ pub(crate) struct ChromePaintNodes {
 }
 
 impl ChromeNodes {
+    #[cfg(feature = "phobos")]
+    fn sw_index(&self, button: NodeId) -> Option<usize> {
+        self.sw_buttons.iter().position(|&node| node == button)
+    }
+
     fn paint(&self) -> ChromePaintNodes {
         ChromePaintNodes {
             tree: self.serial,
@@ -182,11 +184,10 @@ impl ChromeNodes {
 /// What places the nodes: a move re-reads the rects only when it changed.
 /// The layout's added buttons count by their rects, which follow their own
 /// live texts (credits, power), not by the parts' allocation.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 struct SyncKey {
-    /// Phobos' column: its buttons and whether it is expanded.
-    sw: (usize, bool),
-    view_revision: u64,
+    sw: SwPlaces,
+    placement_revision: u64,
     frame: sidebar::SidebarFrame,
     command_bar_closed: bool,
     minimap: bool,
@@ -199,6 +200,8 @@ struct SyncKey {
 pub(crate) struct InGameChrome {
     nodes: Option<ChromeNodes>,
     key: Option<SyncKey>,
+    /// Last point routed to the chrome, cleared when it loses the pointer.
+    hover_point: Option<(i32, i32)>,
     /// The node the last pointer button message reached: the one it fired,
     /// pressed or passed to the host, else the holder.
     pub(crate) last_route: Option<NodeId>,
@@ -416,16 +419,13 @@ struct Places {
     cameos: Vec<Rect>,
     command_bar: command_bar::CommandBarPlaces,
     timer: Option<Rect>,
-    layout: Vec<Option<Rect>>,
-    sw: SwPlaces,
 }
 
-/// Phobos' superweapon column: the toggle and each button, `None` where it
-/// takes no pointer.
-#[derive(Debug, Default)]
+/// The Phobos toggle and the buttons currently open on the battlefield.
+#[derive(Debug, Default, PartialEq)]
 struct SwPlaces {
     toggle: Option<Rect>,
-    buttons: Vec<Option<Rect>>,
+    buttons: Vec<Rect>,
 }
 
 /// The column's places. The toggle takes nothing without its On or Off PCX
@@ -439,18 +439,20 @@ fn sw_places(state: &AppState) -> SwPlaces {
         return SwPlaces::default();
     }
     let expanded = presentation.sidebar_projection.model.sw_sidebar_expanded();
-    let toggle = sw
-        .layout
-        .toggle
-        .filter(|_| crate::app::presentation::sw_sidebar::toggle_art(state).is_some())
-        .map(cursor_rect);
-    let buttons = sw
-        .entries
-        .iter()
-        .take(SW_BUTTONS_MAX)
-        .map(|entry| expanded.then(|| cursor_rect(entry.rect)))
-        .collect();
-    SwPlaces { toggle, buttons }
+    let has_toggle = crate::app::presentation::sw_sidebar::toggle_art(state).is_some();
+    sw_layout_places(&sw.layout, expanded, has_toggle)
+}
+
+#[cfg(feature = "phobos")]
+fn sw_layout_places(layout: &crate::ui::sw_sidebar::SwSidebarLayout, expanded: bool, has_toggle: bool) -> SwPlaces {
+    SwPlaces {
+        toggle: layout.toggle.filter(|_| has_toggle).map(cursor_rect),
+        buttons: if expanded {
+            layout.entries.iter().map(|entry| cursor_rect(entry.rect)).collect()
+        } else {
+            Vec::new()
+        },
+    }
 }
 
 #[cfg(not(feature = "phobos"))]
@@ -511,8 +513,6 @@ fn places(state: &AppState, view: &SidebarView) -> Places {
         cameos: view.items.iter().map(|item| rect_px(frame, item.rect)).collect(),
         command_bar: command_bar::places(state),
         timer: timer_rect(state),
-        layout: layout_rects(state),
-        sw: sw_places(state),
     }
 }
 
@@ -555,16 +555,9 @@ fn layout_rects(state: &AppState) -> Vec<Option<Rect>> {
 
 fn sync_key(state: &AppState) -> SyncKey {
     let presentation = &state.match_state.match_presentation;
-    #[cfg(feature = "phobos")]
-    let sw = (
-        presentation.sw_sidebar.entries.len(),
-        presentation.sidebar_projection.model.sw_sidebar_expanded(),
-    );
-    #[cfg(not(feature = "phobos"))]
-    let sw = (0, false);
     SyncKey {
-        sw,
-        view_revision: presentation.sidebar_projection.view_revision(),
+        sw: sw_places(state),
+        placement_revision: presentation.sidebar_projection.placement_revision(),
         frame: state.sidebar_frame(),
         command_bar_closed: presentation.sidebar_gadget_state.command_bar_closed,
         minimap: minimap_available(state),
@@ -591,22 +584,58 @@ fn sync(state: &mut AppState, force: bool) -> bool {
         .nodes(presentation.dialog_ui.gui())
         .is_some();
     let key = sync_key(state);
-    if built && !force && presentation.in_game_chrome.key.as_ref() == Some(&key) {
-        return true;
+    let changed = !built || presentation.in_game_chrome.key.as_ref() != Some(&key);
+    if changed || force {
+        let places = places(state, view);
+        let presentation = &mut state.match_state.match_presentation;
+        let gui = presentation.dialog_ui.gui_mut();
+        let Some(nodes) = ensure(&mut presentation.in_game_chrome, gui) else {
+            return false;
+        };
+        write_places(gui, nodes, &places, &key);
+        presentation.in_game_chrome.key = Some(key);
     }
-    let places = places(state, view);
+    let point = state.match_state.input.cursor_px();
     let presentation = &mut state.match_state.match_presentation;
-    let gui = presentation.dialog_ui.gui_mut();
-    let Some(nodes) = ensure(&mut presentation.in_game_chrome, gui) else {
-        return false;
-    };
-    write_places(gui, nodes, &places);
-    presentation.in_game_chrome.key = Some(key);
+    if let Some((hovered, held)) = presentation.in_game_chrome.refresh_hover(
+        &mut presentation.dialog_ui, point, changed || force,
+    ) {
+        if held.is_some() {
+            publish_pressed_visuals(state);
+        }
+        apply_cameo_hover_tooltip(state, hovered);
+    }
     true
 }
 
-fn write_places(gui: &mut Gui, nodes: &mut ChromeNodes, places: &Places) {
-    write_sw(gui, nodes, &places.sw);
+impl InGameChrome {
+    /// Native G7/G22 run before dispatch even with a parked pointer. Skip
+    /// the walk when neither its point nor its hit regions have changed.
+    fn refresh_hover(
+        &mut self,
+        ui: &mut crate::ui::shell::controller::DialogController,
+        point: (i32, i32),
+        places_changed: bool,
+    ) -> Option<(Option<NodeId>, Option<NodeId>)> {
+        if ui.top_id().is_some() {
+            self.hover_point = None;
+            return None;
+        }
+        if !places_changed && self.hover_point == Some(point) {
+            return None;
+        }
+        let layer = self.nodes(ui.gui())?.layer;
+        let hovered = ui.gui().hovered_in(layer);
+        let held = ui.gui().pressed_in(layer);
+        let (x, y) = point;
+        ui.chrome_input(InputEvent::PointerMove { x, y })?;
+        self.hover_point = Some(point);
+        Some((hovered, held))
+    }
+}
+
+fn write_places(gui: &mut Gui, nodes: &mut ChromeNodes, places: &Places, key: &SyncKey) {
+    write_sw(gui, nodes, &key.sw);
     for (node, tab) in nodes.tabs.iter().zip(places.tabs) {
         place(gui, *node, tab.map(|t| t.0), !tab.is_some_and(|t| t.1));
     }
@@ -623,7 +652,7 @@ fn write_places(gui: &mut Gui, nodes: &mut ChromeNodes, places: &Places) {
     write_cameos(gui, nodes, &places.cameos);
     command_bar::sync(gui, &nodes.command_bar, &places.command_bar);
     place(gui, nodes.timer_dock, places.timer, true);
-    write_layout_buttons(gui, nodes, &places.layout);
+    write_layout_buttons(gui, nodes, &key.layout);
 }
 
 /// Phobos' column: the toggle, and the button pool grown to the column's
@@ -641,7 +670,7 @@ fn write_sw(gui: &mut Gui, nodes: &mut ChromeNodes, places: &SwPlaces) {
         nodes.sw_buttons.push(node);
     }
     for (index, node) in nodes.sw_buttons.iter().enumerate() {
-        place(gui, *node, places.buttons.get(index).copied().flatten(), true);
+        place(gui, *node, places.buttons.get(index).copied(), true);
     }
 }
 
@@ -768,6 +797,7 @@ pub(crate) fn mouse_button(state: &mut AppState, button: MouseButton, pressed: b
     kept.last_fired = fired;
     let routed = classify(state, result);
     if let Some((node, right)) = fired
+        && !apply_sw(state, node, right)
         && let Some(id) = chrome(state).and_then(|(gui, _)| gui.id_of(node))
     {
         apply_result(state, id as u16, right);
@@ -783,20 +813,11 @@ pub(crate) fn refresh(state: &mut AppState) -> bool {
     sync(state, true)
 }
 
-/// A cursor move over the match: the chrome's hover and its held button's
-/// pushed look follow it (G7, G22 rows 2/3).
-pub(crate) fn pointer_moved(state: &mut AppState) {
-    if crate::app::input::campaign_input::is_locked(state) || !sync(state, false) {
-        return;
+/// Reconcile the hit regions and pointer when either may have changed.
+pub(crate) fn refresh_pointer(state: &mut AppState) {
+    if !crate::app::input::campaign_input::is_locked(state) {
+        sync(state, false);
     }
-    let (x, y) = state.match_state.input.cursor_px();
-    let Some((_, _, hovered, held)) = route(state, InputEvent::PointerMove { x, y }) else {
-        return;
-    };
-    if held.is_some() {
-        publish_pressed_visuals(state);
-    }
-    apply_cameo_hover_tooltip(state, hovered);
 }
 
 /// Cancel the chrome's pointer gesture after the display loses capture or a
@@ -804,6 +825,7 @@ pub(crate) fn pointer_moved(state: &mut AppState) {
 /// toggle/mode state stays with its sidebar owner.
 pub(crate) fn cancel(state: &mut AppState) {
     let presentation = &mut state.match_state.match_presentation;
+    presentation.in_game_chrome.hover_point = None;
     if let Some(layer) = presentation
         .in_game_chrome
         .nodes(presentation.dialog_ui.gui())
@@ -853,7 +875,7 @@ pub(crate) fn hovered_cameo(state: &AppState) -> Option<usize> {
 pub(crate) fn hovered_sw_button(state: &AppState) -> Option<usize> {
     let (gui, nodes) = chrome(state)?;
     let hovered = gui.hovered_in(nodes.layer)?;
-    nodes.sw_buttons.iter().position(|&node| node == hovered)
+    nodes.sw_index(hovered)
 }
 
 /// Whether the layout's added part `index` is a button held down now.
@@ -914,7 +936,7 @@ pub(crate) fn play_gui_main_button_sound(state: &mut AppState) {
 /// identically (study §2.2: `key & ~0x4000`). The retained sidebar view the
 /// press ran on is read before the action that may change it.
 fn apply_result(state: &mut AppState, id: u16, right: bool) {
-    if command_bar::apply(state, id, right) || apply_sw(state, id, right) {
+    if command_bar::apply(state, id, right) {
         return;
     }
     let (side2_tiles, cameos) = current_sidebar_view(state).map_or((0, 0), |view| {
@@ -1012,24 +1034,23 @@ fn apply_result(state: &mut AppState, id: u16, right: bool) {
     }
 }
 
-/// Phobos' column fired `id`: the toggle switches the column on its left
+/// Phobos' column fired `node`: the toggle switches the column on its left
 /// release, a button launches or selects its superweapon by the same
-/// `apply_sidebar_action` path as the vanilla cameo. False when `id` is none
+/// `apply_sidebar_action` path as the vanilla cameo. False when `node` is none
 /// of the column's.
 #[cfg(feature = "phobos")]
-fn apply_sw(state: &mut AppState, id: u16, right: bool) -> bool {
-    if id == ID_SW_TOGGLE {
+fn apply_sw(state: &mut AppState, node: NodeId, right: bool) -> bool {
+    let Some((_, nodes)) = chrome(state) else {
+        return false;
+    };
+    if node == nodes.sw_toggle {
         if !right {
             crate::app::presentation::sw_sidebar::toggle(state);
             play_gui_main_button_sound(state);
         }
         return true;
     }
-    let Some(index) = id
-        .checked_sub(ID_SW_BASE)
-        .map(usize::from)
-        .filter(|index| *index < SW_BUTTONS_MAX)
-    else {
+    let Some(index) = nodes.sw_index(node) else {
         return false;
     };
     let section = state
@@ -1049,7 +1070,7 @@ fn apply_sw(state: &mut AppState, id: u16, right: bool) -> bool {
 }
 
 #[cfg(not(feature = "phobos"))]
-fn apply_sw(_: &mut AppState, _: u16, _: bool) -> bool {
+fn apply_sw(_: &mut AppState, _: NodeId, _: bool) -> bool {
     false
 }
 
@@ -1243,6 +1264,31 @@ mod tests {
     }
 
     #[test]
+    fn a_parked_pointer_follows_new_cameos_without_transferring_its_held_press() {
+        let mut ui = crate::ui::shell::controller::DialogController::default();
+        let mut chrome = InGameChrome::default();
+        let nodes = ensure(&mut chrome, ui.gui_mut()).unwrap();
+        let (layer, repair) = (nodes.layer, nodes.repair);
+        let rect = r(10, 20, 60, 48);
+        place(ui.gui_mut(), repair, Some(rect), true);
+        let point = (15, 25);
+        chrome.refresh_hover(&mut ui, point, true);
+        ui.chrome_input(InputEvent::PointerDown { x: 15, y: 25, button: GuiButton::Left });
+        assert!(ui.gui().shows_pressed_in(layer, repair));
+
+        let nodes = ensure(&mut chrome, ui.gui_mut()).unwrap();
+        place(ui.gui_mut(), repair, Some(r(90, 20, 60, 48)), true);
+        write_cameos(ui.gui_mut(), nodes, &[rect]);
+        let cameo = nodes.cameos[0];
+        chrome.refresh_hover(&mut ui, point, true);
+        assert_eq!(ui.gui().hovered_in(layer), Some(cameo));
+        assert_eq!(ui.gui().pressed_in(layer), Some(repair));
+        assert!(!ui.gui().shows_pressed_in(layer, repair));
+        let (_, events) = ui.chrome_input(InputEvent::PointerUp { x: 15, y: 25, button: GuiButton::Left }).unwrap();
+        assert!(!events.iter().any(|event| matches!(event, UiEvent::Activated { .. })));
+    }
+
+    #[test]
     fn the_cameo_pool_keeps_its_tail_off_the_pointer() {
         let (mut gui, mut nodes) = test_layer();
         write_cameos(&mut gui, &mut nodes, &[r(0, 0, 60, 48), r(60, 0, 60, 48)]);
@@ -1262,7 +1308,7 @@ mod tests {
         place(&mut gui, nodes.tactical, Some(r(0, 0, 800, 600)), true);
         let column = |expanded: bool| SwPlaces {
             toggle: Some(r(0, 0, 10, 10)),
-            buttons: vec![expanded.then(|| r(10, 20, 60, 48))],
+            buttons: if expanded { vec![r(10, 20, 60, 48)] } else { Vec::new() },
         };
         write_sw(&mut gui, &mut nodes, &column(true));
         let sw = ID_SW_BASE;
@@ -1286,6 +1332,34 @@ mod tests {
         write_sw(&mut gui, &mut nodes, &column(false));
         let (press, _) = edge(&mut gui, 15, 25, GuiButton::Left, true);
         assert_eq!(press.passthrough, Some(nodes.tactical));
+    }
+
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn the_257th_drawn_superweapon_owns_its_press_over_the_battlefield() {
+        let settings = crate::rules::phobos_sw_sidebar::SuperWeaponSidebarUi {
+            enabled: true,
+            pyramid: false,
+            ..Default::default()
+        };
+        let weapons: Vec<_> = (0..257).map(|i| format!("Power{i}")).collect();
+        let layout = crate::ui::sw_sidebar::compute_layout(settings, &weapons, 1080, 0, 0, None, true);
+        let last = cursor_rect(layout.entries[256].rect);
+        let (mut gui, mut nodes) = test_layer();
+        place(&mut gui, nodes.tactical, Some(r(0, 0, 1920, 1080)), true);
+        write_sw(&mut gui, &mut nodes, &sw_layout_places(&layout, true, false));
+        let press = gui.input(InputEvent::PointerDown { x: last.x, y: last.y, button: GuiButton::Left }, 0);
+        assert!(press.consumed && press.passthrough.is_none());
+        let fired = gui.drain_events().into_iter().find_map(|event| match event {
+            UiEvent::Activated { node } => Some(node),
+            _ => None,
+        }).unwrap();
+        assert_eq!(nodes.sw_index(fired), Some(256));
+
+        // Layout-provided build grids can label a regular cameo with the same id.
+        let cameo = button(&mut gui, nodes.cameo_group, ID_SW_BASE + 256, BOTH).unwrap();
+        assert_eq!(gui.id_of(cameo), gui.id_of(fired));
+        assert_eq!(nodes.sw_index(cameo), None);
     }
 
     #[test]
