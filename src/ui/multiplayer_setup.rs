@@ -2370,6 +2370,13 @@ pub(crate) fn sync(
         page_nodes::sync_rects(gui, root, |id| {
             control_rect(view, layout, id)
                 .filter(|_| box_page.is_none_or(|page| on_game_options_page(view, page, id)))
+                .map(|rect| {
+                    if dialog == page && id == CHAT {
+                        crate::app::frontend::skirmish_shell_render::chat_text_rect(rect)
+                    } else {
+                        rect
+                    }
+                })
         });
         let nodes: Vec<(NodeId, u16)> = gui
             .tree()

@@ -766,6 +766,23 @@ pub(crate) fn render_multiplayer_setup(
         overlay.controls.extend(paint.controls);
         overlay.texts.extend(paint.texts);
     }
+    // VERA's send key on the room's chat box: the native room has none, and a
+    // phone has no Enter to press.
+    {
+        let rect = super::chat_send_rect(layout.chat);
+        let filled = !state
+            .frontend
+            .shell_controller
+            .text(view.page().dialog, crate::ui::multiplayer_setup::CHAT)
+            .trim()
+            .is_empty();
+        let tint = if filled {
+            [0.72, 0.06, 0.06]
+        } else {
+            [0.35, 0.15, 0.15]
+        };
+        super::chrome::push_solid_rect(&mut overlay.controls, atlas, rect, tint, SHELL_CONTROL_DEPTH);
+    }
     in_game_shell::render_shell_frame(
         state,
         encoder,

@@ -575,6 +575,15 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         return;
     };
     let (x, y) = state.match_state.input.cursor_px();
+    // VERA's send key: a phone has no Enter, so the button on the chat box
+    // sends the line.
+    #[cfg(target_os = "android")]
+    if pressed
+        && crate::app::frontend::skirmish_shell_render::chat_send_rect(layout.chat).contains(x, y)
+    {
+        key_press(state, Some(winit::keyboard::KeyCode::Enter), None);
+        return;
+    }
     if pressed {
         let over_preview = crate::app::frontend::preview_zoom::over_box(
             &state.frontend.shell_controller,

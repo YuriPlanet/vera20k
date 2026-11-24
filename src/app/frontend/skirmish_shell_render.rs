@@ -1963,6 +1963,19 @@ mod wol_lobby;
 mod wol_login;
 mod wol_page;
 mod wol_quick_match;
+/// The send key's rect at the right end of a chat box: a 22 px square flush
+/// with the box's right edge, matching the online room's key.
+pub(crate) fn chat_send_rect(chat: crate::ui::shell::geom::RectPx) -> crate::ui::shell::geom::RectPx {
+    let size = 22.min(chat.w).min(chat.h);
+    crate::ui::shell::geom::RectPx::new(chat.x + chat.w - size, chat.y + (chat.h - size) / 2, size, size)
+}
+
+/// The chat edit's rect once the send key takes the box's right end.
+pub(crate) fn chat_text_rect(chat: crate::ui::shell::geom::RectPx) -> crate::ui::shell::geom::RectPx {
+    let size = 22.min(chat.w).min(chat.h);
+    crate::ui::shell::geom::RectPx::new(chat.x, chat.y, (chat.w - size - 2).max(1), chat.h)
+}
+
 pub(crate) use lan_lobby::render_lan_lobby;
 pub(crate) use wol_buddy::paint_wol_buddy_children;
 pub(crate) use wol_lobby::{

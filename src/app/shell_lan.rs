@@ -1088,7 +1088,14 @@ pub(crate) fn sync_gui(state: &mut AppState) {
         controller.focus_control(PAGE.dialog, Some(CHAT));
     }
     let gui = controller.gui_mut();
-    page::sync_rects(gui, root, |id| layout.widget_rect(id));
+    page::sync_rects(gui, root, |id| {
+        if id == CHAT
+            && let Some(rect) = layout.chat_text()
+        {
+            return Some(rect);
+        }
+        layout.widget_rect(id)
+    });
     let lobby = &mut runtime.lobby;
     let _ = gui.set(root, Prop::Enabled, Value::Bool(lobby.enabled));
     // The observer image `0x75F` toggles like its box, anywhere on it.
@@ -1180,6 +1187,13 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     }
     sync_gui(state);
     let (x, y) = state.match_state.input.cursor_px();
+    // VERA's send key: a phone has no Enter to press, so the button on the
+    // chat box sends the line.
+    #[cfg(target_os = "android")]
+    if pressed && layout(state).chat_send().is_some_and(|rect| rect.contains(x, y)) {
+        key_press(state, Some(KeyCode::Enter), None);
+        return;
+    }
     let controller = &mut state.frontend.shell_controller;
     if !pressed {
         controller.on_pointer_up(x, y);

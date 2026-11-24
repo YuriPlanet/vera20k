@@ -751,6 +751,21 @@ impl LanLobbyLayout {
             _ => self.rect(id),
         }
     }
+
+    /// VERA's send key at the chat box's right end: the native template has
+    /// none, and a phone has no Enter to press.
+    pub(crate) fn chat_send(&self) -> Option<RectPx> {
+        Some(crate::app::frontend::skirmish_shell_render::chat_send_rect(
+            self.rect(CHAT)?,
+        ))
+    }
+
+    /// The chat edit's rect with the send key taking the box's right end.
+    pub(crate) fn chat_text(&self) -> Option<RectPx> {
+        Some(crate::app::frontend::skirmish_shell_render::chat_text_rect(
+            self.rect(CHAT)?,
+        ))
+    }
 }
 
 #[cfg(all(test, tests_ui))]

@@ -299,6 +299,22 @@ pub(crate) fn render_lan_lobby(
     if runtime.creating {
         paint_create_box(state, atlas, &mut overlay);
     }
+    // VERA's send key on the chat box: a native lobby has none, and a phone
+    // has no Enter to press. The face only here; its art is drawn below.
+    if let Some(rect) = layout.chat_send() {
+        let filled = !state
+            .frontend
+            .shell_controller
+            .text(PAGE.dialog, crate::ui::lan_shell::CHAT)
+            .trim()
+            .is_empty();
+        let tint = if filled {
+            [0.72, 0.06, 0.06]
+        } else {
+            [0.35, 0.15, 0.15]
+        };
+        super::chrome::push_solid_rect(&mut overlay.controls, atlas, rect, tint, SHELL_CONTROL_DEPTH);
+    }
     in_game_shell::render_shell_frame(
         state,
         encoder,
