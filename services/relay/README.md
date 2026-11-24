@@ -486,7 +486,9 @@ the command allowance backpressures new batches while the clock and already
 accepted entries remain writable. A finished room keeps only the bytes it wrote
 through its replay grace. A room whose files could not all be created, or whose
 exact files could not all be removed, keeps its reservation while the relay
-retries the removal once a second.
+retries the removal once a second. Ending a room tries only that room's
+removal; the earlier failures wait for that timed retry, so a relay that ends
+many rooms does not repeat them on every end.
 
 Unexpected journal I/O failure, or a federated entry that no longer fits the
 journal, reports `StorageUnavailable` and preserves the files, rather than

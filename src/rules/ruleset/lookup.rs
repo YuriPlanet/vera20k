@@ -851,6 +851,14 @@ impl RuleSet {
         self.phobos
     }
 
+    /// Whether Kratos plays in this game: its Rules, art, mode or map hold a
+    /// key of a Kratos piece that runs in every build
+    /// (`rules::kratos_switch`). Sim and presentation read this one answer.
+    #[inline]
+    pub fn kratos(&self) -> bool {
+        self.kratos
+    }
+
     /// VERA: whether this game plays RA2 Mode (docs/ra2-mode.md): original
     /// Red Alert 2's rules where they differ from Yuri's Revenge. Sim and
     /// rules read this one answer; app, asset and INI-root code read the

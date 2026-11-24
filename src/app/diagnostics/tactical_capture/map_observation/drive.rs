@@ -256,16 +256,13 @@ impl TacticalCaptureSession {
                 .as_ref()
                 .context("loaded source absent")?;
             ensure!(
-                matches!(
-                    source,
-                    crate::map::source::LoadedMapSource::Loose { .. }
-                        | crate::map::source::LoadedMapSource::Mix { .. }
-                ) || matches!(
-                    source,
-                    crate::map::source::LoadedMapSource::Generated {
-                        seed_source: Some(seed_source), ..
-                    } if seed_source.payload_len > 0
-                ),
+                source.is_authored()
+                    || matches!(
+                        source,
+                        crate::map::source::LoadedMapSource::Generated {
+                            seed_source: Some(seed_source), ..
+                        } if seed_source.payload_len > 0
+                    ),
                 "map observation requires consumed map or nonempty seed-file bytes"
             );
             self.map_source_evidence = Some(serde_json::to_value(source)?);

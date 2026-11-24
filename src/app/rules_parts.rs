@@ -72,6 +72,9 @@ pub(crate) struct RulesSettings {
     pub(crate) ares: &'static str,
     /// `ares.mix` is mounted.
     pub(crate) ares_mix: bool,
+    /// Effective Kratos behavior of the startup rules. Stock games keep their original parts.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) kratos: bool,
     /// The INI roots listed under `resources` and the theater suffix are all
     /// YR's (`ProcessAssets::stock_ini_roots`).
     pub(crate) ini_roots_stock: bool,
@@ -210,6 +213,7 @@ impl RulesParts {
                 building_production_queue: false,
                 ares: "auto",
                 ares_mix: false,
+                kratos: false,
                 ini_roots_stock: true,
                 ra2: false,
                 resources: None,

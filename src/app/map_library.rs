@@ -322,23 +322,25 @@ fn carry_favorite(
 
 /// The catalog header of an online row (`record_index` into the scenario
 /// catalog).
-fn online_header(state: &AppState, record_index: usize) -> Option<&[u8]> {
+fn catalog_header(state: &AppState, record_index: usize) -> Option<&[u8]> {
     let record = state
         .frontend
         .scenario_catalog
         .records()
         .get(record_index)?;
-    let map = state.frontend.map_library.online_map(record)?;
-    Some(&map.header)
+    match record.source {
+        SkirmishScenarioSource::Bundled => crate::map::source::bundled_map_bytes(&record.file_name),
+        _ => Some(&state.frontend.map_library.online_map(record)?.header),
+    }
 }
 
-/// The preview of an online row, decoded from its catalog header.
-pub(crate) fn online_preview(
+/// A bundled or downloadable map supplies its own preview bytes to the chooser.
+pub(crate) fn catalog_preview(
     state: &AppState,
     record_index: usize,
 ) -> Option<crate::map::preview::DecodedPreview> {
     let ini =
-        crate::rules::ini_parser::IniFile::from_bytes(online_header(state, record_index)?).ok()?;
+        crate::rules::ini_parser::IniFile::from_bytes(catalog_header(state, record_index)?).ok()?;
     crate::map::preview::decode_preview_image_from_ini(&ini)
         .ok()
         .flatten()
@@ -356,8 +358,16 @@ pub(crate) fn briefing(state: &AppState, record_index: usize) -> Option<String> 
         .get(record_index)?;
     match record.source {
         SkirmishScenarioSource::Online(_) => {
-            crate::map::basic::briefing_text(online_header(state, record_index)?)
+            crate::map::basic::briefing_text(catalog_header(state, record_index)?)
         }
+        SkirmishScenarioSource::Bundled => crate::map::basic::briefing_text_with_csf(
+            catalog_header(state, record_index)?,
+            state.process_assets.csf.as_ref(),
+        ),
+        SkirmishScenarioSource::ArchiveMap => crate::map::basic::briefing_text_with_csf(
+            state.process_assets.manager()?.get_ref(&record.file_name)?,
+            state.process_assets.csf.as_ref(),
+        ),
         SkirmishScenarioSource::LooseMap(_) => {
             let path =
                 crate::map::source::local_map_path(state.ra2_dir()?, &record.file_name).ok()?;

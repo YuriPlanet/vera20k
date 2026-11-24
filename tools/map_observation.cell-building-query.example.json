@@ -265,11 +265,12 @@
       }
     },
     {
-      "issue_after_step": 7380,
+      "issue_after_step": 7379,
       "owner": "VERA-OBSERVER",
       "payload": {
-        "DeployMcv": {
-          "entity_id": 1737
+        "Select": {
+          "entity_ids": [{"owner": "VERA-OBSERVER", "type_id": "AMCV"}],
+          "additive": false
         }
       }
     },
@@ -278,21 +279,29 @@
       "owner": "VERA-OBSERVER",
       "payload": {
         "Move": {
-          "entity_id": 1737,
+          "entity_id": {
+            "owner": "VERA-OBSERVER",
+            "type_id": "AMCV"
+          },
           "target_rx": 41,
           "target_ry": 97
         }
       }
     },
     {
-      "issue_after_step": 8400,
+      "issue_after_step": 8399,
       "owner": "VERA-OBSERVER",
       "payload": {
-        "DeployMcv": {
-          "entity_id": 1737
+        "Select": {
+          "entity_ids": [{"owner": "VERA-OBSERVER", "type_id": "AMCV"}],
+          "additive": false
         }
       }
     }
+  ],
+  "gestures": [
+    {"issue_after_step": 7380, "gesture": {"kind": "key", "key": "D"}},
+    {"issue_after_step": 8400, "gesture": {"kind": "key", "key": "D"}}
   ],
   "observe_owners": [
     "VERA-OBSERVER"
@@ -301,25 +310,10 @@
     35,
     94
   ],
-  "terrain_cells": [
-    [
-      27,
-      92
-    ],
-    [
-      27,
-      93
-    ],
-    [
-      28,
-      93
-    ]
-  ],
   "observe_types": [
     "AMCV",
     "GACNST",
-    "GAWEAP",
-    "GADEPT"
+    "GAWEAP"
   ],
   "cursor_position": [
     700,
