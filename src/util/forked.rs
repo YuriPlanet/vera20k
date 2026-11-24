@@ -5,17 +5,16 @@
 //! takes one `Arc` handle per field, a turn copies only the fields it writes,
 //! and the fork can say which those were and drop them again.
 //!
-//! - In ordinary play a field is `Owned`: its value sits inline, reads go
-//!   through `Deref` and writes through `DerefMut`, which also notes the
-//!   write, so owners keep their code.
+//! - In ordinary play a field is `Inline`: its value sits in the field, reads
+//!   go through `Deref` and writes through `DerefMut`, which also notes the
+//!   write, so owners keep their code. A read tests one byte first.
 //! - [`Forked::share`] moves the value behind an `Arc` before the world is
 //!   forked. [`Forked::fork`] of a shared field is another handle on the same
 //!   value, without a copy.
-//! - The first write through a handle makes it `Written`: the handle takes
-//!   its own copy of the value and keeps the base it copied.
-//!   [`Forked::restore_from`] drops the copy and reads the kept base again.
-//!   Neither step touches the `Arc`'s count, which every worker thread
-//!   would otherwise contend on.
+//! - The first write through a handle gives it its own copy of the value,
+//!   inline again, and keeps the base it copied. [`Forked::restore_from`]
+//!   drops the copy and reads the kept base again. Neither step touches the
+//!   `Arc`'s count, which every worker thread would otherwise contend on.
 //! - [`Forked::unshare`] takes the value back inline once the forks are gone.
 //!
 //! It never changes a value: `Debug`, serialization and the saved layout are
@@ -28,21 +27,31 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 /// A world field as a copy-on-write value that knows whether it was written.
+///
+/// `repr(u8)` keeps the form in the first byte, with `Inline` as zero: a read
+/// of an inline field is one byte's test before the value, wherever it is
+/// inlined. Without it the form may hide in a niche of `T` that takes more
+/// instructions to tell apart.
+#[repr(u8)]
 pub enum Forked<T> {
-    /// The value, inline, and whether `DerefMut` handed it out since the flag
-    /// was last cleared.
-    Owned { value: T, written: bool },
+    /// The value, in the field, and whether `DerefMut` handed it out since
+    /// the flag was last cleared. A world's own field has no `base`. A
+    /// handle that wrote a shared value holds its own copy here and keeps
+    /// the `base` it copied, so that [`Forked::restore_from`] need not take
+    /// it again.
+    Inline {
+        written: bool,
+        base: Option<Arc<T>>,
+        value: T,
+    } = 0,
     /// A value its forks read together, unwritten.
-    Shared(Arc<T>),
-    /// A shared value this handle has written: its own copy, and the base it
-    /// copied, kept so that [`Forked::restore_from`] need not take it again.
-    Written { base: Arc<T>, own: T },
-    /// Inside a change from one of the forms above to another only, while the
-    /// value or its `Arc` moves. No caller ever meets it.
-    Moving,
+    Shared(Arc<T>) = 1,
+    /// Inside a change from one of the forms above to the other only, while
+    /// the value or its `Arc` moves. No caller ever meets it.
+    Moving = 2,
 }
 
-/// A value was reached while it moved from one form to another.
+/// A value was reached while it moved from one form to the other.
 #[cold]
 #[inline(never)]
 fn moving() -> ! {
@@ -50,12 +59,13 @@ fn moving() -> ! {
 }
 
 impl<T> Forked<T> {
-    /// An owned, unwritten field holding `value`.
+    /// An inline, unwritten field holding `value`.
     #[inline]
     pub const fn new(value: T) -> Self {
-        Self::Owned {
-            value,
+        Self::Inline {
             written: false,
+            base: None,
+            value,
         }
     }
 
@@ -63,71 +73,72 @@ impl<T> Forked<T> {
     /// forked. A shared value stays as it is.
     pub fn share(&mut self) {
         *self = match std::mem::replace(self, Self::Moving) {
-            Self::Owned { value, .. } => Self::Shared(Arc::new(value)),
-            Self::Written { own, .. } => Self::Shared(Arc::new(own)),
+            Self::Inline { value, .. } => Self::Shared(Arc::new(value)),
             shared => shared,
         };
     }
 
-    /// Take the value back inline once every fork of it is gone. A shared
-    /// value comes back unwritten; one this handle wrote comes back written,
-    /// leaving its base to the forks. An owned value stays as it is.
+    /// Take a shared value back inline, unwritten, once every fork of it is
+    /// gone. An inline value stays as it is and lets go of any base it kept.
     ///
     /// # Panics
     /// When a fork still holds the shared value: the world was unshared too
     /// early.
     pub fn unshare(&mut self) {
-        if matches!(self, Self::Owned { .. }) {
-            return;
-        }
-        *self = match std::mem::replace(self, Self::Moving) {
-            Self::Shared(shared) => match Arc::try_unwrap(shared) {
-                Ok(value) => Self::new(value),
-                Err(shared) => {
-                    *self = Self::Shared(shared);
-                    panic!("a fork still holds a shared {}", std::any::type_name::<T>());
+        match self {
+            Self::Inline { base, .. } => *base = None,
+            Self::Moving => {}
+            Self::Shared(_) => {
+                if let Self::Shared(shared) = std::mem::replace(self, Self::Moving) {
+                    match Arc::try_unwrap(shared) {
+                        Ok(value) => *self = Self::new(value),
+                        Err(shared) => {
+                            *self = Self::Shared(shared);
+                            panic!("a fork still holds a shared {}", std::any::type_name::<T>());
+                        }
+                    }
                 }
-            },
-            Self::Written { own, .. } => Self::Owned {
-                value: own,
-                written: true,
-            },
-            other => other,
-        };
+            }
+        }
     }
 
     /// Whether `DerefMut` handed the value out since the flag was last
     /// cleared, or since the value was shared. A shared value is not written.
     #[inline]
     pub fn written(&self) -> bool {
-        matches!(
-            self,
-            Self::Owned { written: true, .. } | Self::Written { .. }
-        )
+        matches!(self, Self::Inline { written: true, .. })
     }
 
-    /// Forget that the value was written. A shared value this handle wrote
-    /// becomes owned: it keeps the value and lets go of its base.
+    /// Forget that the value was written.
+    #[inline]
     pub fn clear_written(&mut self) {
+        if let Self::Inline { written, .. } = self {
+            *written = false;
+        }
+    }
+
+    /// A read that found the field shared: the value its forks read
+    /// together. Out of line, so that an inline field's read stays one test
+    /// wherever it is inlined; a world's fields are all inline unless it is
+    /// forked.
+    #[cold]
+    #[inline(never)]
+    fn shared_ref(&self) -> &T {
         match self {
-            Self::Owned { written, .. } => *written = false,
-            Self::Shared(_) | Self::Moving => {}
-            Self::Written { .. } => {
-                if let Self::Written { own, .. } = std::mem::replace(self, Self::Moving) {
-                    *self = Self::new(own);
-                }
-            }
+            Self::Inline { value, .. } => value,
+            Self::Shared(shared) => shared,
+            Self::Moving => moving(),
         }
     }
 }
 
 impl<T: Clone> Forked<T> {
     /// A fork's handle on this field: a shared value gives another handle on
-    /// the same value, without a copy; any other gives a full copy.
+    /// the same value, without a copy; an inline one gives a full copy.
     pub fn fork(&self) -> Self {
         match self {
             Self::Shared(shared) => Self::Shared(Arc::clone(shared)),
-            Self::Owned { .. } | Self::Written { .. } | Self::Moving => self.clone(),
+            Self::Inline { .. } | Self::Moving => self.clone(),
         }
     }
 
@@ -136,15 +147,21 @@ impl<T: Clone> Forked<T> {
     /// `Arc`'s count alone.
     pub fn restore_from(&mut self, base: &Self) {
         let same_base = match (&*self, base) {
-            (Self::Shared(kept) | Self::Written { base: kept, .. }, Self::Shared(shared)) => {
-                Arc::ptr_eq(kept, shared)
-            }
+            (
+                Self::Shared(kept)
+                | Self::Inline {
+                    base: Some(kept), ..
+                },
+                Self::Shared(shared),
+            ) => Arc::ptr_eq(kept, shared),
             _ => false,
         };
         if !same_base {
             *self = base.fork();
-        } else if let Self::Written { .. } = self
-            && let Self::Written { base: kept, .. } = std::mem::replace(self, Self::Moving)
+        } else if let Self::Inline { .. } = self
+            && let Self::Inline {
+                base: Some(kept), ..
+            } = std::mem::replace(self, Self::Moving)
         {
             *self = Self::Shared(kept);
         }
@@ -154,28 +171,34 @@ impl<T: Clone> Forked<T> {
     /// shared value is copied unless this is its last handle.
     pub fn into_inner(self) -> T {
         match self {
-            Self::Owned { value, .. } => value,
+            Self::Inline { value, .. } => value,
             Self::Shared(shared) => Arc::unwrap_or_clone(shared),
-            Self::Written { own, .. } => own,
             Self::Moving => moving(),
         }
     }
 
-    /// The first write through a shared handle: the handle takes its own
-    /// copy of the value and keeps the base.
+    /// A write that found the field shared: the handle takes its own copy of
+    /// the value, written, and keeps the base. Out of line for the reason
+    /// [`Self::shared_ref`] is.
     #[cold]
     #[inline(never)]
-    fn own_for_write(&mut self) -> &mut T {
-        let Self::Shared(shared) = &*self else {
-            moving()
-        };
-        let own = T::clone(shared);
-        if let Self::Shared(base) = std::mem::replace(self, Self::Moving) {
-            *self = Self::Written { base, own };
+    fn write_shared(&mut self) -> &mut T {
+        if let Self::Shared(shared) = &*self {
+            let value = T::clone(shared);
+            if let Self::Shared(base) = std::mem::replace(self, Self::Moving) {
+                *self = Self::Inline {
+                    written: true,
+                    base: Some(base),
+                    value,
+                };
+            }
         }
         match self {
-            Self::Written { own, .. } => own,
-            Self::Owned { .. } | Self::Shared(_) | Self::Moving => moving(),
+            Self::Inline { written, value, .. } => {
+                *written = true;
+                value
+            }
+            Self::Shared(_) | Self::Moving => moving(),
         }
     }
 }
@@ -183,27 +206,24 @@ impl<T: Clone> Forked<T> {
 impl<T> Deref for Forked<T> {
     type Target = T;
 
-    #[inline]
+    #[inline(always)]
     fn deref(&self) -> &T {
         match self {
-            Self::Owned { value, .. } => value,
-            Self::Shared(shared) => shared,
-            Self::Written { own, .. } => own,
-            Self::Moving => moving(),
+            Self::Inline { value, .. } => value,
+            Self::Shared(_) | Self::Moving => self.shared_ref(),
         }
     }
 }
 
 impl<T: Clone> DerefMut for Forked<T> {
-    #[inline]
+    #[inline(always)]
     fn deref_mut(&mut self) -> &mut T {
         match self {
-            Self::Owned { value, written } => {
+            Self::Inline { written, value, .. } => {
                 *written = true;
                 value
             }
-            Self::Written { own, .. } => own,
-            Self::Shared(_) | Self::Moving => self.own_for_write(),
+            Self::Shared(_) | Self::Moving => self.write_shared(),
         }
     }
 }
@@ -222,7 +242,7 @@ impl<T: Default> Default for Forked<T> {
     }
 }
 
-/// A clone is a full, independent value, owned and unwritten.
+/// A clone is a full, independent value, inline and unwritten.
 impl<T: Clone> Clone for Forked<T> {
     #[inline]
     fn clone(&self) -> Self {
@@ -294,7 +314,7 @@ mod tests {
     }
 
     #[test]
-    fn a_shared_value_forks_without_a_copy_and_comes_back_owned() {
+    fn a_shared_value_forks_without_a_copy_and_comes_back_inline() {
         let mut base = Forked::new(String::from("a"));
         base.push('b');
         base.share();
@@ -303,9 +323,16 @@ mod tests {
         assert_eq!(*fork, "ab");
         drop(fork);
         base.unshare();
-        assert!(matches!(base, Forked::Owned { written: false, .. }));
+        assert!(matches!(
+            base,
+            Forked::Inline {
+                written: false,
+                base: None,
+                ..
+            }
+        ));
         assert_eq!(*base, "ab");
-        // An owned value forks as a full copy, and so restores as one.
+        // An inline value forks as a full copy, and so restores as one.
         let mut copy = base.fork();
         copy.push('c');
         assert_eq!(*base, "ab");
@@ -325,7 +352,7 @@ mod tests {
     }
 
     #[test]
-    fn it_saves_as_its_value_and_loads_owned_and_unwritten() {
+    fn it_saves_as_its_value_and_loads_inline_and_unwritten() {
         let mut value = Forked::new((3_u16, String::from("x")));
         value.0 = 4;
         let bytes = save_codec::serialize(&value).unwrap();
@@ -333,7 +360,14 @@ mod tests {
         value.share();
         assert_eq!(save_codec::serialize(&value).unwrap(), bytes);
         let loaded: Forked<(u16, String)> = save_codec::deserialize(&bytes).unwrap();
-        assert!(matches!(loaded, Forked::Owned { written: false, .. }));
+        assert!(matches!(
+            loaded,
+            Forked::Inline {
+                written: false,
+                base: None,
+                ..
+            }
+        ));
         assert_eq!(*loaded, (4, String::from("x")));
         assert_eq!(
             save_codec::layout::describe::<Forked<(u16, String)>>().unwrap(),
