@@ -64,6 +64,28 @@ VERA resolves the offset for each shooter when calculating its projectile, muzzl
 animation and positioned report sound. Infantry sharing a type can stand and crawl
 independently. [Upstream stance and rank selection](https://github.com/ra2diy/KratosPP/blob/v0.2.4/src/Ext/TechnoType/CrawlingFLH.cpp#L17-L90)
 
+## Warhead payout
+
+`ShowMeTheMoney` on a `[WarheadType]` credits the attacking house every time that warhead's
+area damage runs, before any victim is chosen:
+
+```ini
+[MONEY]
+CellSpread=2
+ShowMeTheMoney=250
+```
+
+A negative value charges the house instead. The payout happens once per area damage, so a
+CellSpread explosion does not pay per victim, and it needs an attacking house: an area damage
+with no source (a bomb's fuse, an anim's landing) pays nothing.
+
+Kratos runs it from its `MapClass::DamageArea` hook (`0x489280`, the payout at `0x489286`,
+[source](https://github.com/ra2diy/KratosPP/blob/v0.2.4/src/Hooks/MapExtHook.cpp)): `VERA`
+reads the key into `WarheadType::show_me_the_money` and pays in
+`world_receiver::apply_area_damage_in_run_with_target`, the one owner every direct and
+transaction area damage passes through. The floating `+$` text is not ported: VERA has no
+damage-text owner, so `ShowMeTheMoneyDisplay` is not read and does not turn the switch on.
+
 ## Original project and authors
 
 VERA20K implements the behavior in Rust. It does not load `Kratos.dll` and does not redistribute
@@ -83,13 +105,16 @@ The features ported here originate with:
 
 - Infantry firing offsets (`CrawlingFLH`) -
   **双杀步枪 (ChrisLv_CN)**, `src/Ext/TechnoType/CrawlingFLH.cpp` and `CrawlingFLHData.h`.
+- Warhead payout (`ShowMeTheMoney`) -
+  **双杀步枪 (ChrisLv_CN)**, `src/Hooks/MapExtHook.cpp`.
 
 ## VERA20K porting credits
 
 The Rust ports are individual VERA20K contributions; GitHub usernames name the merged pull
 requests that carried each chain:
 
-- **1372704087** — the Kratos switch and the prone firing offset (`CrawlingFLH`).
+- **1372704087** — the Kratos switch, the prone firing offset (`CrawlingFLH`) and the warhead
+  payout (`ShowMeTheMoney`).
 
 简体中文：[Kratos 扩展支持](zh-CN/kratos.md) · [扩展支持与原作者](zh-CN/credits.md).
 
