@@ -9,6 +9,12 @@ The two bases face each other across a frozen shortcut. Grizzlies crack fresh ic
 Rhinos and Apocalypse tanks break through, and either shore gives a dry route
 around the lake.
 
+**Arctic Circle 16 - Ice Passages** is also available in Skirmish. Its 30 start
+positions and road bridges come from *Arctic Circle 16*, uploaded to the VERA
+map library by LingGuGu. The ice variant adds a north and south passage to
+each of the three central gem islands and crossings on the northwest and
+southeast flanks. Both maps work offline with the original YR game data.
+
 ## Use the bundled ice in a map
 
 Start from a Yuri's Revenge snow map. Set these keys in the map itself:
