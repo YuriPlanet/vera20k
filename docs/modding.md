@@ -163,7 +163,8 @@ mod folder to identify it as the mod's text.
 
 To translate your mod's names, add a UTF-8 file such as
 `Resources/vera20k.en.ini` inside your mod (up to 1 MiB per language). Use
-the menu keys in the [English language file](../src/i18n/vera20k.en.ini).
+the menu keys in the [English language file](../src/i18n/vera20k.en.ini)
+or the original label of a caption your mod adds or changes in its CSF.
 A mod that calls Skirmish “前線演習” in its CSF can give it an English name.
 
 ```ini

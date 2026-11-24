@@ -19,13 +19,13 @@ use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
 use crate::app::shell_route::ShellRoute;
-use crate::i18n::{tr, tr_fill};
+use crate::i18n::tr;
 use crate::ui::mods_shell::{self, ModsLayout};
 use crate::ui::movies_credits_shell::{
     family_list_node, family_list_selected, find_family_list, set_family_list,
 };
 use crate::ui::shell::controller::DialogController;
-use crate::ui::shell::modal::ShellBox;
+use crate::ui::shell::modal::{Footer, ShellBox, ShellText};
 use crate::util::config::GameConfig;
 use winit::window::Window;
 
@@ -254,15 +254,26 @@ impl App {
         frontend: &mut FrontendState,
         process_assets: &ProcessAssets,
         options_profile: &RetailOptionsProfile,
-        text: String,
-        confirm: String,
-        cancel: String,
+        text: ShellText,
+        confirm: &'static str,
+        cancel: Option<&'static str>,
         purpose: ShellMessageBoxPurpose,
     ) {
         if frontend.shell_message_box.is_some() {
             Self::close_shell_message_box_from_controller(frontend);
         }
-        let shell_box = ShellBox::message(text, confirm, cancel, String::new());
+        let mut shell_box =
+            ShellBox::localized_message(process_assets.csf.as_ref(), text, confirm, cancel);
+        if matches!(
+            purpose,
+            ShellMessageBoxPurpose::ModFiles(ModFilesBox::Offer | ModFilesBox::Found)
+                | ShellMessageBoxPurpose::ModMade(_)
+        ) {
+            shell_box = shell_box.footer(Footer {
+                list: false,
+                raised: &[],
+            });
+        }
         Self::open_shell_message_box(
             window,
             renderer,
@@ -281,9 +292,8 @@ impl App {
         frontend: &mut FrontendState,
         process_assets: &ProcessAssets,
         options_profile: &RetailOptionsProfile,
-        text: String,
+        text: ShellText,
     ) {
-        let ok = process_assets.csf_label("TXT_OK", "OK");
         let purpose = ShellMessageBoxPurpose::ModFiles(ModFilesBox::Found);
         Self::open_mods_box(
             window,
@@ -292,8 +302,8 @@ impl App {
             process_assets,
             options_profile,
             text,
-            ok,
-            String::new(),
+            "TXT_OK",
+            None,
             purpose,
         );
     }
@@ -307,14 +317,17 @@ impl App {
         options_profile: &RetailOptionsProfile,
         folder: &std::path::Path,
     ) {
-        let text = tr_fill("VERA:ModsFolderIsHere", &[("folder", &folder.display())]);
-        Self::open_shell_notice(
+        let text = ShellText::with("VERA:ModsFolderIsHere", &[("folder", &folder.display())]);
+        Self::open_mods_box(
             window,
             renderer,
             frontend,
             process_assets,
             options_profile,
             text,
+            "TXT_OK",
+            None,
+            ShellMessageBoxPurpose::Notice,
         );
     }
 
@@ -343,7 +356,7 @@ impl App {
         match started {
             Ok(check) => {
                 frontend.mods.files_check = Some(check);
-                let text = tr_fill("VERA:ModChecking", &[("mod", &title)]);
+                let text = ShellText::with("VERA:ModChecking", &[("mod", &title)]);
                 let purpose = ShellMessageBoxPurpose::ModFiles(ModFilesBox::Reading);
                 Self::open_mods_box(
                     &platform.window,
@@ -352,8 +365,8 @@ impl App {
                     process_assets,
                     options_profile,
                     text,
-                    tr("VERA:Cancel"),
-                    String::new(),
+                    "VERA:Cancel",
+                    None,
                     purpose,
                 );
             }
@@ -365,7 +378,7 @@ impl App {
                     frontend,
                     process_assets,
                     options_profile,
-                    tr_fill("VERA:ModFilesNotRead", &[("mod", &title)]),
+                    ShellText::with("VERA:ModFilesNotRead", &[("mod", &title)]),
                 );
             }
         }
@@ -411,12 +424,14 @@ impl App {
                 frontend,
                 process_assets,
                 options_profile,
-                tr_fill("VERA:ModFilesNotRead", &[("mod", &title)]),
+                ShellText::with("VERA:ModFilesNotRead", &[("mod", &title)]),
             );
             return None;
         };
         let (count, code) = (found.len(), found.code());
-        let found_text = |key| tr_fill(key, &[("mod", &title), ("count", &count), ("code", &code)]);
+        let found_text = |key: &str| {
+            ShellText::with(key, &[("mod", &title), ("count", &count), ("code", &code)])
+        };
         let (text, offer) = match &against {
             Against::Same => (found_text("VERA:ModFilesSame"), None),
             Against::NoList => (found_text("VERA:ModFilesNoList"), Some("VERA:ModFilesMake")),
@@ -425,7 +440,7 @@ impl App {
                 Some("VERA:ModFilesMake"),
             ),
             Against::Differs(differences) => (
-                tr_fill(
+                ShellText::with(
                     "VERA:ModFilesDiffer",
                     &[
                         ("mod", &title),
@@ -461,8 +476,8 @@ impl App {
                     process_assets,
                     options_profile,
                     text,
-                    tr(write_key),
-                    tr("VERA:Close"),
+                    write_key,
+                    Some("VERA:Close"),
                     purpose,
                 );
             }
@@ -493,7 +508,7 @@ impl App {
                 let text = match found.write(&check.dir) {
                     Ok(list) => {
                         log::info!("Mods: wrote {}", list.display());
-                        tr_fill(
+                        ShellText::with(
                             "VERA:ModFilesMade",
                             &[
                                 ("mod", &check.title),
@@ -505,7 +520,7 @@ impl App {
                     Err(error) => {
                         let list = check.dir.join(crate::app::mod_files::LIST_NAME);
                         log::warn!("Mods: could not write {}: {error}", list.display());
-                        tr_fill("VERA:ModFilesNotMade", &[("file", &list.display())])
+                        ShellText::with("VERA:ModFilesNotMade", &[("file", &list.display())])
                     }
                 };
                 Self::open_mod_files_found(
@@ -547,13 +562,16 @@ impl App {
             Ok(made) => made,
             Err(error) => {
                 log::warn!("Mods: no new mod made in {}: {error}", mods_dir.display());
-                Self::open_shell_notice(
+                Self::open_mods_box(
                     &state.platform.window,
                     &state.renderer,
                     &mut state.frontend,
                     &state.process_assets,
                     &state.persistence.options_profile,
-                    tr_fill("VERA:ModNotMade", &[("folder", &mods_dir.display())]),
+                    ShellText::with("VERA:ModNotMade", &[("folder", &mods_dir.display())]),
+                    "TXT_OK",
+                    None,
+                    ShellMessageBoxPurpose::Notice,
                 );
                 return;
             }
@@ -565,8 +583,7 @@ impl App {
         );
         Self::select_installed_mod(state, &made.folder);
         let files = made.copied.join(", ");
-        let text = tr_fill("VERA:ModMade", &[("mod", &made.folder), ("files", &files)]);
-        let (open, close) = (tr("VERA:ModOpenItsFolder"), tr("VERA:Close"));
+        let text = ShellText::with("VERA:ModMade", &[("mod", &made.folder), ("files", &files)]);
         Self::open_mods_box(
             &state.platform.window,
             &state.renderer,
@@ -574,8 +591,8 @@ impl App {
             &state.process_assets,
             &state.persistence.options_profile,
             text,
-            open,
-            close,
+            "VERA:ModOpenItsFolder",
+            Some("VERA:Close"),
             ShellMessageBoxPurpose::ModMade(made.dir),
         );
     }
@@ -650,10 +667,9 @@ impl App {
             return;
         }
         let title = match &row.folder {
-            Some(_) => tr_fill("VERA:ModRestartUse", &[("mod", &row.title())]),
-            None => tr("VERA:ModRestartOriginal"),
+            Some(_) => ShellText::with("VERA:ModRestartUse", &[("mod", &row.title())]),
+            None => ShellText::new("VERA:ModRestartOriginal"),
         };
-        let (restart, cancel) = (tr("VERA:ModRestart"), tr("VERA:Cancel"));
         let purpose = ShellMessageBoxPurpose::ModRestart(folder);
         Self::open_mods_box(
             &platform.window,
@@ -662,8 +678,8 @@ impl App {
             process_assets,
             options_profile,
             title,
-            restart,
-            cancel,
+            "VERA:ModRestart",
+            Some("VERA:Cancel"),
             purpose,
         );
     }
@@ -690,13 +706,16 @@ impl App {
         let file = crate::util::config::GameConfig::path()
             .map(|path| path.display().to_string())
             .unwrap_or_default();
-        Self::open_shell_notice(
+        Self::open_mods_box(
             &platform.window,
             renderer,
             frontend,
             process_assets,
             options_profile,
-            tr_fill("VERA:ModChoiceNotSaved", &[("file", &file)]),
+            ShellText::with("VERA:ModChoiceNotSaved", &[("file", &file)]),
+            "TXT_OK",
+            None,
+            ShellMessageBoxPurpose::Notice,
         );
         false
     }

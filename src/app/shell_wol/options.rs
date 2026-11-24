@@ -15,6 +15,7 @@ use crate::app::persistence::{options_profile::RetailOptionsProfile, profile_fil
 use crate::app::shell_wol::WolVisit;
 use crate::app::{App, AppState};
 use crate::ui::chat_translation::ChatTranslation;
+use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::page::{self, PageCue, PageEvent};
 use crate::ui::shell::sound::{self, SHELL_SOUND_PAGE, ShellSoundLayout};
 use crate::ui::wol_options::{
@@ -283,10 +284,7 @@ pub(crate) fn sound_positions(frontend: &FrontendState) -> Option<[u8; 3]> {
 pub(crate) fn sync_gui(state: &mut AppState) {
     let options = layout(state);
     let sound = sound_layout(state);
-    let off = state.process_assets.csf.as_ref().map_or_else(
-        || TRANSLATE_OFF_KEY.to_owned(),
-        |csf| csf.text(TRANSLATE_OFF_KEY).into_owned(),
-    );
+    let off = crate::i18n::tr(TRANSLATE_OFF_KEY);
     let Some((root, _)) = shown_root(&state.frontend) else {
         return;
     };
@@ -314,6 +312,19 @@ pub(crate) fn sync_gui(state: &mut AppState) {
             page::ensure_built(gui, root, || wol_options::spec(page.shown, &off, audio));
             page::sync_rects(gui, root, |id| options.rect(id));
         }
+    }
+}
+
+pub(super) fn refresh_labels(controller: &mut DialogController) {
+    if let Some(root) = controller.root_in(DIALOG) {
+        let rows = wol_options::translate_labels(&crate::i18n::tr(TRANSLATE_OFF_KEY));
+        page::set(
+            controller.gui_mut(),
+            root,
+            TRANSLATE,
+            vera20k_gui::Prop::Items,
+            vera20k_gui::Value::Items(rows),
+        );
     }
 }
 

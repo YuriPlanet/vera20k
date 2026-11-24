@@ -1738,9 +1738,40 @@ impl SkirmishCapture {
             state.frontend.main_menu_movie.is_none(),
             "prior shell movie survived skirmish entry"
         );
-        Ok(state.frontend.shell_first_paint_slide.is_none()
-            && state.frontend.shell_slide_active_shell == Some(ShellSlideKind::Skirmish)
-            && state.frontend.skirmish_shell_state.statics.is_terminal())
+        if state.frontend.shell_first_paint_slide.is_some()
+            || state.frontend.shell_slide_active_shell != Some(ShellSlideKind::Skirmish)
+        {
+            return Ok(false);
+        }
+        let shell = &state.frontend.skirmish_shell_state;
+        if self.setups && self.game_options_opened {
+            // Setups paints its own title and Save/Load/Delete/Back controls.
+            // The 0x102 statics behind it cannot advance until it closes.
+            let browser = shell
+                .setups_browser
+                .as_ref()
+                .context("Setups browser closed")?;
+            let layout = crate::app::frontend::shell_layout::setups_layout(
+                &state.renderer,
+                &state.frontend.screen,
+            );
+            ensure!(
+                browser.mode == crate::ui::skirmish_shell::SavedSeedMode::Save
+                    && browser.prompt.is_none()
+                    && browser
+                        .entries
+                        .iter()
+                        .any(|row| row.visible && row.file_name.is_none())
+                    && layout.title.w > 0
+                    && layout.action.w > 0
+                    && layout.back.w > 0
+                    && layout.load.is_some()
+                    && layout.delete.is_some(),
+                "Setups did not show its name list and action controls"
+            );
+            return Ok(true);
+        }
+        Ok(shell.statics.is_terminal())
     }
 
     pub(super) fn ready(&self, state: &AppState) -> Result<bool> {

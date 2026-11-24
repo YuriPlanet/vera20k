@@ -240,19 +240,46 @@ pub(super) fn open_locale_page(state: &mut AppState) {
 
 /// API+0xD0's count fills `0xFE`'s list with `WOL:Locale%02d` (`0x00780A00`,
 /// format `0x0084A684`).
+pub(super) fn locale_texts(
+    assets: &ProcessAssets,
+    count: i32,
+) -> impl Iterator<Item = (i32, String)> + '_ {
+    (0..count).map(|locale| (locale, assets.csf_text(&format!("WOL:Locale{locale:02}"))))
+}
+
 pub(super) fn locale_count(state: &mut AppState, count: i32) {
-    let texts: Vec<(i32, String)> = (0..count.max(0))
-        .map(|locale| (locale, state.csf_text(&format!("WOL:Locale{locale:02}"))))
-        .collect();
+    let texts: Vec<_> = locale_texts(&state.process_assets, count).collect();
+    let root = state.frontend.shell_controller.root_in(LOCALE_DIALOG);
+    let selected = root
+        .and_then(|root| {
+            page::int(
+                state.frontend.shell_controller.gui(),
+                root,
+                LOCALE_LIST,
+                Prop::Selected,
+            )
+        })
+        .and_then(|row| usize::try_from(row).ok());
     let Some(WolPage::Locale(page)) = state.frontend.wol.as_mut().map(|visit| &mut visit.page)
     else {
         return;
     };
+    let locale = selected
+        .and_then(|index| page.rows.get(index))
+        .map(|row| row.locale);
     page.fill(texts);
+    let selected = locale.and_then(|locale| page.rows.iter().position(|row| row.locale == locale));
     let items = page.rows.iter().map(|row| row.text.clone()).collect();
-    if let Some(root) = sync(state) {
+    if let Some(root) = root {
         let gui = state.frontend.shell_controller.gui_mut();
         page::set(gui, root, LOCALE_LIST, Prop::Items, Value::Items(items));
+        page::set(
+            gui,
+            root,
+            LOCALE_LIST,
+            Prop::Selected,
+            Value::Int(selected.map_or(-1, |row| row as i32)),
+        );
     }
 }
 

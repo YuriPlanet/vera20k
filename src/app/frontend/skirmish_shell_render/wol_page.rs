@@ -160,7 +160,15 @@ pub(crate) fn paint_wol_page_dialog(
     page: &WolPageDialog,
     layout: &WolPageLayout,
 ) -> WolLobbyPaint {
-    let text_of = |id| (id == i32::from(STATUS)).then(|| page.status.clone());
+    let text_of = |id| {
+        (id == i32::from(STATUS)).then(|| {
+            crate::app::shell_wol::page::location_text(
+                state.frontend.wol.as_ref(),
+                &state.process_assets,
+                page,
+            )
+        })
+    };
     let rows_of = |id| (id == i32::from(PAGE_TRANSCRIPT)).then(|| rows(&page.lines));
     paint_widget_box(state, PAGE_DIALOG, layout.dialog, &text_of, &rows_of)
 }

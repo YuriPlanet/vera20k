@@ -14,6 +14,7 @@ use crate::audio::sfx::SfxPlayer;
 use crate::render::bit_font::BitFont;
 use crate::ui::shell::controller::DialogController;
 use crate::ui::shell::page::PageCue;
+use crate::ui::shell::static_reveal::HoverLabel;
 use crate::ui::skirmish_shell::SkirmishShellState;
 use crate::ui::skirmish_shell::page::Pointer;
 use crate::ui::skirmish_shell::{
@@ -1433,22 +1434,19 @@ impl App {
             )
         });
         let preview = target == Some(SkirmishHoverTarget::MapPreview0x468);
-        let text = Self::status_help(state, key, preview);
-        if (state.frontend.skirmish_shell_state.statics).hover(&text, Instant::now()) {
+        let label = HoverLabel::new(
+            key,
+            preview
+                && crate::app::frontend::preview_zoom::available(
+                    &state.frontend.skirmish_preview_texture,
+                ),
+        );
+        if state.frontend.skirmish_shell_state.statics.hover_label(
+            label,
+            state.process_assets.csf.as_ref(),
+            Instant::now(),
+        ) {
             state.platform.window.request_redraw();
-        }
-    }
-
-    /// The status line's text for help `key`; over a map `preview` it says
-    /// that a press enlarges it.
-    fn status_help(state: &AppState, key: Option<&str>, preview: bool) -> String {
-        let text = key.map(|key| state.csf_label(key, "")).unwrap_or_default();
-        match preview {
-            true => crate::app::frontend::preview_zoom::box_help(
-                &state.frontend.skirmish_preview_texture,
-                text,
-            ),
-            false => text,
         }
     }
 
@@ -1473,17 +1471,24 @@ impl App {
             Target::ModeListRow0x6eb { mode } => mode
                 .resolve(&state.frontend.skirmish_modes)
                 .filter(|mode| !mode.tooltip_key.is_empty())
-                .map(|mode| state.csf_label(&mode.tooltip_key, ""))
-                .filter(|text| !text.is_empty()),
+                .map(|mode| mode.tooltip_key.as_str())
+                .filter(|key| !state.csf_label(key, "").is_empty()),
             _ => None,
         };
-        let text = mode_help.unwrap_or_else(|| {
-            let key = crate::ui::skirmish_shell::status_help_key_for_choose_map_hover(target);
-            Self::status_help(state, key, target == Target::Preview0x468)
-        });
+        let key = mode_help
+            .or_else(|| crate::ui::skirmish_shell::status_help_key_for_choose_map_hover(target));
+        let label = HoverLabel::new(
+            key,
+            target == Target::Preview0x468
+                && crate::app::frontend::preview_zoom::available(
+                    &state.frontend.skirmish_preview_texture,
+                ),
+        );
         // A child's hover message writes and repaints the status line.
         if let Some(modal) = chooser(&mut state.frontend.skirmish_shell_state)
-            && modal.statics.hover(&text, Instant::now())
+            && modal
+                .statics
+                .hover_label(label, state.process_assets.csf.as_ref(), Instant::now())
         {
             state.platform.window.request_redraw();
         }

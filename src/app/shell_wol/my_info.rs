@@ -11,6 +11,7 @@ use super::service::{self, WolServiceRequest};
 use crate::app::frontend::shell_layout;
 use crate::app::frontend::state::FrontendState;
 use crate::app::persistence::wol_profile::WolPersona;
+use crate::app::process_assets::ProcessAssets;
 use crate::app::shell_wol::WolVisit;
 use crate::app::{App, AppState};
 use crate::ui::shell::controller::DialogController;
@@ -18,6 +19,13 @@ use crate::ui::shell::page::PageEvent;
 use crate::ui::skirmish_shell::{SkirmishComboItem, SkirmishCountryChoice};
 use crate::ui::wol_my_info::*;
 use crate::util::config::GameConfig;
+
+#[derive(Debug, Clone)]
+pub(crate) struct MyInfoDialog {
+    ui: WolMyInfoPage,
+    profile_name: String,
+    profile: WolPersona,
+}
 
 fn view(persona: &WolPersona) -> MyInfoPersona {
     MyInfoPersona {
@@ -145,12 +153,22 @@ pub(super) fn open(state: &mut AppState) {
     };
     let frontend = &mut state.frontend;
     let gui = frontend.shell_controller.gui_mut();
-    let persona = view(&persona);
     let page = WolMyInfoPage::open(
-        gui, root, rows, &nickname, &persona, texts, auto_login, &unknown,
+        gui,
+        root,
+        rows,
+        &nickname,
+        &view(&persona),
+        texts,
+        auto_login,
+        &unknown,
     );
     if let Some(visit) = frontend.wol.as_mut() {
-        visit.page = WolPage::MyInformation(Box::new(page));
+        visit.page = WolPage::MyInformation(Box::new(MyInfoDialog {
+            ui: page,
+            profile_name: nickname,
+            profile: persona,
+        }));
         visit.requests.push(WolServiceRequest::LocaleCount);
     }
 }
@@ -165,20 +183,40 @@ pub(super) fn locale_count(state: &mut AppState, count: i32) {
         &state.process_assets,
         &nickname,
     );
-    let rows = crate::ui::wol_persona::locale_rows(
-        (0..count.max(0)).map(|locale| (locale, state.csf_text(&format!("WOL:Locale{locale:02}")))),
-    );
-    let rows = (rows.into_iter())
-        .map(|row| MyInfoRow::text(row.text, row.locale))
-        .collect();
+    let rows = locales(&state.process_assets, count);
     with_page(state, |page, gui, root| {
-        page.fill_locales(gui, root, rows, persona.locale)
+        page.ui.fill_locales(gui, root, rows, persona.locale)
+    });
+}
+
+fn locales(assets: &ProcessAssets, count: i32) -> Vec<MyInfoRow> {
+    crate::ui::wol_persona::locale_rows(super::persona::locale_texts(assets, count))
+        .into_iter()
+        .map(|row| MyInfoRow::text(row.text, row.locale))
+        .collect()
+}
+
+pub(super) fn refresh_labels(state: &mut AppState) {
+    let Some(WolPage::MyInformation(dialog)) = state.frontend.wol.as_ref().map(|visit| &visit.page)
+    else {
+        return;
+    };
+    let rows = locales(&state.process_assets, dialog.ui.combos[2].len() as i32);
+    let countries = country_rows(state);
+    let colors = color_rows(state);
+    let default = state.csf_text(DEFAULT_KEY);
+    let unknown = state.csf_text(UNKNOWN_STATS_KEY);
+    let texts =
+        super::persona::profile_texts(&state.process_assets, &dialog.profile_name, &dialog.profile);
+    with_page(state, |page, gui, root| {
+        page.ui
+            .relabel(gui, root, default, unknown, rows, countries, colors, texts);
     });
 }
 
 pub(crate) fn page(wol: Option<&WolVisit>) -> Option<&WolMyInfoPage> {
     match &wol?.page {
-        WolPage::MyInformation(page) => Some(page),
+        WolPage::MyInformation(page) => Some(&page.ui),
         _ => None,
     }
 }
@@ -186,7 +224,7 @@ pub(crate) fn page(wol: Option<&WolVisit>) -> Option<&WolMyInfoPage> {
 /// Runs `f` on the page and its widgets.
 fn with_page<R>(
     state: &mut AppState,
-    f: impl FnOnce(&mut WolMyInfoPage, &mut vera20k_gui::Gui, NodeId) -> R,
+    f: impl FnOnce(&mut MyInfoDialog, &mut vera20k_gui::Gui, NodeId) -> R,
 ) -> Option<R> {
     let root = sync(state)?;
     let frontend = &mut state.frontend;
@@ -280,9 +318,17 @@ fn apply(state: &mut AppState, action: MyInfoAction) {
             );
             let texts = super::persona::profile_texts(&state.process_assets, &name, &persona);
             let auto_login = auto_login_names(&state.frontend, state.platform.game_config.as_ref());
-            let persona = view(&persona);
             with_page(state, |page, gui, root| {
-                page.nickname_changed(gui, root, &persona, texts, !name.is_empty(), auto_login)
+                page.ui.nickname_changed(
+                    gui,
+                    root,
+                    &view(&persona),
+                    texts,
+                    !name.is_empty(),
+                    auto_login,
+                );
+                page.profile = persona;
+                page.profile_name = name;
             });
         }
         MyInfoAction::Server(text) => {
@@ -347,9 +393,10 @@ fn apply(state: &mut AppState, action: MyInfoAction) {
                 "",
             );
             let texts = super::persona::profile_texts(&state.process_assets, "", &default);
-            let default = view(&default);
             with_page(state, |page, gui, root| {
-                page.refresh(gui, root, &default, texts)
+                page.ui.refresh(gui, root, &view(&default), texts);
+                page.profile = default;
+                page.profile_name.clear();
             });
         }
         MyInfoAction::Close(control) => App::leave_shell_dialog(
@@ -397,9 +444,9 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         let action = with_page(state, |page, gui, root| match event {
             PageEvent::Picked(id, row) => usize::try_from(row)
                 .ok()
-                .and_then(|row| page.select(id, row)),
+                .and_then(|row| page.ui.select(id, row)),
             PageEvent::Toggled(id, checked) => WolMyInfoPage::toggle(id, checked),
-            PageEvent::Activated(id) => page.activate(gui, root, id),
+            PageEvent::Activated(id) => page.ui.activate(gui, root, id),
             _ => None,
         });
         match action {

@@ -525,8 +525,10 @@ mod tests {
             par_time: "00:00:10".into(),
             your_time: "00:00:09".into(),
             enemies_destroyed: "8".into(),
-            rank: "fast".into(),
-            commendation: "well done".into(),
+            awards: crate::ui::campaign_score_shell::CampaignAwards::Labels([
+                "fast".into(),
+                "well done".into(),
+            ]),
             ..Default::default()
         };
         let victory = scenario_exit_destination(

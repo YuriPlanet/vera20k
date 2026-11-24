@@ -17,7 +17,7 @@ use crate::app::mod_import_picker;
 use crate::i18n::{tr, tr_fill};
 use crate::ui::shell::descriptor::DialogResourceId;
 use crate::ui::shell::geom::{RectPx, ShellScale};
-use crate::ui::shell::modal::{BoxParts, Footer, ShellBox, control};
+use crate::ui::shell::modal::{BoxParts, Footer, ShellBox, ShellText, control};
 use crate::util::mod_package::{ModImport, PreparedModImport};
 use crate::util::time::{Duration, Instant};
 use vera20k_gui::shell::list::ROW_HEIGHT;
@@ -38,7 +38,7 @@ use winit::window::Window;
 pub(crate) enum Dialog {
     Select(Selection),
     Preparing(Preparation),
-    Notice,
+    Notice(ShellText, Option<ShellText>),
 }
 
 #[derive(Debug)]
@@ -173,10 +173,7 @@ impl Selection {
 
     fn selection_error(&mut self, error: std::io::Error) {
         log::warn!("Mods: could not add parts: {error}");
-        self.error = Some(tr_fill(
-            "VERA:ModImportSelectionError",
-            &[("error", &error)],
-        ));
+        self.error = Some(error.to_string());
     }
 
     /// The box: its question and buttons, and in the preview More and the
@@ -187,15 +184,18 @@ impl Selection {
         } else {
             "VERA:Cancel"
         });
-        let title = self.error.clone().unwrap_or_else(|| {
-            tr(if self.previewing() {
-                "VERA:ModImportOrder"
-            } else if self.can_browse {
-                "VERA:ModImportPrompt"
-            } else {
-                "VERA:ModImportDrop"
-            })
-        });
+        let title = self.error.as_ref().map_or_else(
+            || {
+                tr(if self.previewing() {
+                    "VERA:ModImportOrder"
+                } else if self.can_browse {
+                    "VERA:ModImportPrompt"
+                } else {
+                    "VERA:ModImportDrop"
+                })
+            },
+            |error| tr_fill("VERA:ModImportSelectionError", &[("error", error)]),
+        );
         let (confirm, third, cancel) = if self.choosing_kind() {
             (
                 tr("VERA:ModImportZIPs"),
@@ -526,12 +526,32 @@ pub(super) fn enter(message_box: Option<&ShellMessageBox>) -> Option<bool> {
         return None;
     };
     Some(match dialog.as_ref() {
-        Dialog::Select(_) | Dialog::Notice => true,
+        Dialog::Select(_) | Dialog::Notice(..) => true,
         Dialog::Preparing(_) => false,
     })
 }
 
 impl App {
+    /// Repaint the open import step without disturbing its worker, list or selection.
+    pub(super) fn refresh_mod_import_labels(
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+    ) {
+        let Some(message) = frontend.shell_message_box.as_mut() else {
+            return;
+        };
+        let ShellMessageBoxPurpose::ModImport(dialog) = &message.purpose else {
+            return;
+        };
+        message.shell_box = match dialog.as_ref() {
+            Dialog::Select(selection) => selection.shell_box(),
+            Dialog::Notice(text, needs) => {
+                import_notice_box(text, needs.as_ref(), process_assets.csf.as_ref())
+            }
+            Dialog::Preparing(_) => return,
+        };
+    }
+
     pub(super) fn open_add_mod(state: &mut AppState) {
         Self::show_import_selection(state, Selection::new());
     }
@@ -727,7 +747,7 @@ impl App {
             return;
         };
         let mods = config.paths.mods_dir();
-        let title = tr_fill("VERA:ModImportWorking", &[("mod", &plan.name())]);
+        let title = ShellText::with("VERA:ModImportWorking", &[("mod", &plan.name())]);
         let stop = Arc::new(AtomicBool::new(false));
         let Some(result) = crate::app::worker::spawn("mod-import", stop.clone(), move |stop| {
             Ok(plan.prepare(&mods, stop)?)
@@ -742,7 +762,8 @@ impl App {
             );
             return;
         };
-        let shell_box = ShellBox::message(title, tr("VERA:Cancel"), String::new(), String::new());
+        let shell_box =
+            ShellBox::localized_message(process_assets.csf.as_ref(), title, "VERA:Cancel", None);
         Self::show_import_box(
             &platform.window,
             renderer,
@@ -798,22 +819,18 @@ impl App {
             .as_ref()
             .and_then(|rows| selected.and_then(|row| rows.get(row)));
         let name = row.map_or_else(|| folder.clone(), |row| row.title().into_owned());
-        let added = tr_fill("VERA:ModImported", &[("mod", &name)]);
-        let title = if let Some(needs) = row.and_then(|row| row.needs.as_ref()) {
-            format!(
-                "{added}\n\n{}",
-                tr_fill("VERA:ModNeeds", &[("needs", needs)])
-            )
-        } else {
-            added
-        };
+        let added = ShellText::with("VERA:ModImported", &[("mod", &name)]);
+        let needs = row
+            .and_then(|row| row.needs.as_ref())
+            .map(|needs| ShellText::with("VERA:ModNeeds", &[("needs", needs)]));
         Self::mod_import_notice(
             &state.platform.window,
             &state.renderer,
             &mut state.frontend,
             &state.process_assets,
             &state.persistence.options_profile,
-            title,
+            added,
+            needs,
         );
     }
 
@@ -832,7 +849,8 @@ impl App {
             frontend,
             process_assets,
             options_profile,
-            tr_fill("VERA:ModImportFailed", &[("error", &error)]),
+            ShellText::with("VERA:ModImportFailed", &[("error", &error)]),
+            None,
         );
     }
 
@@ -842,17 +860,34 @@ impl App {
         frontend: &mut FrontendState,
         process_assets: &ProcessAssets,
         options_profile: &RetailOptionsProfile,
-        title: String,
+        text: ShellText,
+        needs: Option<ShellText>,
     ) {
-        let ok = process_assets.csf_label("TXT_OK", "OK");
+        let shell_box = import_notice_box(&text, needs.as_ref(), process_assets.csf.as_ref());
         Self::show_import_box(
             window,
             renderer,
             frontend,
             process_assets,
             options_profile,
-            import_box(ShellBox::notice(title, ok), false),
-            Dialog::Notice,
+            shell_box,
+            Dialog::Notice(text, needs),
         );
     }
+}
+
+fn import_notice_box(
+    text: &ShellText,
+    needs: Option<&ShellText>,
+    csf: Option<&crate::assets::csf_file::CsfFile>,
+) -> ShellBox {
+    let mut body = text.resolve();
+    if let Some(needs) = needs {
+        body.push_str("\n\n");
+        body.push_str(&needs.resolve());
+    }
+    import_box(
+        ShellBox::notice(body, crate::i18n::label(csf, "TXT_OK", "OK")),
+        false,
+    )
 }

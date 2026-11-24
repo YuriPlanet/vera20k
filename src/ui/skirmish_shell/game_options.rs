@@ -312,10 +312,7 @@ pub fn sync(
                 .id(slider_label_id(slider))
                 .tooltip(control.status_help_key().unwrap_or_default())
                 .with(Prop::Align, Value::Int(0))
-                .with(
-                    Prop::Text,
-                    Value::Text(control.label_key().map(crate::i18n::tr).unwrap_or_default()),
-                )
+                .label(control.label_key().unwrap_or_default())
         });
         let controls = CONTROLS.map(|control| {
             let spec = match control {
@@ -332,10 +329,9 @@ pub fn sync(
                 GameOptionsControl::Ok => NodeSpec::new(NodeKind::Button)
                     .with(Prop::Default, Value::Bool(true))
                     .with(Prop::Cancel, Value::Bool(true)),
-                _ => NodeSpec::new(NodeKind::Checkbox).with(
-                    Prop::Text,
-                    Value::Text(control.label_key().map(crate::i18n::tr).unwrap_or_default()),
-                ),
+                _ => {
+                    NodeSpec::new(NodeKind::Checkbox).label(control.label_key().unwrap_or_default())
+                }
             };
             let spec = spec.id(control.id());
             match control.status_help_key() {
@@ -631,6 +627,18 @@ mod tests {
         let bar = layout.tech_level;
         let row = bar.y + bar.h - 4;
         open.at(Pointer::Move, bar.x + 1, row);
+        for (id, key) in [
+            (
+                slider_label_id(GameOptionsSlider::TechLevel),
+                TECH_LEVEL_LABEL,
+            ),
+            (GameOptionsControl::Bases.id(), BASES_LABEL),
+        ] {
+            assert_eq!(
+                open.0.prop(DIALOG, id as u16, Prop::Label),
+                Some(&Value::Text(key.into()))
+            );
+        }
         assert_eq!(
             hovered(open.0.gui()),
             Some(GameOptionsControl::Slider(GameOptionsSlider::TechLevel))

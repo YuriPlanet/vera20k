@@ -336,6 +336,37 @@ impl WolMyInfoPage {
             Prop::Checked,
             persona.match_by_res,
         );
+        self.set_texts(gui, root, texts);
+    }
+
+    /// Refresh displayed names without selecting another account or writing a persona.
+    pub(crate) fn relabel(
+        &mut self,
+        gui: &mut Gui,
+        root: NodeId,
+        default: String,
+        unknown: String,
+        locales: Vec<MyInfoRow>,
+        countries: Vec<MyInfoRow>,
+        colors: Vec<MyInfoRow>,
+        texts: Vec<(u16, String)>,
+    ) {
+        if let Some(row) = self.combos[0].first_mut() {
+            row.text = default;
+        }
+        self.fill(gui, root, NICKNAME);
+        let locale = self.data_or(gui, root, LOCALE, -1);
+        self.fill_locales(gui, root, locales, locale);
+        self.combos[3] = countries;
+        self.combos[4] = colors;
+        for control in [COUNTRY, COLOR] {
+            self.fill(gui, root, control);
+        }
+        self.unknown = unknown;
+        self.set_texts(gui, root, texts);
+    }
+
+    fn set_texts(&mut self, gui: &mut Gui, root: NodeId, texts: Vec<(u16, String)>) {
         self.texts = texts;
         for id in [HEADING, UPDATE].into_iter().chain(STATS) {
             let text = self.texts.iter().find(|(control, _)| *control == id);
@@ -705,6 +736,29 @@ mod tests {
         let page = Page::open(single, "tester", &persona(), false);
         assert_eq!(page.enabled(&[SERVER]), [false]);
         assert_eq!(page.page.combos[1][0].text, NO_SERVERS);
+    }
+
+    #[test]
+    fn changing_language_preserves_the_selected_locale_and_account() {
+        let mut p = Page::open(rows(), "tester", &persona(), false);
+        let mut translated = rows();
+        translated.locales.swap(1, 2);
+        translated.locales[2].text = "五".into();
+        let before = p.data();
+        p.page.relabel(
+            &mut p.gui,
+            p.root,
+            "默认".into(),
+            "?".into(),
+            translated.locales,
+            translated.countries,
+            translated.colors,
+            Vec::new(),
+        );
+        assert_eq!(p.data(), before);
+        assert_eq!(selected(&p.gui, p.root, LOCALE), Some(2));
+        assert_eq!(p.page.combos[0][1].text, "tester");
+        assert_eq!(p.page.combos[2][2].text, "五");
     }
 
     #[test]

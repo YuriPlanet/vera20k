@@ -304,11 +304,9 @@ pub struct CoopScoreState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoopScoreModel {
     pub rows: Vec<crate::ui::score_shell::ScoreRow>,
-    pub time: String,
-    pub next_mission: String,
-    pub mode_label: String,
-    pub map_label: String,
-    pub description: String,
+    pub elapsed_seconds: u32,
+    pub mode_key: String,
+    pub description_key: Option<String>,
     /// Scenario `+0x34B8`, which picks the score palette (`0x0072D300`).
     pub side: i32,
     /// The next mission's shell map, for the preview `0x468`.

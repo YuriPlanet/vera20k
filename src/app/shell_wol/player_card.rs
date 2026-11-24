@@ -220,17 +220,24 @@ fn own_locale(frontend: &FrontendState) -> i32 {
 }
 
 /// Change Country: `0xFE`'s rows, every `WOL:Locale%02d`, with yours lit.
-fn open_countries(state: &mut AppState) {
-    let rows = locale_rows(
-        (0..LOCALE_COUNT).map(|locale| (locale, state.csf_text(&format!("WOL:Locale{locale:02}")))),
-    );
+fn open_countries(state: &mut AppState, top_locale: Option<i32>) {
+    let rows = locale_rows(super::persona::locale_texts(&state.process_assets, LOCALE_COUNT));
     let locale = own_locale(&state.frontend);
     if let Some(value) = country_value(state)
         && let Some(ui) = card_ui_mut(state.frontend.wol.as_mut())
     {
-        ui.open_countries(rows, locale, value);
+        ui.open_countries(rows, locale, value, top_locale);
     }
     state.frontend.shell_status_line.repaint();
+}
+
+pub(super) fn refresh_labels(state: &mut AppState) {
+    if let Some(ui) = card_ui(state.frontend.wol.as_ref())
+        && let Some(list) = ui.countries_drop_down()
+    {
+        let top_locale = ui.country_locale(list.popup.first);
+        open_countries(state, top_locale);
+    }
 }
 
 /// Your pick: VERA.INI keeps it for later sign-ins, and the lobby has it at
@@ -303,7 +310,7 @@ fn act(state: &mut AppState, name: String, action: WolCardAction) {
             close(&mut state.frontend, &state.platform.window);
             super::page::open_page_dialog_to(state, &name);
         }
-        WolCardAction::Country => open_countries(state),
+        WolCardAction::Country => open_countries(state, None),
         WolCardAction::Buddy => match buddy(&state.frontend.wol_buddies, &name) {
             Some(known) => super::buddies::remove(&mut state.frontend, &known),
             None => super::buddies::add(&mut state.frontend, name),

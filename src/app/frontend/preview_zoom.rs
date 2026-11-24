@@ -46,7 +46,7 @@ pub(crate) struct PreviewZoom {
 
 /// Whether a press on the preview box would enlarge it: the box shows a
 /// picture.
-fn available(skirmish_preview_texture: &Option<SkirmishPreviewTexture>) -> bool {
+pub(crate) fn available(skirmish_preview_texture: &Option<SkirmishPreviewTexture>) -> bool {
     skirmish_preview_texture.is_some()
 }
 
@@ -102,21 +102,6 @@ pub(crate) fn press_on_box(
         crate::ui::shell::page::ensure_built(controller.gui_mut(), root, || spec);
     }
     true
-}
-
-/// The preview box's `help`, ending with the hint that a press enlarges it.
-pub(crate) fn box_help(
-    skirmish_preview_texture: &Option<SkirmishPreviewTexture>,
-    help: String,
-) -> String {
-    if !available(skirmish_preview_texture) {
-        return help;
-    }
-    if help.is_empty() {
-        crate::i18n::tr("VERA:ClickToEnlarge")
-    } else {
-        crate::i18n::tr_fill("VERA:HelpClickToEnlarge", &[("help", &help)])
-    }
 }
 
 pub(crate) fn close(window: &winit::window::Window, frontend: &mut FrontendState) {

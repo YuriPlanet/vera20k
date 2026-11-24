@@ -290,23 +290,35 @@ fn append_line(
     renderer: &RendererState,
     dialog: DialogResourceId,
     line: LanChatLine,
+    key: Option<&'static str>,
 ) -> bool {
     let (_, rect_of, id) = widgets(renderer, &frontend.screen, dialog);
     let rect = rect_of(id).unwrap_or_default();
     let font = &renderer.bit_font;
-    let Some(lines) = frontend.wol.as_mut().and_then(|visit| lines(visit, dialog)) else {
+    let measure = |units: &[u16]| font.text_width(&String::from_utf16_lossy(units)) as i32;
+    let Some(visit) = frontend.wol.as_mut() else {
         return false;
     };
-    let dropped = append_wrapped(lines, line, rect.w, |units| {
-        font.text_width(&String::from_utf16_lossy(units)) as i32
-    });
+    let (count, dropped) = if dialog == PAGE_DIALOG {
+        let Some(page) = visit.page_dialog.as_mut() else {
+            return false;
+        };
+        let dropped = page.append(line, key, rect.w, measure);
+        (page.lines.len(), dropped)
+    } else {
+        let Some(page) = visit.page_received.as_mut() else {
+            return false;
+        };
+        let dropped = append_wrapped(&mut page.lines, line, rect.w, measure);
+        (page.lines.len(), dropped)
+    };
     let c = &mut frontend.shell_controller;
     if let Some(list) = c.control(dialog, id) {
         // A list placed after its rows came starts at its first row.
         if c.prop(dialog, id, Prop::Top).is_none() {
             c.set_prop(dialog, id, Prop::Top, Value::Int(0));
         }
-        let _ = c.gui_mut().log_rows(list, lines.len(), dropped);
+        let _ = c.gui_mut().log_rows(list, count, dropped);
     }
     true
 }
@@ -318,7 +330,7 @@ pub(crate) fn append_page_line(
     renderer: &RendererState,
     line: LanChatLine,
 ) -> bool {
-    append_line(frontend, renderer, PAGE_DIALOG, line)
+    append_line(frontend, renderer, PAGE_DIALOG, line, None)
 }
 
 /// `0x005E2700` into `0x11E`'s `0x53F`.
@@ -327,7 +339,7 @@ pub(super) fn append_received_line(
     renderer: &RendererState,
     line: LanChatLine,
 ) {
-    append_line(frontend, renderer, RECEIVED_DIALOG, line);
+    append_line(frontend, renderer, RECEIVED_DIALOG, line, None);
 }
 
 /// The current window's `0x53F`, else its `0x5B5` (the find sink's tail
@@ -414,42 +426,64 @@ fn open_received(frontend: &mut FrontendState, renderer: &RendererState, modal: 
 /// takes the room or a `TXT_FINDPAGE_*` text. Returns whether `0xCF` took
 /// the result.
 pub(super) fn located(
-    mut wol: Option<&mut WolVisit>,
+    wol: Option<&mut WolVisit>,
     window: &Window,
-    process_assets: &ProcessAssets,
     result: &Result<crate::ui::wol_lobby::WolChannel, u32>,
 ) -> bool {
-    if page_dialog(wol.as_deref()).is_none() {
+    let Some(page) = wol.and_then(|visit| visit.page_dialog.as_mut()) else {
         return false;
-    }
-    let key = match result {
-        Ok(channel) => {
-            let text = match channel.lobby_number().filter(|_| channel.kind == 0) {
-                Some(number) => crate::ui::wol_lobby::WolLobbyRow::joined_name(
-                    number,
-                    &super::lobby::base_names(wol.as_deref(), process_assets),
-                ),
-                None => channel.name.clone(),
-            };
-            return set_status(wol.as_deref_mut(), window, text);
-        }
-        Err(0x0004_0131) => "TXT_FINDPAGE_NOT_IN_CHANNEL",
-        Err(0x0004_0132) => "TXT_FINDPAGE_FIND_DISABLED",
-        Err(_) => "TXT_FINDPAGE_NOT_ONLINE",
     };
-    set_status(
-        wol.as_deref_mut(),
-        window,
-        process_assets.csf_label(key, key),
-    )
-}
-
-fn set_status(wol: Option<&mut WolVisit>, window: &Window, text: String) -> bool {
-    if let Some(page) = wol.and_then(|visit| visit.page_dialog.as_mut()) {
-        page.status = text;
-    }
+    let status = match result {
+        Ok(channel) => match channel.lobby_number().filter(|_| channel.kind == 0) {
+            Some(number) => PageLocation::Lobby(number),
+            None => PageLocation::Channel(channel.name.clone()),
+        },
+        Err(0x0004_0131) => PageLocation::Label("TXT_FINDPAGE_NOT_IN_CHANNEL"),
+        Err(0x0004_0132) => PageLocation::Label("TXT_FINDPAGE_FIND_DISABLED"),
+        Err(_) => PageLocation::Label("TXT_FINDPAGE_NOT_ONLINE"),
+    };
+    page.status = Some(status);
     window.request_redraw();
     true
+}
+
+pub(crate) fn location_text(
+    wol: Option<&WolVisit>,
+    assets: &ProcessAssets,
+    page: &WolPageDialog,
+) -> String {
+    match &page.status {
+        Some(PageLocation::Channel(name)) => name.clone(),
+        Some(PageLocation::Lobby(number)) => crate::ui::wol_lobby::WolLobbyRow::joined_name(
+            *number,
+            &super::lobby::base_names(wol, assets),
+        ),
+        Some(PageLocation::Label(key)) => assets.csf_label(key, key),
+        None => String::new(),
+    }
+}
+
+pub(super) fn refresh_labels(
+    frontend: &mut FrontendState,
+    renderer: &RendererState,
+    assets: &ProcessAssets,
+) {
+    let Some(page) = frontend.wol.as_mut().and_then(|visit| visit.page_dialog.as_mut()) else {
+        return;
+    };
+    let (_, rect_of, id) = widgets(renderer, &frontend.screen, PAGE_DIALOG);
+    let width = rect_of(id).unwrap_or_default().w;
+    page.relabel_notices(
+        |key| assets.csf_label(key, key),
+        width,
+        |units| renderer.bit_font.text_width(&String::from_utf16_lossy(units)) as i32,
+    );
+    frontend.shell_controller.set_prop(
+        PAGE_DIALOG,
+        id,
+        Prop::RowCount,
+        Value::Int(page.lines.len() as i32),
+    );
 }
 
 fn request(wol: Option<&mut WolVisit>, line: WolChatLine) {
@@ -500,6 +534,7 @@ fn send_page(
         renderer,
         dialog,
         LanChatLine { text: echo, color },
+        None,
     );
 }
 
@@ -543,20 +578,22 @@ fn apply(state: &mut AppState, actions: Vec<WolPageAction>) {
 }
 
 /// A white (-1) CSF line through `0x005E2790`.
-fn notice(
+pub(super) fn notice(
     frontend: &mut FrontendState,
     renderer: &RendererState,
     process_assets: &ProcessAssets,
-    key: &str,
+    key: &'static str,
 ) {
     let text = process_assets.csf_label(key, key).encode_utf16().collect();
-    append_page_line(
+    append_line(
         frontend,
         renderer,
+        PAGE_DIALOG,
         LanChatLine {
             text,
             color: u32::MAX,
         },
+        Some(key),
     );
 }
 

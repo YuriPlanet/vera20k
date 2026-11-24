@@ -339,7 +339,9 @@ fn button_node(id: u16) -> NodeSpec {
 /// `0x126` with Yes (6) and No (7) on the CE/120 rects. Its loop
 /// (`0x007759E0`) dispatches without `IsDialogMessage`, so it takes no keys.
 pub fn message_box(body: String, ok: String) -> ShellBox {
-    ShellBox::new(DialogResourceId(0x00D0), body).button(BOX_OK, ok)
+    ShellBox::new(DialogResourceId(0x00D0), body)
+        .button(BOX_OK, ok)
+        .with_caption_keys(&["GUI:OK"])
 }
 
 /// [`message_box`]'s style 4: Yes and No.
@@ -347,6 +349,7 @@ pub fn yes_no_box(body: String, yes: String, no: String) -> ShellBox {
     ShellBox::new(DialogResourceId(0x0126), body)
         .button(BOX_YES, yes)
         .button(BOX_NO, no)
+        .with_caption_keys(&["GUI:Yes", "GUI:No"])
 }
 
 /// `0xC4` OK button id 1, `0x126` Yes 6 / No 7.
@@ -378,6 +381,7 @@ impl WolWaitBox {
         let shell_box = ShellBox::new(WAIT_DIALOG, text)
             .button(WAIT_DISCONNECT, disconnect)
             .button(WAIT_CHECK_STATUS, check_status)
+            .with_caption_keys(&["GUI:Disconnect", "GUI:WOLCheckStatus"])
             .template(crate::ui::shell::modal::WAIT_TEMPLATE);
         let opened_at = crate::util::time::Instant::now();
         Self {

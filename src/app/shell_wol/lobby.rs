@@ -1050,7 +1050,7 @@ fn show_wait(frontend: &mut FrontendState, process_assets: &ProcessAssets, key: 
         return;
     };
     match lobby.wait.as_mut() {
-        Some(open) => open.shell_box.body = fresh.shell_box.body,
+        Some(open) => open.shell_box.replace_body(fresh.shell_box.body, Some(key)),
         None => lobby.wait = Some(fresh),
     }
     lobby.ui.release_buttons();
@@ -1063,7 +1063,7 @@ fn show_wait(frontend: &mut FrontendState, process_assets: &ProcessAssets, key: 
 fn retext_wait(wol: Option<&mut WolVisit>, process_assets: &ProcessAssets, key: &str) {
     let text = process_assets.csf_text(key);
     if let Some(wait) = lobby_mut(wol).and_then(|lobby| lobby.wait.as_mut()) {
-        wait.shell_box.body = text;
+        wait.shell_box.replace_body(text, Some(key));
     }
 }
 
@@ -1082,7 +1082,8 @@ fn show_box(
     yes_no: bool,
     then: BoxThen,
 ) {
-    let message = service::message_box(process_assets, process_assets.csf_text(key), yes_no);
+    let message =
+        service::message_box(process_assets, process_assets.csf_text(key), yes_no).with_body_key(key);
     put_box(frontend, message, then);
 }
 
@@ -1091,7 +1092,7 @@ pub(super) fn replace_box_body(wol: Option<&mut WolVisit>, body: &str) -> bool {
     let Some((message, _)) = lobby_mut(wol).and_then(|lobby| lobby.message.as_mut()) else {
         return false;
     };
-    message.body = body.to_owned();
+    message.replace_body(body.to_owned(), None);
     true
 }
 
@@ -1258,9 +1259,13 @@ fn await_room(frontend: &mut FrontendState, process_assets: &ProcessAssets) {
     show_wait(frontend, process_assets, "TXT_REQ_CHANLIST");
     let cancel = process_assets.csf_text("GUI:Cancel");
     if let Some(wait) = lobby_mut(frontend.wol.as_mut()).and_then(|lobby| lobby.wait.as_mut()) {
-        wait.shell_box.body = crate::i18n::tr("VERA:ReturningToRoom");
-        wait.shell_box
-            .set_caption(crate::ui::wol_shell::WAIT_DISCONNECT, cancel);
+        let key = "VERA:ReturningToRoom";
+        wait.shell_box.replace_body(crate::i18n::tr(key), Some(key));
+        wait.shell_box.replace_caption(
+            crate::ui::wol_shell::WAIT_DISCONNECT,
+            cancel,
+            Some("GUI:Cancel"),
+        );
     }
 }
 
@@ -1514,7 +1519,7 @@ fn host_changed(state: &mut AppState, name: String, channel: Option<WolChannel>)
     );
 }
 
-fn refill_games(frontend: &mut FrontendState, process_assets: &ProcessAssets) {
+pub(super) fn refill_games(frontend: &mut FrontendState, process_assets: &ProcessAssets) {
     let sort = frontend.wol_lobby_globals.game_sort;
     let Some(lobby) = lobby(frontend.wol.as_ref()) else {
         return;

@@ -8,6 +8,7 @@ use crate::app::process_assets::ProcessAssets;
 use crate::app::shell_route::ShellRoute;
 use crate::map::skirmish_scenarios::{RANDMAP_PREVIEW, RANDMAP_SED};
 use crate::sim::rng::MainRng;
+use crate::ui::shell::static_reveal::HoverLabel;
 use crate::ui::skirmish_shell::SkirmishShellState;
 use crate::ui::skirmish_shell::page::Pointer;
 use crate::util::config::GameConfig;
@@ -1852,17 +1853,18 @@ impl App {
         if random_map_page::holding(controller, modal) {
             return;
         }
-        let help = (controller.top_id() == Some(random_map_page::DIALOG))
+        let key = (controller.top_id() == Some(random_map_page::DIALOG))
             .then(|| crate::ui::shell::page::hovered_key(controller.gui()))
             .flatten()
             // The preview static hovers with no help of its own.
-            .filter(|key| !key.is_empty())
-            .map(|key| process_assets.csf_label(key, ""))
-            .unwrap_or_default();
+            .filter(|key| !key.is_empty());
+        let label = HoverLabel::new(key, false);
         if let Some(setup) = random_map_dialog(&mut frontend.skirmish_shell_state)
-            && setup
-                .statics
-                .hover(&help, crate::util::time::Instant::now())
+            && setup.statics.hover_label(
+                label,
+                process_assets.csf.as_ref(),
+                crate::util::time::Instant::now(),
+            )
         {
             window.request_redraw();
         }

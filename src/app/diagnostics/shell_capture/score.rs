@@ -146,11 +146,16 @@ fn synthetic_campaign_score_model() -> CampaignScoreScreenModel {
         par_time: "00:10:00".into(),
         your_time: "00:08:31".into(),
         enemies_destroyed: "17".into(),
-        rank: "Captain".into(),
-        commendation: "Mission completed ahead of schedule.".into(),
+        awards: crate::ui::campaign_score_shell::CampaignAwards::Literal([
+            PREVIEW_RANK.to_owned(),
+            PREVIEW_COMMENDATION.to_owned(),
+        ]),
         ..Default::default()
     }
 }
+
+const PREVIEW_RANK: &str = "Captain";
+const PREVIEW_COMMENDATION: &str = "Mission completed ahead of schedule.";
 
 pub(super) struct CampaignScoreCapture {
     phase: CampaignScorePhase,
@@ -647,8 +652,8 @@ impl CampaignScoreCapture {
                 "par_time": fixture.par_time,
                 "your_time": fixture.your_time,
                 "enemies_destroyed": fixture.enemies_destroyed,
-                "rank": fixture.rank,
-                "commendation": fixture.commendation,
+                "rank": PREVIEW_RANK,
+                "commendation": PREVIEW_COMMENDATION,
             },
             "parity_certification": "NONE",
             "presenter_domain": "final-swapchain-after-rgb565",
@@ -769,6 +774,7 @@ fn comparison_model(state: &AppState) -> Result<ScoreScreenModel> {
         rows: vec![
             ScoreRow {
                 name: computer,
+                computer_name: true,
                 rgb: color("DarkRed")?,
                 kills: 0,
                 losses: 0,
@@ -777,6 +783,7 @@ fn comparison_model(state: &AppState) -> Result<ScoreScreenModel> {
             },
             ScoreRow {
                 name: "[New Player]".into(),
+                computer_name: false,
                 rgb: color("DarkBlue")?,
                 kills: 0,
                 losses: 15,

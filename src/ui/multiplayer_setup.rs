@@ -109,10 +109,10 @@ const ROSTER_PAIR_GAP: i32 = 2 * ROSTER_BOX_MARGIN.0 + ROSTER_GROUP_GAP;
 /// text like the rows', no button art. A narrower column narrows them all
 /// ([`RosterColumns`]).
 const ROSTER_W: i32 = 751;
-const ROSTER_CELLS: [(i32, i32); 5] = [(18, 260), (286, 156), (450, 57), (515, 57), (580, 57)];
+const ROSTER_CELLS: [(i32, i32); 5] = [(18, 260), (286, 156), (450, 83), (541, 83), (632, 83)];
 const ROSTER_CAPTION_W: i32 = 260;
-const ROSTER_ADD_AI: (i32, i32) = (286, 91);
-const ROSTER_JOIN_W: i32 = 91;
+const ROSTER_ADD_AI: (i32, i32) = (286, 220);
+const ROSTER_JOIN_W: i32 = 192;
 /// A list opened from VERA's roster is at least as wide as its widest text,
 /// with this margin at each side, and as a colour swatch this wide.
 const ROSTER_LIST_MARGIN: i32 = 3;
@@ -2977,7 +2977,13 @@ mod tests {
         for (position, place) in into_b.iter().enumerate() {
             let row = layout.roster_rows[position];
             assert_eq!(row.x, layout.roster_rows[0].x);
-            if !place.header {
+            if place.header {
+                let (join, add_ai) = layout.header_controls[position];
+                // At 800×600 the Russian “Добавить ИИ” needs over 56 px
+                // even at the tightest fit. Both actions share the header.
+                assert!(add_ai.w > 56 && add_ai.x + add_ai.w <= join.x);
+                assert!(join.x + join.w <= row.x + row.w);
+            } else {
                 let team = layout.combos[position][SetupColumn::Team as usize];
                 assert!(team.x + team.w <= row.x + row.w, "{position}");
             }

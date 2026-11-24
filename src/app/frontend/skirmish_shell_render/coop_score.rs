@@ -120,11 +120,12 @@ pub(crate) fn render_coop_score(
         match id {
             TITLE => Some(state.csf_label(COOP_SCORE_PAGE.title_key, COOP_SCORE_PAGE.title_key)),
             STATUS => Some(status.clone()),
-            TIME => Some(model.time.clone()),
-            NEXT_MISSION => Some(model.next_mission.clone()),
-            DESCRIPTION => Some(model.description.clone()),
-            MODE_LABEL => Some(model.mode_label.clone()),
-            MAP_LABEL => Some(model.map_label.clone()),
+            TIME => Some(model.time(&state.process_assets)),
+            NEXT_MISSION | MAP_LABEL => {
+                Some(model.map_label(&state.frontend.scenario_catalog).to_owned())
+            }
+            DESCRIPTION => Some(model.description(&state.process_assets)),
+            MODE_LABEL => Some(state.csf_text(&model.mode_key)),
             id if NAMES.contains(&id) => slot(NAMES).map(|slot| slot.name.clone()),
             id if COUNTRIES.contains(&id) => pick(&slot(COUNTRIES)?.country),
             id if COLORS.contains(&id) => pick(&slot(COLORS)?.color),

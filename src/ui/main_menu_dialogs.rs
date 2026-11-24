@@ -29,14 +29,20 @@ use crate::ui::shell::modal::ShellBox;
 /// table is missing the key. Provided by the caller (which owns the CSF table).
 pub(crate) type CsfLookup<'a> = dyn Fn(&str, &str) -> String + 'a;
 
-/// ShellMessageBox__Run `0x005D3490`'s boxes, read from CSF once at open:
+/// ShellMessageBox__Run `0x005D3490`'s boxes, read from CSF at open:
 /// body, then the buttons that answer 0 (OK slot), 1 (Cancel) and 2 (third).
-fn message(csf: &CsfLookup<'_>, [body, ok, cancel, third]: [(&str, &str); 4]) -> ShellBox {
+fn message(csf: &CsfLookup<'_>, [body, ok, cancel, third]: [(&'static str, &str); 4]) -> ShellBox {
     let text = |(key, fallback): (&str, &str)| match key {
         "" => String::new(),
         key => csf(key, fallback),
     };
-    ShellBox::message(text(body), text(ok), text(cancel), text(third))
+    let shell_box = ShellBox::message(text(body), text(ok), text(cancel), text(third))
+        .with_caption_keys(&[ok.0, cancel.0, third.0]);
+    if body.0.is_empty() {
+        shell_box
+    } else {
+        shell_box.with_body_key(body.0)
+    }
 }
 
 const NONE: (&str, &str) = ("", "");
@@ -72,6 +78,21 @@ pub(crate) fn campaign_replay(csf: &CsfLookup<'_>) -> ShellBox {
 #[cfg(all(test, tests_ui))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_open_box_follows_the_current_table_and_keeps_a_literal_replacement() {
+        let mut popup = exit_confirm(&|_, fallback| fallback.to_owned());
+        let csf = crate::assets::csf_file::test_csf(&[
+            ("GUI:ExitAreYouSure", "¿Quieres salir?"),
+            ("TXT_OK", "Aceptar"),
+            ("GUI:Cancel", "Cancelar"),
+        ]);
+        assert_eq!(popup.body_in(Some(&csf)), "¿Quieres salir?");
+        assert_eq!(popup.buttons[0].caption_in(Some(&csf)), "Aceptar");
+        assert_eq!(popup.buttons[1].caption_in(Some(&csf)), "Cancelar");
+        popup.replace_body("GUI:Cancel".into(), None);
+        assert_eq!(popup.body_in(Some(&csf)), "GUI:Cancel");
+    }
 
     /// The captions land in answer order: the Esc menu's Options answers
     /// 0, Cancel 1 and Exit Game 2.

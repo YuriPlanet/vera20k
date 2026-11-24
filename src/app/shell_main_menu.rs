@@ -46,18 +46,69 @@ impl AppState {
                 &mut self.frontend.scenario_catalog.records_mut(),
                 csf,
             );
-        }
-        crate::app::loading::transitions::resolve_status_texts(self);
-        crate::app::input::keyboard::refresh_title(&mut self.frontend, &self.process_assets);
-        // The login form keeps its status line as resolved text; the rest of
-        // that page resolves every frame.
-        if let Some(visit) = self.frontend.wol.as_mut()
-            && let crate::app::shell_wol::WolPage::Login(login) = &mut visit.page
-        {
-            for form in login.form.iter_mut().chain(login.account.iter_mut()) {
-                form.refresh_text();
+            let caption = |key: &str| crate::i18n::label(Some(csf), key, key);
+            let now = Instant::now();
+            if let Some(page) = self.frontend.score_page.as_mut() {
+                page.refresh_labels(caption, now);
+            }
+            if let Some(page) = self.frontend.campaign_score_page.as_mut() {
+                page.refresh_labels(caption, now);
             }
         }
+        crate::app::loading::transitions::resolve_status_texts(self);
+        crate::app::input::keyboard::refresh_labels(&mut self.frontend, &self.process_assets);
+        if self.frontend.options_dialog.is_some()
+            || self.match_state.match_presentation.options_page.is_some()
+        {
+            let labels =
+                App::launcher_options_labels(self.frontend.shell_route, &self.process_assets);
+            if let Some(dialog) = self.frontend.options_dialog.as_mut() {
+                dialog.set_labels(labels.clone());
+            }
+            if let Some(page) = self.match_state.match_presentation.options_page.as_mut() {
+                page.dialog.set_labels(labels);
+            }
+        }
+        let now = Instant::now();
+        let (heading, mode, map) =
+            crate::app::frontend::skirmish_shell_render::skirmish_right_panel_label_strings(
+                &self.frontend,
+                &self.process_assets,
+            );
+        let choose = self.csf_text(crate::ui::skirmish_shell::CHOOSE_MAP_TITLE_KEY);
+        let generate = self.csf_text(crate::ui::skirmish_shell::RANDOM_MAP_TITLE_KEY);
+        let empty_slot = self.csf_label("TXT_EMPTY_SLOT", "[EMPTY SLOT]");
+        let shell = &mut self.frontend.skirmish_shell_state;
+        let csf = self.process_assets.csf.as_ref();
+        shell.statics.refresh_help(csf, now);
+        shell.statics.set_labels(&heading, &mode, &map, now);
+        if let Some(page) = shell.choose_map_modal.as_mut() {
+            page.statics.set_heading(&choose, now);
+            page.statics.refresh_help(csf, now);
+        }
+        if let Some(page) = shell.random_map_setup_modal.as_mut() {
+            page.statics.set_heading(&generate, now);
+            page.statics.refresh_help(csf, now);
+        }
+        if let Some(room) = self.frontend.multiplayer_setup.as_mut() {
+            room.statics.refresh_help(csf, now);
+        }
+        if let Some(browser) = shell.setups_browser.as_mut() {
+            browser.refresh_empty_slot_label(&empty_slot);
+        }
+        if let Some(browser) = shell.saved_seed_browser.as_mut() {
+            browser.refresh_empty_slot_label(&empty_slot);
+        }
+        App::refresh_mod_import_labels(&mut self.frontend, &self.process_assets);
+        for browser in self.frontend.load_saved_game.iter_mut().chain(
+            self.match_state
+                .match_presentation
+                .saved_game_browser
+                .iter_mut(),
+        ) {
+            browser.refresh_empty_slot_label(&empty_slot);
+        }
+        crate::app::shell_wol::refresh_labels(self);
     }
 
     /// The String Keys hotkey: with the Developer box ticked, keys and texts
@@ -293,25 +344,14 @@ impl App {
         title: String,
         detail: String,
     ) {
-        use crate::ui::score_shell::{ScorePage, ScoreTexts, format_elapsed, format_game_number};
+        use crate::ui::score_shell::{ScorePage, ScoreTexts};
         // The page draws the main menu's chrome, dropped for the match.
         Self::ensure_main_menu_shell_chrome(
             &state.renderer,
             &mut state.frontend,
             &state.process_assets,
         );
-        let texts = ScoreTexts {
-            game: format_game_number(&model, &state.csf_text("TXT_GAME")),
-            time: format_elapsed(&model, &state.csf_text("TXT_TIME_FORMAT_HOURS")),
-            headers: [
-                "GUI:Player",
-                "GUI:Kills",
-                "GUI:Losses",
-                "GUI:Built",
-                "GUI:Score",
-            ]
-            .map(|key| state.csf_text(key)),
-        };
+        let texts = ScoreTexts::localize(&model, |key| state.process_assets.csf_text(key));
         // A rules set may name its own picture for this country
         // (`[EndGameScreens]`). A name the install cannot open is not fatal:
         // the side's own picture is still a correct score page, and the model

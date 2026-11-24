@@ -869,7 +869,7 @@ fn apply_catalog(catalog: &Catalog, csf: &mut CsfFile, mod_dir: Option<&Path>, s
         }
     }
     for (key, text) in catalog.selected.strings.iter().filter(single) {
-        if !STANDARD_MENU.contains_key(key) {
+        if !STANDARD_MENU.contains_key(key) && (key.starts_with("VERA:") || !csf.is_mod_text(key)) {
             csf.set_override(key, text);
         }
     }
@@ -929,7 +929,9 @@ fn apply_mod_menu_file(csf: &mut CsfFile, dir: &Path, catalog: &Catalog) {
         Ok(text) => {
             for entry in parse(&text).entries {
                 let key = entry.key();
-                if STANDARD_MENU.contains_key(&key) {
+                if STANDARD_MENU.contains_key(&key)
+                    || (!key.starts_with("VERA:") && csf.is_mod_text(&key))
+                {
                     csf.set_override(&key, &entry.text);
                 }
             }
@@ -1685,7 +1687,12 @@ mod tests {
             ("TXT_OK", "OK"),
         ];
         std::fs::write(install.path().join("ra2md.csf"), test_csf_bytes(&base)).unwrap();
-        let renamed = [("GUI:Back", "Back"), ("GUI:Skirmish", "Frontline"), base[2]];
+        let renamed = [
+            ("GUI:Back", "Back"),
+            ("GUI:Skirmish", "Frontline"),
+            ("GUI:ModSound", "Dawn Audio"),
+            base[2],
+        ];
         game_mod.write_mix("expandmd01.mix", "ra2md.csf", &test_csf_bytes(&renamed));
         game_mod.write_mix(
             "ares.mix",
@@ -1705,7 +1712,7 @@ mod tests {
         };
         let de = catalog_with(
             "de",
-            "[Strings]\nGUI:Back=Zurück\nGUI:Skirmish=Gefecht\nTXT_OK=Bestätigen\n",
+            "[Strings]\nGUI:Back=Zurück\nGUI:Skirmish=Gefecht\nGUI:ModSound=Ton\nTXT_OK=Bestätigen\n",
         );
         let mut csf = load();
         apply_catalog(&de, &mut csf, None, false);
@@ -1715,6 +1722,7 @@ mod tests {
         apply_catalog(&de, &mut csf, None, false);
         assert_eq!(csf.get("GUI:Back"), Some("Zurück"));
         assert_eq!(csf.get("GUI:Skirmish"), Some("Frontline"));
+        assert_eq!(csf.get("GUI:ModSound"), Some("Dawn Audio"));
         assert_eq!(csf.get("TXT_OK"), Some("Deploy"));
         let es = catalog_with(
             "es",
@@ -1724,15 +1732,17 @@ mod tests {
         std::fs::create_dir(&resources).unwrap();
         std::fs::write(
             resources.join("vera20k.es.ini"),
-            "[Strings]\nGUI:Skirmish=Primera línea\n",
+            "[Strings]\nGUI:Skirmish=Primera línea\nGUI:ModSound=Radio del alba\n",
         )
         .unwrap();
         apply_catalog(&es, &mut csf, Some(game_mod.path()), false);
         assert_eq!(csf.get("GUI:Back"), Some("Atrás"));
         assert_eq!(csf.get("GUI:Skirmish"), Some("Primera línea"));
+        assert_eq!(csf.get("GUI:ModSound"), Some("Radio del alba"));
         assert_eq!(csf.get("TXT_OK"), Some("Deploy"));
         apply_catalog(&de, &mut csf, Some(game_mod.path()), false);
         assert_eq!(csf.get("GUI:Skirmish"), Some("Frontline"));
+        assert_eq!(csf.get("GUI:ModSound"), Some("Dawn Audio"));
     }
 
     #[test]

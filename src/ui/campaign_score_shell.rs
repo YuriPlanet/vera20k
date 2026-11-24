@@ -273,8 +273,8 @@ impl CampaignScoreDialog {
     }
 }
 
-/// Already-resolved text from the campaign victory path. The app owns all
-/// value formatting and sends these strings to the page unchanged.
+/// The campaign victory snapshot. Map-defined awards retain their CSF keys
+/// after the match so changing the language can resolve them again.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CampaignScoreScreenModel {
     /// Campaign side index (`Scenario+0x34B8`): 0 allies, 1 Soviet, 2 Yuri.
@@ -292,23 +292,90 @@ pub struct CampaignScoreScreenModel {
     pub par_time: String,
     pub your_time: String,
     pub enemies_destroyed: String,
-    pub rank: String,
-    pub commendation: String,
+    pub awards: CampaignAwards,
 }
 
-/// The texts `0xBC7`'s init (`0x00470D30`, `WM_INITDIALOG`) writes, resolved
-/// by the app: the campaign name `0x733`, `GUI:CampaignLabel` over the
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CampaignAwards {
+    /// The selected [Ranking] title and message.
+    Labels([String; 2]),
+    /// Prewritten display text supplied by a preview.
+    Literal([String; 2]),
+}
+
+impl Default for CampaignAwards {
+    fn default() -> Self {
+        Self::Literal(Default::default())
+    }
+}
+
+impl CampaignAwards {
+    fn text(&self, id: u16, caption: &impl Fn(&str) -> String) -> Option<String> {
+        let index = match id {
+            RANK_STATIC => 0,
+            COMMENDATION_STATIC => 1,
+            _ => return None,
+        };
+        match self {
+            Self::Labels(keys) => Some(caption(&keys[index])),
+            Self::Literal(text) => Some(text[index].clone()),
+        }
+    }
+}
+
+/// The snapshot for `0xBC7`'s init (`0x00470D30`, `WM_INITDIALOG`):
+/// the campaign name `0x733`, `GUI:CampaignLabel` over the
 /// campaign's number `0x735`, `GUI:DifficultyString` `0x732`, the time
 /// `0x3EA`, and the two partners' rows as `0x00471420` sorted them.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CampaignEndModel {
     /// Scenario `+0x34B8`, which picks the score art (`0x0072D300`).
     pub side: i32,
-    pub campaign_name: String,
-    pub campaign_number: String,
-    pub difficulty: String,
-    pub time: String,
+    pub labels: CampaignEndLabels,
     pub rows: Vec<ScoreRow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CampaignEndLabels {
+    pub campaign_name_key: Option<String>,
+    pub campaign_number: i64,
+    pub difficulty: i32,
+    pub elapsed_seconds: u32,
+}
+
+impl CampaignEndLabels {
+    fn text(&self, id: u16, caption: &impl Fn(&str) -> String) -> Option<String> {
+        use crate::assets::csf_file::{CsfArg, format_csf};
+        Some(match id {
+            CAMPAIGN_END_NAME => self
+                .campaign_name_key
+                .as_deref()
+                .map(caption)
+                .unwrap_or_default(),
+            CAMPAIGN_END_NUMBER => format_csf(
+                &caption("GUI:CampaignLabel"),
+                &[CsfArg::Int(self.campaign_number)],
+            ),
+            CAMPAIGN_END_DIFFICULTY => match self.difficulty {
+                level @ 0..=2 => {
+                    let value = caption(
+                        [
+                            "TXT_DIFFICULTY_EASY",
+                            "TXT_DIFFICULTY_MEDIUM",
+                            "TXT_DIFFICULTY_BRUTAL",
+                        ][level as usize],
+                    );
+                    format_csf(&caption("GUI:DifficultyString"), &[CsfArg::Str(&value)])
+                }
+                _ => caption("GUI:Blank"),
+            },
+            CAMPAIGN_END_TIME => crate::ui::score_shell::format_elapsed_seconds(
+                self.elapsed_seconds,
+                &caption("TXT_TIME_FORMAT_HOURS"),
+            ),
+            _ => return None,
+        })
+    }
 }
 
 /// One of `0xBC7`'s plain score cells (`0x781..0x78A`): its text, alignment
@@ -431,11 +498,27 @@ pub struct CampaignScorePage {
     pub side: i32,
     pub statics: ScoreStatics,
     cells: Vec<CampaignScoreCell>,
+    labels: CampaignPageLabels,
     emblem_animation: Option<CampaignScoreEmblemAnimation>,
     /// The native SHOW completion (`0x4EC`) has started reveals and the
     /// kind-4 timer. False until then, including a page whose slide was
     /// unavailable.
     presentation_started: bool,
+}
+
+#[derive(Debug, Clone)]
+enum CampaignPageLabels {
+    Victory(CampaignAwards),
+    End(CampaignEndLabels),
+}
+
+impl CampaignPageLabels {
+    fn text(&self, id: u16, caption: &impl Fn(&str) -> String) -> Option<String> {
+        match self {
+            Self::Victory(awards) => awards.text(id, caption),
+            Self::End(labels) => labels.text(id, caption),
+        }
+    }
 }
 
 /// The campaign `0x72B` SCRA static's kind-4 timer and frame. The timer is
@@ -471,21 +554,46 @@ impl CampaignScoreEmblemAnimation {
 }
 
 impl CampaignScorePage {
+    /// Replace localized captions without reopening the dialog or changing
+    /// either player's statistics, places or emblem animation.
+    pub fn refresh_labels(&mut self, caption: impl Fn(&str) -> String, now: Instant) {
+        for spec in self
+            .dialog
+            .controls()
+            .iter()
+            .filter(|spec| spec.reveal.is_some())
+        {
+            let value = self.labels.text(spec.id, &caption).or_else(|| {
+                spec.caption_key
+                    .filter(|key| Some(*key) != BLANK)
+                    .map(&caption)
+            });
+            if let Some(text) = value {
+                self.statics.set_text(spec.id, &text, now);
+            }
+        }
+    }
+
     /// The init of `dialog`: each kind-1 static gets the text and colour
     /// `value` gives its id, else its template caption resolved by `caption`.
     fn open_dialog(
         dialog: CampaignScoreDialog,
         side: i32,
+        labels: CampaignPageLabels,
         value: impl Fn(u16) -> Option<(String, Option<[u8; 3]>)>,
-        caption: impl Fn(&'static str) -> String,
+        caption: impl Fn(&str) -> String,
         now: Instant,
     ) -> Self {
         let statics = dialog.controls().iter().filter_map(|spec| {
             let reveal = spec.reveal?;
             let (text, rgb) = match spec.id {
                 STATUS_HELP_STATIC => (String::new(), None),
-                id => value(id)
-                    .unwrap_or_else(|| (spec.caption_key.map(&caption).unwrap_or_default(), None)),
+                id => value(id).unwrap_or_else(|| {
+                    let text = labels
+                        .text(id, &caption)
+                        .or_else(|| spec.caption_key.map(&caption));
+                    (text.unwrap_or_default(), None)
+                }),
             };
             Some(ScoreStatic::new(
                 spec.id, spec.align, rgb, reveal, &text, now,
@@ -496,6 +604,7 @@ impl CampaignScorePage {
             side,
             statics: ScoreStatics(statics.collect()),
             cells: Vec::new(),
+            labels,
             emblem_animation: None,
             presentation_started: false,
         }
@@ -505,15 +614,13 @@ impl CampaignScorePage {
     /// labels keep their template captions, resolved by `caption`.
     pub fn open(
         model: &CampaignScoreScreenModel,
-        caption: impl Fn(&'static str) -> String,
+        caption: impl Fn(&str) -> String,
         now: Instant,
     ) -> Self {
         let value = |id| {
             let text = match id {
                 PAR_TIME_VALUE_STATIC => &model.par_time,
                 YOUR_TIME_VALUE_STATIC => &model.your_time,
-                RANK_STATIC => &model.rank,
-                COMMENDATION_STATIC => &model.commendation,
                 ENEMIES_DESTROYED_VALUE_STATIC => &model.enemies_destroyed,
                 _ => return None,
             };
@@ -522,6 +629,7 @@ impl CampaignScorePage {
         Self::open_dialog(
             CampaignScoreDialog::Victory,
             model.side,
+            CampaignPageLabels::Victory(model.awards.clone()),
             value,
             caption,
             now,
@@ -535,30 +643,28 @@ impl CampaignScorePage {
     /// `caption`.
     pub fn open_campaign_end(
         model: CampaignEndModel,
-        caption: impl Fn(&'static str) -> String,
+        caption: impl Fn(&str) -> String,
         now: Instant,
     ) -> Self {
-        let value =
-            |id| {
-                let place = CAMPAIGN_END_PLACES.iter().zip(&model.rows).find_map(
-                    |(&(name, score), row)| {
-                        let text = (id == name).then(|| row.name.clone());
-                        let text = text.or_else(|| (id == score).then(|| row.score.to_string()));
-                        text.map(|text| (text, Some(row.rgb)))
-                    },
-                );
-                let text = match id {
-                    _ if place.is_some() => return place,
-                    CAMPAIGN_END_NAME => &model.campaign_name,
-                    CAMPAIGN_END_NUMBER => &model.campaign_number,
-                    CAMPAIGN_END_DIFFICULTY => &model.difficulty,
-                    CAMPAIGN_END_TIME => &model.time,
-                    _ => return None,
-                };
-                Some((text.clone(), None))
-            };
+        let value = |id| {
+            CAMPAIGN_END_PLACES
+                .iter()
+                .zip(&model.rows)
+                .find_map(|(&(name, score), row)| {
+                    let text = (id == name).then(|| row.name.clone());
+                    let text = text.or_else(|| (id == score).then(|| row.score.to_string()));
+                    text.map(|text| (text, Some(row.rgb)))
+                })
+        };
         let dialog = CampaignScoreDialog::CampaignEnd;
-        let mut page = Self::open_dialog(dialog, model.side, value, caption, now);
+        let mut page = Self::open_dialog(
+            dialog,
+            model.side,
+            CampaignPageLabels::End(model.labels),
+            value,
+            caption,
+            now,
+        );
         let rows = model
             .rows
             .iter()
@@ -832,8 +938,7 @@ mod tests {
             par_time: "00:10:00".into(),
             your_time: "00:08:31".into(),
             enemies_destroyed: "17".into(),
-            rank: "Major".into(),
-            commendation: "Mission commendation".into(),
+            awards: CampaignAwards::Literal(["Major".into(), "Mission commendation".into()]),
             ..Default::default()
         };
         let page = CampaignScorePage::open(&model, |key| key.to_owned(), Instant::now());
@@ -899,6 +1004,7 @@ mod tests {
     fn campaign_end_binds_rows_to_cells_and_places() {
         let row = |name: &str, rgb, score| crate::ui::score_shell::ScoreRow {
             name: name.into(),
+            computer_name: false,
             rgb,
             kills: 7,
             losses: 2,
@@ -907,17 +1013,26 @@ mod tests {
         };
         let model = CampaignEndModel {
             side: 1,
-            campaign_name: "Soviet Campaign".into(),
-            campaign_number: "Campaign 2".into(),
-            difficulty: "Difficulty: Medium".into(),
-            time: "01:02:03".into(),
+            labels: CampaignEndLabels {
+                campaign_name_key: Some("GUI:SovietCampaign".into()),
+                campaign_number: 2,
+                difficulty: 1,
+                elapsed_seconds: 3723,
+            },
             rows: vec![
                 row("Host", [10, 20, 30], 900),
                 row("Guest", [40, 50, 60], 400),
             ],
         };
-        let page =
-            CampaignScorePage::open_campaign_end(model, |key| key.to_owned(), Instant::now());
+        let caption = |key: &str| {
+            match key {
+                "GUI:SovietCampaign" => "Soviet Campaign",
+                "TXT_TIME_FORMAT_HOURS" => "%02d:%02d:%02d",
+                key => key,
+            }
+            .to_owned()
+        };
+        let mut page = CampaignScorePage::open_campaign_end(model, caption, Instant::now());
         assert_eq!(page.dialog, CampaignScoreDialog::CampaignEnd);
         assert_eq!(
             page.statics.text(CAMPAIGN_END_NAME),
@@ -926,6 +1041,29 @@ mod tests {
         assert_eq!(page.statics.text(CAMPAIGN_END_TIME), Some("01:02:03"));
         assert_eq!(page.statics.text(0x0736), Some("GUI:FirstPlace"));
         assert_eq!(page.statics.text(TITLE_STATIC), Some("GUI:CampaignResults"));
+        page.refresh_labels(
+            |key| {
+                match key {
+                    "GUI:FirstPlace" => "Erster Platz",
+                    "GUI:SovietCampaign" => "Sowjetkampagne",
+                    "GUI:CampaignLabel" => "Kampagne %d",
+                    "GUI:DifficultyString" => "Stufe %s",
+                    "TXT_DIFFICULTY_MEDIUM" => "Mittel",
+                    "TXT_TIME_FORMAT_HOURS" => "Zeit %02d:%02d:%02d",
+                    key => key,
+                }
+                .to_owned()
+            },
+            Instant::now(),
+        );
+        assert_eq!(page.statics.text(0x0736), Some("Erster Platz"));
+        assert_eq!(page.statics.text(CAMPAIGN_END_NAME), Some("Sowjetkampagne"));
+        assert_eq!(page.statics.text(CAMPAIGN_END_NUMBER), Some("Kampagne 2"));
+        assert_eq!(
+            page.statics.text(CAMPAIGN_END_DIFFICULTY),
+            Some("Stufe Mittel")
+        );
+        assert_eq!(page.statics.text(CAMPAIGN_END_TIME), Some("Zeit 01:02:03"));
         let place = |id| {
             page.statics
                 .0

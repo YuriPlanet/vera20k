@@ -2753,6 +2753,10 @@ impl LanCapture {
                     state.frontend.score_page.is_none(),
                     "the co-op exit opened the score dialog"
                 );
+                ensure!(
+                    state.frontend.skirmish_shell_chrome.is_some(),
+                    "BC6 opened without the artwork used to draw its controls"
+                );
                 let page = state
                     .frontend
                     .coop_score_page
@@ -2800,8 +2804,8 @@ impl LanCapture {
                 );
                 self.route
                     .push(json!({"frame":frame,"action":"BC6 opened","rows":rows,
-                    "next_map":next,"next_mission":page.model.next_mission,"time":page.model.time,
-                    "description":page.model.description}));
+                    "next_map":next,"next_mission":page.model.map_label(&state.frontend.scenario_catalog),"time":page.model.time(&state.process_assets),
+                    "description":page.model.description(&state.process_assets)}));
                 self.phase = if matches!(self.target, LanTarget::CoopNext | LanTarget::CoopRetry) {
                     LanPhase::CoopRound(0)
                 } else {
