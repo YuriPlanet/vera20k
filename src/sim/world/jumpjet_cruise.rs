@@ -179,6 +179,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
                 self.stable_id,
                 self.rules,
                 Some(self.rules.overlay_registry()),
+                true,
             );
         }
         foot_set_location(
