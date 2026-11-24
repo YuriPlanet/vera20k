@@ -369,8 +369,9 @@ modules, external modders, freeze), and the later items (`Launch`,
   `HitByWarhead`, `SpawnFire`, `HitTarget`, `TargetChanged`, `ProjectileIncoming`,
   `Detonated`, `Commanded`, `Crushed`, `HouseTransfer`, `ProductionCancelled`
   (reasons in `events.rs`). `Birth` misses paradrops, spawned aircraft, crate units,
-  survivors and starting objects; garrisons and non-departure cargo removal raise no
-  passenger events; type-bound timers scan every object when due, and type-bound
+  survivors and starting objects; a garrison entry raises `TransportEntered` and
+  `PassengerAdded` with `value2` 1, but garrison exits and non-departure cargo removal
+  raise no passenger events; type-bound timers scan every object when due, and type-bound
   polls walk the IDs, reading only the due phase's types; `Timer` with only
   weapon/projectile bindings never fires.
 - Decisions: decision triggers cannot have immediate actions; `ProductionAllowed`
