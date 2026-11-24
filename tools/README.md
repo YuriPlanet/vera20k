@@ -294,7 +294,9 @@ If the argument is omitted, the extractor reads `RA2_DIR`, then `config.toml`.
 
 A label preserves every executable reported by **that Cargo invocation**, including
 fresh cache hits, under `<git-common-dir>/owned-builds/artifacts/<label>`.
-Executables retain their original basename inside numbered subdirectories.
+Executables retain their original basename inside numbered subdirectories. Each has
+a copy of the build’s two loose `Terrain` files beside it, so map loads still work
+after the checkout changes.
 The printed directory's `manifest.json` gives the executable filenames, SHA-256s,
 checkout, commit, dirty status, combined tracked/nonignored source hash, command,
 Cargo/Rust versions and common build environment overrides. Labels cannot be

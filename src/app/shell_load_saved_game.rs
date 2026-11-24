@@ -13,7 +13,7 @@ use crate::app::frontend::shell_layout::load_saved_game_layout;
 use crate::app::shell_route::ShellRoute;
 use crate::ui::shell::saved_file_input;
 use crate::ui::shell::saved_games::LOAD_SAVED_GAME_PAGE;
-use crate::ui::skirmish_shell::{SavedSeedBrowserState, SavedSeedMode, SavedSeedPromptPurpose};
+use crate::ui::skirmish_shell::{SavedSeedBrowserState, SavedSeedMode};
 
 impl App {
     /// State 9: `0x00558F2E` creates `0xB7` with the rows `0x005596A0`
@@ -110,9 +110,7 @@ impl App {
             state.frontend.load_saved_game = None;
             return;
         };
-        log::warn!("Load Saved Game: {}: {error}", path.display());
-        let body = state.csf_label("TXT_ERROR_LOADING_GAME", "Error loading game.");
-        Self::show_saved_game_prompt(state, SavedSeedPromptPurpose::Error, body, false);
+        Self::report_saved_game_load_error(state, path, &error);
     }
 
     /// Status help of the control under the cursor (`0x006040B0`): the list,

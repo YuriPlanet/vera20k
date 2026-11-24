@@ -365,6 +365,7 @@ fn run_inner(
         &map.map.ini,
         false,
     )
+    .map_err(|error| format!("{error:#}"))?
     .ok_or_else(|| {
         format!(
             "load theater {} for app rule-source selection",
