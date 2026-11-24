@@ -181,8 +181,8 @@ fn install_world(
     // Map-load authority retains Size height beside the bounds (the shared
     // Foot zone precheck reads both).
     sim.set_playfield_size_height_for_test(Some(i32::from(terrain.height())));
-    sim.resolved_terrain = Some(terrain);
-    sim.overlay_grid = Some(OverlayGrid::new(GRID_SIZE, GRID_SIZE));
+    *sim.resolved_terrain = Some(terrain);
+    *sim.overlay_grid = Some(OverlayGrid::new(GRID_SIZE, GRID_SIZE));
     for &(rx, ry) in ore_cells {
         sim.overlay_grid
             .as_mut()
@@ -191,12 +191,12 @@ fn install_world(
     }
     // Map load publishes the canonical PathGrid the frame and the Drive
     // destination search read.
-    sim.path_grid = Some(std::sync::Arc::new(grid.clone()));
+    *sim.path_grid = Some(std::sync::Arc::new(grid.clone()));
     if install_zones {
         sim.rebuild_zone_grid(grid);
         assert!(sim.zone_grid.is_some());
     } else {
-        sim.zone_grid = None;
+        *sim.zone_grid = None;
     }
     for &(rx, ry) in ore_cells {
         let cell = sim.resolved_terrain.as_ref().unwrap().cell(rx, ry).unwrap();

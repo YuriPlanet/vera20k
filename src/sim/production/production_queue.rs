@@ -196,10 +196,9 @@ pub fn publish_production_changes_for_tests(
 /// publish_production_changes plus the world's existing scheduled tail.
 #[cfg(any(test, feature = "test-support"))]
 pub fn dispatch_production_changes_for_tests(sim: &mut Simulation, rules: &RuleSet) -> bool {
-    sim.session
-        .set_tick_for_test(sim.session.tick().saturating_add(1));
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+    let session = &mut *sim.session;
+    session.set_tick_for_test(session.tick().saturating_add(1));
+    session.set_binary_frame_for_test(session.binary_frame().wrapping_add(1));
     let owners: Vec<_> = sim.houses.iter().map(|(&owner, _)| owner).collect();
     for owner in owners {
         publish_production_changes_for_tests(sim, rules, owner);

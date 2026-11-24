@@ -15,7 +15,7 @@ fn custom_snapshot_refuses_a_malformed_retained_rng_cursor() {
         .with_allows_manual_alliances(false);
     sim.install_session_admission(mode, None, policy);
     let map = sim.session.map_name().to_owned();
-    sim.scenario_rng = serde_json::from_value(serde_json::json!({
+    *sim.scenario_rng = serde_json::from_value(serde_json::json!({
         "disabled": 0, "index_a": 250, "index_b": 0, "state": vec![0u32; 250]
     }))
     .unwrap();
@@ -31,7 +31,7 @@ fn custom_snapshot_refuses_a_malformed_retained_rng_cursor() {
 #[test]
 fn snapshot_refuses_a_short_rng_table() {
     let mut sim = Simulation::new();
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0xC0FF_EE11);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0xC0FF_EE11);
     let map = sim.session.map_name().to_owned();
     let bytes = GameSnapshot::save(&sim, 1, 2, &map, 0);
     // The table's wire form is a length and then the words, as a Vec's.
@@ -74,8 +74,8 @@ fn round_trip_preserves_state_hash() {
     // Native in-scenario load restarts Scenario RNG from Seed0. Put both
     // source/reference branches on that cursor before testing unrelated
     // snapshot persistence and continued deterministic execution.
-    sim_a.scenario_rng = crate::sim::rng::SimRng::new(0);
-    sim_b.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim_a.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim_b.scenario_rng = crate::sim::rng::SimRng::new(0);
 
     // Snapshot sim_a at tick 50.
     let hash_at_50 = sim_a.state_hash();
@@ -492,7 +492,7 @@ fn custom_player_file_resumes_live_navigation_and_fallback_cell() {
     live.resolve_type_handles(rules);
     let template = flat_terrain(16, 16);
     live.install_resolved_terrain_for_new_map(flat_terrain(16, 16));
-    live.overlay_grid = Some(OverlayGrid::new(16, 16));
+    *live.overlay_grid = Some(OverlayGrid::new(16, 16));
     let bounds = PlayfieldBounds {
         base: 8,
         off_fc: -1_000,

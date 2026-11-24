@@ -453,7 +453,7 @@ mod canopy_tests {
         rules.install_art_fixture(art);
 
         let mut sim = Simulation::new();
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         let id = sim.substrate.allocate_stable_id();
         sim.substrate
             .entities

@@ -334,8 +334,8 @@ where
         // gamemd reads the saved ScenarioClass Random at +0x218, then
         // immediately reseeds it. MapGen starts at Seed(0) until the live
         // process cursor, if present, is bound during player-load admission.
-        simulation.scenario_rng = crate::sim::rng::SimRng::new(0);
-        simulation.mapgen_rng = crate::sim::rng::SimRng::new(0);
+        *simulation.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *simulation.mapgen_rng = crate::sim::rng::SimRng::new(0);
     }
     Ok(simulation)
 }

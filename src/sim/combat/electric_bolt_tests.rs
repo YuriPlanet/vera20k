@@ -60,10 +60,10 @@ fn ordinary_spark() -> &'static Value {
 }
 
 fn restore_rng(sim: &mut Simulation, expected: &Value) {
-    sim.main_rng = SimRng::from_native_state_hex_for_test(expected["main"].as_str().unwrap());
-    sim.scenario_rng =
+    *sim.main_rng = SimRng::from_native_state_hex_for_test(expected["main"].as_str().unwrap());
+    *sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(expected["scenario"].as_str().unwrap());
-    sim.mapgen_rng = SimRng::from_native_state_hex_for_test(expected["mapgen"].as_str().unwrap());
+    *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(expected["mapgen"].as_str().unwrap());
 }
 
 fn assert_rng(sim: &Simulation, expected: &Value, name: &str) {
@@ -235,7 +235,7 @@ fn retail_birth_fields_match_native_exact_flh() {
         let rules = controlled_rules(&retail, input);
         let (mut sim, source, target) = scene(&rules, input);
         restore_rng(&mut sim, &row["rng_before"]);
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(initial_id));
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(initial_id));
         let stable_before = sim.next_stable_object_id();
         electric_bolt::fired(
             &mut sim,
@@ -343,7 +343,7 @@ fn direct_bolt_uses_explicit_weapon_source_and_existing_rng_constructor() {
         .unwrap()["native_id_before"]
         .as_u64()
         .unwrap() as u32;
-    sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(initial_id));
+    *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(initial_id));
     let expected = &row["bolts"][0];
     let from = coord(&expected["source"]);
     electric_bolt::create(

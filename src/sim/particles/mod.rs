@@ -1316,7 +1316,7 @@ mod tests {
             &rules,
             &mut sim,
         );
-        sim.scenario_rng = crate::sim::rng::SimRng::with_next_draws_for_test(&[0, 0, 0x8000_0000]);
+        *sim.scenario_rng = crate::sim::rng::SimRng::with_next_draws_for_test(&[0, 0, 0x8000_0000]);
         sim.session.set_binary_frame_for_test(0);
 
         let _ = gas::tick_particle(

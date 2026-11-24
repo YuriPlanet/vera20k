@@ -1652,7 +1652,8 @@ const ROOTS: &[(&str, &str)] = &[
 /// owner: a struct whose fields are all private, so other modules change its
 /// state only through its operations. A raw container, primitive, enum or
 /// open struct in a root slot would let any module write that state directly.
-/// `Option`, `Box`, `Arc`, `Rc` and `Sparse` wrappers are looked through.
+/// `Option`, `Box`, `Arc`, `Rc`, `Sparse` and `Forked` wrappers are looked
+/// through.
 #[test]
 fn composition_root_slots_are_owner_types() {
     // Root slots that are not owner structs, each with its reason.
@@ -1770,6 +1771,7 @@ fn slot_type_scan_reads_wrappers_tuples_and_visibility() {
         .collect();
     assert!(owner_type_verdict(&structs, "Option<C>").is_ok());
     assert!(owner_type_verdict(&structs, "Sparse<crate::x::C>").is_ok());
+    assert!(owner_type_verdict(&structs, "Forked<Option<C>>").is_ok());
     assert!(owner_type_verdict(&structs, "crate::x::B").is_err());
     assert!(owner_type_verdict(&structs, "BTreeMap<u8, C>").is_err());
     assert!(owner_type_verdict(&structs, "SomeEnum").is_err());
@@ -1811,13 +1813,14 @@ fn owner_type_verdict(
     }
 }
 
-/// The type a slot names, through `Option`/`Box`/`Arc`/`Rc`/`Sparse` and paths.
+/// The type a slot names, through `Option`/`Box`/`Arc`/`Rc`/`Sparse`/`Forked`
+/// and paths.
 fn slot_base_type(ty: &str) -> &str {
     let mut ty = ty.trim();
     loop {
         let (path, generics) = ty.find('<').map_or((ty, ""), |at| ty.split_at(at));
         let last = path.rsplit("::").next().unwrap_or(path).trim();
-        if ["Option", "Box", "Arc", "Rc", "Sparse"].contains(&last)
+        if ["Option", "Box", "Arc", "Rc", "Sparse", "Forked"].contains(&last)
             && generics.starts_with('<')
             && generics.ends_with('>')
         {
@@ -2050,6 +2053,8 @@ fn mutable_handouts_and_setters_are_owner_operations() {
                           field of its owner";
     const SPARSE: &str = "a generic out-of-line holder for state most objects leave at its \
                           default; every Sparse is a field of its owner and holds an owner struct";
+    const FORKED: &str = "a generic copy-on-write holder for a world field (util::forked); every \
+                          Forked is a slot of a composition root and holds that slot's own type";
     const LASER: &str = "LaserDraw 0x0054FE60 returns the new laser for its caller's postprocessing \
                          (FireAt 0x006FF50A..0x006FF571); the caller finishes its own frame fact";
     const ANIM_OBJECT: &str = "AnimObject's fields are private to the `sim::anim_class` module, \
@@ -2146,6 +2151,7 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "emit_and_finish",
             "a producer finishes the fact it just emitted, before the frame tail reads the channel",
         ),
+        ("util/forked.rs", "deref_mut", FORKED),
         ("util/synced.rs", "deref_mut", SHARED),
         ("util/synced.rs", "get_mut", SHARED),
         ("util/synced.rs", "iter_mut", SHARED),

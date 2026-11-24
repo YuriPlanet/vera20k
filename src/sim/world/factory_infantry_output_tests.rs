@@ -631,10 +631,10 @@ fn ground_command_fixture(
                 sim.path_grid.as_deref().unwrap(),
                 sim.resolved_terrain.as_ref().unwrap(),
                 &[],
-                sim.playfield_bounds,
+                *sim.playfield_bounds,
             )
             .expect("the existing load owner binds the supplied flat map");
-        sim.zone_grid = Some(zones.into());
+        *sim.zone_grid = Some(zones.into());
         let terrain = sim.resolved_terrain.as_ref().unwrap();
         for cell in map["cells"].as_array().unwrap() {
             let (rx, ry) = fixture_cell(&cell["xy"]);
@@ -663,11 +663,11 @@ fn ground_command_fixture(
             }
         }
     }
-    sim.main_rng =
+    *sim.main_rng =
         SimRng::from_native_state_hex_for_test(ground_command_rng_hex(row, state, "main"));
-    sim.mapgen_rng =
+    *sim.mapgen_rng =
         SimRng::from_native_state_hex_for_test(ground_command_rng_hex(row, state, "mapgen"));
-    sim.scenario_rng =
+    *sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(ground_command_rng_hex(row, state, "scenario"));
     Some((sim, rules, registry, id))
 }
@@ -1768,16 +1768,16 @@ pub(super) fn install_ground(
     let local = observed_map.map_or([0, 0, 16, 16], |map| {
         std::array::from_fn(|index| map["local_size"][index].as_i64().unwrap() as i32)
     });
-    sim.playfield_bounds = Some(
+    *sim.playfield_bounds = Some(
         crate::map::playfield::PlayfieldBounds::from_normalized_local_size(
             size.0, local[0], local[1], local[2], local[3],
         ),
     );
-    sim.playfield_size_height = Some(size.1);
+    *sim.playfield_size_height = Some(size.1);
     sim.session.set_map_width_for_test(side);
     sim.session.set_map_height_for_test(side);
-    sim.overlay_grid = Some(OverlayGrid::new(side, side));
-    sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain_with_map_size(
+    *sim.overlay_grid = Some(OverlayGrid::new(side, side));
+    *sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain_with_map_size(
         &terrain,
         true,
         rules.bridge_rules.strength,

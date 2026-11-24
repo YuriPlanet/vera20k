@@ -131,7 +131,7 @@ fn invalid_grid_dependencies_fail_before_mutation() {
             .is_err()
     );
     assert_eq!(sim.state_hash(), before);
-    sim.resolved_terrain = map;
+    *sim.resolved_terrain = map;
 }
 
 #[test]

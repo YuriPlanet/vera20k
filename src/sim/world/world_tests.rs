@@ -130,8 +130,8 @@ fn insert_house_with_counts(
 
 /// The house rung's defeat pass, past frame zero as the gate requires.
 fn check_defeat_now(sim: &mut Simulation, rules: Option<&RuleSet>) {
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame().max(1));
+    let session = &mut *sim.session;
+    session.set_binary_frame_for_test(session.binary_frame().max(1));
     sim.check_defeat(rules, None);
 }
 
@@ -240,7 +240,7 @@ fn gsi_04_10_clear_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
 /// Supply rectangular bounds for synthetic cell-list and lifecycle fixtures.
 fn install_rectangular_test_playfield(sim: &mut Simulation, width: u16, height: u16) {
     let span = i32::from(width.max(height));
-    sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+    *sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
         base: 0,
         off_fc: -span,
         off_100: -span,
@@ -255,7 +255,7 @@ fn install_rectangular_test_map(sim: &mut Simulation, width: u16, height: u16) {
     install_rectangular_test_playfield(sim, width, height);
     let bounds = sim.playfield_bounds.as_mut().unwrap();
     bounds.base = i32::from(width);
-    sim.playfield_size_height = Some(i32::from(height));
+    *sim.playfield_size_height = Some(i32::from(height));
 }
 
 fn combat_test_rules() -> RuleSet {

@@ -201,7 +201,7 @@ fn save_restore(runtime: &mut SimRuntime) {
     let sim = &runtime.simulation;
     let terrain = sim.resolved_terrain().unwrap().clone();
     let terrain_speed_config = sim.terrain_speed_config().clone();
-    let trigger_runtime = sim.trigger_runtime.clone();
+    let trigger_runtime = (*sim.trigger_runtime).clone();
     let binary_frame = sim.session().binary_frame();
     let bytes = GameSnapshot::save_validated(
         sim,
@@ -223,7 +223,7 @@ fn save_restore(runtime: &mut SimRuntime) {
     restored.resolve_type_handles(rules);
     // Native in-scenario load resets only Scenario RNG to Seed0; the shared
     // trigger owner, active timers, map authority and clock continue from save.
-    assert_eq!(restored.trigger_runtime, trigger_runtime);
+    assert_eq!(*restored.trigger_runtime, trigger_runtime);
     assert_eq!(restored.session().binary_frame(), binary_frame);
     assert_eq!(
         restored.scenario_rng.logical_state(),

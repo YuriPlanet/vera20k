@@ -459,12 +459,12 @@ fn restore130_after_owner_transfer_matches_native_blocked_and_cleared_cells() {
             .clone();
         // Adopt the measured original boundary, including setup's earlier
         // draws, rather than deriving expected RNG from the Rust setup.
-        sim.scenario_rng = SimRng::from_native_state_hex_for_test(
+        *sim.scenario_rng = SimRng::from_native_state_hex_for_test(
             case["rng_before"]["scenario"].as_str().unwrap(),
         );
-        sim.main_rng =
+        *sim.main_rng =
             SimRng::from_native_state_hex_for_test(case["rng_before"]["main"].as_str().unwrap());
-        sim.mapgen_rng =
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(case["rng_before"]["mapgen"].as_str().unwrap());
         let returned = sim.apply_live_trigger_action(
             &action,

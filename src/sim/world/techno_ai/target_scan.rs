@@ -1061,7 +1061,7 @@ mod tests {
             if blocked {
                 overlays.place_overlay(13, 12, wall, 0);
             }
-            sim.overlay_grid = Some(overlays);
+            *sim.overlay_grid = Some(overlays);
             let actor = sim.substrate.entities.get(scanner).unwrap();
             let subject = FireSubject {
                 world: &sim,

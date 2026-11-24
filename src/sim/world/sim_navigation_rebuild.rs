@@ -40,7 +40,7 @@ impl Simulation {
         terrain_speed_config: terrain_speed::TerrainSpeedConfig,
         rules: &RuleSet,
     ) {
-        resolved_terrain.bind_shared_cell_dummy(self.shared_cell_dummy.clone());
+        resolved_terrain.bind_shared_cell_dummy((*self.shared_cell_dummy).clone());
         // Restore externally-derived data only. Substrate caches are rebuilt
         // transactionally by `restore_after_snapshot_load` before this call.
         // The supplied map grid predates runtime Terrain lifecycle changes, so
@@ -65,8 +65,8 @@ impl Simulation {
         }
         // VERA terrain deformation follows the saved rules, as on a new map.
         resolved_terrain.set_terrain_deformation(rules.combat_damage.terrain_deformation);
-        self.resolved_terrain = Some(resolved_terrain);
-        self.terrain_speed_config = terrain_speed_config;
+        *self.resolved_terrain = Some(resolved_terrain);
+        *self.terrain_speed_config = terrain_speed_config;
         self.resolve_rule_animation_lists(rules);
     }
 
@@ -146,7 +146,7 @@ impl Simulation {
     /// of use (the grid read alongside a `&mut self` call). Take it where the
     /// grid is read, never to carry a view across a republish.
     pub fn path_grid_snapshot(&self) -> Option<Arc<PathGrid>> {
-        self.path_grid.clone()
+        (*self.path_grid).clone()
     }
 
     /// Rebuild dynamic structure blockers, zones, and the canonical PathGrid
@@ -159,7 +159,7 @@ impl Simulation {
             zones: &mut self.zone_grid,
             path: &mut self.path_grid,
             overlays: self.overlay_grid.as_ref(),
-            playfield_bounds: self.playfield_bounds,
+            playfield_bounds: *self.playfield_bounds,
         }
         .rebuild_dynamic(
             terrain,
@@ -169,7 +169,7 @@ impl Simulation {
             rules,
         );
         match result {
-            Ok(cells) => self.structure_navigation_cells = cells,
+            Ok(cells) => *self.structure_navigation_cells = cells,
             Err(error) => {
                 log::error!("Navigation restoration refused: {error}");
                 return false;
@@ -212,7 +212,7 @@ impl Simulation {
         let mut navigation_cells = Vec::new();
         let overlay_ready = self.resolved_terrain.is_some() && overlay_registry.is_some();
         if overlay_ready && let Some(grid) = self.overlay_grid.as_mut() {
-            self.frame_overlay_removals = grid.take_removed_render_cells();
+            *self.frame_overlay_removals = grid.take_removed_render_cells();
             let dirty_cells = grid.take_dirty_cells();
             navigation_cells = grid.take_synchronous_navigation_cells();
 
@@ -289,7 +289,7 @@ impl Simulation {
             zones: &mut self.zone_grid,
             path: &mut self.path_grid,
             overlays: self.overlay_grid.as_ref(),
-            playfield_bounds: self.playfield_bounds,
+            playfield_bounds: *self.playfield_bounds,
         };
         let published = cells.iter().try_for_each(|&coord| {
             caches.publish_recalculated_cell_with_presence(terrain, coord, blocked.contains(&coord))
@@ -320,7 +320,7 @@ impl Simulation {
             zones: &mut self.zone_grid,
             path: &mut self.path_grid,
             overlays: self.overlay_grid.as_ref(),
-            playfield_bounds: self.playfield_bounds,
+            playfield_bounds: *self.playfield_bounds,
         }
         .rebuild_zones(
             Arc::new(path_grid.clone()),
@@ -342,7 +342,7 @@ impl Simulation {
             zones: &mut self.zone_grid,
             path: &mut self.path_grid,
             overlays: self.overlay_grid.as_ref(),
-            playfield_bounds: self.playfield_bounds,
+            playfield_bounds: *self.playfield_bounds,
         }
         .rebuild_zones_full(path_grid, terrain, self.bridge_state.as_ref());
     }
@@ -425,7 +425,7 @@ impl Simulation {
                     path,
                     terrain,
                     self.bridge_state.as_ref(),
-                    self.playfield_bounds,
+                    *self.playfield_bounds,
                     cell,
                     ZoneRepairKind::AssignOrphaned,
                 );
@@ -474,7 +474,7 @@ impl Simulation {
                 path,
                 terrain,
                 self.bridge_state.as_ref(),
-                self.playfield_bounds,
+                *self.playfield_bounds,
                 cell,
                 ZoneRepairKind::AssignOrphaned,
             );
@@ -498,7 +498,7 @@ impl Simulation {
             zone_grid: &mut self.zone_grid,
             path_grid: &mut self.path_grid,
             bridge_state: self.bridge_state.as_ref(),
-            playfield_bounds: self.playfield_bounds,
+            playfield_bounds: *self.playfield_bounds,
         };
         let _ = damage_wall_overlay_with_runtime_host(
             grid,

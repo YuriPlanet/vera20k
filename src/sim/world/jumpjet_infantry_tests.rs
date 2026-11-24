@@ -82,7 +82,7 @@ pub(super) fn retail_dustbowl_rocketeer()
                 (y - 1..=y + 1).all(|cy| {
                     crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                         (i32::from(cx), i32::from(cy)),
-                        sim.playfield_bounds,
+                        *sim.playfield_bounds,
                         Some(terrain),
                     ) && terrain.cell(cx, cy).is_some_and(|cell| {
                         cell.level == level
@@ -997,16 +997,16 @@ fn rocketeer_crash_fixture(
         },
     ));
     let mut sim = super::Simulation::with_seed(0);
-    sim.scenario_rng = crate::sim::rng::SimRng::new(31);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(31);
     install_common_raw_terrain(&mut sim, 70, 70, 0, None);
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+    *sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 64,
         off_fc: 0,
         off_100: 0,
         off_104: 64,
         off_108: 64,
     });
-    sim.playfield_size_height = Some(64);
+    *sim.playfield_size_height = Some(64);
     // Infantry's walk-or-fly choice (0x005221D0) asks the movement zones.
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     sim.session.set_binary_frame_for_test(1000);
@@ -1546,7 +1546,7 @@ fn grounded_rocketeer() -> (super::Simulation, crate::rules::ruleset::RuleSet, u
 #[test]
 fn a_ground_route_order_gives_a_rocketeer_his_navcom_and_move_to() {
     let (mut sim, rules, _) = grounded_rocketeer();
-    sim.path_grid = Some(std::sync::Arc::new(
+    *sim.path_grid = Some(std::sync::Arc::new(
         crate::sim::pathfinding::PathGrid::test_all_passable(70, 70),
     ));
     sim.assign_destination_represented(
@@ -1622,7 +1622,7 @@ fn assert_rocketeer_flies_near(sim: &super::Simulation, near: (u16, u16)) {
 #[test]
 fn an_object_order_flies_a_rocketeer_with_the_order() {
     let (mut sim, rules, shooter) = grounded_rocketeer();
-    sim.path_grid = Some(std::sync::Arc::new(
+    *sim.path_grid = Some(std::sync::Arc::new(
         crate::sim::pathfinding::PathGrid::test_all_passable(70, 70),
     ));
     move_shooter(&mut sim, shooter, (46, 44));

@@ -157,7 +157,7 @@ fn saved_deso_fields_decay_on_the_first_resumed_frame() {
     loaded.restore_after_snapshot_load().unwrap();
     // PreparedLoad reattaches these skipped map/rule caches before resuming.
     loaded.rebuild_caches_after_load(
-        sim.resolved_terrain.clone().unwrap(),
+        (*sim.resolved_terrain).clone().unwrap(),
         sim.terrain_speed_config().clone(),
         &rules,
     );
@@ -318,9 +318,9 @@ fn overlapping_stock_fields_preserve_serialized_bits_hash_and_decay() {
     let (scene, _) = create_overlap(&rules, 3, DOG_CELL);
     let bytes = save_codec::serialize(&scene.radiation).unwrap();
     let mut reference = Simulation::with_seed(0);
-    reference.radiation = scene.radiation.clone();
+    *reference.radiation = (*scene.radiation).clone();
     let mut restored = Simulation::with_seed(0);
-    restored.radiation = save_codec::deserialize(&bytes).unwrap();
+    *restored.radiation = save_codec::deserialize(&bytes).unwrap();
     assert_eq!(restored.state_hash(), reference.state_hash());
     let before_decay = reference.radiation.cell_level(DOG_CELL).to_bits();
     let initial_hash = reference.state_hash();

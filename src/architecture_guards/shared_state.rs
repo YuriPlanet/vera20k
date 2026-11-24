@@ -418,6 +418,11 @@ const DEREF_TYPES: &[(&str, &str, &str)] = &[
         "no client, one or a shared list, read as one slice of clients",
     ),
     (
+        "Forked",
+        "util/forked.rs",
+        "a copy-on-write world field: `deref_mut` notes the write and gives a fork its own copy",
+    ),
+    (
         "ModFolder",
         "util/mod_package.rs",
         "a mod folder's path, which owns the prepared directory it names while it lives",

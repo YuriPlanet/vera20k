@@ -351,7 +351,7 @@ mod tests {
                 .attack_target
                 .set_for_test(Some(TargetKind::Cell(10, 5)));
             let mut sim = crate::sim::world::Simulation::new();
-            sim.interner = crate::sim::intern::test_interner();
+            *sim.interner = crate::sim::intern::test_interner();
             for (mode, turns) in [(0, true), (2, false), (0, true)] {
                 entity.set_gunner_weapon(mode, object, ares_way);
                 assert_eq!(

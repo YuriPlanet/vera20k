@@ -73,7 +73,7 @@ impl Simulation {
             tail_grid,
             terrain,
             self.bridge_state.as_ref(),
-            self.playfield_bounds,
+            *self.playfield_bounds,
             repair_cell,
             repair,
         );
@@ -199,7 +199,7 @@ impl Simulation {
                     zone_grid: &mut self.zone_grid,
                     path_grid: &mut self.path_grid,
                     bridge_state: self.bridge_state.as_ref(),
-                    playfield_bounds: self.playfield_bounds,
+                    playfield_bounds: *self.playfield_bounds,
                 };
                 self.overlay_grid.as_mut().and_then(|grid| {
                     runtime_wall_cleanup_visit_at(
@@ -291,7 +291,7 @@ impl Simulation {
             } else {
                 self.rebuild_zone_grid_full(std::sync::Arc::clone(&tail_grid));
             }
-            self.path_grid = Some(tail_grid);
+            *self.path_grid = Some(tail_grid);
         }
         true
     }

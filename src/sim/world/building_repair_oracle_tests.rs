@@ -513,7 +513,7 @@ fn update_scene(corpus: &Value, input: &Value) -> (Simulation, RuleSet, Option<u
             .set_for_test(Some(smoke));
         smoke
     });
-    sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
+    *sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
     sim.sound_events.clear_for_test();
     (sim, rules, smoke)
 }

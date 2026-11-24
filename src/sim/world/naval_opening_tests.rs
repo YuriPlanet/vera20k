@@ -425,11 +425,11 @@ fn two_searches_and_event_birth_match_the_original_supplied_map_control() {
         actor.lifecycle.set_in_limbo_for_test(false);
         actor.position.put_world_xy([1344, 1344]);
         sim.substrate.entities.insert(actor);
-        sim.resolved_terrain = Some(terrain);
-        sim.zone_grid = Some(zones.into());
-        sim.substrate.raw_cell_occupation = raw;
-        sim.playfield_bounds = Some(bounds());
-        sim.playfield_size_height = Some(8);
+        *sim.resolved_terrain = Some(terrain);
+        *sim.zone_grid = Some(zones.into());
+        *sim.substrate.raw_cell_occupation = raw;
+        *sim.playfield_bounds = Some(bounds());
+        *sim.playfield_size_height = Some(8);
         sim.session.set_binary_frame_for_test(frame);
         sim.initialize_naval_rally_point(1, &rules);
         let pending = sim.pending_command_snapshot();

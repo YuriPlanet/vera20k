@@ -406,12 +406,12 @@ fn target_uninit_clears_tarcom_before_aim_query_and_physical_removal() {
         );
     // Match the supplied native boundary, independently checking all 250
     // words and both cursors below; index_a=3 alone would not establish it.
-    duel.sim.scenario_rng = SimRng::new(0);
+    *duel.sim.scenario_rng = SimRng::new(0);
     for _ in 0..3 {
         duel.sim.scenario_rng.next_u32();
     }
-    duel.sim.main_rng = SimRng::new(0);
-    duel.sim.mapgen_rng = SimRng::new(0);
+    *duel.sim.main_rng = SimRng::new(0);
+    *duel.sim.mapgen_rng = SimRng::new(0);
     assert_rng(&duel.sim, &expiry["rng_before"], "before UnInit");
     assert_timer(&duel.sim, before_timer);
 

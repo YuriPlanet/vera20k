@@ -266,7 +266,7 @@ impl Simulation {
         if let Some(definitions) = staged {
             self.trigger_runtime.definitions = definitions;
         }
-        self.team_script_vm = vm;
+        *self.team_script_vm = vm;
         for diagnostic in &diagnostics {
             log::warn!("Team AI install diagnostic: {diagnostic:?}");
         }
@@ -324,7 +324,7 @@ impl Simulation {
                 }
             }
         }
-        self.trigger_runtime = TriggerRuntime {
+        *self.trigger_runtime = TriggerRuntime {
             definitions,
             definitions_prepared: true,
             locals_set,

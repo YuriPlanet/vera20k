@@ -48,7 +48,7 @@ fn retail_signed_terrain_dummy_suffix_survives_save_and_limbo_without_replacemen
         (4, 4),
     ]);
     sim.install_resolved_terrain_for_new_map(grid.clone());
-    sim.overlay_grid = Some(OverlayGrid::from_overlay_entries(
+    *sim.overlay_grid = Some(OverlayGrid::from_overlay_entries(
         &[OverlayEntry {
             rx: 0,
             ry: 0,
@@ -58,7 +58,7 @@ fn retail_signed_terrain_dummy_suffix_survives_save_and_limbo_without_replacemen
         8,
         8,
     ));
-    sim.native_unique_ids =
+    *sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
     let dummy = sim.resolved_terrain.as_ref().unwrap().shared_cell_dummy();
     dummy.write_overlay_identity_state(i32::from(ore), 9);

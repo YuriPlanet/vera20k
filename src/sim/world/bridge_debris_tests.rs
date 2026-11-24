@@ -159,13 +159,13 @@ fn fixture(rules: &RuleSet, input: &Value) -> (Simulation, BTreeSet<(u16, u16)>)
     let mut sim = Simulation::with_seed(input["seed"].as_u64().unwrap());
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.metallic_debris = rules
+    *sim.metallic_debris = rules
         .general
         .metallic_debris
         .iter()
         .map(|name| sim.interner.intern(name))
         .collect();
-    sim.bridge_explosions = rules
+    *sim.bridge_explosions = rules
         .bridge_rules
         .explosions
         .iter()
