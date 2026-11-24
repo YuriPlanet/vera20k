@@ -156,15 +156,15 @@ pub fn list_skirmish_scenario_records_with_assets(
         assets,
     )?;
 
-    // Bundled YR scenarios belong to the standard game's catalog. A
-    // replacement catalog or a selected mod decides which maps it offers.
+    // The stock YR catalog also looks up its release maps by name. The loose
+    // scan above already handles files installed in the player's Maps folder.
     if assets.mod_dir().is_none()
         && assets.ini_roots().is_stock()
         && !crate::util::ra2_launch::enabled()
     {
         if records.is_empty() {
             // Keep the normal shell fallback for installs without a PKT/YRO
-            // catalog, before the bundled row makes this list nonempty.
+            // catalog, before Ice Lake makes this list nonempty.
             records.extend(
                 list_available_maps_in(ra2_dir, Some(assets))?
                     .iter()
@@ -172,7 +172,10 @@ pub fn list_skirmish_scenario_records_with_assets(
                     .map(|(index, map)| SkirmishScenarioRecord::from_map_menu_entry(index, map)),
             );
         }
-        for &(name, _) in crate::map::source::BUNDLED_MAPS {
+        for name in [
+            crate::map::source::ICE_LAKE,
+            crate::map::installed::ARCTIC_MAP,
+        ] {
             if records
                 .iter()
                 .any(|record| record.file_name.eq_ignore_ascii_case(name))
@@ -590,32 +593,36 @@ mod tests {
     use crate::map::source::test_support::{TestDirectory, make_new_format_mix_bytes};
 
     #[test]
-    fn fresh_skirmish_lists_and_loads_both_bundled_ice_maps() {
-        let game = TestDirectory::new("bundled-ice-passages");
+    fn arctic_ice_passages_lists_and_loads_from_the_maps_folder() {
+        use crate::map::installed::ARCTIC_MAP;
+        assert!(crate::map::source::bundled_map_bytes(ARCTIC_MAP).is_none());
+
+        let game = TestDirectory::new("installed-ice-passages");
+        let maps = Path::new(env!("CARGO_MANIFEST_DIR")).join("../maps");
         let mut assets = AssetManager::from_loose_root_for_test(game.path());
-        let catalog =
+        let mut records =
             list_skirmish_scenario_records_with_assets(game.path(), &mut assets, None).unwrap();
-        let bundled: Vec<_> = catalog
+        assert!(!records.iter().any(|row| row.file_name == ARCTIC_MAP));
+        append_loose_map_records(&mut records, &[game.path()], Some(&maps), &assets).unwrap();
+        let row = records
             .iter()
-            .filter(|record| record.source == SkirmishScenarioSource::Bundled)
-            .collect();
-        assert!(
-            bundled
-                .iter()
-                .any(|record| record.display_name == "Ice Lake")
+            .find(|row| row.file_name == ARCTIC_MAP)
+            .unwrap();
+        assert_eq!(
+            row.source,
+            SkirmishScenarioSource::LooseMap(ARCTIC_MAP.into())
         );
-        let arctic = bundled
-            .iter()
-            .find(|record| record.display_name == "Arctic Circle 16 - Ice Passages")
-            .expect("Arctic Circle variant available offline");
-        assert_eq!(arctic.player_capacity, 30);
+        assert_eq!(row.display_name, "Arctic Circle 16 - Ice Passages");
+        assert_eq!(row.player_capacity, 30);
+
+        let path = maps.join(&row.file_name);
         let loaded = crate::map::source::load_map_by_name_or_path_with_assets(
             game.path(),
-            &arctic.file_name,
+            path.to_str().unwrap(),
             &assets,
         )
         .unwrap();
-        assert!(matches!(loaded.source, LoadedMapSource::Bundled { .. }));
+        assert!(matches!(loaded.source, LoadedMapSource::Loose { .. }));
         assert_eq!(loaded.map.waypoints.len(), 30);
         assert!(crate::map::theater::map_requests_bundled_ice(
             &loaded.map.header.theater,

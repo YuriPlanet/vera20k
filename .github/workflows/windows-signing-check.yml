@@ -129,9 +129,10 @@ jobs:
           version="$(python -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')"
           stamp="$(date -u +%Y%m%d-%H%M%S)"
           name="vera20k-${version}-windows-x64-${stamp}-${GITHUB_SHA:0:7}"
-          mkdir -p dist/package
+          mkdir -p dist/package/Maps
           cp target/shipping/vera20k.exe config.toml.example LICENSE-GPL \
             dist/THIRD_PARTY_LICENSES.html dist/package/
+          cp maps/Arctic_Circle_16_Ice_Passages.map dist/package/Maps/
           bash .github/release/languages.sh dist/package
           pwsh -File .github/release/windows/fetch-dxc.ps1 -Package dist/package
           sed -e "s/@VERSION@/${version}/" -e "s/@BUILD@/${stamp}/" -e "s/@COMMIT@/${GITHUB_SHA}/" \

@@ -276,7 +276,7 @@ function storageTransaction(operation) {
         const tx = database.transaction('files', 'readwrite');
         operation(tx.objectStore('files'));
         tx.oncomplete = resolve;
-        tx.onerror = tx.onabort = () => reject(tx.error || new Error('Storage transaction aborted'));
+        tx.onabort = () => reject(tx.error || new Error('Storage transaction aborted'));
     });
 }
 function persist(operation) {
@@ -288,6 +288,42 @@ function persist(operation) {
         if (!pending && !storageFailed) say(storageStatus, 'saved');
     });
 }
+function readStorage(request) {
+    return new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+}
+async function installPackagedMap() {
+    const name = 'Arctic_Circle_16_Ice_Passages.map';
+    const folder = '/saves/profile/Maps/';
+    const path = folder + name;
+    const receipt = folder + '.Arctic_Circle_16_Ice_Passages.installed';
+    const keys = database ? await readStorage(database.transaction('files').objectStore('files').getAllKeys()) : [];
+    if (keys.includes(receipt)) return;
+
+    const modified = Date.now();
+    let map;
+    if (!keys.some(key => key.startsWith(folder) && key.slice(folder.length).toLowerCase() === name.toLowerCase())) {
+        const response = await fetch('Maps/' + name);
+        if (!response.ok) throw new Error(`Could not fetch ${name} (HTTP ${response.status})`);
+        map = {path, bytes: new Uint8Array(await response.arrayBuffer()), modified};
+    }
+    if (database) {
+        try {
+            // Both records commit together. A second tab that raced this one restores the winner below.
+            await storageTransaction(store => {
+                if (map) store.add(map);
+                store.add({path: receipt, bytes: new Uint8Array(), modified});
+            });
+            return;
+        } catch (error) {
+            if (error.name === 'ConstraintError') return;
+            storageError(error);
+        }
+    }
+    if (map) restore_user_file(map.path, map.bytes, modified);
+}
 async function restore() {
     database = await new Promise((resolve, reject) => {
         const request = indexedDB.open('vera20k-wasm-user-data', 1);
@@ -295,12 +331,10 @@ async function restore() {
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
         request.onblocked = () => reject(new Error('Close other game tabs to open storage'));
-    });
-    const records = await new Promise((resolve, reject) => {
-        const request = database.transaction('files').objectStore('files').getAll();
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-    });
+    }).catch(storageError);
+    try { await installPackagedMap(); } catch (error) { console.warn('Packaged skirmish map unavailable', error); }
+    if (!database) return;
+    const records = await readStorage(database.transaction('files').objectStore('files').getAll());
     for (const { path, bytes, modified } of records) restore_user_file(path, new Uint8Array(bytes), modified);
 }
 

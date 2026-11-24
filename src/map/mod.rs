@@ -31,6 +31,7 @@ pub mod source;
 pub mod entities;
 pub mod events;
 pub mod houses;
+pub mod installed;
 pub(crate) mod iso_tile_flood;
 pub mod lat;
 pub mod lighting;

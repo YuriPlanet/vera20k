@@ -198,6 +198,8 @@ Source: "LICENSE-DXC.txt"; DestDir: "{app}"; Flags: ignoreversion
 ; Every language but English and the fonts behind them. Deleting a language's
 ; files removes it from the game until the next update.
 Source: "languages\*"; DestDir: "{app}\languages"; Flags: ignoreversion
+; The player's map folder can already contain an edited copy.
+Source: "Maps\Arctic_Circle_16_Ice_Passages.map"; DestDir: "{app}\Maps"; Flags: onlyifdoesntexist uninsneveruninstall
 
 [Dirs]
 ; Where a player puts their mods, one folder each. The game makes it too, for
@@ -869,7 +871,7 @@ var
   ConfigInfo: String;
 begin
   { Use the standard Ready memo and retain Inno Setup's normal sections.
-    Keep the filenames below aligned with the seven packaged [Files] entries. }
+    Keep the filenames below aligned with the packaged [Files] entries. }
   Result := '';
   AppendReadySection(Result, MemoUserInfoInfo, NewLine);
   AppendReadySection(Result, MemoDirInfo, NewLine);
@@ -878,7 +880,8 @@ begin
   AppendReadySection(Result, MemoGroupInfo, NewLine);
   AppendReadySection(Result, CustomMessage('ReadyFiles') + NewLine +
     Space + 'vera20k.exe, dxcompiler.dll, config.toml.example, README.txt' + NewLine +
-    Space + 'LICENSE-GPL, LICENSE-DXC.txt, THIRD_PARTY_LICENSES.html, languages', NewLine);
+    Space + 'LICENSE-GPL, LICENSE-DXC.txt, THIRD_PARTY_LICENSES.html, languages' + NewLine +
+    Space + 'Maps\Arctic_Circle_16_Ice_Passages.map', NewLine);
   if FileExists(AddBackslash(WizardDirValue()) + 'config.toml') then
     ConfigInfo := CustomMessage('ReadyConfigExisting')
   else
