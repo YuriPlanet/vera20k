@@ -62,6 +62,27 @@ SecondaryCrawlingFLH=0,0,20
 VERA 按射手自身的姿态计算枪口位置，弹丸起点、枪口动画和开火音效都使用这一坐标。
 同类型步兵可以独立站立或卧倒。[上游姿态和等级判定](https://github.com/ra2diy/KratosPP/blob/v0.2.4/src/Ext/TechnoType/CrawlingFLH.cpp#L17-L90)
 
+## 弹头给钱
+
+在 `[WarheadType]` 写 `ShowMeTheMoney`，该弹头的范围伤害每次结算时给攻击方所属加钱，
+发生在选择受害者之前：
+
+```ini
+[MONEY]
+CellSpread=2
+ShowMeTheMoney=250
+```
+
+写负数则扣钱。给钱按「每次范围伤害」结算一次，所以 CellSpread 爆炸不会按受害者数量重复给；
+而且必须有攻击方所属——没有来源的范围伤害（炸弹引信、动画落地）不给钱。
+
+Kratos 在 `MapClass::DamageArea` 钩子（`0x489280`，给钱分支 `0x489286`，
+[源码](https://github.com/ra2diy/KratosPP/blob/v0.2.4/src/Hooks/MapExtHook.cpp)）里做这件事：
+VERA 把键读进 `WarheadType::show_me_the_money`，并在
+`world_receiver::apply_area_damage_in_run_with_target` 结算——直接调用和伤害事务两条路径都
+经过这个所有者。漂浮的 `+$` 文字没有移植：VERA 没有伤害文字这一所有者，所以
+`ShowMeTheMoneyDisplay` 不读取，也不会点亮开关。
+
 ## 原作者与项目
 
 VERA20K 用 Rust 重新实现行为，不加载 `Kratos.dll`，也不重新分发 Kratos 二进制；每个已移植的
@@ -80,13 +101,15 @@ VERA20K 的 GPLv3 组合作品保留该许可证。
 
 - 卧倒射击点（`CrawlingFLH`）— **双杀步枪（ChrisLv_CN）**，
   `src/Ext/TechnoType/CrawlingFLH.cpp` 与 `CrawlingFLHData.h`。
+- 弹头给钱（`ShowMeTheMoney`）— **双杀步枪（ChrisLv_CN）**，`src/Hooks/MapExtHook.cpp`。
 
 ## VERA20K 移植署名
 
 各扩展功能的 Rust 移植由 VERA20K 贡献者以合并的 pull request 完成；下面用 GitHub 用户名
 标注每个链条对应的合并 PR 作者：
 
-- **1372704087** — Kratos 的逐局开关与卧倒射击点（`CrawlingFLH`）。
+- **1372704087** — Kratos 的逐局开关、卧倒射击点（`CrawlingFLH`）与弹头给钱
+  （`ShowMeTheMoney`）。
 
 ## 添加一个功能
 

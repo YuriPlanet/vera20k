@@ -371,6 +371,11 @@ pub struct WarheadType {
     /// rule to the airborne phase. `None` falls back to
     /// [`crate::rules::ruleset::RuleSet::allow_damage_on_self_for`]'s
     /// `[General] AllowDamageOnSelf` value.
+    /// Kratos `ShowMeTheMoney` (`WarheadTypeExt::TypeData`): credits the
+    /// attacking house gains when this warhead's area damage runs
+    /// (`MapClass::DamageArea @ 0x00489280`, hook `0x489280`). A negative value
+    /// takes credits away.
+    pub show_me_the_money: i32,
     #[cfg(feature = "phobos")]
     allow_damage_on_self: Option<bool>,
     /// Phobos `WarheadTypeExt::DecloakDamagedTargets` (`Nullable<bool>`): a
@@ -738,6 +743,9 @@ impl WarheadType {
             debris_maximums,
             min_debris,
             max_debris,
+            show_me_the_money: crate::rules::kratos_switch::kratos_read(|| {
+                section.read_int("ShowMeTheMoney", 0)
+            }),
             #[cfg(feature = "phobos")]
             allow_damage_on_self: section.read_phobos_nullable_bool("AllowDamageOnSelf", None),
             #[cfg(feature = "phobos")]

@@ -114,6 +114,8 @@ mod fireat_launch_tests;
 mod garrison_oracle_tests;
 #[cfg(all(test, tests_sim_combat_d_z))]
 mod homing_shipyard_tests;
+#[cfg(all(test, tests_sim_combat_d_z))]
+mod kratos_warhead_money_tests;
 // Phobos `ROF.RandomDelay` (`0x006FD0B5`) redraws the full-rearm jitter, so
 // this stock golden only holds without the capability.
 #[cfg(all(test, tests_sim_combat_d_z, not(feature = "phobos")))]

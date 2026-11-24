@@ -807,6 +807,15 @@ pub(crate) fn apply_area_damage_in_run_with_target(
     area_target: Option<u64>,
     pings: &mut Vec<UnderAttackEvent>,
 ) -> (DeathEffects, bool, AreaDamageResult) {
+    // Kratos `MapClass_DamageArea` (`0x489280`, arm `0x489286`): the attacking
+    // house gains (or loses) the warhead's `ShowMeTheMoney` once per area
+    // damage, before the receivers are collected.
+    if rules.kratos()
+        && warhead.show_me_the_money != 0
+        && let Some(house) = origin.1
+    {
+        crate::sim::credit_income::add_credits(&mut world.houses, house, warhead.show_me_the_money);
+    }
     let area = collect_area_at(
         world,
         rules,
