@@ -75,6 +75,7 @@ use vera20k_wasm_ext::{
 mod actions;
 mod cells;
 mod chains;
+mod claims;
 mod decide;
 mod events;
 mod held;
@@ -398,6 +399,12 @@ pub struct ExtModules {
     decide: decide::DecideState,
     /// Registered INI names and the string table ([`ini_names`]).
     ini: ini_names::IniNames,
+    /// House domain claims (RFC 6i, [`claims`]).
+    claims: claims::DomainClaims,
+    /// The mod's `[VeraWasm] Controller=`, for "mod AI" seats
+    /// ([`Simulation::seat_mod_ai_houses`]). Not saved: seats are given
+    /// when the match starts, and a save carries the claims.
+    controller: bool,
 }
 
 /// What a save holds: the modules, the modifiers and the variable values
@@ -413,6 +420,8 @@ struct SavedExtModules {
     held: held::ActionHeld,
     #[serde(default)]
     ini: ini_names::IniNames,
+    #[serde(default)]
+    claims: claims::DomainClaims,
 }
 
 impl serde::Serialize for ExtModules {
@@ -440,6 +449,7 @@ impl serde::Serialize for ExtModules {
             rules_ini: self.rules_ini.clone(),
             held: self.held.clone(),
             ini: self.ini.clone(),
+            claims: self.claims.clone(),
         }
         .serialize(serializer)
     }
@@ -454,6 +464,7 @@ impl<'de> serde::Deserialize<'de> for ExtModules {
             rules_ini: saved.rules_ini,
             held: saved.held,
             ini: saved.ini,
+            claims: saved.claims,
             ..Self::default()
         };
         modules.vars.values = saved.vars;
@@ -549,9 +560,11 @@ impl ExtModules {
             || !values.house.is_empty()
             || !values.object.is_empty();
         let ini = (!self.ini.is_empty()).then(|| fnv1a(self.ini.state_bytes()));
+        let claims = (!self.claims.is_empty()).then(|| fnv1a(self.claims.state_bytes()));
         modules
             .chain(held.then(|| fnv1a(self.held_state_bytes())))
             .chain(ini)
+            .chain(claims)
     }
 
     /// The modifiers and declared-variable values as checksum bytes.
@@ -618,6 +631,9 @@ impl ExtModules {
             for byte in self.ini.state_bytes() {
                 byte.hash(hasher);
             }
+        }
+        if !self.claims.is_empty() {
+            self.claims.hash(hasher);
         }
     }
 }
@@ -941,6 +957,11 @@ impl SimHost for Host<'_, '_> {
             return Ok(status);
         }
         let name = property_name(prop).unwrap_or_default();
+        if name == "ControlDomains"
+            && let Some(Ref::House(index)) = decode_ref(reference)?
+        {
+            return self.write_control_domains(index, value);
+        }
         if let Some(Ref::Object(id)) = decode_ref(reference)?
             && self.sim.entities().get(id).is_some()
         {
@@ -1189,6 +1210,7 @@ const READABLE: &[&str] = &[
     // Houses.
     "TechLevel",
     "Country",
+    "ControlDomains",
     // Types and rules (props.rs).
     "Soylent",
     "Speed",
@@ -1394,6 +1416,7 @@ impl Host<'_, '_> {
             "IsDefeated" => i64::from(house.is_defeated()),
             "IsHuman" => i64::from(house.is_human()),
             "TechLevel" => i64::from(house.tech_level()),
+            "ControlDomains" => self.sim.ext_modules.claims.mask(index),
             "Country" => match self
                 .sim
                 .interner
@@ -1846,6 +1869,7 @@ impl Simulation {
             ]);
         }
         self.ext_modules.map_ui = policy.map_ui;
+        self.ext_modules.controller = policy.controller;
         if !modules.is_empty() {
             self.ext_modules.rules_ini = Some(rules_ini);
         }
@@ -2087,6 +2111,8 @@ impl Simulation {
         // section 3).
         slot.orders.clear();
         let source = slot.source;
+        // Its house domain claims; the native AI takes them back (RFC 6i).
+        self.ext_modules.claims.release(source);
         self.ext_modules.keep_log(reason.clone());
         self.trigger_runtime
             .module_triggers_mut()
@@ -2124,3 +2150,7 @@ mod event_tests;
 #[cfg(all(test, tests_sim_c_g))]
 #[path = "ext_modules_ini_register_tests.rs"]
 mod ini_register_tests;
+
+#[cfg(all(test, tests_sim_c_g))]
+#[path = "ext_modules_claim_tests.rs"]
+mod claim_tests;

@@ -113,6 +113,12 @@ pub(crate) fn factory_ai(
         abandon_stopped_factory(sim, rules, building, owner, effects);
         return;
     }
+    // VERA: a Wasm module that claimed `Production` starts the house's
+    // production itself, through orders (RFC 0001 6i,
+    // `sim::ext_modules::claims`).
+    if sim.module_claims(owner, vera20k_wasm_ext::DOMAIN_PRODUCTION) {
+        return;
+    }
     start_factory(sim, rules, building, owner, factory_rtti, effects);
 }
 
