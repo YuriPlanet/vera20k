@@ -1,23 +1,22 @@
 //! Which listeners a pointer expiry reaches.
 //!
-//! `DispatchPointerExpiredCleanup @ 0x007258D0` calls every object's
-//! PointerExpired, and most objects hold nothing an expiry changes, so the
-//! broadcast passes over them. This index names, for an expiring id, the
-//! entities, anims, particle systems, bullets and waves that hold something,
-//! instead of asking every object at every expiry. What each holds is what
-//! its callback compares: [`Simulation::entity_expiry_holds`] for an entity,
-//! `expiry_names` for the others. A smudge's callback changes nothing, so no
-//! smudge is a listener. The index is derived from the stores alone and
-//! re-reads an object whenever its store has handed it out mutably (the
-//! store's touch log), so it answers as asking every object would
-//! ([`ExpiryListeners::asked_of_every`]). Never saved, never hashed; a fresh,
-//! cloned or restored store makes it re-read that store's objects.
+//! When a Techno expires, `DispatchPointerExpiredCleanup @ 0x007258D0`
+//! walks registered listeners (`0x00B0F720`) and calls PointerExpired
+//! (`0x00725954`). Most listeners hold nothing the expiry changes.
+//! This index names the entities, anims, particle systems, bullets and
+//! waves whose callbacks use the expiring id. A smudge's callback changes
+//! nothing. [`Simulation::entity_expiry_holds`] and the other stores'
+//! `expiry_names` describe the fields each callback compares.
+//!
+//! The index re-reads objects from each store's touch log. A fresh, cloned or
+//! restored store triggers a full rebuild ([`ExpiryListeners::asked_of_every`]).
+//! The index is excluded from saves and from the simulation hash.
 
 use std::collections::BTreeSet;
 
 use super::Simulation;
 use super::substrate::ObjectKind;
-use crate::sim::anim_class::{AnimStore, AnimTouchReader};
+use crate::sim::anim_class::{AnimStore, AnimTouchReader, is_local_anim_id};
 use crate::sim::entity_store::{EntityStore, TouchReader};
 use crate::sim::particles::{ParticleSystemStore, ParticleTouchReader};
 use crate::sim::projectile::ProjectileStore;
@@ -110,16 +109,25 @@ impl ExpiryListeners {
         } = stores;
         self.refresh_entities(entities);
         let entities = &*entities;
-        // The other listeners hold only a few ids: reading them costs
-        // less than handing them to the worker pool.
-        let ids = self.anims.rereads(
-            anims.take_touched(AnimTouchReader::ExpiryListeners),
-            anims.len(),
-            || anims.iter().map(|(&id, _)| id).collect(),
-        );
+        // A full scan visits shared anims. The touch log also names local
+        // anims, including VERA's presentation anims, which keep their owner
+        // link until UnInit. Use the same membership for incremental updates.
+        let touched = match anims.take_touched(AnimTouchReader::ExpiryListeners) {
+            Touched::Ids(ids) => Touched::Ids(
+                ids.into_iter()
+                    .filter(|&id| !is_local_anim_id(id))
+                    .collect(),
+            ),
+            touched => touched,
+        };
+        let ids = self.anims.rereads(touched, anims.len(), || {
+            anims.iter().map(|(&id, _)| id).collect()
+        });
         self.anims.reread(ids, |id, names| {
             anims.get(id).map(|anim| named(names, anim.expiry_names()))
         });
+        // The other listeners hold only a few ids: reading them costs
+        // less than handing them to the worker pool.
         let ids = self.particle_systems.rereads(
             particle_systems.take_touched(ParticleTouchReader::ExpiryListeners),
             particle_systems.len(),
@@ -467,6 +475,14 @@ mod tests {
         )
     }
 
+    /// A local anim: a VERA presentation anim, which rides its owner but is
+    /// not in the Anim array.
+    fn presentation_anim(id: u64) -> AnimObject {
+        let mut anim = anim(id);
+        anim.mark_presentation_for_test();
+        anim
+    }
+
     fn bullet(stores: &mut Stores, id: u64, source: u64, target: ProjectileTarget) {
         let payload = ProjectilePayload::new(40, InternedId::from_index(3), None, false);
         stores
@@ -674,6 +690,29 @@ mod tests {
         }
         assert_eq!(reach(&mut index, &mut stores, 3), [3]);
         assert_eq!(reach(&mut index, &mut stores, 6), [30, 31]);
+    }
+
+    #[test]
+    fn a_local_anim_is_not_a_pointer_expiry_listener() {
+        let mut stores = Stores::default();
+        stores
+            .entities
+            .insert(GameEntity::test_default(3, "HTNK", "Russians", 14, 14));
+        // Two anims in the Anim array, so the index re-reads after the first
+        // expiry only what the touch log names.
+        stores.anims.insert(anim(10));
+        stores.anims.insert(anim(11));
+        let mut index = ExpiryListeners::default();
+        assert_eq!(reach(&mut index, &mut stores, 3), [3]);
+
+        // A presentation anim rides its owner. It is a local anim, outside the
+        // Anim array, so the expiry of its owner does not reach it: it ends
+        // with the owner's UnInit instead.
+        let local = stores.anims.allocate_local_id();
+        stores.anims.insert(presentation_anim(local));
+        stores.anims.set_owner_entity_for_test(local, Some(3));
+        let _ = stores.anims.get_mut(local).expect("the local anim is stored");
+        assert_eq!(reach(&mut index, &mut stores, 3), [3]);
     }
 
     #[test]

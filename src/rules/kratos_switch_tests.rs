@@ -167,8 +167,8 @@ fn saved_kratos_inputs_restore_the_switch_and_infantry_offsets() {
         let restored =
             RuleSet::from_processed_rules(&save_codec::deserialize(&bytes).unwrap()).unwrap();
         assert_eq!(restored.kratos(), plays);
-        let offsets = restored.object("GI").unwrap().kratos_weapon_offsets();
-        assert_eq!(offsets[0][0], [17, -2, 12]);
-        assert_eq!(offsets[0][2], [32, 8, 60]);
+        let offsets = restored.object("GI").unwrap().kratos_crawling();
+        assert_eq!(offsets.flh(0, false, true), [17, -2, 12].into());
+        assert_eq!(offsets.flh(0, false, false), [32, 8, 60].into());
     }
 }

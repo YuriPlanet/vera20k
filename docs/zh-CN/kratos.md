@@ -115,3 +115,15 @@ VERA20K 的 GPLv3 组合作品保留该许可证。
 已移植的功能把它的键放在 `kratos_read` 里读取，这些读取会被标记为 Kratos 读取器；开关只统计没有
 被其它读取器读到的键。键名、默认值和钳制值来自 Kratos PP 以及 Kratos 所挂钩的 `gamemd.exe`，
 不是凭清单猜的；原生地址写在 Rust 代码旁。没有该键的游戏保持原版路径。
+
+### 一个功能一个模块
+
+每项功能的键、默认值和判定都放在 `src/rules/<扩展>_<功能>.rs`，测试放在同目录的
+`<扩展>_<功能>_tests.rs`。读取逻辑遵循 Kratos 对应的 `Read` 方法，模拟在用到该值时调用此模块的判定。
+
+例如，`kratos_crawling_flh.rs` 对应 `Ext/TechnoType/CrawlingFLHData.h`。读取器把两组坐标写入
+`WeaponOffsets.crawling` 和 `WeaponOffsets.elite_crawling`。`get_weapon_record` 通过借用这两个字段
+的视图调用 `flh(slot, elite, prone)`。玩家存档的布局记录字段名、类型和顺序，因此这两个字段保留原来的
+名称、类型和顺序。
+
+类型数据保存在共享的 `RuleSet` 中，即使场上有两万个单位，同一类型的单位也共用一组偏移量。

@@ -15,7 +15,8 @@
 
 VERA20K là một engine mới cho Red Alert 2: Yuri's Revenge. Nó chơi giống bản gốc, với cùng đơn vị,
 bản đồ và hình ảnh, và chạy trên Windows, macOS và Linux. Nó được làm cho những trận đánh lớn hơn,
-với tối đa 30 người chơi và 20.000 đơn vị trên một bản đồ.
+với tối đa 20.000 đơn vị trên một bản đồ. Chế độ Skirmish ngoại tuyến có tối đa 120 ô người chơi,
+còn các trận qua mạng LAN hoặc Internet có tối đa 30 ô.
 
 VERA20K do game thủ làm ra, dành cho game thủ, và game thủ có tiếng nói cuối cùng về hướng đi của
 dự án.
@@ -33,7 +34,7 @@ Gặp khó khăn? Xem [trang trợ giúp](https://vera20k.org/help) (tiếng Anh
 ## Mục tiêu dự án
 
 1. Giữ nguyên lối chơi, hình ảnh và không khí của Red Alert 2: Yuri's Revenge gốc.
-2. Hỗ trợ những trận đánh lớn hơn: tối đa **30 người chơi** và **20.000 đơn vị** trên bản đồ 500×500.
+2. Hỗ trợ những trận đánh lớn hơn trên bản đồ 500×500 với tối đa **20.000 đơn vị**, **120 ô người chơi** trong chế độ Skirmish ngoại tuyến và **30 ô** khi chơi qua mạng LAN hoặc Internet.
 3. Đưa vào các tính năng RTS quen thuộc và cả một số tính năng chưa từng có.
 4. Client chơi mạng tích hợp sẵn
 
@@ -42,7 +43,7 @@ Gặp khó khăn? Xem [trang trợ giúp](https://vera20k.org/help) (tiếng Anh
 Người đóng góp có thể nhận phụ trách các phần của engine, với nhiều tự do để thực hiện những thay
 đổi giúp VERA20K tiến lên.
 
-Những người bảo trì sẽ hỗ trợ review, tích hợp và merge. Bạn vẫn được ghi công đầy đủ cho đóng góp
+Những người bảo trì sẽ hỗ trợ xem xét, tích hợp và sát nhập. Bạn vẫn được ghi công đầy đủ cho đóng góp
 của mình.
 
 Thảo luận diễn ra trên [Discord](https://discord.gg/kmjRUn5m5F) và trong nhóm QQ (1097193563).
@@ -51,7 +52,7 @@ Thảo luận diễn ra trên [Discord](https://discord.gg/kmjRUn5m5F) và trong
 
 Engine có ba phần chính:
 
-- **Mô phỏng (Simulation):** Nắm giữ trạng thái và logic của lối chơi.
+- **Mô phỏng (Simulation):** Nắm giữ trạng thái và nguyên lý của lối chơi.
 - **Kết xuất (Rendering):** Dùng GPU để vẽ địa hình, đơn vị và công trình bằng đồ họa của trò chơi gốc.
 - **Ứng dụng (Application):** Xử lý đầu vào, menu, âm thanh và tích hợp nền tảng, kết nối các hệ
   thống với nhau.
@@ -118,7 +119,9 @@ nhiều dự án khác.
 
 Copyright © 2026 Halvor Nikolai Rusten và những người đóng góp cho VERA20K.
 Được cấp phép theo [GPLv3](LICENSE-GPL) kèm [các điều khoản bổ sung](LEGAL.md#additional-terms).
-Kho mã này không chứa tệp nào của trò chơi. Command & Conquer và Red Alert là thương hiệu của
+VERA20K đã được phép phân phối kèm các ô địa hình tuyết và băng từ Tiberian Sun: Firestorm.
+Các ô này vẫn thuộc sở hữu của Electronic Arts. Người chơi phải dùng tệp trò chơi từ bản
+Red Alert 2: Yuri's Revenge của mình. Command & Conquer và Red Alert là thương hiệu của
 Electronic Arts Inc., còn ảnh chụp màn hình và biểu tượng ứng dụng, ngôi sao đỏ của Red Alert 2,
 thể hiện hình ảnh trò chơi thuộc sở hữu của Electronic Arts. VERA20K không liên kết với Electronic
 Arts và không được Electronic Arts chứng thực.

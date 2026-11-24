@@ -25,23 +25,12 @@ mod cache;
 mod saved_path;
 pub use cache::CacheLease;
 
-/// Standard YR scenarios carried by every executable. The chooser and the
-/// map reader share these names. Local maps and archives take precedence.
-pub(super) const BUNDLED_MAPS: &[(&str, &[u8])] = &[
-    (
-        "vera-ice-lake.map",
-        include_bytes!("bundled/vera-ice-lake.map"),
-    ),
-    (
-        "Arctic_Circle_16_Ice_Passages.map",
-        include_bytes!("bundled/Arctic_Circle_16_Ice_Passages.map"),
-    ),
-];
+/// The built-in Ice Lake scenario is the last fallback after files and archives.
+pub(super) const ICE_LAKE: &str = "vera-ice-lake.map";
 
 pub fn bundled_map_bytes(name: &str) -> Option<&'static [u8]> {
-    BUNDLED_MAPS
-        .iter()
-        .find_map(|&(filename, bytes)| name.eq_ignore_ascii_case(filename).then_some(bytes))
+    name.eq_ignore_ascii_case(ICE_LAKE)
+        .then_some(include_bytes!("bundled/vera-ice-lake.map").as_slice())
 }
 
 /// Exact source whose bytes were parsed into the active map.

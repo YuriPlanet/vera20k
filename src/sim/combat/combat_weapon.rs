@@ -1450,9 +1450,9 @@ pub(crate) fn get_weapon_record<'r>(
         && (0..=1).contains(&index)
     {
         let elite = entity.veterancy.rank() >= RANK_ELITE_U16;
-        let stance_offset = if infantry.is_prone() { 0 } else { 2 };
-        record.flh =
-            obj.kratos_weapon_offsets()[usize::from(elite)][stance_offset + index as usize].into();
+        record.flh = obj
+            .kratos_crawling()
+            .flh(index as usize, elite, infantry.is_prone());
     }
     Some(record)
 }

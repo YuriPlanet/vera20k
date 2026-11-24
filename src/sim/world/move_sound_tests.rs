@@ -176,8 +176,8 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, step: &Value, context: 
         .get();
     let object = rules.object("SQD").unwrap();
     let (_, draws) = crate::sim::rng::trace_draws(|| {
-        crate::sim::animation::tick_foot_body_frame_counter(
-            sim.substrate.entities.get_mut(id).unwrap(),
+        let due = crate::sim::animation::foot_body_frame_due(
+            sim.substrate.entities.get(id).unwrap(),
             crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses),
             crate::sim::animation::FootBodyCadence {
                 walk_rate: object.walk_rate,
@@ -188,6 +188,10 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, step: &Value, context: 
             0,
             None,
             sim.session.binary_frame(),
+        );
+        crate::sim::animation::tick_foot_body_frame_counter(
+            sim.substrate.entities.get_mut(id).unwrap(),
+            due,
         );
         Simulation::tick_move_sound_after_process(
             &sim.interner,

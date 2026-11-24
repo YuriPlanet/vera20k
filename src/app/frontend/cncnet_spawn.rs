@@ -384,11 +384,11 @@ impl SpawnRequest {
             }
         };
         let max = max_spawn_country_index(ares);
+        // VERA shared control: a shared House plays its leader's Country.
         let countries = session
-            .humans
-            .iter()
-            .filter(|human| !human.is_observer())
-            .map(|human| human.slot.country)
+            .humans_with_house_leaders()
+            .filter(|(index, human, leader)| index == leader && !human.is_observer())
+            .map(|(_, human, _)| human.slot.country)
             .chain(session.opponents.iter().map(|opponent| opponent.country));
         for country in countries {
             ensure!(
@@ -607,8 +607,10 @@ fn skirmish(
     let handicaps = ini.section_or_empty("HouseHandicaps");
     let mut active = Vec::new();
     let mut rows = Vec::new();
-    let mut colors = Vec::new();
-    let mut used_starts = [false; SKIRMISH_MAX_SLOT_COUNT];
+    // VERA shared control: in a mode with shared starts, humans who write one
+    // start share its House (`humans_with_house_leaders`).
+    let shared_starts = mode.class.policy().shared_start_positions;
+    let mut held_starts = [None; SKIRMISH_MAX_SLOT_COUNT];
     let mut humans: Vec<Option<SkirmishHumanSlot>> = vec![None; player_count];
     let mut names = std::collections::BTreeSet::new();
     let mut local_player_index = 0;
@@ -652,7 +654,15 @@ fn skirmish(
         } else {
             (country(section, "Side")?, color(section, "Color")?)
         };
-        let start = start(ini, house, house_limit, &mut used_starts)?;
+        let start = start(
+            ini,
+            house,
+            house_limit,
+            StartHolder::Human {
+                shares: shared_starts,
+            },
+            &mut held_starts,
+        )?;
         ensure!(
             !observer || start == LaunchStartPosition::Auto,
             "spectator Multi{} cannot have a start location",
@@ -670,9 +680,6 @@ fn skirmish(
         }
         active.push(house);
         rows.push(source as u8);
-        if !observer {
-            colors.push(color);
-        }
         humans[source] = Some(SkirmishHumanSlot {
             raw_slot_index: Some(source as u8),
             name,
@@ -714,14 +721,19 @@ fn skirmish(
         let color_index = color(ini.section_or_empty("HouseColors"), &key)?;
         active.push(raw_slot);
         rows.push(raw_slot as u8);
-        colors.push(color_index);
         opponents.push(SkirmishAiSlot {
             raw_slot_index: raw_slot as u8,
             country: country(ini.section_or_empty("HouseCountries"), &key)?,
             country_random: false,
             color_index,
             color_random: false,
-            start_position: start(ini, raw_slot, house_limit, &mut used_starts)?,
+            start_position: start(
+                ini,
+                raw_slot,
+                house_limit,
+                StartHolder::Ai,
+                &mut held_starts,
+            )?,
             team: LaunchTeam::None,
             difficulty: match difficulty {
                 0 => AiDifficulty::Hard,
@@ -736,27 +748,6 @@ fn skirmish(
         "AIPlayers={ai_count} does not match {} active HouseHandicaps entries",
         opponents.len()
     );
-    // The lobby's start admission (docs/lobby-protocol.md): at least two
-    // participants play; spectators may watch AI play too. Each spectator
-    // takes an observer House (`ScenarioSession::observer_houses`).
-    let spectators = humans.iter().filter(|human| human.is_observer()).count();
-    ensure!(
-        !multiplayer || humans.len() - spectators + ai_count >= 2,
-        "a multiplayer launch needs at least two playing participants"
-    );
-    // Up to eight houses keep distinct colours. Past eight the launcher
-    // decides: this reader runs before the rules' colour list is known, and
-    // VERA's rooms keep colours apart while their list covers every player
-    // (`network_color_in_use`).
-    if colors.len() <= SKIRMISH_PLAYER_SLOT_COUNT {
-        let mut used = [false; COLOR_SLOTS];
-        for &index in &colors {
-            ensure!(
-                !std::mem::replace(&mut used[usize::from(index)], true),
-                "duplicate player color {index}"
-            );
-        }
-    }
     // `active` lists the humans' houses first, then the AI houses in order.
     let teams = teams(ini, &active, &rows, house_limit)?;
     for (row, team) in rows.iter().zip(&teams).take(player_count) {
@@ -793,14 +784,6 @@ fn skirmish(
             mode.id
         );
     }
-    let playing_teams: Vec<_> = humans
-        .iter()
-        .filter(|human| !human.is_observer())
-        .map(|human| human.slot.team)
-        .chain(opponents.iter().map(|opponent| opponent.team))
-        .collect();
-    validate_mode_teams(&mode, &playing_teams)?;
-
     let options = SkirmishLaunchOptions {
         starting_credits: ranged(settings, "Credits", 10000, 0, i32::MAX)?,
         unit_count: ranged(settings, "UnitCount", 0, 0, i32::MAX)?,
@@ -836,6 +819,49 @@ fn skirmish(
         opponents,
         options,
     );
+    // VERA shared control: a shared House is one participant, and plays its
+    // leader's Side, Color and team; its other players' are ignored.
+    let houses: Vec<_> = session
+        .humans_with_house_leaders()
+        .filter(|(index, human, leader)| index == leader && !human.is_observer())
+        .map(|(_, human, _)| &human.slot)
+        .collect();
+    // The lobby's start admission (docs/lobby-protocol.md): at least two
+    // participants play; spectators may watch AI play too. Each spectator
+    // takes an observer House (`ScenarioSession::observer_houses`).
+    ensure!(
+        !multiplayer || houses.len() + ai_count >= 2,
+        "a multiplayer launch needs at least two playing participants"
+    );
+    // Up to eight houses keep distinct colours. Past eight the launcher
+    // decides: this reader runs before the rules' colour list is known, and
+    // VERA's rooms keep colours apart while their list covers every player
+    // (`network_color_in_use`).
+    let colors: Vec<_> = houses
+        .iter()
+        .map(|slot| slot.color_index)
+        .chain(
+            session
+                .opponents
+                .iter()
+                .map(|opponent| opponent.color_index),
+        )
+        .collect();
+    if colors.len() <= SKIRMISH_PLAYER_SLOT_COUNT {
+        let mut used = [false; COLOR_SLOTS];
+        for &index in &colors {
+            ensure!(
+                !std::mem::replace(&mut used[usize::from(index)], true),
+                "duplicate player color {index}"
+            );
+        }
+    }
+    let playing_teams: Vec<_> = houses
+        .iter()
+        .map(|slot| slot.team)
+        .chain(session.opponents.iter().map(|opponent| opponent.team))
+        .collect();
+    validate_mode_teams(&session.mode, &playing_teams)?;
     // The gates network setup's host runs before its assignments: the mode's
     // Start (`validate_setup_start`, vtable+14), then TXT_CANNOT_ALLY.
     let roles: Vec<_> = session
@@ -921,13 +947,22 @@ fn color(section: &IniSection, key: &str) -> Result<u8> {
     Ok(priority as u8)
 }
 
+/// Who wrote a start already taken: VERA shared control lets humans share one
+/// when `shares` (the mode's `shared_start_positions`); an AI shares none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StartHolder {
+    Human { shares: bool },
+    Ai,
+}
+
 /// Waypoints below `house_limit`: 0..29 in network rooms, as for one human
 /// with a relay, and 0..119 offline; the map decides which exist.
 fn start(
     ini: &IniFile,
     raw_slot: usize,
     house_limit: usize,
-    used: &mut [bool; SKIRMISH_MAX_SLOT_COUNT],
+    holder: StartHolder,
+    held: &mut [Option<StartHolder>; SKIRMISH_MAX_SLOT_COUNT],
 ) -> Result<LaunchStartPosition> {
     let key = format!("Multi{}", raw_slot + 1);
     let value = ranged(
@@ -940,8 +975,12 @@ fn start(
     if value < 0 {
         return Ok(LaunchStartPosition::Auto);
     }
-    ensure!(!used[value as usize], "duplicate starting waypoint {value}");
-    used[value as usize] = true;
+    let entry = &mut held[value as usize];
+    match (*entry, holder) {
+        (None, _) => *entry = Some(holder),
+        (Some(StartHolder::Human { .. }), StartHolder::Human { shares: true }) => {}
+        _ => bail!("duplicate starting waypoint {value}"),
+    }
     Ok(LaunchStartPosition::Position(value as u8))
 }
 
