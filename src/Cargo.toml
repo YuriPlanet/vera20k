@@ -26,6 +26,11 @@ path = "bin/parity-digest.rs"
 name = "sim-bench"
 path = "bin/sim-bench.rs"
 
+# Headless skirmish control over JSON Lines (play_cli/README.md).
+[[bin]]
+name = "vera20k-play"
+path = "bin/vera20k-play.rs"
+
 # The saved-game layout id the browser build compiles in (tools/wasm/build.py).
 [[bin]]
 name = "snapshot-layout"
@@ -43,6 +48,7 @@ required-features = ["test-support"]
 assets = ["assets"]
 map = ["map"]
 net = ["net"]
+play-cli = ["play_cli"]
 rules-a-n = [
     "rules::a", "rules::b", "rules::c", "rules::d", "rules::e", "rules::f", "rules::g",
     "rules::h", "rules::i", "rules::j", "rules::k", "rules::l", "rules::m", "rules::n",
@@ -107,6 +113,7 @@ test-focus = []
 tests-assets = []
 tests-map = []
 tests-net = []
+tests-play-cli = []
 tests-rules-a-n = []
 tests-rules-o-z = []
 tests-scenario = []
