@@ -15,7 +15,8 @@
 
 VERA20K là một engine mới cho Red Alert 2: Yuri's Revenge. Nó chơi giống bản gốc, với cùng đơn vị,
 bản đồ và hình ảnh, và chạy trên Windows, macOS và Linux. Nó được làm cho những trận đánh lớn hơn,
-với tối đa 120 người chơi và 20.000 đơn vị trên một bản đồ.
+với tối đa 20.000 đơn vị trên một bản đồ. Chế độ Skirmish ngoại tuyến có tối đa 120 ô người chơi,
+còn các trận qua mạng LAN hoặc Internet có tối đa 30 ô.
 
 VERA20K do game thủ làm ra, dành cho game thủ, và game thủ có tiếng nói cuối cùng về hướng đi của
 dự án.
@@ -33,7 +34,7 @@ Gặp khó khăn? Xem [trang trợ giúp](https://vera20k.org/help) (tiếng Anh
 ## Mục tiêu dự án
 
 1. Giữ nguyên lối chơi, hình ảnh và không khí của Red Alert 2: Yuri's Revenge gốc.
-2. Hỗ trợ những trận đánh lớn hơn: tối đa **120 người chơi** và **20.000 đơn vị** trên bản đồ 500×500.
+2. Hỗ trợ những trận đánh lớn hơn trên bản đồ 500×500 với tối đa **20.000 đơn vị**, **120 ô người chơi** trong chế độ Skirmish ngoại tuyến và **30 ô** khi chơi qua mạng LAN hoặc Internet.
 3. Đưa vào các tính năng RTS quen thuộc và cả một số tính năng chưa từng có.
 4. Client chơi mạng tích hợp sẵn
 

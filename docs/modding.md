@@ -13,7 +13,7 @@ extension features VERA20k supports.
 | Game files | MIX, INI, SHP, VXL, CSF and maps | The same files, searched in the same order |
 | DLL mods and exe patches | Run inside the game | Can't run |
 | Map size | Width plus height up to 512 | Up to 1024 |
-| Players | 8 | Up to 120, on maps made for it |
+| Players | 8 | Up to 120 player slots in offline Skirmish and up to 30 in LAN or online matches, on maps with enough starts |
 | Player colours | 8 | 30, and a mod can [list its own](skirmish-colors.md) |
 | Playing online | With the original game | Only with other VERA20k players |
 
@@ -31,7 +31,7 @@ to 512 and `[AI] AIBaseSpacing` to −16 through 16 cells.
 - Add new units, buildings and weapons.
 - Replace pictures, models, sounds and music.
 - Change the AI, the game modes and the game's text.
-- Make your own maps, including bigger ones and maps for up to 30 players.
+- Make larger maps with up to 120 starting positions. Offline Skirmish can use all 120. LAN and online matches can use up to 30.
 - Play your mod online, if everyone has the same files.
 
 **Only partly:**
