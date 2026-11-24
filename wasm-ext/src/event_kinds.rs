@@ -65,6 +65,8 @@ pub const DELIVERED_EVENTS: &[&str] = &[
     // RFC 0001 section 6h: the module event and the start-of-match
     // records (1040..1042)
     "ModuleEvent", "IniEntry", "IniKey",
+    // RFC 0001 6i: an order refused at execution (1043)
+    "OrderRefused",
 ];
 
 /// An event kind's number by name, ASCII case-insensitive.
