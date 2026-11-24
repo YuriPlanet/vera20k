@@ -1024,6 +1024,7 @@ impl Simulation {
         self.real_cell_bridge_flags_0x1180 =
             resolved_terrain.capture_real_cell_bridge_flags_0x1180();
         self.dynamic_terrain_cells.clear();
+        self.ice_cracks.clear();
         self.resolved_terrain = Some(resolved_terrain);
         // A fresh grid restarts its mutation epoch; drop any plane keyed on the old one.
         self.movement_pass_cache = Default::default();

@@ -61,15 +61,6 @@ fn network_map_digest(ini: &IniFile) -> String {
         .read_string("1", "No digest here mate. Nope.", 0x20)
 }
 
-fn physical_map_length(source: &LoadedMapSource) -> i32 {
-    match source {
-        LoadedMapSource::Loose { payload_len, .. } | LoadedMapSource::Mix { payload_len, .. } => {
-            *payload_len as u32 as i32
-        }
-        _ => unreachable!("metadata reader returns only physical source bytes"),
-    }
-}
-
 pub(crate) struct ScenarioCatalog {
     records: Vec<SkirmishScenarioRecord>,
     /// Always exactly `records.iter().map(to_map_menu_entry)`.
@@ -133,23 +124,22 @@ impl ScenarioCatalog {
         } else {
             network_map_digest(&loaded.ini)
         };
+        let (length, source_sha256) = loaded
+            .source
+            .physical_identity()
+            .ok_or_else(|| anyhow::anyhow!("selected map has no file identity: {file}"))?;
         Ok(NetworkMapMetadata {
             display_name: network_map_title(&record.display_name, file),
             player_capacity: record.player_capacity.min(room_limit),
             official: record.official,
-            byte_length: physical_map_length(&loaded.source),
+            byte_length: length as i32,
             digest,
             effective_digest: crate::map::source::effective_network_map_digest(
                 &loaded.ini,
                 crate::map::rmg::is_seed_selection(file),
                 ares,
             ),
-            source_sha256: loaded
-                .source
-                .physical_identity()
-                .expect("physical source")
-                .1
-                .to_owned(),
+            source_sha256: source_sha256.to_owned(),
         })
     }
 
@@ -176,18 +166,16 @@ impl ScenarioCatalog {
             else {
                 continue;
             };
-            if physical_map_length(&loaded.source) != metadata.byte_length {
+            let Some((length, source_sha256)) = loaded.source.physical_identity() else {
+                continue;
+            };
+            if length as i32 != metadata.byte_length {
                 continue;
             }
             if !metadata.digest.is_empty() && metadata.digest != network_map_digest(&loaded.ini) {
                 continue;
             }
-            if !metadata.source_sha256.is_empty()
-                && loaded
-                    .source
-                    .physical_identity()
-                    .is_none_or(|(_, digest)| digest != metadata.source_sha256)
-            {
+            if !metadata.source_sha256.is_empty() && source_sha256 != metadata.source_sha256 {
                 continue;
             }
             if !metadata.effective_digest.is_empty()

@@ -69,7 +69,6 @@ data.
 
 | Residual | Hooks | Where |
 |---|---|---|
-| An upgrade's ProduceCash timer is not started at Put, so the Update hook starts it one frame longer | `0x4409F4` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | Flying carriers: spawned aircraft keep their launch Z, and the spawn manager aims them at its cell | `0x414338`, `0x6B783B` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | Capture manager and parasite on any weapon slot (TechnoClass Init_1), with the parasite slot hooks | `0x6F407D`, `0x629804`, `0x62A020`, `0x62A7B1` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | Gunner temporal swap | `0x74642C`, `0x74653C` | [ares-techno-hooks.md](ares-techno-hooks.md) |
@@ -77,7 +76,6 @@ data.
 | Occupier + VehicleThief destination expiry | `0x4D9A83` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | The PermaDisguise arm of `InfantryClass::ClearDisguise` has no Rust caller | `0x5227A3` | [ares-combat-sim-hooks.md](ares-combat-sim-hooks.md) |
 | `GarrisonedIn` is not kept: a garrisoned infantryman's skipped death anim, its release on Limbo and Unlimbo | `0x518434`, `0x51DF38`, `0x51DFFD` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
-| A map house section's `Degrades=` | `0x50114D` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | A repacked MCV that is still unplaced skips the conversion tail | `0x449FF8` | [ares-bugfixes.md](ares-bugfixes.md) |
 | UnInit announces expiry only when Limbo fails; VERA keeps both broadcasts and their order | `0x5F6612` | [ares-bugfixes.md](ares-bugfixes.md) |
 | Expired Flamer/Scorch anims make no SmallFire/LargeFire anims (needs `MapClass::GetRandomCoordsNear`); retail sets neither key | `0x4250C9`, `0x42511B`, `0x42513F` | [ares-anim-particles.md](ares-anim-particles.md) |
@@ -86,18 +84,6 @@ data.
 | AttachEffect: `TemporalHidesAnim` and the airborne half-distance collection | none | [ares-attach-effect.md](ares-attach-effect.md) |
 | Country power plants: a house with no candidate is a fatal error natively (`0x1001DEF6`); VERA splices nothing | none | [ares-country-powerplants.md](ares-country-powerplants.md) |
 | With Phobos too: Phobos `SuperWeaponSidebar.*Houses` keep the 0x80 buffer | `0x4750EC`, `0x475107` | [ares-bugfixes.md](ares-bugfixes.md) |
-
-Input rungs
-([ares-techno-hooks.md](ares-techno-hooks.md),
-[ares-building-house-hooks.md](ares-building-house-hooks.md)):
-- an Ivan entering an allied Grinder without Ctrl (`0x51EB48`; VERA answers IvanBomb);
-- a healer infantryman whose weapon 0 does not heal over a non-allied object (Foot's
-  Guard on itself, `0x4D74E0`; VERA orders nothing), and any healer's Alt or Ctrl+Alt
-  over a Terrain object (`0x51E797`; VERA answers the key rungs);
-- the structure and defense tab hotkeys, the cameo click and the ready-building strip
-  asking for a usable factory (`0x535DB6`, `0x535E76`, `0x6AB312`, `0x6A9822`);
-- `SuperGapRadiusInCells` multiples of 256: the stock What_Action (`0x004472AA`)
-  reads the char, VERA the int.
 
 Equivalence notes that need no port stay in their chain docs: INI `+` numbering and
 section caching ([ares-ini-syntax.md](ares-ini-syntax.md)), the random map's urban

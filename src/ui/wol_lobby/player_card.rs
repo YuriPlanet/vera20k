@@ -10,7 +10,7 @@
 use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
 use super::WolLobbyState;
-use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::geom::{RectPx, ShellAlign};
 use crate::ui::shell::modal::PLAYER_CARD_ROWS;
 use crate::ui::shell::page;
 use crate::ui::wol_persona::LocaleRow;
@@ -30,6 +30,14 @@ pub(crate) const CARD_COUNTRIES: u16 = 0x7FF7;
 /// The card's rows, which give their help under the pointer: statics from
 /// here on, one per row of the card's layout.
 pub(crate) const CARD_ROWS: u16 = 0x7FE0;
+
+/// The card's statics, which paint from their nodes: row `i`'s caption
+/// `CARD_CAPTIONS + 2i` (right-aligned) and value `CARD_CAPTIONS + 2i + 1`,
+/// then the status line [`CARD_STATUS`].
+pub(crate) const CARD_CAPTIONS: u16 = 0x7FE5;
+pub(crate) const CARD_STATUS: u16 = CARD_CAPTIONS + 2 * PLAYER_CARD_ROWS as u16;
+/// The player list's badge before the name, a picture the host names.
+pub(crate) const CARD_BADGE: u16 = 0x7FDF;
 
 /// The country list's visible rows, which end a little below the card.
 pub(crate) const CARD_COUNTRY_ROWS: usize = 7;
@@ -87,16 +95,30 @@ pub(super) fn card_spec() -> NodeSpec {
         .id(CARD_COUNTRIES.into())
         .with(Prop::VisibleRows, Value::Int(CARD_COUNTRY_ROWS as i32))
         .with(Prop::Enabled, Value::Bool(false));
-    // Hover only: the host paints them and gives their help.
+    // Hover only: they give their rows' help.
     let rows = (0..PLAYER_CARD_ROWS as u16).map(|row| {
         NodeSpec::new(NodeKind::Text)
             .id((CARD_ROWS + row).into())
             .tooltip("")
     });
+    // The rows' captions and values, then the status line, in the order they
+    // read.
+    let statics = (CARD_CAPTIONS..=CARD_STATUS).map(|id| {
+        let align = match id {
+            CARD_STATUS => ShellAlign::NONE,
+            id if (id - CARD_CAPTIONS) % 2 == 0 => ShellAlign::H_RIGHT | ShellAlign::V_CENTER,
+            _ => ShellAlign::V_CENTER,
+        };
+        NodeSpec::new(NodeKind::Text)
+            .id(id.into())
+            .with(Prop::Align, Value::Int(i32::from(align.0)))
+    });
     NodeSpec::new(NodeKind::Dialog)
         .children(buttons)
         .child(countries)
         .children(rows)
+        .child(NodeSpec::new(NodeKind::Image).id(CARD_BADGE.into()))
+        .children(statics)
 }
 
 impl WolLobbyState {
@@ -158,10 +180,22 @@ impl WolLobbyState {
     /// Puts the card on `dialog` (a press outside it closes the card), its
     /// rows on `rows` and its buttons on their rects (`None`: hidden), and
     /// sets which take a press.
-    pub(crate) fn sync_card(
+    /// The card's dialog root, while it is open.
+    pub(crate) fn card_root(&self) -> Option<vera20k_gui::NodeId> {
+        self.card_dialog.map(|(_, root)| root)
+    }
+
+    /// Puts the card on `dialog`: its rows' hover statics on `rows`, its
+    /// statics ([`CARD_CAPTIONS`]..=[`CARD_STATUS`]) on `statics`' rects
+    /// with their texts (copied in only when they change; a static without
+    /// one is hidden), the badge on `badge` (hidden without one), and each
+    /// button `place` puts with its enable.
+    pub(crate) fn sync_card<'t>(
         &mut self,
         dialog: RectPx,
         rows: &[RectPx],
+        badge: Option<RectPx>,
+        statics: impl Fn(u16) -> Option<(&'t str, RectPx)>,
         place: impl Fn(u16) -> Option<(RectPx, bool)>,
     ) {
         let Some((_, root)) = self.card_dialog else {
@@ -181,8 +215,19 @@ impl WolLobbyState {
             id if (CARD_ROWS..CARD_ROWS + PLAYER_CARD_ROWS as u16).contains(&id) => {
                 rows.get(usize::from(id - CARD_ROWS)).copied()
             }
+            id if (CARD_CAPTIONS..=CARD_STATUS).contains(&id) => statics(id).map(|(_, rect)| rect),
+            CARD_BADGE => badge,
             id => place(id).map(|(rect, _)| rect),
         });
+        let count = self.gui.tree().children(root).map_or(0, <[vera20k_gui::NodeId]>::len);
+        for index in 0..count {
+            let child = self.gui.tree().children(root).ok().and_then(|c| c.get(index).copied());
+            let Some(node) = child else { break };
+            let id = self.gui.id_of(node).and_then(|id| u16::try_from(id).ok());
+            if let Some((text, _)) = id.and_then(&statics) {
+                page::set_node_text(&mut self.gui, node, Prop::Text, text);
+            }
+        }
         for id in buttons {
             let enabled = place(id).is_none_or(|(_, enabled)| enabled);
             page::set(&mut self.gui, root, id, Prop::Enabled, Value::Bool(enabled));

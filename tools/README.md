@@ -55,6 +55,7 @@ oracle families index their own fixtures and producers.
 | Render a whole map as one picture, such as its preview on vera20k.org | `python3 -m tools.map_render --help` |
 | Run one bounded child with retained diagnostics | `tools.child_process.run_child` (shared by capture wrappers) |
 | Check shell UI matrices | [exact shell matrix](exact_shell_ui_matrix/README.md) |
+| Run stock-YR end-to-end checks and available native comparisons | [end-to-end checks](e2e_parity/README.md), `python -m tools.e2e_parity run` |
 | Synchronize authoritative skill sources | `python tools/skill_sync.py --write`, then `--check` |
 
 ## Capture files

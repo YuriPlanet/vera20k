@@ -84,7 +84,12 @@ impl App {
                 return None;
             }
         };
-        let Some(theater) = crate::map::theater::load_theater(assets, &map.header.theater) else {
+        let Some(theater) = crate::map::theater::load_scenario_theater(
+            assets,
+            &map.header.theater,
+            &map.ini,
+            false,
+        ) else {
             log::warn!(
                 "Team Starts measures straight lines: theater {} unavailable",
                 map.header.theater
@@ -1014,10 +1019,7 @@ impl App {
         let (w, h) = (state.render_width() as i32, state.render_height() as i32);
         let parts = shell_box.parts(w, h, crate::ui::shell::geom::RETAIL_SCALE);
         let controller = &mut state.frontend.shell_controller;
-        if controller.top_id() != Some(shell_box.dialog) {
-            controller.close(shell_box.dialog);
-            controller.push_modal(shell_box.dialog);
-        }
+        Self::raise_choose_map_prompt(controller, shell_box.dialog);
         crate::ui::shell::menu_page::sync_nodes(
             controller,
             shell_box.dialog,
@@ -1032,6 +1034,17 @@ impl App {
             controller.set_prop(shell_box.dialog, b.id, Prop::Cancel, cancel);
         }
         Some((prompt, shell_box))
+    }
+
+    /// Use Map's box `dialog` on top of the controller, over the chooser.
+    pub(crate) fn raise_choose_map_prompt(
+        controller: &mut crate::ui::shell::controller::DialogController,
+        dialog: crate::ui::shell::descriptor::DialogResourceId,
+    ) {
+        if controller.top_id() != Some(dialog) {
+            controller.close(dialog);
+            controller.push_modal(dialog);
+        }
     }
 
     /// A pointer message (`down`; `None` moves) while Use Map's box shows:

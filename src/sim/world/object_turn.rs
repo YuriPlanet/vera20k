@@ -1485,6 +1485,8 @@ impl Simulation {
             outcome.destroyed_structure |= receipt.structure_destroyed;
             // Unit73666B..736685: a visceroid's UpdateVisceroid737180.
             sim.unit_update_visceroid(stable_id, rules, &mut object_ctx.effects);
+            // Firestorm 2.0 follows it with the Limpet Drone's Stage wrap.
+            sim.wrap_drone_stage(stable_id, rules);
             // UnitAI736689 Reload+424 follows FireAtTarget/Facing and
             // precedes the second Ready/Commence. Aircraft/Infantry have
             // no corresponding ordinary Reload dispatch here. The native

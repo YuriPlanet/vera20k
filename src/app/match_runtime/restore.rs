@@ -235,29 +235,18 @@ pub(crate) fn commit_prepared_load(
     // without reordering.
     state.match_state.match_presentation.active_sidebar_tab =
         crate::app::sidebar_projection::loaded_active_tab(committed.details.sidebar_order.as_ref());
-    #[cfg(feature = "phobos")]
-    let sw_sidebar_expanded = committed
-        .details
-        .sidebar_order
-        .as_ref()
-        .map(|order| order.sw_sidebar_expanded());
     state
         .match_state
         .match_presentation
         .sidebar_projection
-        .restore_order(committed.details.sidebar_order);
-    #[cfg(feature = "phobos")]
-    if let Some(expanded) = sw_sidebar_expanded {
-        // `ScenarioExt::SWSidebar_Enable` survives the load like the strips.
-        state.match_state.match_presentation.sw_sidebar.expanded = expanded;
-    }
+        .model.restore_order(committed.details.sidebar_order);
 
     let owner = state.match_state.local_player_owner().map(str::to_owned);
     state
         .match_state
         .match_presentation
         .sidebar_projection
-        .restore_credits_counter(owner.as_deref(), committed.credits_counter);
+        .model.restore_credits_counter(owner.as_deref(), committed.credits_counter);
     if let Some(owner) = owner {
         state
             .match_state

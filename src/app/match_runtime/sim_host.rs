@@ -423,7 +423,7 @@ impl SimHost {
     }
 
     /// Have every frame of this scenario answer the local sidebar's `types`
-    /// too (`SidebarProjectionState::asked_types`). A home frame captured
+    /// too (`SidebarModel::asked_types`). A home frame captured
     /// without one of them is dropped, so the next read captures it; a lent
     /// tick's frame stands, as the sidebar adds types only from a tick that
     /// has come back.

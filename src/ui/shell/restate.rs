@@ -13,10 +13,10 @@
 //! rect and clipped at its height, with no scrolling (`OwnerDraw_Static`
 //! 0x006153E0 → `BitText__DrawText` 0x00434CD0).
 
-use vera20k_gui::{NodeKind, NodeSpec};
+use vera20k_gui::{NodeKind, NodeSpec, Prop, Value};
 
 use super::descriptor::DialogResourceId;
-use super::geom::{self, RectPx};
+use super::geom::{self, RectPx, ShellAlign};
 use super::in_game_shell::{self, InGameShellLayout};
 
 pub const DIALOG: DialogResourceId = DialogResourceId(0x10C);
@@ -50,16 +50,19 @@ impl RestateControl {
     }
 }
 
-/// Return, then the briefing text, each with its status help.
+/// Return, then the briefing text (SS_LEFT, top aligned), each with its
+/// status help, then the title and status line.
 pub fn spec() -> NodeSpec {
     let node = |kind, control: RestateControl| {
         NodeSpec::new(kind)
             .id(control.id().into())
             .tooltip(control.help_key().unwrap_or_default())
     };
+    let align = Value::Int(i32::from(ShellAlign::NONE.0));
     NodeSpec::new(NodeKind::Dialog)
         .child(node(NodeKind::Button, RestateControl::Return))
-        .child(node(NodeKind::Text, RestateControl::Content))
+        .child(node(NodeKind::Text, RestateControl::Content).with(Prop::Align, align))
+        .children(in_game_shell::panel_statics())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,6 +97,8 @@ impl RestateLayout {
         match id {
             0x423 => Some(self.return_button),
             0x6E7 => Some(self.content),
+            in_game_shell::TITLE => Some(self.title),
+            in_game_shell::FOOTER => Some(self.status_line),
             _ => None,
         }
     }

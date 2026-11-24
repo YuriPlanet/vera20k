@@ -314,10 +314,10 @@ fn the_ivan_self_bomb_gate_counts_the_whole_selection() {
     let ivan = sim
         .spawn_object("IVAN", "Americans", 3, 5, 0, &rules)
         .unwrap();
-    assert!(friendly_bomb_ivans(&sim, &rules, &[ivan], 1, ivan, None).is_empty());
+    assert!(friendly_ivans(&sim, &rules, &[ivan], 1, ivan, false, None).is_empty());
     assert_eq!(
-        friendly_bomb_ivans(&sim, &rules, &[ivan], 2, ivan, None),
-        [ivan]
+        friendly_ivans(&sim, &rules, &[ivan], 2, ivan, false, None),
+        [(ivan, FriendlyIvanAction::Bomb)]
     );
 }
 
@@ -2999,13 +2999,30 @@ fn bomb_click_orders() {
     let selected = [ivan, engineer];
 
     assert_eq!(
-        friendly_bomb_ivans(&sim, &rules, &selected, selected.len(), own_tank, None),
-        vec![ivan]
+        friendly_ivans(
+            &sim,
+            &rules,
+            &selected,
+            selected.len(),
+            own_tank,
+            false,
+            None
+        ),
+        vec![(ivan, FriendlyIvanAction::Bomb)]
     );
     // 0% Verses: ILLEGAL to the Ivan, so the friend stays a selection
     // click, as the cursor shows it.
     assert!(
-        friendly_bomb_ivans(&sim, &rules, &selected, selected.len(), armoured, None).is_empty()
+        friendly_ivans(
+            &sim,
+            &rules,
+            &selected,
+            selected.len(),
+            armoured,
+            false,
+            None
+        )
+        .is_empty()
     );
     {
         let cursor = |target| {
@@ -3051,12 +3068,29 @@ fn bomb_click_orders() {
         "an unseen bomb"
     );
     assert!(
-        friendly_bomb_ivans(&sim, &rules, &selected, selected.len(), own_tank, None).is_empty(),
+        friendly_ivans(
+            &sim,
+            &rules,
+            &selected,
+            selected.len(),
+            own_tank,
+            false,
+            None
+        )
+        .is_empty(),
         "a bombed friend stays a selection click"
     );
     assert_eq!(
-        friendly_bomb_ivans(&sim, &rules, &selected, selected.len(), spare_tank, None),
-        vec![ivan]
+        friendly_ivans(
+            &sim,
+            &rules,
+            &selected,
+            selected.len(),
+            spare_tank,
+            false,
+            None
+        ),
+        vec![(ivan, FriendlyIvanAction::Bomb)]
     );
     assert!(ivan_cannot_bomb(&sim, &rules, ivan, own_tank));
     assert!(!ivan_cannot_bomb(&sim, &rules, engineer, own_tank));

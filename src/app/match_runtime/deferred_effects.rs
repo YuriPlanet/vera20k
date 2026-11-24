@@ -164,7 +164,7 @@ impl DeferredClientEffects {
                     .match_state
                     .match_presentation
                     .sidebar_projection
-                    .clear_production_request(type_id),
+                    .model.clear_production_request(type_id),
                 // Recorded only when the sim emits Ares bounty text, so this runs in every game.
                 DeferredEffect::Bounty(text) => {
                     if let Some(rt) = state.match_state.sim_runtime.runtime() {

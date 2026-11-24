@@ -352,10 +352,24 @@ pub(crate) const DIALOG: InGameDialog = InGameDialog {
     ui_mut: super::dialog_page::shared_ui_mut,
     // The boxes play GUICheckboxSound where their proc cases do, below.
     own_checkbox_sound: true,
+    help_under_held: false,
+    help_fallback: |_| "",
 };
 
 pub(crate) fn layout(state: &AppState) -> Option<DiplomacyLayout> {
     super::dialog_page::layout(state, diplomacy_layout)
+}
+
+/// Makes 0x73's nodes current without input (rects, the hidden children,
+/// the rows): its renderer's call every drawn frame before it paints from
+/// them. Returns the geometry and the rows it put on them.
+pub(crate) fn sync(state: &mut AppState) -> Option<(DiplomacyLayout, DiplomacyView)> {
+    let layout = layout(state)?;
+    let view = view(state);
+    let rect = |id| view.rect(&layout, id);
+    let sync = |gui: &mut vera20k_gui::Gui, root| view.sync(&layout, gui, root);
+    DIALOG.sync(state, diplomacy::spec, rect, sync);
+    Some((layout, view))
 }
 
 /// One pointer message on 0x73 (`down`: `None` moves), over the rows as

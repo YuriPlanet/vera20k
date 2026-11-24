@@ -150,6 +150,7 @@ pub(super) fn controls(
                 Control::Setting(Setting::List(Combo::Ares)),
                 RectPx::new(x, 86, OPTIONS_COMBO_W, COMBO_FACE_H),
             );
+            combo(&mut row, Combo::Kratos, right, 86);
             heading(&mut row, "VERA:ExtensionsVeraHeading", 166);
             for (i, id) in [
                 Check::CommanderFeedback,

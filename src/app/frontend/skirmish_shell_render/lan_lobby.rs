@@ -5,15 +5,12 @@ use super::chrome::*;
 use super::in_game_shell::{
     self, InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
 };
-use super::text::rect_to_text_rect;
-use super::{SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
+use super::SHELL_CONTROL_DEPTH;
 use crate::app::AppState;
+use crate::render::hud_paint::Material;
 use crate::app::frontend::shell_transition::ShellSlideKind;
-use crate::render::shell_paint;
-use crate::render::shell_text::{self, ShellTextDraw};
 use crate::render::shell_text_reveal::PathAReveal;
-use crate::ui::lan_shell::{CHAT_LOG, GAMES, JOIN, PAGE, PLAYERS};
-use crate::ui::shell::geom::{RectPx, ShellAlign};
+use crate::ui::lan_shell::{CHAT_LOG, GAMES, JOIN, PAGE, PLAYERS, STATUS, TITLE};
 use crate::util::time::Instant;
 
 /// Whether box button `id` shows pushed (612B70).
@@ -55,8 +52,18 @@ fn paint_create_box(
     let style = super::gui_paint::GuiStyle::popup();
     let widgets =
         super::gui_paint::paint_gui_ids(state, controller.gui(), root, ids, layout.scale, style);
-    overlay.controls.extend(widgets.controls);
+    overlay.controls.extend(widgets.lane(Material::Controls).copied());
     overlay.texts.extend(widgets.texts);
+}
+
+/// BB's message box as it shows, when one is up.
+fn lan_notice(state: &AppState) -> Option<crate::ui::shell::modal::ShellBox> {
+    use crate::app::shell_lan::{MODAL, OK};
+    let runtime = state.frontend.lan.as_ref()?;
+    let key = runtime.modal?;
+    let body = (runtime.modal_body.clone()).unwrap_or_else(|| state.csf_label(key, key));
+    let ok = state.csf_label("TXT_OK", "OK");
+    Some(crate::ui::shell::modal::ShellBox::new(MODAL, body).button(OK, ok))
 }
 
 pub(crate) fn render_lan_lobby(
@@ -65,6 +72,16 @@ pub(crate) fn render_lan_lobby(
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
     crate::app::shell_lan::sync_gui(state);
+    // The message box on its widgets (built as it opened) before it paints.
+    let notice = lan_notice(state);
+    let size = (state.render_width() as i32, state.render_height() as i32);
+    let notice_parts = notice.as_ref().map(|notice| super::shell_box::skirmish_parts(notice, size));
+    if let (Some(notice), Some(parts)) = (notice.as_ref(), notice_parts.as_ref()) {
+        let controller = &mut state.frontend.shell_controller;
+        if let Some(root) = controller.root_in(notice.dialog) {
+            notice.sync(controller.gui_mut(), root, parts);
+        }
+    }
     let now = Instant::now();
     let layout = crate::app::shell_lan::layout(state);
     let scale = layout.page.scale;
@@ -109,7 +126,6 @@ pub(crate) fn render_lan_lobby(
         .skirmish_shell_chrome
         .as_ref()
         .expect("BB control art");
-    let font = &state.renderer.bit_font;
     // BB's native background is precisely the ordinary MNSCRN shell family.
     let mut art =
         super::launcher_options::launcher_background_instances(atlas, width, height, scale);
@@ -134,31 +150,11 @@ pub(crate) fn render_lan_lobby(
     let mut controls = Vec::new();
     let mut texts = Vec::new();
     let mut overlay = ShellFrameOverlay::default();
-    let text = |value: &str, rect: RectPx, align: ShellAlign, rgb: [f32; 3]| -> ShellTextDraw {
-        shell_text::draw_in_rect_scaled(
-            font,
-            value,
-            rect_to_text_rect(rect),
-            rgb,
-            align,
-            [0.0; 2],
-            SHELL_CONTROL_TEXT_DEPTH,
-            scale.factor(),
-        )
-    };
     // VERA's Create Game box shows over the bare backdrop, as the online
     // lobby's does.
     let gui = state.frontend.shell_controller.gui();
     let root = state.frontend.shell_controller.root_in(PAGE.dialog);
     if !leaving {
-        for (id, key) in crate::ui::lan_shell::LABELS {
-            texts.push(text(
-                &state.csf_label(key, key),
-                layout.rect(id).unwrap_or_default(),
-                ShellAlign::NONE,
-                SHELL_LABEL_TEXT_RGB,
-            ));
-        }
         let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
         // The column's buttons (left to the slide while it runs), the lists
         // with their rows as their widgets hold them and the observer box.
@@ -192,16 +188,34 @@ pub(crate) fn render_lan_lobby(
                 _ => return None,
             })
         };
-        // The column's captions; Join reads Observe for an observer.
+        // The column's captions, Join's Observe for an observer; the heading
+        // and the status line while they reveal.
         let text_of = |id: i32| {
             let id = u16::try_from(id).ok()?;
             let key = match id {
+                TITLE => return title.map(|_| state.csf_label(PAGE.title_key, "Lobby")),
+                STATUS => return status.as_ref().map(|status| status.text.to_string()),
                 JOIN if observer => "GUI:Observe",
                 id => PAGE.button(id)?.csf_key,
             };
             Some(state.csf_label(key, key))
         };
+        let reveal_of = |id: i32| match u16::try_from(id).ok()? {
+            TITLE => title.map(|reveal| PathAReveal {
+                count: reveal.count,
+                range: reveal.range,
+                base_rgb: [255, 255, 0],
+                highlight_rgb: [255; 3],
+            }),
+            STATUS => status.as_ref()?.path_a_reveal,
+            _ => None,
+        };
         let enabled_of = |_| Some(lobby.enabled);
+        // The observer image shows its eye, not a box.
+        let picture_of = |id: i32| {
+            (id == i32::from(crate::ui::lan_shell::OBSERVER_IMAGE))
+                .then_some(super::gui_paint::Picture::Observer { on: observer })
+        };
         // An edit's caret blinks while it has BB's focus, under the message
         // box too.
         let controller = &state.frontend.shell_controller;
@@ -216,70 +230,28 @@ pub(crate) fn render_lan_lobby(
             enabled_of: Some(&enabled_of),
             rows_of: Some(&rows_of),
             control_lists: true,
+            reveal_of: Some(&reveal_of),
+            picture_of: Some(&picture_of),
             ..Default::default()
         };
         if let Some(root) = root {
-            // The observer image paints as its art below, not as a box.
-            let skip = [crate::ui::lan_shell::OBSERVER_IMAGE];
-            let ids = super::gui_paint::child_ids_except(gui, root, &skip);
-            let paint = super::gui_paint::paint_gui_ids(state, gui, root, ids, scale, style);
-            controls.extend(paint.controls);
+            let paint = super::gui_paint::paint_gui_styled(state, gui, root, scale, &[], style);
+            controls.extend(paint.lane(Material::Controls).copied());
             texts.extend(paint.texts);
         }
-        if let Some(entry) = atlas.lan_observer_toggle(observer) {
-            push_flag_entry_clipped_centered(
-                &mut controls,
-                entry,
-                layout
-                    .rect(crate::ui::lan_shell::OBSERVER_IMAGE)
-                    .unwrap_or_default(),
-                scale,
-                SHELL_CONTROL_DEPTH,
-            );
-        }
-        if let Some(reveal) = title {
-            texts.push(shell_text::draw_in_rect_path_a_scaled(
-                font,
-                &state.csf_label(PAGE.title_key, "Lobby"),
-                rect_to_text_rect(layout.page.title),
-                ShellAlign::PANEL_TITLE,
-                [0.0; 2],
-                SHELL_CONTROL_TEXT_DEPTH,
-                PathAReveal {
-                    count: reveal.count,
-                    range: reveal.range,
-                    base_rgb: [255, 255, 0],
-                    highlight_rgb: [255; 3],
-                },
-                scale.factor(),
-            ));
-        }
-        texts.extend(shell_paint::paint_labels_scaled(
-            font,
-            &status.into_iter().collect::<Vec<_>>(),
-            scale.factor(),
-        ));
-        if let Some(key) = runtime.modal {
-            use crate::app::shell_lan::{MODAL, OK};
-            let body = runtime
-                .modal_body
-                .clone()
-                .unwrap_or_else(|| state.csf_label(key, key));
-            let ok = state.csf_label("TXT_OK", "OK");
-            let notice = crate::ui::shell::modal::ShellBox::new(MODAL, body).button(OK, ok);
+        if let (Some(notice), Some(parts)) = (notice.as_ref(), notice_parts.as_ref()) {
+            use crate::app::shell_lan::OK;
             let pressed = box_pressed(state, OK.into());
             let look = super::BoxLook::skirmish(atlas.mode_two_dialog_background(None));
-            let (sprites, texts) = (
-                Some(&mut overlay.controls),
-                Some((&mut overlay.texts, false)),
-            );
-            let size = (width as i32, height as i32);
+            let (sprites, texts) = (&mut overlay.controls, (&mut overlay.texts, false));
             let pressed = |id| pressed && id == OK;
+            let tree = super::controller_tree(&state.frontend.shell_controller, notice.dialog);
             super::shell_box::push_skirmish_box(
                 state,
                 Some(atlas),
-                size,
-                &notice,
+                tree,
+                notice,
+                parts,
                 pressed,
                 look,
                 sprites,

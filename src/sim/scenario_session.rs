@@ -1005,7 +1005,8 @@ pub struct ScenarioSession {
     tiberium_death_to_visceroid: bool,
     /// Scenario+34A8. Execute87 stores the literal low byte at6DDBE1;
     /// Basic's bool reader normalizes only when it actually reads a value.
-    /// Retain the byte even though no ice-growth simulation leaf is ported.
+    /// gamemd has no reader; the Firestorm ice chain's Grow and Solidify
+    /// read it (Firestorm 2.0 Scenario+0x1D84, docs/ts-ice.md).
     ice_growth: u8,
     /// Scenario34A7. Native Veinhole74D80A reads this byte; that separate
     /// TS mechanism is not ported. Do not fabricate growth from this switch.
@@ -1073,6 +1074,12 @@ pub struct ScenarioSession {
     /// Scenario+1224/+122C, restarted before RegrowFog by
     /// LogicClass::AI55B2DF..55B326. Save/load retains its frame anchor.
     fog_regrow_timer: CdTimer,
+    /// The Firestorm ice growth timer (docs/ts-ice.md), Firestorm 2.0
+    /// Scenario+0x7D4/+0x7DC, restarted by LogicClass::AI 0x506f06..0x506f20
+    /// before Grow. None until a map that runs ice first polls it: the
+    /// Firestorm constructor (0x5daaf0..0x5daafb) leaves it started at its
+    /// frame with no delay, so that first poll expires.
+    ice_growth_timer: Option<CdTimer>,
     /// Monotonic Rust-side simulation ordinal. This is kept separately from
     /// the wrapping native frame so long-running diagnostics and command
     /// bookkeeping do not lose their ordering at the 32-bit wrap.
@@ -1281,6 +1288,18 @@ impl ScenarioSession {
             return false;
         }
         self.fog_regrow_timer.start(frame, interval_frames);
+        true
+    }
+
+    /// Firestorm 2.0 LogicClass::AI 0x506edb..0x506f20: test the ice growth
+    /// timer against the native frame and, once it has expired, restart it
+    /// with `interval_frames` before the caller runs Grow.
+    pub(crate) fn poll_ice_growth(&mut self, interval_frames: i32) -> bool {
+        let frame = self.binary_frame as i32;
+        if !self.ice_growth_timer.unwrap_or_default().expired(frame) {
+            return false;
+        }
+        self.ice_growth_timer = Some(CdTimer::started(frame, interval_frames));
         true
     }
 
@@ -2193,6 +2212,10 @@ impl ScenarioSession {
             b"scenario-fog-regrow-timer-v1".hash(hasher);
             s.fog_regrow_timer.hash(hasher);
         }
+        if let Some(timer) = s.ice_growth_timer {
+            b"scenario-ice-growth-timer-v1".hash(hasher);
+            timer.hash(hasher);
+        }
         let (money, cap) = s.campaign_money_policy();
         if money != crate::util::native_x87::NativeF64Bits::POSITIVE_ZERO || cap != 0 {
             b"scenario-campaign-money-policy-v1".hash(hasher);
@@ -2377,7 +2400,7 @@ impl ScenarioSession {
             map_value.unwrap_or(tiberium_death_to_visceroid_default());
     }
 
-    /// Retained native Scenario+34A8; not a claim of an active ice grower.
+    /// Scenario+34A8, which the Firestorm ice chain's Grow and Solidify read.
     pub const fn ice_growth_enabled(&self) -> bool {
         self.ice_growth != 0
     }
@@ -2466,6 +2489,7 @@ impl ScenarioSession {
             game_options: GameOptions::default(),
             shroud_growth_timer: initial_map_regrowth_timer(),
             fog_regrow_timer: initial_map_regrowth_timer(),
+            ice_growth_timer: None,
             tick: 0,
             total_sim_ms: 0,
             binary_frame: 0,

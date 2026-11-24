@@ -2598,6 +2598,12 @@ struct ShpUnitLayout<'r> {
     /// game, and with Ares places the turret block.
     actual_art: Option<&'r crate::rules::shp_vehicle_sequence::UnitShpReadState>,
     ares: bool,
+    /// The actual type is a Tiberian Sun Limpet Drone (`IsLimpetDrone=`).
+    /// Firestorm 2.0's Unit SHP draw (`0x00652EE0`) draws its body from the
+    /// Stage in place of a facing and returns (`0x00652F2D` to `0x0065377F`),
+    /// so no turret either; `sim::limpet::wrap_drone_stage` loops the Stage
+    /// through ten frames.
+    limpet_drone: bool,
 }
 
 impl<'r> ShpUnitLayout<'r> {
@@ -2613,18 +2619,18 @@ impl<'r> ShpUnitLayout<'r> {
             .and_then(|interner| super::units::water_image_type(entity, interner, rules, cells))
             .and_then(|water| rules?.animation_sequence_in_category(ObjectCategory::Vehicle, water))
             .unwrap_or(actual);
-        let actual_art = rules.zip(interner).and_then(|(rules, interner)| {
-            rules.unit_shp_read_state_of(interner.object_type_in_category(
-                entity.type_ref(),
-                ObjectCategory::Vehicle,
-                rules,
-            )?)
+        let actual_type = rules.zip(interner).and_then(|(rules, interner)| {
+            interner.object_type_in_category(entity.type_ref(), ObjectCategory::Vehicle, rules)
         });
+        let actual_art = rules
+            .zip(actual_type)
+            .and_then(|(rules, object)| rules.unit_shp_read_state_of(object));
         Self {
             layout,
             actual,
             actual_art,
             ares: rules.is_some_and(crate::rules::ruleset::RuleSet::ares),
+            limpet_drone: actual_type.is_some_and(|object| object.is_limpet_drone),
         }
     }
 
@@ -2632,6 +2638,10 @@ impl<'r> ShpUnitLayout<'r> {
     /// current 16-bit facing, as the draw reads it
     /// ([`ObjectRecord::shp_body_facing`](crate::app::presentation::frame::ObjectRecord::shp_body_facing)).
     fn body_frame(&self, entity: &crate::app::presentation::frame::ObjectRecord) -> Option<u16> {
+        if self.limpet_drone {
+            // The +0xF8 Stage every object keeps (Firestorm's +0x84).
+            return u16::try_from(entity.construction_stage_value()).ok();
+        }
         let facing = entity.shp_body_facing;
         let facings = self.actual_art.map_or_else(
             || {
@@ -2661,6 +2671,9 @@ impl<'r> ShpUnitLayout<'r> {
     /// the actual type's `WalkFrames * 8` (`0x0073CCE1..0x0073CD03`), or with
     /// Ares its `WalkFrames * Facings` (`UnitClass_DrawSHP_FacingsB`).
     fn turret_start_frame(&self) -> Option<u16> {
+        if self.limpet_drone {
+            return None;
+        }
         self.layout.shp_vehicle_turret()?;
         if self.ares {
             self.actual_art?.ares_turret_start_frame()
@@ -2829,6 +2842,51 @@ mod tests {
         assert_eq!(draw(""), (false, Some(0), Some(32)));
         // `(((0x1000 + 0x2000) >> 11) + 1) >> 1` is bucket 3 of four frames.
         assert_eq!(draw("ImmuneToAbduction=yes\n"), (true, Some(12), Some(64)));
+    }
+
+    /// Firestorm 2.0's Unit SHP draw (`0x00652F2D` to `0x0065377F`): a
+    /// Limpet Drone's body is its Stage, whatever its facing, and it draws
+    /// no turret.
+    #[test]
+    fn a_limpet_drone_draws_its_stage_and_no_turret() {
+        use crate::map::entities::EntityCategory;
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+        use crate::sim::game_entity::GameEntity;
+
+        let mut entity = GameEntity::test_default_of_category(
+            1,
+            "LIMPET",
+            "Americans",
+            0,
+            0,
+            EntityCategory::Unit,
+        );
+        entity.body_facing = crate::sim::movement::FacingClass::new(0x4000, 0);
+        entity.set_native_stage_value(7);
+        let record = ObjectRecord::of_test(&entity);
+        let art = IniFile::from_str("[LIMPET]\nVoxel=no\nFacings=8\n");
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[VehicleTypes]\n0=LIMPET\n[LIMPET]\nStrength=100\nTurret=yes\n\
+                 IsLimpetDrone=yes\n",
+            ),
+            &art,
+        )
+        .unwrap();
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+        let interner = crate::sim::intern::test_interner();
+        let layout = super::ShpUnitLayout::of(
+            rules.animation_sequence("LIMPET").unwrap(),
+            Some(&rules),
+            Some(&interner),
+            &record,
+            None,
+        );
+        assert_eq!(
+            (layout.body_frame(&record), layout.turret_start_frame()),
+            (Some(7), None)
+        );
     }
 
     /// A building is passed by only when its cell is past the slot

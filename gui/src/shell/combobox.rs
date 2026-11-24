@@ -2,44 +2,14 @@
 //! The item's identity and selected value remain with each control's owner.
 
 use super::geom::{RectPx, ShellScale};
-use super::list::{
-    ListMetrics, ListScrollPart, ShellListGeometry, scrollbar_thumb_y, thumb_height,
-};
+use super::list::{ListMetrics, ListScrollPart, ShellListGeometry};
 
 /// Default combo metrics, measured from gamemd's `ComboDropWin` and owner-draw
-/// combo: the face height, the drop-down's row height, scrollbar width,
-/// scrollbar button height and minimum thumb height, and the arrow's reserve
-/// at the face's right.
+/// combo: the face height, the drop-down's row height (its scrollbar is the
+/// list's, [`ListMetrics::combo`]), and the arrow's reserve at the face's right.
 pub const COMBO_FACE_H: i32 = 24;
 pub const COMBO_DROPDOWN_ROW_H: i32 = 23;
-pub const COMBO_DROPDOWN_SCROLLBAR_W: i32 = 20;
-pub const COMBO_DROPDOWN_SCROLLBAR_BUTTON_H: i32 = 22;
-pub const COMBO_DROPDOWN_SCROLLBAR_MIN_THUMB_H: i32 = 14;
 pub const COMBO_ARROW_RESERVE_W: i32 = 20;
-
-/// The `ComboDropWin` dropdown's device metrics: the authored row, scrollbar and
-/// thumb sizes grown by the page's stretch, so a dropdown under a stretched
-/// combo has rows as tall as its face and stays the same number of rows deep.
-/// Identity on an unscaled mapping, where every field is the default above.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DropdownMetrics {
-    pub row_h: i32,
-    pub scrollbar_w: i32,
-    pub button_h: i32,
-    pub min_thumb_h: i32,
-}
-
-impl DropdownMetrics {
-    pub fn scaled(scale: ShellScale) -> Self {
-        let grow = |px: i32, factor: f32| ((px as f32 * factor).round() as i32).max(1);
-        Self {
-            row_h: grow(COMBO_DROPDOWN_ROW_H, scale.factor()),
-            scrollbar_w: grow(COMBO_DROPDOWN_SCROLLBAR_W, scale.factor()),
-            button_h: grow(COMBO_DROPDOWN_SCROLLBAR_BUTTON_H, scale.factor()),
-            min_thumb_h: grow(COMBO_DROPDOWN_SCROLLBAR_MIN_THUMB_H, scale.factor()),
-        }
-    }
-}
 
 /// The painted face of a combo whose control rect is `rect`: the control's
 /// width, [`COMBO_FACE_H`] tall.
@@ -77,7 +47,7 @@ pub struct ComboPopup {
 impl ComboPopup {
     pub fn new(face: RectPx, scale: ShellScale, total: usize, cap: usize, first: usize) -> Self {
         let visible_rows = if cap == 0 { total } else { total.min(cap) };
-        let row_height = DropdownMetrics::scaled(scale).row_h;
+        let row_height = ListMetrics::combo(scale).row_h;
         Self {
             rect: RectPx::new(
                 face.x,
@@ -100,55 +70,37 @@ impl ComboPopup {
         self
     }
     pub fn scrollbar(&self) -> Option<RectPx> {
-        (self.total > self.visible_rows).then(|| {
-            let width = DropdownMetrics::scaled(self.scale).scrollbar_w;
-            RectPx::new(
-                self.rect.x + self.rect.w - width,
-                self.rect.y,
-                width,
-                self.rect.h,
-            )
-        })
+        self.panes().1
     }
-    /// The shared scrollbar child's metrics (ComboDropWin 0060E72F creates
-    /// it, 0060E745 subclasses it to 0061C690).
+    /// The shared scrollbar child's metrics on this list's rows.
     fn metrics(&self) -> ListMetrics {
-        let metrics = DropdownMetrics::scaled(self.scale);
         ListMetrics {
             row_h: self.row_height,
-            scrollbar_w: metrics.scrollbar_w,
-            arrow_h: metrics.button_h,
-            min_thumb_h: metrics.min_thumb_h,
+            ..ListMetrics::combo(self.scale)
         }
+    }
+    /// The row content and scrollbar: the list's, without its frame inset.
+    fn panes(&self) -> (RectPx, Option<RectPx>) {
+        let scrolls = self.total > self.visible_rows;
+        ShellListGeometry::panes(self.rect, 0, scrolls, self.metrics())
     }
     pub fn thumb(&self) -> Option<RectPx> {
-        let bar = self.scrollbar()?;
-        let (metrics, max_top) = (self.metrics(), self.total - self.visible_rows);
-        let height = thumb_height(bar.h, max_top, metrics);
-        let y = scrollbar_thumb_y(bar, height, self.first, max_top, metrics);
-        Some(RectPx::new(bar.x + 1, y, bar.w - 2, height))
+        self.scroll_geometry().thumb
     }
     pub fn scroll_geometry(&self) -> ShellListGeometry {
-        ShellListGeometry {
-            outer: self.rect,
-            content: self.content(),
-            scrollbar: self.scrollbar(),
-            thumb: self.thumb(),
-            visible_rows: self.visible_rows,
-            max_top: self.total - self.visible_rows,
-            metrics: self.metrics(),
-        }
+        ShellListGeometry::unframed(
+            self.rect,
+            self.total,
+            self.visible_rows,
+            self.first,
+            self.metrics(),
+        )
     }
     pub fn scroll_part_at(&self, x: i32, y: i32) -> Option<ListScrollPart> {
         self.scroll_geometry().scroll_part_at(x, y)
     }
     pub fn content(&self) -> RectPx {
-        RectPx::new(
-            self.rect.x,
-            self.rect.y,
-            self.rect.w - self.scrollbar().map_or(0, |bar| bar.w),
-            self.rect.h,
-        )
+        self.panes().0
     }
     pub fn row_rect(&self, index: usize) -> Option<RectPx> {
         if index < self.first || index >= self.first + self.visible_rows {
@@ -168,7 +120,7 @@ impl ComboPopup {
             .then(|| self.first + ((y - self.rect.y) / self.row_height) as usize)
             .filter(|row| *row < self.first + self.visible_rows)
     }
-    pub fn track_hot_row(&self, hot_row: &mut Option<usize>, x: i32, y: i32) {
+    pub(crate) fn track_hot_row(&self, hot_row: &mut Option<usize>, x: i32, y: i32) {
         // 60E262 retains the previous hot row after leaving the row content.
         if let Some(row) = self.row_at(x, y) {
             *hot_row = Some(row);

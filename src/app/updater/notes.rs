@@ -51,8 +51,7 @@ impl ReleaseNotes {
         for note in notes {
             // GAME.FNT has no arrow; release pages write "Internet → Custom Match".
             let note = note.replace('\u{2192}', "->");
-            for (index, line) in font.wrap_layout(&note, width).lines.iter().enumerate() {
-                let text = &note[line.start_byte..line.end_byte];
+            for (index, text) in font.wrap_layout(&note, width).line_texts(&note).enumerate() {
                 rows.push(match index {
                     0 => Row {
                         text: format!("{BULLET}{text}"),
@@ -90,27 +89,19 @@ impl ReleaseNotes {
         ))
     }
 
-    /// Each visible row's text with the rect it is drawn in. The rect runs to
-    /// the list's right edge: the text was wrapped narrower, so a scaled
-    /// rect's rounding never wraps it again.
-    pub(crate) fn texts(
-        &self,
-        geometry: &ShellListGeometry,
-        top: usize,
-        scale: f32,
-    ) -> Vec<(&str, RectPx)> {
-        let right = geometry.outer.x + geometry.outer.w - 1;
-        self.rows
-            .iter()
-            .skip(top)
-            .take(geometry.visible_rows)
-            .enumerate()
-            .map(|(visible, row)| {
-                let rect = geometry.row(visible);
-                let x = rect.x + ((TEXT_INSET + row.indent) as f32 * scale).round() as i32;
-                (row.text.as_str(), RectPx::new(x, rect.y, right - x, rect.h))
-            })
-            .collect()
+    /// Row `row`'s text and where it starts, in 800x600 pixels into the
+    /// row: a change's further rows hang under its text. The text runs to
+    /// the list's right edge: it was wrapped narrower, so a scaled rect's
+    /// rounding never wraps it again ([`crate::app::frontend::skirmish_shell_render::gui_paint::GuiStyle::indent_of`]).
+    pub(crate) fn row(&self, row: usize) -> Option<(&str, i32)> {
+        let row = self.rows.get(row)?;
+        Some((row.text.as_str(), TEXT_INSET + row.indent))
+    }
+
+    /// The rows' text as the list's `Items`, written once as it is built:
+    /// the notes never change while the offer is open.
+    fn items(&self) -> Vec<String> {
+        self.rows.iter().map(|row| row.text.clone()).collect()
     }
 }
 
@@ -148,6 +139,17 @@ fn open_list(state: &AppState) -> Option<(&ReleaseNotes, BoxParts, DialogResourc
     }
 }
 
+/// The offer list's host id: past the box's 16-bit control ids, so the
+/// box's rect sync leaves its window alone and no press names it (the movie
+/// list's is `0x1_0000`, the Add Mod parts list's `0x1_0002`).
+pub(crate) const LIST_ID: i32 = 0x1_0001;
+
+/// The open offer's `List` node and its notes, if built.
+pub(crate) fn node(state: &AppState) -> Option<(NodeId, &ReleaseNotes)> {
+    let (notes, _, dialog) = open_list(state)?;
+    Some((list_node(state, dialog)?, notes))
+}
+
 /// The offer box's `List` node, if built.
 fn list_node(state: &AppState, dialog: DialogResourceId) -> Option<NodeId> {
     let controller = &state.frontend.shell_controller;
@@ -173,24 +175,37 @@ pub(crate) fn view(state: &AppState) -> Option<(ShellListGeometry, usize, Option
     ))
 }
 
-/// Builds the open offer's list in its box once (with no id, so the box's
-/// buttons still build) and keeps it on its rect; only its scrollbar takes
-/// the pointer. The box's widgets take the press and release.
+/// Builds the open offer's list in its box once, after the box's buttons
+/// (its id counts as built), and keeps it on its rect; only its scrollbar
+/// takes the pointer. The box's widgets take the press and release.
 pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
     let (geometry, _, _) = view(state)?;
     let (notes, layout, dialog) = open_list(state)?;
-    let (rows, scale) = (notes.rows.len() as i32, layout.scale);
+    let scale = layout.scale;
     let node = list_node(state, dialog);
-    let controller = &mut state.frontend.shell_controller;
+    // The rows' text goes into the list once, when it is built.
+    let items = node.is_none().then(|| notes.items());
+    let frontend = &mut state.frontend;
+    let shell_box = &frontend.shell_message_box.as_ref()?.shell_box;
+    let controller = &mut frontend.shell_controller;
     // The list's metrics follow the box's scale, as its paint does.
     controller.set_scale_in(dialog, scale);
     let root = controller.root_in(dialog)?;
     let gui = controller.gui_mut();
     let node = match node {
         Some(node) => node,
-        None => gui.create(NodeKind::List, Some(root)).ok()?,
+        None => {
+            crate::ui::shell::page::ensure_built(gui, root, || shell_box.nodes());
+            let node = gui.create(NodeKind::List, Some(root)).ok()?;
+            let _ = gui.set(node, Prop::Id, Value::Int(LIST_ID));
+            // The rows draw top-left, as `texts` placed them.
+            let _ = gui.set(node, Prop::Align, Value::Int(0));
+            node
+        }
     };
-    let _ = gui.set(node, Prop::RowCount, Value::Int(rows));
+    if let Some(items) = items {
+        let _ = gui.set(node, Prop::Items, Value::Items(items));
+    }
     let _ = gui.set(node, Prop::Rect, Value::Rect(geometry.outer));
     let _ = gui.set(
         node,

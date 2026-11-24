@@ -590,7 +590,7 @@ fn load_with_assets(
     };
     let team_ai_registry =
         crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, rule_policy)?;
-    let theater = theater::load_theater(assets, &map.header.theater)
+    let theater = theater::load_scenario_theater(assets, &map.header.theater, &map.ini, false)
         .ok_or_else(|| format!("load theater {}", map.header.theater))?;
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
     let house_roster = crate::map::houses::parse_house_roster(

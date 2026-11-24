@@ -172,9 +172,9 @@ pub struct SidebarGadgetState {
     pub last_sim_tick: u64,
 
     /// Transient pressed bits (+0x2C) of the buttons whose frame shows them:
-    /// true while the gadget driver holds the button pressed-inside; popped on
-    /// drag-off, restored on drag-back. Published by `app::input::gadget_input`
-    /// after every gadget tick. Tabs, Repair and Sell draw their on-state
+    /// true while the match's chrome holds the button pressed-inside; popped
+    /// on drag-off, restored on drag-back. Published by
+    /// `app::input::chrome_input` after every pointer message it takes. Tabs, Repair and Sell draw their on-state
     /// instead (see [`shape_button_frame`]), so they publish none.
     pub scroll_down_pressed: bool,
     pub scroll_up_pressed: bool,

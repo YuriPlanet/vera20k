@@ -1484,3 +1484,34 @@ fn terrain_relaxation_never_reopens_a_cliff_cell() {
     let grid = PathGrid::from_resolved_terrain(&terrain);
     assert!(!grid.is_walkable_for_infantry(0, 0));
 }
+
+/// The heuristic's root is the x87-stored root, bit for bit, over the
+/// offsets a cell can hold: the small ones, the ones past the binary32
+/// chopping boundary, and the 32-bit wrap of a far corner.
+#[test]
+fn the_heuristic_root_matches_the_x87_stored_root() {
+    use crate::util::native_x87::{X87Chop53, sqrt_approx_f32};
+
+    for (dx, dy) in [
+        (0i32, 0i32),
+        (1, 0),
+        (0, 1),
+        (3, 4),
+        (255, 255),
+        (4096, 4096),
+        (32767, 32767),
+        (-32768, -32768),
+    ] {
+        let cell = (dx as u16, dy as u16);
+        let goal = (0u16, 0u16);
+        let squares = dy.wrapping_mul(dy).wrapping_add(dx.wrapping_mul(dx));
+        let expected = sqrt_approx_f32(X87Chop53::load_i32(squares))
+            .expect("a square is finite")
+            .bits();
+        assert_eq!(
+            heuristic(cell, goal).to_bits(),
+            expected,
+            "offset {dx},{dy}"
+        );
+    }
+}

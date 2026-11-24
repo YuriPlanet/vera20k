@@ -99,8 +99,14 @@ pub(crate) fn current_sidebar_action_visits(state: &AppState, sidebar_action: bo
 /// also includes ready Supers; the shared gadget owner supplies phase/timing.
 /// The scroll roll moves one row per Sidebar Action visit
 /// ([`sidebar_action_visits`]); the view is rebuilt from the moved row by the
-/// idle tick that follows.
+/// pass's republish that follows.
 pub(crate) fn update_sidebar_gadget_state(state: &mut AppState, visits: u64) {
+    // TabClass::ReceiveNotice @ 0x006D1770 (the planning notice sink) turns the
+    // PlanningMode button on for Planning__StartMode's 0x11C7 and off for
+    // EndMode's 0x11C8, so its look follows the PlanMgr owner's mode every
+    // frame, whatever ended or started it (hotkey, committed plan, focus loss).
+    let planning = state.match_state.input.planning.active();
+    state.match_state.match_presentation.sidebar_gadget_state.command_pressed[9] = planning;
     // A ready tab's completed object is the frame's (`presentation::frame`).
     state.match_state.sim_runtime.ensure_frame();
     let Some(frame) = state.match_state.sim_runtime.frame() else {
@@ -128,7 +134,7 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState, visits: u64) {
             .match_state
             .match_presentation
             .sidebar_projection
-            .ready_building_tabs(sim, frame, owner)
+            .model.ready_building_tabs(sim, frame, owner)
     });
     let (tick, frame) = (sim.session().tick(), sim.session().binary_frame() as i32);
     let presentation = &mut state.match_state.match_presentation;
@@ -140,7 +146,7 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState, visits: u64) {
     {
         presentation
             .sidebar_projection
-            .step_pending_scroll(rows, visits);
+            .model.step_pending_scroll(rows, visits);
     }
     update_tab_flashes_for_owner(
         &mut presentation.sidebar_gadget_state,

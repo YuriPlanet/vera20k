@@ -15,7 +15,7 @@ use crate::app::{App, AppState};
 use crate::assets::csf_file::{CsfArg, format_csf};
 use crate::ui::shell::page::{self, PageEvent};
 use crate::ui::wol_persona::*;
-use vera20k_gui::shell::list::{ListMetrics, ShellListGeometry};
+use vera20k_gui::shell::list::ShellListGeometry;
 use vera20k_gui::{NodeId, Prop, Value};
 
 /// Native diagnostics use the file next to VERA.INI; modern online visits
@@ -321,15 +321,9 @@ pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
 
 /// `0xFE`'s list as it shows: its geometry and top row.
 pub(crate) fn list_view(state: &AppState) -> Option<(ShellListGeometry, usize)> {
-    let layout = layout(state)?;
     let gui = state.frontend.shell_controller.gui();
     let list = gui.find_id(leaf::root(state, LOCALE_DIALOG)?, LOCALE_LIST.into())?;
-    let view = gui.list_view(list)?;
-    let metrics = ListMetrics::scaled(layout.page.scale);
-    Some((
-        view.geometry(layout.rect_of(LOCALE_LIST)?, metrics),
-        view.top,
-    ))
+    Some((gui.list_geometry(list)?, gui.list_view(list)?.top))
 }
 
 pub(super) fn cursor_moved(state: &mut AppState) {

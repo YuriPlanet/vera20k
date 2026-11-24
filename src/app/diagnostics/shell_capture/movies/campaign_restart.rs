@@ -230,7 +230,7 @@ impl RestartCapture {
             let owner = crate::app::input::commands::preferred_local_owner_name(state)
                 .context("campaign credits owner")?;
             let actual = before.money.context("campaign wallet")?[0].max(0);
-            let projection = &mut state.match_state.match_presentation.sidebar_projection;
+            let projection = &mut state.match_state.match_presentation.sidebar_projection.model;
             projection.displayed_credits_or_seed(&owner, actual);
             let target = if actual == 0 { 1000 } else { 0 };
             projection.advance_credits(&owner, target);
@@ -314,7 +314,7 @@ impl RestartCapture {
                     .match_state
                     .match_presentation
                     .sidebar_projection
-                    .advance_credits(owner, *target);
+                    .model.advance_credits(owner, *target);
             }
             let from_menu = target == RestartTarget::MenuDefeatReplayed;
             if from_menu {
@@ -331,7 +331,7 @@ impl RestartCapture {
                     .match_state
                     .match_presentation
                     .sidebar_projection
-                    .displayed_credits_or_seed(owner, *actual);
+                    .model.displayed_credits_or_seed(owner, *actual);
                 ensure!(
                     warm == *displayed,
                     "warm load lost saved credits display: {warm} != {displayed}"
@@ -348,7 +348,7 @@ impl RestartCapture {
                     .match_state
                     .match_presentation
                     .sidebar_projection
-                    .displayed_credits_or_seed(owner, *actual);
+                    .model.displayed_credits_or_seed(owner, *actual);
                 ensure!(
                     cold == *displayed,
                     "cold load lost saved credits display: {cold} != {displayed}"
@@ -424,8 +424,12 @@ impl RestartCapture {
             | RestartTarget::SavedAbortRestarted => {
                 let choice =
                     (target != RestartTarget::AbortShown).then_some(AbortButton::Secondary);
-                capture.abort = Some(abort_return::AbortReturnInput::begin_choosing(
-                    state, route, frame, choice,
+                capture.abort = Some(abort_return::AbortReturnInput::begin(
+                    state,
+                    route,
+                    frame,
+                    abort_return::AbortGoal::Choose(choice),
+                    true,
                 )?);
             }
             RestartTarget::DefeatPrompt
@@ -468,9 +472,9 @@ impl RestartCapture {
     }
 
     /// A physical left press and release on the sidebar's 0xF2 tab, through
-    /// the in-game gadget list.
+    /// the match's chrome.
     fn click_briefing_tab(state: &mut AppState, route: &mut Vec<Value>, frame: u32) -> Result<()> {
-        use crate::app::input::gadget_input;
+        use crate::app::input::chrome_input;
         let view = crate::app::presentation::sidebar_render::current_sidebar_view(state)
             .context("no sidebar view")?;
         let rect = state
@@ -480,7 +484,7 @@ impl RestartCapture {
         state.match_state.input.cursor_x = point[0];
         state.match_state.input.cursor_y = point[1];
         for pressed in [true, false] {
-            gadget_input::handle_mouse_button_event(
+            chrome_input::mouse_button(
                 state,
                 winit::event::MouseButton::Left,
                 pressed,
@@ -639,8 +643,12 @@ impl RestartCapture {
                         paused_tick: 0,
                     });
                     self.observe_objective(state, "objective visible");
-                    self.abort = Some(abort_return::AbortReturnInput::begin_menu(
-                        state, route, frame,
+                    self.abort = Some(abort_return::AbortReturnInput::begin(
+                        state,
+                        route,
+                        frame,
+                        abort_return::AbortGoal::Menu,
+                        true,
                     )?);
                     self.objective_pause.as_mut().unwrap().paused_tick =
                         Self::simulation_tick(state)?;
@@ -685,18 +693,7 @@ impl RestartCapture {
                     let rect = layout
                         .button(crate::ui::shell::pause_menu::PauseMenuButton::Resume)
                         .context("B5 Resume")?;
-                    let point = set_window_pointer_to_rect_center(state, rect);
-                    crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                    for edge in [
-                        winit::event::ElementState::Pressed,
-                        winit::event::ElementState::Released,
-                    ] {
-                        crate::app::input::dispatch::handle_mouse_input(
-                            state,
-                            winit::event::MouseButton::Left,
-                            edge,
-                        );
-                    }
+                    let point = click_in_game(state, rect);
                     ensure!(
                         !state.match_state.match_presentation.in_game_menu.is_open(),
                         "Resume did not close B5"

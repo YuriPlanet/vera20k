@@ -14,8 +14,9 @@ use crate::app::web_link;
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::modal::{WolPlayerCardLayout, wol_player_card_layout_on};
 use crate::ui::wol_lobby::{
-    CARD_BUDDY, CARD_CLOSE, CARD_COUNTRY, CARD_MESSAGE, CARD_PROFILE, CARD_ROWS, WolCardAction,
-    WolLobbyState, WolPlayerCard, badge_name_key,
+    CARD_BUDDY, CARD_CAPTIONS, CARD_CLOSE, CARD_COUNTRY, CARD_MESSAGE, CARD_PROFILE, CARD_ROWS,
+    CARD_STATUS, PLAYER_BADGE_X, PLAYER_NAME_X, WolCardAction, WolLobbyState, WolPlayerCard,
+    badge_name_key,
 };
 use crate::ui::wol_persona::{LOCALE_COUNT, locale_rows};
 
@@ -29,8 +30,6 @@ pub(crate) struct PlayerCardView {
     /// Each shown button's id and caption; the lobby's tree holds the
     /// rest ([`sync`]).
     pub(crate) buttons: Vec<(u16, String)>,
-    /// The hovered button's help, in the box's status line.
-    pub(crate) status: String,
     /// The open country list.
     pub(crate) countries: Option<vera20k_gui::ComboDropDown>,
 }
@@ -104,14 +103,54 @@ pub(super) fn sync(state: &mut AppState) {
         .collect();
     let value = country_value(state);
     let layout = layout(state);
+    let shown = rows(state, &name);
     // Each shown row hovers from its caption to its value's end.
-    let rows: Vec<RectPx> = (layout.rows.iter().take(rows(state, &name).len()))
+    let rows: Vec<RectPx> = (layout.rows.iter().take(shown.len()))
         .map(|(caption, value)| {
             RectPx::new(caption.x, value.y, value.x + value.w - caption.x, value.h)
         })
         .collect();
+    // The name sits after its badge as in the modern player list, where the
+    // lobby's art shows the badge.
+    let badged = super::lobby::player_badge(state, &name).is_some()
+        && super::leaf::art(state, crate::ui::wol_lobby::DIALOG).is_some();
+    let scale = super::lobby::popup_scale(state);
+    // The badge at its own size, 2 pixels into the name's value and centred
+    // on it, as the player list draws it.
+    let badge = super::lobby::player_badge(state, &name)
+        .filter(|_| badged)
+        .and_then(|file| state.frontend.skirmish_shell_chrome.as_ref()?.wol_badge(file))
+        .zip(layout.rows.first())
+        .map(|(entry, &(_, value))| {
+            let base = scale.base_rect(value);
+            let h = entry.pixel_size[1] as i32;
+            let [x, y] = scale.scale_point([base.x + 2, base.y + (base.h - h) / 2]);
+            let [w, h] = scale.art_size(entry.pixel_size[0], entry.pixel_size[1]);
+            RectPx::new(x, y, w.round() as i32, h.round() as i32)
+        });
+    let status = status_help(state).unwrap_or_default();
+    // Each row's caption and value, then the status line.
+    let statics = |id: u16| {
+        if id == CARD_STATUS {
+            return Some((status.as_str(), layout.status));
+        }
+        let index = usize::from(id.checked_sub(CARD_CAPTIONS)?);
+        let row = shown.get(index / 2)?;
+        let (caption, value) = *layout.rows.get(index / 2)?;
+        Some(match index % 2 {
+            0 => (row.caption.as_str(), caption),
+            _ if index == 1 && badged => {
+                let value = scale.derive_rect(value, |rect| {
+                    let x = 2 + PLAYER_NAME_X - PLAYER_BADGE_X;
+                    RectPx::new(rect.x + x, rect.y, rect.w - x, rect.h)
+                });
+                (row.value.as_str(), value)
+            }
+            _ => (row.value.as_str(), value),
+        })
+    };
     if let Some(ui) = card_ui_mut(state) {
-        ui.sync_card(layout.dialog, &rows, |id| {
+        ui.sync_card(layout.dialog, &rows, badge, statics, |id| {
             placed
                 .iter()
                 .find(|(known, ..)| *known == id)
@@ -394,7 +433,6 @@ pub(crate) fn view(state: &AppState) -> Option<PlayerCardView> {
         badge,
         rows,
         buttons,
-        status: status_help(state).unwrap_or_default(),
         countries,
     })
 }

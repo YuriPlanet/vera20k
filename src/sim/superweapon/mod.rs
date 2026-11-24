@@ -64,6 +64,7 @@ mod hunter_seeker;
 #[cfg(all(test, tests_sim_superweapon))]
 mod hunter_seeker_tests;
 pub mod invulnerability;
+mod ion_cannon;
 pub mod iron_curtain;
 pub mod lightning_storm;
 #[cfg(all(test, any(tests_sim_superweapon, tests_sim_trigger)))]

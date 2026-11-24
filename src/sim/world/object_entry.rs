@@ -1355,10 +1355,11 @@ fn full_foot_entry<'a>(
                 } else {
                     bt.unit_absorb
                 };
-                // Original RA2 has no Grinding= field; the refund-on-entry
-                // behavior lives on Cloning vats. On the RA2 profile treat a
-                // Cloning building as the grinder/eater for these gates.
-                let refund_eater = bt.grinding || (live.rules.ra2() && bt.cloning);
+                // A `Grinding=` building (YR recycling) eats vehicles here.
+                // Original RA2 has no Grinding= field; refund-on-entry lives
+                // on Cloning vats but is infantry-only there, so a Cloning
+                // building is never a vehicle eater (no RA2 tank grinding).
+                let refund_eater = bt.grinding;
                 if object_target_is(e, blocker_id)
                     && ((mission == Some(MissionType::Enter) && absorber)
                         || (mission == Some(MissionType::Eaten) && refund_eater))
@@ -1445,6 +1446,13 @@ fn full_foot_entry<'a>(
                     continue;
                 }
                 if bt.invisible_in_game {
+                    continue;
+                }
+                // Tiberian Sun: a vehicle drives into a limpet mine's cell.
+                // Firestorm 2.0 `UnitClass::Can_Enter_Cell` skips an
+                // `IsLimpetMine=` building right after this test
+                // (`0x0065570A..0x00655717`, `sim::limpet`).
+                if bt.is_limpet_mine {
                     continue;
                 }
                 // Ares 3.0 10015100 (hook 0x73F7B0): an `IsPassable`

@@ -70,6 +70,8 @@ pub(crate) const DIALOG: InGameDialog = InGameDialog {
     ui: super::dialog_page::shared_ui,
     ui_mut: super::dialog_page::shared_ui_mut,
     own_checkbox_sound: false,
+    help_under_held: false,
+    help_fallback: |_| "",
 };
 
 /// The open B6's geometry.
@@ -78,6 +80,16 @@ pub(crate) fn current_abort_layout(state: &AppState) -> Option<AbortLayout> {
     super::dialog_page::layout(state, |w, h, shell, size| {
         abort_layout(w, h, shell, size, secondary)
     })
+}
+
+/// Makes B6's nodes current without input (rects, the hidden 712): its
+/// renderer's call every drawn frame before it paints from them.
+pub(crate) fn sync(state: &mut AppState) -> Option<AbortLayout> {
+    let layout = current_abort_layout(state)?;
+    let nodes = || abort::spec(layout.secondary_kind);
+    let rect_of = |id| layout.rect(id);
+    DIALOG.sync(state, nodes, rect_of, super::dialog_page::no_sync);
+    Some(layout)
 }
 
 /// One pointer message on B6 (`down`: `None` moves).

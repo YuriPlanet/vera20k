@@ -634,9 +634,8 @@ pub fn probe(map_name: Option<String>) -> Result<String, JsValue> {
         None => None,
     };
     let config = crate::util::config::GameConfig::load().map_err(error)?;
-    let personal_rules =
-        crate::app::spawn_probe::existing_personal_rules(config.paths.settings_dir())
-            .map_err(error)?;
+    let profile = crate::app::spawn_probe::existing_profile(config.paths.settings_dir());
+    let personal_rules = crate::app::spawn_probe::existing_personal_rules(&profile);
     let report = crate::app::spawn_probe::probe(
         &config,
         personal_rules,
@@ -646,7 +645,8 @@ pub fn probe(map_name: Option<String>) -> Result<String, JsValue> {
         crate::app::mods::launch_mod(&config.paths, None)
             .map_err(|message| JsValue::from_str(&message))?,
         // The Ares setting the browser's VERA.INI holds, as its start reads it.
-        crate::app::spawn_probe::existing_ares_setting(config.paths.settings_dir()),
+        profile.ares,
+        profile.kratos,
     )
     .map_err(error)?;
     serde_json::to_string(&report).map_err(|error| JsValue::from_str(&error.to_string()))

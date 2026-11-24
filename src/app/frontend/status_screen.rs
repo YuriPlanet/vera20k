@@ -62,12 +62,7 @@ impl Action {
             Self::Abort => ("GUI:AbortMission", "Abort Mission"),
             Self::Leave => ("GUI:Leave", "Quit"),
         };
-        state
-            .process_assets
-            .csf
-            .as_ref()
-            .and_then(|csf| csf.get(key))
-            .map_or(Cow::Borrowed(fallback), Cow::Borrowed)
+        state.csf_label(key, fallback).into()
     }
 
     /// Escape's button: the one that backs out of the card.
@@ -557,11 +552,9 @@ impl CardType {
 
     /// `text` broken into lines no wider than `max_width` pixels.
     fn wrap(self, font: &BitFont, text: &str, max_width: f32) -> Vec<String> {
-        let layout = font.wrap_layout(text, (max_width / self.scale).max(1.0) as u32);
-        layout
-            .lines
-            .iter()
-            .map(|line| text[line.start_byte..line.end_byte].trim_end().to_owned())
+        font.wrap_layout(text, (max_width / self.scale).max(1.0) as u32)
+            .line_texts(text)
+            .map(|line| line.trim_end().to_owned())
             .collect()
     }
 
