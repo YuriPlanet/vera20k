@@ -3695,6 +3695,7 @@ dependencies = [
  "ureq",
  "vera20k-core",
  "vera20k-gui",
+ "vera20k-wasm-ext",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-rayon",

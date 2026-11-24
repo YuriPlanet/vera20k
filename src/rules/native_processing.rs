@@ -696,18 +696,8 @@ impl RulesLayerStack {
         let Some(hook) = hook.as_deref_mut().filter(|hook| hook.runs_at(layer)) else {
             return Ok(());
         };
-        let ares_inputs = crate::rules::ares_switch::AresInputs::from_passes(
-            &processor.ares_reads,
-            self.ships_ares,
-            self.ares_keys_off,
-        );
-        let (ini, native_type_construction_trace) = processor.clone().finish();
-        let prefix = ProcessedRulesLayers {
-            ini,
-            content_hash: 0,
-            native_type_construction_trace,
-            ares_inputs,
-        };
+        // The rules so far, as the map prefix projects them.
+        let prefix = self.finish_rules(processor.clone(), fixed_art, 0);
         let rules = RuleSet::from_processed_rules(&prefix)?;
         let Some(overlay) = hook
             .on_rules(layer, &prefix.ini, &rules)
