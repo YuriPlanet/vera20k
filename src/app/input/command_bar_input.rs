@@ -172,15 +172,13 @@ pub(super) fn apply(state: &mut AppState, id: u16, right: bool) -> bool {
     true
 }
 
-/// The bar's pushed looks. TabClass::ReceiveNotice @ 0x006D1770 (the
-/// planning notice sink) turns the PlanningMode button on for
-/// Planning__StartMode's 0x11C7 and off for EndMode's 0x11C8, so its look is
-/// the PlanMgr owner's mode.
+/// The bar's pushed looks. The PlanningMode button's look (slot 9) is the
+/// PlanMgr owner's mode, written every frame by
+/// `sidebar_gadgets::update_sidebar_gadget_state`.
 pub(super) fn publish(state: &mut AppState, pressed: [bool; 12]) {
-    let planning = state.match_state.input.planning.active();
     let out = &mut state.match_state.match_presentation.sidebar_gadget_state;
-    out.command_pressed.copy_from_slice(&pressed[..11]);
-    out.command_pressed[9] = planning;
+    out.command_pressed[..9].copy_from_slice(&pressed[..9]);
+    out.command_pressed[10] = pressed[10];
     out.command_thumb_pressed = pressed[11];
 }
 

@@ -101,6 +101,12 @@ pub(crate) fn current_sidebar_action_visits(state: &AppState, sidebar_action: bo
 /// ([`sidebar_action_visits`]); the view is rebuilt from the moved row by the
 /// pass's republish that follows.
 pub(crate) fn update_sidebar_gadget_state(state: &mut AppState, visits: u64) {
+    // TabClass::ReceiveNotice @ 0x006D1770 (the planning notice sink) turns the
+    // PlanningMode button on for Planning__StartMode's 0x11C7 and off for
+    // EndMode's 0x11C8, so its look follows the PlanMgr owner's mode every
+    // frame, whatever ended or started it (hotkey, committed plan, focus loss).
+    let planning = state.match_state.input.planning.active();
+    state.match_state.match_presentation.sidebar_gadget_state.command_pressed[9] = planning;
     // A ready tab's completed object is the frame's (`presentation::frame`).
     state.match_state.sim_runtime.ensure_frame();
     let Some(frame) = state.match_state.sim_runtime.frame() else {

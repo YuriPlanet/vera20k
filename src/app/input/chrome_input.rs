@@ -178,8 +178,9 @@ impl ChromeNodes {
     }
 }
 
-/// What places the nodes, short of the layout's own texts: a move re-reads
-/// the rects only when it changed.
+/// What places the nodes: a move re-reads the rects only when it changed.
+/// The layout's added buttons count by their rects, which follow their own
+/// live texts (credits, power), not by the parts' allocation.
 #[derive(Debug, Clone, PartialEq)]
 struct SyncKey {
     /// Phobos' column: its buttons and whether it is expanded.
@@ -189,7 +190,7 @@ struct SyncKey {
     command_bar_closed: bool,
     minimap: bool,
     timer: Option<Rect>,
-    parts: usize,
+    layout: Vec<Option<Rect>>,
 }
 
 /// The chrome's state on the match presentation.
@@ -567,7 +568,7 @@ fn sync_key(state: &AppState) -> SyncKey {
         command_bar_closed: presentation.sidebar_gadget_state.command_bar_closed,
         minimap: minimap_available(state),
         timer: timer_rect(state),
-        parts: std::sync::Arc::as_ptr(&presentation.added_parts).cast::<()>() as usize,
+        layout: layout_rects(state),
     }
 }
 
