@@ -727,7 +727,7 @@ fn batched_the_teleporter_ladder_waits_and_keeps_the_redirect_navcom() {
 
     for frame in 100..103 {
         sim.session.set_binary_frame_for_test(frame);
-        sim.answer_batched_path_searches(&rules);
+        sim.answer_batched_work(&rules, None);
         assert_eq!(
             process_drive(&mut sim, miner, &rules),
             Ok(false),

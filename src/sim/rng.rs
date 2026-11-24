@@ -77,6 +77,28 @@ pub fn trace_draws<T>(run: impl FnOnce() -> T) -> (T, Vec<serde_json::Value>) {
     (result, trace)
 }
 
+/// Keeps this thread's draws out of a running [`trace_draws`] until it drops
+/// ([`untraced_draws`]).
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) struct UntracedDraws(Option<Vec<serde_json::Value>>);
+
+#[cfg(any(test, feature = "test-support"))]
+impl Drop for UntracedDraws {
+    fn drop(&mut self) {
+        DRAW_TRACE.set(self.0.take());
+    }
+}
+
+/// Leave this thread's draws out of a running [`trace_draws`] while the guard
+/// lives. Work the worker pool shares with the thread that asked for it
+/// ([`crate::sim::parallel`]) draws only on private copies of a stream, and
+/// a worker's share never reaches the trace: the asking thread's share stays
+/// out too, so a trace does not depend on which thread took an item.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn untraced_draws() -> UntracedDraws {
+    UntracedDraws(DRAW_TRACE.take())
+}
+
 /// A draw's backtrace without this machine's checkout and home prefixes, so a
 /// saved trace names `src/...` and `~/...` and compares across checkouts.
 #[cfg(any(test, feature = "test-support"))]
