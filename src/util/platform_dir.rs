@@ -33,3 +33,12 @@ pub fn set(path: PathBuf) -> bool {
 pub fn get() -> Option<&'static Path> {
     DATA_DIR.get().map(PathBuf::as_path)
 }
+
+/// A resource folder installed beside the Windows executable, in macOS bundle
+/// Resources, or in an AppImage's shared game directory.
+pub fn packaged_resource_dir(program_dir: &Path, name: &str) -> Option<PathBuf> {
+    ["", "../Resources", "../share/vera20k"]
+        .into_iter()
+        .map(|parent| program_dir.join(parent).join(name))
+        .find(|dir| dir.is_dir())
+}

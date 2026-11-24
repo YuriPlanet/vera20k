@@ -14,6 +14,10 @@ positions and road bridges come from *Arctic Circle 16*, uploaded to the VERA
 map library by LingGuGu. The ice variant adds a north and south passage to
 each of the three central gem islands and crossings on the northwest and
 southeast flanks. Both maps work offline with the original YR game data.
+The Windows installer puts the [Arctic map](../maps/Arctic_Circle_16_Ice_Passages.map)
+in `VERA20k/Maps`. On macOS and Linux, the game copies it from the app into
+the profile's `Maps` folder on first launch. You can edit the file or remove it.
+Select the map in Skirmish to play with the ice crossings. The map enables them automatically.
 
 ## Use the bundled ice in a map
 

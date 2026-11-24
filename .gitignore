@@ -34,6 +34,7 @@ Thumbs.db
 # by tools.run_test_map; the binary-map rule above is meant for retail maps.
 !/tests/maps/*.map
 !/src/map/bundled/*.map
+!/maps/Arctic_Circle_16_Ice_Passages.map
 *_todo.md
 
 # No trailing slash: a linked worktree reaches the retail INIs through an
