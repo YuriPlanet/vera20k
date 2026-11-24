@@ -48,10 +48,9 @@ name: Release
 # third-party notices (THIRD_PARTY_LICENSES.html) and a README.txt made from
 # .github/release/README.txt.in; the Windows one also config.toml.example. Each
 # also holds every language but English, and the fonts behind them
-# (.github/release/languages.sh). They
-# never hold game files (README.md, README.txt.in). Their one piece of game art
-# is the app icon, Red Alert 2's red star from retail game.exe
-# (.github/release/icon.png).
+# (.github/release/languages.sh). The installer README credits the app icon
+# (.github/release/icon.png) and the bundled terrain artwork. Players supply
+# their Yuri's Revenge installation.
 on:
   workflow_dispatch:
     inputs:
