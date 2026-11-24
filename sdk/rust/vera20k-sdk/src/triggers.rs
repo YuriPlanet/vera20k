@@ -25,7 +25,8 @@
 //! ```
 
 use crate::{
-    Action, Cell, House, Modifier, NO_HANDLE, Op, Prop, Ref, Result, Techno, Var, check, sys,
+    Action, Cell, House, Modifier, ModuleEvent, NO_HANDLE, Op, Prop, Ref, Result, Techno, Var,
+    check, sys,
 };
 
 /// Event kinds (appendix 4). Stock events keep 0..61 (4.1); new delivered
@@ -176,6 +177,17 @@ impl Event {
     /// Decision-only (appendix 4.5): needs [`Trigger::decide_sync`] and an
     /// object or type binding. Asked for each command on a bound object.
     pub const COMMAND_ALLOWED: i32 = 1034;
+
+    // Module INI (RFC 0001 INI addendum, sections 5 and 6).
+    /// A module event ([`crate::ini::event`]): the trigger's `id` is the
+    /// event ID; [`Trigger::on_module_event`] sets both.
+    pub const MODULE_EVENT: i32 = 1040;
+    /// Delivery only, never in a trigger: one entry of a registry
+    /// ([`crate::IniEntryRecord`]).
+    pub const INI_ENTRY: i32 = 1041;
+    /// Delivery only, never in a trigger: one registered key
+    /// ([`crate::IniKeyRecord`]).
+    pub const INI_KEY: i32 = 1042;
 }
 
 /// What a trigger action acts on (`ActionTarget`, appendix 5.1).
@@ -188,6 +200,21 @@ pub enum Target {
     Projectile = 3,
     House = 4,
     Cell = 5,
+}
+
+impl Target {
+    /// The target numbered `raw`, or `None` for another number.
+    pub const fn from_raw(raw: i32) -> Option<Self> {
+        Some(match raw {
+            0 => Self::Subject,
+            1 => Self::Other,
+            2 => Self::TagHolder,
+            3 => Self::Projectile,
+            4 => Self::House,
+            5 => Self::Cell,
+            _ => return None,
+        })
+    }
 }
 
 /// A trigger action (`ActionDef` with its `ActionParams`), only constructed
@@ -243,6 +270,37 @@ impl ActionDef {
             Action::MODULE,
             Target::Subject,
             sys::ActionParams { id: key, ..PARAMS },
+        )
+    }
+
+    /// Queues a record with dispatch key `key` whose `target` is `target`
+    /// and whose `args` is `text` ([`EventRecord::args_text`]), as INI's
+    /// `Wasm:name(Target,text)`; `trigger_create` copies the text.
+    pub fn module_with(key: i32, target: Target, text: &'static str) -> Self {
+        Self::new(
+            Action::MODULE,
+            target,
+            sys::ActionParams {
+                id: key,
+                text: text.as_ptr() as i32,
+                text_len: text.len() as i32,
+                ..PARAMS
+            },
+        )
+    }
+
+    /// Raises module event `event` on `target` (any target for a global
+    /// event) with `value` and `value2`, as [`Action::raise_event`] does.
+    pub const fn raise_event(target: Target, event: ModuleEvent, value: i64, value2: i64) -> Self {
+        Self::new(
+            Action::RAISE_EVENT,
+            target,
+            sys::ActionParams {
+                id: event.0,
+                value,
+                value2,
+                ..PARAMS
+            },
         )
     }
 
@@ -394,6 +452,12 @@ impl Trigger {
         trigger
     }
 
+    /// A trigger on module event `event` ([`crate::ini::event`]): an object
+    /// event fires on bound objects, a global event needs no binding.
+    pub fn on_module_event(event: ModuleEvent) -> Self {
+        Self::on(Event::MODULE_EVENT).id(event.0)
+    }
+
     /// A trigger on `PropertyPoll` (appendix 3 `Trigger.onProperty`): fires
     /// when `prop op value` becomes true, checked every `interval` frames.
     pub fn on_property(prop: Prop, op: Op, value: i64, interval: i32) -> Self {
@@ -450,7 +514,7 @@ impl Trigger {
     }
 
     /// Sets the latest event's `id` argument (a TechnoType ID for stock
-    /// events 60 and 61).
+    /// events 60 and 61, the event ID for [`Event::MODULE_EVENT`]).
     pub fn id(mut self, id: i32) -> Self {
         match (self.header.event_count as usize).checked_sub(1) {
             Some(index) => self.events[index].def.id = id,
@@ -568,6 +632,12 @@ impl Trigger {
         self.immediate(ActionDef::module(key))
     }
 
+    /// As [`Trigger::enqueue`], with the record's target and parameter text
+    /// ([`ActionDef::module_with`]).
+    pub fn enqueue_with(self, key: i32, target: Target, text: &'static str) -> Self {
+        self.immediate(ActionDef::module_with(key, target, text))
+    }
+
     /// Makes this a decision trigger (RFC 6f) whose requests reach the
     /// [`crate::on_decide!`] handler for `key`, and finalizes it as
     /// [`Trigger::done`] does. Its event must have a decision form; such a
@@ -654,6 +724,24 @@ impl EventRecord {
     pub fn house(&self) -> House {
         House(self.house)
     }
+
+    /// The `args` string ID: a module action's parameter text, an
+    /// `IniEntry` entry name, an `IniKey` value; 0 for none.
+    pub fn args(&self) -> i32 {
+        self.args
+    }
+
+    /// The `args` text, written into `buf` (`""` without any).
+    /// `Err(Refused)` when `buf` is too small.
+    pub fn args_text<'b>(&self, buf: &'b mut [u8]) -> Result<&'b str> {
+        crate::text(self.args, buf)
+    }
+
+    /// A module action's target, as its trigger names it (`Subject` on
+    /// other records).
+    pub fn target(&self) -> Target {
+        Target::from_raw(self.target).unwrap_or(Target::Subject)
+    }
 }
 
 macro_rules! view {
@@ -684,6 +772,7 @@ macro_rules! view {
         }
     };
 }
+pub(crate) use view;
 
 view!(
     /// `TakeDamage` (appendix 3 and 4.3).
@@ -888,8 +977,11 @@ view!(
 // ----------------------------------------------------------------- Exports
 
 /// Exports `on_events`, calling the handler whose key matches each record,
-/// in order. A handler takes `&EventRecord` or an event view. The macro also
-/// declares the module's delivery area ([`DELIVERY_SECTION`]).
+/// in order. A handler takes `&EventRecord` or an event view. Keys are the
+/// module's own: those of [`named_actions!`](crate::named_actions!),
+/// [`Trigger::enqueue`] and the INI registrations of [`crate::ini`], whose
+/// handlers take [`crate::IniEntryRecord`] or [`crate::IniKeyRecord`]. The
+/// macro also declares the module's delivery area ([`DELIVERY_SECTION`]).
 ///
 /// ```ignore
 /// vera20k_sdk::on_events!(ON_HIT => on_hit, ON_DEATH => on_death);
@@ -917,7 +1009,7 @@ macro_rules! on_events {
     };
 }
 
-/// Where the SDK's delivery area lies: nine records from address 8.
+/// Where the SDK's delivery area lies: eight records from address 8.
 ///
 /// A `link_section` static holds plain bytes only (rustc refuses an address
 /// there), so the area cannot be a static buffer whose address the linker
@@ -927,13 +1019,16 @@ macro_rules! on_events {
 /// default). Limitation: a module whose stack comes within a KiB of its
 /// 1 MiB limit during `on_events` would overwrite records it has not read.
 pub const DELIVERY_OFFSET: u32 = 8;
-pub const DELIVERY_RECORDS: u32 = 9;
+pub const DELIVERY_RECORDS: u32 = 8;
+
+/// `EventRecord`'s size; a `DecideRecord` takes 160.
+const RECORD_BYTES: u32 = size_of::<EventRecord>() as u32;
 
 /// The `vera.delivery` section (appendix "Custom sections") for
 /// [`DELIVERY_OFFSET`] and [`DELIVERY_RECORDS`].
 pub const DELIVERY_SECTION: [u8; 9] = {
     let offset = DELIVERY_OFFSET.to_le_bytes();
-    let bytes = (DELIVERY_RECORDS * 112).to_le_bytes();
+    let bytes = (DELIVERY_RECORDS * RECORD_BYTES).to_le_bytes();
     [
         1, offset[0], offset[1], offset[2], offset[3], bytes[0], bytes[1], bytes[2], bytes[3],
     ]

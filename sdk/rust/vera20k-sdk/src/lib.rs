@@ -16,6 +16,7 @@
 #![no_std]
 
 pub mod decide;
+pub mod ini;
 mod props;
 pub mod sys;
 pub mod triggers;
@@ -24,6 +25,9 @@ pub mod vars;
 pub use decide::{
     CommandAllowedDecision, DecideRecord, DefeatDecision, ProductionAllowedDecision,
     ProductionQueuedDecision, TakeDamageDecision,
+};
+pub use ini::{
+    EventScope, IniEntryRecord, IniKeyRecord, IniSection, ModuleEvent, ModuleEventRecord,
 };
 pub use triggers::{
     ActionDef, DELIVERY_SECTION, Event, EventRecord, FireEvent, KilledEvent, TakeDamageEvent,
@@ -34,12 +38,12 @@ pub mod prelude {
     pub use crate::vars::{GlobalVar, HouseVar, ObjectVar};
     pub use crate::{
         Action, ActionDef, Blocked, Category, Cell, Command, CommandAllowedDecision, DecideRecord,
-        DefeatDecision, Event, EventRecord, FIXED_ONE, Find, FireEvent, Global, House, KilledEvent,
-        Layer, Mission, Modifier, ModifierOp, NameKind, Op, Order, Outcome,
+        DefeatDecision, Event, EventRecord, EventScope, FIXED_ONE, Find, FireEvent, Global, House,
+        IniEntryRecord, IniKeyRecord, IniSection, KilledEvent, Layer, Mission, Modifier,
+        ModifierOp, ModuleEvent, ModuleEventRecord, NameKind, Op, Order, Outcome,
         ProductionAllowedDecision, ProductionQueuedDecision, Prop, Ref, Relation, Rules, SpeedType,
         Status, TakeDamageDecision, TakeDamageEvent, Target, Techno, TimerEvent, Trigger,
-        TriggerRef, TypeRef, Var, Waypoint, anim_id, fixed, frame, log,
-        lookup, random,
+        TriggerRef, TypeRef, Var, Waypoint, anim_id, fixed, frame, ini, log, lookup, random,
     };
 }
 
@@ -227,10 +231,15 @@ pub enum NameKind {
     Variable = 15,
     Notify = 16,
     ModuleAction = 17,
+    /// Engine-held text by string ID ([`text`]); `lookup` finds the ID of
+    /// text it already holds.
     String = 18,
     Property = 19,
     EventKind = 20,
     ActionKind = 21,
+    /// Module events any source registered ([`ini::event`]); the ID is the
+    /// event ID.
+    ModuleEvent = 24,
 }
 
 /// Filter clause comparison (appendix 8.3, enum 0).
@@ -286,16 +295,21 @@ pub fn lookup(kind: NameKind, name: &str) -> Result<i32> {
 /// Writes the name of `id` into `buf` and returns it. `Err(Refused)` when
 /// `buf` is too small.
 pub fn name_of(kind: NameKind, id: i32, buf: &mut [u8]) -> Result<&str> {
+    name_of_raw(kind as i32, id, buf)
+}
+
+/// The text of string ID `id` (`name_of(String, ..)`): a module action's
+/// parameter text, an INI entry name or value. ID 0 is no text, `""`.
+pub fn text(id: i32, buf: &mut [u8]) -> Result<&str> {
+    if id == 0 {
+        return Ok("");
+    }
+    name_of(NameKind::String, id, buf)
+}
+
+fn name_of_raw(kind: i32, id: i32, buf: &mut [u8]) -> Result<&str> {
     let mut len = 0;
-    check(unsafe {
-        sys::name_of(
-            kind as i32,
-            id,
-            buf.as_mut_ptr(),
-            buf.len() as i32,
-            &mut len,
-        )
-    })?;
+    check(unsafe { sys::name_of(kind, id, buf.as_mut_ptr(), buf.len() as i32, &mut len) })?;
     let bytes = buf.get(..len as usize).ok_or(Status::Refused)?;
     core::str::from_utf8(bytes).map_err(|_| Status::Unsupported)
 }
@@ -731,6 +745,7 @@ impl Action {
     pub const ADD_SCORE: i32 = 1032;
     pub const LOG: i32 = 1033;
     pub const CONVERT: i32 = 1034;
+    pub const RAISE_EVENT: i32 = 1042;
     /// Trigger-only kinds ([`ActionDef::set_var`], [`ActionDef::module`]).
     pub const SET_VAR: i32 = 1024;
     pub const MODULE: i32 = 1036;
@@ -984,6 +999,39 @@ impl Action {
     pub fn add_passenger(transport: Techno, passenger: Techno) -> Result<()> {
         let params = params!(other: passenger.0);
         Self::run(Self::ADD_PASSENGER, transport.0, &params).map(drop)
+    }
+
+    /// Raises module event `event` (RFC 0001 INI addendum, section 6) on
+    /// `target`: an object for an object event, anything (`Global`) for a
+    /// global one. `other`, `value` and `value2` go into the record; its
+    /// triggers' module actions are queued. Not in a decision handler.
+    pub fn raise_event(
+        event: ModuleEvent,
+        target: impl Ref,
+        other: Techno,
+        value: i64,
+        value2: i64,
+    ) -> Result<()> {
+        Self::raise_event_with_house(event, target, other, value, value2, House(NO_HANDLE))
+    }
+
+    /// As [`Action::raise_event`], with the record's `house`.
+    pub fn raise_event_with_house(
+        event: ModuleEvent,
+        target: impl Ref,
+        other: Techno,
+        value: i64,
+        value2: i64,
+        house: House,
+    ) -> Result<()> {
+        let params = params!(
+            id: event.0,
+            other: other.0,
+            value: value,
+            value2: value2,
+            house: house.0,
+        );
+        Self::run(Self::RAISE_EVENT, target.raw(), &params).map(drop)
     }
 
     // Stock actions (5.2) taking a string.

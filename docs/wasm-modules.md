@@ -119,6 +119,8 @@ the source tree). Its Wasm verbs need no game install:
   player's click would, human or computer; `House::order` gives computer houses
   orders for many units and production.
 - Triggers: `Trigger::on(Event::TAKE_DAMAGE).bind(..).where_prop(..).enqueue(..)`.
+- INI names: `ini::key`, `ini::registry` and `ini::event` let modders configure the
+  module in INI ([below](#ini-names-a-module-registers)).
 
 ### Viewpoint properties
 
@@ -161,7 +163,7 @@ Trigger section keys:
 | --- | --- |
 | `Event`, `Event<n>` | `name` or `name(op,interval,id,value)`. All events must hold. `id` is a number; for `PropertyPoll` a property name, for `VariablePoll` a variable name |
 | `Where<n>`, `Event<k>.Where<n>` | `Subject.`, `Other.` or `House.` and a property, or `Var(Global\|Subject\|Other\|House,name)`, then `=`, `!=`, `<`, `<=`, `>` or `>=` and a number. `Where<n>` belongs to event 1 |
-| `Action`, `Action<n>` | `Wasm:name` (`Wasm:mod.name`, `Wasm:map.name` for the other source), or `name(target,parameters…)` |
+| `Action`, `Action<n>` | `Wasm:name` (`Wasm:mod.name`, `Wasm:map.name` for the other source), `Wasm:name(target,text)`, or `name(target,parameters…)` |
 | `Decide` | `Wasm:name`, a decision handler |
 | `House` | A country name; empty means the subject's owner |
 | `Difficulty` | `Easy`, `Normal`, `Hard`, comma-separated |
@@ -184,6 +186,88 @@ key.
 
 A map cannot bind types: a `Wasm.Tags` in a map is ignored, and the match says so
 when it starts. A map's module binds its triggers in code (`Trigger::on(..).bind(..)`).
+
+## INI names a module registers
+
+A module can give modders INI keys of its own: the modder writes INI, the module
+implements it ([addendum](rfcs/0001-ini-register.zh-CN.md), Chinese).
+
+```ini
+[HTNK]
+Kratos.Shield=HeavyShield          ; a key on a type
+Wasm.Tags=ShieldMedicTag
+
+[Kratos.ShieldTypes]               ; a registry: a list of entry sections
+1=HeavyShield
+
+[HeavyShield]                      ; an entry section, read by the module
+Strength=300
+
+[ShieldMedic]                      ; a trigger section (tag omitted)
+Event=Wasm:Kratos.ShieldBroken     ; a module event
+Action1=Wasm:restoreShield(Subject,50)   ; a module action with target and text
+```
+
+| Registration | INI | The module receives |
+| --- | --- | --- |
+| `ini::key(name, IniSection::TechnoType, KEY)` | `name=value` in sections of that kind (`TechnoType`, `Weapon`, `Warhead`, `Projectile`, `SuperWeapon`, `Country`, `General`) | One `IniKeyRecord` per section holding the key: `type_ref()` (the global reference for `[General]`), `value(buf)` |
+| `ini::registry(name, KEY)` | A list section `[name]` of entry section names | One `IniEntryRecord` per entry, in list order: `entry_name(buf)`, `position()` |
+| `ini::event(name, EventScope::Object)` | `Event=Wasm:name` in a trigger | Returns the event's `ModuleEvent` ID |
+
+```rust
+const SHIELD_TYPES: i32 = 10;
+const SHIELD: i32 = 11;
+static SHIELD_BROKEN: ini::EventSlot = ini::EventSlot::new();
+
+fn init() {
+    let _ = ini::registry("Kratos.ShieldTypes", SHIELD_TYPES);
+    let _ = ini::key("Kratos.Shield", IniSection::TechnoType, SHIELD);
+    if let Ok(event) = ini::event("Kratos.ShieldBroken", EventScope::Object) {
+        SHIELD_BROKEN.set(event);
+    }
+}
+
+fn load_shield_type(r: IniEntryRecord) {
+    let (mut name, mut value) = ([0u8; 64], [0u8; 32]);
+    let Ok(section) = r.entry_name(&mut name) else { return };
+    let _strength = Rules::get(section, "Strength", &mut value).ok().and_then(ini::int);
+    // keep it in module memory
+}
+
+fn attach_shield(r: IniKeyRecord) {
+    let mut value = [0u8; 64];
+    let _shield = r.value(&mut value); // "HeavyShield", for the type r.type_ref()
+}
+
+vera20k_sdk::init!(init);
+vera20k_sdk::on_events!(SHIELD_TYPES => load_shield_type, SHIELD => attach_shield);
+```
+
+- Register only in the module's `init`; anywhere else stops the module. A name is 1
+  to 63 ASCII letters, digits, `.` and `_`, compared ignoring case. A name the mod or
+  map already registered, or one starting with `Vera.`, is `Err(Refused)`.
+- The handlers are dispatched by key through `on_events!`, like module actions; keep
+  the keys distinct from those of `named_actions!`.
+- Order: the mod's `init` and `on_rules`, the map's rules, the map's `init` and
+  `on_rules`, then INI triggers are read (an unregistered `Event=Wasm:name` keeps the
+  match from starting). Before each module's `on_scenario_start`, it receives all its
+  `IniEntry` records, then all its `IniKey` records. Values are the final merged rules
+  text (mod and map), not checked by the engine: read entry sections with
+  `Rules::get`, parse values yourself (`ini::split`, `ini::int`, `ini::ints`,
+  `ini::yes_no` help), and stop with a message naming the section
+  (`IniKeyRecord::section_name`) and key when one is wrong. Don't cache registered
+  keys' values in `on_rules`; they may still change.
+- These deliveries count against `on_scenario_start`'s start-up budget. Loading a save
+  delivers nothing again: what the handlers built is in the module's memory.
+- `Action::raise_event(event, target, other, value, value2)` raises a module event
+  on an object (any target for `EventScope::Global`); `ActionDef::raise_event` is its
+  trigger form, and INI writes `RaiseEvent(target,name,value,value2)`. Triggers on it
+  fire as on any delivered event; in code, `Trigger::on_module_event(event)`, whose
+  records read as `ModuleEventRecord`. A decision handler cannot raise one. Any source
+  can raise any registered event; `ModuleEvent::named` finds another module's.
+- A module action's record carries its target and parameter text:
+  `record.target()` and `record.args_text(buf)`. In code, `ActionDef::module_with(key,
+  target, "text")` or `Trigger::enqueue_with(..)`.
 
 ## Limits
 
