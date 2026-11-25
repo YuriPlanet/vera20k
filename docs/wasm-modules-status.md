@@ -474,8 +474,9 @@ Branch `feature/wasm-control-points` (items 1 and 2 of the control-point plan):
   `ModifierCountPoll`, `DistancePoll`, `VariablePoll`); decision-only 1031..1036
   (`ProductionAllowed` 1031, `ProductionQueued` 1032, `Defeat` 1033, `CommandAllowed`
   1034, `Launch` 1035, `ProjectileFrame` 1036); unit-level decision-only events
-  from 1060 (`IdleMission` 1060, `HarvestCell` 1061; RFC 100060, 100061; no INI
-  names yet). Stock events keep 0..88. One name table: `wasm-ext/src/event_kinds.rs`.
+  from 1060 (`IdleMission` 1060, RFC 100060; `MissionStep` 1062, RFC 100062; no INI
+  names yet); `HarvestCell` is
+  1049 (RFC 100049), asked in every ore scan. Stock events keep 0..88. One name table: `wasm-ext/src/event_kinds.rs`.
 - `Passable.<SpeedType>` properties are appended to `PROPERTIES` (IDs 173..180).
 - Houses stay on the bit-47 reference: putting them on the shared creation counter
   would renumber every object in every game, modules or not (stock state hash, saves,
@@ -551,8 +552,7 @@ section 10 permissions.
 Before version 1 (RFC "Process"): the TypeScript SDK
 (deferred by the maintainer), phase 2 (`ui.wasm`), phase 3 (a real mission with
 modules, external modders, freeze), and the later items (peer calls,
-`TargetChanged`'s decision form, `MissionChanged`, the Guard/Area Guard/Hunt/Attack
-mission slots MIS-S3..S6).
+`TargetChanged`'s decision form).
 
 ## Done (control points, preview, RFC 0.0.23)
 
@@ -576,6 +576,15 @@ mission slots MIS-S3..S6).
   `control.rs`, its test with the idle one); the computer
   mission arms the 6i claims had missed are gated (`claims.rs` module doc);
   tests `ext_modules_unit_ai_tests.rs`.
+- `MissionStep` (MIS-S3..S6, preview), the outcome of the Guard, Sticky, Area
+  Guard, Hunt and Attack bodies of infantry and vehicles: a `MissionStepResult`
+  (target, destination, mission to queue, delay) in the result area, asked in
+  `mission_handlers::dispatch_foot_mission` after the body and before
+  `MissionClass::AI`'s queue and timer write (`0x005B3060`), applied in
+  `src/sim/ext_modules/unit_ai.rs` through the class setters. The body runs in
+  full first, so its scenario draws are unchanged (list 4.4); what else it did
+  (shots, deploys, a mission queued on going idle) stands. No saved state.
+  SDK `MissionStepDecision`; tests `ext_modules_unit_ai_tests.rs`.
 
 ## Residuals
 
