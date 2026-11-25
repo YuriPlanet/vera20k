@@ -558,7 +558,7 @@ pub(crate) fn local_left(state: &mut AppState) {
     if super::quick_match(state.frontend.network_setup_protocol.as_ref()) {
         // No dialog: the nodes go with the setup; the runner's stage
         // timeout moves on.
-        super::abandon_for_wol_runner(state);
+        super::abandon_for_wol_runner(&mut state.frontend, &mut state.match_state);
         return;
     }
     let dialog = super::dialog(&state.frontend, &state.match_state);
@@ -874,7 +874,10 @@ pub(crate) fn verify_sync(state: &mut AppState) {
     let parts = Some(shown)
         .and_then(|verify| verify.mismatch.as_ref())
         .map(|message| verify_mismatch_parts(&state.renderer.gpu, message));
-    let ok = parts.as_ref().map(|parts| parts.button(0)).unwrap_or_default();
+    let ok = parts
+        .as_ref()
+        .map(|parts| parts.button(0))
+        .unwrap_or_default();
     let layout = verify_layout(state);
     if let Ok(verify) = verify_mut(&mut state.frontend.network_setup_protocol) {
         verify.sync_widgets(&layout, ok);

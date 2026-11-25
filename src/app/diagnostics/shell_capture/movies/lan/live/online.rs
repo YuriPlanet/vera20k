@@ -421,7 +421,8 @@ impl LiveRoundFlow {
             PresentedShell::WolLocale
                 if MoviesCapture::slide_settled(&state.frontend, ShellSlideKind::WolLocale) =>
             {
-                let layout = persona::layout(state).context("online location dialog")?;
+                let layout = persona::layout(state.frontend.wol.as_ref(), &state.renderer.gpu)
+                    .context("online location dialog")?;
                 let Some(WolPage::Locale(page)) =
                     state.frontend.wol.as_ref().map(|visit| &visit.page)
                 else {
@@ -463,7 +464,8 @@ impl LiveRoundFlow {
                     ShellSlideKind::WolAutoLoginQuery,
                 ) =>
             {
-                let layout = persona::layout(state).context("online auto-login dialog")?;
+                let layout = persona::layout(state.frontend.wol.as_ref(), &state.renderer.gpu)
+                    .context("online auto-login dialog")?;
                 click(
                     state,
                     layout.page.button_rect(DECLINE).context("auto-login No")?,
@@ -519,10 +521,13 @@ impl LiveRoundFlow {
                         if online {
                             click(
                                 state,
-                                crate::app::shell_wol::lobby::layout(state)
-                                    .page
-                                    .button_rect(wol_lobby::BACK)
-                                    .context("profile lobby Back")?,
+                                crate::app::shell_wol::lobby::layout(
+                                    state.frontend.wol.as_ref(),
+                                    &state.renderer.gpu,
+                                )
+                                .page
+                                .button_rect(wol_lobby::BACK)
+                                .context("profile lobby Back")?,
                             );
                             self.phase = RoundPhase::ExitSignIn;
                         } else {
@@ -608,9 +613,12 @@ impl LiveRoundFlow {
                 if rendered == PresentedShell::WolLogin
                     && MoviesCapture::slide_settled(&state.frontend, ShellSlideKind::WolLogin) =>
             {
-                let chooser = crate::app::shell_wol::login_layout(state)
-                    .entry_choice()
-                    .context("online entry chooser")?;
+                let chooser = crate::app::shell_wol::login_layout(
+                    state.frontend.wol.as_ref(),
+                    &state.renderer.gpu,
+                )
+                .entry_choice()
+                .context("online entry chooser")?;
                 click(state, chooser.guest);
                 // The live clients locate each other's games by their agreed
                 // command-line names. Set that fixture identity before the
@@ -637,7 +645,10 @@ impl LiveRoundFlow {
                     if !self.quick_match_turn(core, &state.frontend.wol) {
                         return Ok(());
                     }
-                    let layout = crate::app::shell_wol::lobby::layout(state);
+                    let layout = crate::app::shell_wol::lobby::layout(
+                        state.frontend.wol.as_ref(),
+                        &state.renderer.gpu,
+                    );
                     click(
                         state,
                         layout
@@ -652,7 +663,10 @@ impl LiveRoundFlow {
                     return Ok(());
                 }
                 if core.host() {
-                    let layout = crate::app::shell_wol::lobby::layout(state);
+                    let layout = crate::app::shell_wol::lobby::layout(
+                        state.frontend.wol.as_ref(),
+                        &state.renderer.gpu,
+                    );
                     click(
                         state,
                         layout
@@ -710,7 +724,10 @@ impl LiveRoundFlow {
                     self.record(frame, "Configured discovered game joined");
                     self.phase = RoundPhase::GuestSetup;
                 } else if self.last_refresh.elapsed() >= Duration::from_secs(2) {
-                    let layout = crate::app::shell_wol::lobby::layout(state);
+                    let layout = crate::app::shell_wol::lobby::layout(
+                        state.frontend.wol.as_ref(),
+                        &state.renderer.gpu,
+                    );
                     click(
                         state,
                         layout
@@ -1323,10 +1340,13 @@ impl LiveRoundFlow {
                     "Back from the reopened room retained its setup"
                 );
                 if online {
-                    let rect = crate::app::shell_wol::lobby::layout(state)
-                        .page
-                        .button_rect(wol_lobby::BACK)
-                        .context("WOL lobby Back button")?;
+                    let rect = crate::app::shell_wol::lobby::layout(
+                        state.frontend.wol.as_ref(),
+                        &state.renderer.gpu,
+                    )
+                    .page
+                    .button_rect(wol_lobby::BACK)
+                    .context("WOL lobby Back button")?;
                     click(state, rect);
                     self.phase = RoundPhase::ExitSignIn;
                 } else {
@@ -1347,7 +1367,10 @@ impl LiveRoundFlow {
                 if rendered == PresentedShell::WolLogin
                     && MoviesCapture::slide_settled(&state.frontend, ShellSlideKind::WolLogin) =>
             {
-                let layout = crate::app::shell_wol::login_layout(state);
+                let layout = crate::app::shell_wol::login_layout(
+                    state.frontend.wol.as_ref(),
+                    &state.renderer.gpu,
+                );
                 let rect = layout
                     .page
                     .button_rect(crate::ui::wol_login::BACK)
@@ -1361,9 +1384,12 @@ impl LiveRoundFlow {
                     self.phase = RoundPhase::MainReturn;
                 } else {
                     ensure!(
-                        crate::app::shell_wol::login_layout(state)
-                            .entry_choice()
-                            .is_some(),
+                        crate::app::shell_wol::login_layout(
+                            state.frontend.wol.as_ref(),
+                            &state.renderer.gpu
+                        )
+                        .entry_choice()
+                        .is_some(),
                         "Back did not return to the online entry chooser"
                     );
                 }
@@ -1375,7 +1401,10 @@ impl LiveRoundFlow {
                         self.config.as_ref().is_some_and(|config| config.latency),
                     )? =>
             {
-                if crate::app::shell_wol::online_cleanup_pending(state) {
+                if crate::app::shell_wol::online_cleanup_pending(
+                    &state.frontend,
+                    &state.match_state,
+                ) {
                     return Ok(());
                 }
                 let visits_retired = state.frontend.lan.is_none() && state.frontend.wol.is_none();
@@ -1409,7 +1438,7 @@ impl LiveRoundFlow {
                     "visits_retired":visits_retired,"setup_retired":setup_retired,
                     "transport_retired":transport_retired,"session_retired":session_retired,
                     "scenario_retired":scenario_retired,
-                    "online_cleanup_pending":crate::app::shell_wol::online_cleanup_pending(state),
+                    "online_cleanup_pending":crate::app::shell_wol::online_cleanup_pending(&state.frontend, &state.match_state),
                     "online_logout_acknowledged":acknowledged}));
                 self.record(
                     frame,
@@ -1549,7 +1578,8 @@ pub(super) fn online_setup_settled(frontend: &FrontendState, host: bool) -> bool
 /// adapter. False after a click that scrolls toward a row outside the list's
 /// view instead.
 fn join_game_row(state: &mut AppState, row: usize) -> Result<bool> {
-    let layout = crate::app::shell_wol::lobby::layout(state);
+    let layout =
+        crate::app::shell_wol::lobby::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
     let lobby = state
         .frontend
         .wol

@@ -265,7 +265,7 @@ impl WolCapture {
                 self.phase = WolPhase::Qm(QmPhase::Box("WOL:MatchTimeout"));
             }
             WolTarget::QmCancel => {
-                let layout = qm::layout(state);
+                let layout = qm::layout(&state.renderer.gpu);
                 let cancel = layout
                     .page
                     .button_rect(crate::ui::wol_quick_match::CANCEL)
@@ -385,7 +385,14 @@ impl WolCapture {
     /// guest then joins and accepts, and the start runs to the loading
     /// screen.
     fn qm_host(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        let options = crate::app::shell_wol::test_service_matchbot_options(state, NICKNAME, PEER)?;
+        let options = crate::app::shell_wol::test_service_matchbot_options(
+            &state.frontend,
+            state.platform.game_config.as_ref(),
+            &state.match_state,
+            &state.process_assets,
+            NICKNAME,
+            PEER,
+        )?;
         let from = qm_rows(&state.frontend.wol)?.len();
         matchbot_says(
             state,
@@ -625,8 +632,14 @@ impl WolCapture {
     /// `Start` naming the user as guest: the host's game listed, joined,
     /// then the host's options accepted at once (`A1`).
     fn qm_guest(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        let mut options =
-            crate::app::shell_wol::test_service_matchbot_options(state, PEER, NICKNAME)?;
+        let mut options = crate::app::shell_wol::test_service_matchbot_options(
+            &state.frontend,
+            state.platform.game_config.as_ref(),
+            &state.match_state,
+            &state.process_assets,
+            PEER,
+            NICKNAME,
+        )?;
         let from = qm_rows(&state.frontend.wol)?.len();
         matchbot_says(
             state,
@@ -764,7 +777,11 @@ impl WolCapture {
             self.hover_settle(state);
             return Ok(());
         }
-        let layout = crate::app::shell_wol::persona::layout(state).context("0x122 layout")?;
+        let layout = crate::app::shell_wol::persona::layout(
+            state.frontend.wol.as_ref(),
+            &state.renderer.gpu,
+        )
+        .context("0x122 layout")?;
         let yes = layout
             .page
             .button_rect(crate::ui::wol_persona::ACCEPT)

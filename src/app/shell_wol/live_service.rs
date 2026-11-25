@@ -35,6 +35,8 @@ use super::{
 };
 use crate::app::AppState;
 use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::session::MatchSession;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::shell_network_setup::{NetworkSetupEvent, NetworkSetupRequest};
 use crate::i18n::tr;
 use crate::net::udp::LanUdpTransport;
@@ -66,6 +68,7 @@ use sign_in::{
     forget_deleted_account, forget_sign_in, remember_online_name, remember_sign_in, settings_dir,
     sign_in_credential,
 };
+use winit::window::Window;
 
 // The deployment sets this at build time; a runtime override supports staging.
 const DEFAULT_LOBBY_URL: &str = match option_env!("VERA20K_LOBBY_URL") {
@@ -437,11 +440,11 @@ fn update_required_text(message: Option<&str>) -> String {
 
 /// The lobby says this version is behind: the desktop updater checks again
 /// ([`crate::app::updater::lobby_outdated`]).
-fn lobby_says_outdated(state: &mut AppState) {
+fn lobby_says_outdated(frontend: &mut FrontendState) {
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    crate::app::updater::lobby_outdated(&mut state.frontend);
+    crate::app::updater::lobby_outdated(frontend);
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-    let _ = state;
+    let _ = frontend;
 }
 
 /// The external launch's online visit: once its match ends or admission
@@ -727,9 +730,9 @@ pub(crate) fn relay_pass_lapsed(wol: Option<&WolVisit>, now_ms: u32) -> bool {
 /// Both existing cleanup owners must finish before another online admission.
 /// HTTP logout may complete while the same socket still retries its explicit
 /// relay departure; this observation owns no retry or membership state.
-pub(crate) fn online_cleanup_pending(state: &AppState) -> bool {
-    state.frontend.online_cleanup.pending()
-        || crate::app::lan_service::online_retirement_pending(&state.match_state)
+pub(crate) fn online_cleanup_pending(frontend: &FrontendState, match_state: &MatchState) -> bool {
+    frontend.online_cleanup.pending()
+        || crate::app::lan_service::online_retirement_pending(match_state)
 }
 
 pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
@@ -820,7 +823,12 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
             (watch.start.is_some() || service.pending.is_some())
                 && !super::lobby::awaits_watch(state.frontend.wol.as_ref(), &watch.match_id)
         }) {
-            cancel_watch_start(state, &mut service);
+            cancel_watch_start(
+                &mut state.frontend,
+                &state.platform.window,
+                &mut state.match_state,
+                &mut service,
+            );
         }
         while state.frontend.shell_exit.is_none() && state.frontend.wol.is_some() {
             let Ok(response) = service.responses.try_recv() else {
@@ -955,17 +963,31 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
         if let Err((line, error)) = admission {
             if service.watching.is_some() {
                 log::warn!("Could not watch the match: {error:#}");
-                fail_watch(state, &mut service, "VERA:RelayConnectionFailed");
+                fail_watch(
+                    &mut state.frontend,
+                    &state.platform.window,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut service,
+                    "VERA:RelayConnectionFailed",
+                );
             } else {
                 log::warn!("Online relay admission failed ({line}): {error:#}");
-                cancel_pending(state, &mut service);
+                cancel_pending(&mut state.frontend, &mut state.match_state, &mut service);
                 fail_start(state, &tr(line));
             }
         }
         poll_maps(state, &mut service);
         if let Err(error) = poll_watch(state, &mut service) {
             log::warn!("Could not watch the match: {error:#}");
-            fail_watch(state, &mut service, "VERA:WatchCouldNotStart");
+            fail_watch(
+                &mut state.frontend,
+                &state.platform.window,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut service,
+                "VERA:WatchCouldNotStart",
+            );
         }
         if crate::app::lan_service::has_online_relay_route(&state.match_state) {
             service.poll_renewal(crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32);
@@ -1090,24 +1112,33 @@ fn relay_failure_line(pending: &PendingStart) -> &'static str {
     }
 }
 
-fn cancel_pending(state: &mut AppState, service: &mut LiveService) {
+fn cancel_pending(
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    service: &mut LiveService,
+) {
     service.start_preparation = None;
-    if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+    if let Some(protocol) = frontend.network_setup_protocol.as_mut() {
         protocol.set_start_phase(crate::app::shell_network_setup::StartPhase::Idle);
     }
     if service.pending.take().is_some() {
         // A Ready relay may already have moved into the shared transport owner.
         // Retire either ownership location when this start is canceled.
-        crate::app::lan_service::close(&state.frontend, &mut state.match_state);
+        crate::app::lan_service::close(frontend, match_state);
     }
 }
 
 /// This game is done with its room (it left, signed out or lost the lobby,
 /// or the room closed) or with a watch's start: the map transfer and any
 /// start stop, and nothing waits for the host's answer.
-fn end_room(state: &mut AppState, service: &mut LiveService) {
-    maps::cancel(state, service);
-    cancel_pending(state, service);
+fn end_room(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &mut MatchState,
+    service: &mut LiveService,
+) {
+    maps::cancel(frontend, window, &match_state.session, service);
+    cancel_pending(frontend, match_state, service);
     service.room.stop_waiting();
 }
 
@@ -1124,10 +1155,10 @@ pub(crate) fn keep_network_report(
     }
 }
 
-pub(super) fn match_returned(state: &mut AppState) {
-    let report = match_report(state);
-    let back_to_room = state.match_state.session.awaiting_wol_room_return();
-    if let Some(visit) = state.frontend.wol.as_mut() {
+pub(super) fn match_returned(frontend: &mut FrontendState, session: &MatchSession) {
+    let report = match_report(frontend);
+    let back_to_room = session.awaiting_wol_room_return();
+    if let Some(visit) = frontend.wol.as_mut() {
         visit.match_returned(report, Instant::now(), back_to_room);
     }
 }
@@ -1136,12 +1167,12 @@ pub(super) fn match_returned(state: &mut AppState) {
 /// `App::record_match_result` decided them, and when it did.
 type MatchReport = (Option<&'static str>, Option<Vec<String>>, Option<Instant>);
 
-fn match_report(state: &AppState) -> MatchReport {
+fn match_report(frontend: &FrontendState) -> MatchReport {
     (
-        crate::app::App::match_result(&state.frontend)
+        crate::app::App::match_result(frontend)
             .map(crate::app::cncnet::ExternalMatchResult::as_str),
-        crate::app::App::match_winners(&state.frontend).map(<[String]>::to_vec),
-        crate::app::App::match_result_at(&state.frontend),
+        crate::app::App::match_winners(frontend).map(<[String]>::to_vec),
+        crate::app::App::match_result_at(frontend),
     )
 }
 
@@ -1174,17 +1205,20 @@ impl super::WolVisit {
     }
 }
 
-pub(super) fn leave_visit(state: &mut AppState) {
-    if let Some(mut service) = take_service(state.frontend.wol.as_mut()) {
-        maps::cancel(state, &mut service);
-        put_service(&mut state.frontend, service);
+pub(super) fn leave_visit(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &mut MatchState,
+) {
+    if let Some(mut service) = take_service(frontend.wol.as_mut()) {
+        maps::cancel(frontend, window, &match_state.session, &mut service);
+        put_service(frontend, service);
     }
-    let frontend = &mut state.frontend;
     if let Some(visit) = frontend.wol.as_mut() {
         frontend.online_cleanup.leave(visit, Instant::now());
     }
-    crate::app::lan_service::close(&state.frontend, &mut state.match_state);
-    state.frontend.wol_account.password.clear();
+    crate::app::lan_service::close(frontend, match_state);
+    frontend.wol_account.password.clear();
 }
 
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
@@ -1195,33 +1229,36 @@ pub(super) fn leave_visit(state: &mut AppState) {
 /// `quit`, as Abort Mission records it, unless the game already decided one.
 /// One still loading has no result and finishes without one, as a match
 /// whose loading failed does.
-pub(crate) fn retire_visit_for_exit(state: &mut AppState) {
-    let Some(visit) = state
-        .frontend
+pub(crate) fn retire_visit_for_exit(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &mut MatchState,
+) {
+    let Some(visit) = frontend
         .wol
         .as_ref()
         .filter(|visit| visit.provider == WolProvider::Online)
     else {
         return;
     };
-    state.match_state.session.take_network_room_return();
+    match_state.session.take_network_room_return();
     if visit
         .live_service
         .as_ref()
         .is_some_and(LiveService::match_unfinished)
     {
         crate::app::App::record_match_result(
-            &mut state.frontend,
-            &state.match_state,
+            frontend,
+            match_state,
             crate::app::cncnet::ExternalMatchResult::Quit,
         );
-        let report = match_report(state);
-        if let Some(visit) = state.frontend.wol.as_mut() {
+        let report = match_report(frontend);
+        if let Some(visit) = frontend.wol.as_mut() {
             visit.match_left_for_exit(report, Instant::now());
         }
     }
-    leave_visit(state);
-    state.frontend.wol = None;
+    leave_visit(frontend, window, match_state);
+    frontend.wol = None;
 }
 
 /// Answer a request that needs no lobby; false for any other.

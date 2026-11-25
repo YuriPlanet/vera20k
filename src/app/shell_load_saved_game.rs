@@ -15,6 +15,7 @@ use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::SaveRepository;
 use crate::app::presentation::state::MatchPresentationState;
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::shell_route::ShellRoute;
 use crate::ui::shell::saved_file_input;
 use crate::ui::shell::saved_games::LOAD_SAVED_GAME_PAGE;
@@ -24,7 +25,7 @@ impl App {
     /// State 9: `0x00558F2E` creates `0xB7` with the rows `0x005596A0`
     /// scanned, and `0x00558FC8..0x00558FE5` enables Load from the row count.
     pub(super) fn open_load_saved_game_page(state: &mut AppState) {
-        Self::destroy_current_shell_dialog(state);
+        Self::destroy_current_shell_dialog(&mut state.frontend);
         // The error message box paints from the skirmish chrome atlas.
         let _ = Self::ensure_skirmish_shell_chrome(
             &state.renderer,
@@ -52,9 +53,12 @@ impl App {
 
     /// Back's teardown has run: state 9 returns false and state 1 recreates
     /// Single Player (`0x0052E0F9`).
-    pub(super) fn commit_load_saved_game_back(state: &mut AppState) {
-        state.frontend.load_saved_game = None;
-        Self::open_single_player_shell(state);
+    pub(super) fn commit_load_saved_game_back(
+        frontend: &mut FrontendState,
+        repository: &SaveRepository,
+    ) {
+        frontend.load_saved_game = None;
+        Self::open_single_player_shell(frontend, repository);
     }
 
     /// One pointer message on the page (`down`: `None` moves).
@@ -102,14 +106,14 @@ impl App {
     }
 
     /// Scrollbar arrow repeat (`0x0061C690`), each frame the page shows.
-    pub(super) fn update_load_saved_game_scroll(state: &mut AppState) {
-        let layout = load_saved_game_layout(&state.renderer.gpu, &state.frontend);
-        let extent = (
-            state.renderer.gpu.config.width,
-            state.renderer.gpu.config.height,
-        );
-        let font = &state.renderer.bit_font;
-        if let Some(browser) = state.frontend.load_saved_game.as_mut() {
+    pub(super) fn update_load_saved_game_scroll(
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+    ) {
+        let layout = load_saved_game_layout(&renderer.gpu, frontend);
+        let extent = (renderer.gpu.config.width, renderer.gpu.config.height);
+        let font = &renderer.bit_font;
+        if let Some(browser) = frontend.load_saved_game.as_mut() {
             saved_file_input::update(browser, &layout.browser, extent, |text| {
                 font.text_width(text)
             });

@@ -420,7 +420,13 @@ impl TacticalCaptureSession {
                 ),
                 "random-map setup did not produce an accepted candidate"
             );
-            crate::app::App::accept_random_map_setup(state);
+            crate::app::App::accept_random_map_setup(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+            );
             self.preparing_random_map = false;
             self.begin_accepted_loading(state)?;
             self.failure_stage = "loading".to_owned();

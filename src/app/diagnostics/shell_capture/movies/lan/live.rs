@@ -969,7 +969,7 @@ impl LiveLanCapture {
                 let name = if self.host() { HOST_NAME } else { GUEST_NAME };
                 lobby_click(
                     state,
-                    lobby::layout(state)
+                    lobby::layout(&state.renderer.gpu)
                         .rect(crate::ui::lan_shell::NAME)
                         .unwrap_or_default(),
                 );
@@ -981,7 +981,7 @@ impl LiveLanCapture {
                 if state.frontend.multiplayer_shell_runtime.lan_observer() {
                     lobby_click(
                         state,
-                        lobby::layout(state)
+                        lobby::layout(&state.renderer.gpu)
                             .rect(crate::ui::lan_shell::OBSERVER_TOGGLE)
                             .unwrap_or_default(),
                     );
@@ -1009,7 +1009,7 @@ impl LiveLanCapture {
                 if let Some(index) = found {
                     // Index0 is BB's synthetic no-game row. Drive its normal
                     // selection handler, which emits the real query packet.
-                    let layout = lobby::layout(state);
+                    let layout = lobby::layout(&state.renderer.gpu);
                     let lobby_state = &state.frontend.lan.as_ref().context("BB")?.lobby;
                     let top = lobby::list_top(
                         &state.frontend.shell_controller,

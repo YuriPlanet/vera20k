@@ -601,7 +601,14 @@ fn render_skirmish_shell_with_atlas(
     // `0x102`'s widgets, synced to the session, through the shared painter;
     // an open list goes over every dialog text.
     let page_root = parent_showing
-        .then(|| crate::app::App::sync_skirmish_page(state))
+        .then(|| {
+            crate::app::App::sync_skirmish_page(
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+            )
+        })
         .flatten();
     if let Some(root) = page_root {
         show_skirmish_flags(&mut state.frontend, root, layout.shown_rows);

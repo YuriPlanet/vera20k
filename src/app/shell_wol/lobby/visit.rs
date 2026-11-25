@@ -14,23 +14,24 @@ use super::{
     request_listed, sort_lobby, switching_room,
 };
 use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::shell_wol::WolVisit;
 
 /// VERA: the room's Lobby (docs/lobby-protocol.md "Visiting the lobby"):
 /// this player also joins the public lobby to look round it. Their room
 /// goes on hidden, its events still reaching it, until Back to Room.
-pub(crate) fn visit_lobby(state: &mut AppState) {
-    if quick_match_runner(state.frontend.wol.as_ref()) || !in_setup_channel(state) {
+pub(crate) fn visit_lobby(frontend: &mut FrontendState) {
+    if quick_match_runner(frontend.wol.as_ref()) || !in_setup_channel(frontend) {
         return;
     }
-    let Some(runner) = lobby_mut(state.frontend.wol.as_mut()) else {
+    let Some(runner) = lobby_mut(frontend.wol.as_mut()) else {
         return;
     };
     if !matches!(runner.step, Step::Ready) || runner.visit.is_some() {
         return;
     }
     runner.step = Step::Visiting { request: None };
-    request(state.frontend.wol.as_mut(), WolServiceRequest::VisitLobby);
+    request(frontend.wol.as_mut(), WolServiceRequest::VisitLobby);
 }
 
 /// Whether this player looks round the public lobby while their game room
@@ -175,12 +176,15 @@ pub(super) fn visit_failed(state: &mut AppState) {
 /// Ends the visit with its room, as leaving it or the runner's close does:
 /// the hidden room is dropped through its owner. The lobby visited, if
 /// there was a visit.
-pub(super) fn take_visit(state: &mut AppState) -> Option<LobbyVisit> {
-    let runner = lobby_mut(state.frontend.wol.as_mut())?;
+pub(super) fn take_visit(
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+) -> Option<LobbyVisit> {
+    let runner = lobby_mut(frontend.wol.as_mut())?;
     let visit = runner.visit.take()?;
     runner.ui.set_visiting(false);
-    if state.frontend.network_setup_protocol.is_some() {
-        crate::app::shell_network_setup::abandon_for_wol_runner(state);
+    if frontend.network_setup_protocol.is_some() {
+        crate::app::shell_network_setup::abandon_for_wol_runner(frontend, match_state);
     }
     Some(visit)
 }
@@ -191,7 +195,7 @@ pub(super) fn visit_room_left(state: &mut AppState) {
     if lobby(state.frontend.wol.as_ref())
         .is_some_and(|lobby| matches!(lobby.step, Step::Leaving { .. }))
     {
-        take_visit(state);
+        take_visit(&mut state.frontend, &mut state.match_state);
         leave_finished(state, true);
         return;
     }
@@ -212,7 +216,7 @@ pub(super) fn visit_room_left(state: &mut AppState) {
 /// the public lobby they visit their channel, and its page stays, saying
 /// why with `line`.
 pub(super) fn visit_settles(state: &mut AppState, line: String) {
-    let Some(visit) = take_visit(state) else {
+    let Some(visit) = take_visit(&mut state.frontend, &mut state.match_state) else {
         return;
     };
     state.frontend.wol_lobby_globals.lobby_number = visit.channel.joined_lobby_number();

@@ -16,6 +16,7 @@ use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
 use crate::app::shell_wol::WolVisit;
 use crate::app::{App, AppState};
+use crate::audio::sfx::SfxPlayer;
 use crate::ui::game_screen::GameScreen;
 use crate::ui::lan_shell::{LanChatLine, append_wrapped};
 use crate::ui::pause_menu::InGameMenuState;
@@ -609,12 +610,26 @@ fn with_received<R>(
     Some(f(received, &mut frontend.shell_controller))
 }
 
-pub(crate) fn cursor_moved(state: &mut AppState) {
-    if let Some(dialog) = top(state.frontend.wol.as_ref())
-        && sync(&mut state.frontend, &state.renderer, dialog).is_some()
+pub(crate) fn cursor_moved(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    sfx_player: &mut Option<SfxPlayer>,
+) {
+    if let Some(dialog) = top(frontend.wol.as_ref())
+        && sync(frontend, renderer, dialog).is_some()
     {
         // The boxes' hit tests leave the status line under them alone.
-        leaf::pointer_quiet(state, Pointer::Move);
+        leaf::pointer_quiet(
+            frontend,
+            window,
+            match_state,
+            process_assets,
+            sfx_player,
+            Pointer::Move,
+        );
     }
 }
 
@@ -629,7 +644,14 @@ pub(crate) fn mouse(state: &mut AppState, pressed: bool) {
         return;
     }
     let before = leaf::focused(&state.frontend.shell_controller);
-    let events = leaf::pointer_quiet(state, if pressed { Pointer::Down } else { Pointer::Up });
+    let events = leaf::pointer_quiet(
+        &mut state.frontend,
+        &state.platform.window,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        if pressed { Pointer::Down } else { Pointer::Up },
+    );
     // Android: a press that lands on one of the page's edits arms the keyboard
     // for this dialog, the tree those edits live in.
     #[cfg(target_os = "android")]

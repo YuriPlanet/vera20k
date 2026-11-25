@@ -8,7 +8,9 @@ use super::shell_saved_seeds::saved_browser_rows;
 use super::*;
 use crate::app::frontend::shell_layout::setups_layout;
 use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::map::rmg::{SeedDescription, saved_seeds};
 use crate::ui::shell::saved_file_input::{self, BrowserInputResult};
 use crate::ui::skirmish_shell::SkirmishShellState;
@@ -26,9 +28,12 @@ fn description(text: &str) -> SeedDescription {
 impl App {
     /// The Setups button: open the page on the saved setups, newest first,
     /// with a new row whose name is the selected map's.
-    pub(super) fn open_skirmish_setups(state: &mut AppState) {
-        let rows = state
-            .frontend
+    pub(super) fn open_skirmish_setups(
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+    ) {
+        let rows = frontend
             .multiplayer_shell_runtime
             .named_setups()
             .map(|(name, saved)| SavedSeedBrowserRow {
@@ -40,12 +45,11 @@ impl App {
                 migratable: false,
             })
             .collect();
-        let maps = state.frontend.scenario_catalog.shell_maps();
-        let map = maps.get(state.frontend.skirmish_shell_state.selected_map_idx);
+        let maps = frontend.scenario_catalog.shell_maps();
+        let map = maps.get(frontend.skirmish_shell_state.selected_map_idx);
         let map_name = map.map(|map| map.display_name.trim()).unwrap_or_default();
-        let empty = state.csf_label("TXT_EMPTY_SLOT", "[EMPTY SLOT]");
-        let visible_rows =
-            saved_browser_rows(&setups_layout(&state.renderer, &state.frontend.screen));
+        let empty = process_assets.csf_label("TXT_EMPTY_SLOT", "[EMPTY SLOT]");
+        let visible_rows = saved_browser_rows(&setups_layout(renderer, &frontend.screen));
         let mut browser = SavedSeedBrowserState::open_rows(
             SavedSeedMode::Save,
             rows,
@@ -61,8 +65,8 @@ impl App {
         browser
             .ui
             .set_prop(BROWSER_DIALOG, BACK, vera20k_gui::Prop::Cancel, cancel);
-        Self::blur_player_name(&mut state.frontend.shell_controller);
-        state.frontend.skirmish_shell_state.setups_browser = Some(browser);
+        Self::blur_player_name(&mut frontend.shell_controller);
+        frontend.skirmish_shell_state.setups_browser = Some(browser);
     }
 
     fn close_skirmish_setups(skirmish_shell: &mut SkirmishShellState) {
@@ -185,8 +189,13 @@ impl App {
         }
     }
 
-    fn resolve_skirmish_setups_prompt(state: &mut AppState, affirmative: bool) {
-        let Some(browser) = state.frontend.skirmish_shell_state.setups_browser.as_mut() else {
+    fn resolve_skirmish_setups_prompt(
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        affirmative: bool,
+    ) {
+        let Some(browser) = frontend.skirmish_shell_state.setups_browser.as_mut() else {
             return;
         };
         let Some(prompt) = browser.take_prompt() else {
@@ -194,17 +203,14 @@ impl App {
         };
         match prompt.purpose {
             SetupPurpose::EmptyDescription => browser.focus_edit(),
-            SetupPurpose::Saved => {
-                Self::close_skirmish_setups(&mut state.frontend.skirmish_shell_state)
-            }
+            SetupPurpose::Saved => Self::close_skirmish_setups(&mut frontend.skirmish_shell_state),
             SetupPurpose::Overwrite { file_name, .. } if affirmative => {
-                Self::save_skirmish_setup(&mut state.frontend, &state.process_assets, &file_name);
+                Self::save_skirmish_setup(frontend, process_assets, &file_name);
             }
             SetupPurpose::Delete { file_name } if affirmative => {
-                let rows =
-                    saved_browser_rows(&setups_layout(&state.renderer, &state.frontend.screen));
-                (state.frontend.multiplayer_shell_runtime).delete_named_setup(&file_name);
-                if let Some(browser) = state.frontend.skirmish_shell_state.setups_browser.as_mut() {
+                let rows = saved_browser_rows(&setups_layout(renderer, &frontend.screen));
+                (frontend.multiplayer_shell_runtime).delete_named_setup(&file_name);
+                if let Some(browser) = frontend.skirmish_shell_state.setups_browser.as_mut() {
                     browser.remove_entry(&file_name, rows);
                 }
             }
@@ -212,65 +218,126 @@ impl App {
         }
     }
 
-    fn apply_skirmish_setups_input(state: &mut AppState, results: Vec<BrowserInputResult<String>>) {
+    fn apply_skirmish_setups_input(
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        sfx_player: &mut Option<SfxPlayer>,
+        results: Vec<BrowserInputResult<String>>,
+    ) {
         for result in results {
             match result {
-                BrowserInputResult::Outcome(outcome) => Self::apply_skirmish_setups_outcome(
-                    &mut state.frontend,
-                    &state.process_assets,
-                    outcome,
-                ),
-                BrowserInputResult::PromptAnswer(answer) => {
-                    Self::resolve_skirmish_setups_prompt(state, answer)
+                BrowserInputResult::Outcome(outcome) => {
+                    Self::apply_skirmish_setups_outcome(frontend, process_assets, outcome)
                 }
-                BrowserInputResult::Cue(cue) => Self::play_page_cue(
-                    &state.frontend,
-                    &state.match_state,
-                    &state.process_assets,
-                    &mut state.audio.sfx_player,
-                    cue,
-                ),
+                BrowserInputResult::PromptAnswer(answer) => {
+                    Self::resolve_skirmish_setups_prompt(renderer, frontend, process_assets, answer)
+                }
+                BrowserInputResult::Cue(cue) => {
+                    Self::play_page_cue(frontend, match_state, process_assets, sfx_player, cue)
+                }
             }
         }
-        state.platform.window.request_redraw();
+        window.request_redraw();
     }
 
     pub(super) fn handle_skirmish_setups_key(
-        state: &mut AppState,
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        sfx_player: &mut Option<SfxPlayer>,
         code: Option<KeyCode>,
         text: Option<&str>,
     ) {
-        let Some(browser) = state.frontend.skirmish_shell_state.setups_browser.as_mut() else {
+        let Some(browser) = frontend.skirmish_shell_state.setups_browser.as_mut() else {
             return;
         };
         // Esc leaves the page through Back when no message box is up.
         let results = saved_file_input::key(browser, code, text);
-        Self::apply_skirmish_setups_input(state, results);
-        Self::update_skirmish_setups_scroll(state, false);
+        Self::apply_skirmish_setups_input(
+            window,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            results,
+        );
+        Self::update_skirmish_setups_scroll(
+            window,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            false,
+        );
     }
 
     /// Each frame, and on a pointer move: the scroll repeat, a held thumb
     /// and the edit's scroll.
-    pub(super) fn update_skirmish_setups_scroll(state: &mut AppState, pointer_moved: bool) {
+    pub(super) fn update_skirmish_setups_scroll(
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        sfx_player: &mut Option<SfxPlayer>,
+        pointer_moved: bool,
+    ) {
         if pointer_moved {
-            Self::skirmish_setups_pointer(state, None);
+            Self::skirmish_setups_pointer(
+                window,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                None,
+            );
         }
-        let layout = setups_layout(&state.renderer, &state.frontend.screen);
-        let extent = (state.render_width(), state.render_height());
-        let font = &state.renderer.bit_font;
-        if let Some(browser) = state.frontend.skirmish_shell_state.setups_browser.as_mut() {
+        let layout = setups_layout(renderer, &frontend.screen);
+        let extent = (
+            renderer.render_width(&frontend.screen),
+            renderer.render_height(&frontend.screen),
+        );
+        let font = &renderer.bit_font;
+        if let Some(browser) = frontend.skirmish_shell_state.setups_browser.as_mut() {
             saved_file_input::update(browser, &layout, extent, |text| font.text_width(text));
         }
     }
 
-    pub(super) fn skirmish_setups_pointer(state: &mut AppState, down: Option<bool>) {
-        let layout = setups_layout(&state.renderer, &state.frontend.screen);
-        let extent = (state.render_width(), state.render_height());
-        let pointer = state.match_state.input.cursor_px();
-        let Some(browser) = state.frontend.skirmish_shell_state.setups_browser.as_mut() else {
+    pub(super) fn skirmish_setups_pointer(
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        sfx_player: &mut Option<SfxPlayer>,
+        down: Option<bool>,
+    ) {
+        let layout = setups_layout(renderer, &frontend.screen);
+        let extent = (
+            renderer.render_width(&frontend.screen),
+            renderer.render_height(&frontend.screen),
+        );
+        let pointer = match_state.input.cursor_px();
+        let Some(browser) = frontend.skirmish_shell_state.setups_browser.as_mut() else {
             return;
         };
         let results = saved_file_input::pointer(browser, &layout, extent, pointer, down);
-        Self::apply_skirmish_setups_input(state, results);
+        Self::apply_skirmish_setups_input(
+            window,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            results,
+        );
     }
 }

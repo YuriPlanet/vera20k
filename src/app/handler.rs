@@ -162,7 +162,7 @@ impl App {
             .resize(&state.renderer.gpu);
         // The frame-index wave is driven by wall-clock ticks and repaints every
         // frame, so a mid-flight resize simply lets it finish; no snap/cancel.
-        Self::invalidate_main_menu_movie_if_base_changed(state);
+        Self::invalidate_main_menu_movie_if_base_changed(&state.renderer.gpu, &mut state.frontend);
         Self::sync_zoom_pass(state);
         crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
     }
@@ -326,7 +326,13 @@ impl App {
         if let Some(page) = state.match_state.match_presentation.options_page.as_mut() {
             page.dialog.sync_full_screen(full_screen);
         }
-        Self::shell_menu_follow_full_screen(state, full_screen, changed);
+        Self::shell_menu_follow_full_screen(
+            &state.platform,
+            &mut state.frontend.shell_message_box,
+            &state.persistence.options_profile,
+            full_screen,
+            changed,
+        );
     }
 
     /// After a frame could not be taken, fit the surface to the window's size
@@ -406,8 +412,20 @@ impl App {
             ScreenPage::MovieList if left => Self::handle_movie_list_mouse(state, down),
             ScreenPage::Mods if left => Self::handle_mods_mouse(state, down),
             ScreenPage::Campaign if left => match down {
-                None => Self::handle_campaign_mouse_move(state),
-                Some(true) => Self::handle_campaign_mouse_down(state),
+                None => Self::handle_campaign_mouse_move(
+                    &state.renderer.gpu,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                ),
+                Some(true) => Self::handle_campaign_mouse_down(
+                    &state.renderer.gpu,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                ),
                 Some(false) => Self::handle_campaign_mouse_up(state),
             },
             ScreenPage::LoadSavedGame if left => match down {
@@ -607,14 +625,22 @@ impl App {
                             &state.match_state.input,
                         );
                         #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-                        super::shell_mod_import::cursor_moved(state);
+                        super::shell_mod_import::cursor_moved(
+                            &state.renderer,
+                            &mut state.frontend,
+                            &state.match_state.input,
+                        );
                         Self::shell_menu_pointer(state, None);
                     }
                     Input::Button(MouseButton::Left, edge) => {
                         Self::raise_shell_message_box(&mut state.frontend);
                         // Add Mod's parts list takes its own presses.
                         #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-                        if super::shell_mod_import::pointer_button(state, edge.is_pressed()) {
+                        if super::shell_mod_import::pointer_button(
+                            &state.renderer,
+                            &mut state.frontend,
+                            edge.is_pressed(),
+                        ) {
                             return;
                         }
                         Self::handle_shell_message_box_mouse(state, edge.is_pressed());
@@ -628,7 +654,12 @@ impl App {
                             _lines,
                         );
                         #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-                        super::shell_mod_import::wheel(state, _lines);
+                        super::shell_mod_import::wheel(
+                            &state.platform.window,
+                            &state.renderer,
+                            &mut state.frontend,
+                            _lines,
+                        );
                     }
                 }
                 return;
@@ -793,9 +824,31 @@ impl App {
             let game_options = shell.game_options.is_some();
             let browser_key: Option<fn(&mut AppState, Option<KeyCode>, Option<&str>)> =
                 if shell.saved_seed_browser.is_some() {
-                    Some(Self::handle_saved_seed_browser_key)
+                    Some(|state, code, text| {
+                        Self::handle_saved_seed_browser_key(
+                            state.platform.game_config.as_ref(),
+                            &state.renderer,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &mut state.process_assets,
+                            &mut state.audio.sfx_player,
+                            code,
+                            text,
+                        )
+                    })
                 } else if shell.setups_browser.is_some() {
-                    Some(Self::handle_skirmish_setups_key)
+                    Some(|state, code, text| {
+                        Self::handle_skirmish_setups_key(
+                            &state.platform.window,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                            &mut state.audio.sfx_player,
+                            code,
+                            text,
+                        )
+                    })
                 } else {
                     None
                 };
@@ -820,7 +873,14 @@ impl App {
                     _ => None,
                 };
                 if let Some(key) = key.filter(|_| fresh_press) {
-                    Self::skirmish_game_options_key(state, key);
+                    Self::skirmish_game_options_key(
+                        &state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &mut state.process_assets,
+                        &mut state.persistence.options_profile,
+                        key,
+                    );
                 }
                 return;
             }
@@ -1031,9 +1091,17 @@ impl App {
             ScreenPage::NetworkSetup if !chooser_open => {
                 crate::app::input::multiplayer_setup::wheel(state, lines);
             }
-            ScreenPage::Mods => Self::handle_mods_wheel(state, lines),
+            ScreenPage::Mods => {
+                Self::handle_mods_wheel(&state.renderer.gpu, &mut state.frontend, lines)
+            }
             ScreenPage::Skirmish => {
-                Self::handle_skirmish_shell_mouse_wheel(state, lines);
+                Self::handle_skirmish_shell_mouse_wheel(
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    lines,
+                );
             }
             ScreenPage::InGameShell(_) | ScreenPage::Battlefield
                 if !state.match_state.paused()
@@ -1088,9 +1156,13 @@ impl App {
             ScreenPage::MovieList | ScreenPage::Mods => {
                 Self::poll_family_list(&state.platform.window, &mut state.frontend.shell_controller)
             }
-            ScreenPage::Campaign => Self::poll_campaign(state),
+            ScreenPage::Campaign => Self::poll_campaign(
+                &mut state.frontend,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+            ),
             ScreenPage::LoadSavedGame => {
-                Self::update_load_saved_game_scroll(state);
+                Self::update_load_saved_game_scroll(&state.renderer, &mut state.frontend);
                 None
             }
             _ => None,
@@ -1897,7 +1969,10 @@ impl ApplicationHandler for App {
                     crate::app::input::cursor::refresh_pointer_in_client(&mut state.platform);
                     crate::app::input::cursor::apply_cursor_confinement(&mut state.platform);
                     // Back from the folder, perhaps with a new mod in it.
-                    Self::refresh_mods_page(state);
+                    Self::refresh_mods_page(
+                        state.platform.game_config.as_ref(),
+                        &mut state.frontend,
+                    );
                 }
                 if !active {
                     // Give the arrow back at once: a backgrounded window may
@@ -1909,7 +1984,11 @@ impl ApplicationHandler for App {
                     crate::app::input::cursor::release_cursor_confinement(&mut state.platform);
                     Self::release_in_game_pointer_state(state);
                     #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-                    super::shell_mod_import::pointer_button(state, false);
+                    super::shell_mod_import::pointer_button(
+                        &state.renderer,
+                        &mut state.frontend,
+                        false,
+                    );
                     if let Some(browser) = state
                         .frontend
                         .skirmish_shell_state
@@ -2060,7 +2139,14 @@ impl ApplicationHandler for App {
                 Self::route_input(state, Input::Wheel(lines));
             }
             #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-            WindowEvent::DroppedFile(path) => Self::mod_import_drop(state, path),
+            WindowEvent::DroppedFile(path) => Self::mod_import_drop(
+                &state.platform.window,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+                path,
+            ),
             WindowEvent::Ime(ime) => crate::app::input::ime::event(state, ime),
             WindowEvent::RedrawRequested => {
                 let state = {
@@ -2182,8 +2268,24 @@ impl ApplicationHandler for App {
             {
                 crate::app::input::ime::sync(state);
             }
-            Self::update_saved_seed_browser_scroll(state, false);
-            Self::update_skirmish_setups_scroll(state, false);
+            Self::update_saved_seed_browser_scroll(
+                state.platform.game_config.as_ref(),
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &mut state.process_assets,
+                &mut state.audio.sfx_player,
+                false,
+            );
+            Self::update_skirmish_setups_scroll(
+                &state.platform.window,
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                false,
+            );
             type Poll = fn(&mut AppState) -> Option<Instant>;
             let polls: &[Poll] = &[
                 |state| {
@@ -2238,7 +2340,13 @@ impl ApplicationHandler for App {
                 },
                 #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
                 Self::poll_mod_import,
-                Self::poll_choose_map_scroll,
+                |state| {
+                    Self::poll_choose_map_scroll(
+                        &state.platform.window,
+                        &state.renderer,
+                        &mut state.frontend,
+                    )
+                },
                 Self::poll_skirmish_opponent_scroll,
                 Self::poll_language_files,
                 |state| Self::campaign_score_animation_deadline(state),

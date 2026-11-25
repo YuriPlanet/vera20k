@@ -1067,8 +1067,20 @@ impl MoviesCapture {
                         let point = (rect.x + rect.w / 2, rect.y + rect.h / 2);
                         state.match_state.input.cursor_x = point.0 as f32;
                         state.match_state.input.cursor_y = point.1 as f32;
-                        App::handle_campaign_mouse_move(state);
-                        App::handle_campaign_mouse_down(state);
+                        App::handle_campaign_mouse_move(
+                            &state.renderer.gpu,
+                            &mut state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                            &mut state.audio.sfx_player,
+                        );
+                        App::handle_campaign_mouse_down(
+                            &state.renderer.gpu,
+                            &mut state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                            &mut state.audio.sfx_player,
+                        );
                         let campaign = state
                             .frontend
                             .campaign
@@ -1097,8 +1109,20 @@ impl MoviesCapture {
                         let point = (rect.x + rect.w / 2, rect.y + rect.h / 2);
                         state.match_state.input.cursor_x = point.0 as f32;
                         state.match_state.input.cursor_y = point.1 as f32;
-                        App::handle_campaign_mouse_move(state);
-                        App::handle_campaign_mouse_down(state);
+                        App::handle_campaign_mouse_move(
+                            &state.renderer.gpu,
+                            &mut state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                            &mut state.audio.sfx_player,
+                        );
+                        App::handle_campaign_mouse_down(
+                            &state.renderer.gpu,
+                            &mut state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                            &mut state.audio.sfx_player,
+                        );
                         App::handle_campaign_mouse_up(state);
                         ensure!(
                             state.frontend.shell_exit.is_some(),
@@ -1125,11 +1149,29 @@ impl MoviesCapture {
                         if let Some(over) = hold_over {
                             // The pointer reaches the slider, presses, and keeps
                             // the button down on its way to `over`.
-                            App::handle_campaign_mouse_move(state);
-                            App::handle_campaign_mouse_down(state);
+                            App::handle_campaign_mouse_move(
+                                &state.renderer.gpu,
+                                &mut state.frontend,
+                                &state.match_state,
+                                &state.process_assets,
+                                &mut state.audio.sfx_player,
+                            );
+                            App::handle_campaign_mouse_down(
+                                &state.renderer.gpu,
+                                &mut state.frontend,
+                                &state.match_state,
+                                &state.process_assets,
+                                &mut state.audio.sfx_player,
+                            );
                             state.match_state.input.cursor_x = over.0 as f32;
                             state.match_state.input.cursor_y = over.1 as f32;
-                            App::handle_campaign_mouse_move(state);
+                            App::handle_campaign_mouse_move(
+                                &state.renderer.gpu,
+                                &mut state.frontend,
+                                &state.match_state,
+                                &state.process_assets,
+                                &mut state.audio.sfx_player,
+                            );
                             self.route.push(json!({"dialog": 0x94, "frame": frame,
                                 "action": "hold slider", "point": [point.0, point.1],
                                 "over": [over.0, over.1]}));
@@ -1137,7 +1179,13 @@ impl MoviesCapture {
                             return Ok(());
                         }
                         // The native helper clicks, then recenters the pointer.
-                        App::handle_campaign_mouse_down(state);
+                        App::handle_campaign_mouse_down(
+                            &state.renderer.gpu,
+                            &mut state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                            &mut state.audio.sfx_player,
+                        );
                         App::handle_campaign_mouse_up(state);
                         self.route.push(json!({"dialog": 0x94, "frame": frame,
                             "action": "press slider", "point": [point.0, point.1]}));
@@ -1146,7 +1194,13 @@ impl MoviesCapture {
                         &state.renderer.gpu,
                         &mut state.match_state.input,
                     );
-                    App::handle_campaign_mouse_move(state);
+                    App::handle_campaign_mouse_move(
+                        &state.renderer.gpu,
+                        &mut state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        &mut state.audio.sfx_player,
+                    );
                     self.route.push(
                         json!({"dialog": 0x94, "frame": frame, "action": "pointer at neutral"}),
                     );
@@ -1279,7 +1333,7 @@ impl MoviesCapture {
                         App::leave_shell_dialog(
                             state,
                             crate::app::frontend::shell_transition::ShellSlideKind::MovieList,
-                            App::open_movies_credits_page,
+                            |state| App::open_movies_credits_page(&mut state.frontend),
                         );
                         ensure!(
                             state.frontend.shell_exit.is_some(),

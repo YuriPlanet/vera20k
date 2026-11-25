@@ -242,19 +242,19 @@ pub(crate) fn page_open(wol: Option<&WolVisit>) -> bool {
 /// which wraps a row to the list's width and appends it (`0x005E29A0`);
 /// the list widget then keeps its view ([`vera20k_gui::Gui::log_rows`]).
 fn with_transcript(
-    state: &mut AppState,
+    frontend: &mut FrontendState,
+    renderer: &RendererState,
     f: impl FnOnce(&mut WolQuickMatchPage, &dyn Fn(&mut WolQuickMatchPage, LanChatLine)),
 ) {
-    let layout = layout(state);
+    let layout = layout(&renderer.gpu);
     let rect = layout
         .rect_of(crate::ui::wol_quick_match::TRANSCRIPT)
         .unwrap_or_default();
     let width = layout.page.scale.base_rect(rect).w;
-    let root = sync(state);
-    let gui = state.frontend.shell_controller.gui_mut();
-    let font = &state.renderer.bit_font;
-    let Some(WolPage::QuickMatch(dialog)) =
-        state.frontend.wol.as_mut().map(|visit| &mut visit.page)
+    let root = sync(frontend, renderer);
+    let gui = frontend.shell_controller.gui_mut();
+    let font = &renderer.bit_font;
+    let Some(WolPage::QuickMatch(dialog)) = frontend.wol.as_mut().map(|visit| &mut visit.page)
     else {
         return;
     };
@@ -275,12 +275,16 @@ fn with_transcript(
 }
 
 /// A line for `0x117`'s transcript (`0x005E2700` with `0x117` on top).
-pub(crate) fn append_line(state: &mut AppState, line: LanChatLine) {
-    with_transcript(state, |ui, add| add(ui, line));
+pub(crate) fn append_line(
+    frontend: &mut FrontendState,
+    renderer: &RendererState,
+    line: LanChatLine,
+) {
+    with_transcript(frontend, renderer, |ui, add| add(ui, line));
 }
 
-pub(crate) fn layout(state: &AppState) -> WolQuickMatchLayout {
-    shell_layout::on(&state.renderer.gpu, WolQuickMatchLayout::new)
+pub(crate) fn layout(gpu: &GpuContext) -> WolQuickMatchLayout {
+    shell_layout::on(gpu, WolQuickMatchLayout::new)
 }
 
 /// The status help under the pointer (`0x006040B0`).
@@ -289,18 +293,18 @@ pub(crate) fn status_key(wol: Option<&WolVisit>) -> Option<&str> {
 }
 
 /// Builds and places `0x117`'s widgets; under a box they take no pointer.
-pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
-    let layout = layout(state);
-    let boxed = App::wol_box_owns_input(state.frontend.wol.as_ref());
+pub(crate) fn sync(frontend: &mut FrontendState, renderer: &RendererState) -> Option<NodeId> {
+    let layout = layout(&renderer.gpu);
+    let boxed = App::wol_box_owns_input(frontend.wol.as_ref());
     let root = leaf::sync(
-        &mut state.frontend.shell_controller,
-        &state.renderer.bit_font,
+        &mut frontend.shell_controller,
+        &renderer.bit_font,
         DIALOG,
         layout.page.scale,
         spec,
         |id| layout.rect_of(id),
     )?;
-    let gui = state.frontend.shell_controller.gui_mut();
+    let gui = frontend.shell_controller.gui_mut();
     for id in [CANCEL, TRANSCRIPT] {
         let hit = layout.rect_of(id).filter(|_| !boxed).unwrap_or_default();
         page::set(gui, root, id, Prop::HitRect, Value::Rect(hit));
@@ -342,20 +346,23 @@ fn nickname(account: &WolAccountGlobals) -> String {
 /// 30 s wait `0x0077F120`).
 /// RESIDUAL: `Network__InitUdpSession` `0x0052F3F0` (the UDP port the
 /// request's PRT names) belongs to the transport.
-pub(super) fn run(state: &mut AppState) {
+pub(super) fn run(
+    frontend: &mut FrontendState,
+    session: &mut MatchSession,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+) {
     // 0x0079FC40..0x0079FC5D: [0xAC10C8] cleared; 0x5EE350 re-applies it to
     // open dialogs, of which there are none.
-    if state.frontend.multiplayer_shell_runtime.lan_observer() {
-        state
-            .frontend
-            .multiplayer_shell_runtime
-            .set_lan_observer(false);
+    if frontend.multiplayer_shell_runtime.lan_observer() {
+        frontend.multiplayer_shell_runtime.set_lan_observer(false);
     }
-    let away = state
+    let away = process_assets
         .csf_text("TXT_AWAY_QUICKMATCH")
         .encode_utf16()
         .collect();
-    let Some(visit) = state.frontend.wol.as_mut() else {
+    let Some(visit) = frontend.wol.as_mut() else {
         return;
     };
     let globals = &mut visit.quick_match;
@@ -366,15 +373,30 @@ pub(super) fn run(state: &mut AppState) {
     globals.opponent = None;
     globals.lobby = None;
     globals.search = None;
-    lobby::open_runner(state, lobby::Runner::QuickMatch);
+    lobby::open_runner(
+        frontend,
+        session,
+        process_assets,
+        renderer,
+        options_profile,
+        lobby::Runner::QuickMatch,
+    );
 }
 
 /// The refusal that names the changed game files (`{files}`).
 const CHANGED_FILES: &str = "VERA:QuickMatchChangedFiles";
 
+use crate::app::match_runtime::session::MatchSession;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::options_profile::RetailOptionsProfile;
+use crate::app::renderer_state::RendererState;
 use crate::app::shell_network_setup::agreement::{
     OriginalGameChange, changed_files_text, original_game_changes,
 };
+use crate::audio::sfx::SfxPlayer;
+use crate::render::gpu::GpuContext;
+use crate::util::config::GameConfig;
+use winit::window::Window;
 
 /// VERA: Quick Match pairs players who agreed on nothing, so it plays the
 /// original game. A mod fails the pre-match check. Rules, Art, AI or mode
@@ -451,7 +473,12 @@ pub(super) fn lobbies_listed(state: &mut AppState) {
     if let Some(globals) = globals_mut(state.frontend.wol.as_mut()) {
         globals.lobby = Some(found);
     }
-    open_dialog(state);
+    open_dialog(
+        &mut state.frontend,
+        &state.process_assets,
+        &state.renderer,
+        &state.persistence.options_profile,
+    );
     // 0x0079FEAC..0x0079FF3E: the buddy mirror restarts (API+0xDC; modes
     // 1-3 skip 0x0079CE70), then the ladder queue.
     super::buddies::restart(&mut state.frontend);
@@ -460,8 +487,13 @@ pub(super) fn lobbies_listed(state: &mut AppState) {
 
 /// `0x0079FE44..0x0079FE8B`: the art, then `0x117` created, its slide
 /// (`0x4A9`) and shown.
-fn open_dialog(state: &mut AppState) {
-    let Some(visit) = state.frontend.wol.as_mut() else {
+fn open_dialog(
+    frontend: &mut FrontendState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    options_profile: &RetailOptionsProfile,
+) {
+    let Some(visit) = frontend.wol.as_mut() else {
         return;
     };
     visit.page = WolPage::QuickMatch(Box::new(QuickMatchDialog {
@@ -469,15 +501,10 @@ fn open_dialog(state: &mut AppState) {
         dot_at: Instant::now() + DOT_PERIOD,
         help: None,
     }));
-    state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
-    let _ = App::ensure_skirmish_shell_chrome(
-        &state.renderer,
-        &mut state.frontend,
-        &state.process_assets,
-        &state.persistence.options_profile,
-    );
-    super::leaf::open_art(state, DIALOG);
-    state.frontend.shell_controller.reset_to(DIALOG);
+    frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
+    let _ = App::ensure_skirmish_shell_chrome(renderer, frontend, process_assets, options_profile);
+    super::leaf::open_art(frontend, process_assets, renderer, DIALOG);
+    frontend.shell_controller.reset_to(DIALOG);
 }
 
 /// The runner loop's stage tests (`0x0079FF50..0x0079FFC5`): stage 2 joins
@@ -631,7 +658,7 @@ fn request(state: &mut AppState) -> bool {
         .as_ref()
         .and_then(|visit| visit.locales.get(&nickname.to_ascii_lowercase()))
         .copied();
-    let width = lobby::options_screen(state).0;
+    let width = lobby::options_screen(&state.renderer.gpu, &state.persistence.options_profile).0;
     // An online visit has no persona file: the MultiPlayer side and colour
     // the player saved in VERA.INI stay (`persona::take_side_and_color`),
     // and they go instead, as the game's first `R` sends them
@@ -817,7 +844,14 @@ fn start(state: &mut AppState, payload: &str) {
             found_with(state, &guest);
             csf_line(state, "WOL:MatchCreatingGame", u32::MAX);
             set_stage(state.frontend.wol.as_mut(), stage::CREATING, Some(30));
-            lobby::quick_match_create(state);
+            lobby::quick_match_create(
+                &mut state.frontend,
+                state.platform.game_config.as_ref(),
+                &state.match_state.session,
+                &state.process_assets,
+                &state.renderer.gpu,
+                &state.persistence.options_profile,
+            );
         }
         Some(StartRole::Guest { host }) => {
             let host = host.to_owned();
@@ -891,10 +925,20 @@ pub(super) fn hosted_pairing(
 /// ([`hosted_pairing`]), which the `Start` message carries (`[0xB73714]`);
 /// `None` for a pairing that cannot be built (logged).
 pub(super) fn online_start_options(
-    state: &AppState,
+    frontend: &FrontendState,
+    game_config: Option<&GameConfig>,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     pairing: MatchStart,
 ) -> Option<Box<crate::app::shell_network_setup::HostOptions>> {
-    match host_options(state, &pairing, MatchMap::OfficialDuel) {
+    match host_options(
+        frontend,
+        game_config,
+        match_state,
+        process_assets,
+        &pairing,
+        MatchMap::OfficialDuel,
+    ) {
         Ok(options) => Some(Box::new(options)),
         Err(error) => {
             log::warn!("WOL Quick Match: no host options for the matchbot's pairing: {error:#}");
@@ -910,13 +954,16 @@ pub(super) fn online_start_options(
 /// (Random ones drawn by [`draw_random_picks`]), and the pairing's seed. The test service's stand-in matchbot and VERA20K
 /// Online's both build them here.
 pub(crate) fn host_options(
-    state: &AppState,
+    frontend: &FrontendState,
+    game_config: Option<&GameConfig>,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     pairing: &MatchStart,
     map: MatchMap<'_>,
 ) -> anyhow::Result<crate::app::shell_network_setup::HostOptions> {
     use crate::ui::skirmish_shell::{SkirmishComboItem, SkirmishCountryChoice};
-    let modes = &state.frontend.skirmish_modes;
-    let mode = if quick_coop(state.frontend.wol.as_ref()) {
+    let modes = &frontend.skirmish_modes;
+    let mode = if quick_coop(frontend.wol.as_ref()) {
         modes
             .iter()
             .find(|mode| mode.class == crate::skirmish_modes::MpModeClass::Cooperative)
@@ -925,8 +972,7 @@ pub(crate) fn host_options(
     }
     .ok_or_else(|| anyhow::anyhow!("no mode"))?;
     // My Information's countries (0x4E3A00).
-    let countries: Vec<_> = state
-        .rules()
+    let countries: Vec<_> = crate::app::state::active_rules(frontend, match_state)
         .map(crate::ui::skirmish_shell::country_choices)
         .unwrap_or_default()
         .into_iter()
@@ -937,20 +983,16 @@ pub(crate) fn host_options(
         .collect();
     build_host_options(
         mode,
-        state.frontend.scenario_catalog.records(),
+        frontend.scenario_catalog.records(),
         &countries,
         pairing,
         map,
-        state
-            .frontend
-            .skirmish_shell_state
-            .launch_options_base
-            .clone(),
+        frontend.skirmish_shell_state.launch_options_base.clone(),
         |file| {
             crate::app::shell_network_setup::local_map_metadata(
-                state.platform.game_config.as_ref(),
-                &state.frontend.scenario_catalog,
-                &state.process_assets,
+                game_config,
+                &frontend.scenario_catalog,
+                process_assets,
                 file,
             )
         },
@@ -1385,7 +1427,10 @@ pub(super) fn exit(state: &mut AppState) {
     close_dialog(&mut state.frontend);
     // A game channel's nodes go with it.
     if state.frontend.network_setup_protocol.is_some() {
-        crate::app::shell_network_setup::abandon_for_wol_runner(state);
+        crate::app::shell_network_setup::abandon_for_wol_runner(
+            &mut state.frontend,
+            &mut state.match_state,
+        );
     }
     lobby::quick_match_leave_and_return(state);
 }
@@ -1447,7 +1492,10 @@ fn pump(state: &mut AppState) {
             // The guest search ends with its stage; the rejoin's leave
             // takes the game channel and its nodes (0x00785740).
             if state.frontend.network_setup_protocol.is_some() {
-                crate::app::shell_network_setup::abandon_for_wol_runner(state);
+                crate::app::shell_network_setup::abandon_for_wol_runner(
+                    &mut state.frontend,
+                    &mut state.match_state,
+                );
             }
             advance(state);
         }
@@ -1477,7 +1525,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
     );
     if dot {
         // 0x005E2AC0's rows take colour -1.
-        with_transcript(state, |ui, add| {
+        with_transcript(&mut state.frontend, &state.renderer, |ui, add| {
             ui.dot(|ui, text| {
                 add(
                     ui,
@@ -1506,20 +1554,43 @@ pub(crate) fn expire_stage(wol: Option<&mut WolVisit>) {
     }
 }
 
-pub(super) fn cursor_moved(state: &mut AppState) {
-    sync(state);
-    leaf::pointer(state, Pointer::Move);
-    let help = leaf::status_key(&state.frontend.shell_controller, DIALOG).map(str::to_owned);
-    if let Some(dialog) = dialog_mut(state.frontend.wol.as_mut()) {
+pub(super) fn cursor_moved(
+    frontend: &mut FrontendState,
+    window: &Window,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    renderer: &RendererState,
+    sfx_player: &mut Option<SfxPlayer>,
+) {
+    sync(frontend, renderer);
+    leaf::pointer(
+        frontend,
+        window,
+        match_state,
+        process_assets,
+        sfx_player,
+        Pointer::Move,
+    );
+    let help = leaf::status_key(&frontend.shell_controller, DIALOG).map(str::to_owned);
+    if let Some(dialog) = dialog_mut(frontend.wol.as_mut()) {
         dialog.help = help;
     }
 }
 
 pub(super) fn mouse(state: &mut AppState, pressed: bool) {
-    if shell_transition::blocks_shell_input(state) || sync(state).is_none() {
+    if shell_transition::blocks_shell_input(state)
+        || sync(&mut state.frontend, &state.renderer).is_none()
+    {
         return;
     }
-    let events = leaf::pointer(state, if pressed { Pointer::Down } else { Pointer::Up });
+    let events = leaf::pointer(
+        &mut state.frontend,
+        &state.platform.window,
+        &state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        if pressed { Pointer::Down } else { Pointer::Up },
+    );
     if events.contains(&PageEvent::Activated(CANCEL)) {
         cancel(state);
     }
@@ -1544,7 +1615,13 @@ pub(super) fn postmatch(state: &mut AppState) {
     .is_some_and(|file| file.ask_add_match_buddies());
     let local = nickname(&state.frontend.wol_account);
     if !disconnected && ask && state.frontend.wol_buddies.valid_new(&opponent, &local) {
-        super::persona::open_add_buddy_query(state, &opponent);
+        super::persona::open_add_buddy_query(
+            &mut state.frontend,
+            &state.process_assets,
+            &state.renderer,
+            &state.persistence.options_profile,
+            &opponent,
+        );
         return;
     }
     welcome(state);

@@ -993,14 +993,29 @@ impl App {
                 detail,
                 model,
             } => {
-                Self::open_score_page(state, model, title, detail);
+                Self::open_score_page(
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.process_assets,
+                    model,
+                    title,
+                    detail,
+                );
             }
             ScenarioExitDestination::CampaignScore {
                 title,
                 detail,
                 model,
             } => {
-                Self::open_campaign_score_page(state, model, title, detail);
+                Self::open_campaign_score_page(
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.process_assets,
+                    &mut state.audio,
+                    model,
+                    title,
+                    detail,
+                );
             }
             ScenarioExitDestination::CampaignVictoryContinue => {
                 Self::leave_mission_result_screen(state)

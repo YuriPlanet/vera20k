@@ -5,6 +5,7 @@ use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::shell_route::ShellRoute;
 use crate::map::skirmish_scenarios::{RANDMAP_PREVIEW, RANDMAP_SED};
 use crate::sim::rng::MainRng;
@@ -1552,11 +1553,15 @@ impl App {
         if accept {
             // The generate block ran inside Use Map; the dialog then
             // ends through its teardown slide.
-            Self::leave_shell_dialog(
-                state,
-                ShellSlideKind::RandomMap,
-                App::accept_random_map_setup,
-            );
+            Self::leave_shell_dialog(state, ShellSlideKind::RandomMap, |state| {
+                App::accept_random_map_setup(
+                    &state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                )
+            });
         }
 
         true
@@ -1602,10 +1607,15 @@ impl App {
 
     /// Commit the dialog's options and close it. Shared by the immediate accept
     /// and the one deferred behind a generation.
-    pub(super) fn accept_random_map_setup(state: &mut AppState) {
-        let dir = Self::random_map_dir(state.platform.game_config.as_ref());
+    pub(super) fn accept_random_map_setup(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+    ) {
+        let dir = Self::random_map_dir(platform.game_config.as_ref());
         let options = {
-            let frontend = &mut state.frontend;
             accept_random_map_setup_owners(
                 &mut frontend.multiplayer_shell_runtime,
                 &mut frontend.skirmish_shell_state.random_map_setup_modal,
@@ -1616,8 +1626,15 @@ impl App {
         let Some(options) = options else {
             return;
         };
-        state.frontend.random_map_generation = None;
-        match Self::commit_random_map_setup(state, &options) {
+        frontend.random_map_generation = None;
+        match Self::commit_random_map_setup(
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            &options,
+        ) {
             Ok(()) => {
                 // Teardown retained both accepted start staging and its
                 // presentation preview; map construction remains owned by the
@@ -1627,19 +1644,14 @@ impl App {
                 // The native dialog has already torn down at this point. Do
                 // not leave an accepted launch attached when the seed/options
                 // commit failed and no random-map selection was installed.
-                state.frontend.random_map_retention.cancel_setup();
+                frontend.random_map_retention.cancel_setup();
                 log::error!("random map: could not write {RANDMAP_SED}: {err}");
-                if let Some(chooser) = state
-                    .frontend
-                    .skirmish_shell_state
-                    .choose_map_modal
-                    .as_mut()
-                {
+                if let Some(chooser) = frontend.skirmish_shell_state.choose_map_modal.as_mut() {
                     chooser.show_random_map_failure();
                 }
             }
         }
-        Self::show_choose_map_after_random_map(&mut state.frontend.skirmish_shell_state);
+        Self::show_choose_map_after_random_map(&mut frontend.skirmish_shell_state);
     }
 
     /// Colour and rasterise a map. Main thread only: the resolver reads theater
@@ -1677,12 +1689,16 @@ impl App {
     /// file as "use defaults", so committing anyway would silently start a
     /// different map than the one the player configured.
     fn commit_random_map_setup(
-        state: &mut AppState,
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
         options: &crate::map::rmg::RmgOptions,
     ) -> anyhow::Result<()> {
-        let dir = Self::random_map_dir(state.platform.game_config.as_ref())
+        let dir = Self::random_map_dir(platform.game_config.as_ref())
             .ok_or_else(|| anyhow::anyhow!("no game config; cannot locate VERA's Maps folder"))?;
-        let ares = state.process_assets.reads_ares_way();
+        let ares = process_assets.reads_ares_way();
         crate::util::file_system::create_dir_all(&dir)?;
         crate::util::file_system::write(dir.join(RANDMAP_SED), options.to_sed_bytes(ares))?;
 
@@ -1694,26 +1710,19 @@ impl App {
         };
         // Reuse the modal helper: it upserts the single sentinel, honours the
         // mode's random-map admission, and refreshes the filtered record list.
-        let chooser_layout = crate::app::frontend::shell_layout::choose_map_layout(
-            &state.renderer,
-            &state.frontend.screen,
-        );
-        let Some(modal) = state
-            .frontend
-            .skirmish_shell_state
-            .choose_map_modal
-            .as_mut()
-        else {
+        let chooser_layout =
+            crate::app::frontend::shell_layout::choose_map_layout(renderer, &frontend.screen);
+        let Some(modal) = frontend.skirmish_shell_state.choose_map_modal.as_mut() else {
             return Ok(());
         };
         // F11: the catalog's mutation guard re-projects the shell map entries
         // on drop, so the loadable-map projection can never drift from the
         // records — the old hand-patch by name-position is gone.
         let index = {
-            let mut records = state.frontend.scenario_catalog.records_mut();
+            let mut records = frontend.scenario_catalog.records_mut();
             modal.create_random_map(
                 &mut records,
-                &state.frontend.skirmish_modes,
+                &frontend.skirmish_modes,
                 display,
                 options.num_players,
                 &chooser_layout,
@@ -1729,18 +1738,18 @@ impl App {
             // Success runs the hidden chooser's Use Map (`0x005E6B2F`): its
             // eject box can keep the chooser (`0x005E6B47`).
             if Self::prompt_choose_map_eject(
-                &state.platform.window,
-                &mut state.frontend,
-                &state.match_state.session,
+                &platform.window,
+                frontend,
+                &match_state.session,
                 selection,
             ) {
                 return Ok(());
             }
             Self::commit_choose_map_use(
-                state.platform.game_config.as_ref(),
-                &mut state.frontend,
-                &mut state.match_state,
-                &state.process_assets,
+                platform.game_config.as_ref(),
+                frontend,
+                match_state,
+                process_assets,
                 selection,
             );
         }
@@ -1750,68 +1759,89 @@ impl App {
     /// The pointer on `0x105`'s widgets: their cues play; the button the
     /// user activated.
     fn random_map_pointer(
-        state: &mut AppState,
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        sfx_player: &mut Option<SfxPlayer>,
         at: Pointer,
     ) -> Option<crate::ui::skirmish_shell::RandomMapSetupControl> {
-        let layout = random_map_setup_layout(&state.renderer, &state.frontend.screen);
-        let (x, y) = state.match_state.input.cursor_px();
-        let modal = state
-            .frontend
+        let layout = random_map_setup_layout(renderer, &frontend.screen);
+        let (x, y) = match_state.input.cursor_px();
+        let modal = frontend
             .skirmish_shell_state
             .random_map_setup_modal
             .as_mut()?;
         let (cues, activated) = crate::ui::skirmish_shell::random_map_page::pointer(
-            &mut state.frontend.shell_controller,
+            &mut frontend.shell_controller,
             modal,
             &layout,
             at,
             x,
             y,
         );
-        Self::play_cues(
-            &state.frontend,
-            &state.match_state,
-            &state.process_assets,
-            &mut state.audio.sfx_player,
-            cues,
-        );
-        state.platform.window.request_redraw();
+        Self::play_cues(frontend, match_state, process_assets, sfx_player, cues);
+        window.request_redraw();
         activated
     }
 
-    pub(super) fn handle_random_map_setup_mouse_down(state: &mut AppState) -> bool {
+    pub(super) fn handle_random_map_setup_mouse_down(
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        sfx_player: &mut Option<SfxPlayer>,
+    ) -> bool {
         use crate::app::frontend::preview_zoom;
         let preview = preview_zoom::over_box(
-            &state.frontend.shell_controller,
-            &state.match_state.input,
+            &frontend.shell_controller,
+            &match_state.input,
             crate::ui::skirmish_shell::random_map_page::DIALOG,
         );
         // VERA: a press on the preview enlarges it, as on the other setup
         // screens (`preview_zoom`), while the dialog rests: no list open and
         // no generation running.
-        let modal = state
-            .frontend
+        let modal = frontend
             .skirmish_shell_state
             .random_map_setup_modal
             .as_ref();
         let resting = modal.is_some_and(|modal| {
-            !modal.generating && state.frontend.shell_controller.gui().popup().is_none()
+            !modal.generating && frontend.shell_controller.gui().popup().is_none()
         });
-        if !(resting
-            && preview_zoom::press_on_box(&mut state.frontend, &state.match_state.input, preview))
-        {
-            Self::random_map_pointer(state, Pointer::Down);
+        if !(resting && preview_zoom::press_on_box(frontend, &match_state.input, preview)) {
+            Self::random_map_pointer(
+                window,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                sfx_player,
+                Pointer::Down,
+            );
         }
         true
     }
 
-    pub(super) fn handle_random_map_setup_mouse_move(state: &mut AppState) {
-        Self::random_map_pointer(state, Pointer::Move);
-        Self::update_random_map_status_help(
-            &state.platform.window,
-            &mut state.frontend,
-            &state.process_assets,
+    pub(super) fn handle_random_map_setup_mouse_move(
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &MatchState,
+        process_assets: &ProcessAssets,
+        sfx_player: &mut Option<SfxPlayer>,
+    ) {
+        Self::random_map_pointer(
+            window,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            Pointer::Move,
         );
+        Self::update_random_map_status_help(window, frontend, process_assets);
     }
 
     /// `0x105`'s proc runs the common handler first (`0x0059631A`): every move
@@ -1864,7 +1894,15 @@ impl App {
             &state.frontend.shell_controller,
             modal,
         );
-        let released = Self::random_map_pointer(state, Pointer::Up);
+        let released = Self::random_map_pointer(
+            &state.platform.window,
+            &state.renderer,
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            Pointer::Up,
+        );
         if held {
             Self::update_random_map_status_help(
                 &state.platform.window,
@@ -2036,7 +2074,13 @@ impl App {
         }
 
         if let Some(mode) = open_browser {
-            Self::open_saved_seed_browser(state, mode);
+            Self::open_saved_seed_browser(
+                state.platform.game_config.as_ref(),
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                mode,
+            );
             return true;
         }
         if export_requested {
@@ -2087,7 +2131,15 @@ impl App {
         // Both results end the dialog through its teardown slide.
         let slide = ShellSlideKind::RandomMap;
         if accept_requested {
-            Self::leave_shell_dialog(state, slide, App::accept_random_map_setup);
+            Self::leave_shell_dialog(state, slide, |state| {
+                App::accept_random_map_setup(
+                    &state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                )
+            });
         }
         if close_setup {
             Self::leave_shell_dialog(state, slide, |state| {

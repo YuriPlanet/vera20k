@@ -20,6 +20,7 @@ use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
 use crate::app::shell_route::ShellRoute;
 use crate::i18n::{tr, tr_fill};
+use crate::render::gpu::GpuContext;
 use crate::ui::mods_shell::{self, ModsLayout};
 use crate::ui::movies_credits_shell::{
     family_list_node, family_list_selected, find_family_list, set_family_list,
@@ -39,11 +40,15 @@ impl App {
 
     /// The Mods button of Options, once Options has closed: list what `Mods`
     /// holds now, with what this run uses selected and in view.
-    pub(super) fn open_mods_page(state: &mut AppState) {
-        Self::destroy_current_shell_dialog(state);
-        state.frontend.mods.page = Some(Self::installed_mods(state.platform.game_config.as_ref()));
-        Self::show_shell_page(&mut state.frontend, ShellRoute::Mods, mods_shell::DIALOG);
-        Self::mods_sync(state);
+    pub(super) fn open_mods_page(
+        game_config: Option<&GameConfig>,
+        gpu: &GpuContext,
+        frontend: &mut FrontendState,
+    ) {
+        Self::destroy_current_shell_dialog(frontend);
+        frontend.mods.page = Some(Self::installed_mods(game_config));
+        Self::show_shell_page(frontend, ShellRoute::Mods, mods_shell::DIALOG);
+        Self::mods_sync(gpu, frontend);
     }
 
     /// The row the page's list has selected.
@@ -54,15 +59,18 @@ impl App {
     /// The window is in front again, perhaps from the folder that Open Mods
     /// Folder showed: list what `Mods` holds now. The picked row stays
     /// picked while its folder is there.
-    pub(super) fn refresh_mods_page(state: &mut AppState) {
-        if crate::app::input::precedence::route_page(&state.frontend)
+    pub(super) fn refresh_mods_page(
+        game_config: Option<&GameConfig>,
+        frontend: &mut FrontendState,
+    ) {
+        if crate::app::input::precedence::route_page(frontend)
             != crate::app::input::precedence::ScreenPage::Mods
         {
             return;
         }
-        let rows = Self::installed_mods(state.platform.game_config.as_ref());
-        let selected = Self::mods_selected(&state.frontend.shell_controller);
-        let Some(page) = state.frontend.mods.page.as_mut() else {
+        let rows = Self::installed_mods(game_config);
+        let selected = Self::mods_selected(&frontend.shell_controller);
+        let Some(page) = frontend.mods.page.as_mut() else {
             return;
         };
         if *page == rows {
@@ -74,7 +82,7 @@ impl App {
         let selected = picked.and_then(|folder| rows.iter().position(|row| row.folder == folder));
         *page = rows;
         // The top stays where it was, within the new range.
-        Self::update_mods_list(&mut state.frontend, selected, false);
+        Self::update_mods_list(frontend, selected, false);
     }
 
     /// The page's rows and `selected` into its `List` node. With `reveal`
@@ -113,14 +121,14 @@ impl App {
     /// Binds the controller to the page and keeps its `List` node, which a
     /// new instance builds with the row in use selected and in view (a hover
     /// target for status help, never a button press); the layout.
-    fn mods_sync(state: &mut AppState) -> ModsLayout {
-        let layout = mods_layout(&state.renderer.gpu);
-        let mods = &state.frontend.mods;
+    fn mods_sync(gpu: &GpuContext, frontend: &mut FrontendState) -> ModsLayout {
+        let layout = mods_layout(gpu);
+        let mods = &frontend.mods;
         let in_use = mods.page.as_ref().map(|rows| {
             let selected = rows.iter().position(|row| mods.in_use(row));
             (rows.len(), selected)
         });
-        let controller = &mut state.frontend.shell_controller;
+        let controller = &mut frontend.shell_controller;
         controller.ensure_active(mods_shell::DIALOG);
         controller.set_scale(layout.page.scale);
         if let Some((rows, selected)) = in_use {
@@ -146,9 +154,9 @@ impl App {
 
     /// The wheel moves the list three rows a notch, as on the Keyboard page,
     /// wherever the pointer is: the list takes the rows a turn makes.
-    pub(super) fn handle_mods_wheel(state: &mut AppState, lines: f32) {
-        Self::mods_sync(state);
-        let controller = &mut state.frontend.shell_controller;
+    pub(super) fn handle_mods_wheel(gpu: &GpuContext, frontend: &mut FrontendState, lines: f32) {
+        Self::mods_sync(gpu, frontend);
+        let controller = &mut frontend.shell_controller;
         let Some(node) = find_family_list(controller, mods_shell::DIALOG) else {
             return;
         };
@@ -168,7 +176,7 @@ impl App {
     /// selection is nothing a restart would change to, Check Files while it
     /// is no mod. Every hover message repaints the status line (0x00615EF7).
     pub(super) fn handle_mods_mouse(state: &mut AppState, down: Option<bool>) {
-        let layout = Self::mods_sync(state);
+        let layout = Self::mods_sync(&state.renderer.gpu, &mut state.frontend);
         let selected = Self::mods_selected(&state.frontend.shell_controller);
         let mods = &state.frontend.mods;
         let enabled = [
@@ -196,7 +204,13 @@ impl App {
                 &state.persistence.options_profile,
             ),
             #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
-            Some(mods_shell::ADD) => Self::open_add_mod(state),
+            Some(mods_shell::ADD) => Self::open_add_mod(
+                &state.platform.window,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+            ),
             Some(mods_shell::OPEN_FOLDER) => Self::open_mods_folder(
                 &state.platform,
                 &state.renderer,
@@ -211,11 +225,24 @@ impl App {
                 &state.process_assets,
                 &state.persistence.options_profile,
             ),
-            Some(mods_shell::NEW) => Self::make_new_mod(state),
+            Some(mods_shell::NEW) => Self::make_new_mod(
+                &state.platform,
+                &state.renderer,
+                &mut state.frontend,
+                &state.process_assets,
+                &state.persistence.options_profile,
+            ),
             Some(mods_shell::BACK) => {
                 Self::leave_shell_dialog(state, ShellSlideKind::Mods, |state| {
-                    App::close_mods_page(state);
-                    App::open_launcher_options_dialog(state);
+                    App::close_mods_page(&mut state.frontend);
+                    App::open_launcher_options_dialog(
+                        &state.platform,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.process_assets,
+                        &state.audio,
+                        &state.persistence.options_profile,
+                    );
                 })
             }
             _ => {}
@@ -524,8 +551,14 @@ impl App {
     /// New Mod: a folder in `Mods` with the original game's main INI files
     /// (`app::new_mod`), picked in the list, under a box that says what it
     /// holds and offers to show it.
-    fn make_new_mod(state: &mut AppState) {
-        let Some(config) = state.platform.game_config.as_ref() else {
+    fn make_new_mod(
+        platform: &PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+    ) {
+        let Some(config) = platform.game_config.as_ref() else {
             return;
         };
         let paths = &config.paths;
@@ -535,7 +568,7 @@ impl App {
         // run's own archives may hold a mod's copies.
         let made = crate::assets::asset_manager::AssetManager::inspect_install(
             &paths.ra2_dir,
-            state.process_assets.media_archive_mode(),
+            process_assets.media_archive_mode(),
         )
         .map_err(std::io::Error::other)
         .and_then(|(original, _)| {
@@ -548,11 +581,11 @@ impl App {
             Err(error) => {
                 log::warn!("Mods: no new mod made in {}: {error}", mods_dir.display());
                 Self::open_shell_notice(
-                    &state.platform.window,
-                    &state.renderer,
-                    &mut state.frontend,
-                    &state.process_assets,
-                    &state.persistence.options_profile,
+                    &platform.window,
+                    renderer,
+                    frontend,
+                    process_assets,
+                    options_profile,
                     tr_fill("VERA:ModNotMade", &[("folder", &mods_dir.display())]),
                 );
                 return;
@@ -563,16 +596,16 @@ impl App {
             made.dir.display(),
             made.copied.join(", ")
         );
-        Self::select_installed_mod(state, &made.folder);
+        Self::select_installed_mod(platform.game_config.as_ref(), frontend, &made.folder);
         let files = made.copied.join(", ");
         let text = tr_fill("VERA:ModMade", &[("mod", &made.folder), ("files", &files)]);
         let (open, close) = (tr("VERA:ModOpenItsFolder"), tr("VERA:Close"));
         Self::open_mods_box(
-            &state.platform.window,
-            &state.renderer,
-            &mut state.frontend,
-            &state.process_assets,
-            &state.persistence.options_profile,
+            &platform.window,
+            renderer,
+            frontend,
+            process_assets,
+            options_profile,
             text,
             open,
             close,
@@ -581,13 +614,17 @@ impl App {
     }
 
     /// Refresh the list and bring a mod we just added into view.
-    pub(super) fn select_installed_mod(state: &mut AppState, folder: &str) {
-        Self::refresh_mods_page(state);
-        let selected = state.frontend.mods.page.as_ref().and_then(|rows| {
+    pub(super) fn select_installed_mod(
+        game_config: Option<&GameConfig>,
+        frontend: &mut FrontendState,
+        folder: &str,
+    ) {
+        Self::refresh_mods_page(game_config, frontend);
+        let selected = frontend.mods.page.as_ref().and_then(|rows| {
             rows.iter()
                 .position(|row| row.folder.as_deref() == Some(folder))
         });
-        Self::update_mods_list(&mut state.frontend, selected, true);
+        Self::update_mods_list(frontend, selected, true);
     }
 
     /// New Mod's box: Open Folder shows the new mod's folder, or says where it
@@ -615,10 +652,10 @@ impl App {
 
     /// The page is gone and the route is the main menu's again. Back builds
     /// Options over it next; a restart leaves from here.
-    pub(super) fn close_mods_page(state: &mut AppState) {
-        Self::destroy_current_shell_dialog(state);
-        state.frontend.mods.page = None;
-        state.frontend.shell_route = ShellRoute::MainMenu;
+    pub(super) fn close_mods_page(frontend: &mut FrontendState) {
+        Self::destroy_current_shell_dialog(frontend);
+        frontend.mods.page = None;
+        frontend.shell_route = ShellRoute::MainMenu;
     }
 
     /// Use This Mod. A mod is read once, at start-up, so a change to another
@@ -719,7 +756,7 @@ impl App {
             log::info!("Mods: restarting to use {folder:?}");
             crate::app::restart::ask();
             // As Exit Game leaves: from the empty backdrop, the page gone.
-            Self::close_mods_page(state);
+            Self::close_mods_page(&mut state.frontend);
             Self::confirm_quit(state);
         }
     }

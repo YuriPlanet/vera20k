@@ -194,7 +194,10 @@ impl CampaignScoreCapture {
                 && steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(state))?
             {
                 App::open_campaign_score_page(
-                    state,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.process_assets,
+                    &mut state.audio,
                     synthetic_campaign_score_model(),
                     "Synthetic campaign score capture".into(),
                     "Synthetic UI fixture; not native-parity evidence.".into(),
@@ -248,7 +251,10 @@ impl CampaignScoreCapture {
                     && steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(state))?
                 {
                     App::open_campaign_score_page(
-                        state,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.process_assets,
+                        &mut state.audio,
                         synthetic_campaign_score_model(),
                         "Synthetic campaign score animation capture".into(),
                         "Synthetic UI fixture; not native-parity evidence.".into(),
@@ -328,7 +334,10 @@ impl CampaignScoreCapture {
                         "campaign score page or art survived the Continue close"
                     );
                     App::open_campaign_score_page(
-                        state,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.process_assets,
+                        &mut state.audio,
                         synthetic_campaign_score_model(),
                         "Synthetic campaign score animation reopen".into(),
                         "Synthetic UI fixture; not native-parity evidence.".into(),
@@ -828,7 +837,14 @@ impl ScoreCapture {
             {
                 let model =
                     comparison_model(&state.frontend, &state.match_state, &state.process_assets)?;
-                App::open_score_page(state, model, String::new(), String::new());
+                App::open_score_page(
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.process_assets,
+                    model,
+                    String::new(),
+                    String::new(),
+                );
                 self.route
                     .push(json!({"dialog": 0x108, "frame": frame, "action": "open"}));
                 self.phase = Phase::Score;

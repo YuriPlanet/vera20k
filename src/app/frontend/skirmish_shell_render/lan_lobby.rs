@@ -35,7 +35,7 @@ fn paint_create_box(
     use crate::app::shell_lan::{
         CANCEL, MODAL, OK, ROOM_PLAYERS, ROOM_PLAYERS_CAPTION, ROOM_SPECTATORS,
     };
-    let layout = crate::app::shell_lan::create_box_layout(state);
+    let layout = crate::app::shell_lan::create_box_layout(&state.renderer.gpu);
     overlay.controls.extend(super::wol_lobby::online_box(
         atlas,
         layout.dialog,
@@ -89,7 +89,7 @@ pub(crate) fn render_lan_lobby(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
-    crate::app::shell_lan::sync_gui(state);
+    crate::app::shell_lan::sync_gui(&state.renderer, &mut state.frontend);
     // The message box on its widgets (built as it opened) before it paints.
     let notice = lan_notice(&state.frontend.lan, &state.process_assets);
     let size = (state.render_width() as i32, state.render_height() as i32);
@@ -103,7 +103,7 @@ pub(crate) fn render_lan_lobby(
         }
     }
     let now = Instant::now();
-    let layout = crate::app::shell_lan::layout(state);
+    let layout = crate::app::shell_lan::layout(&state.renderer.gpu);
     let scale = layout.page.scale;
     let width = state.render_width();
     let height = state.render_height();

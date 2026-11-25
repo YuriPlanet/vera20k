@@ -416,10 +416,11 @@ impl LiveRoundFlow {
         run.exit_route
             .push(json!({"step":"online lobby","render_frame":frame}));
         self.record(frame, "Escape returned to the online lobby");
-        let rect = crate::app::shell_wol::lobby::layout(state)
-            .page
-            .button_rect(wol_lobby::BACK)
-            .context("WOL lobby Back button")?;
+        let rect =
+            crate::app::shell_wol::lobby::layout(state.frontend.wol.as_ref(), &state.renderer.gpu)
+                .page
+                .button_rect(wol_lobby::BACK)
+                .context("WOL lobby Back button")?;
         click(state, rect);
         self.record(
             frame,

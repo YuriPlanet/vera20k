@@ -45,7 +45,11 @@ impl WolCapture {
     pub(super) fn persona_page(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         use crate::app::shell_wol::WolPage;
         use crate::ui::wol_persona::{ACCEPT, DECLINE};
-        let layout = crate::app::shell_wol::persona::layout(state).context("persona layout")?;
+        let layout = crate::app::shell_wol::persona::layout(
+            state.frontend.wol.as_ref(),
+            &state.renderer.gpu,
+        )
+        .context("persona layout")?;
         match self.target {
             WolTarget::AutoLoginQuery | WolTarget::LocaleQuery => {
                 self.event(frame, "persona page settled");
@@ -441,7 +445,8 @@ impl WolCapture {
             }]),
         );
 
-        let layout = crate::app::shell_wol::lobby::layout(state);
+        let layout =
+            crate::app::shell_wol::lobby::layout(state.frontend.wol.as_ref(), &state.renderer.gpu);
         let ui = &Self::lobby(&state.frontend.wol)?.ui;
         let rows = &ui.game_rows;
         ensure!(

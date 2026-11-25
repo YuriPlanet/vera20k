@@ -477,7 +477,13 @@ impl WolCapture {
                 self.event(frame, "Start: TXT_CLAN_NOSTART");
             }
             WolTarget::ClanChooseMap => {
-                crate::app::shell_network_setup::open_choose_map(state);
+                crate::app::shell_network_setup::open_choose_map(
+                    &state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &mut state.process_assets,
+                );
                 let modal = state
                     .frontend
                     .skirmish_shell_state

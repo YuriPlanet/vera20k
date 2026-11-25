@@ -309,7 +309,10 @@ impl WolCapture {
                 if rendered == PresentedShell::WolLogin
                     && Self::page_settled(&state.frontend, ShellSlideKind::WolLogin) =>
             {
-                let layout = crate::app::shell_wol::login_layout(state);
+                let layout = crate::app::shell_wol::login_layout(
+                    state.frontend.wol.as_ref(),
+                    &state.renderer.gpu,
+                );
                 match self.target {
                     target if target.online_login() => {
                         // Captures read nothing: the page shows fixed counts.
@@ -336,7 +339,10 @@ impl WolCapture {
                         // These are visual-only captures. Play as Guest joins
                         // the live lobby immediately, so they use the account form.
                         welcome_click(state, choice.account);
-                        let layout = crate::app::shell_wol::login_layout(state);
+                        let layout = crate::app::shell_wol::login_layout(
+                            state.frontend.wol.as_ref(),
+                            &state.renderer.gpu,
+                        );
                         if matches!(target, WolTarget::ModernUsername | WolTarget::ModernLogin) {
                             let remember = layout
                                 .rect_of(crate::ui::wol_account::FORM_REMEMBER)
@@ -1114,7 +1120,10 @@ impl WolCapture {
                 if rendered == PresentedShell::WolLogin
                     && Self::page_settled(&state.frontend, ShellSlideKind::WolLogin) =>
             {
-                let layout = crate::app::shell_wol::login_layout(state);
+                let layout = crate::app::shell_wol::login_layout(
+                    state.frontend.wol.as_ref(),
+                    &state.renderer.gpu,
+                );
                 // A stored account selected by LastValid is ready as it is.
                 let ready = login_mut(&mut state.frontend).is_ok()
                     && state.frontend.shell_controller.flag(
@@ -1190,7 +1199,10 @@ impl WolCapture {
                         &state.csf_label("TXT_JOINED_S", "TXT_JOINED_S"),
                         &[crate::assets::csf_file::CsfArg::Str("")],
                     );
-                    let layout = crate::app::shell_wol::lobby::layout(state);
+                    let layout = crate::app::shell_wol::lobby::layout(
+                        state.frontend.wol.as_ref(),
+                        &state.renderer.gpu,
+                    );
                     ensure!(
                         layout.control_rect(lobby_ui::LOBBIES).is_none()
                             && !lobby.ui.enabled(lobby_ui::LOBBIES)
@@ -1201,7 +1213,10 @@ impl WolCapture {
                     );
                 }
                 if self.target == WolTarget::ModernCreate {
-                    let layout = crate::app::shell_wol::lobby::layout(state);
+                    let layout = crate::app::shell_wol::lobby::layout(
+                        state.frontend.wol.as_ref(),
+                        &state.renderer.gpu,
+                    );
                     lobby_button(state, &layout, lobby_ui::CREATE)?;
                     ensure!(
                         Self::lobby(&state.frontend.wol)?
@@ -1220,7 +1235,10 @@ impl WolCapture {
                         "the modern 0xC3 has no Max players or Allow spectators"
                     );
                     self.event(frame, "0xC3 opened (modern)");
-                    let create = crate::app::shell_wol::lobby::create_layout(state);
+                    let create = crate::app::shell_wol::lobby::create_layout(
+                        state.frontend.wol.as_ref(),
+                        &state.renderer.gpu,
+                    );
                     set_window_pointer_to_rect_center(
                         &state.renderer,
                         &state.frontend.screen,
@@ -1307,7 +1325,10 @@ impl WolCapture {
                     );
                     self.event(frame, "player card opened");
                     // Message's help in the box's status line.
-                    let card = crate::app::shell_wol::player_card::layout(state);
+                    let card = crate::app::shell_wol::player_card::layout(
+                        state.frontend.wol.as_ref(),
+                        &state.renderer.gpu,
+                    );
                     set_window_pointer_to_rect_center(
                         &state.renderer,
                         &state.frontend.screen,
@@ -1328,9 +1349,13 @@ impl WolCapture {
                     // The season row: her OS to the hundredth, and what OS
                     // is under the pointer.
                     let label = |key: &str| state.csf_label(key, key);
-                    let rows = crate::app::shell_wol::player_card::view(state)
-                        .context("Tanya's card")?
-                        .rows;
+                    let rows = crate::app::shell_wol::player_card::view(
+                        &state.frontend,
+                        &state.process_assets,
+                        &state.renderer.gpu,
+                    )
+                    .context("Tanya's card")?
+                    .rows;
                     let season = rows
                         .iter()
                         .position(|(caption, _)| *caption == label("VERA:Season"))
@@ -1369,7 +1394,10 @@ impl WolCapture {
                         | WolTarget::ModernOptionsTranslation
                         | WolTarget::ModernOptionsTranslationList
                 ) {
-                    let layout = crate::app::shell_wol::lobby::layout(state);
+                    let layout = crate::app::shell_wol::lobby::layout(
+                        state.frontend.wol.as_ref(),
+                        &state.renderer.gpu,
+                    );
                     lobby_button(state, &layout, lobby_ui::OPTIONS)?;
                     ensure!(
                         state.frontend.shell_exit.is_some(),
@@ -1380,7 +1408,10 @@ impl WolCapture {
                     return Ok(());
                 }
                 if self.target == WolTarget::BuddyFromLobby && !self.rejoined {
-                    let layout = crate::app::shell_wol::lobby::layout(state);
+                    let layout = crate::app::shell_wol::lobby::layout(
+                        state.frontend.wol.as_ref(),
+                        &state.renderer.gpu,
+                    );
                     lobby_button(state, &layout, lobby_ui::BUDDY)?;
                     self.event(frame, "0x113 Buddy List");
                     self.phase = WolPhase::BuddyShown;
@@ -1403,11 +1434,17 @@ impl WolCapture {
                         | WolTarget::ClanNoStart
                         | WolTarget::ClanChooseMap
                 ) {
-                    let layout = crate::app::shell_wol::lobby::layout(state);
+                    let layout = crate::app::shell_wol::lobby::layout(
+                        state.frontend.wol.as_ref(),
+                        &state.renderer.gpu,
+                    );
                     lobby_button(state, &layout, lobby_ui::CREATE)?;
                     // VERA's online box puts OK a row lower, and grows with
                     // the lobby in a scaled window.
-                    let create = crate::app::shell_wol::lobby::create_layout(state);
+                    let create = crate::app::shell_wol::lobby::create_layout(
+                        state.frontend.wol.as_ref(),
+                        &state.renderer.gpu,
+                    );
                     if self.target.clan() {
                         // 0x78DF35: the clan box is enabled by the squad id.
                         ensure!(
@@ -1433,13 +1470,19 @@ impl WolCapture {
                     self.target,
                     WolTarget::PageDialog | WolTarget::PageFindStatus | WolTarget::PageUserGone
                 ) {
-                    let layout = crate::app::shell_wol::lobby::layout(state);
+                    let layout = crate::app::shell_wol::lobby::layout(
+                        state.frontend.wol.as_ref(),
+                        &state.renderer.gpu,
+                    );
                     lobby_button(state, &layout, lobby_ui::PAGE_BUTTON)?;
                     self.page_input(state, frame, false)?;
                     return Ok(());
                 }
                 if self.target.page_received() {
-                    let layout = crate::app::shell_wol::lobby::layout(state);
+                    let layout = crate::app::shell_wol::lobby::layout(
+                        state.frontend.wol.as_ref(),
+                        &state.renderer.gpu,
+                    );
                     lobby_button(state, &layout, lobby_ui::BACK)?;
                     self.event(frame, "0x113 Back");
                     self.phase = WolPhase::PageWelcome;
@@ -1483,7 +1526,10 @@ impl WolCapture {
                         .position(|row| row.name == format!("{host}'s_game"))
                         .context("the stand-in host's game")?;
                     game_row_click(state, row)?;
-                    let layout = crate::app::shell_wol::lobby::layout(state);
+                    let layout = crate::app::shell_wol::lobby::layout(
+                        state.frontend.wol.as_ref(),
+                        &state.renderer.gpu,
+                    );
                     lobby_button(state, &layout, lobby_ui::JOIN)?;
                     self.event(frame, format!("Join on {host}'s_game (test service)"));
                     self.phase = WolPhase::ServiceSetup;

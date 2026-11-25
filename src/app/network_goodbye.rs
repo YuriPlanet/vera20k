@@ -32,7 +32,7 @@ impl App {
             return false;
         }
         say_goodbye(state);
-        if !crate::app::shell_wol::online_cleanup_pending(state) {
+        if !crate::app::shell_wol::online_cleanup_pending(&state.frontend, &state.match_state) {
             return false;
         }
         Self::leave_screen(&mut state.platform, &mut state.audio);
@@ -64,7 +64,9 @@ impl App {
         };
         let next = crate::app::shell_wol::poll(state);
         let now = Instant::now();
-        if crate::app::shell_wol::online_cleanup_pending(state) && now < deadline {
+        if crate::app::shell_wol::online_cleanup_pending(&state.frontend, &state.match_state)
+            && now < deadline
+        {
             let wake = next
                 .unwrap_or_else(|| now + Duration::from_millis(16))
                 .min(deadline);
@@ -90,7 +92,11 @@ fn say_goodbye(state: &mut AppState) {
     if online && state.match_state.live_network.is_some() {
         crate::app::lan_service::return_transport(&mut state.frontend, &mut state.match_state);
     }
-    crate::app::shell_wol::retire_visit_for_exit(state);
+    crate::app::shell_wol::retire_visit_for_exit(
+        &mut state.frontend,
+        &state.platform.window,
+        &mut state.match_state,
+    );
     if state.match_state.lan_service.is_some() {
         crate::app::lan_service::close(&state.frontend, &mut state.match_state);
     }

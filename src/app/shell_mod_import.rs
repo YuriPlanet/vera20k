@@ -27,10 +27,12 @@ use super::{App, AppState};
 use crate::app::PlatformState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::frontend::state::ShellMessageBox;
+use crate::app::input::state::MatchInputState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
 use crate::app::renderer_state::RendererState;
 use crate::render::bit_font::BitFont;
+use crate::render::gpu::GpuContext;
 use crate::ui::shell::controller::DialogController;
 use winit::window::Window;
 
@@ -291,11 +293,13 @@ fn list_rect(layout: &BoxParts) -> RectPx {
 }
 
 /// The open preview's box layout and dialog.
-fn preview_box(state: &AppState) -> Option<(&Selection, BoxParts, DialogResourceId)> {
-    let selection = preview(state.frontend.shell_message_box.as_ref())?;
-    let shell_box = &state.frontend.shell_message_box.as_ref()?.shell_box;
-    let layout =
-        crate::app::frontend::shell_layout::shell_box_parts(&state.renderer.gpu, shell_box);
+fn preview_box<'a>(
+    gpu: &GpuContext,
+    frontend: &'a FrontendState,
+) -> Option<(&'a Selection, BoxParts, DialogResourceId)> {
+    let selection = preview(frontend.shell_message_box.as_ref())?;
+    let shell_box = &frontend.shell_message_box.as_ref()?.shell_box;
+    let layout = crate::app::frontend::shell_layout::shell_box_parts(gpu, shell_box);
     Some((selection, layout, shell_box.dialog))
 }
 
@@ -315,22 +319,21 @@ fn list_node(controller: &DialogController, dialog: DialogResourceId) -> Option<
 pub(crate) const LIST_ID: i32 = 0x1_0002;
 
 /// The open preview's parts list node, if built.
-pub(crate) fn node(state: &AppState) -> Option<NodeId> {
-    let (_, _, dialog) = preview_box(state)?;
-    list_node(&state.frontend.shell_controller, dialog)
+pub(crate) fn node(gpu: &GpuContext, frontend: &FrontendState) -> Option<NodeId> {
+    let (_, _, dialog) = preview_box(gpu, frontend)?;
+    list_node(&frontend.shell_controller, dialog)
 }
 
 /// Builds the preview's parts list in its box once, after the box's
 /// buttons (its id counts as built), from the selection's rows, selected
 /// row and top, the selected row in view; keeps it on its rect and its
 /// rows' text cut to the row.
-pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
-    let (selection, layout, dialog) = preview_box(state)?;
+pub(crate) fn sync(renderer: &RendererState, frontend: &mut FrontendState) -> Option<NodeId> {
+    let (selection, layout, dialog) = preview_box(&renderer.gpu, frontend)?;
     let rect = list_rect(&layout);
     let (rows, selected, top) = (selection.rows.len(), selection.selected, selection.top);
     let scale = layout.scale;
-    let built = list_node(&state.frontend.shell_controller, dialog);
-    let frontend = &mut state.frontend;
+    let built = list_node(&frontend.shell_controller, dialog);
     let shell_box = &frontend.shell_message_box.as_ref()?.shell_box;
     let controller = &mut frontend.shell_controller;
     // The list's metrics follow the box's scale, as its paint does.
@@ -360,13 +363,7 @@ pub(crate) fn sync(state: &mut AppState) -> Option<NodeId> {
     };
     let _ = gui.set(node, Prop::Rect, Value::Rect(rect));
     let width = row_text_width(gui, node, scale);
-    list_rows(
-        &state.renderer.bit_font,
-        &mut state.frontend,
-        node,
-        width,
-        built.is_none(),
-    );
+    list_rows(&renderer.bit_font, frontend, node, width, built.is_none());
     Some(node)
 }
 
@@ -419,33 +416,33 @@ fn list_rows(
 
 /// The selection's own change of its rows or selected row: the list takes
 /// them and shows the selected row.
-fn push_selection(state: &mut AppState) {
-    let Some(node) = sync(state) else {
+fn push_selection(renderer: &RendererState, frontend: &mut FrontendState) {
+    let Some(node) = sync(renderer, frontend) else {
         return;
     };
-    let Some(selection) = preview(state.frontend.shell_message_box.as_ref()) else {
+    let Some(selection) = preview(frontend.shell_message_box.as_ref()) else {
         return;
     };
     let int = |v: usize| Value::Int(i32::try_from(v).unwrap_or(i32::MAX));
     let selected = selection.selected;
-    let gui = state.frontend.shell_controller.gui_mut();
+    let gui = frontend.shell_controller.gui_mut();
     let _ = gui.set(node, Prop::Selected, selected.map_or(Value::Int(-1), int));
     if let Some(row) = selected {
         let _ = gui.ensure_row_visible(node, row);
     }
-    follow_list(state);
+    follow_list(&renderer.gpu, frontend);
 }
 
 /// After an input on the open preview: the selection keeps the list's
 /// selected row and top, and the reorder buttons grey where they have
 /// nothing to move.
-pub(crate) fn follow_list(state: &mut AppState) {
-    let Some((_, _, dialog)) = preview_box(state) else {
+pub(crate) fn follow_list(gpu: &GpuContext, frontend: &mut FrontendState) {
+    let Some((_, _, dialog)) = preview_box(gpu, frontend) else {
         return;
     };
-    let view = list_node(&state.frontend.shell_controller, dialog)
-        .and_then(|node| state.frontend.shell_controller.gui().list_view(node));
-    let Some(message) = state.frontend.shell_message_box.as_mut() else {
+    let view = list_node(&frontend.shell_controller, dialog)
+        .and_then(|node| frontend.shell_controller.gui().list_view(node));
+    let Some(message) = frontend.shell_message_box.as_mut() else {
         return;
     };
     let ShellMessageBoxPurpose::ModImport(dialog) = &mut message.purpose else {
@@ -468,17 +465,25 @@ pub(crate) fn follow_list(state: &mut AppState) {
 
 /// The box's own input reaches the parts list through the gui; this only
 /// makes sure the list is there first. Never takes the press itself.
-pub(super) fn pointer_button(state: &mut AppState, _pressed: bool) -> bool {
-    sync(state);
+pub(super) fn pointer_button(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    _pressed: bool,
+) -> bool {
+    sync(renderer, frontend);
     false
 }
 
 /// The cursor drags a captured thumb and moves on or off a held arrow.
-pub(super) fn cursor_moved(state: &mut AppState) {
-    let Some(node) = sync(state) else {
+pub(super) fn cursor_moved(
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    input: &MatchInputState,
+) {
+    let Some(node) = sync(renderer, frontend) else {
         return;
     };
-    let controller = &state.frontend.shell_controller;
+    let controller = &frontend.shell_controller;
     if controller
         .top_id()
         .and_then(|top| controller.pressed_node_in(top))
@@ -486,37 +491,44 @@ pub(super) fn cursor_moved(state: &mut AppState) {
     {
         return;
     }
-    let (x, y) = state.match_state.input.cursor_px();
-    let controller = &mut state.frontend.shell_controller;
+    let (x, y) = input.cursor_px();
+    let controller = &mut frontend.shell_controller;
     controller.on_pointer_move(x, y);
     controller.drain_events();
-    follow_list(state);
+    follow_list(&renderer.gpu, frontend);
 }
 
 /// Three rows a wheel notch.
-pub(super) fn wheel(state: &mut AppState, lines: f32) {
-    let Some(node) = sync(state) else {
+pub(super) fn wheel(
+    window: &Window,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    lines: f32,
+) {
+    let Some(node) = sync(renderer, frontend) else {
         return;
     };
-    let controller = &mut state.frontend.shell_controller;
+    let controller = &mut frontend.shell_controller;
     let now = controller.now();
     let gui = controller.gui_mut();
     let _ = gui.set(node, Prop::WheelStep, Value::Int(1));
     gui.wheel_list(node, (lines * 3.0) as i32, now);
     gui.drain_events();
-    follow_list(state);
-    state.platform.window.request_redraw();
+    follow_list(&renderer.gpu, frontend);
+    window.request_redraw();
 }
 
 /// A held arrow's repeat; the deadline of the next one.
-fn poll_scroll(state: &mut AppState) -> Option<Instant> {
-    sync(state)?;
-    let window = &state.platform.window;
-    let next = state
-        .frontend
+fn poll_scroll(
+    window: &Window,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+) -> Option<Instant> {
+    sync(renderer, frontend)?;
+    let next = frontend
         .shell_controller
         .poll_then(|| window.request_redraw());
-    follow_list(state);
+    follow_list(&renderer.gpu, frontend);
     next
 }
 
@@ -532,23 +544,43 @@ pub(super) fn enter(message_box: Option<&ShellMessageBox>) -> Option<bool> {
 }
 
 impl App {
-    pub(super) fn open_add_mod(state: &mut AppState) {
-        Self::show_import_selection(state, Selection::new());
+    pub(super) fn open_add_mod(
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+    ) {
+        Self::show_import_selection(
+            window,
+            renderer,
+            frontend,
+            process_assets,
+            options_profile,
+            Selection::new(),
+        );
     }
 
-    fn show_import_selection(state: &mut AppState, selection: Selection) {
+    fn show_import_selection(
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+        selection: Selection,
+    ) {
         let shell_box = selection.shell_box();
         Self::show_import_box(
-            &state.platform.window,
-            &state.renderer,
-            &mut state.frontend,
-            &state.process_assets,
-            &state.persistence.options_profile,
+            window,
+            renderer,
+            frontend,
+            process_assets,
+            options_profile,
             shell_box,
             Dialog::Select(selection),
         );
         // A new box's list shows the selected row.
-        sync(state);
+        sync(renderer, frontend);
     }
 
     /// `shell_box` for `dialog`, in place of any box already open.
@@ -576,9 +608,16 @@ impl App {
         );
     }
 
-    pub(super) fn mod_import_drop(state: &mut AppState, path: PathBuf) {
-        follow_list(state);
-        let Some(message) = state.frontend.shell_message_box.as_mut() else {
+    pub(super) fn mod_import_drop(
+        window: &Window,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+        path: PathBuf,
+    ) {
+        follow_list(&renderer.gpu, frontend);
+        let Some(message) = frontend.shell_message_box.as_mut() else {
             return;
         };
         let ShellMessageBoxPurpose::ModImport(dialog) = &mut message.purpose else {
@@ -595,36 +634,43 @@ impl App {
         // Other buttons make another box; the same ones keep it, and its list.
         if ids(&shell_box) == ids(&message.shell_box) {
             message.shell_box = shell_box;
-            push_selection(state);
-        } else if let Some(message) = state.frontend.shell_message_box.take() {
-            Self::close_shell_message_box_from_controller(&mut state.frontend);
+            push_selection(renderer, frontend);
+        } else if let Some(message) = frontend.shell_message_box.take() {
+            Self::close_shell_message_box_from_controller(frontend);
             Self::open_shell_message_box(
-                &state.platform.window,
-                &state.renderer,
-                &mut state.frontend,
-                &state.process_assets,
-                &state.persistence.options_profile,
+                window,
+                renderer,
+                frontend,
+                process_assets,
+                options_profile,
                 shell_box,
                 message.purpose,
             );
-            sync(state);
+            sync(renderer, frontend);
         }
-        state.platform.window.request_redraw();
+        window.request_redraw();
     }
 
-    pub(super) fn activate_mod_import_button(state: &mut AppState, id: u16) {
-        follow_list(state);
-        let Some(selection) = preview_mut(&mut state.frontend.shell_message_box) else {
+    pub(super) fn activate_mod_import_button(
+        platform: &mut PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+        id: u16,
+    ) {
+        follow_list(&renderer.gpu, frontend);
+        let Some(selection) = preview_mut(&mut frontend.shell_message_box) else {
             return;
         };
         if id != ADD_MORE {
             if selection.move_selected(id) {
-                push_selection(state);
-                state.platform.window.request_redraw();
+                push_selection(renderer, frontend);
+                platform.window.request_redraw();
             }
             return;
         }
-        let Some(message) = state.frontend.shell_message_box.take() else {
+        let Some(message) = frontend.shell_message_box.take() else {
             return;
         };
         let ShellMessageBoxPurpose::ModImport(dialog) = message.purpose else {
@@ -633,19 +679,42 @@ impl App {
         let Dialog::Select(mut selection) = *dialog else {
             return;
         };
-        Self::close_shell_message_box_from_controller(&mut state.frontend);
+        Self::close_shell_message_box_from_controller(frontend);
         if cfg!(target_os = "macos") {
-            Self::browse_mod_parts(state, selection, false);
+            Self::browse_mod_parts(
+                platform,
+                renderer,
+                frontend,
+                process_assets,
+                options_profile,
+                selection,
+                false,
+            );
         } else {
             selection.choosing_kind = true;
-            Self::show_import_selection(state, selection);
+            Self::show_import_selection(
+                &platform.window,
+                renderer,
+                frontend,
+                process_assets,
+                options_profile,
+                selection,
+            );
         }
     }
 
     /// The box's answer: 0 its first button, 1 Cancel (and Enter or
     /// Escape), 2 the third.
-    pub(super) fn answer_mod_import(state: &mut AppState, dialog: Dialog, answer: usize) {
-        state.platform.window.request_redraw();
+    pub(super) fn answer_mod_import(
+        platform: &mut PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+        dialog: Dialog,
+        answer: usize,
+    ) {
+        platform.window.request_redraw();
         let Dialog::Select(mut selection) = dialog else {
             return;
         };
@@ -654,11 +723,11 @@ impl App {
                 && let Some(plan) = selection.plan.take()
             {
                 Self::prepare_mod_import(
-                    &state.platform,
-                    &state.renderer,
-                    &mut state.frontend,
-                    &state.process_assets,
-                    &state.persistence.options_profile,
+                    platform,
+                    renderer,
+                    frontend,
+                    process_assets,
+                    options_profile,
                     plan,
                     action == 0,
                 );
@@ -666,27 +735,58 @@ impl App {
             return;
         }
         match answer {
-            0 if selection.can_browse => Self::browse_mod_parts(state, selection, false),
-            0 => Self::open_mods_folder(
-                &state.platform,
-                &state.renderer,
-                &mut state.frontend,
-                &state.process_assets,
-                &state.persistence.options_profile,
+            0 if selection.can_browse => Self::browse_mod_parts(
+                platform,
+                renderer,
+                frontend,
+                process_assets,
+                options_profile,
+                selection,
+                false,
             ),
-            2 if selection.choosing_kind() => Self::browse_mod_parts(state, selection, true),
+            0 => Self::open_mods_folder(
+                platform,
+                renderer,
+                frontend,
+                process_assets,
+                options_profile,
+            ),
+            2 if selection.choosing_kind() => Self::browse_mod_parts(
+                platform,
+                renderer,
+                frontend,
+                process_assets,
+                options_profile,
+                selection,
+                true,
+            ),
             1 if selection.choosing_kind => {
                 selection.choosing_kind = false;
-                Self::show_import_selection(state, selection);
+                Self::show_import_selection(
+                    &platform.window,
+                    renderer,
+                    frontend,
+                    process_assets,
+                    options_profile,
+                    selection,
+                );
             }
             _ => {}
         }
     }
 
-    fn browse_mod_parts(state: &mut AppState, mut selection: Selection, folders: bool) {
-        crate::app::input::hardware_cursor::give_back_arrow(&mut state.platform);
-        crate::app::input::cursor::release_cursor_confinement(&mut state.platform);
-        let window = &state.platform.window;
+    fn browse_mod_parts(
+        platform: &mut PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        process_assets: &ProcessAssets,
+        options_profile: &RetailOptionsProfile,
+        mut selection: Selection,
+        folders: bool,
+    ) {
+        crate::app::input::hardware_cursor::give_back_arrow(platform);
+        crate::app::input::cursor::release_cursor_confinement(platform);
+        let window = &platform.window;
         #[cfg(not(target_os = "macos"))]
         let picked = if folders {
             mod_import_picker::pick_folders(window, &tr("VERA:ModImportFolders"))
@@ -703,7 +803,14 @@ impl App {
             Ok(paths) => selection.add(paths),
             Err(error) => selection.selection_error(error),
         }
-        Self::show_import_selection(state, selection);
+        Self::show_import_selection(
+            &platform.window,
+            renderer,
+            frontend,
+            process_assets,
+            options_profile,
+            selection,
+        );
     }
 
     fn prepare_mod_import(
@@ -761,7 +868,7 @@ impl App {
             return None;
         };
         let Dialog::Preparing(preparation) = dialog.as_ref() else {
-            return poll_scroll(state);
+            return poll_scroll(&state.platform.window, &state.renderer, &mut state.frontend);
         };
         let result = match preparation.result.try_recv() {
             Err(TryRecvError::Empty) => return Some(Instant::now() + Duration::from_millis(100)),
@@ -785,7 +892,11 @@ impl App {
     }
 
     fn mod_imported(state: &mut AppState, folder: String, play: bool) {
-        Self::select_installed_mod(state, &folder);
+        Self::select_installed_mod(
+            state.platform.game_config.as_ref(),
+            &mut state.frontend,
+            &folder,
+        );
         let selected = Self::mods_selected(&state.frontend.shell_controller);
         if play && state.frontend.mods.switch_to(selected).is_some() {
             Self::answer_mod_restart(state, Some(folder), true);

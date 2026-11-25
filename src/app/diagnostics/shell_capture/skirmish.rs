@@ -774,8 +774,24 @@ impl SkirmishCapture {
             )
             .back;
             Self::set_pointer(&mut state.match_state.input, centre(back));
-            App::saved_seed_browser_pointer(state, Some(true));
-            App::saved_seed_browser_pointer(state, Some(false));
+            App::saved_seed_browser_pointer(
+                state.platform.game_config.as_ref(),
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &mut state.process_assets,
+                &mut state.audio.sfx_player,
+                Some(true),
+            );
+            App::saved_seed_browser_pointer(
+                state.platform.game_config.as_ref(),
+                &state.renderer,
+                &mut state.frontend,
+                &mut state.match_state,
+                &mut state.process_assets,
+                &mut state.audio.sfx_player,
+                Some(false),
+            );
             Self::set_pointer(&mut state.match_state.input, self.rest_point());
             self.pointer_rested = true;
             self.route
@@ -806,7 +822,14 @@ impl SkirmishCapture {
         if let Some((point, action)) = press {
             Self::set_pointer(&mut state.match_state.input, point);
             App::handle_skirmish_shell_mouse_move(state);
-            App::handle_random_map_setup_mouse_down(state);
+            App::handle_random_map_setup_mouse_down(
+                &state.platform.window,
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+            );
             App::handle_random_map_setup_mouse_up(state);
             Self::set_pointer(&mut state.match_state.input, self.rest_point());
             self.route
@@ -857,7 +880,14 @@ impl SkirmishCapture {
         if let Some((point, action)) = press {
             Self::set_pointer(&mut state.match_state.input, point);
             App::handle_skirmish_shell_mouse_move(state);
-            App::handle_random_map_setup_mouse_down(state);
+            App::handle_random_map_setup_mouse_down(
+                &state.platform.window,
+                &state.renderer,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+            );
             App::handle_random_map_setup_mouse_up(state);
             Self::set_pointer(&mut state.match_state.input, self.rest_point());
             self.route
@@ -1243,7 +1273,15 @@ impl SkirmishCapture {
                     App::leave_shell_dialog(
                         state,
                         crate::app::frontend::shell_transition::ShellSlideKind::Skirmish,
-                        App::open_choose_map_from_skirmish,
+                        |state| {
+                            App::open_choose_map_from_skirmish(
+                                &state.platform,
+                                &state.renderer,
+                                &mut state.frontend,
+                                &state.match_state,
+                                &mut state.process_assets,
+                            )
+                        },
                     );
                     ensure!(
                         state.frontend.shell_exit.is_some(),
@@ -1371,7 +1409,14 @@ impl SkirmishCapture {
                             RANDOM_MAP_TERRAIN_ARROW_POINT,
                         );
                         App::handle_skirmish_shell_mouse_move(state);
-                        App::handle_random_map_setup_mouse_down(state);
+                        App::handle_random_map_setup_mouse_down(
+                            &state.platform.window,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                            &mut state.audio.sfx_player,
+                        );
                         App::handle_random_map_setup_mouse_up(state);
                         ensure!(
                             state
@@ -1406,7 +1451,14 @@ impl SkirmishCapture {
                         // Cancel through the dialog's production handlers.
                         Self::set_pointer(&mut state.match_state.input, RANDOM_MAP_CANCEL_POINT);
                         App::handle_skirmish_shell_mouse_move(state);
-                        App::handle_random_map_setup_mouse_down(state);
+                        App::handle_random_map_setup_mouse_down(
+                            &state.platform.window,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                            &mut state.audio.sfx_player,
+                        );
                         App::handle_random_map_setup_mouse_up(state);
                         Self::set_pointer(&mut state.match_state.input, self.rest_point());
                         ensure!(

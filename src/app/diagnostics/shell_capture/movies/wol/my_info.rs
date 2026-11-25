@@ -212,7 +212,7 @@ impl WolCapture {
         matches: impl Fn(&crate::ui::wol_my_info::MyInfoRow) -> bool,
     ) -> Result<usize> {
         use crate::app::shell_wol::my_info;
-        let layout = my_info::layout(state);
+        let layout = my_info::layout(&state.renderer.gpu);
         let face = layout.rect_of(control).context("combo face")?;
         let arrow = crate::ui::skirmish_shell::combo_arrow_hit_rect(face, layout.page.scale);
         welcome_click(state, arrow);
@@ -241,7 +241,7 @@ impl WolCapture {
 
     /// A click on a checkbox's icon.
     fn my_info_check(&mut self, state: &mut AppState, control: u16) -> Result<()> {
-        let layout = crate::app::shell_wol::my_info::layout(state);
+        let layout = crate::app::shell_wol::my_info::layout(&state.renderer.gpu);
         let rect = layout.rect_of(control).context("checkbox")?;
         welcome_click(
             state,

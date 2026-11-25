@@ -119,7 +119,9 @@ impl App {
             Self::return_to_saved_game_list(state, source);
         } else if state.frontend.screen == GameScreen::MainMenu {
             let slide = crate::app::frontend::shell_transition::ShellSlideKind::LoadSavedGame;
-            Self::leave_shell_dialog(state, slide, App::commit_load_saved_game_back);
+            Self::leave_shell_dialog(state, slide, |state| {
+                App::commit_load_saved_game_back(&mut state.frontend, &state.persistence.repository)
+            });
         } else {
             state.match_state.match_presentation.saved_game_browser = None;
             Self::enter_in_game_menu_state(state, InGameMenuState::Menu);
