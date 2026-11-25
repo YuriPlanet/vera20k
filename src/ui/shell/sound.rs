@@ -217,7 +217,7 @@ fn slider_label(index: usize) -> NodeSpec {
         .with(Prop::Align, Value::Int(align))
 }
 
-/// The horizontal volume row shared by the launcher and online options.
+/// The horizontal volume row for online options.
 pub(crate) fn launcher_volume_rects(slider: SoundSlider) -> (RectPx, RectPx) {
     let x = 124 + slider as i32 * 154;
     (RectPx::new(x, 482, 129, 17), RectPx::new(x, 503, 129, 22))
