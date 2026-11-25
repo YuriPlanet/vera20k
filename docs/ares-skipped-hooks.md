@@ -149,6 +149,27 @@ save format is its own.
 | `0x67E74A` | `1002F7A0` | LoadGame_EarlyLoadSides | `Ext/Side/Hooks.cpp` |
 | `0x67F281` | `1002F800` | LoadGame_LateSkipSides | `Ext/Side/Hooks.cpp` |
 
+## Save stream and header (equivalent)
+
+Ares writes its own data after gamemd's save stream, reads it back, stamps the
+save header with the mod and Ares version, and hides a save from another mod
+or Ares version in the load dialog (`0x559F48` sets the row's other-version
+flag). VERA20K saves the Ares state inside its own snapshot (serde) with the
+game's processed rules, and its load refuses a save from another game through
+the fixed-ARTMD hash and the Ares read-way check
+(`app::persistence::resource_load`, `rules::process_owner`). The start hooks
+and the log line fix only log.
+
+| Hook | Ares.dll | Name | Source |
+|---|---|---|---|
+| `0x67D300` | `1006AEF0` | SaveGame_Start | `Misc/Savegame.cpp` |
+| `0x67E730` | `1006AE60` | LoadGame_Start | `Misc/Savegame.cpp` |
+| `0x67E42E` | `1006AED0` | SaveGame | `Misc/Savegame.cpp` |
+| `0x67F7C8` | `1006AE50` | LoadGame_End | `Misc/Savegame.cpp` |
+| `0x67D04E` | `1006AE10` | Game_Save_SavegameInformation | `Misc/Savegame.cpp` |
+| `0x559F31` | `1006AE70` | LoadOptionsClass_GetFileInfo | `Misc/Savegame.cpp` |
+| `0x67CEFE` | `1006ADF0` | Game_Save_FixLog | `Misc/Savegame.cpp` |
+
 ## Win32 front end (not applicable)
 
 Main menu, single player and movie dialog buttons, owner-draw control

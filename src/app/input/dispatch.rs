@@ -89,6 +89,8 @@ use selection::{
 };
 #[cfg(test)]
 pub(super) use sidebar::local_has_manageable_building;
+#[cfg(all(test, tests_app_input_d_z))]
+pub(super) use {hotkey_dispatch::ready_tab_factory, sidebar::ready_cameo_factory};
 #[cfg(test)]
 pub(crate) use sidebar::wheel_action;
 pub(crate) use sidebar::{

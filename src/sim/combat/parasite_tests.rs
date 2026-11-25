@@ -595,12 +595,12 @@ fn retail_drone_fire_frames_survive_launch_parasitism_and_release() {
     .unwrap();
     let frame = crate::sim::animation::resolve_shp_vehicle_body_frame(
         rules.animation_sequence("DRON").unwrap(),
-        facing,
+        crate::sim::animation::shp_vehicle_facing_slot(8, u16::from(facing) << 8, false, false),
         actor.body_frame_counter.get(),
         actor.unit_firing_counter.get(),
         actor.unit_death_counter.get(),
         crate::sim::movement::motion_query::is_moving(actor) == Some(true),
-        false,
+        actor.foot_occupation_enabled(),
     );
     // Original Unit741340 -> Bullet4666E0 -> Attach62A980 -> Exit62A4A0
     // retains +6C0=7 through limbo. Draw73C62B..73C725 selects the fire
@@ -627,12 +627,17 @@ fn retail_drone_fire_frames_survive_launch_parasitism_and_release() {
         );
         let image = crate::sim::animation::resolve_shp_vehicle_body_frame(
             rules.animation_sequence("DRON").unwrap(),
-            actor.body_facing_byte(arena.frame()),
+            crate::sim::animation::shp_vehicle_facing_slot(
+                8,
+                u16::from(actor.body_facing_byte(arena.frame())) << 8,
+                false,
+                false,
+            ),
             actor.body_frame_counter.get(),
             counter,
             -1,
             crate::sim::movement::motion_query::is_moving(actor) == Some(true),
-            false,
+            actor.foot_occupation_enabled(),
         )
         .unwrap();
         assert_eq!((56..88).contains(&image), counter >= 0);

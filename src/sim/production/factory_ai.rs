@@ -165,20 +165,12 @@ fn exit_finished_object(
     }
     match exit {
         BuildingExit::Placed => {
-            // Phobos `BuildingClass_KickOutUnit_BuildingType_Phobos 0x44531F`
-            // clears the building slot after the placed structure exits.
-            // Unit, Infantry and Aircraft clear in Exit_Object's prelude.
-            if product_type.category == ObjectCategory::Building && rules.parallel_ai_queues_act() {
-                let slot = crate::sim::ai_base_building::AiFactorySlot::for_product(
-                    product_type.category,
-                    product_type.naval,
-                );
-                if let Some(house) = sim.houses.get_mut(&owner) {
-                    house
-                        .ai_production_mut()
-                        .clear_parallel_factory(slot, building);
-                }
-            }
+            // Ares' and Phobos' `BuildingClass_KickOutUnit_BuildingType`
+            // (0x44531F, Ares `10024D80`) never run: the building arm sets
+            // the house's choice to -1 at its start (0x444F3F), so the compare
+            // at 0x44531B never reaches them. A placed structure keeps the
+            // building slot; abandonment and removal free it. Unit, Infantry
+            // and Aircraft clear in Exit_Object's prelude.
             //4501A4 reads after exit. A consumed wall is still retained at
             //its constructor Location until the frame's shared725C70 drain.
             let object = BuiltObject::capture(sim, product);
@@ -272,8 +264,8 @@ fn start_factory(
         .get(building)
         .and_then(|entity| sim.entity_object_type(entity, rules))
         .is_some_and(|ty| ty.naval);
-    // Phobos `BuildingClass_Update_Factory_Phobos 0x4502F4` runs before the
-    // money gate, so its claimed slot survives a start that stops here.
+    // The `0x4502F4` hooks run before the money gate, so a claimed slot
+    // survives a start that stops here.
     if !parallel_start_allowed(sim, rules, building, owner, factory_rtti, factory_naval) {
         return;
     }
@@ -337,12 +329,19 @@ fn start_factory(
     }
 }
 
-/// Phobos `BuildingClass_Update_Factory_Phobos @ 0x4502F4`: with Ares'
-/// `AllowParallelAIQueues=` on, the first factory building of a category
-/// claims the house's slot; a second one is refused while the category or the
-/// type in current production forbids parallel queues. The type check reads
-/// the same native `Producing*TypeIndex` choice fields that
-/// [`ai_base_building::suggest_new_object`] consumes.
+/// The `0x4502F4` hooks: the first factory building of a category claims
+/// the house's slot, and a second one may be refused, which skips to the
+/// function's exit `0x4503CA`.
+/// - Ares `BuildingClass_Update_Factory` (Ares.dll `10024E00`), with
+///   `AllowParallelAIQueues=no`: refused whenever another building holds the
+///   slot, so the house produces one per category at a time.
+/// - Phobos `BuildingClass_Update_Factory_Phobos`, with the gate on: refused
+///   while the category or the type in current production forbids parallel
+///   queues. The type check reads the same native `Producing*TypeIndex`
+///   choice fields that [`ai_base_building::suggest_new_object`] consumes.
+///
+/// Ares raises an error for a `Factory=` of no category
+/// ([`AiFactorySlot::for_producer`] `None`); VERA lets that factory start.
 fn parallel_start_allowed(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -353,7 +352,8 @@ fn parallel_start_allowed(
 ) -> bool {
     use crate::sim::ai_base_building::AiFactorySlot;
     use crate::sim::ai_unit_choice::UnitChoiceKind;
-    if !rules.parallel_ai_queues_act() {
+    let serial = rules.serial_ai_queues_act();
+    if !serial && !rules.parallel_ai_queues_act() {
         return true;
     }
     let switches = rules.parallel_ai_queues();
@@ -374,6 +374,9 @@ fn parallel_start_allowed(
     };
     if current == building {
         return true;
+    }
+    if serial {
+        return false;
     }
     let category = match slot {
         AiFactorySlot::Building => ObjectCategory::Building,

@@ -57,6 +57,10 @@ answer it was started with.
 A save records no Ares capability; a save from an older build with the retired `ares`
 feature does not load.
 
+The save reader requires the build's snapshot layout. Animation glow ownership,
+alternate theater art and a map House's low-power override change that layout.
+The reader refuses saves written with earlier layouts.
+
 Ares combines with the `phobos` and `npatch` build features, and every implemented feature
 must keep working when they are compiled in. The rule and the pattern for two extensions
 touching one native site are in
@@ -100,6 +104,17 @@ Supported extensions:
   game loading and default `asset csf-get` / `csf-grep` queries (`--ares On` for
   an Ares game).
 - [Per-type SHP building palettes](ares-building-palettes.md)
+- [SHP vehicle art](../src/app/presentation/instances/shp.rs): `Facings=` above 8
+  (body buckets and the turret block), the `WaterImage=` type's frames and turret, and
+  the shadow drawn before a turreted body (`Ext/Techno/Hooks.Art.cpp`). A weapon's
+  `Anim=` list of 8 or more picks its muzzle anim by facing the same way
+  ([fire_coord.rs](../src/sim/combat/fire_coord.rs))
+- [Moving Alpha Lights](../src/sim/world/alpha_shape.rs): `AlphaImage=` glows follow
+  their Technos, Terrain, Bullets and Anims, go while the object is cloaked, deactivated,
+  unpowered or under ground, and draw a Techno's facing frame
+  (`Ext/Techno/Hooks.Alpha.cpp`). As in Ares, a Techno the player sees as hidden draws
+  no glow, so a mod's `InvisibleInGame=yes` lamp with an `AlphaImage=` stays dark unless
+  the player owns it (no retail lamp has both; retail `TSTLAMP` still glows)
 - [PCX sidebar icons](ares-pcx-cameos.md) (`CameoPCX`, `AltCameoPCX`, `SidebarPCX`)
 - [EVA voice tags and Side selection](ares-eva.md)
 - [Per-type promotion sounds](ares-promotion-sounds.md)
@@ -298,8 +313,8 @@ Supported extensions:
   updates, `TeamRetaliate`, `AIInnerBase`, `EVA.Lost`, EMP on Fly and Jumpjet
   victims, and the `CanMakeStuffUp` draws.
 - [Sidebar and interface hooks](ares-sidebar-ui-hooks.md): no cameo limit, the
-  Ares cameo insertion and top row, and Shift-click batch production. The CSF
-  loader hooks are deferred.
+  Ares cameo insertion and top row, Shift-click batch production, the extra
+  string tables and `NOSTR:` labels.
 - [Radiation types](ares-radiation.md): Ares 3.0 never loads `[RadiationTypes]`;
   its snow-theater hook is the only live radiation hook.
 - [Random-map generator](ares-rmg.md): Archipelago and Desert in the dialog, the

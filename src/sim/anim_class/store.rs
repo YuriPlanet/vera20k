@@ -354,10 +354,12 @@ impl AnimStore {
     /// Remove the retired local anims. Their Destroy already released the
     /// sound and left Display; the destructor's `0x00422A69` takes each out
     /// of the local list.
-    pub(crate) fn drain_local_deletes(&mut self) {
-        for id in std::mem::take(&mut self.local_deletes) {
+    pub(crate) fn drain_local_deletes(&mut self) -> Vec<AnimId> {
+        let drained = std::mem::take(&mut self.local_deletes);
+        for &id in &drained {
             self.remove(id);
         }
+        drained
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&AnimId, &AnimObject)> {

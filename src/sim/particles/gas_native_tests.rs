@@ -172,7 +172,7 @@ fn gas_system_motion_lifetime_replacement_and_rng_match_original_histories() {
                 kind,
                 coords(&prior["coords"]),
                 IVec3::ZERO,
-                rules.particle_type(kind),
+                &rules,
                 &mut sim,
             );
             p.motion = std::array::from_fn(|i| bits(&prior["direction_bits"][i]));

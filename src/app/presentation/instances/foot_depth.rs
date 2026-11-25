@@ -118,7 +118,16 @@ pub(crate) fn unit_bridge_split(
     entity: &ObjectRecord,
     unloading_body: bool,
 ) -> bool {
-    unit_bridge_condition(DepthWorld::of(state), entity, unloading_body, true)
+    unit_bridge_split_in(DepthWorld::of(state), entity, unloading_body)
+}
+
+/// [`unit_bridge_split`] in a given world.
+pub(super) fn unit_bridge_split_in(
+    world: DepthWorld<'_>,
+    entity: &ObjectRecord,
+    unloading_body: bool,
+) -> bool {
+    unit_bridge_condition(world, entity, unloading_body, true)
 }
 
 /// Direct SHP Unit no-turret branch 0x73CE0D..0x73CE7F (stock SQD).
@@ -277,7 +286,7 @@ pub(crate) fn unit_z_adjust(
     )
 }
 
-fn unit_z_adjust_in(
+pub(super) fn unit_z_adjust_in(
     world: DepthWorld<'_>,
     entity: &ObjectRecord,
     unloading_body: bool,

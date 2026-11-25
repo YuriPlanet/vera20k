@@ -1220,7 +1220,12 @@ fn retail_mirage_body_frame_matches_original_unit_shp() {
         let input = &row["input"];
         let body_frame = crate::sim::animation::resolve_shp_vehicle_body_frame(
             set,
-            (input["facing_u16"].as_u64().unwrap() >> 8) as u8,
+            crate::sim::animation::shp_vehicle_facing_slot(
+                8,
+                input["facing_u16"].as_u64().unwrap() as u16,
+                true,
+                false,
+            ),
             input["body_counter"].as_u64().unwrap() as u32,
             -1,
             -1,

@@ -1329,6 +1329,13 @@ fn ares_smoke_keys_replace_the_aircraft_smoke() {
         );
     }
     assert!(drawn > 0);
+    // `0x10047BA6..0x10047BAA`: a 0/0 health ratio is unordered, which Ares
+    // does not take as red.
+    let unordered = serde_json::json!({"health": 0, "strength": 0, "name": "nan", "seed": 1});
+    assert_eq!(
+        smoke(&unordered, "Smoke.ChanceRed=100\nSmoke.ChanceDead=100"),
+        (false, false)
+    );
 }
 
 /// Ares FootClass_Crash_Spin (Ares.dll 10049050, hook 0x4DECAE):

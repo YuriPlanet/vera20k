@@ -15,17 +15,14 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
   gameplay key among them. The keys still unread are UI and front-end keys (uimd.ini
   `[UISettings]`, campaign `HoverSound`, the movie list,
   `DebugKeysEnabled`, `DirectX.Force`) and the
-  presentation keys `DamageSmokeParticleSystems` / `DamageSparksParticleSystems` and
-  `AlternateTheaterArt` (read by `pType->ID`, which the key scan misses). Ares
+  presentation keys `DamageSmokeParticleSystems` / `DamageSparksParticleSystems`. Ares
   3.0 itself never loads `[RadiationTypes]` or `AttachEffect.Damage`/`.DamageDelay`
   (no reader in the DLL; see [ares-radiation.md](ares-radiation.md) and
   [ares-attach-effect.md](ares-attach-effect.md)). `ares-src/report/ini_coverage.tsv` is
   not exhaustive; use the key scan under Tools.
 - Hooks: Ares 3.0 installs 1448 (`report/hooks.tsv` also lists 234 0.A hooks that 3.0
-  removed). The engine source cites 1022 and the chain docs give 360 more a disposition
-  (ported elsewhere, equivalent, not applicable, skipped or residual); 66 are
-  untouched, listed at the end with `0x5F3D65`, whose address the engine quotes only
-  for the stock destructor. A residual disposition is still a gap: every
+  removed). The chain docs record the disposition of each documented hook. The
+  39 untouched hooks are listed at the end. A residual disposition is still a gap. Every
   residual in the chain docs is gathered on this page, the gameplay ones under
   [Smaller gameplay residuals](#smaller-gameplay-residuals).
 - Tests at the commit that adds this page, when Ares was still a build feature
@@ -74,8 +71,6 @@ data.
 
 | Residual | Hooks | Where |
 |---|---|---|
-| Serial AI queues (`AllowParallelAIQueues=no`); the default changes nothing | `0x4502F4`, `0x4CA07A`, the four KickOutUnit hooks (`0x443CCA`, `0x444119`, `0x444131`, `0x44531F`) | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
-| An upgrade's ProduceCash timer is not started at Put, so the Update hook starts it one frame longer | `0x4409F4` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | Flying carriers: spawned aircraft keep their launch Z, and the spawn manager aims them at its cell | `0x414338`, `0x6B783B` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | Capture manager and parasite on any weapon slot (TechnoClass Init_1), with the parasite slot hooks | `0x6F407D`, `0x629804`, `0x62A020`, `0x62A7B1` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | Gunner temporal swap | `0x74642C`, `0x74653C` | [ares-techno-hooks.md](ares-techno-hooks.md) |
@@ -83,7 +78,6 @@ data.
 | Occupier + VehicleThief destination expiry | `0x4D9A83` | [ares-techno-hooks.md](ares-techno-hooks.md) |
 | The PermaDisguise arm of `InfantryClass::ClearDisguise` has no Rust caller | `0x5227A3` | [ares-combat-sim-hooks.md](ares-combat-sim-hooks.md) |
 | `GarrisonedIn` is not kept: a garrisoned infantryman's skipped death anim, its release on Limbo and Unlimbo | `0x518434`, `0x51DF38`, `0x51DFFD` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
-| A map house section's `Degrades=` | `0x50114D` | [ares-building-house-hooks.md](ares-building-house-hooks.md) |
 | A repacked MCV that is still unplaced skips the conversion tail | `0x449FF8` | [ares-bugfixes.md](ares-bugfixes.md) |
 | UnInit announces expiry only when Limbo fails; VERA keeps both broadcasts and their order | `0x5F6612` | [ares-bugfixes.md](ares-bugfixes.md) |
 | Expired Flamer/Scorch anims make no SmallFire/LargeFire anims (needs `MapClass::GetRandomCoordsNear`); retail sets neither key | `0x4250C9`, `0x42511B`, `0x42513F` | [ares-anim-particles.md](ares-anim-particles.md) |
@@ -97,8 +91,6 @@ Input rungs
 ([ares-techno-hooks.md](ares-techno-hooks.md),
 [ares-building-house-hooks.md](ares-building-house-hooks.md)):
 - an Ivan entering an allied Grinder without Ctrl (`0x51EB48`; VERA answers IvanBomb);
-- the structure and defense tab hotkeys, the cameo click and the ready-building strip
-  asking for a usable factory (`0x535DB6`, `0x535E76`, `0x6AB312`, `0x6A9822`);
 - `SuperGapRadiusInCells` multiples of 256: the stock What_Action (`0x004472AA`)
   reads the char, VERA the int.
 
@@ -125,8 +117,10 @@ the alternate model, including an unloading harvester's alternate, before that
 model has its own unit. The current bounded chain is ordinary base-gun VXL art.
 RNG draws 0, simulation timer writes 0, detach calls 0.
 
-SHP image/frame hooks and mixed actual/alternate indexed-gun modes remain open.
-Native uses actual TurretCount/IsGattling to choose the selected model's base or
+The SHP draw also selects the alternate (`UnitClass_DrawSHP_WaterType` `73C5FC`
+and `UnitClass_DrawSHP_ChangeType1` in `app::presentation::instances::shp`).
+Mixed actual/alternate indexed-gun modes remain open. Native uses actual
+TurretCount/IsGattling to choose the selected model's base or
 indexed slots, while the current atlas keys derive this from the selected model.
 Custom combinations can show a different gun or omit it. These
 require separate physical slot identities through the existing voxel catalog and
@@ -136,19 +130,14 @@ atlas. The ordinary ROBO/MTNK path has zero TurretCount on both types.
 
 ## Presentation and UI not ported
 
-- Unit art still needs WaterImage's SHP path and mixed indexed-gun draws above,
-  the SHP facings and change-type draws (Ext/Techno/Hooks.Art.cpp),
-  AlphaImage lights (Ext/Techno/Hooks.Alpha.cpp) beyond a glow following its object
-  (`sim/world/alpha_shape.rs` lists the rest), the ore-gather anim under EMP. Listed at
-  the end. A `Turret=yes` NoSpawnAlt unit's turret over its WO body (`0x73B6E3`) and
-  `AlternateTheaterArt` (`0x5F9634`, read for Load2DArt `0x5F9070`) are residuals in
-  [ares-techno-hooks.md](ares-techno-hooks.md). PCX cameos are ported
+- Unit art still needs the mixed indexed-gun draws above and the ore-gather anim
+  under EMP. A `Turret=yes` NoSpawnAlt unit's turret over its WO body (`0x73B6E3`)
+  is a residual in [ares-techno-hooks.md](ares-techno-hooks.md). PCX cameos are ported
   ([ares-pcx-cameos.md](ares-pcx-cameos.md)), but that doc cites neither of their hooks
   (`0x6A9A43`, `0x712045`), so both stay in the list.
 - Technos: the radial indicators of non-buildings (`0x41BE80`), the damage spark and smoke
   particle-system lists (`DamageSparksParticleSystems`, `DamageSmokeParticleSystems`;
-  `0x6FAD49`, `0x702894`) and the `Pip=`/`OccupyPip=` colours (`0x4748A0`). See
-  [ares-techno-hooks.md](ares-techno-hooks.md) and [ares-bugfixes.md](ares-bugfixes.md).
+  `0x6FAD49`, `0x702894`). See [ares-techno-hooks.md](ares-techno-hooks.md).
 - Sidebar and screens: the observer strip art (`0x6AA0CA`, `0x6AA164`;
   [ares-country-presentation.md](ares-country-presentation.md)), the Money superweapon
   tooltip (`0x6A932B`).
@@ -160,8 +149,7 @@ atlas. The ordinary ROBO/MTNK path has zero TurretCount on both types.
   the campaign keys `DebugOnly`/`HoverSound`/`Summary`) and unlimited player colours
   (`[Colors] Count` above 8). Ares' defaults match the engine. See
   [ares-sidebar-ui-hooks.md](ares-sidebar-ui-hooks.md).
-- The CSF loader hooks (Misc/CSFLoader.cpp) are deferred: CSF loading is handled separately.
-- DLL plumbing (Checksum, Savegame, CopyProtection, Debug, Swizzle, Ares.cpp), most
+- DLL plumbing (Checksum, CopyProtection, Debug, Swizzle, Ares.cpp), most
   of which does not apply to the engine.
 - Overlay radar colours (OverlayTypeClass_GetRadarColor, `1006ACC0`, hook `0x5FED00`):
   Ares returns the OverlayType's `RadarColor` field where VERA reads the SHP frame
@@ -238,24 +226,11 @@ Retail INIs for retail tests: run the repo's `extract-ini` into `ini/` and set `
 
 ## Untouched hooks
 
-These 67 Ares 3.0 hooks have no citation in the engine or in another chain doc (the
-hook script above skips this page, and counts `0x5F3D65` as cited). Most are DLL plumbing, unit art and the alpha
-lights.
+These 39 Ares 3.0 hooks have no citation in the engine or in another chain doc
+(the hook script above skips this page). Most are DLL plumbing.
 
 | Hook | Ares.dll | Name | Source |
 |---|---|---|---|
-| `0x420A71` | `100475A0` | AlphaShapeClass_CTOR_Anims | `Ext/Techno/Hooks.Alpha.cpp` |
-| `0x420F75` | `10047470` | AlphaLightClass_UpdateScreen_ShouldDraw | `Ext/Techno/Hooks.Alpha.cpp` |
-| `0x4210AC` | `10047440` | AlphaLightClass_UpdateScreen_Header | `Ext/Techno/Hooks.Alpha.cpp` |
-| `0x4211AC` | `10047400` | AlphaLightClass_UpdateScreen_Body | `Ext/Techno/Hooks.Alpha.cpp` |
-| `0x421371` | `100477D0` | TacticalClass_UpdateAlphasInRectangle_ShouldDraw | `Ext/Techno/Hooks.Alpha.cpp` |
-| `0x42146E` | `10047780` | TacticalClass_UpdateAlphasInRectangle_Header | `Ext/Techno/Hooks.Alpha.cpp` |
-| `0x42152C` | `10047740` | TacticalClass_UpdateAlphasInRectangle_Body | `Ext/Techno/Hooks.Alpha.cpp` |
-| `0x421730` | `10047610` | AlphaShapeClass_SDDTOR | `Ext/Techno/Hooks.Alpha.cpp` |
-| `0x421798` | `10047670` | AlphaShapeClass_SDDTOR_Anims | `Ext/Techno/Hooks.Alpha.cpp` |
-| `0x423B0B` | `100476C0` | AnimClass_Update_AlphaLight | `Ext/Techno/Hooks.Alpha.cpp` |
-| `0x5F3D65` | `100476E0` | ObjectClass_DTOR | `Ext/Techno/Hooks.Alpha.cpp` |
-| `0x71944E` | `10047810` | TeleportLocomotionClass_ILocomotion_Process | `Ext/Techno/Hooks.Alpha.cpp` |
 | `0x4A1C10` | `1005F550` | Checksummer_Add_BYTE | `Misc/Checksum.cpp` |
 | `0x4A1CA0` | `1005F600` | Checksummer_Add_bool | `Misc/Checksum.cpp` |
 | `0x4A1D30` | `1005F5E0` | Checksummer_Add_WORD | `Misc/Checksum.cpp` |
@@ -264,22 +239,6 @@ lights.
 | `0x4A1D90` | `1005F640` | Checksummer_Add_double | `Misc/Checksum.cpp` |
 | `0x52E9AA` | `1005F680` | Frontend_WndProc_Checksum | `Misc/Checksum.cpp` |
 | `0x6516F0` | `1005F720` | Multiplay_LogToSync_MPDEBUG | `Misc/Checksum.cpp` |
-| `0x73B4A0` | `100481E0` | UnitClass_DrawVXL_WaterType | `Ext/Techno/Hooks.Art.cpp` |
-| `0x73C5FC` | `10048190` | UnitClass_DrawSHP_WaterType | `Ext/Techno/Hooks.Art.cpp` |
-| `0x73C613` | `10047FE0` | UnitClass_DrawSHP_FacingsA | `Ext/Techno/Hooks.Art.cpp` |
-| `0x73C655` | `10047E80` | UnitClass_DrawSHP_ChangeType1 | `Ext/Techno/Hooks.Art.cpp` |
-| `0x73C69D` | `10047E80` | UnitClass_DrawSHP_ChangeType1 | `Ext/Techno/Hooks.Art.cpp` |
-| `0x73C702` | `10047E80` | UnitClass_DrawSHP_ChangeType1 | `Ext/Techno/Hooks.Art.cpp` |
-| `0x73C733` | `10048180` | UnitClass_DrawSHP_SkipTurretedShadow | `Ext/Techno/Hooks.Art.cpp` |
-| `0x73CD01` | `10048150` | UnitClass_DrawSHP_FacingsB | `Ext/Techno/Hooks.Art.cpp` |
-| `0x483BF1` | `1006ADE0` | CellClass_Load_Crates | `Misc/Savegame.cpp` |
-| `0x559F31` | `1006AE70` | LoadOptionsClass_GetFileInfo | `Misc/Savegame.cpp` |
-| `0x565215` | `1006AEC0` | MapClass_CTOR_NoInit_Crates | `Misc/Savegame.cpp` |
-| `0x67CEFE` | `1006ADF0` | Game_Save_FixLog | `Misc/Savegame.cpp` |
-| `0x67D04E` | `1006AE10` | Game_Save_SavegameInformation | `Misc/Savegame.cpp` |
-| `0x67D300` | `1006AEF0` | SaveGame_Start | `Misc/Savegame.cpp` |
-| `0x67E42E` | `1006AED0` | SaveGame | `Misc/Savegame.cpp` |
-| `0x67F7C8` | `1006AE50` | LoadGame_End | `Misc/Savegame.cpp` |
 | `0x47AE36` | `10003B00` | CDFileClass_SetFileName | `Ares.cpp` |
 | `0x47B026` | `10003B90` | FileFindOpen | `Ares.cpp` |
 | `0x52C5E0` | `10003AE0` | Ares_NoLogo | `Ares.cpp` |

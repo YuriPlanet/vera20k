@@ -862,6 +862,48 @@ pub fn object_find_factory(
     )
 }
 
+/// What `HouseExt::FindFactory` (Ares.dll `10020D40`) finds for an object's
+/// type among its owner's factories ([`ares_object_factory`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AresObjectFactory {
+    /// No factory fits (state 1).
+    Missing,
+    /// Only factories without power or deactivated fit (state 2).
+    Unpowered,
+    /// A factory that fits, the primary first (states 3 and 4).
+    Found(u64),
+}
+
+/// Ares' sidebar cameo click asks `HouseExt::FindFactory(owner, type, false,
+/// true, false, true)` (`10020D40`) for the ready product `object_id` itself
+/// (SidebarClass_ProcessCameoClick_Power, Ares.dll `10025170`, hook
+/// `0x006AB312`, in place of the stock `FindFactory(0, 0)`): any fitting
+/// factory without power or deactivated only counts as
+/// [`AresObjectFactory::Unpowered`], and the first powered one or the
+/// primary answers.
+pub fn ares_object_factory(sim: &Simulation, rules: &RuleSet, object_id: u64) -> AresObjectFactory {
+    let Some(object) = sim.entities().get(object_id) else {
+        return AresObjectFactory::Missing;
+    };
+    let Some(object_type) = sim.entity_object_type(object, rules) else {
+        return AresObjectFactory::Missing;
+    };
+    match query_factory(
+        sim,
+        rules,
+        object.owner(),
+        object_type,
+        false,
+        true,
+        false,
+        true,
+    ) {
+        FactorySearch::Online(id) | FactorySearch::Primary(id) => AresObjectFactory::Found(id),
+        FactorySearch::Offline => AresObjectFactory::Unpowered,
+        FactorySearch::Missing | FactorySearch::BuildLimitRefused => AresObjectFactory::Missing,
+    }
+}
+
 /// Original ObjectType5F7900, scanned in House+6C insertion order. A first
 /// eligible primary wins; without one, return the last eligible building.
 /// Human PLACE4FB1DA retains this transient identity through its radio/release

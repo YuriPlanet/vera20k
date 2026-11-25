@@ -399,7 +399,7 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | `5F8277` | ObjectTypeClass_Load3DArt_NoSpawnAlt1 | `10041280` | ported: a unit's NoSpawnAlt `<Image>WO` pair is required, whatever its `Turret=` (`rules::voxel_model_plan`) |
 | `5F848C` | ObjectTypeClass_Load3DArt_NoSpawnAlt2 | `100413A0` | ported: skips the stock WO load into the turret slot (`rules::voxel_model_plan`) |
 | `73B6E3` | UnitClass_DrawVXL_NoSpawnAlt | `10041460` | equivalent: the unit draw reads the `{type}WO` pair by name in every build (`voxel_frame_catalog::unit_atlas_variants`); residual: a `Turret=yes` NoSpawnAlt unit draws that body without its turret, where Ares draws the turret over it (retail and Brute Force have no such type) |
-| `5F9634` | ObjectTypeClass_LoadFromINI | `100413B0` | residual: reads `AlternateTheaterArt` (unread), whose only consumer is Load2DArt (`10041040`, hook `0x5F9070`, not ported: VERA runs the stock SHP image load); retail and Brute Force never set it |
+| `5F9634` | ObjectTypeClass_LoadFromINI | `100413B0` | ported: a TechnoType read the Ares way reads `AlternateTheaterArt` (`ObjectImageState::read_ares_alternate_theater_art`); its consumer Load2DArt (`10041040`, hook `0x5F9070`) is ported in `ObjectImageState::load_unowned_shp`: Image plus the theater letter, once, when the art INI has that section, in place of AlternateArcticArt |
 | `5F865F` | ObjectTypeClass_Load3DArt_Turrets | `10042220` | equivalent: turret voxel enumeration has no 18 bound |
 | `5F887B` | ObjectTypeClass_Load3DArt_Barrels | `10042090` | equivalent: barrel voxel enumeration has no 18 bound |
 | `70DC70` | TechnoClass_SwitchGunner | `10042480` | ported earlier |

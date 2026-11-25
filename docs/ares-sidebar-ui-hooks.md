@@ -26,6 +26,13 @@ takes its Ares form, in every build, when Ares plays in the game
   in `src/app/input/dispatch.rs`. The Options page's Shift-Click Batch Queue keeps
   its own count when ticked; a held build, a finished build and the structure strips
   keep their single event.
+- **Extra string tables and `NOSTR:`** (`CSF_LoadExtraFiles` 0x6BD886,
+  `CSF_AddOrOverrideLabel` 0x734A5F, `CSF_LoadString_1` 0x734E83,
+  `CSF_LoadString_2` 0x734EC2). A game that mounts `ares.mix` reads `ares.csf`,
+  `ares_<language>.csf` and `stringtable00.csf` to `stringtable99.csf` after
+  the base table. A later label replaces an earlier one. A label lookup such
+  as `UIName=NOSTR:Heavy Tank` displays `Heavy Tank` directly. Literal and
+  missing-label text use a 101-character limit (`GetDynamicString` `100607C0`).
 
 ## Residuals
 
@@ -93,12 +100,12 @@ takes its Ares form, in every build, when Ares plays in the game
 | `0x6ABF44` | `1002D0E0` | sub_6ABD30_Strip1 | `Ext/Rules/Hooks.Selects.cpp` | Not applicable | gamemd gadget-list plumbing for the shared SelectClass buttons; the engine pools one hit region per visible cameo, grown on demand (`sync_cameos`, `src/app/input/gadget_input.rs`) |
 | `0x6ABFB2` | `1002D100` | sub_6ABD30_Strip2 | `Ext/Rules/Hooks.Selects.cpp` | Not applicable | gamemd gadget-list plumbing for the shared SelectClass buttons; the engine pools one hit region per visible cameo, grown on demand (`sync_cameos`, `src/app/input/gadget_input.rs`) |
 | `0x6AC02F` | `1002D130` | sub_6ABD30_Strip3 | `Ext/Rules/Hooks.Selects.cpp` | Not applicable | tooltip registration for the select buttons; the engine builds tooltip regions from the visible items (`in_game_regions`, `src/app/input/tooltips.rs`) |
-| `0x7346D0` | `10060DD0` | CSF_LoadBaseFile | `Misc/CSFLoader.cpp` | Deferred | Deferred: CSF loading is handled separately |
-| `0x734823` | `10060D60` | CSF_AllocateMemory | `Misc/CSFLoader.cpp` | Deferred | Deferred: CSF loading is handled separately |
-| `0x7349CF` | `10060F20` | StringTable_ParseFile_Buffer | `Misc/CSFLoader.cpp` | Deferred | Deferred: CSF loading is handled separately |
-| `0x734A97` | `10060EE0` | CSF_SetIndex | `Misc/CSFLoader.cpp` | Deferred | Deferred: CSF loading is handled separately |
-| `0x734E83` | `10060E80` | CSF_LoadString_1 | `Misc/CSFLoader.cpp` | Deferred | Deferred: CSF loading is handled separately |
-| `0x734EC2` | `10060EC0` | CSF_LoadString_2 | `Misc/CSFLoader.cpp` | Deferred | Deferred: CSF loading is handled separately |
+| `0x7346D0` | `10060DD0` | CSF_LoadBaseFile | `Misc/CSFLoader.cpp` | Equivalent | `CsfFile::load_active` loads the base table first and then appends the extra files |
+| `0x734823` | `10060D60` | CSF_AllocateMemory | `Misc/CSFLoader.cpp` | Equivalent | Ares reserves space for extra labels. The Ares table in VERA grows as labels arrive in `append_ares` |
+| `0x7349CF` | `10060F20` | StringTable_ParseFile_Buffer | `Misc/CSFLoader.cpp` | Not applicable | VERA parses CSF bytes already in memory |
+| `0x734A97` | `10060EE0` | CSF_SetIndex | `Misc/CSFLoader.cpp` | Ported | `append_ares` writes the value into the chosen existing or new slot |
+| `0x734E83` | `10060E80` | CSF_LoadString_1 | `Misc/CSFLoader.cpp` | Ported | `CsfFile::get` and `text` return the text after `NOSTR:` before searching the table |
+| `0x734EC2` | `10060EC0` | CSF_LoadString_2 | `Misc/CSFLoader.cpp` | Ported | `CsfFile::text` uses `ares_dynamic_text` to limit the `MISSING:'label'` text to 101 characters |
 | `0x6AB773` | `10064520` | SelectClass_ProcessInput_ProduceUnsuspended | `Misc/Gadgets.cpp` | Ported | `produce_copies`, `src/app/input/sidebar_eva.rs`, called by `sidebar_cameo_press`, `src/app/input/dispatch.rs`: Shift queues five PRODUCE events |
 | `0x4E42A0` | `10067000` | GameSetup_GetColorTooltip | `Misc/Interface.PlayerColors.cpp` | Equivalent | tooltips for the eight colours and the observer are `STT:PlayerColor*` (`src/ui/skirmish_shell/state/hit_test.rs`); `Slot%d.Tooltip` is residual R2 |
 | `0x4E4556` | `10067200` | hWnd_GetSlotColorIndex | `Misc/Interface.PlayerColors.cpp` | Not applicable | Win32 colour combo-box bookkeeping; the shell tracks each row's claim itself (`available_color_choices`, `color_claimed_by_other_row`, `src/ui/skirmish_shell/state/combos.rs`) |

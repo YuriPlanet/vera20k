@@ -122,6 +122,9 @@ impl RulesPassProcessor {
                 // visual asset loading.
                 let theater = self.image_theater;
                 let member = &mut self.family_mut(family)[index];
+                if ares_way {
+                    member.object_image.read_ares_alternate_theater_art(&raw);
+                }
                 member
                     .object_image
                     .read_ini(&raw, fixed_art, ObjectImageKind::Ordinary, theater);
