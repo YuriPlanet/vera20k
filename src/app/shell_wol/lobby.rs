@@ -2149,33 +2149,6 @@ fn begin_join(state: &mut AppState, row: usize, show: bool) {
     continue_join(state, channel);
 }
 
-/// VERA: Join Any Game joins the first room the list shows that admits this
-/// player without a password, as Join on its row does. With none, Create Game
-/// opens instead.
-fn join_any(state: &mut AppState) {
-    let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
-    let Some(lobby) = lobby(state.frontend.wol.as_ref()) else {
-        return;
-    };
-    let open: Vec<usize> = (lobby.ui.game_rows.iter().enumerate())
-        .filter(|(_, row)| !row.watch && !row.keyed)
-        .map(|(row, _)| row)
-        .collect();
-    let Some(row) = open
-        .into_iter()
-        .find(|&row| admit_row(state, row, observer, false))
-    else {
-        begin_create(state);
-        return;
-    };
-    let Some(lobby) = lobby_mut(state.frontend.wol.as_mut()) else {
-        return;
-    };
-    lobby.ui.select_row(GAMES, Some(row));
-    lobby.ui.admitted_name = lobby.ui.game_rows.get(row).map(|row| row.name.clone());
-    begin_join(state, row, false);
-}
-
 /// VERA: the match of the selected watch row.
 fn selected_match(lobby: &WolLobby) -> Option<String> {
     lobby
@@ -2687,7 +2660,6 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
             sync(state);
             cursor_moved(state);
         }
-        WolLobbyAction::JoinAny => join_any(state),
         // VERA: a shorter list keeps its top row within the rows it shows.
         WolLobbyAction::FilterToggled(control) => {
             state.frontend.wol_lobby_globals.room_filter.toggle(control);
