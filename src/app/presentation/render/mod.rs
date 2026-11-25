@@ -536,7 +536,13 @@ pub(crate) fn render_game(
     let after_world = render_started.map(|_| Instant::now());
 
     // Phase 2: Build debug overlay instances (pathgrid, cell grid, heightmap).
-    let debug = build_instances::build_debug_instances(state, vsw, vsh);
+    let debug = build_instances::build_debug_instances(
+        &state.diag,
+        &state.match_state,
+        &state.renderer.bit_font,
+        vsw,
+        vsh,
+    );
     let after_debug = render_started.map(|_| Instant::now());
 
     // Phase 3: Recompose the shroud ABuffer on the GPU, recorded into this
