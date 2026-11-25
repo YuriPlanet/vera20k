@@ -7,8 +7,9 @@
 //! - Bottom left: the quartermaster's buttons (redraw, improve, battle),
 //!   then a card per offer: name, price, tier, how close it is to a merge,
 //!   hire and keep.
-//! - Left: the company, a button per member; a second click within three
-//!   seconds dismisses it.
+//! - Top left, below the game's message lines: the company, a button per
+//!   member, filled downwards so a member keeps its place; a second click
+//!   within three seconds dismisses it.
 //! - Middle: a card per supply to pick from, while a pick is waiting.
 //!
 //! The pictures are the mod folder's PCX files: `mfp_<type>.pcx` portraits,
@@ -39,8 +40,8 @@ use vera20k_sdk::client::{self, prelude::*};
 
 // ------------------------------------------------------------------ Layout
 
+const TOP_LEFT: i64 = 0;
 const TOP_RIGHT: i64 = 2;
-const LEFT: i64 = 3;
 const MIDDLE: i64 = 4;
 const BOTTOM_LEFT: i64 = 6;
 
@@ -64,9 +65,12 @@ const SUPPLY_WIDTH: i64 = 150;
 const SUPPLY_STEP: i64 = 176;
 const BAR_WIDTH: i64 = 240;
 
-/// Render frames are not counted: a second dismiss click counts within so
-/// many simulation frames.
-const CONFIRM_FRAMES: i32 = 45;
+/// Below the game's message lines.
+const COMPANY_TOP: i64 = 140;
+
+/// A second dismiss click counts within so many seconds, whatever the game
+/// speed.
+const CONFIRM_SECONDS: f32 = 3.0;
 
 // ------------------------------------------------------------------- Nodes
 
@@ -261,9 +265,10 @@ static SUPPLIES: Supplies = Supplies {
     cards: [SupplyCard::NEW; 3],
 };
 
-/// The member a first dismiss click armed, and when; −1 for none.
+/// The member a first dismiss click armed, and the seconds it has left
+/// (f32 bits); −1 for none.
 static ARMED: AtomicI32 = AtomicI32::new(-1);
-static ARMED_AT: AtomicI32 = AtomicI32::new(0);
+static ARMED_LEFT: AtomicU32 = AtomicU32::new(0);
 
 // ------------------------------------------------------------------- State
 
@@ -447,7 +452,7 @@ fn start() {
         button(&card.keep, node, CARD_WIDTH, "mfb136s.pcx");
     }
 
-    let company = column(&COMPANY.column, LEFT, MARGIN, 0);
+    let company = column(&COMPANY.column, TOP_LEFT, MARGIN, COMPANY_TOP);
     text(&COMPANY.title, company);
     for item in &COMPANY.members {
         button(item, company, COMPANY_WIDTH, "mfb150s.pcx");
@@ -476,7 +481,12 @@ fn start() {
 
 // ------------------------------------------------------------------ Render
 
-fn render(_dt: f32, _alpha: f32) {
+fn render(dt: f32, _alpha: f32) {
+    let left = f32::from_bits(ARMED_LEFT.load(Relaxed)) - dt;
+    ARMED_LEFT.store(left.to_bits(), Relaxed);
+    if left <= 0.0 {
+        ARMED.store(-1, Relaxed);
+    }
     let me = Client::viewer();
     let camp = (!me.is_none()).then(|| Camp::read(me));
     let playing = camp
@@ -696,9 +706,6 @@ fn cards(camp: &Camp) {
 }
 
 fn company(camp: &Camp) {
-    if ARMED.load(Relaxed) >= 0 && client::frame() - ARMED_AT.load(Relaxed) > CONFIRM_FRAMES {
-        ARMED.store(-1, Relaxed);
-    }
     let members = camp.members();
     COMPANY.title.label(
         Line::new()
@@ -798,7 +805,7 @@ fn on_click(event: &ClientEventRecord) {
                 send(proto::MSG_DISMISS, at);
             } else {
                 ARMED.store(at as i32, Relaxed);
-                ARMED_AT.store(client::frame(), Relaxed);
+                ARMED_LEFT.store(CONFIRM_SECONDS.to_bits(), Relaxed);
             }
             return;
         }
