@@ -85,7 +85,7 @@ fn say_goodbye(state: &mut AppState) {
     let online =
         state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol;
     if online && state.match_state.live_network.is_some() {
-        crate::app::lan_service::return_transport(state);
+        crate::app::lan_service::return_transport(&mut state.frontend, &mut state.match_state);
     }
     crate::app::shell_wol::retire_visit_for_exit(state);
     if state.match_state.lan_service.is_some() {

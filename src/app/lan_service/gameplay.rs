@@ -338,25 +338,25 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
 
 /// End private channels on leaving gameplay, retaining the LAN visit's same
 /// socket pair for BB. It is dropped only when that visit itself ends.
-pub(crate) fn return_transport(state: &mut AppState) {
+pub(crate) fn return_transport(
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) {
     if let Some(report) =
-        crate::app::match_runtime::network_quality::close(&mut state.match_state.network_quality)
+        crate::app::match_runtime::network_quality::close(&mut match_state.network_quality)
     {
-        crate::app::shell_wol::keep_network_report(state.frontend.wol.as_mut(), &report);
+        crate::app::shell_wol::keep_network_report(frontend.wol.as_mut(), &report);
     }
-    let online = state.match_state.session_mode() == SessionMode::Wol;
-    let Some(live) = state.match_state.live_network.take() else {
+    let online = match_state.session_mode() == SessionMode::Wol;
+    let Some(live) = match_state.live_network.take() else {
         return;
     };
     if live.watching()
         && let Ok(endpoint) = live.primary_addr()
     {
-        state
-            .match_state
-            .session
-            .disconnect_network_watcher(endpoint);
+        match_state.session.disconnect_network_watcher(endpoint);
     }
-    if let Some(service) = state.match_state.lan_service.as_mut() {
+    if let Some(service) = match_state.lan_service.as_mut() {
         let mut transport = live.into_transport();
         transport.connections_mut().reset();
         if online {

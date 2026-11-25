@@ -547,7 +547,7 @@ impl App {
         }
         // The accepted match owns the socket until either exit path returns
         // it to the visit's shared transport owner, including score Continue.
-        crate::app::lan_service::return_transport(state);
+        crate::app::lan_service::return_transport(&mut state.frontend, &mut state.match_state);
         crate::app::match_runtime::sim_tick::flush_replay_log(state);
         Self::capture_returned_multiplayer_scenario(
             &mut state.frontend,

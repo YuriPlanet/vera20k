@@ -2160,7 +2160,7 @@ fn advance_one_simulation_frame(
     let slow_tick = crate::app::cncnet::SpawnSlowPc::of(&state.frontend).tick;
     // A spawn test switch counts a tick this thread runs itself apart from
     // the service around it (`spawn_frame_cost`).
-    let inline_cost = crate::app::spawn_frame_cost::begin(state);
+    let inline_cost = crate::app::spawn_frame_cost::begin(&state.frontend.external_progress);
     // A lent tick publishes the frame the last read captured: until `lend`
     // below, this dispatch writes nothing a frame records.
     let parts = if threaded {
@@ -2420,13 +2420,16 @@ fn advance_one_simulation_frame(
     // The thread's part of a handed-off frame counted its cost; the exchange
     // adds no second sample.
     let tick_cost = (resume != FrameResume::QueueHandoff).then(|| advance_started.elapsed());
-    crate::app::spawn_frame_cost::end_inline_tick(state, inline_cost);
+    crate::app::spawn_frame_cost::end_inline_tick(
+        &mut state.frontend.external_progress,
+        inline_cost,
+    );
     if let Some(tick_cost) = tick_cost {
         state
             .platform
             .frame_pacer
             .record_frame_cost(tick_cost, false);
-        crate::app::spawn_frame_cost::tick(state, tick_cost, false);
+        crate::app::spawn_frame_cost::tick(&mut state.frontend.external_progress, tick_cost, false);
     }
     record_replay_frame(
         state.match_state.match_diagnostics.replay_log.as_mut(),
@@ -2534,7 +2537,7 @@ fn finish_threaded_output(
         .platform
         .frame_pacer
         .record_frame_cost(tick_cost, true);
-    crate::app::spawn_frame_cost::tick(state, tick_cost, true);
+    crate::app::spawn_frame_cost::tick(&mut state.frontend.external_progress, tick_cost, true);
     let committed = finish_simulation_frame(state, finish, output, Some(tick_cost), mouse_scroll);
     // The draw left this tick's radar-terrain marks with it
     // (`App::drain_radar_terrain_marks`); they go to the minimap now.

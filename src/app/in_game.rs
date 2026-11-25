@@ -74,7 +74,10 @@ impl App {
     /// Quit Game's leave: a frame suspended in Wait_For_Players finishes its
     /// tail before the result-8 return.
     pub(super) fn leave_network_wait_to_main_menu(state: &mut AppState) {
-        crate::app::match_runtime::network_failure::hold_quit_line(state);
+        crate::app::match_runtime::network_failure::hold_quit_line(
+            &mut state.frontend,
+            &state.match_state,
+        );
         if state
             .match_state
             .sim_runtime
@@ -135,7 +138,7 @@ impl App {
         state.match_state.match_presentation.saved_game_browser = None;
         state.match_state.network_wait = Default::default();
         state.match_state.network_failure = None;
-        crate::app::lan_service::return_transport(state);
+        crate::app::lan_service::return_transport(&mut state.frontend, &mut state.match_state);
         // Persist the deterministic diagnostic log before leaving the scenario.
         // Runtime and presentation resources remain retained in the shell.
         crate::app::match_runtime::sim_tick::flush_replay_log(state);

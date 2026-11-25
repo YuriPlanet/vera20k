@@ -1206,9 +1206,12 @@ pub(crate) fn leave_setup(match_state: &mut crate::app::match_runtime::state::Ma
 
 /// A new PrepareSession visit reaches5DB680 ->540A80 before5DC350.
 /// Reuse the portable socket pair, with freshly initialized channel state.
-pub(crate) fn restart_lobby_visit(state: &mut AppState) {
-    return_transport(state);
-    if let Some(service) = state.match_state.lan_service.as_mut() {
+pub(crate) fn restart_lobby_visit(
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+) {
+    return_transport(frontend, match_state);
+    if let Some(service) = match_state.lan_service.as_mut() {
         service.restart_visit();
     }
 }

@@ -51,7 +51,7 @@ pub(crate) fn reset_scenario_exit_runtime(state: &mut AppState) {
         .outcome_banner_presentation = Default::default();
     state.match_state.network_failure = None;
     state.match_state.frame_stopped = false;
-    crate::app::lan_service::return_transport(state);
+    crate::app::lan_service::return_transport(&mut state.frontend, &mut state.match_state);
     state.audio.restore_sound_master();
 }
 

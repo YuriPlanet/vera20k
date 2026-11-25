@@ -1204,7 +1204,7 @@ pub(crate) fn return_after_match(state: &mut AppState) {
     if dialog.wol() {
         crate::app::shell_wol::reenter_after_match(state);
     } else {
-        crate::app::lan_service::restart_lobby_visit(state);
+        crate::app::lan_service::restart_lobby_visit(&mut state.frontend, &mut state.match_state);
         App::reopen_lan_room(state);
     }
 }

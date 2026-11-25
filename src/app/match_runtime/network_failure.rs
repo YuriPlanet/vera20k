@@ -145,16 +145,18 @@ fn hold_chat_line(state: &mut AppState) {
 }
 
 /// VERA: Quit on the wait of a match the relay never started shows no box.
-pub(crate) fn hold_quit_line(state: &mut AppState) {
-    let never_started = state
-        .match_state
+pub(crate) fn hold_quit_line(
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &crate::app::match_runtime::state::MatchState,
+) {
+    let never_started = match_state
         .live_network
         .as_ref()
         .and_then(|live| live.delivery_counters())
         .is_some_and(|counters| !counters.started);
-    if online(&state.match_state) && never_started {
+    if online(match_state) && never_started {
         crate::app::shell_wol::hold_problem_line(
-            state.frontend.wol.as_mut(),
+            frontend.wol.as_mut(),
             crate::i18n::tr("VERA:MatchStartCancelled"),
         );
     }
