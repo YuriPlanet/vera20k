@@ -54,7 +54,7 @@ pub(crate) struct RendererState {
         Option<crate::app::presentation::outcome_banner::OutcomeBannerArt>,
     /// This frame's posed bodies: crash tilts and pitched rockets
     /// (`render::unit_pose_cache`). A `RefCell`: the unit and building
-    /// visitors, alive at once over `&AppState`, pose bodies through it.
+    /// visitors, alive at once over the shared renderer, pose bodies through it.
     pub(crate) vxl_pose_frame_cache:
         std::cell::RefCell<crate::render::unit_pose_cache::VxlPoseFrameCache>,
     /// Previous presented pre-cursor composition, retained for input-time

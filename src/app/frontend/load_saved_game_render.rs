@@ -23,7 +23,14 @@ pub(crate) fn render_load_saved_game_page(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> Result<bool> {
-    if state.frontend.load_saved_game.is_none() || !family_art_ready(state) {
+    if state.frontend.load_saved_game.is_none()
+        || !family_art_ready(
+            &state.renderer,
+            &mut state.frontend,
+            &state.process_assets,
+            &state.persistence.options_profile,
+        )
+    {
         return Ok(false);
     }
     let layout = crate::app::frontend::shell_layout::load_saved_game_layout(

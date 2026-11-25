@@ -21,8 +21,13 @@ impl App {
         state: &AppState,
         mode: SavedSeedMode,
     ) -> Option<SavedSeedLayout> {
-        let shell =
-            crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(state)?;
+        let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+        )?;
         Some(crate::ui::shell::saved_games::saved_game_layout(
             mode,
             shell.width,

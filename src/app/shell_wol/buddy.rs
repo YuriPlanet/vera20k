@@ -603,7 +603,7 @@ pub(super) fn cursor_moved(
 }
 
 pub(super) fn mouse(state: &mut AppState, pressed: bool) {
-    if shell_transition::blocks_shell_input(state) {
+    if shell_transition::blocks_shell_input(&state.frontend) {
         return;
     }
     let at = if pressed { Pointer::Down } else { Pointer::Up };
@@ -694,7 +694,7 @@ fn double_click(state: &mut AppState) {
 
 /// Keys reach only `0x115`'s edit while it runs.
 pub(super) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
-    if shell_transition::blocks_shell_input(state) {
+    if shell_transition::blocks_shell_input(&state.frontend) {
         return;
     }
     let local = local_nickname(&state.frontend.wol_account);

@@ -1700,7 +1700,14 @@ impl App {
         then: crate::app::frontend::shell_transition::ShellExitThen,
     ) {
         use crate::app::frontend::shell_transition::{ShellExitStart, begin_shell_exit};
-        match begin_shell_exit(state, kind, network_start, then) {
+        match begin_shell_exit(
+            &state.renderer,
+            &mut state.frontend,
+            &state.match_state,
+            kind,
+            network_start,
+            then,
+        ) {
             // GUIMoveOutSound (stock `MenuSlideOut`) as `0x00608070` starts.
             ShellExitStart::Sliding => {
                 Self::play_rules_sound(

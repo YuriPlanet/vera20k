@@ -197,7 +197,6 @@ pub(crate) fn install_world_presentation(
         .match_state
         .match_presentation
         .pixel_fx
-        .borrow_mut()
         .clear_on_load();
     if let Some(runtime) = state.match_state.sim_runtime.runtime() {
         state
@@ -258,7 +257,13 @@ pub(crate) fn install_world_presentation(
     state.match_state.match_presentation.sidebar_chrome = assets.sidebar_chrome;
     // The side's layout, the mod's with the player's own over it, sizes the
     // sidebar, and with it the battlefield, from the world's first frame.
-    crate::app::presentation::player_layout::install(state, assets.match_layout_ini);
+    crate::app::presentation::player_layout::install(
+        &state.platform,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
+        assets.match_layout_ini,
+    );
     #[cfg(feature = "phobos")]
     {
         state
@@ -499,7 +504,10 @@ pub(crate) fn install_world_presentation(
     // Full_Init 687BB2 -> Init_BeaconArt 4309D0, after 68781F mounted the
     // side's MIX group; each row's ColorScheme is its House's (+0x16054),
     // whose Convert Init_Theater rebuilt from UNIT%s.PAL (534D77).
-    let beacon_side = crate::app::presentation::sidebar_render::current_sidebar_side(state);
+    let beacon_side = crate::app::presentation::sidebar_render::current_sidebar_side(
+        &state.frontend,
+        &state.match_state,
+    );
     let beacon_ares = state.rules().is_some_and(|rules| rules.ares());
     state.match_state.match_presentation.beacon_art =
         state.process_assets.manager().and_then(|assets| {

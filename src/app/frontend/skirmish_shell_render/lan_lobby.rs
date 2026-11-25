@@ -8,7 +8,11 @@ use super::in_game_shell::{
 };
 use crate::app::AppState;
 use crate::app::frontend::shell_transition::ShellSlideKind;
+use crate::app::frontend::state::FrontendState;
+use crate::app::input::ime::ImeState;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::shell_lan::LanShellRuntime;
 use crate::render::hud_paint::Material;
 use crate::render::shell_text_reveal::PathAReveal;
@@ -28,20 +32,24 @@ fn box_pressed(shell_controller: &DialogController, id: i32) -> bool {
 /// VERA's Create Game box (`LanShellRuntime::creating`): the online box's
 /// art, then its buttons and its room's limits as its widgets hold them.
 fn paint_create_box(
-    state: &AppState,
+    ime: &ImeState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
     overlay: &mut ShellFrameOverlay,
 ) {
     use crate::app::shell_lan::{
         CANCEL, MODAL, OK, ROOM_PLAYERS, ROOM_PLAYERS_CAPTION, ROOM_SPECTATORS,
     };
-    let layout = crate::app::shell_lan::create_box_layout(&state.renderer.gpu);
+    let layout = crate::app::shell_lan::create_box_layout(&renderer.gpu);
     overlay.controls.extend(super::wol_lobby::online_box(
         atlas,
         layout.dialog,
         layout.scale,
     ));
-    let controller = &state.frontend.shell_controller;
+    let controller = &frontend.shell_controller;
     let Some(root) = controller.root_in(MODAL) else {
         return;
     };
@@ -54,11 +62,11 @@ fn paint_create_box(
     ];
     let style = super::gui_paint::GuiStyle::popup();
     let widgets = super::gui_paint::paint_gui_ids(
-        &state.platform.ime,
-        &state.renderer.bit_font,
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
+        ime,
+        &renderer.bit_font,
+        frontend,
+        match_state,
+        process_assets,
         controller.gui(),
         root,
         ids,
@@ -311,7 +319,15 @@ pub(crate) fn render_lan_lobby(
         }
     }
     if runtime.creating {
-        paint_create_box(state, atlas, &mut overlay);
+        paint_create_box(
+            &state.platform.ime,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            atlas,
+            &mut overlay,
+        );
     }
     // Android: VERA's send key beside the chat box. The host draws it, so it
     // has to go with the page's slide: otherwise it hangs over the next menu's

@@ -179,7 +179,11 @@ pub(crate) fn presented<'a>(
     PresentedWorld {
         sim,
         rules: state.rules(),
-        translucent_viewer: crate::app::presentation::instances::translucent_fog_viewer(state, sim),
+        translucent_viewer: crate::app::presentation::instances::translucent_fog_viewer(
+            &state.platform,
+            &state.match_state,
+            sim,
+        ),
     }
 }
 

@@ -20,7 +20,12 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
         .simulation;
     let mut objects = PlannedObjects::default();
     build_unit_instances(
-        state,
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        &state.persistence,
         &mut objects,
         &NativeDisplayOrder::from_world(sim, None),
     );

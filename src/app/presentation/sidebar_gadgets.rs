@@ -7,7 +7,7 @@
 //! tabs 0 and 1, and ShapeButton StartFlashing 69DFC0 has no other live caller.
 //! Phase, catch-up and gadget state belong to `SidebarGadgetState`.
 
-use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::preferred_local_owner_name;
 use crate::app::match_runtime::state::MatchState;
 use crate::sim::intern::InternedId;
@@ -99,49 +99,50 @@ pub(crate) fn current_sidebar_action_visits(match_state: &MatchState, sidebar_ac
 /// The scroll roll moves one row per Sidebar Action visit
 /// ([`sidebar_action_visits`]); the view is rebuilt from the moved row by the
 /// pass's republish that follows.
-pub(crate) fn update_sidebar_gadget_state(state: &mut AppState, visits: u64) {
+pub(crate) fn update_sidebar_gadget_state(
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    visits: u64,
+) {
     // TabClass::ReceiveNotice @ 0x006D1770 (the planning notice sink) turns the
     // PlanningMode button on for Planning__StartMode's 0x11C7 and off for
     // EndMode's 0x11C8, so its look follows the PlanMgr owner's mode every
     // frame, whatever ended or started it (hotkey, committed plan, focus loss).
-    let planning = state.match_state.input.planning.active();
-    state
-        .match_state
+    let planning = match_state.input.planning.active();
+    match_state
         .match_presentation
         .sidebar_gadget_state
         .command_pressed[9] = planning;
     // A ready tab's completed object is the frame's (`presentation::frame`).
-    state.match_state.sim_runtime.ensure_frame();
-    let Some(frame) = state.match_state.sim_runtime.frame() else {
+    match_state.sim_runtime.ensure_frame();
+    let Some(frame) = match_state.sim_runtime.frame() else {
         return;
     };
-    let Some(sim) = state
-        .match_state
+    let Some(sim) = match_state
         .sim_runtime
         .presentation()
         .map(|rt| &rt.simulation)
     else {
         return;
     };
-    let Some(rules) = state.rules() else {
+    let Some(rules) = crate::app::state::active_rules(frontend, match_state) else {
         return;
     };
-    let Some(owner) = preferred_local_owner_name(&state.match_state) else {
+    let Some(owner) = preferred_local_owner_name(match_state) else {
         return;
     };
     let owner_iid = sim.interner().get(&owner).unwrap_or_default();
     let superweapon_views =
         crate::sim::superweapon::superweapon_views_for_owner(sim, rules, &owner_iid);
     let ready = sim.interner().get(&owner).map_or([false; 2], |owner| {
-        state
-            .match_state
+        match_state
             .match_presentation
             .sidebar_projection
             .model
             .ready_building_tabs(sim, frame, owner)
     });
     let (tick, frame) = (sim.session().tick(), sim.session().binary_frame() as i32);
-    let presentation = &mut state.match_state.match_presentation;
+    let presentation = &mut match_state.match_presentation;
     // StripClass::AI scrolls before its tab poll, once per Sidebar Action.
     if let Some(rows) = presentation
         .sidebar_projection

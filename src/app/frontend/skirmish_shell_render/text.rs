@@ -3,7 +3,6 @@
 //! Owns localized labels, text rect conversion, modal/listbox text,
 //! status help text, and start-marker number labels.
 
-use crate::app::AppState;
 use crate::app::frontend::main_menu_shell_render::shell_reveal_path_a;
 use crate::i18n::{tr, tr_count, tr_fill};
 use crate::render::batch::SpriteInstance;
@@ -609,13 +608,16 @@ pub(super) fn random_map_paint(
 /// ([`crate::ui::skirmish_shell::choose_map_page`]) with their words and
 /// rows, the search box's text, then its heading and status line.
 pub(super) fn choose_map_paint(
-    state: &mut AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &mut FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
     layout: &ChooseMapModalLayout,
     sliding: bool,
 ) -> Option<HudPaint> {
     use crate::ui::skirmish_shell::choose_map_page;
-    let frontend = &mut state.frontend;
     let modal = frontend.skirmish_shell_state.choose_map_modal.as_mut()?;
     // The heading and status line, revealed from the entry slide's end; a
     // hidden chooser shows neither.
@@ -631,7 +633,7 @@ pub(super) fn choose_map_paint(
     let modal = &*modal;
     let controller = &mut frontend.shell_controller;
     let root = choose_map_page::sync_page(controller, modal, layout)?;
-    let csf = state.process_assets.csf.as_ref();
+    let csf = process_assets.csf.as_ref();
     let label = |key: &str, fallback: &str| crate::i18n::label(csf, key, fallback);
     choose_map_page::show_texts(
         controller,
@@ -640,16 +642,12 @@ pub(super) fn choose_map_paint(
         sliding,
         &label,
     );
-    let state = &*state;
-    let modal = state
-        .frontend
-        .skirmish_shell_state
-        .choose_map_modal
-        .as_ref()?;
+    let frontend = &*frontend;
+    let modal = frontend.skirmish_shell_state.choose_map_modal.as_ref()?;
     let rows_of = |id| {
         Some(choose_map_rows(
-            &state.frontend,
-            &state.process_assets,
+            frontend,
+            process_assets,
             modal,
             layout,
             id == 0x6EB,
@@ -658,7 +656,7 @@ pub(super) fn choose_map_paint(
     // VERA's search line over the map list shows the search with its
     // composition, or names itself while empty; an empty list says why.
     // The line takes its text once a frame: it moves in, not a copy.
-    let search = map_search_display(&state.platform.ime, &modal.search);
+    let search = map_search_display(ime, &modal.search);
     let empty = search.is_empty();
     let search = std::cell::Cell::new(Some(search));
     let text_of = |id: i32| {
@@ -680,7 +678,7 @@ pub(super) fn choose_map_paint(
     };
     let empty_of = |id: i32| {
         (id == i32::from(choose_map_page::MAP_LIST))
-            .then(|| choose_map_empty_text(state, modal))
+            .then(|| choose_map_empty_text(frontend, modal))
             .flatten()
     };
     // Native owner-draw lists keep the composed backing; only the
@@ -701,13 +699,13 @@ pub(super) fn choose_map_paint(
         empty_of: Some(&empty_of),
         ..Default::default()
     };
-    let gui = state.frontend.shell_controller.gui();
+    let gui = frontend.shell_controller.gui();
     let mut paint = paint_gui_with(
-        &state.platform.ime,
-        &state.renderer.bit_font,
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
+        ime,
+        bit_font,
+        frontend,
+        match_state,
+        process_assets,
         atlas,
         gui,
         root,
@@ -716,7 +714,7 @@ pub(super) fn choose_map_paint(
         style,
     );
     paint.texts.extend(super::paint_map_dialog_statics(
-        &state.renderer.bit_font,
+        bit_font,
         &statics,
         layout.scale,
     ));
@@ -792,7 +790,7 @@ fn choose_map_rows(
 /// VERA: why an empty Online Maps or Favorites list is empty, which it
 /// shows down the list.
 fn choose_map_empty_text(
-    state: &AppState,
+    frontend: &FrontendState,
     modal: &crate::ui::skirmish_shell::ChooseMapModalState,
 ) -> Option<String> {
     if modal.map_row_count() > 0 {
@@ -800,9 +798,7 @@ fn choose_map_empty_text(
     } else if modal.random_maps_selected() && modal.search.is_empty() {
         Some(tr("VERA:NoRandomMaps"))
     } else if modal.online_maps_selected() {
-        Some(crate::app::map_library::empty_online_maps_text(
-            &state.frontend,
-        ))
+        Some(crate::app::map_library::empty_online_maps_text(frontend))
     } else if modal.favorites_selected() && modal.search.is_empty() {
         Some(tr(if modal.favorites.is_empty() {
             "VERA:NoFavorites"
@@ -921,16 +917,17 @@ pub(super) fn exclude_text_under(out: &mut Vec<ShellTextDraw>, dialog: RectPx) {
 /// The body and first button of Use Map's box. The download and random-map
 /// failure texts are VERA's own; the retail string table has none.
 pub(super) fn choose_map_prompt_labels(
-    state: &AppState,
+    frontend: &FrontendState,
+    process_assets: &ProcessAssets,
     prompt: &crate::ui::skirmish_shell::ChooseMapPrompt,
 ) -> (String, String) {
     use crate::ui::skirmish_shell::ChooseMapPromptKind;
     let record = prompt
         .selection
         .record_index
-        .and_then(|index| state.frontend.scenario_catalog.records().get(index));
+        .and_then(|index| frontend.scenario_catalog.records().get(index));
     let online = record.and_then(|record| {
-        let map = state.frontend.map_library.online_map(record)?;
+        let map = frontend.map_library.online_map(record)?;
         Some((map.name.as_str(), record.player_capacity, map.byte_length))
     });
     // The map's name fills in last, so a `{...}` in it stays as written.
@@ -946,7 +943,7 @@ pub(super) fn choose_map_prompt_labels(
             &[("size", &bytes.div_ceil(1024)), ("name", &name)],
         ),
         (ChooseMapPromptKind::Downloading, Some((name, ..))) => {
-            match crate::app::map_library::download_progress(&state.frontend) {
+            match crate::app::map_library::download_progress(frontend) {
                 Some((received, length)) => tr_fill(
                     "VERA:DownloadingMapPercent",
                     &[
@@ -964,12 +961,12 @@ pub(super) fn choose_map_prompt_labels(
             tr_fill("VERA:MapSaveFailed", &[("name", &name)])
         }
         (ChooseMapPromptKind::RandomMapFailed, _) => tr("VERA:RandomMapSaveFailed"),
-        _ => state.csf_label("GUI:EjectAIPlayers", "GUI:EjectAIPlayers"),
+        _ => process_assets.csf_label("GUI:EjectAIPlayers", "GUI:EjectAIPlayers"),
     };
     let ok = match prompt.kind {
         ChooseMapPromptKind::EjectAi
         | ChooseMapPromptKind::Downloaded
-        | ChooseMapPromptKind::RandomMapFailed => state.csf_label("GUI:Ok", "OK"),
+        | ChooseMapPromptKind::RandomMapFailed => process_assets.csf_label("GUI:Ok", "OK"),
         _ => tr("VERA:Download"),
     };
     (body, ok)

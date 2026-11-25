@@ -15,6 +15,7 @@
 use vera20k_gui::{Layer, Origin, Rect, Rgba};
 
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::hotkeys::HotkeyCommand;
 use crate::app::match_runtime::state::MatchState;
 use crate::app::persistence::PersistenceState;
@@ -191,30 +192,45 @@ fn label_text(process_assets: &ProcessAssets, label: &str) -> String {
 
 /// Every added part of the local side's layout, where this frame shows it,
 /// one for each part in the layout's order.
-pub(crate) fn placed(state: &AppState) -> Vec<Placed> {
-    let parts = &state.match_state.match_presentation.added_parts;
+pub(crate) fn placed(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
+) -> Vec<Placed> {
+    let parts = &match_state.match_presentation.added_parts;
     if parts.is_empty() {
         return Vec::new();
     }
-    let font = &state.renderer.bit_font;
-    let side = state.sidebar_frame().side_area();
+    let font = &renderer.bit_font;
+    let side = crate::app::state::sidebar_frame(
+        platform,
+        persistence,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation.sidebar_layout_spec,
+    )
+    .side_area();
     let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.match_presentation,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation,
+        persistence,
     );
     let field = [x as i32, y as i32, width as i32, height as i32];
-    let art = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
-        .map(|atlas| &atlas.layout_art);
+    let art =
+        crate::app::presentation::sidebar_render::current_sidebar_chrome(frontend, match_state)
+            .map(|atlas| &atlas.layout_art);
     // Each part's own content and size first, at no place yet.
     let mut placed: Vec<Placed> = parts
         .iter()
         .enumerate()
         .map(|(index, part)| {
             let pressed = crate::app::input::chrome_input::layout_button_pressed(
-                &state.match_state.match_presentation,
+                &match_state.match_presentation,
                 index,
             );
             let (text, button, picture) = match &part.kind {
@@ -225,9 +241,9 @@ pub(crate) fn placed(state: &AppState) -> Vec<Placed> {
                         .as_deref()
                         .and_then(|name| art?.frames(name))
                         .map(|frames| *frames[usize::from(pressed)]);
-                    (label_text(&state.process_assets, label), true, picture)
+                    (label_text(process_assets, label), true, picture)
                 }
-                AddedKind::Text { value } => (value_text(&state.match_state, *value), false, None),
+                AddedKind::Text { value } => (value_text(match_state, *value), false, None),
                 // A group places its parts; a cameo grid is the sidebar
                 // view's (`ui::sidebar::append_added_grids`).
                 AddedKind::Group { .. } | AddedKind::CameoGrid { .. } => {

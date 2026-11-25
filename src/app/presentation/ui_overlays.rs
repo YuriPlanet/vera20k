@@ -3,13 +3,19 @@
 //! Split from the presentation render path. Part of the app layer — may depend on everything.
 
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::cursor::{
     CursorTargets, current_cursor_feedback_kind, cursor_id_for_feedback,
 };
 use crate::app::input::entity_pick::HoverObject;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::frame::{ObjectRecord, PresentationFrame};
 use crate::app::presentation::instances::in_view;
 use crate::app::presentation::state::MatchPresentationState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::state::PlatformState;
 use crate::app::types::{CursorId, HoverTargetKind, SoftwareCursorSequence};
 use crate::assets::csf_file::{CsfArg, format_csf};
 use crate::map::entities::EntityCategory;
@@ -1003,36 +1009,40 @@ pub(crate) fn build_control_group_status_render_instances(
     parents
 }
 
-/// AppState adapter for the production tactical UI build. `hovered_entity_id`
-/// is this draw's [`health_hover_target`] for `local_owner`.
+/// The client owners' adapter for the production tactical UI build.
+/// `hovered_entity_id` is this draw's [`health_hover_target`] for
+/// `local_owner`.
 pub(crate) fn build_control_group_status_instances(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    persistence: &PersistenceState,
     local_owner: Option<&str>,
     hovered_entity_id: Option<u64>,
     sw: f32,
     sh: f32,
 ) -> BTreeMap<u64, StatusTextOverlayInstances> {
     let (Some(sim), Some(frame), Some(rules)) = (
-        state
-            .match_state
+        match_state
             .sim_runtime
             .presentation()
             .map(|runtime| &runtime.simulation),
-        state.match_state.sim_runtime.frame(),
-        state.rules(),
+        match_state.sim_runtime.frame(),
+        crate::app::state::active_rules(frontend, match_state),
     ) else {
         return BTreeMap::new();
     };
     let local_owner_id = local_owner.and_then(|name| sim.interner().get(name));
     let (tactical_x, tactical_y, tactical_width, tactical_height) =
         crate::app::input::camera::tactical_viewport_px(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &state.match_state.match_presentation,
-            &state.persistence,
+            platform,
+            renderer,
+            &frontend.screen,
+            &match_state.match_presentation,
+            persistence,
         );
-    let zoom = state.match_state.input.zoom_level;
+    let zoom = match_state.input.zoom_level;
     let tactical_clip = [
         (tactical_x as f32 / zoom).round() as i32,
         (tactical_y as f32 / zoom).round() as i32,
@@ -1045,14 +1055,11 @@ pub(crate) fn build_control_group_status_instances(
         frame.control_groups(),
         hovered_entity_id,
         local_owner_id,
-        state.match_state.sandbox_full_visibility,
-        &state.match_state.match_presentation.house_color_map,
+        match_state.sandbox_full_visibility,
+        &match_state.match_presentation.house_color_map,
         &rules.house_color_ramps,
-        &state.renderer.bit_font,
-        [
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
-        ],
+        &renderer.bit_font,
+        [match_state.input.camera_x, match_state.input.camera_y],
         sw,
         sh,
         tactical_clip,
@@ -1382,22 +1389,27 @@ enum BuildingStatusText {
     Fake,
 }
 
-/// AppState supplies current resources and the existing tactical viewport;
+/// The client owners supply current resources and the existing tactical viewport;
 /// simulation owners supply primary identity and retained power, and the
 /// per-frame body plan supplies the current opportunities.
 pub(crate) fn build_building_status_instances(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
+    persistence: &PersistenceState,
     body_opportunities: &BTreeSet<u64>,
 ) -> BuildingStatusTextInstances {
     let (Some(runtime), Some(rules), Some(csf)) = (
-        state.match_state.sim_runtime.presentation(),
-        state.rules(),
-        state.process_assets.csf.as_ref(),
+        match_state.sim_runtime.presentation(),
+        crate::app::state::active_rules(frontend, match_state),
+        process_assets.csf.as_ref(),
     ) else {
         return BuildingStatusTextInstances::default();
     };
     let sim = &runtime.simulation;
-    let Some(frame) = state.match_state.sim_runtime.frame() else {
+    let Some(frame) = match_state.sim_runtime.frame() else {
         return BuildingStatusTextInstances::default();
     };
     // The local player comes from the world this frame draws, not from
@@ -1408,34 +1420,28 @@ pub(crate) fn build_building_status_instances(
         return BuildingStatusTextInstances::default();
     };
     let (left, top, width, height) = crate::app::input::camera::tactical_viewport_px(
-        &state.platform,
-        &state.renderer,
-        &state.frontend.screen,
-        &state.match_state.match_presentation,
-        &state.persistence,
+        platform,
+        renderer,
+        &frontend.screen,
+        &match_state.match_presentation,
+        persistence,
     );
-    let zoom = state.match_state.input.zoom_level;
+    let zoom = match_state.input.zoom_level;
     build_building_status_render_instances(
         sim,
         frame,
         body_opportunities,
         current_house,
-        &state.match_state.match_presentation.house_color_map,
+        &match_state.match_presentation.house_color_map,
         &rules.house_color_ramps,
-        &state.renderer.bit_font,
+        &renderer.bit_font,
         csf,
-        [
-            state.match_state.input.camera_x,
-            state.match_state.input.camera_y,
-        ],
+        [match_state.input.camera_x, match_state.input.camera_y],
         zoom,
         [left as i32, top as i32, width as i32, height as i32],
         rules,
-        state
-            .match_state
-            .match_presentation
-            .superweapon_building_timers,
-        state.match_state.match_presentation.convenience_help,
+        match_state.match_presentation.superweapon_building_timers,
+        match_state.match_presentation.convenience_help,
     )
 }
 

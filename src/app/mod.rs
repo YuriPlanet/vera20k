@@ -35,7 +35,6 @@ use crate::audio::music::MusicPlayer;
 use crate::audio::sfx::SfxPlayer;
 use crate::map::basic::BasicSection;
 use crate::map::houses::HouseRoster;
-use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::render::batch::BatchRenderer;
 use crate::render::bit_font::BitFont;
 use crate::render::gpu::GpuContext;

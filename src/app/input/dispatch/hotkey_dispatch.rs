@@ -101,7 +101,13 @@ fn execute_type_select_tap(state: &mut AppState) {
             return;
         };
         let screen_order =
-            crate::app::presentation::instances::tactical_screen_entity_encounter_order(state);
+            crate::app::presentation::instances::tactical_screen_entity_encounter_order(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state,
+                &state.persistence,
+            );
         let map_order = map_entity_creation_order(sim.entities());
         let current = selected_stable_ids_in_order(
             state

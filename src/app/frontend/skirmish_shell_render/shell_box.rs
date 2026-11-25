@@ -15,7 +15,6 @@ use super::{
     OWNERDRAW_BEVEL_DARK_RGB_FROM_PACKED_00807A68, SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F,
     SHELL_DROPDOWN_DEPTH, SHELL_DROPDOWN_TEXT_DEPTH, SHELL_MODAL_PANEL_RGB,
 };
-use crate::app::AppState;
 use crate::app::frontend::state::FrontendState;
 use crate::app::input::ime::ImeState;
 use crate::app::match_runtime::state::MatchState;
@@ -383,11 +382,12 @@ pub(crate) fn render_size(renderer: &RendererState, screen: &GameScreen) -> (i32
 /// Use Map's two-button box over the chooser as it shows: its body and
 /// captions in the current language.
 pub(crate) fn choose_map_prompt_shell_box(
-    state: &AppState,
+    frontend: &FrontendState,
+    process_assets: &ProcessAssets,
     prompt: &crate::ui::skirmish_shell::ChooseMapPrompt,
 ) -> ShellBox {
-    let (body, ok) = super::text::choose_map_prompt_labels(state, prompt);
-    let cancel = state.csf_label("GUI:Cancel", "Cancel");
+    let (body, ok) = super::text::choose_map_prompt_labels(frontend, process_assets, prompt);
+    let cancel = process_assets.csf_label("GUI:Cancel", "Cancel");
     prompt.shell_box(body, ok, cancel)
 }
 
@@ -397,7 +397,11 @@ pub(crate) fn choose_map_prompt_shell_box(
 /// Red Alert 2's, with how much has arrived under the text. Its texts give
 /// up the box's rect.
 pub(crate) fn choose_map_prompt_box(
-    state: &AppState,
+    ime: &ImeState,
+    bit_font: &BitFont,
+    frontend: &FrontendState,
+    match_state: &MatchState,
+    process_assets: &ProcessAssets,
     atlas: Option<&SkirmishShellChromeAtlas>,
     prompt: &crate::ui::skirmish_shell::ChooseMapPrompt,
     shell_box: &ShellBox,
@@ -413,7 +417,7 @@ pub(crate) fn choose_map_prompt_box(
     });
     let mut paint = HudPaint::default();
     if let (Some(atlas), Kind::Downloading) = (atlas, prompt.kind)
-        && let Some(progress) = crate::app::map_library::download_progress(&state.frontend)
+        && let Some(progress) = crate::app::map_library::download_progress(frontend)
     {
         let track = parts.progress_track();
         let depth = BoxLook::skirmish(None).depths.button;
@@ -423,18 +427,18 @@ pub(crate) fn choose_map_prompt_box(
         });
     }
     // Its widgets' captured button keeps its pushed look off the pointer too.
-    let controller = &state.frontend.shell_controller;
+    let controller = &frontend.shell_controller;
     let held = crate::ui::shell::menu_page::pressed_id(controller, shell_box.dialog);
     let pressed = |id| held == Some(id);
     let look = BoxLook::prompt(background);
     let tree = controller_tree(controller, shell_box.dialog);
     skirmish_box_into(
         paint,
-        &state.platform.ime,
-        &state.renderer.bit_font,
-        &state.frontend,
-        &state.match_state,
-        &state.process_assets,
+        ime,
+        bit_font,
+        frontend,
+        match_state,
+        process_assets,
         atlas,
         tree,
         shell_box,

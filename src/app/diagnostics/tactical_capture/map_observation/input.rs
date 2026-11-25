@@ -722,8 +722,14 @@ impl MapCommandBarGestureReceipt {
 
     pub(super) fn capture(state: &AppState, command: &str) -> Result<(Self, vera20k_gui::NodeId)> {
         let (layout, slots) =
-            crate::app::presentation::sidebar_build::command_bar::layout_and_slots(state)
-                .context("command-bar layout is absent")?;
+            crate::app::presentation::sidebar_build::command_bar::layout_and_slots(
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.persistence,
+            )
+            .context("command-bar layout is absent")?;
         let (gui, nodes) =
             crate::app::input::chrome_input::chrome(&state.match_state.match_presentation)
                 .context("command-bar controls are absent")?;

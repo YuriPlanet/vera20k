@@ -305,7 +305,11 @@ fn queue_context_order(
         .and_then(|s| s.interner().get(&owner))
         .unwrap_or_default();
     let translucent_viewer = state.match_state.sim_runtime.runtime().and_then(|rt| {
-        crate::app::presentation::instances::translucent_fog_viewer(state, &rt.simulation)
+        crate::app::presentation::instances::translucent_fog_viewer(
+            &state.platform,
+            &state.match_state,
+            &rt.simulation,
+        )
     });
 
     let mut queued: Vec<CommandEnvelope> = Vec::new();

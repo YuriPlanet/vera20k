@@ -130,7 +130,13 @@ fn select_template(match_state: &MatchState) -> PauseMenuTemplate {
 }
 
 pub(crate) fn current_layout(state: &AppState) -> Option<PauseMenuLayout> {
-    let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(state)?;
+    let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    )?;
     let mut layout = pause_menu_layout(
         shell.width,
         shell.height,
@@ -165,7 +171,13 @@ pub(crate) fn current_layout(state: &AppState) -> Option<PauseMenuLayout> {
 /// The Options page showing on the open in-game menu, in the shell's pixels.
 pub(crate) fn options_page_layout(state: &AppState) -> Option<LauncherOptionsLayout> {
     let page = state.match_state.match_presentation.options_page.as_ref()?;
-    let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(state)?;
+    let shell = crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    )?;
     let battle = App::match_zoom_geometry(state);
     let menu = current_layout(state)?;
     Some(

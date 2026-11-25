@@ -308,10 +308,6 @@ pub(crate) fn radar_presentation_ms(
 }
 
 impl crate::app::AppState {
-    pub(crate) fn diagnostic_presentation_ms(&self) -> Option<u64> {
-        diagnostic_presentation_ms(&self.diag, &self.match_state)
-    }
-
     pub(crate) fn radar_presentation_ms(&self) -> u64 {
         radar_presentation_ms(&self.diag, &self.match_state)
     }

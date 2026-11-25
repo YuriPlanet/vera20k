@@ -88,7 +88,13 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         }
         return;
     }
-    if crate::app::presentation::sidebar_render::is_cursor_over_minimap(state) {
+    if crate::app::presentation::sidebar_render::is_cursor_over_minimap(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) {
         if matches!(button, MouseButton::Left | MouseButton::Right) {
             crate::app::input::radar::centre_view_at_cursor(state);
         }
@@ -185,7 +191,10 @@ fn switch_view(state: &mut AppState, next: View) {
     show_sight(&mut state.match_state);
     // No House update reports the radar of the House now followed: its
     // housing opens or closes to that House's as a change there would.
-    let available = crate::app::presentation::building_anim::local_has_radar(state);
+    let available = crate::app::presentation::building_anim::local_has_radar(
+        &state.frontend,
+        &state.match_state,
+    );
     crate::app::presentation::building_anim::set_local_tactical_radar(
         &mut state.match_state,
         &mut state.audio.sfx_player,

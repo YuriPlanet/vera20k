@@ -579,7 +579,7 @@ impl TacticalCaptureSession {
                 });
                 let (from, to, sidebar_slot) = match &scheduled.gesture {
                     MapGesture::MinimapObject { entity_id } => {
-                        let position = crate::app::presentation::sidebar_render::minimap_object_click_position(state, *entity_id)
+                        let position = crate::app::presentation::sidebar_render::minimap_object_click_position(&state.platform, &state.renderer, &state.frontend, &state.match_state, &state.persistence, *entity_id)
                             .context("requested object has no retained clickable radar pixel")?;
                         (position, position, None)
                     }
@@ -634,9 +634,14 @@ impl TacticalCaptureSession {
                 );
                 move_cursor(state, from);
                 if scheduled.gesture.is_minimap() {
-                    let target =
-                        crate::app::presentation::sidebar_render::minimap_camera_target(state)
-                            .context("minimap point has no current native camera target")?;
+                    let target = crate::app::presentation::sidebar_render::minimap_camera_target(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.persistence,
+                    )
+                    .context("minimap point has no current native camera target")?;
                     if let MapGesture::MinimapObject { entity_id } = scheduled.gesture {
                         ensure!(
                             target.tracker_hit == Some(entity_id),

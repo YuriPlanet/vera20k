@@ -24,7 +24,13 @@ pub(crate) struct CommandBarPlaces {
 }
 
 pub(crate) fn places(state: &AppState) -> CommandBarPlaces {
-    let layout = crate::app::presentation::sidebar_build::command_bar::layout_and_slots(state);
+    let layout = crate::app::presentation::sidebar_build::command_bar::layout_and_slots(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    );
     let closed = state
         .match_state
         .match_presentation

@@ -40,7 +40,8 @@ impl App {
             || !event.state.is_pressed()
             || event.repeat
             || state.frontend.shell_message_box.is_some()
-            || shell_transition::current_shell_slide_target(state).is_none()
+            || shell_transition::current_shell_slide_target(&state.frontend, &state.match_state)
+                .is_none()
             || !Self::page_leaves_escape(state, screen)
         {
             return false;
@@ -241,7 +242,10 @@ impl App {
     /// its own, and slides back in when Options closes.
     pub(super) fn answer_shell_menu(state: &mut AppState, answer: usize) {
         match answer {
-            0 => match shell_transition::current_shell_slide_target(state) {
+            0 => match shell_transition::current_shell_slide_target(
+                &state.frontend,
+                &state.match_state,
+            ) {
                 Some(kind) => {
                     Self::leave_shell_dialog(state, kind, |state| {
                         App::open_launcher_options_dialog(

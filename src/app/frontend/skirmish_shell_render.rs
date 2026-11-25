@@ -465,9 +465,9 @@ fn render_skirmish_shell_with_atlas(
     let message_box_up = validation.is_some() || message_box.is_some();
     // The boxes on their widgets on the shell controller before they paint,
     // Use Map's raised as its input raises it.
-    let prompt_box = message_box
-        .as_ref()
-        .map(|prompt| shell_box::choose_map_prompt_shell_box(state, prompt));
+    let prompt_box = message_box.as_ref().map(|prompt| {
+        shell_box::choose_map_prompt_shell_box(&state.frontend, &state.process_assets, prompt)
+    });
     let size = shell_box::render_size(&state.renderer, &state.frontend.screen);
     let validation_parts = validation
         .as_ref()
@@ -516,9 +516,23 @@ fn render_skirmish_shell_with_atlas(
     let preview_rect = setup_preview_rect
         .or_else(|| choose_map_layout.as_ref().map(|layout| layout.preview))
         .unwrap_or(layout.map_preview);
-    ensure_selected_preview_texture(state, preview_rect);
-    let zoom_layout =
-        ensure_zoom_texture(state, layout.scale, !sliding && !leaving && !message_box_up);
+    ensure_selected_preview_texture(
+        &state.platform,
+        &state.renderer,
+        &mut state.frontend,
+        &state.process_assets,
+        &state.persistence,
+        preview_rect,
+    );
+    let zoom_layout = ensure_zoom_texture(
+        &state.platform,
+        &state.renderer,
+        &mut state.frontend,
+        &state.match_state.input,
+        &state.process_assets,
+        layout.scale,
+        !sliding && !leaving && !message_box_up,
+    );
     let selected_entry = preview::preview_map_idx(&state.frontend)
         .and_then(|index| state.frontend.scenario_catalog.shell_maps().get(index));
     // A generated preview carries its red squares (0x00641140) and also gets
@@ -697,7 +711,16 @@ fn render_skirmish_shell_with_atlas(
                 setup_layout,
                 sliding,
             ),
-            None => text::choose_map_paint(state, atlas, choose_map_layout, sliding),
+            None => text::choose_map_paint(
+                &state.platform.ime,
+                &state.renderer.bit_font,
+                &mut state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                atlas,
+                choose_map_layout,
+                sliding,
+            ),
         },
         (None, _) => setups_layout
             .as_ref()
@@ -753,7 +776,17 @@ fn render_skirmish_shell_with_atlas(
         .zip(prompt_box.as_ref())
         .zip(prompt_parts.as_ref())
         .map(|((prompt, prompt_box), parts)| {
-            shell_box::choose_map_prompt_box(state, Some(atlas), prompt, prompt_box, parts)
+            shell_box::choose_map_prompt_box(
+                &state.platform.ime,
+                &state.renderer.bit_font,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                Some(atlas),
+                prompt,
+                prompt_box,
+                parts,
+            )
         });
     let mut instances = if message_box_up {
         let mut instances = Vec::new();

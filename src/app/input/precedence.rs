@@ -119,7 +119,9 @@ impl Layers {
         let frontend = &state.frontend;
         Self {
             house_outcome_wait: App::house_outcome_wait_pending(&state.match_state.sim_runtime),
-            shell_transition: crate::app::frontend::shell_transition::blocks_shell_input(state),
+            shell_transition: crate::app::frontend::shell_transition::blocks_shell_input(
+                &state.frontend,
+            ),
             shell_error: frontend.screen == GameScreen::MainMenu
                 && frontend.main_menu_shell_error.is_some(),
             network_failure: crate::app::match_runtime::network_failure::pending(
@@ -143,7 +145,11 @@ impl Layers {
             launcher_options: App::native_launcher_options_active(&state.frontend),
             in_game_menu: state.match_state.match_presentation.in_game_menu,
             in_game_shell: crate::app::frontend::skirmish_shell_render::native_in_game_shell_active(
-                state,
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.persistence,
             ),
             coop_score: crate::app::input::coop_score::active(&state.frontend),
             campaign_score: App::campaign_score_shell_active(&state.frontend),
