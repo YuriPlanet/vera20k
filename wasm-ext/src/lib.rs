@@ -200,6 +200,9 @@ pub const NAME_ACTION_KIND: i32 = 21;
 /// Notifications (`vera.notify`, RFC 0001 section 10): the sandbox answers
 /// `lookup` and `name_of` from the calling module's own section.
 pub const NAME_NOTIFY: i32 = 16;
+/// Hotkeys a client module registered (`RegisterHotkey`, appendix 5.4):
+/// only `client_lookup` answers it.
+pub const NAME_HOTKEY: i32 = 22;
 /// Registered module events (RFC 0001 section 6h).
 pub const NAME_MODULE_EVENT: i32 = 24;
 pub const NAME_KINDS: i32 = 25;

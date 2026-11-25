@@ -140,6 +140,9 @@ pub(crate) struct LocalState {
     /// The frames of the house-wide client orders of the current window.
     house_orders: VecDeque<u32>,
     messages: [MessageWindow; 2],
+    /// A replay plays: its command stream is the recording's, so orders and
+    /// messages are `Refused` ([`Self::set_playback`]).
+    playback: bool,
 }
 
 impl LocalState {
@@ -152,7 +155,13 @@ impl LocalState {
             unit_orders: HashMap::new(),
             house_orders: VecDeque::new(),
             messages: [MessageWindow::default(), MessageWindow::default()],
+            playback: false,
         }
+    }
+
+    /// Whether a replay plays (set by the runtime each render frame).
+    pub(crate) fn set_playback(&mut self, playback: bool) {
+        self.playback = playback;
     }
 
     /// The keys the game's bindings use (`HotkeyBindings::bound_keys`):
@@ -442,7 +451,7 @@ impl LocalState {
         automation_allowed: bool,
         order: &Order,
     ) -> Result<Status, Invalid> {
-        if view.viewer.spectator || view.viewer.house == 0 || !automation_allowed {
+        if self.playback || view.viewer.spectator || view.viewer.house == 0 || !automation_allowed {
             return Ok(Status::Refused);
         }
         let sim = &view.runtime.simulation;
@@ -499,6 +508,9 @@ impl LocalState {
         source: Source,
         data: &[u8],
     ) -> Result<Status, Invalid> {
+        if self.playback {
+            return Ok(Status::Refused);
+        }
         let now = view.runtime.simulation.session().binary_frame();
         Ok(self.message(effects, view.viewer, now, source, data))
     }

@@ -75,7 +75,7 @@ use crate::app::AppState;
 use crate::rules::ini_parser::IniFile;
 use crate::sim::ext_modules::{ClientOutbox, MapUi};
 use crate::util::time::Instant;
-use host::{ClientRng, FrameHost};
+use host::FrameHost;
 use local::{LocalEffects, LocalInputs, LocalState};
 use reads::{ClientView, LocalFacts};
 use storage::Storage;
@@ -91,8 +91,6 @@ pub(crate) struct Viewer {
     pub sees_whole_map: bool,
 }
 
-/// Nodes the client overlay holds at most (engine, INI and module nodes).
-const MAX_CLIENT_NODES: usize = 4096;
 /// Module log lines shown in the console per module and render frame; the
 /// rest go to the log file only (as the simulation modules' `log`).
 const SHOWN_LOG_LINES: usize = 8;
@@ -194,11 +192,11 @@ pub(crate) struct UiModules {
     slots: Vec<Slot>,
     /// The mod's `[VeraWasm] MapUI=`.
     map_ui: MapUi,
-    /// The client overlay the tree's nodes live on.
-    gui: Gui,
+    /// The modules' nodes, on the match's own `Gui`
+    /// (`MatchPresentationState::dialog_ui`), beside the engine's and the
+    /// `veraui.ini` parts (RFC 10, "Node ownership").
     tree: UiTree,
     local: LocalState,
-    rng: ClientRng,
     /// `client_on_start` given since load or the last catch-up.
     started: bool,
     /// What the simulation's frames since the last render frame sent the
@@ -223,16 +221,11 @@ struct CallOutput {
 
 impl UiModules {
     fn new(map_ui: MapUi) -> Self {
-        let seed = crate::util::time::SystemTime::now()
-            .duration_since(crate::util::time::UNIX_EPOCH)
-            .map_or(0x9E37_79B9_7F4A_7C15, |since| since.as_nanos() as u64);
         Self {
             slots: Vec::new(),
             map_ui,
-            gui: Gui::new(MAX_CLIENT_NODES),
             tree: UiTree::new(),
             local: LocalState::new(),
-            rng: ClientRng::new(seed),
             started: false,
             outbox: ClientOutbox::default(),
             last_render: None,
@@ -241,16 +234,12 @@ impl UiModules {
         }
     }
 
-    /// The client overlay, for drawing.
-    pub(crate) fn gui(&self) -> &Gui {
-        &self.gui
-    }
-
     /// Runs `call` on every loaded module, mod first. A fault disables that
     /// module: its nodes go and its player is told.
     fn call_each(
         &mut self,
-        view: &ClientView<'_>,
+        gui: &mut Gui,
+        base: &ClientView<'_>,
         inputs: &LocalInputs,
         out: &mut CallOutput,
         mut call: impl FnMut(&mut ClientModule, &mut FrameHost<'_, '_>) -> Result<(), Fault>,
@@ -258,27 +247,29 @@ impl UiModules {
         let Self {
             slots,
             map_ui,
-            gui,
             tree,
             local,
-            rng,
             ..
         } = self;
         let mut failed = Vec::new();
         for (index, slot) in slots.iter_mut().enumerate() {
             let mut log = Vec::new();
+            // Names without a `mod.`/`map.` prefix are the caller's own.
+            let view = ClientView {
+                source: slot.source,
+                ..*base
+            };
             let result = {
                 let mut host = FrameHost {
                     source: slot.source,
                     map_ui: *map_ui,
-                    view,
+                    view: &view,
                     inputs,
                     gui: &mut *gui,
                     tree: &mut *tree,
                     local: &mut *local,
                     storage: &mut slot.storage,
                     effects: &mut out.effects,
-                    rng: &mut *rng,
                     log: &mut log,
                 };
                 call(&mut slot.module, &mut host)
@@ -294,7 +285,7 @@ impl UiModules {
         }
         for (index, fault) in failed.into_iter().rev() {
             let slot = self.slots.remove(index);
-            self.tree.remove_source(&mut self.gui, slot.source);
+            self.tree.remove_source(gui, slot.source);
             let reason = format!("{} ui.wasm {fault}", source_label(slot.source));
             log::warn!(target: "ext_module", "client module stopped: {reason}");
             out.lines.push((reason, true));
@@ -305,6 +296,7 @@ impl UiModules {
     /// order"), steps 2..4.
     fn run_frame(
         &mut self,
+        gui: &mut Gui,
         view: &ClientView<'_>,
         inputs: &LocalInputs,
         selected: &[u64],
@@ -313,7 +305,7 @@ impl UiModules {
     ) {
         if !self.started {
             self.started = true;
-            self.call_each(view, inputs, out, |module, host| module.start(host));
+            self.call_each(gui, view, inputs, out, |module, host| module.start(host));
         }
         let outbox = std::mem::take(&mut self.outbox);
         self.local.deliver_outbox(&outbox, view);
@@ -332,7 +324,7 @@ impl UiModules {
         // Render-frame interpolation: the picture shows the latest finished
         // simulation frame as it is, so no fraction of the next one.
         let alpha = 0.0;
-        self.call_each(view, inputs, out, |module, host| {
+        self.call_each(gui, view, inputs, out, |module, host| {
             let events = per_source
                 .iter_mut()
                 .find(|(source, _)| *source == host.source)
@@ -482,7 +474,15 @@ pub(crate) fn install(state: &mut AppState, sources: UiModuleSources) {
     }
     let map_layout = sources.map_layout.filter(|_| map_allowed);
     if let Some(layout) = map_layout.as_ref() {
-        ui.tree.add_map_parts(&mut ui.gui, layout);
+        let gui = state.match_state.match_presentation.dialog_ui.gui_mut();
+        let problems = ui.tree.add_map_parts(gui, layout, map_ui, |name| {
+            crate::app::presentation::layout_parts::command_named(name).is_some()
+        });
+        lines.extend(
+            problems
+                .into_iter()
+                .map(|problem| (format!("[VeraUI] {problem}"), true)),
+        );
     }
     if !ui.slots.is_empty() {
         let viewer = viewer(state);
@@ -496,15 +496,28 @@ pub(crate) fn install(state: &mut AppState, sources: UiModuleSources) {
             runtime,
             viewer,
             local: LocalFacts::default(),
+            source: Source::Mod,
         };
         let mut out = CallOutput::default();
-        ui.call_each(&view, &inputs, &mut out, |module, host| module.init(host));
+        let gui = state.match_state.match_presentation.dialog_ui.gui_mut();
+        ui.call_each(gui, &view, &inputs, &mut out, |module, host| module.init(host));
         lines.extend(out.lines);
         // `client_init` may only look names up and log (appendix 2.2):
         // nothing of it reaches the app.
         drop(out.effects);
     }
     ui.pending_lines = lines;
+    if !ui.slots.is_empty() {
+        // The simulation cannot see client modules: a match whose only
+        // modules are `ui.wasm` still needs the `SimEvent`s forwarded.
+        if let Some(runtime) = state
+            .match_state
+            .sim_runtime
+            .write_sim(crate::app::match_runtime::sim_host::SimWrite::Presentation)
+        {
+            runtime.simulation.set_client_event_forwarding(true);
+        }
+    }
     if !ui.slots.is_empty() || map_layout.is_some() || !ui.pending_lines.is_empty() {
         state.match_state.ui_modules = Some(ui);
         rebind_game_keys(state);
@@ -525,12 +538,12 @@ fn storage_root(state: &AppState) -> PathBuf {
 /// the next render frame; during catch-up, or without client modules, it is
 /// dropped (RFC 11: notifications are suspended while catching up).
 pub(crate) fn collect_sim_outbox(state: &mut AppState) {
-    let has_sim_modules = state
+    if state
         .match_state
-        .sim_runtime
-        .runtime()
-        .is_some_and(|runtime| !runtime.simulation.ext_modules().is_empty());
-    if !has_sim_modules {
+        .ui_modules
+        .as_ref()
+        .is_none_or(|ui| ui.slots.is_empty())
+    {
         return;
     }
     let catching_up = catching_up(state);
@@ -573,16 +586,21 @@ pub(crate) fn render_frame(state: &mut AppState) {
     let viewer = viewer(state);
     let inputs = local_inputs(state);
     let selected = crate::app::input::dispatch::selected_in_order(state);
+    let playback = state.match_state.match_diagnostics.is_replay_playback();
     let now = Instant::now();
     let mut out = CallOutput::default();
     {
         let match_state = &mut state.match_state;
+        // Client reads need the live world: the frame a lent tick publishes
+        // holds no objects. While a tick has the world, this render frame
+        // skips the modules; their events wait for the next one.
         let (Some(ui), Some(runtime)) = (
             match_state.ui_modules.as_mut(),
-            match_state.sim_runtime.runtime(),
+            match_state.sim_runtime.home_runtime(),
         ) else {
             return;
         };
+        let gui = match_state.match_presentation.dialog_ui.gui_mut();
         if ui.slots.is_empty() {
             // Static map parts only: the tree's events have no reader.
             ui.tree.take_events(&mut Vec::new());
@@ -599,8 +617,10 @@ pub(crate) fn render_frame(state: &mut AppState) {
                 selected: &selected,
                 control_groups: &[],
             },
+            source: Source::Mod,
         };
-        ui.run_frame(&view, &inputs, &selected, dt, &mut out);
+        ui.local.set_playback(playback);
+        ui.run_frame(gui, &view, &inputs, &selected, dt, &mut out);
     }
     post_lines(state, out.lines);
     apply_effects(state, out.effects);
@@ -626,15 +646,7 @@ fn post_lines(state: &mut AppState, lines: Vec<(String, bool)>) {
 /// Queued commands go through the local player's ordinary command path
 /// (`input::commands::try_schedule_command`: replays and locks refuse them
 /// there); the other effects are [`local::apply`]'s.
-fn apply_effects(state: &mut AppState, mut effects: LocalEffects) {
-    let commands = std::mem::take(&mut effects.commands);
-    if !commands.is_empty()
-        && let Some(owner) = crate::app::input::commands::preferred_local_owner(state)
-    {
-        for command in commands {
-            let _ = crate::app::input::commands::try_schedule_command(state, &owner, command);
-        }
-    }
+fn apply_effects(state: &mut AppState, effects: LocalEffects) {
     local::apply(effects, state);
 }
 
@@ -648,8 +660,10 @@ pub(crate) fn pointer_moved(state: &mut AppState) {
         state.match_state.input.cursor_y,
     );
     let cell = battlefield_cell(state, x, y);
-    if let Some(ui) = state.match_state.ui_modules.as_mut() {
-        ui.tree.pointer_move(&ui.gui, x as i32, y as i32, cell);
+    let match_state = &mut state.match_state;
+    if let Some(ui) = match_state.ui_modules.as_mut() {
+        let gui = match_state.match_presentation.dialog_ui.gui();
+        ui.tree.pointer_move(gui, x as i32, y as i32, cell);
     }
 }
 
@@ -675,9 +689,11 @@ pub(crate) fn pointer_button(
         state.match_state.input.cursor_y,
     );
     let cell = battlefield_cell(state, x, y);
-    let Some(ui) = state.match_state.ui_modules.as_mut() else {
+    let match_state = &mut state.match_state;
+    let Some(ui) = match_state.ui_modules.as_mut() else {
         return false;
     };
+    let gui = match_state.match_presentation.dialog_ui.gui_mut();
     let bit = 1 << index;
     if !pressed {
         let consumed = ui.consumed_buttons & bit != 0;
@@ -686,7 +702,7 @@ pub(crate) fn pointer_button(
     }
     let consumed = ui
         .tree
-        .pointer_down(&mut ui.gui, x as i32, y as i32, index, cell);
+        .pointer_down(gui, x as i32, y as i32, index, cell);
     if consumed {
         ui.consumed_buttons |= bit;
     }
@@ -696,11 +712,12 @@ pub(crate) fn pointer_button(
 /// Esc in the match, before the game's own: true when it dismissed a
 /// module's node (`Dismiss`).
 pub(crate) fn key_escape(state: &mut AppState) -> bool {
-    state
-        .match_state
+    let match_state = &mut state.match_state;
+    let gui = match_state.match_presentation.dialog_ui.gui();
+    match_state
         .ui_modules
         .as_mut()
-        .is_some_and(|ui| ui.tree.key_escape(&ui.gui))
+        .is_some_and(|ui| ui.tree.key_escape(gui))
 }
 
 /// A key press the game did not use: the modules' hotkeys (game hotkeys

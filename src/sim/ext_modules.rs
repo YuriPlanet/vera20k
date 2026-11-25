@@ -98,7 +98,7 @@ mod props;
 mod rules;
 mod supers;
 mod unit_ai;
-pub(crate) mod vars;
+pub mod vars;
 mod writes;
 
 pub use actions::{ActionContext, run_action};
@@ -106,8 +106,8 @@ pub(crate) use client_outbox::CLIENT_FORWARDED_EVENTS;
 pub use client_outbox::{ClientNotify, ClientOutbox, ClientSimEvent};
 pub(crate) use decide::CommandAdmission;
 use modifiers::{Modifier, ModifierOp, ModifierStore, Stat};
-pub(crate) use orders::{CheckedOrder, check_client_order, take_due_orders};
-pub(crate) use props::View;
+pub use orders::{CheckedOrder, check_client_order, take_due_orders};
+pub use props::View;
 use props::type_property;
 use rules::check_notify_collision;
 pub use rules::{MapUi, PreparedExtModules, WasmPolicy};
@@ -621,7 +621,7 @@ impl ExtModules {
     }
 
     /// The declared variables (RFC 6e), for client reads.
-    pub(crate) fn vars(&self) -> &VarStore {
+    pub fn vars(&self) -> &VarStore {
         &self.vars
     }
 
@@ -800,18 +800,18 @@ const REF_GLOBAL: i64 = 4;
 const REF_LIMIT: i64 = 1 << 53;
 
 /// A type reference: name kind and ID.
-pub(crate) const fn type_ref(kind: i32, id: u32) -> i64 {
+pub const fn type_ref(kind: i32, id: u32) -> i64 {
     (REF_TYPE << REF_KIND_SHIFT) | ((kind as i64) << 32) | id as i64
 }
 
 /// A cell reference, in cells.
-pub(crate) const fn cell_ref(x: u16, y: u16) -> i64 {
+pub const fn cell_ref(x: u16, y: u16) -> i64 {
     (REF_CELL << REF_KIND_SHIFT) | ((x as i64) << 16) | y as i64
 }
 
 /// What a nonzero reference names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Ref {
+pub enum Ref {
     Object(u64),
     House(usize),
     /// House `house`'s Super of `[SuperWeaponTypes]` entry `index`.
@@ -835,7 +835,7 @@ pub(crate) enum Ref {
 
 /// Decodes a reference; `None` for 0. Client kinds (5, 6) and unknown kinds
 /// are invalid in the simulation.
-pub(crate) fn decode_ref(reference: i64) -> Result<Option<Ref>, Invalid> {
+pub fn decode_ref(reference: i64) -> Result<Option<Ref>, Invalid> {
     if reference == 0 {
         return Ok(None);
     }
@@ -874,7 +874,7 @@ pub(crate) fn decode_ref(reference: i64) -> Result<Option<Ref>, Invalid> {
 /// A client module's cell argument (RFC 10; appendix "References"): a
 /// cell, or a waypoint's cell (`NotFound` for a waypoint the map does not
 /// set). Any other reference is invalid.
-pub(crate) fn client_cell(
+pub fn client_cell(
     sim: &Simulation,
     reference: i64,
 ) -> Result<Result<(u16, u16), Status>, Invalid> {
@@ -889,7 +889,7 @@ pub(crate) fn client_cell(
 
 /// A client module's object argument: the object ID. Any other reference
 /// (0 included) is invalid.
-pub(crate) fn client_object(reference: i64) -> Result<u64, Invalid> {
+pub fn client_object(reference: i64) -> Result<u64, Invalid> {
     match decode_ref(reference)? {
         Some(Ref::Object(id)) => Ok(id),
         _ => Err(Invalid(format!("{reference:#x} is not an object"))),
@@ -897,7 +897,7 @@ pub(crate) fn client_object(reference: i64) -> Result<u64, Invalid> {
 }
 
 /// A cell's reference, for a client read (the camera's `Cell`).
-pub(crate) const fn client_cell_ref(x: u16, y: u16) -> i64 {
+pub const fn client_cell_ref(x: u16, y: u16) -> i64 {
     cell_ref(x, y)
 }
 
@@ -946,7 +946,7 @@ impl Host<'_, '_> {
 /// through it too (`app::ui_modules::reads`), behind their visibility gate,
 /// on whatever runtime the app reads (possibly the presentation copy).
 #[derive(Clone, Copy)]
-pub(crate) struct Reader<'a> {
+pub struct Reader<'a> {
     pub(crate) sim: &'a Simulation,
     pub(crate) rules: &'a RuleSet,
     /// For `Placeable` (the placement owner's overlay test).
@@ -961,7 +961,7 @@ pub(crate) struct Reader<'a> {
 /// "client" column): which candidates exist for it, and how its clauses
 /// read. Candidates it does not list are passed over like keys without a
 /// candidate ([`FindPage::skip`]), so a page says nothing about them.
-pub(crate) trait ReadGate {
+pub trait ReadGate {
     /// Whether `find` may list `reference`: an object, a cell or a
     /// superweapon reference.
     fn lists(&self, reference: i64) -> bool;
@@ -973,7 +973,7 @@ pub(crate) trait ReadGate {
 
 /// `has_kind`, the same in every call (the rules stage included); client
 /// modules answer the simulation's tables with it too.
-pub(crate) fn has_kind(rules: &RuleSet, table: i32, id: i32) -> bool {
+pub fn has_kind(rules: &RuleSet, table: i32, id: i32) -> bool {
     match table {
         vera20k_wasm_ext::triggers::TABLE_EVENT => {
             events::raises(rules, id)
@@ -1103,7 +1103,7 @@ fn variable_name(vars: &VarStore, id: i32) -> Result<(String, Status), Invalid> 
 }
 
 /// TechnoType `id`: an index into the rules' type registry.
-pub(crate) fn techno_type(
+pub fn techno_type(
     rules: &RuleSet,
     id: i32,
 ) -> Option<&crate::rules::object_type::ObjectType> {
@@ -1115,7 +1115,7 @@ pub(crate) fn techno_type(
 /// `source` (whose variables a name without a `mod.`/`map.` prefix finds).
 /// The module host and client modules (`client_lookup`) both answer with it;
 /// `Property`, `ActionKind` and `ModuleAction` are the sandbox's.
-pub(crate) fn lookup_name(
+pub fn lookup_name(
     sim: &Simulation,
     rules: &RuleSet,
     source: ModuleSource,
@@ -1138,7 +1138,7 @@ pub(crate) fn lookup_name(
 }
 
 /// `name_of` of the name kinds the simulation answers ([`lookup_name`]'s).
-pub(crate) fn name_of_id(
+pub fn name_of_id(
     sim: &Simulation,
     rules: &RuleSet,
     kind: i32,
@@ -1417,7 +1417,7 @@ impl SimHost for Host<'_, '_> {
     /// [`MAX_NOTIFIES_PER_FRAME`] this frame `Refused`. The notification
     /// goes to the client outbox, never into simulation state.
     fn send_notify(&mut self, to: i64, id: i32, data: &[u8]) -> Result<Status, Invalid> {
-        if to != 0 && self.house(to)?.is_none() {
+        if to != 0 && self.reader().house(to)?.is_none() {
             return Ok(Status::Gone);
         }
         let frame = self.sim.session.binary_frame();

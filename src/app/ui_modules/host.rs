@@ -25,7 +25,8 @@ use vera20k_wasm_ext::client::{
     CLIENT_CAMERA, CLIENT_CURSOR, CLIENT_SETTINGS, REF_KIND_CLIENT_GLOBAL, REF_KIND_NODE,
 };
 use vera20k_wasm_ext::{
-    ActionParams, ClientHost, FindPage, Invalid, NodeInit, Order, Query, Source, Status,
+    ActionParams, ClientHost, FindPage, Invalid, NAME_HOTKEY, NAME_NOTIFY, NodeInit, Order, Query,
+    Source, Status,
 };
 
 use super::local::{LocalEffects, LocalInputs, LocalState};
@@ -34,11 +35,6 @@ use super::storage::Storage;
 use super::tree::UiTree;
 use crate::sim::ext_modules::MapUi;
 
-/// Name kind `Notify` (appendix 8.1): the notification names this match's
-/// simulation modules declared.
-pub(crate) const NAME_NOTIFY: i32 = 16;
-/// Name kind `Hotkey` (appendix 8.1): hotkeys this module registered.
-pub(crate) const NAME_HOTKEY: i32 = 22;
 
 /// Log lines one module keeps per render frame, and bytes per line
 /// (RFC 15.4 "Log"); the excess is dropped.
@@ -94,35 +90,6 @@ pub(crate) fn lookup_route(kind: i32) -> LookupRoute {
     }
 }
 
-/// A display-only random stream for `client_random`: never the
-/// simulation's, never saved (RFC 10).
-pub(crate) struct ClientRng(u64);
-
-impl ClientRng {
-    pub(crate) fn new(seed: u64) -> Self {
-        // xorshift has no zero state.
-        Self(seed | 1)
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        let mut x = self.0;
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        self.0 = x;
-        x
-    }
-
-    /// A draw in `[lo, hi]`; `lo` when the range is empty.
-    pub(crate) fn range(&mut self, lo: i32, hi: i32) -> i32 {
-        if hi <= lo {
-            return lo;
-        }
-        let span = (i64::from(hi) - i64::from(lo) + 1) as u64;
-        (i64::from(lo) + (self.next_u64() % span) as i64) as i32
-    }
-}
-
 /// Keeps `line` in `log` within the per-frame limits (RFC 15.4 "Log"): at
 /// most [`LOG_LINES_PER_FRAME`] lines, each cut to [`LOG_LINE_BYTES`] bytes
 /// on a character boundary.
@@ -149,7 +116,6 @@ pub(crate) struct FrameHost<'a, 'v> {
     pub local: &'a mut LocalState,
     pub storage: &'a mut Storage,
     pub effects: &'a mut LocalEffects,
-    pub rng: &'a mut ClientRng,
     /// This call's log lines, for the in-game console.
     pub log: &'a mut Vec<String>,
 }
@@ -175,17 +141,13 @@ impl ClientHost for FrameHost<'_, '_> {
         frame.saturating_sub(1) as i32
     }
 
-    fn random(&mut self, lo: i32, hi: i32) -> i32 {
-        self.rng.range(lo, hi)
-    }
-
     fn log(&mut self, line: &str) {
         log::info!(target: "ext_module", "{:?} ui.wasm: {line}", self.source);
         keep_log_line(self.log, line);
     }
 
     fn has_kind(&mut self, table: i32, id: i32) -> bool {
-        reads::has_kind(table, id)
+        reads::has_kind(self.view, table, id)
     }
 
     fn lookup(&mut self, kind: i32, name: &str) -> Result<(i32, Status), Invalid> {
@@ -368,18 +330,5 @@ mod tests {
             keep_log_line(&mut log, "x");
         }
         assert_eq!(log.len(), LOG_LINES_PER_FRAME);
-    }
-
-    #[test]
-    fn random_stays_in_range() {
-        let mut rng = ClientRng::new(0);
-        for _ in 0..1000 {
-            let value = rng.range(-3, 4);
-            assert!((-3..=4).contains(&value));
-        }
-        assert_eq!(rng.range(5, 5), 5);
-        assert_eq!(rng.range(5, 1), 5);
-        let full = rng.range(i32::MIN, i32::MAX);
-        let _ = full;
     }
 }

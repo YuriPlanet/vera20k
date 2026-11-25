@@ -373,7 +373,7 @@ pub(crate) fn check_order(
 /// units `house` (a house reference) owns stay, as a player's input names
 /// only the player's own units. An order that lists units but keeps none is
 /// `Refused`.
-pub(crate) fn check_client_order(
+pub fn check_client_order(
     sim: &Simulation,
     rules: &RuleSet,
     house: i64,

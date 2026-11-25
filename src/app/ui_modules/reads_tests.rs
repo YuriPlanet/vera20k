@@ -11,7 +11,7 @@ use crate::sim::cloak_disguise::{CloakRuntime, DisguiseRuntime};
 use crate::sim::ext_modules::cell_ref;
 use crate::sim::house_state::HouseState;
 use crate::sim::runtime::{SimResources, SimRuntime};
-use vera20k_wasm_ext::{Area, MAX_SCAN, NAME_COUNTRY, NAME_VARIABLE, VarDecl, VarScope};
+use vera20k_wasm_ext::{Area, MAX_SCAN, NAME_COUNTRY, NAME_VARIABLE, SCOPE_HOUSES, VarDecl, VarScope};
 
 const DRIVE: &str = "Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\nMovementZone=Normal\n";
 

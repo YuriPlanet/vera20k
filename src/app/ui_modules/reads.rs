@@ -78,8 +78,7 @@ use crate::sim::world::Simulation;
 
 /// Name kinds the glue routes elsewhere (appendix 8.1): `Notify` to the
 /// simulation's declared notify table, `Hotkey` to the module's own.
-const NAME_NOTIFY: i32 = 16;
-const NAME_HOTKEY: i32 = 22;
+use vera20k_wasm_ext::{NAME_HOTKEY, NAME_NOTIFY};
 /// `find` scopes that are the simulation's only (appendix 8.2): `Teams`,
 /// `Triggers`, `Tags` and `Modifiers`.
 const SIM_SCOPES: [i32; 4] = [4, 5, 6, SCOPE_MODIFIERS];
@@ -163,7 +162,7 @@ const CLIENT_PROPERTIES: &[&str] = &[
 const HIDDEN: (i64, Status) = (0, Status::Refused);
 
 /// Local facts a read needs beside the world.
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub(crate) struct LocalFacts<'a> {
     /// This player's selection (`Selected`).
     pub selected: &'a [u64],
@@ -172,6 +171,7 @@ pub(crate) struct LocalFacts<'a> {
 }
 
 /// One client's view of the world for the duration of a call.
+#[derive(Clone, Copy)]
 pub(crate) struct ClientView<'a> {
     pub runtime: &'a SimRuntime,
     pub viewer: Viewer,
