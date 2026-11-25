@@ -682,6 +682,8 @@ TypeScript 映射如下；Rust 使用 newtype 和蛇形命名（`where_prop`）�
 | 100035 | `Launch` | `projectile`，`subject` 发射者（不存在时为 0），`other` 目标对象，`cell` 目标坐标所在的格子 | 每个会飞行的抛射体射出时一次，在它进入游戏之后：开火、射击方案、子弹分裂、空爆、超级武器和触发器打击；`Inviso=` 不询问 | 对象+武器 | `PathSpec` 的字节数（32 + 24 × 点数）；结果区为一个 `PathSpec`；未处理时按原生弹道飞行 | preview |
 | 100036 | `ProjectileFrame` | `subject` 和 `projectile` 为抛射体，`value` 已飞行帧数 | 每帧引擎推进抛射体时，按引擎的顺序，在等待动画、目标解析和帧数引信之后、计算候选位置之前，每个本帧要移动的绑定抛射体一次 | 抛射体类型 | 不用；结果区为一个 `ProjectileStep`；`handled` 为 0 时按 `Launch` 的路径或原生推进 | preview |
 | 100039 | `DamageIncoming` | `subject`，`other` 来源（可为 0），`id` 弹头，`value` 入射伤害（有符号），`value2` 把 `previous` 按触发器 `EventDef.id` 的护甲（−1 为主体的护甲）经距离衰减、Verses 和上限算出的伤害，符号同 `previous`；`EventDef.value` 位 0 为 1 时，正值先按主体护甲倍率的乘积相除并向零取整；`x`、`y`、`z` 主体位置（lepton） | Techno 受伤入口：步兵卧倒、寄生前缀和引擎自己的护盾之后，阻止死亡、主体护甲和最小伤害 1 之前。入射为 0、无视防御、狂暴或超时空弹头，以及会被免疫、铁幕或敌我许可拒绝的命中不询问；主体护甲的 Verses 为 0 不影响询问 | 对象 | 继续进入原生流程的入射伤害：须为 0 或与 `previous` 同号，否则保留上一环；每一环按自己的 `previous` 重算 `value2`；变成 0 时不再施加最小伤害 1 | preview |
+| 100060 | `IdleMission` | `subject` | 步兵或车辆进入空闲、引擎选定要排入的任务之后、排入之前；不排任务时不询问；飞机和建筑不询问 | 对象 | 要排入的任务（`Mission`），255 不排；`native` 为引擎的选择 | preview |
+| 100061 | `HarvestCell` | `subject` 矿车，`cell` 引擎找到的矿格（没有为 0），`value` 搜索半径（格） | 矿车找矿并前往时，引擎的扫描之后、设目的地之前；奴隶矿工不询问 | 对象 | 矿格的格子引用，0 为没有；地图外的格子保留引擎的结果 | preview |
 
 ### 4.6 客户端事件种类
 

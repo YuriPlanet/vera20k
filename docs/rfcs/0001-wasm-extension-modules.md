@@ -595,7 +595,7 @@ Version 1 freezes three decidable events: `TakeDamage` (settled final damage), `
 
 - **Preview, not frozen in version 1:** `ProductionAllowed` (expressible with `AllowType`) and `CommandAllowed` (must first cover computer AI missions).
 - **Shields:** preview adds `DamageIncoming` (damage at the receive entry, with shield damage computed by the engine against the armor the trigger declares) and the modifiable property `TargetArmor` (armor for targeting and fire permission). `TakeDamage` asks only when settled damage is above 0, so it cannot implement a shield with its own armor. Both freeze in version 1 only after passing the cases below. Phobos-compatible shields remain in the engine, and modules need not reproduce them point by point.
-- **Preview:** the decision forms of `Fire` (shot plan, section 9) and `FatalDamage` (death plan, appendix 4.3), `Launch` and `ProjectileFrame` (section 9).
+- **Preview:** the decision forms of `Fire` (shot plan, section 9) and `FatalDamage` (death plan, appendix 4.3), `Launch` and `ProjectileFrame` (section 9), and the unit-level `IdleMission` and `HarvestCell` (appendix 4.5).
 - **Later:** the decision form of `TargetChanged`. Modules probe with `has_kind`.
 
 **Shield acceptance.** Write a minimal shield and an overcharging shield with the public SDK (distance 0, multiplier 1):
@@ -716,13 +716,13 @@ A module can operate a house as a player would: a simulation module takes over a
 
 | Bit | `Domain` | Decisions native AI yields once claimed |
 | --- | --- | --- |
-| 0 | `Production` | Choosing products, build queues, automatic base building (`AutoBaseBuilding`), building placement |
-| 1 | `Forces` | AI triggers, creating teams, team scripts, and attack, defense and rally dispatch of existing forces in the house update |
-| 2 | `Abilities` | Ability missions the house AI gives individual units: deploying and undeploying (other than the MCV), garrisoning and leaving buildings, engineer capture, spy infiltration |
+| 0 | `Production` | Choosing products, build queues, automatic base building (`AutoBaseBuilding`), building placement, and a computer harvester's return from guard to harvesting |
+| 1 | `Forces` | AI triggers, creating teams, team scripts, and attack, defense and rally dispatch of existing forces in the house update, plus the computer arms of missions that place units for the house: idle infantry's stance pick, a campaign hunter's march on the player, area guard moving its post off an own building, damaged vehicles seeking a repair depot, the fate of a mind-controlled unit |
+| 2 | `Abilities` | Ability missions the house AI gives individual units: deploying and undeploying (other than the MCV), garrisoning and leaving buildings, engineer capture, spy infiltration, a guarding demolitions unit going to plant C4 |
 | 3 | `SuperWeapons` | Choosing and firing superweapons |
 
 - Writes are accepted only for an undefeated house no player controls (the same condition as `order`). For a human house they are `Refused`. A value of 0 leaves stock behavior unchanged (goal 5).
-- Units' own reactions belong to no domain and run as usual: target acquisition, retaliation, the harvest cycle, automatic deployment under the unit's rules and idle behavior. MCV deployment belongs to `Production`.
+- Units' own reactions belong to no domain and run as usual: target acquisition, retaliation, the harvest cycle, automatic deployment under the unit's rules and idle behavior. MCV deployment belongs to `Production`. A computer arm a claim yields still makes its random draws and discards the result (such as the mind-controlled unit's fate roll), so the random stream does not shift. Unit-level decisions (`IdleMission`, `HarvestCell`, appendix 4.5) belong to no domain and are asked by binding.
 - A claim belongs to the module that wrote it. At any time one domain of a house can be claimed by only one module. Another module writing a claimed bit gets `Refused`. When a module is disabled, every bit it claimed is cleared and native AI resumes from the next frame (section 3).
 - Claim state is saved and included in the state hash and the multiplayer sync check.
 
@@ -1111,7 +1111,7 @@ Question numbers are unchanged so earlier discussion still resolves. **Decided**
 
 ## Revision history
 
-- **0.0.23** (2026-11-25): Shot plans and projectile trajectories are settled to what the engine can do (section 9): the decision forms of `Fire` and `FatalDamage`, `Launch` and `ProjectileFrame` become preview. The text now says that a module path replaces the homing and Vertical arms together with their detonation tests, that the ordinary tail runs for every module path, how fixed point converts and the 2,048 per-axis cap, how paths are computed, which shots a plan is not asked for and which effects still act on the native target. `FatalDamage`'s result becomes a death plan (appendix 4.3), dropping the wreck the engine does not have. Projectile properties (appendix 7.4) become preview. The current-tense mentions of Phobos `Trajectory=` and the frame fuse are removed.
+- **0.0.23** (2026-11-25): Shot plans and projectile trajectories are settled to what the engine can do (section 9): the decision forms of `Fire` and `FatalDamage`, `Launch` and `ProjectileFrame` become preview. The text now says that a module path replaces the homing and Vertical arms together with their detonation tests, that the ordinary tail runs for every module path, how fixed point converts and the 2,048 per-axis cap, how paths are computed, which shots a plan is not asked for and which effects still act on the native target. `FatalDamage`'s result becomes a death plan (appendix 4.3), dropping the wreck the engine does not have. Added the preview unit-level decisions `IdleMission` and `HarvestCell`. House domain claims now cover the computer mission arms that had no gate (section 6i). Projectile properties (appendix 7.4) become preview. The current-tense mentions of Phobos `Trajectory=` and the frame fuse are removed.
 - **0.0.21** (2026-11-24): Modules register INI keys, registries and module events with `ini_register` at initialization, and at scenario start the engine passes the registered names appearing in the rules to their handlers. Added `ModuleEvent`, `RaiseEvent` and module actions with arguments (section 6h). Modules can claim a computer house by domain and client modules can play for the local player. Added `OrderRefused`, `SimEvent` and the read properties for driving a house, reversing 0.0.20's "no house takeover in version 1" (section 6i, open question 18). The mod default budget becomes 500,000, with seat budgets and a player-set budget added. `EventRecord` grows to 120 bytes.
 
 - **0.0.20** (2026-11-23): Stated where gameplay effects are listed that missions (`Mission` writes, `SetMission`) reach any house's units, a player's included; only `order` is limited to computer houses. The text read as if modules could not command a player's units.
