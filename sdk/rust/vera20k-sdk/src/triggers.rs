@@ -185,6 +185,14 @@ impl Event {
     /// and a projectile type binding. Asked every frame a bound bullet
     /// moves: answer with [`crate::ProjectileFrameDecision::set_step`].
     pub const PROJECTILE_FRAME: i32 = 1036;
+    /// Decision-only (appendix 4.5, preview): needs [`Trigger::decide_sync`]
+    /// and an object or type binding. Answer the mission the object idles
+    /// into ([`crate::Mission`], 255 for none).
+    pub const IDLE_MISSION: i32 = 1060;
+    /// Decision-only (appendix 4.5, preview): needs [`Trigger::decide_sync`]
+    /// and an object or type binding. Answer the ore cell a harvester's
+    /// search settles on (a cell reference, 0 for none).
+    pub const HARVEST_CELL: i32 = 1061;
 
     // Module INI (RFC 0001 section 6h).
     /// A module event ([`crate::ini::event`]): the trigger's `id` is the

@@ -20,7 +20,9 @@
 //! - `Launch` (4.5, preview): a [`PathSpec`] in the result area, its byte
 //!   count in `result`, when a bullet of a bound type is launched;
 //! - `ProjectileFrame` (4.5, preview): a [`ProjectileStep`] in the result
-//!   area, before a bound bullet's candidate position is computed.
+//!   area, before a bound bullet's candidate position is computed;
+//! - `IdleMission` and `HarvestCell` (4.5, preview): the mission an object
+//!   idles into, the ore cell a harvester's search settles on.
 //!
 //! Provisional numbering (open question 5): new events continue from 1000
 //! in appendix order, 4.3 (1000..1025), then 4.4 (1026..1030), then 4.5
@@ -34,9 +36,13 @@ pub const EVENT_DEFEAT: i32 = 1033;
 pub const EVENT_COMMAND_ALLOWED: i32 = 1034;
 pub const EVENT_LAUNCH: i32 = 1035;
 pub const EVENT_PROJECTILE_FRAME: i32 = 1036;
+/// Unit-level AI (appendix 4.5, preview; RFC numbers 100060, 100061):
+/// the mission an object idles into, and the ore cell a harvester heads for.
+pub const EVENT_IDLE_MISSION: i32 = 1060;
+pub const EVENT_HARVEST_CELL: i32 = 1061;
 
 /// Events with a decision form in this engine.
-pub const DECIDABLE_EVENTS: [i32; 9] = [
+pub const DECIDABLE_EVENTS: [i32; 11] = [
     EVENT_TAKE_DAMAGE,
     EVENT_FATAL_DAMAGE,
     EVENT_FIRE,
@@ -46,16 +52,20 @@ pub const DECIDABLE_EVENTS: [i32; 9] = [
     EVENT_COMMAND_ALLOWED,
     EVENT_LAUNCH,
     EVENT_PROJECTILE_FRAME,
+    EVENT_IDLE_MISSION,
+    EVENT_HARVEST_CELL,
 ];
 /// Of those, the decision-only ones (appendix 4.5): they need a decision
 /// handler and are never delivered.
-pub const DECISION_ONLY_EVENTS: [i32; 6] = [
+pub const DECISION_ONLY_EVENTS: [i32; 8] = [
     EVENT_PRODUCTION_ALLOWED,
     EVENT_PRODUCTION_QUEUED,
     EVENT_DEFEAT,
     EVENT_COMMAND_ALLOWED,
     EVENT_LAUNCH,
     EVENT_PROJECTILE_FRAME,
+    EVENT_IDLE_MISSION,
+    EVENT_HARVEST_CELL,
 ];
 
 /// Plan entries one `Fire` decision may hold (RFC 15.4: 768 bytes).
