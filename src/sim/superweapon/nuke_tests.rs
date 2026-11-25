@@ -375,6 +375,7 @@ fn wait_matches_native() {
                 false,
                 |_, _, _| None,
                 Some(&context),
+                None,
             )
             .unwrap();
 

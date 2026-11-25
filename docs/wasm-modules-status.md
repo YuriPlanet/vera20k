@@ -471,8 +471,9 @@ Branch `feature/wasm-control-points` (items 1 and 2 of the control-point plan):
   `SuperWeaponLaunched` = 1024, `Commanded` = 1016, `OrderRefused` = 1043; polls 1026..1030 (`PropertyPoll`, `HousePowerPoll`,
   `ModifierCountPoll`, `DistancePoll`, `VariablePoll`); decision-only 1031..1036
   (`ProductionAllowed` 1031, `ProductionQueued` 1032, `Defeat` 1033, `CommandAllowed`
-  1034; `Launch` and `ProjectileFrame` reserved). Stock events keep 0..88. One name
-  table: `wasm-ext/src/event_kinds.rs`.
+  1034, `Launch` 1035, `ProjectileFrame` 1036); unit-level decision-only events
+  from 1060 (`IdleMission` 1060, RFC 100060; no INI name yet); `HarvestCell` is
+  1049 (RFC 100049), asked in every ore scan. Stock events keep 0..88. One name table: `wasm-ext/src/event_kinds.rs`.
 - `Passable.<SpeedType>` properties are appended to `PROPERTIES` (IDs 173..180).
 - Houses stay on the bit-47 reference: putting them on the shared creation counter
   would renumber every object in every game, modules or not (stock state hash, saves,
@@ -547,8 +548,29 @@ section 10 permissions.
 
 Before version 1 (RFC "Process"): the TypeScript SDK
 (deferred by the maintainer), phase 2 (`ui.wasm`), phase 3 (a real mission with
-modules, external modders, freeze), and the later items (`Launch`,
-`ProjectileFrame`, module trajectories, peer calls).
+modules, external modders, freeze), and the later items (peer calls,
+`TargetChanged`'s decision form, the Guard/Area Guard/Hunt/Attack mission
+slots MIS-S3..S6).
+
+## Done (control points, preview, RFC 0.0.23)
+
+- Result areas in `on_decide` (`wasm-ext/src/decide.rs` `ResultArea`,
+  `ProjectileSpec`, `PathSpec`, `ProjectileStep`; SDK views `FireDecision`,
+  `LaunchDecision`, `ProjectileFrameDecision`).
+- `Fire` decision form, the shot plan: `src/sim/combat/fire_plan.rs`, asked in
+  `world_fire::emit_admitted_fire` before `BulletClass::Fire` (`0x006FF014`).
+- `Launch` and `ProjectileFrame`, projectile references and properties (7.4),
+  per-projectile module data and paths: `src/sim/ext_modules/projectiles.rs`;
+  `ProjectileStore::reaches_candidate_step`, `ModuleMotion` in
+  `src/sim/projectile.rs`; asked from `combat::projectile_delivery::admit_bullet`
+  and `Simulation::visit_logic_bullet`. Tests `ext_modules_flight_tests.rs`.
+- `FatalDamage` decision form, the death plan: `src/sim/combat/death_plan.rs`,
+  read at the entry of `world_receiver::handle_death`; tests
+  `ext_modules_death_tests.rs`.
+- `IdleMission`: `src/sim/ext_modules/unit_ai.rs` (`HarvestCell` is in
+  `control.rs`, its test with the idle one); the computer
+  mission arms the 6i claims had missed are gated (`claims.rs` module doc);
+  tests `ext_modules_unit_ai_tests.rs`.
 
 ## Residuals
 

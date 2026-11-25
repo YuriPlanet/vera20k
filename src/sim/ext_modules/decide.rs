@@ -44,6 +44,20 @@
 //!   write all pass there, on every machine in command order. A refused
 //!   command does nothing, as a receiver refusal does; a rally point keeps
 //!   the producers not refused.
+//! - `FatalDamage` (preview) → the death plan's bits: the entry of the
+//!   receiver's death arm (`combat::death_plan`, `0x00702050`).
+//! - `Fire` (preview) → a shot plan, the count of `ProjectileSpec`s in the
+//!   result area: FireAt's launch, just before `BulletClass::Fire`
+//!   (`combat::fire_plan`).
+//! - `Launch` and `ProjectileFrame` (preview) → a `PathSpec` (its byte count
+//!   in `result`) and a `ProjectileStep`: a bullet's launch and its flight
+//!   visit (`ext_modules::projectiles`).
+//!
+//! Result areas (`Fire`, `Launch`, `ProjectileFrame`; RFC 15.4 sizes): the
+//! area follows the record in the module's delivery area, smaller when that
+//! area is (0 when nothing fits). Each link gets the last accepted result's
+//! bytes (`previous_len`), the rest zeroed; an answer whose size does not fit
+//! (`vera20k_wasm_ext::decide::result_len`) keeps the previous bytes.
 //!
 //! The chain (RFC section 2): every enabled decider whose clauses hold is a
 //! link, mod module's triggers first, then the map's, each in creation
@@ -102,8 +116,6 @@
 //!   placement, superweapons, wall sales) ask nothing; the computer's own
 //!   AI gives missions directly, not through commands, so only module
 //!   orders reach it for computer houses.
-//! - `Launch` and `ProjectileFrame` (tier "later") have no decision point.
-//! - No result areas: none of the kinds decided here uses one.
 //! - A decision nested in another module's call gets no merged rules text
 //!   (`rules_get` answers `Unsupported`): the outer call holds it.
 
@@ -111,10 +123,13 @@ use std::collections::BTreeSet;
 
 use vera20k_wasm_ext::decide::{
     DECIDABLE_EVENTS, DECIDE_BUDGET, DECISION_ONLY_EVENTS, DecideRecord, EVENT_COMMAND_ALLOWED,
-    EVENT_DEFEAT, EVENT_PRODUCTION_ALLOWED, EVENT_PRODUCTION_QUEUED,
+    EVENT_DEFEAT, EVENT_PRODUCTION_ALLOWED, EVENT_PRODUCTION_QUEUED, ResultArea, result_area_bytes,
+    result_len,
+};
+use vera20k_wasm_ext::{
+    EventRecord, Export, Invalid, NAME_PROJECTILE, NAME_WARHEAD, NAME_WEAPON, Status, TriggerDef,
 };
 use vera20k_wasm_ext::triggers::EventDef;
-use vera20k_wasm_ext::{EventRecord, Export, Invalid, Status, TriggerDef};
 
 use super::{ModuleEvent, ModuleSource, techno_type};
 use crate::rules::object_type::ObjectType;
@@ -245,7 +260,8 @@ impl Simulation {
         native: i64,
         accept: impl Fn(i64) -> Option<i64>,
     ) -> Option<i64> {
-        self.decide_chain(rules, event, house, type_id, native, None, None, accept)
+        let mut area = ResultArea::none();
+        self.decide_chain(rules, event, house, type_id, native, None, None, &mut area, accept)
             .answer
     }
 
@@ -260,12 +276,36 @@ impl Simulation {
         shape: &LinkShape<'_>,
         accept: impl Fn(i64) -> Option<i64>,
     ) -> Option<i64> {
-        self.decide_chain(rules, event, None, None, native, None, Some(shape), accept)
+        let mut area = ResultArea::none();
+        self.decide_chain(rules, event, None, None, native, None, Some(shape), &mut area, accept)
             .answer
     }
 
+    /// The decision chain for a kind with a result area (`Fire`, `Launch`,
+    /// `ProjectileFrame`; module docs): `area` goes in holding the native
+    /// result's bytes (or none) and comes out holding the last accepted
+    /// link's, cut to the bytes its answer uses. `None` when no link
+    /// answered; `area` is then as it went in.
+    pub(crate) fn decide_module_area(
+        &mut self,
+        rules: &RuleSet,
+        event: &ModuleEvent,
+        native: i64,
+        area: &mut Vec<u8>,
+    ) -> Option<i64> {
+        let mut result = ResultArea::of(event.kind, std::mem::take(area));
+        let answer = self
+            .decide_chain(rules, event, None, None, native, None, None, &mut result, Some)
+            .answer;
+        *area = result.bytes;
+        answer
+    }
+
     /// The chain; `cached` is the result a link that could not be asked
-    /// passes on in place of the previous one.
+    /// passes on in place of the previous one. `area` is the result area
+    /// ([`ResultArea::none`] for the kinds without one): each link gets the
+    /// previous accepted bytes, and an answer [`result_len`] or `accept`
+    /// rejects leaves them in place.
     #[allow(clippy::too_many_arguments)]
     fn decide_chain(
         &mut self,
@@ -276,6 +316,7 @@ impl Simulation {
         native: i64,
         cached: Option<i64>,
         shape: Option<&LinkShape<'_>>,
+        area: &mut ResultArea,
         accept: impl Fn(i64) -> Option<i64>,
     ) -> Decided {
         let mut decided = Decided {
@@ -294,20 +335,44 @@ impl Simulation {
             let object = self.entity_object_type(entity, rules)?;
             rules.type_handle(&object.id).map(|handle| handle.0)
         });
-        let mut handles = triggers.deciders(event.kind, event.subject, type_id);
+        // A weapon, warhead or projectile type binding reaches the kinds
+        // that name them (appendix 4.3 "object + weapon").
+        let weapons: Vec<(i32, u32)> = if triggers.has_weapon_bindings() {
+            [
+                (NAME_WEAPON, event.weapon),
+                (NAME_WARHEAD, event.warhead),
+                (NAME_PROJECTILE, event.projectile_type),
+            ]
+            .into_iter()
+            .filter_map(|(kind, id)| Some((kind, u32::try_from(id).ok()?)))
+            .collect()
+        } else {
+            Vec::new()
+        };
+        let mut handles = triggers.deciders(event.kind, event.subject, type_id, &weapons);
         // Mod first, then map; creation order within each (a stable sort).
         handles.sort_by_key(|handle| triggers.get(*handle).map(|t| t.source));
         for handle in handles {
             let previous = decided.answer.unwrap_or(native);
-            match self.ask_decider(rules, handle, event, house, native, previous, shape) {
+            let before = (result_area_bytes(event.kind) > 0).then(|| area.bytes.clone());
+            match self.ask_decider(rules, handle, event, house, native, previous, shape, area) {
                 // A shaped chain (`DamageIncoming`) takes 0 or an answer with
                 // the sign of the link's `previous`.
                 Some(Link::Answered(answer)) => {
-                    decided.answer = accept(answer)
-                        .filter(|&answer| {
-                            shape.is_none() || answer == 0 || answer.signum() == previous.signum()
-                        })
-                        .or(decided.answer);
+                    let accepted = accept(answer).filter(|&answer| {
+                        shape.is_none() || answer == 0 || answer.signum() == previous.signum()
+                    });
+                    match accepted.zip(result_len(event.kind, answer, area.cap)) {
+                        Some((answer, len)) => {
+                            area.bytes.truncate(len);
+                            decided.answer = Some(answer);
+                        }
+                        None => {
+                            if let Some(before) = before {
+                                area.bytes = before;
+                            }
+                        }
+                    }
                 }
                 Some(Link::Unasked) => {
                     decided.unasked = true;
@@ -322,6 +387,7 @@ impl Simulation {
     /// One link: `None` when the trigger is off, its clauses fail, its
     /// module is disabled, or the handler leaves `handled` 0 or faults
     /// (which stops the module).
+    #[allow(clippy::too_many_arguments)]
     fn ask_decider(
         &mut self,
         rules: &RuleSet,
@@ -331,6 +397,7 @@ impl Simulation {
         native: i64,
         previous: i64,
         shape: Option<&LinkShape<'_>>,
+        area: &mut ResultArea,
     ) -> Option<Link> {
         let difficulty = self.trigger_difficulty();
         let trigger = self.trigger_runtime.module_triggers().get(handle)?;
@@ -396,7 +463,11 @@ impl Simulation {
             Some(rules.overlay_registry()),
             &mut FrameEffects::empty(),
             index,
-            |module, host| module.decide(&record, DECIDE_BUDGET, host),
+            |module, host| {
+                // Each module's delivery area bounds its own view of it.
+                area.cap = result_area_bytes(event.kind);
+                module.decide(&record, area, DECIDE_BUDGET, host)
+            },
         );
         std::mem::swap(&mut self.ext_modules.slots[index].rng, &mut stream);
         self.ext_modules.decide.streams.push((stream_key, stream));
@@ -457,6 +528,7 @@ impl Simulation {
             1,
             None,
             None,
+            &mut ResultArea::none(),
             allow,
         );
         !decided.unasked && decided.answer != Some(0)
@@ -508,6 +580,7 @@ impl Simulation {
                     // A refusal does not lapse because the budget did.
                     last.contains(&(house, type_id)).then_some(0),
                     None,
+                    &mut ResultArea::none(),
                     allow,
                 );
                 // The sidebar's native answer is the input to the decision.

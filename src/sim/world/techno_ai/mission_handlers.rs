@@ -1123,7 +1123,10 @@ fn infantry_idle_guard_pick(sim: &Simulation, id: u64, rules: &RuleSet) -> Missi
     let human = house.is_none_or(|house| house.is_controlled_by_human(sim.session.rule_policy()));
     let teamed = sim.team_script_vm.team_of(id).is_some();
     let object = sim.entity_object_type(entity, rules);
-    let area_guard = if !human && !teamed {
+    // A house whose `Forces` a Wasm module claims (RFC 0001 6i) leaves the
+    // computer's stance pick: its infantry take the units' own rule.
+    let claimed = sim.module_claims(entity.owner(), vera20k_wasm_ext::DOMAIN_FORCES);
+    let area_guard = if !human && !teamed && !claimed {
         house.is_some_and(|house| house.current_iq() >= rules.general.iq_guard_area)
             && entity.seldom.slave.owner().is_none()
             && object.is_some_and(|object| {
@@ -1154,6 +1157,12 @@ fn infantry_idle_guard_pick(sim: &Simulation, id: u64, rules: &RuleSet) -> Missi
 }
 
 impl Simulation {
+    /// [`infantry_idle_guard_pick`] for `id`, for the Wasm module tests.
+    #[cfg(test)]
+    pub(crate) fn infantry_idle_guard_pick_for_test(&self, id: u64, rules: &RuleSet) -> MissionType {
+        infantry_idle_guard_pick(self, id, rules)
+    }
+
     /// Infantry EnterIdle51CBA0 after the sole Foot4D82B0 base.
     /// P2/P5 actual human E1 controls execute constructor-empty planning and
     /// stock-false DefaultToGuardArea/GUARD_AREA; the guard pick is
@@ -1197,13 +1206,16 @@ impl Simulation {
             FootIdleSelection::KeepBaseReturn => {}
             FootIdleSelection::ReturnFalse => return false,
             FootIdleSelection::Queue(mission) => {
-                let _ = self.mission_queue_exact(
-                    id,
-                    MissionId::from_known(mission),
-                    0,
-                    self.session.binary_frame(),
-                    &LiveReadyInputProvider { rules },
-                );
+                // Wasm module `IdleMission` (`ext_modules::unit_ai`).
+                if let Some(mission) = self.module_idle_mission(rules, id, Some(mission)) {
+                    let _ = self.mission_queue_exact(
+                        id,
+                        MissionId::from_known(mission),
+                        0,
+                        self.session.binary_frame(),
+                        &LiveReadyInputProvider { rules },
+                    );
+                }
             }
         }
         saved_base_return
@@ -1525,6 +1537,16 @@ fn hunt_march_on_player(
     else {
         return;
     };
+    // A house whose `Forces` a Wasm module claims (RFC 0001 6i) does not
+    // march its hunters on the player.
+    if sim
+        .substrate
+        .entities
+        .get(id)
+        .is_some_and(|entity| sim.module_claims(entity.owner(), vera20k_wasm_ext::DOMAIN_FORCES))
+    {
+        return;
+    }
     sim.reset_slave_manager(id, rules, &mut ctx.effects);
     let (rx, ry) = sim.resolved_terrain.as_ref().map_or(cell, |terrain| {
         let identity = terrain.native_cell_identity((cell.0 as i16, cell.1 as i16));
@@ -1811,6 +1833,8 @@ fn area_guard_post_off_building(sim: &mut Simulation, id: u64) {
         owner,
         building_owner,
     ) || sim.owner_is_human(owner)
+        // A house whose `Forces` a Wasm module claims (RFC 0001 6i).
+        || sim.module_claims(owner, vera20k_wasm_ext::DOMAIN_FORCES)
         || (entity.category() == EntityCategory::Unit && entity.is_harvester())
     {
         return;
@@ -2273,6 +2297,8 @@ fn guard_queues_sabotage(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
     };
     if entity.category() != EntityCategory::Infantry
         || sim.owner_is_human(entity.owner())
+        // A house whose `Abilities` a Wasm module claims (RFC 0001 6i).
+        || sim.module_claims(entity.owner(), vera20k_wasm_ext::DOMAIN_ABILITIES)
         || entity.mission.current().known() == Some(MissionType::Sabotage)
         || !sim
             .object_type(entity.type_ref(), rules)
@@ -2398,6 +2424,11 @@ fn harvester_guard_override_requeues_harvest(sim: &Simulation, id: u64, rules: &
         .get(&entity.owner())
         .filter(|house| !house.is_controlled_by_human(sim.session.rule_policy()))
     {
+        // A house whose `Production` (its economy) a Wasm module claims
+        // (RFC 0001 6i) leaves its idle harvesters to the module.
+        if sim.module_claims(entity.owner(), vera20k_wasm_ext::DOMAIN_PRODUCTION) {
+            return false;
+        }
         // Arm (ii), `0x00740880..0x0074092C`.
         return house.tracking().owns_any_building(
             unit_type

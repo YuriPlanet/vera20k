@@ -49,8 +49,9 @@
 //!   turns, searches an exit cell and ejects the cargo head one per 14..16
 //!   frames. No native operation takes a named passenger out; `SetMission`
 //!   with `Unload` orders the mission.
-//! - `CreateProjectile`, `DetonateProjectile`, `RemoveProjectile`: no
-//!   projectile references yet.
+//! - `CreateProjectile`, `DetonateProjectile`, `RemoveProjectile`: not
+//!   wired; projectile references are read (`ext_modules::projectiles`) and
+//!   a `Fire` decision's plan launches bullets, but no action does yet.
 //! - `Push`: no forced-motion owner; the locomotors move objects only
 //!   toward their own destinations.
 //! - The team actions (`CreateTeamUnlimited`, `DisbandTeam`,

@@ -24,8 +24,10 @@ pub mod vars;
 
 pub use decide::{
     CommandAllowedDecision, CrushAllowedDecision, DamageIncomingDecision, DecideRecord,
-    DefeatDecision, DeployAllowedDecision, DestinationSetDecision, FireAllowedDecision,
-    HarvestCellDecision, ProductionAllowedDecision, ProductionQueuedDecision, RetaliateDecision,
+    DefeatDecision, DeployAllowedDecision, DestinationSetDecision, FatalDamageDecision,
+    FireAllowedDecision, FireDecision, HarvestCellDecision, IdleMissionDecision, LaunchDecision,
+    PathKind, ProductionAllowedDecision, ProductionQueuedDecision, ProjectileFrameDecision,
+    RetaliateDecision,
     TakeDamageDecision,
 };
 pub use ini::{
@@ -47,7 +49,9 @@ pub mod prelude {
     pub use crate::vars::{GlobalVar, HouseVar, ObjectVar};
     pub use crate::{
         Action, ActionDef, Blocked, Category, Cell, Command, CommandAllowedDecision, DecideRecord,
-        DefeatDecision, Event, EventRecord, EventScope, FIXED_ONE, Find, FireEvent, Global, House,
+        DefeatDecision, Event, EventRecord, EventScope, FIXED_ONE, FatalDamageDecision, Find,
+        FireDecision, FireEvent,
+        Global, House, LaunchDecision, PathKind, Projectile, ProjectileFrameDecision,
         IniEntryRecord, IniKeyRecord, IniSection, KilledEvent, Layer, Mission, Modifier,
         ModifierOp, ModuleEvent, ModuleEventRecord, NameKind, Op, Order, Outcome,
         ProductionAllowedDecision, ProductionQueuedDecision, Prop, Ref, Relation, Rules, SpeedType,
@@ -126,6 +130,12 @@ macro_rules! reference {
 reference!(
     /// A unit or building: kind 0, its creation serial.
     Techno
+);
+reference!(
+    /// A projectile (bullet): kind 0, its creation serial. Its properties
+    /// are appendix 7.4's (`Type`, `X`..`Z`, `VX`..`VZ`, `Source`,
+    /// `Target`, `Data0`, `Data1`).
+    Projectile
 );
 reference!(
     /// A house.
