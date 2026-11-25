@@ -50,8 +50,8 @@ impl App {
         // The 640 art set belongs to the unscaled 640 dialog; a fitted layout
         // always authors `0x94` at 800x600, so it takes the large set and the
         // trackbar frame of that control size.
-        let small = shell_layout::art_key_screen_width(state) == 640;
-        let layout = shell_layout::campaign_layout(state);
+        let small = shell_layout::art_key_screen_width(&state.renderer.gpu) == 640;
+        let layout = shell_layout::campaign_layout(&state.renderer.gpu);
         let base = layout.scale.base_rect(layout.slider);
         state.frontend.campaign_art =
             crate::render::main_menu_shell_chrome::build_campaign_shell_art(
@@ -72,7 +72,7 @@ impl App {
     /// the emblems and the difficulty slider, on the page's scale with the
     /// slider at the dialog's position. Returns their events after the cues.
     fn campaign_pointer(state: &mut AppState, down: Option<bool>) -> Vec<PageEvent> {
-        let layout = shell_layout::campaign_layout(state);
+        let layout = shell_layout::campaign_layout(&state.renderer.gpu);
         let difficulty = state.frontend.campaign.as_ref().map(|c| c.difficulty());
         let controller = &mut state.frontend.shell_controller;
         controller.ensure_active(CAMPAIGN_DIALOG);
@@ -335,11 +335,13 @@ impl App {
     /// The dialog loop's hover voice and the emblem timers while the page
     /// shows. Returns the next wake deadline.
     pub(super) fn poll_campaign(state: &mut AppState) -> Option<Instant> {
-        if crate::app::frontend::shell_transition::shell_slide_running(state) {
+        if crate::app::frontend::shell_transition::shell_slide_running(&state.frontend) {
             return None;
         }
         let now = Instant::now();
-        let frame_counts = crate::app::frontend::campaign_shell_render::emblem_frame_counts(state);
+        let frame_counts = crate::app::frontend::campaign_shell_render::emblem_frame_counts(
+            &state.frontend.campaign_art,
+        );
         let campaign = state.frontend.campaign.as_mut()?;
         let voice = campaign.take_due_voice(now);
         campaign.advance_emblems(now, frame_counts);

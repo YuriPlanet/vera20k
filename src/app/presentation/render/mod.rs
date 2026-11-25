@@ -20,6 +20,10 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
+use crate::app::diagnostics::performance_overlay::PerformanceOverlay;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::presentation::state::MatchPresentationState;
+
 #[cfg(all(test, tests_app_presentation_render))]
 mod anim_translucency_gpu_tests;
 #[cfg(all(test, tests_app_presentation_render))]
@@ -192,8 +196,11 @@ impl GameRenderOutput {
     /// The sidebar view this render drew, read from the retained projection:
     /// `None` when the render drew no sidebar, or when the projection's view
     /// has changed since and the drawn one is gone.
-    pub(crate) fn drawn_sidebar_view<'s>(&self, state: &'s AppState) -> Option<&'s SidebarView> {
-        let projection = &state.match_state.match_presentation.sidebar_projection;
+    pub(crate) fn drawn_sidebar_view<'s>(
+        &self,
+        presentation: &'s MatchPresentationState,
+    ) -> Option<&'s SidebarView> {
+        let projection = &presentation.sidebar_projection;
         projection.view_at(self.sidebar_view_revision?)
     }
 }
@@ -299,15 +306,17 @@ pub(crate) const RENDER_PHASE_KEYS: [&str; RenderPhases::COUNT] = [
 
 /// Whether this render measures its phases: for an attached dashboard, while
 /// the performance panel shows its Most CPU row, or always in a perf build.
-fn render_phases_wanted(state: &AppState) -> bool {
+// `diag` is read only with the telemetry dashboard.
+#[cfg_attr(not(feature = "telemetry-dashboard"), allow(unused_variables))]
+fn render_phases_wanted(performance_overlay: &PerformanceOverlay, diag: &DiagnosticsState) -> bool {
     if cfg!(feature = "perf") {
         return true;
     }
     #[cfg(feature = "telemetry-dashboard")]
-    if state.diag.telemetry_observer.active() {
+    if diag.telemetry_observer.active() {
         return true;
     }
-    state.renderer.performance_overlay.is_visible()
+    performance_overlay.is_visible()
 }
 
 /// Render one in-game frame: terrain, units, overlays, UI, sidebar.
@@ -323,7 +332,8 @@ pub(crate) fn render_game(
     // Phase accounting for the dashboard's render breakdown and the performance panel's
     // Most CPU row. One clock read per phase boundary; the spans are handed
     // back on `GameRenderOutput` and never written into the world here.
-    let render_started = render_phases_wanted(state).then(Instant::now);
+    let render_started =
+        render_phases_wanted(&state.renderer.performance_overlay, &state.diag).then(Instant::now);
     let (sw, sh) = (state.render_width() as f32, state.render_height() as f32);
     // What this picture draws of the world (`presentation::frame`).
     state.match_state.sim_runtime.ensure_frame();
@@ -351,7 +361,7 @@ pub(crate) fn render_game(
         state.match_state.input.camera_x,
         state.match_state.input.camera_y,
         state.match_state.input.zoom_level,
-        crate::app::presentation::instances::depth_axis(state),
+        crate::app::presentation::instances::depth_axis(&state.match_state.match_presentation),
     );
     update_native_z_origin(state);
 
@@ -1085,7 +1095,11 @@ fn upload_to_gpu(
     // the boxes and frames behind it, at the window's pixels
     // (`window_ui`): its producers lay out in the frame and emit for the
     // window.
-    let window_raster = crate::app::presentation::window_ui::battlefield_raster(state);
+    let window_raster = crate::app::presentation::window_ui::battlefield_raster(
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+    );
     let frame_raster = state
         .renderer
         .bit_font
@@ -1100,7 +1114,7 @@ fn upload_to_gpu(
     let (message_fill, message_text) =
         crate::app::input::messages::build_message_instances(state, &mut message_hud);
     state.match_state.match_presentation.message_hud = message_hud;
-    let verdict = crate::app::presentation::outcome_banner::visible_verdict(state);
+    let verdict = crate::app::presentation::outcome_banner::visible_verdict(&state.match_state);
     let mut banner_huds =
         std::mem::take(&mut state.match_state.match_presentation.outcome_banner_huds);
     let (outcome_shape, outcome_text) = match verdict {
@@ -1113,7 +1127,8 @@ fn upload_to_gpu(
         }
     };
     state.match_state.match_presentation.outcome_banner_huds = banner_huds;
-    let rendered_verdict = verdict.filter(|_| !outcome_shape.is_empty() || !outcome_text.is_empty());
+    let rendered_verdict =
+        verdict.filter(|_| !outcome_shape.is_empty() || !outcome_text.is_empty());
 
     // A4 in-game tooltip: built before the pool borrow (it reads &AppState);
     // fill (darken texture) + text (GAME.FNT atlas), drawn after the chat
@@ -1153,7 +1168,11 @@ fn upload_to_gpu(
     // The buttons and texts the side's layout adds over the battlefield
     // share the timers' lanes: white boxes, then text, inside its clip.
     {
-        let side_text = state.match_state.match_presentation.sidebar_layout_spec.side_text;
+        let side_text = state
+            .match_state
+            .match_presentation
+            .sidebar_layout_spec
+            .side_text;
         let placed = crate::app::presentation::layout_parts::placed(state);
         let layout_parts = &mut state.match_state.match_presentation.added_part_huds.field;
         layout_parts.draw(
@@ -1193,7 +1212,11 @@ fn upload_to_gpu(
     });
     // The software cursor follows them into the window, last.
     let software_cursor: std::borrow::Cow<'_, [crate::render::batch::SpriteInstance]> =
-        match crate::app::presentation::window_ui::zoom_raster(state) {
+        match crate::app::presentation::window_ui::zoom_raster(
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.input,
+        ) {
             Some(raster) => ui
                 .software_cursor
                 .iter()
@@ -1233,7 +1256,13 @@ fn upload_to_gpu(
     // unless a raster already placed that on the surface.
     let ui_camera = state.renderer.batch_renderer.ui_camera_uniform().camera_pos;
     let text_camera = if matches!(
-        crate::app::presentation::sidebar_surface::column_text(state),
+        crate::app::presentation::sidebar_surface::column_text(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state,
+            &state.persistence
+        ),
         crate::app::presentation::sidebar_surface::ColumnText::Surface(Some(_))
     ) {
         [0.0; 2]

@@ -356,7 +356,7 @@ pub(crate) fn dialog(
 
 pub(crate) fn layout(state: &AppState) -> Option<WolPersonaLayout> {
     let dialog = dialog(state.frontend.wol.as_ref())?;
-    Some(shell_layout::on(state, |w, h, scale| {
+    Some(shell_layout::on(&state.renderer.gpu, |w, h, scale| {
         WolPersonaLayout::new(dialog, w, h, scale)
     }))
 }

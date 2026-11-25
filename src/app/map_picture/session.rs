@@ -264,7 +264,9 @@ impl MapPictureSession {
             self.settle_frames += 1;
             return Ok(false);
         }
-        self.readback_armed = output.drawn_sidebar_view(state).is_some()
+        self.readback_armed = output
+            .drawn_sidebar_view(&state.match_state.match_presentation)
+            .is_some()
             && !state.match_state.paused()
             && !state.main_menu_dialog_open();
         Ok(self.readback_armed)

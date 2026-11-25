@@ -105,8 +105,17 @@ pub(crate) fn render_pause_menu_shell(
             // own buttons still work. The open list paints after every
             // control and text.
             let column = launcher_options::ColumnArt::Side(paint.side_buttons());
-            let mut widgets =
-                launcher_options::paint_page(state, &page.dialog, page_layout.scale, column, &[]);
+            let mut widgets = launcher_options::paint_page(
+                &state.platform.ime,
+                &state.renderer.bit_font,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &page.dialog,
+                page_layout.scale,
+                column,
+                &[],
+            );
             widgets.drain_lane(Material::Side, &mut paint.art);
             overlay.controls = widgets.take_lane(Material::Popup);
             widgets.drain_lane(Material::Controls, &mut paint.controls);

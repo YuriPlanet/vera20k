@@ -13,6 +13,8 @@ use super::helpers::{
     tactical_entity_admission,
 };
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
 use crate::app::presentation::render::draw_plan_lowering::{
     NativeDisplayOrder, ObjectPieceInstance, ObjectTexture, PlannedBuildingPieceInstance,
     PlannedObjects,
@@ -121,12 +123,17 @@ pub(crate) fn shp_inputs<'a>(
         unit_atlas: presentation.unit_atlas.as_ref(),
         voxel_images: &presentation.voxel_images,
         zshape_skips: &presentation.zshape_skips,
-        depth_tested_images: super::units::DepthTestedImages::of(state),
+        depth_tested_images: super::units::DepthTestedImages::of(
+            &state.renderer.vxl_pose_frame_cache,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        ),
         camera,
         render_size: [state.render_width(), state.render_height()],
         zoom: state.match_state.input.zoom_level,
         building_viewport,
-        axis: depth_axis(state),
+        axis: depth_axis(&state.match_state.match_presentation),
         local_owner,
         ignore_visibility: state.match_state.sandbox_full_visibility,
         lighting: presentation.lighting.grid(),
@@ -2028,7 +2035,7 @@ pub(crate) fn build_building_anim_instances(
                     crate::sim::vision::cell_is_shrouded(sim.fog(), cells, viewer, cell)
                 })
     };
-    let axis = depth_axis(state);
+    let axis = depth_axis(&state.match_state.match_presentation);
     let zoom = state.match_state.input.zoom_level;
     let viewport = [
         state.match_state.input.camera_x,
@@ -2110,7 +2117,17 @@ pub(crate) fn build_building_anim_instances(
             building,
             &slot_anims,
             &mut anim_types,
-            &|id| anim_colour_word(state, sim, frame, cells.as_ref(), &shrouded, id),
+            &|id| {
+                anim_colour_word(
+                    &state.frontend,
+                    &state.match_state,
+                    sim,
+                    frame,
+                    cells.as_ref(),
+                    &shrouded,
+                    id,
+                )
+            },
             axis.origin_y,
             axis.world_height,
             viewport,
@@ -2416,15 +2433,19 @@ fn emit_building_anims(
 /// with that cell's shroud; any other anim none. The lookup is read, not
 /// executed: the oracle's rows stub the cell.
 fn anim_colour_word(
-    state: &AppState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
     sim: &crate::sim::world::Simulation,
     frame: &crate::app::presentation::frame::PresentationFrame,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
     shrouded: &impl Fn((u16, u16)) -> bool,
     anim: u64,
 ) -> u16 {
-    let (Some(rules), Some(cells), Some(coord)) = (state.rules(), cells, frame.anim_coord(anim))
-    else {
+    let (Some(rules), Some(cells), Some(coord)) = (
+        crate::app::state::active_rules(frontend, match_state),
+        cells,
+        frame.anim_coord(anim),
+    ) else {
         return 0;
     };
     if !sim
@@ -2574,7 +2595,8 @@ fn emit_unit_terrain_body(
 }
 
 pub(crate) fn resolve_object_shp_frame(
-    state: &AppState,
+    frontend: &FrontendState,
+    match_state: &MatchState,
     type_id: &str,
     entity: &crate::app::presentation::frame::ObjectRecord,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
@@ -2583,8 +2605,8 @@ pub(crate) fn resolve_object_shp_frame(
     // committed binary frame.
     let facing = entity.pose.body;
     resolve_object_shp_frame_with_facing(
-        state.match_state.sim_runtime.presentation(),
-        state.rules(),
+        match_state.sim_runtime.presentation(),
+        crate::app::state::active_rules(frontend, match_state),
         type_id,
         entity,
         facing,

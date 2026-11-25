@@ -43,8 +43,8 @@
 //! - Part of the app layer — may depend on everything.
 
 use vera20k_gui::{
-    DialogId, Gui, InputEvent, InputResult, MouseButton as GuiButton, NodeId, NodeKind, Prop,
-    Rect, Refused, UiEvent, Value,
+    DialogId, Gui, InputEvent, InputResult, MouseButton as GuiButton, NodeId, NodeKind, Prop, Rect,
+    Refused, UiEvent, Value,
 };
 use winit::event::MouseButton;
 
@@ -373,7 +373,10 @@ fn ensure<'a>(chrome: &'a mut InGameChrome, gui: &mut Gui) -> Option<&'a mut Chr
 /// match ends.
 pub(crate) fn build_for_match(state: &mut AppState) {
     let presentation = &mut state.match_state.match_presentation;
-    ensure(&mut presentation.in_game_chrome, presentation.dialog_ui.gui_mut());
+    ensure(
+        &mut presentation.in_game_chrome,
+        presentation.dialog_ui.gui_mut(),
+    );
 }
 
 /// The chrome's nodes the sidebar and the command bar draw into, built if
@@ -439,16 +442,26 @@ fn sw_places(state: &AppState) -> SwPlaces {
         return SwPlaces::default();
     }
     let expanded = presentation.sidebar_projection.model.sw_sidebar_expanded();
-    let has_toggle = crate::app::presentation::sw_sidebar::toggle_art(state).is_some();
+    let has_toggle =
+        crate::app::presentation::sw_sidebar::toggle_art(&state.match_state.match_presentation)
+            .is_some();
     sw_layout_places(&sw.layout, expanded, has_toggle)
 }
 
 #[cfg(feature = "phobos")]
-fn sw_layout_places(layout: &crate::ui::sw_sidebar::SwSidebarLayout, expanded: bool, has_toggle: bool) -> SwPlaces {
+fn sw_layout_places(
+    layout: &crate::ui::sw_sidebar::SwSidebarLayout,
+    expanded: bool,
+    has_toggle: bool,
+) -> SwPlaces {
     SwPlaces {
         toggle: layout.toggle.filter(|_| has_toggle).map(cursor_rect),
         buttons: if expanded {
-            layout.entries.iter().map(|entry| cursor_rect(entry.rect)).collect()
+            layout
+                .entries
+                .iter()
+                .map(|entry| cursor_rect(entry.rect))
+                .collect()
         } else {
             Vec::new()
         },
@@ -475,7 +488,11 @@ fn cursor_rect(r: sidebar::Rect) -> Rect {
 
 fn places(state: &AppState, view: &SidebarView) -> Places {
     let frame = state.sidebar_frame();
-    let tab = |i: usize| view.tabs.get(i).map(|t| (rect_px(frame, t.rect), t.disabled));
+    let tab = |i: usize| {
+        view.tabs
+            .get(i)
+            .map(|t| (rect_px(frame, t.rect), t.disabled))
+    };
     let top = |i: usize| {
         view.top_buttons
             .get(i)
@@ -510,14 +527,18 @@ fn places(state: &AppState, view: &SidebarView) -> Places {
         top: [top(0), top(1)],
         tactical: Rect::new(x as i32, y as i32, w as i32, h as i32),
         minimap,
-        cameos: view.items.iter().map(|item| rect_px(frame, item.rect)).collect(),
+        cameos: view
+            .items
+            .iter()
+            .map(|item| rect_px(frame, item.rect))
+            .collect(),
         command_bar: command_bar::places(state),
         timer: timer_rect(state),
     }
 }
 
 fn minimap_available(state: &AppState) -> bool {
-    crate::app::presentation::sidebar_render::minimap_shown(state)
+    crate::app::presentation::sidebar_render::minimap_shown(&state.match_state.match_presentation)
         && state.match_state.match_presentation.minimap.is_some()
 }
 
@@ -546,7 +567,14 @@ fn layout_rects(state: &AppState) -> Vec<Option<Rect>> {
         .take(LAYOUT_BUTTONS_MAX)
         .map(|part| {
             part.button.then(|| {
-                let [x, y, w, h] = crate::app::presentation::layout_parts::click_rect(state, part);
+                let [x, y, w, h] = crate::app::presentation::layout_parts::click_rect(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &state.match_state.match_presentation,
+                    &state.persistence,
+                    part,
+                );
                 Rect::new(x, y, w, h)
             })
         })
@@ -598,7 +626,9 @@ fn sync(state: &mut AppState, force: bool) -> bool {
     let point = state.match_state.input.cursor_px();
     let presentation = &mut state.match_state.match_presentation;
     if let Some((hovered, held)) = presentation.in_game_chrome.refresh_hover(
-        &mut presentation.dialog_ui, point, changed || force,
+        &mut presentation.dialog_ui,
+        point,
+        changed || force,
     ) {
         if held.is_some() {
             publish_pressed_visuals(state);
@@ -642,8 +672,18 @@ fn write_places(gui: &mut Gui, nodes: &mut ChromeNodes, places: &Places, key: &S
     // Native never disables Repair/Sell (`SidebarGadgetState::repair_frame`).
     place(gui, nodes.repair, Some(places.repair), true);
     place(gui, nodes.sell, Some(places.sell), true);
-    place(gui, nodes.scroll_down, Some(places.scroll_down.0), !places.scroll_down.1);
-    place(gui, nodes.scroll_up, Some(places.scroll_up.0), !places.scroll_up.1);
+    place(
+        gui,
+        nodes.scroll_down,
+        Some(places.scroll_down.0),
+        !places.scroll_down.1,
+    );
+    place(
+        gui,
+        nodes.scroll_up,
+        Some(places.scroll_up.0),
+        !places.scroll_up.1,
+    );
     for (node, top) in nodes.top.iter().zip(places.top) {
         place(gui, *node, top.map(|t| t.0), !top.is_some_and(|t| t.1));
     }
@@ -745,7 +785,11 @@ fn route(
 /// Route a mouse press/release edge to the chrome. A release completing a
 /// captured gesture always goes to its holder (in gamemd the sticky tier is
 /// exclusive: no other gadget — including the tactical catcher — sees it).
-pub(crate) fn mouse_button(state: &mut AppState, button: MouseButton, pressed: bool) -> ChromeRoute {
+pub(crate) fn mouse_button(
+    state: &mut AppState,
+    button: MouseButton,
+    pressed: bool,
+) -> ChromeRoute {
     if crate::app::input::campaign_input::is_locked(state) {
         return ChromeRoute::Consumed;
     }
@@ -937,9 +981,10 @@ fn apply_result(state: &mut AppState, id: u16, right: bool) {
     if command_bar::apply(state, id, right) {
         return;
     }
-    let (side2_tiles, cameos) = current_sidebar_view(state).map_or((0, 0), |view| {
-        (view.layout.side2_tile_count, view.items.len())
-    });
+    let (side2_tiles, cameos) = current_sidebar_view(&state.match_state.match_presentation)
+        .map_or((0, 0), |view| {
+            (view.layout.side2_tile_count, view.items.len())
+        });
     // A built-in button the side's layout gives another `Command=` gives
     // that command, as a button the layout adds would; its look stays.
     let stock = match id {
@@ -1020,7 +1065,7 @@ fn apply_result(state: &mut AppState, id: u16, right: bool) {
         _ if (ID_CAMEO_BASE..ID_CAMEO_BASE.saturating_add(cameos as u16)).contains(&id) => {
             let slot = (id - ID_CAMEO_BASE) as usize;
             let shift = crate::app::input::dispatch::is_shift_held(state);
-            let action = current_sidebar_view(state)
+            let action = current_sidebar_view(&state.match_state.match_presentation)
                 .and_then(|view| view.items.get(slot))
                 .map(|item| crate::ui::sidebar::hit_test_item(item, right, shift));
             if let Some(action) = action {
@@ -1042,7 +1087,7 @@ fn apply_sw(state: &mut AppState, node: NodeId, right: bool) -> bool {
     };
     if node == nodes.sw_toggle {
         if !right {
-            crate::app::presentation::sw_sidebar::toggle(state);
+            crate::app::presentation::sw_sidebar::toggle(&mut state.match_state.match_presentation);
             play_gui_main_button_sound(state);
         }
         return true;
@@ -1156,12 +1201,23 @@ pub(crate) fn edge(
 pub(crate) fn press_cameo(rects: &[Rect], x: i32, y: i32, right: bool) -> Option<(usize, bool)> {
     let (mut gui, mut nodes) = test_layer();
     write_cameos(&mut gui, &mut nodes, rects);
-    let button = if right { GuiButton::Right } else { GuiButton::Left };
+    let button = if right {
+        GuiButton::Right
+    } else {
+        GuiButton::Left
+    };
     let (result, fired) = edge(&mut gui, x, y, button, true);
     assert!(result.consumed && result.passthrough.is_none());
-    assert_eq!(gui.pressed_in(nodes.layer), None, "a cameo takes no capture");
+    assert_eq!(
+        gui.pressed_in(nodes.layer),
+        None,
+        "a cameo takes no capture"
+    );
     let (release, again) = edge(&mut gui, x, y, button, false);
-    assert!(again.is_empty() && !release.consumed, "the UP edge fires no other entry");
+    assert!(
+        again.is_empty() && !release.consumed,
+        "the UP edge fires no other entry"
+    );
     let &[(id, right)] = fired.as_slice() else {
         return None;
     };
@@ -1270,7 +1326,11 @@ mod tests {
         place(ui.gui_mut(), repair, Some(rect), true);
         let point = (15, 25);
         chrome.refresh_hover(&mut ui, point, true);
-        ui.chrome_input(InputEvent::PointerDown { x: 15, y: 25, button: GuiButton::Left });
+        ui.chrome_input(InputEvent::PointerDown {
+            x: 15,
+            y: 25,
+            button: GuiButton::Left,
+        });
         assert!(ui.gui().shows_pressed_in(layer, repair));
 
         let nodes = ensure(&mut chrome, ui.gui_mut()).unwrap();
@@ -1281,8 +1341,18 @@ mod tests {
         assert_eq!(ui.gui().hovered_in(layer), Some(cameo));
         assert_eq!(ui.gui().pressed_in(layer), Some(repair));
         assert!(!ui.gui().shows_pressed_in(layer, repair));
-        let (_, events) = ui.chrome_input(InputEvent::PointerUp { x: 15, y: 25, button: GuiButton::Left }).unwrap();
-        assert!(!events.iter().any(|event| matches!(event, UiEvent::Activated { .. })));
+        let (_, events) = ui
+            .chrome_input(InputEvent::PointerUp {
+                x: 15,
+                y: 25,
+                button: GuiButton::Left,
+            })
+            .unwrap();
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, UiEvent::Activated { .. }))
+        );
     }
 
     #[test]
@@ -1305,21 +1375,38 @@ mod tests {
         place(&mut gui, nodes.tactical, Some(r(0, 0, 800, 600)), true);
         let column = |expanded: bool| SwPlaces {
             toggle: Some(r(0, 0, 10, 10)),
-            buttons: if expanded { vec![r(10, 20, 60, 48)] } else { Vec::new() },
+            buttons: if expanded {
+                vec![r(10, 20, 60, 48)]
+            } else {
+                Vec::new()
+            },
         };
         write_sw(&mut gui, &mut nodes, &column(true));
         let sw = ID_SW_BASE;
-        assert_eq!(edge(&mut gui, 15, 25, GuiButton::Right, true).1, [(sw, true)]);
+        assert_eq!(
+            edge(&mut gui, 15, 25, GuiButton::Right, true).1,
+            [(sw, true)]
+        );
         let (release, fired) = edge(&mut gui, 15, 25, GuiButton::Right, false);
         assert!(fired.is_empty() && release.consumed && release.passthrough.is_none());
-        assert_eq!(edge(&mut gui, 15, 25, GuiButton::Left, true).1, [(sw, false)]);
+        assert_eq!(
+            edge(&mut gui, 15, 25, GuiButton::Left, true).1,
+            [(sw, false)]
+        );
         edge(&mut gui, 15, 25, GuiButton::Left, false);
         // The toggle: silent press, the release over it switches.
         assert!(edge(&mut gui, 5, 5, GuiButton::Left, true).1.is_empty());
-        assert_eq!(edge(&mut gui, 5, 5, GuiButton::Left, false).1, [(ID_SW_TOGGLE, false)]);
+        assert_eq!(
+            edge(&mut gui, 5, 5, GuiButton::Left, false).1,
+            [(ID_SW_TOGGLE, false)]
+        );
         // Let go off it, nothing switches.
         edge(&mut gui, 5, 5, GuiButton::Left, true);
-        assert!(edge(&mut gui, 300, 300, GuiButton::Left, false).1.is_empty());
+        assert!(
+            edge(&mut gui, 300, 300, GuiButton::Left, false)
+                .1
+                .is_empty()
+        );
         // The right button over it reaches neither it nor the battlefield.
         let (press, fired) = edge(&mut gui, 5, 5, GuiButton::Right, true);
         assert!(fired.is_empty() && press.consumed && press.passthrough.is_none());
@@ -1340,17 +1427,33 @@ mod tests {
             ..Default::default()
         };
         let weapons: Vec<_> = (0..257).map(|i| format!("Power{i}")).collect();
-        let layout = crate::ui::sw_sidebar::compute_layout(settings, &weapons, 1080, 0, 0, None, true);
+        let layout =
+            crate::ui::sw_sidebar::compute_layout(settings, &weapons, 1080, 0, 0, None, true);
         let last = cursor_rect(layout.entries[256].rect);
         let (mut gui, mut nodes) = test_layer();
         place(&mut gui, nodes.tactical, Some(r(0, 0, 1920, 1080)), true);
-        write_sw(&mut gui, &mut nodes, &sw_layout_places(&layout, true, false));
-        let press = gui.input(InputEvent::PointerDown { x: last.x, y: last.y, button: GuiButton::Left }, 0);
+        write_sw(
+            &mut gui,
+            &mut nodes,
+            &sw_layout_places(&layout, true, false),
+        );
+        let press = gui.input(
+            InputEvent::PointerDown {
+                x: last.x,
+                y: last.y,
+                button: GuiButton::Left,
+            },
+            0,
+        );
         assert!(press.consumed && press.passthrough.is_none());
-        let fired = gui.drain_events().into_iter().find_map(|event| match event {
-            UiEvent::Activated { node } => Some(node),
-            _ => None,
-        }).unwrap();
+        let fired = gui
+            .drain_events()
+            .into_iter()
+            .find_map(|event| match event {
+                UiEvent::Activated { node } => Some(node),
+                _ => None,
+            })
+            .unwrap();
         assert_eq!(nodes.sw_index(fired), Some(256));
 
         // Layout-provided build grids can label a regular cameo with the same id.
@@ -1381,8 +1484,20 @@ mod tests {
 
     /// Tab, Repair, Sell, scroll pair, top pair.
     type NativeSizes = [[f32; 2]; 5];
-    const ALLIED_SIZES: NativeSizes = [[28.0, 27.0], [64.0, 31.0], [64.0, 31.0], [46.0, 25.0], [72.0, 18.0]];
-    const SOVIET_SIZES: NativeSizes = [[32.0, 28.0], [52.0, 32.0], [52.0, 32.0], [46.0, 25.0], [72.0, 22.0]];
+    const ALLIED_SIZES: NativeSizes = [
+        [28.0, 27.0],
+        [64.0, 31.0],
+        [64.0, 31.0],
+        [46.0, 25.0],
+        [72.0, 18.0],
+    ];
+    const SOVIET_SIZES: NativeSizes = [
+        [32.0, 28.0],
+        [52.0, 32.0],
+        [52.0, 32.0],
+        [46.0, 25.0],
+        [72.0, 22.0],
+    ];
 
     /// Where two sidebar buttons overlap (in the built-in layout and the
     /// sample's, with the art's own sizes: the Soviet tabs, 32 wide, on the
@@ -1393,8 +1508,9 @@ mod tests {
     fn a_press_where_sidebar_buttons_overlap_goes_by_the_gadget_order() {
         use crate::ui::match_layout::MatchLayoutFile;
         use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarFrame};
-        let file =
-            MatchLayoutFile::from_bytes(crate::test_fixture::text("docs/examples/veraui.ini").as_bytes());
+        let file = MatchLayoutFile::from_bytes(
+            crate::test_fixture::text("docs/examples/veraui.ini").as_bytes(),
+        );
         let mut overlaps = 0;
         for (theme, [tab, repair, sell, scroll, top]) in NATIVE_SIZES {
             for side in [None, Some("GDI"), Some("Nod"), Some("ThirdSide")] {

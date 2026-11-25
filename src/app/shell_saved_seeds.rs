@@ -37,7 +37,11 @@ impl App {
             .skirmish_shell_state
             .saved_seed_browser
             .as_ref()?;
-        Some(shell_layout::saved_seed_layout(state, browser.mode))
+        Some(shell_layout::saved_seed_layout(
+            &state.renderer,
+            &state.frontend.screen,
+            browser.mode,
+        ))
     }
 
     pub(super) fn open_saved_seed_browser(state: &mut AppState, mode: SavedSeedMode) {
@@ -50,7 +54,11 @@ impl App {
             .map(|modal| modal.options.description.clone())
             .unwrap_or_default();
         let empty = state.csf_label("TXT_EMPTY_SLOT", "[EMPTY SLOT]");
-        let rows = saved_browser_rows(&shell_layout::saved_seed_layout(state, mode));
+        let rows = saved_browser_rows(&shell_layout::saved_seed_layout(
+            &state.renderer,
+            &state.frontend.screen,
+            mode,
+        ));
         let time = saved_seeds::new_slot_file_time(crate::util::time::SystemTime::now());
         let browser = SavedSeedBrowserState::open(mode, entries, current, empty.into(), time, rows);
         state.frontend.skirmish_shell_state.saved_seed_browser = Some(browser);
@@ -158,7 +166,11 @@ impl App {
                 // As in driver 0x00558DD0 the browser drops the row after the
                 // attempt. The chooser reflects the files still on disk.
                 Self::refresh_saved_random_maps(state);
-                let layout = shell_layout::saved_seed_layout(state, SavedSeedMode::Delete);
+                let layout = shell_layout::saved_seed_layout(
+                    &state.renderer,
+                    &state.frontend.screen,
+                    SavedSeedMode::Delete,
+                );
                 let rows = saved_browser_rows(&layout);
                 let empty = Self::saved_seed_browser(state).is_some_and(|browser| {
                     browser.remove_entry(&file_name, rows);

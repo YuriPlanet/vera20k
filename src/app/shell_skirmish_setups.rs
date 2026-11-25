@@ -41,7 +41,8 @@ impl App {
         let map = maps.get(state.frontend.skirmish_shell_state.selected_map_idx);
         let map_name = map.map(|map| map.display_name.trim()).unwrap_or_default();
         let empty = state.csf_label("TXT_EMPTY_SLOT", "[EMPTY SLOT]");
-        let visible_rows = saved_browser_rows(&setups_layout(state));
+        let visible_rows =
+            saved_browser_rows(&setups_layout(&state.renderer, &state.frontend.screen));
         let mut browser = SavedSeedBrowserState::open_rows(
             SavedSeedMode::Save,
             rows,
@@ -154,7 +155,8 @@ impl App {
                 Self::save_skirmish_setup(state, &file_name);
             }
             SetupPurpose::Delete { file_name } if affirmative => {
-                let rows = saved_browser_rows(&setups_layout(state));
+                let rows =
+                    saved_browser_rows(&setups_layout(&state.renderer, &state.frontend.screen));
                 (state.frontend.multiplayer_shell_runtime).delete_named_setup(&file_name);
                 if let Some(browser) = state.frontend.skirmish_shell_state.setups_browser.as_mut() {
                     browser.remove_entry(&file_name, rows);
@@ -199,7 +201,7 @@ impl App {
         if pointer_moved {
             Self::skirmish_setups_pointer(state, None);
         }
-        let layout = setups_layout(state);
+        let layout = setups_layout(&state.renderer, &state.frontend.screen);
         let extent = (state.render_width(), state.render_height());
         let font = &state.renderer.bit_font;
         if let Some(browser) = state.frontend.skirmish_shell_state.setups_browser.as_mut() {
@@ -208,7 +210,7 @@ impl App {
     }
 
     pub(super) fn skirmish_setups_pointer(state: &mut AppState, down: Option<bool>) {
-        let layout = setups_layout(state);
+        let layout = setups_layout(&state.renderer, &state.frontend.screen);
         let extent = (state.render_width(), state.render_height());
         let pointer = state.match_state.input.cursor_px();
         let Some(browser) = state.frontend.skirmish_shell_state.setups_browser.as_mut() else {

@@ -1700,7 +1700,10 @@ impl App {
         };
         // Reuse the modal helper: it upserts the single sentinel, honours the
         // mode's random-map admission, and refreshes the filtered record list.
-        let chooser_layout = crate::app::frontend::shell_layout::choose_map_layout(state);
+        let chooser_layout = crate::app::frontend::shell_layout::choose_map_layout(
+            &state.renderer,
+            &state.frontend.screen,
+        );
         let Some(modal) = state
             .frontend
             .skirmish_shell_state
@@ -1745,7 +1748,7 @@ impl App {
         state: &mut AppState,
         at: Pointer,
     ) -> Option<crate::ui::skirmish_shell::RandomMapSetupControl> {
-        let layout = random_map_setup_layout(state);
+        let layout = random_map_setup_layout(&state.renderer, &state.frontend.screen);
         let (x, y) = state.match_state.input.cursor_px();
         let modal = state
             .frontend
@@ -1767,8 +1770,11 @@ impl App {
 
     pub(super) fn handle_random_map_setup_mouse_down(state: &mut AppState) -> bool {
         use crate::app::frontend::preview_zoom;
-        let preview =
-            preview_zoom::over_box(state, crate::ui::skirmish_shell::random_map_page::DIALOG);
+        let preview = preview_zoom::over_box(
+            &state.frontend.shell_controller,
+            &state.match_state.input,
+            crate::ui::skirmish_shell::random_map_page::DIALOG,
+        );
         // VERA: a press on the preview enlarges it, as on the other setup
         // screens (`preview_zoom`), while the dialog rests: no list open and
         // no generation running.
@@ -1780,7 +1786,9 @@ impl App {
         let resting = modal.is_some_and(|modal| {
             !modal.generating && state.frontend.shell_controller.gui().popup().is_none()
         });
-        if !(resting && preview_zoom::press_on_box(state, preview)) {
+        if !(resting
+            && preview_zoom::press_on_box(&mut state.frontend, &state.match_state.input, preview))
+        {
             Self::random_map_pointer(state, Pointer::Down);
         }
         true

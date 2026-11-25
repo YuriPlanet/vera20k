@@ -77,8 +77,10 @@ pub(crate) fn render_saved_game_loading(
     };
     let layout = message_box_parts(1, area);
     let body = state.csf_label("TXT_LOADING", "Mission is loading. Please wait...");
-    let shell_box =
-        crate::ui::shell::modal::ShellBox::new(crate::ui::shell::descriptor::DialogResourceId(0xF0), body);
+    let shell_box = crate::ui::shell::modal::ShellBox::new(
+        crate::ui::shell::descriptor::DialogResourceId(0xF0),
+        body,
+    );
     // Its widgets, which only this paint keeps.
     let ui = &mut state.frontend.loading_box;
     if ui.root_in(shell_box.dialog).is_none() {
@@ -86,16 +88,34 @@ pub(crate) fn render_saved_game_loading(
     }
     crate::ui::shell::menu_page::sync_box(ui, &shell_box, &layout);
     // A zoomed match's text is drawn in the window (`window_ui`).
-    let raster = crate::app::presentation::window_ui::shell_raster(state, false)
-        .unwrap_or(crate::render::bit_font::TextRaster::NATIVE);
+    let raster = crate::app::presentation::window_ui::shell_raster(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+        false,
+    )
+    .unwrap_or(crate::render::bit_font::TextRaster::NATIVE);
     let frame_raster = state.renderer.bit_font.set_raster(raster);
     let look = super::BoxLook::new(
         atlas.mode_two_dialog_background(side),
         VALIDATION_MODAL_SPRITE_DEPTHS,
     );
     let tree = super::controller_tree(&state.frontend.loading_box, shell_box.dialog);
-    let modal =
-        super::paint_shell_box(state, Some(atlas), tree, &shell_box, &layout, |_| false, look);
+    let modal = super::paint_shell_box(
+        &state.platform.ime,
+        &state.renderer.bit_font,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        Some(atlas),
+        tree,
+        &shell_box,
+        &layout,
+        |_| false,
+        look,
+    );
     let painted = super::in_game_shell::render_shell_frame(
         state,
         encoder,

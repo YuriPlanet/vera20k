@@ -139,7 +139,9 @@ impl DeferredClientEffects {
             match effect {
                 DeferredEffect::TacticalRadar(available) => {
                     crate::app::presentation::building_anim::set_local_tactical_radar(
-                        state, available,
+                        &mut state.match_state,
+                        &mut state.audio.sfx_player,
+                        available,
                     );
                 }
                 DeferredEffect::PlanningLeft => {
@@ -163,7 +165,8 @@ impl DeferredClientEffects {
                     .match_state
                     .match_presentation
                     .sidebar_projection
-                    .model.clear_production_request(type_id),
+                    .model
+                    .clear_production_request(type_id),
                 // Recorded only when the sim emits Ares bounty text, so this runs in every game.
                 DeferredEffect::Bounty(text) => {
                     if let Some(rt) = state.match_state.sim_runtime.runtime() {

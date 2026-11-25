@@ -877,7 +877,8 @@ impl SkirmishCapture {
     fn add_second_ai(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         use crate::ui::skirmish_shell::{SkirmishAiRowType, SkirmishComboId, SkirmishComboItem};
         let id = SkirmishComboId::AiType(1);
-        let layout = crate::app::frontend::shell_layout::skirmish_layout(state);
+        let layout =
+            crate::app::frontend::shell_layout::skirmish_layout(&state.renderer, &state.frontend);
         let face = crate::ui::skirmish_shell::combo_rect(
             &layout,
             &state.frontend.skirmish_shell_state,
@@ -941,10 +942,11 @@ impl SkirmishCapture {
             true => (0x7102, "Setups"),
             false => (0x7101, "Game Options"),
         };
-        let button = crate::app::frontend::shell_layout::skirmish_layout(state)
-            .statics
-            .get(id)
-            .with_context(|| format!("0x102 has no {action}"))?;
+        let button =
+            crate::app::frontend::shell_layout::skirmish_layout(&state.renderer, &state.frontend)
+                .statics
+                .get(id)
+                .with_context(|| format!("0x102 has no {action}"))?;
         Self::set_pointer(state, (button.x + button.w / 2, button.y + button.h / 2));
         App::handle_skirmish_shell_mouse_down(state);
         App::handle_skirmish_shell_mouse_up(state);
@@ -962,7 +964,8 @@ impl SkirmishCapture {
     }
 
     fn check_short_game(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        let layout = crate::app::frontend::shell_layout::skirmish_layout(state);
+        let layout =
+            crate::app::frontend::shell_layout::skirmish_layout(&state.renderer, &state.frontend);
         let rect = (layout.statics.get(0x54E)).context("0x102 has no Short Game box")?;
         let icon = crate::ui::skirmish_shell::checkbox_icon_rect(rect, layout.scale);
         Self::set_pointer(state, (icon.x + icon.w / 2, icon.y + icon.h / 2));
@@ -1443,7 +1446,7 @@ impl SkirmishCapture {
                 };
                 ensure!(
                     crate::app::frontend::shell_transition::shell_exit_wave(
-                        state,
+                        &state.frontend.shell_exit,
                         ShellSlideKind::ChooseMap
                     )
                     .is_none(),
@@ -1611,14 +1614,16 @@ impl SkirmishCapture {
                     .slide_out_tick
                     .context("slide-out phase without a tick")?;
                 let tick = crate::app::frontend::shell_transition::shell_exit_wave(
-                    state,
+                    &state.frontend.shell_exit,
                     ShellSlideKind::Skirmish,
                 )
                 .context("Skirmish teardown ended before capture")?
                 .tick();
                 ensure!(tick <= target, "teardown slide passed tick {target}");
                 if tick == target {
-                    crate::app::frontend::shell_transition::hold_shell_exit_for_capture(state);
+                    crate::app::frontend::shell_transition::hold_shell_exit_for_capture(
+                        &mut state.frontend.shell_exit,
+                    );
                     self.route.push(json!({"dialog": 0x102, "frame": frame,
                         "action": "hold teardown slide", "tick": tick}));
                 }
@@ -1712,7 +1717,8 @@ impl SkirmishCapture {
         );
         super::movies::MoviesCapture::restore_neutral_pointer(state);
         crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-        self.route.push(json!({"frame": frame, "action": "pointer rests",
+        self.route
+            .push(json!({"frame": frame, "action": "pointer rests",
             "point": [state.match_state.input.cursor_x, state.match_state.input.cursor_y]}));
         self.menu_opened = true;
         Ok(())
@@ -1910,7 +1916,7 @@ impl SkirmishCapture {
             return Ok(self.phase == Phase::SlideOut
                 && self.last_presented == Some(PresentedShell::Skirmish)
                 && crate::app::frontend::shell_transition::shell_exit_wave(
-                    state,
+                    &state.frontend.shell_exit,
                     ShellSlideKind::Skirmish,
                 )
                 .map(|wave| wave.tick())

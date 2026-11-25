@@ -29,8 +29,12 @@ impl App {
     /// The shell dialog being left is destroyed (child `0x71A` with it)
     /// before the next dialog or presentation is created.
     pub(super) fn destroy_current_shell_dialog(state: &mut AppState) {
-        crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
-        crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
+        crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(
+            &mut state.frontend,
+        );
+        crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(
+            &mut state.frontend,
+        );
     }
 
     /// `route` shows with `dialog` the shell's sole dialog.
@@ -81,7 +85,7 @@ impl App {
     /// dialog's `List` node: a hover target for status help and its own
     /// press handler, never a button press.
     fn movie_list_sync(state: &mut AppState) -> crate::ui::movies_credits_shell::MovieListLayout {
-        let layout = crate::app::frontend::shell_layout::movie_list_layout(state);
+        let layout = crate::app::frontend::shell_layout::movie_list_layout(&state.renderer.gpu);
         let retained = state.frontend.movie_list_selection;
         let controller = &mut state.frontend.shell_controller;
         controller.ensure_active(MOVIE_LIST_DIALOG);
@@ -242,7 +246,7 @@ impl App {
             voice_volume,
             subtitles,
             return_to,
-            crate::app::frontend::fullscreen_movie::playback_active(state),
+            crate::app::frontend::fullscreen_movie::playback_active(&state.platform),
         );
         state.frontend.fullscreen_movie = Some(movie);
         if running_scenario {

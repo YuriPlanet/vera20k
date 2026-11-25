@@ -230,7 +230,11 @@ impl RestartCapture {
             let owner = crate::app::input::commands::preferred_local_owner_name(state)
                 .context("campaign credits owner")?;
             let actual = before.money.context("campaign wallet")?[0].max(0);
-            let projection = &mut state.match_state.match_presentation.sidebar_projection.model;
+            let projection = &mut state
+                .match_state
+                .match_presentation
+                .sidebar_projection
+                .model;
             projection.displayed_credits_or_seed(&owner, actual);
             let target = if actual == 0 { 1000 } else { 0 };
             projection.advance_credits(&owner, target);
@@ -314,7 +318,8 @@ impl RestartCapture {
                     .match_state
                     .match_presentation
                     .sidebar_projection
-                    .model.advance_credits(owner, *target);
+                    .model
+                    .advance_credits(owner, *target);
             }
             let from_menu = target == RestartTarget::MenuDefeatReplayed;
             if from_menu {
@@ -331,7 +336,8 @@ impl RestartCapture {
                     .match_state
                     .match_presentation
                     .sidebar_projection
-                    .model.displayed_credits_or_seed(owner, *actual);
+                    .model
+                    .displayed_credits_or_seed(owner, *actual);
                 ensure!(
                     warm == *displayed,
                     "warm load lost saved credits display: {warm} != {displayed}"
@@ -348,7 +354,8 @@ impl RestartCapture {
                     .match_state
                     .match_presentation
                     .sidebar_projection
-                    .model.displayed_credits_or_seed(owner, *actual);
+                    .model
+                    .displayed_credits_or_seed(owner, *actual);
                 ensure!(
                     cold == *displayed,
                     "cold load lost saved credits display: {cold} != {displayed}"
@@ -475,8 +482,10 @@ impl RestartCapture {
     /// the match's chrome.
     fn click_briefing_tab(state: &mut AppState, route: &mut Vec<Value>, frame: u32) -> Result<()> {
         use crate::app::input::chrome_input;
-        let view = crate::app::presentation::sidebar_render::current_sidebar_view(state)
-            .context("no sidebar view")?;
+        let view = crate::app::presentation::sidebar_render::current_sidebar_view(
+            &state.match_state.match_presentation,
+        )
+        .context("no sidebar view")?;
         let rect = state
             .sidebar_frame()
             .rect_to_frame(view.top_buttons[0].rect);
@@ -484,11 +493,7 @@ impl RestartCapture {
         state.match_state.input.cursor_x = point[0];
         state.match_state.input.cursor_y = point[1];
         for pressed in [true, false] {
-            chrome_input::mouse_button(
-                state,
-                winit::event::MouseButton::Left,
-                pressed,
-            );
+            chrome_input::mouse_button(state, winit::event::MouseButton::Left, pressed);
         }
         let presentation = &state.match_state.match_presentation;
         ensure!(

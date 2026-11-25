@@ -49,9 +49,7 @@ pub(crate) use live_service::{
 pub(crate) use live_service::{
     local_choices_agreed, online_cleanup_pending, online_match_id, relay_pass_lapsed,
 };
-pub(crate) use login::{
-    account_form_layout, login_layout, status_key as login_status_key,
-};
+pub(crate) use login::{account_form_layout, login_layout, status_key as login_status_key};
 pub(crate) use service::{
     NET_STATUS_LOST, SERVER_STATUS_READY, WolApiStatus, WolHighScoreRecord, WolLadderRecord,
     WolLoginAccepted, WolMatch, WolProvider, WolServer, WolServerList, WolServiceEvent,
@@ -660,10 +658,7 @@ impl App {
         }
         visit.page = WolPage::Welcome;
         leaf::open_art(state, WOL_WELCOME_DIALOG);
-        state
-            .frontend
-            .shell_controller
-            .reset_to(WOL_WELCOME_DIALOG);
+        state.frontend.shell_controller.reset_to(WOL_WELCOME_DIALOG);
         let filled = persona::welcome_texts(
             &state.frontend,
             state.platform.game_config.as_ref(),
@@ -678,7 +673,7 @@ impl App {
         state: &mut AppState,
         filled: &[(u16, String)],
     ) -> Option<vera20k_gui::NodeId> {
-        let layout = crate::app::frontend::shell_layout::wol_welcome_layout(state);
+        let layout = crate::app::frontend::shell_layout::wol_welcome_layout(&state.renderer.gpu);
         let spec = || crate::ui::wol_shell::spec(filled);
         leaf::sync(
             &mut state.frontend.shell_controller,
@@ -709,18 +704,25 @@ impl App {
     /// The pointer on the box over the page, else on the welcome. Owner-draw
     /// buttons play GUIMainButtonSound on the press (`0x00613667..0x00613771`).
     fn wol_box_or_welcome_pointer(state: &mut AppState, at: leaf::Pointer) {
-        let open = state.frontend.wol.as_ref().and_then(|visit| match visit.message() {
-            Some(message) => Some(Some(message.clone())),
-            // A hidden wait box takes no pointer.
-            None if visit.waiting() => Some(
-                visit.wait_box().filter(|wait| wait.shown).map(|wait| wait.shell_box.clone()),
-            ),
-            None => None,
-        });
+        let open = state
+            .frontend
+            .wol
+            .as_ref()
+            .and_then(|visit| match visit.message() {
+                Some(message) => Some(Some(message.clone())),
+                // A hidden wait box takes no pointer.
+                None if visit.waiting() => Some(
+                    visit
+                        .wait_box()
+                        .filter(|wait| wait.shown)
+                        .map(|wait| wait.shell_box.clone()),
+                ),
+                None => None,
+            });
         if let Some(open) = open {
             let top = state.frontend.shell_controller.top_id();
             if let Some(shell_box) = open.filter(|open| top == Some(open.dialog)) {
-                let parts = shell_layout::shell_box_parts(state, &shell_box);
+                let parts = shell_layout::shell_box_parts(&state.renderer.gpu, &shell_box);
                 let down = match at {
                     leaf::Pointer::Move => None,
                     leaf::Pointer::Down => Some(true),

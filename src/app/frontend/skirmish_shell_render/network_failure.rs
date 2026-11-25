@@ -57,7 +57,11 @@ pub(crate) fn render_network_failure(
     let (controls_out, texts_out) = (&mut controls, (&mut texts, false));
     let tree = super::controller_tree(&state.frontend.shell_controller, shell_box.dialog);
     super::shell_box::push_skirmish_box(
-        state,
+        &state.platform.ime,
+        &state.renderer.bit_font,
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
         atlas,
         tree,
         &shell_box,

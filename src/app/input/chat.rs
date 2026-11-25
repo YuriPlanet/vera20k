@@ -321,7 +321,14 @@ fn open_edit(state: &mut AppState, target: ChatTarget) -> bool {
         .and_then(|source| {
             crate::app::match_runtime::network_match::shared_house_player_name(session, source)
         })
-        .or_else(|| crate::app::presentation::house_ui::house_ui_name(state, local))
+        .or_else(|| {
+            crate::app::presentation::house_ui::house_ui_name(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                local,
+            )
+        })
     else {
         return false;
     };
@@ -385,8 +392,12 @@ fn apply_input(state: &mut AppState, key: EditKey) {
         match presentation.chat.skirmish_post(result) {
             Some(SkirmishPost::Message(text)) => {
                 if let Some(local) = local_house(state)
-                    && let Some(name) =
-                        crate::app::presentation::house_ui::house_ui_name(state, local)
+                    && let Some(name) = crate::app::presentation::house_ui::house_ui_name(
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        local,
+                    )
                 {
                     let rgb = crate::app::input::messages::player_line_rgb(state, local);
                     crate::app::input::messages::post_chat_line(state, &name, &text, rgb);

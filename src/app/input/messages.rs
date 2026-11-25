@@ -777,7 +777,14 @@ fn post_house_names_line(
 ) {
     let Some(names) = houses
         .iter()
-        .map(|&house| crate::app::presentation::house_ui::house_ui_name(state, house))
+        .map(|&house| {
+            crate::app::presentation::house_ui::house_ui_name(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                house,
+            )
+        })
         .collect::<Option<Vec<String>>>()
     else {
         return;
@@ -1289,7 +1296,7 @@ pub(crate) fn build_message_instances(
     }
     // A layout that leaves the messages out only takes them off the screen.
     if !crate::app::presentation::field_parts::shows(
-        state,
+        &state.match_state.match_presentation,
         crate::ui::field_layout::FieldPart::Messages,
     ) {
         return (Vec::new(), Vec::new());
@@ -1423,7 +1430,10 @@ fn draw_message_rows(
         );
     }
     hud.finish(font);
-    (hud.boxes().copied().collect(), hud.glyphs().copied().collect())
+    (
+        hud.boxes().copied().collect(),
+        hud.glyphs().copied().collect(),
+    )
 }
 
 #[cfg(all(test, tests_app_input_d_z))]

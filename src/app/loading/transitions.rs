@@ -141,7 +141,7 @@ pub(crate) fn resolve_status_texts(state: &mut AppState) {
             state.csf_text(label)
         })
     });
-    let status_texts = crate::app::presentation::state::StatusTexts::resolve(state);
+    let status_texts = crate::app::presentation::state::StatusTexts::resolve(&state.process_assets);
     let presentation = &mut state.match_state.match_presentation;
     presentation.ares_status_texts = ares_status_texts;
     presentation.status_texts = status_texts;
@@ -762,13 +762,15 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         .match_state
         .match_presentation
         .sidebar_projection
-        .model.reset_cameo_seed();
+        .model
+        .reset_cameo_seed();
     let owner = state.match_state.local_player_owner().map(str::to_owned);
     state
         .match_state
         .match_presentation
         .sidebar_projection
-        .model.start_scenario_credits_counter(owner.as_deref());
+        .model
+        .start_scenario_credits_counter(owner.as_deref());
     if let Some(runtime) = state.match_state.sim_runtime.write_sim(SimWrite::Lifecycle) {
         runtime
             .simulation
@@ -937,7 +939,10 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
                 Ok(effects) => initial_replay_effects = effects,
                 Err(error) => {
                     log::error!("Replay startup failed: {error:#}");
-                    let message = if matches!(startup, crate::app::match_bootstrap::LoadingStartup::AuthoredCampaignReplay { .. }) {
+                    let message = if matches!(
+                        startup,
+                        crate::app::match_bootstrap::LoadingStartup::AuthoredCampaignReplay { .. }
+                    ) {
                         crate::i18n::tr("VERA:CampaignReplayUnavailable")
                     } else {
                         format!("Replay startup failed: {error:#}")

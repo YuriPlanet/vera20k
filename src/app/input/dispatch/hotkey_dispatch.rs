@@ -212,7 +212,8 @@ fn select_sidebar_tab_command(state: &mut AppState, index: i32) {
         .match_state
         .match_presentation
         .sidebar_projection
-        .model.selectable_tab(index)
+        .model
+        .selectable_tab(index)
     else {
         return;
     };
@@ -246,7 +247,8 @@ fn place_ready_building_for_tab(state: &mut AppState, tab: SidebarTab) {
             .match_state
             .match_presentation
             .sidebar_projection
-            .model.ready_building_for_tab(sim, owner_id, tab)
+            .model
+            .ready_building_for_tab(sim, owner_id, tab)
             .and_then(|(type_id, held)| {
                 // Manual_Place4FB840 refuses a null factory; placement start
                 // centres the foundation on it.
@@ -433,8 +435,10 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
             if state
                 .rules()
                 .is_some_and(|rules| rules.sw_sidebar.keys_enabled)
-                && let Some(entry) =
-                    crate::app::presentation::sw_sidebar::positional_entry(state, index)
+                && let Some(entry) = crate::app::presentation::sw_sidebar::positional_entry(
+                    &state.match_state.match_presentation,
+                    index,
+                )
             {
                 let type_id = entry.type_id.clone();
                 press_super_weapon(state, &type_id, false, false);
@@ -445,7 +449,9 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
             if state
                 .rules()
                 .is_some_and(|rules| rules.sw_sidebar.toggle_key_enabled)
-                && crate::app::presentation::sw_sidebar::toggle(state)
+                && crate::app::presentation::sw_sidebar::toggle(
+                    &mut state.match_state.match_presentation,
+                )
             {
                 crate::app::input::chrome_input::play_gui_main_button_sound(state);
                 crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
@@ -453,7 +459,10 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         }
         HotkeyCommand::AutoLoad => crate::app::input::smart_command::hotkey_pressed(state),
         HotkeyCommand::FpsCounter => {
-            crate::app::presentation::ares_tactical_text::execute_fps_counter(state)
+            crate::app::presentation::ares_tactical_text::execute_fps_counter(
+                &state.frontend,
+                &mut state.match_state,
+            )
         }
         HotkeyCommand::TogglePower => crate::app::input::power_mode::execute_command(state),
         // A chord runs in the window owner before this dispatch; a binding on

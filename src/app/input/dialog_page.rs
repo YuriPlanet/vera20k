@@ -25,7 +25,13 @@ pub(crate) fn event_at(x: i32, y: i32, down: Option<bool>) -> InputEvent {
 
 /// [`event_at`] the active-game shell's cursor.
 pub(crate) fn shell_event(state: &AppState, down: Option<bool>) -> InputEvent {
-    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
+    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    );
     event_at(x, y, down)
 }
 

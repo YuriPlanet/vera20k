@@ -54,8 +54,10 @@ impl App {
 
     fn saved_game_browser_rows(state: &AppState, mode: SavedSeedMode) -> usize {
         if state.frontend.screen == GameScreen::MainMenu {
-            let layout =
-                crate::app::frontend::shell_layout::load_saved_game_layout_for_mode(state, mode);
+            let layout = crate::app::frontend::shell_layout::load_saved_game_layout_for_mode(
+                &state.renderer.gpu,
+                mode,
+            );
             saved_browser_rows(&layout.browser)
         } else {
             Self::saved_game_layout(state, mode)
@@ -351,7 +353,13 @@ impl App {
             return;
         };
         let extent = (layout.screen.w as u32, layout.screen.h as u32);
-        let pointer = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
+        let pointer = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state,
+            &state.persistence,
+        );
         if let Some(browser) = Self::saved_game_browser_slot(state).as_mut() {
             let results = saved_file_input::pointer(browser, &layout, extent, pointer, down);
             Self::apply_saved_game_input(state, results);

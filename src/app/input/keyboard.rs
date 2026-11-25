@@ -180,7 +180,13 @@ fn layout_and_pointer(state: &AppState) -> Option<(KeyboardLayout, (i32, i32))> 
             shell.width,
             shell.height,
             Some((shell.layout, shell.button_size)),
-            crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state),
+            crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state,
+                &state.persistence,
+            ),
         )
     } else {
         let (x, y) = state.cursor_position();
@@ -192,7 +198,12 @@ fn layout_and_pointer(state: &AppState) -> Option<(KeyboardLayout, (i32, i32))> 
         )
     };
     Some((
-        crate::app::frontend::shell_layout::keyboard_layout(state, width, height, shell),
+        crate::app::frontend::shell_layout::keyboard_layout(
+            &state.renderer.gpu,
+            width,
+            height,
+            shell,
+        ),
         pointer,
     ))
 }
@@ -562,7 +573,9 @@ pub(crate) fn wheel(state: &mut AppState, lines: f32) {
         false => (lines * 3.0) as i32,
     };
     dialog.ui.set_scale(layout.scale);
-    dialog.ui.on_input(vera20k_gui::InputEvent::Wheel { lines, x, y });
+    dialog
+        .ui
+        .on_input(vera20k_gui::InputEvent::Wheel { lines, x, y });
     let events = dialog.ui.drain_events();
     let events = crate::ui::shell::page::page_events(dialog.ui.gui(), events);
     apply(state, events);

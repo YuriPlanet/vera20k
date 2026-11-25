@@ -200,7 +200,10 @@ impl Selection {
         } else {
             (tr("VERA:ModsOpenFolder"), String::new(), cancel)
         };
-        let mut shell_box = import_box(ShellBox::message(title, confirm, cancel, third), self.previewing());
+        let mut shell_box = import_box(
+            ShellBox::message(title, confirm, cancel, third),
+            self.previewing(),
+        );
         if self.previewing() {
             if self.can_browse {
                 shell_box = shell_box.button(ADD_MORE, tr("VERA:ModImportMore"));
@@ -286,7 +289,8 @@ fn list_rect(layout: &BoxParts) -> RectPx {
 fn preview_box(state: &AppState) -> Option<(&Selection, BoxParts, DialogResourceId)> {
     let selection = preview(state)?;
     let shell_box = &state.frontend.shell_message_box.as_ref()?.shell_box;
-    let layout = crate::app::frontend::shell_layout::shell_box_parts(state, shell_box);
+    let layout =
+        crate::app::frontend::shell_layout::shell_box_parts(&state.renderer.gpu, shell_box);
     Some((selection, layout, shell_box.dialog))
 }
 
@@ -724,6 +728,10 @@ impl App {
 
     fn mod_import_notice(state: &mut AppState, title: String) {
         let ok = state.csf_label("TXT_OK", "OK");
-        Self::show_import_box(state, import_box(ShellBox::notice(title, ok), false), Dialog::Notice);
+        Self::show_import_box(
+            state,
+            import_box(ShellBox::notice(title, ok), false),
+            Dialog::Notice,
+        );
     }
 }

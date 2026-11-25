@@ -399,8 +399,10 @@ pub(super) struct MapSidebarObservation {
 impl MapSidebarObservation {
     pub(super) fn capture(state: &AppState) -> Result<Self> {
         Self::from_view(
-            crate::app::presentation::sidebar_render::current_sidebar_view(state)
-                .context("sidebar observation requires the retained view")?,
+            crate::app::presentation::sidebar_render::current_sidebar_view(
+                &state.match_state.match_presentation,
+            )
+            .context("sidebar observation requires the retained view")?,
         )
     }
 
@@ -603,7 +605,12 @@ impl MapCommandBarThumbState {
             sticky: gui.pressed_in(nodes.layer) == Some(handle),
             left_held: state.match_state.input.tactical_mouse.left_held(),
             gadget_id: control.id,
-            rect: [control.rect.x, control.rect.y, control.rect.w, control.rect.h],
+            rect: [
+                control.rect.x,
+                control.rect.y,
+                control.rect.w,
+                control.rect.h,
+            ],
             disabled: control.disabled,
             current_house: owner.map(|owner| sim.interner().resolve(owner).to_owned()),
             side_index: house.map(|house| house.side_index()),
@@ -762,7 +769,13 @@ impl MapCommandBarGestureReceipt {
         let handle = bar[command_index];
         let control =
             ChromeControl::read(gui, handle).context("requested command-bar control is absent")?;
-        let rect = [control.rect.x, control.rect.y, control.rect.w, control.rect.h].map(|v| v as f32);
+        let rect = [
+            control.rect.x,
+            control.rect.y,
+            control.rect.w,
+            control.rect.h,
+        ]
+        .map(|v| v as f32);
         ensure!(
             rect == [layout_rect.x, layout_rect.y, layout_rect.w, layout_rect.h],
             "command-bar control differs from its current layout"

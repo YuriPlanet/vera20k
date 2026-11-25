@@ -425,7 +425,7 @@ pub(crate) fn cursor(state: &AppState) -> Option<RadarCursor> {
     }
     Some(written_cursor(
         state.match_state.input.tactical_mouse.left_held(),
-        sidebar::minimap_shown(state),
+        sidebar::minimap_shown(&state.match_state.match_presentation),
         sidebar::is_cursor_over_minimap(state),
         || {
             hover(state).map(|hover| {

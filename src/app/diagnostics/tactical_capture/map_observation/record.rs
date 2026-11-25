@@ -614,7 +614,7 @@ impl TacticalCaptureSession {
         {
             let rendered = MapSidebarObservation::from_view(
                 output
-                    .drawn_sidebar_view(state)
+                    .drawn_sidebar_view(&state.match_state.match_presentation)
                     .context("requested sidebar draw is absent")?,
             )?;
             ensure!(
@@ -652,7 +652,9 @@ impl TacticalCaptureSession {
         validate_loaded_resources(state)?;
         let unit_atlas =
             unit_atlas_statistics(state.match_state.match_presentation.unit_atlas.as_ref())?;
-        let sidebar_drawn = output.drawn_sidebar_view(state).is_some();
+        let sidebar_drawn = output
+            .drawn_sidebar_view(&state.match_state.match_presentation)
+            .is_some();
         let ready = sidebar_drawn
             && !state.match_state.paused()
             && !state.main_menu_dialog_open()

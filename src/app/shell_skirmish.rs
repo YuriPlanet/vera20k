@@ -126,10 +126,11 @@ impl App {
             .choose_map_modal
             .as_ref())
         .filter(|modal| modal.message_box.is_none() && !modal.is_hidden())?;
-        let layout = choose_map_layout(state);
+        let layout = choose_map_layout(&state.renderer, &state.frontend.screen);
         Some(
             crate::app::frontend::skirmish_shell_render::choose_map_search_ime_area(
-                state,
+                &state.platform.ime,
+                &state.renderer.bit_font,
                 &layout,
                 &modal.search,
             ),
@@ -150,7 +151,7 @@ impl App {
         if Self::choose_map_search_ime_rect(state).is_none() {
             return false;
         }
-        let layout = choose_map_layout(state);
+        let layout = choose_map_layout(&state.renderer, &state.frontend.screen);
         let frontend = &mut state.frontend;
         let Some(modal) = frontend.skirmish_shell_state.choose_map_modal.as_mut() else {
             return false;
@@ -441,7 +442,7 @@ impl App {
     /// and the box closes.
     pub(super) fn skirmish_game_options_key(state: &mut AppState, key: vera20k_gui::Key) {
         use crate::ui::skirmish_shell::game_options;
-        let page = skirmish_layout(state);
+        let page = skirmish_layout(&state.renderer, &state.frontend);
         let frontend = &mut state.frontend;
         let close = game_options::key(
             &mut frontend.shell_controller,
@@ -459,7 +460,7 @@ impl App {
         if state.frontend.skirmish_shell_state.game_options.is_none() {
             return false;
         }
-        let page = skirmish_layout(state);
+        let page = skirmish_layout(&state.renderer, &state.frontend);
         let (x, y) = state.match_state.input.cursor_px();
         let frontend = &mut state.frontend;
         let (cues, close) = game_options::pointer(
@@ -587,7 +588,7 @@ impl App {
         } else {
             Self::reload_skirmish_catalog(state, current_record_index)
         };
-        let layout = choose_map_layout(state);
+        let layout = choose_map_layout(&state.renderer, &state.frontend.screen);
         let session = &state.match_state.session;
         let context = if state.frontend.shell_route == ShellRoute::NetworkSetup {
             let room = session.network_room();
@@ -631,7 +632,10 @@ impl App {
     /// Delete changes it in the generator above the chooser.
     pub(super) fn refresh_saved_random_maps(state: &mut AppState) {
         let dir = Self::random_map_dir(state);
-        let layout = crate::app::frontend::shell_layout::choose_map_layout(state);
+        let layout = crate::app::frontend::shell_layout::choose_map_layout(
+            &state.renderer,
+            &state.frontend.screen,
+        );
         if let Some(modal) = state
             .frontend
             .skirmish_shell_state
@@ -743,7 +747,7 @@ impl App {
         ) else {
             return;
         };
-        let layout = choose_map_layout(state);
+        let layout = choose_map_layout(&state.renderer, &state.frontend.screen);
         let frontend = &mut state.frontend;
         if let Some(modal) = frontend.skirmish_shell_state.choose_map_modal.as_mut() {
             modal.replace_rows(rows, frontend.scenario_catalog.records(), &layout, clicked);
@@ -821,9 +825,12 @@ impl App {
             return false;
         }
         use crate::app::frontend::preview_zoom;
-        let over =
-            preview_zoom::over_box(state, crate::ui::skirmish_shell::choose_map_page::DIALOG);
-        if !preview_zoom::press_on_box(state, over) {
+        let over = preview_zoom::over_box(
+            &state.frontend.shell_controller,
+            &state.match_state.input,
+            crate::ui::skirmish_shell::choose_map_page::DIALOG,
+        );
+        if !preview_zoom::press_on_box(&mut state.frontend, &state.match_state.input, over) {
             Self::choose_map_pointer(state, Pointer::Down);
         }
         true
@@ -832,7 +839,7 @@ impl App {
     /// The pointer on the chooser's widgets: their cues play, a game-type
     /// click lists the mode's own rows and a button acts.
     fn choose_map_pointer(state: &mut AppState, at: Pointer) {
-        let layout = choose_map_layout(state);
+        let layout = choose_map_layout(&state.renderer, &state.frontend.screen);
         let (x, y) = state.match_state.input.cursor_px();
         let frontend = &mut state.frontend;
         let Some(modal) = frontend.skirmish_shell_state.choose_map_modal.as_mut() else {
@@ -865,7 +872,7 @@ impl App {
     /// Scrollbar arrow auto-repeat on the chooser's lists; returns the next
     /// wake deadline.
     pub(super) fn poll_choose_map_scroll(state: &mut AppState) -> Option<Instant> {
-        let layout = choose_map_layout(state);
+        let layout = choose_map_layout(&state.renderer, &state.frontend.screen);
         let frontend = &mut state.frontend;
         let modal = frontend.skirmish_shell_state.choose_map_modal.as_mut()?;
         let (moved, next) = crate::ui::skirmish_shell::choose_map_page::poll(
@@ -907,7 +914,7 @@ impl App {
 
     /// A chooser button released over its own press.
     fn choose_map_button(state: &mut AppState, fired_button: ChooseMapModalButton) {
-        let layout = choose_map_layout(state);
+        let layout = choose_map_layout(&state.renderer, &state.frontend.screen);
         let frontend = &mut state.frontend;
         let Some(modal) = frontend.skirmish_shell_state.choose_map_modal.as_mut() else {
             return;
@@ -1316,7 +1323,10 @@ impl App {
     fn status_help(state: &AppState, key: Option<&str>, preview: bool) -> String {
         let text = key.map(|key| state.csf_label(key, "")).unwrap_or_default();
         match preview {
-            true => crate::app::frontend::preview_zoom::box_help(state, text),
+            true => crate::app::frontend::preview_zoom::box_help(
+                &state.frontend.skirmish_preview_texture,
+                text,
+            ),
             false => text,
         }
     }
@@ -1434,8 +1444,12 @@ impl App {
     /// `0x102`'s widgets under the shell controller, built once per visit and
     /// showing the session; their root.
     pub(crate) fn sync_skirmish_page(state: &mut AppState) -> Option<vera20k_gui::NodeId> {
-        let layout = skirmish_layout(state);
-        let labels = crate::app::frontend::skirmish_shell_render::skirmish_labels(state);
+        let layout = skirmish_layout(&state.renderer, &state.frontend);
+        let labels = crate::app::frontend::skirmish_shell_render::skirmish_labels(
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        );
         let frontend = &mut state.frontend;
         crate::ui::skirmish_shell::page::sync_page(
             &mut frontend.shell_controller,
@@ -1449,8 +1463,12 @@ impl App {
     /// The pointer on `0x102`'s widgets: the session takes their events, their
     /// cues play and an activated button acts.
     fn skirmish_page_pointer(state: &mut AppState, at: Pointer) {
-        let layout = skirmish_layout(state);
-        let labels = crate::app::frontend::skirmish_shell_render::skirmish_labels(state);
+        let layout = skirmish_layout(&state.renderer, &state.frontend);
+        let labels = crate::app::frontend::skirmish_shell_render::skirmish_labels(
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        );
         let (x, y) = state.match_state.input.cursor_px();
         let frontend = &mut state.frontend;
         let (cues, action) = crate::ui::skirmish_shell::page::pointer(
@@ -1546,7 +1564,8 @@ impl App {
             return;
         }
         let over = crate::app::frontend::preview_zoom::over_box(
-            state,
+            &state.frontend.shell_controller,
+            &state.match_state.input,
             crate::ui::skirmish_shell::page::DIALOG,
         );
         let zoom = over && !Self::skirmish_list_open(state);
@@ -1554,7 +1573,11 @@ impl App {
         // on the preview it takes nothing and enlarges the picture.
         Self::skirmish_page_pointer(state, Pointer::Down);
         if zoom {
-            crate::app::frontend::preview_zoom::press_on_box(state, true);
+            crate::app::frontend::preview_zoom::press_on_box(
+                &mut state.frontend,
+                &state.match_state.input,
+                true,
+            );
         }
     }
 
@@ -1608,8 +1631,12 @@ impl App {
         {
             return true;
         }
-        let layout = skirmish_layout(state);
-        let labels = crate::app::frontend::skirmish_shell_render::skirmish_labels(state);
+        let layout = skirmish_layout(&state.renderer, &state.frontend);
+        let labels = crate::app::frontend::skirmish_shell_render::skirmish_labels(
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+        );
         let frontend = &mut state.frontend;
         crate::ui::skirmish_shell::page::wheel(
             &mut frontend.shell_controller,

@@ -79,9 +79,14 @@ pub(crate) fn mission_ended(state: &mut AppState, elapsed_ticks: i32) {
         .cooperative_score_rows()
         .into_iter()
         .map(|row| CooperativeMissionRow {
-            name: crate::app::presentation::house_ui::house_ui_name(state, row.owner)
-                .map(|name| crate::util::native_string::narrow_utf16_c_string(name.encode_utf16()))
-                .unwrap_or_default(),
+            name: crate::app::presentation::house_ui::house_ui_name(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                row.owner,
+            )
+            .map(|name| crate::util::native_string::narrow_utf16_c_string(name.encode_utf16()))
+            .unwrap_or_default(),
             kills: row.kills as i32,
             built: row.built as i32,
             lost: row.losses as i32,
@@ -243,13 +248,23 @@ pub(crate) fn open_result(state: &mut AppState, victory: bool) {
 fn build_model(state: &AppState, can_continue: bool, elapsed: i32) -> Option<CoopScoreModel> {
     let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     let computer = state.csf_text("TXT_COMPUTER");
-    let sources = crate::app::presentation::house_ui::HouseUiSources::from_state(state, &computer);
+    let sources = crate::app::presentation::house_ui::HouseUiSources::from_state(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets.csf,
+        &computer,
+    );
     let mut rows: Vec<_> = sim
         .cooperative_score_rows()
         .into_iter()
         .map(|row| crate::ui::score_shell::ScoreRow {
-            name: crate::app::presentation::house_ui::house_ui_name(state, row.owner)
-                .unwrap_or_default(),
+            name: crate::app::presentation::house_ui::house_ui_name(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                row.owner,
+            )
+            .unwrap_or_default(),
             rgb: sources.text_rgb(sim, row.owner),
             kills: row.kills,
             losses: row.losses,
@@ -331,15 +346,25 @@ fn build_campaign_end(
     use crate::assets::csf_file::{CsfArg, format_csf};
     let sim = &state.match_state.sim_runtime.runtime()?.simulation;
     let computer = state.csf_text("TXT_COMPUTER");
-    let sources = crate::app::presentation::house_ui::HouseUiSources::from_state(state, &computer);
+    let sources = crate::app::presentation::house_ui::HouseUiSources::from_state(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets.csf,
+        &computer,
+    );
     let houses: Vec<_> = sim
         .cooperative_score_rows()
         .into_iter()
         .take(2)
         .map(|row| {
             (
-                crate::app::presentation::house_ui::house_ui_name(state, row.owner)
-                    .unwrap_or_default(),
+                crate::app::presentation::house_ui::house_ui_name(
+                    &state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    row.owner,
+                )
+                .unwrap_or_default(),
                 sources.text_rgb(sim, row.owner),
             )
         })
@@ -604,8 +629,7 @@ fn run_step(state: &mut AppState, step: CooperativeRoundStep) {
         CooperativeRoundStep::Exit(false) => finish(state),
         CooperativeRoundStep::TimedOut => {
             finish(state);
-            let text =
-                state.csf_text("TXT_SYSTEM_NOT_RESPONDING");
+            let text = state.csf_text("TXT_SYSTEM_NOT_RESPONDING");
             crate::app::shell_lan::append_chat(
                 state,
                 crate::ui::lan_shell::LanChatLine {

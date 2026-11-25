@@ -12,12 +12,12 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 
 /// The room's page in the window, before VERA's roster is placed in it.
 pub(in crate::app) fn page_layout(state: &AppState) -> MultiplayerSetupLayout {
-    let (w, h) = shell_layout::shell_screen_size(state);
+    let (w, h) = shell_layout::shell_screen_size(&state.renderer.gpu);
     MultiplayerSetupLayout::new(
         crate::app::shell_network_setup::dialog(state),
         w as i32,
         h as i32,
-        shell_layout::fills_window(state),
+        shell_layout::fills_window(&state.renderer.gpu),
     )
 }
 
@@ -481,7 +481,7 @@ fn hovered_help(state: &AppState, view: &SetupView) -> String {
         })
         .unwrap_or_default();
     if over_preview {
-        crate::app::frontend::preview_zoom::box_help(state, help)
+        crate::app::frontend::preview_zoom::box_help(&state.frontend.skirmish_preview_texture, help)
     } else {
         help
     }
@@ -530,10 +530,18 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     };
     let (x, y) = state.match_state.input.cursor_px();
     if pressed {
-        let over_preview = crate::app::frontend::preview_zoom::over_box(state, view.page().dialog);
+        let over_preview = crate::app::frontend::preview_zoom::over_box(
+            &state.frontend.shell_controller,
+            &state.match_state.input,
+            view.page().dialog,
+        );
         if pointer_target(state, &view, false).is_none()
             && preview_box_shows(state, &view)
-            && crate::app::frontend::preview_zoom::press_on_box(state, over_preview)
+            && crate::app::frontend::preview_zoom::press_on_box(
+                &mut state.frontend,
+                &state.match_state.input,
+                over_preview,
+            )
         {
             return;
         }

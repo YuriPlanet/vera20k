@@ -1209,7 +1209,7 @@ impl App {
         // VERA's enlarged map preview shows only over the pages that open it.
         if page.is_some() || !matches!(screen_page, ScreenPage::Skirmish | ScreenPage::NetworkSetup)
         {
-            crate::app::frontend::preview_zoom::close(state);
+            crate::app::frontend::preview_zoom::close(&state.platform.window, &mut state.frontend);
         }
         match &state.frontend.screen {
             _ if page == Some(ModalPage::ShellError) => {
@@ -1245,7 +1245,8 @@ impl App {
                 Self::advance_fullscreen_movie(state)?;
                 if state.frontend.fullscreen_movie.is_some() {
                     crate::app::frontend::movies_credits_render::render_fullscreen_movie(
-                        state,
+                        &state.renderer,
+                        &state.frontend.fullscreen_movie,
                         &mut encoder,
                         &output.texture,
                     )?;
@@ -1254,7 +1255,7 @@ impl App {
                     // The movie ended this frame: recreate the caller's
                     // dialog on the next frame's normal dispatch.
                     crate::app::frontend::movies_credits_render::render_fullscreen_black(
-                        state,
+                        &state.renderer,
                         &mut encoder,
                         &output.texture,
                     );
@@ -1264,14 +1265,16 @@ impl App {
                 Self::advance_credits_roll(state);
                 if state.frontend.credits_roll.is_some() {
                     crate::app::frontend::movies_credits_render::render_credits_roll(
-                        state,
+                        state.platform.window_active,
+                        &state.renderer,
+                        &mut state.frontend.credits_roll,
                         &mut encoder,
                         &output.texture,
                     )?;
                     presented_shell = PresentedShell::CreditsRoll;
                 } else {
                     crate::app::frontend::movies_credits_render::render_fullscreen_black(
-                        state,
+                        &state.renderer,
                         &mut encoder,
                         &output.texture,
                     );
@@ -1315,7 +1318,7 @@ impl App {
                     }
                     ScreenPage::Wol => {
                         wol_welcome_render::render_wol_page(state, encoder, texture)?
-                            .then(|| wol_welcome_render::presented_wol_page(state))
+                            .then(|| wol_welcome_render::presented_wol_page(&state.frontend.wol))
                     }
                     ScreenPage::LoadSavedGame => {
                         load_saved_game_render::render_load_saved_game_page(
@@ -1385,7 +1388,10 @@ impl App {
                                 .unwrap_or("auto")
                                 .to_string();
                         crate::app::frontend::status_screen::render(
-                            state,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &state.match_state.input,
+                            &state.process_assets,
                             &mut encoder,
                             &view,
                             &crate::i18n::tr("VERA:Loading"),
@@ -1403,8 +1409,15 @@ impl App {
                 // No battlefield commands share this encoder/camera upload.
                 // Its text is laid out at the Sidebar size and drawn in the
                 // window (`window_ui::shell_raster`).
-                let raster = crate::app::presentation::window_ui::shell_raster(state, true)
-                    .unwrap_or(crate::render::bit_font::TextRaster::NATIVE);
+                let raster = crate::app::presentation::window_ui::shell_raster(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &state.match_state.match_presentation,
+                    &state.persistence,
+                    true,
+                )
+                .unwrap_or(crate::render::bit_font::TextRaster::NATIVE);
                 let frame_raster = state.renderer.bit_font.set_raster(raster);
                 let painted =
                     Self::render_in_game_shell(state, &mut encoder, &output.texture, screen_page);
@@ -1415,7 +1428,10 @@ impl App {
                 let abort = state.match_state.match_presentation.in_game_menu
                     == crate::ui::pause_menu::InGameMenuState::AbortConfirm;
                 crate::app::frontend::status_screen::render(
-                    state,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state.input,
+                    &state.process_assets,
                     &mut encoder,
                     &view,
                     &crate::i18n::tr(if abort {
@@ -1500,7 +1516,9 @@ impl App {
                         .draw(&mut encoder, &view);
                     render::draw_world_window_copy(state, &mut encoder, &view);
                     crate::app::presentation::sidebar_surface::draw_window_copy(
-                        state,
+                        &state.renderer,
+                        &state.frontend.screen,
+                        &state.match_state.match_presentation,
                         &mut encoder,
                         &view,
                     );
@@ -1517,7 +1535,9 @@ impl App {
                         .renderer
                         .copy_game_frame_to(&mut encoder, &output.texture);
                     render::draw_software_cursor(
-                        state,
+                        &state.renderer,
+                        &state.frontend.screen,
+                        &state.match_state.match_presentation,
                         &mut encoder,
                         &view,
                         render_output.software_cursor,
@@ -1562,7 +1582,10 @@ impl App {
                     presented_shell = PresentedShell::Score;
                 } else {
                     crate::app::frontend::status_screen::render(
-                        state,
+                        &state.renderer,
+                        &mut state.frontend,
+                        &state.match_state.input,
+                        &state.process_assets,
                         &mut encoder,
                         &view,
                         &title,
@@ -1660,7 +1683,11 @@ impl App {
         // Browser capture reads the visible canvas, not the native retained
         // PCX composition (which requires a synchronous GPU map and std::fs).
         let retail_screenshot_current_frame = screenshot_requested
-            && !cfg!(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"));
+            && !cfg!(all(
+                feature = "wasm",
+                target_arch = "wasm32",
+                target_os = "unknown"
+            ));
         let screenshot_central_rect = shake_central_rect(state, &output.texture);
         // Text drawn in the window (`window_ui`) is not in the frame the
         // screenshot retains, and neither is the wheel-zoomed battlefield's
@@ -1696,7 +1723,7 @@ impl App {
                 state
                     .renderer
                     .window_ui
-                    .draw_screenshot_text(state, &mut encoder, copy);
+                    .draw_screenshot_text(&state.renderer, &mut encoder, copy);
             }
         }
         let pending_retail_screenshot = previous_composition

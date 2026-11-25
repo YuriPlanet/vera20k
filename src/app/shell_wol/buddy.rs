@@ -61,7 +61,7 @@ pub(super) fn page_open(wol: Option<&WolVisit>) -> bool {
 }
 
 pub(crate) fn layout(state: &AppState) -> WolBuddyLayout {
-    shell_layout::on(state, WolBuddyLayout::new)
+    shell_layout::on(&state.renderer.gpu, WolBuddyLayout::new)
 }
 
 /// Builds and places `0x116`'s widgets; the root.

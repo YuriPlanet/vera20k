@@ -249,7 +249,13 @@ fn options_page_pointer(state: &mut AppState, pressed: Option<bool>) -> bool {
     let Some(layout) = options_page_layout(state) else {
         return false;
     };
-    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
+    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state,
+        &state.persistence,
+    );
     let Some(page) = state.match_state.match_presentation.options_page.as_mut() else {
         return false;
     };

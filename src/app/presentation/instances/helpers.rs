@@ -8,6 +8,7 @@
 
 use crate::app::AppState;
 use crate::app::presentation::frame::ObjectRecord;
+use crate::app::presentation::state::MatchPresentationState;
 use crate::map::entities::EntityCategory;
 use crate::map::terrain;
 use crate::render::batch::DepthAxis;
@@ -495,17 +496,19 @@ pub(crate) fn ground_sort_row(entity: &ObjectRecord, drawn_row_y: f32) -> f32 {
 /// Lower screen_y → larger depth (further from camera). The height lift is
 /// taken back off so the row is the ground-projected one, exactly as every
 /// native class folds `-AdjustForZ(Location.Z)` into its Z term.
-pub(crate) fn compute_sprite_depth(state: &AppState, screen_y: f32, z: u8) -> f32 {
-    let axis = depth_axis(state);
+pub(crate) fn compute_sprite_depth(
+    presentation: &MatchPresentationState,
+    screen_y: f32,
+    z: u8,
+) -> f32 {
+    let axis = depth_axis(presentation);
     compute_sprite_depth_params(axis.origin_y, axis.world_height, screen_y, z)
 }
 
 /// The normalised depth axis of the loaded map (`DepthAxis::NONE` outside a
 /// match): what `BatchRenderer::update_camera` uploads for the shaders.
-pub(crate) fn depth_axis(state: &AppState) -> DepthAxis {
-    state
-        .match_state
-        .match_presentation
+pub(crate) fn depth_axis(presentation: &MatchPresentationState) -> DepthAxis {
+    presentation
         .terrain_grid
         .as_ref()
         .map(|g| DepthAxis {

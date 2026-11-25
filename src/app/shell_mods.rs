@@ -106,7 +106,7 @@ impl App {
     /// new instance builds with the row in use selected and in view (a hover
     /// target for status help, never a button press); the layout.
     fn mods_sync(state: &mut AppState) -> ModsLayout {
-        let layout = mods_layout(state);
+        let layout = mods_layout(&state.renderer.gpu);
         let mods = &state.frontend.mods;
         let in_use = mods.page.as_ref().map(|rows| {
             let selected = rows.iter().position(|row| mods.in_use(row));

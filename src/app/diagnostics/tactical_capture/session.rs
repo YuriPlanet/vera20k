@@ -1081,7 +1081,7 @@ impl TacticalCaptureSession {
             .match_presentation
             .radar_content_insets
             .context("radar content insets are absent")?;
-        let drawn_sidebar = output.drawn_sidebar_view(state);
+        let drawn_sidebar = output.drawn_sidebar_view(&state.match_state.match_presentation);
         let render_evidence = SidebarRenderEvidence::from_render_output(
             output,
             drawn_sidebar,
