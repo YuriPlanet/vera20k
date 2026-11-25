@@ -125,9 +125,12 @@ the source tree). Its Wasm verbs need no game install:
   `DESTINATION_SET`, `CRUSH_ALLOWED`, `HARVEST_CELL`, `DEPLOY_ALLOWED` and
   `DAMAGE_INCOMING` are decisions only: bind them with `Trigger::decide_sync` and
   answer in `on_decide!` (`FireAllowedDecision::set_result(0)` vetoes a shot). They are
-  `preview` and may change. `MISSION_CHANGED` is numbered but not raised yet; check
-  with `has_kind`. A `SpeedMultiplier` modifier also slows or speeds up aircraft,
-  jumpjets and rockets.
+  `preview` and may change. `MISSION_CHANGED` is numbered but deferred (not raised);
+  check with `has_kind`. A `SpeedMultiplier` modifier also slows or speeds up
+  aircraft, jumpjets and rockets. An `ImmunityFlags` override (preview; `Override`
+  only, bits 0..6) grants or removes immunity to mind control, radiation, poison,
+  psychic damage, chrono, EMP and berserk. `FatalDamageDecision::TIBERIUM_REMAINS`
+  leaves Riparius where the object died.
 - INI names: `ini::key`, `ini::registry` and `ini::event` let modders configure the
   module in INI ([below](#ini-names-a-module-registers)).
 
