@@ -23,20 +23,19 @@
 //! - the computer house's own harvesters (`HarvestCell`) and production
 //!   (`ProductionQueued` on the first type its factories start,
 //!   `ProductionAllowed` on a type they started twice; the house gets 10000
-//!   credits early so they keep starting things). The module's own `QueueProduction` is not used: a
-//!   module order checks the player's prerequisites.
+//!   credits early so they keep starting things). The module's own
+//!   `QueueProduction` is not used: a module order checks the player's
+//!   prerequisites.
 //!
 //! A `MoveFrame` decider that never answers (the observer) reads the NavCom
 //! a `DestinationSet`, `ApproachPoint` or `HarvestCell` answer set.
-//!
-//! Lines `movement diag ...` are temporary diagnostics for the points that
-//! did not come in the first central runs.
 //!
 //! Not in `MARKS`:
 //! - `ROTMultiplier` (the ROT modifier): `basics` covers it.
 //!
 //! Most likely to miss in the scene: the production pair needs the Easy
-//! computer house's factories to start a bound type and start it again;
+//! computer house's factories to start a bound type twice, and another one
+//! while it is forbidden;
 //! `HarvestCell` needs a computer harvester scanning on an ore field of at
 //! least two cells' spread; the deploy needs the chopper's (or the MCV's)
 //! deploy to be asked at all.
@@ -49,7 +48,7 @@ use vera20k_sdk::{
     MissionStepDecision, NO_HANDLE, get, sys,
 };
 
-use crate::{Line, alive, arena, bench_fail, enemy, mark, offset, player, spawn};
+use crate::{alive, arena, bench_fail, enemy, mark, offset, player, spawn};
 
 /// Every mark this area reaches in the bench's scene.
 #[allow(dead_code)]
@@ -158,10 +157,6 @@ static IM_GOAL: V = V::new(0);
 static IM_EXPECT: V = V::new(0);
 static IM_HOME: V = V::new(0);
 static IM_TRY: V = V::new(0);
-static IM_NATIVE: V = V::new(0);
-static IM_ASKS: V = V::new(0);
-static IM_ASKED_AT: V = V::new(0);
-static IM_ASKED_DIST: V = V::new(0);
 
 // MissionStep.
 static T_MS: V = V::new(0);
@@ -190,7 +185,6 @@ static CA_ALLOW: V = V::new(0);
 static CA_TRIES: V = V::new(0);
 static DS: V = V::new(0);
 static DS_AT: V = V::new(0);
-static DS_ASKS: V = V::new(0);
 static DS_SEEN: V = V::new(0);
 static DS_NATIVE: V = V::new(0);
 static CMD_NATIVE: V = V::new(0);
@@ -235,6 +229,7 @@ static PA_YES: V = V::new(0);
 static PA_TYPE: V = V::new(-1);
 static PA_SLOT: V = V::new(0);
 static PA_BASE: V = V::new(0);
+static PA_OTHERS: V = V::new(0);
 
 // --------------------------------------------------------------- Helpers
 
@@ -287,30 +282,6 @@ fn disable(slot: &V) {
 
 fn no_cell() -> Cell {
     Cell(NO_HANDLE)
-}
-
-/// Logs `movement diag <what>: mission M cell X,Y, D cells from X2,Y2`, a
-/// temporary diagnostic for a point that did not come.
-fn diag_unit(what: &str, unit: Techno, near: Cell) {
-    let at = cell_of(unit);
-    let mut line = Line::new();
-    line.text("movement diag ")
-        .text(what)
-        .text(": alive ")
-        .num(i64::from(alive(unit)))
-        .text(" mission ")
-        .num(unit.mission().unwrap_or(-1))
-        .text(" cell ")
-        .num(i64::from(at.x()))
-        .text(",")
-        .num(i64::from(at.y()))
-        .text(", ")
-        .num(i64::from(dist(at, near)))
-        .text(" cells from ")
-        .num(i64::from(near.x()))
-        .text(",")
-        .num(i64::from(near.y()));
-    line.log();
 }
 
 /// The current frame (this file's `frame` is the area hook).
@@ -428,12 +399,6 @@ pub fn events(record: &EventRecord) {
                 2 => {
                     bench_fail("movement.DeployAllowed", "deployed after the veto");
                     DA.set(DONE);
-                }
-                1 | 5 => {
-                    let mut line = Line::new();
-                    line.text("movement diag DeployAllowed: deployed without a request, ")
-                        .text(deployer_name());
-                    line.log();
                 }
                 3 if DA_ALLOW.get() == 1 => {
                     mark("movement.DeployAllowed");
@@ -712,7 +677,6 @@ fn idle_mission(now: i64, since: i64) {
             }
         }
         1 if now > IM_AT.get() + 400 => {
-            diag_unit("IdleMission never asked", tank, IM_GOAL.cell());
             IM.set(DONE);
         }
         2 => {
@@ -721,25 +685,8 @@ fn idle_mission(now: i64, since: i64) {
                 mark("movement.IdleMission");
                 IM.set(DONE);
             } else if now > IM_AT.get() + 300 {
-                let mut line = Line::new();
-                line.text("movement diag IdleMission attempt ")
-                    .num(IM_TRY.get())
-                    .text(" native ")
-                    .num(IM_NATIVE.get())
-                    .text(" answered ")
-                    .num(IM_EXPECT.get())
-                    .text(" asks ")
-                    .num(IM_ASKS.get())
-                    .text(" mission now ")
-                    .num(mission)
-                    .text(" at frame ")
-                    .num(IM_ASKED_AT.get())
-                    .text(" goal distance then ")
-                    .num(IM_ASKED_DIST.get());
-                line.log();
                 if IM_TRY.get() == 0 {
                     IM_TRY.set(1);
-                    IM_ASKS.set(0);
                     IM_AT.set(now);
                     IM.set(1);
                     if Action::set_mission(tank, Mission::Move, IM_HOME.cell()).is_err() {
@@ -768,19 +715,10 @@ fn decide_idle(mut d: IdleMissionDecision) {
         } else {
             Mission::AreaGuard as i64
         };
-        IM_NATIVE.set(native);
         IM_EXPECT.set(answer);
-        IM_ASKED_AT.set(tick());
-        let goal = if IM_TRY.get() == 1 {
-            IM_HOME.cell()
-        } else {
-            IM_GOAL.cell()
-        };
-        IM_ASKED_DIST.set(i64::from(dist(cell_of(d.unit()), goal)));
         IM_AT.set(tick());
         IM.set(2);
     }
-    IM_ASKS.add(1);
     d.set_result(IM_EXPECT.get());
 }
 
@@ -850,12 +788,10 @@ fn approach_point_player(now: i64, since: i64) {
                 AP2_AT.set(now);
                 AP2.set(1);
             } else {
-                diag_unit("ApproachPoint player attack not taken", tank, cell_of(gi));
                 ap2_finish();
             }
         }
         1 if now > AP2_AT.get() + 300 => {
-            diag_unit("ApproachPoint player tank not asked", tank, cell_of(gi));
             ap2_finish();
         }
         2 => {
@@ -863,7 +799,6 @@ fn approach_point_player(now: i64, since: i64) {
                 mark("movement.ApproachPoint");
                 ap2_finish();
             } else if now > AP2_AT.get() + 300 {
-                diag_unit("ApproachPoint answered, player tank", tank, AP2_CELL.cell());
                 bench_fail(
                     "movement.ApproachPoint",
                     "the tank did not head for the module cell",
@@ -1025,7 +960,6 @@ fn destination_set(now: i64) {
             DS.set(1);
         }
         1 if now > DS_AT.get() + 200 => {
-            diag_unit("DestinationSet never asked", miner, CMD_NATIVE.cell());
             DS.set(DONE);
         }
         2 => {
@@ -1033,13 +967,6 @@ fn destination_set(now: i64) {
                 mark("movement.DestinationSet");
                 DS.set(DONE);
             } else if now > DS_AT.get() + 150 || !alive(miner) {
-                diag_unit("DestinationSet answered, miner", miner, CMD_MODULE.cell());
-                let mut line = Line::new();
-                line.text("movement diag DestinationSet asks ")
-                    .num(DS_ASKS.get())
-                    .text(" native NavCom seen ")
-                    .num(DS_NATIVE.get());
-                line.log();
                 if DS_NATIVE.get() == 1 {
                     bench_fail("movement.DestinationSet", "the native destination stayed");
                 }
@@ -1054,7 +981,6 @@ fn decide_destination(mut d: DestinationSetDecision) {
     if d.object().0 != U_CMD.get() || !matches!(DS.get(), 1 | 2) {
         return;
     }
-    DS_ASKS.add(1);
     if d.destination_cell() == CMD_NATIVE.cell() {
         d.set_result(CMD_MODULE.get());
         if DS.get() == 1 {
@@ -1077,7 +1003,6 @@ fn harvest_cell(now: i64, since: i64) {
             HC_AT.set(now);
         }
         1 if now > HC_AT.get() + 4000 => {
-            log("movement diag HarvestCell: no computer harvester scan answered");
             HC.set(DONE);
         }
         2 => {
@@ -1090,7 +1015,6 @@ fn harvest_cell(now: i64, since: i64) {
                 mark("movement.HarvestCell");
                 HC.set(DONE);
             } else if now > HC_AT.get() + 300 || !alive(harvester) {
-                diag_unit("HarvestCell answered, harvester", harvester, HC_CELL.cell());
                 HC_TRIES.add(1);
                 if HC_TRIES.get() < 3 {
                     HC_AT.set(now);
@@ -1212,13 +1136,6 @@ fn order_deploy(unit: Techno) -> bool {
     enemy().order(&Order::deploy_mcv(&units)).is_ok()
 }
 
-fn deployer_name() -> &'static str {
-    DEPLOYERS
-        .get(DA_KIND.get() as usize)
-        .copied()
-        .unwrap_or("?")
-}
-
 /// The deploy is vetoed (no `Deployed` may follow), then allowed (the
 /// `Deployed` must come); a deployer never asked gives way to the next.
 fn deploy_allowed(now: i64, since: i64) {
@@ -1236,19 +1153,9 @@ fn deploy_allowed(now: i64, since: i64) {
         5 if now >= DA_AT.get() + 15 => {
             DA.set(1);
             DA_AT.set(now);
-            if !order_deploy(unit) {
-                let mut line = Line::new();
-                line.text("movement diag DeployAllowed: the deploy order failed for ")
-                    .text(deployer_name());
-                line.log();
-            }
+            let _ = order_deploy(unit);
         }
         1 if now > DA_AT.get() + 150 => {
-            let mut line = Line::new();
-            line.text("movement diag DeployAllowed never asked for ")
-                .text(deployer_name());
-            line.log();
-            diag_unit("DeployAllowed deployer", unit, cell_of(unit));
             if alive(unit) {
                 let _ = Action::remove(unit);
             }
@@ -1259,17 +1166,10 @@ fn deploy_allowed(now: i64, since: i64) {
             DA.set(3);
             DA_AT.set(now);
             if !alive(unit) || !order_deploy(unit) {
-                diag_unit("DeployAllowed second order failed", unit, cell_of(unit));
                 DA.set(DONE);
             }
         }
         3 if now > DA_AT.get() + 200 => {
-            let mut line = Line::new();
-            line.text("movement diag DeployAllowed allowed but no Deployed for ")
-                .text(deployer_name())
-                .text(", allow asks ")
-                .num(DA_ALLOW.get());
-            line.log();
             DA.set(4);
         }
         4 => {
@@ -1340,6 +1240,11 @@ fn production_open() {
     TR_PQ2.set(second.decide_sync(KEY_PQ).map_or(0, |t| t.0));
 }
 
+/// All starts counted so far.
+fn total_starts() -> i64 {
+    STARTS.iter().map(V::get).sum()
+}
+
 fn slot_of(ty: i64) -> Option<usize> {
     TYPE_IDS.iter().position(|id| id.get() == ty)
 }
@@ -1365,31 +1270,16 @@ fn count_of(ty: TypeRef) -> i64 {
         .map_or(0, |(count, _)| count as i64)
 }
 
-fn prod_diag(what: &str, ty: i64, a: i64, b: i64) {
-    let mut line = Line::new();
-    line.text("movement diag ")
-        .text(what)
-        .text(" type ")
-        .num(ty)
-        .text(": ")
-        .num(a)
-        .text(", ")
-        .num(b);
-    line.log();
-}
-
 /// `ProductionQueued` first: the first type the computer's factory starts
 /// is refused until it asks again (nothing started), then allowed (one more
-/// must be built). Then `ProductionAllowed` on the type the factories have
-/// started most (at least 3 times, 2 late in the match): forbidden for 300
-/// frames, while its native answer says the house could build it, no start
-/// of it may be asked; allowed back, one more start must come.
+/// must be built). `ProductionAllowed` runs beside it
+/// ([`production_allowed`]).
 fn production(now: i64, since: i64) {
     // Money early, so the computer's factories keep starting things.
     if since == 5 {
         let _ = Action::add_money(enemy(), 10000);
     }
-    production_allowed(now, since);
+    production_allowed(now);
     let ty = TypeRef::new(NameKind::TechnoType, PROD_TYPE.get() as i32);
     match PQ.get() {
         0 if PQ_NO.get() >= 1 && PQ_AT.get() == 0 => {
@@ -1402,12 +1292,6 @@ fn production(now: i64, since: i64) {
             PQ.set(1);
         }
         0 if PQ_AT.get() > 0 && now > PQ_AT.get() + 1500 => {
-            prod_diag(
-                "ProductionQueued asked once",
-                PROD_TYPE.get(),
-                PQ_NO.get(),
-                0,
-            );
             PQ.set(DONE);
         }
         1 => {
@@ -1416,12 +1300,6 @@ fn production(now: i64, since: i64) {
                 mark("movement.ProductionQueued");
                 PQ.set(DONE);
             } else if now > PQ_AT.get() + 2000 {
-                prod_diag(
-                    "ProductionQueued allowed, count",
-                    PROD_TYPE.get(),
-                    PQ_COUNT.get(),
-                    count,
-                );
                 PQ.set(DONE);
             }
         }
@@ -1434,30 +1312,13 @@ fn production(now: i64, since: i64) {
 }
 
 /// `ProductionAllowed` on the type the computer's factories have started
-/// at least twice (not the one `ProductionQueued` is refusing): forbidden
-/// for 300 frames, while its native answer says the house could build it,
-/// no start of it may be asked; allowed back, one more start must come.
-fn production_allowed(now: i64, since: i64) {
-    if since == 5900 && PA.get() != DONE {
-        let best = (0..STARTS.len())
-            .map(|s| STARTS[s].get())
-            .max()
-            .unwrap_or(0);
-        let mut line = Line::new();
-        line.text("movement diag ProductionAllowed at the end: state ")
-            .num(PA.get())
-            .text(" type ")
-            .num(PA_TYPE.get())
-            .text(" most starts ")
-            .num(best)
-            .text(" forbid asks ")
-            .num(PA_NO.get())
-            .text(" native yes ")
-            .num(PA_NATIVE.get())
-            .text(" allow asks ")
-            .num(PA_YES.get());
-        line.log();
-    }
+/// at least twice (not the one `ProductionQueued` is refusing): while it
+/// is forbidden and its native answer says the house could build it, no
+/// start of it may be asked (a start is a `bench_fail`), and within the
+/// window (at least 300 frames, at most 1200) the factories must start
+/// another bound type, which shows they were busy and skipped the
+/// forbidden one. Then it is allowed back (answered 1 again).
+fn production_allowed(now: i64) {
     let slot = PA_SLOT.get() as usize;
     match PA.get() {
         0 => {
@@ -1482,50 +1343,31 @@ fn production_allowed(now: i64, since: i64) {
                     .map_or(0, |t| t.0),
             );
             PA_BASE.set(STARTS[best].get());
+            PA_OTHERS.set(total_starts() - STARTS[best].get());
             PA_AT.set(now);
             PA.set(1);
         }
-        1 if now >= PA_AT.get() + 300 => {
-            let during = STARTS[slot].get() - PA_BASE.get();
-            if during > 0 {
-                prod_diag(
-                    "ProductionAllowed forbidden, starts",
-                    PA_TYPE.get(),
-                    PA_NO.get(),
-                    during,
-                );
+        1 => {
+            if STARTS[slot].get() > PA_BASE.get() {
                 bench_fail(
                     "movement.ProductionAllowed",
                     "the factory started a forbidden type",
                 );
                 PA.set(DONE);
-            } else if PA_NO.get() >= 1 && PA_NATIVE.get() >= 1 {
-                PA_BASE.set(STARTS[slot].get());
-                PA_AT.set(now);
+            } else if now >= PA_AT.get() + 300
+                && total_starts() - STARTS[slot].get() > PA_OTHERS.get()
+                && PA_NO.get() >= 1
+                && PA_NATIVE.get() >= 1
+            {
+                // The factories were busy and skipped the forbidden type.
                 PA.set(2);
-            } else {
-                prod_diag(
-                    "ProductionAllowed forbid asks, native",
-                    PA_TYPE.get(),
-                    PA_NO.get(),
-                    PA_NATIVE.get(),
-                );
+            } else if now > PA_AT.get() + 1200 {
                 PA.set(DONE);
             }
         }
-        2 => {
-            if PA_YES.get() >= 1 && STARTS[slot].get() > PA_BASE.get() {
-                mark("movement.ProductionAllowed");
-                PA.set(DONE);
-            } else if now > PA_AT.get() + 2500 {
-                prod_diag(
-                    "ProductionAllowed allowed, asks",
-                    PA_TYPE.get(),
-                    PA_YES.get(),
-                    0,
-                );
-                PA.set(DONE);
-            }
+        2 if PA_YES.get() >= 1 => {
+            mark("movement.ProductionAllowed");
+            PA.set(DONE);
         }
         DONE => disable(&TR_PA),
         _ => {}
@@ -1576,7 +1418,7 @@ fn decide_production_queued(mut d: ProductionQueuedDecision) {
     }
 }
 
-/// `OrderRefused` (global): the command and deploy checks above.
+/// `OrderRefused` (global): the command check above.
 fn order_refused(record: &EventRecord) {
     if record.subject == U_CMD.get()
         && record.subject != NO_HANDLE
@@ -1587,13 +1429,5 @@ fn order_refused(record: &EventRecord) {
     {
         CA.set(2);
         return;
-    }
-    if record.subject != NO_HANDLE && record.subject == U_DEPLOY.get() {
-        let mut line = Line::new();
-        line.text("movement diag DeployAllowed order not carried out, reason ")
-            .num(record.value2)
-            .text(", deployer ")
-            .text(deployer_name());
-        line.log();
     }
 }
