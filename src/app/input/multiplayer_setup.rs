@@ -635,7 +635,12 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     // sends the line.
     #[cfg(target_os = "android")]
     if pressed
-        && crate::app::frontend::skirmish_shell_render::room_chat_send_rect(layout.chat, layout.chat_log, layout.page.scale).contains(x, y)
+        && crate::app::frontend::skirmish_shell_render::room_chat_send_rect(
+            layout.chat,
+            layout.chat_log,
+            layout.page.scale,
+        )
+        .contains(x, y)
     {
         key_press(state, Some(winit::keyboard::KeyCode::Enter), None);
         return;

@@ -1294,7 +1294,8 @@ pub(crate) fn lane_contains_window_px(state: &AppState, px: i32, py: i32) -> boo
     px >= lx && px < lx + lw && py >= ly && py < ly + lh
 }
 
-/// The open chat edit's text and caret, for seeding Android's input method.
+/// Android: the open chat edit's text and caret, for seeding the input method.
+#[cfg(target_os = "android")]
 pub(crate) fn ime_edit_state(state: &AppState) -> Option<(String, usize)> {
     state
         .match_state

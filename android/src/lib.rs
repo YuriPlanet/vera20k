@@ -460,11 +460,6 @@ fn android_main(app: AndroidApp) {
         set_state: ime_set_state,
         set_secret: ime_set_secret,
     });
-    // The battle view fills the window, so its messages need to know what the
-    // screen's corner and cutout hide.
-    vera20k::util::display_insets::install(vera20k::util::display_insets::Hooks {
-        insets: display_insets,
-    });
     // Android starts every process in "/" with no writable home. Hand the app's
     // private folder to the engine before anything opens a file: it becomes
     // both the working directory and the settings folder, so logs, config.toml,
@@ -555,7 +550,7 @@ fn claim_event_loop() -> bool {
     CLAIMED.set(()).is_ok()
 }
 
-use std::ffi::{c_char, c_int, c_void};
+use std::ffi::{c_int, c_void};
 
 unsafe extern "C" {
     fn __real_pthread_create(
@@ -594,4 +589,3 @@ pub unsafe extern "C" fn __wrap_pthread_create(
         __real_pthread_create(thread, attr_ptr, start_routine, arg)
     }
 }
-

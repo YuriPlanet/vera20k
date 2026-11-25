@@ -3,7 +3,7 @@ name = "vera20k-android"
 version = "0.4.2"
 edition = "2024"
 build = "build.rs"
-description = "Android NativeActivity entry point for the VERA20k client"
+description = "Android GameActivity entry point for the VERA20k client"
 publish = false
 
 # A cdylib: Android loads libvera20k_android.so and calls `android_main`.

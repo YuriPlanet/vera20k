@@ -2243,9 +2243,7 @@ impl ApplicationHandler for App {
             };
             // Android's input method commits text without waking winit
             // (winit#4673), so keep polling while its keyboard is up.
-            let flow = if cfg!(target_os = "android")
-                && crate::app::input::ime::keyboard_active(state)
-            {
+            let flow = if crate::app::input::ime::keyboard_active(state) {
                 ControlFlow::Poll
             } else {
                 wake.map_or(ControlFlow::Wait, ControlFlow::WaitUntil)

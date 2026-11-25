@@ -78,13 +78,13 @@ pub(crate) fn open(wol: Option<&WolVisit>) -> bool {
     top(wol).is_some()
 }
 
-/// The open dialog that takes the input, `0xCF` first.
-/// The dialog whose edits take keys, for `app::input::ime::gui_armed`.
+/// Android: the dialog whose edits take keys, for `app::input::ime::gui_armed`.
 #[cfg(target_os = "android")]
 pub(crate) fn armed_dialog(wol: Option<&WolVisit>) -> Option<u16> {
     top(wol).map(|dialog| dialog.0)
 }
 
+/// The open dialog that takes the input, `0xCF` first.
 fn top(wol: Option<&WolVisit>) -> Option<DialogResourceId> {
     if page_dialog(wol).is_some() {
         Some(PAGE_DIALOG)

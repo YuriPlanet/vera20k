@@ -241,9 +241,8 @@ libc = "0.2"
 # The client crate also builds for Android, where winit refuses to compile
 # without a platform backend feature; the desktop features above stay in the
 # unconditional table, and winit gates their crates by target internally, so
-# this only adds the Android backend. `android-game-activity` (winit's other
-# Android backend, which carries text input) replaces this feature if P6 picks
-# GameActivity over NativeActivity.
+# this only adds the Android backend: `android-game-activity`, whose
+# GameActivity carries the platform's text input (docs/android.md).
 [target.'cfg(target_os = "android")'.dependencies]
 winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "android-game-activity"] }
 

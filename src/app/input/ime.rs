@@ -14,11 +14,14 @@
 //! paints the open composition (`0x00777EA0`) at its caret (`0x00623880`).
 //!
 //! VERA20k takes the composition and the finished text from winit's `Ime`
-//! events, and asks for an input method only while an edit takes keys: the
-//! in-game line, and on Android the focused `Edit` of a GUI page (the LAN
-//! lobby's chat and name box, the setup room's chat, the WOL pages and lobby,
-//! the skirmish player name, and Choose Map's search line). Finished text goes
-//! through each screen's own text path, as WM_IME_CHAR does.
+//! events, and asks for an input method only while an edit takes keys:
+//! the in-game line, the WOL lobby (`0x10F`), the WOL game room and LAN setup
+//! (C2/C9, BC/BD), the LAN lobby (BB), Choose Map's search line, and VERA's
+//! converted-save name edit. On Android they are the in-game line and the
+//! focused `Edit` of a GUI page (the LAN lobby's chat and name box, the setup
+//! room's chat, the WOL pages and lobby, the skirmish player name, and Choose
+//! Map's search line). Finished text goes through each screen's own text
+//! path, as WM_IME_CHAR does.
 //!
 //! Player-name edits take no input method: NewEdit `0x00614B30` drops units at
 //! or above 0x100 from them (`0x00615226..0x0061527A`, the byte-only filter),
@@ -26,9 +29,8 @@
 //! input-method character such as Chinese.
 //!
 //! RESIDUAL: native's other NewEdits (login, page, buddy, saved-game
-//! descriptions) also take IME input; on the desktop they keep plain key text,
-//! because winit's `Ime` events reach only the in-game line here. In battle,
-//! native leaves the composition to the system's default IME window
+//! descriptions) also take IME input; on the desktop they keep plain key text.
+//! In battle, native leaves the composition to the system's default IME window
 //! (OwnerDraw__ServiceIMEMessage `0x00778030` passes the composition messages
 //! to DefWindowProc). winit hides that window, so VERA20k draws the
 //! composition after the typed text in the NewEdit composition colour.
@@ -53,8 +55,21 @@ pub(crate) const COMPOSITION_RGB: [u8; 3] = [0x9F, 0x9F, 0x00];
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ImeTarget {
     InGameChat,
+    #[cfg(not(target_os = "android"))]
+    WolLobbyEdit,
+    #[cfg(not(target_os = "android"))]
+    SetupChat,
+    #[cfg(not(target_os = "android"))]
+    LanLobbyChat,
+    #[cfg(not(target_os = "android"))]
+    ChooseMapSearch,
+    #[cfg(not(target_os = "android"))]
+    MainMenuConversionName,
+    #[cfg(not(target_os = "android"))]
+    InGameConversionName,
     /// Android only: the focused `Edit` of a GUI page, whichever screen owns it
-    /// ([`gui_edit`]); the text goes to that screen's own input path.
+    /// ([`gui_edit`]); the text goes to that screen's own input path. It takes
+    /// the place of the desktop's per-screen targets.
     #[cfg(target_os = "android")]
     Gui,
 }
@@ -128,6 +143,101 @@ fn target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
     {
         return None;
     }
+    edit_target(state)
+}
+
+/// The desktop's and the browser's edits that take an input method.
+#[cfg(not(target_os = "android"))]
+fn edit_target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
+    use crate::app::input::precedence::{InputLayer, ScreenPage};
+    use crate::app::{App, GameScreen};
+    use crate::render::shell_text::{ScissorRect, TextRect};
+    use crate::ui::pause_menu::InGameMenuState;
+    // The conversion edit owns the keys when a battlefield chat edit is
+    // underneath it; a prompt over the name keeps the IME closed.
+    let saved_browser = match state.frontend.screen {
+        GameScreen::MainMenu => state.frontend.load_saved_game.as_ref(),
+        GameScreen::InGame => state
+            .match_state
+            .match_presentation
+            .saved_game_browser
+            .as_ref(),
+        _ => None,
+    };
+    if let Some(browser) = saved_browser.filter(|browser| browser.is_naming_conversion()) {
+        if !browser.edit().focused {
+            return None;
+        }
+        let (target, layout) = match crate::app::input::precedence::input_layer(state) {
+            InputLayer::Screen(ScreenPage::LoadSavedGame) => (
+                ImeTarget::MainMenuConversionName,
+                crate::app::frontend::shell_layout::load_saved_game_layout(
+                    &state.renderer.gpu,
+                    &state.frontend,
+                )
+                .browser,
+            ),
+            InputLayer::Screen(ScreenPage::InGameShell(InGameMenuState::SavedGame(_))) => (
+                ImeTarget::InGameConversionName,
+                App::saved_game_layout(state, browser.mode)?,
+            ),
+            _ => return None,
+        };
+        let rect = layout.name_edit?;
+        // The launcher is in window pixels. An active-game shell's edit
+        // shares the text's sidebar and match zoom before it reaches them.
+        let rect = match crate::app::presentation::window_ui::shell_raster(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state.match_presentation,
+            &state.persistence,
+            true,
+        ) {
+            Some(raster) => {
+                let at = ScissorRect::of(TextRect::of(rect), raster);
+                RectPx::new(at.x as i32, at.y as i32, at.w as i32, at.h as i32)
+            }
+            None => rect,
+        };
+        return Some((target, rect));
+    }
+    [
+        (
+            ImeTarget::InGameChat,
+            crate::app::input::messages::ime_edit_rect(
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state.match_presentation,
+            ),
+        ),
+        (
+            ImeTarget::LanLobbyChat,
+            crate::app::shell_lan::ime_chat_rect(state),
+        ),
+        (
+            ImeTarget::SetupChat,
+            crate::app::input::multiplayer_setup::ime_chat_rect(state),
+        ),
+        (
+            ImeTarget::WolLobbyEdit,
+            crate::app::shell_wol::lobby::ime_edit_rect(state),
+        ),
+        (
+            ImeTarget::ChooseMapSearch,
+            crate::app::App::choose_map_search_ime_rect(state),
+        ),
+    ]
+    .into_iter()
+    .find_map(|(target, rect)| rect.map(|rect| (target, rect)))
+}
+
+/// Android: the in-game line, else the focused `Edit` of a GUI page. The
+/// keyboard shows for a tapped edit only: the pages focus their edits when
+/// they open, and a tap arms the dialog the player means
+/// (`ui::shell::controller`, `util::android_ime`).
+#[cfg(target_os = "android")]
+fn edit_target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
     if let Some(rect) = crate::app::input::messages::ime_edit_rect(
         &state.renderer,
         &state.frontend.screen,
@@ -135,10 +245,6 @@ fn target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
     ) {
         return Some((ImeTarget::InGameChat, rect));
     }
-    // Android shows the keyboard for a tapped edit only: the pages focus their
-    // edits when they open, and a tap arms the dialog the player means
-    // (`ui::shell::controller`, `util::android_ime`).
-    #[cfg(target_os = "android")]
     if let Some((screen, edit)) = gui_edit(state)
         && (!screen.needs_tap() || gui_armed(state))
     {
@@ -195,6 +301,7 @@ pub(crate) fn sync(state: &mut AppState) {
 
 /// Android: whether the soft keyboard is up, which keeps the frame loop polling
 /// (the input method's commits do not wake winit, winit#4673).
+#[cfg(target_os = "android")]
 pub(crate) fn keyboard_active(state: &AppState) -> bool {
     state.platform.ime.allowed
 }
@@ -281,13 +388,25 @@ fn gui_screen(state: &AppState) -> Option<(GuiScreen, &vera20k_gui::Gui)> {
         InputLayer::Screen(ScreenPage::Skirmish)
             if state.frontend.skirmish_shell_state.setups_browser.is_some() =>
         {
-            let browser = state.frontend.skirmish_shell_state.setups_browser.as_ref()?;
+            let browser = state
+                .frontend
+                .skirmish_shell_state
+                .setups_browser
+                .as_ref()?;
             Some((GuiScreen::Setups, browser.ime_ui().gui()))
         }
         InputLayer::Screen(ScreenPage::Skirmish)
-            if state.frontend.skirmish_shell_state.saved_seed_browser.is_some() =>
+            if state
+                .frontend
+                .skirmish_shell_state
+                .saved_seed_browser
+                .is_some() =>
         {
-            let browser = state.frontend.skirmish_shell_state.saved_seed_browser.as_ref()?;
+            let browser = state
+                .frontend
+                .skirmish_shell_state
+                .saved_seed_browser
+                .as_ref()?;
             Some((GuiScreen::Setups, browser.ime_ui().gui()))
         }
         InputLayer::Screen(ScreenPage::Skirmish) => Some((GuiScreen::Skirmish, shell.gui())),
@@ -364,7 +483,12 @@ fn gui_armed(state: &AppState) -> bool {
             .setups_browser
             .as_ref()
             .map(|browser| browser.ime_ui())
-            .or_else(|| shell.saved_seed_browser.as_ref().map(|browser| browser.ime_ui())),
+            .or_else(|| {
+                shell
+                    .saved_seed_browser
+                    .as_ref()
+                    .map(|browser| browser.ime_ui())
+            }),
         _ => None,
     });
     let armed = |id: u16| crate::util::android_ime::armed(id);
@@ -408,9 +532,7 @@ fn gui_key(state: &mut AppState, code: Option<winit::keyboard::KeyCode>, text: O
     };
     match screen {
         GuiScreen::LanLobby => crate::app::shell_lan::key_press(state, code, text),
-        GuiScreen::SetupRoom => {
-            crate::app::input::multiplayer_setup::key_press(state, code, text)
-        }
+        GuiScreen::SetupRoom => crate::app::input::multiplayer_setup::key_press(state, code, text),
         // The WOL pages route the key to the top page's own input path.
         GuiScreen::WolPages | GuiScreen::WolLobby => {
             crate::app::App::handle_wol_key(state, code, true, text)
@@ -445,9 +567,7 @@ fn gui_key(state: &mut AppState, code: Option<winit::keyboard::KeyCode>, text: O
             }
         },
         GuiScreen::InGamePage => crate::app::shell_wol::page::key_press(state, code, text),
-        GuiScreen::LoadSavedGame => {
-            crate::app::App::handle_load_saved_game_key(state, code, text)
-        }
+        GuiScreen::LoadSavedGame => crate::app::App::handle_load_saved_game_key(state, code, text),
         GuiScreen::InGameSavedGame => crate::app::App::saved_game_key(state, code, text),
     }
 }
@@ -608,8 +728,30 @@ pub(crate) fn event(state: &mut AppState, event: Ime) {
 fn commit(state: &mut AppState, text: &str) {
     match target(state).map(|(target, _)| target) {
         Some(ImeTarget::InGameChat) => crate::app::input::chat::commit_text(state, text),
+        #[cfg(not(target_os = "android"))]
+        Some(ImeTarget::LanLobbyChat) => crate::app::shell_lan::key_press(state, None, Some(text)),
+        #[cfg(not(target_os = "android"))]
+        Some(ImeTarget::SetupChat) => {
+            crate::app::input::multiplayer_setup::key_press(state, None, Some(text))
+        }
+        #[cfg(not(target_os = "android"))]
+        Some(ImeTarget::WolLobbyEdit) => {
+            crate::app::shell_wol::lobby::key_press(state, None, Some(text))
+        }
+        #[cfg(not(target_os = "android"))]
+        Some(ImeTarget::ChooseMapSearch) => {
+            crate::app::App::choose_map_search_text(state, text);
+        }
+        #[cfg(not(target_os = "android"))]
+        Some(ImeTarget::MainMenuConversionName) => {
+            crate::app::App::handle_load_saved_game_key(state, None, Some(text));
+        }
+        #[cfg(not(target_os = "android"))]
+        Some(ImeTarget::InGameConversionName) => {
+            crate::app::App::saved_game_key(state, None, Some(text))
+        }
         #[cfg(target_os = "android")]
         Some(ImeTarget::Gui) => gui_key(state, None, Some(text)),
-        _ => {}
+        None => {}
     }
 }

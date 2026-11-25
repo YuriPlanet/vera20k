@@ -1963,33 +1963,10 @@ mod wol_lobby;
 mod wol_login;
 mod wol_page;
 mod wol_quick_match;
-/// The send key's rect at the right end of a chat box: a 22 px square flush
-/// with the box's right edge, matching the online room's key.
-pub(crate) fn chat_send_rect(
-    chat: crate::ui::shell::geom::RectPx,
-    panel_left: i32,
-    scale: crate::ui::shell::geom::ShellScale,
-) -> crate::ui::shell::geom::RectPx {
-    let size = ((22.0 * scale.factor()).round() as i32).clamp(8, 64);
-    // Centre the tile in the gap between the box's right edge and the side
-    // panel, as the internet lobby's emote button sits.
-    let gap = (panel_left - (chat.x + chat.w)).max(size + 2);
-    let left = chat.x + chat.w + (gap - size) / 2;
-    crate::ui::shell::geom::RectPx::new(left, chat.y + (chat.h - size) / 2, size, size)
-}
-
-/// The chat edit's rect: the send key sits beside the box, so the edit keeps
-/// its full length.
-pub(crate) fn chat_text_rect(
-    chat: crate::ui::shell::geom::RectPx,
-    _panel_left: i32,
-    _scale: crate::ui::shell::geom::ShellScale,
-) -> crate::ui::shell::geom::RectPx {
-    chat
-}
-
-/// The room chat edit's rect, sized as the online room's: the log's width
-/// less the send tile and its gap (`26 + 6` authored px).
+/// Android: the room chat edit's rect beside VERA's send key, sized as the
+/// online room's: the log's width less the send tile and its gap (`26 + 6`
+/// authored px).
+#[cfg(target_os = "android")]
 pub(crate) fn room_chat_text_rect(
     chat: crate::ui::shell::geom::RectPx,
     log: crate::ui::shell::geom::RectPx,
@@ -2000,8 +1977,10 @@ pub(crate) fn room_chat_text_rect(
     crate::ui::shell::geom::RectPx::new(chat.x, chat.y, (log.w - tile - gap).max(1), chat.h)
 }
 
-/// The room's send tile, at the online room's emote slot: just right of the
-/// box, one pixel above it and `26 x 23` authored px.
+/// Android: the room's send tile, at the online room's emote slot: just
+/// right of the box, one pixel above it and `26 x 23` authored px. A phone has
+/// no Enter key, so a press on it sends the line.
+#[cfg(target_os = "android")]
 pub(crate) fn room_chat_send_rect(
     chat: crate::ui::shell::geom::RectPx,
     log: crate::ui::shell::geom::RectPx,
@@ -2017,6 +1996,35 @@ pub(crate) fn room_chat_send_rect(
         tile_w,
         tile_h,
     )
+}
+
+/// Android: VERA's send key in `rect`, drawn with the online room's emote
+/// button art (`0x3ED`'s released image, as `Picture::Emote` draws it).
+#[cfg(target_os = "android")]
+fn push_chat_send_key(
+    controls: &mut Vec<crate::render::batch::SpriteInstance>,
+    atlas: &crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas,
+    scale: crate::ui::shell::geom::ShellScale,
+    rect: crate::ui::shell::geom::RectPx,
+) {
+    let (Some(mut entry), _) = atlas.wol_emote_images() else {
+        return;
+    };
+    let [aw, ah] = scale.art_size(entry.pixel_size[0], entry.pixel_size[1]);
+    if aw <= 0.0 || ah <= 0.0 {
+        return;
+    }
+    let draw = [aw.min(rect.w as f32), ah.min(rect.h as f32)];
+    entry.uv_size[0] *= draw[0] / aw;
+    entry.uv_size[1] *= draw[1] / ah;
+    crate::render::shell_paint::push_entry_sized(
+        controls,
+        entry,
+        rect.x as f32,
+        rect.y as f32,
+        draw,
+        SHELL_CONTROL_DEPTH,
+    );
 }
 
 pub(crate) use lan_lobby::render_lan_lobby;

@@ -38,8 +38,11 @@ import java.io.IOException
  * `ContentResolver` can read it.
  */
 class VeraActivity : GameActivity() {
-    /** How far the screen's top-left corner hides the game, in screen pixels. */
+    /** How far the screen's top-left corner hides the game, in screen pixels.
+     * The UI thread writes them and the game thread reads them. */
+    @Volatile
     private var displayInsetLeft = 0
+    @Volatile
     private var displayInsetTop = 0
 
     /** The cutout and corner radius at the window's top-left (`display_insets`). */

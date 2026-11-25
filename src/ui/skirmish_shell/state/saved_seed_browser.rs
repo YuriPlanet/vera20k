@@ -282,8 +282,6 @@ impl<I> SavedSeedBrowserState<I> {
             .is_some_and(|node| Some(node) == self.node(id))
     }
 
-    /// The description edit as NewEdit paints it: the first shown unit is
-    /// its `Top`, the focus the browser's own.
     /// Android: the browser's own widget tree, whose focused `Edit` takes the
     /// platform's text (`app::input::ime`).
     #[cfg(target_os = "android")]
@@ -291,6 +289,8 @@ impl<I> SavedSeedBrowserState<I> {
         &self.ui
     }
 
+    /// The description edit as NewEdit paints it: the first shown unit is
+    /// its `Top`, the focus the browser's own.
     pub fn edit(&self) -> NewEdit {
         let edit = self
             .node(EDIT)

@@ -326,20 +326,14 @@ pub(crate) fn right_button(state: &mut AppState) {
     }
 }
 
-/// The chat branch `0x0055E519..0x0055E5B4`: the prefix is `TXT_FROM` with
-/// the player's House UI name, in the player's colour; overflow is on and
-/// no sound plays. The cursor character 0 draws no caret.
-/// Android: when the lane's long press opened the edit, so the right click it
-/// came with is dropped. Thread-local, like the rest of the input state.
 #[cfg(target_os = "android")]
 thread_local! {
+    /// Android: when the lane's long press opened the edit, so the right click
+    /// it came with is dropped. Thread-local, like the rest of the input state.
     static TOUCH_OPENED_AT: std::cell::RefCell<Option<crate::util::time::Instant>> =
         const { std::cell::RefCell::new(None) };
 }
 
-/// The chat branch `0x0055E519..0x0055E5B4`: the prefix is `TXT_FROM` with
-/// the player's House UI name, in the player's colour; overflow is on and
-/// no sound plays. The cursor character 0 draws no caret.
 /// Android: the message lane's long press opens the chat as Enter does: the
 /// Skirmish target in an offline skirmish (which also cancels a pending spawn
 /// order), the listeners otherwise. Returns whether the edit opened.
@@ -382,6 +376,9 @@ pub(crate) fn send_touch(state: &mut AppState) -> bool {
     true
 }
 
+/// The chat branch `0x0055E519..0x0055E5B4`: the prefix is `TXT_FROM` with
+/// the player's House UI name, in the player's colour; overflow is on and
+/// no sound plays. The cursor character 0 draws no caret.
 fn open_edit(state: &mut AppState, target: ChatTarget) -> bool {
     let Some(local) = local_house(&state.match_state.sim_runtime) else {
         return false;

@@ -179,7 +179,7 @@ pub fn edit_of(old: &str, new: &str) -> (usize, String) {
     (removed, inserted)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod tests {
     use super::edit_of;
 
@@ -201,7 +201,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_util))]
 mod composition_tests {
     use super::split_composition;
 

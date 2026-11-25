@@ -183,20 +183,6 @@ pub(crate) fn render_lan_lobby(
             SHELL_CONTROL_DEPTH,
         );
     }
-    // TEMP: the LAN lobby's chat column geometry.
-    #[cfg(target_os = "android")]
-    {
-        use std::sync::atomic::{AtomicU64, Ordering};
-        static N: AtomicU64 = AtomicU64::new(0);
-        if N.fetch_add(1, Ordering::Relaxed) % 120 == 0 {
-            log::info!(
-                "CHATGEOM lan chat={:?} log={:?} players={:?}",
-                layout.rect(crate::ui::lan_shell::CHAT),
-                layout.rect(crate::ui::lan_shell::CHAT_LOG),
-                layout.rect(crate::ui::lan_shell::PLAYERS),
-            );
-        }
-    }
     let mut controls = Vec::new();
     let mut texts = Vec::new();
     let mut overlay = ShellFrameOverlay::default();
@@ -327,36 +313,12 @@ pub(crate) fn render_lan_lobby(
     if runtime.creating {
         paint_create_box(state, atlas, &mut overlay);
     }
-    // VERA's send key beside the chat box: the emote button's own square art
-    // (same PCX and drawing path as `Picture::Emote`); a press sends `Enter`.
-    // The host draws it, so it has to go with the page's slide: otherwise it
-    // hangs over the next menu's entrance.
-    if !leaving
-        && let Some(rect) = layout.chat_send()
-    {
-        let filled = !state
-            .frontend
-            .shell_controller
-            .text(PAGE.dialog, crate::ui::lan_shell::CHAT)
-            .trim()
-            .is_empty();
-        if let (Some(released), _) = atlas.wol_emote_images() {
-            let mut entry = released;
-            let [aw, ah] = scale.art_size(entry.pixel_size[0], entry.pixel_size[1]);
-            if aw > 0.0 && ah > 0.0 {
-                let draw = [aw.min(rect.w as f32), ah.min(rect.h as f32)];
-                entry.uv_size[0] *= draw[0] / aw;
-                entry.uv_size[1] *= draw[1] / ah;
-                crate::render::shell_paint::push_entry_sized(
-                    &mut overlay.controls,
-                    entry,
-                    rect.x as f32,
-                    rect.y as f32,
-                    draw,
-                    SHELL_CONTROL_DEPTH,
-                );
-            }
-        }
+    // Android: VERA's send key beside the chat box. The host draws it, so it
+    // has to go with the page's slide: otherwise it hangs over the next menu's
+    // entrance.
+    #[cfg(target_os = "android")]
+    if !leaving && let Some(rect) = layout.chat_send() {
+        super::push_chat_send_key(&mut overlay.controls, atlas, scale, rect);
     }
     in_game_shell::render_shell_frame(
         state,
