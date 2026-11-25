@@ -64,10 +64,20 @@ impl Simulation {
                 return;
             }
         };
-        self.overlay_grid
-            .as_mut()
+        // A Recalc that leaves the cell's pair as it is takes neither the
+        // overlay grid nor, for a current cell, the navigation caches for
+        // writing (`util::forked`).
+        if !self
+            .overlay_grid
+            .as_ref()
             .unwrap()
-            .write_finalized_map_cell(coord.0, coord.1, outcome.finalized);
+            .holds_finalized_map_cell(coord.0, coord.1, outcome.finalized)
+        {
+            self.overlay_grid
+                .as_mut()
+                .unwrap()
+                .write_finalized_map_cell(coord.0, coord.1, outcome.finalized);
+        }
         if let Err(error) = (NavigationCaches {
             zones: &mut self.zone_grid,
             path: &mut self.path_grid,
