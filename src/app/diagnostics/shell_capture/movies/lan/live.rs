@@ -1817,7 +1817,7 @@ fn click_main_menu(
     state: &mut AppState,
     control: crate::ui::main_menu_shell::MainMenuControlId,
 ) -> Result<()> {
-    let layout = crate::app::frontend::shell_layout::main_menu_layout(state);
+    let layout = crate::app::frontend::shell_layout::main_menu_layout(&state.renderer.gpu);
     let rect = layout
         .buttons
         .iter()

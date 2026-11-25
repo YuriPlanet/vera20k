@@ -166,7 +166,10 @@ fn finish(state: &mut AppState, save: bool) {
     presentation.dialog_ui.close(EDIT_DIALOG);
     let changed = presentation.player_layout_text != edit.before;
     if edit.leave(&mut presentation.player_layout_text, save) {
-        crate::app::presentation::player_layout::write(state);
+        crate::app::presentation::player_layout::write(
+            &state.platform,
+            &state.match_state.match_presentation,
+        );
     } else if changed {
         // The parts go back where the mode found them.
         relayout(state);
@@ -232,9 +235,15 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
     // has it, the map picture as big as the layout makes it, a panel as big
     // as its picture. A part after its panel lies over it, so it is grabbed
     // first.
-    let layout = sidebar_render::current_sidebar_layout(state);
+    let layout = sidebar_render::current_sidebar_layout(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let atlas = sidebar_render::current_sidebar_chrome(state);
-    let view = sidebar_render::current_sidebar_view(state);
+    let view = sidebar_render::current_sidebar_view(&state.match_state.match_presentation);
     let size = |part, key| {
         atlas
             .and_then(|atlas| atlas.art(part, key, 0))
@@ -272,7 +281,7 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
 
     // The battlefield's pieces have a box each, most often the whole
     // battlefield: a handle shows where the piece sits in it.
-    let field = field_parts::layout(state);
+    let field = field_parts::layout(&state.match_state.match_presentation);
     for (part, part_box) in [
         (FieldPart::Messages, field.messages),
         (FieldPart::Timers, field.timers),
@@ -309,7 +318,7 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
     // What the layout added: buttons, texts, rows and columns as a whole,
     // and grids of build pictures.
     let placed = layout_parts::placed(state);
-    let view = sidebar_render::current_sidebar_view(state);
+    let view = sidebar_render::current_sidebar_view(&state.match_state.match_presentation);
     for (index, part) in presentation.added_parts.iter().enumerate() {
         let part_scale = match part.holder {
             Holder::Side => scale,
@@ -321,9 +330,16 @@ pub(crate) fn targets(state: &AppState) -> Vec<Target> {
             AddedKind::CameoGrid { .. } => view
                 .and_then(|view| view.added_grids.iter().find(|grid| grid.part == index))
                 .map(|grid| to_frame(grid.rect.x, grid.rect.y, grid.rect.w, grid.rect.h)),
-            _ => placed
-                .get(index)
-                .map(|placed| layout_parts::click_rect(state, placed)),
+            _ => placed.get(index).map(|placed| {
+                layout_parts::click_rect(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend.screen,
+                    &state.match_state.match_presentation,
+                    &state.persistence,
+                    placed,
+                )
+            }),
         };
         let Some(rect) = rect.filter(|rect| rect[2] > 0 && rect[3] > 0) else {
             continue;
@@ -388,7 +404,11 @@ fn sync_nodes(state: &mut AppState) -> Vec<Target> {
         return targets;
     };
     let gui = ui.gui_mut();
-    let old: Vec<NodeId> = gui.tree().children(root).map(<[_]>::to_vec).unwrap_or_default();
+    let old: Vec<NodeId> = gui
+        .tree()
+        .children(root)
+        .map(<[_]>::to_vec)
+        .unwrap_or_default();
     for node in old {
         let _ = gui.remove(node);
     }
@@ -397,7 +417,11 @@ fn sync_nodes(state: &mut AppState) -> Vec<Target> {
             return;
         };
         let _ = gui.set(node, Prop::Id, Value::Int(id));
-        let _ = gui.set(node, Prop::Rect, Value::Rect(vera20k_gui::Rect::new(x, y, w, h)));
+        let _ = gui.set(
+            node,
+            Prop::Rect,
+            Value::Rect(vera20k_gui::Rect::new(x, y, w, h)),
+        );
         if draggable {
             // A press grabs the part; it follows from the first move.
             let _ = gui.set(node, Prop::Draggable, Value::Bool(true));
@@ -571,7 +595,11 @@ fn pieces(state: &AppState) -> Vec<EditPiece> {
     };
     // The side's text colour as its layout gives it.
     let tint = crate::render::sidebar_text::native_outline_from(
-        state.match_state.match_presentation.sidebar_layout_spec.side_text,
+        state
+            .match_state
+            .match_presentation
+            .sidebar_layout_spec
+            .side_text,
     );
     let font = &state.renderer.bit_font;
     let grabbed = edit.grab.as_ref().map(|grab| grab.name.as_str());

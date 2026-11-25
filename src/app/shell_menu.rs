@@ -105,7 +105,7 @@ impl App {
     /// button's new state, `None` a move. True when an open list took a press,
     /// as a click outside the list only closes it.
     pub(super) fn shell_menu_pointer(state: &mut AppState, pressed: Option<bool>) -> bool {
-        let size = shell_layout::shell_screen_size(state);
+        let size = shell_layout::shell_screen_size(&state.renderer.gpu);
         let Some(settings) = state
             .frontend
             .shell_message_box

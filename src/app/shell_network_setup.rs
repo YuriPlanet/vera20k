@@ -40,8 +40,8 @@ pub(crate) use wol::{
 use super::{App, AppState};
 use crate::app::frontend::shell_transition;
 use crate::app::frontend::skirmish_session::SetupProfile;
-use crate::app::match_runtime::session::{MatchSession, NetworkVacancy};
 use crate::app::match_runtime::session::SessionMode;
+use crate::app::match_runtime::session::{MatchSession, NetworkVacancy};
 use crate::skirmish_launch::{SkirmishHumanSlot, SkirmishLaunchSession};
 use crate::ui::multiplayer_setup::{MultiplayerSetupState, SetupDialog, SetupFlavor};
 use crate::ui::wol_chat::WolChatLine;
@@ -1233,7 +1233,7 @@ fn show_dialog(state: &mut AppState, dialog: SetupDialog) {
     App::show_shell_page(state, route, dialog.page().dialog);
     state.frontend.skirmish_shell_state.choose_map_modal = None;
     state.frontend.skirmish_preview_texture = None;
-    shell_transition::invalidate_main_menu_dialog_instance(state);
+    shell_transition::invalidate_main_menu_dialog_instance(&mut state.frontend);
     state.platform.window.request_redraw();
 }
 

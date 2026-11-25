@@ -306,8 +306,21 @@ pub(crate) fn view(state: &AppState) -> DiplomacyView {
         sim,
         rules,
         switches,
-        &HouseUiSources::from_state(state, &computer),
-        |country| crate::app::presentation::house_ui::country_display_name(state, sim, country),
+        &HouseUiSources::from_state(
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets.csf,
+            &computer,
+        ),
+        |country| {
+            crate::app::presentation::house_ui::country_display_name(
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets.csf,
+                sim,
+                country,
+            )
+        },
     );
     let paging = state.match_state.match_presentation.diplomacy_page;
     let range = paging.range(resolved.rows.len(), DIPLOMACY_ROWS);
@@ -335,7 +348,7 @@ pub(crate) fn view(state: &AppState) -> DiplomacyView {
     view.map_name = if mode.execution_topology().is_lockstep() {
         crate::app::shell_network_setup::map_display_name(state)
     } else {
-        crate::app::frontend::skirmish_shell_render::skirmish_selected_map_name(state)
+        crate::app::frontend::skirmish_shell_render::skirmish_selected_map_name(&state.frontend)
     }
     .unwrap_or_default()
     .to_string();

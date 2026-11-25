@@ -175,7 +175,11 @@ fn switch_view(state: &mut AppState, next: View) {
     // No House update reports the radar of the House now followed: its
     // housing opens or closes to that House's as a change there would.
     let available = crate::app::presentation::building_anim::local_has_radar(state);
-    crate::app::presentation::building_anim::set_local_tactical_radar(state, available);
+    crate::app::presentation::building_anim::set_local_tactical_radar(
+        &mut state.match_state,
+        &mut state.audio.sfx_player,
+        available,
+    );
     state.platform.window.request_redraw();
 }
 

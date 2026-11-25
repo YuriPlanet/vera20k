@@ -199,11 +199,14 @@ impl LanShellRuntime {
 }
 
 pub(crate) fn layout(state: &AppState) -> LanLobbyLayout {
-    shell_layout::on(state, LanLobbyLayout::new)
+    shell_layout::on(&state.renderer.gpu, LanLobbyLayout::new)
 }
 
 pub(crate) fn create_box_layout(state: &AppState) -> crate::ui::shell::modal::LanCreateGameLayout {
-    shell_layout::on(state, crate::ui::shell::modal::lan_create_game_layout_on)
+    shell_layout::on(
+        &state.renderer.gpu,
+        crate::ui::shell::modal::lan_create_game_layout_on,
+    )
 }
 
 impl App {

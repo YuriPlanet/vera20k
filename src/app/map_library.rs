@@ -204,7 +204,10 @@ pub(crate) fn empty_online_maps_text(
 
 /// An open Choose Map shows the catalog's rows as they are now.
 fn refresh_choose_map(state: &mut AppState) {
-    let layout = crate::app::frontend::shell_layout::choose_map_layout(state);
+    let layout = crate::app::frontend::shell_layout::choose_map_layout(
+        &state.renderer,
+        &state.frontend.screen,
+    );
     let frontend = &mut state.frontend;
     if let Some(modal) = frontend.skirmish_shell_state.choose_map_modal.as_mut() {
         modal.refresh(

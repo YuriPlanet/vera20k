@@ -10,8 +10,12 @@ use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
 
 pub(crate) fn layout(state: &AppState) -> CoopScoreLayout {
-    let (w, h) = shell_layout::shell_screen_size(state);
-    CoopScoreLayout::new(w as i32, h as i32, shell_layout::fills_window(state))
+    let (w, h) = shell_layout::shell_screen_size(&state.renderer.gpu);
+    CoopScoreLayout::new(
+        w as i32,
+        h as i32,
+        shell_layout::fills_window(&state.renderer.gpu),
+    )
 }
 
 /// BC6 owns the result screen while its page is open.

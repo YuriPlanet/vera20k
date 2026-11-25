@@ -118,7 +118,15 @@ pub(super) fn build_paths(
         strokes.add(&points, path.pending);
     }
     let phase = stroke_phase(wall_ms);
-    let color = |pending| stroke_rgb(state, sim, &rt.resources.rules, viewer, pending);
+    let color = |pending| {
+        stroke_rgb(
+            &state.match_state.match_presentation,
+            sim,
+            &rt.resources.rules,
+            viewer,
+            pending,
+        )
+    };
     let white = [255; 3];
     for &(from, to, _) in &strokes.lines {
         emit_solid_segment(&mut out, from, to, white, 4, view);

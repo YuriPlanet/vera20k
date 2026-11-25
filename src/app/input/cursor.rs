@@ -2212,7 +2212,10 @@ fn command_bar_arrow_hit(frame: crate::ui::sidebar::SidebarFrame, x: f32, y: f32
 /// the radar's own press drew its row: a radar press dragged onto them shows
 /// the arrow too.
 fn over_radar_top_button(state: &AppState) -> bool {
-    crate::app::presentation::sidebar_render::current_sidebar_view(state).is_some_and(|view| {
+    crate::app::presentation::sidebar_render::current_sidebar_view(
+        &state.match_state.match_presentation,
+    )
+    .is_some_and(|view| {
         top_button_hit(
             state.sidebar_frame(),
             view.top_buttons.iter().map(|button| button.rect),

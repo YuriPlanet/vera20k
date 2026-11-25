@@ -256,14 +256,16 @@ pub(crate) fn commit_prepared_load(
         .match_state
         .match_presentation
         .sidebar_projection
-        .model.restore_order(committed.details.sidebar_order);
+        .model
+        .restore_order(committed.details.sidebar_order);
 
     let owner = state.match_state.local_player_owner().map(str::to_owned);
     state
         .match_state
         .match_presentation
         .sidebar_projection
-        .model.restore_credits_counter(owner.as_deref(), committed.credits_counter);
+        .model
+        .restore_credits_counter(owner.as_deref(), committed.credits_counter);
     if let Some(owner) = owner {
         state
             .match_state
@@ -298,7 +300,13 @@ pub(crate) fn commit_prepared_load(
     // The incoming chrome owns the footer allowance; refresh its layout
     // before initializing derived geometry, including on a cold/different-side
     // load. No Power AI visit or retained-band clamp belongs in this phase.
-    let power_budget = crate::app::presentation::building_anim::power_bar_budget_px(state);
+    let power_budget = crate::app::presentation::building_anim::power_bar_budget_px(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     state
         .match_state
         .match_presentation

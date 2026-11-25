@@ -20,6 +20,8 @@
 //! - Part of the app layer — may depend on everything.
 
 use crate::app::AppState;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
 use crate::render::batch::SpriteInstance;
 use crate::rules::ruleset::RuleSet;
 use crate::ui::game_screen::GameScreen;
@@ -43,9 +45,9 @@ pub(crate) struct PlacedLine {
 
 /// `FPSCounterCommandClass::Execute` (Ares.dll `100022F0`) flips the
 /// counter. The command exists only in a game Ares plays.
-pub(crate) fn execute_fps_counter(state: &mut AppState) {
-    if state.rules().is_some_and(RuleSet::ares) {
-        let presentation = &mut state.match_state.match_presentation;
+pub(crate) fn execute_fps_counter(frontend: &FrontendState, match_state: &mut MatchState) {
+    if crate::app::state::active_rules(frontend, match_state).is_some_and(RuleSet::ares) {
+        let presentation = &mut match_state.match_presentation;
         presentation.ares_fps_counter = !presentation.ares_fps_counter;
     }
 }

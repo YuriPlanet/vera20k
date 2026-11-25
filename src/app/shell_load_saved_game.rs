@@ -22,8 +22,9 @@ impl App {
         Self::destroy_current_shell_dialog(state);
         // The error message box paints from the skirmish chrome atlas.
         let _ = Self::ensure_skirmish_shell_chrome(state);
-        let rows =
-            super::shell_saved_seeds::saved_browser_rows(&load_saved_game_layout(state).browser);
+        let rows = super::shell_saved_seeds::saved_browser_rows(
+            &load_saved_game_layout(&state.renderer.gpu, &state.frontend).browser,
+        );
         let browser = Self::open_saved_game_rows(state, SavedSeedMode::Load, rows, None);
         state.frontend.load_saved_game = Some(browser);
         // The status help is the cursor's from the first frame.
@@ -41,7 +42,7 @@ impl App {
 
     /// One pointer message on the page (`down`: `None` moves).
     fn load_saved_game_pointer(state: &mut AppState, down: Option<bool>) {
-        let layout = load_saved_game_layout(state);
+        let layout = load_saved_game_layout(&state.renderer.gpu, &state.frontend);
         let extent = (
             state.renderer.gpu.config.width,
             state.renderer.gpu.config.height,
@@ -86,7 +87,7 @@ impl App {
 
     /// Scrollbar arrow repeat (`0x0061C690`), each frame the page shows.
     pub(super) fn update_load_saved_game_scroll(state: &mut AppState) {
-        let layout = load_saved_game_layout(state);
+        let layout = load_saved_game_layout(&state.renderer.gpu, &state.frontend);
         let extent = (
             state.renderer.gpu.config.width,
             state.renderer.gpu.config.height,

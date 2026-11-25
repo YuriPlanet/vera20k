@@ -532,7 +532,7 @@ impl WolLobby {
 }
 
 pub(crate) fn layout(state: &AppState) -> WolLobbyLayout {
-    shell_layout::on(state, |w, h, scale| {
+    shell_layout::on(&state.renderer.gpu, |w, h, scale| {
         match lobby(state.frontend.wol.as_ref()) {
             Some(lobby) => lobby.ui.layout(w, h, scale),
             None => WolLobbyLayout::new(w, h, scale, &PAGE),
@@ -543,7 +543,7 @@ pub(crate) fn layout(state: &AppState) -> WolLobbyLayout {
 /// [`layout`] as the online page's chat view lays it out, whichever view
 /// shows: the log the lobby's chat wraps its messages to.
 pub(crate) fn chat_layout(state: &AppState) -> WolLobbyLayout {
-    shell_layout::on(state, |w, h, scale| {
+    shell_layout::on(&state.renderer.gpu, |w, h, scale| {
         match lobby(state.frontend.wol.as_ref()) {
             Some(lobby) => lobby.ui.chat_layout(w, h, scale),
             None => WolLobbyLayout::new(w, h, scale, &PAGE),
@@ -1024,7 +1024,7 @@ pub(super) fn options_screen(state: &AppState) -> (i32, i32) {
     if profile.screen_width > 0 && profile.screen_height > 0 {
         (profile.screen_width, profile.screen_height)
     } else {
-        let (w, h) = shell_layout::shell_screen_size(state);
+        let (w, h) = shell_layout::shell_screen_size(&state.renderer.gpu);
         (w as i32, h as i32)
     }
 }

@@ -21,7 +21,9 @@ use winit::window::Window;
 /// A WOL page's art loader: its background shape and palette (loaded only at
 /// 800 wide, [`shell_layout::art_key_screen_width`]) and its PCX images.
 /// `0xFE` and `0x122` load none.
-fn art_files(dialog: DialogResourceId) -> Option<((&'static str, &'static str), Vec<&'static str>)> {
+fn art_files(
+    dialog: DialogResourceId,
+) -> Option<((&'static str, &'static str), Vec<&'static str>)> {
     use crate::ui::{wol_buddy, wol_persona, wol_shell};
     let files = match dialog {
         // 0x0072C7E0
@@ -86,7 +88,7 @@ pub(crate) fn open_art(state: &mut AppState, dialog: DialogResourceId) -> bool {
         &state.renderer.gpu,
         &state.renderer.batch_renderer,
         assets,
-        shell_layout::art_key_screen_width(state),
+        shell_layout::art_key_screen_width(&state.renderer.gpu),
         background,
         &icons,
     );
@@ -243,7 +245,16 @@ pub(crate) fn paint(
 ) -> crate::render::hud_paint::HudPaint {
     let controller = &state.frontend.shell_controller;
     match controller.root_in(dialog) {
-        Some(root) => gui_paint::paint_gui_children(state, controller.gui(), root, scale),
+        Some(root) => gui_paint::paint_gui_children(
+            &state.platform.ime,
+            &state.renderer.bit_font,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            controller.gui(),
+            root,
+            scale,
+        ),
         None => Default::default(),
     }
 }

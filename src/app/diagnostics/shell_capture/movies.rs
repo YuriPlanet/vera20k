@@ -336,11 +336,11 @@ impl MoviesCapture {
     /// The Mods page's row and button for `press`, through the ordinary
     /// pointer handlers. Check Files then waits for its reading thread.
     fn press_mod_row_and(state: &mut AppState, press: ModsPress) -> Result<()> {
-        let layout = crate::app::frontend::shell_layout::mods_layout(state);
+        let layout = crate::app::frontend::shell_layout::mods_layout(&state.renderer.gpu);
         let mods = &state.frontend.mods;
         let page = mods.page.as_ref().context("the Mods page has no list")?;
         let (geometry, view) = crate::app::frontend::movies_credits_render::family_list_view(
-            state,
+            &state.frontend.shell_controller,
             crate::ui::mods_shell::DIALOG,
         )
         .context("the Mods page has no list")?;
@@ -893,7 +893,10 @@ impl MoviesCapture {
                     if check_sidebar {
                         // Start with the process state a confirmed Abort leaves behind.
                         state.match_state.match_presentation.modal_latch = false;
-                        let layout = crate::app::frontend::shell_layout::load_saved_game_layout(state);
+                        let layout = crate::app::frontend::shell_layout::load_saved_game_layout(
+                            &state.renderer.gpu,
+                            &state.frontend,
+                        );
                         set_window_pointer_to_rect_center(state, layout.browser.action);
                         App::handle_load_saved_game_mouse(state, true);
                         App::handle_load_saved_game_mouse(state, false);
@@ -1239,12 +1242,17 @@ impl MoviesCapture {
                 let MoviesTarget::SlideOut { kind, tick: target } = self.target else {
                     bail!("slide-out phase without a slide-out target");
                 };
-                let tick = crate::app::frontend::shell_transition::shell_exit_wave(state, kind)
-                    .context("teardown slide ended before capture")?
-                    .tick();
+                let tick = crate::app::frontend::shell_transition::shell_exit_wave(
+                    &state.frontend.shell_exit,
+                    kind,
+                )
+                .context("teardown slide ended before capture")?
+                .tick();
                 ensure!(tick <= target, "teardown slide passed tick {target}");
                 if tick == target {
-                    crate::app::frontend::shell_transition::hold_shell_exit_for_capture(state);
+                    crate::app::frontend::shell_transition::hold_shell_exit_for_capture(
+                        &mut state.frontend.shell_exit,
+                    );
                     self.route
                         .push(json!({"dialog": kind.dialog_id().0, "frame": frame,
                         "action": "hold teardown slide", "tick": tick}));
@@ -1495,7 +1503,10 @@ impl MoviesCapture {
     pub(super) fn ready(&self, state: &AppState) -> Result<bool> {
         if matches!(
             self.target,
-            MoviesTarget::LoadSavedGame0xB7 { check_sidebar: true, .. }
+            MoviesTarget::LoadSavedGame0xB7 {
+                check_sidebar: true,
+                ..
+            }
         ) {
             return Ok(self.phase == Phase::SavedGameButtonsChecked);
         }
@@ -1642,7 +1653,9 @@ impl MoviesCapture {
                 entry_tick: Some(_),
                 ..
             } => true,
-            MoviesTarget::LoadSavedGame0xB7 { entry_tick: None, .. }
+            MoviesTarget::LoadSavedGame0xB7 {
+                entry_tick: None, ..
+            }
             | MoviesTarget::Options0xD5 {
                 entry_tick: None, ..
             } => {
@@ -1715,8 +1728,11 @@ impl MoviesCapture {
                     })
             }
             MoviesTarget::SlideOut { kind, tick } => {
-                crate::app::frontend::shell_transition::shell_exit_wave(state, kind)
-                    .map(|wave| wave.tick())
+                crate::app::frontend::shell_transition::shell_exit_wave(
+                    &state.frontend.shell_exit,
+                    kind,
+                )
+                .map(|wave| wave.tick())
                     == Some(tick)
             }
             MoviesTarget::Campaign0x94 { entry_tick, .. } => {
@@ -2061,8 +2077,10 @@ fn check_loaded_sidebar_buttons(state: &mut AppState) -> Result<()> {
 
     let mut opened = [InGameMenuState::Closed; 2];
     for (index, dialog) in opened.iter_mut().enumerate() {
-        let view = crate::app::presentation::sidebar_render::current_sidebar_view(state)
-            .context("loaded match has no sidebar view")?;
+        let view = crate::app::presentation::sidebar_render::current_sidebar_view(
+            &state.match_state.match_presentation,
+        )
+        .context("loaded match has no sidebar view")?;
         let rect = state
             .sidebar_frame()
             .rect_to_frame(view.top_buttons[index].rect);
@@ -2282,8 +2300,12 @@ fn initial_save_receipt(state: &AppState, directory: &Path) -> Result<Value> {
         !pending_speed,
         "automatic save retained already-consumed Options input"
     );
-    let browser =
-        App::open_saved_game_rows(state, crate::ui::skirmish_shell::SavedSeedMode::Save, 8, None);
+    let browser = App::open_saved_game_rows(
+        state,
+        crate::ui::skirmish_shell::SavedSeedMode::Save,
+        8,
+        None,
+    );
     ensure!(
         browser
             .selected_entry()

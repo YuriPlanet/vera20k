@@ -36,7 +36,12 @@ pub(crate) fn choice(state: &AppState, item: SkirmishComboItem) -> SetupChoice {
     };
     SetupChoice {
         value,
-        text: combo_item_label(state, item),
+        text: combo_item_label(
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            item,
+        ),
         swatch: if let SkirmishComboItem::Color(index) = item {
             Some(index)
         } else {
@@ -48,7 +53,12 @@ pub(crate) fn choice(state: &AppState, item: SkirmishComboItem) -> SetupChoice {
 
 /// A team's letter as the Team list shows it.
 pub(super) fn team_letter(state: &AppState, team: u8) -> String {
-    combo_item_label(state, SkirmishComboItem::Team(i32::from(team)))
+    combo_item_label(
+        &state.frontend,
+        &state.match_state,
+        &state.process_assets,
+        SkirmishComboItem::Team(i32::from(team)),
+    )
 }
 
 /// A row of VERA's room list: a seat or spectator row, a header over the

@@ -63,7 +63,8 @@ pub(crate) fn sidebar_scroll_command(state: &mut AppState, action: WheelAction) 
     if crate::app::input::campaign_input::is_locked(state) {
         return;
     }
-    let Some(visible_rows) = current_sidebar_view(state).map(|view| view.layout.side2_tile_count)
+    let Some(visible_rows) = current_sidebar_view(&state.match_state.match_presentation)
+        .map(|view| view.layout.side2_tile_count)
     else {
         return;
     };
@@ -74,7 +75,7 @@ pub(crate) fn sidebar_scroll_command(state: &mut AppState, action: WheelAction) 
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
-    let over = current_sidebar_view(state).and_then(|view| {
+    let over = current_sidebar_view(&state.match_state.match_presentation).and_then(|view| {
         view.added_grids
             .iter()
             .find(|grid| grid.rect.contains(x, y))
@@ -176,7 +177,8 @@ fn sidebar_cameo_press(
             .match_state
             .match_presentation
             .sidebar_projection
-            .model.cameo_factory(sim, sim.interner().get(&owner)?, type_iid?)
+            .model
+            .cameo_factory(sim, sim.interner().get(&owner)?, type_iid?)
             .map(|factory| {
                 (
                     factory.cameo_state(),
@@ -204,7 +206,8 @@ fn sidebar_cameo_press(
                 .match_state
                 .match_presentation
                 .sidebar_projection
-                .model.cameo_request(type_id)
+                .model
+                .cameo_request(type_id)
         }),
         press,
         at_build_limit,
@@ -284,7 +287,8 @@ fn sidebar_cameo_press(
             .match_state
             .match_presentation
             .sidebar_projection
-            .model.record_cameo_click(
+            .model
+            .record_cameo_click(
                 &runtime.simulation,
                 &runtime.resources.rules,
                 owner,

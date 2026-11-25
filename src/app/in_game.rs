@@ -341,7 +341,7 @@ impl App {
     /// draws, so update its video and soundtrack here as well as on creation.
     fn sync_window_movies(state: &mut AppState) {
         state.frontend.main_menu_movie_clock.pause();
-        let active = crate::app::frontend::fullscreen_movie::playback_active(state);
+        let active = crate::app::frontend::fullscreen_movie::playback_active(&state.platform);
         if let Some(movie) = state.frontend.fullscreen_movie.as_mut() {
             movie.set_active(active);
         }

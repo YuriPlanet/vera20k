@@ -331,7 +331,7 @@ impl App {
                 &state.renderer.batch_renderer,
                 assets,
                 model.side,
-                shell_layout::art_key_screen_width(state),
+                shell_layout::art_key_screen_width(&state.renderer.gpu),
                 art,
             )
         });
@@ -395,7 +395,7 @@ impl App {
                 &state.renderer.batch_renderer,
                 assets,
                 side,
-                shell_layout::art_key_screen_width(state),
+                shell_layout::art_key_screen_width(&state.renderer.gpu),
                 state.process_assets.side_score_art(side),
             )
         });
@@ -436,7 +436,7 @@ impl App {
     /// `0x108` down with its slide; the match then ends and the shell resumes.
     pub(super) fn handle_score_shell_mouse(state: &mut AppState, down: Option<bool>) {
         use crate::ui::score_shell::{self as score, NEXT_PAGE, PREVIOUS_PAGE};
-        let layout = shell_layout::score_layout(state);
+        let layout = shell_layout::score_layout(&state.renderer.gpu);
         let paged = state
             .frontend
             .score_page
@@ -466,8 +466,8 @@ impl App {
     /// to the shell.
     pub(super) fn handle_campaign_score_mouse(state: &mut AppState, down: Option<bool>) {
         use crate::ui::campaign_score_shell::{CampaignScoreDialog, CampaignScoreLayout};
-        let (width, height) = shell_layout::shell_screen_size(state);
-        let fills_window = shell_layout::fills_window(state);
+        let (width, height) = shell_layout::shell_screen_size(&state.renderer.gpu);
+        let fills_window = shell_layout::fills_window(&state.renderer.gpu);
         let page = state.frontend.campaign_score_page.as_ref();
         let dialog: CampaignScoreDialog = page.map_or_else(Default::default, |page| page.dialog);
         let layout = page.map_or_else(
@@ -689,7 +689,9 @@ impl App {
         // Native destroys dialog 0x100 and its child 0x71A movie handle before
         // constructing 0x102. Drop the hidden Rust session as well so returning
         // to 0x100 cannot continue the pre-Skirmish RA2TS timeline.
-        crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
+        crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(
+            &mut state.frontend,
+        );
         state.frontend.shell_route = ShellRoute::Skirmish;
         // A fresh `0x102`: its widgets build on the first sync.
         (state.frontend.shell_controller).reset_to(crate::ui::skirmish_shell::page::DIALOG);
@@ -752,13 +754,20 @@ impl App {
                 }
                 (title, text)
             };
+        let buttons = crate::app::frontend::status_screen::shell_error_buttons(
+            &state.frontend.asset_import,
+            &state.process_assets,
+        );
         crate::app::frontend::status_screen::render(
-            state,
+            &state.renderer,
+            &mut state.frontend,
+            &state.match_state.input,
+            &state.process_assets,
             encoder,
             view,
             &title,
             &text,
-            crate::app::frontend::status_screen::shell_error_buttons(state),
+            buttons,
         );
         Ok(())
     }
@@ -1032,7 +1041,7 @@ impl App {
                 if let Some(dialog) = state.frontend.options_dialog.as_mut() {
                     dialog.select_category(next);
                     crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(
-                        state,
+                        &mut state.frontend,
                     );
                 }
             });
@@ -1063,8 +1072,8 @@ impl App {
         page: FamilyPage,
         down: Option<bool>,
     ) -> Option<u16> {
-        let layout = page.layout(state);
-        let enabled = page.enabled(state);
+        let layout = page.layout(&state.renderer.gpu);
+        let enabled = page.enabled(&state.frontend.single_player_shell_state);
         Self::screen_page_pointer(
             state,
             page.dialog(),
@@ -1258,7 +1267,7 @@ impl App {
         }
         #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
         super::shell_mod_import::sync(state);
-        let parts = shell_layout::shell_box_parts(state, &shell_box);
+        let parts = shell_layout::shell_box_parts(&state.renderer.gpu, &shell_box);
         let id = Self::shell_box_pointer(state, &shell_box, &parts, Some(down));
         // Add Mod's More and reorder buttons act inside the box.
         #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
@@ -1743,7 +1752,7 @@ impl App {
             }
             return;
         }
-        let parts = shell_layout::shell_box_parts(state, &shell_box);
+        let parts = shell_layout::shell_box_parts(&state.renderer.gpu, &shell_box);
         let event = vera20k_gui::InputEvent::Key(key);
         if let Some(answer) = Self::shell_box_input(state, &shell_box, &parts, event)
             .and_then(|id| shell_box.answer(id))
@@ -1761,7 +1770,9 @@ impl App {
             .main_menu_movie_identity
             .is_some_and(|identity| identity.base() != movie_base)
         {
-            crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
+            crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(
+                &mut state.frontend,
+            );
         }
     }
 }

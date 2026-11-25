@@ -3097,8 +3097,13 @@ impl LanCapture {
                     .simulation;
                 let order = sim.houses().order().to_vec();
                 let name = |index: usize| {
-                    crate::app::presentation::house_ui::house_ui_name(state, order[index])
-                        .unwrap_or_default()
+                    crate::app::presentation::house_ui::house_ui_name(
+                        &state.frontend,
+                        &state.match_state,
+                        &state.process_assets,
+                        order[index],
+                    )
+                    .unwrap_or_default()
                 };
                 let template = state.csf_label("TXT_HAS_ALLIED", "TXT_HAS_ALLIED");
                 let line = |a: usize, b: usize| {
@@ -3552,7 +3557,10 @@ fn cooperative_mode(state: &AppState) -> Result<&crate::skirmish_modes::Skirmish
 /// Click Cooperative in the open chooser's game types; `+0x4C` lists the
 /// campaigns, whose labels this returns.
 fn click_cooperative_mode(state: &mut AppState) -> Result<Vec<String>> {
-    let layout = crate::app::frontend::shell_layout::choose_map_layout(state);
+    let layout = crate::app::frontend::shell_layout::choose_map_layout(
+        &state.renderer,
+        &state.frontend.screen,
+    );
     let mode_id = cooperative_mode(state)?.id;
     let modal = state
         .frontend
@@ -3596,7 +3604,10 @@ fn use_soviet_campaign_row(state: &mut AppState, labels: &[String]) -> Result<()
 
 /// Selects a Cooperative chooser row and presses Use Map.
 fn use_chooser_row(state: &mut AppState, row: usize) -> Result<()> {
-    let layout = crate::app::frontend::shell_layout::choose_map_layout(state);
+    let layout = crate::app::frontend::shell_layout::choose_map_layout(
+        &state.renderer,
+        &state.frontend.screen,
+    );
     let modal = state
         .frontend
         .skirmish_shell_state
@@ -3697,8 +3708,10 @@ impl RandomMapInput {
                             (2..=crate::map::rmg::MAX_PLAYERS as usize).contains(&players),
                             "random maps support two to thirty starts"
                         );
-                        let layout =
-                            crate::app::frontend::shell_layout::random_map_setup_layout(state);
+                        let layout = crate::app::frontend::shell_layout::random_map_setup_layout(
+                            &state.renderer,
+                            &state.frontend.screen,
+                        );
                         let slider = layout.control_rects[5];
                         let x = (slider.x..slider.x + slider.w)
                             .find(|&x| {

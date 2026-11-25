@@ -861,7 +861,13 @@ fn kick(state: &mut AppState, source_index: usize, error: ConnectionError) {
 
 /// The list's wrap width and visible rows at the current shell size.
 fn list_metrics(state: &AppState) -> (i32, usize) {
-    let (width, height) = crate::app::frontend::skirmish_shell_render::in_game_shell_size(state);
+    let (width, height) = crate::app::frontend::skirmish_shell_render::in_game_shell_size(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let rect = crate::ui::shell::connection::list_rect(width, height);
     let page = state.match_state.network_wait.page();
     let (count, top) = page.map_or((0, 0), |page| (page.lines.len(), page.top));

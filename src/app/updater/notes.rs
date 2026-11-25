@@ -130,7 +130,8 @@ fn wrap_width() -> u32 {
 fn open_list(state: &AppState) -> Option<(&ReleaseNotes, BoxParts, DialogResourceId)> {
     let message_box = state.frontend.shell_message_box.as_ref()?;
     let shell_box = &message_box.shell_box;
-    let layout = crate::app::frontend::shell_layout::shell_box_parts(state, shell_box);
+    let layout =
+        crate::app::frontend::shell_layout::shell_box_parts(&state.renderer.gpu, shell_box);
     match &message_box.purpose {
         ShellMessageBoxPurpose::UpdateOffer(notes) if !notes.rows.is_empty() => {
             Some((notes, layout, shell_box.dialog))

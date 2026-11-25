@@ -45,7 +45,7 @@ pub(crate) fn build_fogged_instances(state: &AppState) -> ObjectLayerPass {
         atlas,
         lighting: presentation.lighting.grid(),
         house_colors: presentation.effective_house_color_map(),
-        axis: super::depth_axis(state),
+        axis: super::depth_axis(&state.match_state.match_presentation),
         building_zshape: presentation
             .building_zshape
             .as_ref()

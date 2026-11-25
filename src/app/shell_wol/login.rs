@@ -26,7 +26,7 @@ pub(crate) fn login_layout(state: &AppState) -> WolLoginLayout {
         .as_ref()
         .and_then(WolVisit::login)
         .map_or(LoginPolicy::Legacy, |login| login.policy);
-    shell_layout::on(state, |w, h, scale| {
+    shell_layout::on(&state.renderer.gpu, |w, h, scale| {
         WolLoginLayout::new(w, h, scale, policy)
     })
 }

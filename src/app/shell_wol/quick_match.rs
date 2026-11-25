@@ -280,7 +280,7 @@ pub(crate) fn append_line(state: &mut AppState, line: LanChatLine) {
 }
 
 pub(crate) fn layout(state: &AppState) -> WolQuickMatchLayout {
-    shell_layout::on(state, WolQuickMatchLayout::new)
+    shell_layout::on(&state.renderer.gpu, WolQuickMatchLayout::new)
 }
 
 /// The status help under the pointer (`0x006040B0`).

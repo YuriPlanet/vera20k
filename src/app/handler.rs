@@ -512,7 +512,17 @@ impl App {
             Input::Key(event) if Self::window_key(state, event) => return,
             // VERA's enlarged map preview is a modal over the page: nothing
             // under it follows the pointer; only the cursor over it moves.
-            Input::Move if zoom_page && preview_zoom::pointer(state, None) => return,
+            Input::Move
+                if zoom_page
+                    && preview_zoom::pointer(
+                        &state.platform.window,
+                        &mut state.frontend,
+                        &state.match_state.input,
+                        None,
+                    ) =>
+            {
+                return;
+            }
             // Shared tooltip service: every move restarts the show delay and
             // hides a visible tip, and any button edge (middle too) kills a
             // visible tip and its timer (study S1).
@@ -599,7 +609,13 @@ impl App {
             Input::Key(event) => Self::screen_key(state, screen, event),
             Input::Move => Self::screen_pointer(state, screen, None),
             Input::Button(_, edge)
-                if zoom_page && preview_zoom::pointer(state, Some(edge.is_pressed())) => {}
+                if zoom_page
+                    && preview_zoom::pointer(
+                        &state.platform.window,
+                        &mut state.frontend,
+                        &state.match_state.input,
+                        Some(edge.is_pressed()),
+                    ) => {}
             Input::Button(button, edge) => {
                 Self::screen_pointer(state, screen, Some((button, edge)))
             }
@@ -693,7 +709,12 @@ impl App {
             .skirmish_shell_state
             .choose_map_modal
             .is_some();
-        if (zoom_page && crate::app::frontend::preview_zoom::key(state, event))
+        if (zoom_page
+            && crate::app::frontend::preview_zoom::key(
+                &state.platform.window,
+                &mut state.frontend,
+                event,
+            ))
             || Self::shell_menu_key(state, event, screen)
         {
             return;
@@ -931,7 +952,10 @@ impl App {
             }
             // Nothing under VERA's enlarged map preview takes it.
             ScreenPage::NetworkSetup | ScreenPage::Skirmish
-                if crate::app::frontend::preview_zoom::wheel(state) => {}
+                if crate::app::frontend::preview_zoom::wheel(
+                    &state.platform.window,
+                    &mut state.frontend,
+                ) => {}
             ScreenPage::NetworkSetup if !chooser_open => {
                 crate::app::input::multiplayer_setup::wheel(state, lines);
             }

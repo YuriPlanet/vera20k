@@ -441,13 +441,17 @@ impl LoadingRequest {
         progress: &mut dyn LoadingProgressSink,
     ) -> anyhow::Result<MapLoadInitial> {
         let replay_map = match self.startup() {
-            LoadingStartup::AuthoredCampaignReplay { logical_map, local_map, map_sha256, .. }
-                if local_map == logical_map =>
-            {
-                crate::map::source::matching_loose_map_path(
-                    &ra2_dir, asset_manager.mod_dir(), logical_map, map_sha256,
-                )
-            }
+            LoadingStartup::AuthoredCampaignReplay {
+                logical_map,
+                local_map,
+                map_sha256,
+                ..
+            } if local_map == logical_map => crate::map::source::matching_loose_map_path(
+                &ra2_dir,
+                asset_manager.mod_dir(),
+                logical_map,
+                map_sha256,
+            ),
             _ => None,
         };
         let map_file = replay_map
@@ -2448,8 +2452,7 @@ fn poll_network_load_wait(
             // Retire the held result and its asset lease through the normal
             // failure path before the world can be installed.
             state.frontend.loading_session = Some(session);
-            let text =
-                state.csf_text("TXT_SYSTEM_NOT_RESPONDING");
+            let text = state.csf_text("TXT_SYSTEM_NOT_RESPONDING");
             return Ok(LoadingPump::Failed(anyhow::anyhow!(text)));
         }
         let LoadingStage::AwaitingPeers { result, .. } = session.stage else {
@@ -3428,7 +3431,10 @@ fn fail_loading_with(
         .loading_session
         .as_ref()
         .is_some_and(|loading| {
-            matches!(loading.stage.startup(), LoadingStartup::AuthoredCampaignReplay { .. })
+            matches!(
+                loading.stage.startup(),
+                LoadingStartup::AuthoredCampaignReplay { .. }
+            )
         });
     let campaign_notice = if campaign_room {
         Some("VERA:CampaignRoomUnavailable")
@@ -3461,7 +3467,11 @@ fn fail_loading_with(
         // network StartScenario call52E745 follows the same retry at52E75F;
         // GameMode3 re-enters LAN at52DAEF/52E356, so retain its lobby context.
         crate::app::App::return_to_main_menu(state);
-        if notify && let Some(text) = campaign_notice.map(crate::i18n::tr).or_else(|| failed_load_notice(policy, &err)) {
+        if notify
+            && let Some(text) = campaign_notice
+                .map(crate::i18n::tr)
+                .or_else(|| failed_load_notice(policy, &err))
+        {
             crate::app::App::open_shell_notice(state, text);
         }
     } else if policy == LoadingFailurePolicy::ReportNativeFailure {
@@ -3642,7 +3652,7 @@ fn normalize_rgb(rgb: [u8; 3]) -> [f32; 3] {
 /// 1:1 art viewport, or that same authored dialog scaled to fit the window.
 fn loading_scale(state: &AppState) -> ShellScale {
     loading_screen_scale(
-        crate::app::frontend::shell_layout::fills_window(state),
+        crate::app::frontend::shell_layout::fills_window(&state.renderer.gpu),
         [
             state.renderer.gpu.config.width,
             state.renderer.gpu.config.height,

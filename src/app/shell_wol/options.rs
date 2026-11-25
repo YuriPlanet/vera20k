@@ -38,9 +38,11 @@ pub(crate) struct WolOptionsPage {
 
 pub(crate) fn layout(state: &AppState) -> WolOptionsLayout {
     if modern(state.frontend.wol.as_ref()) {
-        shell_layout::on(state, |width, height, _| WolOptionsLayout::modern(width, height))
+        shell_layout::on(&state.renderer.gpu, |width, height, _| {
+            WolOptionsLayout::modern(width, height)
+        })
     } else {
-        shell_layout::on(state, WolOptionsLayout::new)
+        shell_layout::on(&state.renderer.gpu, WolOptionsLayout::new)
     }
 }
 
@@ -59,7 +61,7 @@ pub(crate) fn menu_spec(
 }
 
 pub(crate) fn sound_layout(state: &AppState) -> ShellSoundLayout {
-    shell_layout::on(state, ShellSoundLayout::new)
+    shell_layout::on(&state.renderer.gpu, ShellSoundLayout::new)
 }
 
 fn page_mut(wol: Option<&mut WolVisit>) -> Option<&mut WolOptionsPage> {

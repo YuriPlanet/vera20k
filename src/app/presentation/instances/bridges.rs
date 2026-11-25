@@ -13,6 +13,7 @@
 use std::collections::BTreeMap;
 
 use crate::app::AppState;
+use crate::app::match_runtime::state::MatchState;
 use crate::map::lighting::CellLightGrid;
 use crate::map::overlay::OverlayEntry;
 use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
@@ -200,16 +201,15 @@ pub(crate) fn build_bridge_body_instances_inner(
     }
 }
 
-/// Thin `AppState` wrapper around `build_bridge_body_instances_inner`. Pulls
-/// the live fields the inner function needs out of `state` and forwards.
+/// Thin `MatchState` wrapper around `build_bridge_body_instances_inner`. Pulls
+/// the live fields the inner function needs out of `match_state` and forwards.
 pub(crate) fn build_bridge_body_instances(
-    state: &AppState,
+    match_state: &MatchState,
     sw: f32,
     sh: f32,
     out: &mut Vec<CellBody>,
 ) {
-    let Some(sim) = state
-        .match_state
+    let Some(sim) = match_state
         .sim_runtime
         .presentation()
         .map(|rt| &rt.simulation)
@@ -219,11 +219,10 @@ pub(crate) fn build_bridge_body_instances(
     let Some(terrain) = sim.resolved_terrain() else {
         return;
     };
-    let Some(atlas) = state.match_state.match_presentation.bridge_atlas.as_ref() else {
+    let Some(atlas) = match_state.match_presentation.bridge_atlas.as_ref() else {
         return;
     };
-    let (origin_y, world_height) = state
-        .match_state
+    let (origin_y, world_height) = match_state
         .match_presentation
         .terrain_grid
         .as_ref()
@@ -233,12 +232,12 @@ pub(crate) fn build_bridge_body_instances(
         terrain,
         sim.overlay_grid(),
         atlas,
-        &state.match_state.match_presentation.overlay_names,
-        state.match_state.match_presentation.lighting.grid(),
+        &match_state.match_presentation.overlay_names,
+        match_state.match_presentation.lighting.grid(),
         origin_y,
         world_height,
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
+        match_state.input.camera_x,
+        match_state.input.camera_y,
         sw,
         sh,
         out,

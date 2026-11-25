@@ -1087,9 +1087,10 @@ impl LiveRoundFlow {
                 );
                 self.result_rows.extend(visible);
                 if page.page_index() + 1 < page.page_count() {
-                    let rect = crate::app::frontend::shell_layout::score_layout(state)
-                        .paging_button(crate::ui::score_shell::NEXT_PAGE)
-                        .context("score Next")?;
+                    let rect =
+                        crate::app::frontend::shell_layout::score_layout(&state.renderer.gpu)
+                            .paging_button(crate::ui::score_shell::NEXT_PAGE)
+                            .context("score Next")?;
                     set_window_pointer_to_rect_center(state, rect);
                     App::handle_score_shell_mouse(state, None);
                     App::handle_score_shell_mouse(state, Some(true));
@@ -1116,7 +1117,7 @@ impl LiveRoundFlow {
                     json!(self.result_rows);
                 self.current_round.as_mut().context("completed round")?["terminal_simulation"] =
                     terminal_simulation_receipt(state)?;
-                let rect = crate::app::frontend::shell_layout::score_layout(state)
+                let rect = crate::app::frontend::shell_layout::score_layout(&state.renderer.gpu)
                     .page
                     .button_rect(crate::ui::score_shell::CONTINUE_BUTTON)
                     .context("score Continue")?;

@@ -8,12 +8,12 @@
 //! - Part of the app layer — may depend on everything.
 
 use crate::app::AppState;
-use crate::app::presentation::text_hud::{self, TextHud};
-use crate::app::input::cursor::CursorVisibility;
 use crate::app::input::chrome_input::{
     ID_DIPLOMACY, ID_OPTIONS, ID_SCROLL_DOWN, ID_SCROLL_UP, ID_TAB_BASE,
 };
+use crate::app::input::cursor::CursorVisibility;
 use crate::app::presentation::sidebar_render::{current_sidebar_side, current_sidebar_view};
+use crate::app::presentation::text_hud::{self, TextHud};
 use crate::assets::csf_file::{CsfArg, format_csf};
 use crate::map::entities::EntityCategory;
 use crate::render::batch::SpriteInstance;
@@ -670,7 +670,7 @@ fn sync_in_game_regions(state: &mut AppState, demand: TextDemand) {
 /// from direct CSF keys, cameos through the money format. Only the text
 /// `demand` reads is resolved.
 fn in_game_regions(state: &AppState, demand: TextDemand) -> Vec<TipRegion> {
-    let Some(view) = current_sidebar_view(state) else {
+    let Some(view) = current_sidebar_view(&state.match_state.match_presentation) else {
         return Vec::new();
     };
     let tips = &state.match_state.match_presentation.tooltips;
@@ -876,7 +876,11 @@ pub(crate) fn build_tooltip_instances(
         .map(|rgb| rgb.map(|channel| f32::from(channel) / 255.0))
         .unwrap_or_else(|| {
             crate::render::sidebar_text::side_text_tint(
-                state.match_state.match_presentation.sidebar_layout_spec.side_text,
+                state
+                    .match_state
+                    .match_presentation
+                    .sidebar_layout_spec
+                    .side_text,
             )
         });
     draw_tooltip(
@@ -907,7 +911,8 @@ pub(crate) fn build_tooltip_instances(
         // The darken strip is only the "a real FNT loaded" sentinel here (the
         // 5x7 fallback builds none); the pop-up itself no longer draws with it.
         state.renderer.bit_font.darken_texture().is_some(),
-        crate::app::presentation::field_parts::layout(state).tooltip,
+        crate::app::presentation::field_parts::layout(&state.match_state.match_presentation)
+            .tooltip,
         hud,
     )
 }
