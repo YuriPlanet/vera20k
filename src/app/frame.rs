@@ -1027,9 +1027,9 @@ impl App {
 
         // Outcome gates, exit cascades, the audio pump and the simulation
         // advance, shared with the hidden-window service loop.
-        let shell_capture_owns_simulation = shell_capture
-            .as_deref()
-            .is_some_and(|capture| capture.owns_simulation_steps(state));
+        let shell_capture_owns_simulation = shell_capture.as_deref().is_some_and(|capture| {
+            capture.owns_simulation_steps(&state.frontend.screen, &state.match_state.sim_runtime)
+        });
         // A capture that checks every committed frame needs one per render.
         let catch_up_allowed = !shell_capture
             .as_deref()
@@ -1150,7 +1150,10 @@ impl App {
             && let Some(session) = shell_capture.as_deref_mut()
             && session.is_entry_sequence()
         {
-            session.complete_entry_sequence_after_wave(state)?;
+            session.complete_entry_sequence_after_wave(
+                &state.renderer.gpu,
+                &state.frontend.shell_first_paint_slide,
+            )?;
             event_loop.exit();
             return Ok(FrameRenderOutcome::Unavailable);
         }
@@ -1679,8 +1682,11 @@ impl App {
                 (Some(_), None) | (None, _) => false,
             };
         if let Some(session) = shell_capture.as_deref_mut() {
-            shell_capture_current_frame |=
-                session.should_capture_after_render(state, presented_shell)?;
+            shell_capture_current_frame |= session.should_capture_after_render(
+                &state.renderer.gpu,
+                &state.frontend,
+                presented_shell,
+            )?;
         }
         let replay_capture_current_frame = game_render_output.is_some()
             && state.match_state.match_diagnostics.playback_capture_ready();

@@ -19,7 +19,7 @@ impl WolCapture {
 
     pub(super) fn buddy_my_info(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         use crate::ui::wol_my_info::PLAY_BUDDY;
-        let page = my_info_shown(state)?;
+        let page = my_info_shown(&state.frontend)?;
         if self.rejoined {
             ensure!(
                 state.frontend.wol.as_ref().and_then(|visit| visit.mode())
@@ -42,9 +42,10 @@ impl WolCapture {
     }
 
     /// `0x116` and its mirror: the rows once every locate has answered.
-    pub(super) fn buddy_rows(state: &AppState) -> Result<Vec<(String, Option<i32>, String)>> {
-        let dialog =
-            crate::app::shell_wol::buddy::page(state.frontend.wol.as_ref()).context("0x116")?;
+    pub(super) fn buddy_rows(
+        frontend: &FrontendState,
+    ) -> Result<Vec<(String, Option<i32>, String)>> {
+        let dialog = crate::app::shell_wol::buddy::page(frontend.wol.as_ref()).context("0x116")?;
         Ok(dialog
             .ui
             .rows
@@ -52,7 +53,7 @@ impl WolCapture {
             .map(|row| {
                 (
                     row.name.clone(),
-                    state.frontend.wol_buddies.status(&row.name),
+                    frontend.wol_buddies.status(&row.name),
                     row.status.clone(),
                 )
             })
@@ -108,7 +109,7 @@ impl WolCapture {
         use crate::ui::wol_buddy::{
             ADD, ADD_DIALOG, BACK, CREATE, JOIN, PAGE_BUTTON, REMOVE, WINS,
         };
-        let rows = Self::buddy_rows(state)?;
+        let rows = Self::buddy_rows(&state.frontend)?;
         let expected: Vec<(&str, Option<i32>)> = Self::BUDDIES
             .iter()
             .map(|(name, status)| (*name, Some(*status)))
@@ -165,7 +166,7 @@ impl WolCapture {
                 self.event(frame, "0x115 opened, Natasha typed");
                 if self.target == WolTarget::BuddyAdded {
                     App::handle_wol_key(state, Some(winit::keyboard::KeyCode::Enter), true, None);
-                    let rows = Self::buddy_rows(state)?;
+                    let rows = Self::buddy_rows(&state.frontend)?;
                     ensure!(
                         crate::app::shell_wol::buddy::page(state.frontend.wol.as_ref())
                             .is_some_and(|dialog| dialog.ui.add.is_none())
@@ -180,7 +181,7 @@ impl WolCapture {
             WolTarget::BuddyRemove => {
                 Self::buddy_row_click(state, "Ghost")?;
                 Self::buddy_button(state, REMOVE)?;
-                let rows = Self::buddy_rows(state)?;
+                let rows = Self::buddy_rows(&state.frontend)?;
                 ensure!(
                     rows.len() == 3
                         && !rows.iter().any(|(name, _, _)| name == "Ghost")
@@ -265,18 +266,22 @@ impl WolCapture {
             self.phase = WolPhase::BuddyShown;
             return Ok(());
         }
-        MoviesCapture::restore_neutral_pointer(state);
+        MoviesCapture::restore_neutral_pointer(&state.renderer.gpu, &mut state.match_state.input);
         crate::app::input::multiplayer_setup::cursor_moved(state);
         self.settle();
         Ok(())
     }
 
-    pub(super) fn buddy_returned(&self, state: &AppState, rendered: PresentedShell) -> bool {
+    pub(super) fn buddy_returned(
+        &self,
+        frontend: &FrontendState,
+        rendered: PresentedShell,
+    ) -> bool {
         let (shell, kind) = match self.target {
             WolTarget::BuddyBack => (PresentedShell::WolWelcome, ShellSlideKind::WolWelcome),
             _ => (PresentedShell::WolLobby, ShellSlideKind::WolLobby),
         };
-        rendered == shell && Self::page_settled(state, kind)
+        rendered == shell && Self::page_settled(frontend, kind)
     }
 
     pub(super) fn buddy_return(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
@@ -288,7 +293,7 @@ impl WolCapture {
             );
             self.event(frame, "0x10E settled after 0x116 Back");
         } else {
-            let lobby = Self::lobby(state)?;
+            let lobby = Self::lobby(&state.frontend.wol)?;
             ensure!(
                 lobby.shown && lobby.runner == crate::app::shell_wol::lobby::Runner::Lobby,
                 "0x113 did not run the lobby runner"

@@ -58,7 +58,16 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
             ("z-read", RenderZPolicy::ReadOnly),
             ("z-bypass", RenderZPolicy::None),
         ] {
-            let pixels = raster(state, &pool, pieces, policy)?;
+            let pixels = raster(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state.match_presentation,
+                &state.persistence,
+                &pool,
+                pieces,
+                policy,
+            )?;
             let count = pixels
                 .chunks_exact(4)
                 .filter(|pixel| *pixel != CLEAR_PIXEL)
@@ -114,14 +123,20 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
 }
 
 fn raster(
-    state: &AppState,
+    platform: &PlatformState,
+    renderer: &RendererState,
+    screen: &GameScreen,
+    match_presentation: &MatchPresentationState,
+    persistence: &PersistenceState,
     pool: &InstanceBufferPool,
     pieces: &[crate::app::presentation::render::draw_plan_lowering::ObjectPieceInstance],
     policy: RenderZPolicy,
 ) -> Result<Vec<u8>> {
-    let renderer = &state.renderer;
     let gpu = &renderer.gpu;
-    let [width, height] = [state.render_width(), state.render_height()];
+    let [width, height] = [
+        renderer.render_width(screen),
+        renderer.render_height(screen),
+    ];
     let texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
         label: Some("Aircraft production-depth diagnostic"),
         size: wgpu::Extent3d {
@@ -139,9 +154,7 @@ fn raster(
     let view = texture.create_view(&Default::default());
     let mut encoder = gpu.device.create_command_encoder(&Default::default());
     let pose = renderer.vxl_pose_frame_cache.borrow();
-    let palette = state
-        .match_state
-        .match_presentation
+    let palette = match_presentation
         .palette_set
         .as_ref()
         .context("aircraft palette absent")?;
@@ -175,18 +188,16 @@ fn raster(
             multiview_mask: None,
         });
         let (x, y, w, h) = crate::app::input::camera::tactical_viewport_px(
-            &state.platform,
-            &state.renderer,
-            &state.frontend.screen,
-            &state.match_state.match_presentation,
-            &state.persistence,
+            platform,
+            renderer,
+            screen,
+            match_presentation,
+            persistence,
         );
         pass.set_scissor_rect(x, y, w, h);
         for (index, piece) in pieces.iter().enumerate() {
             let texture = match piece.target {
-                ObjectTexture::UnitAtlasPage(page) => state
-                    .match_state
-                    .match_presentation
+                ObjectTexture::UnitAtlasPage(page) => match_presentation
                     .unit_atlas
                     .as_ref()
                     .and_then(|atlas| atlas.page_texture(page)),

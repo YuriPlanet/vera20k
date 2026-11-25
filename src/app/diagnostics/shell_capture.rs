@@ -16,12 +16,40 @@ use anyhow::{Context, Result, bail, ensure};
 use serde::Serialize;
 
 use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::diagnostics::state::DiagnosticsState;
 use crate::app::frontend::main_menu_shell_render::Ra2tsDialogOwner;
+use crate::app::frontend::shell_transition::ShellFrameWave;
 use crate::app::frontend::shell_transition::ShellSlideKind;
+use crate::app::frontend::state::FrontendState;
+use crate::app::input::state::MatchInputState;
+use crate::app::match_audio::MatchAudioState;
+use crate::app::match_diagnostics::MatchDiagnosticsState;
+use crate::app::match_runtime::session::MatchSession;
+use crate::app::match_runtime::sim_host::SimHost;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::persistence::SaveRepository;
+use crate::app::presentation::state::MatchPresentationState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::app::scenario_catalog::ScenarioCatalog;
+use crate::app::shell_network_setup::NetworkSetupProtocol;
+use crate::app::shell_wol::WolVisit;
+use crate::audio::sfx::SfxPlayer;
+use crate::net::live_commands::LiveCommandSession;
 use crate::render::frame_readback::PendingTextureReadback;
+use crate::render::gpu::GpuContext;
+use crate::skirmish_modes::SkirmishGameMode;
+use crate::ui::campaign_score_shell::CampaignScorePage;
 use crate::ui::game_screen::GameScreen;
 use crate::ui::main_menu_dialogs::options::Category;
 use crate::ui::main_menu_shell::MainMenuMovieBase;
+use crate::ui::multiplayer_setup::MultiplayerSetupState;
+use crate::ui::shell::controller::DialogController;
+use crate::ui::skirmish_shell::SkirmishShellState;
+use crate::util::config::GameConfig;
 
 mod movies;
 mod score;
@@ -2445,10 +2473,10 @@ impl ShellCaptureSession {
     /// First-live observes tick zero; opening captures drive exact steps through
     /// the same production runtime. Abort-return releases this ownership after
     /// its first draw so the ordinary modal/EXIT owners govern remaining frames.
-    pub(crate) fn owns_simulation_steps(&self, state: &AppState) -> bool {
+    pub(crate) fn owns_simulation_steps(&self, screen: &GameScreen, sim_runtime: &SimHost) -> bool {
         self.movies
             .as_ref()
-            .is_some_and(|capture| capture.owns_simulation_steps(state))
+            .is_some_and(|capture| capture.owns_simulation_steps(screen, sim_runtime))
     }
 
     /// The live LAN and online battle observers check every committed frame,
@@ -2550,10 +2578,10 @@ impl ShellCaptureSession {
             return capture.ready(state);
         }
         if let Some(capture) = &self.score {
-            return capture.ready(state);
+            return capture.ready(&state.frontend);
         }
         if let Some(capture) = &self.campaign_score {
-            return capture.ready(state);
+            return capture.ready(&state.frontend);
         }
         match &self.skirmish {
             Some(capture) => capture.ready(state),
@@ -2634,7 +2662,8 @@ impl ShellCaptureSession {
     /// swapchain bytes submitted for readback.
     pub(crate) fn should_capture_after_render(
         &mut self,
-        state: &AppState,
+        gpu: &GpuContext,
+        frontend: &FrontendState,
         rendered: PresentedShell,
     ) -> Result<bool> {
         let Some(capture) = self.campaign_score.as_mut() else {
@@ -2645,9 +2674,9 @@ impl ShellCaptureSession {
             "campaign score capture requested overlapping readbacks"
         );
         let should_capture = if capture.is_animation_sequence() {
-            capture.should_capture_animation_frame(state, rendered, self.frames_seen)?
+            capture.should_capture_animation_frame(gpu, frontend, rendered, self.frames_seen)?
         } else {
-            capture.should_capture_steady_frame(state)?
+            capture.should_capture_steady_frame(frontend)?
         };
         self.readback_started = should_capture;
         Ok(should_capture)
@@ -2802,7 +2831,7 @@ impl ShellCaptureSession {
                     .as_mut()
                     .expect("animation sequence has a campaign capture");
                 capture.record_animation_sample(
-                    state,
+                    &state.frontend,
                     self.request.width,
                     self.request.height,
                     pixels,
@@ -2935,7 +2964,11 @@ impl ShellCaptureSession {
         Ok(())
     }
 
-    pub(crate) fn complete_entry_sequence_after_wave(&mut self, state: &AppState) -> Result<()> {
+    pub(crate) fn complete_entry_sequence_after_wave(
+        &mut self,
+        gpu: &GpuContext,
+        shell_first_paint_slide: &Option<ShellFrameWave>,
+    ) -> Result<()> {
         ensure!(
             self.request.checkpoint == ShellCaptureCheckpoint::MainMenu0xE2EntrySequence,
             "entry-sequence completion used for steady capture"
@@ -2945,7 +2978,7 @@ impl ShellCaptureSession {
             "capture outcome was already recorded"
         );
         ensure!(
-            state.frontend.shell_first_paint_slide.is_none(),
+            shell_first_paint_slide.is_none(),
             "entry sequence completion ran before the wave cleared"
         );
         let started_at = self
@@ -2988,9 +3021,9 @@ impl ShellCaptureSession {
                 !remaining.is_zero(),
                 "entry sequence timeout expired during deferred readback"
             );
-            let pixels =
-                item.readback
-                    .finish(&state.renderer.gpu.device, item.submission, remaining)?;
+            let pixels = item
+                .readback
+                .finish(&gpu.device, item.submission, remaining)?;
             ensure!(
                 pixels.len() as u64 == FRAME_BYTE_LENGTH,
                 "entry-sequence tick {expected_tick} length mismatch: expected \
@@ -3018,7 +3051,7 @@ impl ShellCaptureSession {
                 .join(ENTRY_SEQUENCE_FRAMES_FILE_NAME),
             &payload,
         )?;
-        let manifest = entry_sequence_manifest(&self.request, state.renderer.gpu.config.format);
+        let manifest = entry_sequence_manifest(&self.request, gpu.config.format);
         let mut manifest_bytes =
             serde_json::to_vec_pretty(&manifest).context("serialize entry-sequence manifest")?;
         manifest_bytes.push(b'\n');
