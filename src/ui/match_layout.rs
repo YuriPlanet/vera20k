@@ -2062,7 +2062,12 @@ mod tests {
         file.check_commands(|_| false);
         assert_eq!(
             problems(&file),
-            expect(&[("[Hud.Empty] Command", LayoutProblemKind::UnknownCommand)])
+            expect(&[
+                // A button with no command, label or picture is refused, and
+                // its list names a part that is not there.
+                ("[Hud.Empty] Command", LayoutProblemKind::UnknownCommand),
+                ("[Hud.Field] Parts", LayoutProblemKind::UnknownPart),
+            ])
         );
         assert_eq!(file.art_names(), ["logo.shp", "mute.shp"]);
         let kinds: Vec<AddedKind> = file

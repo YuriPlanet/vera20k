@@ -60,7 +60,16 @@ fn house_and_unit(scene: &HeadlessScenario) -> (InternedId, u64) {
         .sim()
         .entities()
         .iter_sorted()
-        .find(|(_, e)| e.category() == EntityCategory::Unit && e.lifecycle.object_alive())
+        .find(|(_, e)| {
+            e.category() == EntityCategory::Unit
+                && e.lifecycle.object_alive()
+                // Only a house the DoList serves executes its records.
+                && scene
+                    .sim()
+                    .houses
+                    .get(&e.owner())
+                    .is_some_and(|house| house.event_dispatch_eligible())
+        })
         .map(|(id, e)| (e.owner(), id))
         .expect("the map has a unit")
 }
@@ -140,6 +149,7 @@ fn a_message_reaches_on_message_before_on_frame() {
     sim.queue_command(CommandEnvelope::synchronized(record, tick));
     for _ in 0..8 {
         scene.tick();
+
         if mem_i32(&scene, 0, 8) == 1 {
             break;
         }

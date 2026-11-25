@@ -654,6 +654,9 @@ fn engine_per_client_reads_have_pinned_callers() {
         (
             "is_observer_house",
             &[
+                // A client module's message from an observer is dropped;
+                // each peer holds the same observer list from the room.
+                ("sim/ext_modules/messages.rs", 1),
                 ("sim/scenario_session.rs", 1),
                 ("sim/score.rs", 1),
                 // The same offline command refuses a local observer.
