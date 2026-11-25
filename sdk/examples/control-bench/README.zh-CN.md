@@ -14,12 +14,12 @@
 ```sh
 cd sdk/examples/control-bench && cargo build --release
 # 在引擎仓库根目录：
-VERA20K_TEST_INI_DEMOS="<wasm>|sdk/examples/control-bench/rulesmd.ini|bench.all|6000" \
+VERA20K_TEST_INI_DEMOS="<wasm 绝对路径>|$PWD/sdk/examples/control-bench/rulesmd.ini|bench.all|6000" \
 RA2_DIR=<原版目录> python3 -m tools.cargo_run -- test --locked -p vera20k-core --lib \
   ini_demo_mods_reach_their_marks -- --nocapture
 ```
 
-只填 `bench.all` 时，缺哪个标记要看日志；把各区域 `MARKS` 里的名字全部列出（逗号分隔），
+路径要写绝对路径（测试在核心库目录里运行）。只填 `bench.all` 时，缺哪个标记要看日志；把各区域 `MARKS` 里的名字全部列出（逗号分隔），
 失败信息会直接点名缺的那个。
 
 ## 分区（各占一个文件，互不干扰）
