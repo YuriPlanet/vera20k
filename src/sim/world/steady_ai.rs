@@ -4,9 +4,9 @@
 //!
 //! `TechnoClass::AI_Update @ 0x006F9E50`, which `UnitClass::AI` and
 //! `InfantryClass::AI` reach every frame, and the leaf steps before it act on
-//! what the object holds: a target, damage, a queued mission, a curtain, a
-//! drain, a manager, a clock of its own. An object holding none of these,
-//! moving or standing, finds every step off but
+//! what the object holds: a queued mission, a curtain, a drain, a manager, a
+//! clock of its own, a target, damage. An object holding none of the first
+//! five, moving or standing, finds every step off but
 //! - the `+0xC4` counter (`0x006FA646`), which every visit steps;
 //! - the common stage clock (Techno6FABC4), on the frames it advances;
 //! - `MissionClass::AI @ 0x005B3060`'s handler, when its dispatch timer runs
@@ -14,7 +14,15 @@
 //! - the passive block (`0x006FA65A`), when its targeting timer runs out and
 //!   the block would act;
 //! - the estimated health's recover (Techno6F9F6E), on the frames it moves;
-//! - the voice probe (Techno6F9EBB), while the client waits on its voice.
+//! - the voice probe (Techno6F9EBB), while the client waits on its voice;
+//! - with a target, the illegal drop (`0x006FA472`) on every sixteenth
+//!   frame, the reach block (`0x006FAB48`) outside a team, and the allied
+//!   drop (`0x006FA30C`) when its house is allied with the target's;
+//! - hurt, the house heal arms (`0x006FA79A`) on their frames.
+//!
+//! What reads the object alone stays off by its mark: a target's
+//! off-mission clear (`0x006FA5E8`) and a healer's drops (`0x006FA9D8`), a
+//! hurt self-healer's pulse (`0x006FA743`) and a hurt type's damage sparks.
 //!
 //! At the end of a turn the pass asks [`ai_rests`], and whether a trigger
 //! has given the object a sound for `ObjectClass::AI`'s sound block
@@ -26,10 +34,11 @@
 //! cannot turn a step on again (a spent curtain stays spent), and the
 //! hidden-object count of its Cell, which only a building's arrival or
 //! departure changes, and those wake every object. The next turn's head
-//! ([`Simulation::steady_ai_visit`]) asks the last four, which read timers,
-//! the frame and the client's voice set; when none acts, it steps the
-//! counter and the stage clock in place of the visit. The rest of the turn
-//! (the locomotor, the fire visit) runs as before.
+//! ([`Simulation::steady_ai_visit`]) asks the rest of the list, which read
+//! timers, the frame, the client's voice set, its team, its house's heal
+//! count and its target's owner; when none acts, it steps the counter and
+//! the stage clock in place of the visit. The rest of the turn (the
+//! locomotor, the fire visit) runs as before.
 //!
 //! Only Units and Infantry are marked, under idle sleeping's switch and
 //! gates: no extension's unsorted per-visit steps, no campaign (its shroud
@@ -81,8 +90,13 @@ impl Simulation {
 
     /// Whether steady `id`'s visit acts on more than its counter and stage
     /// clock this frame: its mission handler or passive block is due, its
-    /// estimated health moves, or the client waits on its voice.
+    /// estimated health moves, the client waits on its voice, a target step
+    /// that reads more than the object asks, or a house heal arm heals it.
     fn steady_visit_acts(&self, id: u64, rules: &RuleSet) -> bool {
+        use super::techno_ai::{
+            allied_target_drops, house_heal_frame, house_heals, illegal_target_drop_frame,
+            target_reach_asks,
+        };
         let frame = self.session.binary_frame();
         let Some(entity) = self.substrate.entities.get(id) else {
             return true;
@@ -94,6 +108,15 @@ impl Simulation {
             || (entity.passive_scan.timer().due(frame)
                 && super::techno_ai::passive_block_acts(self, id, rules))
             || self.unit_voice_visit_interest.contains(&id)
+            || (entity.attack_target.target().is_some()
+                && (illegal_target_drop_frame(frame)
+                    || target_reach_asks(self, id, entity)
+                    || allied_target_drops(self, id, rules)))
+            || (house_heal_frame(frame, rules)
+                && self
+                    .interner
+                    .object_type(entity.type_ref(), rules)
+                    .is_none_or(|object| house_heals(&self.houses, entity, object, frame, rules)))
     }
 
     /// Check mode: what steady `id`'s visit must leave. Once a frame, on a
@@ -142,6 +165,10 @@ impl Simulation {
                 .object_type(entity.type_ref(), rules)
                 .is_some_and(|object| {
                     ai_rests(entity, object, frame, rules)
+                        // The healer drops (`0x006FA9D8`): only a healer's
+                        // target goes.
+                        && (entity.attack_target.target().is_none()
+                            || !super::techno_ai::combat_damage_heals(self, entity, object, rules))
                         // The Behind indicator: no Cell of its that could
                         // hide it, whatever stands there.
                         && super::techno_ai::behind_indicator_coord(self, id, entity, object)
@@ -160,28 +187,25 @@ impl Simulation {
 /// Whether every step of the AI visit of `entity` (a Unit or Infantryman of
 /// type `object`) but those [`Simulation::steady_ai_visit`] asks about finds
 /// it off at `frame` and at every later frame while its state stays as it
-/// is. The Behind indicator's Cell is asked apart
+/// is. The healer drops and the Behind indicator's Cell are asked apart
 /// ([`Simulation::steady_after_turn`]).
 ///
-/// What a fighting, hurt or busy object fails comes first, so most answer
-/// after a few reads (every term only reads, so the order changes no
-/// answer).
-fn ai_rests(
-    entity: &GameEntity,
-    object: &ObjectType,
-    frame: u32,
-    rules: &RuleSet,
-) -> bool {
+/// What a busy object fails comes first, so most answer after a few reads
+/// (every term only reads, so the order changes no answer).
+fn ai_rests(entity: &GameEntity, object: &ObjectType, frame: u32, rules: &RuleSet) -> bool {
     let health = entity.health.current();
-    // The target drops (`0x006FA30C`, `0x006FA472`, `0x006FA9D8`), the
-    // off-mission clear (`0x006FA5E8`) and the reach block (`0x006FAB48`).
-    entity.attack_target.target().is_none()
-        // Both self-heal steps (`0x006FA743`, `0x006FA79A`), InfantryClass::AI's
-        // Health reset (`0x0051BC57`) and the damage sparks.
-        && health == object.strength
-        && health > 0
+    // InfantryClass::AI's Health reset (`0x0051BC57`) at Health 0, and a
+    // hurt self-healer's pulse (`0x006FA743`); the house heal arms
+    // (`0x006FA79A`) the head asks, the damage sparks below.
+    health > 0
+        && health <= object.strength
+        && (health == object.strength
+            || !crate::sim::combat::veterancy::holds_self_heal(entity, object))
         // Ready/Commence (Unit736465, Infantry51BC51).
         && entity.mission.queued() == MissionId::NONE
+        // A target's off-mission clear (`0x006FA5E8`); its drops and reach
+        // block the head asks, the healer drops the mark.
+        && !super::techno_ai::off_mission_clear_drops(entity)
         // The visit's own gates: alive, not dying, no tube.
         && entity.lifecycle.object_alive()
         && !entity.lifecycle.in_limbo()
