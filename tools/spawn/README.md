@@ -15,8 +15,12 @@ directories (docs/spawn.md). Nothing here is used by ordinary play.
   Grants and ordering certificates are signed by `relay_grant.mjs` in the
   lobby's format (docs/lobby-protocol.md): `VO1C`, or `VO2C` with
   `--pacing on|off|continuous` (`run.sh`: `PACING=on|off|continuous`). Results go to `OUT/results.json`.
-* `SLOW=K` makes source K a slow PC: the spawn-only switch
-  `VERA20K_SPAWN_SLOW_PLAN` (`run.sh`: `SLOW_PLAN`) is
+* `SLOW=K` makes source K a slow PC. The spawn-only switches
+  `VERA20K_SPAWN_SLOW_DRAW_MS` and `VERA20K_SPAWN_SLOW_TICK_MS` (`run.sh`:
+  `SLOW_DRAW_MS`, `SLOW_TICK_MS`) add that many milliseconds to each drawn
+  picture and to each simulation tick throughout, the tick's inside its
+  reported cost. The switch `VERA20K_SPAWN_SLOW_PLAN` (`run.sh`:
+  `SLOW_PLAN`), which may be set as well (tick delays add up), is
   `second:draw_ms:tick_ms[:unreported_ms]` points, comma separated, from the
   match's start; that many milliseconds go on each frame pass (drawn or not,
   so hidden windows pay it too) and each simulation tick (inside its

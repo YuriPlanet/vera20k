@@ -381,10 +381,15 @@ impl MatchSeedClock for SpawnSeedClock {
     }
 }
 
-/// Spawn-only test switch (tools/spawn/README.md): with
-/// `VERA20K_SPAWN_SLOW_PLAN`, a `-SPAWN` multiplayer launch plays as a slow
-/// PC once its match is on screen, each frame pass (drawn or not) and each
-/// simulation tick taking that many milliseconds more. The plan is
+/// Spawn-only test switches (tools/spawn/README.md): a `-SPAWN` multiplayer
+/// launch plays as a slow PC once its match is on screen.
+///
+/// `VERA20K_SPAWN_SLOW_DRAW_MS` and `VERA20K_SPAWN_SLOW_TICK_MS` add that many
+/// milliseconds to each drawn picture and to each simulation tick throughout,
+/// the tick's inside the cost the relay's pace reports carry.
+///
+/// `VERA20K_SPAWN_SLOW_PLAN` adds delays that change over the match, to each
+/// frame pass (drawn or not) and each simulation tick. The plan is
 /// `second:draw_ms:tick_ms[:unreported_ms]` points, comma separated, from
 /// the match's start; the delays go linearly between points and hold after
 /// the last, so one point is a PC slow by the same amount throughout and
@@ -392,10 +397,14 @@ impl MatchSeedClock for SpawnSeedClock {
 /// delay is inside the cost the relay's pace reports carry; the unreported
 /// one is spent on each tick too but outside it, as a world copy for the
 /// picture is (2026-11-21, match 1e9fac21: 8 ms ticks, 55 frames a second).
-/// Read only for such launches; ordinary play never consults it.
+/// Both may be set; their tick delays add up. Read only for such launches;
+/// ordinary play never consults them.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct SpawnSlowPc {
+    /// Each frame pass, drawn or not (the plan).
     pub(crate) draw: std::time::Duration,
+    /// Each drawn picture only (`VERA20K_SPAWN_SLOW_DRAW_MS`).
+    pub(crate) drawn: std::time::Duration,
     pub(crate) tick: std::time::Duration,
     pub(crate) unreported: std::time::Duration,
 }
@@ -413,7 +422,11 @@ impl SpawnSlowPc {
         let Some(started) = progress.match_started else {
             return Self::default();
         };
-        Self::at(Self::plan(), started.elapsed().as_secs_f64())
+        let mut slow = Self::at(Self::plan(), started.elapsed().as_secs_f64());
+        let (drawn, tick) = Self::fixed();
+        slow.drawn = drawn;
+        slow.tick += tick;
+        slow
     }
 
     /// The delays `plan` gives `second` into the match.
@@ -435,6 +448,7 @@ impl SpawnSlowPc {
             draw: millis(delays[0]),
             tick: millis(delays[1]),
             unreported: millis(delays[2]),
+            ..Self::default()
         }
     }
 
@@ -485,6 +499,41 @@ impl SpawnSlowPc {
     #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
     fn plan() -> &'static [SlowPoint] {
         &[]
+    }
+
+    /// `VERA20K_SPAWN_SLOW_DRAW_MS` and `VERA20K_SPAWN_SLOW_TICK_MS`: the
+    /// drawn picture's and the tick's delays throughout the match.
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    fn fixed() -> (std::time::Duration, std::time::Duration) {
+        static FIXED: std::sync::OnceLock<(std::time::Duration, std::time::Duration)> =
+            std::sync::OnceLock::new();
+        *FIXED.get_or_init(|| {
+            let millis = |name| {
+                std::time::Duration::from_millis(
+                    std::env::var(name)
+                        .ok()
+                        .and_then(|value| value.trim().parse().ok())
+                        .unwrap_or(0),
+                )
+            };
+            let fixed = (
+                millis("VERA20K_SPAWN_SLOW_DRAW_MS"),
+                millis("VERA20K_SPAWN_SLOW_TICK_MS"),
+            );
+            if fixed != Default::default() {
+                log::info!(
+                    "Spawn test switch: playing as a slow PC, drawn {:?}, tick {:?}",
+                    fixed.0,
+                    fixed.1
+                );
+            }
+            fixed
+        })
+    }
+
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    fn fixed() -> (std::time::Duration, std::time::Duration) {
+        Default::default()
     }
 
     /// Spend `delay` on this thread, as a slow PC would.
