@@ -125,7 +125,8 @@ jobs:
           python-version: '3.12'
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
-          node-version: '22'
+          # Node 22 crashes (SIGSEGV) running sim-bench.wasm; 24 and 26 do not.
+          node-version: '24'
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: stable
