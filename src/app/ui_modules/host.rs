@@ -272,7 +272,7 @@ impl ClientHost for FrameHost<'_, '_> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

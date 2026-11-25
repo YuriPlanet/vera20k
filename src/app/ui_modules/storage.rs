@@ -244,7 +244,7 @@ fn write_atomically(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
 

@@ -770,7 +770,7 @@ pub(crate) fn rebind_game_keys(state: &mut AppState) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     #[test]

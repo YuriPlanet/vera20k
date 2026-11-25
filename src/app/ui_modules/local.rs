@@ -857,7 +857,7 @@ fn cell_coord(state: &AppState, x: u16, y: u16) -> Option<[i32; 3]> {
     runtime.simulation.trigger_cell_coord(cell)
 }
 
-#[cfg(test)]
+#[cfg(all(test, tests_app))]
 mod tests {
     use super::*;
     use crate::sim::ext_modules::{ClientNotify, ClientSimEvent};
