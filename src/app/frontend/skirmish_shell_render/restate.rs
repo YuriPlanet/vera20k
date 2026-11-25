@@ -16,7 +16,14 @@ pub(crate) fn render_restate_shell(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
-    crate::app::input::restate::sync(state).expect("active 0x10C geometry");
+    crate::app::input::restate::sync(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
+    )
+    .expect("active 0x10C geometry");
     super::in_game_shell::paint_dialog(state, encoder, destination, &DIALOG, |paint, ui| {
         let content = RestateControl::Content.id();
         // The briefing 0x6E7 is SS_LEFT, top aligned (its node's `Align`),

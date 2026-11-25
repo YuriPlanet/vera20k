@@ -6,7 +6,14 @@
 //! and child routing remain with their established owners.
 
 use super::audio::{AudioVolume, apply_volume, set_volume};
+use crate::app::PlatformState;
+use crate::app::audio_runtime::AppAudioRuntime;
+use crate::app::frontend::state::FrontendState;
+use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
 use crate::app::{App, AppState};
 use crate::ui::main_menu_dialogs::options::{
     LauncherCheckboxId as C, LauncherOptionsEvent, LauncherOptionsLabels, LauncherOptionsPacked,
@@ -400,49 +407,60 @@ fn apply_launcher_parent(
 /// applies and destroys the primary before child preparation/route or the one
 /// final write. Keyboard then rebuilds a fresh primary without writing.
 pub(crate) fn dispatch_launcher_parent_result(
-    state: &mut AppState,
+    platform: &mut PlatformState,
+    renderer: &RendererState,
+    frontend: &mut FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    audio: &mut AppAudioRuntime,
+    persistence: &mut PersistenceState,
     dialog: OptionsDialogState,
     result: LauncherParentResult,
     opened: Option<LauncherOptionsPacked>,
 ) {
     apply_launcher_parent(
-        &state.platform,
-        &mut state.match_state,
-        &mut state.audio,
-        &mut state.persistence.options_profile,
+        platform,
+        match_state,
+        audio,
+        &mut persistence.options_profile,
         dialog.pack(),
         opened,
     );
     drop(dialog);
     match result {
         LauncherParentResult::Back | LauncherParentResult::Terminal => {
-            super::persist_options_profile(&state.platform, &state.persistence.options_profile);
+            super::persist_options_profile(platform, &persistence.options_profile);
         }
         LauncherParentResult::Keyboard => {
             use crate::ui::shell::keyboard::KeyboardParent;
-            crate::app::input::keyboard::open(state, KeyboardParent::Launcher);
+            crate::app::input::keyboard::open(
+                platform,
+                renderer,
+                frontend,
+                match_state,
+                process_assets,
+                audio,
+                persistence,
+                KeyboardParent::Launcher,
+            );
             // Native caller blocks in A3. Our asynchronous child resumes this
             // continuation when it closes (after its teardown slide).
-            if state.frontend.keyboard_dialog.is_none() {
+            if frontend.keyboard_dialog.is_none() {
                 App::open_launcher_options_dialog(
-                    &state.platform,
-                    &state.renderer,
-                    &mut state.frontend,
-                    &state.process_assets,
-                    &state.audio,
-                    &state.persistence.options_profile,
+                    platform,
+                    renderer,
+                    frontend,
+                    process_assets,
+                    audio,
+                    &persistence.options_profile,
                 );
             }
         }
         // VERA's own. Written first: Use This Mod leaves the game from the
         // Mods page, whose Back builds the parent again.
         LauncherParentResult::Mods => {
-            super::persist_options_profile(&state.platform, &state.persistence.options_profile);
-            App::open_mods_page(
-                state.platform.game_config.as_ref(),
-                &state.renderer.gpu,
-                &mut state.frontend,
-            );
+            super::persist_options_profile(platform, &persistence.options_profile);
+            App::open_mods_page(platform.game_config.as_ref(), &renderer.gpu, frontend);
         }
     }
 }

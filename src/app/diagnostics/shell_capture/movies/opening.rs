@@ -731,16 +731,38 @@ impl OpeningCapture {
         if !locked || depth_before >= 0 {
             return Ok(());
         }
-        App::enter_in_game_menu_state(state, InGameMenuState::Menu);
+        App::enter_in_game_menu_state(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            InGameMenuState::Menu,
+        );
         try_load_save_file(state, &unlocked).context("load the unlocked save in the lock")?;
-        App::enter_in_game_menu_state(state, InGameMenuState::Closed);
+        App::enter_in_game_menu_state(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            InGameMenuState::Closed,
+        );
         self.loaded_frame = Some(installed_frame(&state.match_state.sim_runtime)?);
         let locked_after = crate::app::input::campaign_input::is_locked(&state.match_state);
         let depth_after = state.match_state.input.cursor_visibility.level();
         let cursor_instances_after =
             crate::app::presentation::ui_overlays::build_software_cursor_instances(
                 state,
-                &crate::app::input::cursor::CursorTargets::read(state),
+                &crate::app::input::cursor::CursorTargets::read(
+                    &state.platform,
+                    &state.frontend,
+                    &state.match_state,
+                ),
             )
             .0
             .len();

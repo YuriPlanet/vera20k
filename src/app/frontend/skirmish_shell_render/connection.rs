@@ -48,7 +48,14 @@ pub(crate) fn render_connection_shell(
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
 ) -> anyhow::Result<()> {
-    crate::app::input::connection::sync(state).expect("active 0xEA geometry");
+    crate::app::input::connection::sync(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
+    )
+    .expect("active 0xEA geometry");
     in_game_shell::paint_dialog(state, encoder, destination, &DIALOG, |paint, ui| {
         let state = paint.state;
         let page = state.match_state.network_wait.page().expect("open 0xEA");

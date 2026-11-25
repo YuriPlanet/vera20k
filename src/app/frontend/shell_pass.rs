@@ -38,7 +38,14 @@ pub(crate) fn software_cursor(
     depth: f32,
 ) -> Option<(&BatchTexture, SpriteInstance)> {
     use crate::app::input::precedence::{ModalPage, modal_page};
-    if modal_page(state) == Some(ModalPage::ShellMessageBox) {
+    if modal_page(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) == Some(ModalPage::ShellMessageBox)
+    {
         return None;
     }
     top_software_cursor(state, depth)

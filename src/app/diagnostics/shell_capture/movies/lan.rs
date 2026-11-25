@@ -2658,8 +2658,14 @@ impl LanCapture {
                     self.phase = match self.target {
                         LanTarget::HostObserve => LanPhase::Observing,
                         LanTarget::HostObserveOffered => {
-                            let layout = crate::app::input::abort::current_abort_layout(state)
-                                .context("B6 geometry")?;
+                            let layout = crate::app::input::abort::current_abort_layout(
+                                &state.platform,
+                                &state.renderer,
+                                &state.frontend,
+                                &state.match_state,
+                                &state.persistence,
+                            )
+                            .context("B6 geometry")?;
                             ensure!(
                                 layout.secondary_kind
                                     == crate::ui::shell::abort::AbortSecondary::Observe,
@@ -2732,8 +2738,14 @@ impl LanCapture {
                     .context("LAN observed abort input")?
                     .after_present(state, &mut self.route, frame)?
                 {
-                    let layout = crate::app::input::abort::current_abort_layout(state)
-                        .context("B6 geometry after defeat")?;
+                    let layout = crate::app::input::abort::current_abort_layout(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.persistence,
+                    )
+                    .context("B6 geometry after defeat")?;
                     ensure!(
                         layout.secondary_kind == crate::ui::shell::abort::AbortSecondary::Hidden,
                         "a defeated House was offered Observe"
@@ -2890,7 +2902,13 @@ impl LanCapture {
                             &mut state.match_state.input,
                             rect,
                         );
-                        crate::app::input::coop_score::cursor_moved(state);
+                        crate::app::input::coop_score::cursor_moved(
+                            &state.renderer,
+                            &mut state.frontend,
+                            &state.match_state,
+                            &state.process_assets,
+                            &mut state.audio.sfx_player,
+                        );
                         crate::app::input::coop_score::mouse(state, MouseButton::Left, true);
                         crate::app::input::coop_score::mouse(state, MouseButton::Left, false);
                         let requests = state.match_state.session.take_network_send_requests();
@@ -3137,7 +3155,14 @@ impl LanCapture {
                 self.phase = LanPhase::Ally(1);
             }
             1 => {
-                let layout = diplomacy::layout(state).context("0x73 has no hit geometry")?;
+                let layout = diplomacy::layout(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                )
+                .context("0x73 has no hit geometry")?;
                 let before = row(state).context("no Allies box on the peer row")?;
                 ensure!(
                     before.enabled && !before.checked && !before.partner,
@@ -3263,7 +3288,19 @@ impl LanCapture {
                     .and_then(|launch| launch.humans.get(1))
                     .map(|human| i32::from(human.slot.color_index))
                     .context("the peer's colour")?;
-                crate::app::input::chat::receive_packet(state, &peer, color, "gg");
+                crate::app::input::chat::receive_packet(
+                    &state.platform,
+                    &state.renderer,
+                    &state.diag,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                    &state.persistence,
+                    &peer,
+                    color,
+                    "gg",
+                );
                 let received = format!("{peer}:gg");
                 ensure!(
                     rows(state).last() == Some(&received),
@@ -3276,7 +3313,14 @@ impl LanCapture {
                 self.phase = LanPhase::Chat(1);
             }
             1 => {
-                let layout = diplomacy::layout(state).context("0x73 has no hit geometry")?;
+                let layout = diplomacy::layout(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                )
+                .context("0x73 has no hit geometry")?;
                 let checked = |state: &AppState| {
                     diplomacy::view(&state.frontend, &state.match_state, &state.process_assets).rows
                         [1]
@@ -3474,7 +3518,14 @@ impl LanCapture {
                         == Some(true),
                     "TauntsOn is not shown checked"
                 );
-                let layout = diplomacy::layout(state).context("0x73 has no hit geometry")?;
+                let layout = diplomacy::layout(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                )
+                .context("0x73 has no hit geometry")?;
                 // A press on the caption is outside the 18x18 icon.
                 let rect = layout.control_rect(DiplomacyControl::Taunts);
                 click_in_game(state, RectPx::new(rect.x + 40, rect.y, rect.w - 40, rect.h));

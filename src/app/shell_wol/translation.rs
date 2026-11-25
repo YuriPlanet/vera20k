@@ -104,7 +104,14 @@ pub(super) fn show(
                 color,
             );
             crate::app::input::messages::post_chat_line(
-                state,
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
                 &name,
                 &format!("{MARKER}{translated}"),
                 rgb,

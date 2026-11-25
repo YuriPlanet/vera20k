@@ -200,8 +200,14 @@ impl AbortReturnInput {
                 route.push(
                     json!({"frame": frame, "action": "pause menu presented", "dialog": dialog}),
                 );
-                let mut layout = crate::app::input::pause_menu::current_layout(state)
-                    .context("B5 has no loaded hit geometry")?;
+                let mut layout = crate::app::input::pause_menu::current_layout(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                )
+                .context("B5 has no loaded hit geometry")?;
                 if self.stop_at_menu {
                     let internet = state.match_state.match_presentation.pause_menu_template
                         == crate::ui::shell::pause_menu::PauseMenuTemplate::Internet;
@@ -220,8 +226,14 @@ impl AbortReturnInput {
                                 .get(row)
                                 .with_context(|| format!("FF has no {step} button"))?;
                             let point = click_in_game(state, rect);
-                            layout = crate::app::input::pause_menu::current_layout(state)
-                                .context("FF has no loaded hit geometry")?;
+                            layout = crate::app::input::pause_menu::current_layout(
+                                &state.platform,
+                                &state.renderer,
+                                &state.frontend,
+                                &state.match_state,
+                                &state.persistence,
+                            )
+                            .context("FF has no loaded hit geometry")?;
                             route.push(json!({"frame": frame, "action": step,
                                 "dialog": dialog, "point": point}));
                         }
@@ -319,8 +331,14 @@ impl AbortReturnInput {
                         ),
                     "B6 did not present with its required loaded artwork"
                 );
-                let layout = crate::app::input::abort::current_abort_layout(state)
-                    .context("B6 has no loaded geometry")?;
+                let layout = crate::app::input::abort::current_abort_layout(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                )
+                .context("B6 has no loaded geometry")?;
                 route.push(
                     json!({"frame": frame, "action": "abort modal presented", "dialog": 0xb6,
                     "secondary": format!("{:?}", layout.secondary_kind),
@@ -432,9 +450,15 @@ impl AbortReturnInput {
                         ),
                     "B6 secondary capture changed before its presented press/release"
                 );
-                let secondary = crate::app::input::abort::current_abort_layout(state)
-                    .context("B6 has no loaded geometry")?
-                    .secondary_kind;
+                let secondary = crate::app::input::abort::current_abort_layout(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                )
+                .context("B6 has no loaded geometry")?
+                .secondary_kind;
                 crate::app::input::dispatch::handle_mouse_input(
                     state,
                     MouseButton::Left,
@@ -511,9 +535,15 @@ impl AbortReturnInput {
                         )),
                     "an EXIT was already queued before physical Leave release"
                 );
-                let destructs = crate::app::input::abort::current_abort_layout(state)
-                    .context("B6 has no loaded geometry")?
-                    .secondary_kind
+                let destructs = crate::app::input::abort::current_abort_layout(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                )
+                .context("B6 has no loaded geometry")?
+                .secondary_kind
                     == AbortSecondary::Observe;
                 crate::app::input::dispatch::handle_mouse_input(
                     state,

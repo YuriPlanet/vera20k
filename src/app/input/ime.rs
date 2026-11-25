@@ -168,7 +168,13 @@ fn edit_target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
         if !browser.edit().focused {
             return None;
         }
-        let (target, layout) = match crate::app::input::precedence::input_layer(state) {
+        let (target, layout) = match crate::app::input::precedence::input_layer(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+        ) {
             InputLayer::Screen(ScreenPage::LoadSavedGame) => (
                 ImeTarget::MainMenuConversionName,
                 crate::app::frontend::shell_layout::load_saved_game_layout(
@@ -377,7 +383,13 @@ fn gui_screen(state: &AppState) -> Option<(GuiScreen, &vera20k_gui::Gui)> {
         .choose_map_modal
         .as_ref()
         .is_some_and(|modal| modal.message_box.is_none() && !modal.is_hidden());
-    match input_layer(state) {
+    match input_layer(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &state.match_state,
+        &state.persistence,
+    ) {
         InputLayer::Screen(ScreenPage::LanLobby) => Some((GuiScreen::LanLobby, shell.gui())),
         InputLayer::Screen(ScreenPage::NetworkSetup | ScreenPage::Skirmish) if chooser => {
             Some((GuiScreen::ChooseMap, shell.gui()))

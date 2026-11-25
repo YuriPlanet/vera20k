@@ -690,7 +690,14 @@ impl SkirmishCapture {
             })
             .context("the local player has no MCV")?;
             crate::app::input::commands::schedule_command(
-                state,
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
                 &owner,
                 crate::sim::command::Command::DeployMcv { entity_id: mcv },
             );
@@ -703,7 +710,14 @@ impl SkirmishCapture {
             })
         {
             crate::app::input::commands::schedule_command(
-                state,
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
                 &owner,
                 crate::sim::command::Command::SellBuilding { entity_id: yard },
             );
@@ -1790,11 +1804,17 @@ impl SkirmishCapture {
         match target {
             InGameMenuTarget::Menu | InGameMenuTarget::AbortConfirm => {}
             InGameMenuTarget::Options => {
-                let rect = *crate::app::input::pause_menu::current_layout(state)
-                    .context("B5 has no loaded hit geometry")?
-                    .page_column()
-                    .first()
-                    .context("B5 shows no Options button")?;
+                let rect = *crate::app::input::pause_menu::current_layout(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                )
+                .context("B5 has no loaded hit geometry")?
+                .page_column()
+                .first()
+                .context("B5 shows no Options button")?;
                 let point = super::movies::click_in_game(state, rect);
                 self.route.push(
                     json!({"frame": frame, "action": "Options", "dialog": 0xb5, "point": point}),
@@ -1810,10 +1830,16 @@ impl SkirmishCapture {
                 );
             }
             InGameMenuTarget::Sound => {
-                let rect = crate::app::input::pause_menu::options_page_layout(state)
-                    .context("Game Controls has no loaded page geometry")?
-                    .button_rect(LauncherButton::InGameSound)
-                    .context("Game Controls shows no Sound button")?;
+                let rect = crate::app::input::pause_menu::options_page_layout(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                )
+                .context("Game Controls has no loaded page geometry")?
+                .button_rect(LauncherButton::InGameSound)
+                .context("Game Controls shows no Sound button")?;
                 let point = super::movies::click_in_game(state, rect);
                 self.route.push(
                     json!({"frame": frame, "action": "Sound", "dialog": 0xb5, "point": point}),
@@ -1822,13 +1848,25 @@ impl SkirmishCapture {
             InGameMenuTarget::Keyboard => {
                 // The sidebar row under Options, or the page's own button
                 // where the sidebar has no row for it.
-                let rect = match crate::app::input::pause_menu::current_layout(state)
-                    .and_then(|layout| layout.button(PauseMenuButton::Keyboard))
+                let rect = match crate::app::input::pause_menu::current_layout(
+                    &state.platform,
+                    &state.renderer,
+                    &state.frontend,
+                    &state.match_state,
+                    &state.persistence,
+                )
+                .and_then(|layout| layout.button(PauseMenuButton::Keyboard))
                 {
                     Some(rect) => rect,
-                    None => crate::app::input::pause_menu::options_page_layout(state)
-                        .and_then(|layout| layout.button_rect(LauncherButton::InGameKeyboard))
-                        .context("B5 shows no Keyboard button")?,
+                    None => crate::app::input::pause_menu::options_page_layout(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend,
+                        &state.match_state,
+                        &state.persistence,
+                    )
+                    .and_then(|layout| layout.button_rect(LauncherButton::InGameKeyboard))
+                    .context("B5 shows no Keyboard button")?,
                 };
                 let point = super::movies::click_in_game(state, rect);
                 self.route.push(

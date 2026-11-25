@@ -461,7 +461,11 @@ pub(crate) fn render_game(
     let phase1_started = render_started.map(|_| Instant::now());
     // The selection in order and the cursor's pick each walk every object;
     // the draw reads them once (TacticalPick 6DA380 runs once per frame).
-    let cursor_targets = crate::app::input::cursor::CursorTargets::read(state);
+    let cursor_targets = crate::app::input::cursor::CursorTargets::read(
+        &state.platform,
+        &state.frontend,
+        &state.match_state,
+    );
     // A selected building is in the selection, so only its few members are
     // asked, not every record of the frame.
     let selected_building = state.match_state.sim_runtime.frame().is_some_and(|frame| {
@@ -1285,15 +1289,27 @@ fn upload_to_gpu(
     // overlay and before the software cursor (O10).
     let mut tooltip_hud = std::mem::take(&mut state.match_state.match_presentation.tooltip_hud);
     let (mut tooltip_fill, mut tooltip_border, mut tooltip_text) =
-        crate::app::input::tooltips::build_tooltip_instances(state, &mut tooltip_hud);
+        crate::app::input::tooltips::build_tooltip_instances(
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &mut tooltip_hud,
+        );
     state.match_state.match_presentation.tooltip_hud = tooltip_hud;
     // The layout edit mode's outlines and names share the tooltip's lanes:
     // over the whole frame, sidebar included.
     {
         let mut edit_hud =
             std::mem::take(&mut state.match_state.match_presentation.layout_edit_hud);
-        let (fills, borders, texts) =
-            crate::app::input::layout_edit::instances(state, &mut edit_hud);
+        let (fills, borders, texts) = crate::app::input::layout_edit::instances(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &state.persistence,
+            &mut edit_hud,
+        );
         state.match_state.match_presentation.layout_edit_hud = edit_hud;
         tooltip_fill.extend(fills);
         tooltip_border.extend(borders);

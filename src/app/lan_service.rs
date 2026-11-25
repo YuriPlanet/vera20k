@@ -1830,7 +1830,19 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
                 message.name(),
                 chat.color as i32,
             );
-            super::input::chat::receive_packet(state, &name, color, &chat.text());
+            super::input::chat::receive_packet(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &mut state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &mut state.audio.sfx_player,
+                &state.persistence,
+                &name,
+                color,
+                &chat.text(),
+            );
             return Ok(());
         }
         if let Some(taunt) = message.in_game_taunt_fields() {

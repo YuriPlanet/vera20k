@@ -10,6 +10,7 @@ use crate::app::frontend::state::ShellMessageBoxPurpose as Purpose;
 use crate::app::input::state::MatchInputState;
 use crate::app::match_runtime::sim_host::SimWrite;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::persistence::SaveRepository;
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::app::process_assets::ProcessAssets;
@@ -1055,7 +1056,16 @@ impl App {
             }
             Some(result) => {
                 crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
-                    state, dialog, result, None,
+                    &mut state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &mut state.persistence,
+                    dialog,
+                    result,
+                    None,
                 );
             }
             None => {
@@ -1102,19 +1112,40 @@ impl App {
             return;
         };
         crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
-            state, dialog, result, None,
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+            dialog,
+            result,
+            None,
         );
     }
 
     /// The in-game menu's Options page has closed: the controls the player
     /// moved commit as the main menu's do, and the profile is written once.
     pub(crate) fn commit_in_game_options_page(
-        state: &mut AppState,
+        platform: &mut PlatformState,
+        renderer: &RendererState,
+        frontend: &mut FrontendState,
+        match_state: &mut MatchState,
+        process_assets: &ProcessAssets,
+        audio: &mut AppAudioRuntime,
+        persistence: &mut PersistenceState,
         dialog: crate::ui::main_menu_dialogs::OptionsDialogState,
         opened: crate::ui::main_menu_dialogs::options::LauncherOptionsPacked,
     ) {
         crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
-            state,
+            platform,
+            renderer,
+            frontend,
+            match_state,
+            process_assets,
+            audio,
+            persistence,
             dialog,
             LauncherParentResult::Back,
             Some(opened),
@@ -1165,7 +1196,13 @@ impl App {
             return;
         };
         crate::app::persistence::options::launcher::dispatch_launcher_parent_result(
-            state,
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
             dialog,
             LauncherParentResult::Terminal,
             None,
@@ -1633,7 +1670,15 @@ impl App {
         // Complete that transaction before unrelated shell teardown.
         crate::app::input::keyboard::prepare_terminal_exit(state);
         Self::close_launcher_options_terminal(state);
-        crate::app::input::pause_menu::on_match_end(state);
+        crate::app::input::pause_menu::on_match_end(
+            &mut state.platform,
+            &state.renderer,
+            &mut state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence,
+        );
         if crate::app::input::precedence::route_page(&state.frontend)
             == crate::app::input::precedence::ScreenPage::Skirmish
         {

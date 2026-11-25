@@ -1044,7 +1044,15 @@ impl App {
             &state.match_state,
             hidden_run.is_some(),
         );
-        let tooltip_ms = crate::app::input::tooltips::update(state);
+        let tooltip_ms = crate::app::input::tooltips::update(
+            &state.platform,
+            &state.renderer,
+            &state.diag,
+            &state.frontend,
+            &mut state.match_state,
+            &state.process_assets,
+            &state.persistence,
+        );
         // `Init_Game` plays the startup logo (`0x0052C5E2`) before it presents
         // the splash (`0x0052C5F3`): the splash waits while a movie owns the
         // screen through the ordinary FullscreenMovie page below.
@@ -1160,9 +1168,21 @@ impl App {
         let message_ms = if state.focus_freeze_active() {
             None
         } else {
-            crate::app::input::messages::show_status_notices(state);
+            crate::app::input::messages::show_status_notices(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.persistence,
+            );
             crate::app::input::messages::update(
-                state,
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.persistence,
                 runtime_pass.main_tick_admitted || hidden_run.is_some(),
             )
         };
@@ -1319,7 +1339,13 @@ impl App {
         }
         Self::update_saved_game_browser(state, false);
         // Input routes to these same pages (`input::precedence`).
-        let (page, screen_page) = crate::app::input::precedence::presented(state);
+        let (page, screen_page) = crate::app::input::precedence::presented(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+        );
         // VERA's enlarged map preview shows only over the pages that open it.
         if page.is_some() || !matches!(screen_page, ScreenPage::Skirmish | ScreenPage::NetworkSetup)
         {

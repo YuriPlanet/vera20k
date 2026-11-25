@@ -23,10 +23,17 @@
 //! - Part of the app layer — may depend on everything.
 
 use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::match_runtime::beacons::{self, BeaconTarget};
 use crate::app::match_runtime::sim_host::SimHost;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
 use crate::app::presentation::state::MatchPresentationState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
 
 /// SetPlaceBeaconMode's argument.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,57 +82,106 @@ pub(crate) fn place_beacon_mode_transition(
 /// the sidebar gadget state's, and entry runs Unselect_All (`0x004AC9EA`).
 /// A change also clears the power byte (`0x004AC9C7`). The cursor rows reset
 /// by vt+0x48/+0x50 follow from the bytes.
-pub(crate) fn set_place_beacon_mode(state: &mut AppState, request: BeaconModeRequest) {
-    let gadgets = &state.match_state.match_presentation.sidebar_gadget_state;
+pub(crate) fn set_place_beacon_mode(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    request: BeaconModeRequest,
+) {
+    let gadgets = &match_state.match_presentation.sidebar_gadget_state;
     let modes = DisplayModes {
         repair: gadgets.repair_mode_on,
         sell: gadgets.sell_mode_on,
         beacon: gadgets.place_beacon_mode_on,
     };
-    let can_place =
-        beacons::local_house_index(&state.match_state.sim_runtime).is_some_and(|house| {
-            state
-                .match_state
-                .match_presentation
-                .beacons
-                .can_place(house)
-        });
+    let can_place = beacons::local_house_index(&match_state.sim_runtime)
+        .is_some_and(|house| match_state.match_presentation.beacons.can_place(house));
     let Some(next) = place_beacon_mode_transition(
         request,
         modes,
-        state.armed_building_type().is_some(),
+        match_state.input.armed_building_type().is_some(),
         can_place,
     ) else {
         return;
     };
-    let gadgets = &mut state.match_state.match_presentation.sidebar_gadget_state;
+    let gadgets = &mut match_state.match_presentation.sidebar_gadget_state;
     gadgets.repair_mode_on = next.repair;
     gadgets.sell_mode_on = next.sell;
     gadgets.place_beacon_mode_on = next.beacon;
     gadgets.power_mode_on = false;
     if next.beacon {
-        crate::app::input::dispatch::unselect_all(state);
+        crate::app::input::dispatch::unselect_all(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+        );
     }
 }
 
 /// `BeaconPlacementCommandClass::Execute 0x005370A0`: the key refuses
 /// GameMode 0 and 5.
-pub(crate) fn execute_command(state: &mut AppState) {
-    if beacons::feedback_mode(state.match_state.session_mode()) {
-        enter_placement_mode(state);
+pub(crate) fn execute_command(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    if beacons::feedback_mode(match_state.session_mode()) {
+        enter_placement_mode(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+        );
     }
 }
 
 /// `Enter_Beacon_Placement_Mode 0x00731A30`, the button's whole action:
 /// refused once the local player is out (`[0x00A8B538]`).
-pub(crate) fn enter_placement_mode(state: &mut AppState) {
-    let defeated = state
-        .match_state
+pub(crate) fn enter_placement_mode(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    let defeated = match_state
         .sim_runtime
         .runtime()
         .is_none_or(|runtime| runtime.simulation.local_player_defeated());
     if !defeated {
-        set_place_beacon_mode(state, BeaconModeRequest::Toggle);
+        set_place_beacon_mode(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+            BeaconModeRequest::Toggle,
+        );
     }
 }
 
@@ -170,16 +226,44 @@ pub(crate) fn place_at_cell(state: &mut AppState, cell: (u16, u16)) {
         let coord = cell_coord(&state.match_state.sim_runtime, cell);
         beacons::place_beacon(state, house, coord, None);
     }
-    set_place_beacon_mode(state, BeaconModeRequest::Off);
+    set_place_beacon_mode(
+        &state.platform,
+        &state.renderer,
+        &state.diag,
+        &state.frontend,
+        &mut state.match_state,
+        &state.process_assets,
+        &mut state.audio.sfx_player,
+        &state.persistence,
+        BeaconModeRequest::Off,
+    );
 }
 
 /// BandBox_LeftUp's action 0x3D: `SelectBeacon 0x00430F70` at the Cell.
-pub(crate) fn select_at_cell(state: &mut AppState, cell: (u16, u16)) {
-    let coord = cell_coord(&state.match_state.sim_runtime, cell);
-    if let Some((house, slot)) = state.match_state.match_presentation.beacons.find_at(coord) {
-        crate::app::input::dispatch::unselect_all(state);
-        state
-            .match_state
+pub(crate) fn select_at_cell(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+    cell: (u16, u16),
+) {
+    let coord = cell_coord(&match_state.sim_runtime, cell);
+    if let Some((house, slot)) = match_state.match_presentation.beacons.find_at(coord) {
+        crate::app::input::dispatch::unselect_all(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+        );
+        match_state
             .match_presentation
             .beacons
             .set_selected(house, slot);

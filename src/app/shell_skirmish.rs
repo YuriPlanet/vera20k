@@ -129,7 +129,13 @@ impl App {
     ) -> Option<crate::ui::shell::geom::RectPx> {
         use crate::app::input::precedence::{InputLayer, ScreenPage};
         if !matches!(
-            crate::app::input::precedence::input_layer(state),
+            crate::app::input::precedence::input_layer(
+                &state.platform,
+                &state.renderer,
+                &state.frontend,
+                &state.match_state,
+                &state.persistence
+            ),
             InputLayer::Screen(ScreenPage::NetworkSetup | ScreenPage::Skirmish)
         ) {
             return None;
@@ -1014,7 +1020,14 @@ impl App {
     /// returns the next wake deadline.
     pub(super) fn poll_skirmish_opponent_scroll(state: &mut AppState) -> Option<Instant> {
         use crate::app::input::precedence::{InputLayer, ScreenPage, input_layer};
-        if input_layer(state) != InputLayer::Screen(ScreenPage::Skirmish) {
+        if input_layer(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+        ) != InputLayer::Screen(ScreenPage::Skirmish)
+        {
             return None;
         }
         let frontend = &mut state.frontend;

@@ -466,7 +466,13 @@ impl App {
                 }
             }
             ScreenPage::CoopScore => match edge {
-                None => crate::app::input::coop_score::cursor_moved(state),
+                None => crate::app::input::coop_score::cursor_moved(
+                    &state.renderer,
+                    &mut state.frontend,
+                    &state.match_state,
+                    &state.process_assets,
+                    &mut state.audio.sfx_player,
+                ),
                 Some((button, edge)) => {
                     crate::app::input::coop_score::mouse(state, button, edge.is_pressed())
                 }
@@ -516,7 +522,13 @@ impl App {
     fn route_to_layer(state: &mut AppState, input: Input) {
         use crate::app::frontend::preview_zoom;
         use crate::app::input::tooltips;
-        let layer = crate::app::input::precedence::input_layer(state);
+        let layer = crate::app::input::precedence::input_layer(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &state.match_state,
+            &state.persistence,
+        );
         // The blocking layers take every input first.
         match (layer, input) {
             (InputLayer::HouseOutcomeWait, Input::Key(event)) => {
@@ -587,7 +599,15 @@ impl App {
             // Shared tooltip service: every move restarts the show delay and
             // hides a visible tip, and any button edge (middle too) kills a
             // visible tip and its timer (study S1).
-            Input::Move => tooltips::on_mouse_move(state),
+            Input::Move => tooltips::on_mouse_move(
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.persistence,
+            ),
             Input::Button(..) => tooltips::on_button_event(&state.diag, &mut state.match_state),
             Input::Key(_) | Input::Wheel(_) => {}
         }
@@ -599,7 +619,15 @@ impl App {
             InputLayer::Page(ModalPage::NetworkWait) => {
                 match input {
                     Input::Key(event) => release_held_key(&mut state.match_state.input, event),
-                    Input::Move => crate::app::input::connection::cursor_moved(state),
+                    Input::Move => crate::app::input::connection::cursor_moved(
+                        &state.platform,
+                        &state.renderer,
+                        &state.frontend,
+                        &mut state.match_state,
+                        &state.process_assets,
+                        &mut state.audio.sfx_player,
+                        &state.persistence,
+                    ),
                     Input::Button(button, edge) => {
                         dispatch::handle_mouse_input(state, button, edge)
                     }
@@ -718,7 +746,13 @@ impl App {
             && state.match_state.input.planning.owns_key(code)
         {
             crate::app::input::planning_mode::key_edge(
-                state,
+                &state.platform,
+                &state.renderer,
+                &state.diag,
+                &state.frontend,
+                &mut state.match_state,
+                &state.process_assets,
+                &state.persistence,
                 crate::app::input::hotkeys::HotkeyResolution::Unhandled,
                 code,
                 event.state,

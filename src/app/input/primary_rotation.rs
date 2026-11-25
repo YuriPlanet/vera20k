@@ -22,13 +22,19 @@
 //! it, it ends with the match, and it ends when the key is pressed on the
 //! same factories again or fewer than two of them are left.
 
-use crate::app::AppState;
+use crate::app::PlatformState;
+use crate::app::diagnostics::state::DiagnosticsState;
+use crate::app::frontend::state::FrontendState;
 use crate::app::input::commands::{
     command_executed_by, preferred_local_owner_name, try_schedule_command,
 };
 use crate::app::input::dispatch::selected_stable_ids_in_order;
 use crate::app::match_audio::QuietSound;
 use crate::app::match_runtime::state::MatchState;
+use crate::app::persistence::PersistenceState;
+use crate::app::process_assets::ProcessAssets;
+use crate::app::renderer_state::RendererState;
+use crate::audio::sfx::SfxPlayer;
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::{FactoryType, ObjectCategory};
 use crate::rules::ruleset::RuleSet;
@@ -338,12 +344,21 @@ fn send(
 }
 
 /// The Rotate Primary key.
-pub(crate) fn hotkey_pressed(state: &mut AppState) {
-    let Some(owner_name) = preferred_local_owner_name(&state.match_state) else {
+pub(crate) fn hotkey_pressed(
+    platform: &PlatformState,
+    renderer: &RendererState,
+    diag: &DiagnosticsState,
+    frontend: &FrontendState,
+    match_state: &mut MatchState,
+    process_assets: &ProcessAssets,
+    sfx_player: &mut Option<SfxPlayer>,
+    persistence: &PersistenceState,
+) {
+    let Some(owner_name) = preferred_local_owner_name(match_state) else {
         return;
     };
-    let mut rotation = std::mem::take(&mut state.match_state.input.primary_rotation);
-    let result = state.match_state.sim_runtime.runtime().and_then(|runtime| {
+    let mut rotation = std::mem::take(&mut match_state.input.primary_rotation);
+    let result = match_state.sim_runtime.runtime().and_then(|runtime| {
         let sim = &runtime.simulation;
         let rules = &runtime.resources.rules;
         let owner = sim.interner().get(&owner_name)?;
@@ -351,26 +366,29 @@ pub(crate) fn hotkey_pressed(state: &mut AppState) {
         let selected = selected_stable_ids_in_order(
             Some(sim),
             Some(rules),
-            &state.match_state.input.selection_order,
-            state.match_state.input.selection_order_pending,
+            &match_state.input.selection_order,
+            match_state.input.selection_order_pending,
         );
         let (rotating, turns) = rotation.toggle(sim, rules, owner, &selected, now)?;
         Some((owner, now, rotating, turns))
     });
     let rotating = result.map(|(owner, now, rotating, turns)| {
-        send(
-            &mut state.match_state,
-            &mut rotation,
-            &owner_name,
-            owner,
-            turns,
-            now,
-        );
+        send(match_state, &mut rotation, &owner_name, owner, turns, now);
         rotating
     });
-    state.match_state.input.primary_rotation = rotation;
+    match_state.input.primary_rotation = rotation;
     if let Some(rotating) = rotating {
-        crate::app::input::messages::post_primary_rotation(state, rotating);
+        crate::app::input::messages::post_primary_rotation(
+            platform,
+            renderer,
+            diag,
+            frontend,
+            match_state,
+            process_assets,
+            sfx_player,
+            persistence,
+            rotating,
+        );
     }
 }
 

@@ -1106,7 +1106,13 @@ impl App {
                 // The player's route: open the abort box (its init picks
                 // Observe/Leave from the live match), then press a button.
                 Self::enter_in_game_menu_state(
-                    state,
+                    &mut state.platform,
+                    &state.renderer,
+                    &mut state.frontend,
+                    &mut state.match_state,
+                    &state.process_assets,
+                    &mut state.audio,
+                    &mut state.persistence,
                     crate::ui::pause_menu::InGameMenuState::AbortConfirm,
                 );
                 let secondary = state.match_state.match_presentation.abort_secondary;
@@ -1126,7 +1132,13 @@ impl App {
                             "Spawn action: resign unavailable (abort box secondary {secondary:?}); nothing pressed"
                         );
                         Self::enter_in_game_menu_state(
-                            state,
+                            &mut state.platform,
+                            &state.renderer,
+                            &mut state.frontend,
+                            &mut state.match_state,
+                            &state.process_assets,
+                            &mut state.audio,
+                            &mut state.persistence,
                             crate::ui::pause_menu::InGameMenuState::Closed,
                         );
                     }
