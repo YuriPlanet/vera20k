@@ -346,14 +346,10 @@ const RISE: i64 = 1024;
 const RISE_SPEED: i64 = 96;
 
 /// `ProjectileFrame`: the answered bullet.
-/// `ProjectileFrame`: the bullets answered and not yet checked (a ring),
-/// and counts for the diagnostic line.
+/// `ProjectileFrame`: the bullets answered and not yet checked (a ring).
 const PF_RING: usize = 4;
 static PF_BULLETS: [AtomicI64; PF_RING] = [const { AtomicI64::new(0) }; PF_RING];
 static PF_NEXT: AtomicI64 = AtomicI64::new(0);
-static PF_ASKED: AtomicI64 = AtomicI64::new(0);
-static PF_MINE: AtomicI64 = AtomicI64::new(0);
-static PF_GONE: AtomicI64 = AtomicI64::new(0);
 const PF_MARKER: i64 = 0x5EED_C0DE;
 
 /// `CrushAllowed`: the spared victim and its frame, the allowed one, and
@@ -416,7 +412,7 @@ pub fn frame(now: i32) {
     check_fatal(now);
     check_retaliate(now);
     check_launch(now);
-    check_projectile_frame(now);
+    check_projectile_frame();
     check_crush(now);
 }
 
@@ -777,7 +773,6 @@ const PF_SHOOTERS: [usize; 4] = [SP, SF, SA, AR];
 /// One step for each shell of the shooters above, once per shell: its own
 /// velocity, and module data to read back.
 fn projectile_frame(mut d: ProjectileFrameDecision) {
-    PF_ASKED.fetch_add(1, Relaxed);
     let bullet = d.projectile();
     let Ok(source) = get(bullet, Prop::Source) else {
         return;
@@ -785,7 +780,6 @@ fn projectile_frame(mut d: ProjectileFrameDecision) {
     if source == NO_HANDLE || !PF_SHOOTERS.iter().any(|&slot| unit(slot).0 == source) {
         return;
     }
-    PF_MINE.fetch_add(1, Relaxed);
     if d.frames() < 0 || PF_BULLETS.iter().any(|b| b.load(Relaxed) == bullet.0) {
         return;
     }
@@ -808,7 +802,7 @@ fn projectile_frame(mut d: ProjectileFrameDecision) {
     }
 }
 
-fn check_projectile_frame(now: i64) {
+fn check_projectile_frame() {
     if marked("combat.projectile_frame") {
         return;
     }
@@ -831,29 +825,8 @@ fn check_projectile_frame(now: i64) {
             }
             Err(_) => {
                 slot.store(0, Relaxed); // gone: the next shell is answered
-                PF_GONE.fetch_add(1, Relaxed);
             }
         }
-    }
-    if now % 600 == 0 {
-        let mut line = crate::Line::new();
-        line.text("combat-diag pframe: shell ")
-            .num(SHELL_BOUND.load(Relaxed) - 1)
-            .text(" asked ")
-            .num(PF_ASKED.load(Relaxed))
-            .text(" mine ")
-            .num(PF_MINE.load(Relaxed))
-            .text(" answered ")
-            .num(PF_NEXT.load(Relaxed))
-            .text(" gone ")
-            .num(PF_GONE.load(Relaxed))
-            .text(" sp hp ")
-            .num(unit(SP).health().unwrap_or(-1))
-            .text(" sp target ")
-            .num(unit(SP).target().unwrap_or(-1))
-            .text(" t1 ")
-            .num(unit(T1).0);
-        line.log();
     }
 }
 
