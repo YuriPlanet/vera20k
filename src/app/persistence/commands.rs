@@ -45,8 +45,19 @@ pub(crate) fn save_game(
     save(state, Some(description), SaveDestination::Player(overwrite))
 }
 
+/// The opt-in autosave (`persistence::autosave`): the match under
+/// `description` in the one autosave slot.
+pub(crate) fn autosave_game(
+    state: &mut AppState,
+    description: &str,
+) -> Result<PathBuf, SaveCommandError> {
+    save(state, Some(description), SaveDestination::Autosave)
+}
+
 enum SaveDestination<'a> {
     Player(Option<&'a Path>),
+    /// `autosave::FILE_NAME`, replacing the previous autosave.
+    Autosave,
     InitialCampaign(&'a str),
 }
 
@@ -185,7 +196,8 @@ fn prepare_save<'a>(
     let active_tab = saved_active_tab(presentation.active_sidebar_tab);
     let sidebar_order = presentation
         .sidebar_projection
-        .model.saved_order()
+        .model
+        .saved_order()
         .map(|order| order.with_active_tab(active_tab));
     let tactical_view = crate::app::input::camera::saved_tactical_view(
         &state.platform,
@@ -225,12 +237,12 @@ fn prepare_save<'a>(
             .as_ref()
             .map(crate::render::radar::anim::RadarAnimState::saved_housing),
     );
-    local_view.set_credits_counter(
-        state
-            .match_state
-            .local_player_owner()
-            .and_then(|owner| presentation.sidebar_projection.model.saved_credits_counter(owner)),
-    );
+    local_view.set_credits_counter(state.match_state.local_player_owner().and_then(|owner| {
+        presentation
+            .sidebar_projection
+            .model
+            .saved_credits_counter(owner)
+    }));
     local_view.set_radar_events(presentation.minimap.as_ref().map_or_else(
         Default::default,
         crate::render::radar::minimap::MinimapRenderer::saved_radar_events,
@@ -351,6 +363,7 @@ impl PreparedSave<'_> {
                 SaveDestination::InitialCampaign(filename) => {
                     repository.write_initial_campaign(filename, &bytes)
                 }
+                SaveDestination::Autosave => repository.write_autosave(&bytes),
             }
             .map_err(Into::into)
         });
