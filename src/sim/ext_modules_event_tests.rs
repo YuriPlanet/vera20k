@@ -22,11 +22,11 @@ const ACTION_DAMAGE: i32 = 1006;
 
 /// One `EventDef` without clauses.
 pub(super) struct Ev {
-    kind: i32,
-    op: i32,
-    interval: i32,
-    id: i32,
-    value: i64,
+    pub(super) kind: i32,
+    pub(super) op: i32,
+    pub(super) interval: i32,
+    pub(super) id: i32,
+    pub(super) value: i64,
 }
 
 impl Ev {
