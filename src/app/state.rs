@@ -42,17 +42,18 @@ pub(crate) struct AppState {
 /// ClearScene685213..68521F and ordinary load cleanup69BB40 reset the shared
 /// 87E758 output scalar, not Theme's slots/fading. ThemeLoad721040 must see
 /// that process state unchanged; fresh-start request cancellation stays there.
-pub(crate) fn reset_scenario_exit_runtime(state: &mut AppState) {
-    state.match_state.scenario_outcome = None;
-    state.match_state.scenario_exit = None;
-    state
-        .match_state
-        .match_presentation
-        .outcome_banner_presentation = Default::default();
-    state.match_state.network_failure = None;
-    state.match_state.frame_stopped = false;
-    crate::app::lan_service::return_transport(&mut state.frontend, &mut state.match_state);
-    state.audio.restore_sound_master();
+pub(crate) fn reset_scenario_exit_runtime(
+    frontend: &mut crate::app::frontend::state::FrontendState,
+    match_state: &mut crate::app::match_runtime::state::MatchState,
+    audio: &mut crate::app::audio_runtime::AppAudioRuntime,
+) {
+    match_state.scenario_outcome = None;
+    match_state.scenario_exit = None;
+    match_state.match_presentation.outcome_banner_presentation = Default::default();
+    match_state.network_failure = None;
+    match_state.frame_stopped = false;
+    crate::app::lan_service::return_transport(frontend, match_state);
+    audio.restore_sound_master();
 }
 
 /// The correction matrix for `[VERA] ColorVisionMode=`, or `None` for `Off`.
@@ -174,21 +175,6 @@ impl AppState {
             && !self.frontend.main_menu_dialog_open()
     }
 
-    /// VERA: the main menu is the page to show but has not started to slide
-    /// in: behind the startup logo and splash, or while the startup update
-    /// check holds it. A box asks over the empty backdrop at once, with no
-    /// slide in or out; its menu slides in once it closes.
-    pub(crate) fn main_menu_not_shown(&self) -> bool {
-        use crate::ui::game_screen::GameScreen;
-        let frontend = &self.frontend;
-        frontend.screen == GameScreen::MainMenu
-            && frontend.shell_route == ShellRoute::MainMenu
-            && frontend.shell_slide_active_shell.is_none()
-            && frontend.main_menu_shell_error.is_none()
-            && frontend.quit_cascade.is_none()
-            && !frontend.main_menu_dialog_open()
-    }
-
     pub(crate) fn main_menu_dialog_open(&self) -> bool {
         self.frontend.main_menu_dialog_open()
     }
@@ -233,6 +219,20 @@ pub(crate) fn focus_freeze_active(
     match_state: &crate::app::match_runtime::state::MatchState,
 ) -> bool {
     platform.focus_freeze_configured() && match_state.session_mode().is_single_player()
+}
+
+/// VERA: the main menu is the page to show but has not started to slide
+/// in: behind the startup logo and splash, or while the startup update
+/// check holds it. A box asks over the empty backdrop at once, with no
+/// slide in or out; its menu slides in once it closes.
+pub(crate) fn main_menu_not_shown(frontend: &crate::app::frontend::state::FrontendState) -> bool {
+    use crate::ui::game_screen::GameScreen;
+    frontend.screen == GameScreen::MainMenu
+        && frontend.shell_route == ShellRoute::MainMenu
+        && frontend.shell_slide_active_shell.is_none()
+        && frontend.main_menu_shell_error.is_none()
+        && frontend.quit_cascade.is_none()
+        && !frontend.main_menu_dialog_open()
 }
 
 /// Whether the software cursor (mouse.shp) should be active this frame.

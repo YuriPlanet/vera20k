@@ -59,7 +59,11 @@ impl MapPresentationProfile {
             smooth_sidebar: self.smooth_sidebar,
             map_picture: false,
         };
-        crate::app::App::sync_zoom_pass(state);
+        crate::app::App::sync_zoom_pass(
+            &state.platform,
+            &mut state.renderer,
+            &state.persistence.options_profile,
+        );
     }
 }
 

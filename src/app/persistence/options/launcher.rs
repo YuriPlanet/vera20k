@@ -138,7 +138,7 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
     match event {
         E::ZoomSelected(zoom) => {
             profile.zoom = zoom;
-            App::sync_zoom_pass(state);
+            App::sync_zoom_pass(&state.platform, &mut state.renderer, profile);
         }
         E::SidebarSelected(size) => profile.sidebar = size,
         E::SidebarColumnsSelected(columns) => profile.sidebar_columns = columns,
@@ -169,7 +169,7 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
                 state.persistence.options_profile.language = Some(tag);
             }
         }
-        E::SetWindowSizeRequested => App::restore_launch_window(state),
+        E::SetWindowSizeRequested => App::restore_launch_window(&mut state.platform),
         // The in-game menu opens these dialogs, and starts the layout edit
         // mode, itself (`app::input::pause_menu`).
         E::InGameKeyboardRequested | E::InGameSoundRequested | E::EditLayoutRequested => {}
@@ -222,8 +222,14 @@ pub(crate) fn dispatch_launcher_preview_event(state: &mut AppState, event: Launc
 /// A VERA box's change beyond the profile value it stores.
 fn apply_box(state: &mut AppState, id: C, on: bool) {
     match id {
-        C::FullScreen => App::set_full_screen(state, on),
-        C::OriginalShape => App::sync_zoom_pass(state),
+        C::FullScreen => {
+            App::set_full_screen(&mut state.platform, &state.persistence.options_profile, on)
+        }
+        C::OriginalShape => App::sync_zoom_pass(
+            &state.platform,
+            &mut state.renderer,
+            &state.persistence.options_profile,
+        ),
         // The menu movie's session identity carries the choice, so its next
         // paint loads the selected game copy; the splash follows next launch.
         // The shell atlas carries the same profile value; it is rebuilt (or
@@ -248,7 +254,11 @@ fn apply_box(state: &mut AppState, id: C, on: bool) {
             crate::app::input::cursor::apply_cursor_confinement(&mut state.platform);
         }
         C::VeraIcon => show_vera_icon(&state.platform, &state.persistence.options_profile, on),
-        C::VSync => App::sync_present_mode(state),
+        C::VSync => App::sync_present_mode(
+            &state.platform,
+            &mut state.renderer.gpu,
+            &state.persistence.options_profile,
+        ),
         // Live state only; no profile stores it, so each launch starts hidden.
         C::PerformanceStats => state.renderer.performance_overlay.set_visible(on),
         // The box arms the hotkey but leaves the texts showing, so ticking it
