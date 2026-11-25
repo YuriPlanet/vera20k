@@ -165,7 +165,7 @@ impl crate::sim::world::Simulation {
     /// `Flash(frames)` on one object, on this machine only. The countdown is
     /// presentation state outside the state hash (`world_hash::entity`),
     /// like the Phobos selection flash above.
-    pub(crate) fn flash_object_locally(&mut self, id: u64, frames: i32) {
+    pub fn flash_object_locally(&mut self, id: u64, frames: i32) {
         Self::flash_object(
             &self.interner,
             &self.session,

@@ -81,6 +81,7 @@ use vera20k_wasm_ext::{
 mod actions;
 mod cells;
 mod chains;
+pub mod client_reads;
 mod claims;
 mod client_outbox;
 mod control;
@@ -98,7 +99,7 @@ mod props;
 mod rules;
 mod supers;
 mod unit_ai;
-pub mod vars;
+pub(crate) mod vars;
 mod writes;
 
 pub use actions::{ActionContext, run_action};
@@ -106,8 +107,9 @@ pub(crate) use client_outbox::CLIENT_FORWARDED_EVENTS;
 pub use client_outbox::{ClientNotify, ClientOutbox, ClientSimEvent};
 pub(crate) use decide::CommandAdmission;
 use modifiers::{Modifier, ModifierOp, ModifierStore, Stat};
-pub use orders::{CheckedOrder, check_client_order, take_due_orders};
-pub use props::View;
+pub use orders::{CheckedOrder, check_client_order};
+pub(crate) use orders::take_due_orders;
+pub(crate) use props::View;
 use props::type_property;
 use rules::check_notify_collision;
 pub use rules::{MapUi, PreparedExtModules, WasmPolicy};
@@ -621,7 +623,7 @@ impl ExtModules {
     }
 
     /// The declared variables (RFC 6e), for client reads.
-    pub fn vars(&self) -> &VarStore {
+    pub(crate) fn vars(&self) -> &VarStore {
         &self.vars
     }
 
@@ -800,18 +802,18 @@ const REF_GLOBAL: i64 = 4;
 const REF_LIMIT: i64 = 1 << 53;
 
 /// A type reference: name kind and ID.
-pub const fn type_ref(kind: i32, id: u32) -> i64 {
+pub(crate) const fn type_ref(kind: i32, id: u32) -> i64 {
     (REF_TYPE << REF_KIND_SHIFT) | ((kind as i64) << 32) | id as i64
 }
 
 /// A cell reference, in cells.
-pub const fn cell_ref(x: u16, y: u16) -> i64 {
+pub(crate) const fn cell_ref(x: u16, y: u16) -> i64 {
     (REF_CELL << REF_KIND_SHIFT) | ((x as i64) << 16) | y as i64
 }
 
 /// What a nonzero reference names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Ref {
+pub(crate) enum Ref {
     Object(u64),
     House(usize),
     /// House `house`'s Super of `[SuperWeaponTypes]` entry `index`.
@@ -835,7 +837,7 @@ pub enum Ref {
 
 /// Decodes a reference; `None` for 0. Client kinds (5, 6) and unknown kinds
 /// are invalid in the simulation.
-pub fn decode_ref(reference: i64) -> Result<Option<Ref>, Invalid> {
+pub(crate) fn decode_ref(reference: i64) -> Result<Option<Ref>, Invalid> {
     if reference == 0 {
         return Ok(None);
     }
@@ -946,7 +948,7 @@ impl Host<'_, '_> {
 /// through it too (`app::ui_modules::reads`), behind their visibility gate,
 /// on whatever runtime the app reads (possibly the presentation copy).
 #[derive(Clone, Copy)]
-pub struct Reader<'a> {
+pub(crate) struct Reader<'a> {
     pub(crate) sim: &'a Simulation,
     pub(crate) rules: &'a RuleSet,
     /// For `Placeable` (the placement owner's overlay test).
@@ -961,7 +963,7 @@ pub struct Reader<'a> {
 /// "client" column): which candidates exist for it, and how its clauses
 /// read. Candidates it does not list are passed over like keys without a
 /// candidate ([`FindPage::skip`]), so a page says nothing about them.
-pub trait ReadGate {
+pub(crate) trait ReadGate {
     /// Whether `find` may list `reference`: an object, a cell or a
     /// superweapon reference.
     fn lists(&self, reference: i64) -> bool;
@@ -973,7 +975,7 @@ pub trait ReadGate {
 
 /// `has_kind`, the same in every call (the rules stage included); client
 /// modules answer the simulation's tables with it too.
-pub fn has_kind(rules: &RuleSet, table: i32, id: i32) -> bool {
+pub(crate) fn has_kind(rules: &RuleSet, table: i32, id: i32) -> bool {
     match table {
         vera20k_wasm_ext::triggers::TABLE_EVENT => {
             events::raises(rules, id)
@@ -1103,7 +1105,7 @@ fn variable_name(vars: &VarStore, id: i32) -> Result<(String, Status), Invalid> 
 }
 
 /// TechnoType `id`: an index into the rules' type registry.
-pub fn techno_type(
+pub(crate) fn techno_type(
     rules: &RuleSet,
     id: i32,
 ) -> Option<&crate::rules::object_type::ObjectType> {
@@ -1115,7 +1117,7 @@ pub fn techno_type(
 /// `source` (whose variables a name without a `mod.`/`map.` prefix finds).
 /// The module host and client modules (`client_lookup`) both answer with it;
 /// `Property`, `ActionKind` and `ModuleAction` are the sandbox's.
-pub fn lookup_name(
+pub(crate) fn lookup_name(
     sim: &Simulation,
     rules: &RuleSet,
     source: ModuleSource,
@@ -1138,7 +1140,7 @@ pub fn lookup_name(
 }
 
 /// `name_of` of the name kinds the simulation answers ([`lookup_name`]'s).
-pub fn name_of_id(
+pub(crate) fn name_of_id(
     sim: &Simulation,
     rules: &RuleSet,
     kind: i32,

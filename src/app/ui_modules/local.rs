@@ -307,10 +307,10 @@ impl LocalState {
         };
         let hotkeys = &mut self.hotkeys[source as usize];
         match hotkeys
-            .iter_mut()
-            .find(|hotkey| hotkey.name.eq_ignore_ascii_case(name))
+            .iter()
+            .position(|hotkey| hotkey.name.eq_ignore_ascii_case(name))
         {
-            Some(hotkey) => hotkey.key = key,
+            Some(index) => hotkeys[index].key = key,
             None if hotkeys.len() >= MAX_HOTKEYS => return Ok(Status::Refused),
             None => hotkeys.push(Hotkey {
                 name: name.to_owned(),

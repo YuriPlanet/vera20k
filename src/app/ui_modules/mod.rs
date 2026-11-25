@@ -81,15 +81,7 @@ use reads::{ClientView, LocalFacts};
 use storage::Storage;
 use tree::UiTree;
 
-/// Whose view a client module reads with.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Viewer {
-    /// This player's house handle (reference kind 0); 0 for a spectator.
-    pub house: i64,
-    pub spectator: bool,
-    /// A spectator in a room that shows the whole map.
-    pub sees_whole_map: bool,
-}
+pub(crate) use crate::sim::ext_modules::client_reads::Viewer;
 
 /// Module log lines shown in the console per module and render frame; the
 /// rest go to the log file only (as the simulation modules' `log`).
@@ -380,7 +372,7 @@ fn viewer(state: &AppState) -> Viewer {
     let sim = &runtime.simulation;
     match sim.session().current_house() {
         Some(house) if sim.session().is_observer_house(house) => spectator(true),
-        Some(house) => match sim.houses.index_of(house) {
+        Some(house) => match sim.houses().index_of(house) {
             Some(index) => Viewer {
                 house: crate::sim::ext_modules::house_ref(index),
                 spectator: false,

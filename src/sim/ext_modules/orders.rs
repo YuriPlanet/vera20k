@@ -252,7 +252,7 @@ pub(super) fn waypoint_cell(sim: &Simulation, number: i32) -> Option<(u16, u16)>
 /// check of `order` (RFC 6g) and `client_send_order` (RFC 10, 6i), so both
 /// accept the same orders and turn them into the same player commands.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CheckedOrder {
+pub struct CheckedOrder {
     command: OrderCommand,
     /// The unit entries as object IDs; empty for a house-wide command.
     units: Vec<u64>,
@@ -260,19 +260,19 @@ pub(crate) struct CheckedOrder {
 
 impl CheckedOrder {
     /// The units the order names (object IDs).
-    pub(crate) fn units(&self) -> &[u64] {
+    pub fn units(&self) -> &[u64] {
         &self.units
     }
 
     /// A house-wide command (production, placement, superweapon, wall
     /// sale): the command table lists no units for it.
-    pub(crate) fn house_wide(&self) -> bool {
+    pub fn house_wide(&self) -> bool {
         self.units.is_empty()
     }
 
     /// The player commands the order becomes, as the order's house's player
     /// would send them; `None` where a type the order names is gone.
-    pub(crate) fn commands(&self, sim: &Simulation, rules: &RuleSet) -> Option<Vec<Command>> {
+    pub fn commands(&self, sim: &Simulation, rules: &RuleSet) -> Option<Vec<Command>> {
         order_commands(sim, rules, &self.command, &self.units)
     }
 }

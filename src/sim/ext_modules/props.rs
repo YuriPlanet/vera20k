@@ -90,7 +90,7 @@ const RELATION_NEUTRAL: i64 = 3;
 /// one in a direct `get` (the property then answers `Unsupported`).
 /// A client module's viewpoint is always its own house (RFC 10).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct View {
+pub(crate) struct View {
     /// The viewpoint house's array index: the query's house, or its
     /// viewpoint object's owner.
     pub(crate) house: Option<usize>,
