@@ -179,3 +179,37 @@ recorded beside its code as a sim-scale deviation (AGENTS.md) and listed here.
   patrol scan of fewer than four frames, above), and no timer a script counts
   runs longer. In the battle this takes the team step from about 14% of the
   simulation thread to about 7%.
+- **Each object's turn draws its own random numbers**
+  ([turn_streams.rs](../src/sim/world/turn_streams.rs), with the generator in
+  [rng.rs](../src/sim/rng.rs)). The original gives every object's turn its
+  random numbers from the one Scenario stream, in the order of the object
+  list (`LogicClass::AI`), so the numbers a turn gets depend on how many every
+  turn before it took. Here the object pass takes one number from the
+  Scenario stream as it begins, on every frame, whether or not any turn then
+  draws, and each object's turn, with all it does to others, draws from a
+  generator of its own (SplitMix64), started from that number, the frame and
+  the object's id. Ranges are made from its numbers as from the Scenario
+  stream's, so a mission delay, a targeting delay, ROF jitter, scatter or gas
+  drift spreads as before, but takes other values than the original's for
+  the same seed. The draws outside the turns stay on the Scenario stream:
+  about 96% of them a computer player's choice of what to build next, the
+  rest its strategy timer and ore growth. The pass's number comes before
+  each of them every frame and the turns' numbers no longer do, so they take
+  other values too. Nothing new is saved; a loaded match draws this way
+  again. In the battle the turns draw about 5,500 numbers a frame, in one
+  turn in ten, and the draws outside them 11; on Death.mmx, 47 and 2.4.
+  `sim-bench --shared-stream` draws every turn from the Scenario stream. A
+  turn that draws so no longer depends on the turns before it, as an object
+  pass that runs turns side by side needs. The battle comes out about 0.2%
+  bloodier: on 14 seeds (battle30-v1.map, 1,200 frames, each seed run with
+  and without `--shared-stream` and the two compared), 38 more units lost of
+  about 17,400 (paired t 2.6), the houses' own tallies 41 more (t 2.3), 34
+  more kills (t 1.8), 48 more losses (2%, t 4.2) in frames 701-800, and the
+  running total 31 to 36 higher from frame 1,100 on (t about 2.1). Death.mmx
+  on 20 seeds and GoldSt.mmx on 10 build and form teams as before. No draw
+  changes its range or how often it is made, and no number several objects
+  shared is drawn apart now; no cause was found beyond the Scenario table's
+  own structure: each number is the XOR of the ones 147 and 250 draws before
+  it (x(n) = x(n-250) xor x(n-147), an R250 table), which every frame ties
+  three objects' draws together at fixed distances in the object list, and
+  the turns' own streams do not.
