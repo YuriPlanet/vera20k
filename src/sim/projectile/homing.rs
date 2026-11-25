@@ -297,34 +297,32 @@ pub(super) fn step(
         target_is_aircraft,
         |coord| {
             let floor = super::projectile_ground_z(terrain, shared_cell_dummy, coord);
-            floor.wrapping_add(
-                if super::structural_bridge_at(terrain, shared_cell_dummy, coord) {
-                    crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
-                } else {
-                    0
-                },
-            )
+            let cell = super::projectile_cell_at(terrain, shared_cell_dummy, coord);
+            if super::is_structural_bridge_cell(&cell) {
+                super::fixed_deck_z_for_cell_ref(terrain, &cell).unwrap_or_else(|| {
+                    crate::sim::movement::ground_pose::z_at_height(floor, 0, true)
+                })
+            } else {
+                floor
+            }
         },
         trig,
     );
     let mut candidate = tracked.candidate;
     // 466D44 resolves candidate Cell before copying the steered velocity.
-    let candidate_structural = super::structural_bridge_at(terrain, shared_cell_dummy, candidate);
+    let candidate_cell = super::projectile_cell_at(terrain, shared_cell_dummy, candidate);
+    let candidate_structural = super::is_structural_bridge_cell(&candidate_cell);
     projectile.velocity = tracked.velocity;
     projectile.speed_leptons_per_frame = super::projectile_velocity_magnitude(projectile.velocity)
         .clamp(0.0, f64::from(u16::MAX)) as u16;
     let old_height = previous_position
         .z
-        .wrapping_sub(super::projectile_ground_z(
+        .wrapping_sub(super::projectile_surface_z(
             terrain,
             shared_cell_dummy,
             previous_position,
-        ))
-        .wrapping_sub(if projectile.on_bridge {
-            crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
-        } else {
-            0
-        });
+            projectile.on_bridge,
+        ));
     let (admit, snap) = super::homing_impact_admission(
         tracked.reached_distance,
         projectile.velocity,
@@ -359,17 +357,24 @@ pub(super) fn step(
     }
     // Guided bridge contact 467032 probes Cell before floor and uses
     // strict endpoint inequalities, unlike Vertical's contact helper.
-    if !impact_flag
-        && (candidate_structural
-            || super::structural_bridge_at(terrain, shared_cell_dummy, previous_position))
-    {
-        let deck = super::projectile_ground_z(terrain, shared_cell_dummy, candidate)
-            .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-        if (previous_position.z < deck && candidate.z > deck)
-            || (previous_position.z > deck && candidate.z < deck)
-        {
-            candidate.z = deck;
-            impact_flag = true;
+    if !impact_flag {
+        let bridge = if candidate_structural {
+            Some(candidate_cell)
+        } else {
+            let previous_cell =
+                super::projectile_cell_at(terrain, shared_cell_dummy, previous_position);
+            super::is_structural_bridge_cell(&previous_cell).then_some(previous_cell)
+        };
+        if let Some(bridge) = bridge {
+            let floor = super::projectile_ground_z(terrain, shared_cell_dummy, candidate);
+            let deck = super::fixed_deck_z_for_cell_ref(terrain, &bridge)
+                .unwrap_or_else(|| crate::sim::movement::ground_pose::z_at_height(floor, 0, true));
+            if (previous_position.z < deck && candidate.z > deck)
+                || (previous_position.z > deck && candidate.z < deck)
+            {
+                candidate.z = deck;
+                impact_flag = true;
+            }
         }
     }
     projectile.guidance = Some(guidance);

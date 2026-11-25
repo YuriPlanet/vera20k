@@ -51,10 +51,6 @@
 //! with matching zones falls back to the plain A*, and one with differing
 //! zones returns `None`. What is missing:
 //!
-//! - **`IsTrain=` stays unmodelled.** The `allowHS` term for the INI key behind
-//!   `TechnoTypeClass+0xC94` (string `0x008444BC`, stored at `0x00712284`) is
-//!   absent from stock `rulesmd.ini`, so it never fires. The `0x004DA1D0` term
-//!   is `Simulation::foot_search_allows_hierarchy`.
 //! - **Without blocker counts there is no hierarchy search.** The one
 //!   production search, the live Foot search in `movement_tick`, supplies
 //!   blocker counts, and every `ZoneGrid` carries levels 0/1/2. A caller
@@ -94,8 +90,8 @@ mod precheck_retry;
 use super::{BlockerNeighborCounts, MoverSearchFacts, RouteProgress, SearchMarkerOverlay};
 
 use super::zone_hierarchy::{
-    MarkedZones, ZONE_PRECHECK_LEVELS, ZoneHierarchy, ZoneLevelGraph, ZonePrecheckExclusions,
-    ZonePrecheckOutcome, ZonePrecheckResult, ZonePrecheckThreat, zone_precheck_flat,
+    ZoneHierarchy, ZoneLevelGraph, ZonePrecheckExclusions, ZonePrecheckOutcome, ZonePrecheckResult,
+    ZonePrecheckThreat, zone_precheck_flat,
 };
 use super::zone_map::{ZoneGrid, ZoneId};
 use super::{HierarchyGate, LayeredPathStep, PathGrid, find_layered_path_marker};
@@ -195,11 +191,10 @@ fn can_reach_through_explicit_tube(
 /// it chose and the search's progress along them.
 struct HierarchyCorridor<'a> {
     level0_zones: &'a ZoneLevelGraph,
-    marked_level0: MarkedZones,
     blocker_neighbor_counts: &'a BlockerNeighborCounts,
     /// Each level's route, start zone first (`PathfinderClass+0xBC`, 500
-    /// words a level; lengths at `+0xC74`).
-    routes: [Vec<ZoneId>; ZONE_PRECHECK_LEVELS],
+    /// words a level; lengths at `+0xC74`), and the zones it marks.
+    routes: ZonePrecheckResult,
     /// Written by the search, read by the retry after it fails.
     progress: RouteProgress,
 }
@@ -210,9 +205,9 @@ impl HierarchyCorridor<'_> {
         (
             HierarchyGate {
                 level0_zones: self.level0_zones,
-                marked_level0: &self.marked_level0,
+                marked_level0: self.routes.marked(0),
                 blocker_neighbor_counts: self.blocker_neighbor_counts,
-                level0_route: &self.routes[0],
+                level0_route: self.routes.route(0),
             },
             &mut self.progress,
         )
@@ -254,19 +249,13 @@ impl<'a> CorridorPrecheck<'a> {
             Some(threat),
         )
         .map_err(PathSearchFailure::CellEntryUnavailable)?;
-        let ZonePrecheckOutcome::Passed(ZonePrecheckResult {
-            paths,
-            marked: [marked_level0, ..],
-            ..
-        }) = outcome
-        else {
+        let ZonePrecheckOutcome::Passed(routes) = outcome else {
             return Ok(None);
         };
         Ok(Some(HierarchyCorridor {
             level0_zones: self.level0_zones,
-            marked_level0,
             blocker_neighbor_counts: self.blocker_neighbor_counts,
-            routes: paths,
+            routes,
             progress: RouteProgress {
                 index: 0,
                 cell: start,
@@ -440,9 +429,9 @@ pub(crate) fn find_layered_path_zoned_marker_detailed(
     allow_zone_hierarchy: bool,
     playfield_bounds: Option<PlayfieldBounds>,
 ) -> Result<Vec<LayeredPathStep>, PathSearchFailure> {
-    // `AStar @ 0x0042CAD6` admits hierarchy only while the mover's stored
-    // TechnoClass+0x3D5 byte is true. False is not a hard failure: it bypasses
-    // zone/hierarchy admission and runs the ordinary cell A*.
+    // AStar_pathfind_search 0x0042CACC..0x0042CAEC bypasses the
+    // hierarchy for trains, an unset Techno+0x3D5 byte or a Foot that may
+    // leave the playfield. The Foot search supplies that decision.
     let entry = prepare_native_path_entry(
         zone_grid,
         resolved_terrain,

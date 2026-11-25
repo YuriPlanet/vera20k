@@ -224,18 +224,24 @@ pub(crate) fn mission_reload(
     sim: &mut Simulation,
     rules: &RuleSet,
     dock: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     // Phobos' `UnitReload=` separate repair loop (`0x44C836`) runs before the
     // stock/Ares reload visit.
     if rules.phobos() {
-        separate_repair_pass(sim, rules, dock, Some(rules.overlay_registry()), effects);
+        separate_repair_pass(
+            sim,
+            rules,
+            dock,
+            Some(rules.overlay_registry()),
+            &mut effects.reborrow(),
+        );
     }
     let mut host = WorldReload {
         sim,
         rules,
         dock,
-        effects,
+        effects: effects.reborrow(),
         detached_timers: DockReloadTimers::default(),
     };
     if rules.ares_form() {
@@ -256,7 +262,7 @@ fn separate_repair_pass(
     rules: &RuleSet,
     dock: u64,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some((unit_reload, rate)) = sim
         .substrate
@@ -282,7 +288,7 @@ fn separate_repair_pass(
         sim,
         rules,
         dock,
-        effects,
+        effects: effects.reborrow(),
         detached_timers: DockReloadTimers::default(),
     };
     // Original re-reads `RadioLinks.Capacity` before each slot.
@@ -317,7 +323,7 @@ fn separate_repair_pass(
                 contact,
                 Some(dock),
                 host.rules,
-                host.effects,
+                &mut host.effects,
             );
         }
     }
@@ -351,7 +357,7 @@ impl AresReloadHost for WorldReload<'_> {
 
     fn timers(&mut self) -> &mut DockReloadTimers {
         match self.sim.substrate.entities.get_mut(self.dock) {
-            Some(building) => &mut building.ares.ares_dock_reload_timers,
+            Some(building) => &mut building.seldom.ares.ares_dock_reload_timers,
             None => &mut self.detached_timers,
         }
     }
@@ -363,7 +369,7 @@ impl ReloadHost for WorldReload<'_> {
             .substrate
             .entities
             .get(self.dock)
-            .map_or(0, |building| building.radio_contacts.capacity())
+            .map_or(0, |building| building.seldom.radio_contacts.capacity())
     }
 
     fn contact(&mut self, slot: usize) -> Option<u64> {
@@ -371,7 +377,7 @@ impl ReloadHost for WorldReload<'_> {
             .substrate
             .entities
             .get(self.dock)
-            .and_then(|building| building.radio_contacts.slot(slot))
+            .and_then(|building| building.seldom.radio_contacts.slot(slot))
     }
 
     fn roger(&mut self, contact: u64, message: RadioMessage) -> bool {
@@ -382,7 +388,7 @@ impl ReloadHost for WorldReload<'_> {
             message,
             RadioPayload::default(),
             self.rules,
-            self.effects,
+            &mut self.effects,
         ) == RadioResponse::Roger
     }
 
@@ -421,7 +427,7 @@ impl ReloadHost for WorldReload<'_> {
             contact,
             self.rules,
             Some(self.rules.overlay_registry()),
-            self.effects,
+            &mut self.effects,
         );
         let now = self.sim.session.binary_frame();
         let _ = self.sim.substrate.mission_assign_exact(

@@ -150,12 +150,22 @@ impl LaserTrailTypeRegistry {
     /// `Enumerable::LoadFromINIList` allocates the entry before its read.
     pub fn from_ini(ini: &IniFile) -> Self {
         let mut types = LookupMap::default();
-        for name in crate::rules::ruleset::parse_registry(ini, "LaserTrailTypes") {
+        let Some(list) = ini.section("LaserTrailTypes") else {
+            return Self::default();
+        };
+        for key in list.physical_keys() {
+            let Some(name) = list.read_name(key, 2048) else {
+                continue;
+            };
+            let name = name.to_ascii_uppercase();
+            if types.contains_key(&name) {
+                continue;
+            }
             let value = ini
-                .section(&name)
+                .section(name.as_str())
                 .map(LaserTrailType::read)
                 .unwrap_or_default();
-            types.insert(name.to_ascii_uppercase(), value);
+            types.insert(name, value);
         }
         Self { types }
     }

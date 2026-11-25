@@ -19,7 +19,7 @@ fn a_computer_miner_that_finds_no_ore_parks_on_guard() {
         return;
     };
     let russians = sim.interner.get("Russians").unwrap();
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(40, 40));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(40, 40));
     // The human house keeps a building, so the match does not end.
     spawn(&mut sim, &rules, "GAPOWR", "Americans", 30, 30);
     spawn(&mut sim, &rules, "GAREFN", "Russians", 10, 10);
@@ -130,7 +130,7 @@ fn blocked_pad() -> Option<(
             .native_fixed_cell_index(0, 0)
             .is_none()
     );
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(40, 40));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(40, 40));
     spawn(&mut sim, &rules, "GAPOWR", "Americans", 22, 22);
     let refinery = spawn(&mut sim, &rules, "GAREFN", "Russians", 12, 13);
     let miner = spawn(&mut sim, &rules, "HARV", "Russians", 15, 14);
@@ -203,7 +203,7 @@ fn failed_harvest_departure_still_assigns_the_zero_cell() {
         &mut sim,
         miner,
         &rules,
-        ObjectAiCtx {
+        &mut ObjectAiCtx {
             overlay_registry: Some(overlay_registry_with_land()),
             ..Default::default()
         },
@@ -234,7 +234,7 @@ fn failed_pad_nudge_still_assigns_the_zero_cell() {
             RadioMessage::Hello,
             RadioPayload::default(),
             &rules,
-            FrameEffects::default()
+            &mut FrameEffects::default()
         ),
         RadioResponse::Roger
     );
@@ -243,10 +243,10 @@ fn failed_pad_nudge_still_assigns_the_zero_cell() {
         &mut sim,
         miner,
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let unit = sim.substrate.entities.get(miner).unwrap();
-    assert!(unit.radio_contacts.is_empty());
+    assert!(unit.seldom.radio_contacts.is_empty());
     assert_eq!(unit.navigation.nav_com(), Some(NavTargetRef::cell(0, 0)));
     assert_eq!(unit.mission.effective().known(), Some(MissionType::Move));
 }

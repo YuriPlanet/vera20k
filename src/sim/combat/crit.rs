@@ -175,7 +175,7 @@ pub(crate) fn detonate(
             if !viewers.is_empty() {
                 let radius = warhead.reveal.clamp(0, i32::from(u16::MAX)) as u16;
                 let cell = ((impact.x / 256) as u16, (impact.y / 256) as u16);
-                let context = crate::sim::world::UninitContext::new(rules);
+                let mut context = crate::sim::world::UninitContext::new(rules);
                 let notification = world.session.current_house();
                 for final_pass in [false, true] {
                     let _ = world.reveal_area(
@@ -186,7 +186,7 @@ pub(crate) fn detonate(
                         None,
                         final_pass,
                         &config,
-                        context,
+                        context.reborrow(),
                         crate::sim::vision::MapRevealProjection::Transient,
                         notification,
                     );
@@ -227,7 +227,7 @@ pub(crate) fn detonate(
         impact,
         warhead,
         overlay_registry,
-        run.effects(),
+        &mut run.effects().reborrow(),
     );
     let chance = get_crit_chance(world, rules, warhead, source_id);
     // `PossibleCellSpreadDetonate` (`Ext/WarheadType/Body.cpp`'s
@@ -318,7 +318,7 @@ pub(crate) fn detonate(
                 .substrate
                 .entities
                 .get(target_id)
-                .and_then(|target| target.mind_control.controller())
+                .and_then(|target| target.seldom.mind_control.controller())
         {
             let silent = warhead
                 .phobos_extras
@@ -361,7 +361,7 @@ pub(crate) fn detonate(
             &warhead.phobos_convert_pairs,
             house,
             rules,
-            run.effects(),
+            &mut run.effects().reborrow(),
         );
         // Phobos `WarheadTypeExt::ExtData::ApplyBuildingUndeploy`
         // (`Detonate.cpp:213-214,266-352`): after `RemoveMindControl`,
@@ -404,7 +404,7 @@ pub(crate) fn detonate(
             let frame = world.session.binary_frame() as u32;
             if let Some(target) = world.substrate.entities.get_mut(target_id)
                 && target
-                    .disguise
+                    .seldom.disguise
                     .as_ref()
                     .is_some_and(|disguise| disguise.is_disguised())
             {
@@ -562,7 +562,7 @@ fn apply_transact_money(
     house: Option<InternedId>,
     firer_id: u64,
     impact: ProjectileCoord,
-    effects: crate::sim::world::FrameEffects<'_>,
+    effects: &mut crate::sim::world::FrameEffects<'_>,
 ) {
     let settings = &warhead.transact_money;
     if settings.amount == 0 {
@@ -807,7 +807,7 @@ fn apply_one(
     }) {
         return false;
     }
-    if target.shield.as_ref().is_some_and(|state| {
+    if target.seldom.shield.as_ref().is_some_and(|state| {
         state.is_active()
             && rules
                 .shield_type(state.type_name())
@@ -881,7 +881,7 @@ fn apply_spawns_crate(
     warhead: &WarheadType,
     house: Option<InternedId>,
     impact: ProjectileCoord,
-    effects: crate::sim::world::FrameEffects<'_>,
+    effects: &mut crate::sim::world::FrameEffects<'_>,
 ) {
     // `Detonate.cpp:49` encloses the SpawnsCrate block in `if (pHouse)`: a
     // house-less detonation draws nothing and places nothing.
@@ -924,7 +924,7 @@ fn apply_change_owner(
     warhead: &WarheadType,
     house: Option<InternedId>,
     target_id: u64,
-    effects: crate::sim::world::FrameEffects<'_>,
+    effects: &mut crate::sim::world::FrameEffects<'_>,
 ) {
     let Some(house) = house else {
         return;
@@ -938,7 +938,7 @@ fn apply_change_owner(
             && world
                 .object_type(target.type_ref(), rules)
                 .is_some_and(|object| object.immune_to_psionics);
-        psionic || target.mind_control.is_mind_controlled()
+        psionic || target.seldom.mind_control.is_mind_controlled()
     };
     if immune {
         return;
@@ -949,7 +949,7 @@ fn apply_change_owner(
         // `MindControlLink::permanent`; `IsMindControlled` and the capture
         // admission read it, so a second `SetAsMindControl` hit refuses.
         if let Some(target) = world.substrate.entities.get_mut(target_id) {
-            target.mind_control.mark_permanent_control();
+            target.seldom.mind_control.mark_permanent_control();
         }
         if let Some(anim) = warhead.phobos_change_owner_mind_control_anim.as_deref() {
             world.attach_control_ring(target_id, anim, rules);
@@ -1057,19 +1057,22 @@ fn crit_effects(
             // `DamageAreaTarget` when the crit warhead does not spread.
             let crit_ref = world.interner.intern(name);
             let impact = ProjectileCoord::new(coord.x, coord.y, coord.z);
-            let (nested, mut pings, _crit_active, _area_result) =
-                apply_area_damage_in_run_with_target(
-                    world,
-                    run,
-                    rules,
-                    overlay_registry,
-                    impact,
-                    damage,
-                    crit_warhead,
-                    true,
-                    (source_id, source_house, crit_ref),
-                    Some(target_id),
-                );
+            // The pings follow the area's effects in `effects`, so they
+            // gather apart first.
+            let mut pings = Vec::new();
+            let (nested, _crit_active, _area_result) = apply_area_damage_in_run_with_target(
+                world,
+                run,
+                rules,
+                overlay_registry,
+                impact,
+                damage,
+                crit_warhead,
+                true,
+                (source_id, source_house, crit_ref),
+                Some(target_id),
+                &mut pings,
+            );
             effects.append(nested);
             effects.under_attack_events.append(&mut pings);
         }
@@ -1078,8 +1081,16 @@ fn crit_effects(
             // false, house)` with the ORIGINAL warhead's id.
             let event =
                 EntityDamageEvent::area(target_id, damage, 0, source_id, source_house, warhead_ref);
-            let (nested, mut pings) =
-                commit_entities(world, run, &[event], None, rules, overlay_registry);
+            let mut pings = Vec::new();
+            let nested = commit_entities(
+                world,
+                run,
+                &[event],
+                None,
+                rules,
+                overlay_registry,
+                &mut pings,
+            );
             effects.append(nested);
             effects.under_attack_events.append(&mut pings);
         }

@@ -244,7 +244,7 @@ pub(super) fn process(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     // Ares hook 53AF40 (10037B40) skips the stock Process; its state
     // machine (10070BA0) runs in its place. On the switch like the Ares
@@ -343,7 +343,7 @@ fn mind_control_area(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     let general = &rules.general;
     let centre = sim.psychic_dominator.cell;
@@ -546,7 +546,7 @@ fn ares_process(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     if !sim.psychic_dominator.ares_machine {
         return false;
@@ -589,9 +589,10 @@ fn ares_process(
             .and_then(|name| super::spawn_super_anim(sim, rules, &name, coords));
             sim.psychic_dominator.anim = anim;
             let sound = match &sw.presentation.activation_sound {
-                Some(sound) => sound.clone(),
-                None => general.psychic_dominator_activate_sound.clone(),
-            };
+                Some(sound) => sound.as_deref(),
+                None => general.psychic_dominator_activate_sound.as_deref(),
+            }
+            .map(|sound| rules.sound_name(sound));
             if let Some(sound_id) = sound {
                 sim.sound_events.emit(SimSoundEvent::VocAtCoord {
                     sound_id,
@@ -687,7 +688,7 @@ fn ares_fire(
     rules: &RuleSet,
     sw: &crate::rules::superweapon_type::SuperWeaponType,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some(metadata) = rules.super_weapon_metadata(&sw.id) else {
         return false;
@@ -779,7 +780,7 @@ fn ares_fire(
             || object
                 .promotion_abilities()
                 .is_some_and(|abilities| abilities.psionics_immune(entity.veterancy.raw()));
-        let controlled = entity.mind_control.controller().is_some();
+        let controlled = entity.seldom.mind_control.controller().is_some();
         if crate::sim::superweapon::invulnerability::is_invulnerable(
             entity.invulnerability.as_ref(),
             frame,
@@ -795,7 +796,7 @@ fn ares_fire(
                 .intersects(sim.ares_house_relation(owner, entity.owner()))
             || !super::protect::techno_affected(sim, entity, targeting.affects_target())
             || controlled && !dominator.capture_mind_controlled
-            || entity.mind_control.permanent()
+            || entity.seldom.mind_control.permanent()
                 && !controlled
                 && !dominator.capture_perma_mind_controlled
             || immune && !dominator.capture_immune_to_psionics

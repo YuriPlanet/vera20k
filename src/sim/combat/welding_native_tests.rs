@@ -62,7 +62,7 @@ fn scene(rules: &RuleSet, cursor: &Value) -> (Simulation, Roles) {
         64,
         crate::map::resolved_terrain::test_clear_cell,
     ));
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(64, 64));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(64, 64));
     let owner = sim.interner.intern("Americans");
     sim.houses
         .register(HouseState::new(owner, 0, None, true, 0, 10));
@@ -98,7 +98,7 @@ fn scene(rules: &RuleSet, cursor: &Value) -> (Simulation, Roles) {
     // These actors are constructor/coordinate priors, not live Unit AI.
     // Only the real constructed System enters Logic in this comparison.
     sim.set_logic_order_for_test(Vec::new());
-    sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+    *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
         int(cursor) as u32
     ));
     (sim, roles)
@@ -130,9 +130,9 @@ fn rng(sim: &Simulation) -> [String; 3] {
 }
 
 fn restore_rng(sim: &mut Simulation, state: &Value) {
-    sim.main_rng = SimRng::from_native_state_hex_for_test(state["main"].as_str().unwrap()).into();
-    sim.scenario_rng = SimRng::from_native_state_hex_for_test(state["scenario"].as_str().unwrap());
-    sim.mapgen_rng = SimRng::from_native_state_hex_for_test(state["mapgen"].as_str().unwrap());
+    *sim.main_rng = SimRng::from_native_state_hex_for_test(state["main"].as_str().unwrap());
+    *sim.scenario_rng = SimRng::from_native_state_hex_for_test(state["scenario"].as_str().unwrap());
+    *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(state["mapgen"].as_str().unwrap());
 }
 
 fn word_hex(bits: u64) -> String {
@@ -279,7 +279,7 @@ fn original_particle_constructor_separates_supplied_coordinate_from_owner_target
             .get_mut(roles["owner"])
             .unwrap()
             .attack_target
-            .set(target(&roles, &input["tarcom"]));
+            .set_for_test(target(&roles, &input["tarcom"]));
         if input["cell_bridge"] == true {
             sim.resolved_terrain
                 .as_mut()
@@ -327,7 +327,7 @@ fn birth(rules: &RuleSet, row: &Value) -> (Simulation, Roles, u64) {
         .get_mut(owner)
         .unwrap()
         .attack_target
-        .set(Some(TargetKind::Entity(roles["target"])));
+        .set_for_test(Some(TargetKind::Entity(roles["target"])));
     let id = sim
         .spawn_particle_system(
             rules.ps_type_id_by_name("WeldingSys").unwrap(),
@@ -343,8 +343,9 @@ fn birth(rules: &RuleSet, row: &Value) -> (Simulation, Roles, u64) {
         .entities
         .get_mut(owner)
         .unwrap()
+        .seldom
         .spark_particle_system
-        .bind(Some(id));
+        .set_for_test(Some(id));
     (sim, roles, id)
 }
 
@@ -415,7 +416,7 @@ fn original_fireat_live_spark_guard_refuses_a_direct_shot_without_launch_side_ef
             36,
             &mut out,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         None
     );
@@ -427,6 +428,7 @@ fn original_fireat_live_spark_guard_refuses_a_direct_shot_without_launch_side_ef
         sim.entities()
             .get(roles["owner"])
             .unwrap()
+            .seldom
             .spark_particle_system
             .system(),
         Some(id)
@@ -472,6 +474,7 @@ fn original_welding_pointer_expiry_and_target_setters_preserve_their_distinct_au
                 sim.entities()
                     .get(roles["owner"])
                     .unwrap()
+                    .seldom
                     .spark_particle_system
                     .system(),
                 Some(id),
@@ -484,7 +487,7 @@ fn original_welding_pointer_expiry_and_target_setters_preserve_their_distinct_au
                     roles["owner"],
                     target(&roles, requested),
                     rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
                 let actor = sim.entities().get(roles["owner"]).unwrap();
@@ -493,7 +496,11 @@ fn original_welding_pointer_expiry_and_target_setters_preserve_their_distinct_au
                     expected["target"]
                 );
                 assert_eq!(
-                    actor.spark_particle_system.system().map(|_| "system"),
+                    actor
+                        .seldom
+                        .spark_particle_system
+                        .system()
+                        .map(|_| "system"),
                     expected["spark_link"].as_str()
                 );
                 assert_eq!(
@@ -525,7 +532,11 @@ fn original_welding_pointer_expiry_and_target_setters_preserve_their_distinct_au
                 row["after"]["target"]
             );
             assert_eq!(
-                actor.spark_particle_system.system().map(|_| "system"),
+                actor
+                    .seldom
+                    .spark_particle_system
+                    .system()
+                    .map(|_| "system"),
                 row["after"]["spark_link"].as_str()
             );
             assert_eq!(
@@ -589,6 +600,7 @@ fn assert_logical_state(sim: &Simulation, roles: &Roles, id: u64, expected: &Val
         sim.entities()
             .get(roles["owner"])
             .unwrap()
+            .seldom
             .spark_particle_system
             .system()
             .map(|_| "system"),
@@ -618,7 +630,7 @@ fn original_welding_live_logic_boundaries_match_rng_ids_children_and_same_pass_l
         system_state(sim.particle_systems().get(id).unwrap(), &roles),
         row["birth"]["systems"][0]
     );
-    sim.scenario_rng =
+    *sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(row["scenario_rng_initial_hex"].as_str().unwrap());
     let other_before = [
         sim.main_rng.native_state_hex(),
@@ -742,7 +754,7 @@ fn detached_particle_snapshot_keeps_bodies_and_queue_until_the_common_drain() {
     };
     let native = &native()["live_case"];
     let (mut sim, _, _) = birth(&retail.rules, &native["birth"]);
-    sim.scenario_rng = SimRng::from_native_state_hex_for_test(
+    *sim.scenario_rng = SimRng::from_native_state_hex_for_test(
         native["scenario_rng_initial_hex"].as_str().unwrap(),
     );
     let last = int(&native["retirement_before_drain"]["tick"]);
@@ -766,7 +778,7 @@ fn detached_particle_snapshot_keeps_bodies_and_queue_until_the_common_drain() {
     );
     // Account for the existing native load reinitialization independently of
     // the retained-particle schema. This is no native saved-resource claim.
-    sim.scenario_rng = SimRng::new(0);
+    *sim.scenario_rng = SimRng::new(0);
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "welding-pending", 0);
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .unwrap()
@@ -793,7 +805,7 @@ fn detached_particle_snapshot_keeps_bodies_and_queue_until_the_common_drain() {
     let mut invalid = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .unwrap()
         .sim;
-    invalid.substrate.pending_delete = Default::default();
+    *invalid.substrate.pending_delete = Default::default();
     assert!(matches!(
         invalid.restore_after_snapshot_load(),
         Err(
@@ -821,7 +833,7 @@ fn system_child_reference_expiry_retains_the_live_body_until_common_uninit() {
     };
     let row = &native()["live_case"];
     let (mut sim, _, system_id) = birth(&retail.rules, &row["birth"]);
-    sim.scenario_rng =
+    *sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(row["scenario_rng_initial_hex"].as_str().unwrap());
     sim.object_ai_stage(Some(&retail.rules));
     let children: Vec<_> = sim
@@ -879,7 +891,7 @@ fn system_child_reference_expiry_retains_the_live_body_until_common_uninit() {
             .map(|found| listed(Some(found)))
             .collect::<Vec<_>>()
     );
-    sim.scenario_rng = SimRng::new(0);
+    *sim.scenario_rng = SimRng::new(0);
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "welding-detached", 0);
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .unwrap()
@@ -975,8 +987,9 @@ fn original_live_spark_rof_and_fireat_rearm_use_the_retained_link_and_exact_rng(
             .entities
             .get_mut(owner)
             .unwrap()
+            .seldom
             .spark_particle_system
-            .bind(live.then_some(id));
+            .set_for_test(live.then_some(id));
         restore_rng(&mut sim, &row["rng_before"]);
         let mut weapon = rules.weapon("RepairBullet").unwrap().clone();
         weapon.use_spark_particles = row["input"]["use_spark_particles"].as_bool().unwrap();
@@ -1012,21 +1025,24 @@ fn original_live_spark_rof_and_fireat_rearm_use_the_retained_link_and_exact_rng(
             let rearm = fireat_rearm_frames(tail_rof, row["input"]["berserk"].as_bool().unwrap());
             let actor = sim.substrate.entities.get_mut(owner).unwrap();
             actor.rearm_after_fire(int(&row["input"]["frame"]), rearm);
-            actor.weapon_burst.complete_shot(weapon.burst.max(1));
+            actor.seldom.weapon_burst.complete_shot(weapon.burst.max(1));
             (rof, rearm)
         });
         assert_eq!(rof, int(&row["get_rof"]));
         assert_eq!(rearm, int(&row["rearm"]["rof"]));
         let actor = sim.substrate.entities.get(owner).unwrap();
         assert_eq!(
-            actor.rearm_timer.timer().start_frame(),
+            actor.seldom.rearm_timer.timer().start_frame(),
             int(&row["rearm"]["rearm"][0])
         );
         assert_eq!(
-            actor.rearm_timer.timer().duration(),
+            actor.seldom.rearm_timer.timer().duration(),
             int(&row["rearm"]["rearm"][2])
         );
-        assert_eq!(actor.weapon_burst.index(), int(&row["rearm"]["burst"]));
+        assert_eq!(
+            actor.seldom.weapon_burst.index(),
+            int(&row["rearm"]["burst"])
+        );
         let raw: Vec<_> = row["get_rof_requests"]
             .as_array()
             .unwrap()

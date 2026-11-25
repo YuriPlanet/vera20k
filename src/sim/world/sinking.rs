@@ -19,6 +19,7 @@ use crate::sim::movement::ground_pose::{ground_surface_z_at, position_world_coor
 use crate::sim::world::FrameChannel;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
+use crate::util::forked::Forked;
 
 /// Native callers of a living, still-marked hull's sink transition.
 pub(crate) enum LivingSinkTrigger {
@@ -28,12 +29,24 @@ pub(crate) enum LivingSinkTrigger {
 
 /// Techno constructor6F2F2B/6F2F31 initializes both bytes to zero. Kept
 /// separate from Foot+425/+426 (`GameEntity::crashing` and its sound edge).
-#[derive(
-    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SinkingState {
     active: bool,
     sound_edge_seen: bool,
+    /// Sinking through broken ice (Firestorm 2.0 Unit+0x1F4, docs/ts-ice.md):
+    /// Unit AI drifts the hull down instead of the ship sink's fall.
+    ice: bool,
+}
+
+/// `ice` joins the hash only when set, so a game without ice hashes as before.
+impl std::hash::Hash for SinkingState {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.active.hash(state);
+        self.sound_edge_seen.hash(state);
+        if self.ice {
+            self.ice.hash(state);
+        }
+    }
 }
 
 impl SinkingState {
@@ -49,6 +62,11 @@ impl SinkingState {
     fn sound_edge_seen(self) -> bool {
         self.sound_edge_seen
     }
+
+    #[cfg(test)]
+    pub(crate) fn is_ice(self) -> bool {
+        self.ice
+    }
 }
 
 impl Simulation {
@@ -60,7 +78,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;
@@ -80,7 +98,7 @@ impl Simulation {
         id: u64,
         trigger: LivingSinkTrigger,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;
@@ -108,13 +126,26 @@ impl Simulation {
         self.stun(id, UninitContext::new(rules).with_effects(frame_effects));
     }
 
+    /// A unit sinking through broken ice (docs/ts-ice.md): Firestorm 2.0
+    /// sets Unit+0x1F4 and calls Stun (vt+0x2E4) from Break_Ice
+    /// (0x520c06..0x520c0c) and from Per_Cell_Process (0x651963..0x65196a).
+    pub(crate) fn begin_ice_sinking(&mut self, id: u64, context: UninitContext<'_>) {
+        let Some(entity) = self.substrate.entities.get_mut(id) else {
+            return;
+        };
+        entity.sinking.active = true;
+        entity.sinking.ice = true;
+        self.stun(id, context);
+    }
+
     /// Foot4DABC7..4DACD7: voice first (no local-player gate), then the type
     /// SinkingSound or Rules+208 on Foot's existing sound handle. The falling
     /// edge releases that handle only when MoveSoundActive+53C is clear.
+    /// `sound_events` is written only for an event (`util::forked`).
     pub(crate) fn sinking_edge_sounds(
         interner: &StringInterner,
         substrate: &mut ObjectSubstrate,
-        sound_events: &mut FrameChannel<SimSoundEvent>,
+        sound_events: &mut Forked<FrameChannel<SimSoundEvent>>,
         id: u64,
         rules: &RuleSet,
     ) {
@@ -125,16 +156,18 @@ impl Simulation {
         if state.active == state.sound_edge_seen {
             return;
         }
-        if state.active {
+        if state.ice {
+            // Firestorm's ice sink plays no sound; only the latch follows.
+        } else if state.active {
             let object = interner.object_type(entity.type_ref(), rules);
-            let voice = object.and_then(|object| object.voice_sinking.clone());
+            let voice = object.and_then(|object| object.voice_sinking.as_deref());
             let sound = object
-                .and_then(|object| object.sinking_sound.clone())
-                .or_else(|| rules.general.sinking_sound.clone());
+                .and_then(|object| object.sinking_sound.as_deref())
+                .or(rules.general.sinking_sound.as_deref());
             let coord = position_world_coord(&entity.position);
             if let Some(sound_id) = voice {
                 sound_events.emit(SimSoundEvent::VocAt {
-                    sound_id,
+                    sound_id: rules.sound_name(sound_id),
                     audible_to: None,
                     rx: entity.position.rx(),
                     ry: entity.position.ry(),
@@ -146,7 +179,7 @@ impl Simulation {
             if let Some(sound) = sound {
                 sound_events.emit(SimSoundEvent::AnimationStarted {
                     anim_id: id,
-                    sound_id: sound,
+                    sound_id: rules.sound_name(sound),
                     world: AnimWorldCoord {
                         x: coord.x,
                         y: coord.y,
@@ -172,7 +205,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -184,22 +217,21 @@ impl Simulation {
         {
             return false;
         }
+        if entity.sinking.ice {
+            return self.tick_ice_sinking(id, rules, registry, frame_effects);
+        }
         // Phobos `UnitClass_Update_SinkSpeed` (`0x7364DC`,
         // `Ext/Unit/Hooks.Sinking.cpp:3-11`): a UnitType's nullable
         // `SinkSpeed`, else `[General] SinkSpeed=` (default 5), replaces the
         // stock five-lepton step. The native hook rewrites EDX after the
         // stock `add edx, -5`, leaving the total at the configured value;
         // Aircraft keep the stock step (UnitClass hook only).
-        let sink_speed = {
-            {
-                if entity.category() == EntityCategory::Unit {
-                    self.object_type(entity.type_ref(), rules)
-                        .and_then(|object| object.phobos_sink_speed)
-                        .unwrap_or(rules.phobos_globals.sink_speed)
-                } else {
-                    5
-                }
-            }
+        let sink_speed = if rules.phobos() && entity.category() == EntityCategory::Unit {
+            self.object_type(entity.type_ref(), rules)
+                .and_then(|object| object.phobos_sink_speed)
+                .unwrap_or(rules.phobos_globals.sink_speed)
+        } else {
+            5
         };
         let mut coord = position_world_coord(&entity.position);
         let floor = ground_surface_z_at(
@@ -245,25 +277,26 @@ impl Simulation {
             // both sinking sites) falls back through the native type `Wake=`
             // to `[General] Wake=`; an unknown name is a null pointer and
             // takes the same fallback.
-            let wake_name = self
-                .substrate
-                .entities
-                .get(id)
-                .and_then(|entity| self.entity_object_type(entity, rules))
-                .and_then(|object| {
-                    {
+            let wake_name = if rules.phobos() {
+                self.substrate
+                    .entities
+                    .get(id)
+                    .and_then(|entity| self.entity_object_type(entity, rules))
+                    .and_then(|object| {
                         object
                             .phobos_wake_sinking
                             .clone()
                             .or_else(|| object.wake.clone())
-                    }
-                })
-                .filter(|name| {
-                    rules
-                        .anim_type_names
-                        .contains(name.to_ascii_uppercase().as_str())
-                })
-                .unwrap_or_else(|| rules.general.wake.name.clone());
+                    })
+                    .filter(|name| {
+                        rules
+                            .anim_type_names
+                            .contains(name.to_ascii_uppercase().as_str())
+                    })
+                    .unwrap_or_else(|| rules.general.wake.name.clone())
+            } else {
+                rules.general.wake.name.clone()
+            };
             let type_id = self.interner.intern(&wake_name);
             let (rx, ry, sub_x, sub_y, z) = wake.to_cell_sub_z();
             let descriptor = AnimClassSpawnDescriptor {
@@ -278,6 +311,62 @@ impl Simulation {
             }
         }
         false
+    }
+
+    /// Firestorm 2.0 UnitClass::AI 0x64dfa3..0x64e122, after Foot AI: a unit
+    /// sinking through ice moves three leptons along its body facing's
+    /// eighth (table 0x80f818, whose north-west row is zero) and nine down
+    /// through Set_Coord (vt+0x188). Below -400 leptons (Height_AGL,
+    /// vt+0x19C) it records a kill with no attacker (vt+0xD0) and is deleted
+    /// (vt+0xE4). No draw, wake or sound.
+    fn tick_ice_sinking(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: &mut FrameEffects<'_>,
+    ) -> bool {
+        const DRIFT: [(i32, i32); 8] = [
+            (0, -1),
+            (1, -1),
+            (1, 0),
+            (1, 1),
+            (0, 1),
+            (-1, 1),
+            (-1, 0),
+            (0, 0),
+        ];
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        let facing = entity.body_facing_current(self.session.binary_frame());
+        let (dx, dy) = DRIFT[super::ice::facing_eighth(facing)];
+        let on_bridge = entity.on_bridge();
+        let mut coord = position_world_coord(&entity.position);
+        coord.x = coord.x.wrapping_add(3 * dx);
+        coord.y = coord.y.wrapping_add(3 * dy);
+        coord.z = coord.z.wrapping_sub(9);
+        self.foot_set_location_marked(id, coord, rules, registry, frame_effects);
+        let floor = ground_surface_z_at(
+            [coord.x, coord.y],
+            on_bridge,
+            self.resolved_terrain.as_ref(),
+            None,
+        )
+        .unwrap_or(0);
+        if coord.z.wrapping_sub(floor) >= -400 {
+            return false;
+        }
+        self.record_the_kill(
+            id,
+            crate::sim::combat::KillSource::Techno(None),
+            crate::sim::combat::KillCallback::Terminal,
+            UninitContext::new(rules).with_effects(frame_effects),
+        );
+        self.uninit_with_context(id, UninitContext::new(rules).with_effects(frame_effects));
+        self.sound_events
+            .emit(SimSoundEvent::ObjectSoundReleased { owner: id });
+        true
     }
 }
 

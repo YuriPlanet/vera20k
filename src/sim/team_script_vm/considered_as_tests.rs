@@ -130,7 +130,7 @@ fn liberating_a_considered_member_frees_its_slot() {
         tank,
         false,
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     {
         let state = sim.team_script_vm.team(team).expect("team");
@@ -141,7 +141,7 @@ fn liberating_a_considered_member_frees_its_slot() {
         tank,
         true,
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let state = sim.team_script_vm.team(team).expect("team");
     assert_eq!(state.members().collect::<Vec<_>>(), Vec::<u64>::new());

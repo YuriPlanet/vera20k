@@ -40,7 +40,7 @@ impl Simulation {
         settings: &CreateUnitSettings,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(anim) = self.anim(id) else {
             return false;

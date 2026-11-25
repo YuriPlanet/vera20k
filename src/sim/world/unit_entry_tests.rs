@@ -182,6 +182,7 @@ fn unit_post_walk_tail_matches_original_crush_controls() {
                     target.set_type_ref_for_test(sim.intern(name));
                     target.set_category_for_test(category);
                     target
+                        .seldom
                         .crushable_facts
                         .set_crushable_for_test(node["crushable"] == true);
                     target
@@ -475,7 +476,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                     }
                 })
                 .collect();
-            sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells_with_tubes(
+            *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells_with_tubes(
                 33, 33, cells, tubes,
             ));
         }
@@ -521,7 +522,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
             )),
         );
         if let Some(bounds) = input["bounds"].as_array() {
-            sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
+            *sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
                 base: bounds[0].as_i64().unwrap() as i32,
                 off_fc: bounds[1].as_i64().unwrap() as i32,
                 off_100: bounds[2].as_i64().unwrap() as i32,
@@ -537,7 +538,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
         mover.set_category_for_test(EntityCategory::Unit);
         mover.set_in_playfield(flag("in_playfield"));
         if flag("mission_only") {
-            mover.mission_only.mark();
+            mover.seldom.mission_only.mark();
         }
         mover.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
         sim.substrate.entities.insert(mover);
@@ -586,7 +587,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
             // Team activation lifecycle. Non-action3 is false for either7F.
             let mut state = serde_json::to_value(&sim.team_script_vm).unwrap();
             state["teams"][id.to_string()]["cursor"] = team["cursor"].clone();
-            sim.team_script_vm = serde_json::from_value(state).unwrap();
+            *sim.team_script_vm = serde_json::from_value(state).unwrap();
         }
         let mut ids = Vec::new();
         for (index, node) in input["objects"]
@@ -614,6 +615,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                     EntityCategory::Unit
                 });
                 blocker
+                    .seldom
                     .crushable_facts
                     .set_crushable_for_test(node["crushable"].as_bool().unwrap_or(false));
                 blocker.mover_facts.set_omni_crush_resistant_for_test(

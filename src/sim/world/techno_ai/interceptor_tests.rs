@@ -604,6 +604,7 @@ fn fire_at_marks_the_interceptor_bullet_and_applies_firepower_mult() {
             .entities
             .get_mut(interceptor)
             .unwrap()
+            .seldom
             .crate_multipliers
             .set_firepower_multiplier_for_test(multiplier);
         sim.commit_fire_visit(
@@ -614,7 +615,7 @@ fn fire_at_marks_the_interceptor_bullet_and_applies_firepower_mult() {
             },
             &rules,
             None,
-            FrameEffects::empty(),
+            &mut FrameEffects::empty(),
         );
         let fired = sim
             .projectiles
@@ -678,7 +679,7 @@ fn a_whole_interception_cycle_keeps_the_rng_and_other_bullets_intact() {
 #[test]
 fn the_bullet_ai_retires_intercepted_bullets_and_inviso_interceptors_detonate() {
     let at = [12 * 256 + 128, 10 * 256 + 128, 0];
-    let ctx = super::super::ObjectAiCtx::default();
+    let mut ctx = super::super::ObjectAiCtx::default();
 
     // An Intercepted bullet detonates and leaves the store on its next AI.
     let (mut sim, rules) = scene("Interceptor=yes\n");
@@ -691,7 +692,7 @@ fn the_bullet_ai_retires_intercepted_bullets_and_inviso_interceptors_detonate() 
         sim.projectiles.get(target).is_some(),
         "the warhead head marks, it does not remove"
     );
-    assert!(sim.bullet_interceptor_pretick(target, &rules, ctx));
+    assert!(sim.bullet_interceptor_pretick(target, &rules, &mut ctx.reborrow()));
     assert!(
         sim.substrate.pending_delete.contains_object(&target),
         "0x4666F7 limbo/uninit retires the intercepted bullet"
@@ -704,7 +705,7 @@ fn the_bullet_ai_retires_intercepted_bullets_and_inviso_interceptors_detonate() 
     let enemy = unit(&mut sim, &rules, "ENEMY", "Russians", 20);
     let target = spawn_bullet(&mut sim, &rules, enemy, "ABULLET", at);
     let bullet = make_interceptor_bullet(&mut sim, &rules, interceptor, target, at);
-    assert!(sim.bullet_interceptor_pretick(bullet, &rules, ctx));
+    assert!(sim.bullet_interceptor_pretick(bullet, &rules, &mut ctx.reborrow()));
     assert!(
         sim.substrate.pending_delete.contains_object(&bullet),
         "the Inviso interceptor detonates and retires"
@@ -750,7 +751,7 @@ fn a_foot_interceptor_approaches_the_bullets_cell() {
         "a live bullet target is approachable"
     );
     let destination = sim
-        .approach_foot_target(interceptor, &rules, None, FrameEffects::empty())
+        .approach_foot_target(interceptor, &rules, None, &mut FrameEffects::empty())
         .expect("approach runs");
     assert!(
         matches!(

@@ -41,7 +41,7 @@ fn team_lookup_events_preserve_names_order_and_do_not_allocate() {
     let event_names: Vec<_> = definitions.trigger_types[0]
         .events
         .iter()
-        .map(|event| event.team_name.as_deref())
+        .map(|event| event.condition.team_name.as_deref())
         .collect();
     assert_eq!(
         event_names,
@@ -567,7 +567,7 @@ fn naval_event_retail_all05_removal_enables_black_eagle_support_once() {
             assert_eq!(sim.houses[&owner].tracking().navy(), 1);
             sim.flush_pending_delete();
         }
-        sim.raise_house_tags(owner, &rules, None, FrameEffects::default());
+        sim.raise_house_tags(owner, &rules, None, &mut FrameEffects::default());
         sim.flush_pending_delete();
         assert_eq!(enabled(&sim, chain[1]), expected, "frame{frame}");
         assert_eq!(enabled(&sim, chain[2]), expected, "frame{frame}");
@@ -742,9 +742,14 @@ fn funds_events_match_original_house_logic_and_cleanup_histories() {
             if mixed {
                 // Logic runs before House; the original mixed trigger can
                 // succeed on frame3750, which is not an eighth-frame poll.
-                sim.advance_triggers(&rules, Some(&overlay), FrameEffects::default());
+                sim.advance_triggers(&rules, Some(&overlay), &mut FrameEffects::default());
             }
-            sim.raise_house_tags(houses[0], &rules, Some(&overlay), FrameEffects::default());
+            sim.raise_house_tags(
+                houses[0],
+                &rules,
+                Some(&overlay),
+                &mut FrameEffects::default(),
+            );
             let runtime = &sim.trigger_runtime;
             let trigger = runtime.trigger(live).unwrap();
             let actual = json!({
@@ -769,9 +774,14 @@ fn funds_events_match_original_house_logic_and_cleanup_histories() {
             }
         }
         if integer(&case["repeat"]) == 0 {
-            sim.process_pending_delete_with(&rules, FrameEffects::default(), 0, false);
+            sim.process_pending_delete_with(&rules, &mut FrameEffects::default(), 0, false);
             sim.session.set_binary_frame_for_test(40);
-            sim.raise_house_tags(houses[0], &rules, Some(&overlay), FrameEffects::default());
+            sim.raise_house_tags(
+                houses[0],
+                &rules,
+                Some(&overlay),
+                &mut FrameEffects::default(),
+            );
         }
         let cleanup = json!({
             "wallet": crate::sim::credit_income::available_money(&sim.houses, houses[0]),
@@ -871,7 +881,7 @@ fn funds_event_sov06_retail_cash_taunt_reaches_named_eva_once() {
             &mut Vec::new(),
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(
             sim.sound_events
@@ -1051,7 +1061,7 @@ fn building_loss_event_retail_all04_sets_the_rescue_route_local() {
             &mut Vec::new(),
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(sim.trigger_runtime.locals_set.contains(&10), expected);
     }
@@ -1216,7 +1226,7 @@ fn surviving_object_damage_tag_ingress_matches_original_call_admission() {
             victim,
             source,
             integer(&case["input"]["damage"]),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(
             json!(sim.substrate.entities.get(victim).unwrap().health.current()),
@@ -1399,7 +1409,7 @@ fn per_cell_arrival_uses_native_bridge_admission_and_keeps_the_cached_tag() {
             crate::sim::movement::PerCellReason::TurnComplete,
             &rules,
             Some(&overlays),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         assert!(sim.trigger_runtime.dispatch_trace.is_empty());
@@ -1408,7 +1418,7 @@ fn per_cell_arrival_uses_native_bridge_admission_and_keeps_the_cached_tag() {
             crate::sim::movement::PerCellReason::Arrival,
             &rules,
             Some(&overlays),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         let native: Vec<_> = case["calls"]
@@ -1526,7 +1536,7 @@ fn fresh_line_marker_writer_and_arrival_consumers_match_original_sparse_cells() 
             })
             .collect();
         assert_eq!(json!(flags), case["line_flags"], "{case}");
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain = Some(terrain);
         compared_markers += 1;
         if case["input"]["mutation"] != "none" {
             continue;
@@ -1546,7 +1556,7 @@ fn fresh_line_marker_writer_and_arrival_consumers_match_original_sparse_cells() 
             crate::sim::movement::PerCellReason::Arrival,
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         // Native starts at the line slice, after direct1/59. Remove only the
@@ -1761,8 +1771,14 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
         .0;
     let identity = sim.super_weapons[&owner][&dominator].native_unique_id();
     for _ in 0..15 {
-        sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
-            .unwrap();
+        sim.advance_app_frame(
+            &[],
+            &rules,
+            67,
+            TickLane::Ordinary,
+            &mut FrameEffects::default(),
+        )
+        .unwrap();
     }
     assert_eq!(sim.session.binary_frame(), 15);
     assert_eq!(sim.entities().get(reactor).unwrap().health.current(), 769);
@@ -1775,8 +1791,14 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
     );
     assert!(!sim.super_weapons[&owner][&dominator].is_suspended());
     sim.trigger_runtime.action_trace.clear();
-    sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
-        .unwrap();
+    sim.advance_app_frame(
+        &[],
+        &rules,
+        67,
+        TickLane::Ordinary,
+        &mut FrameEffects::default(),
+    )
+    .unwrap();
     assert_eq!(sim.trigger_runtime.action_trace, vec![(129, 7), (63, 364)]);
     let reactor = sim.entities().get(reactor).unwrap();
     assert_eq!(
@@ -1835,8 +1857,14 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
     assert!(!before_pause.is_empty());
     assert!(before_pause.iter().all(|(_, _, paused)| !paused));
     sim.trigger_runtime.action_trace.clear();
-    sim.advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
-        .unwrap();
+    sim.advance_app_frame(
+        &[],
+        &rules,
+        67,
+        TickLane::Ordinary,
+        &mut FrameEffects::default(),
+    )
+    .unwrap();
     let paused = super_slots(&sim);
     assert!(!paused.is_empty());
     assert!(paused.iter().all(|(_, _, paused)| *paused));
@@ -2009,7 +2037,7 @@ fn native_all01_super_charge_dispatch_uses_retail_type_and_retained_operands() {
             &mut Vec::new(),
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(
             u8::from(returned),
@@ -2118,7 +2146,7 @@ fn native_damage_at_waypoint_dispatch_matches_original_controls() {
                 &mut Vec::new(),
                 &rules,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
         });
         assert_eq!(
@@ -2282,6 +2310,7 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
     );
     entity.set_native_unique_id_for_test(integer(&native["reactor_native_unique_id"]));
     entity
+        .seldom
         .type_facts
         .set_foundation_for_test(object.foundation.clone().into());
     entity.begin_building_body(BuildingBodyMode::Idle, 0);
@@ -2327,15 +2356,15 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
     sim.trigger_runtime.definitions = definitions;
     // Import the original post-constructor boundary. Damage crossing yellow
     // must retain the shared smoke owner's one Scenario selection draw.
-    sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(integer(
+    *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(integer(
         &native["reactor_native_unique_id"],
     ) as u32));
     let rng_before = &native["rng_state_before"];
-    sim.main_rng =
-        SimRng::from_native_state_hex_for_test(rng_before["main"].as_str().unwrap()).into();
-    sim.scenario_rng =
+    *sim.main_rng = SimRng::from_native_state_hex_for_test(rng_before["main"].as_str().unwrap());
+    *sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(rng_before["scenario"].as_str().unwrap());
-    sim.mapgen_rng = SimRng::from_native_state_hex_for_test(rng_before["mapgen"].as_str().unwrap());
+    *sim.mapgen_rng =
+        SimRng::from_native_state_hex_for_test(rng_before["mapgen"].as_str().unwrap());
     let (returned, visits) = crate::sim::combat::receiver_fixture::trace_area_visits(|| {
         sim.apply_live_trigger_action(
             &action,
@@ -2343,7 +2372,7 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
             &mut Vec::new(),
             &rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
     });
     assert!(returned);
@@ -2430,6 +2459,7 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
             .entities
             .get(1)
             .unwrap()
+            .seldom
             .damage_smoke_system_id
             .system(),
         Some(*id)
@@ -2577,9 +2607,9 @@ fn native_trigger_reveal_action_matches_original_controls() {
         );
         sim.session.install_waypoints(&waypoints);
         sim.trigger_runtime.definitions = definitions;
-        sim.scenario_rng = SimRng::new(31);
-        sim.main_rng = SimRng::new(31).into();
-        sim.mapgen_rng = SimRng::new(31);
+        *sim.scenario_rng = SimRng::new(31);
+        *sim.main_rng = SimRng::new(31);
+        *sim.mapgen_rng = SimRng::new(31);
         let hashes = |sim: &Simulation| {
             json!({
                 "scenario": native_rng_hash(&sim.scenario_rng.native_state_hex()),
@@ -2601,7 +2631,7 @@ fn native_trigger_reveal_action_matches_original_controls() {
                 &mut effects,
                 &rules,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
         });
         assert_eq!(
@@ -2693,7 +2723,7 @@ fn native_trigger_reveal_action_matches_original_controls() {
         let config = sim.sight_reveal_config(&rules);
         let heights = sim.sight_height_grid(&config);
         let mut probe = Simulation::with_seed(31);
-        probe.fog = FogState::new(128, 128);
+        *probe.fog = FogState::new(128, 128);
         probe.session.set_current_house_for_test(Some(player));
         probe.install_resolved_terrain_for_new_map(sim.resolved_terrain.as_ref().unwrap().clone());
         probe
@@ -2932,7 +2962,7 @@ fn action_11_inline_labels_and_ordered_effects_match_original_controls() {
             &mut effects,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(json!(i32::from(result)), control["returned"]);
         let mut expected = vec![preceding];
@@ -2963,7 +2993,7 @@ fn restored_live_owner_rejects_dangling_definitions_instances_and_attachments() 
     let mut sim = Simulation::with_seed(31);
     sim.trigger_runtime.definitions = supplied_definitions(input);
     sim.trigger_runtime.definitions_prepared = true;
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
         64,
         64,
         crate::map::resolved_terrain::test_clear_cell,
@@ -2996,7 +3026,7 @@ fn restored_live_owner_rejects_dangling_definitions_instances_and_attachments() 
         .replace_cell_trigger_tag(cell, Some(tag));
     sim.trigger_runtime.logic_tags.push(tag);
     sim.validate_restored_trigger_runtime(ares).unwrap();
-    let owner = sim.trigger_runtime.clone();
+    let owner = (*sim.trigger_runtime).clone();
     let corruptions: [(&str, fn(&mut Simulation)); 9] = [
         ("definition link", |sim| {
             sim.trigger_runtime.definitions.trigger_types[0].linked = Some(usize::MAX)
@@ -3034,14 +3064,14 @@ fn restored_live_owner_rejects_dangling_definitions_instances_and_attachments() 
         }),
     ];
     for (name, corrupt) in corruptions {
-        sim.trigger_runtime = owner.clone();
+        *sim.trigger_runtime = owner.clone();
         corrupt(&mut sim);
         assert!(
             sim.validate_restored_trigger_runtime(ares).is_err(),
             "{name}"
         );
     }
-    sim.trigger_runtime = owner;
+    *sim.trigger_runtime = owner;
     crate::sim::world::Simulation::mark_live_tag_for_delete(
         &mut sim.substrate,
         &mut sim.trigger_runtime,
@@ -3144,7 +3174,7 @@ fn physical_team_tag_references_match_original_retention_and_long_id_controls() 
                 assert_eq!(sim.trigger_runtime.tag(tag).unwrap().refs, 0);
             }
             let bytes = save_codec::serialize(&sim.trigger_runtime).unwrap();
-            sim.trigger_runtime = save_codec::deserialize(&bytes).unwrap();
+            *sim.trigger_runtime = save_codec::deserialize(&bytes).unwrap();
             sim.attach_team_trigger_tag(8, typ);
             assert_eq!(sim.trigger_runtime.definitions, before);
             if let Some(retained) = retained {
@@ -3242,7 +3272,7 @@ fn team_member_tag_admission_and_removal_match_original_controls() {
                     0,
                     0,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
             })
             .unwrap();
@@ -3287,22 +3317,22 @@ fn team_member_tag_admission_and_removal_match_original_controls() {
         // Import the native mutation boundary after genuine constructors;
         // concrete constructor RNG is separately covered by reinforcement rows.
         let rng_before = &control["member_rng_before"];
-        sim.scenario_rng =
+        *sim.scenario_rng =
             SimRng::from_native_state_hex_for_test(rng_before["scenario"].as_str().unwrap());
-        sim.main_rng =
-            SimRng::from_native_state_hex_for_test(rng_before["main"].as_str().unwrap()).into();
-        sim.mapgen_rng =
+        *sim.main_rng =
+            SimRng::from_native_state_hex_for_test(rng_before["main"].as_str().unwrap());
+        *sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(rng_before["mapgen"].as_str().unwrap());
         let (added, add_draws) = crate::sim::rng::trace_draws(|| {
             sim.with_object_placement_scope(|sim| {
-                sim.team_add_member(team, member, false, &rules, FrameEffects::default())
+                sim.team_add_member(team, member, false, &rules, &mut FrameEffects::default())
             })
         });
         assert_eq!(i32::from(added), integer(&control["added_al"]), "{input}");
         let after_add = state(&sim);
-        sim.trigger_runtime =
+        *sim.trigger_runtime =
             save_codec::deserialize(&save_codec::serialize(&sim.trigger_runtime).unwrap()).unwrap();
-        sim.team_script_vm = save_codec::deserialize::<TeamScriptVm>(
+        *sim.team_script_vm = save_codec::deserialize::<TeamScriptVm>(
             &save_codec::serialize(&sim.team_script_vm).unwrap(),
         )
         .unwrap();
@@ -3312,7 +3342,7 @@ fn team_member_tag_admission_and_removal_match_original_controls() {
             "{input}: retained attachments/membership through save"
         );
         let (_, remove_draws) = crate::sim::rng::trace_draws(|| {
-            sim.team_remove_member(team, member, false, &rules, FrameEffects::default());
+            sim.team_remove_member(team, member, false, &rules, &mut FrameEffects::default());
         });
         assert!(add_draws.is_empty() && remove_draws.is_empty(), "{input}");
         let rng_after = &control["member_rng_after"];
@@ -3546,14 +3576,14 @@ fn physical_retail_sov01_registration_and_enable_timers_match_original_at_all_di
             );
         }
         let mut sim = Simulation::with_seed(31);
-        sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
+        *sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
             row["rng_before"]["scenario"].as_str().unwrap(),
         );
         sim.session.set_binary_frame_for_test(0);
         // The original comparison supplies sparse initialized Cells and
         // minimal House/Country bindings. Full terrain and House construction
         // RNG are explicitly outside this native prefix's coverage.
-        sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+        *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
             160,
             128,
             crate::map::resolved_terrain::test_clear_cell,
@@ -3625,7 +3655,7 @@ fn physical_retail_sov01_registration_and_enable_timers_match_original_at_all_di
                 json!(
                     typ.events
                         .iter()
-                        .map(|event| json!({"kind": event.kind, "value":event.value}))
+                        .map(|event| json!({"kind": event.condition.kind, "value":event.condition.value}))
                         .collect::<Vec<_>>()
                 ),
                 selected["events"]
@@ -3653,7 +3683,7 @@ fn physical_retail_sov01_registration_and_enable_timers_match_original_at_all_di
         compare_stock_state(&sim, draw_count, &row["history"][1]);
         sim.trigger_runtime.stop_before_action = Some(integer(&row["first_poll"]["action_kind"]));
         let boundary = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            sim.advance_triggers(&rules, None, FrameEffects::default())
+            sim.advance_triggers(&rules, None, &mut FrameEffects::default())
         }))
         .expect_err("same original first gameplay-action boundary must stop the prefix");
         assert_eq!(*boundary.downcast::<i32>().unwrap(), 46);
@@ -3701,7 +3731,7 @@ fn physical_retail_sov01_registration_and_enable_timers_match_original_at_all_di
                         &mut Vec::new(),
                         &rules,
                         None,
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                     )
                 } else {
                     sim.register_live_trigger_event(
@@ -4046,17 +4076,17 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
             // Newer controls supply all three process/scenario priors. In
             // particular, their native MapGen Seed(31) differs from a fresh
             // fixed-map Simulation's process default Seed(0).
-            sim.scenario_rng =
+            *sim.scenario_rng =
                 SimRng::from_native_state_hex_for_test(states["scenario"].as_str().unwrap());
-            sim.main_rng =
-                SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap()).into();
-            sim.mapgen_rng =
+            *sim.main_rng =
+                SimRng::from_native_state_hex_for_test(states["main"].as_str().unwrap());
+            *sim.mapgen_rng =
                 SimRng::from_native_state_hex_for_test(states["mapgen"].as_str().unwrap());
         }
         // The original small-world fixture supplies initialized CellClass
         // allocations at(50,60)/(51,60). This is a storage prerequisite,
         // not a claim about the production retail terrain-construction pass.
-        sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+        *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
             64,
             64,
             crate::map::resolved_terrain::test_clear_cell,
@@ -4160,7 +4190,7 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                                     false,
                                 );
                             object.lifecycle.set_in_limbo_for_test(true);
-                            object.in_logic_vector.set_for_test(false);
+                            object.seldom.in_logic_vector.set_for_test(false);
                             sim.substrate.entities.insert(object);
                             objects.push(id);
                         } else {
@@ -4183,7 +4213,7 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                         assert!(sim.discard_constructed_limbo(
                             objects[integer(&args[1]) as usize],
                             &rules,
-                            FrameEffects::default(),
+                            &mut FrameEffects::default(),
                         ));
                     }
                     "supply_pending" => {
@@ -4228,7 +4258,7 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                             &mut effects,
                             &rules,
                             None,
-                            FrameEffects::default(),
+                            &mut FrameEffects::default(),
                         )));
                     }
                     "periodic_cell" => sim.dispatch_airborne_cell_tag_event(
@@ -4266,7 +4296,7 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                             &mut effects,
                             &rules,
                             None,
-                            FrameEffects::default(),
+                            &mut FrameEffects::default(),
                         )));
                     }
                     "mark_tag" => crate::sim::world::Simulation::mark_live_tag_for_delete(
@@ -4288,7 +4318,7 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                     }
                     "drain" => sim.process_pending_delete_with(
                         &rules,
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                         integer(&flags[0]),
                         integer(&flags[1]) != 0,
                     ),
@@ -4313,7 +4343,7 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                         ]
                     }
                     "poll" => {
-                        effects = sim.advance_triggers(&rules, None, FrameEffects::default());
+                        effects = sim.advance_triggers(&rules, None, &mut FrameEffects::default());
                     }
                     kind => panic!("unhandled native operation {name}/{step}/{kind}"),
                 }
@@ -4364,9 +4394,9 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                     .unwrap();
             let (mut restored, restored_queue): (TriggerRuntime, DeferredDeleteQueue) =
                 save_codec::deserialize(&bytes).unwrap();
-            assert_eq!(restored, sim.trigger_runtime, "{name}/{step} saved owner");
+            assert_eq!(restored, *sim.trigger_runtime, "{name}/{step} saved owner");
             assert_eq!(
-                restored_queue, sim.substrate.pending_delete,
+                restored_queue, *sim.substrate.pending_delete,
                 "{name}/{step} saved queue"
             );
             restored_queue.assert_consistent_for_test();
@@ -4387,8 +4417,8 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
             restored.action_trace = std::mem::take(&mut sim.trigger_runtime.action_trace);
             restored.dispatch_trace = std::mem::take(&mut sim.trigger_runtime.dispatch_trace);
             restored.freed_trace = std::mem::take(&mut sim.trigger_runtime.freed_trace);
-            sim.trigger_runtime = restored;
-            sim.substrate.pending_delete = restored_queue;
+            *sim.trigger_runtime = restored;
+            *sim.substrate.pending_delete = restored_queue;
             if row.get("object_tag_raw_history").is_some() {
                 // Original destruction keeps Tag+2C after the last object
                 // is gone. Preserve it across restore without retaining a
@@ -4502,11 +4532,11 @@ fn native_trigger_reveal_initial_event48_tags_receive_neutral_discovery_dispatch
         let events = &sim.trigger_runtime.definitions.trigger_types[trigger.type_index].events;
         assert_eq!(events.len(), 1);
         assert_eq!(
-            json!(events[0].kind),
+            json!(events[0].condition.kind),
             lead["native_trigger"]["events"][0]["kind"]
         );
-        assert_eq!(events[0].kind, 48);
-        let before = sim.trigger_runtime.clone();
+        assert_eq!(events[0].condition.kind, 48);
+        let before = (*sim.trigger_runtime).clone();
         let (_, draws) = crate::sim::rng::trace_draws(|| {
             sim.with_object_placement_scope(|sim| {
                 assert!(sim.discover_techno(id, owner, UninitContext::new(&rules)));
@@ -4516,7 +4546,7 @@ fn native_trigger_reveal_initial_event48_tags_receive_neutral_discovery_dispatch
         });
         assert!(draws.is_empty());
         assert_eq!(sim.trigger_runtime.dispatch_trace, [(tag, 4)]);
-        assert_eq!(sim.trigger_runtime, before);
+        assert_eq!(*sim.trigger_runtime, before);
         assert!(sim.drain_trigger_effects().is_empty());
         assert!(!sim.discover_techno(id, player, UninitContext::new(&rules)));
         assert_eq!(sim.trigger_runtime.dispatch_trace, [(tag, 4)]);

@@ -29,7 +29,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;
@@ -104,7 +104,7 @@ impl Simulation {
         id: u64,
         target: &DeliveryType,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
@@ -166,22 +166,22 @@ impl Simulation {
         // called from `TechnoClass::ChangeType` at `Ext/Techno/Body.cpp:366`):
         // a running countdown is dropped when the new type has no timed
         // AutoDeath. The untimed type then never re-arms it.
-        if actor.auto_death_timer.start_frame() != crate::sim::timer::PAUSED_START_FRAME
+        if actor.auto_death_timer().start_frame() != crate::sim::timer::PAUSED_START_FRAME
             && destination.phobos_auto_death.after_delay <= 0
         {
-            actor.auto_death_timer = crate::sim::timer::CdTimer::default();
+            *actor.auto_death_timer_mut() = crate::sim::timer::CdTimer::default();
         }
         // Phobos `FootExt::UpdateTypeData` (`Ext/Foot/Body.cpp:223-225`): the
         // passenger-deletion countdown stops when the new type configures a
         // PassengerDeletion with `Rate <= 0`. A type with no config at all
         // leaves the clock running, as native does.
-        if actor.passenger_deletion_timer.start_frame() != crate::sim::timer::PAUSED_START_FRAME
+        if actor.passenger_deletion_timer().start_frame() != crate::sim::timer::PAUSED_START_FRAME
             && destination
                 .phobos_passenger_deletion
                 .as_ref()
                 .is_some_and(|settings| settings.rate <= 0)
         {
-            actor.passenger_deletion_timer = crate::sim::timer::CdTimer::default();
+            *actor.passenger_deletion_timer_mut() = crate::sim::timer::CdTimer::default();
         }
         // RESIDUAL: construction alone builds some Type-derived state, and
         // nothing here refreshes it: passenger capacity (PassengerCargo from
@@ -204,7 +204,12 @@ impl Simulation {
         // Phobos `FootExt::UpdateTypeData`'s capture-manager arm: rebuild the
         // manager's limits from the new type's weapons.
         if reset_mind_control {
-            self.phobos_reset_mind_control_on_convert(id, destination, rules, effects);
+            self.phobos_reset_mind_control_on_convert(
+                id,
+                destination,
+                rules,
+                &mut effects.reborrow(),
+            );
         }
         HouseTracking::register_object(&mut self.substrate, &mut self.houses, id);
         if self
@@ -301,7 +306,7 @@ impl Simulation {
         id: u64,
         destination: &crate::rules::object_type::ObjectType,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if destination.category == ObjectCategory::Aircraft
             || matches!(
@@ -427,7 +432,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some((target_name, above, below, health, strength)) =
             self.substrate.entities.get(id).and_then(|actor| {
@@ -469,7 +474,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some((target_name, min, max, type_ammo, ammo)) =
             self.substrate.entities.get(id).and_then(|actor| {
@@ -519,7 +524,7 @@ impl Simulation {
         new_owner: InternedId,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -605,18 +610,18 @@ impl Simulation {
         old_default_to_guard_area: bool,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some((has_links, mission)) = self.substrate.entities.get(id).map(|entity| {
             (
-                entity.radio_contacts.iter_live().next().is_some(),
+                entity.seldom.radio_contacts.iter_live().next().is_some(),
                 entity.mission.effective().known(),
             )
         }) else {
             return;
         };
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.building_entry.clear_mission_fix_seeks();
+            entity.seldom.building_entry.clear_mission_fix_seeks();
         }
         if has_links || old_resource_gatherer {
             return;
@@ -672,7 +677,7 @@ impl Simulation {
         pairs: &[crate::rules::type_convert_group::TypeConvertGroup],
         house: Option<InternedId>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if pairs.is_empty() {
             return;
@@ -745,7 +750,7 @@ impl Simulation {
         id: u64,
         new_type: &crate::rules::object_type::ObjectType,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let (mut max_capture, mut infinite) = (0, false);
         if let Some(entity) = self.substrate.entities.get(id) {

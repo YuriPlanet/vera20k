@@ -56,7 +56,7 @@ fn scripted_result_loss_reaches_campaign_result_after_the_retail_delay() {
                 &[],
                 22,
                 crate::sim::world::TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         locked |= result.trigger_effects.iter().any(|effect| {

@@ -60,7 +60,9 @@ pub(crate) use self::production_refinery::spawn_building_free_unit;
 pub use self::production_repair::{
     RepairControl, repair_remaining, repair_step_cost, toggle_repair,
 };
-pub use self::production_repair::{buildings_wanting_repair, can_repair_building};
+pub use self::production_repair::{
+    buildings_wanting_repair, can_repair_building, player_repair_type_admits,
+};
 pub(crate) use self::production_repair::{engineer_repair, update_repair_and_power};
 // The AutoDeath `Sell` arm (`auto_death::sell_self`, phobos-gated) and the
 // test fixtures share this owner.
@@ -93,7 +95,10 @@ pub(crate) use self::can_build::ares_build_limit_remaining;
 pub(crate) use self::can_build::owns_prerequisites;
 pub use self::can_build::{CanBuild, can_build, primary_factory_category};
 pub(crate) use self::can_build::{RequirementStatus, requirements_met};
-pub use self::can_build::{can_select_factory_primary, find_factory, object_find_factory};
+pub use self::can_build::{
+    AresObjectFactory, ares_object_factory, can_select_factory_primary, find_factory,
+    object_find_factory,
+};
 pub(crate) use self::can_build::{initialize_factory_primary, toggle_factory_primary};
 pub(crate) use self::factory_ai::{
     AiPlacementTimer, detach_all as detach_building_factory, factory_ai,

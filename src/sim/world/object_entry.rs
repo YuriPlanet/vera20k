@@ -181,7 +181,7 @@ impl EntryCell {
             Self::Kept(facts) => facts.in_playfield,
             Self::Live(cell) => crate::sim::cell_rect::retained_cell_is_in_playfield(
                 cell,
-                live.sim.playfield_bounds,
+                *live.sim.playfield_bounds,
                 &crate::map::resolved_terrain::NativeCellQuery::canonical(live.terrain()),
             ),
         }
@@ -275,6 +275,10 @@ impl PreludeCells for PreludeReads<'_> {
         self.kept(cell, |facts| facts.flags)
             .unwrap_or_else(|| self.query.flags(cell))
     }
+
+    fn corrected_deck(&self, cell: Cell) -> Option<i32> {
+        self.query.corrected_deck(cell)
+    }
 }
 
 /// `HouseClass::Is_Ally_ByObject @ 0x004F9A90` / `Is_Ally`: `asker`'s own
@@ -297,6 +301,7 @@ fn infantry_disguised_to(
     observer: InternedId,
 ) -> Result<bool, String> {
     let Some(disguise) = entity
+        .seldom
         .disguise
         .as_ref()
         .filter(|state| state.is_disguised())
@@ -588,14 +593,14 @@ impl Simulation {
             let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
             if !crate::sim::cell_rect::retained_cell_is_in_playfield(
                 cell,
-                self.playfield_bounds,
+                *self.playfield_bounds,
                 &cells,
             ) {
                 return 0;
             }
         }
         if !self.session.uses_local_player_shroud()
-            || !e.discovery.owned_by_current_house()
+            || !e.seldom.discovery.owned_by_current_house()
             || e.is_mission_only()
         {
             return 0;
@@ -971,7 +976,7 @@ fn plain_entry(
             return None;
         }
     }
-    if infantry && mover.e.tether.partner().is_some() {
+    if infantry && mover.e.seldom.tether.partner().is_some() {
         return Some(0);
     }
     let nonzero = to.row_nonzero(mover.speed_row?)?;
@@ -1098,7 +1103,11 @@ fn full_foot_entry<'a>(
             return Ok(7);
         }
         //51C0AE reloads the target level after the first neighbor lookup.
-        if infantry && height.wrapping_sub(i32::from(target.level(live))) > 4 {
+        let corrected_deck = cells.corrected_deck(cell);
+        if infantry
+            && corrected_deck.is_none()
+            && height.wrapping_sub(i32::from(target.level(live))) > 4
+        {
             return Ok(0);
         }
         if !adjust_height_and_list(
@@ -1115,7 +1124,7 @@ fn full_foot_entry<'a>(
         //of the object list plane modified by4D9C60. Keep both authorities.
         if height != -1
             && target.flags(live) & 0x100 != 0
-            && height == i32::from(target.level(live)) + 4
+            && height == corrected_deck.unwrap_or_else(|| i32::from(target.level(live)) + 4)
         {
             (bits, owner) = target.deck_raw(live);
             vehicle_occupied = bits & 0x20 != 0;
@@ -1132,7 +1141,7 @@ fn full_foot_entry<'a>(
     let boundary_refused = !live.sim.object_placement_scope_active()
         && (!infantry || e.in_playfield())
         && !target.in_playfield(live)
-        && !live.sim.foot_allows_outside_playfield(id)?;
+        && !live.sim.foot_allows_outside_playfield(id, obj.is_train)?;
     if boundary_refused && e.in_playfield() {
         return Ok(7);
     }
@@ -1251,7 +1260,7 @@ fn full_foot_entry<'a>(
             {
                 return Ok(
                     if layer == MovementLayer::Ground
-                        && e.tether.partner().is_none()
+                        && e.seldom.tether.partner().is_none()
                         && !target.row_nonzero(live, obj.speed_type)?
                     {
                         7
@@ -1309,7 +1318,7 @@ fn full_foot_entry<'a>(
             .sim
             .entity_object_type(blocker, live.rules)
             .ok_or("repair list missing blocker type")?;
-        if infantry && e.slave.owner() == Some(blocker_id) {
+        if infantry && e.seldom.slave.owner() == Some(blocker_id) {
             let query = crate::sim::slave_deposit::SlaveDepositQuery {
                 entities: &live.sim.substrate.entities,
                 occupancy: &live.sim.substrate.occupancy,
@@ -1338,7 +1347,7 @@ fn full_foot_entry<'a>(
                     }
                     return Ok(
                         if layer == MovementLayer::Ground
-                            && e.tether.partner().is_none()
+                            && e.seldom.tether.partner().is_none()
                             && !target.row_nonzero(live, obj.speed_type)?
                         {
                             7
@@ -1396,9 +1405,14 @@ fn full_foot_entry<'a>(
                 } else {
                     bt.unit_absorb
                 };
+                // A `Grinding=` building (YR recycling) eats vehicles here.
+                // Original RA2 has no Grinding= field; refund-on-entry lives
+                // on Cloning vats but is infantry-only there, so a Cloning
+                // building is never a vehicle eater (no RA2 tank grinding).
+                let refund_eater = bt.grinding;
                 if object_target_is(e, blocker_id)
                     && ((mission == Some(MissionType::Enter) && absorber)
-                        || (mission == Some(MissionType::Eaten) && bt.grinding))
+                        || (mission == Some(MissionType::Eaten) && refund_eater))
                     && !b.warped_out
                 {
                     return Ok(0);
@@ -1406,7 +1420,7 @@ fn full_foot_entry<'a>(
                 //73F661..6CF: Grinding additionally walks CURRENT ground E4,
                 //without mission/NavCom/radio/warp gates. Do the actual lookup
                 //at this list position, preserving shared-Dummy stamping.
-                if bt.grinding {
+                if refund_eater {
                     let current =
                         crate::sim::movement::ground_pose::position_world_coord(&e.position);
                     let current_cell = live
@@ -1484,6 +1498,13 @@ fn full_foot_entry<'a>(
                 if bt.invisible_in_game {
                     continue;
                 }
+                // Tiberian Sun: a vehicle drives into a limpet mine's cell.
+                // Firestorm 2.0 `UnitClass::Can_Enter_Cell` skips an
+                // `IsLimpetMine=` building right after this test
+                // (`0x0065570A..0x00655717`, `sim::limpet`).
+                if bt.is_limpet_mine {
+                    continue;
+                }
                 // Ares 3.0 10015100 (hook 0x73F7B0): an `IsPassable`
                 // building is ignored; a `Firestorm.Wall` one takes the stock
                 // FirestormWall branch (0x73F7BA) as for infantry.
@@ -1517,7 +1538,7 @@ fn full_foot_entry<'a>(
         if infantry
             && mission == Some(MissionType::Enter)
             && object_target_is(e, blocker_id)
-            && e.tether.partner().is_some()
+            && e.seldom.tether.partner().is_some()
         {
             return Ok(0);
         }
@@ -1617,7 +1638,7 @@ fn full_foot_entry<'a>(
         }
     }
     if layer == MovementLayer::Ground
-        && (!infantry || e.tether.partner().is_none())
+        && (!infantry || e.seldom.tether.partner().is_none())
         && !target.row_nonzero(live, obj.speed_type)?
     {
         return Ok(7);
@@ -2043,6 +2064,7 @@ mod tests {
                 .entities
                 .get_mut(id)
                 .unwrap()
+                .seldom
                 .discovery
                 .set_owned_by_current_house_for_test(true);
             sim.session.set_game_mode(
@@ -2054,7 +2076,7 @@ mod tests {
             let valid = cells.lookup((15, 15));
             assert!(crate::sim::cell_rect::retained_cell_is_in_playfield(
                 valid,
-                sim.playfield_bounds,
+                *sim.playfield_bounds,
                 &cells,
             ));
             assert!(crate::sim::vision::cell_is_shrouded(
@@ -2091,7 +2113,7 @@ mod tests {
             let outside = cells.lookup((0, 0));
             assert!(!crate::sim::cell_rect::retained_cell_is_in_playfield(
                 outside,
-                sim.playfield_bounds,
+                *sim.playfield_bounds,
                 &cells,
             ));
             assert_eq!(
@@ -2161,7 +2183,7 @@ mod tests {
         mover.set_category_for_test(EntityCategory::Infantry);
         mover.set_in_playfield(true);
         sim.substrate.entities.insert(mover);
-        sim.playfield_bounds = Some(
+        *sim.playfield_bounds = Some(
             crate::map::playfield::PlayfieldBounds::from_normalized_local_size(16, 0, 0, 1, 1),
         );
         let cell = sim
@@ -2349,7 +2371,7 @@ mod tests {
         let slave = sim
             .spawn_object("ENGINEER", "Americans", 15, 15, 0, &rules)
             .unwrap();
-        sim.substrate.entities.get_mut(slave).unwrap().slave =
+        sim.substrate.entities.get_mut(slave).unwrap().seldom.slave =
             crate::sim::slave_manager::SlaveLink::for_test(Some(hut), Vec::new());
         let slav = sim.intern("SLAV");
         let manager = |slaves: &[u64]| {

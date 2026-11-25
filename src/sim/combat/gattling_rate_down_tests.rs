@@ -48,7 +48,7 @@ fn value(sim: &Simulation, gun: u64) -> i32 {
 }
 
 fn tick(sim: &mut Simulation, rules: &RuleSet, gun: u64) {
-    sim.gattling_update(gun, rules, 1, FrameEffects::default());
+    sim.gattling_update(gun, rules, 1, &mut FrameEffects::default());
 }
 
 /// `RateDown.Delay=3`: the first three decay calls keep the value, the fourth
@@ -120,9 +120,9 @@ fn rate_down_reset_zeroes_on_a_target_change() {
     let second = sim
         .spawn_object_at_height("SHED", "Americans", 16, 10, 0, 0, &rules)
         .unwrap();
-    let effects = FrameEffects::default();
+    let mut effects = FrameEffects::default();
     set_value_stage(&mut sim, gun, 2, 500);
-    let _ = sim.assign_target_represented(gun, Some(TargetKind::Entity(first)), &rules, effects);
+    let _ = sim.assign_target_represented(gun, Some(TargetKind::Entity(first)), &rules, &mut effects);
     assert_eq!(
         (
             sim.substrate.entities.get(gun).unwrap().gattling.stage(),
@@ -132,12 +132,12 @@ fn rate_down_reset_zeroes_on_a_target_change() {
         "a new target resets the gattling"
     );
     set_value_stage(&mut sim, gun, 2, 500);
-    let _ = sim.assign_target_represented(gun, Some(TargetKind::Entity(first)), &rules, effects);
+    let _ = sim.assign_target_represented(gun, Some(TargetKind::Entity(first)), &rules, &mut effects);
     assert_eq!(value(&sim, gun), 500, "the same target does not reset");
-    let _ = sim.assign_target_represented(gun, Some(TargetKind::Entity(second)), &rules, effects);
+    let _ = sim.assign_target_represented(gun, Some(TargetKind::Entity(second)), &rules, &mut effects);
     assert_eq!(value(&sim, gun), 0, "a changed target resets");
     set_value_stage(&mut sim, gun, 2, 500);
-    let _ = sim.assign_target_represented(gun, None, &rules, effects);
+    let _ = sim.assign_target_represented(gun, None, &rules, &mut effects);
     assert_eq!(value(&sim, gun), 0, "a lost target resets");
 }
 
@@ -168,7 +168,7 @@ fn a_spin_up_restarts_the_rate_down_delay() {
     tick(&mut sim, &rules, gun);
     tick(&mut sim, &rules, gun);
     // A charge at the cap leaves the value but resets the accumulator.
-    sim.gattling_increase(gun, &rules, 1, FrameEffects::default());
+    sim.gattling_increase(gun, &rules, 1, &mut FrameEffects::default());
     for _ in 0..3 {
         tick(&mut sim, &rules, gun);
         assert_eq!(value(&sim, gun), 700, "the delay restarted");

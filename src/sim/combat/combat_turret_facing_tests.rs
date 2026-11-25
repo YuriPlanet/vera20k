@@ -39,7 +39,12 @@ fn retail_ifv_retargets_its_turret_during_an_unfinished_turn() {
         .spawn_object("MTNK", "Russians", 9, 12, 0, rules)
         .unwrap();
     let owner = sim.substrate.entities.get(ifv).unwrap().owner();
-    sim.refresh_object_sight(ifv, rules, 0, crate::sim::world::FrameEffects::default());
+    sim.refresh_object_sight(
+        ifv,
+        rules,
+        0,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     let actor = sim.substrate.entities.get(ifv).unwrap();
     let obj = rules.object("FV").unwrap();
     let weapon = super::combat_weapon::current_weapon(
@@ -197,7 +202,7 @@ fn spawn_target(sim: &mut Simulation, stable_id: u64, rx: u16, ry: u16) {
 /// construction and before Reveal/Unlimbo, which resolves identities now;
 /// cloning the interner only after reveal is too late.
 fn use_test_interner(sim: &mut Simulation) {
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
 }
 
 // --- L2 unit_post shadow acceptance tests ---
@@ -324,7 +329,7 @@ fn save_load_round_trip_on_kill_tick() {
 
     // Native in-scenario load restarts Scenario RNG from Seed0; isolate the
     // kill-tick/turret persistence hash on that same post-load cursor.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let hash_before = sim.state_hash();
     let bytes = GameSnapshot::save(&sim, 0, 0, "test_map", 0);
     let mut restored = GameSnapshot::load(&bytes).expect("load").sim;

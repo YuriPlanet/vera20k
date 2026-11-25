@@ -40,7 +40,7 @@ impl Simulation {
         victim_id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(registry) = registry else {
             return;
@@ -132,7 +132,7 @@ fn try_to_create_crate(
     registry: &OverlayTypeRegistry,
     center: (i16, i16),
     powerup: u8,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     for range in 0..DROP_CRATE_CELL_RANGE {
         let mut place = |x: i16, y: i16| -> bool {

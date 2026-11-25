@@ -216,7 +216,10 @@ pub(crate) struct DeathEffects {
     /// admitted cell inline, before the cell's damage.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) tiberium_reduction_requests: Vec<TiberiumReductionRequest>,
-    pub(crate) death_sounds: Vec<(String, crate::sim::anim_class::AnimWorldCoord)>,
+    pub(crate) death_sounds: Vec<(
+        crate::rules::ruleset::SoundName,
+        crate::sim::anim_class::AnimWorldCoord,
+    )>,
     pub(crate) smudge_spawn_requests: Vec<SmudgeSpawnRequest>,
     pub(crate) rad_detonations: Vec<crate::sim::radiation::RadDetonation>,
     pub(crate) under_attack_events: Vec<UnderAttackEvent>,
@@ -304,7 +307,7 @@ pub const NO_COLOR_SPOTLIGHT_FLAGS: u32 = 0x1;
 /// order.
 
 pub(crate) fn combat_light_chance_admits(
-    sim: &crate::sim::world::Simulation,
+    sim: &mut crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     warhead_ref: InternedId,
 ) -> bool {
@@ -312,7 +315,7 @@ pub(crate) fn combat_light_chance_admits(
         return true;
     };
     let chance = warhead.phobos_combat_light_chance;
-    chance >= 1.0 || chance >= sim.main_rng().random_double()
+    chance >= 1.0 || chance >= sim.main_rng.random_double()
 }
 
 #[cfg(all(test, tests_sim_combat_d_z))]
@@ -337,7 +340,7 @@ mod combat_light_chance_tests {
         let mut sim = Simulation::new();
         let warhead = sim.interner.intern("WH");
         let before = sim.main_rng().state();
-        assert!(combat_light_chance_admits(&sim, &rules, warhead));
+        assert!(combat_light_chance_admits(&mut sim, &rules, warhead));
         assert_eq!(sim.main_rng().state(), before);
     }
 
@@ -349,14 +352,14 @@ mod combat_light_chance_tests {
         let mut sim = Simulation::new();
         let warhead = sim.interner.intern("WH");
         let before = sim.main_rng().state();
-        assert!(!combat_light_chance_admits(&sim, &zero, warhead));
+        assert!(!combat_light_chance_admits(&mut sim, &zero, warhead));
         assert_ne!(sim.main_rng().state(), before, "the gate draws once");
 
         let one = rules_with("CombatLightChance=1\n");
         let mut sim = Simulation::new();
         let warhead = sim.interner.intern("WH");
         let before = sim.main_rng().state();
-        assert!(combat_light_chance_admits(&sim, &one, warhead));
+        assert!(combat_light_chance_admits(&mut sim, &one, warhead));
         assert_eq!(sim.main_rng().state(), before);
     }
 }

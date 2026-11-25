@@ -11,8 +11,14 @@ use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::snapshot::GameSnapshot;
 
 fn frame(sim: &mut Simulation, rules: &RuleSet) {
-    sim.advance_app_frame(&[], rules, 67, TickLane::Ordinary, FrameEffects::default())
-        .unwrap();
+    sim.advance_app_frame(
+        &[],
+        rules,
+        67,
+        TickLane::Ordinary,
+        &mut FrameEffects::default(),
+    )
+    .unwrap();
 }
 
 fn reload(sim: &Simulation, rules: &RuleSet, overlays: &OverlayTypeRegistry) -> Simulation {
@@ -74,7 +80,7 @@ fn full_aircraft_evacuates_the_civilian_passenger_house_after_save_and_polling()
             crate::map::playfield::PlayfieldBounds::from_map_header(&map.header),
         ));
         sim.set_playfield_size_height_for_test(Some(32));
-        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+        *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
         let carrier_owner = sim.interner.get("Americans").unwrap();
         let passenger_owner = sim.interner.get("Russians").unwrap();
         for house in sim.houses.values_mut() {
@@ -128,7 +134,7 @@ fn full_aircraft_evacuates_the_civilian_passenger_house_after_save_and_polling()
             passenger_owner,
             rules,
             Some(&overlays),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         if survivor {
             // Existing crew-survival owner supplies this byte independently

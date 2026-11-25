@@ -72,7 +72,7 @@ impl crate::sim::world::Simulation {
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(bool, bool), crate::sim::world::FrameAdvanceError> {
         if self
             .substrate
@@ -148,7 +148,9 @@ impl crate::sim::world::Simulation {
             // `HoverDrownable` answer pick the damage. The drowning arm takes
             // the whole current health (`:1033-1036`); the surviving arm runs
             // the `FallingDownDamage` model below.
-            let damage = {
+            let damage = if !rules.phobos() {
+                health
+            } else {
                 let took_shutdown = self.take_hover_shutdown(id);
                 if took_shutdown && self.hover_drowns(id, rules) {
                     // The drowning arm keeps the whole current-Health packet
@@ -609,7 +611,7 @@ fn parachute_anim_name<'r>(
     if let Some(override_) = rules.side_parachute_override(side) {
         return Some(override_.unwrap_or("PARACH"));
     }
-    if !crate::rules::NPATCH_ENABLED
+    let canopy = if !crate::rules::NPATCH_ENABLED
         || entity.category() == crate::map::entities::EntityCategory::Infantry
     {
         rules.general.parachute_shp.as_deref()
@@ -619,7 +621,14 @@ fn parachute_anim_name<'r>(
             .vehicle_parachute
             .as_deref()
             .or(rules.general.parachute_shp.as_deref())
+    };
+    // Under Ares a house with no side (`0x1001BBD7`), or no canopy from its
+    // side and `[General] Parachute=` (`0x1002E0FA`), gets `Find("PARACH")`
+    // (`0x1001BC09`) rather than none.
+    if rules.ares() && (side < 0 || canopy.is_none()) {
+        return Some("PARACH");
     }
+    canopy
 }
 
 /// Phobos parabombs' descent rate (`Ext/Bullet/Hooks.cpp:128-137`).
@@ -671,7 +680,7 @@ impl crate::sim::world::Simulation {
         stable_id: u64,
         max_fall_rate: i32,
         rules: &crate::rules::ruleset::RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return false;
@@ -685,9 +694,9 @@ impl crate::sim::world::Simulation {
         )
         .wrapping_add(rate);
         let marked = entity.lifecycle.cell_marked();
-        let context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
+        let mut context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
         if marked {
-            self.unmark_entity_remove(stable_id, context);
+            self.unmark_entity_remove(stable_id, context.reborrow());
         }
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity.position.put_z(z);
@@ -750,7 +759,7 @@ mod canopy_tests {
         rules.install_art_fixture(art);
 
         let mut sim = Simulation::new();
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         let id = sim.substrate.allocate_stable_id();
         sim.substrate
             .entities
@@ -863,7 +872,7 @@ mod canopy_tests {
                 id,
                 -3,
                 crate::rules::ruleset::RuleSet::empty_for_test(),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
         }
         let lower = sim.anim_owner_coords(id).unwrap().z;
@@ -910,6 +919,22 @@ mod canopy_tests {
         let entity = GameEntity::test_default(1, "E1", "Americans", 10, 11);
         assert_eq!(
             parachute_anim_name(&rules, &entity, None, 3, None),
+            Some("PARACH")
+        );
+        // A house with no side skips `[General] Parachute=`, and an unset
+        // side with no `[General] Parachute=` also gets `PARACH`.
+        assert_eq!(
+            parachute_anim_name(&rules, &entity, None, -1, None),
+            Some("PARACH")
+        );
+        assert_eq!(
+            parachute_anim_name(&rules, &entity, None, 0, None),
+            Some("OTHER")
+        );
+        let mut empty = rules.clone();
+        empty.general.parachute_shp = None;
+        assert_eq!(
+            parachute_anim_name(&empty, &entity, None, 0, None),
             Some("PARACH")
         );
     }
@@ -1053,7 +1078,7 @@ mod canopy_tests {
             ))
             .expect("rules");
             let mut sim = Simulation::new();
-            sim.interner = crate::sim::intern::test_interner();
+            *sim.interner = crate::sim::intern::test_interner();
             let id = sim.substrate.allocate_stable_id();
             let mut entity = GameEntity::test_default(id, "E1", "Americans", 10, 11);
             entity.lifecycle.set_in_limbo_for_test(false);
@@ -1067,7 +1092,7 @@ mod canopy_tests {
             }
             entity.mark_hover_shutdown();
             sim.substrate.entities.insert(entity);
-            sim.object_ai_fall(id, &rules, None, FrameEffects::default())
+            sim.object_ai_fall(id, &rules, None, &mut FrameEffects::default())
                 .expect("landing arm");
             sim.substrate
                 .entities
@@ -1189,7 +1214,7 @@ Speed=4
             .spawn_object("FALLER", "Americans", 10, 10, 0, &rules)
             .expect("faller");
         sim.entities_mut_for_test().get_mut(id).unwrap().health = Health::new(400);
-        sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
+        *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
             let mut cell = crate::map::resolved_terrain::ResolvedTerrainCell::clear_for_test(x, y);
             if water && (x, y) == (10, 10) {
                 cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
@@ -1281,7 +1306,7 @@ FallingDownDamage=0.5
             entity.position.set_exact_z_leptons_for_test(Some(0));
             entity.begin_bomb_fall();
             entity.mark_hover_shutdown();
-            sim.object_ai_fall(id, &rules, None, FrameEffects::default())
+            sim.object_ai_fall(id, &rules, None, &mut FrameEffects::default())
                 .expect("landing arm");
             let health = sim
                 .substrate
@@ -1345,7 +1370,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             if parachuted {
                 entity.mark_on_parachuted();
             }
-            sim.object_ai_fall(id, &rules, None, FrameEffects::default())
+            sim.object_ai_fall(id, &rules, None, &mut FrameEffects::default())
                 .expect("landing arm");
             let health = sim
                 .substrate
@@ -1404,7 +1429,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
             entity.position.set_exact_z_leptons_for_test(Some(0));
             entity.begin_bomb_fall();
-            sim.object_ai_fall(id, &rules, None, FrameEffects::default())
+            sim.object_ai_fall(id, &rules, None, &mut FrameEffects::default())
                 .expect("landing arm");
             let health = sim
                 .substrate

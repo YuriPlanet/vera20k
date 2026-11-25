@@ -51,7 +51,6 @@ pub fn resolve(names: &[String], art: &IniFile) -> Vec<TechType> {
 /// authored towns of the theater use. The farms and landmarks of the
 /// Countryside and Landmark Extras are the buildings `extras` names
 /// (`RMGMD.INI [Extras] Farms=`, `Landmarks=`).
-#[allow(clippy::too_many_arguments)]
 pub fn resolve_vera_urban(
     rules: &crate::rules::ruleset::RuleSet,
     art: &IniFile,
@@ -271,7 +270,16 @@ pub fn resolve_vera_urban(
         trees: street_trees(theater_name),
         farms: named(&extras.farms),
         landmarks: named(&extras.landmarks),
-        derelicts: named(&extras.derelicts),
+        derelicts: named(&if extras.derelicts.is_empty() {
+            crate::map::rmg::extras::derelict_types_from_lists(
+                rules.build_const_types(),
+                &rules.build_barracks_types,
+                &rules.build_tech_types,
+                &rules.build_weapons_types,
+            )
+        } else {
+            extras.derelicts.clone()
+        }),
         civilians: spawn_civilians(rules),
         animals: spawn_animals(rules),
         wild: spawn_wild(rules),

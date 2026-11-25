@@ -43,22 +43,12 @@ fn award_kill_experience(
     killer_id: u64,
     victim_id: u64,
     points: i32,
-    victim_house: Option<&crate::sim::house_state::HouseState>,
+    victim_house: Option<&HouseCostFactors>,
 ) {
     if killer_id == RAD_NO_ATTACKER || killer_id == victim_id {
         return;
     }
-    let cost_of = |object: &ObjectType| match victim_house {
-        Some(house) => {
-            let factors = house.cost_factors_for(object);
-            rules.cost_of_with_restricted(object, Some(&factors), |priced| {
-                {
-                    house.cost_factors_for(priced).restricted_plant
-                }
-            })
-        }
-        None => rules.cost_of(object, None),
-    };
+    let cost_of = |object: &ObjectType| rules.cost_of(object, victim_house);
     let Some(killer) = entities.get(killer_id) else {
         return;
     };
@@ -79,7 +69,11 @@ fn award_kill_experience(
         Some((killer_id, cost_of(killer_type)))
     } else if killer_type.missile_spawn {
         // Branch 3: a spawned missile pays its launcher.
-        killer.spawn_owner_id.owner().and_then(trainable_cost)
+        killer
+            .seldom
+            .spawn_owner_id
+            .owner()
+            .and_then(trainable_cost)
     } else {
         // Branch 4: an occupied building pays the occupant at its fire index.
         combat_weapon::firing_occupant_id(killer, killer_type).and_then(|occupant| {
@@ -227,6 +221,7 @@ fn award_ares_kill_experience(
         Some(killer_id)
     } else if killer_type.missile_spawn {
         killer
+            .seldom
             .spawn_owner_id
             .owner()
             .filter(|&owner| trainable(entities, owner))
@@ -247,7 +242,7 @@ fn award_ares_kill_experience(
     let mut spawn = None;
     let mut spawn_factor = NativeF64Bits::ONE;
     let mut owner_factor = NativeF64Bits::ONE;
-    if let Some(spawner) = entities.get(recipient)?.spawn_owner_id.owner()
+    if let Some(spawner) = entities.get(recipient)?.seldom.spawn_owner_id.owner()
         && let Some(spawner_type) = techno_type(entities, interner, rules, spawner)
         && !spawner_type.missile_spawn
         && spawner_type.trainable
@@ -265,18 +260,10 @@ fn award_ares_kill_experience(
             return;
         };
         // GetActualCost(pTechno->Owner): the recipient's own House.
-        let recipient_house = houses.get(&entity.owner());
-        let cost = match recipient_house {
-            Some(house) => {
-                let factors = house.cost_factors_for(object);
-                rules.cost_of_with_restricted(object, Some(&factors), |priced| {
-                    {
-                        house.cost_factors_for(priced).restricted_plant
-                    }
-                })
-            }
-            None => rules.cost_of(object, None),
-        };
+        let factors = houses
+            .get(&entity.owner())
+            .map(crate::sim::house_state::HouseState::cost_factors);
+        let cost = rules.cost_of(object, factors.as_ref());
         let weighted =
             X87::ftol_i32_low_masked(X87::mul(X87::load_i32(points), X87::load_f64(factor)));
         if let Some(entity) = entities.get_mut(id) {
@@ -295,7 +282,7 @@ fn award_ares_kill_experience(
         .map(crate::sim::game_entity::GameEntity::owner);
     if let Some(controller) = entities
         .get(recipient)
-        .and_then(|entity| entity.mind_control.controller())
+        .and_then(|entity| entity.seldom.mind_control.controller())
         && let Some(controller_owner) = entities
             .get(controller)
             .map(crate::sim::game_entity::GameEntity::owner)
@@ -447,7 +434,9 @@ fn record_the_kill(
             )
         })
     } else {
-        let victim_house = houses.get(&victim_owner);
+        let victim_house = houses
+            .get(&victim_owner)
+            .map(crate::sim::house_state::HouseState::cost_factors);
         if let Some(killer_id) = killer_id {
             award_kill_experience(
                 entities,
@@ -456,7 +445,7 @@ fn record_the_kill(
                 killer_id,
                 victim_id,
                 points,
-                victim_house,
+                victim_house.as_ref(),
             );
         }
         None
@@ -489,7 +478,7 @@ impl crate::sim::world::Simulation {
         victim_id: u64,
         source: KillSource,
         callback: KillCallback,
-        context: crate::sim::world::UninitContext<'_>,
+        mut context: crate::sim::world::UninitContext<'_>,
     ) {
         let rules = context.rules();
         if matches!(source, KillSource::Techno(_))
@@ -511,7 +500,7 @@ impl crate::sim::world::Simulation {
                 .substrate
                 .entities
                 .get(victim_id)
-                .is_some_and(|victim| victim.capture_infantry_type_index.get() != -1)
+                .is_some_and(|victim| victim.seldom.capture_infantry_type_index.get() != -1)
                 && self.trigger_runtime.object_tag_is_transferable(victim_id);
             if !captor_has_tag {
                 for kind in [7, 48, 29] {
@@ -523,7 +512,11 @@ impl crate::sim::world::Simulation {
                         && kind == 7
                         && let KillSource::Techno(Some(destroyer)) = source
                     {
-                        self.raise_ares_destroyed_by_house(victim_id, destroyer, context);
+                        self.raise_ares_destroyed_by_house(
+                            victim_id,
+                            destroyer,
+                            context.reborrow(),
+                        );
                     }
                     if kind != 7 || source.is_present() {
                         self.dispatch_object_tag_event(
@@ -531,7 +524,7 @@ impl crate::sim::world::Simulation {
                             kind,
                             Some(victim_id),
                             None,
-                            context,
+                            context.reborrow(),
                         );
                     }
                 }
@@ -542,27 +535,28 @@ impl crate::sim::world::Simulation {
         // `DropCrate=` places its fixed powerup at its location, before the
         // kill bookkeeping. Runs on every RegisterDestruction entry, as the
         // hook does.
-        self.drop_crate_on_destruction(victim_id, rules, context.registry(), context.effects());
+        if rules.phobos() {
+            self.drop_crate_on_destruction(
+                victim_id,
+                rules,
+                context.registry(),
+                &mut context.effects().reborrow(),
+            );
+        }
         let Some(victim) = self.substrate.entities.get(victim_id) else {
             return;
         };
         //702D50..61 /70323E..51 retain this base in EBP. Neither the House
         //nor rank is captured here: callback-driven changes are reread below.
-        let victim_object = self.interner.object_type(victim.type_ref(), rules);
-        let victim_house_state = self.houses.get(&victim.owner());
-        let victim_cost = match (victim_house_state, victim_object) {
-            (Some(house), Some(object)) => {
-                let factors = house.cost_factors_for(object);
-                rules.cost_of_with_restricted(object, Some(&factors), |priced| {
-                    {
-                        house.cost_factors_for(priced).restricted_plant
-                    }
-                })
-            }
-            (_, Some(object)) => rules.cost_of(object, None),
-            (_, None) => 0,
-        };
-        self.record_kill_tag_prefix(victim_id, source, context);
+        let victim_house = self
+            .houses
+            .get(&victim.owner())
+            .map(HouseState::cost_factors);
+        let victim_cost = self
+            .interner
+            .object_type(victim.type_ref(), rules)
+            .map_or(0, |object| rules.cost_of(object, victim_house.as_ref()));
+        self.record_kill_tag_prefix(victim_id, source, context.reborrow());
         let promote_now = record_the_kill(
             &mut self.substrate.entities,
             &mut self.houses,
@@ -596,7 +590,7 @@ impl crate::sim::world::Simulation {
         &mut self,
         victim: u64,
         source: KillSource,
-        context: crate::sim::world::UninitContext<'_>,
+        mut context: crate::sim::world::UninitContext<'_>,
     ) {
         if source.is_present() {
             for kind in [6, 4] {
@@ -606,7 +600,13 @@ impl crate::sim::world::Simulation {
                     .get(victim)
                     .is_some_and(|victim| victim.lifecycle.object_alive())
                 {
-                    self.dispatch_object_tag_event(victim, kind, Some(victim), None, context);
+                    self.dispatch_object_tag_event(
+                        victim,
+                        kind,
+                        Some(victim),
+                        None,
+                        context.reborrow(),
+                    );
                 }
             }
         }
@@ -625,7 +625,7 @@ impl crate::sim::world::Simulation {
                 victim,
                 85,
                 Some(crate::sim::trigger_runtime::AresEventSource::House(house)),
-                context,
+                context.reborrow(),
             );
         }
         //702DCE/7032BE query WhatAmI once: Unit1 skips7/48/29,
@@ -644,7 +644,7 @@ impl crate::sim::world::Simulation {
         if context.rules().ares()
             && let KillSource::Techno(Some(destroyer)) = source
         {
-            self.raise_ares_destroyed_by_house(victim, destroyer, context);
+            self.raise_ares_destroyed_by_house(victim, destroyer, context.reborrow());
         }
         for kind in [7, 48, 29] {
             if kind == 7 && !source.is_present() {
@@ -656,7 +656,13 @@ impl crate::sim::world::Simulation {
                 .get(victim)
                 .is_some_and(|victim| victim.lifecycle.object_alive())
             {
-                self.dispatch_object_tag_event(victim, kind, Some(victim), None, context);
+                self.dispatch_object_tag_event(
+                    victim,
+                    kind,
+                    Some(victim),
+                    None,
+                    context.reborrow(),
+                );
             }
         }
     }
@@ -764,13 +770,13 @@ fn record_kill_credit(
     count_killer: bool,
     callback: KillCallback,
 ) {
-    victim.kill_record.killed_by = killer_owner;
+    victim.seldom.kill_record.killed_by = killer_owner;
     if callback == KillCallback::Terminal
         || victim.health.current() == 0
         || killer_owner.is_some()
         || victim.crash.is_crashing()
     {
-        victim.kill_record.destruction_recorded = true;
+        victim.seldom.kill_record.destruction_recorded = true;
     }
     // Score is added before the Building Insignificant branch703045.
     if let Some(killer) = killer_owner

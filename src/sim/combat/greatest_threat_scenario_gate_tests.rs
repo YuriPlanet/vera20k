@@ -127,12 +127,13 @@ fn campaign_discovery_prelude_admits_an_enemy_once_its_ground_is_revealed() {
     let (mut sim, tank, enemy) = rival_pair(rules, "MTNK", "HTNK");
     let player = sim.interner.get("Americans").unwrap();
     sim.session.set_current_house_for_test(Some(player));
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *sim.fog = crate::sim::vision::FogState::new(32, 32);
     let discovered = |sim: &Simulation| {
         sim.substrate
             .entities
             .get(enemy)
             .unwrap()
+            .seldom
             .discovery
             .discovered_by_current_house()
     };
@@ -161,7 +162,7 @@ fn campaign_player_scan_takes_an_undiscovered_aircraft() {
     let (mut sim, ifv, plane) = rival_pair(rules, "FV", "PDPLANE");
     let actor = sim.substrate.entities.get(plane).unwrap();
     assert_eq!(actor.category(), EntityCategory::Aircraft);
-    assert!(!actor.discovery.discovered_by_current_house());
+    assert!(!actor.seldom.discovery.discovered_by_current_house());
     assert_eq!(guard_pick(&mut sim, rules, ifv), Some(plane));
 }
 
@@ -279,7 +280,7 @@ fn retail_area_damage_skips_a_harvester_while_scenario_bit_800_is_set() {
             (crate::sim::combat::RAD_NO_ATTACKER, None, he),
             None,
             0,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             area.hits.iter().any(|event| event.target_id == target),

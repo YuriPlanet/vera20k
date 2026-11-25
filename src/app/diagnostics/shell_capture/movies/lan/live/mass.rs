@@ -532,7 +532,7 @@ fn command_input_context(state: &AppState) -> Result<Value> {
     let sim = simulation(state)?;
     Ok(json!({"available":sim.available_local_command_slots(),
         "pending_local":sim.pending_local_command_count(),
-        "input_locked":crate::app::input::campaign_input::is_locked(state),
+        "input_locked":crate::app::input::campaign_input::is_locked(&state.match_state),
         "scenario_paused":sim.session().scenario_paused(),
         "network_failure":sim.pending_network_failure(),
         "network_interruption":sim.pending_network_interruption(),

@@ -624,7 +624,7 @@ impl ShieldEmissions {
     /// commit through their own runs via [`Simulation::shield_break_detonations`].
     fn commit_shots(mut self, sim: &mut Simulation, rules: &RuleSet) {
         let detonations = sim.shield_break_detonations(std::mem::take(&mut self.shots), rules);
-        sim.commit_attach_effect_detonations(&detonations, rules, None, Default::default());
+        sim.commit_attach_effect_detonations(&detonations, rules, None, &mut Default::default());
     }
 }
 
@@ -660,7 +660,7 @@ pub(crate) fn pre_receive_damage(
         kill_idle_anim(sim, rules, &mut state);
     }
     if let Some(target) = sim.substrate.entities.get_mut(event.target_id) {
-        target.shield = Some(state);
+        target.seldom.shield = Some(state);
     }
     // `FlashbangWarheadAt` runs inside `ReceiveDamage`, before the absorbed
     // hit's animation; its hook takes Phobos's `CombatLightChance` draw first.
@@ -701,7 +701,7 @@ fn shield_stage(
     let warhead = sim.interner.warhead_type(event.warhead_ref, rules)?;
     let frame = sim.session.binary_frame() as i32;
 
-    let mut state = target.shield.clone()?;
+    let mut state = target.seldom.shield.clone()?;
     let ty = rules.shield_type(state.type_name())?;
     let shield_was_active = state.is_active();
 
@@ -1028,7 +1028,7 @@ pub(crate) fn warhead_armor_for_target(
     let Some(object) = sim.interner.object_type(entity.type_ref(), rules) else {
         return crate::rules::armor::ArmorId::NONE;
     };
-    let Some(state) = entity.shield.as_ref() else {
+    let Some(state) = entity.seldom.shield.as_ref() else {
         return object.armor_id();
     };
     let Some(ty) = rules.shield_type(state.type_name()) else {
@@ -1284,7 +1284,7 @@ pub(crate) fn tick(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
-    let Some(mut state) = entity.shield.clone() else {
+    let Some(mut state) = entity.seldom.shield.clone() else {
         return;
     };
     let Some(ty) = rules.shield_type(state.type_name()) else {
@@ -1298,7 +1298,7 @@ pub(crate) fn tick(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     }
     if entity.health.current() <= 0 || !entity.lifecycle.object_alive() {
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
-            entity.shield = None;
+            entity.seldom.shield = None;
         }
         return;
     }
@@ -1340,7 +1340,7 @@ pub(crate) fn tick(sim: &mut Simulation, id: u64, rules: &RuleSet) {
             state.timers.self_healing.pause(frame);
         }
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
-            entity.shield = Some(state);
+            entity.seldom.shield = Some(state);
         }
         return;
     }
@@ -1425,7 +1425,7 @@ pub(crate) fn tick(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     emissions.spawn_anims(sim, rules);
     update_idle_anim(sim, rules, id, ty, &mut state);
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.shield = Some(state);
+        entity.seldom.shield = Some(state);
     }
     // `AnimExt::CreateRandomAnim`'s owner house is the shield object's own,
     // `WeaponTypeExt::DetonateAt(weapon, pThis, pThis)` the break/respawn
@@ -1730,7 +1730,7 @@ impl Simulation {
             .substrate
             .entities
             .get_mut(id)
-            .and_then(|actor| actor.shield.take())
+            .and_then(|actor| actor.seldom.shield.take())
         else {
             return;
         };
@@ -1856,7 +1856,7 @@ impl Simulation {
 /// entity is already gone.
 fn restore_shield(sim: &mut Simulation, id: u64, state: ShieldState) {
     if let Some(actor) = sim.substrate.entities.get_mut(id) {
-        actor.shield = Some(state);
+        actor.seldom.shield = Some(state);
     }
 }
 
@@ -2067,7 +2067,7 @@ pub(crate) fn apply_shield_modifiers(
         .substrate
         .entities
         .get(target_id)
-        .and_then(|target| target.shield.clone());
+        .and_then(|target| target.seldom.shield.clone());
     let mut shots = Vec::new();
 
     // Remove shield (`Detonate.cpp:375..388`): `IndexOf` over the parsed
@@ -2307,7 +2307,7 @@ pub(crate) fn apply_shield_modifiers(
     }
 
     if let Some(target) = sim.substrate.entities.get_mut(target_id) {
-        target.shield = state;
+        target.seldom.shield = state;
     }
     shots
 }

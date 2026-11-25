@@ -93,7 +93,7 @@ fn fire(sim: &mut Simulation, rules: &RuleSet, cell: (u16, u16)) {
         },
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
 }
 

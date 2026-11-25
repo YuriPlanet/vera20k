@@ -684,9 +684,8 @@ fn build_limit(
         type_id.is_some_and(|type_id| {
             sim.production
                 .factories()
-                .iter_insertion_ordered()
-                .into_iter()
-                .any(|factory| {
+                .holders_insertion_ordered()
+                .any(|(_, factory)| {
                     factory.owner() == owner
                         && factory.object().is_some_and(|object| {
                             object.type_id == type_id && object.entity_id.is_some()
@@ -1377,7 +1376,7 @@ fn captured_vehicle_thief_count(
                     .filter(|entity| {
                         entity.category() == EntityCategory::Unit
                             && entity.owner() == owner
-                            && entity.capture_infantry_type_index.get() == index
+                            && entity.seldom.capture_infantry_type_index.get() == index
                     })
                     .fold(0i32, |count, _| count.wrapping_add(1))
             })
@@ -1409,6 +1408,48 @@ pub fn object_find_factory(
         require_online,
         false,
     )
+}
+
+/// What `HouseExt::FindFactory` (Ares.dll `10020D40`) finds for an object's
+/// type among its owner's factories ([`ares_object_factory`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AresObjectFactory {
+    /// No factory fits (state 1).
+    Missing,
+    /// Only factories without power or deactivated fit (state 2).
+    Unpowered,
+    /// A factory that fits, the primary first (states 3 and 4).
+    Found(u64),
+}
+
+/// Ares' sidebar cameo click asks `HouseExt::FindFactory(owner, type, false,
+/// true, false, true)` (`10020D40`) for the ready product `object_id` itself
+/// (SidebarClass_ProcessCameoClick_Power, Ares.dll `10025170`, hook
+/// `0x006AB312`, in place of the stock `FindFactory(0, 0)`): any fitting
+/// factory without power or deactivated only counts as
+/// [`AresObjectFactory::Unpowered`], and the first powered one or the
+/// primary answers.
+pub fn ares_object_factory(sim: &Simulation, rules: &RuleSet, object_id: u64) -> AresObjectFactory {
+    let Some(object) = sim.entities().get(object_id) else {
+        return AresObjectFactory::Missing;
+    };
+    let Some(object_type) = sim.entity_object_type(object, rules) else {
+        return AresObjectFactory::Missing;
+    };
+    match query_factory(
+        sim,
+        rules,
+        object.owner(),
+        object_type,
+        false,
+        true,
+        false,
+        true,
+    ) {
+        FactorySearch::Online(id) | FactorySearch::Primary(id) => AresObjectFactory::Found(id),
+        FactorySearch::Offline => AresObjectFactory::Unpowered,
+        FactorySearch::Missing | FactorySearch::BuildLimitRefused => AresObjectFactory::Missing,
+    }
 }
 
 /// Original ObjectType5F7900, scanned in House+6C insertion order. A first
@@ -1603,12 +1644,12 @@ fn scan_factories<'a>(
             && ownable & get_ownable(building_type, rules, double_owned) != 0
             && if !skip_busy_airfield
                 && obj.category == ObjectCategory::Aircraft
-                && !building.radio_contacts.is_empty()
+                && !building.seldom.radio_contacts.is_empty()
             {
                 // 0x005F79C7..0x005F79FB: unless arg1 skips it, an
                 // AircraftType (`What_Am_I` 3) needs a free contact slot in a
                 // factory In_Radio_Contact (0x0065AE30, 0x0065ADC0).
-                building.radio_contacts.first_free().is_some()
+                building.seldom.radio_contacts.first_free().is_some()
             } else {
                 // 0x005F7A09..0x005F7A49: a naval UnitType needs a naval
                 // factory, anything else a non-naval one.

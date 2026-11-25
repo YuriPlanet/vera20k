@@ -189,8 +189,13 @@ fn ares_airborne_deployer_without_deploy_to_land_deploys() {
         .find(|row| row["input"]["name"] == "air_without_deploy_to_land")
         .unwrap();
     let (mut sim, rules, id) = native_fixture(&row["input"], &row["before"]);
-    sim.update_unit_simple_deploy(id, true, &rules, crate::sim::world::FrameEffects::default())
-        .unwrap();
+    sim.update_unit_simple_deploy(
+        id,
+        true,
+        &rules,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     let entity = sim.substrate.entities.get(id).unwrap();
     let leaf = entity.mission_leaf.as_unit().unwrap();
     assert_eq!((leaf.deployed(), leaf.deploy_begin_active()), (0, 1));
@@ -213,7 +218,7 @@ fn updater_flags_stage_and_signed_boundaries_match_native_lifecycle() {
             id,
             deploying,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         let context = format!("lifecycle[{index}] {}", row["input"]);
@@ -251,7 +256,7 @@ fn updater_reads_the_height_on_any_layer() {
             id,
             deploying,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         let context = format!("lifecycle[{index}] {} on the Ground layer", row["input"]);
@@ -278,7 +283,7 @@ fn mission_then_shared_stage_matches_original_frame_timelines() {
                     .unit_simple_mission_unload(
                         id,
                         &rules,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
                 assert_eq!(
@@ -302,7 +307,11 @@ fn mission_then_shared_stage_matches_original_frame_timelines() {
             let (mut sim, rules, id) = native_fixture(&row["input"], &result["before"]);
             let rng = sim.rng_state();
             let actual = sim
-                .unit_simple_mission_unload(id, &rules, crate::sim::world::FrameEffects::default())
+                .unit_simple_mission_unload(
+                    id,
+                    &rules,
+                    &mut crate::sim::world::FrameEffects::default(),
+                )
                 .unwrap();
             assert_eq!(
                 actual,
@@ -355,6 +364,7 @@ fn synchronized_deploy_obeys_native_event9_actor_guards() {
                     .entities
                     .get_mut(id)
                     .unwrap()
+                    .seldom
                     .tether
                     .set_for_test(Some(partner));
             }
@@ -654,7 +664,7 @@ fn compare_snapshot_continuation(mut sim: Simulation, rules: &RuleSet, id: u64, 
     // Align these load transitions without changing the control's Jumpjet,
     // deployment or attached Anim state; full hashes still compare all of them.
     crate::sim::arena_fixture::flat_ground(&mut loaded, rules);
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let loaded_sound = loaded.substrate.entities.get(id).unwrap().move_sound;
     assert!(!loaded_sound.is_active());
     assert_eq!(loaded_sound.countdown(), 0);
@@ -740,8 +750,13 @@ fn ares_simple_deployer_faces_deploy_dir_before_its_animation() {
         .unwrap()
         .body_facing
         .snap(0xC000, frame);
-    sim.update_unit_simple_deploy(id, true, &rules, crate::sim::world::FrameEffects::default())
-        .unwrap();
+    sim.update_unit_simple_deploy(
+        id,
+        true,
+        &rules,
+        &mut crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     let entity = sim.substrate.entities.get(id).unwrap();
     assert!(entity.deploy_anim().is_none(), "no animation while turning");
     assert_eq!(entity.mission_leaf.as_unit().unwrap().deployed(), 0);
@@ -770,7 +785,7 @@ fn ares_simple_deployer_converts_to_its_convert_deploy_type() {
         .spawn_object("SDEP", "Russians", 10, 10, 64, &rules)
         .unwrap();
     assert_eq!(
-        sim.unit_simple_mission_unload(id, &rules, FrameEffects::default()),
+        sim.unit_simple_mission_unload(id, &rules, &mut FrameEffects::default()),
         Ok(450)
     );
     let entity = sim.substrate.entities.get(id).unwrap();
@@ -812,11 +827,11 @@ fn phobos_add_on_deploy_rewrites_ammo_on_both_transitions() {
             .current()
     };
     assert_eq!(ammo(&sim), 8);
-    sim.update_unit_simple_deploy(id, true, &rules, FrameEffects::empty())
+    sim.update_unit_simple_deploy(id, true, &rules, &mut FrameEffects::empty())
         .unwrap();
     assert!(sim.substrate.entities.get(id).unwrap().is_fully_deployed());
     assert_eq!(ammo(&sim), 5, "deploy completion adds -3");
-    sim.update_unit_simple_deploy(id, false, &rules, FrameEffects::empty())
+    sim.update_unit_simple_deploy(id, false, &rules, &mut FrameEffects::empty())
         .unwrap();
     assert!(!sim.substrate.entities.get(id).unwrap().is_fully_deployed());
     assert_eq!(ammo(&sim), 2, "undeploy completion adds -3 again");
@@ -948,7 +963,7 @@ fn phobos_deploying_anim_keys_select_facing_type_reverse_and_drawer() {
     // unit drawer.
     let rules = rules_with("DeployingAnim.ReverseForUndeploy=no\nDeployingAnim.UseUnitDrawer=no\n");
     let (mut sim, id) = spawn(&rules);
-    sim.update_unit_simple_deploy(id, true, &rules, FrameEffects::default())
+    sim.update_unit_simple_deploy(id, true, &rules, &mut FrameEffects::default())
         .unwrap();
     let forward = sim
         .substrate
@@ -968,7 +983,7 @@ fn phobos_deploying_anim_keys_select_facing_type_reverse_and_drawer() {
         entity.set_unit_simple_deploy_for_test(true, false, false);
         let _ = entity.take_deploy_anim();
     }
-    sim.update_unit_simple_deploy(id, false, &rules, FrameEffects::default())
+    sim.update_unit_simple_deploy(id, false, &rules, &mut FrameEffects::default())
         .unwrap();
     let reverse = sim
         .substrate
@@ -990,7 +1005,7 @@ fn phobos_deploying_anim_keys_select_facing_type_reverse_and_drawer() {
     // Unset keys keep the constructor values: reverse undeploy, unit drawer.
     let rules = rules_with("");
     let (mut sim, id) = spawn(&rules);
-    sim.update_unit_simple_deploy(id, true, &rules, FrameEffects::default())
+    sim.update_unit_simple_deploy(id, true, &rules, &mut FrameEffects::default())
         .unwrap();
     {
         let anim_id = sim
@@ -1007,7 +1022,7 @@ fn phobos_deploying_anim_keys_select_facing_type_reverse_and_drawer() {
         entity.set_unit_simple_deploy_for_test(true, false, false);
         let _ = entity.take_deploy_anim();
     }
-    sim.update_unit_simple_deploy(id, false, &rules, FrameEffects::default())
+    sim.update_unit_simple_deploy(id, false, &rules, &mut FrameEffects::default())
         .unwrap();
     let anim_id = sim
         .substrate

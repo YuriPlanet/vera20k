@@ -553,7 +553,7 @@ fn targeting_a_missing_cell_cannot_change_the_simulation_dummy() {
 }
 
 fn advance(sim: &mut Simulation, rules: &RuleSet) {
-    sim.advance_app_frame(&[], rules, 33, TickLane::Ordinary, FrameEffects::default())
+    sim.advance_app_frame(&[], rules, 33, TickLane::Ordinary, &mut FrameEffects::default())
         .unwrap();
 }
 
@@ -1216,4 +1216,43 @@ fn designator_scan_excludes_allies_limbo_dead_and_unlisted() {
         1,
         "an allied techno is never a designator or inhibitor"
     );
+}
+
+/// Ares draws a ring for the player's selected non-Buildings too (hook
+/// 0x0041BE80): the weapon's range in whole cells, or RadialIndicatorRadius.
+/// Without Ares, and for another player's unit, there is none.
+#[test]
+fn ares_rings_a_selected_unit_with_a_radial_indicator() {
+    let patch = crate::rules::ini_parser::IniFile::from_str(
+        "[HTNK]\nHasRadialIndicator=yes\n[MTNK]\nHasRadialIndicator=yes\nRadialIndicatorRadius=9\n",
+    );
+    let rings = |ares: bool| {
+        let _ares = crate::rules::ares_switch::read_ares_way(ares);
+        let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+            "XMP03T4.MAP",
+            &patch,
+        )?;
+        let rules = &retail.rules;
+        let mut sim = state(rules);
+        let mut spawn = |kind: &str, owner: &str, x: u16| {
+            sim.spawn_object(kind, owner, x, 12, 0, rules).unwrap()
+        };
+        let ids = [
+            spawn("HTNK", "Americans", 12),
+            spawn("MTNK", "Americans", 16),
+            spawn("HTNK", "British", 20),
+        ];
+        // HTNK's retail Primary.
+        let cells = rules.weapon("120mm").unwrap().range_leptons >> 8;
+        let radii: Vec<f32> = query(&sim, rules, &ids, 0)
+            .iter()
+            .map(|draw| draw.radius)
+            .collect();
+        Some((radii, cells as f32))
+    };
+    let Some((radii, cells)) = rings(true) else {
+        return;
+    };
+    assert_eq!(radii, [cells, 9.0]);
+    assert_eq!(rings(false).unwrap().0, [] as [f32; 0]);
 }

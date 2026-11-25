@@ -64,7 +64,6 @@ fn read_burst_rows(
     }
 }
 
-
 /// One `ParseBurstFLHs` key set: the normal and elite rows of one firing
 /// offset family.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -111,7 +110,6 @@ pub(crate) enum InfantryFlhState {
     Crouched,
 }
 
-
 /// TechnoCtor7116E6..71173A zeros both arrays, including these signed fields.
 /// The pointer is retained by WeaponSlots; this record owns the ART geometry.
 #[derive(
@@ -137,6 +135,11 @@ pub(crate) struct WeaponOffsets {
     // way fills them.
     extra_base: Vec<WeaponSlotGeometry>,
     extra_elite: Vec<WeaponSlotGeometry>,
+    /// Kratos infantry firing offsets. Player saves trace both field names and types.
+    #[serde(default)]
+    crawling: [[i32; 3]; 4],
+    #[serde(default)]
+    elite_crawling: [[i32; 3]; 4],
     #[serde(default)]
     alternate_flh_on_turret: Option<bool>,
     #[serde(default)]
@@ -222,7 +225,7 @@ impl WeaponOffsets {
         }
         //715F9E..716005 always reads all five ports after either arm, with
         // the current base Weapon[0] coordinate as each default.
-        for (port, offset) in self.alternate.iter_mut().enumerate() {
+        for (port, offset) in self.alternate[..5].iter_mut().enumerate() {
             *offset = art.read_coord3(&format!("AlternateFLH{port}"), self.base[0].flh);
         }
         // Phobos's loop appends a sixth entry only when `AlternateFLH5` is
@@ -399,6 +402,20 @@ impl WeaponOffsets {
             .map(|record| record.flh)
             .unwrap_or_default()
             .into()
+    }
+
+    /// Kratos PP v0.2.4, Ext/TechnoType/CrawlingFLHData.h::Read. This
+    /// component always reads the *named* ART fields, including on a type
+    /// whose stock weapon records use Weapon1FLH/Weapon2FLH.
+    pub(crate) fn read_kratos_infantry_flh(&mut self, art: &IniSection) {
+        super::kratos_crawling_flh::read(art, &mut self.crawling, &mut self.elite_crawling);
+    }
+
+    pub(crate) fn kratos_crawling(&self) -> super::kratos_crawling_flh::CrawlingFlh<'_> {
+        super::kratos_crawling_flh::CrawlingFlh {
+            base: &self.crawling,
+            elite: &self.elite_crawling,
+        }
     }
 
     /// Ares Prism SupportWeapon reader `100103F0`: `slot` takes AlternateFLH0

@@ -172,13 +172,20 @@ fn native_income_controls_reach_unit_and_slave_payment_callers() {
                     .unwrap()
                     .cargo()
                     .to_vec();
-                scene.sim.substrate.entities.get_mut(id).unwrap().slave =
+                scene
+                    .sim
+                    .substrate
+                    .entities
+                    .get_mut(id)
+                    .unwrap()
+                    .seldom
+                    .slave =
                     crate::sim::slave_manager::SlaveLink::for_test(Some(scene.refinery), cargo);
                 scene.sim.slave_deposit(
                     id,
                     scene.refinery,
                     &scene.rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 );
                 assert!(
                     scene
@@ -186,6 +193,7 @@ fn native_income_controls_reach_unit_and_slave_payment_callers() {
                         .entities()
                         .get(id)
                         .unwrap()
+                        .seldom
                         .slave
                         .cargo()
                         .is_empty()
@@ -195,7 +203,7 @@ fn native_income_controls_reach_unit_and_slave_payment_callers() {
                     &mut scene.sim,
                     &scene.rules,
                     scene.miner,
-                    super::FrameEffects::default(),
+                    &mut super::FrameEffects::default(),
                 );
                 let entity = scene.sim.entities().get(scene.miner).unwrap();
                 assert!(entity.miner.as_ref().unwrap().cargo().is_empty());
@@ -248,10 +256,7 @@ fn virtual_purifiers_use_admitted_rules_and_the_raw_human_byte() {
         let mut house = HouseState::new(owner, 0, None, human, 0, 10);
         house.set_player_control_for_test(true);
         sim.houses.register(house);
-        assert_eq!(
-            effective_purifier_count(&sim, &rules, "Americans"),
-            expected
-        );
+        assert_eq!(effective_purifier_count(&sim, &rules, owner), expected);
     }
 }
 
@@ -276,7 +281,7 @@ fn virtual_purifier_wrap_and_saved_payment_use_native_inputs() {
         crate::sim::miner::miner_system::effective_purifier_count(
             &scene.sim,
             &scene.rules,
-            "Americans"
+            scene.sim.interner.get("Americans").unwrap()
         ),
         i32::MIN
     );
@@ -401,14 +406,14 @@ pub(super) fn world_with(
     let mut sim = Simulation::with_seed(31);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.playfield_bounds = Some(bounds);
-    sim.playfield_size_height = Some(32);
+    *sim.playfield_bounds = Some(bounds);
+    *sim.playfield_size_height = Some(32);
     sim.session.set_map_width_for_test(33);
     sim.session.set_map_height_for_test(33);
-    sim.overlay_grid = Some(OverlayGrid::new(33, 33));
-    sim.bridge_state = Some(bridges);
-    sim.zone_grid = Some(zones.into());
-    sim.path_grid = Some(Arc::new(path));
+    *sim.overlay_grid = Some(OverlayGrid::new(33, 33));
+    *sim.bridge_state = Some(bridges);
+    *sim.zone_grid = Some(zones.into());
+    *sim.path_grid = Some(Arc::new(path));
     sim.install_resolved_terrain_for_new_map(terrain);
     sim
 }
@@ -607,9 +612,9 @@ fn dress(mut s: Scene, input: &Value) -> Scene {
         (other, other_contact),
     ] {
         let entity = s.sim.substrate.entities.get_mut(id).unwrap();
-        entity.radio_contacts.clear_all();
+        entity.seldom.radio_contacts.clear_all();
         if let Some(contact) = contact {
-            entity.radio_contacts.set_slot(0, contact);
+            entity.seldom.radio_contacts.set_slot(0, contact);
         }
     }
     // Refinery state.
@@ -624,7 +629,7 @@ fn dress(mut s: Scene, input: &Value) -> Scene {
             );
         }
         if input["refinery_tether"] == true {
-            building.tether.set_for_test(Some(miner));
+            building.seldom.tether.set_for_test(Some(miner));
         }
         // A live animation in the slot (the oracle's nonzero pointer); no
         // stock refinery art defines these, so the handles are placeholders.
@@ -655,7 +660,7 @@ fn dress(mut s: Scene, input: &Value) -> Scene {
             entity.mission_leaf.set_unit_tracker_byte_18(1);
         }
         if input["miner_tether"] == true {
-            entity.tether.set_for_test(Some(refinery));
+            entity.seldom.tether.set_for_test(Some(refinery));
         }
         entity
             .turret_rotation_latch
@@ -716,7 +721,7 @@ fn dress(mut s: Scene, input: &Value) -> Scene {
             crate::sim::components::NavTargetRef::cell(nav.0, nav.1),
             &s.rules,
             true,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         if input["moving"] != true {
             let entity = s.sim.substrate.entities.get_mut(miner).unwrap();
@@ -795,6 +800,7 @@ fn compare_state(s: &Scene, row: &Value, context: &str) {
     assert_eq!(nav, expected["miner_nav"], "{context}: NavCom");
     assert_eq!(
         miner
+            .seldom
             .radio_contacts
             .slot(0)
             .map_or(Value::Null, |id| s.name(id)),
@@ -803,6 +809,7 @@ fn compare_state(s: &Scene, row: &Value, context: &str) {
     );
     assert_eq!(
         refinery
+            .seldom
             .radio_contacts
             .slot(0)
             .map_or(Value::Null, |id| s.name(id)),
@@ -811,6 +818,7 @@ fn compare_state(s: &Scene, row: &Value, context: &str) {
     );
     assert_eq!(
         other
+            .seldom
             .radio_contacts
             .slot(0)
             .map_or(Value::Null, |id| s.name(id)),
@@ -818,12 +826,12 @@ fn compare_state(s: &Scene, row: &Value, context: &str) {
         "{context}: other contact"
     );
     assert_eq!(
-        u64::from(miner.tether.partner().is_some()),
+        u64::from(miner.seldom.tether.partner().is_some()),
         expected["miner_tether"].as_u64().unwrap(),
         "{context}: miner tether"
     );
     assert_eq!(
-        u64::from(refinery.tether.partner().is_some()),
+        u64::from(refinery.seldom.tether.partner().is_some()),
         expected["refinery_tether"].as_u64().unwrap(),
         "{context}: refinery tether"
     );
@@ -976,7 +984,7 @@ fn docking_handshake_and_radio_core_match_the_original_transmits() {
                 msg,
                 RadioPayload::default(),
                 &s.rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(
                 u64::from(reply.code()),
@@ -1015,7 +1023,7 @@ fn mission_enter_matches_the_original_dispatch() {
             &s.rules,
             None,
             s.miner,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sends(&s), oracle_sends(row), "{context}: transmit sequence");
         compare_delay(&s, row, delay, &mut stream, &context);
@@ -1074,7 +1082,7 @@ fn mission_harvest_states_two_and_three_match_the_original_dispatch() {
             &mut s.sim,
             s.miner,
             &s.rules,
-            crate::sim::world::ObjectAiCtx {
+            &mut crate::sim::world::ObjectAiCtx {
                 overlay_registry: Some(crate::sim::tiberium::test_support::overlay_registry()),
                 ..Default::default()
             },
@@ -1131,7 +1139,7 @@ fn mission_unload_matches_the_original_harvester_branch() {
             &mut s.sim,
             &s.rules,
             s.miner,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sends(&s), oracle_sends(row), "{context}: transmit sequence");
         compare_delay(&s, row, delay, &mut stream, &context);
@@ -1162,7 +1170,7 @@ fn ares_mission_unload_faces_the_dock_exactly() {
             &mut s.sim,
             &s.rules,
             s.miner,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let miner = s.sim.substrate.entities.get(s.miner).unwrap();
         let unloading = miner.miner.as_ref().unwrap().unload_active();
@@ -1187,7 +1195,7 @@ fn per_cell_dock_now_matches_the_original_track_end_arm() {
             s.miner,
             &s.rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sends(&s), oracle_sends(row), "{context}: transmit sequence");
         let mut expected = row.clone();
@@ -1236,7 +1244,7 @@ fn per_cell_release_matches_the_original_track_end_arm() {
             &mut s.sim,
             &s.rules,
             s.miner,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sends(&s), oracle_sends(row), "{context}: transmit sequence");
         compare_state(&s, row, &context);
@@ -1311,7 +1319,7 @@ fn weeder_unload_gate_deposits_into_the_house_weed_store() {
         &mut weeder.sim,
         &weeder.rules,
         weeder.miner,
-        super::FrameEffects::default(),
+        &mut super::FrameEffects::default(),
     );
     let owner = weeder.sim.interner.get("Americans").unwrap();
     let house = &weeder.sim.houses[&owner];
@@ -1351,7 +1359,7 @@ fn weeder_unload_gate_deposits_into_the_house_weed_store() {
         &mut normal.sim,
         &normal.rules,
         normal.miner,
-        super::FrameEffects::default(),
+        &mut super::FrameEffects::default(),
     );
     let owner = normal.sim.interner.get("Americans").unwrap();
     let house = &normal.sim.houses[&owner];

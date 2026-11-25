@@ -40,13 +40,14 @@ fn retail_healing_infantry_ctrl_cell_guards_the_clicked_post() {
         selected: &selected,
         modifier: OrderModifier::ForceFire,
         force_move_key: false,
+        force_fire_key: true,
         order_mode: OrderMode::AttackMove,
         planning: false,
         mouse_over: true,
         full_visibility: true,
     };
     let before = sim.state_hash();
-    let feedback = query.selection_action((5, 6), None);
+    let feedback = query.selection_action((5, 6), None).0;
     let click = attack_branch_orders(
         &sim,
         &rules,

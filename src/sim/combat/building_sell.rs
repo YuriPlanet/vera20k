@@ -37,7 +37,7 @@ pub(crate) fn apply(
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     warhead: &WarheadType,
     target_id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let extras = &warhead.phobos_extras;
     if !(extras.building_sell || extras.building_undeploy) {

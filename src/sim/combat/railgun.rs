@@ -33,7 +33,7 @@ pub(crate) fn line_damage(
     world: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
     death_effects: &mut DeathEffects,
     firer_id: u64,
     source: ProjectileCoord,

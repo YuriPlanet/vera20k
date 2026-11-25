@@ -56,7 +56,7 @@ fn sim(rules: &RuleSet) -> Simulation {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 11);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
     sim
 }
 

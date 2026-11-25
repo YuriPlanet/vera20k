@@ -17,6 +17,8 @@ pub(crate) struct UniformWindows {
     /// Bytes one pass binds.
     window: u64,
     alignment: u64,
+    /// A `RefCell`: the combat-light pass writes its windows through the
+    /// `&CombatLightRenderer` the merged object passes share.
     slots: RefCell<Slots>,
 }
 

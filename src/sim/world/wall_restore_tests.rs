@@ -23,7 +23,7 @@ fn retail_blocking_wall_restores_the_move_in_the_detonation_frame() {
     sim.set_input_delay_ticks(0);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     let wall = registry.id_for_name("GAWALL").unwrap();
     assert!(!registry.flags(wall).unwrap().crushable);
     // A complete enemy wall line makes shooting the wall the admitted route;
@@ -119,7 +119,7 @@ fn ore_removal_runs_the_outer_sweep_but_an_empty_cell_does_not() {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 43);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     let ore = registry.id_for_name("TIB01").unwrap();
     let flags = registry.flags(ore).unwrap();
     assert!(flags.tiberium && flags.chain_reaction && !flags.wall);
@@ -129,13 +129,13 @@ fn ore_removal_runs_the_outer_sweep_but_an_empty_cell_does_not() {
         .spawn_object_with_overlay_registry("MTNK", "Americans", 12, 16, 64, rules, &registry)
         .unwrap();
     let target = Some(TargetKind::Cell(16, 16));
-    let effects = crate::sim::world::FrameEffects::default();
+    let mut effects = crate::sim::world::FrameEffects::default();
     let he = sim.interner.intern("HE");
     sim.overlay_grid
         .as_mut()
         .unwrap()
         .place_overlay(16, 16, ore, 0);
-    sim.assign_target_represented(tank, target, rules, effects)
+    sim.assign_target_represented(tank, target, rules, &mut effects)
         .unwrap();
     let removed = crate::sim::combat::world_receiver::collect_area(
         &mut sim,
@@ -148,7 +148,7 @@ fn ore_removal_runs_the_outer_sweep_but_an_empty_cell_does_not() {
         (crate::sim::combat::RAD_NO_ATTACKER, None, he),
         None,
         0,
-        effects,
+        &mut effects,
     );
     assert_eq!(
         sim.overlay_grid.as_ref().unwrap().cell(16, 16).overlay_id,
@@ -166,7 +166,7 @@ fn ore_removal_runs_the_outer_sweep_but_an_empty_cell_does_not() {
         None
     );
 
-    sim.assign_target_represented(tank, target, rules, effects)
+    sim.assign_target_represented(tank, target, rules, &mut effects)
         .unwrap();
     let empty = crate::sim::combat::world_receiver::collect_area(
         &mut sim,
@@ -179,7 +179,7 @@ fn ore_removal_runs_the_outer_sweep_but_an_empty_cell_does_not() {
         (crate::sim::combat::RAD_NO_ATTACKER, None, he),
         None,
         0,
-        effects,
+        &mut effects,
     );
     assert!(empty.cell_target_detaches.is_empty());
     assert_eq!(

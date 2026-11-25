@@ -46,7 +46,7 @@ fn convert(sim: &mut Simulation, id: u64, name: &str, rules: &RuleSet) {
             id: name.to_owned(),
         },
         rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
 }
 
@@ -316,6 +316,6 @@ fn convert_infantry(sim: &mut Simulation, id: u64, name: &str, rules: &RuleSet) 
             id: name.to_owned(),
         },
         rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
 }

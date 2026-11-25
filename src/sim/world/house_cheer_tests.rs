@@ -41,7 +41,7 @@ fn native_cheer_record_resolves_registered_house_and_runs_the_shared_receiver() 
                 0,
                 0,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         // Mission/Doing are explicit initialized component inputs. Native
@@ -83,7 +83,7 @@ fn native_cheer_record_resolves_registered_house_and_runs_the_shared_receiver() 
             .doing()
     };
     assert_eq!([doing(ids[0]), doing(ids[1]), doing(ids[2])], [32, 0, 32]);
-    assert_eq!(sim.sound_events.iter().filter(|event| matches!(event, SimSoundEvent::VocCentered { sound_id } if sound_id == "Cheer")).count(), 1);
+    assert_eq!(sim.sound_events.iter().filter(|event| matches!(event, SimSoundEvent::VocCentered { sound_id } if sound_id.name_in(&rules) == "Cheer")).count(), 1);
     let invalid = CommandRecord::encode(CHEER_OPCODE, 7, 0, &[]).unwrap();
     assert!(sim.decode_native_command_record(&invalid, 99).is_none());
 }

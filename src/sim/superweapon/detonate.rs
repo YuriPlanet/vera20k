@@ -41,7 +41,7 @@ pub(super) fn apply(
     sw: &SuperWeaponType,
     cell: (u16, u16),
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(detonate) = rules.phobos_super_weapon_detonate(&sw.id) else {
         return;
@@ -148,7 +148,7 @@ fn commit(
     source: u64,
     impact: ProjectileCoord,
     payload: ProjectilePayload,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let detonation = ProjectileDetonation {
         projectile_id: source,

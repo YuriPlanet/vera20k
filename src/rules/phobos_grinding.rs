@@ -50,7 +50,7 @@ impl Default for PhobosGrindingSettings {
 
 impl PhobosGrindingSettings {
     pub fn from_section(section: &IniSection) -> Self {
-        use crate::rules::native_processing::read_valueable_type_vector;
+        use crate::rules::native_processing::read_nullable_type_vector;
         // `ValueableVector` has no `<default>` form and drops any token that
         // does not name a type; a name that does not resolve can never match
         // a techno, so keep the tokens and resolve them at use time.
@@ -58,13 +58,15 @@ impl PhobosGrindingSettings {
         Self {
             allow_allies: section.read_ares_bool("Grinding.AllowAllies", false),
             allow_owner: section.read_ares_bool("Grinding.AllowOwner", true),
-            allow_types: read_valueable_type_vector(section, "Grinding.AllowTypes", &[], resolve),
-            disallow_types: read_valueable_type_vector(
+            allow_types: read_nullable_type_vector(section, "Grinding.AllowTypes", None, resolve)
+                .unwrap_or_default(),
+            disallow_types: read_nullable_type_vector(
                 section,
                 "Grinding.DisallowTypes",
-                &[],
+                None,
                 resolve,
-            ),
+            )
+            .unwrap_or_default(),
             sound: None,
             play_die_sound: section.read_ares_bool("Grinding.PlayDieSound", true),
             // `Read<true>` allocates the named weapon on the same pass

@@ -229,7 +229,13 @@ impl OpeningCapture {
             return Ok(trace_outcome(state).is_some() || sim.session().tick() == tick);
         }
         let locked = sim.session().input_locked();
-        let view = camera::saved_tactical_view(state);
+        let view = camera::saved_tactical_view(
+            &state.platform,
+            &state.renderer,
+            &state.frontend.screen,
+            &state.match_state,
+            &state.persistence,
+        );
         Ok(self.saw_lock
             && match self.target {
                 OpeningTarget::Locked => locked,
@@ -313,7 +319,7 @@ impl OpeningCapture {
                 return Ok(());
             }
         }
-        let locked = crate::app::input::campaign_input::is_locked(state);
+        let locked = crate::app::input::campaign_input::is_locked(&state.match_state);
         let probes = !matches!(
             self.target,
             OpeningTarget::RadarAlert
@@ -364,13 +370,25 @@ impl OpeningCapture {
         }
         if self.target == OpeningTarget::RestoreUnlocked
             && self.restored.is_none()
-            && mid_pan(&camera::saved_tactical_view(state))
+            && mid_pan(&camera::saved_tactical_view(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state,
+                &state.persistence,
+            ))
         {
             state
                 .persistence
                 .isolate_capture_saves(&self.save_directory)
                 .context("create isolated campaign capture save directory")?;
-            let before = camera::saved_tactical_view(state);
+            let before = camera::saved_tactical_view(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state,
+                &state.persistence,
+            );
             let depth = state.match_state.input.cursor_visibility.level();
             let saved_runtime = installed_campaign_runtime_receipt(state)?;
             let path =
@@ -379,7 +397,13 @@ impl OpeningCapture {
             let saved_bytes = std::fs::read(&path).context("read saved capture bytes")?;
             crate::app::persistence::commands::try_load_save_file(state, &path)
                 .context("load through ordinary prepared-load/commit owners")?;
-            let after = camera::saved_tactical_view(state);
+            let after = camera::saved_tactical_view(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &state.match_state,
+                &state.persistence,
+            );
             ensure!(
                 before == after,
                 "ordinary load changed the retained pan trajectory"
@@ -566,7 +590,7 @@ impl OpeningCapture {
             self.steps_after_load += 1;
             return Ok(());
         }
-        let locked = crate::app::input::campaign_input::is_locked(state);
+        let locked = crate::app::input::campaign_input::is_locked(&state.match_state);
         let Some(pre_lock) = self.pre_lock_save.clone() else {
             ensure!(
                 !locked,
@@ -601,7 +625,7 @@ impl OpeningCapture {
         try_load_save_file(state, &unlocked).context("load the unlocked save in the lock")?;
         App::enter_in_game_menu_state(state, InGameMenuState::Closed);
         self.loaded_frame = Some(installed_frame(state)?);
-        let locked_after = crate::app::input::campaign_input::is_locked(state);
+        let locked_after = crate::app::input::campaign_input::is_locked(&state.match_state);
         let depth_after = state.match_state.input.cursor_visibility.level();
         let cursor_instances_after =
             crate::app::presentation::ui_overlays::build_software_cursor_instances(
@@ -818,7 +842,7 @@ impl OpeningCapture {
         if let Some(group) = group {
             ensure!(
                 crate::app::input::commands::try_schedule_command(
-                    state,
+                    &mut state.match_state,
                     &owner,
                     Command::AssignControlGroup {
                         group,
@@ -832,7 +856,7 @@ impl OpeningCapture {
         for &entity_id in &ids {
             ensure!(
                 crate::app::input::commands::try_schedule_command(
-                    state,
+                    &mut state.match_state,
                     &owner,
                     Command::AttackMove {
                         entity_id,
@@ -847,7 +871,15 @@ impl OpeningCapture {
         self.group_orders = Some(json!({"tick": tick, "owner": owner, "ids": ids,
             "requested_native_group": group, "attack_move_cell": target}));
         if group.is_some() {
-            camera::center_camera_on_cell(state, target.0, target.1);
+            camera::center_camera_on_cell(
+                &state.platform,
+                &state.renderer,
+                &state.frontend.screen,
+                &mut state.match_state,
+                &state.persistence,
+                target.0,
+                target.1,
+            );
         }
         Ok(())
     }
@@ -871,7 +903,7 @@ impl OpeningCapture {
         for &entity_id in &ids {
             ensure!(
                 crate::app::input::commands::try_schedule_command(
-                    state,
+                    &mut state.match_state,
                     &owner,
                     Command::AttackMove {
                         entity_id,
@@ -966,7 +998,7 @@ fn opening_observation(state: &AppState) -> Result<Value> {
         .runtime()
         .context("opening observation has no runtime")?
         .simulation;
-    let viewer = crate::app::input::commands::preferred_local_owner_name(state)
+    let viewer = crate::app::input::commands::preferred_local_owner_name(&state.match_state)
         .and_then(|name| sim.interner().get(&name));
     // Read the same CellClass shroud owner as world drawing. Diagnostic misses
     // retain a separate Dummy, so observing a capture never changes the sim.
@@ -1012,7 +1044,7 @@ fn opening_observation(state: &AppState) -> Result<Value> {
                 "estimated_health": entity.estimated_health.get(),
                 "sampled_power_health": entity.building_power_health_sample(),
                 "damaged_mode": entity.building_art.damage_state_active(),
-                "damage_smoke_system": entity.damage_smoke_system_id,
+                "damage_smoke_system": entity.seldom.damage_smoke_system_id,
                 "anim_slots": entity.building_art.anim_slots().iter().enumerate()
                     .filter_map(|(slot, id)| {
                         let id = (*id)?;
@@ -1074,7 +1106,7 @@ fn opening_observation(state: &AppState) -> Result<Value> {
         "scenario_timer": sim.session().scenario_timer_view().map(|(remaining, caption)|
             json!({"remaining": remaining, "caption": caption})),
         "cursor_depth": state.match_state.input.cursor_visibility.level(),
-        "camera": camera::saved_tactical_view(state),
+        "camera": camera::saved_tactical_view(&state.platform, &state.renderer, &state.frontend.screen, &state.match_state, &state.persistence),
         "camera_origin": [state.match_state.input.camera_x, state.match_state.input.camera_y],
         "fog_viewer": viewer.map(|viewer| sim.interner().resolve(viewer)),
         "active_types": active_types, "flashing": flashing, "no_effects_anims": markers,
@@ -1192,7 +1224,13 @@ fn probe_right_drag_pans(state: &mut AppState) -> bool {
     handle_mouse_input(state, MouseButton::Right, ElementState::Pressed);
     state.match_state.input.cursor_x = 280.0;
     handle_cursor_moved_in_game(state);
-    let pan = camera::poll_mouse_scroll(state);
+    let pan = camera::poll_mouse_scroll(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
+    );
     handle_mouse_input(state, MouseButton::Right, ElementState::Released);
     (
         state.match_state.input.cursor_x,
@@ -1219,7 +1257,13 @@ fn probe_unlocked_mouse_edges(state: &mut AppState) -> Result<Value> {
     state.match_state.input.cursor_x = 240.0;
     handle_cursor_moved_in_game(state);
     ensure!(
-        camera::poll_mouse_scroll(state) == (0.0, 0.0),
+        camera::poll_mouse_scroll(
+            &state.platform,
+            &state.renderer,
+            &state.frontend,
+            &mut state.match_state,
+            &state.persistence
+        ) == (0.0, 0.0),
         "right drag panned despite the left button held across unlock"
     );
     handle_mouse_input(state, MouseButton::Right, ElementState::Released);
@@ -1227,7 +1271,13 @@ fn probe_unlocked_mouse_edges(state: &mut AppState) -> Result<Value> {
     handle_mouse_input(state, MouseButton::Right, ElementState::Pressed);
     state.match_state.input.cursor_x = 280.0;
     handle_cursor_moved_in_game(state);
-    let pan = camera::poll_mouse_scroll(state);
+    let pan = camera::poll_mouse_scroll(
+        &state.platform,
+        &state.renderer,
+        &state.frontend,
+        &mut state.match_state,
+        &state.persistence,
+    );
     ensure!(
         pan.0 != 0.0 || pan.1 != 0.0,
         "ordinary right drag remained blocked after physical releases"
@@ -1290,7 +1340,7 @@ fn armed_player_units(state: &AppState) -> Result<(u64, String, Vec<u64>)> {
 /// The local House's campaign outcome, once Flag_To_Win or Flag_To_Lose set it.
 fn trace_outcome(state: &AppState) -> Option<&'static str> {
     let sim = &state.match_state.sim_runtime.runtime()?.simulation;
-    let owner = crate::app::input::commands::preferred_local_owner_name(state)
+    let owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state)
         .and_then(|name| sim.interner().get(&name))?;
     let house = sim.houses().get(&owner)?;
     if house.has_won() {

@@ -12,6 +12,12 @@
 //! ## Dependency rules
 //! - Part of map/ — depends on rules/ini_parser for IniFile.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::panic, clippy::unreachable)
+)]
+
 use std::collections::HashMap;
 
 use crate::rules::art_data::AnimTypeRuntimeConfig;

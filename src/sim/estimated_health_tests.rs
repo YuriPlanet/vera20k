@@ -40,7 +40,7 @@ fn actual_object_ai_recovers_each_category_on_binary_frame_mask() {
         entity.health.set_for_test(100);
         entity.estimated_health = EstimatedHealth::from_raw(-100);
         sim.substrate.entities.insert(entity);
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         sim.set_logic_order_for_test(vec![1]);
         sim.session.set_tick_for_test(4);
         sim.session.set_binary_frame_for_test(3);
@@ -116,7 +116,7 @@ fn active_tube_bypasses_recovery_until_ordinary_ai_resumes() {
             },
         ));
         sim.substrate.entities.insert(entity);
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         sim.set_logic_order_for_test(vec![1]);
         sim.session.set_binary_frame_for_test(4);
         sim.object_ai_stage(None);
@@ -160,8 +160,8 @@ fn save_restore_preserves_negative_reservations_and_ai_continuation() {
     sim.substrate.entities.insert(entity);
     sim.set_logic_order_for_test(vec![id]);
     sim.add_entity_occupancy(id);
-    sim.interner = crate::sim::intern::test_interner();
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.interner = crate::sim::intern::test_interner();
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     sim.session.set_binary_frame_for_test(3);
     let bytes = GameSnapshot::save(&sim, 0, 0, "estimated health", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
@@ -208,7 +208,7 @@ fn common_ai_recovers_before_self_heal_without_mirroring_actual_health() {
     entity.lifecycle.set_in_limbo_for_test(false);
     entity.health.set_for_test(10);
     entity.estimated_health = EstimatedHealth::from_raw(10);
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     sim.substrate.entities.insert(entity);
     sim.set_logic_order_for_test(vec![1]);
     sim.session.set_binary_frame_for_test(900);

@@ -72,7 +72,7 @@ fn a_failing_trigger_target_skips_the_body_and_its_shake_draw() {
             payload,
             reason: ProjectileDetonationReason::ReachedTarget,
         }],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate.entities.get(near).unwrap().health.current(),
@@ -129,7 +129,7 @@ fn the_bullet_key_off_runs_the_body_and_its_shake_draw() {
             payload,
             reason: ProjectileDetonationReason::ReachedTarget,
         }],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
         sim.substrate.entities.get(near).unwrap().health.current() < 250,

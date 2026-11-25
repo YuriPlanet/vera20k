@@ -323,7 +323,7 @@ impl Simulation {
                     weapon,
                 );
             }
-            state.current_burst = firer.weapon_burst.index();
+            state.current_burst = firer.seldom.weapon_burst.index();
             state.firepower_mult = NativeF64Bits::from_bits(
                 crate::sim::combat::crit::current_firepower_multiplier(self, rules, firer)
                     .to_bits(),

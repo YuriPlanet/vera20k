@@ -18,7 +18,7 @@ pub(crate) fn mission_repair(
     rules: &RuleSet,
     hospital: u64,
     registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let now = sim.session.binary_frame();
     //44BA44 reads the live BuildingType+684 Ammo, not an instance cache.
@@ -31,10 +31,14 @@ pub(crate) fn mission_repair(
         .get(hospital)
         .and_then(|building| sim.object_type(building.type_ref(), rules))
         .map_or((-1, rules.general.infantry_repair_rate), |object| {
-            let rate = object
-                .phobos_units_repair
-                .repair_rate
-                .unwrap_or(rules.general.infantry_repair_rate);
+            let rate = if rules.phobos() {
+                object
+                    .phobos_units_repair
+                    .repair_rate
+                    .unwrap_or(rules.general.infantry_repair_rate)
+            } else {
+                rules.general.infantry_repair_rate
+            };
             (object.ammo, rate)
         });
     let Some(building) = sim.substrate.entities.get_mut(hospital) else {
@@ -92,11 +96,11 @@ pub(crate) fn mission_repair(
                         building.position.ry(),
                     ),
                 });
-                if let Some(sound_id) = rules.crate_rules.heal_crate_sound.clone() {
+                if let Some(sound_id) = rules.crate_rules.heal_crate_sound.as_deref() {
                     let coordinate =
                         crate::sim::movement::ground_pose::position_world_coord(&building.position);
                     sim.sound_events.emit(SimSoundEvent::voc_at_world_coord(
-                        sound_id,
+                        rules.sound_name(sound_id),
                         crate::sim::anim_class::AnimWorldCoord {
                             x: coordinate.x,
                             y: coordinate.y,
@@ -115,7 +119,7 @@ pub(crate) fn mission_repair(
                 rules,
                 hospital,
                 DepartureRoute::Hospital,
-                |sim, patient| {
+                |sim, patient, effects| {
                     let _ = crate::sim::production::exit_produced_object(
                         sim,
                         rules,

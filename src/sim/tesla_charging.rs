@@ -87,7 +87,7 @@ impl BuildingCharge {
 
     /// Building::MoveOverpowererToBack452820. A repeat hit refreshes order
     /// without counting the same infantry twice.
-    fn refresh(&mut self, id: u64) {
+    fn refresh(&mut self, id: u64, _: crate::sim::game_entity::NameNote) {
         self.pointer_expired(id);
         self.chargers.push(id);
     }
@@ -151,7 +151,13 @@ impl Simulation {
         // Reverse stable removal is native's order; no temporary list or
         // unconditional mutable store access is needed for unchanged chargers.
         for index in (0..count).rev() {
-            let charger = substrate.entities.get(id).unwrap().building.tesla_charge.chargers[index];
+            let charger = substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .building
+                .tesla_charge
+                .chargers[index];
             let valid_target = substrate.entities.get(charger).is_some_and(|entity| {
                 entity.attack_target.target() == Some(TargetKind::Entity(id))
             });
@@ -270,7 +276,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -329,6 +335,7 @@ impl Simulation {
                 .entities
                 .get_mut(id)
                 .unwrap()
+                .seldom
                 .tesla_charger
                 .active = true;
             let _ = self.mission_queue_exact(
@@ -369,11 +376,11 @@ impl crate::sim::world::ObjectSubstrate {
         }) else {
             return;
         };
-        self.entities
+        let building = self
+            .entities
             .get_mut(target)
-            .expect("the admitted building remains present")
-            .building
-            .tesla_charge
-            .refresh(source);
+            .expect("the admitted building remains present");
+        let note = building.note_names();
+        building.building.tesla_charge.refresh(source, note);
     }
 }

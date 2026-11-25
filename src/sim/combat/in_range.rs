@@ -264,13 +264,13 @@ pub(crate) fn open_topped_range_bonus_leptons(
                         attacker, store, rules, interner,
                     )
                 })
-                .map(|kind| kind.phobos_open_topped().range_bonus(rules))
+                .map(|kind| kind.phobos_open_topped.range_bonus(rules))
                 .unwrap_or(rules.garrison_rules.open_topped_range_bonus);
             // `0x6F72D2` adds the passenger's `OpenTransport.RangeBonus`
             // (`Ext/Techno/Hooks.Transport.cpp:178`).
             let rider = interner
                 .object_type(attacker.type_ref(), rules)
-                .map(|kind| kind.phobos_open_transport().range_bonus(rules))
+                .map(|kind| kind.phobos_open_transport.range_bonus(rules))
                 .unwrap_or(rules.phobos_globals.open_transport_range_bonus);
             carrier.wrapping_add(rider)
         }
@@ -345,7 +345,13 @@ fn elevation_bonus_leptons(
     };
     let height = |[x, y]: [i32; 2]| {
         let cell = cells.lookup(((x / 256) as i16, (y / 256) as i16));
-        crate::sim::map::bridge_topology::CellBridgeView::from_query(cells, cell).effective_height()
+        let view = crate::sim::map::bridge_topology::CellBridgeView::from_query(cells, cell);
+        if view.is_anchor()
+            && let Some(deck) = cells.terrain().corrected_high_bridge_deck_at(cell)
+        {
+            return i32::from(deck);
+        }
+        view.effective_height()
     };
     let firer_height = height(object_center_xy(attacker));
     let drop = firer_height.wrapping_sub(height(target_xy)).max(0);
@@ -447,7 +453,7 @@ pub(crate) fn keep_range_overrides(
         return (None, None);
     }
     let now = world.session.binary_frame() as i32;
-    let timer = attacker.rearm_timer.timer();
+    let timer = attacker.seldom.rearm_timer.timer();
     let early_stop = weapon
         .phobos_keep_range_early_stop
         .unwrap_or(rules.phobos_globals.keep_range_early_stop);
@@ -808,7 +814,7 @@ fn line_of_fire_clear(
     let phobos = phobos_scan_input(
         attacker, target, weapon, src, target_xyz, rules, interner, cells, entities,
     );
-    let blocked = line_of_fire::line_of_fire_blocking_cell(
+    let blocked = line_of_fire::line_of_fire_blocking_cell_with_phobos(
         src,
         target_xyz,
         weapon,
@@ -1072,14 +1078,11 @@ pub(crate) fn native_ground_target_z(x: i32, y: i32, cells: &NativeCellQuery<'_>
     )
     .ok()?;
     let cell = cells.lookup_world(x, y);
-    Some(
-        i64::from(ground)
-            + if cells.flags(cell) & 0x100 != 0 {
-                i64::from(BRIDGE_DECK_HEIGHT_LEPTONS)
-            } else {
-                0
-            },
-    )
+    Some(i64::from(if cells.flags(cell) & 0x100 != 0 {
+        crate::sim::movement::ground_pose::deck_surface_z(cells, cell, ground)
+    } else {
+        ground
+    }))
 }
 
 /// InRange6F7601 first reads source flags; only a structural span reaches
@@ -1103,7 +1106,9 @@ fn native_source_under_bridge(
     ) else {
         return false;
     };
-    let top = i64::from(ground) + i64::from(BRIDGE_DECK_HEIGHT_LEPTONS);
+    let top = i64::from(crate::sim::movement::ground_pose::deck_surface_z(
+        cells, cell, ground,
+    ));
     src.2 < top && target_z >= top
 }
 
@@ -1204,16 +1209,19 @@ pub(crate) fn fire_source_for_target(
         // 6F7821..6F7845 truncates signed world XY toward zero before the
         // packed CellCoord lookup5657A0. Source substitution is independent
         // of whether the target is an Abstract or retained Cell receiver.
-        let (cell_x, cell_y, cell_z) =
-            native_cell_own_coords(cells.lookup(((x / 256) as i16, (y / 256) as i16)), cells)?;
+        let cell = cells.lookup(((x / 256) as i16, (y / 256) as i16));
+        let (cell_x, cell_y, cell_z) = native_cell_own_coords(cell, cells)?;
         x = cell_x;
         y = cell_y;
-        z = cell_z
-            + if attacker.on_bridge() {
-                i64::from(BRIDGE_DECK_HEIGHT_LEPTONS)
-            } else {
-                0
-            };
+        z = if attacker.on_bridge() {
+            i64::from(crate::sim::movement::ground_pose::deck_surface_z(
+                cells,
+                cell,
+                cell_z as i32,
+            ))
+        } else {
+            cell_z
+        };
     }
 
     if is_high_flying_in_query(attacker, cells, Some(rules_context)) {
@@ -1318,7 +1326,7 @@ impl crate::sim::world::Simulation {
             .substrate
             .entities
             .get(id)
-            .filter(|entity| entity.fire_particle_system.system().is_some())
+            .filter(|entity| entity.seldom.fire_particle_system.system().is_some())
             .and_then(|entity| entity.attack_target.target())
         else {
             return;
@@ -1589,6 +1597,7 @@ mod tests {
     use crate::sim::movement::locomotor::LocomotorState;
     use crate::sim::world::Simulation;
     use crate::util::fixed_math::{SIM_ZERO, SimFixed};
+    use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
     use crate::util::lepton::{HIGH_FLIGHT_THRESHOLD_LEPTONS, LEPTONS_PER_LEVEL};
 
     fn ground_entity_at_level(level: u8) -> GameEntity {
@@ -1889,7 +1898,7 @@ mod tests {
             let mut actor =
                 GameEntity::test_default(1, "ATKR", "Test", (x / 256) as u16, (y / 256) as u16);
             let category = if let Some(building) = input.get("building") {
-                actor.type_facts.set_foundation_for_test(
+                actor.seldom.type_facts.set_foundation_for_test(
                     rules.object("ATKR").unwrap().foundation.clone().into(),
                 );
                 actor
@@ -2914,6 +2923,38 @@ mod tests {
         );
     }
 
+    #[test]
+    fn fixed_deck_below_native_rise_drives_aim_and_the_inrange_source_gate() {
+        use crate::map::bridge_facts::{BRIDGE_FLAG_ANCHOR_SELF, BRIDGE_FLAG_STRUCTURAL};
+
+        let mut terrain = terrain_with_bridge_cells(&[(5, 5)]);
+        terrain.cell_mut_for_test(5, 5).unwrap().level = 6;
+        let anchor = terrain.native_cell_identity((5, 5));
+        terrain.write_native_cell_flags(anchor, BRIDGE_FLAG_ANCHOR_SELF | BRIDGE_FLAG_STRUCTURAL);
+        terrain.set_authored_high_bridge_deck(anchor, 8);
+        let aim = crate::sim::projectile::cell_target_coord(Some(&terrain), 5, 5);
+        assert_eq!(aim.z, 832);
+
+        let attacker = ground_attacker(5, 5, 6, "ATKR");
+        let target = TargetKind::Cell(5, 5);
+        let entities = Simulation::new();
+        let src = |z| (i64::from(aim.x), i64::from(aim.y), z);
+        assert!(!in_range_at(
+            &attacker,
+            src(831),
+            &target,
+            &terrain,
+            &entities
+        ));
+        assert!(in_range_at(
+            &attacker,
+            src(832),
+            &target,
+            &terrain,
+            &entities
+        ));
+    }
+
     /// gamemd tests only the SOURCE cell's flag word. A bridge cell under the
     /// target with none under the attacker does not gate anything.
     #[test]
@@ -3494,7 +3535,7 @@ mod tests {
                 10,
                 EntityCategory::Infantry,
             ));
-        sim.interner = test_interner();
+        *sim.interner = test_interner();
         sim.substrate.entities.get_mut(2).unwrap().passenger_role =
             PassengerRole::boarded_for_test(1, true);
 
@@ -3555,6 +3596,7 @@ mod keep_range_tests {
             .entities
             .get_mut(attacker)
             .unwrap()
+            .seldom
             .rearm_timer
             .set_for_test(CdTimer::started(0, 100));
         (sim, rules, attacker, target)
@@ -3617,6 +3659,7 @@ mod keep_range_tests {
             .entities
             .get_mut(attacker)
             .unwrap()
+            .seldom
             .rearm_timer
             .set_for_test(CdTimer::started(0, 50));
         let entity = sim.entities().get(attacker).unwrap();
@@ -3630,6 +3673,7 @@ mod keep_range_tests {
             .entities
             .get_mut(attacker)
             .unwrap()
+            .seldom
             .rearm_timer
             .set_for_test(CdTimer::started(0, 0));
         let entity = sim.entities().get(attacker).unwrap();
@@ -3675,6 +3719,7 @@ mod keep_range_tests {
             .entities
             .get_mut(attacker)
             .unwrap()
+            .seldom
             .rearm_timer
             .set_for_test(CdTimer::started(0, 100));
         let terrain = sim.resolved_terrain.as_ref().expect("terrain");

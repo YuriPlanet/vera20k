@@ -56,7 +56,7 @@ fn an_authored_empty_ammo_frame_continues_the_strip_to_capacity() {
     let art_ini = IniFile::from_str("[RIPUART]\n[RIPCART]\n");
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
         &crate::sim::arena_fixture::clear_ground_ini(
-            "[VehicleTypes]\n0=RIPU\n1=RIPC\n\
+            "[General]\nAIFireSale=yes\n[VehicleTypes]\n0=RIPU\n1=RIPC\n\
              [RIPU]\nImage=RIPUART\nStrength=100\nSpeed=5\nAmmo=3\nInitialAmmo=2\n\
              PipScale=Ammo\nEmptyAmmoPipFrame=7\n\
              [RIPC]\nImage=RIPCART\nStrength=100\nSpeed=5\nAmmo=3\nInitialAmmo=2\n\
@@ -172,11 +172,12 @@ fn stock_harrier_ammo_pips_follow_real_strike_return_reload_and_selection() {
             }
             let mission = entity.mission.current().known();
             saw_enter[index] |= saw_spent[index] && mission == Some(MissionType::Enter);
-            let linked = entity.radio_contacts.contains(airfield)
+            let linked = entity.seldom.radio_contacts.contains(airfield)
                 && sim
                     .entities()
                     .get(airfield)
                     .unwrap()
+                    .seldom
                     .radio_contacts
                     .contains(id);
             let height = crate::sim::movement::air_movement::current_fly_height(
@@ -237,13 +238,36 @@ fn stock_harrier_ammo_pips_follow_real_strike_return_reload_and_selection() {
 /// second fixture. Mirrors the ordinary construction path of the existing
 /// `EmptyAmmoPipFrame` test (a hand-built entity never reaches DrawPipScale).
 fn ammo_pip_scene(max_ammo: i32, initial_ammo: i32, extra: &str) -> (RuleSet, Simulation, u64) {
+    ammo_pip_scene_with(max_ammo, initial_ammo, extra, true)
+}
+
+/// The same scene with no Phobos key: a stock game's draw.
+fn ammo_pip_scene_stock(
+    max_ammo: i32,
+    initial_ammo: i32,
+    extra: &str,
+) -> (RuleSet, Simulation, u64) {
+    ammo_pip_scene_with(max_ammo, initial_ammo, extra, false)
+}
+
+fn ammo_pip_scene_with(
+    max_ammo: i32,
+    initial_ammo: i32,
+    extra: &str,
+    phobos: bool,
+) -> (RuleSet, Simulation, u64) {
     use crate::rules::art_data::ArtRegistry;
     use crate::rules::ini_parser::IniFile;
     use crate::sim::ammo::TechnoAmmo;
 
     let art_ini = IniFile::from_str("[RIPUART]\n");
+    let phobos_key = if phobos {
+        "[General]\nAIFireSale=yes\n"
+    } else {
+        ""
+    };
     let text = format!(
-        "[VehicleTypes]\n0=RIPU\n\
+        "{phobos_key}[VehicleTypes]\n0=RIPU\n\
          [RIPU]\nImage=RIPUART\nStrength=100\nSpeed=5\nAmmo={max_ammo}\n\
          InitialAmmo={initial_ammo}\nPipScale=Ammo\n{extra}"
     );
@@ -282,14 +306,9 @@ fn ammo_pip_scene(max_ammo: i32, initial_ammo: i32, extra: &str) -> (RuleSet, Si
 fn draws(sim: &Simulation, rules: &RuleSet, id: u64) -> Vec<super::ui_overlays::ScalePipDraw> {
     let before = sim.state_hash();
     let entity = crate::app::presentation::frame::ObjectRecord::of_test_sim(sim, rules, id);
-    let result = super::ui_overlays::scale_pip_draws(
-        sim,
-        &entity,
-        None,
-        Some(entity.owner()),
-        rules,
-    )
-    .to_vec();
+    let result =
+        super::ui_overlays::scale_pip_draws(sim, &entity, None, Some(entity.owner()), rules)
+            .to_vec();
     assert_eq!(before, sim.state_hash(), "display cannot spend Ammo");
     result
 }
@@ -469,7 +488,7 @@ AmmoPipOffset=6,-2
 /// the same level counter with the stock start frame 14.
 #[test]
 fn a_negative_pip_wrap_draws_no_stock_strip() {
-    let (rules, sim, id) = ammo_pip_scene(
+    let (rules, sim, id) = ammo_pip_scene_stock(
         10,
         10,
         "PipWrap=-1
@@ -477,7 +496,7 @@ fn a_negative_pip_wrap_draws_no_stock_strip() {
     );
     assert!(frames(&sim, &rules, id, None).is_empty());
 
-    let (rules, sim, id) = ammo_pip_scene(
+    let (rules, sim, id) = ammo_pip_scene_stock(
         10,
         10,
         "PipWrap=5
@@ -528,7 +547,7 @@ fn the_building_ammo_size_global_drives_the_building_strip() {
     use crate::sim::ammo::TechnoAmmo;
 
     let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
-        "[BuildingTypes]\n0=RIPU\n\
+        "[General]\nAIFireSale=yes\n[BuildingTypes]\n0=RIPU\n\
          [RIPU]\nStrength=100\nAmmo=3\nInitialAmmo=2\nPipScale=Ammo\n\
          \n[AudioVisual]\nPips.Ammo.Size=9,3\nPips.Ammo.Buildings.Size=7,1\n",
     ))

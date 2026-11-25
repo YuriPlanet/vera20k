@@ -292,7 +292,7 @@ fn composite_factory_split_requires_navcom_and_slot_zero_weapons_factory() {
     runtime.simulation.entities_mut_for_test().insert(factory);
     let evaluate =
         |rt: &SimRuntime, e: &GameEntity| unit_bridge_split_in_runtime(Some(rt), e, true);
-    tank.radio_contacts.insert(17);
+    tank.seldom.radio_contacts.insert(17);
     assert!(!evaluate(&runtime, &tank));
     tank.navigation
         .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::cell(3, 3)));
@@ -372,7 +372,7 @@ fn a_dug_in_tunnel_hull_adds_the_loco_term_on_top_of_foot() {
         unit_z_adjust_in_runtime(Some(&runtime), &tank, false, Some(height)),
         drive_only.wrapping_add(height_term).wrapping_add(45)
     );
-    }
+}
 
 /// A dug-in Tunnel owner adds `Z_Adjust` (`0x00729E50`) to the Foot draw Z:
 /// 45 rows plus how far its Z (-256 here) projects below the level-0 floor.

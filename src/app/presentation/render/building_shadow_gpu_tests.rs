@@ -4,7 +4,7 @@
 //! exercised separately by normal app capture, not by this component fixture.
 
 use super::draw_plan_lowering::{
-    NativeDisplayOrder, ObjectTexture, PlannedObjectInstance, lower_object_instances,
+    NativeDisplayOrder, ObjectTexture, OwnedPlannedObject, lower_object_instances,
 };
 use super::merge_passes::draw_native_object_pass;
 use crate::app::presentation::instances::{
@@ -73,7 +73,8 @@ fn assert_retail_embedded_shadow(expected_type: &str, expected_frame_count: u16)
     let entity = sim.entities().get(actor_id).expect("spawned SHP entity");
     let presented = crate::app::presentation::frame::PresentationFrame::capture(
         &scene.runtime,
-        &Default::default(), false,
+        &Default::default(),
+        false,
     );
     let record = presented.object(actor_id).unwrap();
     let type_id = sim.interner().resolve(entity.type_ref());
@@ -94,12 +95,17 @@ fn assert_retail_embedded_shadow(expected_type: &str, expected_frame_count: u16)
                 rules
                     .animation_sequence(type_id)
                     .expect("retail Unit layout"),
-                entity.body_facing_byte(sim.session().binary_frame()),
+                crate::sim::animation::shp_vehicle_facing_slot(
+                    8,
+                    u16::from(entity.body_facing_byte(sim.session().binary_frame())) << 8,
+                    false,
+                    false,
+                ),
                 entity.body_frame_counter.get(),
                 entity.unit_firing_counter.get(),
                 entity.unit_death_counter.get(),
                 crate::sim::movement::motion_query::is_moving(entity) == Some(true),
-                false,
+                entity.foot_occupation_enabled(),
             )
             .expect("admitted retail Unit body frame"),
         )
@@ -360,7 +366,7 @@ fn assert_retail_embedded_shadow(expected_type: &str, expected_frame_count: u16)
         assert_eq!(parent.policy.render_z, policy.render_z);
     }
     let planned = if structure {
-        PlannedObjectInstance::building(
+        OwnedPlannedObject::building(
             parent,
             vec![super::draw_plan_lowering::PlannedBuildingPieceInstance {
                 kind: BuildingPieceKind::Shadow,
@@ -371,9 +377,9 @@ fn assert_retail_embedded_shadow(expected_type: &str, expected_frame_count: u16)
             }],
         )
     } else {
-        PlannedObjectInstance::object(parent, vec![shadow])
+        OwnedPlannedObject::object(parent, vec![shadow])
     };
-    let lowered = lower_object_instances(vec![planned]);
+    let lowered = lower_object_instances(vec![planned].into());
     let ground = &lowered[layer];
     let runs = if structure {
         &ground.building_base_runs

@@ -5,12 +5,15 @@
 //! that same system; Spark and Railgun temporarily take/reinsert their owned
 //! body.
 
+use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::particle_system_type::ParticleSystemBehavesLike;
-use crate::rules::particle_type::ParticleBehavesLike;
+use crate::rules::particle_type::{ParticleBehavesLike, ParticleType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::particles::ParticleSystem;
+use crate::sim::rng::SimRng;
 use crate::sim::world::Simulation;
+use crate::util::forked::Forked;
 use thiserror::Error;
 
 use super::spark::{
@@ -110,7 +113,8 @@ where
         // but still reaches the shared RemainingEC decrement at62CE86.
         ParticleBehavesLike::Unknown => {}
         ParticleBehavesLike::Smoke => {
-            super::smoke::tick_particle(p, pt, sim.session.binary_frame(), sim.particle_rng())
+            tick_smoke_particle(p, pt, sim.session.binary_frame(), &mut sim.scenario_rng);
+            return Ok(()); // The Smoke arm's owner runs the lifetime tail.
         }
         // gamemd.exe ParticleClass::AI_Gas (0x0062BD50), 62C2C2..62C2DC:
         // read the parent system's +FC source House regardless of its own
@@ -156,6 +160,21 @@ where
     Ok(())
 }
 
+/// The Smoke arm of `ParticleClass::AI_Dispatch @ 0x0062CE40` with the shared
+/// lifetime tail (`0x0062CE86`). AI_Smoke (`0x0062C540`) reads only the
+/// particle, its type, the frame and the Scenario stream, so a system runs it
+/// on the child where it is stored (VERA-only, same writes and draws). It
+/// draws only on odd frames and takes the stream for writing only then.
+pub(super) fn tick_smoke_particle(
+    p: &mut super::Particle,
+    pt: &ParticleType,
+    frame: u32,
+    rng: &mut Forked<SimRng>,
+) {
+    super::smoke::tick_particle(p, pt, frame, rng);
+    finish_lifetime(p);
+}
+
 /// `ParticleClass::Move_Dispatch @ 0x0062D5E0`, which AI_Gas, AI_Smoke and
 /// AI_Fire call for each particle, by the particle's own behavior: Gas
 /// (`0x0062D2A0`), Smoke (`0x0062D3F0`) or Fire (`0x0062D609`). Spark and
@@ -191,7 +210,7 @@ pub(crate) fn tick_particle_system(
     sim: &mut Simulation,
     rules: &RuleSet,
     id: u64,
-    context: crate::sim::world::UninitContext<'_>,
+    mut context: crate::sim::world::UninitContext<'_>,
 ) -> bool {
     let Some(sys) = sim.particle_systems().get(id) else {
         return false;
@@ -214,11 +233,11 @@ pub(crate) fn tick_particle_system(
     if behavior == ParticleSystemBehavesLike::Gas {
         // Gas damage may synchronously kill another animal and append to this
         // same system. Retain its body in storage through those callbacks.
-        super::gas::tick_system(sim, rules, id, context);
+        super::gas::tick_system(sim, rules, id, context.reborrow());
     } else if behavior == ParticleSystemBehavesLike::Smoke {
         super::smoke::tick_system(sim, rules, id);
     } else if behavior == ParticleSystemBehavesLike::Fire {
-        super::fire::tick_system(sim, rules, id, context);
+        super::fire::tick_system(sim, rules, id, context.reborrow());
     } else {
         let mut sys = sim.substrate.particle_systems.take_for_tick(id).unwrap();
         tick_one_system(&mut sys, sim, rules);
@@ -444,14 +463,7 @@ mod tests {
         assert_eq!(sim.main_rng.logical_state(), old_rng);
 
         let unknown_id = rules.p_type_id_by_name("U").unwrap();
-        let mut unknown = Particle::new(
-            unknown_id,
-            origin,
-            origin,
-            rules.particle_type(unknown_id),
-            &mut sim,
-            &rules,
-        );
+        let mut unknown = Particle::new(unknown_id, origin, origin, &rules, &mut sim);
         let old_rng = sim.main_rng.logical_state();
         tick_particle(&mut unknown, &mut sim, &rules, None, None);
         assert!(unknown.marked_for_deletion());
@@ -464,9 +476,8 @@ mod tests {
             fire_id,
             origin,
             IVec3::new(128, 1024, 100),
-            rules.particle_type(fire_id),
-            &mut sim,
             &rules,
+            &mut sim,
         );
         assert_eq!(fire.draw_frame(rules.particle_type(fire_id)), 9);
         let restored: Particle =
@@ -511,9 +522,8 @@ mod tests {
             kind,
             IVec3::new(5248, 5248, 0),
             IVec3::ZERO,
-            rules.particle_type(kind),
-            &mut sim,
             &rules,
+            &mut sim,
         );
         let system = sim.substrate.particle_systems.get_mut(host).unwrap();
         system.done_spawning = true;
@@ -526,7 +536,7 @@ mod tests {
         ));
         let target = sim.entities().get(target).unwrap();
         assert_eq!(target.health.current(), 40);
-        assert!(target.damage_smoke_system_id.system().is_some());
+        assert!(target.seldom.damage_smoke_system_id.system().is_some());
         assert_eq!(sim.particle_systems().get(host).unwrap().particles.len(), 1);
     }
 
@@ -578,9 +588,8 @@ mod tests {
             kind,
             IVec3::new(at.x, at.y, at.z),
             IVec3::ZERO,
-            rules.particle_type(kind),
-            &mut sim,
             &rules,
+            &mut sim,
         );
         let system = sim.substrate.particle_systems.get_mut(host).unwrap();
         system.done_spawning = true;
@@ -656,9 +665,8 @@ mod tests {
                         kind,
                         IVec3::new(i32::from(x) * 256 + 128, 5248, 0),
                         IVec3::ZERO,
-                        rules.particle_type(kind),
-                        &mut sim,
                         &rules,
+                        &mut sim,
                     );
                     sim.substrate
                         .particle_systems
@@ -733,8 +741,7 @@ mod tests {
         SparkCollisionFacts {
             ground_z: 0,
             slope_matrix: Some(crate::map::voxel_slope::slope_matrix(0).unwrap()),
-            old_has_structural_bridge: false,
-            candidate_has_structural_bridge: false,
+            bridge_z: None,
             accepted_building: false,
             wall_overlay_id: None,
         }
@@ -945,12 +952,12 @@ SpawnSparkPercentage=1
 
         let rules = spark_rules(0);
         let mut sim = Simulation::with_seed(789);
-        sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
+        *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
             1,
             1,
             vec![super::super::spark_world::tests::terrain_cell(0, 0)],
         ));
-        sim.overlay_grid = None;
+        *sim.overlay_grid = None;
         sim.resolved_terrain
             .as_ref()
             .unwrap()
@@ -983,8 +990,10 @@ SpawnSparkPercentage=1
                 (SparkCellSelectionRole::Cell, 256, 0),
             ]
         );
-        assert!(facts.candidate_has_structural_bridge);
-        assert!(!facts.old_has_structural_bridge);
+        assert_eq!(
+            facts.bridge_z,
+            Some(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
+        );
         assert!(!facts.accepted_building);
         assert_eq!(facts.wall_overlay_id, None);
         assert!(facts.slope_matrix.is_none());
@@ -1009,12 +1018,12 @@ SpawnSparkPercentage=1
         );
 
         let mut collision_sim = Simulation::with_seed(790);
-        collision_sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
+        *collision_sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(
             1,
             1,
             vec![super::super::spark_world::tests::terrain_cell(0, 0)],
         ));
-        collision_sim.overlay_grid = None;
+        *collision_sim.overlay_grid = None;
         let mut collision_particle = spark_particle(256, 2);
         collision_particle.coords.z = -1;
         let motion = begin_particle_tick(

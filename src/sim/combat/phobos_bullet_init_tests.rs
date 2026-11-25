@@ -109,6 +109,7 @@ fn bullet_init_captures_the_owner_firepower_multiplier() {
         .entities
         .get_mut(source)
         .unwrap()
+        .seldom
         .crate_multipliers
         .set_firepower_multiplier_for_test(two);
     let bullet = world.construct_projectile(

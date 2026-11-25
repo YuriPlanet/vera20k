@@ -140,6 +140,7 @@ fn hit(f: &mut Fixture, damage: i32, source: Option<InternedId>, warhead: &str) 
         None,
         &f.rules,
         None,
+        &mut Vec::new(),
     );
 }
 

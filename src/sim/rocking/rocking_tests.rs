@@ -239,7 +239,11 @@ fn production_update_materializes_zero_state_for_a_newly_sinking_ship_only() {
     );
 
     // Explicit shared sinking-owner boundary, not a fatal-receiver claim.
-    sim.begin_ship_sinking(ship, &rules, crate::sim::world::FrameEffects::default());
+    sim.begin_ship_sinking(
+        ship,
+        &rules,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     let entity = sim.substrate.entities.get_mut(ship).unwrap();
     assert!(entity.sinking.is_active());
     assert!(entity.rocking.is_none());

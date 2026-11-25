@@ -35,7 +35,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        mut frame_effects: FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -184,7 +184,7 @@ impl Simulation {
             id,
             Some(TargetKind::Bullet(target_bullet)),
             rules,
-            frame_effects,
+            &mut frame_effects,
         );
         // Buildings skip the idle-to-attack transition: QueueMission(Attack,
         // false) then NextMission().
@@ -207,7 +207,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        ctx: super::ObjectAiCtx<'_>,
+        ctx: &mut super::ObjectAiCtx<'_>,
     ) -> bool {
         use crate::sim::projectile::{ProjectileDetonationReason, detonation};
 
@@ -254,7 +254,7 @@ impl Simulation {
                         rules,
                         ctx.overlay_registry,
                         &[detonation],
-                        ctx.effects,
+                        &mut ctx.effects,
                     );
                 }
             }
@@ -265,7 +265,7 @@ impl Simulation {
                 .and_then(|bullet| bullet.payload().installed_weapon());
             let retired = self.retire_non_entity_object(
                 id,
-                crate::sim::world::UninitContext::new(rules).with_effects(ctx.effects),
+                crate::sim::world::UninitContext::new(rules).with_effects(&mut ctx.effects),
             );
             debug_assert!(retired, "an Intercepted bullet is stored");
             // `LimboLaunch`'s self-damage tail: the owner is in limbo and its
@@ -312,7 +312,7 @@ impl Simulation {
                     rules,
                     ctx.overlay_registry,
                     &[event],
-                    ctx.effects,
+                    ctx.effects.reborrow(),
                 );
             }
             return true;
@@ -356,12 +356,12 @@ impl Simulation {
                 rules,
                 ctx.overlay_registry,
                 &[detonation],
-                ctx.effects,
+                &mut ctx.effects,
             );
         }
         let retired = self.retire_non_entity_object(
             id,
-            crate::sim::world::UninitContext::new(rules).with_effects(ctx.effects),
+            crate::sim::world::UninitContext::new(rules).with_effects(&mut ctx.effects),
         );
         debug_assert!(retired, "an interceptor bullet is stored");
         true

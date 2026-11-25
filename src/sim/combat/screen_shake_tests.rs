@@ -72,7 +72,7 @@ fn warhead_shake_rules_drive_ordered_conditional_main_rng_detonation_updates() {
     let mut world = Simulation::with_seed(0x5A_AA_1E);
     world.intern_rule_type_ids(&rules);
     world.resolve_type_handles(&rules);
-    let mut expected_rng = world.main_rng.snapshot_for_test();
+    let mut expected_rng = world.main_rng.clone();
     let expected_x = expected_rng.next_range_i32_inclusive(1, 10);
     let expected_y = expected_rng.next_range_i32_inclusive(-3, 5);
     let expected_y_only = expected_rng.next_range_i32_inclusive(-2, 4);

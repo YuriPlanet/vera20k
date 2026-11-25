@@ -33,7 +33,7 @@ pub(crate) fn build_fogged_instances(state: &AppState) -> ObjectLayerPass {
         return ObjectLayerPass::default();
     }
     let sim = &runtime.simulation;
-    let Some(viewer) = crate::app::input::commands::preferred_local_owner_name(state)
+    let Some(viewer) = crate::app::input::commands::preferred_local_owner_name(&state.match_state)
         .and_then(|owner| sim.interner().get(&owner))
     else {
         return ObjectLayerPass::default();
@@ -45,7 +45,7 @@ pub(crate) fn build_fogged_instances(state: &AppState) -> ObjectLayerPass {
         atlas,
         lighting: presentation.lighting.grid(),
         house_colors: presentation.effective_house_color_map(),
-        axis: super::depth_axis(state),
+        axis: super::depth_axis(&state.match_state.match_presentation),
         building_zshape: presentation
             .building_zshape
             .as_ref()
@@ -159,7 +159,8 @@ struct FrozenDrawInputs<'a> {
     building_zshape: Option<(i32, i32)>,
     /// The world column of the tactical view's left edge.
     view_left: i32,
-    /// The skip table the left-edge building bodies of this picture fill.
+    /// The skip table the left-edge building bodies of this picture fill
+    /// (`MatchPresentationState::zshape_skips`).
     zshape_skips: &'a std::cell::RefCell<crate::render::zshape_skips::ZShapeSkips>,
     detail_level: i32,
 }

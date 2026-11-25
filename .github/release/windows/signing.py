@@ -29,6 +29,11 @@ PACKAGE_FILES = {
 }
 SIGNED_FILES = {"vera20k.exe", "uninstaller.exe"}
 LANGUAGES = "languages"
+PACKAGE_RESOURCES = {
+    "Maps": {"Arctic_Circle_16_Ice_Passages.map"},
+    "Terrain": {"vera_ice.mix", "vera_ice_tiles.ini"},
+}
+PACKAGE_FOLDERS = {LANGUAGES, *PACKAGE_RESOURCES}
 LANGUAGE_FILE = re.compile(
     r"vera20k\.[A-Za-z0-9-]+\.(?:ini|subtitles\.txt|cameos)|NotoSans[A-Za-z]+-[A-Za-z]+\.(?:ttf|otf)")
 UNINSTALLER_NAME = re.compile(r"uninst-7\.1\.0-[0-9a-f]{10}\.e(?:32|64)", re.IGNORECASE)
@@ -56,14 +61,18 @@ def regular_files(directory, expected, folders=frozenset()):
 
 
 def package_files(directory, expected):
-    """A package or payload's files by relative path: `expected` and its languages."""
-    regular_files(directory, expected, {LANGUAGES})
+    """Validate the installer resources and return their exact relative paths."""
+    regular_files(directory, expected, PACKAGE_FOLDERS)
+    files = set(expected)
+    for folder, resources in PACKAGE_RESOURCES.items():
+        regular_files(directory / folder, resources)
+        files.update(f"{folder}/{name}" for name in resources)
     languages = directory / LANGUAGES
     names = {entry.name for entry in languages.iterdir()}
     if not names or not all(LANGUAGE_FILE.fullmatch(name) for name in names):
         raise RuntimeError(f"Unexpected files in {languages}")
     regular_files(languages, names)
-    return expected | {f"{LANGUAGES}/{name}" for name in names}
+    return files | {f"{LANGUAGES}/{name}" for name in names}
 
 
 def validate_identity(version, build, name):
@@ -168,7 +177,8 @@ def prepare(package, staging, version, build, name, iscc):
     package, staging = package.resolve(), staging.resolve()
     contents = package_files(package, PACKAGE_FILES)
     staging.mkdir(parents=True, exist_ok=False)
-    (staging / LANGUAGES).mkdir()
+    for folder in PACKAGE_FOLDERS:
+        (staging / folder).mkdir()
     for filename in sorted(contents):
         shutil.copyfile(package / filename, staging / filename)
     with tempfile.TemporaryDirectory(prefix="vera20k-inno-") as temporary:
@@ -293,7 +303,8 @@ def package_signed(payload, original_payload, output, iscc, fingerprint):
         cache = temporary / "uninstaller"
         package.mkdir()
         cache.mkdir()
-        (package / LANGUAGES).mkdir()
+        for folder in PACKAGE_FOLDERS:
+            (package / folder).mkdir()
         for filename in sorted(set(manifest["files"]) - {"uninstaller.exe"}):
             shutil.copyfile(payload / filename, package / filename)
         shutil.copyfile(payload / "uninstaller.exe", cache / manifest["uninstaller_name"])

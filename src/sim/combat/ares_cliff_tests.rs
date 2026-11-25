@@ -35,7 +35,7 @@ fn world_with_cliff() -> Simulation {
     terrain.test_install_destroyable_cliff_catalog(100);
     assert!(terrain.is_destroyable_cliff(1, 1));
     let mut sim = Simulation::with_seed(0x70CA);
-    sim.resolved_terrain = Some(terrain);
+    *sim.resolved_terrain = Some(terrain);
     sim
 }
 
@@ -53,7 +53,7 @@ fn ares_railgun_ground_stop_spends_no_cliff_draw() {
         &mut sim,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         &mut DeathEffects::default(),
         0,
         ProjectileCoord::new(128, 256 + 128, 0),
@@ -86,7 +86,7 @@ fn ares_area_damage_rolls_the_impact_cliff() {
         (super::RAD_NO_ATTACKER, None, warhead_ref),
         None,
         1,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
 }

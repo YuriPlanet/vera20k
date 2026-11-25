@@ -10,6 +10,7 @@
 pub mod ares_launch;
 pub mod archive_names;
 pub mod base64;
+pub mod kratos_launch;
 #[cfg(target_os = "android")]
 pub mod app_icon;
 #[cfg(target_os = "android")]
@@ -25,9 +26,11 @@ pub mod fixed_math;
 pub mod flh_transform;
 pub mod fnv;
 pub mod folder_picker;
+pub mod forked;
 pub mod import_status;
 pub mod ini_roots;
 pub mod ini_writer;
+pub mod ra2_launch;
 pub mod lcw;
 pub mod legacy_crt_rng;
 pub mod lepton;

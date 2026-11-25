@@ -6,6 +6,18 @@
 //! `sim::trigger_runtime` takes each one by that ID.
 //! Format: `ID=HOUSE,<TRIGGER>,NAME,DISABLED,EASY,MEDIUM,HARD,TRANSFER`.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::indexing_slicing
+    )
+)]
+
 use std::collections::HashMap;
 
 use crate::rules::ini_parser::IniFile;

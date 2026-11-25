@@ -85,7 +85,7 @@ fn arena_with(
             firer,
             Some(TargetKind::Entity(target)),
             &rules,
-            FrameEffects::empty()
+            &mut FrameEffects::empty()
         )
         .is_ok(),
         "the firer holds the target as a mission would"
@@ -103,7 +103,7 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, firer: u64, target: u64, categor
         },
         rules,
         None,
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
     sim.projectiles
         .iter()
@@ -125,12 +125,12 @@ fn the_key_empties_the_whole_burst_in_one_frame() {
         );
         let entity = sim.entities().get(firer).expect("firer");
         assert_eq!(
-            entity.weapon_burst.index(),
+            entity.seldom.weapon_burst.index(),
             0,
             "{category}: the burst wrapped, so the next frame starts a new one"
         );
         assert!(
-            entity.rearm_timer.duration() >= 40,
+            entity.seldom.rearm_timer.duration() >= 40,
             "{category}: the restored rearm is the full ROF, not a burst gap"
         );
     }
@@ -148,9 +148,9 @@ fn an_ordinary_burst_still_fires_one_shot_per_frame() {
             "{category}: the control still fires once"
         );
         let entity = sim.entities().get(firer).expect("firer");
-        assert_eq!(entity.weapon_burst.index(), 1);
+        assert_eq!(entity.seldom.weapon_burst.index(), 1);
         assert!(
-            entity.rearm_timer.duration() <= 5,
+            entity.seldom.rearm_timer.duration() <= 5,
             "{category}: the mid-burst gap stands, not the full ROF"
         );
     }
@@ -170,7 +170,7 @@ fn a_raw_fireat_call_still_launches_one_shot() {
         },
         &rules,
         None,
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
     assert_eq!(
         sim.projectiles
@@ -198,11 +198,11 @@ fn a_refused_repeat_restores_the_last_shots_rearm() {
         );
         let entity = sim.entities().get(firer).expect("firer");
         assert_eq!(
-            entity.weapon_burst.index(),
+            entity.seldom.weapon_burst.index(),
             1,
             "{category}: the burst stopped mid-run instead of wrapping"
         );
-        let duration = entity.rearm_timer.duration();
+        let duration = entity.seldom.rearm_timer.duration();
         assert!(
             (1..=5).contains(&duration),
             "{category}: the restore must write the first shot's mid-burst gap back, not the zero the refused attempt armed and not the full ROF"
@@ -246,6 +246,7 @@ fn a_delayed_fire_weapon_keeps_its_burst_cadence() {
             sim.entities()
                 .get(firer)
                 .expect("firer")
+                .seldom
                 .weapon_burst
                 .index(),
             1,
@@ -301,7 +302,7 @@ fn burst_no_delay_fires_all_shots_without_redrawing_the_sequence() {
         // full arm takes exactly one Scenario value.
         "",
     );
-    sim.scenario_rng = crate::sim::rng::SimRng::new(9);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(9);
     let mut expected = crate::sim::rng::SimRng::new(9);
     expected.next_range_u32_inclusive(0, 2);
     enter_firing_sequence(&mut sim, firer, 0);
@@ -312,7 +313,7 @@ fn burst_no_delay_fires_all_shots_without_redrawing_the_sequence() {
     );
     let entity = sim.entities().get(firer).expect("firer");
     assert_eq!(
-        entity.weapon_burst.index(),
+        entity.seldom.weapon_burst.index(),
         0,
         "the burst wrapped, so the next update starts a new one"
     );
@@ -345,7 +346,7 @@ fn a_forced_full_rearm_reset_ends_the_repeat() {
     let stage = 1;
     enter_firing_sequence(&mut sim, firer, stage);
     let actor = sim.entities_mut_for_test().get_mut(firer).expect("firer");
-    actor.weapon_burst.set_index(1);
+    actor.seldom.weapon_burst.set_index(1);
     assert_eq!(
         visit(&mut sim, &rules, firer, target, "InfantryTypes"),
         1,
@@ -353,7 +354,7 @@ fn a_forced_full_rearm_reset_ends_the_repeat() {
     );
     let entity = sim.entities().get(firer).expect("firer");
     assert_eq!(
-        entity.weapon_burst.index(),
+        entity.seldom.weapon_burst.index(),
         0,
         "the forced full rearm reset the burst to its first shot"
     );
@@ -392,7 +393,7 @@ fn each_burst_shot_picks_its_own_charge_turret_delay_item() {
             "shot {shot}"
         );
         assert_eq!(
-            entity.weapon_burst.index(),
+            entity.seldom.weapon_burst.index(),
             (shot as i32 + 1).rem_euclid(3),
             "shot {shot}"
         );

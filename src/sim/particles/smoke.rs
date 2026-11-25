@@ -14,6 +14,7 @@ use crate::rules::particle_type::ParticleType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::rng::SimRng;
 use crate::sim::world::Simulation;
+use crate::util::forked::Forked;
 use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF32Bits};
 use glam::IVec3;
 
@@ -103,14 +104,7 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
             for sign in [1i32, -1] {
                 let coords =
                     offset_coords(p.coords, dx.wrapping_mul(sign), dy.wrapping_mul(sign), 0);
-                let mut child = Particle::new(
-                    next,
-                    coords,
-                    IVec3::ZERO,
-                    rules.particle_type(next),
-                    sim,
-                    rules,
-                );
+                let mut child = Particle::new(next, coords, IVec3::ZERO, rules, sim);
                 //62EF3B/62EFA0..62F003: constructor draw then one fade draw.
                 child.velocity = p.velocity;
                 child.translucency = if sim.particle_rng().next_raw_modulo_signed(6) != 0 {
@@ -165,14 +159,7 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
             let dy = sim.particle_rng().next_raw_modulo_signed(radius as u32);
             if let Some(holds) = pst.holds_what {
                 let coords = offset_coords(coords, dx, dy, 10);
-                let mut p = Particle::new(
-                    holds,
-                    coords,
-                    target_coords,
-                    rules.particle_type(holds),
-                    sim,
-                    rules,
-                );
+                let mut p = Particle::new(holds, coords, target_coords, rules, sim);
                 if X87::compare(
                     X87::load_f32(timer),
                     X87::load_f32(pst.spawn_translucency_cutoff),
@@ -215,11 +202,16 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
 pub(super) fn owner_in_tube(sim: &Simulation, owner: Option<u64>) -> bool {
     owner
         .and_then(|id| sim.substrate.entities.get(id))
-        .is_some_and(|owner| owner.category().is_foot() && owner.low_bridge_tube_state.is_some())
+        .is_some_and(|owner| owner.category().is_foot() && owner.active_tube().is_some())
 }
 
 /// SmokeAI62C540 body; the shared dispatcher owns the subsequent EC tail.
-pub(super) fn tick_particle(p: &mut Particle, pt: &ParticleType, frame: u32, rng: &mut SimRng) {
+pub(super) fn tick_particle(
+    p: &mut Particle,
+    pt: &ParticleType,
+    frame: u32,
+    rng: &mut Forked<SimRng>,
+) {
     if frame & 1 != 0 {
         if (rng.next_u32() as i32).wrapping_abs() & 3 == 0 {
             let axis = (rng.next_u32() as i32).wrapping_abs() & 1;

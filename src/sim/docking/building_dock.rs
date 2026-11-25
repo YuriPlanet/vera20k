@@ -1038,13 +1038,13 @@ fn break_depot_contact(
     unit_id: u64,
     depot_id: u64,
     rules: &RuleSet,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let linked = sim
         .substrate
         .entities
         .get(unit_id)
-        .is_some_and(|unit| unit.radio_contacts.contains(depot_id));
+        .is_some_and(|unit| unit.seldom.radio_contacts.contains(depot_id));
     if linked {
         let _ = radio::transmit(
             sim,
@@ -1090,7 +1090,7 @@ impl PendingEntry {
 
     /// A class destination setter's store of the Techno it waits for (see the
     /// type).
-    pub(crate) fn install(&mut self, target: u64) {
+    pub(crate) fn install(&mut self, target: u64, _: crate::sim::game_entity::NameNote) {
         self.0 = Some(target);
     }
 
@@ -1134,7 +1134,7 @@ pub(crate) fn try_pending_entry(
     sim: &mut Simulation,
     rules: &RuleSet,
     id: u64,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(depot) = sim
         .substrate
@@ -1220,7 +1220,7 @@ pub(crate) fn depot_owns_enter(sim: &Simulation, rules: &RuleSet, id: u64) -> bo
     let Some(unit) = sim.substrate.entities.get(id) else {
         return false;
     };
-    if let Some(contact) = unit.radio_contacts.slot(0) {
+    if let Some(contact) = unit.seldom.radio_contacts.slot(0) {
         return {
             sim.substrate
                 .entities
@@ -1242,7 +1242,7 @@ pub(crate) fn park_pending_entry(
     sim: &mut Simulation,
     rules: &RuleSet,
     id: u64,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some(depot) = sim
         .substrate
@@ -1336,7 +1336,7 @@ fn release_contact(
     depot: u64,
     unit: u64,
     state1: bool,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(contact) = sim.substrate.entities.get(unit) else {
         return;
@@ -1414,7 +1414,7 @@ fn plain_repair_delay(
     rules: &RuleSet,
 ) -> i32 {
     {
-        if object.bunker && bunker_installing == Some(true) {
+        if rules.phobos() && object.bunker && bunker_installing == Some(true) {
             return object
                 .phobos_bunker_state_update_delay
                 .unwrap_or(rules.phobos_globals.bunker_state_update_delay);
@@ -1459,7 +1459,7 @@ fn construction_yard_repair(sim: &mut Simulation, rules: &RuleSet, yard: u64) ->
                 building.mission.set_handler_state(2);
             }
         }
-        2 if building.radio_contacts.is_empty() => {
+        2 if building.seldom.radio_contacts.is_empty() => {
             let _ = sim.mission_queue_exact(
                 yard,
                 MissionId::from_known(MissionType::Guard),
@@ -1484,7 +1484,7 @@ pub(crate) fn mission_repair(
     rules: &RuleSet,
     depot: u64,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> Option<i32> {
     use crate::util::native_x87::{
         MaskedX87Chop53 as X87, MaskedX87Ordering as Ordering, NativeF64Bits,
@@ -1494,10 +1494,14 @@ pub(crate) fn mission_repair(
     // Phobos `BuildingClass_Mission_Repair_UnitRepair` (`0x44BD38`,
     // `Hooks.cpp:630-640`): the building type's `Units.RepairRate=`
     // replaces `[General] URepairRate=`.
-    let unit_repair_rate = object
-        .phobos_units_repair
-        .repair_rate
-        .unwrap_or(rules.general.unit_repair_rate);
+    let unit_repair_rate = if rules.phobos() {
+        object
+            .phobos_units_repair
+            .repair_rate
+            .unwrap_or(rules.general.unit_repair_rate)
+    } else {
+        rules.general.unit_repair_rate
+    };
     // 0x0044B791..0x0044B7A3: a Bunker= type steps its install first.
     if object.bunker {
         super::bunker_install::update_bunker(sim, rules, registry, depot, frame_effects);
@@ -1509,6 +1513,17 @@ pub(crate) fn mission_repair(
     let building = sim.substrate.entities.get(depot)?;
     if object.hospital {
         return Some(super::hospital::mission_repair(
+            sim,
+            rules,
+            depot,
+            registry,
+            frame_effects,
+        ));
+    }
+    // The Armory shares MissionRepairAndProduce's dispatch with Hospital and
+    // the depots, but promotes its trainee instead of healing or refuelling.
+    if object.armory() {
+        return Some(super::armory::mission_repair(
             sim,
             rules,
             depot,
@@ -1533,6 +1548,7 @@ pub(crate) fn mission_repair(
         }
         let bunker_state = sim.substrate.entities.get(depot).and_then(|building| {
             building
+                .building
                 .bunker_runtime
                 .map(|runtime| runtime.is_installing())
         });
@@ -1545,7 +1561,7 @@ pub(crate) fn mission_repair(
         .known()
         .unwrap_or(MissionType::Repair);
     let rate = rules.mission_control.rate_frames(current);
-    let contact = building.radio_contacts.slot(0);
+    let contact = building.seldom.radio_contacts.slot(0);
     let now = sim.session.binary_frame();
     let Some(unit) = contact else {
         // State1's no-contact arm44C0BD retains the current idle animations
@@ -1634,12 +1650,7 @@ pub(crate) fn mission_repair(
             if powered {
                 // `0x0044C243`: ILoco+0x5C, Hover's override included.
                 if crate::sim::movement::motion_query::is_moving(contact) == Some(false) {
-                    Simulation::locomotor_power_off(
-                        &mut sim.scenario_rng,
-                        &mut sim.substrate,
-                        &sim.resolved_terrain,
-                        unit,
-                    );
+                    sim.locomotor_power_off(unit, rules, registry, frame_effects);
                 }
                 return Some(1);
             }
@@ -1946,6 +1957,7 @@ mod tests {
             .entities
             .get_mut(id)
             .unwrap()
+            .seldom
             .type_facts
             .set_foundation_for_test(object.foundation.clone().into());
         let (width, height) = object.foundation.dimensions();
@@ -2156,7 +2168,7 @@ mod tests {
             DEPOT,
             1,
             false,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let unit = sim.substrate.entities.get(1).unwrap();
@@ -2168,6 +2180,7 @@ mod tests {
                 .entities
                 .get(DEPOT)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .is_empty()
         );
@@ -2183,7 +2196,7 @@ mod tests {
             NavTargetRef::cell(15, 11),
             &rules,
             true,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         assert_eq!(repair_request(&mut sim, &rules, 1), RadioResponse::Negatory);
         assert_eq!(sim.substrate.entities.get(1).unwrap().health.current(), 100);
@@ -2267,7 +2280,7 @@ mod tests {
             depot,
             aircraft,
             false,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let released = sim.substrate.entities.get(aircraft).unwrap();
@@ -2405,6 +2418,7 @@ mod tests {
             .entities
             .get_mut(DEPOT)
             .unwrap()
+            .seldom
             .type_facts
             .set_foundation_for_test("3x3".to_string().into());
         for y in DEPOT_RY..DEPOT_RY + 3 {
@@ -2465,7 +2479,7 @@ mod tests {
             RadioMessage::RepairTick,
             RadioPayload::default(),
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert_eq!(response, RadioResponse::Roger);
@@ -2503,14 +2517,14 @@ mod tests {
                 building.bunker.set_bunker_occupant_for_test(Some(8));
                 let mut runtime = BunkerRuntime::idle();
                 runtime.set_state_for_test(state);
-                building.bunker_runtime = Some(runtime);
+                building.building.bunker_runtime = Some(runtime);
             }
             mission_repair(
                 &mut sim,
                 &rules,
                 9,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         }
         assert_eq!(
@@ -2550,7 +2564,7 @@ mod tests {
                 &rules,
                 DEPOT,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             Some(1)
         );
@@ -2622,7 +2636,7 @@ mod tests {
         sim.uninit_with_rules(DEPOT, &rules);
         let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(unit.pending_entry(), Some(pending));
-        assert!(!unit.radio_contacts.contains(DEPOT));
+        assert!(!unit.seldom.radio_contacts.contains(DEPOT));
         sim.substrate
             .entities
             .get_mut(1)
@@ -2646,7 +2660,7 @@ mod tests {
             NavTargetRef::cell(15, 11),
             &rules,
             true,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         set_pending_entry(&mut sim, 1, Some(DEPOT));
         let rng = sim.scenario_rng.state();
@@ -2655,7 +2669,7 @@ mod tests {
             &mut sim,
             &rules,
             1,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let unit = sim.substrate.entities.get(1).unwrap();
@@ -2696,7 +2710,7 @@ mod tests {
                 RadioMessage::IsRepairing,
                 RadioPayload::default(),
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(
                 response == RadioResponse::Negatory,
@@ -2770,7 +2784,7 @@ mod tests {
             RadioMessage::RepairTick,
             RadioPayload::default(),
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
     }
 
@@ -2790,19 +2804,20 @@ mod tests {
     /// Component fixture for unit-only Enter/RNG observations. Depot visits
     /// are explicit so its independent Guard cadence is outside those checks.
     fn tick_units(sim: &mut Simulation, rules: &RuleSet) {
-        sim.session
-            .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+        let session = &mut *sim.session;
+        session.set_binary_frame_for_test(session.binary_frame().wrapping_add(1));
         visit_units(sim, rules);
         process_units(sim, rules);
         pending_entries(sim, rules);
-        sim.session.set_tick_for_test(sim.session.tick() + 1);
+        let session = &mut *sim.session;
+        session.set_tick_for_test(session.tick() + 1);
     }
 
     fn visit_depot(sim: &mut Simulation, rules: &RuleSet) {
         sim.object_ai_visit_one(
             DEPOT,
             Some(rules),
-            crate::sim::world::ObjectAiCtx::default(),
+            &mut crate::sim::world::ObjectAiCtx::default(),
         );
     }
 
@@ -2826,7 +2841,12 @@ mod tests {
     /// live Logic order are exercised by `frame_tests`.
     fn pending_entries(sim: &mut Simulation, rules: &RuleSet) {
         for id in sim.substrate.entities.keys_sorted() {
-            try_pending_entry(sim, rules, id, crate::sim::world::FrameEffects::default());
+            try_pending_entry(
+                sim,
+                rules,
+                id,
+                &mut crate::sim::world::FrameEffects::default(),
+            );
         }
     }
 
@@ -2843,7 +2863,7 @@ mod tests {
                     id,
                     rules,
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("unit Process");
             }
@@ -2866,7 +2886,11 @@ mod tests {
             })
             .collect();
         for id in units {
-            sim.object_ai_visit_one(id, Some(rules), crate::sim::world::ObjectAiCtx::default());
+            sim.object_ai_visit_one(
+                id,
+                Some(rules),
+                &mut crate::sim::world::ObjectAiCtx::default(),
+            );
         }
     }
 
@@ -2874,12 +2898,12 @@ mod tests {
         sim.substrate
             .entities
             .get(tank)
-            .is_some_and(|e| e.radio_contacts.contains(DEPOT))
+            .is_some_and(|e| e.seldom.radio_contacts.contains(DEPOT))
             && sim
                 .substrate
                 .entities
                 .get(DEPOT)
-                .is_some_and(|d| d.radio_contacts.contains(tank))
+                .is_some_and(|d| d.seldom.radio_contacts.contains(tank))
     }
 
     fn servicing(sim: &Simulation, tank: u64) -> bool {
@@ -2935,11 +2959,11 @@ mod tests {
         }
         let depot = sim.substrate.entities.get(DEPOT).unwrap();
         assert_eq!(
-            depot.radio_contacts.capacity(),
+            depot.seldom.radio_contacts.capacity(),
             1,
             "NumberOfDocks default 1"
         );
-        assert_eq!(depot.radio_contacts.len(), 1);
+        assert_eq!(depot.seldom.radio_contacts.len(), 1);
         tick_units(&mut sim, &rules);
         for tank in 2..=3 {
             let pending = sim.substrate.entities.get(tank).unwrap().pending_entry();
@@ -3023,12 +3047,12 @@ mod tests {
         sim.substrate
             .mission_assign_exact(2, MissionId::from_known(MissionType::Guard), now)
             .expect("assign Guard");
-        sim.session
-            .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+        let session = &mut *sim.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
         let ctx = crate::sim::world::ObjectAiCtx::default;
 
         let mut shadow = sim.clone_scenario_rng();
-        sim.object_ai_visit_one(1, Some(&rules), ctx());
+        sim.object_ai_visit_one(1, Some(&rules), &mut ctx());
         shadow.next_range_u32_inclusive(0, 2);
         assert_eq!(
             sim.scenario_rng.state(),
@@ -3037,7 +3061,7 @@ mod tests {
         );
 
         let before_guard = sim.scenario_rng.state();
-        sim.object_ai_visit_one(2, Some(&rules), ctx());
+        sim.object_ai_visit_one(2, Some(&rules), &mut ctx());
         assert_ne!(
             sim.scenario_rng.state(),
             before_guard,
@@ -3045,7 +3069,7 @@ mod tests {
         );
 
         let mut shadow = sim.clone_scenario_rng();
-        sim.object_ai_visit_one(3, Some(&rules), ctx());
+        sim.object_ai_visit_one(3, Some(&rules), &mut ctx());
         shadow.next_range_u32_inclusive(0, 2);
         assert_eq!(
             sim.scenario_rng.state(),
@@ -3075,7 +3099,7 @@ mod tests {
                 &rules,
                 DEPOT,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             Some(1)
         );
@@ -3097,7 +3121,12 @@ mod tests {
         assert!(order_repair(&mut sim, &rules, 1));
         tick_units(&mut sim, &rules);
         assert!(linked(&sim, 1));
-        sim.assign_null_destination(1, &rules, None, crate::sim::world::FrameEffects::default());
+        sim.assign_null_destination(
+            1,
+            &rules,
+            None,
+            &mut crate::sim::world::FrameEffects::default(),
+        );
         for _ in 0..100 {
             tick_units(&mut sim, &rules);
             let unit = sim.substrate.entities.get(1).unwrap();
@@ -3174,6 +3203,7 @@ mod tests {
                 .entities
                 .get(DEPOT)
                 .unwrap()
+                .seldom
                 .radio_contacts
                 .is_empty()
         );
@@ -3341,7 +3371,7 @@ mod tests {
             sim.object_ai_visit_one(
                 id,
                 Some(rules),
-                crate::sim::world::ObjectAiCtx {
+                &mut crate::sim::world::ObjectAiCtx {
                     effects: crate::sim::world::FrameEffects::default(),
                     overlay_registry: None,
                 },
@@ -3369,7 +3399,7 @@ mod tests {
         rules.mission_control = crate::sim::mission::MissionControl::from_ini(&IniFile::from_str(
             "[Enter]\nRate=.1\n[Guard]\nRate=.03\n",
         ));
-        sim.scenario_rng = crate::sim::rng::SimRng::new(1);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(1);
         sim.substrate
             .mission_assign_exact(1, MissionId::from_known(MissionType::Enter), 0)
             .unwrap();
@@ -3379,7 +3409,7 @@ mod tests {
             &rules,
             None,
             1,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let unit = sim.substrate.entities.get(1).unwrap();
@@ -3419,8 +3449,8 @@ mod tests {
         let mut writes = 0u32;
         let mut prev_timer = dispatch_timer(&sim, MINER);
         for _ in 0..2000 {
-            sim.session
-                .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+            let session = &mut *sim.session;
+            session.set_binary_frame_for_test(session.binary_frame().wrapping_add(1));
             let now = sim.session.binary_frame();
             let due_at_entry = sim
                 .substrate
@@ -3468,7 +3498,8 @@ mod tests {
             prev_timer = timer;
             visit_depot(&mut sim, &rules);
             process_units(&mut sim, &rules);
-            sim.session.set_tick_for_test(sim.session.tick() + 1);
+            let session = &mut *sim.session;
+            session.set_tick_for_test(session.tick() + 1);
             if servicing(&sim, MINER) {
                 reached_pad = true;
                 assert!(linked(&sim, MINER));
@@ -3514,7 +3545,7 @@ mod tests {
                 &rules,
                 DEPOT,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             Some(3)
         );
@@ -3573,7 +3604,7 @@ mod tests {
                 &rules,
                 DEPOT,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         };
         assert_eq!(visit(&mut sim), Some(1));
@@ -3614,7 +3645,7 @@ mod tests {
                 &rules,
                 DEPOT,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
         };
 
@@ -3627,9 +3658,9 @@ mod tests {
         let contacts = |sim: &mut Simulation, add: bool| {
             let yard = sim.substrate.entities.get_mut(DEPOT).unwrap();
             if add {
-                yard.radio_contacts.insert(1).unwrap();
+                yard.seldom.radio_contacts.insert(1).unwrap();
             } else {
-                yard.radio_contacts.remove(1).unwrap();
+                yard.seldom.radio_contacts.remove(1).unwrap();
             }
         };
         contacts(&mut sim, true);
@@ -3696,7 +3727,7 @@ mod tests {
                 &rules,
                 DEPOT,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             Some(1)
         );
@@ -3846,7 +3877,7 @@ mod tests {
             &rules,
             None,
             1,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(!linked(&sim, 1));
         visit_depot(&mut sim, &rules);
@@ -3863,7 +3894,7 @@ mod tests {
             &rules,
             None,
             1,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert!(!linked(&sim, 1));
         assert_eq!(

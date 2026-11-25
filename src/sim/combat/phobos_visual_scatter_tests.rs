@@ -68,7 +68,7 @@ fn arena(weapon_extra: &str) -> (Simulation, RuleSet, u64, u64) {
             firer,
             Some(TargetKind::Entity(target)),
             &rules,
-            FrameEffects::empty()
+            &mut FrameEffects::empty()
         )
         .is_ok(),
         "the firer holds the target as a mission would"
@@ -83,7 +83,7 @@ fn visit_laser(sim: &mut Simulation, rules: &RuleSet, firer: u64) -> Vec<laser::
         world_fire::FireVisit::UnitTarget(firer),
         rules,
         None,
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
     sim.lifecycle_outputs
         .iter()

@@ -89,7 +89,7 @@ impl<'a> SimulationAuthoredLoadHost<'a> {
                 descriptor,
                 world,
                 AnimConstructorInput::AssignedIdentity(native_unique_id),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .map_err(Into::into)
     }
@@ -248,7 +248,7 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
             request,
             ground,
             AnimConstructorInput::AssignedIdentity(native_unique_id),
-            super::FrameEffects::default(),
+            &mut super::FrameEffects::default(),
         )?)
     }
 
@@ -275,7 +275,7 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
     fn drain_deferred(&mut self) -> Result<(), Self::Error> {
         self.sim.process_pending_delete_with(
             self.rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             0,
             false,
         );
@@ -343,7 +343,7 @@ mod tests {
         let mut sim = Simulation::with_seed(0);
         sim.session
             .set_map_name_for_test("authored ART owner".into());
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(700));
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(700));
         let before_rng = sim.rng_state();
         SimulationAuthoredLoadHost::new(&mut sim, &mut rules, &assets, "TEM", "TEMPERATE")
             .construct_terrain_attached_anim(&request)
@@ -408,7 +408,7 @@ mod tests {
         reload
             .session
             .set_map_name_for_test("authored ART owner".into());
-        reload.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(700));
+        *reload.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(700));
         SimulationAuthoredLoadHost::new(
             &mut reload,
             &mut reload_rules,

@@ -88,6 +88,7 @@ pub(super) fn apply(
     let gunner_transport =
         target_type.gunner && target.category() == crate::map::entities::EntityCategory::Unit;
     let mut gunner_removed = false;
+    let mut pings = Vec::new();
     for (index, passenger_id) in picked.into_iter().enumerate() {
         let Some(passenger) = world.substrate.entities.get(passenger_id) else {
             continue;
@@ -128,13 +129,14 @@ pub(super) fn apply(
                 arg6: true,
             },
         );
-        let (nested, _pings) = commit_entities(
+        let nested = commit_entities(
             world,
             run,
             std::slice::from_ref(&event),
             Some(false),
             rules,
             overlay_registry,
+            &mut pings,
         );
         effects.append(nested);
         // `Detonate.cpp:887-903`: the first iterated passenger's `NowDead`
@@ -176,6 +178,7 @@ pub(super) fn apply(
             );
         }
     }
+    effects.under_attack_events.append(&mut pings);
     // A clean pass that leaves no passenger plays `CleanSound` at the
     // transport's Location (`Detonate.cpp:908-920`).
     let remaining = world
@@ -189,7 +192,11 @@ pub(super) fn apply(
         && let Some(target) = world.substrate.entities.get(target_id)
     {
         let event =
-            SimSoundEvent::voc_at_location(sound.clone(), target, world.resolved_terrain.as_ref());
+            SimSoundEvent::voc_at_location(
+                rules.sound_name(sound),
+                target,
+                world.resolved_terrain.as_ref(),
+            );
         world.sound_events.emit(event);
     }
 }

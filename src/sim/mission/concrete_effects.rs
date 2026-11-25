@@ -365,7 +365,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
         //6FCDD2..6FCDE1: only a receiver owning its manager clears the
         //designation here; aircraft and marked buildings borrow +294.
         if changes && entity.airstrike_link() == Some(prepared.receiver) {
-            sim.airstrike_clear_target(prepared.receiver, self.rules, self.frame_effects);
+            sim.airstrike_clear_target(prepared.receiver, self.rules, &mut self.frame_effects);
         }
         let stored = assign_target_stored(
             &sim.substrate.entities,
@@ -406,6 +406,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
                 .entities
                 .get_mut(prepared.receiver)
                 .unwrap()
+                .seldom
                 .tesla_charger
                 .clear();
         }
@@ -439,7 +440,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
                 prepared.receiver,
                 self.rules,
                 Some(self.rules.overlay_registry()),
-                self.frame_effects,
+                &mut self.frame_effects,
             );
             return true;
         }
@@ -461,7 +462,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
                         requested,
                         rules,
                         !self.keep_queue,
-                        self.frame_effects,
+                        &mut self.frame_effects,
                     );
                 }
                 // `InfantryClass::Assign_Destination @ 0x0051AA40`.
@@ -472,7 +473,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
                             requested,
                             rules,
                             Some(self.rules.overlay_registry()),
-                            self.frame_effects,
+                            &mut self.frame_effects,
                         )
                         .expect("represented Infantry destination dependencies must be available");
                 }
@@ -482,7 +483,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
                         prepared.receiver,
                         Some(requested),
                         rules,
-                        self.frame_effects,
+                        &mut self.frame_effects,
                     );
                 }
                 crate::map::entities::EntityCategory::Structure => {
@@ -726,7 +727,7 @@ pub(crate) fn represented_assign_target_admitted(
     //SpawnOwner. A NULL request skips the arm (0x006FCDF3 jumps to the
     // store) and keeps the ammo.
     let requested = if requested.is_some()
-        && entity.type_facts.spawned_non_missile_aircraft()
+        && entity.seldom.type_facts.spawned_non_missile_aircraft()
         && matches!(crate::sim::aircraft::attack_state(entity), Some(5..=9))
         && let Some(ammo) = entity.ammo_mut()
         && ammo.current() != 0
@@ -737,21 +738,22 @@ pub(crate) fn represented_assign_target_admitted(
         stored
     };
 
+    let note = entity.note_names();
     if requested.is_none() {
         // `0x006FCF38..0x006FCF4E`: a NULL target goes on to the
         // SpawnManager (`SetTarget 0x006B7B90`), which drops a queued
         // retarget while it keeps a current target.
         if let Some(manager) = entity.spawn_manager.as_mut() {
-            manager.set_target(None);
+            manager.queue_target(None, note);
         }
         // `0x006FCF53..0x006FCF5B` resets CurrentBurstIndex; Ares 3.0
         // TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53) keeps it.
         if !ares {
-            entity.weapon_burst.reset();
+            entity.seldom.weapon_burst.reset();
         }
     }
     // The store (`0x006FCF3E`).
-    entity.attack_target.set(requested);
+    entity.attack_target.set(requested, note);
     // `0x006FCF61..0x006FCF86`: InRange refuses a NULL target (`0x006F7237`).
     if requested.is_none() {
         entity.release_fire_particle_system();
@@ -768,7 +770,10 @@ pub(crate) fn represented_assign_destination(
 ) {
     match requested {
         Some(target) => crate::sim::movement::navcom::publish_nav_com(entity, target),
-        None => entity.navigation.publish_nav_com(None),
+        None => {
+            let note = entity.note_names();
+            entity.navigation.publish_nav_com(None, note);
+        }
     }
 }
 
@@ -883,7 +888,7 @@ impl ConcreteMissionEffects for RecordingConcreteMissionEffects {
             requested,
             mission_current: entity.mission.current(),
             suspended_mission: entity.mission.suspended(),
-            archived_target: entity.suspended_attack_target.target(),
+            archived_target: entity.seldom.suspended_attack_target.target(),
             archived_destination: entity.navigation.suspended_nav_com(),
         });
         if entity.attack_target.target() != requested {

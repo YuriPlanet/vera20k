@@ -88,7 +88,7 @@ fn stock_airburst_tail_matches_native_children_rng_and_cleanup() {
     .unwrap();
     let native = &rows[0];
     let (mut world, rules, source, request) = scene(600);
-    world.scenario_rng =
+    *world.scenario_rng =
         SimRng::from_native_state_hex_for_test(native["rng_before"]["scenario"].as_str().unwrap());
     let main = world.main_rng.native_state_hex();
     let mapgen = world.mapgen_rng.native_state_hex();
@@ -182,7 +182,7 @@ fn stock_airburst_children_reach_shared_damage_and_expire() {
     let (_, visits) = crate::sim::combat::receiver_fixture::trace_area_visits(|| {
         for frame in 101..106 {
             world.session.set_binary_frame_for_test(frame);
-            world.visit_combat_tail(first, &rules, None, FrameEffects::default());
+            world.visit_combat_tail(first, &rules, None, &mut FrameEffects::default());
             world.flush_pending_delete();
         }
     });

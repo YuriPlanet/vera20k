@@ -93,8 +93,8 @@ pub struct RadSite {
     light: RadiationLight,
     /// Phobos `RadSiteExt::Type`: the bound `[RadiationTypes]` entry's
     /// canonical name, resolved from the detonating weapon's `RadType=`.
-    /// `None` in builds without the capability, where every parameter is the
-    /// global `[Radiation]` value.
+    /// `None` while the game's Phobos switch is off, where every parameter is
+    /// the global `[Radiation]` value.
     rad_type: Option<String>,
     /// Phobos `RadHasOwner`: the house the detonating round belonged to,
     /// kept only when the bound type asks for it. The site's damage then
@@ -168,6 +168,7 @@ impl RadSite {
         theater: &str,
         effective: &EffectiveRadiation,
         ares: bool,
+        phobos: bool,
     ) -> bool {
         let light = &mut self.light;
         light.timer = CdTimer::started(frame as i32, effective.light_delay);
@@ -189,12 +190,12 @@ impl RadSite {
         // replaces the whole activation with `RadSiteExt::CreateLight`, which
         // tints from the bound type's `RadColor` alone (all three channels,
         // clamped at 2000) with no theater test anywhere in `Ext/RadSite`.
-        // The compiled capability decides which owner runs. Ares removes the
+        // The game's Phobos switch decides which owner runs. Ares removes the
         // snow test outright: RadSiteClass_Radiate_UnhardcodeSnow (hook
         // `0x65B5FB` -> `0x10056DB0`) always resumes at `0x65B604`, past
-        // the substitution, so Mental Omega's `RadColor=200,100,0` stays
-        // amber on snow maps.
-        let channels = if !crate::rules::PHOBOS_ENABLED
+        // the substitution, so an amber `RadColor=200,100,0` stays amber
+        // on snow maps.
+        let channels = if !phobos
             && !ares
             && crate::rules::object_image::ImageTheater::from_name(theater)
                 == crate::rules::object_image::ImageTheater::Snow
@@ -312,14 +313,15 @@ pub(crate) fn clamp_level(level: f64, level_max: i32) -> i32 {
 // one retained F0 total, including each operation's binary64 store. Phobos
 // replaces these with CellExt::RadLevels contributions attributed by site.
 type CellRadiation = BTreeMap<(u16, u16), f64>;
+type RadCells = BTreeMap<(u16, u16), CellRadiation>;
 
 /// The per-cell radiation field + site registry. Persisted and state-hashed.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RadiationState {
-    /// Sparse retained CellClass F0 totals. With Phobos, each cell instead
-    /// retains its CellExt::RadLevels contributions for damage attribution.
+    /// Sparse retained CellClass F0 totals, attributed per contributing site
+    /// so Phobos damage can read CellExt::RadLevels and stock reads their sum.
     /// Exactly positive-zero entries are omitted; negative results clamp to 0.
-    cells: BTreeMap<(u16, u16), CellRadiation>,
+    cells: RadCells,
     /// One site per center cell. For canonical real Cells, membership is the
     /// Cell487C70/487C80 center marker; deletion clears it while residual F0
     /// levels remain. This does not model arbitrary off-map/Dummy pointers.
@@ -466,9 +468,7 @@ impl RadiationState {
         let Some(level) = self.cells.get(&cell) else {
             return 0.0;
         };
-        {
-            level.values().sum()
-        }
+        { level.values().sum() }
     }
 
     /// Per-site levels of one cell, in site-center order: the input the
@@ -553,72 +553,19 @@ impl RadiationState {
         site.remaining.wrapping_mul(site.level) / site.duration
     }
 
-    fn stored_cell_level(&self, cell: (u16, u16), site: (u16, u16)) -> f64 {
-        {
-            self.cells
-                .get(&cell)
-                .and_then(|sites| sites.get(&site))
-                .copied()
-                .unwrap_or(0.0)
-        }
-    }
-
-    fn store_cell_level(&mut self, cell: (u16, u16), site: (u16, u16), value: NativeF64Bits) {
-        {
-            let entry = self.cells.entry(cell).or_default();
-            if value == NativeF64Bits::POSITIVE_ZERO {
-                entry.remove(&site);
-                if entry.is_empty() {
-                    self.cells.remove(&cell);
-                }
-            } else {
-                entry.insert(site, f64::from_bits(value.bits()));
-            }
-        }
-    }
-
-    fn add_cell(&mut self, cell: (u16, u16), site: (u16, u16), amount: f64) {
-        // Cell487CE0: FLD incoming, FADD stored, FSTP stored.
-        let value = X87::store_f64_masked_chop(X87::add(
-            X87::load_f64(NativeF64Bits::from_bits(amount.to_bits())),
-            X87::load_f64(NativeF64Bits::from_bits(
-                self.stored_cell_level(cell, site).to_bits(),
-            )),
-        ));
-        self.store_cell_level(cell, site, value);
-    }
-
-    /// Subtract clamping at exactly 0 (negative results store 0; the entry is
-    /// then dropped to keep the map sparse).
-    fn sub_cell(&mut self, cell: (u16, u16), site: (u16, u16), amount: f64) {
-        // Cell487D00 compares the register result with zero after its first
-        // store; only a negative result clamps. Unordered is retained.
-        let difference = X87::sub(
-            X87::load_f64(NativeF64Bits::from_bits(
-                self.stored_cell_level(cell, site).to_bits(),
-            )),
-            X87::load_f64(NativeF64Bits::from_bits(amount.to_bits())),
-        );
-        let value = if X87::compare(X87::load_i32(0), difference) == MaskedX87Ordering::Greater {
-            NativeF64Bits::POSITIVE_ZERO
-        } else {
-            X87::store_f64_masked_chop(difference)
-        };
-        self.store_cell_level(cell, site, value);
-    }
-
     /// Spread the site's full falloff into the field (runs at every
     /// (re)activation — a merge re-spreads with the new level).
     fn spread_site(&mut self, center: (u16, u16), terrain: Option<&ResolvedTerrainGrid>) {
-        let Some(site) = self.sites.get(&center).cloned() else {
+        let Some(site) = self.sites.get(&center) else {
             return;
         };
+        let cells = &mut self.cells;
         let bounds = terrain
             .map(|t| (t.width(), t.height()))
             .unwrap_or(FALLBACK_BOUNDS);
         for_each_square_cell(site.center, site.spread, bounds, |cell| {
             let stored = X87::store_f64_masked_chop(falloff_at(&site, terrain, cell));
-            self.add_cell(cell, center, f64::from_bits(stored.bits()));
+            add_cell(cells, cell, center, f64::from_bits(stored.bits()));
         });
     }
 
@@ -633,9 +580,10 @@ impl RadiationState {
         terrain: Option<&ResolvedTerrainGrid>,
         effective: &EffectiveRadiation,
     ) {
-        let Some(site) = self.sites.get(&center).cloned() else {
+        let Some(site) = self.sites.get(&center) else {
             return;
         };
+        let cells = &mut self.cells;
         let bounds = terrain
             .map(|t| (t.width(), t.height()))
             .unwrap_or(FALLBACK_BOUNDS);
@@ -648,7 +596,8 @@ impl RadiationState {
                 X87::div(falloff, X87::load_i32(site.level_steps)),
                 steps_ahead,
             );
-            self.sub_cell(
+            sub_cell(
+                cells,
                 cell,
                 center,
                 f64::from_bits(X87::store_f64_masked_chop(amount).bits()),
@@ -664,11 +613,12 @@ impl RadiationState {
         theater: &str,
         effective: &EffectiveRadiation,
         ares: bool,
+        phobos: bool,
     ) -> bool {
         if let Some(site) = self.sites.get_mut(&center) {
             site.level_steps = site.duration / effective.level_delay;
             site.level_timer = CdTimer::started(frame as i32, effective.level_delay);
-            site.activate_light(frame, theater, effective, ares)
+            site.activate_light(frame, theater, effective, ares, phobos)
         } else {
             false
         }
@@ -710,6 +660,7 @@ impl RadiationState {
         lights: &mut LightingSources,
     ) {
         let center = (det.rx, det.ry);
+        let phobos = rules.phobos();
         // A merge keeps the existing site's bound type; a fresh site binds
         // the detonating weapon's `RadType=`, resolved to the catalog
         // entry's canonical name (absent and unknown names bind the default
@@ -718,7 +669,11 @@ impl RadiationState {
             .sites
             .get(&center)
             .and_then(|site| site.rad_type.clone())
-            .or_else(|| bound_radiation_type(rules, det.rad_type.as_deref()));
+            .or_else(|| {
+                phobos
+                    .then(|| bound_radiation_type(rules, det.rad_type.as_deref()))
+                    .flatten()
+            });
         let effective = effective_radiation(rules, bound.as_deref());
         let merged = self.sites.get(&center).map(|site| {
             // Merge65B534..65B541 multiplies before dividing, without the
@@ -734,7 +689,7 @@ impl RadiationState {
                 // Retail SetRadLevel65B4F0 stores the supplied level without
                 // a cap; Cell487CB0 caps damage only. Phobos' replacement
                 // RadSiteExt::CreateInstance also caps the initial site level.
-                let level = if crate::rules::PHOBOS_ENABLED {
+                let level = if phobos {
                     det.rad_level.min(effective.level_max)
                 } else {
                     det.rad_level
@@ -773,12 +728,12 @@ impl RadiationState {
                         // Phobos `CreateInstance` copies the owner and the
                         // invoker only when the bound type's flags ask for
                         // them; a merge keeps the existing site's copies.
-                        firing_house: if effective.has_owner {
+                        firing_house: if phobos && effective.has_owner {
                             det.firing_house
                         } else {
                             None
                         },
-                        invoker: if effective.has_invoker {
+                        invoker: if phobos && effective.has_invoker {
                             det.invoker
                         } else {
                             None
@@ -799,7 +754,8 @@ impl RadiationState {
                 site.remaining = duration;
             }
         }
-        let light_changed = self.activate_site(center, frame, theater, &effective, rules.ares());
+        let light_changed =
+            self.activate_site(center, frame, theater, &effective, rules.ares(), phobos);
         self.spread_site(center, terrain);
         // RadSite activation65B7CA/65B7E8 publishes source changes in this
         // interval, even if another change later returns to the same inputs.
@@ -870,9 +826,10 @@ impl RadiationState {
     /// the square (falloff recomputed from the activation-time level, so each
     /// step removes a constant amount; the subtraction clamps at 0).
     fn decay_step(&mut self, center: (u16, u16), terrain: Option<&ResolvedTerrainGrid>) {
-        let Some(site) = self.sites.get(&center).cloned() else {
+        let Some(site) = self.sites.get(&center) else {
             return;
         };
+        let cells = &mut self.cells;
         let bounds = terrain
             .map(|t| (t.width(), t.height()))
             .unwrap_or(FALLBACK_BOUNDS);
@@ -880,13 +837,71 @@ impl RadiationState {
             let falloff = falloff_at(&site, terrain, cell);
             // 65BE25..65BE32: no intermediate binary64 falloff spill.
             let amount = X87::div(falloff, X87::load_i32(site.level_steps));
-            self.sub_cell(
+            sub_cell(
+                cells,
                 cell,
                 center,
                 f64::from_bits(X87::store_f64_masked_chop(amount).bits()),
             );
         });
     }
+}
+
+/// The level `site` holds in `cell`. Free of [`RadiationState`] so a walk over
+/// one of its sites can write the cells beside it.
+fn stored_cell_level(cells: &RadCells, cell: (u16, u16), site: (u16, u16)) -> f64 {
+    cells
+        .get(&cell)
+        .and_then(|sites| sites.get(&site))
+        .copied()
+        .unwrap_or(0.0)
+}
+
+fn store_cell_level(
+    cells: &mut RadCells,
+    cell: (u16, u16),
+    site: (u16, u16),
+    value: NativeF64Bits,
+) {
+    let entry = cells.entry(cell).or_default();
+    if value == NativeF64Bits::POSITIVE_ZERO {
+        entry.remove(&site);
+        if entry.is_empty() {
+            cells.remove(&cell);
+        }
+    } else {
+        entry.insert(site, f64::from_bits(value.bits()));
+    }
+}
+
+fn add_cell(cells: &mut RadCells, cell: (u16, u16), site: (u16, u16), amount: f64) {
+    // Cell487CE0: FLD incoming, FADD stored, FSTP stored.
+    let value = X87::store_f64_masked_chop(X87::add(
+        X87::load_f64(NativeF64Bits::from_bits(amount.to_bits())),
+        X87::load_f64(NativeF64Bits::from_bits(
+            stored_cell_level(cells, cell, site).to_bits(),
+        )),
+    ));
+    store_cell_level(cells, cell, site, value);
+}
+
+/// Subtract clamping at exactly 0 (negative results store 0; the entry is
+/// then dropped to keep the map sparse).
+fn sub_cell(cells: &mut RadCells, cell: (u16, u16), site: (u16, u16), amount: f64) {
+    // Cell487D00 compares the register result with zero after its first
+    // store; only a negative result clamps. Unordered is retained.
+    let difference = X87::sub(
+        X87::load_f64(NativeF64Bits::from_bits(
+            stored_cell_level(cells, cell, site).to_bits(),
+        )),
+        X87::load_f64(NativeF64Bits::from_bits(amount.to_bits())),
+    );
+    let value = if X87::compare(X87::load_i32(0), difference) == MaskedX87Ordering::Greater {
+        NativeF64Bits::POSITIVE_ZERO
+    } else {
+        X87::store_f64_masked_chop(difference)
+    };
+    store_cell_level(cells, cell, site, value);
 }
 
 #[cfg(all(test, tests_sim_p_s))]
@@ -995,7 +1010,7 @@ mod tests {
     }
 
     /// Ares's RadSiteClass_Radiate_UnhardcodeSnow (`0x65B5FB`) keeps every
-    /// `RadColor=` channel on a snow map: Mental Omega's amber field, not the
+    /// `RadColor=` channel on a snow map: an amber field stays amber, not the
     /// retail snow substitution's green-only light.
     #[test]
     fn ares_radiation_keeps_rad_color_on_snow() {

@@ -40,17 +40,18 @@ pub(crate) fn max_speed(
         return 4;
     };
     {
-        let enabled = object
-            .phobos_techno_extras
-            .use_disguise_movement_speed
-            .unwrap_or(
-                rules
-                    .phobos_globals
-                    .use_disguise_movement_speed
-                    .unwrap_or(false),
-            );
+        let enabled = rules.phobos()
+            && object
+                .phobos_techno_extras
+                .use_disguise_movement_speed
+                .unwrap_or(
+                    rules
+                        .phobos_globals
+                        .use_disguise_movement_speed
+                        .unwrap_or(false),
+                );
         if enabled
-            && let Some(disguise) = entity.disguise.as_ref().filter(|d| d.is_disguised())
+            && let Some(disguise) = entity.seldom.disguise.as_ref().filter(|d| d.is_disguised())
             && let Some(speed) = disguise
                 .type_id()
                 .and_then(|id| rules.object(interner.resolve(id)))
@@ -278,7 +279,7 @@ mod tests {
                     &rules,
                     33,
                     crate::sim::world::TickLane::Ordinary,
-                    Default::default(),
+                    &mut Default::default(),
                 )
                 .unwrap();
                 let entity = sim.entities().get(actor).unwrap();

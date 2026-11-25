@@ -1,6 +1,6 @@
 //! Tests for the retries of `AStar_pathfind_search` (`0x0042C900`).
 
-use super::super::super::zone_hierarchy::ZoneEdgeRecord;
+use super::super::super::zone_hierarchy::{ZONE_PRECHECK_LEVELS, ZoneEdgeRecord};
 use super::super::super::zone_map_tests::terrain_from_zone_classes;
 use super::super::super::{
     BlockerNeighborCounts, LayeredPathStep, MoverSearchFacts, PathGrid, find_layered_path_marker,
@@ -194,7 +194,10 @@ fn the_retry_excludes_the_edges_the_flood_could_not_cross() {
     // The furthest route zone the search reached is the last before the
     // refused cells, and it floods from the first cell it gave a node there.
     let progress = corridor.progress;
-    assert_eq!(corridor.routes[0][progress.index], map.zone(0, (6, 0)));
+    assert_eq!(
+        corridor.routes.route(0)[progress.index],
+        map.zone(0, (6, 0))
+    );
     assert_eq!(map.zone(0, progress.cell), map.zone(0, (6, 0)));
 
     // At each level that flood stops at the refused cells and finds the zone
@@ -217,7 +220,7 @@ fn the_retry_excludes_the_edges_the_flood_could_not_cross() {
         .run(&exclusions, &foot, (1, 1))
         .expect("a precheck")
         .expect("the bottom pass is the next route");
-    assert!(retried.routes[0].contains(&map.zone(0, (6, 10))));
+    assert!(retried.routes.route(0).contains(&map.zone(0, (6, 10))));
 }
 
 #[test]

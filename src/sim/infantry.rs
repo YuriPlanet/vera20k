@@ -30,6 +30,7 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::mission::timer::MissionTimer;
 use crate::sim::world::FrameEffects;
 use crate::util::fixed_math::{SIM_ZERO, SimFixed};
+use crate::util::forked::Forked;
 
 /// An infantryman's fear, stance, idle timer and failed-path answer.
 /// - Fear: this module's fear receiver raises and decays it.
@@ -300,7 +301,7 @@ impl crate::sim::world::Simulation {
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let Some(actor) = self.substrate.entities.get(id) else {
             return Ok(false);
@@ -568,13 +569,14 @@ enum IdleTurn {
 
 /// Single Infantry51CDB0 decision body. The world receiver applies its class
 /// action immediately, before a mission caller can spend its cadence draw.
-/// `ares` is the game's `RuleSet::ares_form`.
+/// `ares` is the game's `RuleSet::ares_form`. A refused turn draws nothing
+/// and leaves the stream unwritten.
 fn select_idle_action(
     entity: &mut GameEntity,
     object: &ObjectType,
     controlled_by_human: bool,
     frequency: f64,
-    rng: &mut crate::sim::rng::SimRng,
+    rng: &mut Forked<crate::sim::rng::SimRng>,
     frame: u32,
     ares: bool,
 ) -> Result<IdleTurn, String> {
@@ -638,7 +640,7 @@ impl crate::sim::world::Simulation {
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let Some(actor) = self.substrate.entities.get(id) else {
             return Ok(false);
@@ -702,12 +704,12 @@ impl crate::sim::world::Simulation {
         &mut self,
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;
         };
-        if actor.selection.is_selected() || !self.house_is_human_player(actor.owner()) {
+        if actor.seldom.selection.is_selected() || !self.house_is_human_player(actor.owner()) {
             return;
         }
         let Some(comment) = self
@@ -720,7 +722,7 @@ impl crate::sim::world::Simulation {
             return;
         }
         let event = crate::sim::world::SimSoundEvent::voc_at_location(
-            comment.clone(),
+            rules.sound_name(comment),
             actor,
             self.resolved_terrain.as_ref(),
         );
@@ -741,7 +743,7 @@ pub(crate) fn tick_idle_actions(
     houses: &crate::sim::houses::Houses,
     rules: &crate::rules::ruleset::RuleSet,
     interner: &crate::sim::intern::StringInterner,
-    rng: &mut crate::sim::rng::SimRng,
+    rng: &mut Forked<crate::sim::rng::SimRng>,
     frame: u32,
 ) -> Vec<(u64, i32)> {
     let mut fidgets = Vec::new();
@@ -993,9 +995,9 @@ mod tests {
                 input["game_mode_nonzero"].as_bool().unwrap_or(true),
             ),
         );
-        sim.scenario_rng = SimRng::new(31);
-        sim.main_rng = SimRng::new(31).into();
-        sim.mapgen_rng = SimRng::new(31);
+        *sim.scenario_rng = SimRng::new(31);
+        *sim.main_rng = SimRng::new(31);
+        *sim.mapgen_rng = SimRng::new(31);
         let owner = sim.interner.intern("FearOwner");
         let mut house = HouseState::new(
             owner,
@@ -1118,8 +1120,13 @@ mod tests {
             .unwrap();
         let (mut sim, rules) = fear_fixture(row);
         assert!(
-            !sim.infantry_fear_turn(1, &rules, None, crate::sim::world::FrameEffects::default())
-                .unwrap()
+            !sim.infantry_fear_turn(
+                1,
+                &rules,
+                None,
+                &mut crate::sim::world::FrameEffects::default()
+            )
+            .unwrap()
         );
         assert_native_fear_state(&sim, row);
     }
@@ -1150,8 +1157,13 @@ mod tests {
                 );
             }
             let (changed, draws) = trace_draws(|| {
-                sim.infantry_fear_turn(1, &rules, None, crate::sim::world::FrameEffects::default())
-                    .unwrap()
+                sim.infantry_fear_turn(
+                    1,
+                    &rules,
+                    None,
+                    &mut crate::sim::world::FrameEffects::default(),
+                )
+                .unwrap()
             });
             assert!(!changed);
             assert!(
@@ -1183,8 +1195,13 @@ mod tests {
             let mut terrain = crate::map::resolved_terrain::test_retail_clear_grid(4, 4);
             terrain.cell_mut_for_test(0, 0).unwrap().land_type = land.as_index();
             sim.install_resolved_terrain_for_new_map(terrain);
-            sim.infantry_fear_turn(1, &rules, None, crate::sim::world::FrameEffects::default())
-                .unwrap();
+            sim.infantry_fear_turn(
+                1,
+                &rules,
+                None,
+                &mut crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap();
             let infantry = sim.entities().get(1).unwrap().infantry.as_ref().unwrap();
             assert_eq!(infantry.is_prone, prone, "{land:?}");
         }
@@ -1201,8 +1218,13 @@ mod tests {
             .unwrap();
         let (mut sim, rules) = fear_fixture(row);
         assert!(
-            !sim.infantry_fear_turn(1, &rules, None, crate::sim::world::FrameEffects::default())
-                .unwrap()
+            !sim.infantry_fear_turn(
+                1,
+                &rules,
+                None,
+                &mut crate::sim::world::FrameEffects::default()
+            )
+            .unwrap()
         );
         assert_native_fear_state(&sim, row);
     }
@@ -1283,7 +1305,7 @@ mod tests {
                     1,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default()
+                    &mut crate::sim::world::FrameEffects::default()
                 )
                 .unwrap()
             );
@@ -1394,7 +1416,7 @@ mod tests {
                     civilian,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap()
             });
@@ -1462,11 +1484,11 @@ mod tests {
                 .unwrap();
             actor.infantry.as_mut().unwrap().idle_action_timer =
                 crate::sim::mission::MissionTimer::armed(frame, 0);
-            sim.scenario_rng = SimRng::new(scenario_seed);
+            *sim.scenario_rng = SimRng::new(scenario_seed);
             sim.sound_events.clear_for_test();
-            let before = sim.main_rng.snapshot_for_test();
+            let before = sim.main_rng.clone();
             assert!(
-                sim.infantry_idle_action(man, &rules, None, Default::default())
+                sim.infantry_idle_action(man, &rules, None, &mut Default::default())
                     .unwrap()
             );
             let comments: Vec<String> = sim
@@ -1474,7 +1496,7 @@ mod tests {
                 .iter()
                 .filter_map(|event| match event {
                     crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } => {
-                        Some(sound_id.clone())
+                        Some(sound_id.name_in(&rules).to_string())
                     }
                     _ => None,
                 })
@@ -1532,7 +1554,7 @@ mod tests {
             // an Options constructor/settings load is outside this receipt.
             // Reproduction: foot_missions.md's idle Options input proof.
             sim.session.game_options_mut_for_test().game_speed = 0;
-            sim.scenario_rng = SimRng::new(input["scenario_seed"].as_u64().unwrap());
+            *sim.scenario_rng = SimRng::new(input["scenario_seed"].as_u64().unwrap());
             assert_eq!(
                 native_rng_state(&sim.scenario_rng),
                 row["rng_before"]["scenario"],
@@ -1631,7 +1653,7 @@ mod tests {
                     1,
                     &rules,
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap()
             });

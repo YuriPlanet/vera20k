@@ -19,7 +19,7 @@
 //! - Part of rules/ — no dependency on sim/, render/, ui/, etc.
 
 use crate::rules::ini_parser::IniSection;
-use crate::rules::native_processing::read_valueable_type_vector;
+use crate::rules::native_processing::read_nullable_type_vector;
 
 /// The three `Promote.*` keys on one TechnoType.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -51,18 +51,20 @@ impl PhobosPromote {
         let keep = |name: &str| Some(name.to_owned());
         Self {
             include_spawns: section.read_phobos_nullable_bool("Promote.IncludeSpawns", None),
-            veteran_animation: read_valueable_type_vector(
+            veteran_animation: read_nullable_type_vector(
                 section,
                 "Promote.VeteranAnimation",
-                &[],
+                None,
                 keep,
-            ),
-            elite_animation: read_valueable_type_vector(
+            )
+            .unwrap_or_default(),
+            elite_animation: read_nullable_type_vector(
                 section,
                 "Promote.EliteAnimation",
-                &[],
+                None,
                 keep,
-            ),
+            )
+            .unwrap_or_default(),
         }
     }
 

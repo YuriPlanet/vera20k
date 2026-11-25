@@ -354,7 +354,7 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
             request,
             ground,
             AnimConstructorInput::Runtime,
-            self.effects,
+            &mut self.effects,
         )?)
     }
 
@@ -488,7 +488,7 @@ impl Simulation {
         request: OverlayCellAnim<'_>,
         ground: OverlayCellAnimGround,
         constructor: AnimConstructorInput,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> Result<OverlayCellAnimHandle, AnimSpawnError> {
         let [x, y] = request.anim_xy;
         let ground_z = ground.z;

@@ -3,6 +3,7 @@
 //! UI overlays, selection brackets, target lines, and the overlay render index.
 
 pub(crate) mod airstrike_lines;
+pub(crate) mod ares_tactical_text;
 pub(crate) mod banners;
 pub(crate) mod beacon_labels;
 pub(crate) mod build_text;
@@ -14,7 +15,10 @@ pub(crate) mod digital_display;
 pub(crate) mod display_members;
 pub(crate) mod electric_bolts;
 pub(crate) mod field_parts;
+pub(crate) mod health_templates;
 pub(crate) mod layout_parts;
+pub(crate) mod picture_hud;
+pub(crate) mod text_hud;
 pub(crate) mod player_layout;
 pub(crate) mod fire_effects;
 pub(crate) mod flying_credits;
@@ -65,7 +69,6 @@ mod spawn_pip_tests;
 #[cfg(all(test, tests_app_presentation))]
 mod self_heal_pip_tests;
 
-#[cfg(all(test, tests_app_presentation))]
 #[cfg(all(test, tests_app_presentation))]
 mod absorber_pip_tests;
 

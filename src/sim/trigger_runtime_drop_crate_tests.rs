@@ -28,7 +28,7 @@ fn fixture(gift_keys: &str, actions: &str) -> (Simulation, crate::rules::ruleset
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 11);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     super::tests::install_event_ingress_map(
         &mut sim,
         &rules,
@@ -74,7 +74,7 @@ fn fire(sim: &mut Simulation, rules: &crate::rules::ruleset::RuleSet) {
         &mut Vec::new(),
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
 }
 

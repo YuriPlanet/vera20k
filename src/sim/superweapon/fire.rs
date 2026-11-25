@@ -55,7 +55,7 @@ impl Simulation {
         sw_type_id: InternedId,
         cell: (u16, u16),
         overlays: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         if rules.ares_form()
             && rules.super_weapon_uses_ai_targeting(self.interner.resolve(sw_type_id))
@@ -89,7 +89,7 @@ impl Simulation {
         sw_type_id: InternedId,
         cell: (u16, u16),
         overlay_registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
         automatic: bool,
     ) -> bool {
         self.fire_super_weapon_selected(
@@ -115,7 +115,7 @@ impl Simulation {
         sw_type_id: InternedId,
         cell: (u16, u16),
         overlay_registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
         target_source: super::SuperWeaponTargetSource,
         selection: Option<super::PaidSuperWeaponSelection>,
     ) -> bool {
@@ -388,7 +388,7 @@ fn click_fire(
     sw: &SuperWeaponType,
     cell: (u16, u16),
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
     payment: Option<(InternedId, &SuperWeaponType)>,
     selecting_paid_source: bool,
 ) -> bool {
@@ -598,7 +598,7 @@ fn launch(
     sw: &SuperWeaponType,
     (rx, ry): (u16, u16),
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     use super::paradrop::ParaDropKind;
     let ares = rules.ares_form();
@@ -874,6 +874,11 @@ fn launch(
         SuperWeaponKind::SpyPlane => {
             super::spy_plane::launch(sim, rules, owner, sw_type_id, (rx, ry), frame_effects);
         }
+        // VERA's Tiberian Sun type: Firestorm 2.0 SuperClass::Place case 3
+        // (0x60BE21), in every game, Ares or not.
+        SuperWeaponKind::IonCannon => {
+            super::ion_cannon::launch(sim, owner, sw_type_id, (rx, ry));
+        }
         SuperWeaponKind::GenericWarhead => {
             let activated = super::generic_warhead::launch(
                 sim,
@@ -1025,7 +1030,7 @@ pub(super) fn apply_sw_type_conversion(
     rules: &RuleSet,
     owner: InternedId,
     sw: &crate::rules::superweapon_type::SuperWeaponType,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     if sw.phobos_convert_pairs.is_empty() {
         return;
@@ -1042,7 +1047,7 @@ pub(super) fn apply_sw_type_conversion(
             &sw.phobos_convert_pairs,
             Some(owner),
             rules,
-            effects,
+            &mut effects.reborrow(),
         );
     }
 }
@@ -1065,7 +1070,7 @@ pub(crate) fn launch_super_preserving_charge(
     sw_type_id: InternedId,
     cell: (u16, u16),
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(sw) = rules.super_weapon(sim.interner.resolve(sw_type_id)) else {
         return;
@@ -1117,7 +1122,7 @@ pub(super) fn launch_chained_super(
     sw: &crate::rules::superweapon_type::SuperWeaponType,
     cell: (u16, u16),
     overlay_registry: Option<&OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
     real_launch: bool,
 ) {
     if !real_launch {

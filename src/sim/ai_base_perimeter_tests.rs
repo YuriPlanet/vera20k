@@ -31,7 +31,7 @@ fn campaign_perimeter(
     let roster = crate::map::houses::parse_house_roster(&ini, &rules.color_schemes, Some(&rules));
     let mut sim = Simulation::with_seed(0x5082C0);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.session
@@ -56,15 +56,21 @@ fn campaign_perimeter(
         1,
         &rules,
         Some(rules.overlay_registry()),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
     sim.session.publish_started();
     Some((sim, rules, owner))
 }
 
 fn frame(sim: &mut Simulation, rules: &RuleSet) {
-    sim.advance_app_frame(&[], rules, 67, TickLane::Ordinary, FrameEffects::default())
-        .unwrap();
+    sim.advance_app_frame(
+        &[],
+        rules,
+        67,
+        TickLane::Ordinary,
+        &mut FrameEffects::default(),
+    )
+    .unwrap();
 }
 
 /// Original ChooseBuilding4FE4B0..4FE518 removes -3, expands through5082C0,

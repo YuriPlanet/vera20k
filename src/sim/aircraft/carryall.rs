@@ -409,13 +409,13 @@ impl Simulation {
         aircraft: u64,
         unit: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
-        let context = UninitContext::new(rules).with_effects(effects);
-        let _ = self.techno_limbo_with_context(unit, context);
+        let mut context = UninitContext::new(rules).with_effects(effects);
+        let _ = self.techno_limbo_with_context(unit, context.reborrow());
         let Some(type_ref) = self.substrate.entities.get_mut(unit).map(|cargo| {
             cargo.on_bridge.store(false);
-            cargo.on_carryall.set(true);
+            cargo.seldom.on_carryall.set(true);
             cargo.type_ref()
         }) else {
             return;
@@ -441,7 +441,7 @@ impl Simulation {
         aircraft: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         // `0x00414DAA`: an aircraft its own FootClass::AI removed never gets
         // here.
@@ -503,7 +503,7 @@ impl Simulation {
         aircraft: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let terrain = self.resolved_terrain.as_ref();
         let Some(carrier) = self.substrate.entities.get(aircraft) else {
@@ -519,15 +519,14 @@ impl Simulation {
         )
         .unwrap_or(0);
         let bridge = terrain.is_some_and(|terrain| {
-            let cell = terrain
-                .native_cell_identity(((location.x / 256) as i16, (location.y / 256) as i16));
-            terrain.native_cell_flags(cell) & 0x100 != 0
+            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+            let cell = cells.lookup_world(location.x, location.y);
+            let bridge = cells.flags(cell) & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0;
+            if bridge {
+                coord.z = crate::sim::movement::ground_pose::deck_surface_z(&cells, cell, coord.z);
+            }
+            bridge
         });
-        if bridge {
-            coord.z = coord
-                .z
-                .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-        }
         let requested = carrier.position.at_location_with_level(coord);
         let frame = self.session.binary_frame();
         let ares = rules.ares_form();
@@ -548,7 +547,7 @@ impl Simulation {
             rules,
             aircraft,
             DepartureRoute::Carryall,
-            |sim, cargo| {
+            |sim, cargo, effects| {
                 let object = sim
                     .substrate
                     .entities
@@ -605,7 +604,7 @@ impl Simulation {
             return;
         };
         if let Some(entity) = self.substrate.entities.get_mut(cargo) {
-            entity.on_carryall.set(false);
+            entity.seldom.on_carryall.set(false);
         }
         self.refresh_object_sight(cargo, rules, 0, effects);
         // Ares 3.0 AircraftClass_Carryall_Unload_UpdateCargo (10048A10, hook
@@ -635,7 +634,7 @@ impl Simulation {
             .substrate
             .entities
             .get(aircraft)
-            .and_then(|entity| entity.radio_contacts.slot(0))
+            .and_then(|entity| entity.seldom.radio_contacts.slot(0))
             == Some(cargo)
         {
             crate::sim::radio::transmit_to_contact(
@@ -692,7 +691,7 @@ impl Simulation {
         aircraft: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(health) = self
             .substrate

@@ -110,7 +110,7 @@ fn grinding_type_gates_drive_the_seek_and_the_radio_answer() {
     let civ = spawn(&mut sim, &rules, "CIV", "Russians", 10, 10);
     assert!(!rules.object("GRINDER").unwrap().phobos_grinding.allow_owner);
     assert!(!sim.can_grind_techno(grinder, civ, &rules));
-    assert!(!sim.foot_enter_grinder(civ, &rules, FrameEffects::default()));
+    assert!(!sim.foot_enter_grinder(civ, &rules, &mut FrameEffects::default()));
     assert_eq!(
         can_load_query(&sim, grinder, civ, &rules),
         RadioResponse::Negatory
@@ -201,7 +201,7 @@ fn grinding_extras_accumulate_the_refund_and_fire_the_type_weapon() {
     stand_on_grinder(&mut sim, grinder, first, 10, 10);
     let health = sim.entities().get(grinder).unwrap().health.current();
     sim.sound_events.clear_for_test();
-    assert!(sim.foot_per_cell_eaten(first, &rules, None, FrameEffects::default()));
+    assert!(sim.foot_per_cell_eaten(first, &rules, None, &mut FrameEffects::default()));
     // 75 refunded is below the 100 required: the accumulator keeps it and the
     // weapon stays silent.
     assert_eq!(
@@ -221,7 +221,7 @@ fn grinding_extras_accumulate_the_refund_and_fire_the_type_weapon() {
         .sound_events()
         .iter()
         .filter_map(|event| match event {
-            crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } => Some(sound_id.as_str()),
+            crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } => Some(sound_id.name_in(&rules)),
             _ => None,
         })
         .collect();
@@ -230,7 +230,7 @@ fn grinding_extras_accumulate_the_refund_and_fire_the_type_weapon() {
     let second = spawn(&mut sim, &rules, "CIV", "Russians", 11, 10);
     stand_on_grinder(&mut sim, grinder, second, 11, 10);
     sim.sound_events.clear_for_test();
-    assert!(sim.foot_per_cell_eaten(second, &rules, None, FrameEffects::default()));
+    assert!(sim.foot_per_cell_eaten(second, &rules, None, &mut FrameEffects::default()));
     // The second 75 reaches 150: the weapon fires at the grinder and the
     // accumulator clears.
     assert_eq!(
@@ -300,7 +300,7 @@ fn a_non_grinding_building_never_runs_the_grinding_extras() {
     stand_on_grinder(&mut sim, other, first, 10, 10);
     let health = sim.entities().get(other).unwrap().health.current();
     sim.sound_events.clear_for_test();
-    assert!(sim.foot_per_cell_eaten(first, &rules, None, FrameEffects::default()));
+    assert!(sim.foot_per_cell_eaten(first, &rules, None, &mut FrameEffects::default()));
     let entity = sim.entities().get(other).unwrap();
     assert_eq!(
         entity.phobos_grinding_weapon_accumulated_credits(),
@@ -312,7 +312,7 @@ fn a_non_grinding_building_never_runs_the_grinding_extras() {
         .sound_events()
         .iter()
         .filter_map(|event| match event {
-            crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } => Some(sound_id.as_str()),
+            crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } => Some(sound_id.name_in(&rules)),
             _ => None,
         })
         .collect();
@@ -336,7 +336,7 @@ fn mission_eaten_clears_a_destination_the_grinder_type_refuses() {
         civ,
         Some(NavTargetRef::object(grinder)),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(
         sim.entities()
@@ -346,7 +346,7 @@ fn mission_eaten_clears_a_destination_the_grinder_type_refuses() {
             .nav_com()
             .is_some()
     );
-    crate::sim::mission::eaten::mission_eaten(&mut sim, &rules, None, civ, FrameEffects::default());
+    crate::sim::mission::eaten::mission_eaten(&mut sim, &rules, None, civ, &mut FrameEffects::default());
     assert_eq!(
         sim.entities().get(civ).unwrap().navigation.nav_com(),
         None,
@@ -391,7 +391,7 @@ fn grinding_refund_feeds_the_display_income_accumulator() {
     stand_on_grinder(&mut sim, grinder, civ, 10, 10);
     let owner = sim.interner().get("Americans").unwrap();
     let before = crate::sim::credit_income::available_money(&sim.houses, owner);
-    assert!(sim.foot_per_cell_eaten(civ, &rules, None, FrameEffects::default()));
+    assert!(sim.foot_per_cell_eaten(civ, &rules, None, &mut FrameEffects::default()));
     let after = crate::sim::credit_income::available_money(&sim.houses, owner);
     assert_eq!(
         sim.substrate

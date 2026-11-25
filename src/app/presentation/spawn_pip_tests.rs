@@ -146,7 +146,7 @@ fn stock_carrier_pips_follow_construction_sortie_recall_reload_and_selection() {
                 rules,
                 33,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("ordinary stock Carrier frame");
         fired |= result
@@ -327,7 +327,7 @@ fn stock_carrier_spawner_fire_reveals_to_its_human_victim() {
                 &commands,
                 crate::app::types::SIM_TICK_MS,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         let manager = scene
@@ -374,7 +374,7 @@ fn stock_carrier_spawner_fire_reveals_to_its_human_victim() {
 /// docked so the row renders two filled and one empty pip.
 fn spawn_pips(type_keys: &str) -> Vec<(usize, [i32; 2])> {
     let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&format!(
-        "[AircraftTypes]\n0=BEAR\n1=SPAWN\n\
+        "[General]\nAIFireSale=yes\n[AircraftTypes]\n0=BEAR\n1=SPAWN\n\
          [BEAR]\nStrength=100\nSpeed=10\nSpawns=SPAWN\nSpawnsNumber=3\n{type_keys}\
          [SPAWN]\nStrength=50\nSpeed=10\n"
     )))
@@ -404,16 +404,10 @@ fn spawn_pips(type_keys: &str) -> Vec<(usize, [i32; 2])> {
         }
     }
     let entity = crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, id);
-    super::ui_overlays::scale_pip_draws(
-        &sim,
-        &entity,
-        Some(id),
-        Some(entity.owner()),
-        &rules,
-    )
-    .into_iter()
-    .map(|pip| (pip.frame, pip.offset_pixels))
-    .collect()
+    super::ui_overlays::scale_pip_draws(&sim, &entity, Some(id), Some(entity.owner()), &rules)
+        .into_iter()
+        .map(|pip| (pip.frame, pip.offset_pixels))
+        .collect()
 }
 
 /// Constructor defaults: frames 1/0 at the generic 4x0 mobile step.

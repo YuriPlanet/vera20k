@@ -150,7 +150,7 @@ fn wakeup_selection_and_deferred_mission_state_match_original_controls() {
             &mut Vec::new(),
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(result, int(&control["ret"]) != 0, "{name}");
         for (index, mut expected) in originals {
@@ -385,7 +385,7 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
     assert_eq!(guards.len(), 8);
     assert_eq!(sim.trigger_runtime.tag(wake_tag).unwrap().refs, 7);
     let poll = |sim: &mut Simulation| {
-        sim.advance_triggers(&rules, Some(&overlays), FrameEffects::default());
+        sim.advance_triggers(&rules, Some(&overlays), &mut FrameEffects::default());
     };
     poll(&mut sim);
     assert!(sim.trigger_runtime.action_trace.is_empty());
@@ -411,7 +411,7 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
         guards[0],
         attacker,
         1,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(sim.trigger_runtime.trigger(wake_live).unwrap().enabled);
     assert_eq!(
@@ -427,12 +427,12 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
     // Use the existing native in-scenario load seed0 boundary. This checkpoint
     // deliberately retains pending source Tag/Trigger finalization and all7
     // shared prisoner references, before the enabled elapsed0 poll.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let bytes = GameSnapshot::save(&sim, 0, 0, "ALL02UMD.MAP", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
     restored.restore_after_snapshot_load().unwrap();
     crate::sim::arena_fixture::flat_ground(&mut restored, &rules);
-    assert_eq!(sim.trigger_runtime, restored.trigger_runtime);
+    assert_eq!(*sim.trigger_runtime, *restored.trigger_runtime);
     for candidate in [&mut sim, &mut restored] {
         let before: Vec<_> = prisoners
             .iter()
@@ -471,7 +471,7 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
             );
         }
         assert_eq!(candidate.rng_state(), rng);
-        candidate.process_pending_delete_with(&rules, FrameEffects::default(), 1, false);
+        candidate.process_pending_delete_with(&rules, &mut FrameEffects::default(), 1, false);
         assert!(!candidate.trigger_runtime.has_live_tag(source_tag));
         assert!(!candidate.trigger_runtime.has_live_tag(wake_tag));
         assert!(candidate.trigger_runtime.trigger(source_live).is_none());
@@ -500,7 +500,7 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
             1
         );
     }
-    assert_eq!(sim.trigger_runtime, restored.trigger_runtime);
+    assert_eq!(*sim.trigger_runtime, *restored.trigger_runtime);
     for &id in &prisoners {
         assert_eq!(
             sim.substrate.entities.get(id).unwrap().mission,

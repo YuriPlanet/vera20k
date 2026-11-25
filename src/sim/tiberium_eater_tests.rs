@@ -21,7 +21,7 @@ fn scene(eater: &str) -> (Simulation, RuleSet, u64, InternedId) {
     )))
     .expect("rules");
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(flat_terrain(16, 16));
+    *sim.resolved_terrain = Some(flat_terrain(16, 16));
     place_tiberium_on_map(&mut sim, (5, 5), ResourceType::Ore, 6);
     let owner = sim.interner.intern("Americans");
     sim.houses
@@ -54,14 +54,14 @@ fn an_eater_takes_amount_per_cell_and_pays_cash() {
     let (mut sim, rules, id, owner) =
         scene("TiberiumEater.TransDelay=0\nTiberiumEater.AmountPerCell=2\n");
     let texts = std::cell::RefCell::new(Vec::new());
-    let observe = |_: &Simulation, _: &RuleSet, text: BountyText| {
+    let mut observe = |_: &Simulation, _: &RuleSet, text: BountyText| {
         texts.borrow_mut().push(text);
     };
     sim.phobos_update_tiberium_eater(
         id,
         &rules,
         Some(overlay_registry()),
-        FrameEffects::empty().with_bounty_text(&observe),
+        &mut FrameEffects::empty().with_bounty_text(&mut observe),
     );
     assert_eq!(bales_at(&sim, 5, 5), 4, "two bales were taken");
     assert_eq!(
@@ -86,14 +86,14 @@ fn cash_multiplier_scales_and_display_off_is_silent() {
          TiberiumEater.CashMultiplier=2.0\nTiberiumEater.Display=no\n",
     );
     let texts = std::cell::RefCell::new(Vec::new());
-    let observe = |_: &Simulation, _: &RuleSet, text: BountyText| {
+    let mut observe = |_: &Simulation, _: &RuleSet, text: BountyText| {
         texts.borrow_mut().push(text);
     };
     sim.phobos_update_tiberium_eater(
         id,
         &rules,
         Some(overlay_registry()),
-        FrameEffects::empty().with_bounty_text(&observe),
+        &mut FrameEffects::empty().with_bounty_text(&mut observe),
     );
     assert_eq!(bales_at(&sim, 5, 5), 4);
     assert_eq!(
@@ -109,7 +109,12 @@ fn cash_multiplier_scales_and_display_off_is_silent() {
 #[test]
 fn a_negative_trans_delay_disables_the_eater() {
     let (mut sim, rules, id, owner) = scene("TiberiumEater.TransDelay=-1\n");
-    sim.phobos_update_tiberium_eater(id, &rules, Some(overlay_registry()), FrameEffects::empty());
+    sim.phobos_update_tiberium_eater(
+        id,
+        &rules,
+        Some(overlay_registry()),
+        &mut FrameEffects::empty(),
+    );
     assert_eq!(bales_at(&sim, 5, 5), 6, "nothing was taken");
     assert_eq!(
         sim.houses.get(&owner).unwrap().economy().available_money(),
@@ -135,7 +140,7 @@ fn trans_delay_defers_and_limbo_holds_the_timer() {
     let (mut sim, rules, id, owner) =
         scene("TiberiumEater.TransDelay=3\nTiberiumEater.AmountPerCell=2\n");
     let effects = FrameEffects::empty;
-    sim.phobos_update_tiberium_eater(id, &rules, Some(overlay_registry()), effects());
+    sim.phobos_update_tiberium_eater(id, &rules, Some(overlay_registry()), &mut effects());
     assert_eq!(bales_at(&sim, 5, 5), 4);
     assert_eq!(
         sim.substrate
@@ -146,13 +151,13 @@ fn trans_delay_defers_and_limbo_holds_the_timer() {
             .duration(),
         3
     );
-    sim.phobos_update_tiberium_eater(id, &rules, Some(overlay_registry()), effects());
+    sim.phobos_update_tiberium_eater(id, &rules, Some(overlay_registry()), &mut effects());
     assert_eq!(bales_at(&sim, 5, 5), 4, "the timer defers the second scan");
     {
         let entity = sim.substrate.entities.get_mut(id).unwrap();
         entity.lifecycle.set_in_limbo_for_test(true);
     }
-    sim.phobos_update_tiberium_eater(id, &rules, Some(overlay_registry()), effects());
+    sim.phobos_update_tiberium_eater(id, &rules, Some(overlay_registry()), &mut effects());
     assert_eq!(
         sim.substrate
             .entities
@@ -174,7 +179,12 @@ fn trans_delay_defers_and_limbo_holds_the_timer() {
 #[test]
 fn amount_per_cell_zero_takes_the_whole_cell() {
     let (mut sim, rules, id, owner) = scene("TiberiumEater.TransDelay=0\n");
-    sim.phobos_update_tiberium_eater(id, &rules, Some(overlay_registry()), FrameEffects::empty());
+    sim.phobos_update_tiberium_eater(
+        id,
+        &rules,
+        Some(overlay_registry()),
+        &mut FrameEffects::empty(),
+    );
     assert_eq!(bales_at(&sim, 5, 5), 0, "the whole cell was taken");
     assert_eq!(
         sim.houses.get(&owner).unwrap().economy().available_money(),

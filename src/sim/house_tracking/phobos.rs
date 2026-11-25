@@ -152,14 +152,14 @@ impl Simulation {
     pub(crate) fn phobos_tracking_before_unlimbo(&mut self, id: u64) {
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             if self.substrate.phobos_limbo_control.enabled
-                && entity.phobos_placement.has_been_placed
+                && entity.seldom.phobos_placement.has_been_placed
                 && let Some(house) = self.houses.get_mut(&entity.owner())
             {
                 house
                     .tracking_mut(WRITE)
                     .change_phobos_limbo_count(entity, -1);
             }
-            entity.phobos_placement.has_been_placed = true;
+            entity.seldom.phobos_placement.has_been_placed = true;
         }
     }
 
@@ -249,7 +249,7 @@ impl Simulation {
         let mut active = 0;
         let mut total = 0;
         for entity in self.substrate.entities.values() {
-            if entity.owner() != owner || !entity.phobos_placement.has_been_placed {
+            if entity.owner() != owner || !entity.seldom.phobos_placement.has_been_placed {
                 continue;
             }
             let Some(object) = rules.object(self.interner().resolve(entity.type_ref())) else {
@@ -319,7 +319,7 @@ impl Simulation {
                 // A unit holding any link that is not radio-linked to a dock is
                 // still sitting in its factory, and a purposeless unit idles even
                 // on Harvest (Body.cpp:96-102).
-                if !entity.radio_contacts.is_empty()
+                if !entity.seldom.radio_contacts.is_empty()
                     && !self.has_radio_link_with_dock(entity, object)
                 {
                     return false;
@@ -331,7 +331,7 @@ impl Simulation {
                 // Entering something that is not a building is an unload elsewhere,
                 // not a dock visit (Body.cpp:107-115).
                 entity
-                    .tether
+                    .seldom.tether
                     .partner()
                     .and_then(|link| self.substrate.entities.get(link))
                     .is_none_or(|link| link.category() == EntityCategory::Structure)
@@ -355,7 +355,7 @@ impl Simulation {
         object: &crate::rules::object_type::ObjectType,
     ) -> bool {
         entity
-            .tether
+            .seldom.tether
             .partner()
             .and_then(|link| self.substrate.entities.get(link))
             .is_some_and(|link| {

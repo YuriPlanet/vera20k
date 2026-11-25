@@ -268,10 +268,9 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
         }
         // Ares `InfDeathAnim=` replaces the death-table arm with a literal
         // AnimClass built at the victim's cell, so it is an ordinary
-        // construction root and needs the same physical bounds. Nothing else
-        // names these animations: Mental Omega's GBION warheads set only
-        // `InfDeathAnim` (`FREEZE`, `MELTDIEE`, `PLASMDIE`) with no `InfDeath=`,
-        // and without this root the constructor refuses with
+        // construction root and needs the same physical bounds. A warhead may
+        // set only `InfDeathAnim`, with no `InfDeath=`, so nothing else names
+        // the animation, and without this root the constructor refuses with
         // `animation type [X] has no bound SHP frame count` and the kill plays
         // no death animation at all.
         if ares_way
@@ -869,7 +868,7 @@ mod tests {
                 crate::map::entities::EntityCategory::Infantry,
             ),
         );
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         let anim = sim.attach_parachute_anim(&rules, 1).unwrap();
         assert_eq!(
             sim.interner.resolve(sim.anim(anim).unwrap().type_id()),
@@ -936,7 +935,7 @@ mod tests {
                 11,
                 crate::map::entities::EntityCategory::Infantry,
             ));
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         let owner = sim.entities().get(1).unwrap().owner();
         sim.houses
             .register(crate::sim::house_state::HouseState::new(

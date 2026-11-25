@@ -57,7 +57,7 @@ fn visited_mission(miner_extra: &str, human: bool) -> (MissionType, u32) {
         .expect("MINER spawns");
     area_guard(&mut sim, miner);
     sim.session.set_binary_frame_for_test(5);
-    crate::sim::world::dispatch_foot_mission(&mut sim, miner, &rules, ObjectAiCtx::default())
+    crate::sim::world::dispatch_foot_mission(&mut sim, miner, &rules, &mut ObjectAiCtx::default())
         .expect("the visit runs");
     let entity = sim.substrate.entities.get(miner).unwrap();
     (
@@ -134,7 +134,7 @@ fn require_target_keeps_area_guard_with_a_threat_on_retail_rules() {
         .spawn_object("MTNK", "Americans", 10, 10, 0, &rules)
         .expect("MTNK spawns");
     area_guard(&mut sim, miner);
-    crate::sim::world::dispatch_foot_mission(&mut sim, miner, &rules, ObjectAiCtx::default())
+    crate::sim::world::dispatch_foot_mission(&mut sim, miner, &rules, &mut ObjectAiCtx::default())
         .expect("the visit runs");
     assert_eq!(
         sim.substrate

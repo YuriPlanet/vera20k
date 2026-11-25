@@ -279,9 +279,9 @@ fn caller_count_bridge_detour(
         Some((
             HierarchyGate {
                 level0_zones: level0,
-                marked_level0: &precheck.marked[0],
+                marked_level0: precheck.marked(0),
                 blocker_neighbor_counts: &zero_counts,
-                level0_route: &precheck.paths[0],
+                level0_route: precheck.route(0),
             },
             &mut RouteProgress {
                 index: 0,
@@ -349,7 +349,7 @@ fn gsi_04_12_interaction_order_entry_threads_exact_blocker_counts() {
     }));
     sim.set_playfield_size_height_for_test(Some(4));
     sim.install_resolved_terrain_for_new_map(terrain);
-    sim.zone_grid = Some(zone_grid.into());
+    *sim.zone_grid = Some(zone_grid.into());
     let engineer_id = sim
         .spawn_object("ENGINEER", "Americans", 1, 0, 0, &rules)
         .expect("engineer should spawn");
@@ -413,7 +413,7 @@ fn gsi_04_12_interaction_order_entry_threads_exact_blocker_counts() {
     // Publish the same navigation used by order admission for shared world
     // receivers, which take their grid from Simulation rather than the
     // locomotor test seam's optional fallback.
-    sim.path_grid = Some(std::sync::Arc::new(path_grid));
+    *sim.path_grid = Some(std::sync::Arc::new(path_grid));
     let target_cell = sim
         .resolved_terrain
         .as_ref()

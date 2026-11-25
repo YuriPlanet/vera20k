@@ -196,7 +196,7 @@ fn a_moving_open_topped_carrier_releases_a_rider_that_cannot_fire() {
         carrier,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
         sim.entities().get(rider).expect("rider").lift.target().is_none(),
@@ -209,7 +209,7 @@ fn a_moving_open_topped_carrier_releases_a_rider_that_cannot_fire() {
         carrier,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
         sim.entities().get(rider).expect("rider").lift.target().is_none(),
@@ -227,7 +227,7 @@ fn a_locomotor_weapon_without_fire_while_moving_releases_the_link() {
         carrier,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
         sim.entities().get(rider).expect("rider").lift.target().is_none(),
@@ -240,7 +240,7 @@ fn a_locomotor_weapon_without_fire_while_moving_releases_the_link() {
         carrier,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(
         sim.entities().get(rider).expect("rider").lift.target().is_some(),

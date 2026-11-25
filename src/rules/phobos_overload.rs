@@ -37,11 +37,26 @@ impl PhobosOverloadSettings {
         // `NullableVector<int>::Read`: absent, empty and `<default>` keep the
         // Rules list; any other value replaces it, including a present empty
         // list.
-        use crate::rules::native_processing::read_nullable_int_vector;
+        use crate::rules::native_processing::read_nullable_type_vector;
         Self {
-            count: read_nullable_int_vector(section, "Overload.Count", None),
-            damage: read_nullable_int_vector(section, "Overload.Damage", None),
-            frames: read_nullable_int_vector(section, "Overload.Frames", None),
+            count: read_nullable_type_vector(
+                section,
+                "Overload.Count",
+                None,
+                crate::rules::ini_value::parse_ares_int,
+            ),
+            damage: read_nullable_type_vector(
+                section,
+                "Overload.Damage",
+                None,
+                crate::rules::ini_value::parse_ares_int,
+            ),
+            frames: read_nullable_type_vector(
+                section,
+                "Overload.Frames",
+                None,
+                crate::rules::ini_value::parse_ares_int,
+            ),
             death_sound: None,
             particle_sys: section
                 .read_name("Overload.ParticleSys", 0x80)

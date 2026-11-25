@@ -99,7 +99,6 @@ impl LiftedUnit {
 /// its isolated query through this same walk and every nested Cell decision.
 /// `lifted` reads the map as it stands while that Unit is lifted for the
 /// test ([`LiftedUnit`]).
-#[allow(clippy::too_many_arguments)]
 pub fn can_place_building_at(
     sim: &Simulation,
     rules: &RuleSet,
@@ -155,7 +154,6 @@ pub fn can_place_building_at(
 /// A supplied query must be the context that resolved `cell`, so retained
 /// Dummy coordinates/ground fields come from that identity without relookup.
 /// `lifted` is a Unit its caller lifts around the test ([`LiftedUnit`]).
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn is_clear_to_build(
     sim: &Simulation,
     rules: &RuleSet,
@@ -269,7 +267,7 @@ pub(crate) fn flush_for_placement(
     ty: &ObjectType,
     origin: (i16, i16),
     house: InternedId,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Flush {
     if origin == (0, 0) {
         return Flush::Clear;

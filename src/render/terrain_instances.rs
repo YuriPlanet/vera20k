@@ -222,6 +222,7 @@ mod tests {
             origin_y: 0.0,
             bridge_middle_tiles: None,
             deformation_tiles: Vec::new(),
+            ice_tiles: Vec::new(),
         };
         let draw = |buffer| {
             build_visible_instances(&grid, None, 0.0, 0.0, 800.0, 600.0, None, None, buffer).normal
@@ -267,6 +268,7 @@ mod tests {
             origin_y: 0.0,
             bridge_middle_tiles: None,
             deformation_tiles: Vec::new(),
+            ice_tiles: Vec::new(),
         };
         let tiles = build_visible_instances(
             &grid,

@@ -359,7 +359,14 @@ fn run_inner(
     // App match loading activates theater archives after selecting startup
     // sources and before resolving the mode override. Follow that route;
     // headless's older pre-theater mode lookup is not the claimed path.
-    crate::map::theater::load_theater(assets, &map.map.header.theater).ok_or_else(|| {
+    crate::map::theater::load_scenario_theater(
+        assets,
+        &map.map.header.theater,
+        &map.map.ini,
+        false,
+    )
+    .map_err(|error| format!("{error:#}"))?
+    .ok_or_else(|| {
         format!(
             "load theater {} for app rule-source selection",
             map.map.header.theater

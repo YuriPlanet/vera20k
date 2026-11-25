@@ -59,7 +59,7 @@ fn visit_frames(mut sim: Simulation, rules: &RuleSet, id: u64, end: u32) -> Vec<
     let mut counts = Vec::new();
     for frame in 0..end {
         sim.session.set_binary_frame_for_test(frame);
-        sim.visit_voxel_anim(id, rules, FrameEffects::default())
+        sim.visit_voxel_anim(id, rules, &mut FrameEffects::default())
             .expect("the flight visit stays in domain");
         counts.push(puff_anims(&sim).len());
     }
@@ -114,7 +114,7 @@ fn an_unowned_piece_leaves_the_trailer_unowned() {
     let (mut sim, rules, id, house) = scene("", false);
     assert_eq!(house, None, "the unowned scene passes no house");
     sim.session.set_binary_frame_for_test(0);
-    sim.visit_voxel_anim(id, &rules, FrameEffects::default())
+    sim.visit_voxel_anim(id, &rules, &mut FrameEffects::default())
         .expect("the flight visit stays in domain");
     let trailers = puff_anims(&sim);
     assert_eq!(trailers.len(), 1);
@@ -128,7 +128,7 @@ fn the_trailer_inherits_the_piece_owner_house() {
     let (mut sim, rules, id, house) = scene("", true);
     let house = house.expect("owned scene");
     sim.session.set_binary_frame_for_test(0);
-    sim.visit_voxel_anim(id, &rules, FrameEffects::default())
+    sim.visit_voxel_anim(id, &rules, &mut FrameEffects::default())
         .expect("the flight visit stays in domain");
     let trailers = puff_anims(&sim);
     assert_eq!(trailers.len(), 1);

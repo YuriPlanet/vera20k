@@ -49,7 +49,7 @@ pub(super) fn apply_limbo_delivery(
     owner: InternedId,
     sw: &SuperWeaponType,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(settings) = rules.phobos_super_weapon_limbo(&sw.id) else {
         return;
@@ -89,7 +89,7 @@ fn limbo_create(
     type_name: &str,
     limbo_id: i32,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(building) = rules.object_in_category(ObjectCategory::Building, type_name) else {
         return;
@@ -162,7 +162,7 @@ pub(super) fn apply_limbo_kill(
     owner: InternedId,
     sw: &SuperWeaponType,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(settings) = rules.phobos_super_weapon_limbo(&sw.id) else {
         return;
@@ -218,9 +218,9 @@ pub(super) fn apply_limbo_kill(
         if counts && let Some(house) = sim.houses.get_mut(&owner) {
             house.remove_limbo_delivered_tracking(category, type_id);
         }
-        let context = UninitContext::new(rules).with_effects(effects);
-        sim.stun(id, context);
-        let _ = sim.techno_limbo_with_context(id, context);
+        let mut context = UninitContext::new(rules).with_effects(effects);
+        sim.stun(id, context.reborrow());
+        let _ = sim.techno_limbo_with_context(id, context.reborrow());
         sim.record_kill_and_uninit(id, None, context);
     }
 }

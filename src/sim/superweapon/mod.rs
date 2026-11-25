@@ -80,6 +80,7 @@ mod hunter_seeker;
 #[cfg(all(test, tests_sim_superweapon))]
 mod hunter_seeker_tests;
 pub mod invulnerability;
+mod ion_cannon;
 pub mod iron_curtain;
 pub mod lightning_storm;
 #[cfg(all(test, any(tests_sim_superweapon, tests_sim_trigger)))]
@@ -122,17 +123,15 @@ mod view_admission_tests;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::SuperWeaponType;
 use crate::sim::houses::Houses;
-use crate::sim::intern::InternedId;
 use crate::sim::intern::StringInterner;
+use crate::sim::intern::{InternKey, InternedId};
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::timer::CdTimer;
 use crate::sim::world::FrameChannel;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{SimSoundEvent, Simulation};
-use crate::util::native_x87::{
-    MaskedX87Chop53, NativeF32Bits, NativeF64Bits, X87Chop53, X87Ordering,
-};
+use crate::util::native_x87::{MaskedX87Chop53, MaskedX87Ordering, NativeF32Bits, NativeF64Bits};
 
 /// The `[SuperWeaponTypes]` entry at a type's `PreDependent=` index: the
 /// Super Fire_SW pairs a `PostClick=` type with (`HouseClass+0x258` indexed by
@@ -232,11 +231,8 @@ pub(super) fn spawn_cell_anim(
 /// MapClass lookup (`cell_grid`), as Launch reads the cell it looked up.
 fn deck_coords(sim: &Simulation, (x, y): (u16, u16)) -> [i32; 3] {
     let ground = crate::sim::projectile::cell_ground_coord(sim.resolved_terrain.as_ref(), x, y);
-    let mut coords = [ground.x, ground.y, ground.z];
-    if cell_grid::cell_has_bridge_flag(sim, x as i16, y as i16) {
-        coords[2] = coords[2].wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-    }
-    coords
+    let z = cell_grid::bridge_adjusted_z(sim, x as i16, y as i16, ground.z);
+    [ground.x, ground.y, z]
 }
 
 /// `AnimClass::AnimClass @ 0x00421EA0` with the `(type, &coord, delay 0,
@@ -249,19 +245,30 @@ fn deck_coords(sim: &Simulation, (x, y): (u16, u16)) -> [i32; 3] {
 /// `0x00729360`, `0x00729459`, `0x00729A2F` — all the same row and the
 /// `RulesClass+0x294` / `[AudioVisual] Dig=` type). An empty name or an art
 /// type that never bound constructs nothing.
-pub(crate) fn spawn_super_anim(
+///
+/// A name is trimmed and looked up uppercased. An id whose text is already
+/// trimmed and not empty is that lookup's answer (the interner looks names
+/// up ignoring case), so it is taken as it is and nothing is interned for it.
+pub(crate) fn spawn_super_anim<'k>(
     sim: &mut Simulation,
     rules: &RuleSet,
-    anim_name: &str,
+    anim_name: impl Into<InternKey<'k>>,
     [x, y, z]: [i32; 3],
 ) -> Option<crate::sim::anim_class::AnimId> {
-    let name = anim_name.trim();
+    let anim_name = anim_name.into();
+    let name = sim.interner.key_name(anim_name).trim();
     if name.is_empty() {
         return None;
     }
+    let type_id = match anim_name {
+        InternKey::Id(id) if name.len() == sim.interner.resolve(id).len() => id,
+        _ => {
+            let name = name.to_ascii_uppercase();
+            sim.interner.intern(&name)
+        }
+    };
     let world = crate::sim::anim_class::AnimWorldCoord { x, y, z };
     let (rx, ry, sub_x, sub_y, level) = world.to_cell_sub_z();
-    let type_id = sim.interner.intern(&name.to_ascii_uppercase());
     let descriptor = crate::sim::components::AnimClassSpawnDescriptor {
         delay: 0,
         loop_count: 1,
@@ -275,7 +282,10 @@ pub(crate) fn spawn_super_anim(
     match sim.spawn_anim_at_world(rules, descriptor, world) {
         Ok(anim) => Some(anim),
         Err(error) => {
-            log::debug!("superweapon anim [{name}] did not construct: {error}");
+            log::debug!(
+                "superweapon anim [{}] did not construct: {error}",
+                sim.interner.key_name(anim_name).trim()
+            );
             None
         }
     }
@@ -537,14 +547,16 @@ impl SuperWeaponInstance {
         self.store_charge_timer(CdTimer::started(frame, left.wrapping_sub(amount).max(0)));
     }
 
-    /// 100226D0: called only after an admitted Ares Activate returned true.
-    fn record_ares_launch(&mut self, frame: i32) {
+    /// One accepted `SuperClass::Launch`: Ares's 100226D0 after an admitted
+    /// Activate, and the Phobos `FireSuperWeaponExt` tail's `ShotCount++`
+    /// (`Ext/SWType/FireSuperWeapon.cpp:45`) at the shared continuation.
+    fn record_launch(&mut self, frame: i32) {
         self.ares_launch_count = self.ares_launch_count.wrapping_add(1);
         self.ares_charge_origin_frame = Some(frame);
     }
 
-    /// Folded only once Ares set the origin frame, so a game Ares doesn't
-    /// play in hashes as before.
+    /// Folded only once an Ares or Phobos launch set the origin frame, so an
+    /// instance that never launched hashes as before.
     pub(crate) fn hash_ares_launch_history(&self, hasher: &mut impl std::hash::Hasher) {
         if let Some(frame) = self.ares_charge_origin_frame {
             std::hash::Hash::hash(b"ares-super-launch-history-v1", hasher);
@@ -1614,17 +1626,21 @@ pub(crate) fn super_nearly_ready(
 /// `1.0f` (`[0x007E2AC8]`).
 const ONE_F32: NativeF32Bits = NativeF32Bits::from_bits(0x3F80_0000);
 
-/// `0x0041F148..0x0041F167`: in PC53/chop, `remaining / recharge` is not
-/// above `1.0f - percent` (`FCOMPP`, `TEST AH,0x1`); a zero recharge gives
-/// +inf or NaN, which fail, or -inf, which passes.
+/// `0x0041F148..0x0041F167`: in PC53/chop with masked exceptions,
+/// `remaining / recharge` is not above `1.0f - percent` (`FCOMPP`,
+/// `TEST AH,0x1`, which also fails an unordered compare). A zero recharge
+/// gives +inf or NaN, which fail, or -inf, which passes; an infinite
+/// `AIMinorSuperReadyPercent=` (ReadDouble overflows from about `1.8e308`,
+/// e.g. `1e309`, and the chop store to float keeps it; `1e39` stores the
+/// largest finite float) loads as infinity too.
 pub(crate) fn charge_nearly_full(remaining: i32, recharge: i32, percent: NativeF32Bits) -> bool {
-    type X = X87Chop53;
-    let Ok(ratio) = X::div(X::load_i32(remaining), X::load_i32(recharge)) else {
-        return remaining < 0;
-    };
-    let percent = X::load_f32(percent).expect("AIMinorSuperReadyPercent is finite");
-    let threshold = X::sub(X::load_f32(ONE_F32).expect("1.0f is finite"), percent);
-    X::compare(threshold, ratio) != X87Ordering::Less
+    type X = MaskedX87Chop53;
+    let ratio = X::div(X::load_i32(remaining), X::load_i32(recharge));
+    let threshold = X::sub(X::load_f32(ONE_F32), X::load_f32(percent));
+    matches!(
+        X::compare(threshold, ratio),
+        MaskedX87Ordering::Greater | MaskedX87Ordering::Equal
+    )
 }
 
 /// The charge each of `owner`'s Supers with `Type=` value `kind_index` has
@@ -1901,8 +1917,7 @@ pub struct SuperWeaponView {
     /// `0x0050B1D0`, `10039580`): when it grants the player's House a super
     /// it adds the cameo when `SW.ShowCameo` holds and skips it when
     /// `SW.AutoFire` does, else adds it (`0x10039617..0x1003965F`). Always
-    /// true without Ares; Mental Omega's Iron Guard is such a hidden
-    /// auto-fire super. Residual: Ares's spy-infiltration grant adds the
+    /// true without Ares. Residual: Ares's spy-infiltration grant adds the
     /// cameo without this test (`0x100123C7`); VERA hides the type on every
     /// grant path.
     pub ares_show_cameo: bool,
@@ -2090,7 +2105,7 @@ pub(crate) fn tick_house_superweapon_instances(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner: InternedId,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let current_frame = sim.session.binary_frame();
     let ares = rules.ares_form();
@@ -2099,9 +2114,13 @@ pub(crate) fn tick_house_superweapon_instances(
             .houses
             .get(&owner)
             .is_some_and(|house| house.is_controlled_by_human(sim.session.rule_policy()));
-    for type_id in house_super_order(sim, rules, owner) {
-        let sw = rules.super_weapon(sim.interner.resolve(type_id));
-            let (fade, ready, drain_ended) = 'stock: {
+    for name in &rules.super_weapon_order {
+        let Some(type_id) = house_super(sim, owner, name) else {
+            continue;
+        };
+        // An exact-name hit in the rules' map for the order's own name.
+        let sw = rules.super_weapon(name);
+        let (fade, ready, drain_ended) = 'stock: {
             let instance = sim
                 .super_weapons
                 .instance_mut(&owner, &type_id)
@@ -2111,7 +2130,6 @@ pub(crate) fn tick_house_superweapon_instances(
             // One frame of the per-building shots (Superweapon Limit), ready
             // or not while the Super is granted and not held.
             instance.step_building_charges();
-            let sw = rules.super_weapon(sim.interner.resolve(type_id));
             // Phobos `SuperClass_AI_UseWeeds @ 0x6CBD2C` replaces the timer
             // body for a `UseWeeds=` Super.
             if let Some(use_weeds) = sw
@@ -2212,12 +2230,12 @@ pub(crate) fn tick_house_superweapon_instances(
             }
         }
         if let Some([x, y, z]) = fade
-            && let Some(sound_id) = sw.and_then(|sw| sw.special_sound.clone())
+            && let Some(sound_id) = sw.and_then(|sw| sw.special_sound.as_deref())
         {
             let (rx, ry, sub_x, sub_y, _) =
                 crate::sim::anim_class::AnimWorldCoord { x, y, z }.to_cell_sub_z();
             sim.sound_events.emit(SimSoundEvent::VocAt {
-                sound_id,
+                sound_id: rules.sound_name(sound_id),
                 audible_to: None,
                 rx,
                 ry,
@@ -2331,7 +2349,7 @@ pub(super) fn deactivate_ares_handler(
     typ: InternedId,
     sw: &SuperWeaponType,
     is_player: bool,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     if !sw.kind.has_ares_handler() {
         return;
@@ -2366,7 +2384,7 @@ pub(super) fn raise_ares_activation_events(
     typ: InternedId,
     (rx, ry): (u16, u16),
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     use crate::sim::trigger_runtime::AresEventSource;
     let launch = AresEventSource::Launch {
@@ -2381,7 +2399,7 @@ pub(super) fn raise_ares_activation_events(
 /// `HouseClass::HouseClass` builds the House's whole Supers vector, one
 /// Super per `[SuperWeaponTypes]` entry in that order
 /// (`0x004F620E..0x004F6290`), for every House in every game mode; the grant
-/// and hold passes only walk that list ([`house_super_order`]). Only the
+/// and hold passes only walk that list ([`house_super`]). Only the
 /// admitted campaign prefix has a measured native-ID cursor, so only it binds
 /// each Super's ID (`bind_native_ids`).
 pub(crate) fn construct_house_supers(
@@ -2421,16 +2439,13 @@ pub(crate) fn shorten_ares_firestorm_drain(
     owner: InternedId,
     amount: i32,
 ) {
-    let Some(type_id) = house_super_order(sim, rules, owner)
-        .into_iter()
-        .find(|&id| {
-            rules
-                .super_weapon(sim.interner.resolve(id))
-                .is_some_and(|sw| {
-                    sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Firestorm
-                })
-        })
-    else {
+    let Some(type_id) = rules.super_weapon_order.iter().find_map(|name| {
+        let id = house_super(sim, owner, name)?;
+        rules
+            .super_weapon(name)
+            .is_some_and(|sw| sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Firestorm)
+            .then_some(id)
+    }) else {
         return;
     };
     let frame = sim.session.binary_frame() as i32;
@@ -2439,18 +2454,20 @@ pub(crate) fn shorten_ares_firestorm_drain(
     }
 }
 
-fn house_super_order(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Vec<InternedId> {
-    let Some(weapons) = sim.super_weapons.get(&owner) else {
-        return Vec::new();
-    };
-    rules
-        .super_weapon_order
-        .iter()
-        .filter_map(|name| {
-            let id = sim.interner.get(name)?;
-            weapons.contains_key(&id).then_some(id)
-        })
-        .collect()
+/// `owner`'s Super of the `[SuperWeaponTypes]` entry `name`, if it holds one.
+/// The House walks walk `rules.super_weapon_order` and ask this per entry:
+/// a House's set never changes after [`construct_house_supers`], and an
+/// interned name keeps its id, so asking as the walk goes answers as a copy
+/// of the order taken before it would, without building one per House per
+/// tick. Each entry is one probe of the name, uppercased on the stack, with
+/// no allocation: the rules hold the order as names and the ids are the
+/// interner's, which gives a name its id only when it is first interned.
+fn house_super(sim: &Simulation, owner: InternedId, name: &str) -> Option<InternedId> {
+    let id = sim.interner.get(name)?;
+    sim.super_weapons
+        .get(&owner)?
+        .contains_key(&id)
+        .then_some(id)
 }
 
 /// Tick already-active global superweapon effects in their native pre-object
@@ -2462,7 +2479,7 @@ pub(crate) fn tick_active_superweapon_effects(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     let frame = sim.session.binary_frame() as i32;
     if sim.session.lighting_mut().step_nuke_flash(frame) {
@@ -2746,19 +2763,19 @@ pub fn building_super_charges(
     let Some(object) = sim.object_type(building.type_ref(), rules) else {
         return Vec::new();
     };
+    let mut supers = type_super_weapons(object).peekable();
+    if supers.peek().is_none() {
+        return Vec::new();
+    }
     let Some(held) = sim.super_weapons.get(&building.owner()) else {
         return Vec::new();
     };
     let frame = sim.session.binary_frame() as i32;
-    let draws_all = match sim.session.current_house() {
-        None => true,
-        Some(house) => crate::map::houses::is_allied_with(
-            sim.house_alliances().as_map(),
-            sim.interner.resolve(house),
-            sim.interner.resolve(building.owner()),
-        ),
-    };
-    type_super_weapons(object)
+    let draws_all = sim.session.current_house().is_none_or(|house| {
+        sim.house_alliances()
+            .is_allied(&sim.interner, house, building.owner())
+    });
+    supers
         .filter_map(|name| {
             let id = sim.interner.get(name)?;
             let instance = held.get(&id)?;
@@ -2881,7 +2898,7 @@ fn finish_ares_launch(
     typ: InternedId,
     cell: (u16, u16),
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    frame_effects: crate::sim::world::FrameEffects<'_>,
+    frame_effects: &mut crate::sim::world::FrameEffects<'_>,
 ) {
     use crate::rules::superweapon_type::AresSuperWeaponFlags as F;
     let frame = sim.session.binary_frame() as i32;
@@ -2893,7 +2910,6 @@ fn finish_ares_launch(
         instance.record_launch(frame);
     }
     let data = ares_launch_data_type(sim, rules, owner, typ);
-    let data_name = sim.interner.resolve(data).to_owned();
     let recheck = sim
         .super_weapons
         .get(&owner)
@@ -2901,7 +2917,7 @@ fn finish_ares_launch(
         .is_some_and(|instance| {
             instance.one_time
                 || rules
-                    .super_weapon_metadata(&data_name)
+                    .super_weapon_metadata(sim.interner.resolve(data))
                     .is_some_and(|metadata| {
                         !metadata
                             .availability()
@@ -2917,11 +2933,11 @@ fn finish_ares_launch(
     // 10032F91..10032FBB: neither a PostClick type nor an SW.AutoFire one
     // becomes the House's last Super (the type index of the data Super).
     let auto_fire = rules
-        .super_weapon_target_policy(&data_name)
+        .super_weapon_target_policy(sim.interner.resolve(data))
         .is_some_and(|policy| policy.auto_fire());
     if !flags.has(F::POST_CLICK)
         && !auto_fire
-        && let Some(index) = rules.super_weapon_index(&data_name)
+        && let Some(index) = rules.super_weapon_index(sim.interner.resolve(data))
         && let Some(house) = sim.houses.get_mut(&owner)
     {
         house.remember_ares_last_super(index as i32);
@@ -3038,7 +3054,7 @@ pub(crate) fn update_owned_supers(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner: InternedId,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let paid_before = sim.paid_super_weapon_selection(owner);
     let Some(house) = sim.houses.get(&owner) else {
@@ -3051,8 +3067,11 @@ pub(crate) fn update_owned_supers(
         .get(&owner)
         .is_some_and(|state| state.low_power());
     let providers = provider_supers(sim, rules, owner);
-    for type_id in house_super_order(sim, rules, owner) {
-        let Some(sw) = rules.super_weapon(sim.interner.resolve(type_id)) else {
+    for name in &rules.super_weapon_order {
+        let Some(type_id) = house_super(sim, owner, name) else {
+            continue;
+        };
+        let Some(sw) = rules.super_weapon(name) else {
             continue;
         };
         let allowed = sim.session.game_options().super_weapons || !sw.disableable_from_shell;
@@ -3236,11 +3255,14 @@ pub(crate) fn grant_provided_supers(sim: &mut Simulation, rules: &RuleSet, owner
         .get(&owner)
         .is_some_and(|state| state.low_power());
     let providers = provider_supers(sim, rules, owner);
-    for type_id in house_super_order(sim, rules, owner) {
+    for name in &rules.super_weapon_order {
+        let Some(type_id) = house_super(sim, owner, name) else {
+            continue;
+        };
         if !providers.provided.contains(&type_id) {
             continue;
         }
-        let Some(sw) = rules.super_weapon(sim.interner.resolve(type_id)) else {
+        let Some(sw) = rules.super_weapon(name) else {
             continue;
         };
         if !sim.session.game_options().super_weapons && sw.disableable_from_shell {
@@ -3449,14 +3471,4 @@ mod show_timer_priority_tests {
             "priority 2, 2, 1, 0 by grant order"
         );
     }
-}
-
-impl SuperWeaponInstance {
-        /// One accepted `SuperClass::Launch`: Ares's 100226D0 after an admitted
-        /// Activate, and the Phobos `FireSuperWeaponExt` tail's `ShotCount++`
-        /// (`Ext/SWType/FireSuperWeapon.cpp:45`) at the shared continuation.
-        fn record_launch(&mut self, frame: i32) {
-            self.ares_launch_count = self.ares_launch_count.wrapping_add(1);
-            self.ares_charge_origin_frame = Some(frame);
-        }
 }

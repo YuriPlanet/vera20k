@@ -220,15 +220,15 @@ DisplayIncome=yes
     let refund = crate::sim::production::techno_refund(&sim, &rules, id).expect("refund");
     assert!(refund > 0, "the type has a cost and the refund percent");
     let texts = std::cell::RefCell::new(Vec::new());
-    let observe = |_: &Simulation, _: &crate::rules::ruleset::RuleSet, text: BountyText| {
+    let mut observe = |_: &Simulation, _: &crate::rules::ruleset::RuleSet, text: BountyText| {
         texts.borrow_mut().push(text);
     };
-    let effects = FrameEffects::empty().with_bounty_text(&observe);
+    let mut effects = FrameEffects::empty().with_bounty_text(&mut observe);
     assert!(crate::sim::production::foot_on_sold(
         &mut sim,
         &rules,
         id,
-        UninitContext::new(&rules).with_effects(effects),
+        UninitContext::new(&rules).with_effects(&mut effects),
     ));
     let texts = texts.into_inner();
     assert_eq!(texts.len(), 1, "one DisplayIncome label");

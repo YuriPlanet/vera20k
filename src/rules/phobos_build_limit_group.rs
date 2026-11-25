@@ -65,26 +65,28 @@ impl Default for BuildLimitGroupSettings {
 
 impl BuildLimitGroupSettings {
     pub fn from_section(section: &IniSection) -> Self {
-        use crate::rules::native_processing::read_valueable_type_vector;
+        use crate::rules::native_processing::read_nullable_type_vector;
         // `ValueableVector<TechnoTypeClass*>` filters at read time natively;
         // the names are kept here until a RuleSet can resolve them, and the
         // consumer applies the same filter before pairing.
         let keep = |name: &str| Some(name.to_owned());
         let read_ints = |key: &str| section.read_ares_int_list(key).unwrap_or_default();
         Self {
-            types: read_valueable_type_vector(section, "BuildLimitGroup.Types", &[], keep),
+            types: read_nullable_type_vector(section, "BuildLimitGroup.Types", None, keep)
+                .unwrap_or_default(),
             nums: read_ints("BuildLimitGroup.Nums"),
             factor: section.read_ares_int("BuildLimitGroup.Factor", 1),
             content_if_any_match: section
                 .read_phobos_nullable_bool("BuildLimitGroup.ContentIfAnyMatch", None),
             not_buildable_if_queue_match: section
                 .read_phobos_nullable_bool("BuildLimitGroup.NotBuildableIfQueueMatch", None),
-            extra_limit_types: read_valueable_type_vector(
+            extra_limit_types: read_nullable_type_vector(
                 section,
                 "BuildLimitGroup.ExtraLimit.Types",
-                &[],
+                None,
                 keep,
-            ),
+            )
+            .unwrap_or_default(),
             extra_limit_nums: read_ints("BuildLimitGroup.ExtraLimit.Nums"),
             extra_limit_max_count: read_ints("BuildLimitGroup.ExtraLimit.MaxCount"),
             extra_limit_max_num: section.read_ares_int("BuildLimitGroup.ExtraLimit.MaxNum", 0),

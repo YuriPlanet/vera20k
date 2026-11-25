@@ -468,7 +468,7 @@ impl Simulation {
         if (spy.reveal_production || spy.reveal_radar)
             && let Some(building) = self.substrate.entities.get_mut(building_id)
         {
-            building.ares.display_production_to.add(infiltrator);
+            building.seldom.ares.display_production_to.add(infiltrator);
         }
         arms
     }
@@ -536,7 +536,7 @@ impl Simulation {
         infiltrator: InternedId,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: crate::sim::world::FrameEffects<'_>,
+        frame_effects: &mut crate::sim::world::FrameEffects<'_>,
     ) {
         let (owner, cell, victim, infiltrator_sw) = {
             let Some(building) = self.substrate.entities.get(building_id) else {

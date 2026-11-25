@@ -19,7 +19,7 @@ impl Simulation {
         target: (i16, i16),
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         if target == (0, 0) {
             return Ok(());

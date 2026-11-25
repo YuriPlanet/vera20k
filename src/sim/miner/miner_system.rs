@@ -251,7 +251,7 @@ pub(crate) fn unit_ai_nudge_off_refinery_pad(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
@@ -271,7 +271,7 @@ pub(crate) fn unit_ai_nudge_off_refinery_pad(
         return;
     }
     let (rx, ry) = (entity.position.rx(), entity.position.ry());
-    let in_contact = !entity.radio_contacts.is_empty();
+    let in_contact = !entity.seldom.radio_contacts.is_empty();
     let Some(refinery) = sim
         .substrate
         .occupancy
@@ -311,7 +311,7 @@ pub(super) fn process_miner(
     rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     snap: &mut MinerSnapshot,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> Result<(), TiberiumImageError> {
     // Mission_Harvest73E5E0 reaches its dock/type gates and state switch even
     // while Drive retains a track. The state's non-null NavCom branch owns
@@ -418,7 +418,7 @@ fn harvest_looking(
     rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     snap: &mut MinerSnapshot,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> Result<(), TiberiumImageError> {
     let id = snap.entity_id;
     if snap.miner.is_full() {
@@ -558,7 +558,7 @@ fn assign_archive_destination(
     rules: &RuleSet,
     id: u64,
     archive: crate::sim::combat::TargetKind,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     if let Err(cause) =
         sim.assign_destination_represented(id, Some(archive.into()), rules, frame_effects)
@@ -601,7 +601,7 @@ fn harvest_cutting(
     rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     snap: &mut MinerSnapshot,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> Result<(), TiberiumImageError> {
     let now = sim.session.binary_frame();
     if sim
@@ -781,7 +781,7 @@ fn handle_return(
     sim: &mut Simulation,
     rules: &RuleSet,
     snap: &mut MinerSnapshot,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let id = snap.entity_id;
     let teleporter = sim
@@ -977,7 +977,7 @@ fn handle_going_to_idle(
     sim: &mut Simulation,
     rules: &RuleSet,
     snap: &mut MinerSnapshot,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     // 73EF1F selects the first ground Building before its type flags; no
     // dying filter or later matching refinery can replace that identity.
@@ -1010,7 +1010,7 @@ fn drive_off_refinery(
     rules: &RuleSet,
     id: u64,
     refinery: u64,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     let exit = sim
         .techno_nearby_location(id, Some(refinery), rules)
@@ -1109,10 +1109,10 @@ pub(crate) fn find_docking_bay(
     dock_types: &[String],
     wide: bool,
     ignore_dock_capacity: bool,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> Option<u64> {
     let mut result: Option<u64> = None;
-    let mut best = -1_i32;
+    let mut best = -1_i64;
     for dock_type in dock_types {
         if let Some((found, nearest)) = scan_docking_type(
             sim,
@@ -1143,7 +1143,7 @@ pub(crate) fn find_docking_bay_of_type(
     rules: &RuleSet,
     requester: u64,
     dock_type: &str,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> Option<u64> {
     scan_docking_type(
         sim,
@@ -1181,7 +1181,9 @@ pub(crate) fn find_docking_bay_of_type(
 ///   0x004DEF20) — see [`dock_zone_reachable`];
 /// - `Receive_Radio(0xF)` must return 1 — the shared building radio receiver;
 /// - distance `FUN_005F6500`: `dx² + dy²` in leptons between both objects'
-///   `GetCoords` (Z ignored, `native_coord::squared_xy_distance`); the candidate
+///   `GetCoords` (Z ignored,
+///   [`squared_xy_distance_for_map`](crate::util::native_coord::squared_xy_distance_for_map));
+///   the candidate
 ///   replaces the best when the best is still -1, when it is strictly
 ///   nearer (signed `JL`, so ties keep the earlier building) or when it is a
 ///   primary factory (`TechnoClass+0x3D3`, 0x004DF004).
@@ -1192,8 +1194,8 @@ fn scan_docking_type(
     dock_type: &str,
     wide: bool,
     ignore_dock_capacity: bool,
-    frame_effects: FrameEffects<'_>,
-) -> Option<(u64, i32)> {
+    frame_effects: &mut FrameEffects<'_>,
+) -> Option<(u64, i64)> {
     let (owner, own_x, own_y, aircraft) = {
         let entity = sim.substrate.entities.get(requester)?;
         let coords = object_get_coords(entity, sim.resolved_terrain.as_ref());
@@ -1225,7 +1227,7 @@ fn scan_docking_type(
         .buildings()
         .to_vec();
     let mut found: Option<u64> = None;
-    let mut nearest = -1_i32;
+    let mut nearest = -1_i64;
     for &sid in &buildings {
         let Some(entity) = sim.substrate.entities.get(sid) else {
             continue;
@@ -1239,7 +1241,7 @@ fn scan_docking_type(
         if entity.death.is_dying() || entity.health.current() == 0 {
             continue;
         }
-        if !wide && !entity.radio_contacts.has_free_or(requester) {
+        if !wide && !entity.seldom.radio_contacts.has_free_or(requester) {
             continue;
         }
         // `BuildingClass::GetCoords @ 0x00447AC0`: foundation centre, the
@@ -1261,10 +1263,11 @@ fn scan_docking_type(
         {
             continue;
         }
-        let distance = crate::util::native_coord::squared_xy_distance(
+        let distance = crate::util::native_coord::squared_xy_distance_for_map(
             [own_x, own_y],
             [centre.x, centre.y],
             rules.ares(),
+            sim.session.map_exceeds_original_size(),
         );
         if nearest == -1 || distance < nearest || sim.production.is_primary_factory(sid) {
             found = Some(sid);
@@ -1319,7 +1322,7 @@ pub(crate) fn assign_miner_cell_destination(
     rules: &RuleSet,
     entity_id: u64,
     target: (u16, u16),
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) {
     if let Some(terrain) = sim.resolved_terrain.as_ref() {
         terrain.native_cell_identity((target.0 as i16, target.1 as i16));
@@ -1359,14 +1362,21 @@ pub(crate) fn assign_miner_cell_destination(
 /// `BSTATE_CONSTRUCTION` before `OnConstructionComplete`), `dying` is the
 /// Limbo'd corpse; a selling building (`building_down`) still counts, as the
 /// native `DEC` only lands at Limbo.
-pub(crate) fn count_purifiers_for_owner(sim: &Simulation, rules: &RuleSet, owner: &str) -> i32 {
+///
+/// Counted by a walk of the store at each payment, not kept as a House
+/// counter: the walk reads the four writers' outcomes (construction end,
+/// capture, limbo, death) from the objects themselves, where a counter would
+/// need each of their Rust owners to write it. A payment is one harvester
+/// unload step, not a per-tick walk.
+pub(crate) fn count_purifiers_for_owner(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+) -> i32 {
     sim.substrate
         .entities
         .values()
-        .filter(|e| {
-            counts_as_purifier(sim, rules, e)
-                && sim.interner.resolve(e.owner()).eq_ignore_ascii_case(owner)
-        })
+        .filter(|e| e.owner() == owner && counts_as_purifier(sim, rules, e))
         .count() as i32
 }
 
@@ -1402,13 +1412,11 @@ pub(crate) fn counts_as_purifier(
 pub(crate) fn effective_purifier_count(
     sim: &Simulation,
     rules: &RuleSet,
-    refinery_owner: &str,
+    refinery_owner: InternedId,
 ) -> i32 {
     let real = count_purifiers_for_owner(sim, rules, refinery_owner);
     // The AI virtual bonus needs the owner's house to say it is a computer.
-    let Some(house) =
-        crate::sim::house_state::house_state_for_owner(&sim.houses, refinery_owner, &sim.interner)
-    else {
+    let Some(house) = sim.houses.get(&refinery_owner) else {
         return real;
     };
     if house.is_human() || !sim.session.rule_policy().uses_ai_economy() {

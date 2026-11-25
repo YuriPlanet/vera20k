@@ -110,7 +110,7 @@ fn gsi_05_01_runtime_objects_share_identity_and_continue_after_roundtrip() {
     // In-scenario retail load consumes the saved Scenario RNG bytes and then
     // resets that cursor to seed zero. Normalize the source at that proven
     // post-load baseline so this test isolates object identity preservation.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let hash_before = sim.state_hash();
     let bytes = GameSnapshot::save(&sim, 0, 0, "identity", 0);
     let mut restored = GameSnapshot::load(&bytes).expect("identity snapshot").sim;

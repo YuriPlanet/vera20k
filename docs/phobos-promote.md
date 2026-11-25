@@ -95,9 +95,9 @@ sound/flash path.
   delayed-fire `CenterAnimOnFirer` arm. Frequency: always. Risk: visual-only.
 - **Ares build.** The Phobos hook documented here is the non-Ares arm
   (`TechnoClass_AI_PromoteAnim`); the Ares duplicate
-  (`Misc/Hooks.Ares.cpp:74`) is out of scope, so `--features ares,phobos`
-  reads the keys but plays no promote animation. Trigger: Ares builds with
-  the keys set. Impact: no anim. Frequency: Ares only. Risk: visual-only.
+  (`Misc/Hooks.Ares.cpp:74`) is out of scope, so an Ares-enabled game with
+  the keys set reads them but plays no promote animation. Trigger: Ares games
+  with the keys set. Impact: no anim. Frequency: Ares only. Risk: visual-only.
 - **Single-entry random draw.** `RandomRanged(0, 0)` may draw once natively
   while `SimRng::next_range_i32_inclusive` returns without drawing when the
   bounds are equal. Trigger: a one-element veteran/elite list. Impact: one

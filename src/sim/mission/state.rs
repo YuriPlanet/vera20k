@@ -187,12 +187,6 @@ impl MissionCom {
         self.movement_bypass_latch = 0;
     }
 
-    /// [`Self::count_ai_visit`], under the name world fixtures use.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn increment_ai_counter(&mut self) {
-        self.count_ai_visit();
-    }
-
     /// `+0xC4 += 1`, wrapping, for one AI visit (`0x006FA646..0x006FA64F`).
     pub(crate) fn count_ai_visit(&mut self) {
         self.ai_counter = self.ai_counter.wrapping_add(1);

@@ -127,7 +127,7 @@ fn sov01_transport_crosses_water_below_golden_gate() {
             )],
             SIM_TICK_MS,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     assert!(

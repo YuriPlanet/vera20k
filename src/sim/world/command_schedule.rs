@@ -77,7 +77,7 @@ impl Simulation {
         &mut self,
         commands: impl IntoIterator<Item = CommandEnvelope>,
     ) -> bool {
-        if self.replaying_recorded_commands {
+        if *self.replaying_recorded_commands {
             return false;
         }
         let network = self.session.execution_topology().is_lockstep();
@@ -309,7 +309,7 @@ impl Simulation {
         let receipt = record.then(|| command.replay_envelope());
         let accepted = self.pending_commands.admit_bounded(
             command,
-            self.dispatch_reserved_slots,
+            *self.dispatch_reserved_slots,
             if self.session.execution_topology().is_lockstep() {
                 crate::sim::command_queue::NETWORK_COMMAND_CAPACITY
             } else {
@@ -352,7 +352,7 @@ impl Simulation {
         let count = self.local_commands.len();
         let entries: Vec<_> = self.local_commands.take_prefix(count).collect();
         for command in entries {
-            if self.replaying_recorded_commands {
+            if *self.replaying_recorded_commands {
                 // The recorded accepted stream owns due input. A snapshot
                 // may also retain future input not present in this batch.
                 let future = command.record().map_or_else(
@@ -379,7 +379,7 @@ impl Simulation {
     /// tick, and insertion position exactly. It does not sort, retime, normalize,
     /// intern, deduplicate, or apply the negotiated input delay.
     pub fn queue_command(&mut self, command: CommandEnvelope) {
-        if self.replaying_recorded_commands {
+        if *self.replaying_recorded_commands {
             return;
         }
         let record = !Self::command_uses_frame_ingress(
@@ -605,7 +605,7 @@ impl Simulation {
 
     /// Drain the remote EXIT senders the executor recorded.
     pub fn take_departed_senders(&mut self) -> Vec<i8> {
-        std::mem::take(&mut self.departed_senders)
+        std::mem::take(&mut *self.departed_senders)
     }
 
     /// Only local frame-ingress actions leave the FIFO before Logic. Native
@@ -657,7 +657,7 @@ impl Simulation {
         &mut self,
         commands: &[CommandEnvelope],
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Vec<CommandEnvelope> {
         crate::sim::production::publish_production_changes(self, rules, effects);
         for command in commands {
@@ -697,7 +697,7 @@ impl Simulation {
     ) -> Vec<CommandEnvelope> {
         #[cfg(feature = "debug-tools")]
         self.set_debug_session_context(crate::sim::cheats::DebugSessionContext::Replay);
-        self.replaying_recorded_commands = true;
+        *self.replaying_recorded_commands = true;
         self.frame_command_admissions.clear();
         let commands: Vec<_> = commands.into_iter().collect();
         for recorded in &commands {
@@ -722,7 +722,7 @@ impl Simulation {
         cmd: &CommandEnvelope,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> (bool, bool) {
         // Scatter's found-cell arm immediately runs the locomotor. Its
         // authoritative bridge flag can change before the ordinary movement
@@ -739,10 +739,9 @@ impl Simulation {
         // release it during settlement. Capture only this derived refresh
         // fact now; the production owner remains the placement authority.
         let placed_building_owner = self.successful_non_wall_placement_owner(cmd, true, rules);
-        let cmd_owner_str = self.interner.resolve(cmd.owner).to_string();
         let applied = self.apply_command_with_overlays(
             sender,
-            &cmd_owner_str,
+            cmd.owner,
             &cmd.payload,
             rules,
             overlay_registry,
@@ -974,7 +973,7 @@ impl Simulation {
         let cell = cells.lookup(candidate);
         if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
             (i32::from(candidate.0), i32::from(candidate.1)),
-            self.playfield_bounds,
+            *self.playfield_bounds,
             Some(terrain),
         ) {
             return group_destination::CandidateFacts::outside_playfield();
@@ -1037,11 +1036,10 @@ impl Simulation {
         let sender = sender
             .filter(|_| self.session.execution_topology().is_lockstep())
             .map(|house| {
-                let owner = self.interner.resolve(house.owner);
                 (
-                    owner,
+                    house.owner,
                     house.house_id,
-                    self.resolve_command_grant_source(owner, house.house_id),
+                    self.resolve_command_grant_source(house.owner.into(), house.house_id),
                 )
             });
         let mut run_start = 0;
@@ -1073,6 +1071,11 @@ impl Simulation {
                     let Some(entity) = self.substrate.entities.get(entity_id) else {
                         continue;
                     };
+                    // The receiver refuses an attached slave in every game mode.
+                    if entity.seldom.slave.owner().is_some() {
+                        orders -= 1;
+                        continue;
+                    }
                     if sender.is_some_and(|(owner, source, granted_source)| {
                         // A semantic PlanningRecord can have native payload
                         // bytes without coming from the native queue.
@@ -1088,7 +1091,7 @@ impl Simulation {
                             CommandCapability::PrimaryHouse
                         };
                         self.command_actor_outside_scope(
-                            owner,
+                            owner.into(),
                             granted_source,
                             entity_id,
                             capability,
@@ -1100,7 +1103,7 @@ impl Simulation {
                     if !matches!(
                         entity.category(),
                         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
-                    ) || entity.low_bridge_tube_state.is_some()
+                    ) || entity.active_tube().is_some()
                     {
                         continue;
                     }
@@ -1273,7 +1276,7 @@ impl Simulation {
         commands: &[CommandEnvelope],
         rules: &RuleSet,
         execute_tick: u64,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> usize {
         let mut executed_commands = 0usize;
         let is_network = self.session.execution_topology().is_lockstep();
@@ -1322,7 +1325,7 @@ impl Simulation {
         commands: &[CommandEnvelope],
         rules: &RuleSet,
         execute_tick: u64,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> (usize, bool) {
         self.dispatch_owned_commands(commands, rules, execute_tick, frame_effects)
             .expect("component command dispatch must succeed")
@@ -1344,7 +1347,7 @@ impl Simulation {
         commands: &[CommandEnvelope],
         rules: &RuleSet,
         execute_tick: u64,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(usize, bool), (super::NetworkCommandError, usize, bool)> {
         let is_network = self.session.execution_topology().is_lockstep();
         for command in commands
@@ -1357,8 +1360,8 @@ impl Simulation {
                 DoListInsertion::Back,
             );
         }
-        let mut list = std::mem::take(&mut self.pending_commands);
-        self.dispatch_reserved_slots = list.native_occupancy();
+        let mut list = std::mem::take(&mut *self.pending_commands);
+        *self.dispatch_reserved_slots = list.native_occupancy();
         // One scan per command sender, in sender order. A sender is its
         // House's index, as in gamemd's House scan, unless players share
         // Houses (VERA): each of them then gets its own scan of that House.
@@ -1398,7 +1401,7 @@ impl Simulation {
         let mut host = WorldCommandHost {
             sim: self,
             rules,
-            frame_effects,
+            frame_effects: frame_effects.reborrow(),
             execute_tick,
             spawned: false,
             executed: 0,
@@ -1406,10 +1409,10 @@ impl Simulation {
         let result = list.dispatch(clock, &houses, mode, &mut host);
         let spawned = host.spawned;
         let executed = host.executed;
-        self.dispatch_reserved_slots = Default::default();
-        let mut newly_admitted = std::mem::take(&mut self.pending_commands);
+        *self.dispatch_reserved_slots = Default::default();
+        let mut newly_admitted = std::mem::take(&mut *self.pending_commands);
         list.append_retained(&mut newly_admitted);
-        self.pending_commands = list;
+        *self.pending_commands = list;
         result
             .map(|summary| (summary.executed, spawned))
             .map_err(|cause| (cause, executed, spawned))
@@ -1589,7 +1592,7 @@ impl DoListHost<QueuedCommand> for WorldCommandHost<'_, '_, '_> {
                 &command,
                 self.rules,
                 Some(self.rules.overlay_registry()),
-                self.frame_effects,
+                &mut self.frame_effects,
             );
             if let Some(record) = entry.record() {
                 self.frame_effects
@@ -1609,14 +1612,17 @@ struct GroupMemberTarget {
 }
 
 /// The spread's height of a Cell: its signed level (`+0x11B`), plus
-/// `BRIDGE_DECK_HEIGHT_LEVELS` on the bridge flag (`+0x140 & 0x100`). The
-/// target's is EBX (`0x0064D2AA..0x0064D2DF`), which Can_Enter_Cell receives;
+/// `BRIDGE_DECK_HEIGHT_LEVELS` on the bridge flag (`+0x140 & 0x100`) in the
+/// absence of a fixed deck. The target's is EBX (`0x0064D2AA..0x0064D2DF`),
+/// which Can_Enter_Cell receives;
 /// a candidate's is measured against it (`0x0064D55F..0x0064D592`).
 /// Native executions: tools/spatial_oracle/group_spread_gates.{py,json,meta.json}.
 fn spread_height(terrain: &ResolvedTerrainGrid, cell: NativeCellIdentity) -> i32 {
     let level = i32::from(terrain.native_cell_ground_fields(cell).0 as i8);
     if terrain.native_cell_flags(cell) & BRIDGE_FLAG_STRUCTURAL != 0 {
-        level + BRIDGE_DECK_HEIGHT_LEVELS
+        terrain
+            .corrected_high_bridge_deck_at(cell)
+            .map_or(level + BRIDGE_DECK_HEIGHT_LEVELS, i32::from)
     } else {
         level
     }

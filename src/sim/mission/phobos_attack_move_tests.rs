@@ -144,6 +144,7 @@ fn attack_move_reaches_unarmed_buildings_and_replaces_a_useless_target() {
         sim.entities_mut_for_test()
             .get_mut(firer)
             .expect("firer")
+            .seldom
             .mega_mission =
             MegaMission::for_test(true, Some(TargetKind::Cell(20, 10)), None, false);
         let pick = crate::sim::world::direct_greatest_threat(
@@ -177,10 +178,13 @@ fn attack_move_reaches_unarmed_buildings_and_replaces_a_useless_target() {
                 .set_current_for_test(MissionId::from_known(MissionType::Move), 0);
             // `HaveAttackMoveTarget=1` with no MegaTarget: the handler holds a
             // TarCom in reach and drops it only when the scan finds nothing.
-            actor.mega_mission = MegaMission::for_test(true, None, None, true);
-            actor.attack_target.set(Some(TargetKind::Entity(building)));
+            actor.seldom.mega_mission = MegaMission::for_test(true, None, None, true);
+            let note = actor.note_names();
+            actor
+                .attack_target
+                .set(Some(TargetKind::Entity(building)), note);
         }
-        sim.foot_arrival_target_handler(firer, &rules, ObjectAiCtx::default());
+        sim.foot_arrival_target_handler(firer, &rules, &mut ObjectAiCtx::default());
         let held = sim
             .entities()
             .get(firer)

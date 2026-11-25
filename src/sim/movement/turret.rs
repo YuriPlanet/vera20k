@@ -258,9 +258,13 @@ pub(crate) fn facing_update(
             // Phobos `0x736B60` (`Ext/Unit/Hooks.DisallowMoving.cpp:69-75`):
             // an unset `TurretResponse` falls back to `UnitExt::CannotMove`;
             // `yes` keeps the idle return, `no` always skips it.
-            let skip_idle_return = match obj.and_then(|obj| obj.phobos_turret_response) {
-                Some(response) => !response,
-                None => cannot_move(entity, obj, world),
+            let skip_idle_return = if rules.phobos() {
+                match obj.and_then(|obj| obj.phobos_turret_response) {
+                    Some(response) => !response,
+                    None => cannot_move(entity, obj, world),
+                }
+            } else {
+                cannot_move(entity, obj, world)
             };
             if dwell_elapsed
                 && !bunkered
@@ -392,7 +396,7 @@ mod tests {
                 .attack_target
                 .set_for_test(Some(TargetKind::Cell(10, 5)));
             let mut sim = crate::sim::world::Simulation::new();
-            sim.interner = crate::sim::intern::test_interner();
+            *sim.interner = crate::sim::intern::test_interner();
             for (mode, turns) in [(0, true), (2, false), (0, true)] {
                 entity.set_gunner_weapon(mode, object, ares_way);
                 assert_eq!(
@@ -433,7 +437,7 @@ mod tests {
             .collect();
         cells[5 * 16 + 5].land_type = land.as_index();
         let mut sim = crate::sim::world::Simulation::new();
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         sim.install_resolved_terrain_for_new_map(
             crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(16, 16, cells),
         );

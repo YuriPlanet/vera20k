@@ -24,7 +24,7 @@ pub(crate) fn eat_passengers(
     sim: &mut Simulation,
     rules: &RuleSet,
     id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
@@ -182,7 +182,7 @@ fn delete_passenger(
     owner: InternedId,
     settings: &PassengerDeletionSettings,
     poor_guy: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     // The transport's list splice and `--NumPassengers` happen before every
     // effect below.
@@ -212,6 +212,7 @@ fn delete_passenger(
     });
     if let (Some(coords), Some(location)) = (coords, location) {
         if let Some(sound_id) = settings.report_sound.clone() {
+            let sound_id = rules.sound_name(&sound_id);
             let (rx, ry, sub_x, sub_y, _) = location.to_cell_sub_z();
             sim.sound_events
                 .emit(crate::sim::world::SimSoundEvent::VocAt {
@@ -305,7 +306,7 @@ fn delete_passenger(
             .substrate
             .entities
             .get(poor_guy)
-            .map(|passenger| passenger.capture_infantry_type_index.get())
+            .map(|passenger| passenger.seldom.capture_infantry_type_index.get())
             .unwrap_or(-1);
         if hijacker >= 0
             && let Some(hijacker_type) = rules.type_array_at(
@@ -368,8 +369,8 @@ fn delete_passenger(
         }
     }
     let attacker = (!settings.dont_score).then_some(transport);
-    let context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
-    sim.kill_passengers(poor_guy, attacker, context);
+    let mut context = crate::sim::world::UninitContext::new(rules).with_effects(effects);
+    sim.kill_passengers(poor_guy, attacker, context.reborrow());
     sim.record_kill_and_uninit(poor_guy, attacker, context);
     // `Body.Update.cpp:422-427`: a building transport with an ExtraPower
     // addend marks its House for the next power reassessment.
@@ -428,7 +429,7 @@ fn suppress_and_detach_parasite(
     sim: &mut Simulation,
     rules: &RuleSet,
     eater: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let frame = sim.session.binary_frame();
     if let Some(entity) = sim.substrate.entities.get_mut(eater) {
@@ -443,7 +444,7 @@ fn emit_soylent_text(
     transport: u64,
     amount: i32,
     settings: &PassengerDeletionSettings,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(entity) = sim.substrate.entities.get(transport) else {
         return;

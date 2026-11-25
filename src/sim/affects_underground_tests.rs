@@ -57,6 +57,7 @@ fn area(sim: &mut Simulation, rules: &RuleSet, unit: u64) {
         false,
         (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
         None,
+        &mut Vec::new(),
     );
 }
 

@@ -21,7 +21,7 @@ fn make_rules(rate: &str, passenger: &str) -> RuleSet {
 /// cargo order; both houses start at zero credits.
 fn scene(rules: &RuleSet, passengers: &[(u64, &str)]) -> Simulation {
     let mut sim = Simulation::with_seed(1);
-    sim.interner = test_interner();
+    *sim.interner = test_interner();
     let mut owners = Vec::new();
     for name in passengers
         .iter()
@@ -67,7 +67,7 @@ fn scene(rules: &RuleSet, passengers: &[(u64, &str)]) -> Simulation {
 
 fn eat(sim: &mut Simulation, rules: &RuleSet, frame: u32) {
     sim.session_mut_for_test().set_binary_frame_for_test(frame);
-    eat_passengers(sim, rules, 1, FrameEffects::empty());
+    eat_passengers(sim, rules, 1, &mut FrameEffects::empty());
 }
 
 fn timer(sim: &Simulation) -> crate::sim::timer::CdTimer {

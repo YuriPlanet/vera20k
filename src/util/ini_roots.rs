@@ -21,6 +21,9 @@ pub enum IniProfile {
     #[default]
     Yr,
     Auto,
+    /// Original Red Alert 2 (non-md) control files. Every root is a fixed
+    /// retail name from `ra2.mix -> local.mix`; no per-file override is needed.
+    Ra2,
     Custom,
 }
 
@@ -31,9 +34,10 @@ impl std::str::FromStr for IniProfile {
         match value {
             "yr" => Ok(Self::Yr),
             "auto" => Ok(Self::Auto),
+            "ra2" => Ok(Self::Ra2),
             "custom" => Ok(Self::Custom),
             _ => Err(format!(
-                "unknown INI profile '{value}'; use yr, auto or custom with explicit file names"
+                "unknown INI profile '{value}'; use yr, auto, ra2 or custom with explicit file names"
             )),
         }
     }
@@ -100,6 +104,28 @@ impl Default for IniRoots {
 }
 
 impl IniRoots {
+    /// The original Red Alert 2 roots, all read from `ra2.mix -> local.mix`.
+    /// RA2 predates the `MD` suffix: its theater control files are bare
+    /// `SNOW.INI`/`URBAN.INI`, hence the empty theater suffix. The map catalog
+    /// is `missions.pkt`, the RA2 campaign/skirmish packet.
+    pub fn ra2() -> Self {
+        Self {
+            profile: IniProfile::Ra2,
+            rules: "rules.ini".into(),
+            art: "art.ini".into(),
+            ai: "ai.ini".into(),
+            sound: "sound.ini".into(),
+            eva: "eva.ini".into(),
+            theater_suffix: String::new(),
+            theme: "theme.ini".into(),
+            battle: "BATTLE.INI".into(),
+            mission: "MISSION.INI".into(),
+            mapsel: "MAPSEL.INI".into(),
+            modes: "MPModes.ini".into(),
+            map_catalog: "missions.pkt".into(),
+        }
+    }
+
     pub fn profile(&self) -> IniProfile {
         self.profile
     }
@@ -164,6 +190,56 @@ impl IniRoots {
     pub fn names(&self) -> [&str; 3] {
         [self.rules(), self.art(), self.ai()]
     }
+
+    /// Every root and catalog file: Rules, Art, AI, sound, EVA, theme,
+    /// campaign, mission, map selection, mode and map catalog.
+    pub fn files(&self) -> [&str; 11] {
+        [
+            self.rules(),
+            self.art(),
+            self.ai(),
+            self.sound(),
+            self.eva(),
+            self.theme(),
+            self.battle(),
+            self.mission(),
+            self.mapsel(),
+            self.modes(),
+            self.map_catalog(),
+        ]
+    }
+
+    /// VERA: the roots whose names players' games compare: Rules, Art, AI,
+    /// the mode roster and the map catalog, which hold what a match plays and
+    /// which modes and maps a game offers. The others in [`Self::files`]
+    /// (sound, EVA, theme, campaign, mission, map selection) name what a game
+    /// plays aloud or shows, so two games may read them from other files.
+    pub fn agreed_files(&self) -> [&str; 5] {
+        [
+            self.rules(),
+            self.art(),
+            self.ai(),
+            self.modes(),
+            self.map_catalog(),
+        ]
+    }
+
+    /// Every file in [`Self::agreed_files`] is YR's, ignoring ASCII case.
+    pub fn agreed_files_are_stock(&self) -> bool {
+        self.agreed_files()
+            .into_iter()
+            .zip(Self::default().agreed_files())
+            .all(|(used, stock)| used.eq_ignore_ascii_case(stock))
+    }
+
+    /// The [`Self::agreed_files`] and the theater suffix are YR's, ignoring
+    /// ASCII case.
+    pub fn is_stock(&self) -> bool {
+        self.agreed_files_are_stock()
+            && self
+                .theater_suffix()
+                .eq_ignore_ascii_case(Self::default().theater_suffix())
+    }
 }
 
 impl IniRootConfig {
@@ -223,7 +299,12 @@ impl IniRootConfig {
         // Preserve legacy YR admission: consumers still report missing roots
         // at their original load stage. Merely constructing an asset manager
         // must not eagerly require AI in asset-only tools or small fixtures.
-        let mut selected = IniRoots::default();
+        // Ra2 starts from the fixed non-md set; optional roots below may still
+        // override any name without disturbing the empty theater suffix.
+        let mut selected = match self.profile {
+            IniProfile::Ra2 => IniRoots::ra2(),
+            _ => IniRoots::default(),
+        };
         if self.profile == IniProfile::Custom {
             selected.profile = IniProfile::Custom;
             for (target, name) in [
@@ -322,6 +403,70 @@ mod tests {
         );
         assert_eq!(roots.modes(), "MPModesMD.ini");
         assert_eq!(roots.map_catalog(), "missionsmd.pkt");
+    }
+
+    #[test]
+    fn ini_roots_ra2_uses_all_non_md_names_and_empty_theater_suffix() {
+        let roots = IniRootConfig {
+            profile: IniProfile::Ra2,
+            ..Default::default()
+        }
+        // The three RA2 roots live in ra2.mix -> local.mix and must be probed.
+        .resolve(|name| matches!(name, "rules.ini" | "art.ini" | "ai.ini"))
+        .unwrap();
+        assert_eq!(roots.profile(), IniProfile::Ra2);
+        assert_eq!(roots.names(), ["rules.ini", "art.ini", "ai.ini"]);
+        assert_eq!((roots.sound(), roots.eva()), ("sound.ini", "eva.ini"));
+        assert_eq!(
+            [
+                roots.theme(),
+                roots.battle(),
+                roots.mission(),
+                roots.mapsel()
+            ],
+            ["theme.ini", "BATTLE.INI", "MISSION.INI", "MAPSEL.INI"]
+        );
+        assert_eq!(roots.modes(), "MPModes.ini");
+        assert_eq!(roots.map_catalog(), "missions.pkt");
+        // RA2 predates the MD suffix: SNOW.INI, not SNOWMD.INI.
+        assert_eq!(roots.theater_suffix(), "");
+        assert_eq!(roots.theater_ini("snow"), "snow.ini");
+        assert_eq!(roots.theater_ini("urban"), "urban.ini");
+    }
+
+    #[test]
+    fn ini_roots_ra2_rejects_an_incomplete_triplet() {
+        let request = IniRootConfig {
+            profile: IniProfile::Ra2,
+            ..Default::default()
+        };
+        assert!(
+            request
+                .resolve(|name| name != "ai.ini")
+                .unwrap_err()
+                .contains("ai.ini")
+        );
+    }
+
+    #[test]
+    fn ini_roots_ra2_optional_override_keeps_the_triplet() {
+        let roots = IniRootConfig {
+            profile: IniProfile::Ra2,
+            eva: Some("eva-custom.ini".into()),
+            ..Default::default()
+        }
+        .resolve(|_| true)
+        .unwrap();
+        assert_eq!(roots.names(), ["rules.ini", "art.ini", "ai.ini"]);
+        assert_eq!(roots.eva(), "eva-custom.ini");
+        // Overriding an optional root must not restore the MD suffix.
+        assert_eq!(roots.theater_ini("snow"), "snow.ini");
+    }
+
+    #[test]
+    fn ini_profile_parses_ra2() {
+        assert_eq!("ra2".parse::<IniProfile>().unwrap(), IniProfile::Ra2);
+        assert!("ra2x".parse::<IniProfile>().is_err());
     }
 
     #[test]

@@ -162,7 +162,7 @@ pub fn place_scenario_start_crates(
     rules: &RuleSet,
     overlay_registry: &OverlayTypeRegistry,
     player_count: i32,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Result<CratePlacement, RuntimeOverlayError> {
     place_scenario_start_crates_with_failure(
         sim,
@@ -180,7 +180,7 @@ fn place_scenario_start_crates_with_failure(
     overlay_registry: &OverlayTypeRegistry,
     player_count: i32,
     forced_failure: ForcedPostPrecheckFailure,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Result<CratePlacement, RuntimeOverlayError> {
     if !sim.session.game_options().crates {
         return Ok(CratePlacement {
@@ -242,7 +242,7 @@ fn place_one_random_crate(
     rules: &RuleSet,
     overlay_registry: &OverlayTypeRegistry,
     forced_failure: ForcedPostPrecheckFailure,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Result<OneCrateResult, RuntimeOverlayError> {
     let Some(slot_index) = sim.crate_authority().first_empty_index() else {
         // The native full-table return precedes every random draw.
@@ -301,7 +301,7 @@ fn place_overlay_and_init_timer(
     slot_index: usize,
     cell: (u16, u16),
     forced_failure: ForcedPostPrecheckFailure,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Result<Option<AcceptedCellResult>, RuntimeOverlayError> {
     if cell == (0, 0)
         || !cell_is_in_playfield_height_aware(
@@ -355,7 +355,7 @@ pub(crate) fn place_crate(
     overlay_registry: &OverlayTypeRegistry,
     cell: (i16, i16),
     powerup: Option<u8>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Result<bool, RuntimeOverlayError> {
     let requested = (i32::from(cell.0), i32::from(cell.1));
     let surface = crate_surface_at_packed(sim, requested);
@@ -416,7 +416,7 @@ fn validate_and_stamp_candidate(
     overlay_registry: &OverlayTypeRegistry,
     cell: (u16, u16),
     forced_failure: ForcedPostPrecheckFailure,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Result<AcceptedCellResult, RuntimeOverlayError> {
     validate_and_stamp_candidate_inner(
         sim,
@@ -435,7 +435,7 @@ fn validate_and_stamp_candidate_with_rules(
     overlay_registry: &OverlayTypeRegistry,
     cell: (u16, u16),
     forced_failure: ForcedPostPrecheckFailure,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Result<AcceptedCellResult, RuntimeOverlayError> {
     validate_and_stamp_candidate_inner(
         sim,
@@ -455,7 +455,7 @@ fn validate_and_stamp_candidate_inner(
     overlay_registry: &OverlayTypeRegistry,
     cell: (u16, u16),
     forced_failure: ForcedPostPrecheckFailure,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Result<AcceptedCellResult, RuntimeOverlayError> {
     // CrateValidate4A18F0 clears A8E7AC at4A190B, then restores it on
     // both returns. The constructor/Mark below also serves non-crate callers.
@@ -498,7 +498,7 @@ pub(crate) fn construct_runtime_overlay(
     cell: (u16, u16),
     selected_id: u8,
     recalc: OverlayRecalc,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Result<AcceptedCellResult, RuntimeOverlayError> {
     let selected_flags = overlay_registry.flags(selected_id).ok_or(
         crate::rules::overlay_types::TiberiumImageError::MissingOverlay(i32::from(selected_id)),
@@ -547,7 +547,13 @@ pub(crate) fn construct_runtime_overlay(
         crate_images: MarkCrateImages::resolve(rules, overlay_registry),
     };
     let outcome = mark_overlay(
-        &mut SimulationMarkHost::new(sim, full_rules, overlay_registry, recalc, effects),
+        &mut SimulationMarkHost::new(
+            sim,
+            full_rules,
+            overlay_registry,
+            recalc,
+            effects.reborrow(),
+        ),
         &request,
     )?;
     match outcome {
@@ -697,8 +703,14 @@ pub(crate) mod tests {
         registry: &OverlayTypeRegistry,
         count: i32,
     ) -> CratePlacement {
-        super::place_scenario_start_crates(sim, rules, registry, count, FrameEffects::default())
-            .expect("valid crate fixture")
+        super::place_scenario_start_crates(
+            sim,
+            rules,
+            registry,
+            count,
+            &mut FrameEffects::default(),
+        )
+        .expect("valid crate fixture")
     }
     fn place_scenario_start_crates_with_failure(
         sim: &mut Simulation,
@@ -713,7 +725,7 @@ pub(crate) mod tests {
             registry,
             count,
             failure,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("valid crate fixture")
     }
@@ -732,7 +744,7 @@ pub(crate) mod tests {
             index,
             cell,
             failure,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("valid crate fixture")
     }
@@ -743,8 +755,15 @@ pub(crate) mod tests {
         cell: (i16, i16),
         powerup: Option<u8>,
     ) -> bool {
-        super::place_crate(sim, rules, registry, cell, powerup, FrameEffects::default())
-            .expect("valid crate fixture")
+        super::place_crate(
+            sim,
+            rules,
+            registry,
+            cell,
+            powerup,
+            &mut FrameEffects::default(),
+        )
+        .expect("valid crate fixture")
     }
     fn validate_and_stamp_candidate(
         sim: &mut Simulation,
@@ -759,7 +778,7 @@ pub(crate) mod tests {
             registry,
             cell,
             failure,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("valid crate fixture")
     }
@@ -776,7 +795,7 @@ pub(crate) mod tests {
             registry,
             cell,
             failure,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("valid crate fixture")
     }
@@ -796,7 +815,7 @@ pub(crate) mod tests {
             cell,
             selected,
             OverlayRecalc::Immediate,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("valid crate fixture")
     }
@@ -898,7 +917,7 @@ pub(crate) mod tests {
     pub(crate) fn sim_with_grid(seed: u64) -> Simulation {
         let mut sim = Simulation::new();
         sim.session.set_seed_for_test(seed);
-        sim.scenario_rng = crate::sim::rng::SimRng::new(seed);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(seed);
         sim.session.set_map_width_for_test(MAP);
         sim.session.set_map_height_for_test(MAP);
         // Production installs MapClass authority before Post_Map_Init reaches
@@ -913,8 +932,8 @@ pub(crate) mod tests {
         }));
         sim.set_playfield_size_height_for_test(Some(20));
         sim.session.game_options_mut_for_test().crates = true;
-        sim.overlay_grid = Some(OverlayGrid::new(MAP, MAP));
-        sim.resolved_terrain = Some(uniform_terrain(false));
+        *sim.overlay_grid = Some(OverlayGrid::new(MAP, MAP));
+        *sim.resolved_terrain = Some(uniform_terrain(false));
         sim
     }
 
@@ -942,7 +961,7 @@ pub(crate) mod tests {
 
     fn first_random_cell(sim: &Simulation) -> ((u16, u16), crate::sim::rng::SimRng) {
         let frame = crate_random_frame(sim).expect("valid crate random frame");
-        let mut replay = sim.scenario_rng.clone();
+        let mut replay = (*sim.scenario_rng).clone();
         let cell =
             (
                 frame.left.wrapping_add(
@@ -1799,7 +1818,7 @@ pub(crate) mod tests {
             &rules,
             Some(registry),
             &[],
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let mut pending = sim.overlay_grid.as_ref().unwrap().clone();
         assert!(pending.take_synchronous_navigation_cells().is_empty());
@@ -1815,7 +1834,7 @@ pub(crate) mod tests {
                 &rules,
                 67,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
         assert_eq!(
@@ -1838,7 +1857,7 @@ pub(crate) mod tests {
                 &rules,
                 67,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
         assert!(second.overlay_updates.is_empty());
@@ -2635,7 +2654,7 @@ pub(crate) mod tests {
                     (0, 1),
                     0,
                     recalc,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .expect("a plain Overlay marks"),
                 AcceptedCellResult::Visible
@@ -2825,7 +2844,7 @@ pub(crate) mod tests {
             } else {
                 decoy.speed_costs.float = Some(crate::util::native_x87::NativeF32Bits::ONE);
             }
-            sim.resolved_terrain = Some(terrain);
+            *sim.resolved_terrain = Some(terrain);
 
             let result = place_scenario_start_crates(&mut sim, &rules, registry, 1);
 
@@ -2873,7 +2892,7 @@ pub(crate) mod tests {
         let selected = terrain.cell_mut_for_test(11, 20).expect("candidate B");
         selected.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
         selected.bridge_facts.raw_flags |= BRIDGE_FLAG_STRUCTURAL;
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain = Some(terrain);
 
         // An ordinary overlay would fail occupancy-rect checking, but this
         // caller passes occupancy_rect_check=false. Crate placement itself
@@ -2922,7 +2941,7 @@ pub(crate) mod tests {
             .expect("in-diamond candidate")
             .speed_costs
             .track = Some(crate::rules::terrain_rules::test_speed_percent(100));
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain = Some(terrain);
         sim.set_playfield_bounds_for_test(Some(PlayfieldBounds {
             base: 10,
             off_fc: 2,
@@ -2982,7 +3001,7 @@ pub(crate) mod tests {
                 .expect("wrong-movement decoy")
                 .speed_costs
                 .track = Some(crate::util::native_x87::NativeF32Bits::ONE);
-            sim.resolved_terrain = Some(terrain);
+            *sim.resolved_terrain = Some(terrain);
             sim
         };
 

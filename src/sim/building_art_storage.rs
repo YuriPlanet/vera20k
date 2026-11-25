@@ -346,7 +346,7 @@ mod tests {
                         true,
                         rules,
                         None,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     );
                 } else {
                     sim.update_building_storage_anims(id, rules);
@@ -477,7 +477,7 @@ mod tests {
                 true,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             let art = &sim.entities().get(id).unwrap().building_art;
             if use_normal {

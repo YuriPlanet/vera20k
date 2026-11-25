@@ -53,6 +53,7 @@ fn frame(sim: &Simulation, id: u64) -> u32 {
         .entities
         .get(id)
         .unwrap()
+        .seldom
         .ares
         .ares_firestorm_wall
         .frame()
@@ -76,7 +77,7 @@ fn burns(sim: &Simulation) -> usize {
 
 fn firestorm(sim: &mut Simulation, rules: &RuleSet, owner: &str, active: bool) {
     let owner = house(sim, owner);
-    sim.ares_set_firestorm_state(owner, active, rules, None, FrameEffects::default());
+    sim.ares_set_firestorm_state(owner, active, rules, None, &mut FrameEffects::default());
 }
 
 /// SetFirestormState (`10022590`) updates each section of the House
@@ -178,7 +179,7 @@ fn a_powered_section_burns_the_feet_in_its_cell_but_spares_ignores_firestorm() {
             .unwrap()
     });
     assert!(alive(&sim, late));
-    sim.ares_foot_firestorm(late, &rules, None, FrameEffects::default());
+    sim.ares_foot_firestorm(late, &rules, None, &mut FrameEffects::default());
     assert!(!alive(&sim, late));
     assert_eq!(burns(&sim), 2);
 }
@@ -285,7 +286,7 @@ fn a_placed_section_fills_the_gap_to_a_linked_section() {
         .unwrap();
     let owner = house(&sim, "Americans");
     let object = rules.object("FSWALL").unwrap();
-    let terrain = sim.resolved_terrain.clone().unwrap();
+    let terrain = (*sim.resolved_terrain).clone().unwrap();
     let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(&terrain);
     assert_eq!(
         sim.ares_firestorm_placement_shadow(object, (13, 10), owner, &rules, None, &cells),
@@ -300,7 +301,7 @@ fn a_placed_section_fills_the_gap_to_a_linked_section() {
         owner,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let sections: Vec<_> = sim
         .substrate
@@ -334,7 +335,7 @@ fn a_placed_section_fills_the_gap_to_a_linked_section() {
         owner,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate.entities.len(),
@@ -369,7 +370,7 @@ fn a_placed_trench_fills_the_gap_only_to_its_own_kind() {
         owner,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(count(&sim), 4);
 
@@ -386,7 +387,7 @@ fn a_placed_trench_fills_the_gap_only_to_its_own_kind() {
         owner,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         count(&sim),

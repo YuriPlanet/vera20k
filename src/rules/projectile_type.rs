@@ -59,6 +59,17 @@ pub struct ProjectileType {
     pub aa: bool,
     /// Can hit ground units and buildings. True by default for most projectiles.
     pub ag: bool,
+    /// Kratos `AAOnly` (`BulletTypeExt::TypeData`, `src/Extension/BulletTypeExt.h`):
+    /// the shot is refused against a target that is not in the air.
+    /// `TechnoStatus::CanFire_CheckBullet` runs it from the hook at `0x6FC339`.
+    pub aa_only: bool,
+    /// Tiberian Sun's `AV=` (docs/ts-limpets.md): the projectile hunts only
+    /// vehicles. Firestorm 2.0 reads it into BulletType+0x136 with ReadBool
+    /// over the current value (`0x00448027..0x00448047`; the constructor
+    /// zeroes it at `0x00447BB9`); gamemd has no such key. Its one reader is
+    /// `WeaponTypeClass::Allowable_Threat @ 0x00681150`
+    /// (`combat_weapon::weapon_class_bits`).
+    pub av: bool,
     /// Phobos `AU` (`Ext/BulletType/Body.cpp:83`): this projectile may attack
     /// a techno that is underground. Auto-target ORs `0x20000` into the
     /// weapon's allowed threats (`Ext/Techno/Hooks.cpp:1537-1545`) and the
@@ -178,7 +189,6 @@ pub struct ProjectileType {
     /// Phobos `ClusterScatter.Max=` (`:47`), upper bound; default 512
     /// (`Ext/BulletType/Body.h:112`).
     pub cluster_scatter_max: i32,
-    /// Number of shrapnel fragments on impact. (+0x2B8)
     /// Number of shrapnel fragments on impact. (+0x2B8) Its magnitude is at
     /// most [`SHRAPNEL_COUNT_LIMIT`].
     pub shrapnel_count: i32,
@@ -255,7 +265,7 @@ pub struct ProjectileType {
     /// Airburst child weapon (+2B0), retained by the ordered Rules reader.
     pub airburst_weapon: Option<String>,
     /// Phobos `BulletTypeExt` airburst/splits settings. Absent keys keep the
-    /// Phobos constructor defaults; only Phobos builds read or consume them.
+    /// Phobos constructor defaults; the per-game Phobos switch gates consumers.
     pub phobos_airburst: crate::rules::phobos_airburst::PhobosAirburstType,
     /// Phobos `Trajectory` / `Trajectory.Speed` / `Trajectory.Straight.*`
     /// (`Ext/Bullet/Trajectories/`): a selected flight trajectory instead of
@@ -425,7 +435,7 @@ impl ProjectileArtState {
         // Image may be empty: native then attempts .SHP and .GHP, clearing +A4
         // when neither exists. Inviso can instead retain the base-prefix load.
         if !self.inviso {
-            image.load_unowned_shp(ObjectImageKind::Ordinary, theater);
+            image.load_unowned_shp(ObjectImageKind::Ordinary, theater, None);
         }
         // 46C40B..46C417: independent of Inviso, after the clearing Image
         // read. A false Voxel flag preserves the prior pair; missing/empty
@@ -491,9 +501,7 @@ impl ProjectileType {
     /// `1001A7E0`/`1001A810`, hooks `0x468EB9`/`0x468FFA`). False in stock:
     /// a stock-way read leaves the Ares key unread.
     pub const fn splits(&self) -> bool {
-        {
-            self.phobos_airburst.splits
-        }
+        self.phobos_airburst.splits
     }
 
     /// Phobos `BulletTypeExt::Gravity`, unset when the key is absent.
@@ -506,13 +514,8 @@ impl ProjectileType {
         self.phobos_subject_to_ground
     }
 
-    /// Phobos is compiled out: the line-of-fire walk keeps the stock gates.
-
-    /// Phobos is compiled out: every shot uses the Rules gravity.
-
-    /// `Airburst=` or, in a Phobos build or a game read the Ares way,
-    /// `Splits=`: the BulletClass impact and detonation arms the
-    /// `BulletClass::Explodes` hooks select.
+    /// `Airburst=` or a game's `Splits=`: the BulletClass impact and detonation
+    /// arms the `BulletClass::Explodes` hooks select.
     pub const fn airburst_arm(&self) -> bool {
         self.airburst || self.splits()
     }
@@ -548,6 +551,10 @@ impl ProjectileType {
             // Targeting
             aa: section.read_bool("AA", false),
             ag: section.read_bool("AG", true),
+            aa_only: crate::rules::kratos_switch::kratos_read(|| {
+                section.read_bool("AAOnly", false)
+            }),
+            av: section.read_bool("AV", false),
             au: section.read_bool("AU", false),
             // Flight behavior
             arcing: section.read_bool("Arcing", false),
@@ -661,7 +668,7 @@ impl ProjectileType {
         let mut image = ObjectImageState::new(id);
         image.read_input(section);
         image.read_art(image_section);
-        image.load_for_read(ObjectImageKind::Ordinary, ImageTheater::Uninitialized);
+        image.load_for_read(ObjectImageKind::Ordinary, ImageTheater::Uninitialized, None);
         let mut art = ProjectileArtState::new();
         art.read_bullet_fields(
             &mut image,

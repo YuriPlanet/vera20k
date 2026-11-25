@@ -54,7 +54,8 @@ fn fall_offline(sim: &mut Simulation, building: u64) {
         .entities
         .get_mut(building)
         .expect("building")
-        .building.building_last_operational
+        .building
+        .building_last_operational
         .set_for_test(true);
 }
 
@@ -73,7 +74,8 @@ fn stay_powered(sim: &mut Simulation, building: u64) {
         .entities
         .get_mut(building)
         .expect("building")
-        .building.building_last_operational
+        .building
+        .building_last_operational
         .set_for_test(false);
 }
 
@@ -144,7 +146,7 @@ fn an_offline_building_kills_its_attacking_and_returning_children() {
         Some(false),
         "the fixture building is offline"
     );
-    sim.visit_building_operational(building, &rules, None, FrameEffects::default());
+    sim.visit_building_operational(building, &rules, None, &mut FrameEffects::default());
     for child in [children[0], children[1]] {
         assert!(
             health(&sim, child).is_none_or(|health| health == 0),
@@ -175,7 +177,7 @@ fn the_key_and_the_offline_edge_are_both_required() {
     let (mut sim, rules, building) = scene("");
     let children = arm_pool(&mut sim, building);
     fall_offline(&mut sim, building);
-    sim.visit_building_operational(building, &rules, None, FrameEffects::default());
+    sim.visit_building_operational(building, &rules, None, &mut FrameEffects::default());
     for child in children {
         assert_eq!(health(&sim, child), Some(75), "the key is off");
     }
@@ -196,7 +198,7 @@ fn the_key_and_the_offline_edge_are_both_required() {
     let children = arm_pool(&mut sim, building);
     stay_powered(&mut sim, building);
     assert_eq!(sim.building_operational_state(building, &rules), Some(true));
-    sim.visit_building_operational(building, &rules, None, FrameEffects::default());
+    sim.visit_building_operational(building, &rules, None, &mut FrameEffects::default());
     for child in children {
         assert_eq!(health(&sim, child), Some(75), "the building is online");
     }
@@ -205,7 +207,8 @@ fn the_key_and_the_offline_edge_are_both_required() {
             .entities
             .get(building)
             .expect("building")
-            .building.building_last_operational
+            .building
+            .building_last_operational
             .is_operational(),
         "the online sample is stored"
     );

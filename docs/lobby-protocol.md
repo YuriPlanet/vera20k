@@ -15,7 +15,8 @@ persistent state is created.
 `{player_id,nickname,token,expires_at,features?}`, plus `motd` while an operator welcome is set:
 text the game prints in the chat lobby, one line per `\n`. Without it the game prints no welcome.
 `features` lists what the lobby offers beyond protocol 4, and a game offers only what it
-lists: `visit_lobby` ([Visiting the lobby](#visiting-the-lobby)).
+lists: `visit_lobby` ([Visiting the lobby](#visiting-the-lobby)) and `campaign_rooms`
+(HostOptions `campaign` below), which VERA's lobby does not offer.
 A game says what it is and what it can do in [sign-in headers](#sign-in-headers).
 Each entry receives a fresh random player
 UUID and bearer token. `expires_at` is a Unix timestamp in seconds by the lobby's clock,
@@ -165,14 +166,19 @@ A slot's `color_index` is 0 to 7 for the original colours, 8 for an observer and
 for the game's [extra lobby colours](skirmish-colors.md); the lobby passes 0 to 255 on
 unchanged.
 Generated maps add `random_map:{start_staging,preview:{source_sha256,byte_length}}`.
-Cooperative rooms add `cooperative_campaign`, the host's campaign record as the game's
-`C0` text (at most 512 bytes, starting `C0,`); a guest applies it before the options
-that carry it. Other modes omit the field.
 `start_staging` is the canonical native `W` record: 37 numbers for up to eight starts,
 and for a random map of 9 to 30 players four more for each start past the eighth,
 bounded to 2048 bytes. A lobby from before those maps refuses a record past 37 numbers
 or 512 bytes with 400 `invalid_options`;
 `staging_digest` is its lowercase SHA-256, or the empty string for authored maps.
+Cooperative rooms add `cooperative_campaign`, the host's campaign record as the game's
+`C0` text (at most 512 bytes, starting `C0,`); a guest applies it before the options
+that carry it. Other modes omit the field.
+Multiplayer Campaign rooms add `campaign`, the authored room record
+([Multiplayer Campaign rooms](Networking.md#multiplayer-campaign-rooms)), only on a lobby
+that offers `campaign_rooms`; that lobby keeps it through room revisions, the start and
+`watch_started`. Without the feature a game refuses campaign rooms online, and a 400
+`invalid_options` for a campaign room's options turns them off until the next sign-in.
 `launch` is the existing serde representation of `SkirmishLaunchSession` (including
 its human rows, AI rows and launch options). The game's tests keep `tests/fixtures/lobby/`
 current: `options.json` holds rooms' options as the game sends them at the limits it
@@ -191,7 +197,7 @@ the room return 409 `player_not_in_room` instead, which leaves Teams as it is. A
 from before Teams cannot read a host's options while Teams is set and shows its
 invalid-update line, in a room that cannot start anyway, since its players' versions
 differ. `launch.options.auto_balance`, the Balance automatically setting of hosts on
-0.3.3 and 0.3.4, is `true` or left out while it is off; those games send it only with a Teams count,
+0.3.2 to 0.3.4, is `true` or left out while it is off; those games send it only with a Teams count,
 and current games never send it. `launch.options.queue`, a VERA room's join
 queue, lists by name the room's spectators (humans with the `Observer` role) who wait
 for a seat, first first, each once and at most 30; the game leaves it out while nobody
@@ -296,15 +302,16 @@ its `{name}`, while every game shows `text` for a key it lacks.
 Operator notices carry no `phrases`: they come in the session's language when the
 operator translated them.
 
-`start_rejected`'s `message` is English. Current games match
+`start_rejected`'s `message` is English. Games from 0.3.6 on match
 the four messages the lobby sends: `A player left before the game started.`,
 `A player cancelled the game start.`, `A player could not connect to the gameplay relay.`
 and `A player could not complete the peer latency check.`, and show each in the player's
 language; for the relay message a game whose `relay_ready` the service took says another
 player's game could not reach the server, and any other says its own could not. Any
 other message, including a reworded one, shows the general line that the match could
-not start, so a change to these messages needs the game's
-`LiveService::start_rejected_line` changed with it.
+not start, as every message does in older games. The lobby therefore keeps these four
+messages unchanged while it admits games from 0.3.6 on;
+`tests/fixtures/lobby/start_rejected.json` lists them.
 
 A start that times out connecting also says who held it up: every game's
 `start_rejected` then carries `phrases`, one `StartNotConnected` holding
@@ -329,8 +336,9 @@ source mask LEu32, fixed FPS LEu16, expiry LEu64, then HMAC-SHA256 over the
 first 34 bytes with domain `VERA20k relay ordering certificate v1\0`. A lobby
 whose every member build reads relay rate markers may instead issue a 67-byte
 `VO2C` certificate: the same fields, then a flags byte (bit 0: the host turned
-relay pacing off; bit 1: the relay orders this one-source match, below; other bits
-zero), then HMAC-SHA256 over the first 35 bytes with
+relay pacing off; bit 1: the relay orders this one-source match, below; bit 2:
+continuous pacing, never with bit 0, issued only when the relay and every admitted
+build read it; other bits zero), then HMAC-SHA256 over the first 35 bytes with
 domain `VERA20k relay ordering certificate v2\0`. Every grant of one match carries
 the same version and flags; clients reject a renewal whose flags differ. The signed
 mask includes all human sources (including observers); AI has no source. FPS
@@ -355,7 +363,9 @@ nonce); `tag` is HMAC-SHA256(relay ticket key, `VERA20k relay federation roster
 v1\0` ‖ the table through the masks ‖ index byte ‖ nonce ‖ wrapped). The client
 appends it unchanged to every CONFIRM; the first relay coordinates the start.
 The lobby federates a match only when every human's sign-in request carried the
-header `Vera-Relay-Federation: 1`, which clients send once they forward the roster.
+header `Vera-Relay-Federation: 1`, which desktop games send since they forward the
+roster. Browser games do not ([sign-in headers](#sign-in-headers)), so a match with a
+browser player stays on one relay.
 
 The relay room uses the fresh `match_id`, including for rematches. The server sends
 `game_started` only after all current participants agree to revision, version,
@@ -475,12 +485,13 @@ room.
 
 `GET /v1/library/catalog` lists every library map:
 `{revision,maps:[{sha256,name,file_name,players,byte_length,header}]}`, where `name` is
-the map's `[Basic] Name=`, `file_name` the `.yrm` name to save it under, and `header`
+the map's `[Basic] Name=`, `file_name` its catalog filename, and `header`
 the base64 of the map's own `[Basic]`, `[Preview]`, `[PreviewPack]`, `[Waypoints]`,
 `[Header]` and `[RandomMap]` lines, byte for byte. No two library maps share a
 `file_name` without case: one whose name would, or whose name has nothing left to save
-under, ends in `-<first 8 hex of its SHA-256>.yrm`. The game skips an entry whose
-`file_name` it would not save as it is: one not ending in `.yrm`, or with a path, a colon,
+under, ends in `-<first 8 hex of its SHA-256>.yrm`. The service supplies lowercase
+`.yrm` catalog filenames for older games. Current games accept `.map`, `.yrm` and
+`.mpr` in any case. They skip entries with an unsupported extension, a path, a colon,
 a control character, a leading dot, a trailing dot or space, another character Windows
 forbids, or a name Windows reserves. The catalog carries
 `ETag: "lib-<revision>-<16 hex>"`, the hex from its content (catalogs written before:
@@ -493,12 +504,13 @@ network; the service keeps no player, session or address with a map. The game re
 when the player goes online and keeps it for the run once it arrives; a failed read is
 tried once more in that visit, and again on the next. In an online room (not one that
 takes only official maps), Choose Map lists under its Online Maps row each map the
-player does not have, starred maps first: a file of its name in the game folder or
-VERA's `Maps` folder that holds its bytes means the player has it. Use Map on one asks
+player does not have, starred maps first. An existing custom map in the selected mod,
+game folder or VERA's `Maps` folder is identified by its length and SHA-256,
+including files the player renamed. Use Map on a missing map asks
 to download it, checks its length and SHA-256, and saves it in VERA's `Maps` folder,
-where it is an ordinary map in every game type's list. A map whose name another map
-already holds is saved as `<stem>-<first 8 hex of its SHA-256>.yrm`; no file is ever
-replaced.
+where it is an ordinary map in the applicable game types. The game saves a new
+file as `<stem>.map`, or `<stem>-<first 8 hex of its SHA-256>.map` when the name
+is taken. Identical files keep their existing name and extension.
 
 The match admission is retained independently of channel membership until
 finish/timeout. The original-style shell leaves its game room at the start and
@@ -559,7 +571,9 @@ error that ended the match on this game: `agreement_mismatch`, `start_cancelled`
 `local_error`. `start_hash` is null once the
 relay's clock started; before that it maps each part of the start this game offered the
 relay, at most 64, to 16 hex digits, so two games' reports of one match differ in the part
-that differs.
+that differs: the `setup_*` parts, `world` with the world's own parts, `build`, `rules`
+and, from games that certify it, `asset_files` (what the simulation reads from picture
+and model files).
 Games before these fields send none of them.
 `fps_p50` and `fps_p5` read the presents of a moving picture: one that stands between
 frames is not drawn again, and the present after it starts a new interval.
@@ -675,6 +689,22 @@ differ is named until the rest show that the host's rules are the odd ones. A pl
 named again only after they stopped being named (their rules matched, or the line moved
 between the host and the others) or after they left the room and joined it again, not
 when a change of settings has every game send its agreement again.
+
+Where both games named what they change from the original game at sign-in
+(`Vera-Changes`, below), the line instead says what differs. It opens with
+`LobbyRulesDifferFromHost` or `LobbyHostRulesDifferFromOthers` (only `name`), compared
+with the host or, when the host is named, with the first other player, whose rules every
+other player shares. Then `LobbyOnlyHas` (`name`, `changes`) names what only the named
+player has, and `LobbyOnlyHostHas` or `LobbyOnlyOthersHave` (`changes`) what only the
+other side has. When neither side has anything the other lacks, `LobbyBothHave` or
+`LobbyAllHave` (`name`, `changes`) names what both have in copies that differ, or
+`LobbyNoChangesNamed` says VERA names no change in either, so their installed game files
+differ. `LobbySameRulesToStart` closes the line. `changes` is an `and` list of
+`LobbyChangeMod` (`name`, the mod's title), `LobbyChangeIniRoots`, `LobbyChangeAresOn`,
+`LobbyChangeAresOff` and `LobbyChangeFiles` (`count` and `files`, a `unit` list of up to
+six file names, then `LobbyMoreFiles` with the `count` left). A mod or Ares setting
+differs when the other side has another or none; file names compare ignoring case, and
+when the other side changes no files, every file of the named side's `count` differs.
 Games without a key show its English `text`. VERA shows these lines, and the version and
 build lines above, in red, as the CnCNet client shows its modified-files warning; a game
 before it shows them as the lobby's other lines.
@@ -703,10 +733,21 @@ not know.
   maintenance message come in that language when the operator wrote it: the translation
   for that tag, else for its language alone (`zh`), else for another region of that
   language, else the operator's `text`, which a missing or malformed tag gets.
+- `Vera-Changes: <percent-encoded JSON>`: what the game changes from the original game,
+  which a room's rules line names: an object with `mod` (the mod's title), optional `kratos: true` when the startup rules enable Kratos, `ini_roots:
+  true` (config.toml names other Rules, Art, AI, mode roster or map catalog files, or
+  another theater suffix, or [RA2 Mode](ra2-mode.md) is on), `ares` (`on` or `off`, the player's Ares setting where it
+  decides which game opens: On unless a selected mod mounts `ares.mix` anyway, Off only
+  with such a mod or over rules that hold an Ares key) and `files` with `count` (up to 32 names of the game-folder files
+  that change the rules the network compares, of `count`), each left out when unchanged:
+  `{}` for the original game. Texts are 1–64 bytes of well-formed UTF-16 without control
+  or format characters (such as bidi overrides), `count` at most 65535 and the header at
+  most 8192 characters; the lobby ignores a malformed one whole.
 - `Vera-Quick-Match: 1` ([Quick Match](#quick-match)), `Vera-Host-Handover: 1` (host
   handover), `Vera-Watch-AI: 1` ([Watching](#watching)) and `Vera-Relay-Federation: 1`
   (a RelayGrant's `federation`): what it can do. A browser game sends every header but
-  this last one, since its gateway reaches one fixed relay.
+  this last one, which its gateway would not forward either (`FORWARDED_HEADERS` in
+  `tools/wasm/gateway/server.mjs`).
 
 Two games compare their builds when both name one, else their versions. They are on
 another version when both name what they compare and it differs: they could never start
@@ -770,8 +811,11 @@ watcher's game then takes the first observer's seat), one human only when its
 certificate carries VO2C flags bit 1; with watching on, in a
 room without a password, on a relay that lets watchers in and on the caller's version
 (as `kind=41` lists rooms), that the caller plays no part in. Clan rooms, generated maps
-and co-op missions are never listed: a watcher's game cannot yet rebuild a start that
-splits players by squad, comes from the host's map seed or from a campaign. `name`
+and stock co-op missions are never listed: a watcher's game cannot yet rebuild a start
+that splits players by squad, comes from the host's map seed or from a stock co-op
+campaign. A lobby that offers `campaign_rooms` may list an authored campaign match: its
+`watch_started` options keep the `campaign` record, which the watcher's game checks
+against its own installed series. `name`
 is the room's; `map`, `mode`, `players`, `observers`, `computers` and `since` (when play
 began, Unix seconds) are as the dashboard shows a match; `names` are the playing humans
 (none where only AI play);
@@ -879,7 +923,9 @@ password. Every request below is a `POST` with a JSON body; a refusal's
   It refuses with 400 `invalid_name`, `invalid_email` or `invalid_password`, 409
   `name_unavailable` or `email_in_use`, or 429. Names follow the session rule;
   passwords are 8–64 printable ASCII characters; emails are at most 254 characters of
-  the `x@y.z` shape, one account each.
+  the `x@y.z` shape, one account each. `tests/fixtures/lobby/accounts.json` holds names,
+  passwords and emails at the edges of these rules, each with whether the game takes it;
+  the lobby gives each the same answer.
 - `/v1/accounts/verify` `{name,code}` returns 200 and creates the account: 400
   `invalid_code` (5 tries), 410 `code_expired` (30 minutes, or the tries used up).
 - `/v1/accounts/forgot` `{name}` returns 202 whether or not the name has an account,
@@ -902,6 +948,21 @@ password. Every request below is a `POST` with a JSON body; a refusal's
   A name without an account returns 404 `no_account`. Deletion returns 409
   `match_active` while the player is in a match or a ranked game of theirs is still
   waiting for results.
+- `/v1/accounts/rename` `{name,password,new_name}` returns 200 `{name}` with the new
+  name; no game sends it. The new name follows the session rule, and the password stays
+  the same. Ratings, standings, past seasons and ranked games move to the new name; the
+  rename drops every remembered sign-in, signs out whoever plays under the old name and
+  mails the owner. An account renames at most once in 30 days: sooner returns 429
+  `rename_too_soon` with `retry_after`. Wrong passwords count toward the sign-in limits,
+  which refuse a rename with 429 `account_locked` or `rate_limited` as they refuse a
+  sign-in. It also refuses with 400 `invalid_request` or `invalid_name`, 403
+  `wrong_password`, 404 `no_account`, 409 `match_active` as deletion does, 409
+  `same_name` for the account's own name (a change of case only is allowed), and 409
+  `name_unavailable` for a name that is reserved, held, an account's or being
+  registered, or has a player online, a match or ranked games under it. For 30 days the
+  old name stays held for the account: registering it returns 409 `name_unavailable`,
+  `GET /v1/players/<old name>` answers the account's profile under its new name, and
+  deleting the account frees it. A change of case only holds nothing.
 
 At `/v1/sessions` an account's name needs its `password` or a `sign_in_token`, never
 both: with neither it returns 403 `name_claimed`, with a wrong one 403 `wrong_password`,
@@ -910,15 +971,22 @@ the owner. 30 wrong passwords from one network in an hour return 429 `rate_limit
 An account's sign-in has `account:true` in the response, and `remember:true` with the
 right password adds a `sign_in_token` (32 bytes, base64url without padding). A password
 or `sign_in_token` for a name without an account returns 404 `no_account`; otherwise
-that name enters as a guest. A lobby without accounts set up refuses a password with
-503 `accounts_unavailable`.
+that name enters as a guest. A renamed account's held old name returns the same 404 to a
+password or `sign_in_token`, with `phrases` `AccountRenamed` holding `{name}`, the new
+name. Every game the lobby admits shows it and, as for any `no_account`, forgets the
+remembered sign-in. A guest under that name gets 409 `name_unavailable`. A lobby without
+accounts set up refuses a password with 503 `accounts_unavailable`.
 
-VERA20k's online login page is its sign-in form: a username, which starts from the last
-name signed in, a password and Remember password. Play, or Enter, signs in: a username
-alone enters as a guest, and with its password as that account. Under the form the page
-shows the players online and the last 24 hours' games (`GET /v1/stats`, read each time
-the page opens), leaving out a count of none. Every other button opens a popup that
-starts from the form's username. Create Account asks for the name, email and password,
+Opening VERA Online offers **Play as Guest** and **Sign In and Play**. Guest entry
+immediately requests a session under a temporary name such as `Guest04219`, with no
+credentials. If the lobby says the name is in use or registered, the game tries up to
+three more names. It keeps the last account username for the next sign-in. The account
+path takes a username and password or the remembered sign-in for that username.
+The welcome dialog shows the current online player count from `GET /v1/stats` on
+entry and refreshes it once a minute while the chooser is open. It shows zero for an
+empty lobby and a dash while the count is unavailable. The account form also shows the last 24 hours'
+games, omits zero counts, and offers registration, recovery and deletion.
+Create Account asks for the name, email and password,
 then the mailed code, and signs in. Forgot Password asks for the name and mails its
 code, then asks for it and a new password, and signs in. Delete Account accepts the
 username or registered email and asks for the current password. After success it
@@ -926,8 +994,8 @@ forgets that account's remembered sign-in. Older games send the username as befo
 A lobby rollback accepts deletion by username.
 
 A remembered sign-in lives in `Account.json` beside `VERA.INI` as `{name,
-sign_in_token}` per lobby, readable only by its owner; the form then opens on the name
-with a masked password, and Play needs none.
+sign_in_token}` per lobby, readable only by its owner. The account form shows a masked
+password for the remembered username and can submit it without typing the password.
 Unticking Remember password forgets it here and at the lobby, and so does a password
 sign-in of that name or a remembered sign-in of another account. A `wrong_password` or
 `no_account` answer to it forgets it too. Signing in under another name leaves it.
@@ -1015,7 +1083,8 @@ where `null` stands for a player whose account has since been deleted; `trend`
 their OS after each of their 200 newest rated games, oldest first, each `{ended,season,os}`;
 and `seasons` their final standing in each ended season they played, newest first, each
 `{season,rank,total,os,badge,wins,losses,disconnects}`. A name without an account answers
-404. `GET /v1/leaderboard` answers the leaderboard vera20k.org shows, renewed once a
+404, unless it is a renamed account's held old name ([Accounts](#accounts)).
+`GET /v1/leaderboard` answers the leaderboard vera20k.org shows, renewed once a
 minute: `{season,started_at,ends_at,updated_at,total,players,seasons,running}`, `season`
 being `null` when no season runs and `ends_at` `null` without an end, `total` the players
 ranked in it and `players` the best 1,000 of them by OS, then wins, each
@@ -1041,8 +1110,8 @@ stay as they are. The host's game moves each named player to that team, as their
 choice would, and publishes the options. A game that ignores the event leaves the teams
 to the host. The host alone hears why nothing moves: a Quick Match room, a mode without
 teams, AI players, fewer than two players, or teams already as even as they can be.
-Anyone else typing `/balance` hears that only the host can. The host's Balance button
-sends `/balance` in the room's chat. A 0.3.3 or 0.3.4 host with Balance automatically on sends
+Anyone else typing `/balance` hears that only the host can. The host's Balance teams, in
+Quick Team Setup, sends `/balance` in the room's chat. A host on 0.3.2 to 0.3.4 with Balance automatically on sends
 the `balance` command 5 seconds after who plays or the Teams count last changed; the
 lobby balances as for `/balance` but says nothing when nothing moves, and refuses the
 command from anyone but the host with 403 `forbidden`. Current games never send it.

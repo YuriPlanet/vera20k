@@ -96,7 +96,7 @@ fn board(sim: &mut Simulation, rules: &RuleSet, pax: u64, carrier: u64) {
             carrier,
             BoardingArm::UnitTransport,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         ),
         "the passenger boards"
     );
@@ -104,7 +104,7 @@ fn board(sim: &mut Simulation, rules: &RuleSet, pax: u64, carrier: u64) {
 
 fn capture(sim: &mut Simulation, rules: &RuleSet, transport: u64) {
     let soviets = sim.intern("Soviets");
-    sim.change_owner_with_rules(transport, soviets, rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(transport, soviets, rules, None, &mut FrameEffects::default());
 }
 
 /// Phobos `TechnoClass_EnterTransport @ 0x71067B` records the board-time
@@ -134,8 +134,8 @@ fn synced_cargo_reverts_on_exit_and_no_revert_keeps_the_transport_house() {
         &rules,
         apc,
         DepartureRoute::Vehicle,
-        |_, _| Ok(()),
-        FrameEffects::default(),
+        |_, _, _| Ok(()),
+        &mut FrameEffects::default(),
     )
     .expect("the departure removes the head");
     assert_eq!(
@@ -156,8 +156,8 @@ fn synced_cargo_reverts_on_exit_and_no_revert_keeps_the_transport_house() {
         &rules,
         apc,
         DepartureRoute::Vehicle,
-        |_, _| Ok(()),
-        FrameEffects::default(),
+        |_, _, _| Ok(()),
+        &mut FrameEffects::default(),
     )
     .expect("the departure removes the head");
     assert_eq!(
@@ -226,7 +226,7 @@ fn a_dying_transport_restores_the_recorded_house_before_the_escape() {
             arg6: false,
         },
     );
-    sim.commit_noncombat_aoe_hits(&rules, None, &[hit], FrameEffects::default());
+    sim.commit_noncombat_aoe_hits(&rules, None, &[hit], &mut FrameEffects::default());
     assert!(sim.substrate.pending_delete.contains_object(&apc), "killed");
     let escaped = sim.entities().get(pax).expect("the passenger escapes");
     assert!(

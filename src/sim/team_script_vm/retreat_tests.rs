@@ -65,7 +65,7 @@ fn retail_guard_retreat(ramp: bool) {
     let definition = sim.interner.get("08DA30EC-G").unwrap();
     let team = sim.create_team(definition, Some(owner), &rules).unwrap();
     for _ in 0..6 {
-        sim.run_team_ai_pass(&rules, None, FrameEffects::default());
+        sim.run_team_ai_pass(&rules, None, &mut FrameEffects::default());
         let state = &sim.team_script_vm.teams[&team];
         if state.members.len() == 6 && state.formed {
             break;
@@ -91,10 +91,10 @@ fn retail_guard_retreat(ramp: bool) {
     }
     // Exercise the production restore seam on its documented seed-zero
     // Scenario cursor and freshly published map hierarchy (native load rebuilds it).
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
     sim.restore_map_authority_after_snapshot_load(&rules, &overlays, None)
         .unwrap();
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     // Player load discards active planning (ClearScene6370B0 / TechnoLoad70BF79).
     sim.reset_planning_after_player_load();
     let before_rng = rng(&sim);
@@ -105,7 +105,7 @@ fn retail_guard_retreat(ramp: bool) {
     let mut restored = snapshot_copy(&sim, &rules, &overlays);
     assert_same_hash(&sim, &restored);
     for world in [&mut sim, &mut restored] {
-        world.run_team_ai_pass(&rules, None, FrameEffects::default());
+        world.run_team_ai_pass(&rules, None, &mut FrameEffects::default());
         assert_eq!(rng(world), before_rng, "retreat must not draw RNG");
         let state = &world.team_script_vm.teams[&team];
         assert_eq!((state.guard_timer, state.suspend_timer), timers);
@@ -145,10 +145,9 @@ fn retail_guard_retreat(ramp: bool) {
     let mut restored = snapshot_copy(&sim, &rules, &overlays);
     assert_same_hash(&sim, &restored);
     for world in [&mut sim, &mut restored] {
-        world
-            .session
-            .set_binary_frame_for_test(world.session.binary_frame() + 1);
-        world.run_team_ai_pass(&rules, None, FrameEffects::default());
+        let session = &mut *world.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
+        world.run_team_ai_pass(&rules, None, &mut FrameEffects::default());
     }
     assert_same_hash(&sim, &restored);
 }
@@ -367,7 +366,7 @@ fn retreat_building_selection_matches_original_controls() {
             cell.base_speed_costs.foot = None;
         }
         let before_rng = rng(&sim);
-        sim.team_under_strength_retreat(team, &rules, None, FrameEffects::default());
+        sim.team_under_strength_retreat(team, &rules, None, &mut FrameEffects::default());
         let (x, y) = pair(&row["focus"]);
         let state = &sim.team_script_vm.teams[&team];
         assert_eq!(

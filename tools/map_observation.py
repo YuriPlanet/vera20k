@@ -3211,8 +3211,11 @@ def validate_capture(directory: Path, profile: Mapping[str, Any],
                 if not require_string(source.get(name), f'map_source.{name}'):
                     raise ValidationError(f'empty map_source.{name}')
             require_int(source.get('entry_id'), 'map_source.entry_id')
+        elif source.get('kind') == 'bundled':
+            if not require_string(source.get('logical_name'), 'map_source.logical_name'):
+                raise ValidationError('empty bundled map name')
         else:
-            raise ValidationError('map source must be loaded loose, MIX, or consumed .SED bytes')
+            raise ValidationError('map source must be a loose, MIX, bundled, or consumed .SED file')
     lifecycle = require_object(manifest.get('lifecycle'), 'lifecycle')
     for key, expected in (('window_hidden', True), ('window_focused', False),
                           ('focus_violations', 0), ('input_violations', 0)):

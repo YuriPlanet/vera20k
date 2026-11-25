@@ -61,9 +61,9 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
     // Native supplies Map+F4 Size8,8 and final LocalSize0,0,8,8. The
     // shared bridge fixture's Size16 makes this sloped current cell a fringe
     // cell, which would short-circuit56D100 before its raw-label comparison.
-    sim.playfield_bounds =
+    *sim.playfield_bounds =
         Some(crate::map::playfield::PlayfieldBounds::from_normalized_local_size(8, 0, 0, 8, 8));
-    sim.playfield_size_height = Some(8);
+    *sim.playfield_size_height = Some(8);
     rules.general.path_delay = input["path_delay"].as_f64().unwrap_or(0.01);
     rules.general.blockage_path_delay_ticks = input["blockage_delay"].as_i64().unwrap_or(22) as i32;
     rules.general.close_enough = input["close_enough"].as_i64().unwrap_or(128) as i32;
@@ -156,7 +156,8 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
     e.set_in_playfield(input["in_playfield"].as_bool().unwrap_or(false));
     e.lifecycle.set_object_alive_for_test(true);
     e.lifecycle.set_cell_marked_for_test(true);
-    e.tether
+    e.seldom
+        .tether
         .set_for_test(input["tethered"].as_bool().unwrap_or(false).then_some(999));
     e.mission.apply_test_fixture(MissionTestFixture {
         current: MissionId::from_raw(before["mission"].as_i64().unwrap() as i32),
@@ -187,7 +188,7 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
     e.navigation.set_suspended_nav_com_for_test(None);
     e.attack_target
         .set_for_test((input["attack_target"] == true).then_some(TargetKind::Cell(11, 10)));
-    e.suspended_attack_target.set_for_test(None);
+    e.seldom.suspended_attack_target.set_for_test(None);
     e.navigation
         .path_replay_mut()
         .set_directions_for_test(vec![2, 3, 4, 5]);
@@ -210,9 +211,9 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
     p.set_retries_left_for_test(before["retries"].as_i64().unwrap() as u32);
     p.set_scold_latch_for_test(before["flag68a"].as_u64().unwrap() as u8);
     if input["radio"] == true {
-        e.radio_contacts.insert(999);
+        e.seldom.radio_contacts.insert(999);
     }
-    sim.substrate.occupancy = OccupancyGrid::new();
+    *sim.substrate.occupancy = OccupancyGrid::new();
     sim.substrate.occupancy.add(
         9,
         10,
@@ -221,7 +222,7 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
         Some(2),
         CellListInsertion::PrependNonBuilding,
     );
-    sim.substrate.raw_cell_occupation = RawCellOccupationGrid::default();
+    *sim.substrate.raw_cell_occupation = RawCellOccupationGrid::default();
     sim.substrate.raw_cell_occupation.mark_ground(
         10,
         10,
@@ -256,7 +257,7 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
     }
     sim.session
         .set_binary_frame_for_test(input["frame"].as_u64().unwrap_or(100) as u32);
-    sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(31));
+    *sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(31));
     (sim, rules, registry, id, other)
 }
 
@@ -318,7 +319,10 @@ fn compare(sim: &Simulation, id: u64, other: Option<u64>, expected: &Value, row:
         ),
         (
             "suspended_target",
-            json!(native_target(e.suspended_attack_target.target(), other)),
+            json!(native_target(
+                e.seldom.suspended_attack_target.target(),
+                other
+            )),
         ),
         ("mission", json!(e.mission.current().raw())),
         ("queued_mission", json!(e.mission.queued().raw())),
@@ -502,14 +506,14 @@ fn ordinary_and_recursive_walk_responses_match_original_decoder() {
                     &request,
                     &rules,
                     Some(&registry),
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )?;
                 if found {
                     let again = sim.run_walk_admission_request(
                         request.into_walk_admission_for_test(),
                         &rules,
                         Some(&registry),
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )?;
                     assert!(again.is_none(), "recursive refusal recursed twice: {input}");
                 }
@@ -584,7 +588,7 @@ fn exhausted_walk_retry_emits_native_retained_scold_request() {
             &request,
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let (_, unused) = fresh_oracle_seam::finish();
         assert!(!result.unwrap());
@@ -606,7 +610,7 @@ fn exhausted_walk_retry_emits_native_retained_scold_request() {
             .iter()
             .filter_map(|event| match event {
                 crate::sim::world::SimSoundEvent::VocCentered { sound_id } => {
-                    Some(sound_id.as_str())
+                    Some(sound_id.name_in(&rules))
                 }
                 _ => None,
             })

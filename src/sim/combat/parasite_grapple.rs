@@ -161,7 +161,7 @@ impl Simulation {
         victim: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(source) = self.substrate.entities.get(owner) else {
             return;
@@ -532,7 +532,7 @@ impl Simulation {
         victim: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(source) = self.substrate.entities.get(owner) else {
             return;
@@ -553,7 +553,8 @@ impl Simulation {
         // always sink.
         let target_is_unit = target.category() == EntityCategory::Unit;
         let target_strength = target_type.strength;
-        let sink = !target_is_unit
+        let sink = !rules.phobos()
+            || !target_is_unit
             || target_type
                 .phobos_sinkable_squid_grab
                 .unwrap_or(rules.phobos_globals.sinkable_squid_grab);

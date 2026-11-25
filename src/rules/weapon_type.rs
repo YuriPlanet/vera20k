@@ -477,6 +477,12 @@ pub struct WeaponType {
     /// `0x415EEE`) only when this key, else
     /// `[General] AircraftWeapon.KickOutPassengers=`, is yes.
     pub phobos_kick_out_passengers: Option<bool>,
+    /// Kratos `NoMoneyNoTalk` (`WeaponTypeExt::TypeData`): the shot needs this
+    /// much available money (`can_fire` in `sim::combat::fire_error`); a
+    /// negative value refuses while the house holds more than its magnitude.
+    pub no_money_no_talk: i32,
+    /// Kratos `DontNeedMoney`: this weapon ignores `NoMoneyNoTalk`.
+    pub dont_need_money: bool,
 }
 
 impl WeaponType {
@@ -964,6 +970,12 @@ impl WeaponType {
                 .read_int_fields_complete::<3>("DelayedFire.AnimOffset", 2048),
             phobos_delayed_fire_anim_on_turret: section
                 .read_ares_bool("DelayedFire.AnimOnTurret", true),
+            no_money_no_talk: crate::rules::kratos_switch::kratos_read(|| {
+                section.read_int("NoMoneyNoTalk", 0)
+            }),
+            dont_need_money: crate::rules::kratos_switch::kratos_read(|| {
+                section.read_bool("DontNeedMoney", false)
+            }),
         }
     }
 }

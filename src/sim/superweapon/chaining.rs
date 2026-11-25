@@ -86,7 +86,7 @@ pub(super) fn apply_phobos_launch_tail(
     sw: &SuperWeaponType,
     cell: (u16, u16),
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     if sim.super_weapon_chain_depth.at_limit() {
         log::warn!(
@@ -100,7 +100,15 @@ pub(super) fn apply_phobos_launch_tail(
     // SW.Link (`Ext/SWType/FireSuperWeapon.cpp:13-40`).
     super::limbo::apply_limbo_delivery(sim, rules, owner, sw, overlay_registry, effects);
     super::limbo::apply_limbo_kill(sim, rules, owner, sw, overlay_registry, effects);
-    super::detonate::apply(sim, rules, owner, sw, cell, overlay_registry, effects);
+    super::detonate::apply(
+        sim,
+        rules,
+        owner,
+        sw,
+        cell,
+        overlay_registry,
+        effects,
+    );
     let chaining = rules
         .phobos_super_weapon_chaining(&sw.id)
         .cloned()
@@ -136,7 +144,7 @@ fn apply_sw_next(
     chaining: &crate::rules::phobos_sw_chaining::PhobosSuperWeaponChaining,
     cell: (u16, u16),
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     if chaining.next().is_empty() {
         return;
@@ -175,7 +183,7 @@ fn launch_next(
     name: &str,
     cell: (u16, u16),
     overlay_registry: Option<&OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(next_sw) = rules.super_weapon(name) else {
         return;
@@ -216,9 +224,7 @@ fn launch_next(
 /// inline. Without the Ares capability the key is unread (0), which always
 /// passes.
 pub(super) fn affordable(sim: &Simulation, owner: InternedId, next_sw: &SuperWeaponType) -> bool {
-    {
-        super::money::can_transact(&sim.houses, owner, next_sw.money_amount)
-    }
+    { super::money::can_transact(&sim.houses, owner, next_sw.money_amount) }
 }
 
 /// The type's `HasInhibitor`/`HasDesignator` around the launch cell. The two

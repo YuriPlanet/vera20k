@@ -22,6 +22,27 @@ pub(crate) struct SensorCloakReevaluation {
 }
 
 impl Simulation {
+    /// Phobos `DetachOnCloak=` (`Ext/AnimType/Body.cpp:112`, `Valueable<bool>`
+    /// constructor `true`): `Detach_All(false)` on a cloaking object detaches
+    /// every attached anim (`TechnoClass::Do_Cloak @ 0x703789` reaches vtable
+    /// `+0xDC`), and the hook `AnimClass_Detach_Cloak @ 0x425174`
+    /// (`Ext/Anim/Hooks.cpp:663-684`) suppresses that detach only for a type
+    /// whose key reads `no`.
+    pub(crate) fn detach_attached_anims_for_cloak(&mut self, owner_id: u64, rules: &RuleSet) {
+        let ids: Vec<_> = self
+            .anims()
+            .filter(|(_, anim)| anim.owner_entity() == Some(owner_id))
+            .filter(|(_, anim)| {
+                let name = self.interner.resolve(anim.type_id());
+                crate::sim::anim_class::anim_type_detach_on_cloak(rules, name)
+            })
+            .map(|(&id, _)| id)
+            .collect();
+        for id in ids {
+            self.detach_anim_from_owner(id, rules);
+        }
+    }
+
     /// InfantryLoad521A0C and the other Techno class loads call NoInit6F4300
     /// for every retained object. Invoke this at the player-file boundary;
     /// internal continuations retain their progress clocks.
@@ -47,8 +68,7 @@ fn has_stealth_ability(
         entity.category(),
         object,
         ares,
-    ))
-        || entity.phobos_cloakable()
+    )) || entity.phobos_cloakable()
 }
 
 /// `FootClass::IsCloakable @ 0x004DBDA0` (vtable +0x288) while Ares plays:
@@ -147,8 +167,9 @@ fn stock_cloak_tick_facts(
     };
     // CloakDisallowed10043A40 also refuses while the SonarTimer runs.
     let sonar_active = rules.ares()
-        && entity.ares.sonar_timer.start_frame() != -1
+        && entity.seldom.ares.sonar_timer.start_frame() != -1
         && entity
+            .seldom
             .ares
             .sonar_timer
             .remaining(sim.session.binary_frame() as i32)
@@ -170,6 +191,7 @@ fn stock_cloak_tick_facts(
     // resolving to a WeaponsFactory building (naval-yard repair contact), not
     // an arbitrary movement destination.
     let destination_is_weapons_factory = entity
+        .seldom
         .radio_contacts
         .slot(0)
         .is_some_and(|contact| sim.is_weapons_factory(contact, rules));
@@ -215,7 +237,7 @@ fn stock_cloak_tick_facts(
         // it rejects before the retained-target weapon/range query.
         // Ares CloakAllowed10043990 asks recloak before weapon rearm.
         && (!rules.ares() || entity.cloak.as_ref().is_some_and(|cloak| cloak.recloak_delay().expired(current_frame)))
-        && entity.rearm_timer.timer().expired(current_frame)
+        && entity.seldom.rearm_timer.timer().expired(current_frame)
         // 4. `Target(+0x2B4) != 0 && CanFireAtTarget(vt+0x3AC)`.
         //    6FBEF4..6FBF01 calls the canonical selected-weapon/InRange owner
         //    (6F7780), not GetFireError. An ordinary Attack retains a distant
@@ -364,7 +386,7 @@ fn tick_building_cloak(
     id: u64,
     rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some((edge, state)) = sim
         .substrate
@@ -569,7 +591,7 @@ pub(crate) fn sensor_reevaluate_stock_cloak(
         // sensor-count resident callback `0x006F4EB0`, argument zero.
         .map(|cloak| cloak.start_cloaking(facts.current_frame, facts.cloaking_speed, false));
     if start.is_some_and(|start| start.transitioned) {
-        start_cloaking_detach(sim, id, rules, FrameEffects::default());
+        start_cloaking_detach(sim, id, rules, &mut FrameEffects::default());
     }
     if start.is_some_and(|start| start.play_sound) {
         emit_cloak_transition_sound(sim, id, rules, false);
@@ -579,7 +601,7 @@ pub(crate) fn sensor_reevaluate_stock_cloak(
             targeter_id,
             Some(TargetKind::Entity(id)),
             rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     }
     SensorCloakReevaluation {
@@ -684,7 +706,7 @@ fn start_cloaking_detach(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     sim.detach_all(id, false, UninitContext::new(rules).with_effects(effects));
     // Detach_All's anim arm, gated per anim type by Phobos `DetachOnCloak=`
@@ -762,7 +784,7 @@ pub(crate) fn uncloak_on_sensor_neighbour_after_cell_entry(
         // seam.
         if !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
             (i32::from(nx), i32::from(ny)),
-            sim.playfield_bounds,
+            *sim.playfield_bounds,
             sim.resolved_terrain.as_ref(),
         ) {
             continue;
@@ -863,7 +885,7 @@ pub(crate) fn emit_configured_cloak_sound(
         return;
     };
     sound_events.emit(crate::sim::world::SimSoundEvent::cloak_sound(
-        sound_name.to_owned(),
+        rules.sound_name(sound_name),
         &position,
     ));
 }
@@ -931,16 +953,14 @@ pub(crate) fn cloak_producer_ticks(
         entity.category(),
         object,
         ares,
-    ))
-        || has_weapon_ability(
-            rank_from_u16(entity.veterancy.rank()),
-            object,
-            Ability::Cloak,
-        )
-        || entity
-            .cloak
-            .as_ref()
-            .is_some_and(|cloak| cloak.state() != 0)
+    )) || has_weapon_ability(
+        rank_from_u16(entity.veterancy.rank()),
+        object,
+        Ability::Cloak,
+    ) || entity
+        .cloak
+        .as_ref()
+        .is_some_and(|cloak| cloak.state() != 0)
         || entity.phobos_cloakable()
 }
 
@@ -953,7 +973,7 @@ pub(super) fn tick_stock_cloak_producer(
     id: u64,
     rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;

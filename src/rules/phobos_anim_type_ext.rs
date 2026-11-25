@@ -126,12 +126,13 @@ impl PhobosAnimTypeExt {
     /// `WakeAnim` (`ValueableVector<AnimType*>`, empty): the anims a debris
     /// impact spawns in water (`Ext/Anim/Body.cpp:278-296`).
     pub fn wake_anim(section: &IniSection) -> Vec<String> {
-        crate::rules::native_processing::read_valueable_type_vector(
+        crate::rules::native_processing::read_nullable_type_vector(
             section,
             "WakeAnim",
-            &[],
+            None,
             |name| Some(name.to_owned()),
         )
+        .unwrap_or_default()
     }
 
     /// `VisibleTo` (`Valueable<AffectedHouse>`, constructed `All` at
@@ -199,12 +200,13 @@ impl PhobosAnimTypeExt {
     /// fire anims; an empty vector falls back to `[AudioVisual] SmallFire=`
     /// (`Ext/Anim/Body.cpp:384`).
     pub fn small_fire_anims(section: &IniSection) -> Vec<String> {
-        crate::rules::native_processing::read_valueable_type_vector(
+        crate::rules::native_processing::read_nullable_type_vector(
             section,
             "SmallFireAnims",
-            &[],
+            None,
             |name| Some(name.to_owned()),
         )
+        .unwrap_or_default()
     }
 
     /// `SmallFireChances` (`ValueableVector<double>`, empty).
@@ -233,12 +235,13 @@ impl PhobosAnimTypeExt {
     /// `LargeFireAnims` (`ValueableVector<AnimTypeClass*>`, empty): the
     /// `Flamer=` type's second loop (`Ext/Anim/Body.cpp:395`).
     pub fn large_fire_anims(section: &IniSection) -> Vec<String> {
-        crate::rules::native_processing::read_valueable_type_vector(
+        crate::rules::native_processing::read_nullable_type_vector(
             section,
             "LargeFireAnims",
-            &[],
+            None,
             |name| Some(name.to_owned()),
         )
+        .unwrap_or_default()
     }
 
     /// `LargeFireChances` (`ValueableVector<double>`, empty).

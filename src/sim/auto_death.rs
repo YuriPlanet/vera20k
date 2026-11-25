@@ -50,7 +50,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         // Only the scalar keys are copied: the type's presence lists are read
         // later, under a borrow that ends before any mutation.
@@ -454,7 +454,7 @@ impl Simulation {
         in_limbo: bool,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         if in_limbo {
             return self.kill_self_in_limbo(id, rules, registry, effects);
@@ -495,19 +495,19 @@ impl Simulation {
         &mut self,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if self.auto_death_objects.is_empty() {
             return;
         }
-        let pending = std::mem::take(&mut self.auto_death_objects);
+        let pending = std::mem::take(&mut *self.auto_death_objects);
         for &id in &pending {
             // `!IsInLogic && IsAlive`: `Object+0x98` is the object's own
             // membership byte, which `ObjectClass::Conceal`
             // (`sim::world::lifecycle`) clears, and the visit itself may kill
             // the object.
             let visitable = self.substrate.entities.get(id).is_some_and(|entity| {
-                entity.lifecycle.object_alive() && !entity.in_logic_vector.is_member()
+                entity.lifecycle.object_alive() && !entity.seldom.in_logic_vector.is_member()
             });
             if visitable {
                 self.check_auto_death(id, rules, registry, effects);
@@ -520,7 +520,7 @@ impl Simulation {
                 .get(*id)
                 .is_some_and(|entity| entity.lifecycle.object_alive())
         });
-        std::mem::swap(&mut self.auto_death_objects, &mut survivors);
+        std::mem::swap(&mut *self.auto_death_objects, &mut survivors);
     }
 
     /// `TechnoExt::KillSelf`'s `Vanish` arm (`:771-790`): a random
@@ -542,9 +542,8 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
-        let context = UninitContext::new(rules).with_effects(effects);
         let Some(entity) = self.substrate.entities.get(id) else {
             return true;
         };
@@ -580,14 +579,15 @@ impl Simulation {
             // release, which does not reposition the unit or queue a Move.
             crate::sim::docking::bunker_link::release_sell_destroy(self, id, rules, effects);
         }
-        self.kill_passengers(id, Some(id), context);
-        self.stun(id, context);
-        let _ = self.techno_limbo_with_context(id, context);
+        let mut context = UninitContext::new(rules).with_effects(effects);
+        self.kill_passengers(id, Some(id), context.reborrow());
+        self.stun(id, context.reborrow());
+        let _ = self.techno_limbo_with_context(id, context.reborrow());
         self.record_the_kill(
             id,
             KillSource::House(Some(owner)),
             KillCallback::Terminal,
-            context,
+            context.reborrow(),
         );
         self.uninit_with_context(id, context);
         true
@@ -603,7 +603,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let sellable = self.substrate.entities.get(id).is_some_and(|entity| {
             entity.category() == crate::map::entities::EntityCategory::Structure
@@ -638,7 +638,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         // RESIDUAL: Phobos calls Ares `SpawnSurvivors(pThis, nullptr, false,
         // false)` immediately before this hit `:810-816`, because the hit's
@@ -665,9 +665,8 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
-        let context = UninitContext::new(rules).with_effects(effects);
         let Some(entity) = self.substrate.entities.get(id) else {
             return true;
         };
@@ -715,11 +714,12 @@ impl Simulation {
         // the source house, not an attacking Techno. UnInit drops the object
         // from its transport's cargo (`ObjectClass::Detach_All`) and kills its
         // own passengers, so the gunner step below reads the remaining cargo.
+        let mut context = UninitContext::new(rules).with_effects(effects);
         self.record_the_kill(
             id,
             KillSource::House(Some(owner)),
             KillCallback::Terminal,
-            context,
+            context.reborrow(),
         );
         self.uninit_with_context(id, context);
         // `:749-763`: a `Gunner=` transport empties its gunner slot and hands it

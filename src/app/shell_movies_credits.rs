@@ -4,7 +4,6 @@
 //! recreates its return dialog afterwards.
 
 use crate::sim::trigger_runtime::ThemeRequest;
-use crate::ui::shell::list::ListMetrics;
 use crate::util::time::Instant;
 use std::sync::Arc;
 
@@ -13,10 +12,15 @@ use crate::app::frontend::credits_roll::{
     CreditsInput, CreditsReturn, CreditsRoll, CreditsRollSession, CreditsViewport,
 };
 use crate::app::frontend::fullscreen_movie::{FullscreenMovie, MovieReturn, movie_stem};
+use crate::app::frontend::state::FrontendState;
 use crate::app::shell_route::ShellRoute;
 use crate::ui::movies_credits_shell::{
-    MOVIE_LIST_DIALOG, MOVIES_CREDITS_PAGE, MovieListState, MoviesCreditsAction,
+    MOVIE_LIST_DIALOG, MOVIES_CREDITS_PAGE, MoviesCreditsAction, active_movie_entries,
+    family_list_node, family_list_selected, retained_movie_row,
 };
+use crate::ui::shell::controller::DialogController;
+use winit::keyboard::ModifiersState;
+use winit::window::Window;
 
 /// The Sneak Peeks movie (`0x0052DE55`).
 const SNEAK_PEEK_MOVIE: &str = "RENEGADE.BIK";
@@ -29,29 +33,36 @@ impl App {
     /// The shell dialog being left is destroyed (child `0x71A` with it)
     /// before the next dialog or presentation is created.
     pub(super) fn destroy_current_shell_dialog(state: &mut AppState) {
-        crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
-        crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
+        crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(
+            &mut state.frontend,
+        );
+        crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(
+            &mut state.frontend,
+        );
+    }
+
+    /// `route` shows with `dialog` the shell's sole dialog.
+    pub(super) fn show_shell_page(
+        frontend: &mut FrontendState,
+        route: ShellRoute,
+        dialog: crate::ui::shell::descriptor::DialogResourceId,
+    ) {
+        frontend.shell_route = route;
+        frontend.shell_controller.reset_to(dialog);
     }
 
     /// State 4: create Movies & Credits `0x101`.
     pub(super) fn open_movies_credits_page(state: &mut AppState) {
         Self::destroy_current_shell_dialog(state);
         state.frontend.movie_list = None;
-        state.frontend.shell_route = ShellRoute::MoviesAndCredits;
-        state
-            .frontend
-            .shell_controller
-            .reset_to(MOVIES_CREDITS_PAGE.dialog, false);
+        let dialog = MOVIES_CREDITS_PAGE.dialog;
+        Self::show_shell_page(&mut state.frontend, ShellRoute::MoviesAndCredits, dialog);
     }
 
     pub(super) fn handle_movies_credits_action(state: &mut AppState, action: MoviesCreditsAction) {
         match action {
             MoviesCreditsAction::SneakPeeks => {
-                Self::start_fullscreen_movie(
-                    state,
-                    SNEAK_PEEK_MOVIE,
-                    MovieReturn::MoviesAndCredits,
-                );
+                Self::start_fullscreen_movie(state, SNEAK_PEEK_MOVIE, MovieReturn::MoviesAndCredits)
             }
             MoviesCreditsAction::PlayMovies => Self::open_movie_list(state),
             MoviesCreditsAction::ViewCredits => {
@@ -68,170 +79,103 @@ impl App {
     /// and the retained selection `DAT_00825C80`.
     pub(super) fn open_movie_list(state: &mut AppState) {
         Self::destroy_current_shell_dialog(state);
-        state.frontend.movie_list = Some(MovieListState::open(
-            state.persistence.options_profile.movie_progress,
-            state.frontend.movie_list_selection,
-        ));
-        state.frontend.shell_route = ShellRoute::MovieList;
-        state
-            .frontend
-            .shell_controller
-            .reset_to(MOVIE_LIST_DIALOG, false);
+        let rows = active_movie_entries(state.persistence.options_profile.movie_progress);
+        state.frontend.movie_list = Some(rows);
+        Self::show_shell_page(
+            &mut state.frontend,
+            ShellRoute::MovieList,
+            MOVIE_LIST_DIALOG,
+        );
+        Self::movie_list_sync(state);
     }
 
-    pub(super) fn movie_list_active(state: &AppState) -> bool {
-        state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
-            && state.frontend.shell_route.movie_list()
-            && state.frontend.movie_list.is_some()
-    }
-
-    fn movie_list_layout(state: &AppState) -> crate::ui::movies_credits_shell::MovieListLayout {
-        crate::app::frontend::shell_layout::movie_list_layout(state)
-    }
-
-    fn movie_list_feed(state: &mut AppState) -> Vec<crate::ui::shell::layout::LaidOutControl> {
-        let layout = Self::movie_list_layout(state);
-        state
-            .frontend
-            .shell_controller
-            .ensure_active(MOVIE_LIST_DIALOG, false);
-        let mut feed = Self::menu_page_button_feed(&layout.page);
-        // The list is a hover target for status help, never an owner-draw
-        // button press: it is appended after the buttons and filtered out of
-        // press handling below.
-        feed.push(crate::ui::shell::layout::LaidOutControl {
-            id: crate::ui::movies_credits_shell::MOVIE_LIST_CONTROL,
-            rect: layout.list,
-        });
-        feed
-    }
-
-    pub(super) fn handle_movie_list_mouse_move(state: &mut AppState) {
-        let feed = Self::movie_list_feed(state);
-        let (x, y) = state.match_state.input.cursor_px();
-        state.frontend.shell_controller.on_pointer_move(x, y, &feed);
-        let layout = Self::movie_list_layout(state);
-        if let Some(list) = state.frontend.movie_list.as_mut() {
-            list.scroll_pointer_moved(layout.list, ListMetrics::scaled(layout.page.scale), x, y);
+    /// Binds the controller to the page and keeps its list `0x744`, the
+    /// dialog's `List` node: a hover target for status help and its own
+    /// press handler, never a button press.
+    fn movie_list_sync(state: &mut AppState) -> crate::ui::movies_credits_shell::MovieListLayout {
+        let layout = crate::app::frontend::shell_layout::movie_list_layout(&state.renderer.gpu);
+        let retained = state.frontend.movie_list_selection;
+        let controller = &mut state.frontend.shell_controller;
+        controller.ensure_active(MOVIE_LIST_DIALOG);
+        controller.set_scale(layout.page.scale);
+        if let Some(rows) = state.frontend.movie_list.as_ref() {
+            // The buttons and the prompt first: the list's id counts as built.
+            if let Some(root) = controller.root_in(MOVIE_LIST_DIALOG) {
+                let nodes = crate::ui::movies_credits_shell::movie_list_nodes;
+                crate::ui::shell::page::ensure_built(controller.gui_mut(), root, nodes);
+            }
+            let list = (rows.len(), retained_movie_row(rows, retained), 0);
+            if let Some(node) = family_list_node(controller, MOVIE_LIST_DIALOG, layout.list, list) {
+                // Its rows draw top-left (`Shell__DrawTextAligned`, flags 0).
+                let gui = controller.gui_mut();
+                let id = crate::ui::movies_credits_shell::FAMILY_LIST_ID;
+                let _ = gui.set(node, vera20k_gui::Prop::Id, vera20k_gui::Value::Int(id));
+                let _ = gui.set(node, vera20k_gui::Prop::Align, vera20k_gui::Value::Int(0));
+            }
         }
-        // Every hover message repaints the status line (0x00615EF7).
-        state.frontend.shell_status_line.repaint();
+        layout
     }
 
-    /// Scrollbar arrow auto-repeat; returns the next wake deadline.
-    pub(super) fn poll_movie_list_scroll(state: &mut AppState) -> Option<Instant> {
-        if !Self::movie_list_active(state) {
-            return None;
-        }
-        let (x, y) = state.match_state.input.cursor_px();
-        let layout = Self::movie_list_layout(state);
-        let list = state.frontend.movie_list.as_mut()?;
-        if list.scroll_poll(
-            layout.list,
-            ListMetrics::scaled(layout.page.scale),
-            x,
-            y,
-            Instant::now(),
+    /// The movie or Mods list's scrollbar arrow repeat
+    /// (`0x0061D215..0x0061D2C8`) while its page shows; returns the next
+    /// wake deadline.
+    pub(super) fn poll_family_list(
+        window: &Window,
+        controller: &mut DialogController,
+    ) -> Option<Instant> {
+        (*controller).poll_then(|| window.request_redraw())
+    }
+
+    /// One pointer message (`down`: `None` moves). A press on a button
+    /// plays GUIMainButtonSound, one in the list (0x0061A948) selects the
+    /// row under it (presses below the last row are ignored) and plays
+    /// GenericClick; the scrollbar child (0x0061C690) captures its own
+    /// presses without a sound, and the second press of a double-click
+    /// selects nothing. Every hover message repaints the status line
+    /// (0x00615EF7).
+    pub(super) fn handle_movie_list_mouse(state: &mut AppState, down: Option<bool>) {
+        use crate::app::frontend::shell_transition::ShellSlideKind::MovieList;
+        let layout = Self::movie_list_sync(state);
+        let rect_of = |id| layout.rect_of(id);
+        let nodes = crate::ui::movies_credits_shell::movie_list_nodes;
+        match Self::screen_page_pointer(
+            &mut state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio.sfx_player,
+            MOVIE_LIST_DIALOG,
+            nodes,
+            rect_of,
+            &[],
+            down,
         ) {
-            state.platform.window.request_redraw();
-        }
-        list.scroll.repeat_at()
-    }
-
-    pub(super) fn handle_movie_list_mouse_down(state: &mut AppState) {
-        let feed = Self::movie_list_feed(state);
-        let (x, y) = state.match_state.input.cursor_px();
-        let layout = Self::movie_list_layout(state);
-        if let Some(list) = state.frontend.movie_list.as_mut()
-            && layout.list.contains(x, y)
-        {
-            // The scrollbar child (0x0061C690) captures its own presses and
-            // plays no sound.
-            if list.scroll_press(
-                layout.list,
-                ListMetrics::scaled(layout.page.scale),
-                x,
-                y,
-                Instant::now(),
-            ) {
-                return;
-            }
-            let double_click = list.is_double_click(
-                Instant::now(),
-                x,
-                y,
-                crate::ui::shell::saved_file_input::host_double_click_limits(),
-            );
-            // 0x0061A948: a single press selects the row under it (presses
-            // below the last row are ignored) and plays GenericClick.
-            if !double_click
-                && let Some(row) =
-                    list.row_at(layout.list, ListMetrics::scaled(layout.page.scale), x, y)
-            {
-                list.selected = Some(row);
-                Self::play_generic_click_sound(state);
-            }
-            return;
-        }
-        let buttons: Vec<_> = feed
-            .into_iter()
-            .filter(|control| control.id != crate::ui::movies_credits_shell::MOVIE_LIST_CONTROL)
-            .collect();
-        state
-            .frontend
-            .shell_controller
-            .on_pointer_down(x, y, &buttons);
-        if state.frontend.shell_controller.pressed().is_some() {
-            Self::play_main_menu_button_sound(state);
-        }
-    }
-
-    pub(super) fn handle_movie_list_mouse_up(state: &mut AppState) {
-        if let Some(list) = state.frontend.movie_list.as_mut() {
-            list.scroll.cancel();
-        }
-        let feed: Vec<_> = Self::movie_list_feed(state)
-            .into_iter()
-            .filter(|control| control.id != crate::ui::movies_credits_shell::MOVIE_LIST_CONTROL)
-            .collect();
-        let (x, y) = state.match_state.input.cursor_px();
-        use crate::app::frontend::shell_transition::ShellExitThen;
-        match state.frontend.shell_controller.on_pointer_up(x, y, &feed) {
             Some(crate::ui::movies_credits_shell::PLAY_MOVIE_CONTROL) => {
-                let selected = state
-                    .frontend
-                    .movie_list
-                    .as_ref()
-                    .is_some_and(|list| list.selected.is_some());
-                if selected {
-                    Self::leave_shell_dialog(state, ShellExitThen::PlayMovie);
+                if family_list_selected(&state.frontend.shell_controller, MOVIE_LIST_DIALOG)
+                    .is_some()
+                {
+                    Self::leave_shell_dialog(state, MovieList, App::play_selected_movie);
                 } else {
                     // No selection: the proc stores it and keeps the dialog.
                     Self::play_selected_movie(state);
                 }
             }
             // Back writes -1: state 4 recreates Movies & Credits.
-            Some(0x0686) => Self::leave_shell_dialog(state, ShellExitThen::MovieListBack),
+            Some(0x0686) => {
+                Self::leave_shell_dialog(state, MovieList, App::open_movies_credits_page)
+            }
             _ => {}
         }
-    }
-
-    pub(super) fn play_generic_click_sound(state: &mut AppState) {
-        let sound_id = state
-            .rules()
-            .and_then(|rules| rules.general.generic_click_sound.as_deref())
-            .map(str::to_owned);
-        Self::play_shell_ui_sound_by_id(state, sound_id.as_deref());
     }
 
     /// Play Movie (`0x0052D960..0x0052D98D`): the current selection is saved
     /// to `DAT_00825C80`; no selection plays nothing and keeps the dialog.
     pub(super) fn play_selected_movie(state: &mut AppState) {
-        let Some(list) = state.frontend.movie_list.as_ref() else {
+        let Some(rows) = state.frontend.movie_list.as_ref() else {
             return;
         };
-        state.frontend.movie_list_selection = list.selected.map_or(-1, |row| row as i32);
-        let Some(entry) = list.selected.and_then(|row| list.rows.get(row).copied()) else {
+        let selected = family_list_selected(&state.frontend.shell_controller, MOVIE_LIST_DIALOG);
+        state.frontend.movie_list_selection = selected.map_or(-1, |row| row as i32);
+        let Some(entry) = selected.and_then(|row| rows.get(row).copied()) else {
             return;
         };
         // State 0xE's CD check (0x004790E0 with entry.cd) passes for a
@@ -303,11 +247,7 @@ impl App {
         state.audio.set_movie_sounds_suspended(true, wall_ms);
         // The Bink soundtrack plays at VoiceVolume: BinkSetVolume(ftol(
         // VoiceVolume * 32768.0)) at `0x00432897` (32768 = unity gain).
-        let voice_volume = state
-            .persistence
-            .options_profile
-            .voice_volume
-            .clamp(0.0, 1.0);
+        let voice_volume = (state.persistence.options_profile.voice_volume).clamp(0.0, 1.0);
         // 0x006C99D0: the movie's cues, when it has any.
         let header = &surface.file().header;
         let subtitles =
@@ -326,13 +266,12 @@ impl App {
             voice_volume,
             subtitles,
             return_to,
-            crate::app::frontend::fullscreen_movie::playback_active(state),
+            crate::app::frontend::fullscreen_movie::playback_active(&state.platform),
         );
         state.frontend.fullscreen_movie = Some(movie);
         if running_scenario {
             state.frontend.screen = crate::ui::game_screen::GameScreen::MainMenu;
         }
-        state.platform.window.request_redraw();
     }
 
     /// End of Play_Movie: resume the paused music and recreate the caller's
@@ -354,11 +293,7 @@ impl App {
         let Some(movie) = state.frontend.fullscreen_movie.as_mut() else {
             return Ok(());
         };
-        let voice_volume = state
-            .persistence
-            .options_profile
-            .voice_volume
-            .clamp(0.0, 1.0);
+        let voice_volume = (state.persistence.options_profile.voice_volume).clamp(0.0, 1.0);
         let ended = match movie.step(&state.renderer.gpu, voice_volume) {
             Ok(ended) => ended,
             Err(err) => {
@@ -368,8 +303,6 @@ impl App {
         };
         if ended {
             Self::finish_fullscreen_movie(state);
-        } else {
-            state.platform.window.request_redraw();
         }
         Ok(())
     }
@@ -385,8 +318,6 @@ impl App {
             .advance(crate::app::frontend::credits_roll::wall_bucket(now_ms));
         if session.roll.finished() {
             Self::finish_credits_roll(state);
-        } else {
-            state.platform.window.request_redraw();
         }
     }
 
@@ -400,23 +331,23 @@ impl App {
             MovieReturn::MoviesAndCredits => Self::open_movies_credits_page(state),
             MovieReturn::MovieList => Self::open_movie_list(state),
             MovieReturn::CampaignStart(request) => {
-                crate::app::loading::pump::begin_loading(state, *request);
+                crate::app::loading::pump::begin_loading(state, *request)
             }
             MovieReturn::CampaignLoaded(result) => {
-                crate::app::loading::transitions::apply_map_load_result(state, *result);
+                crate::app::loading::transitions::apply_map_load_result(state, *result)
             }
             MovieReturn::RunningScenario => {
                 state.frontend.screen = crate::ui::game_screen::GameScreen::InGame;
                 state.platform.window.request_redraw();
             }
             MovieReturn::CampaignResult(destination) => {
-                Self::complete_scenario_exit(state, *destination);
+                Self::complete_scenario_exit(state, *destination)
             }
             MovieReturn::CampaignVictory(victory) => {
-                Self::advance_campaign_victory(state, *victory);
+                Self::advance_campaign_victory(state, *victory)
             }
             MovieReturn::CampaignDefeat(defeat) => {
-                Self::open_campaign_replay_prompt(state, *defeat);
+                Self::open_campaign_replay_prompt(state, *defeat)
             }
         }
     }
@@ -424,19 +355,19 @@ impl App {
     /// Only a bare Escape release (`Keyboard::Get() == 0x081B`) aborts a
     /// movie; every other key and mouse event is consumed and ignored.
     pub(super) fn fullscreen_movie_key(
-        state: &mut AppState,
+        live_modifiers: ModifiersState,
+        fullscreen_movie: &mut Option<FullscreenMovie>,
         code: winit::keyboard::KeyCode,
         pressed: bool,
     ) {
-        let modifiers = state.platform.live_modifiers;
+        let modifiers = live_modifiers;
         let bare = !(modifiers.shift_key() || modifiers.control_key() || modifiers.alt_key());
         if code == winit::keyboard::KeyCode::Escape
             && !pressed
             && bare
-            && let Some(movie) = state.frontend.fullscreen_movie.as_mut()
+            && let Some(movie) = fullscreen_movie.as_mut()
         {
             movie.abort();
-            state.platform.window.request_redraw();
         }
     }
 
@@ -453,11 +384,9 @@ impl App {
             Self::finish_credits_roll_return(state, return_to);
             return;
         };
-        let lookup = |key: &str| Self::csf_label(state, key, &format!("MISSING:'{key}'"));
-        let viewport = CreditsViewport::new(
-            state.renderer.gpu.config.width,
-            state.renderer.gpu.config.height,
-        );
+        let lookup = |key: &str| state.csf_label(key, &format!("MISSING:'{key}'"));
+        let config = &state.renderer.gpu.config;
+        let viewport = CreditsViewport::new(config.width, config.height);
         let lines = crate::ui::movies_credits_shell::parse_credits(
             &bytes,
             viewport.surface_height,
@@ -470,15 +399,17 @@ impl App {
         let saved_score_volume = state.persistence.options_profile.score_volume;
         if saved_score_volume == 0.0 {
             crate::app::persistence::options::audio::apply_volume(
-                state,
+                &state.frontend,
+                &state.match_state,
+                &state.process_assets,
+                &mut state.audio,
+                &mut state.persistence.options_profile,
                 crate::app::persistence::options::audio::AudioVolume::Score,
                 CREDITS_SILENT_SCORE_VOLUME,
                 false,
             );
         }
-        state
-            .audio
-            .queue_theme(&ThemeRequest::Name(CREDITS_THEME.into()), now_ms);
+        (state.audio).queue_theme(&ThemeRequest::Name(CREDITS_THEME.into()), now_ms);
         let roll = CreditsRoll::new(
             lines,
             &state.renderer.bit_font,
@@ -490,14 +421,15 @@ impl App {
             last_drawn: Vec::new(),
             return_to,
         });
-        state.platform.window.request_redraw();
     }
 
     /// Queue one keyboard/mouse event for the credits loop.
-    pub(super) fn credits_roll_input(state: &mut AppState, input: CreditsInput) {
-        if let Some(session) = state.frontend.credits_roll.as_mut() {
+    pub(super) fn credits_roll_input(
+        credits_roll: &mut Option<CreditsRollSession>,
+        input: CreditsInput,
+    ) {
+        if let Some(session) = credits_roll.as_mut() {
             session.roll.push_input(input);
-            state.platform.window.request_redraw();
         }
     }
 
@@ -510,7 +442,11 @@ impl App {
         };
         state.audio.stop_theme();
         crate::app::persistence::options::audio::apply_volume(
-            state,
+            &state.frontend,
+            &state.match_state,
+            &state.process_assets,
+            &mut state.audio,
+            &mut state.persistence.options_profile,
             crate::app::persistence::options::audio::AudioVolume::Score,
             session.saved_score_volume,
             false,
@@ -520,9 +456,7 @@ impl App {
 
     fn finish_credits_roll_return(state: &mut AppState, return_to: CreditsReturn) {
         let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
-        state
-            .audio
-            .queue_theme(&ThemeRequest::Name("INTRO".into()), now_ms);
+        (state.audio).queue_theme(&ThemeRequest::Name("INTRO".into()), now_ms);
         match return_to {
             CreditsReturn::MoviesAndCredits => Self::open_movies_credits_page(state),
             CreditsReturn::MainMenu => {

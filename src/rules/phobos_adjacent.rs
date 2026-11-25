@@ -35,12 +35,14 @@ pub struct PhobosAdjacent {
 
 impl PhobosAdjacent {
     pub fn from_section(section: &IniSection) -> Self {
-        use crate::rules::native_processing::read_valueable_type_vector;
+        use crate::rules::native_processing::read_nullable_type_vector;
         let resolve = |name: &str| Some(name.to_owned());
         Self {
             no_build_area_on_buildup: section.read_ares_bool("NoBuildAreaOnBuildup", false),
-            allowed: read_valueable_type_vector(section, "Adjacent.Allowed", &[], resolve),
-            disallowed: read_valueable_type_vector(section, "Adjacent.Disallowed", &[], resolve),
+            allowed: read_nullable_type_vector(section, "Adjacent.Allowed", None, resolve)
+                .unwrap_or_default(),
+            disallowed: read_nullable_type_vector(section, "Adjacent.Disallowed", None, resolve)
+                .unwrap_or_default(),
             prohibit: section.read_ares_bool("Adjacent.Disallowed.Prohibit", false),
             prohibit_distance: section.read_ares_int("Adjacent.Disallowed.ProhibitDistance", 0),
         }

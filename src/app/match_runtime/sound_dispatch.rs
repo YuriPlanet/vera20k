@@ -41,7 +41,7 @@ pub(crate) fn selection_voice_event(
     let sound_id = sim.selection_voice_request(rules, entity_id, voices_enabled)?;
     Some(GameSoundEvent::UnitSelected {
         speaker_id: entity_id,
-        sound_id: sound_id.to_string(),
+        sound_id: rules.sound_name(sound_id),
     })
 }
 
@@ -65,7 +65,7 @@ pub(crate) fn default_order_voice_event(
     )?;
     Some(GameSoundEvent::UnitMoveOrder {
         speaker_id: entity_id,
-        sound_id: sound_id.to_string(),
+        sound_id: rules.sound_name(sound_id),
     })
 }
 
@@ -88,7 +88,7 @@ pub(crate) fn deploy_order_voice_event(
     let sound_id = sim.deploy_voice_request(rules, entity_id, true)?;
     Some(GameSoundEvent::UnitVoiceRequested {
         speaker_id: entity_id,
-        sound_id: sound_id.to_string(),
+        sound_id: rules.sound_name(sound_id),
     })
 }
 
@@ -174,10 +174,13 @@ pub(super) fn dispatch_sim_sound_events(
                 if !owner_is_local(sim.interner(), owner, local_owner_name) {
                     continue;
                 }
-                let Some(sound_id) = rules.general.add_planning_mode_command_sound.clone() else {
+                let Some(sound_id) = rules.general.add_planning_mode_command_sound.as_deref()
+                else {
                     continue;
                 };
-                GameSoundEvent::UiSound { sound_id }
+                GameSoundEvent::UiSound {
+                    sound_id: rules.sound_name(sound_id),
+                }
             }
             SimSoundEvent::TriggerAudio { reference, target } => {
                 GameSoundEvent::TriggerAudio { reference, target }
@@ -203,7 +206,7 @@ pub(super) fn dispatch_sim_sound_events(
                 world,
             } => GameSoundEvent::AnimationStarted {
                 anim_id: owner,
-                sound_id: sim.interner().resolve(sound_id).to_string(),
+                sound_id: rules.sound_name(sim.interner().resolve(sound_id)),
                 source: Some(anim_world_sound_source(world)),
             },
             SimSoundEvent::AnimationStarted {
@@ -221,7 +224,7 @@ pub(super) fn dispatch_sim_sound_events(
                 world,
             } => GameSoundEvent::AnimationStopped {
                 anim_id,
-                stop_sound_id: stop_sound_id.map(|id| sim.interner().resolve(id).to_string()),
+                stop_sound_id: stop_sound_id.map(|id| rules.sound_name(sim.interner().resolve(id))),
                 source: Some(anim_world_sound_source(world)),
             },
             // The techno's `+0x4A4` handle: an owner loop, keyed apart from
@@ -248,7 +251,7 @@ pub(super) fn dispatch_sim_sound_events(
                 GameSoundEvent::AnimationDetached { anim_id: owner }
             }
             SimSoundEvent::AircraftPhase { sound_id, world } => GameSoundEvent::AircraftPhase {
-                sound_id: sim.interner().resolve(sound_id).to_string(),
+                sound_id: rules.sound_name(sim.interner().resolve(sound_id)),
                 source: Some(anim_world_sound_source(world)),
             },
             SimSoundEvent::EntityDied {
@@ -262,29 +265,29 @@ pub(super) fn dispatch_sim_sound_events(
                 crush_sound_id,
                 world,
             } => GameSoundEvent::EntityCrushed {
-                sound_id: sim.interner().resolve(crush_sound_id).to_string(),
+                sound_id: rules.sound_name(sim.interner().resolve(crush_sound_id)),
                 source: Some(anim_world_sound_source(world)),
             },
             SimSoundEvent::LeaveTransport { sound_id, world } => GameSoundEvent::LeaveTransport {
-                sound_id: sim.interner().resolve(sound_id).to_string(),
+                sound_id: rules.sound_name(sim.interner().resolve(sound_id)),
                 source: Some(anim_world_sound_source(world)),
             },
             SimSoundEvent::EntityDeployed {
                 deploy_sound_id,
                 world,
             } => GameSoundEvent::EntityDeployed {
-                sound_id: sim.interner().resolve(deploy_sound_id).to_string(),
+                sound_id: rules.sound_name(sim.interner().resolve(deploy_sound_id)),
                 source: Some(anim_world_sound_source(world)),
             },
             SimSoundEvent::EntityUndeployed {
                 undeploy_sound_id,
                 world,
             } => GameSoundEvent::EntityUndeployed {
-                sound_id: sim.interner().resolve(undeploy_sound_id).to_string(),
+                sound_id: rules.sound_name(sim.interner().resolve(undeploy_sound_id)),
                 source: Some(anim_world_sound_source(world)),
             },
             SimSoundEvent::ChronoTeleport { sound_id, world } => GameSoundEvent::ChronoTeleport {
-                sound_id: sim.interner().resolve(sound_id).to_string(),
+                sound_id: rules.sound_name(sim.interner().resolve(sound_id)),
                 source: Some(anim_world_sound_source(world)),
             },
             SimSoundEvent::UnitPromoted {
@@ -307,7 +310,7 @@ pub(super) fn dispatch_sim_sound_events(
                 // through to the shared push below.
                 if let Some(sound_id) = sound_id {
                     output.push(GameSoundEvent::UnitPromoted {
-                        sound_id: sim.interner().resolve(sound_id).to_string(),
+                        sound_id: rules.sound_name(sim.interner().resolve(sound_id)),
                         source: Some(anim_world_sound_source(world)),
                     });
                 }
@@ -438,7 +441,7 @@ pub(super) fn dispatch_sim_sound_events(
                         superweapon_launch_cue(sw.kind, &rules.general, sw.start_sound.as_deref());
                     if let Some(sound_id) = cue.sound_id {
                         output.push(GameSoundEvent::VocAt {
-                            sound_id,
+                            sound_id: rules.sound_name(sound_id),
                             source: Some(anim_world_sound_source(world)),
                         });
                     }
@@ -446,10 +449,10 @@ pub(super) fn dispatch_sim_sound_events(
                 // Ares SW_Protect::Activate10074750: StartSound at the cell.
                 if ares
                     && sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Protect
-                    && let Some(sound_id) = sw.start_sound.clone()
+                    && let Some(sound_id) = sw.start_sound.as_deref()
                 {
                     output.push(GameSoundEvent::VocAt {
-                        sound_id,
+                        sound_id: rules.sound_name(sound_id),
                         source: Some(anim_world_sound_source(world)),
                     });
                 }
@@ -498,7 +501,7 @@ pub(super) fn dispatch_sim_sound_events(
                         .map(|sound_id| {
                             let coordinate = [world.x, world.y, world.z];
                             GameSoundEvent::VocAtCoord {
-                                sound_id,
+                                sound_id: rules.sound_name(sound_id),
                                 coordinate,
                                 flags: 0,
                                 source: SoundSource::from_coordinate(coordinate),
@@ -521,7 +524,7 @@ pub(super) fn dispatch_sim_sound_events(
                     .map(str::to_string);
                 // What is left of the cue is its EVA line, with no position.
                 let activated = eva_event.map(|line| GameSoundEvent::SuperWeaponActivated {
-                    sound_id: String::new(),
+                    sound_id: crate::rules::ruleset::SoundName::Static(""),
                     source: None,
                     eva_event: Some(line),
                 });
@@ -546,8 +549,6 @@ pub(super) fn dispatch_sim_sound_events(
                 };
                 retained_cue
             }
-            SimSoundEvent::SuperWeaponActivatedMessage { .. }
-            | SimSoundEvent::SuperWeaponLinkedAcquired { .. } => continue,
             SimSoundEvent::SuperWeaponActivatedMessage { owner, sw_type } => {
                 // Phobos `SWTypeExt::ApplyActivatedMessage`/`ApplyActivatedEva`
                 // (`Ext/SWType/FireSuperWeapon.cpp:491-526`): every client
@@ -639,11 +640,11 @@ pub(super) fn dispatch_sim_sound_events(
                 // 1.0, centred rather than at the storm cell. Its line
                 // follows through `hud_messages`; the EVA line
                 // was spoken at launch, the whole countdown earlier.
-                let Some(sound_id) = rules.general.storm_sound.clone() else {
+                let Some(sound_id) = rules.general.storm_sound.as_deref() else {
                     continue;
                 };
                 GameSoundEvent::SuperWeaponActivated {
-                    sound_id,
+                    sound_id: rules.sound_name(sound_id),
                     source: None,
                     eva_event: None,
                 }
@@ -728,10 +729,12 @@ pub(super) fn dispatch_sim_sound_events(
                 if !sim.house_is_human_player(owner) {
                     continue;
                 }
-                let Some(sound_id) = rules.general.scold_sound.clone() else {
+                let Some(sound_id) = rules.general.scold_sound.as_deref() else {
                     continue;
                 };
-                GameSoundEvent::UiSound { sound_id }
+                GameSoundEvent::UiSound {
+                    sound_id: rules.sound_name(sound_id),
+                }
             }
             SimSoundEvent::BuildingPlaced {
                 owner,
@@ -758,10 +761,12 @@ pub(super) fn dispatch_sim_sound_events(
                 } else {
                     sound_id
                 };
-                let Some(sound_id) = sound_id.map(str::to_owned) else {
+                let Some(sound_id) = sound_id else {
                     continue;
                 };
-                GameSoundEvent::UiSound { sound_id }
+                GameSoundEvent::UiSound {
+                    sound_id: rules.sound_name(sound_id),
+                }
             }
             SimSoundEvent::StructureGarrisoned { owner, type_id } => {
                 // `0x005229AE CALL 0x0050B6F0`: only for a human player.
@@ -797,7 +802,7 @@ pub(super) fn dispatch_sim_sound_events(
                 let sound_id = match Some(rules)
                     .and_then(|r| r.general.building_garrisoned_sound.as_deref())
                 {
-                    Some(s) if !s.is_empty() => s.to_string(),
+                    Some(s) if !s.is_empty() => rules.sound_name(s),
                     _ => continue,
                 };
                 GameSoundEvent::BuildingGarrisonedSfx {
@@ -807,7 +812,7 @@ pub(super) fn dispatch_sim_sound_events(
             }
             SimSoundEvent::ChuteSound { world } => {
                 let sound_id = match Some(rules).and_then(|r| r.general.chute_sound.as_deref()) {
-                    Some(s) if !s.is_empty() => s.to_string(),
+                    Some(s) if !s.is_empty() => rules.sound_name(s),
                     _ => continue,
                 };
                 GameSoundEvent::ChuteSound {
@@ -819,7 +824,7 @@ pub(super) fn dispatch_sim_sound_events(
                 // Walls-up cue on install; skip when the rules key is empty.
                 let sound_id =
                     match Some(rules).and_then(|r| r.general.bunker_walls_up_sound.as_deref()) {
-                        Some(s) if !s.is_empty() => s.to_string(),
+                        Some(s) if !s.is_empty() => rules.sound_name(s),
                         _ => continue,
                     };
                 GameSoundEvent::BunkerWalls {
@@ -831,7 +836,7 @@ pub(super) fn dispatch_sim_sound_events(
                 // Walls-down cue on normal exit / clear teardown.
                 let sound_id =
                     match Some(rules).and_then(|r| r.general.bunker_walls_down_sound.as_deref()) {
-                        Some(s) if !s.is_empty() => s.to_string(),
+                        Some(s) if !s.is_empty() => rules.sound_name(s),
                         _ => continue,
                     };
                 GameSoundEvent::BunkerWalls {
@@ -843,8 +848,10 @@ pub(super) fn dispatch_sim_sound_events(
                 // Spatial SFX gated on rules.bridge_rules.repair_sound
                 // being set (the original game gates on
                 // `RulesClass+0x248 != -1`).
-                let sound_id = Some(rules)
-                    .and_then(|r| r.bridge_rules.repair_sound.clone())
+                let sound_id = rules
+                    .bridge_rules
+                    .repair_sound
+                    .as_deref()
                     .unwrap_or_default();
                 let source = if sound_id.is_empty() {
                     None
@@ -862,7 +869,7 @@ pub(super) fn dispatch_sim_sound_events(
                     continue;
                 }
                 GameSoundEvent::BridgeRepaired {
-                    sound_id,
+                    sound_id: rules.sound_name(sound_id),
                     source,
                     eva_event,
                 }
@@ -889,7 +896,7 @@ pub(super) fn dispatch_sim_sound_events(
                     crate::sim::world::CombatAlertVoice::Feedback { sound_id }
                     | crate::sim::world::CombatAlertVoice::Attack { sound_id } => {
                         output.push(GameSoundEvent::VocAt {
-                            sound_id,
+                            sound_id: rules.sound_name(&sound_id),
                             source: None,
                         });
                     }
@@ -1030,7 +1037,7 @@ pub(super) fn dispatch_sim_sound_events(
                     continue;
                 };
                 GameSoundEvent::SuperWeaponActivated {
-                    sound_id: String::new(),
+                    sound_id: crate::rules::ruleset::SoundName::Static(""),
                     source: None,
                     eva_event: Some(event.to_string()),
                 }
@@ -1127,10 +1134,12 @@ pub(super) fn dispatch_sim_sound_events(
                 if !sim.house_is_human_player(owner) {
                     continue;
                 }
-                let Some(sound_id) = rules.general.generic_click_sound.clone() else {
+                let Some(sound_id) = rules.general.generic_click_sound.as_deref() else {
                     continue;
                 };
-                GameSoundEvent::UiSound { sound_id }
+                GameSoundEvent::UiSound {
+                    sound_id: rules.sound_name(sound_id),
+                }
             }
             SimSoundEvent::Repairing { owner, type_id } => {
                 // `BuildingClass::ToggleRepair 0x004470A4 CALL
@@ -1499,8 +1508,9 @@ fn wall_sell_sound_for_local(
     if !local_owner.is_some_and(|local| local.eq_ignore_ascii_case(receiver_name)) {
         return None;
     }
+    let rules = rules?;
     Some(GameSoundEvent::UiSound {
-        sound_id: rules?.general.sell_sound.clone()?,
+        sound_id: rules.sound_name(rules.general.sell_sound.as_deref()?),
     })
 }
 
@@ -1529,7 +1539,7 @@ fn base_under_attack_siren(
         .as_deref()
         .filter(|id| !id.is_empty())?;
     Some(GameSoundEvent::BaseUnderAttackSfx {
-        sound_id: sound_id.to_string(),
+        sound_id: rules.sound_name(sound_id),
     })
 }
 
@@ -1594,7 +1604,6 @@ fn phobos_eva_sold(
         .map(|cue| cue.map(str::to_owned))
 }
 
-
 /// The outcome line: `HouseClass::Flag_To_Win 0x004FCBA9` plays
 /// `EVA_YouAreVictorious` (`0x00824C2C`) and `Flag_To_Lose 0x004FCDA1`
 /// `EVA_YouHaveLost` (`0x00824C08`), both with `EDX = -1` (the entry's own
@@ -1623,9 +1632,9 @@ pub(crate) fn anim_world_sound_source(
 
 /// What one superweapon `Type=` case plays when it fires.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub(crate) struct SuperWeaponLaunchCue {
+pub(crate) struct SuperWeaponLaunchCue<'a> {
     /// `[AudioVisual]` (or the type's own `StartSound=`) cue name, if any.
-    pub sound_id: Option<String>,
+    pub sound_id: Option<&'a str>,
     /// `true` when the cue plays at the target coordinate. Every launch cue
     /// this table still carries is positional; the one non-positional cue in
     /// the system, `StormSound`, is not a launch cue at all — see
@@ -1663,11 +1672,11 @@ pub(crate) struct SuperWeaponLaunchCue {
 /// `0x00A8B538` is the client-side defeated/spectating flag
 /// (`HouseClass::MPlayer_Defeated @ 0x004FC205` sets it to 1); the dispatch
 /// reads it as [`crate::sim::world::Simulation::local_player_defeated`].
-pub(crate) fn superweapon_launch_cue(
+pub(crate) fn superweapon_launch_cue<'a>(
     kind: crate::rules::superweapon_type::SuperWeaponKind,
-    general: &crate::rules::ruleset::GeneralRules,
-    start_sound: Option<&str>,
-) -> SuperWeaponLaunchCue {
+    general: &'a crate::rules::ruleset::GeneralRules,
+    start_sound: Option<&'a str>,
+) -> SuperWeaponLaunchCue<'a> {
     use crate::rules::superweapon_type::SuperWeaponKind as K;
     let positional = SuperWeaponLaunchCue {
         positional: true,
@@ -1675,7 +1684,7 @@ pub(crate) fn superweapon_launch_cue(
     };
     match kind {
         K::MultiMissile => SuperWeaponLaunchCue {
-            sound_id: general.dig_sound.clone(),
+            sound_id: general.dig_sound.as_deref(),
             eva_event: Some("EVA_NuclearMissileLaunched"),
             ..positional
         },
@@ -1698,7 +1707,7 @@ pub(crate) fn superweapon_launch_cue(
             ..Default::default()
         },
         K::PsychicDominator => SuperWeaponLaunchCue {
-            sound_id: general.psychic_dominator_activate_sound.clone(),
+            sound_id: general.psychic_dominator_activate_sound.as_deref(),
             // `evamd.ini [EVA_PsychicDominatorActivated] Type=QUEUE` — and all
             // three of its faction values are `Dummy`, so on retail data the
             // line resolves to a zero-sample entry and is inaudible; only the
@@ -1707,20 +1716,17 @@ pub(crate) fn superweapon_launch_cue(
             ..positional
         },
         K::GeneticConverter => SuperWeaponLaunchCue {
-            sound_id: general.genetic_mutator_activate_sound.clone(),
+            sound_id: general.genetic_mutator_activate_sound.as_deref(),
             // `evamd.ini [EVA_GeneticMutatorActivated] Type=QUEUE`.
             eva_event: Some("EVA_GeneticMutatorActivated"),
             ..positional
         },
         K::ForceShield => SuperWeaponLaunchCue {
-            sound_id: start_sound
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(str::to_string),
+            sound_id: start_sound.map(str::trim).filter(|s| !s.is_empty()),
             ..positional
         },
         K::PsychicReveal => SuperWeaponLaunchCue {
-            sound_id: general.psychic_reveal_activate_sound.clone(),
+            sound_id: general.psychic_reveal_activate_sound.as_deref(),
             ..positional
         },
         // Cases 3, 5, 6 and 8 reach neither a `VocClass` nor a `VoxClass` call.
@@ -1739,7 +1745,10 @@ pub(crate) fn superweapon_launch_cue(
         | K::SonarPulse
         | K::EMPulse
         | K::Firestorm
-        | K::DropPod => SuperWeaponLaunchCue::default(),
+        | K::DropPod
+        // Firestorm 2.0 SuperClass::Place case 3 (0x60BE21..0x60BEC6) plays
+        // nothing either.
+        | K::IonCannon => SuperWeaponLaunchCue::default(),
     }
 }
 
@@ -1806,7 +1815,7 @@ pub(super) fn hud_messages(
 }
 
 fn cloak_sound_for_app(
-    sound_id: String,
+    sound_id: crate::rules::ruleset::SoundName,
     rx: u16,
     ry: u16,
     sub_x: crate::util::fixed_math::SimFixed,
@@ -1960,7 +1969,7 @@ mod tests {
                     eva_event: Some(event),
                     ..
                 } => Some(event.as_str()),
-                GameSoundEvent::VocAtCoord { sound_id, .. } => Some(sound_id.as_str()),
+                GameSoundEvent::VocAtCoord { sound_id, .. } => Some(sound_id.name_in(&rules)),
                 GameSoundEvent::EvaRemove { event } => Some(event.as_str()),
                 _ => None,
             })
@@ -2056,7 +2065,7 @@ mod tests {
         assert!(matches!(
             deploy_order_voice_event(&mut sim, &rules, miner, true),
             Some(GameSoundEvent::UnitVoiceRequested { speaker_id, ref sound_id })
-                if speaker_id == miner && sound_id == "SlaveMinerDeployVoice"
+                if speaker_id == miner && sound_id.name_in(&rules) == "SlaveMinerDeployVoice"
         ));
         assert!(deploy_order_voice_event(&mut sim, &rules, miner, false).is_none());
     }
@@ -2169,7 +2178,7 @@ mod tests {
             let sound_name = format!("NativeSound{}", native_sound["sound"].as_i64().unwrap());
             let events = [
                 SimSoundEvent::VocCentered {
-                    sound_id: sound_name.clone(),
+                    sound_id: rules.sound_name(&sound_name),
                 },
                 SimSoundEvent::StructureAbandoned {
                     owner,
@@ -2203,7 +2212,7 @@ mod tests {
                             sound_id,
                             source: None,
                         } => {
-                            assert_eq!(sound_id, sound_name, "{name}");
+                            assert_eq!(sound_id.name_in(&rules), sound_name, "{name}");
                             observed.borrow_mut().push("abandoned_sound");
                         }
                         GameSoundEvent::Eva {
@@ -2330,7 +2339,7 @@ mod tests {
         assert_eq!(emitted.len(), 1);
         assert!(matches!(
             &emitted[0],
-            GameSoundEvent::UiSound { sound_id } if sound_id == "PlaceBuilding"
+            GameSoundEvent::UiSound { sound_id } if sound_id.name_in(&rules) == "PlaceBuilding"
         ));
     }
 
@@ -2369,7 +2378,7 @@ mod tests {
         assert_eq!(emitted.len(), 1);
         assert!(matches!(
             &emitted[0],
-            GameSoundEvent::UiSound { sound_id } if sound_id == "Slam"
+            GameSoundEvent::UiSound { sound_id } if sound_id.name_in(&rules) == "Slam"
         ));
     }
 
@@ -2404,7 +2413,7 @@ mod tests {
             None,
         );
         assert!(matches!(output.drain().as_slice(),
-            [GameSoundEvent::UiSound { sound_id }] if *sound_id == expected));
+            [GameSoundEvent::UiSound { sound_id }] if sound_id.name_in(&rules) == expected));
         dispatch_sim_sound_events(
             events.clone(),
             &sim,
@@ -2485,7 +2494,7 @@ mod tests {
         };
         let mut output = SoundEventQueue::new();
         output.push(GameSoundEvent::UiSound {
-            sound_id: "Earlier".into(),
+            sound_id: crate::rules::ruleset::SoundName::Unlisted("Earlier".into()),
         });
         dispatch_sim_sound_events(
             [
@@ -2534,7 +2543,7 @@ mod tests {
         assert_eq!(
             events
                 .iter()
-                .map(GameSoundEvent::sound_id)
+                .map(|event| event.sound_id(Some(rules.sound_names())))
                 .collect::<Vec<_>>(),
             expected
         );
@@ -2604,7 +2613,7 @@ mod tests {
             output
                 .drain()
                 .iter()
-                .map(GameSoundEvent::sound_id)
+                .map(|event| event.sound_id(Some(rules.sound_names())))
                 .collect::<Vec<_>>(),
             [
                 "EVA_UnitRepaired",
@@ -2659,7 +2668,7 @@ mod tests {
             let spoken: Vec<String> = output
                 .drain()
                 .iter()
-                .map(|event| event.sound_id().to_string())
+                .map(|event| event.sound_id(Some(rules.sound_names())).to_string())
                 .collect();
             (asked, spoken)
         };
@@ -2725,7 +2734,7 @@ mod tests {
             let spoken: Vec<serde_json::Value> = output
                 .drain()
                 .iter()
-                .map(|event| serde_json::json!(event.sound_id()))
+                .map(|event| serde_json::json!(event.sound_id(Some(replayed.rules.sound_names()))))
                 .collect();
             assert_eq!(spoken, of_kind("eva"), "{name}: the EVA lines");
         }
@@ -2740,7 +2749,7 @@ mod tests {
         dispatch_sim_sound_events(
             [
                 SimSoundEvent::VocAt {
-                    sound_id: "Feedback".into(),
+                    sound_id: crate::rules::ruleset::SoundName::Unlisted("Feedback".into()),
                     audible_to: None,
                     rx: 3,
                     ry: 4,
@@ -2749,7 +2758,7 @@ mod tests {
                     world_z_leptons: 104,
                 },
                 SimSoundEvent::VocAtCoord {
-                    sound_id: "Damaged".into(),
+                    sound_id: crate::rules::ruleset::SoundName::Unlisted("Damaged".into()),
                     coordinate: crate::sim::components::DriveCoord {
                         x: 3 * 256 + 61,
                         y: 4 * 256 + 174,
@@ -2769,7 +2778,7 @@ mod tests {
         assert_eq!(
             events
                 .iter()
-                .map(GameSoundEvent::sound_id)
+                .map(|event| event.sound_id(Some(rules.sound_names())))
                 .collect::<Vec<_>>(),
             ["Feedback", "Damaged"]
         );
@@ -3067,7 +3076,7 @@ mod tests {
                             eva_event,
                             sound_id,
                             source: None,
-                        } if sound_id.is_empty() => eva_event
+                        } if sound_id.name_in(&rules).is_empty() => eva_event
                             .map(|line| format!("eva {line}"))
                             .into_iter()
                             .collect(),
@@ -3077,7 +3086,7 @@ mod tests {
                             flags: 0,
                             ..
                         } if coordinate == [40 * 256 + 128, 40 * 256 + 128, 0] => {
-                            vec![format!("play {sound_id}")]
+                            vec![format!("play {}", sound_id.name_in(&rules))]
                         }
                         GameSoundEvent::EvaRemove { event } => vec![format!("remove {event}")],
                         other => panic!("{other:?}"),
@@ -3192,7 +3201,7 @@ mod tests {
         assert!(matches!(
             wall_sell_sound_for_local(receiver_name, Some("receiver"), Some(&rules)),
             Some(crate::audio::events::GameSoundEvent::UiSound { sound_id })
-                if sound_id == "SellBuilding"
+                if sound_id.name_in(&rules) == "SellBuilding"
         ));
         assert!(
             wall_sell_sound_for_local(receiver_name, Some("WallOwner"), Some(&rules)).is_none()
@@ -3218,7 +3227,7 @@ mod tests {
             return;
         };
         let g = retail.rules.general;
-        let cue = |kind, start: Option<&str>| superweapon_launch_cue(kind, &g, start);
+        let cue = |kind, start: Option<&'static str>| superweapon_launch_cue(kind, &g, start);
         let generic = cue(K::GenericWarhead, None);
         assert_eq!(generic.sound_id, None);
         assert_eq!(generic.eva_event, None);
@@ -3343,7 +3352,7 @@ mod tests {
             if cue == Some("ForceShieldStarting") {
                 assert!(matches!(early.as_slice(), [GameSoundEvent::VocAt {
                     sound_id, source: Some(_),
-                }] if sound_id == "ForceShieldStarting"));
+                }] if sound_id.name_in(&rules) == "ForceShieldStarting"));
             } else {
                 assert!(early.is_empty());
             }
@@ -3572,7 +3581,7 @@ mod tests {
                 rules,
                 67,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap()
             .sound_events
@@ -3860,7 +3869,12 @@ mod tests {
         };
         let frame = |runtime: &mut SimRuntime, commands: &[CommandEnvelope]| {
             let output = runtime
-                .advance_frame(commands, 67, TickLane::Ordinary, FrameEffects::default())
+                .advance_frame(
+                    commands,
+                    67,
+                    TickLane::Ordinary,
+                    &mut FrameEffects::default(),
+                )
                 .unwrap();
             let sim = &runtime.simulation;
             let hash = sim.state_hash();
@@ -3989,7 +4003,7 @@ mod tests {
                         type_override: None,
                     },
                     GameSoundEvent::SuperWeaponActivated { .. },
-                ] if sound_id == "WeatherIntro" && event == "EVA_LightningStormCreated"
+                ] if sound_id.name_in(&rules) == "WeatherIntro" && event == "EVA_LightningStormCreated"
             ),
             "the cue plays centred on every client, the EVA line with a local \
              player: {played:?}"

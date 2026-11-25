@@ -28,7 +28,7 @@ use crate::sim::combat::laser::{self, LaserColor};
 use crate::sim::combat::radiation_beam::{BeamHouseColor, RadiationBeamBirth};
 use crate::sim::intern::InternedId;
 use crate::sim::projectile::ProjectileCoord;
-use crate::sim::rng::MainRng;
+use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::{FrameChannel, LifecycleOutput, Simulation};
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
@@ -93,7 +93,7 @@ pub(crate) fn update(
     owner: Option<InternedId>,
     rad_color: (u8, u8, u8),
     session: &ScenarioSession,
-    main_rng: &MainRng,
+    main_rng: &mut SimRng,
     outputs: &mut FrameChannel<LifecycleOutput>,
 ) -> bool {
     let Some(last) = *last_location else {
@@ -259,7 +259,7 @@ impl Simulation {
                     owner,
                     rules.radiation.color,
                     session,
-                    &self.main_rng,
+                    &mut self.main_rng,
                     outputs,
                 );
             }
@@ -307,7 +307,7 @@ impl Simulation {
                     owner,
                     rules.radiation.color,
                     session,
-                    &self.main_rng,
+                    &mut self.main_rng,
                     outputs,
                 );
             }
@@ -387,7 +387,7 @@ mod tests {
                 owner,
                 (0, 0, 0),
                 &sim.session,
-                &sim.main_rng,
+                &mut sim.main_rng,
                 &mut sim.lifecycle_outputs,
             )
         };
@@ -555,10 +555,10 @@ mod tests {
         .unwrap();
         sim.admit_death_debris(packets, &rules);
         let id = sim.voxel_anims().ids()[0];
-        sim.visit_voxel_anim(id, &rules, FrameEffects::default())
+        sim.visit_voxel_anim(id, &rules, &mut FrameEffects::default())
             .unwrap();
         assert!(lasers(&sim).is_empty(), "the first update only seeds");
-        sim.visit_voxel_anim(id, &rules, FrameEffects::default())
+        sim.visit_voxel_anim(id, &rules, &mut FrameEffects::default())
             .unwrap();
         assert_eq!(lasers(&sim).len(), 1, "the bounce moved the location");
     }
@@ -585,7 +585,7 @@ mod tests {
             None,
             (0, 0, 0),
             &sim.session,
-            &sim.main_rng,
+            &mut sim.main_rng,
             &mut sim.lifecycle_outputs,
         ));
         assert!(update(
@@ -597,7 +597,7 @@ mod tests {
             None,
             (0, 0, 0),
             &sim.session,
-            &sim.main_rng,
+            &mut sim.main_rng,
             &mut sim.lifecycle_outputs,
         ));
         assert_eq!(lasers(&sim)[0].color, LaserColor::HouseStyle([1, 2, 3]));
@@ -617,7 +617,7 @@ mod tests {
             Some(owner),
             (0, 0, 0),
             &sim.session,
-            &sim.main_rng,
+            &mut sim.main_rng,
             &mut sim.lifecycle_outputs,
         ));
         assert!(update(
@@ -629,7 +629,7 @@ mod tests {
             Some(owner),
             (0, 0, 0),
             &sim.session,
-            &sim.main_rng,
+            &mut sim.main_rng,
             &mut sim.lifecycle_outputs,
         ));
         assert_eq!(lasers(&sim)[1].color, LaserColor::House(owner));
@@ -679,7 +679,7 @@ mod tests {
             None,
             rad_color,
             &sim.session,
-            &sim.main_rng,
+            &mut sim.main_rng,
             &mut sim.lifecycle_outputs,
         ));
         assert!(update(
@@ -691,7 +691,7 @@ mod tests {
             None,
             rad_color,
             &sim.session,
-            &sim.main_rng,
+            &mut sim.main_rng,
             &mut sim.lifecycle_outputs,
         ));
         for trail in [&beam, &fallback] {
@@ -705,7 +705,7 @@ mod tests {
                 None,
                 rad_color,
                 &sim.session,
-                &sim.main_rng,
+                &mut sim.main_rng,
                 &mut sim.lifecycle_outputs,
             ));
             assert!(update(
@@ -717,7 +717,7 @@ mod tests {
                 None,
                 rad_color,
                 &sim.session,
-                &sim.main_rng,
+                &mut sim.main_rng,
                 &mut sim.lifecycle_outputs,
             ));
         }

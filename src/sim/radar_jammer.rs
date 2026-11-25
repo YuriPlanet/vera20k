@@ -55,8 +55,6 @@ impl RadarJamState {
 }
 
 /// JammerClass::ScanInterval: Update scans when more than 29 frames passed.
-/// Phobos replaces it with `RadarJamDelay=` (`New/Entity/Ares/
-/// RadarJammerClass.cpp:10`), which falls back to this same 30.
 const SCAN_INTERVAL: i32 = 30;
 
 impl Simulation {
@@ -68,7 +66,7 @@ impl Simulation {
             return;
         };
         if entity.deactivated.is_offline() {
-            if entity.ares.radar_jam.jammer.is_some() {
+            if entity.seldom.ares.radar_jam.jammer.is_some() {
                 self.unjam_all(id);
             }
             return;
@@ -84,7 +82,8 @@ impl Simulation {
         // (`RadarJammerClass.cpp:10`), plus the House filter and the two type
         // lists its scan applies (`:17-27`). All of them come from the
         // jammer's own type, read before the mutable borrow below.
-        let (scan_interval, jam_houses, jam_affect, jam_ignore) = {
+        let phobos = rules.phobos();
+        let (scan_interval, jam_houses, jam_affect, jam_ignore) = if phobos {
             let extras = self
                 .entity_object_type(entity, rules)
                 .map(|object| object.phobos_techno_extras.clone())
@@ -99,9 +98,11 @@ impl Simulation {
                 extras.radar_jam_affect,
                 extras.radar_jam_ignore,
             )
+        } else {
+            (SCAN_INTERVAL, Default::default(), Vec::new(), Vec::new())
         };
         let entity = self.substrate.entities.get_mut(id).expect("same jammer");
-        let jammer = entity.ares.radar_jam.jammer.get_or_insert_default();
+        let jammer = entity.seldom.ares.radar_jam.jammer.get_or_insert_default();
         if frame.wrapping_sub(jammer.last_scan) < scan_interval {
             return;
         }
@@ -130,16 +131,25 @@ impl Simulation {
                     && self
                         .entity_object_type(target, rules)
                         .is_some_and(|object| object.radar || object.spy_sat)
-                    // IsEligible: the jammer's house targets the building's
-                    // under the Phobos `RadarJammer.AffectedHouse` filter.
-                    && crate::sim::combat::can_target_house(
-                        jam_houses,
-                        owner,
-                        target.owner(),
-                        &self.houses,
-                        &self.house_alliances,
-                        &self.interner,
-                    )
+                    // Phobos replaces the stock non-allied filter with
+                    // `RadarJammer.AffectedHouse`; Ares alone keeps its own.
+                    && if phobos {
+                        crate::sim::combat::can_target_house(
+                            jam_houses,
+                            owner,
+                            target.owner(),
+                            &self.houses,
+                            &self.house_alliances,
+                            &self.interner,
+                        )
+                    } else {
+                        !crate::sim::combat::combat_weapon::is_ally_by_object(
+                            Some(&self.house_alliances),
+                            &self.interner,
+                            owner,
+                            target.owner(),
+                        )
+                    }
             })
             .map(|(building, _)| building)
             .collect();
@@ -164,7 +174,7 @@ impl Simulation {
                     .unwrap_or_default();
                 let listed =
                     |names: &[String]| names.iter().any(|name| name.eq_ignore_ascii_case(&type_id));
-                !listed(&jam_ignore) && (jam_affect.is_empty() || listed(&jam_affect))
+                !phobos || (!listed(&jam_ignore) && (jam_affect.is_empty() || listed(&jam_affect)))
             };
             if in_range && admitted {
                 self.jam(id, building);
@@ -180,11 +190,17 @@ impl Simulation {
         let Some(target) = self.substrate.entities.get_mut(building) else {
             return;
         };
-        if target.ares.radar_jam.registered_jammers.contains(&jammer) {
+        if target
+            .seldom
+            .ares
+            .radar_jam
+            .registered_jammers
+            .contains(&jammer)
+        {
             return;
         }
-        target.ares.radar_jam.registered_jammers.push(jammer);
-        let first = target.ares.radar_jam.registered_jammers.len() == 1;
+        target.seldom.ares.radar_jam.registered_jammers.push(jammer);
+        let first = target.seldom.ares.radar_jam.registered_jammers.len() == 1;
         let owner = target.owner();
         if first {
             self.power_states.house_mut(owner).recheck_radar();
@@ -193,7 +209,7 @@ impl Simulation {
             .substrate
             .entities
             .get_mut(jammer)
-            .and_then(|entity| entity.ares.radar_jam.jammer.as_mut())
+            .and_then(|entity| entity.seldom.ares.radar_jam.jammer.as_mut())
         {
             state.registered = true;
         }
@@ -206,6 +222,7 @@ impl Simulation {
             return;
         };
         let Some(index) = target
+            .seldom
             .ares
             .radar_jam
             .registered_jammers
@@ -214,8 +231,13 @@ impl Simulation {
         else {
             return;
         };
-        target.ares.radar_jam.registered_jammers.remove(index);
-        if target.ares.radar_jam.registered_jammers.is_empty() {
+        target
+            .seldom
+            .ares
+            .radar_jam
+            .registered_jammers
+            .remove(index);
+        if target.seldom.ares.radar_jam.registered_jammers.is_empty() {
             let owner = target.owner();
             self.power_states.house_mut(owner).recheck_radar();
         }
@@ -228,7 +250,7 @@ impl Simulation {
             .substrate
             .entities
             .get_mut(jammer)
-            .and_then(|entity| entity.ares.radar_jam.jammer.as_mut())
+            .and_then(|entity| entity.seldom.ares.radar_jam.jammer.as_mut())
         else {
             return;
         };
@@ -251,7 +273,7 @@ impl Simulation {
     pub(crate) fn remove_radar_jammer(&mut self, jammer: u64) {
         self.unjam_all(jammer);
         if let Some(entity) = self.substrate.entities.get_mut(jammer) {
-            entity.ares.radar_jam.jammer = None;
+            entity.seldom.ares.radar_jam.jammer = None;
         }
     }
 
@@ -260,7 +282,7 @@ impl Simulation {
     /// scan.
     pub(crate) fn clear_registered_jammers(&mut self, building: u64) {
         if let Some(entity) = self.substrate.entities.get_mut(building) {
-            entity.ares.radar_jam.registered_jammers.clear();
+            entity.seldom.ares.radar_jam.registered_jammers.clear();
         }
     }
 }

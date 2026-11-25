@@ -22,7 +22,7 @@ pub(crate) fn apply_on_detonation(
     impact: ProjectileCoord,
     warhead: &WarheadType,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let settings = &warhead.phobos_launch_sw;
     if settings.super_types.is_empty() {

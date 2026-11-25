@@ -155,9 +155,9 @@ fn managed_ai_base_controls_reservation_and_production_together() {
 /// the stream the port must leave: `sim`'s, advanced by those draws.
 fn expect_draws(sim: &mut Simulation, draws: &[&Value], low: i32, high: i32) -> SimRng {
     if let Some(first) = draws.first() {
-        sim.scenario_rng = SimRng::answering(low, high, int(&first[4]) as i32);
+        *sim.scenario_rng = SimRng::answering(low, high, int(&first[4]) as i32);
     }
-    let mut expected = sim.scenario_rng.clone();
+    let mut expected = (*sim.scenario_rng).clone();
     for draw in draws {
         assert_eq!(
             [int(&draw[1]), int(&draw[2]), int(&draw[3])],
@@ -569,7 +569,7 @@ fn exit_fixture() -> (Simulation, RuleSet, InternedId, u64, u64) {
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     (sim, rules, owner, yard, product)
@@ -629,7 +629,7 @@ fn conyard_exit_fixture_with(rules_text: &str) -> (Simulation, RuleSet, Interned
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     (sim, rules, owner, yard, product)
@@ -657,7 +657,7 @@ fn ai_forbid_conyard_marks_the_open_node_placed_and_fails_the_exit() {
         yard,
         product,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert_eq!(exit, BuildingExit::Failed);
@@ -683,7 +683,7 @@ fn ai_forbid_conyard_off_still_places_the_second_yard() {
         yard,
         product,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert_eq!(exit, BuildingExit::Placed);
@@ -814,7 +814,7 @@ fn wall_clean_scene(
             0,
             0,
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     assert!(
@@ -842,7 +842,7 @@ fn ai_clean_wall_node_refuses_a_wall_without_a_protected_neighbour() {
         yard,
         product,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(exit, BuildingExit::Failed);
     assert!(
@@ -882,7 +882,7 @@ fn a_computer_yard_places_its_building_on_the_node_cell() {
         yard,
         product,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert_eq!(exit, BuildingExit::Placed);
@@ -932,7 +932,7 @@ fn a_computer_yards_building_follows_the_native_computer_route() {
             yard,
             product,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert_eq!(exit, BuildingExit::Placed, "{name}");
@@ -954,7 +954,7 @@ fn a_computer_yards_building_follows_the_native_computer_route() {
             sim.object_ai_visit_one(
                 product,
                 Some(&rules),
-                crate::sim::world::ObjectAiCtx::default(),
+                &mut crate::sim::world::ObjectAiCtx::default(),
             );
             let building = sim.substrate.entities.get(product).unwrap();
             if native_route::assert_frame(building, frame, &format!("{name} frame {now}")) {
@@ -978,7 +978,7 @@ fn a_unit_of_the_house_on_the_site_makes_the_yard_try_later() {
             yard,
             product,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(exit, BuildingExit::TryLater);
         assert!(
@@ -1007,7 +1007,7 @@ fn a_unit_of_the_house_on_the_site_makes_the_yard_try_later() {
             yard,
             product,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ),
         BuildingExit::TryLater
     );
@@ -1021,7 +1021,7 @@ fn a_unit_of_the_house_on_the_site_makes_the_yard_try_later() {
         yard,
         product,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(exit, BuildingExit::TryLater);
     assert!(node_state(&sim, owner).is_empty());
@@ -1042,7 +1042,7 @@ fn an_enemy_on_the_site_fails_the_exit_and_the_node_forgets_its_cell() {
         yard,
         product,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert_eq!(exit, BuildingExit::Failed);
@@ -1071,7 +1071,7 @@ fn a_human_yard_places_nothing() {
         yard,
         product,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     assert_eq!(exit, BuildingExit::Failed);
@@ -1218,7 +1218,7 @@ fn ares_retail_soviet_computer_draws_between_both_nod_plants() {
     sim.power_states
         .map_mut_for_test()
         .insert(owner, PowerState::default());
-    sim.scenario_rng = SimRng::answering(0, 1, 1);
+    *sim.scenario_rng = SimRng::answering(0, 1, 1);
     let mut expected = sim.scenario_rng.clone();
     expected.next_range_i32_inclusive(0, 1);
     let radar = rules.object("NARADR").expect("retail NARADR");

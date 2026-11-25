@@ -22,7 +22,6 @@ fn scene(
     scene_with_firer(warheads, wh_ini, target_ini, sections, "", target_house)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn scene_with_firer(
     warheads: &str,
     wh_ini: &str,
@@ -388,10 +387,10 @@ fn transact_money_display_uses_at_firer_houses_and_offset() {
     use std::cell::RefCell;
 
     let events = RefCell::new(Vec::new());
-    let observe = |_: &Simulation, _: &RuleSet, text: BountyText| {
+    let mut observe = |_: &Simulation, _: &RuleSet, text: BountyText| {
         events.borrow_mut().push(text);
     };
-    let effects = FrameEffects::empty().with_bounty_text(&observe);
+    let mut effects = FrameEffects::empty().with_bounty_text(&mut observe);
     let (mut sim, rules, firer, target) = scene(
         "",
         "TransactMoney=13\nTransactMoney.Display=yes\n\
@@ -407,7 +406,7 @@ fn transact_money_display_uses_at_firer_houses_and_offset() {
         sim.resolved_terrain.as_ref(),
     );
     let shot = detonation(&mut sim, "WH", firer, target, 0);
-    let mut run = ReceiverRun::default().with_effects(effects);
+    let mut run = ReceiverRun::default().with_effects(&mut effects);
     commit_projectiles(&mut sim, &mut run, &[shot], &rules, None);
     run.finish();
     let events = events.borrow();
@@ -425,13 +424,13 @@ fn transact_money_display_uses_at_firer_houses_and_offset() {
 
     // The same warhead without Display emits no label.
     let hidden = RefCell::new(Vec::new());
-    let observe_hidden = |_: &Simulation, _: &RuleSet, text: BountyText| {
+    let mut observe_hidden = |_: &Simulation, _: &RuleSet, text: BountyText| {
         hidden.borrow_mut().push(text);
     };
-    let hidden_effects = FrameEffects::empty().with_bounty_text(&observe_hidden);
+    let mut hidden_effects = FrameEffects::empty().with_bounty_text(&mut observe_hidden);
     let (mut sim, rules, firer, target) = scene("", "TransactMoney=13\n", "", "", "Russians");
     let shot = detonation(&mut sim, "WH", firer, target, 0);
-    let mut run = ReceiverRun::default().with_effects(hidden_effects);
+    let mut run = ReceiverRun::default().with_effects(&mut hidden_effects);
     commit_projectiles(&mut sim, &mut run, &[shot], &rules, None);
     run.finish();
     assert!(hidden.borrow().is_empty(), "Display=no emits no label");
@@ -439,10 +438,10 @@ fn transact_money_display_uses_at_firer_houses_and_offset() {
     // `if (this->TransactMoney)` wraps the Display block too: a zero amount
     // moves nothing and emits no label.
     let zero = RefCell::new(Vec::new());
-    let observe_zero = |_: &Simulation, _: &RuleSet, text: BountyText| {
+    let mut observe_zero = |_: &Simulation, _: &RuleSet, text: BountyText| {
         zero.borrow_mut().push(text);
     };
-    let zero_effects = FrameEffects::empty().with_bounty_text(&observe_zero);
+    let mut zero_effects = FrameEffects::empty().with_bounty_text(&mut observe_zero);
     let (mut sim, rules, firer, target) = scene(
         "",
         "TransactMoney=0\nTransactMoney.Display=yes\n",
@@ -451,7 +450,7 @@ fn transact_money_display_uses_at_firer_houses_and_offset() {
         "Russians",
     );
     let shot = detonation(&mut sim, "WH", firer, target, 0);
-    let mut run = ReceiverRun::default().with_effects(zero_effects);
+    let mut run = ReceiverRun::default().with_effects(&mut zero_effects);
     commit_projectiles(&mut sim, &mut run, &[shot], &rules, None);
     run.finish();
     assert!(zero.borrow().is_empty(), "a zero amount emits no label");
@@ -679,7 +678,7 @@ fn a_positive_reveal_touches_only_the_owner_and_its_allies() {
         let koreans = sim.interner.intern("Koreans");
         // The arena scene carries no client map; `ResetShroud`/`RevealArea`
         // need a real grid, as every other reveal test gives its world.
-        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        *sim.fog = crate::sim::vision::FogState::new(32, 32);
         sim.houses
             .register(crate::sim::house_state::HouseState::new(
                 koreans, 0, None, true, 0, 10,
@@ -743,7 +742,7 @@ fn a_negative_reveal_clears_the_owner_whole_map() {
     let (mut sim, rules, firer, target) = scene("", "Reveal=-1\n", "", "", "Russians");
     let americans = sim.interner.intern("Americans");
     let russians = sim.interner.intern("Russians");
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    *sim.fog = crate::sim::vision::FogState::new(32, 32);
     sim.houses
         .get_mut(&russians)
         .expect("russians")
@@ -906,6 +905,7 @@ fn remove_disguise_strips_a_target_on_impact() {
             .entities
             .get_mut(target)
             .unwrap()
+            .seldom
             .disguise
             .get_or_insert_with(Default::default)
             .acquire(0, Some(type_id), Some(house));
@@ -918,6 +918,7 @@ fn remove_disguise_strips_a_target_on_impact() {
         .entities
         .get(target)
         .unwrap()
+        .seldom
         .disguise
         .as_ref()
         .unwrap();
@@ -930,6 +931,7 @@ fn remove_disguise_strips_a_target_on_impact() {
             .entities
             .get(target)
             .unwrap()
+            .seldom
             .disguise
             .as_ref()
             .unwrap()
@@ -1275,7 +1277,7 @@ fn direct_area_damage_applies_the_warhead_attach_effects() {
         warhead,
         false,
         (firer, None, warhead_ref),
-        crate::sim::world::FrameEffects::empty(),
+        &mut crate::sim::world::FrameEffects::empty(),
     );
     let attached = sim
         .entities()
@@ -1823,11 +1825,11 @@ fn change_owner_mind_control_marks_the_capture() {
     let entity = sim.entities().get(target).expect("target");
     assert_eq!(entity.owner(), americans, "the firing House owns it");
     assert!(
-        entity.mind_control.is_mind_controlled(),
+        entity.seldom.mind_control.is_mind_controlled(),
         "the capture counts as mind-controlled"
     );
     assert!(
-        entity.mind_control.permanent(),
+        entity.seldom.mind_control.permanent(),
         "MindControlledByAUnit is +0x2C4"
     );
 }

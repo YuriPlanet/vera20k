@@ -126,7 +126,7 @@ fn ground_walk_order_preserves_native_human_deploy_refusal() {
         id,
         Some(crate::sim::components::NavTargetRef::cell(11, 10)),
         &rules,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let actor = sim.substrate.entities.get(id).unwrap();
     let walk = actor.locomotor.as_ref().unwrap();
@@ -166,7 +166,7 @@ fn retail_scene(type_name: &str) -> Option<(Simulation, RuleSet, InternedId, u64
         assert!(
             cell_is_in_playfield_height_aware_in_query(
                 (i32::from(cell.0), i32::from(cell.1)),
-                sim.playfield_bounds,
+                *sim.playfield_bounds,
                 sim.resolved_terrain.as_ref(),
                 None,
             ),
@@ -174,6 +174,59 @@ fn retail_scene(type_name: &str) -> Option<(Simulation, RuleSet, InternedId, u64
         );
     }
     Some((sim, rules, owner, gi, id))
+}
+
+/// Foot ClickedAction 4D81A9..4D8231 orders Move beyond the opposite mouth.
+#[test]
+fn infantry_and_unit_click_through_a_tunnel_but_jumpjet_infantry_cannot() {
+    use crate::map::tube_facts::{TubeFact, TubeId};
+    use crate::rules::terrain_rules::LandType;
+    let Some((mut sim, rules, owner, gi, tank)) = retail_scene("MTNK") else {
+        return;
+    };
+    let rocket = sim
+        .spawn_object("JUMPJET", "Local", 6, 6, 0, &rules)
+        .unwrap();
+    let terrain = sim.resolved_terrain().unwrap();
+    let mut cells = terrain.cells().iter().cloned().collect::<Vec<_>>();
+    let mouths = [(7u16, 5u16), (11, 5)];
+    for (id, &(x, y)) in mouths.iter().enumerate() {
+        let cell = &mut cells[usize::from(y) * 16 + usize::from(x)];
+        cell.land_type = LandType::Tunnel.as_index();
+        cell.tube_index = Some(TubeId(id as u16));
+    }
+    sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells_with_tubes(
+        16,
+        16,
+        cells,
+        vec![
+            TubeFact::explicit(mouths[0], mouths[1], 2, vec![2; 4]),
+            TubeFact::explicit(mouths[1], mouths[0], 6, vec![6; 4]),
+        ],
+    ));
+    for unit in [gi, tank] {
+        assert_eq!(
+            sim.cell_move_action(owner, unit, mouths[0], query(true, false), &rules)
+                .unwrap()
+                .native(),
+            0x23
+        );
+        assert_eq!(
+            sim.cell_click_destination(owner, unit, mouths[0], true, &rules)
+                .unwrap(),
+            Some((12, 5))
+        );
+        assert!(
+            !sim.cell_click_flashes_move(owner, unit, mouths[0], true, &rules)
+                .unwrap()
+        );
+    }
+    assert_eq!(
+        sim.cell_move_action(owner, rocket, mouths[0], query(true, false), &rules)
+            .unwrap()
+            .native(),
+        0
+    );
 }
 
 fn query(mouse_over: bool, shift: bool) -> CellActionQuery {
@@ -281,7 +334,7 @@ fn shroud_bars_a_type_without_move_to_shroud() {
     assert!(!rules.object("CLEG").unwrap().move_to_shroud);
     assert!(rules.object("MTNK").unwrap().move_to_shroud);
     let shrouded = (12, 5);
-    sim.fog = crate::sim::vision::FogState::new(16, 16);
+    *sim.fog = crate::sim::vision::FogState::new(16, 16);
     sim.fog.reveal_cells_for_owner(
         owner,
         (0..16)
@@ -342,7 +395,7 @@ fn harvesters_answer_harvest_over_mapped_tiberium() {
     let tank = spawn("MTNK", taken);
     sim.resolve_type_handles(&rules);
     let all = || (0..16).flat_map(|y| (0..16).map(move |x| (x, y)));
-    sim.fog = crate::sim::vision::FogState::new(16, 16);
+    *sim.fog = crate::sim::vision::FogState::new(16, 16);
     sim.fog.reveal_cells_for_owner(owner, all());
     let ask = |sim: &Simulation, id, cell, mouse_over| {
         sim.cell_move_action(owner, id, cell, query(mouse_over, false), &rules)
@@ -365,7 +418,7 @@ fn harvesters_answer_harvest_over_mapped_tiberium() {
     );
 
     assert!(rules.object("HARV").unwrap().move_to_shroud);
-    sim.fog = crate::sim::vision::FogState::new(16, 16);
+    *sim.fog = crate::sim::vision::FogState::new(16, 16);
     sim.fog
         .reveal_cells_for_owner(owner, all().filter(|&cell| cell != open));
     assert_eq!(ask(&sim, war, open, false), MoveAction::Move);
@@ -449,7 +502,7 @@ fn no_move_over_a_shrouded_object_needs_move_to_shroud() {
     let tank = sim.spawn_object("MTNK", "Local", 6, 6, 0, &rules).unwrap();
     let hidden = sim.spawn_object("MTNK", "Local", 12, 5, 0, &rules).unwrap();
     sim.resolve_type_handles(&rules);
-    sim.fog = crate::sim::vision::FogState::new(16, 16);
+    *sim.fog = crate::sim::vision::FogState::new(16, 16);
     sim.fog.reveal_cells_for_owner(
         owner,
         (0..16)
@@ -510,7 +563,7 @@ fn an_object_outside_the_playfield_sends_every_mover_to_a_cell() {
     sim.resolve_type_handles(&rules);
     assert!(!cell_is_in_playfield_height_aware_in_query(
         (3, 3),
-        sim.playfield_bounds,
+        *sim.playfield_bounds,
         sim.resolved_terrain.as_ref(),
         None,
     ));
@@ -524,7 +577,7 @@ fn an_object_outside_the_playfield_sends_every_mover_to_a_cell() {
         assert!(
             cell_is_in_playfield_height_aware_in_query(
                 (i32::from(x), i32::from(y)),
-                sim.playfield_bounds,
+                *sim.playfield_bounds,
                 sim.resolved_terrain.as_ref(),
                 None,
             ),
@@ -614,9 +667,9 @@ impl Simulation {
         sim.session.set_map_height_for_test(16);
         // Native Unlimbo now publishes sight synchronously. Allocate the map
         // domain before either source can create a viewer plane/cache.
-        sim.fog = crate::sim::vision::FogState::new(16, 16);
-        sim.playfield_bounds = Some(bounds());
-        sim.playfield_size_height = Some(8);
+        *sim.fog = crate::sim::vision::FogState::new(16, 16);
+        *sim.playfield_bounds = Some(bounds());
+        *sim.playfield_size_height = Some(8);
         let clear = rules
             .terrain_rules
             .semantics_for_land_type(crate::rules::terrain_rules::LandType::Clear.as_index())
@@ -667,7 +720,7 @@ impl Simulation {
                 active: true,
                 bridge_kind: BridgeRecordKind::High,
             }];
-            sim.zone_grid = Some(
+            *sim.zone_grid = Some(
                 ZoneGrid::build_with_native_bridge_geometry(
                     sim.path_grid().unwrap(),
                     sim.resolved_terrain.as_ref().unwrap(),
@@ -709,7 +762,7 @@ impl Simulation {
             cell.bridge_walkable = false;
             cell.bridge_transition = false;
         }
-        self.real_cell_bridge_flags_0x1180 = terrain.capture_real_cell_bridge_flags_0x1180();
+        *self.real_cell_bridge_flags_0x1180 = terrain.capture_real_cell_bridge_flags_0x1180();
         assert!(self.rebuild_dynamic_navigation(rules));
     }
 }
@@ -745,7 +798,7 @@ fn a_wall_warhead_reaches_the_attack_rung_over_an_enemy_wall() {
     let mut grid = crate::sim::overlay_grid::OverlayGrid::new(width, height);
     grid.place_owned_wall(8, 4, wall, 0, enemy);
     grid.place_owned_wall(6, 6, wall, 0, owner);
-    sim.overlay_grid = Some(grid);
+    *sim.overlay_grid = Some(grid);
     let admits = |id, cell| sim.cell_attack_rung_admits(id, cell, &rules, Some(&registry));
     assert!(admits(tank, (8, 4)));
     assert!(!admits(gi, (8, 4)), "SA has no Wall=");
@@ -784,7 +837,7 @@ fn a_terrain_fire_weapon_reaches_the_attack_rung_over_a_rock() {
     };
     let mut grid = crate::sim::overlay_grid::OverlayGrid::new(width, height);
     grid.place_overlay(8, 4, rock, 0);
-    sim.overlay_grid = Some(grid);
+    *sim.overlay_grid = Some(grid);
     let admits = |id, cell| sim.cell_attack_rung_admits(id, cell, &rules, Some(&registry));
     assert!(admits(tank, (8, 4)));
     assert!(!admits(gi, (8, 4)), "M60 has no TerrainFire=");

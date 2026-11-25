@@ -37,7 +37,7 @@ fn world(rules: &RuleSet) -> Simulation {
         .register(HouseState::new(owner, 0u8, None, true, 2000, 10));
     construct_house_supers(&mut sim, rules, owner, false);
     sim.session.game_options_mut_for_test().super_weapons = true;
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
         super::cell_receiver_tests::test_terrain_cell(x, y)
     }));
     sim.set_playfield_bounds_for_test(Some(super::cell_receiver_tests::test_playfield_bounds()));
@@ -55,8 +55,8 @@ fn allowed(sim: &Simulation, rules: &RuleSet) -> bool {
 }
 
 fn recheck(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
-    sim.recheck_house_tech_tree(owner, rules, Default::default());
-    sim.recheck_house_tech_tree(owner, rules, Default::default());
+    sim.recheck_house_tech_tree(owner, rules, &mut Default::default());
+    sim.recheck_house_tech_tree(owner, rules, &mut Default::default());
     assert!(!sim.houses[&owner].tech_recheck_pending());
 }
 
@@ -190,7 +190,7 @@ fn phobos_aux_excludes_factory_product_until_first_placement() {
             0,
             0,
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     assert!(
@@ -205,7 +205,7 @@ fn phobos_aux_excludes_factory_product_until_first_placement() {
         0,
         crate::sim::world::PlacementEvidence::EvaluateMark,
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
     assert!(
@@ -250,7 +250,7 @@ fn phobos_limbo_gates_survive_save_transfer_and_uninit() {
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .unwrap()
         .sim;
-    restored.resolved_terrain = sim.resolved_terrain.clone();
+    *restored.resolved_terrain = (*sim.resolved_terrain).clone();
     restored.restore_after_snapshot_load().unwrap();
     assert!(!allowed(&restored, &rules));
     restored
@@ -262,11 +262,11 @@ fn phobos_limbo_gates_survive_save_transfer_and_uninit() {
             0,
             crate::sim::world::PlacementEvidence::EvaluateMark,
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     restored.techno_limbo_with_rules(id, &rules);
-    restored.change_owner_with_rules(id, other, &rules, None, FrameEffects::default());
+    restored.change_owner_with_rules(id, other, &rules, None, &mut FrameEffects::default());
     assert!(restored.houses[&owner].tech_recheck_pending());
     assert!(restored.houses[&other].tech_recheck_pending());
     recheck(&mut restored, &rules, owner);
@@ -307,7 +307,7 @@ fn phobos_techno_gates_count_installed_upgrade_on_its_host() {
             0,
             0,
             &rules,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
     assert!(!allowed(&sim, &rules), "producing upgrades are excluded");
@@ -320,7 +320,7 @@ fn phobos_techno_gates_count_installed_upgrade_on_its_host() {
     ));
     assert!(allowed(&sim, &rules), "the host owns the installed upgrade");
     assert!(!super_weapon_available(&sim, &rules, owner, "BlockSpecial"));
-    sim.power_down_building_upgrade(host, &rules, Default::default());
+    sim.power_down_building_upgrade(host, &rules, &mut Default::default());
     assert!(!allowed(&sim, &rules));
     assert!(super_weapon_available(&sim, &rules, owner, "BlockSpecial"));
 }
@@ -350,7 +350,7 @@ fn phobos_command_refuses_unmet_gate_without_consuming_a_retained_charge() {
         sw,
         (12, 10),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
     assert_eq!(
@@ -364,7 +364,7 @@ fn phobos_command_refuses_unmet_gate_without_consuming_a_retained_charge() {
         sw,
         (12, 10),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false
     ));
 }

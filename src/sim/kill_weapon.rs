@@ -23,7 +23,7 @@ impl Simulation {
         event: &EntityDamageEvent,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(warhead) = rules.warhead(self.interner.resolve(event.warhead_ref)) else {
             return;

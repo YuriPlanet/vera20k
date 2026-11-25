@@ -5,6 +5,17 @@
 //! IPv4 endpoints here are VERA's LAN transport adaptation: retail's Network
 //! menu uses IPX sockets. No legacy IPX socket or address protocol is included.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use std::collections::VecDeque;
 use std::net::{Ipv4Addr, SocketAddrV4};
 
@@ -149,6 +160,22 @@ struct SeenMessage {
     sequence: u32,
 }
 
+/// The contiguous wire sequences of one `send_reliable_batch`. A reset
+/// restarts the sequences, and no holder reads its batch after one: a
+/// campaign result or narrative hold ends before its match transport resets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GlobalBatch {
+    first: u32,
+    count: u32,
+}
+
+impl GlobalBatch {
+    /// The batch's wire sequences, in recipient order.
+    pub(super) fn sequences(self) -> impl Iterator<Item = u32> {
+        (0..self.count).map(move |offset| self.first.wrapping_add(offset))
+    }
+}
+
 /// One aggregate send queue/response history, with unknown-source receive
 /// admission. This object is carried from lobby through loading and gameplay.
 #[derive(Debug)]
@@ -161,6 +188,10 @@ pub struct GlobalChannel {
     next_seen: usize,
     total_received: u32,
     responses: VecDeque<GlobalResponseTime>,
+    // Sequences of the latest reliable sends retired by their ACK, capped at
+    // the send capacity. A batch whose record is pushed out reads undelivered;
+    // its holder polls every frame, so it has read the batch by then.
+    acknowledged: VecDeque<u32>,
 }
 
 impl GlobalChannel {
@@ -193,6 +224,7 @@ impl GlobalChannel {
             next_seen: 0,
             total_received: 0,
             responses: VecDeque::new(),
+            acknowledged: VecDeque::new(),
         }
     }
 
@@ -301,6 +333,43 @@ impl GlobalChannel {
         };
         let frame = self.frame(kind, outgoing_sequence, payload);
         self.send.enqueue(frame, destination)
+    }
+
+    /// Queue one reliable payload to every recipient, or nothing when they do
+    /// not all fit. Consecutive enqueues take consecutive sequences.
+    pub fn send_reliable_batch(
+        &mut self,
+        payload: &[u8],
+        recipients: &[SocketAddrV4],
+    ) -> Option<GlobalBatch> {
+        if self.available_send_slots() < recipients.len() {
+            return None;
+        }
+        let batch = GlobalBatch {
+            first: self.next_send_sequence(),
+            count: u32::try_from(recipients.len()).ok()?,
+        };
+        for &endpoint in recipients {
+            // Only the first send can fail: the payload is the same, and
+            // every recipient has a slot.
+            if !self.send(
+                payload,
+                GlobalDestination::direct(endpoint),
+                Delivery::Reliable,
+                0,
+            ) {
+                return None;
+            }
+        }
+        Some(batch)
+    }
+
+    /// Every send of the batch was ACKed. Other sends never count, and a
+    /// discarded or cancelled one never reads delivered.
+    pub fn batch_delivered(&self, batch: GlobalBatch) -> bool {
+        batch
+            .sequences()
+            .all(|sequence| self.acknowledged.contains(&sequence))
     }
 
     /// Frame a one-shot control whose sender is about to reset its channel.
@@ -420,12 +489,17 @@ impl GlobalChannel {
     ) -> bool {
         let observe = self.config.acknowledgments == GlobalAcknowledgments::AuthenticatedSource;
         let responses = &mut self.responses;
+        let acknowledged = &mut self.acknowledged;
         let capacity = self.config.send_capacity;
         if !self.send.service(
             now_ticks,
             self.timing,
             send,
             &mut |destination, sequence, elapsed| {
+                if acknowledged.len() == capacity {
+                    acknowledged.pop_front();
+                }
+                acknowledged.push_back(sequence);
                 if observe {
                     // Derived observations are bounded by the send owner's cap.
                     // Startup consumes them every service pass; no history is

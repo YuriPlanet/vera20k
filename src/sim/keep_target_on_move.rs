@@ -160,7 +160,7 @@ pub(crate) fn update_keep_target_on_move(
     id: u64,
     rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
@@ -218,7 +218,7 @@ fn clear_latched_target(
     id: u64,
     rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let _ = sim.assign_target_represented(id, None, rules, effects);
     if let Some(entity) = sim.substrate.entities.get_mut(id) {

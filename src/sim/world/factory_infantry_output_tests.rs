@@ -248,7 +248,7 @@ fn ground_command_fixture(
         id,
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     ground_pose::foot_set_location(
         &mut sim.substrate.entities,
@@ -261,7 +261,7 @@ fn ground_command_fixture(
         id,
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     if unit && state["target"] != 0 {
         // Recreate the observed admitted GAPOWR TarCom prior. The owner label
@@ -316,7 +316,7 @@ fn ground_command_fixture(
             id,
             Some(TargetKind::Entity(target)),
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     }
@@ -381,6 +381,7 @@ fn ground_command_fixture(
             state["deploy_bytes"][2] != 0,
         );
         actor
+            .seldom
             .setter_force_reassign
             .set_for_test(state["force_reassign"] != 0);
         assert_eq!(
@@ -552,7 +553,7 @@ fn ground_command_fixture(
         assert_eq!(target_actor.lifecycle.cell_marked(), ambient["marked"] != 0);
         assert_eq!(target_actor.on_bridge(), ambient["on_bridge"] != 0);
         assert_eq!(
-            target_actor.in_logic_vector.is_member(),
+            target_actor.seldom.in_logic_vector.is_member(),
             ambient["logic_registered"] != 0
         );
         assert_eq!(
@@ -630,10 +631,10 @@ fn ground_command_fixture(
                 sim.path_grid.as_deref().unwrap(),
                 sim.resolved_terrain.as_ref().unwrap(),
                 &[],
-                sim.playfield_bounds,
+                *sim.playfield_bounds,
             )
             .expect("the existing load owner binds the supplied flat map");
-        sim.zone_grid = Some(zones.into());
+        *sim.zone_grid = Some(zones.into());
         let terrain = sim.resolved_terrain.as_ref().unwrap();
         for cell in map["cells"].as_array().unwrap() {
             let (rx, ry) = fixture_cell(&cell["xy"]);
@@ -662,11 +663,11 @@ fn ground_command_fixture(
             }
         }
     }
-    sim.main_rng =
-        SimRng::from_native_state_hex_for_test(ground_command_rng_hex(row, state, "main")).into();
-    sim.mapgen_rng =
+    *sim.main_rng =
+        SimRng::from_native_state_hex_for_test(ground_command_rng_hex(row, state, "main"));
+    *sim.mapgen_rng =
         SimRng::from_native_state_hex_for_test(ground_command_rng_hex(row, state, "mapgen"));
-    sim.scenario_rng =
+    *sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(ground_command_rng_hex(row, state, "scenario"));
     Some((sim, rules, registry, id))
 }
@@ -704,7 +705,7 @@ fn assert_ground_command_fields(sim: &Simulation, id: u64, row: &Value, state: &
             "{context}: Unit deploy bytes"
         );
         assert_eq!(
-            actor.setter_force_reassign.is_raised(),
+            actor.seldom.setter_force_reassign.is_raised(),
             state["force_reassign"] != 0,
             "{context}: force reassign"
         );
@@ -1077,7 +1078,7 @@ pub fn check_initialized_ground_reissues(names: &[&str], produce: GroundCommandP
                         5,
                         true,
                         &rules,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
                 assert_ground_command_fields(&sim, id, row, &down["after"]);
@@ -1113,7 +1114,7 @@ pub fn check_initialized_ground_reissues(names: &[&str], produce: GroundCommandP
                 &decoded.payload,
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ));
             assert_ground_command_fields(&sim, id, row, &dispatch["after"]);
         }
@@ -1155,7 +1156,7 @@ pub fn check_initialized_unit_paid_reissues(produce: GroundCommandProducer) {
                 &Command::Stop { entity_id: id },
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ));
             assert_ground_command_fields(&sim, id, row, &stop["after"]);
         }
@@ -1176,7 +1177,7 @@ pub fn check_initialized_unit_paid_reissues(produce: GroundCommandProducer) {
             &decoded.payload,
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         let dispatch = boundaries
             .iter()
@@ -1228,7 +1229,7 @@ fn initialized_unit_delayed_move_reaches_original_class_refusal() {
             },
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ),
         "the void class refusal is still an executed Move"
     );
@@ -1281,7 +1282,7 @@ fn initialized_gi_move_clears_original_archive_before_destination() {
         },
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     assert_ground_command_fields(&sim, id, row, &row["final"]);
 }
@@ -1331,7 +1332,7 @@ fn initialized_gi_retained_priors_and_stop_reissues_match_original_returns() {
                     5,
                     true,
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             assert_ground_command_fields(&sim, id, row, &down["after"]);
@@ -1361,7 +1362,7 @@ fn initialized_gi_retained_priors_and_stop_reissues_match_original_returns() {
             },
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         assert_ground_command_fields(&sim, id, row, &row["final"]);
     }
@@ -1387,7 +1388,7 @@ fn replay_original_stop(
         id,
         rules,
         Some(registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     assert_ground_command_fields(sim, id, row, &stop["after"]);
@@ -1442,7 +1443,7 @@ fn initialized_gi_findpath_redirects_match_original_class_returns() {
                 crate::sim::components::DriveCoord::cell(xy.0, xy.1, 0),
                 answer,
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let native_near = calls
@@ -1650,7 +1651,7 @@ fn initialized_gi_non_deployer_input_reaches_original_class_refusal() {
         },
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     assert_ground_command_fields(&sim, id, row, &row["final"]);
 }
@@ -1688,7 +1689,7 @@ fn initialized_gi_deploy_class_contexts_match_original_returns() {
                 requested,
                 &rules,
                 Some(&registry),
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         assert_ground_command_fields(&sim, id, row, &call["after"]);
@@ -1768,16 +1769,16 @@ pub(super) fn install_ground(
     let local = observed_map.map_or([0, 0, 16, 16], |map| {
         std::array::from_fn(|index| map["local_size"][index].as_i64().unwrap() as i32)
     });
-    sim.playfield_bounds = Some(
+    *sim.playfield_bounds = Some(
         crate::map::playfield::PlayfieldBounds::from_normalized_local_size(
             size.0, local[0], local[1], local[2], local[3],
         ),
     );
-    sim.playfield_size_height = Some(size.1);
+    *sim.playfield_size_height = Some(size.1);
     sim.session.set_map_width_for_test(side);
     sim.session.set_map_height_for_test(side);
-    sim.overlay_grid = Some(OverlayGrid::new(side, side));
-    sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain_with_map_size(
+    *sim.overlay_grid = Some(OverlayGrid::new(side, side));
+    *sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain_with_map_size(
         &terrain,
         true,
         rules.bridge_rules.strength,
@@ -1799,8 +1800,8 @@ fn local_state(sim: &Simulation, id: u64) -> Value {
         "queued": entity.mission.queued().raw(),
         "nav_is_set": entity.navigation.nav_com().is_some(),
         "archive_is_set": entity.archive_target().is_some(),
-        "tether": entity.tether.partner().is_some(),
-        "contact_count": entity.radio_contacts.len(),
+        "tether": entity.seldom.tether.partner().is_some(),
+        "contact_count": entity.seldom.radio_contacts.len(),
         "doing": entity.mission_leaf.as_infantry().unwrap().doing(),
         "idle_entry_latch": entity.mission_leaf.foot_idle_entry_latch(),
         "paid_head_is_set": walk.step_head().is_some(),
@@ -2019,11 +2020,16 @@ fn joined_two_paid_gi(route: OutputRoute) {
         // The ordinary app drains player ingress before advancing each frame.
         let due = sim.take_due_commands();
         let visits = sim.production.factories().strip_visits_for_test(owner);
-        let effects =
-            crate::sim::world::FrameEffects::default().with_production_strip(&visits, &|_| {});
+        let mut effects = crate::sim::world::FrameEffects::default().with_production_strip(&visits);
         if route == OutputRoute::RallyBetweenCompletionAndPlace {
             let mut output = sim
-                .advance_app_frame(&due, &rules, TICK_MS, super::TickLane::Ordinary, effects)
+                .advance_app_frame(
+                    &due,
+                    &rules,
+                    TICK_MS,
+                    super::TickLane::Ordinary,
+                    &mut effects,
+                )
                 .expect("the ordinary app frame completes");
             let admitted = output.take_admitted_commands();
             if products[0].completed_frame.is_some() && products[0].placed_frame.is_none() {
@@ -2077,7 +2083,7 @@ fn joined_two_paid_gi(route: OutputRoute) {
                 TICK_MS,
                 super::TickLane::Ordinary,
                 false,
-                effects,
+                &mut effects,
             )
             .unwrap();
         }
@@ -2118,7 +2124,7 @@ fn joined_two_paid_gi(route: OutputRoute) {
             if view.complete_object().is_some() && progress.completed_frame.is_none() {
                 progress.completed_frame = Some(frame);
                 let entity = sim.substrate.entities.get(held).unwrap();
-                assert!(entity.lifecycle.in_limbo() && !entity.in_logic_vector.is_member());
+                assert!(entity.lifecycle.in_limbo() && !entity.seldom.in_logic_vector.is_member());
                 assert!(
                     !sim.pending_command_snapshot().iter().any(|command| {
                         matches!(&command.payload, Command::SynchronizedRecord { record } if crate::sim::command::PlaceRecord::decode(record).is_some())
@@ -2130,13 +2136,15 @@ fn joined_two_paid_gi(route: OutputRoute) {
         for (index, progress) in products.iter_mut().enumerate() {
             let entity = sim.substrate.entities.get(progress.id).unwrap();
             if entity.lifecycle.in_limbo() {
-                assert!(!entity.in_logic_vector.is_member() && !entity.lifecycle.cell_marked());
+                assert!(
+                    !entity.seldom.in_logic_vector.is_member() && !entity.lifecycle.cell_marked()
+                );
                 continue;
             }
             let golden = &native_products[index];
             let state = local_state(&sim, progress.id);
             let context = format!("{route:?} GI[{index}]={} frame={frame}", progress.id);
-            assert!(entity.lifecycle.cell_marked() && entity.in_logic_vector.is_member());
+            assert!(entity.lifecycle.cell_marked() && entity.seldom.in_logic_vector.is_member());
             assert!(sim.substrate.occupancy.contains_entity(
                 entity.position.rx(),
                 entity.position.ry(),
@@ -2156,11 +2164,12 @@ fn joined_two_paid_gi(route: OutputRoute) {
                         .entities
                         .get(producer)
                         .unwrap()
+                        .seldom
                         .radio_contacts
                         .slot(0),
                     Some(progress.id)
                 );
-                assert_eq!(entity.radio_contacts.slot(0), Some(producer));
+                assert_eq!(entity.seldom.radio_contacts.slot(0), Some(producer));
                 if let Some((rx, ry)) = rally_cell {
                     // Exit443C60 copies the producer's Archive at44499C.
                     // Unlimbo Idle consumes it; Exit restores that Nav to
@@ -2225,12 +2234,16 @@ fn joined_two_paid_gi(route: OutputRoute) {
                 );
                 assert!(frame > progress.first_live_frame.unwrap());
                 assert_eq!(json!(&transmissions[start..]), golden["arrival_radio"]);
-                assert!(entity.radio_contacts.is_empty() && entity.tether.partner().is_none());
+                assert!(
+                    entity.seldom.radio_contacts.is_empty()
+                        && entity.seldom.tether.partner().is_none()
+                );
                 assert!(
                     sim.substrate
                         .entities
                         .get(producer)
                         .unwrap()
+                        .seldom
                         .radio_contacts
                         .is_empty()
                 );

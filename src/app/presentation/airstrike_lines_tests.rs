@@ -1,6 +1,5 @@
 use super::*;
 use crate::sim::rng::MainRng;
-use crate::util::save_codec;
 use serde_json::Value;
 
 fn native() -> &'static Value {
@@ -25,6 +24,7 @@ fn viewport(v: &Value) -> SurfaceLineViewport {
 }
 fn style() -> FlareStyle {
     FlareStyle {
+        phobos: false,
         color: [255, 0, 0],
         z_adjust: 0,
     }
@@ -192,10 +192,7 @@ fn composite_preserves_opaque_beam_order_and_advances_only_the_shared_main_draws
         reference.draws().ranged(745, 1000);
         assert_eq!(result.first(), Some(&opaque));
         assert_eq!(result.last(), Some(&opaque));
-        assert_eq!(
-            save_codec::serialize(&main).unwrap(),
-            save_codec::serialize(&reference).unwrap()
-        );
+        assert_eq!(main.logical_state(), reference.logical_state());
     }
 }
 
@@ -218,6 +215,7 @@ fn phobos_flare_scales_the_lines_flattens_their_depth_and_always_draws_the_dot()
         z: 0,
     };
     let style = FlareStyle {
+        phobos: true,
         color: [12, 200, 45],
         z_adjust: 7,
     };

@@ -45,12 +45,22 @@ fn new_building_drain_blocks_an_earlier_houses_full_power_trigger() {
     );
     spawn(&mut sim, &rules, "LOAD", "House1", 15);
     assert_eq!(sim.power_states[&houses[1]].total_drain(), 10);
-    sim.raise_house_tags(houses[0], &rules, Some(&registry), FrameEffects::default());
+    sim.raise_house_tags(
+        houses[0],
+        &rules,
+        Some(&registry),
+        &mut FrameEffects::default(),
+    );
     assert!(!sim.trigger_runtime.globals_set.contains(&42));
 
     spawn(&mut sim, &rules, "PRODUCER", "House1", 17);
     sim.assess_power_for_test(&rules);
-    sim.raise_house_tags(houses[0], &rules, Some(&registry), FrameEffects::default());
+    sim.raise_house_tags(
+        houses[0],
+        &rules,
+        Some(&registry),
+        &mut FrameEffects::default(),
+    );
     assert!(sim.trigger_runtime.globals_set.contains(&42));
 }
 
@@ -63,7 +73,7 @@ fn captured_building_adds_new_owner_drain_before_old_owner_reassessment() {
         houses[2],
         &rules,
         Some(&registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     // Removed_From_Game5027FA only invalidates; Added_To_Game adds at once.
     assert_eq!(sim.power_states[&houses[1]].total_drain(), 10);
@@ -100,7 +110,7 @@ fn run(
         &mut Vec::new(),
         rules,
         Some(registry),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -198,7 +208,12 @@ fn counted_tag_runs_off_and_on_in_order_without_a_second_state_or_rng_draws() {
     let rng = sim.rng_state();
     sim.sound_events.clear_for_test();
     sim.session.set_binary_frame_for_test(8);
-    sim.raise_house_tags(houses[0], &rules, Some(&registry), FrameEffects::default());
+    sim.raise_house_tags(
+        houses[0],
+        &rules,
+        Some(&registry),
+        &mut FrameEffects::default(),
+    );
     assert!(sim.entities().get(load).unwrap().building_online());
     assert!(
         sim.entities()
@@ -267,18 +282,18 @@ fn authored_power_flag_and_needs_engineer_use_distinct_latches_and_survive_save_
             .stuff_enabled(),
         "NeedsEngineer does not clear660"
     );
-    assert!(sim.go_building_offline(tech, &rules, FrameEffects::default()));
+    assert!(sim.go_building_offline(tech, &rules, &mut FrameEffects::default()));
     // GoOnline (`0x00452271`) refuses while the EMP counter `+0x504` runs.
     sim.entities_mut_for_test()
         .get_mut(tech)
         .unwrap()
         .set_emp_remaining_for_test(3);
-    assert!(!sim.go_building_online(tech, &rules, FrameEffects::default()));
+    assert!(!sim.go_building_online(tech, &rules, &mut FrameEffects::default()));
     sim.entities_mut_for_test()
         .get_mut(tech)
         .unwrap()
         .set_emp_remaining_for_test(0);
-    assert!(sim.go_building_online(tech, &rules, FrameEffects::default()));
+    assert!(sim.go_building_online(tech, &rules, &mut FrameEffects::default()));
     assert!(
         sim.entities()
             .get(tech)
@@ -289,7 +304,7 @@ fn authored_power_flag_and_needs_engineer_use_distinct_latches_and_survive_save_
     );
     assert_eq!(sim.building_operational_state(tech, &rules), Some(false));
     assert!(
-        sim.go_building_offline(powered, &rules, FrameEffects::default()),
+        sim.go_building_offline(powered, &rules, &mut FrameEffects::default()),
         "Powered accepts zero drain"
     );
     let hash = sim.state_hash();
@@ -312,7 +327,7 @@ fn authored_power_flag_and_needs_engineer_use_distinct_latches_and_survive_save_
     assert!(!restored.entities().get(powered).unwrap().building_online());
     assert!(run(&mut restored, &rules, &registry, 62, true));
     assert!(restored.entities().get(load).unwrap().building_online());
-    assert!(sim.go_building_online(load, &rules, FrameEffects::default()));
+    assert!(sim.go_building_online(load, &rules, &mut FrameEffects::default()));
     assert_ne!(sim.state_hash(), hash);
 }
 

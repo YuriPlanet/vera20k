@@ -86,7 +86,7 @@ pub(super) fn retreat(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let entity = sim.substrate.entities.get(id).expect("aircraft dispatch");
     let nav_com = match entity.navigation.nav_com() {
@@ -128,7 +128,7 @@ pub(super) fn retreat(
             sim,
             id,
             rules,
-            frame_effects,
+            frame_effects: frame_effects.reborrow(),
         },
     )
 }
@@ -154,7 +154,7 @@ impl RetreatHost for WorldRetreat<'_> {
             self.id,
             cell.map(|(rx, ry)| NavTargetRef::cell(rx, ry)),
             self.rules,
-            self.frame_effects,
+            &mut self.frame_effects,
         );
     }
 }
@@ -165,8 +165,11 @@ fn retreat_edge_mode(
     rules: &RuleSet,
     plane: Option<&crate::rules::object_type::ObjectType>,
 ) -> crate::rules::phobos_aircraft_edge::PhobosEdgeType {
+    if !rules.phobos() {
+        return crate::rules::phobos_aircraft_edge::PhobosEdgeType::Owner;
+    }
     plane
-        .and_then(|plane| plane.phobos_retreat_to_edge)
+        .and_then(|plane| plane.phobos_retreat_to_edge())
         .unwrap_or(rules.phobos_globals.aircraft_retreat_to_edge)
 }
 

@@ -48,7 +48,7 @@ fn scene(delay: Option<i32>) -> (Simulation, RuleSet, u64, u64) {
         payload: crate::sim::projectile::ProjectilePayload::new(1, warhead, None, false),
         reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
     };
-    sim.mind_control_detonation(detonation, &rules, None, FrameEffects::default());
+    sim.mind_control_detonation(detonation, &rules, None, &mut FrameEffects::default());
     assert_eq!(
         sim.substrate.entities.get(pawn).unwrap().owner(),
         sim.interner.get("Russians").unwrap(),
@@ -98,6 +98,7 @@ fn a_fresh_capture_shield_keeps_the_candidate_out_of_the_scan_until_it_expires()
         .entities
         .get(pawn)
         .unwrap()
+        .seldom
         .mind_control
         .controller()
         .unwrap();

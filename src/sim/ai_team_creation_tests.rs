@@ -258,7 +258,7 @@ fn the_selector_matches_the_original() {
                 answers[slot]
             },
             |_, low, high| draws.draw(low, high),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let slot_of = |id: InternedId| team_types.iter().position(|&tt| tt == id).unwrap();
         let picked: Vec<usize> = picked.into_iter().map(slot_of).collect();
@@ -357,6 +357,23 @@ fn the_super_weapon_readiness_matches_the_original() {
     }
 }
 
+/// `AIMinorSuperReadyPercent=1e999` reads as a binary32 infinity, so the
+/// threshold `1.0f - percent` is -inf and no finite charge ratio is below
+/// it; `-1e999` makes it +inf, which every finite ratio is below.
+#[test]
+fn an_infinite_ready_percent_loads_as_the_fpu_loads_it() {
+    let percent = |text: &str| {
+        RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[General]\nAIMinorSuperReadyPercent={text}\n"
+        )))
+        .unwrap()
+        .general
+        .ai_minor_super_ready_percent
+    };
+    assert!(!charge_nearly_full(0, 100, percent("1e999")));
+    assert!(charge_nearly_full(100, 100, percent("-1e999")));
+}
+
 fn rng_digest(rng: &SimRng) -> u64 {
     let mut hasher = DefaultHasher::new();
     rng.hash_state(&mut hasher);
@@ -391,7 +408,7 @@ fn the_team_block_matches_the_original() {
             &mut sim,
             &rules,
             owner,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let timer = sim.houses[&owner].team_creation().timer;
         assert_eq!(
@@ -424,9 +441,8 @@ fn ares_trigger_side_tokens_admit_any_registered_side() {
 fn a_command_driven_house_stands_down_from_team_creation() {
     let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
     let mut sim = Simulation::new();
-    sim.session.set_game_mode(
-        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
-    );
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.session.set_binary_frame_for_test(100);
     let owner = sim.interner.intern("H0");
     let mut house = HouseState::new(owner, 0, None, false, 0, 10);
@@ -440,13 +456,47 @@ fn a_command_driven_house_stands_down_from_team_creation() {
         &mut sim,
         &rules,
         owner,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         rng_digest(&sim.scenario_rng),
         before,
         "the selector never draws for a command-driven house"
     );
+}
+
+/// A non-finite running weight, which only a damaged save can hold, counts
+/// as weight 0 (FISTP's indefinite low dword) instead of stopping the draw.
+#[test]
+fn a_non_finite_saved_weight_draws_as_zero() {
+    let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
+    let mut sim = Simulation::new();
+    let owner = sim.interner.intern("H0");
+    let [broken, kept, broken_team, kept_team] =
+        ["BROKEN", "KEPT", "BROKENTEAM", "KEPTTEAM"].map(|name| sim.interner.intern(name));
+    let nan = NativeF64Bits::from_bits(f64::NAN.to_bits());
+    sim.team_script_vm
+        .register_ai_trigger(ai_trigger(broken, broken_team, None, nan));
+    sim.team_script_vm.register_ai_trigger(ai_trigger(
+        kept,
+        kept_team,
+        None,
+        NativeF64Bits::from_bits(3.0f64.to_bits()),
+    ));
+    let mut asked = Vec::new();
+    let picked = draw_ai_trigger(
+        &mut sim,
+        &rules,
+        owner,
+        None,
+        false,
+        |_, _, _, _| true,
+        |_, low, high| {
+            asked.push((low, high));
+            high
+        },
+    );
+    assert_eq!((asked, picked), (vec![(1, 3)], vec![kept_team]));
 }
 
 fn dynamic_delay_world(
@@ -507,7 +557,7 @@ fn team_delays_count_rows_select_the_ai_difficulty_column() {
         &mut sim,
         &rules,
         owner,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         restarted_team_delay(&sim, owner),
@@ -534,7 +584,7 @@ fn fixed_team_delay_overrides_the_dynamic_count_row() {
         &mut sim,
         &rules,
         owner,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         restarted_team_delay(&sim, owner),
@@ -555,7 +605,7 @@ fn player_count_reads_the_count_row_for_the_houses_difficulty() {
         &mut sim,
         &rules,
         owner,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         restarted_team_delay(&sim, owner),
@@ -576,7 +626,7 @@ fn an_absent_count_row_leaves_the_stock_team_delay() {
         &mut sim,
         &rules,
         owner,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         restarted_team_delay(&sim, owner),
@@ -597,7 +647,7 @@ fn one_start_waypoint_leaves_the_stock_team_delay() {
         &mut sim,
         &rules,
         owner,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         restarted_team_delay(&sim, owner),
@@ -633,7 +683,7 @@ fn alive_enemies_counts_only_living_non_allied_houses() {
         &mut sim,
         &rules,
         owner,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(
         restarted_team_delay(&sim, owner),
@@ -661,7 +711,7 @@ fn none_and_campaign_keep_the_stock_team_delay() {
             &mut sim,
             &rules,
             owner,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             restarted_team_delay(&sim, owner),

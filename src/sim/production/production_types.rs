@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::rules::object_type::{FactoryType, ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
-use crate::sim::intern::InternedId;
+use crate::sim::intern::{InternKey, InternedId};
 
 /// A test house's opening balance.
 #[cfg(any(test, feature = "test-support"))]
@@ -108,7 +108,7 @@ pub enum BuildingPlacementError {
 #[derive(Debug, Clone, Copy)]
 pub enum ProductionPlacement<'a> {
     Building {
-        type_id: &'a str,
+        type_id: InternKey<'a>,
         cell: (u16, u16),
     },
     Mobile {

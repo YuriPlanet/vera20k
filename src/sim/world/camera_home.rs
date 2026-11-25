@@ -45,7 +45,7 @@ impl Simulation {
             else {
                 continue;
             };
-            if entity.lifecycle.in_limbo() || !entity.discovery.owned_by_current_house() {
+            if entity.lifecycle.in_limbo() || !entity.seldom.discovery.owned_by_current_house() {
                 continue;
             }
             let ignored = self

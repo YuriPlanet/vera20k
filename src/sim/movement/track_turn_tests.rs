@@ -145,7 +145,7 @@ fn fixture(kind: LocomotorKind) -> Simulation {
         _ => unreachable!(),
     }
     sim.substrate.entities.insert(entity);
-    sim.substrate.occupancy =
+    *sim.substrate.occupancy =
         crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
     sim
 }
@@ -450,13 +450,13 @@ fn unload_mission_keeps_processing_only_while_a_passenger_remains() {
         cargo.board_forced_chain(&[(2, 1.0)]);
         entity.passenger_role = PassengerRole::transport(cargo);
         assert!(
-            sim.track_movement_gates(1, &rules, FrameEffects::default()),
+            sim.track_movement_gates(1, &rules, &mut FrameEffects::default()),
             "{kind:?}: cargo keeps the Unload process alive"
         );
         sim.substrate.entities.get_mut(1).unwrap().passenger_role =
             PassengerRole::transport(PassengerCargo::new(5, 0.0));
         assert!(
-            !sim.track_movement_gates(1, &rules, FrameEffects::default()),
+            !sim.track_movement_gates(1, &rules, &mut FrameEffects::default()),
             "{kind:?}: an empty transport takes the tail"
         );
     }
@@ -495,7 +495,7 @@ fn actual_turn_completion_reason_zero_does_not_promote_queued_mission() {
             PerCellReason::Arrival,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let mission = sim.substrate.entities.get(1).unwrap().mission.clone();
         assert_eq!(mission.current().known(), Some(MissionType::Unload));
@@ -780,7 +780,7 @@ fn ordinary_fresh_turn_and_drive_refusal_reach_entry_without_running_speed() {
                     blocker.lifecycle.set_in_limbo_for_test(false);
                     blocker.lifecycle.set_cell_marked_for_test(true);
                     sim.substrate.entities.insert(blocker);
-                    sim.substrate.occupancy =
+                    *sim.substrate.occupancy =
                         crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
                 }
                 let stats = sim
@@ -879,7 +879,7 @@ fn live_rotation_returns_before_fresh_selection_with_a_queued_path_and_no_displa
                 })
             })
             .collect();
-        sim.resolved_terrain =
+        *sim.resolved_terrain =
             Some(crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(20, 20, cells));
         assert_eq!(
             sim.resolved_terrain
@@ -1020,7 +1020,7 @@ fn actual_turn_and_arrival_crush_use_binary_frame_for_both_shield_kinds() {
                         victim.set_is_voxel_for_test(false);
                         victim.set_sub_cell(Some(0));
                         victim.position = position;
-                        victim.crushable_facts.set_crushable_for_test(true);
+                        victim.seldom.crushable_facts.set_crushable_for_test(true);
                         victim.lifecycle.set_object_alive_for_test(true);
                         victim.lifecycle.set_in_limbo_for_test(false);
                         victim.lifecycle.set_cell_marked_for_test(true);
@@ -1030,7 +1030,7 @@ fn actual_turn_and_arrival_crush_use_binary_frame_for_both_shield_kinds() {
                         ));
                         sim.substrate.entities.insert(victim);
                     }
-                    sim.substrate.occupancy =
+                    *sim.substrate.occupancy =
                         crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
                     sim.process_ground_locomotor_for_test(1, Some(&rules), None, None)
                         .unwrap();

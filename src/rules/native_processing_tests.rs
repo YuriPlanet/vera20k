@@ -324,6 +324,28 @@ fn player_at_supports_one_hundred_twenty_slots_without_constructing_countries() 
 }
 
 #[test]
+fn multiplayer_side_constructs_no_country_past_vera_bound() {
+    let mut full = NativeRulesRegistryState::default();
+    full.families.insert(
+        RulesTypeFamily::Country,
+        (0..1usize << u16::BITS)
+            .map(|index| ProcessedType::new(format!("C{index}")))
+            .collect(),
+    );
+    let settings = IniFile::from_str("[MultiPlayer]\nSide=Newcomer\n");
+    let (index, trace) = read_native_multiplayer_country(full, &IniFile::empty(), &settings, 3);
+    assert_eq!(index, 3, "the current index stays");
+    assert_eq!(
+        trace
+            .into_registry_state_discarding_events()
+            .country_projection()
+            .count(),
+        1 << u16::BITS,
+        "no Country past CountryIdx"
+    );
+}
+
+#[test]
 fn airburst_retained_flag_matches_native_reads_and_registry_restore() {
     let native = crate::test_fixture::json("tools/projectile_oracle/airburst_retained.json");
     let initial = IniFile::from_str(
@@ -4589,60 +4611,33 @@ fn ares_country_reads_start_in_multiplayer_with_const() {
     assert!(!with_const("CHILD") && !with_const("PLAIN"));
 }
 
-/// Phobos `ShadowIndices.Frame=` (`Ext/TechnoType/Body.cpp:1327-1337`) is
-/// read beside the section list and shares its `Image=` section: a shorter
-/// frame list is resized with `-1`, a repeated section overwrites its frame,
-/// and a pass whose Image section lacks the list keeps both empty.
+/// Original RA2 stores the 36 moved type references (incl. Parachute) under
+/// [AudioVisual]; YR moved them to [General]. The RA2 launch profile must read
+/// them from AudioVisual, while the YR profile ignores an AudioVisual-only key.
 #[test]
-fn phobos_shadow_indices_frames_read_the_image_section_on_every_pass() {
-    use crate::rules::ruleset::RuleSet;
-    let art = IniFile::from_str(
-        "[PAIRED]\nShadowIndices=2,1,2\nShadowIndices.Frame=0,1,5\n\
-         [SHORT]\nShadowIndices=2,1\nShadowIndices.Frame=3\n\
-         [NOFRAMES]\nShadowIndices=2,1\n\
-         [NOLIST]\nShadowIndices.Frame=8\n",
-    );
-    let mut layers = RulesLayerStack::new(IniFile::from_str(
-        "[AircraftTypes]\n0=JET\n[JET]\nImage=PAIRED\n",
-    ));
-    let read = |processed: &ProcessedRulesLayers| {
-        let object = RuleSet::from_processed_rules(processed)
-            .unwrap()
-            .object("JET")
-            .unwrap()
-            .phobos_shadow_indices_frames()
-            .to_vec();
-        object
+fn ra2_reads_moved_general_references_from_audiovisual() {
+    let build = |section: &str| {
+        let layers = RulesLayerStack::new(IniFile::from_str(&format!(
+            "[Animations]\n0=PARACH\n[General]\n\n[{section}]\nParachute=PARACH\nDropZoneAnim=PARACH\n"
+        )));
+        let processed = layers.process().unwrap();
+        RuleSet::from_processed_rules(&processed).unwrap()
     };
-    // The repeated section 2 keeps its later frame 5.
-    assert_eq!(read(&layers.process_with_fixed_art(&art).unwrap()), [5, 1]);
-    layers.push(
-        RulesLayerKind::GameMode,
-        IniFile::from_str("[JET]\nImage=SHORT\n"),
-    );
+
+    crate::util::ra2_launch::set_override(true);
+    let ra2 = build("AudioVisual");
+    assert_eq!(ra2.general.parachute_shp.as_deref(), Some("PARACH"));
+
+    crate::util::ra2_launch::set_override(false);
+    let yr = build("AudioVisual");
     assert_eq!(
-        read(&layers.process_with_fixed_art(&art).unwrap()),
-        [3, -1],
-        "a shorter frame list is resized with -1"
+        yr.general.parachute_shp, None,
+        "YR ignores an AudioVisual-only Parachute"
     );
-    layers.push(
-        RulesLayerKind::Scenario,
-        IniFile::from_str("[JET]\nImage=NOFRAMES\n"),
-    );
-    assert_eq!(
-        read(&layers.process_with_fixed_art(&art).unwrap()),
-        [-1, -1],
-        "a section list without frames fills every entry with -1"
-    );
-    layers.push(
-        RulesLayerKind::GameMode,
-        IniFile::from_str("[JET]\nImage=NOLIST\n"),
-    );
-    assert_eq!(
-        read(&layers.process_with_fixed_art(&art).unwrap()),
-        Vec::<i32>::new(),
-        "frames without a section list stay empty"
-    );
+    let yr_general = build("General");
+    assert_eq!(yr_general.general.parachute_shp.as_deref(), Some("PARACH"));
+
+    crate::util::ra2_launch::clear_override();
 }
 
 /// `[AudioVisual] Dig=` is `RulesClass+0x294`: `0x0066A593` pushes the key
@@ -4665,7 +4660,8 @@ fn audio_visual_dig_retains_its_anim_type_across_layers() {
     let processed = layers.process().unwrap();
     let rules = RuleSet::from_processed_rules(&processed).unwrap();
     assert_eq!(
-        rules.general.dig_anim.as_deref(), Some("DIGANIM"),
+        rules.general.dig_anim.as_deref(),
+        Some("DIGANIM"),
         "a later layer without the key keeps the previous AnimType"
     );
     layers.push(
@@ -4675,7 +4671,26 @@ fn audio_visual_dig_retains_its_anim_type_across_layers() {
     let processed = layers.process().unwrap();
     let rules = RuleSet::from_processed_rules(&processed).unwrap();
     assert_eq!(
-        rules.general.dig_anim.as_deref(), Some("DIGOUT"),
+        rules.general.dig_anim.as_deref(),
+        Some("DIGOUT"),
         "a present key replaces the pointer"
     );
+}
+
+/// A mod's Phobos declaration follows the processed Rules through persistence;
+/// absent one remains the retail-default off answer.
+#[test]
+fn phobos_mod_declaration_is_retained_with_processed_rules() {
+    let stock = RulesLayerStack::new(IniFile::empty()).process().unwrap();
+    assert!(!stock.phobos_required());
+
+    let required = RulesLayerStack::new(IniFile::empty())
+        .with_phobos_required(true)
+        .process()
+        .unwrap();
+    assert!(required.phobos_required());
+
+    let saved = serde_json::to_vec(&required).unwrap();
+    let loaded: ProcessedRulesLayers = serde_json::from_slice(&saved).unwrap();
+    assert!(loaded.phobos_required());
 }

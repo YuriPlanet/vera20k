@@ -132,7 +132,7 @@ impl Simulation {
         id: u64,
         bypass_admission: bool,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;
@@ -161,7 +161,7 @@ impl Simulation {
         id: u64,
         variant: i32,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if !self
             .substrate
@@ -186,7 +186,7 @@ impl Simulation {
         requested: i32,
         force: bool,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let actor = self
             .substrate
@@ -238,7 +238,7 @@ impl Simulation {
         force: bool,
         facts: &DoActionType,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         //51D701: -1 returns before the type record or water-state reads.
         if requested == -1 {
@@ -288,7 +288,7 @@ impl Simulation {
         //The original requested sequence was checked above; do not recheck
         //Carry's count after remapping. The slave owner retains the only cargo.
         let mut requested = if requested == DO_WALK
-            && actor.slave.owner().is_some()
+            && actor.seldom.slave.owner().is_some()
             && self.slave_is_full(id, rules)
         {
             DO_CARRY
@@ -301,17 +301,19 @@ impl Simulation {
         // SkipWaterSequences (0x51D842) and leaves every requested action
         // unmapped. The water-state store and transition sound below are
         // still on that path.
-        let only_land_sequences = rules
-            .object_by_handle(facts.handle)
-            .phobos_land_sequences
-            .only_land(rules.phobos_globals.only_use_land_sequences);
+        let only_land_sequences = rules.phobos()
+            && rules
+                .object_by_handle(facts.handle)
+                .phobos_land_sequences
+                .only_land(rules.phobos_globals.only_use_land_sequences);
         // Phobos `SecondaryFireSequenceLandOnly` (`Ext/Techno/Hooks.Misc.cpp:895`):
         // the resolved yes keeps stock's SecondaryFire/Prone -> WetAttack
         // remap; no leaves those requests on their land records.
-        let secondary_fire_land_only = rules
-            .object_by_handle(facts.handle)
-            .phobos_land_sequences
-            .secondary_fire_land_only(rules.phobos_globals.secondary_fire_sequence_land_only);
+        let secondary_fire_land_only = !rules.phobos()
+            || rules
+                .object_by_handle(facts.handle)
+                .phobos_land_sequences
+                .secondary_fire_land_only(rules.phobos_globals.secondary_fire_sequence_land_only);
         if facts.movement_zone == MovementZone::AmphibiousDestroyer {
             //51D7B0: virtual+1B8 is Abstract41BEA0, signed physical XYZ/256
             // packed to two WORDs. Map5657A0 retains one canonical Cell,
@@ -354,7 +356,7 @@ impl Simulation {
                 // the app's audio gate and playback own audible output.
                 self.sound_events
                     .emit(crate::sim::world::SimSoundEvent::voc_at_location(
-                        sound_id.clone(),
+                        rules.sound_name(sound_id),
                         actor,
                         self.resolved_terrain.as_ref(),
                     ));
@@ -474,7 +476,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<DamageCommitReceipt, String> {
         let Some(actor) = self.substrate.entities.get(id) else {
             return Ok(DamageCommitReceipt::default());
@@ -506,11 +508,13 @@ impl Simulation {
         // InfantryClass::AI @0x0051BAB0, retail gamemd.exe instructions:
         //51BE3E..51BE52 latches Team+82 from the retained playfield byte+3D5.
         // A fresh bounds query would discard ordinary movement's hysteresis.
+        // A team that holds the latch already is only read (`util::forked`).
         if self
             .substrate
             .entities
             .get(id)
             .is_some_and(|actor| actor.in_playfield())
+            && self.team_script_vm.member_team_leaving_map(id) == Some(false)
         {
             self.team_script_vm.mark_member_team_leaving_map(id);
         }
@@ -575,7 +579,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
@@ -753,7 +757,7 @@ impl Simulation {
         for sound in sounds.filter(|sound| sound.frame == frame) {
             self.sound_events
                 .emit(crate::sim::world::SimSoundEvent::voc_at_location(
-                    sound.sound_id.clone(),
+                    rules.sound_name(&sound.sound_id),
                     actor,
                     self.resolved_terrain.as_ref(),
                 ));
@@ -762,15 +766,14 @@ impl Simulation {
 
     /// The Infantry `INoticeSink` answer to the Jumpjet crash impact
     /// (`0x00522A60` -> `0x00522AF7..0x00522BA1`, notice `0x117C`), for a
-    /// `Crashable=` type: SetHeight (vtable `+0x1CC`) to the bridge deck on a
-    /// high-bridge cell (`[0x00A8F234]`, 416) and to 0 elsewhere, then a
-    /// forced AirDeathFinish (`0x00522B9B`). The infantryman stays: its
-    /// sequencer UnInits it when AirDeathFinish has played.
+    /// `Crashable=` type: settle onto the bridge deck or ground, then force
+    /// AirDeathFinish (`0x00522B9B`). The infantryman stays until the sequencer
+    /// UnInits it after playing AirDeathFinish.
     pub(crate) fn infantry_crash_impact(
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;
@@ -789,23 +792,31 @@ impl Simulation {
         // GetCoords (`0x00522B24`), its truncated cell (`0x00522B29..0x00522B4F`)
         // and that cell's flags through Map[cell] (`0x00522B62`).
         let [x, y] = crate::sim::movement::ground_pose::object_center_xy(actor);
-        let high_bridge = self.resolved_terrain.as_ref().is_some_and(|terrain| {
-            let cell = terrain.native_cell_identity((
-                crate::util::lepton::lepton_to_cell_packed(x),
-                crate::util::lepton::lepton_to_cell_packed(y),
-            ));
-            terrain.native_cell_flags(cell) & 0x100 != 0
-        });
-        self.set_object_height(
-            id,
-            if high_bridge {
+        let (high_bridge, deck_z) =
+            self.resolved_terrain
+                .as_ref()
+                .map_or((false, None), |terrain| {
+                    let cell = terrain.native_cell_identity((
+                        crate::util::lepton::lepton_to_cell_packed(x),
+                        crate::util::lepton::lepton_to_cell_packed(y),
+                    ));
+                    (
+                        terrain.native_cell_flags(cell) & 0x100 != 0,
+                        super::ground_pose::corrected_deck_z(terrain, cell),
+                    )
+                });
+        if let Some(z) = deck_z {
+            // SetHeight at 0x00522B7D uses a relative lift. A fixed deck is
+            // absolute and an ordinary crash may still have OnBridge clear.
+            self.set_object_z(id, z, rules, Some(rules.overlay_registry()), effects);
+        } else {
+            let height = if high_bridge {
                 crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
             } else {
                 0
-            },
-            rules,
-            effects,
-        );
+            };
+            self.set_object_height(id, height, rules, effects);
+        }
         if let Err(cause) = self.infantry_do_action(id, DO_AIR_DEATH_FINISH, true, rules, effects) {
             log::debug!("infantry {id} AirDeathFinish: {cause}");
         }
@@ -834,7 +845,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let Some(actor) = self.substrate.entities.get(id) else {
             return Ok(());
@@ -880,7 +891,7 @@ impl Simulation {
             .get(id)
             .ok_or("the recovery's infantryman disappeared")?;
         if super::motion_query::is_moving(actor) != Some(false)
-            || actor.tether.partner().is_some()
+            || actor.seldom.tether.partner().is_some()
             || !actor.in_playfield()
             || self.foot_can_reach_navigation_cell(id, destination, rules)?
         {
@@ -944,7 +955,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let stopped_move = self.substrate.entities.get(id).is_some_and(|actor| {
             actor.category() == EntityCategory::Infantry
@@ -1064,7 +1075,7 @@ impl Simulation {
             requested,
             false,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ) {
             log::debug!("infantry {id} target change action: {cause}");
         }
@@ -1079,7 +1090,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;
@@ -1124,7 +1135,7 @@ impl Simulation {
         id: u64,
         action: i32,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;

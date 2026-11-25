@@ -314,10 +314,10 @@ fn arrive(sim: &mut Simulation, rules: &RuleSet, building: u64) -> bool {
         },
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let result = sim
-        .infantry_per_cell_building_entry(saboteur, rules, None, FrameEffects::default())
+        .infantry_per_cell_building_entry(saboteur, rules, None, &mut FrameEffects::default())
         .unwrap();
     assert!(result.return_before_foot);
     sim.substrate
@@ -416,7 +416,7 @@ fn reveal_production_marks_the_building_until_the_spy_owns_it() {
         spy,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(!shows(&sim));
 }

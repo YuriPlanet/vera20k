@@ -20,7 +20,7 @@ python3 tools/wasm/build.py
 
 The helper builds the client library as a `cdylib` with
 `--target wasm32-unknown-unknown --no-default-features --features wasm` and
-packages its bindings and an asset-free host into `target/wasm-dist/`. By default
+packages its bindings, host page, ice terrain and skirmish map into `target/wasm-dist/`. By default
 it uses the `wasm` profile, which players download: optimized for size, fat LTO,
 one codegen unit and no symbol names; it takes several times as long to build
 (on 2026-11-09 the single-player Wasm was 16.5 MB, 4.6 MB compressed with brotli, against 45.6 MB and 10.3 MB with `fast`). Use `--profile fast` while editing, or `--profile release`. It
@@ -34,12 +34,15 @@ The browser engine embeds none of the interface's bundled fonts. They (Noto Sans
 Noto Sans CJK and 19 script fonts, about 30 MB) and Unifont's CJK glyph table are
 copied with their licences to `pkg/fonts/`. The engine starts fetching Noto Sans
 and the glyph table, which draw GAME.FNT's missing letters, as soon as it
-loads, and `fonts_ready()` resolves once both have arrived: await it before
-`start_game` or `start_spawn`, which fail until then. It fetches each other font
-the first time text needs a character only that font draws, such as a Thai name
+loads. The host awaits `fonts_ready()` before calling `start_game` or `start_spawn`.
+It fetches each other font the first time text needs a character only that font draws, such as a Thai name
 in a chat. A host that serves the package must serve that folder too. Each URL
 carries its file's version, so a browser keeps the fonts across engine updates.
-The engine does not set a window icon in the browser build.
+Every host should also serve `pkg/Terrain/vera_ice.mix` and
+`pkg/Terrain/vera_ice_tiles.ini` beside the bindings. The same `fonts_ready()`
+promise waits for the engine to fetch them into `/Terrain/` before launch.
+Await it before probing a map with `VeraIce=yes` as well. Other maps can start
+if these files are missing. The engine does not set a window icon in the browser build.
 
 For the optional online build:
 
@@ -82,22 +85,27 @@ python3 -m http.server 8000 --bind 127.0.0.1 --directory target/wasm-dist
 
 Open `http://localhost:8000` in a browser with WebGPU or WebGL2. The page
 requires a secure context (HTTPS or localhost). Select an extracted retail
-Yuri's Revenge resource folder, then click Start. No game resources are included
-in the package. The single-player package uploads none; online play can share
-the selected map through the existing map-transfer protocol, while other retail
+Yuri's Revenge resource folder, then click Start. The single-player host reads these files locally.
+Online play can share the selected map through the existing map-transfer protocol, while other retail
 assets stay local. Audio is prepared in that click to satisfy browser autoplay
 policy. Resource bytes are held in memory, so large installations need
 substantial browser memory.
+
+The host installs `Maps/Arctic_Circle_16_Ice_Passages.map` into the browser
+profile on first use. Serve the `Maps/` folder beside the page. Players' edits
+and deletions persist across visits.
 
 The host restores and queues settings/save writes in IndexedDB for this origin.
 The page shows storage failures and pending writes. Engine writes complete in
 memory before the asynchronous storage transaction completes; wait for the
 saved status before closing. Clearing site data removes these copies. Persistence
-callbacks report only `/saves/`, which is what `restore_user_file` accepts. A host
-that wants replays registers `set_replay_callback((name, bytes) => ...)` before
-starting; it receives each segment a match or in-scenario load closes, and the
-engine keeps no copy. Without that callback, as on the supplied page, replays are
-discarded. Imported retail resources are not persisted; they are read again on every visit. Where the
+callbacks report only `/saves/`, which is what `restore_user_file` accepts. The
+supplied page also registers the separate `set_replay_callback((name, bytes) => ...)`
+and keeps only the latest closed diagnostic replay segment in a separate IndexedDB
+database on this origin. Download the latest from **Local diagnostic replays**;
+these files are never restored into the engine or uploaded. Normal exit waits
+for both queues. A custom host that does not register a replay callback discards
+these segments. Imported retail resources are not persisted; they are read again on every visit. Where the
 browser has the File System Access API (Chrome, Edge), the launcher keeps a read
 handle to the chosen folder in a separate `vera20k-wasm-launcher` database and
 offers one-click Continue on the next visit; other browsers ask for the folder again.
@@ -264,12 +272,14 @@ A `start_spawn` launch skips the result-screen Continue button and campaign
 continuation. It freezes its result, completes the existing network finish/leave
 cleanup, delivers `match-ended`, and immediately requests engine shutdown;
 `engine-exited` follows. The old `spawn:finished:<json>` status notification is
-retained once for existing result consumers.
+retained once for existing result consumers. A launch refused for its `ExpectedRulesDigest` adds
+`"failure": "rules_mismatch"` and the game's `rules_parts` to that report
+([rules parts](spawn.md#rules-parts)).
 
 Once `engine-exited` has returned, the same page may call `start_spawn` again:
 import the next launch's files with `import_spawn_file`, call `prepare_audio` and
 pass a new canvas. The imported retail files stay, so `import_file` is refused
-and changing the game folder needs a new page; `restore_user_file`, `probe` and
+and changing the game folder needs a new page; `restore_user_file`, `version`, `probe` and
 `generate_map` work between launches, and each launch rereads the settings. The output
 `AudioContext` also stays, so a later launch needs no new user gesture. A launch's
 files under `/spawn` are removed when it exits. `can_start_spawn()` says whether

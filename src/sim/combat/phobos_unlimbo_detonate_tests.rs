@@ -197,7 +197,7 @@ fn keep_selected_reappears_selected_and_parasite_skips() {
         .entities
         .get_mut(firer)
         .unwrap()
-        .selection
+        .seldom.selection
         .set_selected_for_test(true);
     let weapon = rules.weapon("PARAGUN").expect("PARAGUN");
     // A real Bullet, so Limbo's Detach_All clears its Owner and the fire hook
@@ -217,7 +217,7 @@ fn keep_selected_reappears_selected_and_parasite_skips() {
         weapon,
         Some(bullet),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(
         sim.substrate
@@ -237,7 +237,7 @@ fn keep_selected_reappears_selected_and_parasite_skips() {
             .entities
             .get(firer)
             .unwrap()
-            .unlimbo_detonate
+            .seldom.unlimbo_detonate
             .is_remembered(),
         "KeepSelected remembers the pre-launch selection"
     );
@@ -246,7 +246,7 @@ fn keep_selected_reappears_selected_and_parasite_skips() {
             .entities
             .get(firer)
             .unwrap()
-            .selection
+            .seldom.selection
             .is_selected(),
         "the LimboLaunch Limbo clears the object's own byte"
     );
@@ -256,7 +256,7 @@ fn keep_selected_reappears_selected_and_parasite_skips() {
             .entities
             .get(firer)
             .unwrap()
-            .selection
+            .seldom.selection
             .is_selected(),
         "the reappear restores the remembered selection"
     );
@@ -267,7 +267,7 @@ fn keep_selected_reappears_selected_and_parasite_skips() {
         .entities
         .get_mut(firer)
         .unwrap()
-        .selection
+        .seldom.selection
         .set_selected_for_test(true);
     let weapon = rules.weapon("PARAGUN").expect("PARAGUN");
     sim.parasite_limbo_launch(
@@ -276,7 +276,7 @@ fn keep_selected_reappears_selected_and_parasite_skips() {
         weapon,
         Some(1),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(
         sim.substrate
@@ -291,7 +291,7 @@ fn keep_selected_reappears_selected_and_parasite_skips() {
             .entities
             .get(firer)
             .unwrap()
-            .unlimbo_detonate
+            .seldom.unlimbo_detonate
             .is_remembered(),
         "a Parasite warhead takes neither UnlimboDetonate arm"
     );

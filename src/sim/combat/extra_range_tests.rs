@@ -188,7 +188,7 @@ fn the_prefiring_bonus_follows_the_burst_index() {
     sim.entities_mut_for_test()
         .get_mut(firer)
         .unwrap()
-        .weapon_burst
+        .seldom.weapon_burst
         .advance();
     assert!(
         in_range(&sim, &rules, firer, target),
@@ -203,7 +203,7 @@ fn the_prefiring_bonus_follows_the_burst_index() {
     sim.entities_mut_for_test()
         .get_mut(firer)
         .unwrap()
-        .weapon_burst
+        .seldom.weapon_burst
         .advance();
     assert!(
         !in_range(&sim, &rules, firer, target),
@@ -225,7 +225,7 @@ fn the_sentinel_and_keep_range_bypass_the_bonuses() {
     sim.entities_mut_for_test()
         .get_mut(firer)
         .unwrap()
-        .rearm_timer
+        .seldom.rearm_timer
         .set_for_test(crate::sim::timer::CdTimer::started(100, 100));
     let weapon = rules.weapon("GUN").unwrap();
     let entity = sim.entities().get(firer).unwrap();
@@ -261,7 +261,7 @@ fn the_predicate_sums_every_applicable_bonus() {
     sim.entities_mut_for_test()
         .get_mut(firer)
         .unwrap()
-        .weapon_burst
+        .seldom.weapon_burst
         .advance();
     let attacker = sim.entities().get(firer).unwrap();
     let victim = sim.entities().get(target).unwrap();
@@ -311,7 +311,7 @@ fn the_burst_arm_needs_a_positive_burst_and_a_remainder() {
     sim.entities_mut_for_test()
         .get_mut(firer)
         .unwrap()
-        .weapon_burst
+        .seldom.weapon_burst
         .advance();
     assert!(!in_range(&sim, &rules, firer, target));
 
@@ -321,7 +321,7 @@ fn the_burst_arm_needs_a_positive_burst_and_a_remainder() {
             .entities_mut_for_test()
             .get_mut(firer)
             .unwrap()
-            .weapon_burst;
+            .seldom.weapon_burst;
         burst.advance();
         burst.advance();
     }

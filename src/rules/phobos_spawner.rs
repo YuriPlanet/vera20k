@@ -13,7 +13,7 @@
 //! - Part of rules/ — no dependency on sim/, render/, ui/, etc.
 
 use crate::rules::ini_parser::IniSection;
-use crate::rules::native_processing::read_valueable_type_vector;
+use crate::rules::native_processing::read_nullable_type_vector;
 
 /// The nine `Spawner.*` keys on one TechnoType. `SpawnerRange` /
 /// `EliteSpawnerRange` are computed at use time from the type's weapons plus
@@ -70,7 +70,8 @@ impl PhobosSpawner {
                 .read_phobos_nullable_bool("Spawner.AttackImmediately", None),
             use_turret_facing: section.read_phobos_nullable_bool("Spawner.UseTurretFacing", None),
             recycle_range: section.read_phobos_nullable_leptons("Spawner.RecycleRange", None),
-            recycle_anim: read_valueable_type_vector(section, "Spawner.RecycleAnim", &[], keep),
+            recycle_anim: read_nullable_type_vector(section, "Spawner.RecycleAnim", None, keep)
+                .unwrap_or_default(),
             // `Valueable<CoordStruct>`'s `Read3Integers` writes a parsed
             // prefix, so a one- or two-token read updates only those axes.
             recycle_coord: section.read_int_fields("Spawner.RecycleCoord", 64, [0; 3]),

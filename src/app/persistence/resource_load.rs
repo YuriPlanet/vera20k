@@ -15,7 +15,7 @@ use crate::map::theater::{self, BridgeMiddleTiles};
 use crate::map::tile_variant_selector::TileVariantSelectorCache;
 use crate::rules::native_processing::ProcessedRulesLayers;
 use crate::rules::process_owner::NativeRulesProcessOwner;
-use crate::sim::rng::{MainRng, MainRngDraws};
+use crate::sim::rng::{MainRng, SimRng};
 use crate::sim::runtime::{SimResources, SimRuntime};
 use crate::sim::snapshot::scenario_resources::SavedMapMetadata;
 use crate::sim::snapshot::{GameSnapshot, SnapshotError};
@@ -139,7 +139,14 @@ impl PreparedSavedGame {
             ));
         }
         let theater_name = snapshot.session().theater().to_owned();
-        let theater = theater::load_theater(assets, &theater_name).ok_or_else(|| {
+        let theater = theater::load_theater_with_bundled_ice(
+            assets,
+            &theater_name,
+            saved.map().uses_bundled_ice(),
+            false,
+        )
+        .map_err(|error| PreparedLoadError::Resources(format!("{error:#}")))?
+        .ok_or_else(|| {
             PreparedLoadError::Resources(format!("cannot load theater {theater_name}"))
         })?;
         let mut rules = view
@@ -164,8 +171,11 @@ impl PreparedSavedGame {
         .map_err(|error| PreparedLoadError::Resources(error.to_string()))?;
         // Asset-dependent simulation metadata participates in this digest.
         // Compare after binding, not against the outgoing world's rules.
+        // A converted save takes the rules this game has.
         let expected = rules.simulation_config_hash();
-        if snapshot.rules_hash != expected {
+        if snapshot.rules_hash != expected
+            && snapshot.rules_hash != crate::sim::snapshot::migration::CONVERTED_RULES_HASH
+        {
             return Err(SnapshotError::RulesMismatch {
                 expected,
                 found: snapshot.rules_hash,
@@ -216,7 +226,7 @@ impl PreparedSavedGame {
             );
         let mut tile_cache = view.tile_cache.detached();
         let mut bind_loaded_cells =
-            |terrain: &mut ResolvedTerrainGrid, main: MainRngDraws, size_width: i32| {
+            |terrain: &mut ResolvedTerrainGrid, main: &mut SimRng, size_width: i32| {
                 let mut draw = || main.next_u32();
                 let mut selector = tile_cache.begin_load(&mut draw);
                 terrain
@@ -450,3 +460,8 @@ impl PreparedSavedGame {
 #[cfg(all(test, tests_app))]
 #[path = "resource_load_tests.rs"]
 mod tests;
+
+// These files were written by the stock desktop release configurations.
+#[cfg(all(test, tests_app))]
+#[path = "release_save_tests.rs"]
+mod release_save_tests;

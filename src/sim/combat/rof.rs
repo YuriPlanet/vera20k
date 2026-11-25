@@ -156,6 +156,9 @@ pub(crate) struct RofQuery<'a> {
     /// mid-burst branch for the ordinary full-rearm arm (`0x6FD09E`) while it
     /// is set. `Burst.FireWithinSequence`'s overrun arm sets it.
     pub force_full_rearm: bool,
+    /// Whether this game enables Phobos's rearm hooks. Native-control queries
+    /// leave it off; gameplay passes the rules switch.
+    pub phobos: bool,
     /// The rank holds the ROF ability: a veteran with the type's veteran byte
     /// (`+0x2A0`), or an elite with either byte (`+0x2A0`, `+0x2B2`).
     pub rof_ability: bool,
@@ -241,7 +244,7 @@ pub(crate) fn get_rof_with_arm(query: &RofQuery<'_>, rng: &mut SimRng) -> (i32, 
     // Phobos `TechnoClass_RearmDelay_ForceFullDelay` (`0x6FD054`, 6 bytes
     // replaced): a forced full rearm skips the mid-burst branch and joins the
     // ordinary arm below at `0x6FD09E`.
-    let mid_burst = mid_burst && !query.force_full_rearm;
+    let mid_burst = mid_burst && !(query.phobos && query.force_full_rearm);
     if mid_burst {
         // Phobos `TechnoClass_RearmDelay_BurstDelays` (`0x6FD05E`, 7 bytes
         // replaced): `WeaponTypeExt::GetBurstDelay` answers the shot's own
@@ -249,7 +252,9 @@ pub(crate) fn get_rof_with_arm(query: &RofQuery<'_>, rng: &mut SimRng) -> (i32, 
         // index 5+ guard and the unit `BurstDelay{index-1}=` table. A negative
         // answer restores the stock instruction, so `None` continues below.
         // Index 0 answers 0 with no draw even when the weapon authors no key.
-        if let Some(delay) = weapon.phobos_burst_delay(query.burst_index) {
+        if query.phobos
+            && let Some(delay) = weapon.phobos_burst_delay(query.burst_index)
+        {
             return (delay, RearmArm::BurstGap);
         }
         if let Some(delays) = query.unit_burst_delays
@@ -270,14 +275,18 @@ pub(crate) fn get_rof_with_arm(query: &RofQuery<'_>, rng: &mut SimRng) -> (i32, 
     // stored at `0x006FD0BB`): the replaced code is the draw itself, so a
     // Phobos build takes exactly one jitter draw there, not the stock draw plus
     // this one. `ROF.RandomDelay`'s `{0, 2}` default is the vanilla jitter.
-    let jitter = match query.rof_random_delay {
-        Some(range) if range.is_single() => range.low,
-        Some(range) => rng.next_range_i32_inclusive(range.low, range.high),
-        None => rng.next_range_u32_inclusive(0, 2) as i32,
+    let jitter = if query.phobos {
+        match query.rof_random_delay {
+            Some(range) if range.is_single() => range.low,
+            Some(range) => rng.next_range_i32_inclusive(range.low, range.high),
+            None => rng.next_range_u32_inclusive(0, 2) as i32,
+        }
+    } else {
+        rng.next_range_u32_inclusive(0, 2) as i32
     };
     // Phobos 0x006FD0B5 loads `ROF * AE` (C++ double) in place of the stock
     // int `ROF`. An identity factor loads the same exact value.
-    let phobos_rof = f64::from(weapon.rof) * query.ae_rof;
+    let phobos_rof = f64::from(weapon.rof) * if query.phobos { query.ae_rof } else { 1.0 };
     let weapon_rof = X::load_f64(NativeF64Bits::from_bits(phobos_rof.to_bits()));
     // Installed Ares TechnoClass_GetROF_AttachEffect10047A40 hooks6FD0BF,
     // after FILD weaponROF, before House FMUL6FD0C5 and jitter FIADD6FD0CB.
@@ -329,11 +338,55 @@ pub(crate) fn get_rof(query: &RofQuery<'_>, rng: &mut SimRng) -> i32 {
     get_rof_with_arm(query, rng).0
 }
 
-
 #[cfg(all(test, tests_sim_combat_d_z))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
+
+    /// `TechnoClass::GetROF`'s signed IDIV by the occupant count is the sole
+    /// mechanism that makes a full garrison fire faster than one occupant, in
+    /// both game.exe and gamemd.exe. RA2 has no OccupyROFMultiplier rule, so
+    /// its value stays at identity (1.0); the divisor must still apply. With
+    /// the same RNG the jitter draw is shared, so five occupants give a fifth
+    /// of the single-occupant reload. This guards the -ra2 garrison ROF path.
+    #[test]
+    fn garrison_occupant_divisor_applies_at_ra2_identity_multiplier() {
+        let weapon = {
+            let ini = IniFile::from_str("[GUN]\nROF=120\nBurst=1\n");
+            WeaponType::from_ini_section("GUN", ini.section("GUN").unwrap())
+        };
+        let rof_with = |occupants: i32, rng_seed: u64| {
+            let query = RofQuery {
+                building_ammo: None,
+                weapon: Some(&weapon),
+                live: LiveParticles::default(),
+                burst_index: 1,
+                unit_burst_delays: None,
+                house_rof: NativeF64Bits::ONE,
+                ae_rof: 1.0,
+                attached_rof: None,
+                rof_random_delay: None,
+                force_full_rearm: false,
+                phobos: false,
+                rof_ability: false,
+                veteran_rof: 1.0,
+                occupants: Some(occupants),
+                bunkered: false,
+                occupy_rof_multiplier: 1.0,
+                bunker_rof_multiplier: 1.0,
+            };
+            get_rof(&query, &mut SimRng::new(rng_seed))
+        };
+        // Same seed -> same jitter draw, so only the IDIV differs.
+        let one = rof_with(1, 9);
+        let five = rof_with(5, 9);
+        assert_eq!(
+            one / 5,
+            five,
+            "five occupants reload at a fifth of one occupant's rate"
+        );
+        assert!(five < one, "a full garrison fires faster than a lone one");
+    }
 
     /// Phobos `TechnoClass_RearmDelay_ROF` (`0x006FD0B5`): a ranged
     /// `ROF.RandomDelay` replaces the stock jitter draw with its own, and a
@@ -355,6 +408,7 @@ mod tests {
                 attached_rof: None,
                 rof_random_delay: Some(range),
                 force_full_rearm: false,
+                phobos: true,
                 rof_ability: false,
                 veteran_rof: 1.0,
                 occupants: None,
@@ -408,6 +462,7 @@ mod tests {
                 attached_rof: None,
                 rof_random_delay: None,
                 force_full_rearm: false,
+                phobos: true,
                 rof_ability: false,
                 veteran_rof: 1.0,
                 occupants: None,
@@ -495,6 +550,7 @@ mod tests {
                     attached_rof: attached,
                     rof_random_delay: None,
                     force_full_rearm: false,
+                    phobos: false,
                     rof_ability: false,
                     veteran_rof: 1.0,
                     occupants: None,
@@ -536,12 +592,6 @@ mod tests {
                     .as_array()
                     .map_or((false, false), |pair| (pair[0] != 0, pair[1] != 0))
             };
-            // Phobos `TechnoClass_RearmDelay_BurstDelays` (`0x6FD05E`):
-            // `GetBurstDelay(0)` answers 0 with no draw even for an empty
-            // list, replacing the stock `RandomRanged(3, 5)` control rows.
-            if int("burst_index", 1) == 0 && int("burst", 1) > 0 {
-                continue;
-            }
             let class = int("class", 15);
             let (spark, spark_live) = pair("spark");
             let (fire, fire_live) = pair("fire");
@@ -580,6 +630,7 @@ mod tests {
                 attached_rof: None,
                 rof_random_delay: None,
                 force_full_rearm: false,
+                phobos: false,
                 rof_ability: (veteran && veteran_byte) || (elite && (veteran_byte || elite_byte)),
                 veteran_rof: f64::from_bits(hex("veteran_bits", "3fe3333340000000")),
                 occupants: (int("garrison", 0) != 0).then(|| int("occupants", 0)),
@@ -631,6 +682,7 @@ mod tests {
                 attached_rof: None,
                 rof_random_delay: None,
                 force_full_rearm: false,
+                phobos: true,
                 rof_ability: false,
                 veteran_rof: 1.0,
                 occupants: None,
@@ -697,6 +749,7 @@ mod tests {
             attached_rof: None,
             rof_random_delay: None,
             force_full_rearm: false,
+            phobos: true,
             rof_ability: false,
             veteran_rof: 1.0,
             occupants: None,

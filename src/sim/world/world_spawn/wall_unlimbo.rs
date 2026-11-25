@@ -37,7 +37,7 @@ impl Simulation {
         requested: RevealPosition,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
         game_active: bool,
     ) -> Option<RevealOutcome> {
         let entity = self.substrate.entities.get(id)?;
@@ -148,7 +148,7 @@ impl Simulation {
             || (!self.object_placement_scope_active()
                 && !crate::sim::cell_rect::cell_is_in_playfield_height_aware(
                     (i32::from(rx), i32::from(ry)),
-                    self.playfield_bounds,
+                    *self.playfield_bounds,
                     self.resolved_terrain.as_ref(),
                 ))
         {
@@ -186,7 +186,7 @@ impl Simulation {
                 rules,
                 registry,
                 crate::sim::overlay_mark_host::OverlayRecalc::Immediate,
-                effects,
+                effects.reborrow(),
             ),
             &request,
         ) {
@@ -237,7 +237,7 @@ impl Simulation {
             rules,
             effects,
         );
-        let context = UninitContext::new(rules).with_effects(effects);
+        let mut context = UninitContext::new(rules).with_effects(effects);
         //44082D/440856 reread type/owner for the final0/final1 pair. No live
         //source, cached radius or567DA0 border belongs to this early arm.
         for final_pass in [false, true] {
@@ -270,7 +270,7 @@ impl Simulation {
                 Some(&heights),
                 final_pass,
                 &config,
-                context,
+                context.reborrow(),
                 crate::sim::vision::MapRevealProjection::Transient,
                 self.session.current_house(),
             );
@@ -305,7 +305,7 @@ impl Simulation {
         requested: RevealPosition,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
         game_active: bool,
     ) {
         let Some((owner, ty)) =
@@ -380,7 +380,12 @@ impl Simulation {
     ///   the overlay is that one (`0x0044064A`).
     /// - The type is `Gate=` (`+0x16B7`, read at `0x004609EA..0x00460A13`,
     ///   default no): each foundation cell (vt+0x90(1)) whose overlay is 0, 2
-    ///   or 0x1A (NAWALL), `0x00440674..0x00440720`.
+    ///   or 0x1A (NAWALL), `0x00440674..0x00440720`. In an Ares game, hook
+    ///   `0x00440709` (`BuildingClass_Put`, Ares.dll `100156F0`) replaces that
+    ///   overlay test, after the owner test, with any overlay whose type is
+    ///   `Wall=yes` (resuming at `0x0044071A` to sell, `0x00440725` to skip):
+    ///   the walls its placement hook lets a gate stand on
+    ///   (`build_site::ares_gate_on_wall`), on the same switch.
     ///
     /// A cell counts only when its wall owner (`Cell+0x50`) is the building's
     /// house. The sale's answer is ignored. That sale refunds nothing, sells
@@ -400,7 +405,7 @@ impl Simulation {
         (rx, ry): (u16, u16),
         rules: &RuleSet,
         registry: &OverlayTypeRegistry,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         use crate::sim::build_site::{OVERLAY_GASAND, OVERLAY_GAWALL, OVERLAY_NAWALL};
         const TOWER_WALLS: &[Option<u8>] = &[Some(OVERLAY_GASAND), Some(OVERLAY_GAWALL)];
@@ -426,16 +431,19 @@ impl Simulation {
             .to_overlay
             .as_deref()
             .and_then(|name| registry.id_for_name(name))];
-        let (offsets, sold) = if wall_tower {
-            (vec![(0, 0)], TOWER_WALLS)
+        let (offsets, sold, any_wall) = if wall_tower {
+            (vec![(0, 0)], TOWER_WALLS, false)
         } else if to_overlay[0].is_some() {
-            (vec![(0, 0)], to_overlay.as_slice())
+            (vec![(0, 0)], to_overlay.as_slice(), false)
         } else if ty.gate {
-            (ty.foundation.cell_offsets().collect(), GATE_WALLS)
+            (
+                ty.foundation.cell_offsets().collect(),
+                GATE_WALLS,
+                rules.ares_form(),
+            )
         } else {
             return;
         };
-        let house = self.resolve(owner).to_owned();
         for (dx, dy) in offsets {
             let (Ok(x), Ok(y)) = (
                 u16::try_from(i32::from(rx) + i32::from(dx)),
@@ -443,16 +451,29 @@ impl Simulation {
             ) else {
                 continue;
             };
+            // Off the map `cell` answers an empty cell, which no house owns.
             let owned = self.overlay_grid.as_ref().is_some_and(|grid| {
-                x < grid.width()
-                    && y < grid.height()
-                    && grid.cell(x, y).wall_owner == Some(owner)
-                    && sold.contains(&grid.cell(x, y).overlay_id)
+                let cell = grid.cell(x, y);
+                cell.wall_owner == Some(owner)
+                    && if any_wall {
+                        cell.overlay_id
+                            .and_then(|id| registry.flags(id))
+                            .is_some_and(|flags| flags.wall)
+                    } else {
+                        sold.contains(&cell.overlay_id)
+                    }
             });
             if owned {
                 //44065C/440720 ignore House4FCE80's answer; only the cue is suppressed.
                 self.sell_wall_at_cell(
-                    &house, None, x as i16, y as i16, true, rules, registry, effects,
+                    owner.into(),
+                    None,
+                    x as i16,
+                    y as i16,
+                    true,
+                    rules,
+                    registry,
+                    effects,
                 );
             }
         }

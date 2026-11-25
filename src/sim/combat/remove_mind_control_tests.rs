@@ -103,7 +103,7 @@ fn captured(
     {
         let entity = sim.entities_mut_for_test().get_mut(target).expect("target");
         entity.set_owner_for_test(americans);
-        entity.mind_control =
+        entity.seldom.mind_control =
             crate::sim::capture_manager::MindControlLink::controlled_by_for_test(firer);
     }
     (americans, russians)
@@ -125,7 +125,7 @@ fn remove_mind_control_frees_the_victim() {
         "the freed unit goes back to its original House"
     );
     assert!(
-        !entity.mind_control.is_mind_controlled(),
+        !entity.seldom.mind_control.is_mind_controlled(),
         "the mind-control link is gone"
     );
     assert_ne!(entity.owner(), americans);
@@ -139,7 +139,7 @@ fn an_unset_key_keeps_the_victim_controlled() {
     detonate_once(&mut sim, &rules, firer, target, "WH");
 
     let entity = sim.entities().get(target).expect("target");
-    assert!(entity.mind_control.is_mind_controlled(), "still controlled");
+    assert!(entity.seldom.mind_control.is_mind_controlled(), "still controlled");
     assert_eq!(entity.owner(), americans);
 }
 
@@ -154,7 +154,7 @@ fn the_free_rings_the_mind_cleared_sound() {
 
     assert!(
         sim.sound_events.iter().any(
-            |event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == "CLEARME")
+            |event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&rules) == "CLEARME")
         ),
         "the plain free rings the cue"
     );
@@ -173,14 +173,14 @@ fn the_silent_variant_frees_without_the_feedback() {
 
     let entity = sim.entities().get(target).expect("target");
     assert!(
-        !entity.mind_control.is_mind_controlled(),
+        !entity.seldom.mind_control.is_mind_controlled(),
         "the silent variant still frees"
     );
     assert_eq!(entity.owner(), sim.interner.get("Russians").expect("house"));
     assert!(
         !sim.sound_events.iter().any(|event| matches!(
             event,
-            SimSoundEvent::VocAt { sound_id, .. } if sound_id == "CLEARME"
+            SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&rules) == "CLEARME"
         )),
         "no MindClearedSound while silent"
     );
@@ -201,14 +201,14 @@ fn the_global_default_applies_when_the_warhead_is_unset() {
         !sim.entities()
             .get(target)
             .expect("target")
-            .mind_control
+            .seldom.mind_control
             .is_mind_controlled(),
         "the arm still runs"
     );
     assert!(
         !sim.sound_events.iter().any(|event| matches!(
             event,
-            SimSoundEvent::VocAt { sound_id, .. } if sound_id == "CLEARME"
+            SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&rules) == "CLEARME"
         )),
         "the global silence applies when the warhead is unset"
     );

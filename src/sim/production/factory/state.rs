@@ -38,7 +38,6 @@ impl ProductionState {
     /// House Begin_Production (0x004FA350) and forced StartNext (0x004CA60A).
     /// An accepted request spends one order even when it re-arms an idle
     /// factory and its original construction order stays in place.
-    #[allow(clippy::too_many_arguments)]
     pub(in crate::sim::production) fn enqueue(
         &mut self,
         owner: InternedId,

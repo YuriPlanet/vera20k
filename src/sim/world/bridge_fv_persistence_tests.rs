@@ -36,7 +36,7 @@ fn authority(sim: &Simulation, source: u64, expected_load: bool) -> Value {
         })
         .collect();
     json!({
-        "actor":actor,"actor_in_logic":actor.in_logic_vector.is_member(),
+        "actor":actor,"actor_in_logic":actor.seldom.in_logic_vector.is_member(),
         "bullets":bullets,
         "anims":sim.substrate.anims.iter().map(|(_, anim)|
             json!({"state":anim,"in_logic":anim.in_logic_vector(),
@@ -160,7 +160,7 @@ fn retail_fv_pursuit_missiles_collapse_and_guard_survive_restore_with_map_streng
                 &[],
                 SIM_TICK_MS,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         let sim = scene.sim();
@@ -266,7 +266,7 @@ fn retail_fv_pursuit_missiles_collapse_and_guard_survive_restore_with_map_streng
                         &[],
                         SIM_TICK_MS,
                         TickLane::Ordinary,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
                 std::mem::swap(&mut scene.runtime.simulation, &mut second);

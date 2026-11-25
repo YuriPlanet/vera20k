@@ -83,7 +83,7 @@ fn arena_with_type(
             firer,
             Some(TargetKind::Entity(target)),
             &rules,
-            FrameEffects::empty()
+            &mut FrameEffects::empty()
         )
         .is_ok(),
         "the firer holds the target as a mission would"
@@ -103,7 +103,7 @@ fn destination_after_firing(sim: &mut Simulation, rules: &RuleSet, firer: u64) -
         world_fire::FireVisit::UnitTarget(firer),
         rules,
         None,
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
     sim.entities()
         .get(firer)
@@ -166,7 +166,7 @@ fn a_jumpjet_turns_its_locomotion_facing() {
         world_fire::FireVisit::UnitTarget(firer),
         &rules,
         None,
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
     let entity = sim.entities().get(firer).expect("firer");
     let runtime = entity

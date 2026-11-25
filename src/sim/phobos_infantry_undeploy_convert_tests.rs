@@ -43,12 +43,12 @@ fn kind(sim: &Simulation, id: u64) -> String {
 fn an_undeploy_completion_converts_once_per_sequence() {
     let rules = rules("Convert.Undeploy=B\n");
     let (mut sim, id) = world(&rules);
-    sim.infantry_deploy_completion(id, 31, &rules, FrameEffects::default())
+    sim.infantry_deploy_completion(id, 31, &rules, &mut FrameEffects::default())
         .unwrap();
     assert_eq!(kind(&sim, id), "B");
     // The latch keeps the same sequence from converting again; B's own
     // `Convert.Undeploy=C` is what a missing latch would reach.
-    sim.infantry_deploy_completion(id, 31, &rules, FrameEffects::default())
+    sim.infantry_deploy_completion(id, 31, &rules, &mut FrameEffects::default())
         .unwrap();
     assert_eq!(
         kind(&sim, id),
@@ -57,8 +57,8 @@ fn an_undeploy_completion_converts_once_per_sequence() {
     );
     // The DoingAI reset clears it while the sequence is neither Deploy nor
     // Undeploy (the completion left the man on Ready).
-    let _ = sim.infantry_sequencer(id, &rules, FrameEffects::default());
-    sim.infantry_deploy_completion(id, 31, &rules, FrameEffects::default())
+    let _ = sim.infantry_sequencer(id, &rules, &mut FrameEffects::default());
+    sim.infantry_deploy_completion(id, 31, &rules, &mut FrameEffects::default())
         .unwrap();
     assert_eq!(kind(&sim, id), "C", "the reset re-arms the next Undeploy");
 }
@@ -69,15 +69,15 @@ fn an_undeploy_completion_converts_once_per_sequence() {
 fn a_deploy_completion_converts_once_per_sequence() {
     let rules = rules("Convert.Deploy=D\n");
     let (mut sim, id) = world(&rules);
-    sim.infantry_deploy_completion(id, 27, &rules, FrameEffects::default())
+    sim.infantry_deploy_completion(id, 27, &rules, &mut FrameEffects::default())
         .unwrap();
     assert_eq!(kind(&sim, id), "D");
     // D's own `Convert.Deploy=D2` is what a missing latch would reach.
-    sim.infantry_deploy_completion(id, 27, &rules, FrameEffects::default())
+    sim.infantry_deploy_completion(id, 27, &rules, &mut FrameEffects::default())
         .unwrap();
     assert_eq!(kind(&sim, id), "D", "the latch allows one conversion");
-    let _ = sim.infantry_sequencer(id, &rules, FrameEffects::default());
-    sim.infantry_deploy_completion(id, 27, &rules, FrameEffects::default())
+    let _ = sim.infantry_sequencer(id, &rules, &mut FrameEffects::default());
+    sim.infantry_deploy_completion(id, 27, &rules, &mut FrameEffects::default())
         .unwrap();
     assert_eq!(kind(&sim, id), "D2", "the reset re-arms the next Deploy");
 }
@@ -87,7 +87,7 @@ fn a_deploy_completion_converts_once_per_sequence() {
 fn without_the_key_the_completion_does_not_convert() {
     let rules = rules("");
     let (mut sim, id) = world(&rules);
-    sim.infantry_deploy_completion(id, 31, &rules, FrameEffects::default())
+    sim.infantry_deploy_completion(id, 31, &rules, &mut FrameEffects::default())
         .unwrap();
     assert_eq!(kind(&sim, id), "A");
 }

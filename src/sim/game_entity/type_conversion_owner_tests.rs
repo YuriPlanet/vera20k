@@ -54,7 +54,7 @@ fn a_human_to_computer_change_converts_the_foot() {
         .spawn_object("HW", "Americans", 10, 10, 0, &rules)
         .expect("HW spawns");
     let ai = owner(&sim, "Russians");
-    sim.change_owner_with_rules(unit, ai, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(unit, ai, &rules, None, &mut FrameEffects::default());
     assert_eq!(kind(&sim, unit), "H2C");
 
     // Human to human keeps the type even with the key set.
@@ -64,7 +64,7 @@ fn a_human_to_computer_change_converts_the_foot() {
         .spawn_object("HW", "Americans", 10, 10, 0, &rules)
         .expect("HW spawns");
     let french = owner(&sim, "French");
-    sim.change_owner_with_rules(unit, french, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(unit, french, &rules, None, &mut FrameEffects::default());
     assert_eq!(kind(&sim, unit), "HW");
 }
 
@@ -85,7 +85,7 @@ fn a_computer_to_human_change_converts_and_fixes_the_mission() {
         .mission
         .set_current_for_test(MissionId::from_known(MissionType::Guard), 0);
     let human = owner(&sim, "Americans");
-    sim.change_owner_with_rules(unit, human, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(unit, human, &rules, None, &mut FrameEffects::default());
     assert_eq!(kind(&sim, unit), "HW");
     let actor = sim.entities().get(unit).unwrap();
     let area_guard = MissionId::from_known(MissionType::AreaGuard);
@@ -113,7 +113,7 @@ fn a_resource_gatherer_skips_the_mission_fix() {
         .mission
         .set_current_for_test(MissionId::from_known(MissionType::Harvest), 0);
     let human = owner(&sim, "Americans");
-    sim.change_owner_with_rules(miner, human, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(miner, human, &rules, None, &mut FrameEffects::default());
     assert_eq!(kind(&sim, miner), "HW");
     let actor = sim.entities().get(miner).unwrap();
     assert!(

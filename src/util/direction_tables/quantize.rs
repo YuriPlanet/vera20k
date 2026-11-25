@@ -34,6 +34,25 @@ pub fn muzzle_anim_index_8way(f16: u16) -> u8 {
     (dir_from_facing16(f16) + 1) & 7
 }
 
+/// Ares 3.0 facing bucket for a list of `count` images or anims, shared by
+/// `UnitClass_DrawSHP_FacingsA` (Ares.dll `0x10047FE0`) and
+/// `TechnoClass_Fire_Facings` (Ares.dll `0x10047CF0`). With
+/// `n = floor(log2(count))`: `(((f16 + 0x2000) >> (15 - n)) + 1) >> 1`
+/// masked to `2^n - 1`; from `n = 16` the sum itself, neither shifted nor
+/// masked. A count below 8 gives bucket 0. For eight this is the stock
+/// rotated octant, [`muzzle_anim_index_8way`].
+pub fn ares_facing_bucket(count: u32, f16: u16) -> u32 {
+    let Some(log2) = count.checked_ilog2().filter(|&log2| log2 >= 3) else {
+        return 0;
+    };
+    let raw = u32::from(f16) + 0x2000;
+    if log2 >= 16 {
+        raw
+    } else {
+        (((raw >> (15 - log2)) + 1) >> 1) & ((1 << log2) - 1)
+    }
+}
+
 #[cfg(all(test, tests_util))]
 mod tests {
     use super::*;

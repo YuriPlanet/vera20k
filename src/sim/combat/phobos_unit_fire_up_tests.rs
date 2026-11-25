@@ -93,7 +93,7 @@ fn arena_with_art(firer_extra: &str, weapon_extra: &str, art: &str) -> (Simulati
             firer,
             Some(TargetKind::Entity(target)),
             &rules,
-            FrameEffects::empty()
+            &mut FrameEffects::empty()
         )
         .is_ok(),
         "the firer holds the target as a mission would"
@@ -140,7 +140,7 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, firer: u64) -> usize {
         world_fire::FireVisit::UnitTarget(firer),
         rules,
         None,
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
     sim.projectiles
         .iter()
@@ -169,6 +169,7 @@ fn rearm(sim: &Simulation, firer: u64) -> i32 {
     sim.entities()
         .get(firer)
         .expect("firer")
+        .seldom
         .rearm_timer
         .duration()
 }
@@ -258,6 +259,7 @@ fn burst_overrun_forces_a_full_rearm() {
     sim.entities_mut_for_test()
         .get_mut(firer)
         .expect("firer")
+        .seldom
         .weapon_burst
         .set_index(1);
     set_counter(&mut sim, firer, -5);
@@ -369,6 +371,7 @@ fn rearm_flag(sim: &Simulation, firer: u64) -> bool {
     sim.entities()
         .get(firer)
         .expect("firer")
+        .seldom
         .weapon_burst
         .last_rearm_was_full_delay()
 }
@@ -385,11 +388,11 @@ fn shoot(
 ) -> usize {
     sim.session.set_binary_frame_for_test(frame);
     let actor = sim.entities_mut_for_test().get_mut(firer).expect("firer");
-    actor.weapon_burst.set_index(index);
+    actor.seldom.weapon_burst.set_index(index);
     if force_full {
-        actor.weapon_burst.set_force_full_rearm();
+        actor.seldom.weapon_burst.set_force_full_rearm();
     }
-    actor.rearm_timer.start(frame as i32, 0);
+    actor.seldom.rearm_timer.start(frame as i32, 0);
     visit(sim, rules, firer)
 }
 

@@ -1,5 +1,7 @@
 #[path = "src/app/shell_network_setup/network_build.rs"]
 mod network_build;
+#[path = "src/ice_build.rs"]
+mod ice_build;
 #[path = "src/util/sha256.rs"]
 mod sha256;
 #[path = "src/test_group_cfgs.rs"]
@@ -78,6 +80,11 @@ fn multiplayer_build_identity() {
             &std::fs::read(&file).expect("read multiplayer build source"),
         );
     }
+    // The MIX is binary; hash its raw identity instead of normalizing CRLF
+    // as the source walk does. The runtime checks these exact release bytes.
+    for (name, _, digest) in ice_build::identities(&root.join("Terrain")) {
+        network_build::add_source(&mut input, &format!("Terrain/{name}"), sha256::digest_hex(digest).as_bytes());
+    }
     let variables = std::env::vars().map(|(name, _)| name);
     for feature in network_build::add_features(&mut input, variables) {
         println!("cargo::rerun-if-env-changed={feature}");
@@ -90,14 +97,22 @@ fn multiplayer_build_identity() {
 
 /// Where the startup splash's license notice says this build's source is: the
 /// commit a release build was made from (`VERA20K_COMMIT`, which the Release
-/// workflow sets), otherwise the repository.
+/// workflow and a launcher's engine build set), otherwise the repository. The
+/// commit is also `VERA20K_BUILD_COMMIT`, which `--version` reports (empty
+/// when unset). Neither is in the network build: the sources are.
 fn source_location() {
     println!("cargo::rerun-if-env-changed=VERA20K_COMMIT");
-    let source = match std::env::var("VERA20K_COMMIT") {
-        Ok(commit) if !commit.is_empty() => format!("github.com/YuriPlanet/vera20k/tree/{commit}"),
-        _ => "github.com/YuriPlanet/vera20k".to_owned(),
+    let commit = std::env::var("VERA20K_COMMIT")
+        .unwrap_or_default()
+        .trim()
+        .to_owned();
+    let source = if commit.is_empty() {
+        "github.com/YuriPlanet/vera20k".to_owned()
+    } else {
+        format!("github.com/YuriPlanet/vera20k/tree/{commit}")
     };
     println!("cargo::rustc-env=VERA20K_SOURCE={source}");
+    println!("cargo::rustc-env=VERA20K_BUILD_COMMIT={commit}");
 }
 
 /// The language files VERA ships (`src/i18n/vera20k.<tag>.ini`), which

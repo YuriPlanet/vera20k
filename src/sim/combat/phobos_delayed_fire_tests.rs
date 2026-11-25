@@ -99,7 +99,7 @@ fn arena_with_art(
             firer,
             Some(TargetKind::Entity(target)),
             &rules,
-            FrameEffects::empty()
+            &mut FrameEffects::empty()
         )
         .is_ok(),
         "the firer holds the target as a mission would"
@@ -114,7 +114,7 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, firer: u64) -> usize {
         world_fire::FireVisit::UnitTarget(firer),
         rules,
         None,
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
     sim.projectiles
         .iter()
@@ -286,7 +286,7 @@ fn a_refused_shot_never_starts_the_delay() {
     sim.entities_mut_for_test()
         .get_mut(firer)
         .unwrap()
-        .rearm_timer
+        .seldom.rearm_timer
         .start(100, 10);
     let before = anim_ids(&sim);
     assert_eq!(visit(&mut sim, &rules, firer), 0);

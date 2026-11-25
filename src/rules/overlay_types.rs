@@ -305,7 +305,7 @@ impl OverlayTypeRegistry {
     /// loads project their already processed owner with from_processed_rules.
     pub fn from_ini(ini: &IniFile, art_ini: Option<&IniFile>) -> Self {
         let empty_art = IniFile::empty();
-        let processed = crate::rules::native_processing::RulesLayerStack::new(ini.clone())
+        let processed = match crate::rules::native_processing::RulesLayerStack::new(ini.clone())
             .process_with_fixed_art_and_registry_state_recovering(
                 art_ini.unwrap_or(&empty_art),
                 crate::rules::native_processing::NativeRulesRegistryState::default(),
@@ -315,13 +315,20 @@ impl OverlayTypeRegistry {
                 },
                 &crate::rules::sound_ini::EvaRegistry::default(),
                 &crate::rules::sound_ini::SoundRegistry::default(),
-            )
-            .unwrap_or_else(|failure| {
-                panic!(
-                    "Overlay fixture must satisfy native Rules processing: {}",
+            ) {
+            Ok(processed) => processed,
+            Err(failure) => {
+                // The game's own loads project their processed rules through
+                // `from_processed_rules` and have refused this input already;
+                // this fresh read serves the shell's drive distances and the
+                // tests, and a refused rules file gets an empty registry.
+                log::error!(
+                    "Overlay types: the rules did not process: {}",
                     failure.into_parts().0
-                )
-            });
+                );
+                return Self::from_ini(&IniFile::empty(), None);
+            }
+        };
         Self::from_processed_rules(&processed)
     }
 
@@ -934,8 +941,8 @@ mod tests {
         assert_eq!(registry.flags(wall).unwrap().damage_levels, 3);
         let scene = |wall| {
             let mut sim = crate::sim::world::Simulation::new();
-            sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(8, 8));
-            sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(8, 8));
+            *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(8, 8));
+            *sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(8, 8));
             let grid = sim.overlay_grid.as_mut().unwrap();
             grid.place_overlay(2, 2, wall, 0);
             grid.place_overlay(3, 2, wall, 0);
@@ -944,6 +951,22 @@ mod tests {
             grid.set_overlay_data(2, 2, 1);
             grid.set_overlay_data(3, 2, 1);
             sim
+        };
+        let hit = |sim: &mut crate::sim::world::Simulation,
+                   adjacent_damage: i32,
+                   rng: &mut crate::sim::rng::SimRng| {
+            let grid = sim.overlay_grid.as_mut().unwrap();
+            let terrain = sim.resolved_terrain.as_mut().unwrap();
+            let _ = crate::sim::overlay_grid::damage_wall_overlay_with_runtime_host(
+                grid,
+                &registry,
+                Some(terrain),
+                crate::sim::overlay_grid::WallPointerTarget::Real(2, 2),
+                200,
+                adjacent_damage,
+                rng,
+                None,
+            );
         };
         let cells = |sim: &crate::sim::world::Simulation| {
             let grid = sim.overlay_grid.as_ref().unwrap();
@@ -956,13 +979,9 @@ mod tests {
         };
 
         let mut forced = scene(wall);
+        let mut rng = crate::sim::rng::SimRng::new(1);
         for _ in 0..2 {
-            forced.apply_wall_damage(
-                crate::sim::overlay_grid::WallPointerTarget::Real(2, 2),
-                200,
-                &registry,
-                -1,
-            );
+            hit(&mut forced, -1, &mut rng);
         }
         assert_eq!(
             cells(&forced),
@@ -971,13 +990,9 @@ mod tests {
         );
 
         let mut rejected = scene(wall);
+        let mut rng = crate::sim::rng::SimRng::new(1);
         for _ in 0..2 {
-            rejected.apply_wall_damage(
-                crate::sim::overlay_grid::WallPointerTarget::Real(2, 2),
-                200,
-                &registry,
-                0,
-            );
+            hit(&mut rejected, 0, &mut rng);
         }
         assert_eq!(
             cells(&rejected),
@@ -1282,11 +1297,7 @@ Tiberium=yes
         };
         // Phobos 0x47D36E clears cardinal ramps too unless the projected
         // AllowRamps flag admits them.
-        let cardinal = if true {
-            None
-        } else {
-            Some(LandType::Tiberium)
-        };
+        let cardinal = if true { None } else { Some(LandType::Tiberium) };
         assert_eq!(retained_overlay_land(&resource, 4), cardinal);
         assert_eq!(retained_overlay_land(&resource, 1), cardinal);
         assert_eq!(retained_overlay_land(&resource, 5), None);

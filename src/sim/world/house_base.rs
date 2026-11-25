@@ -417,7 +417,7 @@ impl Simulation {
         value: i32,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(house) = self.houses.get_mut(&owner) else {
             return false;
@@ -446,7 +446,7 @@ impl Simulation {
         owner: InternedId,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let candidate = self.houses[&owner]
             .base_projection()
@@ -463,7 +463,7 @@ impl Simulation {
                     .object_type(building.type_ref(), rules)
                     .is_some_and(|object| object.phobos_ignore_for_base_center);
                 (!building.lifecycle.in_limbo()
-                    && building.type_facts.build_const_eligible()
+                    && building.seldom.type_facts.build_const_eligible()
                     && !ignored)
                     .then_some(id)
             });
@@ -551,7 +551,7 @@ impl Simulation {
         &mut self,
         owner: InternedId,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         // 0x0050C924 reads TechnoClass::Array's count before the search; the
         // walk re-reads each slot (0x0050C9D5).
@@ -707,7 +707,7 @@ impl Simulation {
         let house = self.houses.get(&owner)?;
         let radius = house.base_radius().clamp(768, 2048);
         let origin = house.base_origin();
-        let bounds = self.playfield_bounds?;
+        let bounds = (*self.playfield_bounds)?;
         let terrain = self.resolved_terrain.as_ref()?;
         let native_cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
         let coord = match zone {
@@ -937,7 +937,7 @@ impl Simulation {
         building: u64,
         rules: &RuleSet,
     ) {
-        let Some(bounds) = self.playfield_bounds else {
+        let Some(bounds) = *self.playfield_bounds else {
             return;
         };
         let primary_yard_factory = self.production.is_primary_factory(building)
@@ -1320,14 +1320,14 @@ mod tests {
         sim.install_resolved_terrain_for_new_map(
             crate::map::resolved_terrain::test_flat_ground_grid(17),
         );
-        sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+        *sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
             base: 8,
             off_fc: 0,
             off_100: 0,
             off_104: 8,
             off_108: 8,
         });
-        sim.playfield_size_height = Some(8);
+        *sim.playfield_size_height = Some(8);
         sim.session.set_map_width_for_test(17);
         sim.session.set_map_height_for_test(17);
         sim.session.set_binary_frame_for_test(100);
@@ -1419,7 +1419,13 @@ mod tests {
                 };
                 let ids = sim.houses[&owner].base_projection().buildings().to_vec();
                 let other = add_house(&mut sim, "Russians", &rules);
-                sim.change_owner_with_rules(ids[0], other, &rules, None, FrameEffects::default());
+                sim.change_owner_with_rules(
+                    ids[0],
+                    other,
+                    &rules,
+                    None,
+                    &mut FrameEffects::default(),
+                );
                 assert_eq!(
                     sim.theoretical_power_for_owner(&rules, "Americans"),
                     native_total("stock-drain")
@@ -1451,14 +1457,14 @@ mod tests {
     fn native_home_fixture(input: &serde_json::Value) -> (Simulation, u64, InternedId) {
         let mut sim = native_map_fixture();
         if let Some(bounds) = input["bounds"].as_array() {
-            sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+            *sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
                 base: bounds[0].as_i64().unwrap() as i32,
                 off_fc: bounds[2].as_i64().unwrap() as i32,
                 off_100: bounds[3].as_i64().unwrap() as i32,
                 off_104: bounds[4].as_i64().unwrap() as i32,
                 off_108: bounds[5].as_i64().unwrap() as i32,
             });
-            sim.playfield_size_height = Some(bounds[1].as_i64().unwrap() as i32);
+            *sim.playfield_size_height = Some(bounds[1].as_i64().unwrap() as i32);
         }
         let mut terrain = sim.resolved_terrain.take().unwrap();
         if let Some(cells) = input["cells"].as_array() {
@@ -1488,7 +1494,7 @@ mod tests {
             terrain,
             &[],
             sim.map_size_diamond(),
-            sim.playfield_bounds,
+            *sim.playfield_bounds,
         );
         let overrides = input["zone_overrides"].as_array();
         let base = zones.base_topology_mut_for_test();
@@ -1515,7 +1521,7 @@ mod tests {
                     zone["group"].as_u64().unwrap() as crate::sim::pathfinding::zone_map::ZoneId;
             }
         }
-        sim.zone_grid = Some(zones.into());
+        *sim.zone_grid = Some(zones.into());
         // Zone construction can stamp the same Dummy. Native replay starts
         // its ordinary-return chain AFTER that constructor, with these fields.
         terrain.stamp_dummy_cell_requested_coord(-7, 1);
@@ -1580,7 +1586,7 @@ mod tests {
             .set_exact_z_leptons_for_test(Some(current[2]));
         actor.set_on_bridge(input["on_bridge"].as_bool().unwrap_or(false));
         sim.substrate.entities.insert(actor);
-        sim.scenario_rng = crate::sim::rng::SimRng::new(input["seed"].as_u64().unwrap());
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(input["seed"].as_u64().unwrap());
         (sim, id, owner)
     }
 
@@ -1985,14 +1991,14 @@ mod tests {
         // that owner through the production map seam, which finishes the
         // deliberately pending post-deserialization hierarchy.
         let terrain = sim.resolved_terrain.as_ref().unwrap().clone();
-        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(
+        *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(
             terrain.width(),
             terrain.height(),
         ));
         let overlays = crate::rules::overlay_types::OverlayTypeRegistry::empty();
         sim.restore_map_authority_after_snapshot_load(&rules, &overlays, None)
             .expect("publish fixture map authority");
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         // Player load clears planning tokens (6370B0 / 70BF79), including the
         // empty tokens registered by these fixture buildings.
         sim.reset_planning_after_player_load();
@@ -2135,7 +2141,7 @@ mod tests {
             allies,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(costs(&sim), (675, 450));
         assert!(
@@ -2220,7 +2226,7 @@ mod tests {
         let house = sim.houses.get_mut(&owner).unwrap();
         house.set_base_center_for_test(None);
         house.set_alternate_base_center_for_test((0, 0));
-        sim.move_ground_forces_to_base(owner, &rules, FrameEffects::default());
+        sim.move_ground_forces_to_base(owner, &rules, &mut FrameEffects::default());
         assert_eq!(snapshot(&sim), before);
 
         let origin = (12, 12);
@@ -2243,7 +2249,7 @@ mod tests {
         assert_eq!(search(origin, (1, 1)), Some(origin), "1x1 differs");
         assert_ne!(found, origin, "the water blocks the origin's 4x4 block");
         let destination = Some(NavTargetRef::cell(found.0 + 1, found.1 + 1));
-        sim.move_ground_forces_to_base(owner, &rules, FrameEffects::default());
+        sim.move_ground_forces_to_base(owner, &rules, &mut FrameEffects::default());
 
         let after = snapshot(&sim);
         let move_mission = MissionId::from_known(MissionType::Move);
@@ -2306,7 +2312,7 @@ Foundation=1x1
                 owner,
                 &rules,
                 None,
-                FrameEffects::empty(),
+                &mut FrameEffects::empty(),
             );
             assert_eq!(
                 sim.houses[&owner].base_center(),

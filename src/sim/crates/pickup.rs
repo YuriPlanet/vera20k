@@ -204,6 +204,7 @@ fn crate_land_type(sim: &Simulation, cell: (i16, i16)) -> u8 {
 /// plays it for everyone.
 fn play_crate_sound(
     sound_events: &mut FrameChannel<SimSoundEvent>,
+    rules: &RuleSet,
     sound: Option<&str>,
     heard_by: Option<InternedId>,
     cell: (i16, i16),
@@ -224,7 +225,7 @@ fn play_crate_sound(
         SimFixed::from_num(128),
     );
     sound_events.emit(SimSoundEvent::voc_at_for(
-        sound.to_owned(),
+        rules.sound_name(sound),
         heard_by.map(|owner| [owner, owner]),
         &position,
     ));
@@ -248,9 +249,7 @@ fn announce_upgrade(
 /// `CellClass_GoodieCheck_UnitCrateVehicleCap @ 0x481C27`): the Unit crate's
 /// tracked-vehicle ceiling, `50` natively; a negative value never caps.
 fn unit_crate_vehicle_cap(rules: &RuleSet) -> i32 {
-    {
-        rules.phobos_globals.unit_crate_vehicle_cap
-    }
+    { rules.phobos_globals.unit_crate_vehicle_cap }
 }
 
 /// `0x00481C03..0x00481D6B`: the multiplayer eligibility switch on the
@@ -304,7 +303,7 @@ pub(crate) fn multiplayer_eligible_slot(
         }
         // Stock 481C69; Ares Armor1@1005F840 instead reads the permanent
         // Ext+88, so an attached armor bonus does not consume the crate.
-        POWERUP_ARMOR => actor.crate_multipliers.crate_armor() == NativeF64Bits::ONE,
+        POWERUP_ARMOR => actor.seldom.crate_multipliers.crate_armor() == NativeF64Bits::ONE,
         // `0x00481CDE`: an actor already sped up, or an Aircraft.
         POWERUP_SPEED => {
             actor.foot_speed.crate_multiplier() == NativeF64Bits::ONE
@@ -314,7 +313,7 @@ pub(crate) fn multiplayer_eligible_slot(
         }
         // `0x00481D0B`: an actor already boosted, or unarmed (`Is_Armed`).
         POWERUP_FIREPOWER => {
-            actor.crate_multipliers.crate_firepower() == NativeF64Bits::ONE
+            actor.seldom.crate_multipliers.crate_firepower() == NativeF64Bits::ONE
                 // Installed Firepower1@1005F940 returns481D52 directly,
                 //bypassing stock Is_Armed just as Speed1 bypasses Aircraft.
                 && (rules.ares() || object.is_some_and(|object| {
@@ -348,9 +347,7 @@ pub(crate) fn multiplayer_eligible_slot(
 /// `CellClass_GoodieCheck_FreeMCV @ 0x481BB8`): the MCV pre-empt's credit
 /// floor, `1500` natively.
 fn free_mcv_credits_threshold(rules: &RuleSet) -> i32 {
-    {
-        rules.phobos_globals.free_mcv_credits_threshold
-    }
+    { rules.phobos_globals.free_mcv_credits_threshold }
 }
 
 /// `0x00481BB8..0x00481BFF`: with the lobby Bases option, a house with no
@@ -391,7 +388,7 @@ pub(crate) fn pickup_crate(
     registry: &OverlayTypeRegistry,
     cell: (i16, i16),
     actor_id: u64,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some(actor) = sim.substrate.entities.get(actor_id) else {
         return true;
@@ -536,6 +533,7 @@ pub(crate) fn pickup_crate(
                 UnitCrateOutcome::Placed => {
                     play_crate_sound(
                         &mut sim.sound_events,
+                        rules,
                         general.crate_unit_sound.as_deref(),
                         Some(owner),
                         cell,
@@ -583,6 +581,7 @@ pub(crate) fn pickup_crate(
                 let center = crate_center(sim, cell, receiver);
                 play_crate_sound(
                     &mut sim.sound_events,
+                    rules,
                     general.crate_money_sound.as_deref(),
                     Some(owner),
                     cell,
@@ -592,6 +591,7 @@ pub(crate) fn pickup_crate(
             POWERUP_HEAL_BASE => {
                 play_crate_sound(
                     &mut sim.sound_events,
+                    rules,
                     rules.crate_rules.heal_crate_sound.as_deref(),
                     Some(owner),
                     cell,
@@ -610,6 +610,7 @@ pub(crate) fn pickup_crate(
                 sim.reveal_map_for_owner(owner, rules);
                 play_crate_sound(
                     &mut sim.sound_events,
+                    rules,
                     general.crate_reveal_sound.as_deref(),
                     None,
                     cell,
@@ -638,6 +639,7 @@ pub(crate) fn pickup_crate(
                 announce_upgrade(&mut sim.sound_events, &owners, "EVA_UnitArmorUpgraded");
                 play_crate_sound(
                     &mut sim.sound_events,
+                    rules,
                     general.crate_armour_sound.as_deref(),
                     Some(owner),
                     cell,
@@ -666,6 +668,7 @@ pub(crate) fn pickup_crate(
                 }
                 play_crate_sound(
                     &mut sim.sound_events,
+                    rules,
                     general.crate_speed_sound.as_deref(),
                     Some(owner),
                     cell,
@@ -685,6 +688,7 @@ pub(crate) fn pickup_crate(
                 announce_upgrade(&mut sim.sound_events, &owners, "EVA_UnitFirePowerUpgraded");
                 play_crate_sound(
                     &mut sim.sound_events,
+                    rules,
                     general.crate_fire_sound.as_deref(),
                     Some(owner),
                     cell,
@@ -702,6 +706,7 @@ pub(crate) fn pickup_crate(
                 );
                 play_crate_sound(
                     &mut sim.sound_events,
+                    rules,
                     general.crate_promote_sound.as_deref(),
                     Some(owner),
                     cell,

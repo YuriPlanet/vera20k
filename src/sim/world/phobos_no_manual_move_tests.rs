@@ -75,7 +75,7 @@ fn no_manual_move_unit_still_takes_an_ai_move_mission() {
         None,
         Some(TargetKind::Cell(20, 20)),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let unit = sim.entities().get(UNIT).expect("unit");
     let move_mission = MissionId::from_known(MissionType::Move);

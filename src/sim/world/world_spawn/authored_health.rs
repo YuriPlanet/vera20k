@@ -73,8 +73,11 @@ impl Simulation {
     ) -> (u64, RevealOutcome) {
         let building = entity.category() == EntityCategory::Structure;
         // InitManagers belongs to construction, before the map loader's stores.
-        let (id, position) =
-            self.store_with_constructor_managers(entity, rules, super::FrameEffects::default());
+        let (id, position) = self.store_with_constructor_managers(
+            entity,
+            rules,
+            &mut super::FrameEffects::default(),
+        );
         if building {
             let entity = self
                 .substrate
@@ -103,7 +106,7 @@ impl Simulation {
             rules,
             overlay_registry,
             true,
-            super::FrameEffects::default(),
+            &mut super::FrameEffects::default(),
         );
         if !building && matches!(outcome, RevealOutcome::Revealed { .. }) {
             let strength = self

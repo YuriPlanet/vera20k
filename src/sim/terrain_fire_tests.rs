@@ -76,7 +76,7 @@ fn ares_a_sparky_hit_sets_a_flammable_tree_alight_until_its_fire_anim_ends() {
             &rules,
             None,
             &[hit(700, (5, 5)), hit(701, (8, 8))],
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sim.terrain_objects.get(700).unwrap().health(), 90);
         assert!(
@@ -163,7 +163,7 @@ fn a_burning_tree_with_crumbling_frames_crumbles_instead_of_vanishing() {
         &rules,
         None,
         &[hit(700, (5, 5)), hit(701, (8, 8))],
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(
         on_fire(&sim, 700) && on_fire(&sim, 701),
@@ -205,7 +205,7 @@ fn a_burning_tree_with_crumbling_frames_crumbles_instead_of_vanishing() {
             .iter()
             .filter(|event| matches!(
                 event,
-                SimSoundEvent::VocAt { sound_id, .. } if sound_id == "TreeCrumble"
+                SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&rules) == "TreeCrumble"
             ))
             .count(),
         1,
@@ -214,11 +214,11 @@ fn a_burning_tree_with_crumbling_frames_crumbles_instead_of_vanishing() {
 
     // Rate 2: the Stage holds through frame 1 and steps once at frame 2.
     sim.session.set_binary_frame_for_test(1);
-    tick_terrain_object_ai(&mut sim, 700, &rules, None, FrameEffects::default())
+    tick_terrain_object_ai(&mut sim, 700, &rules, None, &mut FrameEffects::default())
         .expect("terrain AI");
     assert_eq!(sim.terrain_objects.animation_current_frame(700), Some(0));
     sim.session.set_binary_frame_for_test(2);
-    tick_terrain_object_ai(&mut sim, 700, &rules, None, FrameEffects::default())
+    tick_terrain_object_ai(&mut sim, 700, &rules, None, &mut FrameEffects::default())
         .expect("terrain AI");
     assert_eq!(
         sim.terrain_objects.animation_current_frame(700),

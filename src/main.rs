@@ -1,7 +1,7 @@
 //! VERA20k — entry point.
 //!
 //! Runs the CLI-only switches (replay verification, retail data check, language
-//! file check, the headless spawn probe and random-map file), then delegates
+//! file check, the version, the headless spawn probe and random-map file), then delegates
 //! start-up to [`vera20k::entry`], which owns the logging, panic reporting and
 //! event-loop work. Android has no `main`; its cdylib (the `vera20k-android` crate in
 //! `android/`) reaches the same start-up through `entry::run_with_loop`.
@@ -25,6 +25,15 @@ use anyhow::Result;
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() -> Result<()> {
+    // `-ra2` selects the original Red Alert 2 non-md INI roots. Record it
+    // before any CLI switch below can load config, so every GameConfig::load
+    // resolves the same roots. The saved Options choice is read with VERA.INI
+    // (`GameConfig::use_ra2_mode`).
+    {
+        let args: Vec<_> = std::env::args_os().skip(1).collect();
+        let refs: Vec<_> = args.iter().map(std::ffi::OsString::as_os_str).collect();
+        vera20k::util::ra2_launch::configure(&refs);
+    }
     if let Some(result) =
         vera20k::app::frontend::launch::try_replay_verify(std::env::args_os().skip(1))
     {
@@ -38,6 +47,10 @@ fn main() -> Result<()> {
     if let Some(result) =
         vera20k::app::frontend::launch::try_language_check(std::env::args_os().skip(1))
     {
+        std::process::exit(result?);
+    }
+    // docs/spawn.md "Version": this build's version; JSON on stdout.
+    if let Some(result) = vera20k::app::frontend::launch::try_version(std::env::args_os().skip(1)) {
         std::process::exit(result?);
     }
     // docs/spawn.md: headless launch compatibility probe; JSON on stdout.

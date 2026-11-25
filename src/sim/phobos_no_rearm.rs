@@ -36,10 +36,10 @@ impl Simulation {
         let keys = object.phobos_no_rearm;
         let globals = &rules.phobos_globals;
         let entity = self.substrate.entities.get_mut(id).unwrap();
-        if entity.rearm_timer.timer().in_progress()
+        if entity.seldom.rearm_timer.timer().in_progress()
             && keys.rearm_under_emp(globals.no_rearm_under_emp)
         {
-            entity.rearm_timer.delay_one_frame();
+            entity.seldom.rearm_timer.delay_one_frame();
         }
         if entity.ammo_reload_timer().in_progress()
             && keys.reload_under_emp(globals.no_reload_under_emp)
@@ -62,10 +62,10 @@ impl Simulation {
         let keys = object.phobos_no_rearm;
         let globals = &rules.phobos_globals;
         let entity = self.substrate.entities.get_mut(target).unwrap();
-        if entity.rearm_timer.timer().in_progress()
+        if entity.seldom.rearm_timer.timer().in_progress()
             && keys.rearm_temporal(globals.no_rearm_temporal)
         {
-            entity.rearm_timer.delay_one_frame();
+            entity.seldom.rearm_timer.delay_one_frame();
         }
         if entity.ammo_reload_timer().in_progress()
             && keys.reload_temporal(globals.no_reload_temporal)

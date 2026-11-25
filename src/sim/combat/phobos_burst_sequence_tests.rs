@@ -75,7 +75,7 @@ fn infantry_arena(weapon: &str) -> (Simulation, RuleSet, u64) {
             firer,
             Some(TargetKind::Entity(target)),
             &rules,
-            FrameEffects::empty()
+            &mut FrameEffects::empty()
         )
         .is_ok(),
         "the firer holds the target as a mission would"
@@ -102,7 +102,7 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, firer: u64) -> usize {
         world_fire::FireVisit::InfantryTarget(firer),
         rules,
         None,
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
     sim.projectiles
         .iter()
@@ -114,6 +114,7 @@ fn index(sim: &Simulation, firer: u64) -> i32 {
     sim.entities()
         .get(firer)
         .expect("firer")
+        .seldom
         .weapon_burst
         .index()
 }
@@ -122,6 +123,7 @@ fn rearm(sim: &Simulation, firer: u64) -> i32 {
     sim.entities()
         .get(firer)
         .expect("firer")
+        .seldom
         .rearm_timer
         .duration()
 }
@@ -137,7 +139,7 @@ fn listed_delays_move_the_admission_frames_without_draws() {
     // The stock frame (2) still admits the first shot; the delays are zero
     // there.
     set_firing_frame(&mut sim, firer, 2);
-    sim.scenario_rng = SimRng::new(9);
+    *sim.scenario_rng = SimRng::new(9);
     let before = sim.scenario_rng.logical_state();
     assert_eq!(visit(&mut sim, &rules, firer), 1);
     assert_eq!(index(&sim, firer), 1);
@@ -186,16 +188,16 @@ fn unset_entries_draw_one_value_per_index_in_order() {
 
     // Index 0 draws nothing even when the frame does not match.
     set_firing_frame(&mut sim, firer, 0);
-    sim.scenario_rng = SimRng::new(9);
+    *sim.scenario_rng = SimRng::new(9);
     let seed = sim.scenario_rng.logical_state();
     assert_eq!(visit(&mut sim, &rules, firer), 0);
     assert_eq!(sim.scenario_rng.logical_state(), seed);
 
     // Index 2 draws twice before refusing a mismatched frame.
     let actor = sim.entities_mut_for_test().get_mut(firer).expect("firer");
-    actor.weapon_burst.set_index(2);
+    actor.seldom.weapon_burst.set_index(2);
     set_firing_frame(&mut sim, firer, 0);
-    sim.scenario_rng = SimRng::new(9);
+    *sim.scenario_rng = SimRng::new(9);
     assert_eq!(visit(&mut sim, &rules, firer), 0);
     let mut expected = SimRng::new(9);
     expected.next_range_u32_inclusive(3, 5);
@@ -233,7 +235,7 @@ fn unset_entries_draw_one_value_per_index_in_order() {
 fn overrun_arms_the_full_rearm_and_restarts_the_burst() {
     let (mut sim, rules, firer) = infantry_arena("Burst.Delays=5\nBurst.FireWithinSequence=yes\n");
     let actor = sim.entities_mut_for_test().get_mut(firer).expect("firer");
-    actor.weapon_burst.set_index(1);
+    actor.seldom.weapon_burst.set_index(1);
     // 2 + 5 = 7 admits the shot; 2 + (5 + 5) = 12 overruns the six frames.
     set_firing_frame(&mut sim, firer, 7);
     assert_eq!(visit(&mut sim, &rules, firer), 1);
@@ -247,6 +249,7 @@ fn overrun_arms_the_full_rearm_and_restarts_the_burst() {
         !sim.entities()
             .get(firer)
             .expect("firer")
+            .seldom
             .weapon_burst
             .force_full_rearm(),
         "the shot's burst step clears the flag"
@@ -258,7 +261,7 @@ fn overrun_arms_the_full_rearm_and_restarts_the_burst() {
 fn a_frame_inside_the_sequence_keeps_the_mid_burst_delay() {
     let (mut sim, rules, firer) = infantry_arena("Burst.Delays=2\nBurst.FireWithinSequence=yes\n");
     let actor = sim.entities_mut_for_test().get_mut(firer).expect("firer");
-    actor.weapon_burst.set_index(1);
+    actor.seldom.weapon_burst.set_index(1);
     // 2 + 2 = 4 admits; 2 + (2 + 2) = 6 does not pass the six frames.
     set_firing_frame(&mut sim, firer, 4);
     assert_eq!(visit(&mut sim, &rules, firer), 1);
@@ -268,6 +271,7 @@ fn a_frame_inside_the_sequence_keeps_the_mid_burst_delay() {
         !sim.entities()
             .get(firer)
             .expect("firer")
+            .seldom
             .weapon_burst
             .force_full_rearm()
     );
@@ -279,9 +283,9 @@ fn a_frame_inside_the_sequence_keeps_the_mid_burst_delay() {
 fn the_key_off_keeps_the_stock_stage() {
     let (mut sim, rules, firer) = infantry_arena("Burst.Delays=2,0\n");
     let actor = sim.entities_mut_for_test().get_mut(firer).expect("firer");
-    actor.weapon_burst.set_index(1);
+    actor.seldom.weapon_burst.set_index(1);
     set_firing_frame(&mut sim, firer, 4);
-    sim.scenario_rng = SimRng::new(9);
+    *sim.scenario_rng = SimRng::new(9);
     let before = sim.scenario_rng.logical_state();
     assert_eq!(
         visit(&mut sim, &rules, firer),
@@ -354,11 +358,11 @@ fn a_unit_without_the_art_key_stays_stock() {
             firer,
             Some(TargetKind::Entity(target)),
             &rules,
-            FrameEffects::empty()
+            &mut FrameEffects::empty()
         )
         .is_ok()
     );
-    sim.scenario_rng = SimRng::new(9);
+    *sim.scenario_rng = SimRng::new(9);
     let before = sim.scenario_rng.logical_state();
     let before_ids: std::collections::BTreeSet<_> =
         sim.projectiles.iter().map(|(&id, _)| id).collect();
@@ -366,7 +370,7 @@ fn a_unit_without_the_art_key_stays_stock() {
         world_fire::FireVisit::UnitTarget(firer),
         &rules,
         None,
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
     let shots = sim
         .projectiles

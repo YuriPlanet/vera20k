@@ -29,7 +29,7 @@ impl AegisScene {
         let aegis = world
             .spawn_object("AEGIS", "Americans", 10, 20, 0, &rules)
             .expect("admitted retail Aegis");
-        world.resolved_terrain = terrain;
+        *world.resolved_terrain = terrain;
         let target = world
             .spawn_object("ZEP", "Russians", 15, 20, 0, &rules)
             .expect("retail airborne target");
@@ -55,7 +55,7 @@ impl AegisScene {
                     aegis,
                     Some(TargetKind::Entity(target)),
                     &rules,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 )
                 .is_ok()
         );
@@ -86,6 +86,7 @@ impl AegisScene {
             .entities
             .get(self.aegis)
             .unwrap()
+            .seldom
             .weapon_burst
             .radial_index()
     }
@@ -96,6 +97,7 @@ impl AegisScene {
             .entities
             .get(self.aegis)
             .unwrap()
+            .seldom
             .weapon_burst
             .index()
     }
@@ -145,7 +147,7 @@ impl AegisScene {
             frame,
             &mut emitted,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("admitted retail Medusa creates a Bullet");
         assert_eq!(emitted.fire_events.len(), 1);
@@ -223,7 +225,7 @@ fn target_replacement_and_null_preserve_the_next_radial_shot() {
                 scene.aegis,
                 Some(TargetKind::Entity(other)),
                 &scene.rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .is_ok()
     );
@@ -231,7 +233,12 @@ fn target_replacement_and_null_preserve_the_next_radial_shot() {
     assert!(
         scene
             .world
-            .assign_target_represented(scene.aegis, None, &scene.rules, FrameEffects::default(),)
+            .assign_target_represented(
+                scene.aegis,
+                None,
+                &scene.rules,
+                &mut FrameEffects::default(),
+            )
             .is_ok()
     );
     // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53) keeps the
@@ -249,7 +256,7 @@ fn target_replacement_and_null_preserve_the_next_radial_shot() {
                 scene.aegis,
                 Some(TargetKind::Entity(scene.target)),
                 &scene.rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .is_ok()
     );
@@ -272,7 +279,7 @@ fn mid_fan_snapshot_retains_counter_hash_and_continued_shots() {
         scene.fire(100 + shot * 40);
     }
     assert_eq!((scene.radial_index(), scene.burst_index()), (5, 1));
-    scene.world.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *scene.world.scenario_rng = crate::sim::rng::SimRng::new(0);
     let terrain = scene.world.resolved_terrain.as_ref().unwrap().clone();
     let bytes = crate::sim::snapshot::GameSnapshot::save(&scene.world, 0, 0, "aegis", 0);
     let mut loaded = crate::sim::snapshot::GameSnapshot::load(&bytes)
@@ -322,6 +329,7 @@ fn mid_fan_snapshot_retains_counter_hash_and_continued_shots() {
         .entities
         .get(restored.aegis)
         .unwrap()
+        .seldom
         .weapon_burst;
     restored
         .world
@@ -329,6 +337,7 @@ fn mid_fan_snapshot_retains_counter_hash_and_continued_shots() {
         .entities
         .get_mut(restored.aegis)
         .unwrap()
+        .seldom
         .weapon_burst
         .take_radial_index(10);
     assert_ne!(
@@ -342,6 +351,7 @@ fn mid_fan_snapshot_retains_counter_hash_and_continued_shots() {
         .entities
         .get_mut(restored.aegis)
         .unwrap()
+        .seldom
         .weapon_burst = saved_burst;
     assert_eq!(hash, restored.world.state_hash());
     for shot in 5..12 {
@@ -433,7 +443,7 @@ fn retail_normal_and_elite_aegis_unit_fire_enrolls_each_returned_bullet() {
             };
             scene
                 .world
-                .commit_fire_visit(visit, &scene.rules, None, FrameEffects::default());
+                .commit_fire_visit(visit, &scene.rules, None, &mut FrameEffects::default());
             assert_eq!(scene.world.projectiles.len(), before + 1);
         }
         let ids: Vec<_> = scene.world.projectiles.iter().map(|(&id, _)| id).collect();

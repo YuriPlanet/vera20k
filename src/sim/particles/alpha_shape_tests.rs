@@ -33,9 +33,8 @@ fn a_particle_type_alpha_image_glows_and_a_missing_one_does_not() {
         glow_id,
         IVec3::new(256, 256, 0),
         IVec3::ZERO,
-        rules.particle_type(glow_id),
-        &mut sim,
         &rules,
+        &mut sim,
     );
     assert_eq!(
         sim.alpha_shapes()
@@ -49,9 +48,8 @@ fn a_particle_type_alpha_image_glows_and_a_missing_one_does_not() {
         plain_id,
         IVec3::new(512, 256, 0),
         IVec3::ZERO,
-        rules.particle_type(plain_id),
-        &mut sim,
         &rules,
+        &mut sim,
     );
     assert_eq!(
         sim.alpha_shapes().count(),
@@ -66,14 +64,7 @@ fn an_unloaded_alpha_image_adds_no_shape() {
     let rules = rules("MISSING");
     let id = rules.p_type_id_by_name("GLOWP").unwrap();
     let mut sim = Simulation::with_seed(7);
-    let _particle = Particle::new(
-        id,
-        IVec3::new(256, 256, 0),
-        IVec3::ZERO,
-        rules.particle_type(id),
-        &mut sim,
-        &rules,
-    );
+    let _particle = Particle::new(id, IVec3::new(256, 256, 0), IVec3::ZERO, &rules, &mut sim);
     assert_eq!(sim.alpha_shapes().count(), 0);
 }
 
@@ -85,14 +76,7 @@ fn the_light_flash_window_marks_the_glow_it_reveals() {
     let id = rules.p_type_id_by_name("GLOWP").unwrap();
     let mut sim = Simulation::with_seed(7);
     sim.set_particle_light_flash(true);
-    let _glow = Particle::new(
-        id,
-        IVec3::new(256, 256, 0),
-        IVec3::ZERO,
-        rules.particle_type(id),
-        &mut sim,
-        &rules,
-    );
+    let _glow = Particle::new(id, IVec3::new(256, 256, 0), IVec3::ZERO, &rules, &mut sim);
     assert_eq!(
         sim.alpha_shapes()
             .map(|(_, image, light_flash)| (image, light_flash))
@@ -100,14 +84,7 @@ fn the_light_flash_window_marks_the_glow_it_reveals() {
         [("GLOW", true)]
     );
     sim.set_particle_light_flash(false);
-    let _after = Particle::new(
-        id,
-        IVec3::new(512, 256, 0),
-        IVec3::ZERO,
-        rules.particle_type(id),
-        &mut sim,
-        &rules,
-    );
+    let _after = Particle::new(id, IVec3::new(512, 256, 0), IVec3::ZERO, &rules, &mut sim);
     assert_eq!(
         sim.alpha_shapes()
             .map(|(_, _, light_flash)| light_flash)

@@ -75,7 +75,7 @@ fn detonate_warhead_hits_the_target_cell() {
             sw_type,
             TARGET,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             false,
         ),
         "the launch was admitted"

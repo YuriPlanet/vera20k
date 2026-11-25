@@ -39,7 +39,7 @@ fn berserk_hit(sim: &mut Simulation, rules: &RuleSet, firer: u64, target: u64) {
             arg6: false,
         },
     );
-    let _ = sim.commit_direct_damage_receiver(rules, None, event, FrameEffects::default());
+    let _ = sim.commit_direct_damage_receiver(rules, None, event, &mut FrameEffects::default());
 }
 
 fn arena(rules: &RuleSet) -> (Simulation, u64, u64) {

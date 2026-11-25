@@ -39,16 +39,13 @@ pub(crate) fn bullet_land(
     receiver_dispatched: bool,
     ignore_units: bool,
 ) -> i32 {
-    let floor = crate::sim::projectile::projectile_ground_z(
+    let surface = crate::sim::projectile::projectile_surface_z(
         world.resolved_terrain.as_ref(),
         &world.effective_shared_cell_dummy(),
         coordinate,
+        on_bridge,
     );
-    let height = coordinate.z.wrapping_sub(floor).wrapping_sub(if on_bridge {
-        crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
-    } else {
-        0
-    });
+    let height = coordinate.z.wrapping_sub(surface);
     if height >= 2 * crate::util::lepton::LEPTONS_PER_LEVEL as i32 {
         return -1;
     }
@@ -143,7 +140,7 @@ pub(crate) fn select_with_context(
     // Phobos `SelectDamageAnimation_NegativeZeroDamage` (`0x48A4F3`) and
     // Ares 3.0 SelectDamageAnimation_FixNegatives (1005D070, hook 0x48A4F9):
     // a negative packet selects by its magnitude (`std::abs`, wrapping).
-    let damage = if (rules.ares() || crate::rules::PHOBOS_ENABLED) && damage < 0 {
+    let damage = if (rules.ares() || rules.phobos()) && damage < 0 {
         damage.wrapping_neg()
     } else {
         damage
@@ -180,8 +177,8 @@ pub(crate) fn select_with_context(
             if splash_names.is_empty() {
                 return None;
             }
-            let name = match random_index {
-                Some(index) => splash_names[index as usize],
+            let name: &str = match random_index {
+                Some(index) => splash_names[index as usize].as_ref(),
                 None => damage_band(&splash_names, damage, 35)?,
             };
             return Some(SelectedAnim {
@@ -371,6 +368,7 @@ pub(crate) fn bullet_effects(
         && let Some(source) = world.substrate.entities.get_mut(source_id)
     {
         source
+            .seldom
             .wh_anim_remaining_creation_interval
             .interval_allows(interval)
     } else {
@@ -633,7 +631,7 @@ mod tests {
             for id in ["Americans", "FV", "DEST"] {
                 crate::sim::intern::test_intern(id);
             }
-            world.interner = crate::sim::intern::test_interner();
+            *world.interner = crate::sim::intern::test_interner();
             let mut terrain = crate::map::resolved_terrain::test_flat_ground_grid(32);
             let cell = terrain.cell_mut_for_test(10, 20).unwrap();
             cell.level = input["level"].as_u64().unwrap() as u8;
@@ -963,6 +961,39 @@ mod phobos_enhancement_tests {
                 .collect::<Vec<_>>(),
             vec!["A", "B"]
         );
+    }
+
+    #[test]
+    fn negative_damage_animation_uses_its_magnitude_only_when_phobos_plays() {
+        let stock = animation_rules("", "", "");
+        assert!(!stock.phobos());
+        let mut world = Simulation::with_seed(7);
+        let selected = select_with_context(
+            &mut world,
+            &stock,
+            stock.warhead("WH").unwrap(),
+            -1,
+            0,
+            ProjectileCoord::new(0, 0, 0),
+            false,
+        )
+        .expect("stock negative damage reaches the last AnimList entry");
+        assert_eq!(name(&world, selected.name), "B");
+
+        let phobos = animation_rules("CreateAnimsOnZeroDamage=no\n", "", "");
+        assert!(phobos.phobos());
+        let mut world = Simulation::with_seed(7);
+        let selected = select_with_context(
+            &mut world,
+            &phobos,
+            phobos.warhead("WH").unwrap(),
+            -1,
+            0,
+            ProjectileCoord::new(0, 0, 0),
+            false,
+        )
+        .expect("Phobos negative damage selects by magnitude");
+        assert_eq!(name(&world, selected.name), "A");
     }
 
     #[test]
@@ -1550,6 +1581,7 @@ CreateUnit.Owner=special
                 .entities
                 .get(1)
                 .unwrap()
+                .seldom
                 .wh_anim_remaining_creation_interval
                 .remaining(),
             2

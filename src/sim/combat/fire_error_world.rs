@@ -60,6 +60,7 @@ pub(crate) struct FireSubject<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FirerPart {
     ares: bool,
+    kratos: bool,
     class: FirerClass,
     frame: i32,
     /// Every link to the target unset: [`Self::facts`] sets them.
@@ -105,6 +106,7 @@ impl FirerPart {
         firer.temporal = self.temporal_target.map(link);
         FireFacts {
             ares: self.ares,
+            kratos: self.kratos,
             class: self.class,
             frame: self.frame,
             weapon_index,
@@ -246,6 +248,8 @@ impl<'a> FireSubject<'a> {
             fire_in_transport: weapon.fire_in_transport,
             area_fire: weapon.area_fire,
             is_mag_beam: weapon.is_mag_beam,
+            no_money_no_talk: weapon.no_money_no_talk,
+            dont_need_money: weapon.dont_need_money,
             warhead: warhead.map(|warhead| WarheadFacts {
                 mind_control: warhead.mind_control,
                 ivan_bomb: warhead.ivan_bomb,
@@ -273,12 +277,14 @@ impl<'a> FireSubject<'a> {
                     ag: true,
                     au: false,
                     rot: 0,
+                    aa_only: false,
                 },
                 |projectile| ProjectileFacts {
                     aa: projectile.aa,
                     ag: projectile.ag,
                     au: projectile.au,
                     rot: projectile.rot,
+                    aa_only: projectile.aa_only,
                 },
             ),
             can_target_iron_curtained: weapon.phobos_can_target_iron_curtained,
@@ -308,6 +314,7 @@ impl<'a> FireSubject<'a> {
         // U5 reads the `+0x418` tether latch (`radio::tether`) and
         // `RadioLinks[0]`.
         let radio_link = firer
+            .seldom
             .radio_contacts
             .slot(0)
             .and_then(|id| self.world.substrate.entities.get(id));
@@ -327,9 +334,9 @@ impl<'a> FireSubject<'a> {
             // `TechnoExt::HasWeaponsDisabled` (`Ext/Techno/Body.cpp:1109-1123`):
             // the Phobos AttachEffect stat fold, or the Ares timer.
             let phobos = t.phobos_stat_multipliers().disable_weapons;
-            let ares = t.ares_disable_weapons.start_frame()
+            let ares = t.seldom.ares.ares_disable_weapons.start_frame()
                 != crate::sim::timer::PAUSED_START_FRAME
-                && t.ares_disable_weapons.remaining(frame as i32) > 0;
+                && t.seldom.ares.ares_disable_weapons.remaining(frame as i32) > 0;
             phobos || ares
         });
         let transport_attacked_by_locomotor =
@@ -340,14 +347,19 @@ impl<'a> FireSubject<'a> {
         // NavCom stands in for the destination (see residuals).
         let transport_moving = transport.is_some_and(|t| t.navigation.nav_com().is_some());
         let firer_facts = FirerFacts {
-            enslaved: firer.slave.owner().is_some(),
+            enslaved: firer.seldom.slave.owner().is_some(),
             warped_out: firer.is_warped_out(),
             warping_in: firer.is_warping_in(),
             robot_offline: firer.deactivated.is_offline(),
             weapons_disabled: self.rules.ares()
-                && firer.ares.ares_disable_weapons.start_frame()
+                && firer.seldom.ares.ares_disable_weapons.start_frame()
                     != crate::sim::timer::PAUSED_START_FRAME
-                && firer.ares.ares_disable_weapons.remaining(frame as i32) > 0,
+                && firer
+                    .seldom
+                    .ares
+                    .ares_disable_weapons
+                    .remaining(frame as i32)
+                    > 0,
             emp_remaining: firer.emp_remaining(),
             death_frame_counter: firer.unit_death_counter.get(),
             on_bridge: firer.on_bridge(),
@@ -382,13 +394,14 @@ impl<'a> FireSubject<'a> {
                 }),
             wave_live: self.world.active_wave_id(firer.stable_id()).is_some(),
             // FireError reads the actual Techno+304 Fire pointer.
-            fire_particles_live: firer.fire_particle_system.system().is_some(),
+            fire_particles_live: firer.seldom.fire_particle_system.system().is_some(),
             // FireError6FC6D5/6FC9C7 reads the actual Techno+308 pointer.
-            spark_particles_live: firer.spark_particle_system.system().is_some(),
+            spark_particles_live: firer.seldom.spark_particle_system.system().is_some(),
             // FireError reads the actual Techno+314 Railgun pointer too.
-            railgun_particles_live: firer.railgun_particle_system.system().is_some(),
+            railgun_particles_live: firer.seldom.railgun_particle_system.system().is_some(),
             // T45: the object's own rearm countdown (`+0x2EC`).
             rearming: firer
+                .seldom
                 .rearm_timer
                 .remaining(self.world.session.binary_frame() as i32)
                 != 0,
@@ -456,7 +469,7 @@ impl<'a> FireSubject<'a> {
             navcom: firer.navigation.nav_com().is_some(),
             moving_faster_than_tenth: firer.foot_speed.above_tenth(),
             deploying: firer.unit_deploying(),
-            tethered: firer.tether.partner().is_some(),
+            tethered: firer.seldom.tether.partner().is_some(),
             radio_link: match radio_link {
                 None => RadioLink::None,
                 Some(contact) if contact.category() == EntityCategory::Structure => {
@@ -515,7 +528,10 @@ impl<'a> FireSubject<'a> {
             organic: obj.organic,
             jumpjet_turn: obj.jumpjet_turn,
             can_be_occupied: obj.can_be_occupied,
-            can_occupy_fire: obj.can_occupy_fire,
+            // `+0x157C`, or RA2 Mode's answer: original RA2 has no
+            // CanOccupyFire, and a manned CanBeOccupied building fires its
+            // own gun, where B1 would otherwise answer ILLEGAL forever.
+            can_occupy_fire: obj.occupants_fire(),
             emp_pulse_cannon: obj.emp_pulse_cannon,
             turret_anim_is_voxel: obj.turret_anim_is_voxel,
             no_turret_track_target: obj
@@ -525,6 +541,7 @@ impl<'a> FireSubject<'a> {
         };
         FirerPart {
             ares: self.rules.ares(),
+            kratos: self.rules.kratos(),
             class,
             frame: frame as i32,
             firer: firer_facts,
@@ -611,7 +628,7 @@ impl<'a> FireSubject<'a> {
                         chrono_warp_latch: entity.chrono_warp_latch(),
                         bunkered: entity.bunker.link().installed_in().is_some(),
                         // T18 reads the target's `+0x418` tether latch.
-                        tethered: entity.tether.partner().is_some(),
+                        tethered: entity.seldom.tether.partner().is_some(),
                         health: entity.health,
                         parasite_lock_until: entity.parasite.launch_lock() as i32,
                         deploying: entity.unit_deploying(),
@@ -1082,6 +1099,13 @@ impl FireQuery for WorldQuery<'_, '_> {
         self.subject
             .terrain()
             .is_some_and(|terrain| in_range::is_on_bridge_for_firing(self.subject.firer, terrain))
+    }
+
+    fn available_money(&mut self) -> i32 {
+        crate::sim::credit_income::available_money(
+            &self.subject.world.houses,
+            self.subject.firer.owner(),
+        )
     }
 
     fn can_infect(&mut self) -> bool {

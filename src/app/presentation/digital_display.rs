@@ -64,7 +64,6 @@ impl DigitalDisplayInstances {
 /// Build every digital display this parent shows. `enabled` is the
 /// `[Phobos] DigitalDisplay.Enable` client switch; the `phobos` build itself
 /// is the capability gate.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn digital_display_instances(
     sim: &Simulation,
     entity: &ObjectRecord,
@@ -303,7 +302,6 @@ pub(crate) fn building_bracket(
     (x, y)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn display_text(
     display: &DigitalDisplayType,
     font: &BitFont,
@@ -412,7 +410,6 @@ fn timer_text(value: i32) -> String {
 }
 
 /// `DigitalDisplayTypeClass::DisplayShape` + `ShapeTextPrinter::PrintShape`.
-#[allow(clippy::too_many_arguments)]
 fn display_shape(
     display: &DigitalDisplayType,
     shape: &crate::render::selection_overlay::CenteredShapeStrip,

@@ -39,7 +39,8 @@ pub mod spawn;
 pub mod system_ai;
 pub mod wind;
 
-#[cfg(all(test, tests_sim_p_s))]mod ares_gas_tests;
+#[cfg(all(test, tests_sim_p_s))]
+mod ares_gas_tests;
 #[cfg(all(test, tests_sim_p_s))]
 mod fire_native_tests;
 #[cfg(all(test, tests_sim_p_s))]
@@ -369,15 +370,16 @@ impl Particle {
         type_id: ParticleTypeId,
         coords: IVec3,
         target: IVec3,
-        pt: &ParticleType,
-        sim: &mut Simulation,
         rules: &crate::rules::ruleset::RuleSet,
+        sim: &mut Simulation,
     ) -> Self {
+        let pt = rules.particle_type(type_id);
         let particle = Self::new_with_ground(type_id, coords, target, pt, sim, |sim, x, y| {
             spark_world::constructor_ground_height(sim, x, y)
         })
         .expect("particle construction requires supported ground facts");
-        sim.reveal_particle_with_alpha_shape(&particle, rules);
+        Simulation::reveal_particle(&mut sim.substrate, particle.stable_id);
+        sim.unlimbo_particle_alpha_shape(&particle, rules);
         particle
     }
 
@@ -663,7 +665,9 @@ impl ParticleSystem {
         let held = self
             .owner_entity
             .and_then(|owner| entities.get(owner))
-            .is_some_and(|owner| owner.fire_particle_system.system() == Some(self.stable_id));
+            .is_some_and(|owner| {
+                owner.seldom.fire_particle_system.system() == Some(self.stable_id)
+            });
         if !held {
             self.owner_fire_link = false;
             self.done_spawning = true;
@@ -848,6 +852,12 @@ pub struct ParticleSystemStore {
     /// ([`Self::take_touched`]). Transient: never saved, compared or hashed.
     #[serde(skip)]
     touched: TouchLogs<{ ParticleTouchReader::COUNT }>,
+    /// The (index, id) list a system's tick walks, lent by
+    /// [`Self::take_reverse_walk`] and given back by [`Self::return_walk`]
+    /// so each tick reuses one buffer. Transient: empty between walks, never
+    /// saved, compared or hashed.
+    #[serde(skip)]
+    walk_scratch: Vec<(usize, u64)>,
 }
 
 /// A product derived from the particle systems that re-derives from the touch
@@ -1134,6 +1144,40 @@ impl ParticleSystemStore {
         id
     }
 
+    /// `system`'s particles that `keep` admits, last first, as (index, id):
+    /// the list a tick walks. It is a copy, not a walk of the live list: the
+    /// walk's own steps push a particle's successor and remove the expired
+    /// child, and a particle's callbacks get `&mut Simulation`, so the list
+    /// can shift under it. The walk visits the particles present when it
+    /// began, each found again by [`Self::particle_for_tick`]. A walk nested
+    /// inside another finds the buffer lent out and fills a fresh one.
+    pub(crate) fn take_reverse_walk(
+        &mut self,
+        system: u64,
+        keep: impl Fn(&Particle) -> bool,
+    ) -> Option<Vec<(usize, u64)>> {
+        let particles = &self.systems.get(&system)?.particles;
+        let mut walk = std::mem::take(&mut self.walk_scratch);
+        walk.extend(
+            particles
+                .iter()
+                .enumerate()
+                .rev()
+                .filter(|(_, p)| keep(p))
+                .map(|(index, p)| (index, p.stable_id())),
+        );
+        Some(walk)
+    }
+
+    /// Give back a list [`Self::take_reverse_walk`] lent, keeping the larger
+    /// buffer for the next walk.
+    pub(crate) fn return_walk(&mut self, mut walk: Vec<(usize, u64)>) {
+        walk.clear();
+        if walk.capacity() > self.walk_scratch.capacity() {
+            self.walk_scratch = walk;
+        }
+    }
+
     /// Resolve a child across synchronous callbacks which may append or compact
     /// its system. The ordinary store keeps the system's display identity live.
     pub(crate) fn particle_for_tick(&self, system: u64, index: usize, id: u64) -> Option<Particle> {
@@ -1242,9 +1286,8 @@ mod tests {
             ParticleTypeId(0),
             IVec3::ZERO,
             IVec3::ZERO,
-            rules.particle_type(ParticleTypeId(0)),
-            &mut sim,
             &rules,
+            &mut sim,
         );
         assert_eq!(particle.lifetime_remaining(), 0);
         assert_eq!(sim.scenario_rng.logical_state(), rng_before);
@@ -1265,11 +1308,10 @@ mod tests {
             ParticleTypeId(0),
             IVec3::new(0x800, 0x800, 0),
             IVec3::ZERO,
-            rules.particle_type(ParticleTypeId(0)),
-            &mut sim,
             &rules,
+            &mut sim,
         );
-        sim.scenario_rng = crate::sim::rng::SimRng::with_next_draws_for_test(&[0, 0, 0x8000_0000]);
+        *sim.scenario_rng = crate::sim::rng::SimRng::with_next_draws_for_test(&[0, 0, 0x8000_0000]);
         sim.session.set_binary_frame_for_test(0);
 
         let _ = gas::tick_particle(

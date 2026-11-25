@@ -3,11 +3,12 @@
 //! read at each native receiver boundary; collision does not own a second map.
 
 use super::*;
-use crate::sim::cell_rect::{CellRef, get_cellclass_fallback, get_cellclass_fallback_leptons};
+use crate::sim::cell_rect::{CellRef, get_cellclass_fallback};
 use crate::sim::projectile::{
     ImpactLadderTarget, ImpactLadderWorld, ProjectileCollisionMotion, ProjectileCollisionPhase,
     ProjectileTarget, ProjectileTargetQuery, ProjectileTrajectory, ProjectileVelocity,
-    coord_distance, projectile_ground_z,
+    coord_distance, fixed_deck_z_for_cell_ref, is_structural_bridge_cell, projectile_cell_at,
+    projectile_ground_z, projectile_surface_z,
 };
 
 pub(super) struct ProjectileCollisionWorld<'a> {
@@ -61,14 +62,7 @@ impl Simulation {
 
 impl ProjectileCollisionWorld<'_> {
     fn cell(&self, coord: ProjectileCoord) -> CellRef<'_> {
-        if self.terrain.is_some() {
-            get_cellclass_fallback_leptons(self.terrain, coord.x, coord.y)
-        } else {
-            self.dummy.stamp_coord(coord.x / 256, coord.y / 256);
-            CellRef::Dummy {
-                cell: self.dummy.clone(),
-            }
-        }
+        projectile_cell_at(self.terrain, &self.dummy, coord)
     }
 
     fn packed_cell(&self, coord: ProjectileCoord) -> CellRef<'_> {
@@ -409,10 +403,28 @@ impl ProjectileCollisionWorld<'_> {
         let mut impact = false;
         if !vertical {
             let floor = self.ground(candidate);
-            let deck = floor.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
+            // 0x00467494..0x00467778 tests the candidate Cell first. At the
+            // bridge exit the old Cell can still supply the crossing plane.
             let cell = self.cell(candidate);
-            let structural = cell.bridge_flags_0x1180() & 0x100 != 0
-                || self.cell(projectile.position()).bridge_flags_0x1180() & 0x100 != 0;
+            let previous_cell =
+                (!is_structural_bridge_cell(&cell)).then(|| self.cell(projectile.position()));
+            let structural_cell = previous_cell.as_ref().unwrap_or(&cell);
+            let structural = is_structural_bridge_cell(structural_cell);
+            let fixed_deck =
+                fixed_deck_z_for_cell_ref(self.terrain, structural_cell).filter(|&deck| {
+                    // At a stock bridge exit the candidate floor owns the
+                    // crossing threshold. Use the old cell only when its
+                    // retained deck really replaces its local ground + 4.
+                    previous_cell.is_none()
+                        || deck
+                            != crate::sim::movement::ground_pose::z_at_height(
+                                self.ground(projectile.position()),
+                                0,
+                                true,
+                            )
+                });
+            let deck = fixed_deck
+                .unwrap_or_else(|| crate::sim::movement::ground_pose::z_at_height(floor, 0, true));
             let crossing = if structural {
                 projectile_bridge_crossing(projectile.position().z, candidate.z, deck)
             } else {
@@ -467,10 +479,16 @@ impl ProjectileCollisionWorld<'_> {
                         }
                         ProjectileBridgeCrossing::None => {}
                     }
-                    let slope = match self.cell(candidate) {
+                    let ground_slope = match self.cell(candidate) {
                         CellRef::Real(c) => c.slope_type,
                         CellRef::Dummy { cell } => cell.snapshot().slope_type,
                     };
+                    let slope =
+                        if fixed_deck.is_some() && crossing != ProjectileBridgeCrossing::None {
+                            0
+                        } else {
+                            ground_slope
+                        };
                     // The reflection refuses a result its f32 store cannot
                     // hold (an `Elasticity=` near 1e36 or not finite, which
                     // only a mod sets; native `0x00467666..0x00467778` just
@@ -526,11 +544,13 @@ impl ProjectileCollisionWorld<'_> {
         // `ObjectClass::GetHeight @ 0x005F5F40` on the pre-move coordinate,
         // from the bridge deck for an OnBridge bullet.
         let old_height = || {
-            crate::sim::movement::ground_pose::height_at_z(
-                projectile.position().z,
-                self.ground(projectile.position()),
+            let position = projectile.position();
+            position.z.wrapping_sub(projectile_surface_z(
+                self.terrain,
+                &self.dummy,
+                position,
                 projectile.on_bridge(),
-            )
+            ))
         };
         if !vertical && same_cell && old_height() < 208 {
             impact = true;
@@ -572,8 +592,7 @@ impl ProjectileCollisionWorld<'_> {
                         velocity = persistent_velocity;
                     }
                     if crate::sim::projectile::projectile_velocity_magnitude_double(if vertical {
-                        ProjectileCollisionMotion::from_coordinate(candidate, persistent_velocity)
-                            .velocity
+                        persistent_velocity.native()
                     } else {
                         native_velocity
                     }) < 10.0
@@ -617,23 +636,32 @@ impl ProjectileCollisionWorld<'_> {
         // 468C8A/468CF2 dispatch Object.GetHeight5F5F40 with the Bullet's
         // retained OnBridge byte. Keep these ground queries at their original
         // boundaries, including Flak's target-height prerequisite below.
-        let height = crate::sim::movement::ground_pose::height_at_z(
-            candidate.z,
-            self.ground(candidate),
-            projectile.on_bridge(),
-        );
-        if height <= -crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS {
+        let floor = self.ground(candidate);
+        let fixed_deck =
+            projectile.on_bridge() && fixed_deck_z_for_cell_ref(self.terrain, &cell).is_some();
+        // Native's OnBridge height <= -416 is a ground penetration check.
+        // With variable clearance, test the actual ground for that arm.
+        if if fixed_deck {
+            candidate.z.wrapping_sub(floor) <= 0
+        } else {
+            crate::sim::movement::ground_pose::height_at_z(
+                candidate.z,
+                floor,
+                projectile.on_bridge(),
+            ) <= -crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
+        } {
             return true;
         }
         if projectile.collision().flak_scatter
             && self
                 .target_coordinate(projectile.target(), ProjectileTargetQuery::TargetAim)
                 .is_some_and(|target| candidate.z < target.z)
-            && crate::sim::movement::ground_pose::height_at_z(
-                candidate.z,
-                self.ground(candidate),
+            && candidate.z.wrapping_sub(projectile_surface_z(
+                self.terrain,
+                &self.dummy,
+                candidate,
                 projectile.on_bridge(),
-            ) < 0
+            )) < 0
         {
             return true;
         }
@@ -799,6 +827,7 @@ impl ProjectileCollisionWorld<'_> {
             self.interner,
             self.rules,
             &los,
+            self.terrain,
             |(x, y)| {
                 self.packed_cell(ProjectileCoord::new(
                     i32::from(x) * 256,
@@ -910,7 +939,7 @@ mod tests {
     fn world(sim: &Simulation) -> ProjectileCollisionWorld<'_> {
         ProjectileCollisionWorld {
             terrain: sim.resolved_terrain.as_ref(),
-            dummy: sim.shared_cell_dummy.clone(),
+            dummy: (*sim.shared_cell_dummy).clone(),
             occupancy: &sim.substrate.occupancy,
             entities: &sim.substrate.entities,
             terrain_objects: sim.terrain_objects.objects(),
@@ -958,7 +987,7 @@ mod tests {
             bridge_cell.has_bridge_deck = supplied.has_bridge_deck;
             bridge_cell.bridge_walkable = supplied.bridge_walkable;
             bridge_cell.bridge_deck_level = supplied.bridge_deck_level;
-            sim.bridge_state = Some(
+            *sim.bridge_state = Some(
                 crate::sim::bridge_state::BridgeRuntimeState::from_resolved_terrain(
                     sim.resolved_terrain.as_ref().unwrap(),
                     true,
@@ -980,7 +1009,7 @@ mod tests {
                         facing,
                         0,
                         &rules,
-                        FrameEffects::default(),
+                        &mut FrameEffects::default(),
                     )
                     .unwrap();
                 // OnBridge is an explicit caller prior, as in the existing
@@ -1002,7 +1031,7 @@ mod tests {
                             PlacementEvidence::EvaluateMark,
                             &rules,
                             None,
-                            FrameEffects::default(),
+                            &mut FrameEffects::default(),
                         )
                         .is_some()
                     }),
@@ -1045,7 +1074,7 @@ mod tests {
                 },
                 &rules,
                 None,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             );
             let bullet = sim
                 .projectiles
@@ -1410,10 +1439,10 @@ mod tests {
             }
             let mut terrain = ResolvedTerrainGrid::from_cells(8, 8, cells);
             terrain.test_set_native_allocated_cells(&allocated);
-            terrain.bind_shared_cell_dummy(sim.shared_cell_dummy.clone());
+            terrain.bind_shared_cell_dummy((*sim.shared_cell_dummy).clone());
             terrain.set_projectile_water_set_base(row["water_base"].as_i64().unwrap_or(100) as i32);
-            sim.resolved_terrain = Some(terrain);
-            sim.overlay_grid = Some(overlays);
+            *sim.resolved_terrain = Some(terrain);
+            *sim.overlay_grid = Some(overlays);
             if row["source"].as_bool().unwrap_or(true) {
                 place(
                     &mut sim,
@@ -1474,6 +1503,7 @@ mod tests {
                 if category == EntityCategory::Structure {
                     // Construction stamps the type's ART `Foundation=`.
                     entity
+                        .seldom
                         .type_facts
                         .set_foundation_for_test(dimensions.clone().into());
                 }
@@ -1688,6 +1718,7 @@ mod tests {
             for entity in sim.substrate.entities.values_mut() {
                 if entity.category() == EntityCategory::Structure {
                     entity
+                        .seldom
                         .type_facts
                         .set_foundation_for_test(foundation.clone().into());
                 }
@@ -1835,8 +1866,8 @@ mod tests {
             .collect::<Vec<_>>();
         let mut terrain = ResolvedTerrainGrid::from_cells(extent, extent, cells);
         terrain.test_set_native_allocated_cells(&allocated);
-        terrain.bind_shared_cell_dummy(sim.shared_cell_dummy.clone());
-        sim.resolved_terrain = Some(terrain);
+        terrain.bind_shared_cell_dummy((*sim.shared_cell_dummy).clone());
+        *sim.resolved_terrain = Some(terrain);
     }
 
     #[test]
@@ -1852,7 +1883,7 @@ mod tests {
             install_native_size_terrain(&mut sim, 8, 8);
             let mut overlays = crate::sim::overlay_grid::OverlayGrid::new(24, 24);
             overlays.place_overlay(5, 5, 0, 0);
-            sim.overlay_grid = Some(overlays);
+            *sim.overlay_grid = Some(overlays);
             if source_present {
                 place(
                     &mut sim,
@@ -1884,7 +1915,7 @@ mod tests {
                     &[],
                     16,
                     crate::sim::world::TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("fixture frame must complete");
             let detonate = !source_present || shared_wall;
@@ -1937,7 +1968,7 @@ mod tests {
             let mut overlays =
                 crate::sim::overlay_grid::OverlayGrid::new(terrain.width(), terrain.height());
             overlays.place_overlay(12, 12, 0, 0);
-            sim.overlay_grid = Some(overlays);
+            *sim.overlay_grid = Some(overlays);
             let source = sim.substrate.allocate_stable_id();
             place(
                 &mut sim,
@@ -1975,7 +2006,7 @@ mod tests {
                     &[],
                     16,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("fixture frame must complete");
             let saved = runtime.simulation.projectiles.get(id).unwrap().clone();
@@ -2058,7 +2089,7 @@ mod tests {
                     &[],
                     16,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("fixture frame must complete");
             let _ = resumed
@@ -2066,7 +2097,7 @@ mod tests {
                     &[],
                     16,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("fixture frame must complete");
             assert!(
@@ -2195,7 +2226,7 @@ mod tests {
                         &[],
                         16,
                         TickLane::Ordinary,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .expect("fixture frame must complete");
                 assert_eq!(
@@ -2245,7 +2276,7 @@ mod tests {
             install_native_size_terrain(&mut sim, 16, 16);
             let terrain_template = sim.resolved_terrain.as_ref().unwrap().clone();
             sim.install_resolved_terrain_for_new_map(terrain_template.clone());
-            sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(
+            *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(
                 terrain_template.width(),
                 terrain_template.height(),
             ));
@@ -2309,7 +2340,7 @@ mod tests {
                     &[],
                     16,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("fixture frame must complete");
             assert_eq!(
@@ -2426,7 +2457,7 @@ mod tests {
                                 &[],
                                 16,
                                 TickLane::Ordinary,
-                                crate::sim::world::FrameEffects::default(),
+                                &mut crate::sim::world::FrameEffects::default(),
                             )
                             .expect("fixture frame must complete");
                     }
@@ -2515,7 +2546,7 @@ mod tests {
                     &[],
                     16,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .expect("fixture frame must complete");
             let projectile = runtime
@@ -2550,6 +2581,51 @@ mod tests {
     }
 
     #[test]
+    fn ordinary_projectile_crosses_fixed_deck_when_leaving_the_span() {
+        use crate::map::bridge_facts::{BRIDGE_FLAG_ANCHOR_SELF, BRIDGE_FLAG_STRUCTURAL};
+        use crate::util::native_x87::NativeF64Bits;
+
+        let mut sim = Simulation::new();
+        install_common_raw_terrain(&mut sim, 8, 8, 0, None);
+        let terrain = sim.resolved_terrain.as_mut().unwrap();
+        let anchor = terrain.native_cell_identity((2, 2));
+        terrain.write_native_cell_flags(anchor, BRIDGE_FLAG_ANCHOR_SELF | BRIDGE_FLAG_STRUCTURAL);
+        terrain.set_authored_high_bridge_deck(anchor, 8);
+
+        place(
+            &mut sim,
+            1,
+            ProjectileCoord::new(384, 640, 0),
+            EntityCategory::Unit,
+        );
+        let mut shot = gsi_05_02_projectile(1, None);
+        shot.origin = ProjectileCoord::new(765, 640, 840);
+        sim.projectiles.spawn(100, shot);
+        let motion = ProjectileCollisionMotion {
+            candidate: [770.0f64, 640.0, 820.0].map(|v| NativeF64Bits::from_bits(v.to_bits())),
+            velocity: [5.0f64, 0.0, -20.0].map(|v| NativeF64Bits::from_bits(v.to_bits())),
+        };
+        let (resolved, impact) =
+            world(&sim).ordinary_geometry(sim.projectiles.get(100).unwrap(), motion);
+        assert!(impact);
+        assert_eq!(
+            resolved.candidate_coord(),
+            ProjectileCoord::new(770, 640, 832)
+        );
+
+        let terrain = sim.resolved_terrain.as_mut().unwrap();
+        terrain.set_authored_high_bridge_deck(anchor, 4);
+        terrain.cell_mut_for_test(3, 2).unwrap().level = 4;
+        let (resolved, impact) =
+            world(&sim).ordinary_geometry(sim.projectiles.get(100).unwrap(), motion);
+        assert!(impact);
+        assert_eq!(
+            resolved.candidate_coord(),
+            ProjectileCoord::new(770, 640, 832)
+        );
+    }
+
+    #[test]
     fn ordinary_geometry_uses_native_double_and_integer_boundaries() {
         use crate::util::native_x87::NativeF64Bits;
         let vectors: Value = serde_json::from_str(crate::test_fixture::text(
@@ -2571,7 +2647,7 @@ mod tests {
             if overlay >= 0 {
                 let mut grid = crate::sim::overlay_grid::OverlayGrid::new(8, 8);
                 grid.place_overlay(2, 2, overlay as u8, 0);
-                sim.overlay_grid = Some(grid);
+                *sim.overlay_grid = Some(grid);
             }
             if row["source"].as_bool().unwrap_or(true) {
                 place(

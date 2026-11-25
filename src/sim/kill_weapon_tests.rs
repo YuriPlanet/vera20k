@@ -66,7 +66,7 @@ fn kill(sim: &mut Simulation, rules: &RuleSet, victim: u64, attacker: Option<u64
         rules,
         None,
         event,
-        crate::sim::world::FrameEffects::empty(),
+        &mut crate::sim::world::FrameEffects::empty(),
     );
     assert!(
         sim.substrate.entities.get(victim).is_none() || health(sim, victim) == 0,

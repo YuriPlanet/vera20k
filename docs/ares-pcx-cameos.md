@@ -19,6 +19,12 @@ back to the existing SHP path. Successfully loaded transparent PCXs stay
 selected. RGB565-packed magenta is transparent; black is opaque. The destination
 canvas is 60x48, while the source pixel extent is retained without stretching.
 
+Hooks: StripClass_Draw_DrawPCX (`0x6A9A43`, Ares.dll `1005E300`) blits the
+loaded PCX over the cameo cell (`render::sidebar_cameo_atlas`), and
+TechnoTypeClass_GetCameo (`0x712045`, `1005E480`) picks the promoted image when
+CameoIsElite (`1003D800`) answers for the player
+(`app::presentation::sidebar_render::shows_alt_cameo`).
+
 The atlas is derived presentation state. Object, promoted and superweapon
 entries have separate namespaces keyed by type identity. Two superweapons
 sharing a missing PCX can therefore retain different SHP fallbacks, and a

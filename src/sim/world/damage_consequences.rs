@@ -132,7 +132,7 @@ impl DamageConsequences {
         self,
         world: &mut Simulation,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> DamageCommitReceipt {
         let Self {
             mut effects,
@@ -176,16 +176,21 @@ impl DamageConsequences {
         for fx in std::mem::take(&mut effects.explosion_effects) {
             admit_explosion_effect(world, rules, fx);
         }
-        world
-            .combat_light_requests
-            .emit_all(effects.combat_light_requests.drain(..));
+        // A channel is written only for a fact it takes (`util::forked`).
+        if !effects.combat_light_requests.is_empty() {
+            world
+                .combat_light_requests
+                .emit_all(effects.combat_light_requests.drain(..));
+        }
         // RevealOnFire only lifts the shooter's shroud above. gamemd reaches
         // `CreateRadarEvent @ 0x0065FA70` from no weapon-fire path: its 24
         // constant-type call sites never pass type 0 (the 25th,
         // `TriggerAction::Execute`, takes its type from map data), and the one
         // in `BulletClass::AI` (`0x00467EA7`) is the silent type 13 of the
         // `NUKE` payload (`sim::superweapon::nuke::impact`).
-        if let DamageDelivery::Ordinary { fire_events, .. } = delivery {
+        if let DamageDelivery::Ordinary { fire_events, .. } = delivery
+            && !fire_events.is_empty()
+        {
             world.fire_events.emit_all(fire_events);
         }
         for (die_sound_id, location) in effects.death_sounds.drain(..) {
@@ -291,13 +296,13 @@ pub(crate) fn admit_muzzle_anim(world: &mut Simulation, rules: &RuleSet, event: 
             type_name, rx, ry, sub_x, sub_y, level,
         )
     };
-    let constructor = world.effect_anim_constructor(rules, type_name);
+    let constructor = Simulation::effect_anim_constructor(world, rules, type_name);
     match world.spawn_anim_at_world_with_constructor(
         rules,
         descriptor,
         coord,
         constructor,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ) {
         Ok(anim_id) => {
             // `0x6FF42B` marks and counts the anim it just built.
@@ -413,7 +418,7 @@ mod muzzle_anim_tests {
     #[test]
     fn a_presentation_flash_rides_its_firer_outside_display_and_ends_with_it() {
         let (mut sim, rules, tank) = fixture(EntityCategory::Unit);
-        sim.present_effect_anims();
+        Simulation::present_effect_anims(&mut sim);
         sim.reveal(tank);
         let unique_before = sim.next_native_runtime_id();
         let mut event = shot(&mut sim, tank, EntityCategory::Unit);

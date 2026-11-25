@@ -1,3 +1,8 @@
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 // Ported from FFmpeg's libavcodec/bink.c and libavcodec/binkdsp.c.
 // Copyright (c) 2009 Konstantin Shishkov
 // Copyright (c) 2011 Peter Ross <pross@xvid.org>
@@ -257,10 +262,17 @@ pub enum ColorRange {
 
 impl BinkFrame {
     fn alloc(width: u32, height: u32, color_range: ColorRange) -> Self {
-        let stride_y = ((width + 7) & !7) as usize;
-        let stride_uv = (((width + 15) & !15) / 2) as usize;
-        let y_size = stride_y * ((height + 7) & !7) as usize;
-        let uv_size = stride_uv * (((height + 15) & !15) / 2) as usize;
+        // A scaled block writes 16x16 at an even block position
+        // (`scale_block_8x8_to_16x16`, `fill_block` with 16), so each plane
+        // holds whole 16-pixel blocks, as FFmpeg's padded frame buffers do. A
+        // plane of 8-pixel blocks ends eight rows short of a scaled block on
+        // an odd last block row (640x400 and 320x200 have one); retail movies
+        // never place one there, a damaged or re-encoded movie can, and the
+        // write then ran off the slice.
+        let stride_y = ((width + 15) & !15) as usize;
+        let stride_uv = (((width + 31) & !31) / 2) as usize;
+        let y_size = stride_y * ((height + 15) & !15) as usize;
+        let uv_size = stride_uv * (((height + 31) & !31) / 2) as usize;
         Self {
             width,
             height,
@@ -1418,21 +1430,22 @@ impl BinkDecoder {
     ///   - X_OFF / Y_OFF: i8 (motion offsets).
     ///   - INTRA_DC / INTER_DC: i16 (two bytes per value).
     ///
-    /// Port of `get_value` at libavcodec/bink.c:557-568.
+    /// Port of `get_value` at libavcodec/bink.c:557-568. The read is
+    /// checked: a hostile stream can ask a bundle for more values than it
+    /// decoded, and a read past the buffer gives 0 instead of a panic.
     fn get_value(&mut self, bundle_num: usize) -> i32 {
         let b = &mut self.bundles[bundle_num];
+        let at = b.cur_ptr;
+        let byte = |offset: usize| self.bundle_data.get(at + offset).copied().unwrap_or(0);
         if bundle_num == Src::XOff as usize || bundle_num == Src::YOff as usize {
-            let v = self.bundle_data[b.cur_ptr] as i8 as i32;
             b.cur_ptr += 1;
-            v
+            byte(0) as i8 as i32
         } else if bundle_num == Src::IntraDc as usize || bundle_num == Src::InterDc as usize {
-            let v = read_i16(&self.bundle_data, b.cur_ptr) as i32;
             b.cur_ptr += 2;
-            v
+            i16::from_ne_bytes([byte(0), byte(1)]) as i32
         } else {
-            let v = self.bundle_data[b.cur_ptr] as i32;
             b.cur_ptr += 1;
-            v
+            byte(0) as i32
         }
     }
 }
@@ -1508,11 +1521,6 @@ fn motion_copy_8x8(
 #[inline]
 fn write_i16(buf: &mut [u8], byte_off: usize, v: i16) {
     buf[byte_off..byte_off + 2].copy_from_slice(&v.to_ne_bytes());
-}
-
-#[inline]
-fn read_i16(buf: &[u8], byte_off: usize) -> i16 {
-    i16::from_ne_bytes([buf[byte_off], buf[byte_off + 1]])
 }
 
 /// Interleave two adjacent halves (size + size) based on bits read. Port of
@@ -1719,6 +1727,48 @@ mod tests {
         d.init_bundle_lengths(320, bw);
         assert_eq!(d.bundles[Src::BlockTypes as usize].len_bits, 10);
         assert_eq!(d.bundles[Src::SubBlockTypes as usize].len_bits, 10);
+    }
+
+    /// A scaled block on the last block row of a 320x200 movie (25 luma and
+    /// 13 chroma block rows, both odd) must fit the planes.
+    #[test]
+    fn planes_hold_a_scaled_block_on_an_odd_last_block_row() {
+        let mut frame = BinkFrame::alloc(320, 200, ColorRange::Mpeg);
+        let luma_rows = (200u32 + 7) >> 3;
+        assert_eq!(luma_rows % 2, 1);
+        let base = ((luma_rows - 1) as usize) * 8 * frame.stride_y;
+        fill_block(&mut frame.y[base..], 7, frame.stride_y, 16);
+        assert_eq!(frame.y[base + 15 * frame.stride_y + 15], 7);
+        let chroma_rows = (200u32 + 15) >> 4;
+        assert_eq!(chroma_rows % 2, 1);
+        let base = ((chroma_rows - 1) as usize) * 8 * frame.stride_uv;
+        scale_block_8x8_to_16x16(&[9u8; 64], &mut frame.u[base..], frame.stride_uv);
+        assert_eq!(frame.u[base + 15 * frame.stride_uv + 15], 9);
+    }
+
+    /// A stream that asks the last bundle for more values than its buffer
+    /// holds reads 0 past the end instead of panicking.
+    #[test]
+    fn get_value_past_the_bundle_buffer_reads_zero() {
+        let h = crate::assets::bink_file::BinkHeader {
+            version: BinkVersion::BikI,
+            file_size: 1000,
+            num_frames: 1,
+            width: 8,
+            height: 8,
+            fps_num: 30,
+            fps_den: 1,
+            video_flags: 0,
+            num_audio_tracks: 0,
+            audio_tracks: vec![],
+            frame_index_offset: 0,
+        };
+        let mut d = BinkDecoder::new(&h).unwrap();
+        let end = d.bundle_data.len();
+        d.bundle_data[end - 1] = 5;
+        d.bundles[Src::Run as usize].cur_ptr = end - 1;
+        assert_eq!(d.get_value(Src::Run as usize), 5);
+        assert_eq!(d.get_value(Src::Run as usize), 0);
     }
 
     #[test]

@@ -37,23 +37,25 @@ impl WarpAnimRules {
     /// tokens stay here until a RuleSet resolves them, and the consumer drops
     /// the ones it cannot resolve before drawing.
     pub fn from_section(section: &IniSection) -> Self {
-        use crate::rules::native_processing::read_valueable_type_vector;
+        use crate::rules::native_processing::read_nullable_type_vector;
         let keep = |name: &str| Some(name.to_owned());
         Self {
-            warp_out: read_valueable_type_vector(section, "WarpOut", &[], keep),
-            warp_in: read_valueable_type_vector(section, "WarpIn", &[], keep),
-            chronoshift_warp_out: read_valueable_type_vector(
+            warp_out: read_nullable_type_vector(section, "WarpOut", None, keep).unwrap_or_default(),
+            warp_in: read_nullable_type_vector(section, "WarpIn", None, keep).unwrap_or_default(),
+            chronoshift_warp_out: read_nullable_type_vector(
                 section,
                 "Chronoshift.WarpOut",
-                &[],
+                None,
                 keep,
-            ),
-            chronoshift_warp_in: read_valueable_type_vector(
+            )
+            .unwrap_or_default(),
+            chronoshift_warp_in: read_nullable_type_vector(
                 section,
                 "Chronoshift.WarpIn",
-                &[],
+                None,
                 keep,
-            ),
+            )
+            .unwrap_or_default(),
         }
     }
 }

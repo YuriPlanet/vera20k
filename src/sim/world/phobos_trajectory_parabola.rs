@@ -93,7 +93,7 @@ impl Simulation {
         }
 
         if let Some(firer) = self.substrate.entities.get(source_id) {
-            state.current_burst = firer.weapon_burst.index();
+            state.current_burst = firer.seldom.weapon_burst.index();
             if t.mirror_coord && state.current_burst % 2 == 1 {
                 state.offset_coord[1] = state.offset_coord[1].wrapping_neg();
             }

@@ -34,7 +34,7 @@ fn the_bunker_building_type_overrides_the_rof_multiplier() {
             &sim.substrate,
             sim.substrate.entities.get(tank),
             &rules,
-            &sim.interner
+            Some(&sim.interner)
         ),
         None,
         "an unlinked unit keeps the [CombatDamage] global"
@@ -45,7 +45,7 @@ fn the_bunker_building_type_overrides_the_rof_multiplier() {
             &sim.substrate,
             sim.substrate.entities.get(tank),
             &rules,
-            &sim.interner
+            Some(&sim.interner)
         ),
         Some(2.5),
         "the bunker building type overrides the global"

@@ -136,7 +136,7 @@ fn capacity_follows_admission_transfer_and_first_limbo() {
         41,
         "score filters do not suppress capacity"
     );
-    sim.change_owner_with_rules(target, second, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(target, second, &rules, None, &mut FrameEffects::default());
     assert_eq!(
         (
             sim.houses[&first].tracking().storage_capacity(),
@@ -147,7 +147,7 @@ fn capacity_follows_admission_transfer_and_first_limbo() {
     sim.techno_limbo_with_rules(target, &rules);
     sim.techno_limbo_with_rules(target, &rules);
     assert_eq!(sim.houses[&second].tracking().storage_capacity(), 0);
-    sim.change_owner_with_rules(target, first, &rules, None, FrameEffects::default());
+    sim.change_owner_with_rules(target, first, &rules, None, &mut FrameEffects::default());
     assert_eq!(
         sim.houses[&first].tracking().storage_capacity(),
         18,
@@ -180,7 +180,7 @@ fn capacity_and_future_type_input_survive_snapshot_and_affect_hash() {
         .spawn_object_limbo_at_height("CAP", "Americans", 18, 10, 0, 0, &rules)
         .unwrap();
     assert_eq!(sim.houses[&owner].tracking().storage_capacity(), -17);
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let hash = sim.state_hash();
     let bytes = GameSnapshot::save(&sim, 0, 0, "retained-capacity", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;

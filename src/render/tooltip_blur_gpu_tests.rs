@@ -109,7 +109,7 @@ fn tooltip_blur_flattens_the_rect_to_its_mean() {
     slice.map_async(wgpu::MapMode::Read, move |result| {
         sender.send(result).expect("readback receiver");
     });
-    device.poll(wgpu::PollType::wait_indefinitely());
+    let _ = device.poll(wgpu::PollType::wait_indefinitely());
     receiver
         .recv()
         .expect("readback completion")

@@ -262,7 +262,7 @@ fn owner_change_spares_between(kind: &str, old_human: bool, new_human: bool) -> 
         russians,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     sim.session.set_binary_frame_for_test(5);
     sim.object_ai_stage(Some(&rules));
@@ -294,7 +294,7 @@ fn owner_change_flag_transported(kind: &str) -> bool {
         russians,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     sim.entities().get(tank).unwrap().should_be_dead()
 }

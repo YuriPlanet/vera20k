@@ -2,6 +2,7 @@
 //! `0x4243BC`): the `IsVeins=` anim's every-other-frame damage, its
 //! `ImmuneToVeins` skip and the precondition retirement.
 use super::*;
+use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::sim::overlay_grid::OverlayGrid;
 
@@ -94,7 +95,7 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, frame: u32) {
         id,
         rules,
         Some(rules.overlay_registry()),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .unwrap();
 }
@@ -115,7 +116,7 @@ fn veins_anim_damages_the_occupant_every_other_frame() {
     assert!(rules.object("IMMUNE").unwrap().immune_to_veins);
     let mut grid = OverlayGrid::new(32, 32);
     grid.place_overlay(12, 12, 126, 0x30);
-    sim.overlay_grid = Some(grid);
+    *sim.overlay_grid = Some(grid);
     let civ = insert_occupant(&mut sim, &rules, "CIV", 12, 12);
     let anim = spawn_veins(&mut sim, &rules, 12, 12);
 
@@ -140,7 +141,7 @@ fn veins_anim_skips_immune_types_and_retires_off_the_weed_cell() {
     let (mut sim, rules) = fixture();
     let mut grid = OverlayGrid::new(32, 32);
     grid.place_overlay(12, 12, 126, 0x30);
-    sim.overlay_grid = Some(grid);
+    *sim.overlay_grid = Some(grid);
     let immune = insert_occupant(&mut sim, &rules, "IMMUNE", 12, 12);
     let anim = spawn_veins(&mut sim, &rules, 12, 12);
     prime(&mut sim, &rules, anim);

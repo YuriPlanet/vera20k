@@ -153,7 +153,7 @@ pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: Int
             false,
             rules,
             Some(rules.overlay_registry()),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     }
     if !short {
@@ -257,8 +257,8 @@ mod tests {
             for line in house_lines(sim) {
                 lines.push((frame, line));
             }
-            sim.session
-                .set_binary_frame_for_test(sim.session.binary_frame() + 1);
+            let session = &mut *sim.session;
+            session.set_binary_frame_for_test(session.binary_frame() + 1);
         }
         lines
     }
@@ -357,7 +357,7 @@ mod tests {
             soviet,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(counts(&sim, owner), [1, 1, 0, 0, 1]);
         assert_eq!(counts(&sim, soviet), [0, 1, 0, 0, 0]);
@@ -376,7 +376,7 @@ mod tests {
             soviet,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(counts(&sim, owner), [1, 1, 0, 0, -1]);
         assert_eq!(counts(&sim, soviet), [0, 0, 0, 0, 1]);

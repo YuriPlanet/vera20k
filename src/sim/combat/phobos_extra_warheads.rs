@@ -219,7 +219,8 @@ fn detonate_warhead(
         out.effects.append(commit.effects);
         under_attack_events.extend(commit.under_attack_events);
     } else {
-        let (nested, mut pings, _crit_active, _area_result) = apply_area_damage_in_run_with_target(
+        let mut area_pings = Vec::new();
+        let (nested, _crit_active, _area_result) = apply_area_damage_in_run_with_target(
             world,
             run,
             rules,
@@ -230,8 +231,9 @@ fn detonate_warhead(
             true,
             (detonation.source_id, source_house, warhead_ref),
             target_id,
+            &mut area_pings,
         );
         out.effects.append(nested);
-        under_attack_events.append(&mut pings);
+        under_attack_events.append(&mut area_pings);
     }
 }

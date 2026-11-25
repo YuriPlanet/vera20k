@@ -38,14 +38,14 @@ fn fixture(global_audio: &str, building: &str, human: bool) -> (Simulation, Rule
 
 fn run(sim: &mut Simulation, rules: &RuleSet, building: u64) -> Vec<BountyText> {
     let events = std::cell::RefCell::new(Vec::new());
-    let observe = |_: &Simulation, _: &RuleSet, text: BountyText| {
+    let mut observe = |_: &Simulation, _: &RuleSet, text: BountyText| {
         events.borrow_mut().push(text);
     };
     display_income_string(
         sim,
         building,
         rules,
-        FrameEffects::empty().with_bounty_text(&observe),
+        &mut FrameEffects::empty().with_bounty_text(&mut observe),
     );
     events.into_inner()
 }

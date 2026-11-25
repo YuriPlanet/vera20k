@@ -16,6 +16,7 @@ use crate::sim::world::Simulation;
 
 const RULES: &str = "\
 [General]
+AIFireSale=yes
 [Countries]
 0=Americans
 [Americans]
@@ -108,7 +109,7 @@ fn a_placed_miner_needs_harvest_and_an_owned_dock() {
         "the placed miner is in the total, the never-placed one is not"
     );
 
-    sim.substrate
+    let _ = sim.substrate
         .mission_assign_exact(miner, MissionId::from_known(MissionType::Harvest), 100);
     assert_eq!(
         sim.harvester_counts(&rules, owner),
@@ -140,7 +141,7 @@ fn a_counted_no_type_joins_neither_number() {
     let miner = sim
         .spawn_object("SLVD", "Player", 12, 12, 0, &rules)
         .expect("excluded miner");
-    sim.substrate
+    let _ = sim.substrate
         .mission_assign_exact(miner, MissionId::from_known(MissionType::Harvest), 100);
     assert_eq!(sim.harvester_counts(&rules, owner), (0, 0));
 }

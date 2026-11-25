@@ -173,7 +173,7 @@ pub(crate) fn place(
             0,
             level + deck,
             rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap_or_else(|| panic!("{kind} constructs at {x},{y}"));
     let frame = sim.session.binary_frame();
@@ -187,7 +187,10 @@ pub(crate) fn place(
     entity.set_on_bridge(bridge);
     if latch {
         let owner = entity.owner();
-        entity.drop_credit.set_warped_by_house_for_test(Some(owner));
+        entity
+            .seldom
+            .drop_credit
+            .set_warped_by_house_for_test(Some(owner));
         entity
             .locomotor
             .as_mut()
@@ -442,8 +445,14 @@ fn retail_skirmish_chrono_warp_sinks_a_landed_harrier_to_terminal_cleanup() {
 
     fn frame(sim: &mut Simulation, rules: &RuleSet) {
         let due = sim.take_due_commands();
-        sim.advance_app_frame(&due, rules, 67, TickLane::Ordinary, FrameEffects::default())
-            .expect("ordinary skirmish frame");
+        sim.advance_app_frame(
+            &due,
+            rules,
+            67,
+            TickLane::Ordinary,
+            &mut FrameEffects::default(),
+        )
+        .expect("ordinary skirmish frame");
     }
 
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
@@ -478,7 +487,7 @@ fn retail_skirmish_chrono_warp_sinks_a_landed_harrier_to_terminal_cleanup() {
     sim.session.set_game_mode(ScenarioGameMode::Skirmish);
     sim.session.set_current_house_for_test(Some(owner));
     sim.set_input_delay_ticks(0);
-    sim.fog = crate::sim::vision::FogState::new(64, 64);
+    *sim.fog = crate::sim::vision::FogState::new(64, 64);
     sim.fog.reveal_all_for_owner(owner);
     spawn(&mut sim, &rules, "GACNST", "Americans", (5, 5));
     spawn(&mut sim, &rules, "NACNST", "Russians", (10, 30));
@@ -621,7 +630,7 @@ fn retail_chrono_warped_harrier_takes_off_at_its_next_order() {
         &command,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     let mut flew = false;
     for _ in 0..30 {
@@ -676,7 +685,7 @@ fn retail_chrono_warp_carries_a_driving_chrono_miner() {
             &command,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
     };
     order(&mut sim, (30, 20));
@@ -762,7 +771,7 @@ fn retail_chrono_warp_forces_a_sailing_ships_track_to_its_landing() {
         &command,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default()
+        &mut crate::sim::world::FrameEffects::default()
     ));
     charge_chronosphere(&mut sim, americans);
     click(&mut sim, &rules, americans, "ChronoSphereSpecial", SOURCE);
@@ -994,7 +1003,7 @@ fn retail_destination_while_warping_in_is_refused_by_the_drive() {
         next,
         &rules,
         true,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(chain(&sim, miner), [Drive, Teleport, Teleport]);
     assert!(warping_in(&sim));
@@ -1343,7 +1352,7 @@ fn retail_chrono_update_position_matches_native_rows() {
                 terrain.cells_mut_for_test()[index].bridge_facts.raw_flags = int(&cell[3]) as u32;
             }
         }
-        sim.zone_grid = None;
+        *sim.zone_grid = None;
         crate::sim::arena_fixture::supply_native_map(&mut sim);
         let owner_type = if row["owner"] == "infantry" {
             "CLEG"
@@ -1401,7 +1410,7 @@ fn retail_chrono_update_position_matches_native_rows() {
             place,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert_eq!(u8::from(answer), int(&row["result"]) as u8, "{row}");
@@ -1489,7 +1498,7 @@ fn retail_chrono_warp_destinations_match_native_rows() {
                 terrain.cells_mut_for_test()[index].bridge_facts.raw_flags = int(&cell[3]) as u32;
             }
         }
-        sim.zone_grid = None;
+        *sim.zone_grid = None;
         crate::sim::arena_fixture::supply_native_map(&mut sim);
         let infantry = int(&row["what"]) == 0xF;
         let at = (
@@ -1603,13 +1612,13 @@ fn run_chrono_warp_endpoints(
     };
     // State 2 (`0x719827`): the departure animation.
     set_state(&mut sim, 2);
-    sim.process_chrono_warp(id, &rules, ObjectAiCtx::default())
+    sim.process_chrono_warp(id, &rules, &mut ObjectAiCtx::default())
         .unwrap();
     // State 4 places the owner; the next visit is state 5 (`0x719B1E`).
     set_state(&mut sim, 4);
-    sim.process_chrono_warp(id, &rules, ObjectAiCtx::default())
+    sim.process_chrono_warp(id, &rules, &mut ObjectAiCtx::default())
         .unwrap();
-    sim.process_chrono_warp(id, &rules, ObjectAiCtx::default())
+    sim.process_chrono_warp(id, &rules, &mut ObjectAiCtx::default())
         .unwrap();
     for (id, anim) in sim.anims() {
         let name = sim.interner.resolve(anim.type_id()).to_owned();
@@ -1708,9 +1717,9 @@ fn run_chrono_warp_in_delay(type_delay: Option<i32>, general_delay: i32) -> (boo
     // State 4 places the owner; the next visit is the arrival, state 5
     // (`0x719B1E`), where the Phobos hook sits.
     set_state(&mut sim, 4);
-    sim.process_chrono_warp(id, &rules, ObjectAiCtx::default())
+    sim.process_chrono_warp(id, &rules, &mut ObjectAiCtx::default())
         .unwrap();
-    sim.process_chrono_warp(id, &rules, ObjectAiCtx::default())
+    sim.process_chrono_warp(id, &rules, &mut ObjectAiCtx::default())
         .unwrap();
     let warped_out = sim
         .substrate
@@ -1726,7 +1735,7 @@ fn run_chrono_warp_in_delay(type_delay: Option<i32>, general_delay: i32) -> (boo
             .get(id)
             .is_some_and(|entity| entity.chrono_warp().is_some())
     {
-        sim.process_chrono_warp(id, &rules, ObjectAiCtx::default())
+        sim.process_chrono_warp(id, &rules, &mut ObjectAiCtx::default())
             .unwrap();
         visits += 1;
     }

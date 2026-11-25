@@ -387,7 +387,7 @@ fn approach_retargets_a_destroyable_cliff_cell_to_its_nearest_imaged_cell() {
         .attack_target
         .set_for_test(Some(combat::TargetKind::Cell(10, 10)));
 
-    sim.approach_target(tank, &rules, None, FrameEffects::default());
+    sim.approach_target(tank, &rules, None, &mut FrameEffects::default());
 
     let tank = sim.substrate.entities.get(tank).unwrap();
     assert_eq!(tank.attack_target.target(), Some(TargetKind::Cell(8, 10)));
@@ -420,7 +420,7 @@ fn approach_takes_the_first_queued_destination_of_any_kind() {
     actor.navigation.set_nav_queue_for_test(queued.to_vec());
 
     let answer = sim
-        .approach_foot_target(tank, &rules, None, FrameEffects::default())
+        .approach_foot_target(tank, &rules, None, &mut FrameEffects::default())
         .unwrap();
 
     let actor = sim.substrate.entities.get(tank).unwrap();
@@ -462,7 +462,7 @@ fn moving_tank_scene(rules: &RuleSet, seed: u64) -> (Simulation, u64, u64) {
         NavTargetRef::cell(20, 10),
         rules,
         true,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     ));
     for frame in 0..64 {
         sim.session.set_binary_frame_for_test(frame);
@@ -506,7 +506,7 @@ fn approach_stop_when_in_range_stops_a_moving_close_foot() {
         let (mut sim, tank, _enemy) = moving_tank_scene(&rules, 0x4D5A34);
         assert!(approach_target_moving(&sim, tank, &rules));
         let answer = sim
-            .approach_foot_target(tank, &rules, None, FrameEffects::default())
+            .approach_foot_target(tank, &rules, None, &mut FrameEffects::default())
             .unwrap();
         assert_eq!(answer, None, "the in-range tail returns no destination");
         assert!(
@@ -529,7 +529,7 @@ fn approach_without_stop_when_in_range_keeps_the_moving_foot_going() {
     let (mut sim, tank, _enemy) = moving_tank_scene(&rules, 0x4D5A34);
     assert!(approach_target_moving(&sim, tank, &rules));
     let answer = sim
-        .approach_foot_target(tank, &rules, None, FrameEffects::default())
+        .approach_foot_target(tank, &rules, None, &mut FrameEffects::default())
         .unwrap();
     assert_eq!(answer, None);
     assert!(
@@ -557,7 +557,7 @@ fn approach_pursuit_target_sets_the_target_destination() {
     let rules = approach_target_rules("ApproachTarget.PursuitTarget=yes\n", "");
     let (mut sim, tank, enemy) = moving_tank_scene(&rules, 0x4D57EA);
     let answer = sim
-        .approach_foot_target(tank, &rules, None, FrameEffects::default())
+        .approach_foot_target(tank, &rules, None, &mut FrameEffects::default())
         .unwrap();
     assert_eq!(answer, None, "native returns after SetDestination");
     assert_eq!(
@@ -581,7 +581,7 @@ fn approach_pursuit_target_sets_the_target_destination() {
         .navigation
         .nav_com();
     control
-        .approach_foot_target(control_tank, &plain, None, FrameEffects::default())
+        .approach_foot_target(control_tank, &plain, None, &mut FrameEffects::default())
         .unwrap();
     assert_eq!(
         control

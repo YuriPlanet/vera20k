@@ -47,13 +47,12 @@ stays.
 ## Tests
 
 - `phobos_keep_alive_globals_pick_the_category_default` in
-  `src/sim/ares_house_survival_tests.rs` (`--features "phobos ares"`): all
-  five categories, the Combat split, the type override, and the constructor
-  defaults.
+  `src/sim/ares_house_survival_tests.rs`: all five categories, the Combat split,
+  the type override, and the constructor defaults.
 - `the_keep_alive_globals_default_and_read_from_general` in
   `src/rules/phobos_globals_tests.rs` (constructors and authored reads).
 - The existing Ares keep-alive tracking, reader-history and survival tests
-  run unchanged under the same feature set.
+  run unchanged under the same data switch.
 
 ## Residuals
 

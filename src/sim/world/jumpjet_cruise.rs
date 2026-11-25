@@ -30,7 +30,8 @@ use crate::sim::movement::ground_pose::{
 use crate::sim::movement::infantry_entry::InfantryEntryArgs;
 use crate::sim::movement::jumpjet_movement::JumpjetRuntime;
 use crate::sim::movement::jumpjet_movement::jumpjet_flight::{
-    self, FlightOwnerKind, JumpjetFlightHost, STATE_DESCEND, STATE_HOLD, STATE_TRANSLATE,
+    self, FlightOwnerKind, JumpjetBridgeDeck, JumpjetFlightHost, STATE_DESCEND, STATE_HOLD,
+    STATE_TRANSLATE,
 };
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::RawCellKey;
@@ -122,7 +123,8 @@ impl JumpjetFlightHost for CruiseHost<'_> {
             sim.session.current_house() == Some(owner)
         });
         for player in self.sim.jumpjet_discovery_due(id) {
-            let context = super::UninitContext::new(self.rules).with_effects(self.frame_effects);
+            let context =
+                super::UninitContext::new(self.rules).with_effects(&mut self.frame_effects);
             runtime.with_owner_call(self.sim, id, |sim| {
                 sim.discover_techno(id, player, context);
             });
@@ -177,6 +179,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
                 self.stable_id,
                 self.rules,
                 Some(self.rules.overlay_registry()),
+                true,
             );
         }
         foot_set_location(
@@ -197,7 +200,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
             z,
             self.rules,
             Some(self.rules.overlay_registry()),
-            self.frame_effects,
+            &mut self.frame_effects,
         );
     }
     fn height_above_ground(&self) -> i32 {
@@ -235,9 +238,18 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         ground_surface_z_at(xy, false, self.terrain(), None).unwrap_or(0)
     }
     fn cell_high_bridge(&self, xy: [i32; 2]) -> bool {
-        self.terrain().is_some_and(|terrain| {
-            terrain.native_cell_flags(terrain.native_cell_identity(self.cell_of(xy))) & 0x100 != 0
-        })
+        self.high_bridge_deck(xy).is_some()
+    }
+    fn high_bridge_deck(&self, xy: [i32; 2]) -> Option<JumpjetBridgeDeck> {
+        let terrain = self.terrain()?;
+        let cell = terrain.native_cell_identity(self.cell_of(xy));
+        if terrain.native_cell_flags(cell) & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL == 0 {
+            return None;
+        }
+        Some(
+            crate::sim::movement::ground_pose::corrected_deck_z(terrain, cell)
+                .map_or(JumpjetBridgeDeck::Legacy, JumpjetBridgeDeck::Fixed),
+        )
     }
     fn cell_top_height(&self, xy: [i32; 2]) -> i32 {
         let (level, slope) = self.cell_terrain(xy);
@@ -415,7 +427,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         let id = self.stable_id;
         let rules = self.rules;
         let registry = Some(self.rules.overlay_registry());
-        let frame_effects = self.frame_effects;
+        let frame_effects = &mut self.frame_effects;
         runtime.with_owner_call(self.sim, id, |sim| {
             sim.release_locomotor(holder, true, rules, registry, frame_effects);
         });
@@ -527,7 +539,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     fn set_destination_cell(&mut self, cell: (i16, i16), runtime: &mut JumpjetRuntime) {
         let id = self.stable_id;
         let rules = self.rules;
-        let frame_effects = self.frame_effects;
+        let frame_effects = &mut self.frame_effects;
         runtime.with_owner_call(self.sim, id, |sim| {
             let _ = sim.assign_destination_represented(
                 id,
@@ -576,7 +588,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         let id = self.stable_id;
         let rules = self.rules;
         let registry = Some(self.rules.overlay_registry());
-        let frame_effects = self.frame_effects;
+        let frame_effects = &mut self.frame_effects;
         runtime.with_owner_call(self.sim, id, |sim| {
             sim.jumpjet_stop_moving(id, rules, registry, frame_effects);
         });
@@ -588,6 +600,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         let rules = self.rules;
         let factory_contact = self
             .owner()
+            .seldom
             .radio_contacts
             .slot(0)
             .and_then(|contact| self.sim.substrate.entities.get(contact))
@@ -604,7 +617,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         }
         let id = self.stable_id;
         let registry = Some(self.rules.overlay_registry());
-        let frame_effects = self.frame_effects;
+        let frame_effects = &mut self.frame_effects;
         runtime.with_owner_call(self.sim, id, |sim| {
             sim.jumpjet_lift_off_notify(id, rules, registry, frame_effects);
         });
@@ -653,7 +666,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         let id = self.stable_id;
         let rules = self.rules;
         let registry = Some(self.rules.overlay_registry());
-        let frame_effects = self.frame_effects;
+        let frame_effects = &mut self.frame_effects;
         let result = runtime.with_owner_call(self.sim, id, |sim| {
             let changed = sim.per_cell_process(
                 id,
@@ -683,7 +696,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
             return false;
         }
         self.sim
-            .refresh_object_sight(id, rules, 0, self.frame_effects);
+            .refresh_object_sight(id, rules, 0, &mut self.frame_effects);
         let location = self.location();
         let here = self.cell_of([location[0], location[1]]);
         if self.holds_air_slot_at(here) {
@@ -706,7 +719,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         // after the tracker removal (0x0054C9DC); its answer is not read.
         let rules = self.rules;
         let registry = Some(self.rules.overlay_registry());
-        let frame_effects = self.frame_effects;
+        let frame_effects = &mut self.frame_effects;
         // Publish phase0 before the crate's synchronous receivers, then keep
         // their runtime writes. Native does not repeat the alive gate here.
         runtime.with_owner_call(self.sim, id, |sim| {
@@ -718,7 +731,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         let deploy_to_land = self.owner_kind() == FlightOwnerKind::Unit && self.type_flag_6ad();
         let owner = self.sim.substrate.entities.get_mut(id).unwrap();
         owner.lift.allow_end();
-        owner.drop_credit.land();
+        owner.seldom.drop_credit.land();
         owner.crash.lower();
         if deploy_to_land {
             owner.clear_landing_for_deploy();
@@ -751,14 +764,14 @@ impl JumpjetFlightHost for CruiseHost<'_> {
                 self.stable_id,
                 self.rules,
                 Some(self.rules.overlay_registry()),
-                self.frame_effects,
+                &mut self.frame_effects,
             );
         } else {
             self.sim.foot_mark_remove(
                 self.stable_id,
                 self.rules,
                 Some(self.rules.overlay_registry()),
-                self.frame_effects,
+                &mut self.frame_effects,
             );
         }
     }
@@ -780,13 +793,13 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     }
     /// Owner `+0x427`: a Magnetron dropped it.
     fn dropped(&self) -> bool {
-        self.owner().drop_credit.being_manipulated()
+        self.owner().seldom.drop_credit.being_manipulated()
     }
     fn crush_below(&mut self, runtime: &mut JumpjetRuntime) -> bool {
         let rules = self.rules;
         let id = self.stable_id;
         let registry = Some(self.rules.overlay_registry());
-        let frame_effects = self.frame_effects;
+        let frame_effects = &mut self.frame_effects;
         let impact = runtime.with_owner_call(self.sim, id, |sim| {
             sim.dropped_impact(id, rules, registry, frame_effects)
         });
@@ -823,7 +836,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         let rules = self.rules;
         let id = self.stable_id;
         let registry = Some(self.rules.overlay_registry());
-        let frame_effects = self.frame_effects;
+        let frame_effects = &mut self.frame_effects;
         runtime.with_owner_call(self.sim, id, |sim| {
             sim.dropped_sink(id, rules, registry, frame_effects);
         });
@@ -832,7 +845,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         let id = self.stable_id;
         let rules = self.rules;
         let registry = Some(self.rules.overlay_registry());
-        let frame_effects = self.frame_effects;
+        let frame_effects = &mut self.frame_effects;
         runtime.with_owner_call(self.sim, id, |sim| {
             sim.assign_null_destination(id, rules, registry, frame_effects);
         });
@@ -841,7 +854,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     /// (`0x0054CFEE..0x0054CFF7`).
     fn clear_drop_credit(&mut self) {
         let owner = self.sim.substrate.entities.get_mut(self.stable_id).unwrap();
-        owner.drop_credit.forget();
+        owner.seldom.drop_credit.forget();
     }
     /// The crash's OnBridge raise (`0x0054D012`).
     fn set_on_bridge(&mut self) {
@@ -905,7 +918,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         use crate::sim::combat::TargetKind;
         let Some(owner) = self.substrate.entities.get(id) else {
@@ -914,7 +927,7 @@ impl Simulation {
         let Some(object) = self.interner.object_type(owner.type_ref(), rules) else {
             return;
         };
-        if !(object.balloon_hover || object.jumpjet) || owner.radio_contacts.is_empty() {
+        if !(object.balloon_hover || object.jumpjet) || owner.seldom.radio_contacts.is_empty() {
             return;
         }
         crate::sim::radio::transmit_to_contact(
@@ -992,7 +1005,7 @@ impl Simulation {
         &mut self,
         stable_id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<Option<AirMovementTickStats>, super::FrameAdvanceError> {
         if !self
             .substrate
@@ -1011,7 +1024,7 @@ impl Simulation {
                 frame,
                 trig,
                 rules,
-                frame_effects,
+                frame_effects: frame_effects.reborrow(),
                 stable_id,
                 touched_down: false,
                 impact: false,
@@ -1033,7 +1046,7 @@ impl Simulation {
                     crate::sim::movement::infantry_action::DO_AIR_DEATH_START,
                     false,
                     rules,
-                    frame_effects,
+                    &mut host.frame_effects,
                 )
             {
                 log::debug!("infantry {stable_id} AirDeathStart: {cause}");
@@ -1067,7 +1080,7 @@ mod tests {
     use crate::rules::jumpjet_params::JumpjetParams;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::movement::ground_pose::position_world_coord;
-    use crate::sim::movement::jumpjet_movement::jumpjet_flight::STATE_ASCEND;
+    use crate::sim::movement::jumpjet_movement::jumpjet_flight::{STATE_ASCEND, STATE_GROUND};
     use crate::sim::movement::locomotor::LocomotorState;
     use crate::util::fixed_math::SimFixed;
     use serde_json::Value;
@@ -1095,14 +1108,14 @@ mod tests {
         super::super::lifecycle_tests::install_common_raw_terrain(&mut sim, 24, 16, 0, None);
         // A playfield holding the corpus corridor (x 6..20, y 9..11), for the
         // orders' searches and `In_Bounds`.
-        sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
+        *sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
             base: 12,
             off_fc: 0,
             off_100: 0,
             off_104: 16,
             off_108: 16,
         });
-        sim.playfield_size_height = Some(16);
+        *sim.playfield_size_height = Some(16);
         {
             let cell = sim
                 .resolved_terrain
@@ -1149,7 +1162,7 @@ mod tests {
         }
         entity.locomotor = Some(locomotor);
         sim.substrate.entities.insert(entity);
-        sim.interner = crate::sim::intern::test_interner();
+        *sim.interner = crate::sim::intern::test_interner();
         Simulation::set_object_height_unmarked(&mut sim.substrate, &sim.resolved_terrain, 1, 500);
         sim
     }
@@ -1181,7 +1194,7 @@ mod tests {
         let mut sim = hovering_jumpjet(0x40);
         let rules = crate::sim::crates::tests::crate_ruleset("");
         let registry = rules.overlay_registry();
-        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(24, 16));
+        *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(24, 16));
         let wood = registry.id_for_name("WOOD").unwrap();
         sim.overlay_grid
             .as_mut()
@@ -1299,13 +1312,46 @@ mod tests {
     }
 
     #[test]
+    fn a_jumpjet_touches_down_at_the_fixed_deck_above_a_depression() {
+        let (mut sim, rules) = touchdown_crate_fixture();
+        *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(24, 16));
+        let terrain = sim.resolved_terrain.as_mut().unwrap();
+        let cell = terrain.native_cell_identity((10, 10));
+        terrain
+            .cell_mut_for_test(10, 10)
+            .unwrap()
+            .bridge_facts
+            .raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_ANCHOR_SELF
+            | crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
+        terrain.set_authored_high_bridge_deck(cell, 8);
+        let deck_z = 8 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
+        let e = sim.substrate.entities.get_mut(1).unwrap();
+        e.position.put_z(deck_z);
+        let runtime = e.locomotor.as_mut().unwrap().jumpjet_runtime_mut().unwrap();
+        *runtime = runtime
+            .clone()
+            .with_destination_for_test(DriveCoord::cell(10, 10, deck_z));
+
+        assert_eq!(descend_once(&mut sim, &rules), STATE_GROUND);
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .position
+                .exact_z_leptons(),
+            Some(deck_z),
+        );
+    }
+
+    #[test]
     fn a_jumpjet_that_starts_falling_at_touchdown_does_not_finish_landing() {
         let (mut sim, rules) = touchdown_crate_fixture();
         let e = sim.substrate.entities.get_mut(1).unwrap();
         e.on_bridge.store(true);
         e.position
             .put_z(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
-        e.drop_credit.set_being_manipulated_for_test(true);
+        e.seldom.drop_credit.set_being_manipulated_for_test(true);
         let runtime = e.locomotor.as_mut().unwrap().jumpjet_runtime_mut().unwrap();
         *runtime = runtime.clone().with_destination_for_test(DriveCoord::cell(
             10,
@@ -1324,7 +1370,7 @@ mod tests {
             "aborted touchdown must not collect its crate"
         );
         assert!(!e.lift.may_end());
-        assert!(e.drop_credit.being_manipulated());
+        assert!(e.seldom.drop_credit.being_manipulated());
         assert!(
             e.air_spatial_bucket().is_some(),
             "the landing did not remove its tracker"
@@ -1360,7 +1406,7 @@ mod tests {
             let (mut sim, rules) = touchdown_crate_fixture();
             let e = sim.substrate.entities.get_mut(1).unwrap();
             e.crash.set_crashing_for_test(true);
-            e.drop_credit.set_being_manipulated_for_test(true);
+            e.seldom.drop_credit.set_being_manipulated_for_test(true);
             match name {
                 "dead" => e.lifecycle.set_object_alive_for_test(false),
                 "limbo" => e.lifecycle.set_in_limbo_for_test(true),
@@ -1388,7 +1434,7 @@ mod tests {
             );
             assert_eq!(e.lift.may_end(), !aborted, "{name}: lift-end permission");
             assert_eq!(
-                e.drop_credit.being_manipulated(),
+                e.seldom.drop_credit.being_manipulated(),
                 aborted,
                 "{name}: drop credit"
             );
@@ -1465,7 +1511,7 @@ mod tests {
         sim.process_active_locomotor(
             id,
             &rules,
-            super::super::techno_ai::ObjectAiCtx {
+            &mut super::super::techno_ai::ObjectAiCtx {
                 overlay_registry: Some(&registry),
                 ..Default::default()
             },
@@ -1516,7 +1562,7 @@ mod tests {
                 1,
                 crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         }
@@ -1553,7 +1599,7 @@ mod tests {
                 1,
                 crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         }
@@ -1605,7 +1651,7 @@ mod tests {
                 1,
                 crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         }
@@ -1676,7 +1722,7 @@ mod tests {
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
 
@@ -1725,7 +1771,7 @@ mod tests {
                     1,
                     crate::rules::ruleset::RuleSet::empty_for_test(),
                     None,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             let entity = sim.substrate.entities.get(1).expect("jumpjet");
@@ -1809,7 +1855,7 @@ mod tests {
                 1,
                 crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         assert!(!stats.impact);
@@ -1855,7 +1901,7 @@ mod tests {
                 1,
                 crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         }
@@ -1887,7 +1933,7 @@ mod tests {
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         sim.session.set_binary_frame_for_test(1021);
@@ -1895,7 +1941,7 @@ mod tests {
             1,
             crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         let stopped = runtime(&sim);
@@ -1917,7 +1963,7 @@ mod tests {
                 1,
                 crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         }
@@ -1954,7 +2000,7 @@ mod tests {
             let mut sim = hovering_jumpjet(0x40);
             // The owner's type is read through the world's interner once
             // rules are present.
-            sim.interner = crate::sim::intern::test_interner();
+            *sim.interner = crate::sim::intern::test_interner();
             {
                 let entity = sim.substrate.entities.get_mut(1).expect("jumpjet");
                 let runtime = entity
@@ -1979,7 +2025,7 @@ mod tests {
                 1,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
             let (records, unused) = fresh_oracle_seam::finish();
@@ -2337,7 +2383,7 @@ mod tests {
             );
             held_target |= entity.attack_target.target()
                 == Some(crate::sim::combat::TargetKind::Entity(plant));
-            fired |= entity.rearm_timer.duration() > 0;
+            fired |= entity.seldom.rearm_timer.duration() > 0;
             let at = center(sim, kirov);
             closest = closest.min(((at.x - goal.x) as f64).hypot((at.y - goal.y) as f64) as i32);
             damaged |= sim

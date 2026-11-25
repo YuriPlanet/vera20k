@@ -3,6 +3,18 @@
 //! This is a VERA UTF-8 manifest, not a gamemd INI. The same bounded reader
 //! serves the Mods page, game startup and launch probes on every platform.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::indexing_slicing
+    )
+)]
+
 use std::{path::Path, sync::Arc};
 
 use crate::assets::client_install::ClientInstall;
@@ -24,6 +36,7 @@ pub struct ResourceConfig {
     pub ini: IniRootConfig,
     pub archives: ArchiveNames,
     pub requires_ares: bool,
+    pub requires_kratos: bool,
     /// `[Extensions] Phobos=yes`: this mod's games play Phobos even when its
     /// rules carry no Phobos key of their own (`rules::phobos_switch`).
     pub requires_phobos: bool,
@@ -44,6 +57,23 @@ impl ResourceConfig {
 
     /// A mod's requirement belongs to this launch, never to the saved player
     /// setting. Explicit Off refuses the mod rather than misreading its rules.
+    /// A mod that declares `[Extensions] Kratos=yes` plays with Kratos on for
+    /// this launch. An explicit Off refuses it, as it refuses an Ares mod.
+    pub fn effective_kratos(
+        &self,
+        setting: crate::util::kratos_launch::KratosSetting,
+    ) -> Result<crate::util::kratos_launch::KratosSetting, String> {
+        use crate::util::kratos_launch::KratosSetting;
+        match (self.requires_kratos, setting) {
+            (true, KratosSetting::Off) => Err(
+                "This mod requires Kratos. Set Kratos to Auto or On in Options, restart, and choose the mod again."
+                    .into(),
+            ),
+            (true, KratosSetting::Auto) => Ok(KratosSetting::On),
+            _ => Ok(setting),
+        }
+    }
+
     pub fn effective_ares(&self, setting: AresSetting) -> Result<AresSetting, String> {
         match (self.requires_ares, setting) {
             (true, AresSetting::Off) => Err(
@@ -67,6 +97,7 @@ pub struct ModDefinition {
     files: Option<IniRootConfig>,
     archives: ArchiveNames,
     requires_ares: bool,
+    requires_kratos: bool,
     requires_phobos: bool,
     explicit_loading: bool,
 }
@@ -163,6 +194,8 @@ impl ModDefinition {
                     };
                     if key == "ares" {
                         definition.requires_ares = required;
+                    } else if key == "kratos" {
+                        definition.requires_kratos = required;
                     } else if key == "phobos" {
                         definition.requires_phobos = required;
                     } else if required {
@@ -215,6 +248,7 @@ impl ModDefinition {
             ini: self.files.clone().unwrap_or_else(|| base.clone()),
             archives: self.archives.clone(),
             requires_ares: self.requires_ares,
+            requires_kratos: self.requires_kratos,
             requires_phobos: self.requires_phobos,
             client_install: None,
             mod_folder: None,
@@ -246,6 +280,8 @@ mod tests {
     fn unsupported_required_extensions_are_refused() {
         assert!(ModDefinition::parse("[Extensions]\nOtherEngine=yes\n").is_err());
         assert!(ModDefinition::parse("[Extensions]\nOtherEngine=no\n").is_ok());
+        let kratos = ModDefinition::parse("[Extensions]\nKratos=yes\n").unwrap();
+        assert!(kratos.resources(&IniRootConfig::default()).requires_kratos);
         let definition = ModDefinition::parse("[Extensions]\nAres=yes\n").unwrap();
         assert!(
             definition

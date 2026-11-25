@@ -86,7 +86,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         .set_in_limbo_for_test(input["limbo"].as_bool().unwrap_or(false));
     if input["mind_controlled"] == true {
         // Prepared native +2C0 pointer control. This does not execute capture.
-        actor.mind_control = MindControlLink::controlled_by_for_test(ACTOR + 1);
+        actor.seldom.mind_control = MindControlLink::controlled_by_for_test(ACTOR + 1);
     }
     sim.substrate.entities.insert(actor);
     (sim, rules)
@@ -169,14 +169,14 @@ fn native_player_identity_is_independent_of_the_discovery_policy() {
         .with_counts_player_control_as_human(false);
     sim.install_session_admission(Campaign, None, campaign);
     assert!(sim.house_is_human_player(scripted));
-    assert_eq!(sim.human_player_clients(scripted), [player]);
+    assert_eq!(*sim.human_player_client_set(scripted), [player]);
 
     let skirmish = Skirmish
         .stock_rule_policy(None)
         .with_uses_campaign_discovery(true);
     sim.install_session_admission(Skirmish, None, skirmish);
     assert!(!sim.house_is_human_player(scripted));
-    assert!(sim.human_player_clients(scripted).is_empty());
+    assert!(sim.human_player_client_set(scripted).is_empty());
 }
 
 #[test]
@@ -196,6 +196,7 @@ fn building_mission_only_selection_uses_native_virtual_control_admission() {
                     .entities
                     .get_mut(ACTOR)
                     .unwrap()
+                    .seldom
                     .mission_only
                     .mark();
             }
@@ -212,6 +213,7 @@ fn building_mission_only_selection_uses_native_virtual_control_admission() {
                     .entities
                     .get(ACTOR)
                     .unwrap()
+                    .seldom
                     .selection
                     .is_selected()
             );

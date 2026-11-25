@@ -10,8 +10,13 @@
 //! constructor and link here.
 //!
 //! The four doubles keep their native bits and are computed with the
-//! process's 53-bit chop x87 arithmetic ([`X87Chop53`]), so the ramp and the
-//! altitude spring reproduce the executable's values, not an approximation.
+//! process's 53-bit chop x87 arithmetic under masked exceptions
+//! ([`MaskedX87Chop53`]), so the ramp and the altitude spring reproduce the
+//! executable's values, not an approximation, also when a Hover key is
+//! infinite (ReadDouble into binary64: about `1.8e308` and up, e.g. `1e309`,
+//! in the INI) and the arithmetic reaches infinity or NaN. The one integer
+//! step that faults in gamemd, the bob period's `IDIV` by zero, is a
+//! recorded residual in the altitude controller instead.
 
 use super::facing_class::FacingClass;
 use crate::rules::ruleset::RuleSet;
@@ -19,7 +24,7 @@ use crate::sim::cell_kernel::native_xyz_distance;
 use crate::sim::components::DriveCoord;
 use crate::util::direction_tables::facing16_from_delta;
 use crate::util::native_x87::{
-    NativeF64Bits, X87Chop53, X87Ordering, X87Value, distance_3d_leptons,
+    MaskedX87Chop53 as X, MaskedX87Ordering, MaskedX87Value, NativeF64Bits, distance_3d_leptons,
 };
 
 #[path = "hover_process.rs"]
@@ -46,7 +51,10 @@ pub fn hover_draw_slope(
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
     angles: [f32; 2],
 ) -> u8 {
-    if crate::map::voxel_pose::voxel_tilt_applies(angles) || hover_is_powered(entity, cells) {
+    if entity.on_bridge()
+        || crate::map::voxel_pose::voxel_tilt_applies(angles)
+        || hover_is_powered(entity, cells)
+    {
         return 0;
     }
     let [x, y] = super::ground_pose::position_world_xy(&entity.position);
@@ -123,8 +131,7 @@ impl HoverRuntime {
         self.destination
     }
 
-    /// Test fixtures only: ProcessMovement (`hover_process`) is the writer.
-    #[cfg(any(test, feature = "test-support"))]
+    /// ProcessMovement stores the accepted tunnel exit head at 0x005150EE.
     pub(crate) fn set_head(&mut self, head: Option<DriveCoord>) {
         self.head = head;
     }
@@ -175,10 +182,7 @@ impl HoverRuntime {
     /// `ftol(speed * SpeedCurrent)` (0x00514372..0x00514383): the leptons the
     /// Foot moves this frame, from its current speed (vt+0x538).
     fn step_leptons(&self, foot_speed: i32) -> i32 {
-        X87Chop53::ftol_i32_low_masked(X87Chop53::mul(
-            X87Chop53::load_i32(foot_speed),
-            load(self.speed_current),
-        ))
+        X::ftol_i32_low_masked(X::mul(X::load_i32(foot_speed), load(self.speed_current)))
     }
 
     /// SpeedUpdate 0x00515F2F..0x0051610B for a Foot at `foot` with a head:
@@ -226,35 +230,55 @@ impl HoverRuntime {
     /// otherwise; the target `min(mult * request, 1)` is approached by
     /// `1 / (HoverAcceleration * 900)` up to the target, or left by
     /// `1 / (HoverBrake * 900)` down to zero — the brake is not clamped at
-    /// the target.
+    /// the target. Each compare's flag test decides an unordered (NaN) case:
+    /// a NaN target (an infinite HoverBoost times a zero request) becomes 1.
     fn ramp_speed(&mut self, boost: bool, rules: &RuleSet) {
-        let zero = X87Chop53::load_i32(0);
+        use MaskedX87Ordering::{Greater, Less, Unordered};
+        let zero = X::load_i32(0);
         let one = load(NativeF64Bits::ONE);
-        if X87Chop53::compare(load(self.speed_request), zero) == X87Ordering::Greater {
+        // 0x0051610E: `TEST AH,0x41`, only a positive request.
+        if X::compare(load(self.speed_request), zero) == Greater {
             self.speed_mult = if boost {
                 rules.general.hover_boost
             } else {
                 NativeF64Bits::ONE
             };
         }
-        let mut target = X87Chop53::mul(load(self.speed_mult), load(self.speed_request));
-        if X87Chop53::compare(one, target) == X87Ordering::Less {
+        let mut target = X::mul(load(self.speed_mult), load(self.speed_request));
+        // 0x0051615E: `TEST AH,0x1`.
+        if matches!(X::compare(one, target), Less | Unordered) {
             target = one;
         }
-        if X87Chop53::compare(target, load(self.speed_current)) == X87Ordering::Greater {
+        // 0x0051616F: `TEST AH,0x41`.
+        if X::compare(target, load(self.speed_current)) == Greater {
             // `HoverAcceleration=0` divides to +INF at 0x0051617F, which the
-            // compare sends to the target.
-            let raised = reciprocal_minutes(rules.general.hover_acceleration)
-                .map(|step| X87Chop53::add(step, load(self.speed_current)))
-                .filter(|&raised| X87Chop53::compare(raised, target) == X87Ordering::Less);
-            self.speed_current = store(raised.unwrap_or(target));
+            // compare at 0x00516194 (`TEST AH,0x1`) sends to the target.
+            let raised = X::add(
+                reciprocal_minutes(rules.general.hover_acceleration),
+                load(self.speed_current),
+            );
+            self.speed_current = store(if matches!(X::compare(raised, target), Less | Unordered) {
+                raised
+            } else {
+                target
+            });
         }
-        if X87Chop53::compare(target, load(self.speed_current)) == X87Ordering::Less {
-            // `HoverBrake=0` divides to +INF at 0x005161B7: a full stop.
-            let lowered = reciprocal_minutes(rules.general.hover_brake)
-                .map(|step| X87Chop53::sub(load(self.speed_current), step))
-                .filter(|&lowered| X87Chop53::compare(lowered, zero) == X87Ordering::Greater);
-            self.speed_current = store(lowered.unwrap_or(zero));
+        // 0x005161A7: `TEST AH,0x1`.
+        if matches!(
+            X::compare(target, load(self.speed_current)),
+            Less | Unordered
+        ) {
+            // `HoverBrake=0` divides to +INF at 0x005161B7: the compare at
+            // 0x005161CC (`TEST AH,0x41`) makes it a full stop.
+            let lowered = X::sub(
+                load(self.speed_current),
+                reciprocal_minutes(rules.general.hover_brake),
+            );
+            self.speed_current = store(if X::compare(lowered, zero) == Greater {
+                lowered
+            } else {
+                zero
+            });
         }
     }
 
@@ -284,80 +308,74 @@ impl HoverRuntime {
         } else {
             height
         };
-        let resting = X87Chop53::ftol_i32_low_masked(X87Chop53::add(
-            X87Chop53::load_i32(height),
-            load(self.bob_offset),
-        ));
+        let resting = X::ftol_i32_low_masked(X::add(X::load_i32(height), load(self.bob_offset)));
         let scale = load(if id & 1 != 0 {
             NativeF64Bits::ONE
         } else {
             EVEN_ID_BOB_SCALE
         });
-        let period = X87Chop53::mul(
-            X87Chop53::mul(scale, load(general.hover_bob)),
+        let period = X::mul(
+            X::mul(scale, load(general.hover_bob)),
             load(FRAMES_PER_MINUTE),
         );
         let counter = frame.wrapping_add(id.wrapping_mul(2));
-        let phase = X87Chop53::div(
-            X87Chop53::mul(
-                X87Chop53::load_i32(counter.wrapping_rem(X87Chop53::ftol_i32_low_masked(period))),
-                load(TWO_PI),
-            ),
-            period,
-        )
-        .expect("HoverBob gives a nonzero bob period");
-        let sine = crate::util::retail_trig::TrigTable::embedded().sin_from_table(phase);
-        let mut visible = X87Chop53::ftol_i32_low_masked(X87Chop53::add(
-            X87Chop53::add(sine, sine),
-            X87Chop53::load_i32(resting),
-        ));
+        // 0x00513E2B..0x00513E35: `CALL ftol`, `CDQ`, `IDIV ECX`, the
+        // remainder in EDX. Residual: a HoverBob whose period ftol gives 0
+        // (0, below about 1/900 minutes, infinite, or a product whose low
+        // dword is 0), or a period of -1 with the counter at `i32::MIN`,
+        // faults the IDIV and ends gamemd. Outside data must not stop the
+        // game, so VERA takes a remainder of 0 there: the phase is 0 (or NaN
+        // for a zero period, which SinFromTable's ftol also sends to entry
+        // 0), so the bob adds nothing. Retail HoverBob gives a finite,
+        // nonzero period and never reaches this.
+        let remainder = counter
+            .checked_rem(X::ftol_i32_low_masked(period))
+            .unwrap_or(0);
+        let phase = X::div(X::mul(X::load_i32(remainder), load(TWO_PI)), period);
+        let sine = MaskedX87Value::from(
+            crate::util::retail_trig::TrigTable::embedded().sin_from_table(phase),
+        );
+        let mut visible = X::ftol_i32_low_masked(X::add(X::add(sine, sine), X::load_i32(resting)));
         if visible < 0 {
             self.bob_offset = NativeF64Bits::POSITIVE_ZERO;
             visible = 0;
         }
-        let gravity = X87Chop53::load_i32(general.gravity);
+        let gravity = X::load_i32(general.gravity);
         if lift_height < hover_height {
             if powered {
-                let cruise = X87Chop53::load_i32(hover_height);
-                let deficit = X87Chop53::sub(
-                    X87Chop53::add(cruise, cruise),
-                    X87Chop53::load_i32(lift_height),
-                );
-                let lift = X87Chop53::mul(
-                    X87Chop53::div(deficit, cruise).expect("HoverHeight is nonzero"),
-                    gravity,
-                );
-                self.bob_offset = store(X87Chop53::add(lift, load(self.bob_offset)));
+                let cruise = X::load_i32(hover_height);
+                let deficit = X::sub(X::add(cruise, cruise), X::load_i32(lift_height));
+                let lift = X::mul(X::div(deficit, cruise), gravity);
+                self.bob_offset = store(X::add(lift, load(self.bob_offset)));
             }
             if lift_height < hover_height / 4 {
-                self.bob_offset = store(X87Chop53::add(
-                    X87Chop53::load_i32(general.gravity / 3),
+                self.bob_offset = store(X::add(
+                    X::load_i32(general.gravity / 3),
                     load(self.bob_offset),
                 ));
             }
         }
-        let settled = X87Chop53::sub(load(self.bob_offset), gravity);
-        self.bob_offset = store(X87Chop53::mul(settled, load(general.hover_dampen)));
+        let settled = X::sub(load(self.bob_offset), gravity);
+        self.bob_offset = store(X::mul(settled, load(general.hover_dampen)));
         visible
     }
 }
 
 /// `1 / (minutes * 900)`, FLD/FMUL/FDIVR at 0x0051617F and 0x005161B7.
-/// `None` for a zero key, where the masked divide gives infinity.
-fn reciprocal_minutes(minutes: NativeF64Bits) -> Option<X87Value> {
-    X87Chop53::div(
+/// A zero key divides to a signed infinity.
+fn reciprocal_minutes(minutes: NativeF64Bits) -> MaskedX87Value {
+    X::div(
         load(NativeF64Bits::ONE),
-        X87Chop53::mul(load(minutes), load(FRAMES_PER_MINUTE)),
+        X::mul(load(minutes), load(FRAMES_PER_MINUTE)),
     )
-    .ok()
 }
 
-fn load(bits: NativeF64Bits) -> X87Value {
-    X87Chop53::load_f64(bits).expect("Hover doubles stay finite")
+fn load(bits: NativeF64Bits) -> MaskedX87Value {
+    X::load_f64(bits)
 }
 
-fn store(value: X87Value) -> NativeF64Bits {
-    X87Chop53::store_f64(value).expect("Hover doubles stay finite")
+fn store(value: MaskedX87Value) -> NativeF64Bits {
+    X::store_f64_masked_chop(value)
 }
 
 #[cfg(all(test, tests_sim_movement))]

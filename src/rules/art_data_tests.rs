@@ -1737,7 +1737,7 @@ fn imageless_retail_animation_reaches_existing_gas_particle_owner() {
         .p_type_id_by_name(config.spawns_particle.as_deref().unwrap())
         .unwrap();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
-    sim.native_unique_ids =
+    *sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(1000));
     sim.construct_post_load_particle_system_id(&rules);
     let count = |sim: &crate::sim::world::Simulation| {
@@ -1765,14 +1765,14 @@ fn imageless_retail_animation_reaches_existing_gas_particle_owner() {
     sim.object_ai_visit_one(
         anim,
         Some(&rules),
-        crate::sim::world::ObjectAiCtx::default(),
+        &mut crate::sim::world::ObjectAiCtx::default(),
     );
     assert!(sim.anim(anim).is_some(), "constructor first-AI guard");
     sim.session.set_binary_frame_for_test(1 << 16); // expire any u16 rate timer
     sim.object_ai_visit_one(
         anim,
         Some(&rules),
-        crate::sim::world::ObjectAiCtx::default(),
+        &mut crate::sim::world::ObjectAiCtx::default(),
     );
     // AI UnInit conceals and queues the physical receiver. The ordinary
     // end-of-frame deletion owner, rather than AI itself, releases storage.
@@ -1882,6 +1882,43 @@ fn phobos_zshape_point_move_on_buildup_reads_the_art_key() {
     assert_eq!(kept.z_shape_point_move_while_buildup(), (30, 15));
 }
 #[test]
+fn presentation_only_follows_a_long_next_chain_through_the_rules_processor() {
+    // Twenty thousand anims, each `Next=` the one after; the last marks the
+    // map, and a second chain ends back at its own start.
+    const LINKS: usize = 20_000;
+    let mut art_text = String::new();
+    let mut animations = String::from("[Animations]\n");
+    for index in 0..LINKS {
+        let next = if index + 1 == LINKS {
+            "Scorch=yes".to_owned()
+        } else {
+            format!("Next=A{}", index + 1)
+        };
+        art_text.push_str(&format!("[A{index}]\nRate=1\n{next}\n"));
+        animations.push_str(&format!("{index}=A{index}\n"));
+    }
+    for (index, next) in [(0, 1), (1, 0)] {
+        art_text.push_str(&format!("[LOOP{index}]\nRate=1\nNext=LOOP{next}\n"));
+        animations.push_str(&format!("{}=LOOP{index}\n", LINKS + index));
+    }
+    let art = IniFile::from_str(&art_text);
+    let mut rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(&animations),
+        &art,
+    )
+    .unwrap();
+    rules.install_art_data(ArtRegistry::from_ini(&art));
+    assert!(
+        !rules.art().anim_presentation_only("a0"),
+        "its chain ends in Scorch="
+    );
+    assert!(
+        rules.art().anim_presentation_only("LOOP0"),
+        "a plain cycle of Next="
+    );
+}
+
+#[test]
 fn presentation_only_anims_change_nothing_but_their_picture_down_their_chain() {
     let mut art = ArtRegistry::from_ini(&IniFile::from_str(
         "[GUNFIRE]\nRate=900\n[EXPLOSML]\nScorch=yes\nCrater=yes\n\
@@ -1896,6 +1933,7 @@ fn presentation_only_anims_change_nothing_but_their_picture_down_their_chain() {
     refer("PUFF", "PUFF2", "");
     refer("PUFF2", "PUFF", "");
     refer("SMOKE", "", "EXPLOSML");
+    art.refresh_anim_types_affecting_play();
     assert!(art.anim_presentation_only("gunfire"), "a plain flash");
     assert!(art.anim_presentation_only("PUFF"), "a plain cycle of Next=");
     assert!(

@@ -57,7 +57,7 @@ impl Scene {
         sim.session
             .set_map_name_for_test("Temporal Cargo clear arena".into());
         sim.session.game_options_mut_for_test().short_game = short_game;
-        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        *sim.fog = crate::sim::vision::FogState::new(32, 32);
         for name in ["Americans", "Russians"] {
             sim.fog
                 .reveal_all_for_owner(sim.interner.get(name).unwrap());
@@ -117,7 +117,7 @@ impl Scene {
         let due = self.0.simulation.take_due_commands();
         let output = self
             .0
-            .advance_frame(&due, 33, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&due, 33, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
         assert!(
             output.network_failure.is_none() && !output.network_waiting && !output.outcome_waiting
@@ -146,7 +146,7 @@ impl Scene {
         });
         let child = self.actor(child);
         assert!(child.lifecycle.in_limbo());
-        assert!(!child.in_logic_vector.is_member());
+        assert!(!child.seldom.in_logic_vector.is_member());
     }
 
     fn cargo(&self, reactor: u64) -> &[u64] {

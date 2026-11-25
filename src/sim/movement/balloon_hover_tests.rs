@@ -109,7 +109,7 @@ fn world(input: &Value, facing: u16) -> (Simulation, RuleSet) {
     sim.substrate
         .entities
         .insert(unit(OTHER, "TANK", (6, 12), (252, 16)));
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner = crate::sim::intern::test_interner();
     sim.session.set_binary_frame_for_test(100);
     let first = match input["nav"].as_str().unwrap_or("none") {
         "cell_target" => Some(TARGET),
@@ -165,7 +165,11 @@ fn balloon_approach_arm_matches_the_original() {
                 .iter()
                 .any(|call| *call == serde_json::json!(["assign_destination", true, 1]));
             assert_eq!(
-                sim.approach_unit_head(ACTOR, &rules, crate::sim::world::FrameEffects::default(),),
+                sim.approach_unit_head(
+                    ACTOR,
+                    &rules,
+                    &mut crate::sim::world::FrameEffects::default(),
+                ),
                 assigned,
                 "{input}"
             );

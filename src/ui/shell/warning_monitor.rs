@@ -22,10 +22,10 @@
 //! The frame is centered in the static's window along an axis where the window
 //! is larger (`0x0061595E..0x0061597E`).
 
-use crate::util::time::{Duration, Instant};
+use vera20k_gui::time::{Duration, Instant};
 
 /// Control id of the monitor static in every dialog that has one.
-pub(crate) const WARNING_MONITOR_CONTROL: u16 = 0x071C;
+pub const WARNING_MONITOR_CONTROL: u16 = 0x071C;
 
 /// Static kind-4 initial timer (`0x00603240` returns 1 ms for `0x71C`).
 const STARTUP_TIMER: Duration = Duration::from_millis(1);
@@ -38,7 +38,7 @@ const STARTUP_TIMER: Duration = Duration::from_millis(1);
 /// confirms that the recomposition reached the screen, so a dropped frame is
 /// drawn again instead of being skipped.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct WarningMonitor {
+pub struct WarningMonitor {
     started: Option<Instant>,
     /// Next timer deadline once the frame-count timer is armed.
     next_timer: Option<Instant>,
@@ -57,7 +57,7 @@ impl WarningMonitor {
     /// the image is missing. `timers` is false while the dialog's first-paint
     /// slide runs: the static then repaints its current frame and no timer is
     /// delivered.
-    pub(crate) fn paint(&mut self, now: Instant, frames: usize, timers: bool) -> Option<usize> {
+    pub fn paint(&mut self, now: Instant, frames: usize, timers: bool) -> Option<usize> {
         self.pending = None;
         if frames == 0 {
             return None;
@@ -96,7 +96,7 @@ impl WarningMonitor {
 
     /// The latest recomposition was presented: the native paint advances the
     /// frame after drawing it.
-    pub(crate) fn commit_presented(&mut self) {
+    pub fn commit_presented(&mut self) {
         if let Some(frame) = self.pending.take() {
             self.displayed = frame;
             self.next_frame = frame + 1;
@@ -173,7 +173,7 @@ mod tests {
     fn startup_timer_matches_the_native_getter() {
         // 0x00603240 for 0x71C, executed by
         // tools/storage_oracle/shell_static_timers.py.
-        let cases = crate::ui::shell::static_reveal::tests::native_static_timer_cases();
+        let cases = crate::ui::shell::native_fixtures::native_static_timer_cases();
         for dialog in [0xE2, 0x100, 0x101, 0x129, 0xD5] {
             let case = cases
                 .iter()

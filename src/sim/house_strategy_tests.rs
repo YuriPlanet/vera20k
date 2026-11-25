@@ -214,7 +214,7 @@ fn post_map_ai_hate_delays_defer_enemy_selection_across_save_load() {
 
     // Native scenario restore reseeds this stream; keep the hash comparison
     // focused on retained state rather than that independent load effect.
-    sim.scenario_rng = SimRng::new(0);
+    *sim.scenario_rng = SimRng::new(0);
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "hate-delay", 0);
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .unwrap()
@@ -280,7 +280,7 @@ fn the_strategy_timer_and_its_gates_match_native() {
         spawn_building(&mut sim, owner, "FACTORY", 1000, false);
         sim.session
             .set_binary_frame_for_test(int(&row["frame"]) as u32);
-        sim.scenario_rng = SimRng::answering(1, 7, int(&row["answer"]) - 105);
+        *sim.scenario_rng = SimRng::answering(1, 7, int(&row["answer"]) - 105);
         let mut expected = sim.scenario_rng.clone();
         if flag(&row["called"]) {
             expected.next_range_i32_inclusive(1, 7);
@@ -291,7 +291,7 @@ fn the_strategy_timer_and_its_gates_match_native() {
             &rules,
             owner,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let timer = sim.houses[&owner].strategy_timer();
@@ -405,7 +405,7 @@ fn the_strategy_matches_native() {
             [0x218, 1, 7],
             "{label}"
         );
-        sim.scenario_rng = SimRng::answering(1, 7, int(&draws[0][4]));
+        *sim.scenario_rng = SimRng::answering(1, 7, int(&draws[0][4]));
         let mut expected = sim.scenario_rng.clone();
         expected.next_range_i32_inclusive(1, 7);
 
@@ -418,7 +418,7 @@ fn the_strategy_matches_native() {
             &rules,
             owner,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let tried = AI_FIRE_LOG
             .take()
@@ -513,7 +513,7 @@ fn the_fire_sale_matches_native() {
             &rules,
             owner,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let sold: Vec<i32> = (0..slots.len())
@@ -611,7 +611,7 @@ fn all_to_hunt_matches_native() {
                 .lifecycle
                 .set_in_limbo_for_test(flag(&techno["limbo"]));
             if flag(&techno["permanent"]) {
-                entity.mind_control =
+                entity.seldom.mind_control =
                     crate::sim::capture_manager::MindControlLink::permanent_for_test();
             }
             slots.push((slot as i32, id, health));
@@ -622,7 +622,7 @@ fn all_to_hunt_matches_native() {
             &rules,
             owner,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let hunting: Vec<i32> = slots
@@ -1023,7 +1023,7 @@ fn last_legs_pass(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
         rules,
         owner,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 }
 
@@ -1138,7 +1138,7 @@ fn ai_superweapon_delay_gates_the_per_frame_try() {
                 &rules,
                 owner,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             counts.push(AI_FIRE_LOG.with(|log| {
                 let events = log.borrow_mut().take().unwrap_or_default();
@@ -1210,7 +1210,7 @@ fn ai_sw_strategy_tries(
         rules,
         owner,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     ai_sw_tries()
 }
@@ -1230,7 +1230,7 @@ fn ai_sw_per_frame_tries(
         rules,
         owner,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     ai_sw_tries()
 }
@@ -1250,7 +1250,7 @@ fn an_unset_key_keeps_the_vanilla_strategy_timer() {
         .economy_mut()
         .set_credits_for_test(1000);
     spawn_building(&mut sim, owner, "FACTORY", 1000, false);
-    sim.scenario_rng = SimRng::answering(1, 7, 7);
+    *sim.scenario_rng = SimRng::answering(1, 7, 7);
 
     assert_eq!(
         ai_sw_strategy_tries(&mut sim, &rules, owner, 0),
@@ -1424,7 +1424,7 @@ fn ai_bias_spawn_cell_needs_two_yards_and_a_non_campaign() {
     );
     bias_base_center_to_nearest_conyard(&mut sim, &rules, owner);
     assert_eq!(sim.houses[&owner].base_center(), Some((20, 20)));
-    }
+}
 /// Three houses with base centres: H0 far from H1, H2 beside it.
 fn houses_with_bases() -> (Simulation, Vec<InternedId>) {
     let (mut sim, names) = houses(true, 3);

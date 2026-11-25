@@ -71,7 +71,7 @@ fn arena(gun_keys: &str, feedback_keys: &str) -> (Simulation, RuleSet, u64, u64)
             firer,
             Some(TargetKind::Entity(target)),
             &rules,
-            FrameEffects::empty()
+            &mut FrameEffects::empty()
         )
         .is_ok(),
         "the firer holds the target"
@@ -140,7 +140,7 @@ fn carrier_arena(feedback_keys: &str) -> (Simulation, RuleSet, u64, u64) {
             rider,
             Some(TargetKind::Entity(target)),
             &rules,
-            FrameEffects::empty()
+            &mut FrameEffects::empty()
         )
         .is_ok(),
         "the rider holds the target"
@@ -161,7 +161,7 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, firer: u64) {
         world_fire::FireVisit::UnitTarget(firer),
         rules,
         None,
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
 }
 

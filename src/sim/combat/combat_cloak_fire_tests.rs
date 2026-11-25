@@ -83,7 +83,7 @@ fn resolve_once(
 fn bsub_cruise_launcher_uncloaks_without_same_tick_fire_then_retry_fires() {
     let rules = boomer_rules();
     let mut entities = entities("TGTWOOD");
-    let rearm_before = entities.get(1).unwrap().rearm_timer.timer();
+    let rearm_before = entities.get(1).unwrap().seldom.rearm_timer.timer();
     let mut interner = test_interner();
     let mut sounds = Vec::new();
     let mut blocked = CombatEmit::default();
@@ -108,7 +108,7 @@ fn bsub_cruise_launcher_uncloaks_without_same_tick_fire_then_retry_fires() {
     assert!(blocked.fire_events.is_empty());
     assert!(blocked.damage_events.is_empty());
     assert_eq!(
-        entities.get(1).unwrap().rearm_timer.timer(),
+        entities.get(1).unwrap().seldom.rearm_timer.timer(),
         rearm_before,
         "no ROF/burst write on the surfacing visit"
     );
@@ -121,7 +121,7 @@ fn bsub_cruise_launcher_uncloaks_without_same_tick_fire_then_retry_fires() {
             sub_x,
             sub_y,
             world_z_leptons: 0,
-        }] if sound_id == "NavalUnitEmerge"
+        }] if sound_id.name_in(&rules) == "NavalUnitEmerge"
             && *sub_x == crate::util::lepton::CELL_CENTER_LEPTON
             && *sub_y == crate::util::lepton::CELL_CENTER_LEPTON
     ));
@@ -167,7 +167,7 @@ fn bsub_cruise_launcher_uncloaks_without_same_tick_fire_then_retry_fires() {
     );
     assert_eq!(retry.fire_events[0].weapon_slot, WeaponSlot::Secondary);
     assert!(
-        entities.get(1).unwrap().rearm_timer.duration() > 0,
+        entities.get(1).unwrap().seldom.rearm_timer.duration() > 0,
         "normal retry owns rearm state"
     );
     assert_eq!(

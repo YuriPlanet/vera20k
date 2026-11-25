@@ -56,7 +56,7 @@ fn arena_from(text: &str) -> Arena {
     let registry = OverlayTypeRegistry::from_ini(&ini, None);
     let mut sim = Simulation::new();
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
-    sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+    *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
     Arena {
         sim,
         rules,
@@ -398,7 +398,7 @@ mod can_be_built_on {
                 &power,
                 (16, 16),
                 owner,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             ),
             Flush::Clear,
             "the buildable terrain does not block the flush"
@@ -413,7 +413,7 @@ mod can_be_built_on {
                 0,
                 0,
                 &a.rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .expect("limbo building");
         let placed = a.sim.place_building_with_cleared_foundation(
@@ -422,7 +422,7 @@ mod can_be_built_on {
             0,
             &a.rules,
             Some(&a.registry),
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         assert_eq!(placed, Some(building));
         assert_eq!(
@@ -463,7 +463,7 @@ mod can_be_built_on {
                 &power,
                 (16, 16),
                 owner,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             ),
             Flush::Blocked
         );

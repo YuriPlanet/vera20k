@@ -900,6 +900,13 @@ pub struct HouseState {
     /// common Launch read it.
     #[serde(default = "no_super_index")]
     ares_last_super: i32,
+    /// Ares HouseExt `+0x8/+0x9` Degrades (`Nullable<bool>`, constructed
+    /// unset): `Degrades=` in this House's own map section, read by
+    /// `HouseExt::LoadFromINI` (`10021A70`) from hook `0x0050114D` at the end
+    /// of `HouseClass::Read_Scenario_INI`. Saves before it convert with it
+    /// unset (`snapshot::migration`).
+    #[serde(default)]
+    ares_degrades: Option<bool>,
     /// House+2D8: how many of this house's `PowersUnit=` buildings are
     /// counted as operational (each building's `+0x662`). The constructor
     /// clears it; `sim::powered_unit` is its only writer.
@@ -1998,10 +2005,11 @@ impl HouseState {
             .unwrap_or(0)
     }
 
-    /// Explicit retained Counter prior for native execution comparisons.
+    /// Explicit retained Counter prior, for the tests that need one.
     /// Normal construction/acquisition must never call this fixture adapter.
+    /// Client tests reach it through the `test-support` feature.
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn set_produced_count_for_test(
+    pub fn set_produced_count_for_test(
         &mut self,
         category: ObjectCategory,
         type_index: i32,
@@ -2197,6 +2205,10 @@ impl HouseState {
         if self.economy.scenario_credits() != 0 {
             b"house-scenario-credits-v1".hash(hasher);
             self.economy.scenario_credits().hash(hasher);
+        }
+        if let Some(degrades) = self.ares_degrades {
+            b"ares-house-degrades-v1".hash(hasher);
+            degrades.hash(hasher);
         }
     }
 
@@ -2625,6 +2637,21 @@ impl HouseState {
     /// it launched last.
     pub(crate) fn remember_ares_last_super(&mut self, index: i32) {
         self.ares_last_super = index;
+    }
+
+    /// `HouseExt::LoadFromINI @ 10021A70`: the House section's `Degrades=`
+    /// through Ares' `Nullable<bool>` reader (`1000E9B0`).
+    pub(crate) fn read_ares_degrades(&mut self, section: &crate::rules::ini_parser::IniSection) {
+        self.ares_degrades = section.read_ares_nullable_bool("Degrades", self.ares_degrades);
+    }
+
+    /// Whether low power degrades this House's buildings (`100247A0`): the
+    /// country's `Degrades=` when set, else not `MultiplayPassive`; the
+    /// House's own map value, when set, overrides both.
+    pub(crate) fn ares_degrades(&self, country_degrades: Option<bool>) -> bool {
+        self.ares_degrades
+            .or(country_degrades)
+            .unwrap_or(!self.multiplay_passive)
     }
 
     /// Folded only once a launch set it, so other houses hash as earlier
@@ -3195,6 +3222,7 @@ impl HouseState {
             ares_reverse_engineered: Vec::new(),
             ares_stolen_tech: 0,
             ares_last_super: no_super_index(),
+            ares_degrades: None,
             powered_unit_centers: 0,
             discovered_by_current_house: false,
             economy: Economy::new(credits),

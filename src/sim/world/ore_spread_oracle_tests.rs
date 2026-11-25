@@ -33,31 +33,31 @@ fn world(
         &crate::rules::ini_parser::IniFile::from_str("[Clear]\nBuildable=yes\n"),
         |base| *base = terrain,
     );
-    sim.overlay_grid = Some(grid);
-    sim.ore_growth_state = state;
-    sim.scenario_rng = rng;
-    sim.substrate.entities = entities;
-    sim.substrate.occupancy = occupancy;
-    sim.interner = interner;
+    *sim.overlay_grid = Some(grid);
+    *sim.ore_growth_state = state;
+    *sim.scenario_rng = rng;
+    *sim.substrate.entities = entities;
+    *sim.substrate.occupancy = occupancy;
+    *sim.interner = interner;
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     *sim.terrain_objects.cell_index_mut_for_test() = trees;
     *sim.terrain_objects.spawning_cells_mut_for_test() = sources;
     let input = &row["input"];
-    sim.native_unique_ids = Some(
+    *sim.native_unique_ids = Some(
         crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(
             input["scenario_serial"].as_u64().unwrap_or(0) as u32,
         ),
     );
     let width = input["size"][0].as_i64().unwrap() as i32;
     let height = input["size"][1].as_i64().unwrap() as i32;
-    sim.playfield_bounds = Some(
+    *sim.playfield_bounds = Some(
         crate::map::playfield::PlayfieldBounds::from_normalized_local_size(
             width, 0, 0, width, height,
         ),
     );
-    sim.playfield_size_height = Some(height);
-    sim.ore_growth_config = OreGrowthConfig::for_test(
+    *sim.playfield_size_height = Some(height);
+    *sim.ore_growth_config = OreGrowthConfig::for_test(
         input["grows"] == true,
         input["spreads"] == true,
         input["fast_growth"] == true,
@@ -82,7 +82,7 @@ fn ore_rung_publishes_native_cell_attributes_before_live_object_turns() {
     sim.tick_ore_growth_rungs(
         &rules,
         Some(&registry),
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap();
     compare_overlay_state(&sim, &row["steps"][0]["state"], name);
@@ -151,7 +151,7 @@ fn app_frames_match_original_ore_driver_histories_and_rng_continuation() {
                     &rules,
                     67,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap()
             });
@@ -215,7 +215,7 @@ fn app_ore_constructor_terminal_cleanup_matches_original_deferred_drain() {
                 &rules,
                 67,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap()
         });
@@ -270,7 +270,7 @@ fn ore_rung_spreads_no_ore_under_a_landed_aircraft() {
                         .allows_tiberium = true;
                 }
             });
-        sim.native_unique_ids =
+        *sim.native_unique_ids =
             Some(crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(0));
         let grid = sim.overlay_grid.as_mut().expect("overlay grid");
         grid.place_overlay(source.0, source.1, tib01, 11);
@@ -289,8 +289,8 @@ fn ore_rung_spreads_no_ore_under_a_landed_aircraft() {
                 (32, 32),
             )
             .unwrap();
-        sim.ore_growth_state = state;
-        sim.ore_growth_config = OreGrowthConfig::for_test(true, true, false);
+        *sim.ore_growth_state = state;
+        *sim.ore_growth_config = OreGrowthConfig::for_test(true, true, false);
         if landed {
             sim.spawn_object("ORCA", "Americans", target.0, target.1, 0, &rules)
                 .expect("retail ORCA spawns");
@@ -306,7 +306,7 @@ fn ore_rung_spreads_no_ore_under_a_landed_aircraft() {
         sim.tick_ore_growth_rungs(
             &rules,
             Some(&registry),
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         sim.overlay_grid

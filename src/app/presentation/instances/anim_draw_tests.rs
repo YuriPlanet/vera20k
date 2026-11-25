@@ -8,6 +8,13 @@ use crate::render::sprite_atlas::ShpPaletteContext;
 use crate::rules::{art_data::ArtRegistry, house_colors::HouseColorIndex, ini_parser::IniFile};
 use std::collections::HashMap;
 
+/// The pieces one Anim's draw makes ([`anim_draw_pieces`]).
+fn drawn_pieces(atlas: &SpriteAtlas, input: AnimDrawInput<'_>) -> Vec<ObjectPieceInstance> {
+    let mut pieces = Vec::new();
+    anim_draw_pieces(atlas, input, &mut pieces);
+    pieces
+}
+
 fn fixture(keys: &str) -> (SpriteAtlas, ShpSpriteKey, AnimTypeRuntimeConfig) {
     // Native-style INI lookup retains the first duplicate key, so each
     // control must author a single Shadow value rather than append an override.
@@ -90,7 +97,7 @@ fn input<'a>(
 fn ordinary_body_then_shadow_keep_distinct_frames_crops_and_materials() {
     let (atlas, key, config) = fixture("");
     assert_eq!(config.end, 2, "authored End is independent of raw count11");
-    let pieces = anim_draw_pieces(&atlas, input(&atlas, &key, &config));
+    let pieces = drawn_pieces(&atlas, input(&atlas, &key, &config));
     assert_eq!(pieces.len(), 2);
     let body = &pieces[0];
     let shadow = &pieces[1];
@@ -135,7 +142,7 @@ fn producer_flags_select_shadow_depth_independently_of_the_body() {
     ] {
         let mut draw = input(&atlas, &key, &config);
         draw.flags = flags;
-        let pieces = anim_draw_pieces(&atlas, draw);
+        let pieces = drawn_pieces(&atlas, draw);
         assert_eq!(pieces[0].render_z, body_policy);
         assert_eq!(pieces[1].render_z, shadow_policy);
         assert_eq!(pieces[0].instance.palette_light.colour_word(), 0x1234);
@@ -145,7 +152,7 @@ fn producer_flags_select_shadow_depth_independently_of_the_body() {
 #[test]
 fn flat_has_one_flat_body_with_its_separate_minus_three_term() {
     let (atlas, key, config) = fixture("Flat=yes\n");
-    let pieces = anim_draw_pieces(&atlas, input(&atlas, &key, &config));
+    let pieces = drawn_pieces(&atlas, input(&atlas, &key, &config));
     assert_eq!(pieces.len(), 1);
     assert_eq!(
         pieces[0].instance.z_gradient,
@@ -179,7 +186,8 @@ fn tiled_interval_and_align_to_center_override_the_frame_geometry() {
         ]));
         let mut draw = input(&atlas, &key, &config);
         draw.viewport[1] = 170.0;
-        let pieces = anim_draw_pieces(&atlas, draw);
+        let mut pieces = Vec::new();
+        anim_draw_pieces(&atlas, draw, &mut pieces);
         assert!(
             pieces
                 .iter()
@@ -213,7 +221,7 @@ fn tiled_interval_and_align_to_center_override_the_frame_geometry() {
 #[test]
 fn a_disabled_shadow_draws_no_second_pass() {
     let (atlas, key, config) = fixture("Shadow=no\n");
-    let pieces = anim_draw_pieces(&atlas, input(&atlas, &key, &config));
+    let pieces = drawn_pieces(&atlas, input(&atlas, &key, &config));
     assert_eq!(pieces.len(), 1);
 }
 
@@ -249,7 +257,7 @@ fn the_tiled_column_rises_by_frame_zero_through_anim_pal_until_a_row_leaves_the_
     let mut draw = input(&atlas, &key, &config);
     draw.viewport[1] = 170.0;
     draw.bounce_drop_px = Some(-4);
-    let pieces = anim_draw_pieces(&atlas, draw);
+    let pieces = drawn_pieces(&atlas, draw);
     assert_eq!(
         pieces[0].target,
         ObjectTexture::SpriteAtlasEdit(3, TerrainPiece::Shadow),
@@ -291,7 +299,7 @@ fn the_tiled_column_rises_by_frame_zero_through_anim_pal_until_a_row_leaves_the_
 
     // An empty frame 0 would hang gamemd; VERA draws the first tile alone.
     let atlas = column(None);
-    let pieces = anim_draw_pieces(&atlas, input(&atlas, &key, &config));
+    let pieces = drawn_pieces(&atlas, input(&atlas, &key, &config));
     assert_eq!(pieces.len(), 1);
     assert_eq!(pieces[0].instance.position, [103.0, 211.0]);
     assert_eq!(pieces[0].instance.z_adjust, -35.0);
@@ -311,11 +319,11 @@ fn bouncer_and_meteor_bodies_take_the_ordinary_arms_without_a_type_keyed_ground_
             .collect::<Vec<_>>()
     };
     let (atlas, key, config) = fixture("");
-    let ordinary = summary(anim_draw_pieces(&atlas, input(&atlas, &key, &config)));
+    let ordinary = summary(drawn_pieces(&atlas, input(&atlas, &key, &config)));
     assert_eq!(ordinary.len(), 2);
     for keys in ["Bouncer=yes\n", "IsMeteor=yes\n"] {
         let (atlas, key, config) = fixture(keys);
-        let pieces = summary(anim_draw_pieces(&atlas, input(&atlas, &key, &config)));
+        let pieces = summary(drawn_pieces(&atlas, input(&atlas, &key, &config)));
         assert_eq!(pieces, ordinary, "{keys}");
     }
 }
@@ -328,7 +336,7 @@ fn has_bounce_draws_the_body_frame_as_a_z_read_ground_shadow_before_the_body() {
     // while 4233D2's own 2601 always reads it.
     draw.flags = 0x600;
     draw.bounce_drop_px = Some(37);
-    let pieces = anim_draw_pieces(&atlas, draw);
+    let pieces = drawn_pieces(&atlas, draw);
     assert_eq!(pieces.len(), 3);
     let [ground, body, shadow] = [&pieces[0], &pieces[1], &pieces[2]];
     assert_eq!(
@@ -377,7 +385,8 @@ fn extra_shadow_false_drops_the_has_bounce_ground_shadow() {
     let mut draw = input(&atlas, &key, &config);
     draw.flags = 0x600;
     draw.bounce_drop_px = Some(37);
-    let pieces = anim_draw_pieces(&atlas, draw);
+    let mut pieces = Vec::new();
+    anim_draw_pieces(&atlas, draw, &mut pieces);
     assert_eq!(pieces.len(), 2, "the ground shadow is gone");
     assert_eq!(pieces[0].target, ObjectTexture::ShpPage(1));
     assert_eq!(
@@ -400,7 +409,7 @@ fn the_ground_shadow_needs_a_drawn_body_frame() {
     let mut draw = input(&source, &key, &config);
     draw.entry = atlas.get(&key);
     draw.bounce_drop_px = Some(37);
-    let pieces = anim_draw_pieces(&atlas, draw);
+    let pieces = drawn_pieces(&atlas, draw);
     assert_eq!(pieces.len(), 1);
     assert_eq!(
         pieces[0].target,
@@ -418,7 +427,7 @@ fn a_visible_shadow_is_not_culled_by_its_offscreen_body_crop() {
     draw.entry = Some(&offscreen_entry);
     draw.point = [0.0, 0.0];
     draw.viewport = [0.0, 0.0, 16.0, 16.0];
-    let pieces = anim_draw_pieces(&atlas, draw);
+    let pieces = drawn_pieces(&atlas, draw);
     assert_eq!(pieces.len(), 1);
     assert_eq!(
         pieces[0].target,
@@ -445,7 +454,7 @@ fn empty_body_bounds_still_draw_the_companion_shadow_at_the_resolved_point() {
     // The shadow uses the explicit draw point, without deriving it from any
     // body rectangle. Native DrawIt continues after an empty CC_Draw_Shape.
     draw.body.position = [f32::NAN; 2];
-    let pieces = anim_draw_pieces(&atlas, draw);
+    let pieces = drawn_pieces(&atlas, draw);
     assert_eq!(pieces.len(), 1);
     assert_eq!(
         pieces[0].target,
@@ -457,7 +466,7 @@ fn empty_body_bounds_still_draw_the_companion_shadow_at_the_resolved_point() {
 
 fn free_anim_draw(
     empty_body: bool,
-) -> Vec<crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance> {
+) -> Vec<crate::app::presentation::render::draw_plan_lowering::OwnedPlannedObject> {
     free_anim_draw_with("", 0, empty_body, None)
 }
 
@@ -469,7 +478,7 @@ fn free_anim_draw_with(
     level: u8,
     empty_body: bool,
     ground_level: Option<u8>,
-) -> Vec<crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance> {
+) -> Vec<crate::app::presentation::render::draw_plan_lowering::OwnedPlannedObject> {
     let planned = free_anim_draw_in(extra_keys, level, empty_body, ground_level, false, |_| {
         ([-1000.0; 2], [0, 0, 2000, 2000])
     });
@@ -488,12 +497,14 @@ fn free_anim_draw_in(
     ground_level: Option<u8>,
     effect: bool,
     view: impl FnOnce([f32; 2]) -> ([f32; 2], [u32; 4]),
-) -> Vec<crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance> {
+) -> Vec<crate::app::presentation::render::draw_plan_lowering::OwnedPlannedObject> {
     use crate::app::presentation::display_members::{EffectKind, EffectMember};
     use crate::app::presentation::instances::{
         DisplayEffectInputs, build_display_effect_instances,
     };
-    use crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder;
+    use crate::app::presentation::render::draw_plan_lowering::{
+        NativeDisplayOrder, PlannedObjects,
+    };
     use crate::sim::{components::AnimClassSpawnDescriptor, world::Simulation};
     use crate::util::fixed_math::SIM_ZERO;
     use std::cell::RefCell;
@@ -564,7 +575,8 @@ fn free_anim_draw_in(
         ] => view(draw.center),
         other => panic!("{other:?}"),
     };
-    let mut planned = Vec::new();
+    let mut planned =
+        crate::app::presentation::render::draw_plan_lowering::PlannedObjects::default();
     build_display_effect_instances(
         &DisplayEffectInputs {
             sim: &sim,
@@ -591,6 +603,7 @@ fn free_anim_draw_in(
         &order,
         Default::default(),
     );
+    let planned = planned.into_owned();
     assert_eq!(
         sim.state_hash(),
         before,
@@ -950,7 +963,8 @@ fn phobos_draw_offset_relocates_an_owned_anim_to_the_foot_bracket() {
     let house_colors = Default::default();
     let hidden = Default::default();
     let frame = crate::app::presentation::frame::PresentationFrame::of_test(&sim, &rules);
-    let mut planned = Vec::new();
+    let mut planned =
+        crate::app::presentation::render::draw_plan_lowering::PlannedObjects::default();
     build_display_effect_instances(
         &DisplayEffectInputs {
             sim: &sim,
@@ -977,15 +991,16 @@ fn phobos_draw_offset_relocates_an_owned_anim_to_the_foot_bracket() {
         &order,
         Default::default(),
     );
-    assert_eq!(planned.len(), 1);
-    assert_eq!(planned[0].parent.id, id);
+    assert_eq!(planned.iter().count(), 1);
+    assert_eq!(planned.iter().next().unwrap().parent.id, id);
     // Cell (10,10) at its centre projects to (0,315), plus the shared 15-row
     // world bias. Right/Top foot anchor is (0+18, 330-28); the X arm replaces
     // DrawIt's X with the anchor, `BracketAdjust` 5 and the discarding of the
     // atlas-baked XDrawOffset 30, while Y stays. The synthetic frame entry
     // adds its (3,11) origin.
+    let first = planned.iter().next().unwrap();
     assert_eq!(
-        planned[0].pieces[0].instance.position,
+        planned.pieces(first)[0].instance.position,
         [18.0 + 5.0 - 30.0 + 3.0, 330.0 + 11.0]
     );
 }

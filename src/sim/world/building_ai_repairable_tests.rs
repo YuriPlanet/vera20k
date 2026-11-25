@@ -54,6 +54,7 @@ fn granted(sim: &Simulation, id: u64) -> bool {
         .entities
         .get(id)
         .unwrap()
+        .seldom
         .ai_sell_repair
         .ai_repairable()
 }
@@ -66,13 +67,7 @@ fn campaign_ai_repairable_follows_the_basic_global() {
     let mut sim = sim_with_ai_house();
     let owner = ai_house(&sim);
     let id = insert_structure(&mut sim, owner);
-    Simulation::mark_ai_repairable_at_unlimbo(
-        &sim.session,
-        &enabled,
-        &mut sim.substrate,
-        &sim.houses,
-        id,
-    );
+    sim.reveal_entity_with_rules(id, &enabled);
     assert!(
         granted(&sim, id),
         "[Basic] RepairBaseNodes=yes grants the campaign AI building"
@@ -82,13 +77,7 @@ fn campaign_ai_repairable_follows_the_basic_global() {
     let mut sim = sim_with_ai_house();
     let owner = ai_house(&sim);
     let id = insert_structure(&mut sim, owner);
-    Simulation::mark_ai_repairable_at_unlimbo(
-        &sim.session,
-        &vanilla,
-        &mut sim.substrate,
-        &sim.houses,
-        id,
-    );
+    sim.reveal_entity_with_rules(id, &vanilla);
     assert!(
         !granted(&sim, id),
         "the global defaults no; vanilla never grants in a campaign"
@@ -108,13 +97,7 @@ fn campaign_grant_skips_a_map_created_structure() {
         .get_mut(id)
         .unwrap()
         .set_created_from_map_file(true);
-    Simulation::mark_ai_repairable_at_unlimbo(
-        &sim.session,
-        &enabled,
-        &mut sim.substrate,
-        &sim.houses,
-        id,
-    );
+    sim.reveal_entity_with_rules(id, &enabled);
     assert!(
         !granted(&sim, id),
         "a map-created structure is never granted"
@@ -135,13 +118,7 @@ fn the_house_slot_overrides_the_global_per_difficulty() {
         .unwrap()
         .set_repair_base_nodes_for_test([None, Some(false), None]);
     let id = insert_structure(&mut sim, owner);
-    Simulation::mark_ai_repairable_at_unlimbo(
-        &sim.session,
-        &enabled,
-        &mut sim.substrate,
-        &sim.houses,
-        id,
-    );
+    sim.reveal_entity_with_rules(id, &enabled);
     assert!(
         !granted(&sim, id),
         "the house's Normal-slot no overrides the global yes"
@@ -152,13 +129,7 @@ fn the_house_slot_overrides_the_global_per_difficulty() {
         .unwrap()
         .set_repair_base_nodes_for_test([None, Some(true), None]);
     let id = insert_structure(&mut sim, owner);
-    Simulation::mark_ai_repairable_at_unlimbo(
-        &sim.session,
-        &vanilla,
-        &mut sim.substrate,
-        &sim.houses,
-        id,
-    );
+    sim.reveal_entity_with_rules(id, &vanilla);
     assert!(
         granted(&sim, id),
         "the house's Normal-slot yes grants without a global"

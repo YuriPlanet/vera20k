@@ -52,7 +52,7 @@ fn launch(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
         sw_type,
         (10, 10),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false,
     ));
 }

@@ -5,11 +5,11 @@
 //! particle synchronously. AI visits the original reverse list; the subsequent
 //! Move/destruction walk includes those new births, as the original does.
 
+use super::Particle;
 use super::spark::{SparkMotionStep, resolve_collision};
 use super::spark_world::{SparkCollisionWorld, SparkWorldError, constructor_ground_height};
 use super::system_ai::SparkSystemTickError;
 use super::wind::{GAS_WIND_DX, GAS_WIND_DY};
-use super::{Particle, ParticleSystem};
 use crate::rules::particle_type::{ParticleBehavesLike, ParticleTypeId};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::{
@@ -59,14 +59,7 @@ impl Simulation {
         rules: &RuleSet,
     ) -> Option<u64> {
         let system = self.initialize_gas_cloud_system(rules)?;
-        let particle = Particle::new(
-            kind,
-            coords,
-            IVec3::ZERO,
-            rules.particle_type(kind),
-            self,
-            rules,
-        );
+        let particle = Particle::new(kind, coords, IVec3::ZERO, rules, self);
         let id = particle.stable_id();
         self.substrate
             .particle_systems
@@ -77,35 +70,36 @@ impl Simulation {
     }
 }
 
-pub(super) fn reverse_ids(system: &ParticleSystem) -> Vec<(usize, u64)> {
-    system
-        .particles
-        .iter()
-        .enumerate()
-        .rev()
-        .map(|(index, p)| (index, p.stable_id()))
-        .collect()
-}
-
 pub(super) fn tick_system(
     sim: &mut Simulation,
     rules: &RuleSet,
     system: u64,
-    context: UninitContext<'_>,
+    mut context: UninitContext<'_>,
 ) {
     let Some(sys) = sim.particle_systems().get(system) else {
         return;
     };
     let (owner_house, owner_entity) = (sys.owner_house, sys.owner_entity);
-    let ids = reverse_ids(sys);
-    for (index, id) in ids {
+    let Some(walk) = sim
+        .substrate
+        .particle_systems
+        .take_reverse_walk(system, |_| true)
+    else {
+        return;
+    };
+    for &(index, id) in &walk {
         let Some(mut p) = sim.particle_systems().particle_for_tick(system, index, id) else {
             continue;
         };
         if rules.particle_type(p.type_id).behaves_like == ParticleBehavesLike::Gas {
-            if let Err(error) =
-                tick_particle(&mut p, sim, rules, owner_house, owner_entity, context)
-            {
+            if let Err(error) = tick_particle(
+                &mut p,
+                sim,
+                rules,
+                owner_house,
+                owner_entity,
+                context.reborrow(),
+            ) {
                 super::system_ai::retire_refused(&mut p, &error);
             }
             super::system_ai::finish_lifetime(&mut p);
@@ -116,10 +110,15 @@ pub(super) fn tick_system(
             .particle_systems
             .commit_particle_tick(system, index, p);
     }
-    let Some(sys) = sim.particle_systems().get(system) else {
+    sim.substrate.particle_systems.return_walk(walk);
+    let Some(walk) = sim
+        .substrate
+        .particle_systems
+        .take_reverse_walk(system, |_| true)
+    else {
         return;
     };
-    for (index, id) in reverse_ids(sys) {
+    for &(index, id) in &walk {
         let Some(mut p) = sim.particle_systems().particle_for_tick(system, index, id) else {
             continue;
         };
@@ -127,14 +126,7 @@ pub(super) fn tick_system(
             let pt = rules.particle_type(p.type_id);
             if let Some(next) = pt.next_particle {
                 let coords = offset(p.coords, pt.next_particle_offset);
-                let mut child = Particle::new(
-                    next,
-                    coords,
-                    IVec3::ZERO,
-                    rules.particle_type(next),
-                    sim,
-                    rules,
-                );
+                let mut child = Particle::new(next, coords, IVec3::ZERO, rules, sim);
                 //62E7EB..62E811 copies E4 and C0/C4/C8, not translucency
                 //or CC/D0/D4. The constructor still takes its lifetime draw.
                 child.velocity = p.velocity;
@@ -161,6 +153,7 @@ pub(super) fn tick_system(
                 .commit_particle_tick(system, index, p);
         }
     }
+    sim.substrate.particle_systems.return_walk(walk);
 }
 
 /// Complete Gas body; the dispatcher separately owns its word-EC tail.
@@ -276,7 +269,7 @@ fn apply_damage(
     rules: &RuleSet,
     owner_house: Option<InternedId>,
     owner: Option<u64>,
-    context: UninitContext<'_>,
+    mut context: UninitContext<'_>,
 ) {
     let pt = rules.particle_type(p.type_id);
     // RESIDUAL: a Damage particle with no Warhead= passes a null warhead
@@ -404,7 +397,7 @@ fn damage_in_range(
     owner_house: Option<InternedId>,
     warhead: InternedId,
     range: f64,
-    context: UninitContext<'_>,
+    mut context: UninitContext<'_>,
 ) {
     let pt = rules.particle_type(p.type_id);
     let leptons = range * 256.0;
@@ -421,7 +414,9 @@ fn damage_in_range(
             IVec3::new(c.x, c.y, c.z)
         }),
     };
-    let mut items: Vec<(CellObjectMember, (u16, u16))> = Vec::new();
+    // The vector lives in a 0x100-entry stack buffer it cannot grow.
+    let mut items = [(CellObjectMember::Entity(0), (0u16, 0u16)); 0x100];
+    let mut count = 0;
     for (dx, dy) in crate::sim::cell_rect::cell_spread_offsets(spread.max(0) as usize) {
         let (Ok(rx), Ok(ry)) = (
             u16::try_from(center.0 + i32::from(dx)),
@@ -436,8 +431,8 @@ fn damage_in_range(
         {
             continue;
         }
-        let members: Vec<_> = sim.cell_objects((rx, ry), MovementLayer::Ground).collect();
-        for member in members {
+        // The gathering only reads the world; the damage below runs on `items`.
+        for member in sim.cell_objects((rx, ry), MovementLayer::Ground) {
             let Some(at) = location(sim, member) else {
                 continue;
             };
@@ -447,16 +442,16 @@ fn damage_in_range(
                 delta(at.y, p.coords.y),
                 delta(at.z, p.coords.z),
             );
-            // The vector lives in a 0x100-entry stack buffer it cannot grow.
             if dz * dz + dx * dx + dy * dy <= range_sq
-                && items.len() < 0x100
-                && !items.iter().any(|(item, _)| *item == member)
+                && count < items.len()
+                && !items[..count].iter().any(|(item, _)| *item == member)
             {
-                items.push((member, (rx, ry)));
+                items[count] = (member, (rx, ry));
+                count += 1;
             }
         }
     }
-    for (member, cell) in items {
+    for &(member, cell) in &items[..count] {
         let alive = match member {
             CellObjectMember::Entity(id) => sim
                 .entities()

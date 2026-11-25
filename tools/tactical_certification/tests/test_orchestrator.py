@@ -537,7 +537,7 @@ def _stable_fixture(
                 "deterministic_state_hash": 7168770358871354549,
                 "simulation_tick": capture_tick,
                 "total_simulation_ms": (
-                    capture_tick * profile.capture["sim_tick_ms"]
+                    capture_tick * 1000 // 15
                 ),
             },
             "cursor": {

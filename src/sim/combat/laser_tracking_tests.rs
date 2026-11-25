@@ -169,7 +169,7 @@ fn place(sim: &mut Simulation, id: u64, kind: &str, category: EntityCategory, at
         .position
         .set_sub_y_for_test(SimFixed::from_num(at[1] % 256));
     entity.position.set_exact_z_leptons_for_test(Some(at[2]));
-    entity.type_facts.set_foundation_for_test("1x1".into());
+    entity.seldom.type_facts.set_foundation_for_test("1x1".into());
     sim.substrate.entities.insert(entity);
 }
 
@@ -359,7 +359,7 @@ fn a_burst_art_offset_replaces_the_slot_flh_without_a_lateral_shift() {
         .entities
         .get_mut(1)
         .unwrap()
-        .weapon_burst
+        .seldom.weapon_burst
         .advance();
     let birth = fire(&mut sim, &rules);
     let burst = coordinate_of(&sim, &rules, "UNIT", 1);
@@ -378,7 +378,7 @@ fn a_tracked_laser_keeps_the_frozen_burst_offset() {
         .entities
         .get_mut(1)
         .unwrap()
-        .weapon_burst
+        .seldom.weapon_burst
         .advance();
     let mut birth = fire(&mut sim, &rules);
     assert_eq!(
@@ -401,7 +401,7 @@ fn a_tracked_laser_keeps_the_frozen_burst_offset() {
 #[test]
 fn a_burst_index_past_the_run_falls_back_to_the_slot_offset() {
     let (mut sim, rules) = burst_scene();
-    let burst = &mut sim.substrate.entities.get_mut(1).unwrap().weapon_burst;
+    let burst = &mut sim.substrate.entities.get_mut(1).unwrap().seldom.weapon_burst;
     burst.advance();
     burst.advance();
     let birth = fire(&mut sim, &rules);

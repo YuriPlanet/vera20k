@@ -12,15 +12,17 @@
 use crate::util::time::{Duration, Instant};
 
 use super::{WolBoxThen, WolPage, WolVisit};
+use crate::app::frontend::state::FrontendState;
 use crate::app::persistence::wol_profile::{WolInfoFile, WolPersona};
+use crate::app::process_assets::ProcessAssets;
 use crate::app::{App, AppState};
+use crate::ui::shell::modal::ShellBox;
 use crate::ui::wol_chat::WolChatLine;
 use crate::ui::wol_lobby::{WolChannel, WolMember, WolRoomSummary};
 use crate::ui::wol_login::WolCredential;
-use crate::ui::wol_shell::{
-    BOX_NO, BOX_OK, BOX_YES, WAIT_CHECK_STATUS, WAIT_DISCONNECT, WolBoxButtons, WolMessageBox,
-    WolMode, WolWaitBox,
-};
+use crate::ui::wol_shell::{WolMode, WolWaitBox};
+use crate::util::config::GameConfig;
+use winit::window::Window;
 
 /// Which WOLAPI stands behind the visit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,6 +87,8 @@ pub(crate) struct WolLoginAccepted {
     /// VERA: the lobby lets a room's players visit the public lobby
     /// (docs/lobby-protocol.md "Visiting the lobby").
     pub(crate) lobby_visits: bool,
+    /// VERA: the lobby offers `campaign_rooms` (docs/lobby-protocol.md).
+    pub(crate) campaign_rooms: bool,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -111,6 +115,7 @@ pub(crate) enum WolServiceRequest {
         password: String,
         changed: bool,
         remember: bool,
+        generated_guest: bool,
     },
     /// VERA online: a lobby account request; the answer is
     /// [`WolServiceEvent::Account`].
@@ -719,6 +724,7 @@ impl WolVisit {
             (Awaiting::Connect { .. }, WolServiceEvent::Login(Ok(accepted))) => {
                 self.motd = Some(accepted.motd);
                 self.lobby_visits = accepted.lobby_visits;
+                self.lobby_campaign_rooms = accepted.campaign_rooms;
                 self.authenticated = true;
                 // The connect clears [0xB77DC0] (0x007867E6) and the login
                 // sink [0xB77DC2] (0x007A559D).
@@ -755,6 +761,24 @@ impl WolVisit {
         }
     }
 
+    /// Expire a connect or locale wait. A connect queued behind the previous
+    /// logout can be withdrawn here; cancel a dispatched online connect so
+    /// its worker also retires a late session and stops retrying names.
+    fn expire_wait(&mut self) -> WolStep {
+        match std::mem::take(&mut self.awaiting) {
+            Awaiting::Connect { .. } => {
+                let queued = self.requests.len();
+                self.requests
+                    .retain(|request| !matches!(request, WolServiceRequest::Connect { .. }));
+                if self.provider == WolProvider::Online && self.requests.len() == queued {
+                    self.requests.push(WolServiceRequest::CancelWait);
+                }
+                self.connect_failed()
+            }
+            _ => WolStep::LocaleDecided,
+        }
+    }
+
     /// `0xC4`'s Disconnect while it shows.
     pub(super) fn disconnect(&mut self) -> WolStep {
         match std::mem::take(&mut self.awaiting) {
@@ -771,10 +795,6 @@ impl WolVisit {
             }
         }
     }
-}
-
-pub(super) fn resolve(state: &AppState, key: &str) -> String {
-    App::csf_label(state, key, key)
 }
 
 /// [`WolProvider::Unavailable`]'s synchronous answer, called where the
@@ -814,34 +834,39 @@ pub(super) fn begin_my_information(state: &mut AppState) {
 }
 
 /// Queue a request for the visit's service.
-pub(crate) fn request(state: &mut AppState, request: WolServiceRequest) {
-    if let Some(visit) = state.frontend.wol.as_mut() {
+pub(crate) fn request(wol: Option<&mut WolVisit>, request: WolServiceRequest) {
+    if let Some(visit) = wol {
         visit.requests.push(request);
     }
 }
 
 /// `0x007864C0` with `server`: the nickname and password go into the
 /// record (+0xE4/+0xEE) and the connect waits behind `0xC4`.
-fn connect(state: &mut AppState, server: WolServer, auto: bool, remember_locale: i32) -> WolStep {
-    let online = state
-        .frontend
+fn connect(
+    frontend: &mut FrontendState,
+    server: WolServer,
+    auto: bool,
+    remember_locale: i32,
+) -> WolStep {
+    let online = frontend
         .wol
         .as_ref()
         .is_some_and(|visit| visit.provider == WolProvider::Online);
-    let globals = &state.frontend.wol_account;
+    let globals = &frontend.wol_account;
     let (nickname, password, changed, remember) = (
         globals.nickname.clone(),
         globals.password.clone(),
         globals.changed && !online,
         globals.remember && online,
     );
-    let visit = state.frontend.wol.as_mut().expect("WOL visit");
+    let visit = frontend.wol.as_mut().expect("WOL visit");
     visit.requests.push(WolServiceRequest::Connect {
         server: server.clone(),
         nickname,
         password,
         changed,
         remember,
+        generated_guest: online && globals.generated_guest,
     });
     visit.awaiting = Awaiting::Connect {
         deadline: Instant::now() + WAIT_LIMIT,
@@ -867,9 +892,12 @@ fn after_server_list(state: &mut AppState) {
         super::login::open(state);
         return;
     }
-    let auto_name = super::persona::info_file(state)
-        .map(|file| file.auto_login())
-        .unwrap_or_default();
+    let auto_name = super::persona::info_file(
+        state.frontend.wol.as_ref(),
+        state.platform.game_config.as_ref(),
+    )
+    .map(|file| file.auto_login())
+    .unwrap_or_default();
     if !auto_name.is_empty() {
         // 0x00787125..0x00787191: the password clears, then slots 1..32 are
         // searched with _stricmp.
@@ -887,7 +915,12 @@ fn after_server_list(state: &mut AppState) {
                 globals.nickname = stored.nickname;
                 globals.password = stored.password;
                 globals.changed = false;
-                let persona = super::persona::load(state, &auto_name);
+                let persona = super::persona::load(
+                    state.frontend.wol.as_ref(),
+                    state.platform.game_config.as_ref(),
+                    &state.process_assets,
+                    &auto_name,
+                );
                 let visit = state.frontend.wol.as_mut().expect("WOL visit");
                 let index = visit.auto_login_server(&persona.server);
                 if index != -1 {
@@ -897,7 +930,7 @@ fn after_server_list(state: &mut AppState) {
                         .filter(|index| *index >= 1)
                         .and_then(|index| visit.servers.get(index).cloned());
                     let step = match server {
-                        Some(server) => connect(state, server, true, 0),
+                        Some(server) => connect(&mut state.frontend, server, true, 0),
                         // 0x00787350: out of range, the box and its flag.
                         None => WolStep::AutoLoginFailed,
                     };
@@ -907,18 +940,18 @@ fn after_server_list(state: &mut AppState) {
             }
         }
     }
-    prepare_login_dialog(state);
+    prepare_login_dialog(&mut state.frontend, state.platform.game_config.as_ref());
     super::login::open(state);
 }
 
 /// `0x00787362..0x007873AC`: an empty nickname takes LastValid, then
 /// AutoLogin is cleared whatever happened, which creates the file.
-fn prepare_login_dialog(state: &mut AppState) {
-    let Some(file) = super::persona::info_file(state) else {
+fn prepare_login_dialog(frontend: &mut FrontendState, game_config: Option<&GameConfig>) {
+    let Some(file) = super::persona::info_file(frontend.wol.as_ref(), game_config) else {
         return;
     };
-    if state.frontend.wol_account.nickname.is_empty() {
-        state.frontend.wol_account.nickname = file.last_valid();
+    if frontend.wol_account.nickname.is_empty() {
+        frontend.wol_account.nickname = file.last_valid();
     }
     file.set_auto_login("");
 }
@@ -927,7 +960,7 @@ fn prepare_login_dialog(state: &mut AppState) {
 /// is set only for the Yes/No results, which return 0; otherwise `0x10F`
 /// opens after the LastValid and AutoLogin steps.
 fn auto_login_failed(state: &mut AppState) {
-    prepare_login_dialog(state);
+    prepare_login_dialog(&mut state.frontend, state.platform.game_config.as_ref());
     let visit = state.frontend.wol.as_mut().expect("WOL visit");
     let step = match visit.last_error {
         Some(key) => {
@@ -959,13 +992,18 @@ pub(super) fn begin_connect(state: &mut AppState) {
     let persona = if online {
         WolPersona::default()
     } else {
-        super::persona::load(state, &nickname)
+        super::persona::load(
+            state.frontend.wol.as_ref(),
+            state.platform.game_config.as_ref(),
+            &state.process_assets,
+            &nickname,
+        )
     };
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
     let step = match visit.dialog_server(&persona.server) {
-        Some(server) => connect(state, server, false, persona.locale),
+        Some(server) => connect(&mut state.frontend, server, false, persona.locale),
         None => {
             visit.flow = None;
             visit.failed_login_box()
@@ -1068,7 +1106,7 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             return;
         }
         WolServiceEvent::LadderSeason(season) => {
-            super::lobby::ladder_season(state, season);
+            super::lobby::ladder_season(&mut state.frontend, season);
             return;
         }
         WolServiceEvent::Ladder(records) => {
@@ -1076,7 +1114,7 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             return;
         }
         WolServiceEvent::HighScores(result) => {
-            super::lobby::high_scores_received(state, result);
+            super::lobby::high_scores_received(&mut state.frontend.wol_lobby_globals, result);
             return;
         }
         WolServiceEvent::Buddies(result) => {
@@ -1085,7 +1123,12 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
         }
         WolServiceEvent::UserLocales(result) => {
             // Event 14 ends the locale wait (0x00786AB2).
-            if super::persona::user_locales(state, result) {
+            if super::persona::user_locales(
+                &mut state.frontend,
+                state.platform.game_config.as_ref(),
+                &state.process_assets,
+                result,
+            ) {
                 let visit = state.frontend.wol.as_mut().expect("checked");
                 if matches!(visit.awaiting, Awaiting::Locale { .. }) {
                     visit.awaiting = Awaiting::Nothing;
@@ -1096,7 +1139,7 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             return;
         }
         WolServiceEvent::LocaleCount(count) => {
-            if super::my_info::page_open(state) {
+            if super::my_info::page_open(state.frontend.wol.as_ref()) {
                 super::my_info::locale_count(state, count);
             } else {
                 super::persona::locale_count(state, count);
@@ -1104,7 +1147,7 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             return;
         }
         WolServiceEvent::Squad { id, squad } => {
-            super::lobby::squad(state, id, squad);
+            super::lobby::squad(&mut state.frontend, id, squad);
             return;
         }
         event @ (WolServiceEvent::Channels { .. }
@@ -1134,62 +1177,60 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
     state.platform.window.request_redraw();
 }
 
-pub(super) fn wait_box(state: &AppState, key: &str) -> WolWaitBox {
-    WolWaitBox {
-        text: resolve(state, key),
-        disconnect: resolve(state, "GUI:Disconnect"),
-        check_status: resolve(state, "GUI:WOLCheckStatus"),
-        opened_at: Instant::now(),
-        shown: false,
-    }
+pub(super) fn wait_box(process_assets: &ProcessAssets, key: &str) -> WolWaitBox {
+    let text = |key| process_assets.csf_text(key);
+    WolWaitBox::new(
+        text(key),
+        text("GUI:Disconnect"),
+        text("GUI:WOLCheckStatus"),
+    )
 }
 
 /// `0x005E2CD0`'s box over the shell: `0xD0` (OK) or `0x126` (Yes/No).
-pub(super) fn message_box(state: &AppState, key: &str, yes_no: bool) -> WolMessageBox {
-    message_box_text(state, resolve(state, key), yes_no)
-}
-
-/// The same box with an already formatted body.
-pub(super) fn message_box_text(state: &AppState, body: String, yes_no: bool) -> WolMessageBox {
-    let buttons = if yes_no {
-        WolBoxButtons::YesNo {
-            yes: resolve(state, "GUI:Yes"),
-            no: resolve(state, "GUI:No"),
-        }
-    } else {
-        WolBoxButtons::Ok(resolve(state, "GUI:OK"))
-    };
-    WolMessageBox { body, buttons }
+pub(super) fn message_box(process_assets: &ProcessAssets, body: String, yes_no: bool) -> ShellBox {
+    let text = |key| process_assets.csf_text(key);
+    match yes_no {
+        true => crate::ui::wol_shell::yes_no_box(body, text("GUI:Yes"), text("GUI:No")),
+        false => crate::ui::wol_shell::message_box(body, text("GUI:OK")),
+    }
 }
 
 /// A VERA-specific box over the current WOL page, whose OK returns to the
 /// welcome (the online visit's sign-in). False outside WOL.
-pub(super) fn show_text_box(state: &mut AppState, body: &str) -> bool {
-    if state.frontend.shell_route != crate::app::shell_route::ShellRoute::Wol {
+pub(super) fn show_text_box(
+    frontend: &mut FrontendState,
+    window: &Window,
+    process_assets: &ProcessAssets,
+    body: &str,
+) -> bool {
+    if frontend.shell_route != crate::app::shell_route::ShellRoute::Wol {
         return false;
     }
-    let message = message_box_text(state, body.to_owned(), false);
-    let dialog = message.dialog();
-    let Some(visit) = state.frontend.wol.as_mut() else {
+    let message = message_box(process_assets, body.to_owned(), false);
+    let dialog = message.dialog;
+    let Some(visit) = frontend.wol.as_mut() else {
         return false;
     };
-    visit.status_help = None;
     visit.page = WolPage::Message {
         message,
         then: WolBoxThen::Welcome,
     };
-    state.frontend.shell_controller.reset_to(dialog, false);
-    state.platform.window.request_redraw();
+    frontend.shell_controller.reset_to(dialog);
+    window.request_redraw();
     true
 }
 
 /// A live-service refusal whose reason no CSF label carries: the box its
 /// failure opened shows `body` instead. False when no box is open.
-pub(super) fn replace_open_box_body(state: &mut AppState, body: &str) -> bool {
-    match state.frontend.wol.as_mut().map(|visit| &mut visit.page) {
+pub(super) fn replace_open_box_body(
+    wol: Option<&mut WolVisit>,
+    window: &Window,
+    body: &str,
+) -> bool {
+    match wol.map(|visit| &mut visit.page) {
         Some(WolPage::Message { message, .. }) => {
             message.body = body.to_owned();
-            state.platform.window.request_redraw();
+            window.request_redraw();
             true
         }
         _ => false,
@@ -1201,24 +1242,23 @@ fn apply(state: &mut AppState, step: WolStep) {
         WolStep::Stay => {}
         WolStep::Wait(key) => {
             // 0x00792BE0 with an open box only replaces its text.
-            let wait = wait_box(state, key);
+            let wait = wait_box(&state.process_assets, key);
             let visit = state.frontend.wol.as_mut().expect("WOL visit");
             match &mut visit.page {
-                WolPage::Backdrop { wait: Some(open) } => open.text = wait.text,
+                WolPage::Backdrop { wait: Some(open) } => open.shell_box.body = wait.shell_box.body,
                 page => *page = WolPage::Backdrop { wait: Some(wait) },
             }
             state
                 .frontend
                 .shell_controller
-                .reset_to(crate::ui::wol_shell::WAIT_DIALOG, false);
+                .reset_to(crate::ui::wol_shell::WAIT_DIALOG);
         }
         WolStep::Message { key, yes_no, then } => {
-            let message = message_box(state, key, yes_no);
-            let dialog = message.dialog();
+            let message = message_box(&state.process_assets, state.csf_text(key), yes_no);
+            let dialog = message.dialog;
             let visit = state.frontend.wol.as_mut().expect("WOL visit");
-            visit.status_help = None;
             visit.page = WolPage::Message { message, then };
-            state.frontend.shell_controller.reset_to(dialog, false);
+            state.frontend.shell_controller.reset_to(dialog);
         }
         WolStep::Leave(result) => {
             // -1 (the patch download) takes PrepareSession's 0x0052E817
@@ -1275,7 +1315,9 @@ fn connect_succeeded(state: &mut AppState) {
     }
     // ReadMultiPlayerSettings 0x006980C0.
     if !App::prepare_multiplayer_settings(
-        state,
+        &mut state.frontend,
+        &mut state.match_state,
+        &mut state.process_assets,
         crate::app::match_runtime::session::SessionMode::Wol,
     ) {
         return;
@@ -1288,12 +1330,15 @@ fn connect_succeeded(state: &mut AppState) {
         .as_ref()
         .filter(|_| matches!(visit.mode.map(WolMode::native), Some(4 | 5)))
         .map(|flow| flow.server.clone());
-    let file = super::persona::info_file(state);
+    let file = super::persona::info_file(
+        state.frontend.wol.as_ref(),
+        state.platform.game_config.as_ref(),
+    );
     let persona = connected_persona(
         file.as_ref(),
         &nickname,
         server.as_ref().map(WolServer::persona_server),
-        &|key| resolve(state, key),
+        &|key| state.csf_text(key),
     );
     // The nickname becomes the session handle [0xA8B380], the persona's
     // Country and Color the MultiPlayer picks, and WriteMultiPlayerSettings
@@ -1328,7 +1373,7 @@ fn connect_succeeded(state: &mut AppState) {
         // player chose on their card goes again after each sign-in.
         let locale = state.persistence.options_profile.online_locale;
         if locale != 0 {
-            send_locale(state, locale);
+            send_locale(&mut state.frontend, locale);
         }
         finish_login(state);
         return;
@@ -1370,11 +1415,17 @@ fn locale_decided(state: &mut AppState) {
         Some(locale) => {
             if persona.locale == 0 {
                 persona.set_locale(locale, 2);
-                super::persona::save(state, &mut persona, &nickname);
+                super::persona::save(
+                    state.frontend.wol.as_ref(),
+                    state.platform.game_config.as_ref(),
+                    &state.process_assets,
+                    &mut persona,
+                    &nickname,
+                );
             }
-            send_locale(state, persona.locale);
+            send_locale(&mut state.frontend, persona.locale);
         }
-        None if persona.locale != 0 => send_locale(state, persona.locale),
+        None if persona.locale != 0 => send_locale(&mut state.frontend, persona.locale),
         None => {
             flow.persona = Some(persona);
             super::persona::open_locale_page(state);
@@ -1397,18 +1448,24 @@ pub(super) fn locale_chosen(state: &mut AppState, locale: i32) {
         .and_then(|flow| flow.persona.take())
         .unwrap_or_default();
     persona.set_locale(locale, 3);
-    super::persona::save(state, &mut persona, &nickname);
+    super::persona::save(
+        state.frontend.wol.as_ref(),
+        state.platform.game_config.as_ref(),
+        &state.process_assets,
+        &mut persona,
+        &nickname,
+    );
     if locale != 0 {
-        send_locale(state, locale);
+        send_locale(&mut state.frontend, locale);
     }
     connect_returned(state);
 }
 
 /// API+0xB8, the locale request again, and the table entry: `0x007AE1F0`
 /// removes it and only a removed one is inserted again (`0x007ACBE0`).
-pub(super) fn send_locale(state: &mut AppState, locale: i32) {
-    let nickname = state.frontend.wol_account.nickname.clone();
-    let Some(visit) = state.frontend.wol.as_mut() else {
+pub(super) fn send_locale(frontend: &mut FrontendState, locale: i32) {
+    let nickname = frontend.wol_account.nickname.clone();
+    let Some(visit) = frontend.wol.as_mut() else {
         return;
     };
     let key = nickname.to_ascii_lowercase();
@@ -1439,7 +1496,7 @@ fn connect_returned(state: &mut AppState) {
         let globals = state.frontend.wol_account.clone();
         if globals.remember {
             request(
-                state,
+                state.frontend.wol.as_mut(),
                 WolServiceRequest::StoreCredential {
                     nickname: globals.nickname,
                     password: globals.password,
@@ -1452,7 +1509,12 @@ fn connect_returned(state: &mut AppState) {
                 .multiplayer_shell_runtime
                 .persist_local_preferences();
         }
-        if super::persona::info_file(state).is_some_and(|file| file.ask_auto_login()) {
+        if super::persona::info_file(
+            state.frontend.wol.as_ref(),
+            state.platform.game_config.as_ref(),
+        )
+        .is_some_and(|file| file.ask_auto_login())
+        {
             super::persona::open_auto_login_query(state);
             return;
         }
@@ -1472,42 +1534,38 @@ pub(super) fn finish_login(state: &mut AppState) {
     {
         Some(postmatch) => super::open_lobby(state, postmatch),
         None => {
-            super::apply_wol_preferences(state);
+            super::apply_wol_preferences(&mut state.frontend, &mut state.audio);
             super::open_lobby(state, false);
         }
     }
 }
 
-/// A box or wait-box button released.
-pub(super) fn box_command(state: &mut AppState, control: u16) {
+/// A box or wait-box button released: its answer (OK or Yes 0, No 1; the
+/// wait box's Disconnect 0, WOL Check Status 1).
+pub(super) fn box_command(state: &mut AppState, answer: usize) {
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
-    if matches!(visit.page, WolPage::Lobby | WolPage::QuickMatch(_)) {
-        super::lobby::box_command(state, control);
-        state.platform.window.request_redraw();
-        return;
-    }
-    let then = match &visit.page {
-        WolPage::Message { then, .. } => Some(*then),
-        _ => None,
-    };
-    let backdrop = matches!(visit.page, WolPage::Backdrop { .. });
-    let step = match (then, control) {
-        (Some(then), BOX_OK | BOX_YES | BOX_NO) => {
-            if control == BOX_YES {
+    let step = match &visit.page {
+        WolPage::Lobby | WolPage::QuickMatch(_) => {
+            super::lobby::box_command(state, answer);
+            state.platform.window.request_redraw();
+            return;
+        }
+        WolPage::Message { message, then } => {
+            if message.buttons.len() == 2 && answer == 0 {
                 // Yes opens an apiregister.westwood.com page through
                 // WOL__LaunchBrowser; VERA has no browser.
                 log::warn!("WOL account page needs a browser; not opened");
             }
-            match then {
+            match *then {
                 WolBoxThen::Leave(result) => WolStep::Leave(result),
                 WolBoxThen::Welcome => WolStep::Welcome,
                 WolBoxThen::Login => WolStep::OpenLogin,
             }
         }
-        (None, WAIT_DISCONNECT) if backdrop => visit.disconnect(),
-        (None, WAIT_CHECK_STATUS) if backdrop => {
+        WolPage::Backdrop { .. } if answer == 0 => visit.disconnect(),
+        WolPage::Backdrop { .. } => {
             // 0x00773E90 opens the embedded status browser.
             log::warn!("WOL Check Status needs the embedded browser; not opened");
             WolStep::Stay
@@ -1529,17 +1587,7 @@ fn poll_deadline(state: &mut AppState) -> Option<Instant> {
     if Instant::now() < deadline {
         return Some(deadline);
     }
-    let step = match std::mem::take(&mut visit.awaiting) {
-        // 0x007866E4: no box from the wait itself. A sign-in still queued
-        // behind an old logout must not start after the wait gave up.
-        Awaiting::Connect { .. } => {
-            visit
-                .requests
-                .retain(|request| !matches!(request, WolServiceRequest::Connect { .. }));
-            visit.connect_failed()
-        }
-        _ => WolStep::LocaleDecided,
-    };
+    let step = visit.expire_wait();
     apply(state, step);
     state.platform.window.request_redraw();
     None
@@ -1613,23 +1661,32 @@ mod tests {
     #[test]
     fn login_slide_policy_has_only_the_modern_or_native_forms_buttons() {
         use crate::app::frontend::shell_transition::ShellSlideKind;
-        use crate::ui::wol_login::{LoginPolicy, WolAccountGlobals, WolLoginState};
+        use crate::ui::wol_login::{LoginCx, LoginPolicy, WolAccountGlobals, WolLoginState};
         let mut visit = visit();
         let mut globals = WolAccountGlobals::default();
-        visit.page = WolPage::Login(Box::new(WolLoginState::open_online(
-            &mut globals,
-            None,
-            None,
-        )));
+        let mut ui = crate::ui::shell::controller::DialogController::default();
+        ui.push(crate::ui::wol_login::DIALOG);
+        let cx = &mut LoginCx {
+            ui: &mut ui,
+            globals: &mut globals,
+            credentials: &[],
+        };
+        visit.page = WolPage::Login(Box::new(WolLoginState::open_online(cx, None, None)));
         let modern = visit.login().unwrap().policy.page_spec();
-        assert_eq!(modern, LoginPolicy::Online.page_spec());
+        assert_eq!(modern, LoginPolicy::ChooseEntry.page_spec());
         let column = ShellSlideKind::WolLogin.column(9, Some(modern));
         assert_eq!(
             (column.top_buttons, column.bottom_button),
-            (4, true),
-            "Play and the three account buttons"
+            (0, true),
+            "the chooser has its two actions in the popup and Back on the rail"
         );
-        visit.page = WolPage::Login(Box::new(WolLoginState::open(&mut globals, &[])));
+        ui.reset_to(crate::ui::wol_login::DIALOG);
+        let cx = &mut LoginCx {
+            ui: &mut ui,
+            globals: &mut globals,
+            credentials: &[],
+        };
+        visit.page = WolPage::Login(Box::new(WolLoginState::open(cx)));
         let native = visit.login().unwrap().policy.page_spec();
         assert_eq!(native, LoginPolicy::Legacy.page_spec());
         let column = ShellSlideKind::WolLogin.column(9, Some(native));
@@ -1818,10 +1875,12 @@ mod tests {
             visit.reduce(WolServiceEvent::Login(Ok(WolLoginAccepted {
                 motd: "Welcome".into(),
                 lobby_visits: false,
+                campaign_rooms: true,
             }))),
             WolStep::Accepted
         );
         assert!(visit.authenticated);
+        assert!(visit.lobby_campaign_rooms);
         assert_eq!(visit.motd(), Some("Welcome"));
         // Nothing waits any more.
         assert_eq!(
@@ -1900,6 +1959,20 @@ mod tests {
                 then: WolBoxThen::Welcome
             }
         );
+    }
+
+    #[test]
+    fn an_online_connect_timeout_retires_the_in_flight_session_request() {
+        let mut visit = visit();
+        visit.provider = WolProvider::Online;
+        visit.awaiting = Awaiting::Connect {
+            deadline: Instant::now(),
+        };
+        visit.expire_wait();
+        assert!(matches!(
+            visit.requests.as_slice(),
+            [WolServiceRequest::CancelWait]
+        ));
     }
 
     #[test]

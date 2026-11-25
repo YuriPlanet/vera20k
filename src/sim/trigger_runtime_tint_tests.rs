@@ -31,7 +31,7 @@ fn run(sim: &mut Simulation, action: &RuntimeAction) -> bool {
         &mut Vec::new(),
         crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -128,14 +128,20 @@ fn ordered_tag_rgb_actions_then_the_production_fade_keep_distinct_palette_operat
     sim.session.publish_started();
     sim.session.set_map_width_for_test(32);
     sim.session.set_map_height_for_test(32);
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
         32,
         32,
         crate::map::resolved_terrain::test_flat_cell,
     ));
     sim.session.lighting_mut().set_target_ambient_for_test(80);
     let frame = sim
-        .advance_app_frame(&[], &rules, 67, TickLane::Ordinary, FrameEffects::default())
+        .advance_app_frame(
+            &[],
+            &rules,
+            67,
+            TickLane::Ordinary,
+            &mut FrameEffects::default(),
+        )
         .unwrap();
     assert!(frame.tick.frame_committed);
     let palette: Vec<_> = frame
@@ -194,7 +200,7 @@ fn palette_constructor_priority_matches_eight_original_suffix_controls() {
     ] {
         let mut sim = Simulation::with_seed(0);
         if storm {
-            sim.lightning_storm =
+            *sim.lightning_storm =
                 crate::sim::superweapon::lightning_storm::LightningStorm::raging_for_test(
                     crate::sim::intern::InternedId::default(),
                     (0, 0),
@@ -206,7 +212,7 @@ fn palette_constructor_priority_matches_eight_original_suffix_controls() {
         if chrono {
             sim.session.start_chrono_screen_state(10);
         }
-        sim.psychic_dominator =
+        *sim.psychic_dominator =
             crate::sim::superweapon::psychic_dominator::PsychicDominatorState::for_test(
                 dom,
                 (0, 0),

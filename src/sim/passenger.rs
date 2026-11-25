@@ -478,14 +478,18 @@ impl Simulation {
     /// TechnoClass::ClearAllInOpenTransport @ 0x007104C0: clear only each
     /// Cargo member's +82 byte; do not detach +11C or pop its cargo link.
     pub(crate) fn clear_all_in_open_transport(&mut self, transport_id: u64) {
-        let passengers = self
-            .substrate
-            .entities
-            .get(transport_id)
-            .and_then(|transport| transport.passenger_role().cargo())
-            .map(|cargo| cargo.passengers().to_vec())
-            .unwrap_or_default();
-        for id in passengers {
+        // Each write is the passenger's own link, never the transport's
+        // cargo, so the walk reads the list in place.
+        for index in 0.. {
+            let Some(id) = self
+                .substrate
+                .entities
+                .get(transport_id)
+                .and_then(|transport| transport.passenger_role().cargo())
+                .and_then(|cargo| cargo.passengers().get(index).copied())
+            else {
+                break;
+            };
             if let Some(passenger) = self.substrate.entities.get_mut(id)
                 && let Some(link) = passenger.passenger_role().carrier_link()
             {
@@ -520,13 +524,13 @@ impl Simulation {
         carrier: u64,
         head_first: &[(u64, f64)],
         voices: bool,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) -> bool {
         // Phobos `TechnoClass_EnterTransport @ 0x71067B` records the
         // board-time house before the Cargo add (see
         // [`Self::phobos_record_original_passenger_owner`]).
         self.phobos_record_original_passenger_owner(carrier, head_first, context.rules());
-        if !self.add_cargo_passenger_chain(carrier, head_first, context) {
+        if !self.add_cargo_passenger_chain(carrier, head_first, context.reborrow()) {
             return false;
         }
         let Some(&(head, _)) = head_first.first() else {
@@ -537,12 +541,12 @@ impl Simulation {
             && let Some(transport) = self.substrate.entities.get(carrier)
             && let Some(sound_id) = self
                 .entity_object_type(transport, rules)
-                .and_then(|object| object.enter_transport_sound.clone())
+                .and_then(|object| object.enter_transport_sound.as_deref())
         {
             let coordinate =
                 crate::sim::movement::ground_pose::position_world_coord(&transport.position);
             self.sound_events.emit(SimSoundEvent::VocAtCoord {
-                sound_id,
+                sound_id: rules.sound_name(sound_id),
                 coordinate,
                 flags: 0,
             });
@@ -590,7 +594,7 @@ impl Simulation {
         size: f64,
         rider: bool,
         voices: bool,
-        context: UninitContext<'_>,
+        mut context: UninitContext<'_>,
     ) -> bool {
         if let Some(entity) = self.substrate.entities.get_mut(passenger) {
             entity.passenger_role_mut().board_carrier(CarrierLink {
@@ -613,7 +617,7 @@ impl Simulation {
         carrier: u64,
         open_topped: bool,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if let Some(passenger) = self.substrate.entities.get_mut(passenger) {
             passenger.passenger_role_mut().board_carrier(CarrierLink {
@@ -636,7 +640,7 @@ impl Simulation {
         &mut self,
         passenger: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         self.reset_orders_to_guard(passenger, rules, effects);
         self.register_open_topped_passenger(passenger)
@@ -1139,7 +1143,7 @@ pub fn can_dock_occupier_garrison(
             return false;
         }
         // `0x00457D98`: `TechnoClass::IsMindControlled`.
-        !passenger.mind_control.is_mind_controlled()
+        !passenger.seldom.mind_control.is_mind_controlled()
     }
 }
 
@@ -1301,7 +1305,7 @@ pub(crate) fn board_passenger(
     carrier_id: u64,
     arm: BoardingArm,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some(pax_size) = sim.substrate.entities.get(pax_id).map(|pax| {
         sim.object_type(pax.type_ref(), rules)
@@ -1333,7 +1337,7 @@ pub(crate) fn board_passenger(
     // `0x0051A2EF..0x0051A30A`: Foot's GetCoords (`+0x48`) before Limbo,
     // played with `VocClass::PlayAt @ 0x007509E0` once the add commits.
     let bio_reactor_entry_sound = absorber_entry
-        .then(|| rules.general.enter_bio_reactor_sound.clone())
+        .then(|| rules.general.enter_bio_reactor_sound.as_deref())
         .flatten()
         .and_then(|sound_id| {
             sim.substrate.entities.get(pax_id).map(|passenger| {
@@ -1362,7 +1366,7 @@ pub(crate) fn board_passenger(
         .substrate
         .entities
         .get(pax_id)
-        .and_then(|pax| pax.mind_control.controller())
+        .and_then(|pax| pax.seldom.mind_control.controller())
     {
         sim.free_unit(controller, pax_id, rules, registry, effects);
     }
@@ -1372,8 +1376,8 @@ pub(crate) fn board_passenger(
     if absorber_entry {
         sim.substrate.set_infantry_absorber_entry(pax_id, true);
     }
-    let context = UninitContext::new(rules).with_effects(effects);
-    if sim.techno_limbo_with_context(pax_id, context) != ConcealOutcome::Concealed {
+    let mut context = UninitContext::new(rules).with_effects(effects);
+    if sim.techno_limbo_with_context(pax_id, context.reborrow()) != ConcealOutcome::Concealed {
         if absorber_entry {
             sim.substrate.set_infantry_absorber_entry(pax_id, false);
         }
@@ -1391,7 +1395,7 @@ pub(crate) fn board_passenger(
                 crate::sim::radio::RadioMessage::Hello,
                 crate::sim::radio::RadioPayload::default(),
                 rules,
-                effects,
+                context.effects(),
             );
         }
         BoardingArm::InfantryBuilding if extra_power => {
@@ -1426,14 +1430,20 @@ pub(crate) fn board_passenger(
         .get(pax_id)
         .and_then(|pax| pax.passenger_role().transporter());
     if arm == BoardingArm::InfantryTransport {
-        sim.mark_boarded_transport_passenger(pax_id, carrier_id, open_topped, rules, effects);
+        sim.mark_boarded_transport_passenger(
+            pax_id,
+            carrier_id,
+            open_topped,
+            rules,
+            context.effects(),
+        );
     }
     let boarded = if arm.building() {
         // A building's cargo shares VERA's carrier relation; Transporter
         // (`+0x11C`, `PassengerRole::transporter`) stays as it is.
-        sim.add_cargo_members(carrier_id, &[(pax_id, pax_size)], context)
+        sim.add_cargo_members(carrier_id, &[(pax_id, pax_size)], context.reborrow())
     } else {
-        sim.add_passenger_with_context(carrier_id, &[(pax_id, pax_size)], context)
+        sim.add_passenger_with_context(carrier_id, &[(pax_id, pax_size)], context.reborrow())
     };
     // The admitted carrier survives Limbo; Cargo creates its hold if needed.
     debug_assert!(boarded, "boarding admission changed during one transaction");
@@ -1478,7 +1488,7 @@ pub(crate) fn board_passenger(
     }
     if let Some((sound_id, coordinate)) = bio_reactor_entry_sound {
         sim.sound_events.emit(SimSoundEvent::voc_at_world_coord(
-            sound_id,
+            rules.sound_name(sound_id),
             crate::sim::anim_class::AnimWorldCoord {
                 x: coordinate.x,
                 y: coordinate.y,
@@ -1519,7 +1529,7 @@ pub(crate) fn try_fast_enter(
     rules: &RuleSet,
     id: u64,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     use crate::sim::mission::MissionType;
     let Some(pax) = sim.substrate.entities.get(id) else {
@@ -1528,7 +1538,7 @@ pub(crate) fn try_fast_enter(
     let target = if pax.mission.effective()
         == crate::sim::mission::MissionId::from_known(MissionType::Enter)
     {
-        pax.radio_contacts.slot(0)
+        pax.seldom.radio_contacts.slot(0)
     } else {
         pax.pending_entry()
     };
@@ -1631,7 +1641,7 @@ pub fn add_garrison_occupant(
     pax_id: u64,
     building_id: u64,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> Result<bool, crate::sim::world::FrameAdvanceError> {
     let Some(pax) = sim.substrate.entities.get(pax_id) else {
         return Ok(false);
@@ -1689,7 +1699,7 @@ pub fn add_garrison_occupant(
     if sim.houses.get(&owner).is_some_and(|house| house.is_human())
         && let Some(pax) = sim.substrate.entities.get_mut(pax_id)
     {
-        pax.building_entry.clear_occupy_seeks();
+        pax.seldom.building_entry.clear_occupy_seeks();
     }
     Ok(true)
 }
@@ -1722,6 +1732,7 @@ pub(crate) fn receive_gunner(
     // 74643A..746460 samples the donor before moving its manager. Native
     // tests nonzero, including a paused signed duration, rather than >0.
     let donor_rearming = passenger
+        .seldom
         .rearm_timer
         .remaining(session.binary_frame() as i32)
         != 0;
@@ -1775,7 +1786,7 @@ impl Simulation {
         carrier: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(entity) = self.substrate.entities.get(carrier) else {
             return;
@@ -1790,7 +1801,7 @@ impl Simulation {
             return;
         }
         let Some(passengers) = entity
-            .passenger_role
+            .passenger_role()
             .cargo()
             .map(|cargo| cargo.passengers().to_vec())
         else {
@@ -1895,7 +1906,7 @@ impl Simulation {
         transport_id: u64,
         passenger: Option<u64>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if let Some(id) = passenger
             && let Some(cargo) = self
@@ -1910,11 +1921,11 @@ impl Simulation {
             && let Some(transport) = self.substrate.entities.get(transport_id)
             && let Some(sound_id) = self
                 .entity_object_type(transport, rules)
-                .and_then(|kind| kind.leave_transport_sound.clone())
+                .and_then(|kind| kind.leave_transport_sound.as_deref())
         {
             self.sound_events
                 .emit(crate::sim::world::SimSoundEvent::VocAtCoord {
-                    sound_id,
+                    sound_id: rules.sound_name(sound_id),
                     coordinate: crate::sim::movement::ground_pose::position_world_coord(
                         &transport.position,
                     ),
@@ -1966,6 +1977,7 @@ impl Simulation {
         // 746502..746528 samples the IFV before transfer/LetGo. The receiving
         // passenger's current burst/rank/House are read after LetGo below.
         let donor_rearming = transport
+            .seldom
             .rearm_timer
             .remaining(self.session.binary_frame() as i32)
             != 0;
@@ -2016,7 +2028,7 @@ fn rearm_transferred_gunner(
     let Some(actor) = substrate.entities.get_mut(receiver) else {
         return;
     };
-    let burst_index = actor.weapon_burst.advance();
+    let burst_index = actor.seldom.weapon_burst.advance();
     let actor = substrate.entities.get(receiver).unwrap();
     let Some(object) = interner.object_type(actor.type_ref(), rules) else {
         return;
@@ -2040,12 +2052,11 @@ fn rearm_transferred_gunner(
         ));
     let snapshot = crate::sim::combat::build_attacker_snapshot(actor, target, None);
     let live = actor.live_particles();
-    let (rof, rearm_arm) = crate::sim::combat::world_fire::snapshot_get_rof(
+    let rof = crate::sim::combat::world_fire::snapshot_get_rof(
         scenario_rng,
         &*substrate,
         houses,
         rules,
-        interner,
         &snapshot,
         object,
         weapon,
@@ -2054,10 +2065,9 @@ fn rearm_transferred_gunner(
     );
     let frame = session.binary_frame() as i32;
     if let Some(actor) = substrate.entities.get_mut(receiver) {
-        // GetROF writes `TechnoExt::LastRearmWasFullDelay` itself
-        // (`0x6FD054`/`0x6FD0B5`), before the caller starts the timer.
-        actor.weapon_burst.record_rearm_arm(rearm_arm);
-        actor.rearm_timer.start(frame, rof);
+        // RESIDUAL: the shared snapshot ROF owner returns only the delay;
+        // this caller does not publish Phobos' LastRearmWasFullDelay arm.
+        actor.seldom.rearm_timer.start(frame, rof);
     }
 }
 
@@ -2113,7 +2123,7 @@ impl Simulation {
         transport_id: u64,
         target: Option<crate::sim::combat::TargetKind>,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(transport) = self.substrate.entities.get(transport_id) else {
             return;
@@ -2171,7 +2181,7 @@ pub(crate) fn reconcile_civilian_garrison_owner_for_building(
     rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     building_id: u64,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) -> bool {
     let Some(building) = sim.substrate.entities.get(building_id) else {
         return false;
@@ -2231,9 +2241,10 @@ pub(crate) fn reconcile_civilian_garrison_owner_for_building(
         if sim.house_is_human_player(current_owner) {
             //4582A9: centred Voc750920, pan0x2000/volume1/no handle. The
             //configured sound plays even if the following radar event fails.
-            if let Some(sound_id) = rules.general.building_abandoned_sound.clone() {
-                sim.sound_events
-                    .emit(SimSoundEvent::VocCentered { sound_id });
+            if let Some(sound_id) = rules.general.building_abandoned_sound.as_deref() {
+                sim.sound_events.emit(SimSoundEvent::VocCentered {
+                    sound_id: rules.sound_name(sound_id),
+                });
             }
             let building = sim.substrate.entities.get(building_id).unwrap();
             sim.sound_events.emit(SimSoundEvent::StructureAbandoned {
@@ -2280,7 +2291,7 @@ fn tick_entry_arrival(sim: &mut Simulation, rules: &RuleSet) {
             crate::sim::movement::PerCellReason::Arrival,
             rules,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .expect("supplied infantry arrival");
     }
@@ -2301,7 +2312,7 @@ impl Simulation {
         transport_id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let synced = self
             .substrate
@@ -2320,7 +2331,7 @@ impl Simulation {
             Some(transport) => (
                 transport.owner(),
                 transport
-                    .passenger_role
+                    .passenger_role()
                     .cargo()
                     .map(|cargo| cargo.passengers().to_vec())
                     .unwrap_or_default(),
@@ -2380,7 +2391,7 @@ impl Simulation {
         passenger: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let transport_syncs = self
             .substrate
@@ -2425,7 +2436,7 @@ impl Simulation {
         transport_id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let transport_syncs = self
             .substrate
@@ -2443,7 +2454,7 @@ impl Simulation {
         }
         let passengers = match self.substrate.entities.get(transport_id) {
             Some(transport) => transport
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .map(|cargo| cargo.passengers().to_vec())
                 .unwrap_or_default(),
@@ -2564,7 +2575,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get(id)
-                .and_then(|entity| entity.passenger_role.inside_transport_id())
+                .and_then(|entity| entity.passenger_role().inside_transport_id())
             else {
                 continue;
             };
@@ -2574,7 +2585,7 @@ impl Simulation {
                     .entities
                     .get(transport_id)
                     .is_some_and(|transport| {
-                        transport.lifecycle.object_alive() && transport.in_logic_vector.is_member()
+                        transport.lifecycle.object_alive() && transport.seldom.in_logic_vector.is_member()
                     });
             if !transport_in_logic {
                 continue;
@@ -2621,7 +2632,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        if !entity.passenger_role.is_inside_transport() {
+        if !entity.passenger_role().is_inside_transport() {
             return;
         }
         let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
@@ -2968,6 +2979,7 @@ ConditionYellow=50%
             .entities
             .get_mut(passenger)
             .unwrap()
+            .seldom
             .radio_contacts
             .insert(transport);
         assert!(
@@ -2976,7 +2988,7 @@ ConditionYellow=50%
                 &stock,
                 passenger,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             "an unset key keeps the queued Enter mission"
         );
@@ -2985,7 +2997,7 @@ ConditionYellow=50%
                 .entities
                 .get(passenger)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .inside_transport(),
             None
         );
@@ -2999,6 +3011,7 @@ ConditionYellow=50%
             .entities
             .get_mut(passenger)
             .unwrap()
+            .seldom
             .radio_contacts
             .insert(transport);
         assert!(try_fast_enter(
@@ -3006,11 +3019,11 @@ ConditionYellow=50%
             &rules,
             passenger,
             None,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         ));
         let passenger = sim.substrate.entities.get(passenger).unwrap();
         assert_eq!(
-            passenger.passenger_role.inside_transport(),
+            passenger.passenger_role().inside_transport(),
             Some((transport, false))
         );
         assert_eq!(
@@ -3018,7 +3031,7 @@ ConditionYellow=50%
                 .entities
                 .get(transport)
                 .unwrap()
-                .passenger_role
+                .passenger_role()
                 .cargo()
                 .unwrap()
                 .passengers(),
@@ -3044,6 +3057,7 @@ ConditionYellow=50%
             .entities
             .get_mut(passenger)
             .unwrap()
+            .seldom
             .radio_contacts
             .insert(transport);
         assert!(
@@ -3052,7 +3066,7 @@ ConditionYellow=50%
                 &exact,
                 passenger,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             "a 256-lepton offset is not strictly below a 256-lepton distance"
         );
@@ -3066,6 +3080,7 @@ ConditionYellow=50%
             .entities
             .get_mut(passenger)
             .unwrap()
+            .seldom
             .radio_contacts
             .insert(transport);
         assert!(
@@ -3074,7 +3089,7 @@ ConditionYellow=50%
                 &global,
                 passenger,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             ),
             "the unset type keys read [General] NoQueueUpToEnter= and its 384 default"
         );
@@ -3132,7 +3147,7 @@ FixtureOnly=1
             transport,
             super::BoardingArm::InfantryTransport,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         ));
         assert_eq!(sim.transport_reloaders.listed(), [passenger]);
 
@@ -3254,7 +3269,7 @@ ReloadInTransport=yes
                 transport,
                 super::BoardingArm::InfantryTransport,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             ));
         }
         assert_eq!(sim.transport_reloaders.listed(), [global_pax]);

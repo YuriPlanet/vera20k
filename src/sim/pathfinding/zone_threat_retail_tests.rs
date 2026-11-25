@@ -63,7 +63,7 @@ fn retail_miner_beside_a_bridge_searches_through_record_zero_edge() {
     for _ in 0..60 {
         let due = runtime.simulation.take_due_commands();
         runtime
-            .advance_frame(&due, 66, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(&due, 66, TickLane::Ordinary, &mut FrameEffects::default())
             .unwrap();
     }
     let position = &runtime.simulation.entities().get(miner).unwrap().position;

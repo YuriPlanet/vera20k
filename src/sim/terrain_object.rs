@@ -1563,7 +1563,7 @@ mod tests {
                 near_center_ic_isolation_eligible: false,
             },
             true,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let terrain = &sim.terrain_objects.objects()[&stable_id];
         assert_eq!(terrain.health, 0);
@@ -1599,7 +1599,7 @@ mod tests {
                     near_center_ic_isolation_eligible: false,
                 },
                 true,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(sim.terrain_objects.objects()[&stable_id].health, health);
             assert!(sim.terrain_objects.objects()[&stable_id].is_live());
@@ -1634,7 +1634,7 @@ mod tests {
                 near_center_ic_isolation_eligible: false,
             },
             true,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sim.terrain_objects.objects()[&stable_id].health, 0);
         assert!(

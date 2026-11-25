@@ -300,7 +300,7 @@ pub(crate) fn create<'w>(
                 &super::fire_coord::FireSource::of_entity(source),
                 object,
                 weapon_index,
-                source.weapon_burst.index() as u8,
+                source.seldom.weapon_burst.index() as u8,
                 Default::default(),
             )
             .coord;
@@ -379,7 +379,7 @@ pub(crate) fn build_track(
     }
     let source = world.substrate.entities.get(source_id);
     let object = source.and_then(|source| world.interner.object_type(source.type_ref(), rules));
-    let burst_index = source.map_or(0, |source| source.weapon_burst.index() as u8);
+    let burst_index = source.map_or(0, |source| source.seldom.weapon_burst.index() as u8);
     let mut firer = None;
     let mut base_flh = Flh::default();
     let mut saved_offset = ProjectileCoord::new(0, 0, 0);
@@ -586,7 +586,7 @@ pub(crate) fn support_source(
             &super::fire_coord::FireSource::of_entity(source),
             obj,
             0,
-            source.weapon_burst.index() as u8,
+            source.seldom.weapon_burst.index() as u8,
             Default::default(),
         )
         .coord,

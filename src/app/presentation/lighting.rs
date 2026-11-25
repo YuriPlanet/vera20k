@@ -69,6 +69,8 @@ pub(crate) fn body_extra_light(
                 let height = air_movement::queried_flight_height(entity, Some(cells));
                 if entity.on_bridge() {
                     height >= 0
+                } else if let Some(deck) = ground_pose::corrected_deck_z(cells.terrain(), current) {
+                    ground_pose::object_world_z_leptons(entity, Some(cells.terrain())) >= deck
                 } else {
                     height >= crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS
                 }
@@ -1013,10 +1015,16 @@ pub(crate) fn shp_colour_word(
         // Phobos `BuildingClass_Draw_TintColor` (`0x0043D386`) ORs the strike
         // owner type's `TintColorAirstrike`, Phobos's own conversion of its
         // resolved `LaserTargetColor`.
-        rules.color_add.phobos_word(
-            entity.place.airstrike_laser_target_color,
-            rules.phobos_globals.color_add_use_8bit_rgb,
-        )
+        if rules.phobos() {
+            rules.color_add.phobos_word(
+                entity.place.airstrike_laser_target_color,
+                rules.phobos_globals.color_add_use_8bit_rgb,
+            )
+        } else {
+            rules
+                .color_add
+                .rgb565_word(rules.general.laser_target_color)
+        }
     } else {
         0
     };

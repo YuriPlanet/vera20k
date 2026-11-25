@@ -63,7 +63,9 @@ impl FlyingCredits {
         // Phobos `FlyingStrings::AddMoneyString`: a non-All
         // `DisplaySoylentToHouses` compares the paying House with the local
         // player before the source's visual-character test.
-        if let Some(flags) = event.display_to {
+        if rules.phobos()
+            && let Some(flags) = event.display_to
+        {
             let Some(owner) = event
                 .display_owner
                 .or_else(|| actor.map(|actor| actor.owner()))
@@ -92,7 +94,7 @@ impl FlyingCredits {
             if actor.visual_character(
                 observer.cloaking_stages,
                 observer.invisible,
-                actor.discovery.owned_by_current_house(),
+                actor.seldom.discovery.owned_by_current_house(),
                 VisualCharacterQuery::screen(
                     true,
                     observer.observer_present,
@@ -160,6 +162,11 @@ impl FlyingCredits {
         viewport: [u32; 4],
     ) -> Vec<SpriteInstance> {
         let mut out = Vec::new();
+        // The texts' built-in template (`health_templates`) may hide or move them.
+        use crate::app::presentation::health_templates::{Mark, family, shifted};
+        let Some(offset) = family(Mark::FlyingCredits) else {
+            return out;
+        };
         for record in &self.live {
             let (x, y) = crate::util::lepton::absolute_leptons_to_screen(
                 record.coord.x,
@@ -169,8 +176,7 @@ impl FlyingCredits {
             // The world attachment is already composited through wheel zoom
             // before Tactical's text pass. Keep glyph size/rise in frame pixels
             // while placing the anchor on the same zoomed map point.
-            let x = (x - camera[0]) * zoom;
-            let y = (y - camera[1]) * zoom;
+            let (x, y) = shifted(((x - camera[0]) * zoom, (y - camera[1]) * zoom), offset);
             let [left, top, width, height] = viewport.map(|side| side as f32);
             if x >= left && y >= top && x < left + width && y < top + height {
                 let rise = (record.life - 70).min(0);
@@ -286,7 +292,9 @@ mod tests {
     fn display_soylent_filters_by_the_paying_house() {
         use crate::rules::phobos_shields::AffectedHouse;
         let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[VehicleTypes]
+            "[General]
+GatherWhenMCVDeploy=yes
+[VehicleTypes]
 0=TANK
 [TANK]
 Strength=100
@@ -341,7 +349,9 @@ Sight=0
     fn the_money_label_house_filter_uses_its_explicit_owner() {
         use crate::rules::phobos_shields::AffectedHouse;
         let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[VehicleTypes]
+            "[General]
+GatherWhenMCVDeploy=yes
+[VehicleTypes]
 0=TANK
 [TANK]
 Strength=100
@@ -397,7 +407,9 @@ Sight=0
     fn a_source_less_money_label_uses_its_explicit_owner() {
         use crate::rules::phobos_shields::AffectedHouse;
         let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[VehicleTypes]
+            "[General]
+GatherWhenMCVDeploy=yes
+[VehicleTypes]
 0=TANK
 [TANK]
 Strength=100

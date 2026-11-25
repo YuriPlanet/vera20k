@@ -81,6 +81,13 @@ pub enum SuperWeaponKind {
     /// `DropPod.Types` units around the cell in drop pods
     /// (`sim::superweapon::drop_pod`).
     DropPod,
+    /// Tiberian Sun `Type=IonCannon` (docs/ts-ion-cannon.md), a VERA feature:
+    /// Firestorm 2.0's name list (0x70FED4, index 3) holds it and gamemd's
+    /// does not. Retail RULESMD.INI keeps Tiberian Sun's `[IonCannonSpecial]`
+    /// with this Type but lists it in no `[SuperWeaponTypes]`, so only a mod
+    /// or map that lists such a type plays it. One ion blast at the cell
+    /// (`sim::superweapon::ion_cannon`).
+    IonCannon,
     /// Constructor Type=-1: no recognized name has replaced it. Launch's
     /// unsigned guard6CC3AC returns without a case; ordinary ClickFire still
     /// consumes readiness or its one-time grant. This is not an extension.
@@ -208,6 +215,8 @@ impl SuperWeaponKind {
             Self::EMPulse => 0x106,
             Self::Firestorm => 0x107,
             Self::DropPod => 0x108,
+            // VERA's tag, past gamemd's twelve slots and the Ares tags.
+            Self::IonCannon => 0x201,
             Self::GenericWarhead => -1,
             Self::NoEffect => -1,
         }
@@ -241,6 +250,10 @@ impl SuperWeaponKind {
             "firestorm" if ares => Some(Self::Firestorm),
             // SW_DropPod::GetTypeString 1006D7C0.
             "droppod" if ares => Some(Self::DropPod),
+            // Firestorm 2.0 SuperWeaponTypeClass::Read_INI 0x60D215..0x60D280
+            // reads Type= the same way (ReadString 0x28, a case-insensitive
+            // compare). No gamemd, Ares or Phobos Type has this name.
+            "ioncannon" => Some(Self::IonCannon),
             _ => None,
         }
     }
@@ -974,6 +987,12 @@ impl SuperWeaponType {
             // keeps its 0x20-byte ReadString (`0x00474EE0`), which a stock-way
             // read uses for every Type.
             action: match kind {
+                // Firestorm 2.0 ReadAction 0x44AB90 (called at 0x60D1F6) knows
+                // the IonCannon action (its table 0x6CCC70, index 37), which
+                // gamemd's lacks; this type reads it beside gamemd's names.
+                SuperWeaponKind::IonCannon => section
+                    .read_action_name_with("Action", Some("IonCannon"))
+                    .map(str::to_string),
                 _ if !ares_way => section.read_action_name("Action").map(str::to_string),
                 SuperWeaponKind::GenericWarhead => Some("Attack".to_string()),
                 // SW_HunterSeeker::Initialize clears Action (10072A16) after
@@ -1031,6 +1050,11 @@ impl SuperWeaponType {
                 SuperWeaponKind::GeneticConverter => Some("GeneticConverter".to_string()),
                 // SW_PsychicDominator::Initialize10070990: its cursor.
                 SuperWeaponKind::PsychicDominator => Some("PsychicDominator".to_string()),
+                // Ares SWTypeExt::LoadFromRulesFile (0x1003332A) arms both redirects;
+                // SW_ParaDrop::Initialize (0x10073F52) sets their ParaDrop cursor.
+                SuperWeaponKind::ParaDrop | SuperWeaponKind::AmerParaDrop => {
+                    Some("ParaDrop".to_string())
+                }
                 // SW_SpyPlane::Initialize10075800: the SpyPlane cursor.
                 SuperWeaponKind::SpyPlane => Some("SpyPlane".to_string()),
                 // SW_LightningStorm::Initialize10072C50: SW_Cursor 0x32.
@@ -1457,10 +1481,12 @@ impl AresParaDropPlane {
     }
 }
 
-/// VERA's bound on a `ParaDrop*.Count=`. Ares resizes the plane list by the
-/// raw value (`SW_ParaDrop::LoadFromINI`'s GetParadropPlane, no upper bound),
-/// so a value near `i32::MAX` exhausts memory there. Outside data never stops
-/// the game: the count clamps here, far above any drop a mod flies.
+/// VERA's bound on a `ParaDrop*.Count=` and on `SpyPlane.Count=`. Ares
+/// resizes the plane list by the raw value (`SW_ParaDrop::LoadFromINI`'s
+/// GetParadropPlane, no upper bound), so a value near `i32::MAX` exhausts
+/// memory there, and a Spy Plane launch flies its planes one at a time.
+/// Outside data never stops the game: the count clamps here, far above any
+/// flight a mod sends.
 const PARADROP_PLANE_LIMIT: i32 = 1024;
 
 impl AresParaDropRules {
@@ -1825,6 +1851,20 @@ pub(crate) struct AresLightningRules {
     pub(crate) radar_outage_affects: crate::rules::superweapon_targeting::HouseMask,
 }
 
+/// VERA's bound on `Lightning.ScatterCount=`: the tries a scattered cloud
+/// makes for a free cell, each a random draw, so a value near `i32::MAX`
+/// hangs the tick while every candidate is refused. Ares reads it with no
+/// upper bound (LoadFromINI10072CF0); its default is 1. Every value below
+/// the bound draws as before.
+const LIGHTNING_SCATTER_COUNT_LIMIT: i32 = 1024;
+
+/// VERA's bound on `Lightning.DebrisMin=` and `Lightning.DebrisMax=`: a
+/// striking bolt draws its debris count between them and spawns one anim per
+/// piece, so a value near `i32::MAX` hangs the tick. Ares reads them with no
+/// upper bound (LoadFromINI10072CF0); its defaults are 2 and 4. Every pair
+/// below the bound draws as before.
+const LIGHTNING_DEBRIS_LIMIT: i32 = 256;
+
 impl Default for AresLightningRules {
     fn default() -> Self {
         Self {
@@ -1869,13 +1909,19 @@ impl AresLightningRules {
         self.hit_delay = section.read_ares_nullable_int("Lightning.HitDelay", self.hit_delay);
         self.scatter_delay =
             section.read_ares_nullable_int("Lightning.ScatterDelay", self.scatter_delay);
-        self.scatter_count = section.read_ares_int("Lightning.ScatterCount", self.scatter_count);
+        self.scatter_count = section
+            .read_ares_int("Lightning.ScatterCount", self.scatter_count)
+            .min(LIGHTNING_SCATTER_COUNT_LIMIT);
         self.separation = section.read_ares_nullable_int("Lightning.Separation", self.separation);
         self.print_text = section.read_ares_nullable_bool("Lightning.PrintText", self.print_text);
         self.ignore_lightning_rod =
             section.read_ares_bool("Lightning.IgnoreLightningRod", self.ignore_lightning_rod);
-        self.debris_min = section.read_ares_int("Lightning.DebrisMin", self.debris_min);
-        self.debris_max = section.read_ares_int("Lightning.DebrisMax", self.debris_max);
+        self.debris_min = section
+            .read_ares_int("Lightning.DebrisMin", self.debris_min)
+            .min(LIGHTNING_DEBRIS_LIMIT);
+        self.debris_max = section
+            .read_ares_int("Lightning.DebrisMax", self.debris_max)
+            .min(LIGHTNING_DEBRIS_LIMIT);
         self.cloud_height = section.read_ares_int("Lightning.CloudHeight", self.cloud_height);
         if reads.bolt_explosion.is_some() {
             self.bolt_explosion = reads.bolt_explosion;
@@ -2343,7 +2389,11 @@ impl AresSuperWeaponLaunch {
         } else if is("SpyPlane") {
             // 10075880: Count, Type, Mission. An unknown mission keeps it.
             let spy_plane = &mut self.spy_plane;
-            spy_plane.count = section.read_ares_int("SpyPlane.Count", spy_plane.count);
+            // Each plane flies one at a time from the launch loop, so the
+            // count stops at the paradrop plane bound.
+            spy_plane.count = section
+                .read_ares_int("SpyPlane.Count", spy_plane.count)
+                .min(PARADROP_PLANE_LIMIT);
             if let Some(plane) = reads.spy_plane_type {
                 spy_plane.plane = plane;
             }
@@ -2837,6 +2887,36 @@ mod tests {
     }
 
     #[test]
+    fn huge_lightning_counts_clamp_at_their_limits() {
+        use crate::rules::ini_parser::IniFile;
+        let ini = IniFile::from_str(
+            "[Storm]\nLightning.ScatterCount=2147483647\n\
+             Lightning.DebrisMin=2147483647\nLightning.DebrisMax=2147483647\n",
+        );
+        let mut lightning = AresLightningRules::default();
+        lightning.read_pass(ini.section_or_empty("Storm"), AresLightningReads::default());
+        assert_eq!(lightning.scatter_count, LIGHTNING_SCATTER_COUNT_LIMIT);
+        assert_eq!(
+            (lightning.debris_min, lightning.debris_max),
+            (LIGHTNING_DEBRIS_LIMIT, LIGHTNING_DEBRIS_LIMIT)
+        );
+    }
+
+    #[test]
+    fn a_huge_spy_plane_count_clamps_at_the_plane_limit() {
+        use crate::rules::ini_parser::IniFile;
+        let ini = IniFile::from_str("[Spy]\nSpyPlane.Count=2147483647\n");
+        let mut launch = AresSuperWeaponLaunch::default();
+        launch.read_pass(
+            ini.section_or_empty("Spy"),
+            Some("SpyPlane"),
+            true,
+            AresHandlerReads::default(),
+        );
+        assert_eq!(launch.spy_plane().count, PARADROP_PLANE_LIMIT);
+    }
+
+    #[test]
     fn ares_superweapon_eva_uses_fixed_catalog_defaults_and_ordered_retention() {
         use crate::rules::ini_parser::IniFile;
         use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
@@ -3149,22 +3229,22 @@ Type=BogusType
     }
 
     /// The Ares PsychicReveal handler (LoadFromINI `0x10075360`) writes the
-    /// custom action whatever `Action=` says, so Mental Omega's Satellite Scan
-    /// (`Action=Custom`, `SW.Range=12`) asks for a target; a negative
+    /// custom action whatever `Action=` says, so a reveal with
+    /// `Action=Custom` and `SW.Range=12` asks for a target; a negative
     /// `SW.Range` is a whole-map reveal with none.
     #[test]
     fn ares_psychic_reveal_targets_unless_its_range_is_the_whole_map() {
         let _ares = crate::rules::ares_switch::read_ares_way(true);
         let ini = IniFile::from_str(
-            "[CombatDamage]\nPsychicRevealRadius=2\n[SuperWeaponTypes]\n0=SpySatSpecial\n1=Plain\n2=Whole\n3=DefaultRange\n\
-             [SpySatSpecial]\nType=PsychicReveal\nAction=Custom\nSW.Range=12\n\
+            "[CombatDamage]\nPsychicRevealRadius=2\n[SuperWeaponTypes]\n0=ScanSpecial\n1=Plain\n2=Whole\n3=DefaultRange\n\
+             [ScanSpecial]\nType=PsychicReveal\nAction=Custom\nSW.Range=12\n\
              [Plain]\nType=PsychicReveal\nAction=None\n\
              [Whole]\nType=PsychicReveal\nAction=PsychicReveal\nSW.Range=-1\n\
              [DefaultRange]\nType=PsychicReveal\nSW.Range=-1,-1\n",
         );
         let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
         let action = |id| rules.super_weapon(id).unwrap().action.as_deref();
-        assert_eq!(action("SpySatSpecial"), Some("PsychicReveal"));
+        assert_eq!(action("ScanSpecial"), Some("PsychicReveal"));
         assert_eq!(action("Plain"), Some("PsychicReveal"));
         assert_eq!(action("Whole"), None);
         assert_eq!(action("DefaultRange"), Some("PsychicReveal"));

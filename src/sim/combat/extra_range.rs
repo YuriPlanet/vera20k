@@ -84,7 +84,7 @@ fn is_prefiring(
     weapon: &crate::rules::weapon_type::WeaponType,
     include_burst: bool,
 ) -> bool {
-    include_burst && weapon.burst > 0 && attacker.weapon_burst.index() % weapon.burst != 0
+    include_burst && weapon.burst > 0 && attacker.seldom.weapon_burst.index() % weapon.burst != 0
 }
 
 #[cfg(all(test, tests_sim_combat_d_z))]

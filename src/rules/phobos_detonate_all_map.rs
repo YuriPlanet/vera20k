@@ -54,7 +54,7 @@ impl Default for DetonateOnAllMapObjectsRules {
 
 impl DetonateOnAllMapObjectsRules {
     pub fn from_section(section: &IniSection) -> Self {
-        use crate::rules::native_processing::read_valueable_type_vector;
+        use crate::rules::native_processing::read_nullable_type_vector;
         // `ValueableVector<TechnoTypeClass*>` drops unresolvable names at read
         // time natively; the names stay here until the consumer resolves them.
         let keep = |name: &str| Some(name.to_owned());
@@ -64,18 +64,20 @@ impl DetonateOnAllMapObjectsRules {
             require_verses: section.read_bool("DetonateOnAllMapObjects.RequireVerses", false),
             affects_target: AffectedTarget::NONE,
             affects_house: AffectedHouse::NONE,
-            affect_types: read_valueable_type_vector(
+            affect_types: read_nullable_type_vector(
                 section,
                 "DetonateOnAllMapObjects.AffectTypes",
-                &[],
+                None,
                 keep,
-            ),
-            ignore_types: read_valueable_type_vector(
+            )
+            .unwrap_or_default(),
+            ignore_types: read_nullable_type_vector(
                 section,
                 "DetonateOnAllMapObjects.IgnoreTypes",
-                &[],
+                None,
                 keep,
-            ),
+            )
+            .unwrap_or_default(),
         };
         // The deprecated spellings are read first so a later real key wins
         // (`Body.cpp:307-319` reads both into the same field).

@@ -70,7 +70,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -97,7 +97,7 @@ impl Simulation {
         killer: Option<u64>,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(health) = self
             .substrate
@@ -139,7 +139,7 @@ impl Simulation {
         id: u64,
         source: Option<u64>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         use crate::sim::spawn_manager::SpawnSlotState;
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -193,13 +193,17 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let frame = self.session.binary_frame() as i32;
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return true;
         };
-        let state = entity.ares.powered_by.get_or_insert(PoweredBySource::new());
+        let state = entity
+            .seldom
+            .ares
+            .powered_by
+            .get_or_insert(PoweredBySource::new());
         if frame.wrapping_sub(state.last_scan) < SCAN_INTERVAL {
             return true;
         }
@@ -209,6 +213,7 @@ impl Simulation {
             return true;
         }
         entity
+            .seldom
             .ares
             .powered_by
             .as_mut()
@@ -225,6 +230,7 @@ impl Simulation {
         let has_power = busy || self.powered_by_source_online(id, rules);
         let entity = self.substrate.entities.get_mut(id).expect("same object");
         entity
+            .seldom
             .ares
             .powered_by
             .as_mut()
@@ -323,7 +329,11 @@ impl Simulation {
             .object_type(entity.type_ref(), rules)
             .is_some_and(|object| object.powered_unit)
         {
-            return entity.ares.powered_by.is_none_or(PoweredBySource::powered);
+            return entity
+                .seldom
+                .ares
+                .powered_by
+                .is_none_or(PoweredBySource::powered);
         }
         // No second building registry: the existing House+6C order.
         self.houses.get(&entity.owner()).is_some_and(|house| {
@@ -353,7 +363,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -449,7 +459,12 @@ impl Simulation {
 
     /// Installed EMPulse::DisableEMPEffect2 10062650 for a returned power
     /// source.
-    fn ares_disable_emp_effect2(&mut self, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
+    fn ares_disable_emp_effect2(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: &mut FrameEffects<'_>,
+    ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };

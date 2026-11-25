@@ -128,7 +128,7 @@ pub(crate) fn search_for_tiberium_and_move(
     overlay_registry: Option<&OverlayTypeRegistry>,
     id: u64,
     range: i32,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> Result<bool, TiberiumImageError> {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return Ok(false);
@@ -347,7 +347,7 @@ pub(crate) fn harvest_reach(sim: &Simulation, rules: &RuleSet, id: u64) -> Optio
     // ground lookups can stamp shared Dummy; caching OnBridge per scan loses
     // both the head-height decision and the query order.
     let current = ground_pose::position_world_coord(&entity.position);
-    let in_tube = entity.low_bridge_tube_state.is_some();
+    let in_tube = entity.active_tube().is_some();
     let source_on_bridge = ground_pose::navigation_should_be_on_bridge(
         &cells,
         if in_tube { current } else { navigation },
@@ -399,6 +399,7 @@ fn is_cell_harvestable(
             .substrate
             .entities
             .get(id)?
+            .seldom
             .discovery
             .owned_by_current_house()
         && let Some(viewer) = sim.session.current_house()
@@ -467,12 +468,12 @@ mod tests {
             let input = &row["input"];
             let terrain = native::terrain(input);
             let mut sim = Simulation::new();
-            sim.zone_grid = Some(native::zones(&terrain, row).into());
-            sim.resolved_terrain = Some(terrain);
+            *sim.zone_grid = Some(native::zones(&terrain, row).into());
+            *sim.resolved_terrain = Some(terrain);
             sim.substrate
                 .entities
                 .insert(native::candidate(input, 1, "MINER"));
-            sim.interner = crate::sim::intern::test_interner();
+            *sim.interner = crate::sim::intern::test_interner();
             let reach = harvest_reach(&sim, &rules, 1).unwrap();
             assert_eq!(
                 serde_json::json!([reach.source.0, reach.source.1]),

@@ -57,7 +57,7 @@ fn scene() -> (Simulation, RuleSet, InternedId) {
     let mut sim = Simulation::with_seed(0x5E1F_4EA1);
     sim.fog.set_width_for_test(64);
     sim.fog.set_height_for_test(64);
-    sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
+    *sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
         64, 2, 2, 56, 52,
     ));
     sim.intern_rule_type_ids(&rules);
@@ -183,7 +183,7 @@ fn losing_one_of_three_hospitals_releases_one_share() {
             &rules,
             None,
             &[hit],
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
     assert_eq!(
@@ -560,7 +560,7 @@ fn missing_house_self_heal_keys_retain_constructor_defaults_and_completed_buildi
     sim.houses
         .register(HouseState::new(other, 1, None, false, 0, 10));
     for building in [hospital, machine_shop] {
-        sim.change_owner_with_rules(building, other, &rules, None, FrameEffects::empty());
+        sim.change_owner_with_rules(building, other, &rules, None, &mut FrameEffects::empty());
     }
     assert_eq!(sim.houses[&owner].self_heal_infantry(), 0);
     assert_eq!(sim.houses[&owner].self_heal_units(), 0);
@@ -743,7 +743,7 @@ fn the_mechanism_runs_on_a_real_map() {
             false,
             rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         // Let the production spawn decide where a G.I. is admitted: try the
         // hospital's own cell and near neighbours at the same terrain level.
@@ -806,7 +806,7 @@ fn the_mechanism_runs_on_a_real_map() {
                 &due,
                 crate::headless_scenario::SIM_TICK_MS,
                 crate::sim::world::TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .expect("frame");
         let after = runtime.simulation.session.binary_frame();
@@ -889,7 +889,7 @@ mod phobos_gain_type {
         let mut sim = Simulation::with_seed(0x5E1F_4EA1);
         sim.fog.set_width_for_test(64);
         sim.fog.set_height_for_test(64);
-        sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
+        *sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
             64, 2, 2, 56, 52,
         ));
         sim.intern_rule_type_ids(&rules);

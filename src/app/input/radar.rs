@@ -94,21 +94,24 @@ impl RadarAction {
             Kind::Demolish => Self::Sabotage,
             Kind::GuardArea => Self::GuardArea,
             // Action0 and AttackSupport (0x3B), Self (4), Select (7),
-            // ToggleSelect (8), Grind (0xB), Tote (0x11), Damage (0x1C), GRepair (0x1D),
-            // NoDeploy (0x1E), NoEnter (0x1F), NoGRepair (0x20), IvanBomb
-            // (0x35), NoIvanBomb (0x36), Detonate (0x37), DisarmBomb (0x39),
-            // Demolish (0x40) and Airstrike (0x47).
+            // ToggleSelect (8), Grind (0xB), Tote (0x11), Heal (0x1B),
+            // Damage (0x1C), GRepair (0x1D), NoDeploy (0x1E), NoEnter
+            // (0x1F), NoGRepair (0x20), IvanBomb (0x35), NoIvanBomb (0x36),
+            // Detonate (0x37), DisarmBomb (0x39), Demolish (0x40) and
+            // Airstrike (0x47).
             Kind::Default
             | Kind::Deploy
             | Kind::Select
             | Kind::FriendlyUnit
             | Kind::FriendlyStructure
             | Kind::Grind
+            | Kind::EnterTunnel
             | Kind::EngineerDamage
             | Kind::RepairAction(_)
             | Kind::NoDeploy
             | Kind::NoEnter
             | Kind::Tote
+            | Kind::Heal
             | Kind::IvanBomb
             | Kind::NoIvanBomb
             | Kind::DisarmBomb
@@ -125,6 +128,7 @@ impl RadarAction {
             | Kind::Minimap(_)
             | Kind::RepairMode(_)
             | Kind::SellMode(_)
+            | Kind::TogglePower(_)
             | Kind::PlaceBeacon
             | Kind::SuperWeaponTarget(_)
             | Kind::AresAction(_)
@@ -282,11 +286,19 @@ pub(crate) fn action(
         Armed::Kept(super_weapon) => Some(RadarAction::SuperWeapon(super_weapon)),
         Armed::Dropped => None,
         Armed::Unlisted if query.selected.is_empty() => None,
-        Armed::Unlisted => query.selection_action(cell, object).and_then(|kind| {
-            // Ares RadarClass_GetMouseAction_AllowMinimap 100583F0 (hook
-            // 0x653CA6).
-            crate::app::input::ares_cursor::radar_action(query, kind, RadarAction::kept(kind))
-        }),
+        Armed::Unlisted => {
+            let (kind, overrides) = query.selection_action(cell, object);
+            kind.and_then(|kind| {
+                // Ares RadarClass_GetMouseAction_AllowMinimap 100583F0 (hook
+                // 0x653CA6).
+                crate::app::input::ares_cursor::radar_action(
+                    query,
+                    kind,
+                    &overrides,
+                    RadarAction::kept(kind),
+                )
+            })
+        }
     };
     // Planning Mode (`0x00637AA0`) wants every selected object to take
     // waypoints (`0x00639DA0`).
@@ -325,7 +337,7 @@ pub(crate) fn with_minimap_beacon(
 /// leaves the left press to the camera for.
 pub(crate) fn minimap_beacon_armed(state: &AppState) -> bool {
     state.persistence.options_profile.minimap_beacons
-        && crate::app::input::beacon::mode_active(state)
+        && crate::app::input::beacon::mode_active(&state.match_state.match_presentation)
         && hover(state).is_some_and(|hover| hover.action == Some(RadarAction::PlaceBeacon))
 }
 
@@ -351,7 +363,7 @@ fn hover(state: &AppState) -> Option<Hover> {
         return None;
     }
     let sim = &state.match_state.sim_runtime.runtime()?.simulation;
-    let owner = crate::app::input::commands::preferred_local_owner_name(state)?;
+    let owner = crate::app::input::commands::preferred_local_owner_name(&state.match_state)?;
     let object = target
         .tracker_hit
         .and_then(|id| crate::app::input::entity_pick::hover_object_by_id(sim, id, &owner));
@@ -370,14 +382,14 @@ fn hover(state: &AppState) -> Option<Hover> {
             .map(|target| target.stable_id),
     );
     // The Cell's What_Action without mouse-over (`0x00653C9A`).
-    let query = ActionQuery::new(state, sim, &selected, false);
+    let query = ActionQuery::new(&state.frontend, &state.match_state, sim, &selected, false);
     let armed = state
         .armed_super_weapon_type()
         .and_then(|section| state.rules()?.super_weapon_index(section));
     let action = with_minimap_beacon(
         action(&query, armed, target.cell, object),
         state.persistence.options_profile.minimap_beacons,
-        crate::app::input::beacon::mode_active(state),
+        crate::app::input::beacon::mode_active(&state.match_state.match_presentation),
         selected.is_empty(),
         state.armed_super_weapon_type().is_some(),
     );
@@ -413,7 +425,7 @@ pub(crate) fn cursor(state: &AppState) -> Option<RadarCursor> {
     }
     Some(written_cursor(
         state.match_state.input.tactical_mouse.left_held(),
-        sidebar::minimap_shown(state),
+        sidebar::minimap_shown(&state.match_state.match_presentation),
         sidebar::is_cursor_over_minimap(state),
         || {
             hover(state).map(|hover| {

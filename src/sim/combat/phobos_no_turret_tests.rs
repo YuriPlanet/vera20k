@@ -51,7 +51,7 @@ fn hold_rearm(sim: &mut Simulation, id: u64) {
         .entities
         .get_mut(id)
         .expect("attacker")
-        .rearm_timer
+        .seldom.rearm_timer
         .start(frame, 40);
 }
 

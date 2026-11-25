@@ -70,7 +70,7 @@ fn repair_tick(sim: &mut Simulation, rules: &RuleSet, from: u64, to: u64) -> Rad
         RadioMessage::RepairTick,
         RadioPayload::default(),
         rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -150,7 +150,7 @@ fn a_unit_reload_rate_skips_the_stock_repair_tick() {
         tank,
         Some(airfield),
         &rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(health(&sim, tank), 208, "RepairStep=8 heals");
     assert_eq!(credits(&sim), 999, "trunc(300 / (300/8) * 15%) = 1");
@@ -168,7 +168,7 @@ fn the_unit_reload_rate_repairs_linked_units_on_its_period() {
         .entities
         .get_mut(airfield)
         .unwrap()
-        .radio_contacts
+        .seldom.radio_contacts
         .insert(tank);
     // 0.0025 * 900 = 2.25 -> 2 frames.
     sim.session.set_binary_frame_for_test(1);
@@ -176,7 +176,7 @@ fn the_unit_reload_rate_repairs_linked_units_on_its_period() {
         &mut sim,
         &rules,
         airfield,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(health(&sim, tank), 200, "frame 1 is off the period");
     sim.session.set_binary_frame_for_test(2);
@@ -184,7 +184,7 @@ fn the_unit_reload_rate_repairs_linked_units_on_its_period() {
         &mut sim,
         &rules,
         airfield,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(health(&sim, tank), 208, "frame 2 repairs");
 }
@@ -217,7 +217,7 @@ fn units_repair_rate_overrides_the_hospital_period() {
         .entities
         .get_mut(hosp)
         .unwrap()
-        .radio_contacts
+        .seldom.radio_contacts
         .insert(gi);
     let tick = |sim: &mut Simulation| {
         crate::sim::docking::hospital::mission_repair(
@@ -225,7 +225,7 @@ fn units_repair_rate_overrides_the_hospital_period() {
             &rules,
             hosp,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
     };
     sim.session.set_binary_frame_for_test(0);

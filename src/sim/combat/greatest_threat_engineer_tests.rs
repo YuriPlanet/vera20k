@@ -248,7 +248,7 @@ fn retail_ai_engineer_hunt_acquires_enters_repairs_and_is_consumed() {
     let Some((mut sim, rules, registry, engineer, building)) = scene() else {
         return;
     };
-    let path = sim.path_grid.clone().unwrap();
+    let path = (*sim.path_grid).clone().unwrap();
     let full = rules.object("GAPOWR").unwrap().strength;
     // Original Hunt4D53BA..53F4/4D548F..54B9 assigns the building as destination and
     // queues Capture. AreaGuard4D6F32 instead calls ordinary Approach;

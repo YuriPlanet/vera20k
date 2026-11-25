@@ -95,6 +95,67 @@ pub(crate) struct ObjectGroupCopy {
     local_control_group: Option<i32>,
 }
 
+/// Leave to store an object's id in a field `Simulation::entity_expiry_holds`
+/// reads (sim-scale; results unchanged). Only [`GameEntity::note_names`]
+/// makes one, and it notes its entity, so the pointer-expiry index re-reads
+/// the entities that may have come to name an object and no others
+/// ([`EntityStore::take_unread_names`]). Every writer outside a field's own
+/// module that can store such an id takes one, from the entity it writes;
+/// the module's own stores note their entity. A clear needs none: the index
+/// asks each entity it finds before it answers. A move between two of one
+/// entity's fields names nothing new and needs none either.
+///
+/// [`EntityStore::take_unread_names`]: crate::sim::entity_store::EntityStore::take_unread_names
+#[derive(Clone, Copy)]
+pub(crate) struct NameNote(());
+
+#[cfg(any(test, feature = "test-support"))]
+thread_local! {
+    /// Test builds: how many notes fixtures took ([`NameNote::fixture`]).
+    static FIXTURE_NAMES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+impl NameNote {
+    /// Test builds: a note for a fixture's write, which holds only the
+    /// field and cannot note its entity. The pointer-expiry index re-reads
+    /// every entity at its next refresh ([`Self::fixture_notes`]).
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn fixture() -> Self {
+        FIXTURE_NAMES.with(|count| count.set(count.get() + 1));
+        Self(())
+    }
+
+    /// Test builds: how many fixture notes this thread has taken.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn fixture_notes() -> u64 {
+        FIXTURE_NAMES.with(std::cell::Cell::get)
+    }
+}
+
+/// [`GameEntity::names_unread`]: set while the pointer-expiry index has not
+/// read the entity since its names may have changed. A new, copied or
+/// loaded entity is unread.
+struct NamesUnread(bool);
+
+/// Transient: no two entities differ by it in a debug print.
+impl std::fmt::Debug for NamesUnread {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("NamesUnread")
+    }
+}
+
+impl Default for NamesUnread {
+    fn default() -> Self {
+        Self(true)
+    }
+}
+
+impl Clone for NamesUnread {
+    fn clone(&self) -> Self {
+        Self(true)
+    }
+}
+
 /// Every game object (unit, infantry, building, aircraft) is one `GameEntity`.
 /// Core fields are always present; optional subsystems use `Option<T>`. A
 /// mechanism's own state is a record its module defines and alone writes
@@ -102,12 +163,12 @@ pub(crate) struct ObjectGroupCopy {
 /// getters and changes it through that module's functions.
 ///
 /// Every object's turn walks this record, so it holds only what a turn reads
-/// each step. State read less often is the [`Seldom`] part, stored apart.
-/// State that few objects hold sits behind a pointer: a [`Sparse`] for a
-/// Building's own state ([`BuildingPart`]), its art and its damage fires, a
-/// `Box` for a manager only some types construct. A new field goes in this
-/// record only if an object's own turn reads or writes it each step;
-/// otherwise in `Seldom`. A `BuildingClass` field goes in `BuildingPart`.
+/// each step. State read less often is the [`Seldom`] part, stored apart and
+/// reached as `entity.seldom.field`. State that few objects hold sits behind
+/// a pointer: a [`Sparse`] for a Building's own state ([`BuildingPart`]), its
+/// art and its damage fires, a `Box` for a manager only some types
+/// construct. A new field goes in this record only if an object's own turn
+/// reads or writes it each step; otherwise in `Seldom`. A `BuildingClass` field goes in `BuildingPart`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GameEntity {
     // --- Always present (every entity has these) ---
@@ -332,10 +393,9 @@ pub struct GameEntity {
     /// Instance stealth grant; sim::cloak_disguise owns its mutations.
     #[serde(default)]
     pub(crate) stealth_ability: StealthAbility,
-    /// Active low-bridge TubeClass movement. Active YR behaviour — not to be
-    /// confused with the subterranean tunnel locomotor, which is Tiberian Sun
-    /// legacy and was removed as unreachable in stock YR.
-    /// `movement::tube_movement` owns it.
+    /// Foot's retained map tunnel byte, cursor and target. DrawIt and radio
+    /// test presence. [`Self::active_tube`] applies the signed movement gate.
+    /// `movement::tube_movement` owns the payload.
     #[serde(default)]
     pub low_bridge_tube_state: Option<LowBridgeTubeMovementState>,
     /// Controller-owned reversible mind-control manager (`TechnoClass+0x2BC`),
@@ -468,94 +528,15 @@ pub struct GameEntity {
     /// [`SpatialThreat`]: crate::sim::house_threat::SpatialThreat
     #[serde(default)]
     pub(crate) cached_spatial_threat: crate::sim::house_threat::SpatialThreat,
+    /// VERA-only: the entity may name other objects in the fields
+    /// `Simulation::entity_expiry_holds` reads than when the pointer-expiry
+    /// index last read it ([`NameNote`]). Here, not in `Seldom`: the index
+    /// asks it of every entity handed out between two expiries. Transient:
+    /// never saved, compared or hashed.
+    #[serde(skip)]
+    names_unread: NamesUnread,
     /// The state this object's turn does not read each step, stored apart.
-    seldom: Box<Seldom>,
-    /// Phobos `BuildingExt::GrindingWeapon_AccumulatedCredits` (`+0x04`):
-    /// refunds ground since the last `Grinding.Weapon=` shot.
-    #[serde(default)]
-    grinding_weapon_accumulated_credits: i32,
-    /// Phobos `BuildingExt::GrindingWeapon_LastFiredFrame` (`+0x08`).
-    #[serde(default)]
-    grinding_weapon_last_fired_frame: i32,
-    /// Phobos `BuildingExt::AccumulatedIncome` (`Ext/Building/Body.h:23`,
-    /// serialized at `Body.cpp:598`): credits gained since the last periodic
-    /// `DisplayIncome` label.
-    #[serde(default)]
-    phobos_accumulated_income: i32,
-    /// Phobos `TechnoExt` delayed-fire state (`src/Ext/Techno/Body.h:60-63`,
-    /// serialized at `src/Ext/Techno/Body.cpp:1183-1186`). `DelayedFireTimer`
-    /// is a frame-based `CDTimerClass`: VERA keeps the absolute start frame
-    /// (`-1` = not started, matching `StartTime=-1`) and the duration. The
-    /// weapon index defaults to `-1` (`Body.h:121`), the anim pointer to null.
-    #[serde(default = "minus_one_i32")]
-    phobos_delayed_fire_start_frame: i32,
-    #[serde(default)]
-    phobos_delayed_fire_duration: i32,
-    #[serde(default = "minus_one_i32")]
-    phobos_delayed_fire_weapon_index: i32,
-    #[serde(default)]
-    phobos_delayed_fire_sequence_paused: bool,
-    #[serde(default)]
-    phobos_delayed_fire_anim: Option<u64>,
-    #[serde(default)]
-    phobos_delayed_fire_remove_anim_on_no_delay: bool,
-    /// Phobos `InfantryExt::SkipTargetChangeResetSequence`
-    /// (`Ext/Infantry/Body.h:15`, serialized `Body.cpp:50`): set by the
-    /// `0x6FF905` `FireAt` hook when the fired weapon keeps
-    /// `FireOnce.ResetSequence=no`; the next null target consumes it and
-    /// skips the class target-change latch reset and idle `Do_Action`.
-    #[serde(default)]
-    phobos_skip_target_change_reset_sequence: bool,
-    /// Phobos `UnitExt::KeepTargetOnMove` (`Ext/Unit/Body.h`): a Move order
-    /// kept this unit's in-range target, so the Unit AI re-checks the range
-    /// until it gives up.
-    #[serde(default)]
-    phobos_keep_target_on_move: bool,
-    /// Phobos `TechnoExt::RandomFactor` (`Ext/Techno/Body.h:33`): the
-    /// per-object `RandomRanged(0, 15)` drawn once at `TechnoClass::Init`
-    /// (`Ext/Techno/Hooks.cpp:292`); feeds the `DistributeTargetingFrame`
-    /// timer re-arm (`:323-326`) and the interceptor phase (`Body.Update.cpp:37`).
-    #[serde(default)]
-    phobos_random_factor: i32,
-    /// Phobos `TechnoExt::DropCrate`: the per-object override written only by
-    /// the trigger action 600 (`TActionExt::SetDropCrate`,
-    /// `Ext/TAction/Body.cpp:690-720`). `-1` unset, `0` disables, `1` uses
-    /// `DropCrateType` (`Ext/Techno/Body.Internal.cpp:275-299`).
-    #[serde(default = "minus_one_i32")]
-    phobos_drop_crate: i32,
-    /// Phobos `TechnoExt::DropCrateType`: the `[Powerups]` slot the action's
-    /// `Param3` names; read only while `DropCrate == 1`.
-    #[serde(default = "minus_one_i32")]
-    phobos_drop_crate_type: i32,
-    /// Phobos `BuildingExt::IsCreatedFromMapFile`: the map's `[Structures]`
-    /// reader built this building. `BuildingClass_Unlimbo_SetShouldRebuild`
-    /// (`Ext/Building/Hooks.cpp:321-323`) skips the AI-repairable grant for
-    /// one — preplaced structures keep the map line's own AI Repairable.
-    #[serde(default)]
-    created_from_map_file: bool,
-    /// Phobos `InfantryExt::HasUndeployConverted` (`Ext/Infantry/Body.h`):
-    /// this Undeploy sequence already converted the infantryman; the DoingAI
-    /// reset clears it outside the Deploy/Undeploy sequences (`0x520E75`).
-    #[serde(default)]
-    phobos_infantry_undeploy_converted: bool,
-    /// Phobos `InfantryExt::HasDeployConverted`: this Deploy sequence already
-    /// converted the infantryman; the DoingAI reset clears it outside the
-    /// Deploy/Undeploy sequences (`0x520E75`).
-    #[serde(default)]
-    phobos_infantry_deploy_converted: bool,
-    /// Phobos `FootExt::AttackMoveFollowerTempCount` (`src/Ext/Foot/Body.h:26`,
-    /// constructed `0` at `:44`, serialized at `src/Ext/Foot/Body.cpp:951`).
-    /// A per-frame transient: `FootClass_AI`'s tail decrements it
-    /// (`src/Ext/Techno/Hooks.cpp:50-51`, hook `0x4DA54E`) and the follow
-    /// search adds 1 (infantry) or 3 (anything else) to the chosen leader and
-    /// refuses a leader already at 6 (`:1317`, `:1338`).
-    #[serde(default)]
-    phobos_attack_move_follower_temp_count: i32,
-    /// Phobos `BuildingExt::ConstructionStartFacing`
-    /// (`Ext/Building/Body.h:31`, constructed -1 at `:50`): the one random
-    /// `StartFacing.Random` draw, kept for the building's lifetime.
-    #[serde(default = "minus_one_i32")]
-    phobos_construction_start_facing: i32,
+    pub seldom: Box<Seldom>,
 }
 
 /// The `BuildingClass` state. A [`Sparse`] in [`GameEntity::building`] holds
@@ -708,10 +689,96 @@ impl crate::util::sparse::SparseDefault for BuildingPart {
 /// The part of an object's record its own turn does not read each step:
 /// state read on orders, on events, by other objects or when drawing. It is
 /// stored apart from [`GameEntity`], so a turn's walk of the main part stays
-/// small. `GameEntity` derefs to it, so a field here reads and writes as
-/// `entity.field`.
+/// small. Code reaches a field here through the named part, as
+/// `entity.seldom.field`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Seldom {
+    /// Phobos `BuildingExt::GrindingWeapon_AccumulatedCredits` (`+0x04`):
+    /// refunds ground since the last `Grinding.Weapon=` shot.
+    #[serde(default)]
+    grinding_weapon_accumulated_credits: i32,
+    /// Phobos `BuildingExt::GrindingWeapon_LastFiredFrame` (`+0x08`).
+    #[serde(default)]
+    grinding_weapon_last_fired_frame: i32,
+    /// Phobos `BuildingExt::AccumulatedIncome` (`Ext/Building/Body.h:23`,
+    /// serialized at `Body.cpp:598`): credits gained since the last periodic
+    /// `DisplayIncome` label.
+    #[serde(default)]
+    phobos_accumulated_income: i32,
+    /// Phobos `TechnoExt` delayed-fire state (`src/Ext/Techno/Body.h:60-63`,
+    /// serialized at `src/Ext/Techno/Body.cpp:1183-1186`). `DelayedFireTimer`
+    /// is a frame-based `CDTimerClass`: VERA keeps the absolute start frame
+    /// (`-1` = not started, matching `StartTime=-1`) and the duration. The
+    /// weapon index defaults to `-1` (`Body.h:121`), the anim pointer to null.
+    #[serde(default = "minus_one_i32")]
+    phobos_delayed_fire_start_frame: i32,
+    #[serde(default)]
+    phobos_delayed_fire_duration: i32,
+    #[serde(default = "minus_one_i32")]
+    phobos_delayed_fire_weapon_index: i32,
+    #[serde(default)]
+    phobos_delayed_fire_sequence_paused: bool,
+    #[serde(default)]
+    phobos_delayed_fire_anim: Option<u64>,
+    #[serde(default)]
+    phobos_delayed_fire_remove_anim_on_no_delay: bool,
+    /// Phobos `InfantryExt::SkipTargetChangeResetSequence`
+    /// (`Ext/Infantry/Body.h:15`, serialized `Body.cpp:50`): set by the
+    /// `0x6FF905` `FireAt` hook when the fired weapon keeps
+    /// `FireOnce.ResetSequence=no`; the next null target consumes it and
+    /// skips the class target-change latch reset and idle `Do_Action`.
+    #[serde(default)]
+    phobos_skip_target_change_reset_sequence: bool,
+    /// Phobos `UnitExt::KeepTargetOnMove` (`Ext/Unit/Body.h`): a Move order
+    /// kept this unit's in-range target, so the Unit AI re-checks the range
+    /// until it gives up.
+    #[serde(default)]
+    phobos_keep_target_on_move: bool,
+    /// Phobos `TechnoExt::RandomFactor` (`Ext/Techno/Body.h:33`): the
+    /// per-object `RandomRanged(0, 15)` drawn once at `TechnoClass::Init`
+    /// (`Ext/Techno/Hooks.cpp:292`); feeds the `DistributeTargetingFrame`
+    /// timer re-arm (`:323-326`) and the interceptor phase (`Body.Update.cpp:37`).
+    #[serde(default)]
+    phobos_random_factor: i32,
+    /// Phobos `TechnoExt::DropCrate`: the per-object override written only by
+    /// the trigger action 600 (`TActionExt::SetDropCrate`,
+    /// `Ext/TAction/Body.cpp:690-720`). `-1` unset, `0` disables, `1` uses
+    /// `DropCrateType` (`Ext/Techno/Body.Internal.cpp:275-299`).
+    #[serde(default = "minus_one_i32")]
+    phobos_drop_crate: i32,
+    /// Phobos `TechnoExt::DropCrateType`: the `[Powerups]` slot the action's
+    /// `Param3` names; read only while `DropCrate == 1`.
+    #[serde(default = "minus_one_i32")]
+    phobos_drop_crate_type: i32,
+    /// Phobos `BuildingExt::IsCreatedFromMapFile`: the map's `[Structures]`
+    /// reader built this building. `BuildingClass_Unlimbo_SetShouldRebuild`
+    /// (`Ext/Building/Hooks.cpp:321-323`) skips the AI-repairable grant for
+    /// one — preplaced structures keep the map line's own AI Repairable.
+    #[serde(default)]
+    created_from_map_file: bool,
+    /// Phobos `InfantryExt::HasUndeployConverted` (`Ext/Infantry/Body.h`):
+    /// this Undeploy sequence already converted the infantryman; the DoingAI
+    /// reset clears it outside the Deploy/Undeploy sequences (`0x520E75`).
+    #[serde(default)]
+    phobos_infantry_undeploy_converted: bool,
+    /// Phobos `InfantryExt::HasDeployConverted`: this Deploy sequence already
+    /// converted the infantryman; the DoingAI reset clears it outside the
+    /// Deploy/Undeploy sequences (`0x520E75`).
+    #[serde(default)]
+    phobos_infantry_deploy_converted: bool,
+    /// Phobos `FootExt::AttackMoveFollowerTempCount` (`src/Ext/Foot/Body.h:26`,
+    /// constructed `0` at `:44`, serialized at `src/Ext/Foot/Body.cpp:951`).
+    /// A per-frame transient: `FootClass_AI`'s tail decrements it
+    /// (`src/Ext/Techno/Hooks.cpp:50-51`, hook `0x4DA54E`) and the follow
+    /// search adds 1 (infantry) or 3 (anything else) to the chosen leader and
+    /// refuses a leader already at 6 (`:1317`, `:1338`).
+    #[serde(default)]
+    phobos_attack_move_follower_temp_count: i32,
+    /// Phobos `BuildingExt::ConstructionStartFacing`
+    /// (`Ext/Building/Body.h:31`, constructed -1 at `:50`): the one random
+    /// `StartFacing.Random` draw, kept for the building's lifetime.
+    #[serde(default = "minus_one_i32")]
+    phobos_construction_start_facing: i32,
     /// Bounded optional observations; absent from saves and normal builds.
     #[cfg(feature = "debug-tools")]
     #[serde(skip)]
@@ -779,9 +846,8 @@ pub struct Seldom {
     barrel_elevation: crate::sim::movement::FacingClass,
     /// UnitClass+6C8. The constructor clears this next-Unit reference at
     /// 7353EC; the map reader74368C, ChangeOwner7463A0 and Find_Path4D3920
-    /// share it (original gamemd.exe instructions). Not yet ported: the
-    /// Accelerates speed hand-off in Process_Drive_Track 4B1218 / Ship 6A08F0
-    /// and the IsTrain-gated Stop_Moving/track consumers (no retail IsTrain).
+    /// share it with the accelerating Drive/Ship speed hand-off (4B1218 /
+    /// 6A08E0) and IsTrain Stop_Moving (4AFE4D / 69F55D).
     unit_follower: Option<u64>,
     /// UnitClass+6D0, constructed false at7353F8. This retained byte is
     /// independent of incoming links: PointerExpired7446E0 clears only the
@@ -944,16 +1010,6 @@ pub struct Seldom {
     /// radar reads it, so the world hash leaves it out.
     #[serde(default)]
     pub radar_combat_flash: crate::sim::timer::CdTimer,
-    /// Gattling stage, value and report latch (`TechnoClass+0x140`,
-    /// `+0x144`, `+0x4B8`), owned by `combat::gattling`.
-    #[serde(default)]
-    pub gattling: crate::sim::combat::gattling::GattlingState,
-    /// The voxel turret's animation counter (`TechnoClass+0x148`), a
-    /// [`TurretAnimCounter`] that `combat::gattling` owns.
-    ///
-    /// [`TurretAnimCounter`]: crate::sim::combat::gattling::TurretAnimCounter
-    #[serde(default)]
-    pub turret_anim_frame: crate::sim::combat::gattling::TurretAnimCounter,
     /// Phobos `BuildingExt` TurretAnim instance state
     /// (`Ext/Building/Body.h:28-30,47-49`), owned by
     /// [`crate::rules::phobos_turret_anim`]. Idle and firing share one rate
@@ -961,61 +1017,10 @@ pub struct Seldom {
     /// (cf. [`TurretAnimCounter`], `sim/combat/gattling.rs:528`).
     #[serde(default)]
     pub(crate) phobos_turret_anim: crate::rules::phobos_turret_anim::TurretAnimState,
-    /// Optional presentation-only native recoil, owned by voxel_recoil.
-    voxel_recoil: Option<Box<voxel_recoil::VoxelRecoil>>,
     /// Techno+3B8 burst and +43C radial launch indices, owned by
     /// `combat::burst`. Only the burst index resets on a null target.
     #[serde(default)]
     pub(crate) weapon_burst: crate::sim::combat::burst::WeaponBurst,
-    /// Sole native Building+534/+538 body state; construction/sale use the
-    /// existing private StageClass and MissionLeaf ready byte.
-    building_body: Option<crate::sim::building_construction::BuildingBody>,
-    /// Building `+0x544`, a [`PowerHealthSample`] that `sim::power_system`
-    /// owns; a Building's alone is live.
-    ///
-    /// [`PowerHealthSample`]: crate::sim::power_system::PowerHealthSample
-    building_power_health_sample: crate::sim::power_system::PowerHealthSample,
-    /// Sale route metadata, never a second mission, ready byte or timer.
-    building_sale: Option<crate::sim::building_construction::BuildingDown>,
-    /// The wait before the building's computer factory tries its finished
-    /// object again, an [`AiPlacementTimer`] that `production::factory_ai`
-    /// owns.
-    ///
-    /// [`AiPlacementTimer`]: crate::sim::production::AiPlacementTimer
-    #[serde(default)]
-    pub(crate) ai_placement_timer: crate::sim::production::AiPlacementTimer,
-    /// The Building's animation art: its AnimClass slots, their replay
-    /// marks, the damaged-art flag, its StorageClass art, the Stuff flag and
-    /// the Grand_Opening guard. `sim::building_art` owns it.
-    #[serde(default)]
-    pub building_art: crate::sim::building_art::BuildingArt,
-    /// Independent Building+660, owned by sim::building_power.
-    #[serde(default)]
-    pub(crate) building_online: crate::sim::building_power::BuildingOnline,
-    /// Per-instance Deliver.BaseNormal override, not a mutation of its type.
-    #[serde(default)]
-    unit_delivery_no_base: bool,
-    /// An Ares chronoshifted building (BeingWarpedOut `+0x270` with
-    /// BuildingExt `AboutToChronoshift`), from the ChronoWarp's arm until
-    /// ChronoWarpStateMachine puts it back (`superweapon::chronosphere`).
-    #[serde(default)]
-    ares_chronoshifting: bool,
-    /// The DropPod locomotor an Ares DropPod launch gives a Foot
-    /// (TechnoExt::CreateWithDroppod `10044030`), piggybacking the Foot's
-    /// own locomotor until it lands (`superweapon::drop_pod`).
-    #[serde(default)]
-    ares_drop_pod: Option<crate::sim::superweapon::drop_pod::DropPodFlight>,
-    /// Ares TechnoExt::SuperWeapon (+0xA0), the Super attached to this
-    /// Techno: SW_HunterSeeker::Activate's launch source on its seeker and
-    /// SW_EMPulse::Activate's firing Super on each cannon. The entity owns
-    /// its lifetime and save state.
-    #[serde(default)]
-    ares_super_weapon: Option<crate::sim::hunter_seeker::AttachedSuper>,
-    /// Ares TechnoExt::SuperTarget (+0xA4): the cell SW_EMPulse::Activate
-    /// (10071200) aims its cannon at, `TryGetCellAt`'s null for a cell off
-    /// the grid. Only written with [`Self::ares_super_weapon`].
-    #[serde(default)]
-    ares_super_target: Option<(u16, u16)>,
     /// Phobos `BuildingExt::CurrentEMPulseSW`
     /// (`Ext/SWType/FireSuperWeapon.cpp:365`, `Ext/Building/Hooks.cpp:132-189`):
     /// the firing EMPulse SW type this cannon's Mission_Missile must use when
@@ -1049,24 +1054,12 @@ pub struct Seldom {
     /// [`SpawnOwner`]: crate::sim::spawn_manager::SpawnOwner
     #[serde(default)]
     pub spawn_owner_id: crate::sim::spawn_manager::SpawnOwner,
-    /// Object-level fall state, shared by Paradrop and DropAsBomb.
-    #[serde(default)]
-    fall: ObjectFallState,
     /// Phobos `FootExt::JumpjetStraightAscend` (`Ext/Foot/Body.h:25`): a
     /// BalloonHover spawn asks for a straight vertical ascent, so the jumpjet
     /// locomotion skips its horizontal speed, its turn and its location write
     /// while the owner stays in state 0/1.
     #[serde(default)]
     jumpjet_straight_ascend: bool,
-    /// The IronCurtain or ForceShield state: the curtain's timer and its tint
-    /// stage. `None` until the first curtain; `Some` after it, nullifying all
-    /// damage (except healing) while the timer runs ([`is_invulnerable`]).
-    /// Applied by superweapon launch handlers; `superweapon::invulnerability`
-    /// owns it.
-    ///
-    /// [`is_invulnerable`]: crate::sim::superweapon::invulnerability::is_invulnerable
-    #[serde(default)]
-    pub invulnerability: Option<InvulnerabilityState>,
     /// Techno+294 owned manager or borrowed plane/building link; Airstrike
     /// owns both the relationship and its cancellation/removal lifecycle.
     #[serde(default)]
@@ -1081,25 +1074,6 @@ pub struct Seldom {
     /// A `MindControl.ThreatDelay=` capture sets it, `FreeUnit` clears it.
     #[serde(default)]
     pub(crate) phobos_be_controlled_threat_frame: i32,
-    /// TemporalClass state (`TechnoClass+0x274` TemporalImUsing and `+0x278`
-    /// TemporalTargetingMe), written only by `temporal`.
-    #[serde(default)]
-    pub temporal: crate::sim::temporal::TemporalState,
-    /// The Crazy Ivan bomb it carries (`ObjectClass+0x38` and its
-    /// `BombClass`), written only by `bomb`.
-    #[serde(default)]
-    pub bomb: Option<crate::sim::bomb::Bomb>,
-    /// Psychedelic/chaos runtime, separate from reversible mind control: a
-    /// [`BerserkState`] that `combat::receiver_health` owns.
-    ///
-    /// [`BerserkState`]: crate::sim::combat::BerserkState
-    #[serde(default)]
-    pub berserk: crate::sim::combat::BerserkState,
-    /// The pending entry (`Unit+0x500`), a [`PendingEntry`] that
-    /// `docking::building_dock` owns.
-    ///
-    /// [`PendingEntry`]: crate::sim::docking::building_dock::PendingEntry
-    pub(crate) pending_entry: crate::sim::docking::building_dock::PendingEntry,
     /// Foot `+0x68F..+0x691`, cleared by the Foot constructor
     /// (`0x004D33D2..0x004D33DE`) and written only by `sim::building_entry`.
     #[serde(default)]
@@ -1135,23 +1109,6 @@ pub struct Seldom {
     ///
     /// [`CapturedInfantryType`]: crate::sim::world::CapturedInfantryType
     pub(crate) capture_infantry_type_index: crate::sim::world::CapturedInfantryType,
-    #[serde(default)]
-    pub(crate) vehicle_driver: crate::sim::vehicle_theft::VehicleDriverState,
-    /// Ares TechnoExt+A8/AC, owned by sim::bounty; presentation only.
-    #[serde(default)]
-    pub(crate) bounty_display: crate::sim::bounty::BountyDisplayState,
-    /// Ares TechnoExt+50 DisableWeaponTimer (allocator 10042CA0: StartTime
-    /// -1, TimeLeft 0). The ReceiveDamage aftermath starts it with
-    /// `DisableWeapons.Duration` (`vehicle_theft::driver_kill`); GetFireError
-    /// answers Rearm while it runs (`combat::fire_error_world`).
-    #[serde(default)]
-    pub(crate) ares_disable_weapons: crate::sim::timer::CdTimer,
-    /// Ares TechnoExt+0x5C SelfHealingCombatTimer (StartTime -1, TimeLeft
-    /// 0). The ReceiveDamage aftermath starts it with the type's
-    /// `SelfHealing.CombatDelay` (`vehicle_theft::driver_kill`); while it
-    /// runs, GetSelfHealAmount (10044E80, `combat::veterancy`) heals nothing.
-    #[serde(default)]
-    pub(crate) ares_self_heal_combat: crate::sim::timer::CdTimer,
     /// Phobos `TechnoExt::AutoDeathTimer` (`Ext/Techno/Body.h:43`), a
     /// `CDTimerClass` whose constructor leaves StartTime -1 / TimeLeft 0.
     /// `sim::auto_death` starts it with `AutoDeath.AfterDelay=`;
@@ -1283,20 +1240,19 @@ pub struct Seldom {
     /// [`UnloadKeep`]: crate::sim::transport_unload::UnloadKeep
     #[serde(default)]
     pub(crate) transport_unload_keep_count: crate::sim::transport_unload::UnloadKeep,
+    /// Tiberian Sun's limpets (Firestorm TechnoClass+0x214/+0x218), a
+    /// [`Limpets`] that `sim::limpet` owns. Nothing unless a `LimpetFactor=`
+    /// warhead hit the object; [`FootSpeedState::limpeted`] spares the speed
+    /// query this read otherwise.
+    ///
+    /// [`Limpets`]: crate::sim::limpet::Limpets
+    /// [`FootSpeedState::limpeted`]: crate::sim::components::FootSpeedState::limpeted
+    #[serde(default)]
+    pub(crate) limpets: crate::sim::limpet::Limpets,
     /// The Ares 3.0 TechnoExt and BuildingExt state, an [`AresPart`] kept out
     /// of line and only once Ares code writes it.
     #[serde(default)]
     pub(crate) ares: Sparse<AresPart>,
-    /// A building's repair byte (`BuildingClass+0x6E8`), a [`RepairByte`]
-    /// that `production::production_repair` owns.
-    ///
-    /// [`RepairByte`]: crate::sim::production::RepairByte
-    pub repairing: crate::sim::production::RepairByte,
-    /// Tank-bunker install state machine. `Some` on `Bunker=yes` buildings from
-    /// spawn (state `Idle` when empty); its presence marks the entity as a tank
-    /// bunker. Drives entry admission → install.
-    #[serde(default)]
-    pub bunker_runtime: Option<crate::sim::docking::bunker_install::BunkerRuntime>,
 }
 
 /// The Ares 3.0 extension state of an object (its TechnoExt and BuildingExt
@@ -1447,20 +1403,6 @@ impl crate::util::sparse::SparseDefault for AresPart {
     }
 }
 
-impl std::ops::Deref for GameEntity {
-    type Target = Seldom;
-
-    fn deref(&self) -> &Seldom {
-        &self.seldom
-    }
-}
-
-impl std::ops::DerefMut for GameEntity {
-    fn deref_mut(&mut self) -> &mut Seldom {
-        &mut self.seldom
-    }
-}
-
 mod behind_indicator;
 mod construction_stage;
 mod gunner;
@@ -1491,76 +1433,76 @@ impl GameEntity {
     /// Read-only Phobos shield state for presentation. Construction and the
     /// shield owner retain simulation-side mutation authority.
     pub fn shield(&self) -> Option<&crate::sim::shield::ShieldState> {
-        self.shield.as_ref()
+        self.seldom.shield.as_ref()
     }
 
     /// Infantry+6D9: building survivor identity, not Type.Nominal.
     /// Added_To_Game502C3C skips its active counter; UI-name51F2C0 uses
     /// TXT_TECHNICIAN. The flag persists across placement and capture.
     pub fn is_nominal_survivor(&self) -> bool {
-        self.nominal_survivor
+        self.seldom.nominal_survivor
     }
 
     /// The two building crew producers' stores443127 and44A747.
     pub(crate) fn mark_nominal_survivor(&mut self) {
         debug_assert_eq!(self.category, EntityCategory::Infantry);
-        self.nominal_survivor = true;
+        self.seldom.nominal_survivor = true;
     }
 
     /// Whether an Ares ChronoWarp holds this building warped out. Only Ares
     /// code writes it, so in a game Ares doesn't play in it stays false.
     pub(crate) fn ares_chronoshifting(&self) -> bool {
-        self.ares.ares_chronoshifting
+        self.seldom.ares.ares_chronoshifting
     }
 
     /// The ChronoWarp's Building arm (Ares 3.0 `1006F4D0`) warps it out.
     pub(crate) fn begin_ares_chronoshift(&mut self) {
-        self.ares.ares_chronoshifting = true;
+        self.seldom.ares.ares_chronoshifting = true;
     }
 
     /// ChronoWarpStateMachine::Update (Ares 3.0 `10070230`) puts it back.
     pub(crate) fn end_ares_chronoshift(&mut self) {
-        self.ares.ares_chronoshifting = false;
+        self.seldom.ares.ares_chronoshifting = false;
     }
 
     /// The DropPod locomotor carrying this Foot, if any.
     pub(crate) fn ares_drop_pod(&self) -> Option<crate::sim::superweapon::drop_pod::DropPodFlight> {
-        self.ares.ares_drop_pod
+        self.seldom.ares.ares_drop_pod
     }
 
     /// LocomotionClass::ChangeLocomotorTo(DropPod) (`10044083..100440FA`):
     /// a fresh DropPod locomotor piggybacks the Foot's own.
     pub(crate) fn begin_ares_drop_pod(&mut self) {
-        self.ares.ares_drop_pod = Some(Default::default());
+        self.seldom.ares.ares_drop_pod = Some(Default::default());
     }
 
     /// The DropPod locomotor's own fields, for its Move_To.
     pub(crate) fn ares_drop_pod_mut(
         &mut self,
     ) -> Option<&mut crate::sim::superweapon::drop_pod::DropPodFlight> {
-        self.ares.ares_drop_pod.as_mut()
+        self.seldom.ares.ares_drop_pod.as_mut()
     }
 
     /// The landed pod's End_Piggyback (`0x004B5CEE`): the Foot's own
     /// locomotor is current again.
     pub(crate) fn end_ares_drop_pod(&mut self) {
-        self.ares.ares_drop_pod = None;
+        self.seldom.ares.ares_drop_pod = None;
     }
 
     /// The plane this Unit's last raw mark chose (TechnoExt `AltOccupation`),
     /// `true` for the deck, while that mark stands.
     pub(crate) fn ares_alt_occupation(&self) -> Option<bool> {
-        self.ares.ares_alt_occupation
+        self.seldom.ares.ares_alt_occupation
     }
 
     /// A raw mark (vt+0xF0) records the plane it chose.
     pub(crate) fn mark_ares_alt_occupation(&mut self, on_deck: bool) {
-        self.ares.ares_alt_occupation = Some(on_deck);
+        self.seldom.ares.ares_alt_occupation = Some(on_deck);
     }
 
     /// The unmark reads the recorded plane and forgets it.
     pub(crate) fn take_ares_alt_occupation(&mut self) -> Option<bool> {
-        self.ares.ares_alt_occupation.take()
+        self.seldom.ares.ares_alt_occupation.take()
     }
 
     /// Ares PlaceUnits' (10075A60) `Deliver.BaseNormal=no` mark. Only Ares
@@ -1588,7 +1530,7 @@ impl GameEntity {
     /// `HandleEMPulseLaunch`'s `pExt->CurrentEMPulseSW = pSW`
     /// (`Ext/SWType/FireSuperWeapon.cpp:365`).
     pub(crate) fn set_phobos_current_empulse_sw(&mut self, sw: crate::sim::intern::InternedId) {
-        self.phobos_current_empulse_sw = Some(sw);
+        self.seldom.phobos_current_empulse_sw = Some(sw);
     }
 
     /// Mission_Missile consumes and clears the latch
@@ -1596,13 +1538,13 @@ impl GameEntity {
     pub(crate) fn take_phobos_current_empulse_sw(
         &mut self,
     ) -> Option<crate::sim::intern::InternedId> {
-        self.phobos_current_empulse_sw.take()
+        self.seldom.phobos_current_empulse_sw.take()
     }
 
     /// The latch read for the state hash; a cannon holding it will later take
     /// a different weapon slot and resume a different held set.
     pub(crate) fn phobos_current_empulse_sw(&self) -> Option<crate::sim::intern::InternedId> {
-        self.phobos_current_empulse_sw
+        self.seldom.phobos_current_empulse_sw
     }
 
     /// SW_EMPulse::Activate's two stores (10071245..1007126C).
@@ -1651,7 +1593,7 @@ impl GameEntity {
 
     /// Retained scoring and house-count inputs for this actor's type.
     pub(in crate::sim) fn tracking_facts(&self) -> &crate::sim::house_tracking::TrackingFacts {
-        &self.tracking_facts
+        &self.seldom.tracking_facts
     }
 
     /// The lifecycle and scoring paths read these inputs without a RuleSet.
@@ -1662,12 +1604,12 @@ impl GameEntity {
         object: Option<&crate::rules::object_type::ObjectType>,
         rules: &crate::rules::ruleset::RuleSet,
     ) {
-        self.tracking_facts =
+        self.seldom.tracking_facts =
             crate::sim::house_tracking::TrackingFacts::of(self.category(), object, rules);
         if let Some(multiplier) =
             crate::sim::house_tracking::retained_plant_multiplier(self.category(), object, rules)
         {
-            self.ares.factory_plant_multiplier = Some(multiplier);
+            self.seldom.ares.factory_plant_multiplier = Some(multiplier);
         }
     }
 
@@ -1675,7 +1617,7 @@ impl GameEntity {
     pub(in crate::sim) fn tracking_facts_mut_for_test(
         &mut self,
     ) -> &mut crate::sim::house_tracking::TrackingFacts {
-        &mut self.tracking_facts
+        &mut self.seldom.tracking_facts
     }
 
     /// The infantry house-total latches (`Techno+0x438/+0x439`). Only
@@ -1684,24 +1626,24 @@ impl GameEntity {
     pub(crate) fn house_tracking_latches(
         &self,
     ) -> crate::sim::house_tracking::InfantryTrackingLatches {
-        self.house_tracking_latches
+        self.seldom.house_tracking_latches
     }
 
     pub(super) fn house_tracking_latches_mut(
         &mut self,
         _: crate::sim::house_tracking::TrackingWrite,
     ) -> &mut crate::sim::house_tracking::InfantryTrackingLatches {
-        &mut self.house_tracking_latches
+        &mut self.seldom.house_tracking_latches
     }
 
     /// The shared signed Techno ammo, including negative/unlimited counts.
     pub fn ammo(&self) -> Option<&TechnoAmmo> {
-        self.ammo.as_ref()
+        self.seldom.ammo.as_ref()
     }
 
     /// Mutations remain on the shared ammo owner, rather than a caller's copy.
     pub(crate) fn ammo_mut(&mut self) -> Option<&mut TechnoAmmo> {
-        self.ammo.as_mut()
+        self.seldom.ammo.as_mut()
     }
 
     /// Building442C81, Unit735592, Infantry517D69 and Aircraft414033 writes.
@@ -1709,108 +1651,108 @@ impl GameEntity {
         &mut self,
         object: &crate::rules::object_type::ObjectType,
     ) {
-        self.ammo = Some(TechnoAmmo::from_type(object));
+        self.seldom.ammo = Some(TechnoAmmo::from_type(object));
     }
 
     /// The authoritative Techno reload clock, preserved verbatim in saves.
     pub fn ammo_reload_timer(&self) -> crate::sim::timer::CdTimer {
-        self.ammo_reload_timer
+        self.seldom.ammo_reload_timer
     }
 
     /// Phobos `TechnoExt::UpdateRearmInEMPState` (`Ext/Techno/Body.Update.cpp:
     /// 878-879`) and `UpdateRearmInTemporal` (`:890-891`): hold a running
     /// Techno `ReloadTimer` (this clock, `Techno+1FC`) with `StartTime++`.
     pub(crate) fn delay_ammo_reload_one_frame(&mut self) {
-        self.ammo_reload_timer.delay_one_frame();
+        self.seldom.ammo_reload_timer.delay_one_frame();
     }
 
     /// Install a fixture's reload countdown.
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_ammo_reload_timer_for_test(&mut self, timer: crate::sim::timer::CdTimer) {
-        self.ammo_reload_timer = timer;
+        self.seldom.ammo_reload_timer = timer;
     }
 
     /// Phobos `TechnoExt::AutoDeathTimer`; an unstarted clock reads as
     /// `start_frame() == PAUSED_START_FRAME`, which is `HasStarted() == false`.
     pub fn auto_death_timer(&self) -> crate::sim::timer::CdTimer {
-        self.auto_death_timer
+        self.seldom.auto_death_timer
     }
 
     pub(crate) fn auto_death_timer_mut(&mut self) -> &mut crate::sim::timer::CdTimer {
-        &mut self.auto_death_timer
+        &mut self.seldom.auto_death_timer
     }
 
     pub(crate) fn passenger_deletion_timer(&self) -> crate::sim::timer::CdTimer {
-        self.passenger_deletion_timer
+        self.seldom.passenger_deletion_timer
     }
 
     pub(crate) fn passenger_deletion_timer_mut(&mut self) -> &mut crate::sim::timer::CdTimer {
-        &mut self.passenger_deletion_timer
+        &mut self.seldom.passenger_deletion_timer
     }
 
     pub(crate) fn phobos_tiberium_eater_timer(&self) -> crate::sim::timer::CdTimer {
-        self.phobos_tiberium_eater_timer
+        self.seldom.phobos_tiberium_eater_timer
     }
 
     pub(crate) fn phobos_tiberium_eater_timer_mut(&mut self) -> &mut crate::sim::timer::CdTimer {
-        &mut self.phobos_tiberium_eater_timer
+        &mut self.seldom.phobos_tiberium_eater_timer
     }
 
     pub(crate) fn should_be_dead(&self) -> bool {
-        self.should_be_dead
+        self.seldom.should_be_dead
     }
 
     pub(crate) fn set_should_be_dead(&mut self, value: bool) {
-        self.should_be_dead = value;
+        self.seldom.should_be_dead = value;
     }
 
     /// `FootExt::OriginalPassengerOwner`, set when the passenger boards a
     /// `Passengers.SyncOwner` + `.RevertOnExit` transport.
     pub(crate) fn phobos_original_passenger_owner(&self) -> Option<crate::sim::intern::InternedId> {
-        self.phobos_original_passenger_owner
+        self.seldom.phobos_original_passenger_owner
     }
 
     pub(crate) fn set_phobos_original_passenger_owner(
         &mut self,
         owner: Option<crate::sim::intern::InternedId>,
     ) {
-        self.phobos_original_passenger_owner = owner;
+        self.seldom.phobos_original_passenger_owner = owner;
     }
 
     /// `FootExt::IsOwnerChangeFromRevertOnExit`, held across the exit
     /// revert's own owner change.
     pub(crate) fn phobos_revert_on_exit_latch(&self) -> bool {
-        self.phobos_revert_on_exit_latch
+        self.seldom.phobos_revert_on_exit_latch
     }
 
     pub(crate) fn set_phobos_revert_on_exit_latch(&mut self, value: bool) {
-        self.phobos_revert_on_exit_latch = value;
+        self.seldom.phobos_revert_on_exit_latch = value;
     }
 
     /// `TechnoExt::LastTargetCrd` (`Ext/Techno/Body.h:82`).
     pub(crate) fn phobos_extra_threat_last_target_crd(&self) -> [i32; 3] {
-        self.phobos_extra_threat_last_target_crd
+        self.seldom.phobos_extra_threat_last_target_crd
     }
 
     pub(crate) fn set_phobos_extra_threat_last_target_crd(&mut self, crd: [i32; 3]) {
-        self.phobos_extra_threat_last_target_crd = crd;
+        self.seldom.phobos_extra_threat_last_target_crd = crd;
     }
 
     /// `TechnoExt::LastTargetCrdClearTimer` (`Ext/Techno/Body.h:83`).
     pub(crate) fn phobos_extra_threat_last_target_clear_timer(&self) -> crate::sim::timer::CdTimer {
-        self.phobos_extra_threat_last_target_clear_timer
+        self.seldom.phobos_extra_threat_last_target_clear_timer
     }
 
     pub(crate) fn phobos_extra_threat_last_target_clear_timer_mut(
         &mut self,
     ) -> &mut crate::sim::timer::CdTimer {
-        &mut self.phobos_extra_threat_last_target_clear_timer
+        &mut self.seldom.phobos_extra_threat_last_target_clear_timer
     }
 
     /// Ares BuildingClass_FireLaser (10016490) starts this clock (YRpp's
     /// `ReloadTimer`, Techno+1FC) with a Prism support beam's downtime.
     pub(crate) fn start_prism_support_downtime(&mut self, now: i32, duration: i32) {
-        self.ammo_reload_timer.start(now, duration);
+        self.seldom.ammo_reload_timer.start(now, duration);
     }
 
     /// Techno ReceiveDamage701ADB..701B62, after the early immunity gates
@@ -1857,9 +1799,11 @@ impl GameEntity {
             let quotient = if object.pip_wrap() == 0 {
                 1
             } else {
-                // Native IDIV likewise faults for MIN/-1; the ordinary
-                // signed quotient truncates toward zero.
-                current / object.pip_wrap()
+                // IDIV's signed quotient, truncated toward zero. Native
+                // faults on the one overflowing pair (Ammo=-2147483648 with
+                // PipWrap=-1); outside data never stops the game, so that
+                // pair wraps to i32::MIN instead.
+                current.wrapping_div(object.pip_wrap())
             };
             object.reload.wrapping_add(
                 object
@@ -1868,7 +1812,7 @@ impl GameEntity {
                     .wrapping_mul(quotient),
             )
         };
-        self.ammo_reload_timer.start(now, duration);
+        self.seldom.ammo_reload_timer.start(now, duration);
     }
 
     /// UnitClass::Reload736CA0, reached at UnitAI736689 only. MobileFire=no
@@ -1885,12 +1829,13 @@ impl GameEntity {
             let moving = crate::sim::movement::motion_query::is_moving(self).ok_or_else(|| {
                 "Unit Reload736CA0 requires ILocomotion+10 (E_POINTER)".to_owned()
             })?;
-            let remaining = self.ammo_reload_timer.remaining(now);
+            let remaining = self.seldom.ammo_reload_timer.remaining(now);
             if moving && remaining > 0 {
-                self.ammo_reload_timer.start(now, remaining.wrapping_add(1));
+                self.seldom
+                    .ammo_reload_timer
+                    .start(now, remaining.wrapping_add(1));
             }
         }
-
 
         self.reload_techno_ammo(object, now, ares);
         Ok(())
@@ -1906,7 +1851,7 @@ impl GameEntity {
     ) -> bool {
         (!object.mobile_fire
             && crate::sim::movement::motion_query::is_moving(self)
-                .is_none_or(|moving| moving && self.ammo_reload_timer.remaining(now) > 0))
+                .is_none_or(|moving| moving && self.seldom.ammo_reload_timer.remaining(now) > 0))
             || self.techno_ammo_reloads(object, now)
     }
 
@@ -1918,7 +1863,7 @@ impl GameEntity {
     ) -> bool {
         object.ammo != -1
             && self.ammo().is_some_and(|ammo| ammo.current() < object.ammo)
-            && self.ammo_reload_timer.remaining(now) == 0
+            && self.seldom.ammo_reload_timer.remaining(now) == 0
     }
 
     /// gamemd.exe TechnoClass::Reload0x006FB010, shared by Unit's override
@@ -1949,24 +1894,24 @@ impl GameEntity {
             return true;
         }
 
-
         false
     }
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn install_ammo_for_test(&mut self, ammo: Option<TechnoAmmo>) {
-        self.ammo = ammo;
+        let _ = self.note_names();
+        self.seldom.ammo = ammo;
     }
 
     /// Techno+0x284, the Chronosphere warp-in's frames.
     pub(crate) fn chrono_warp_delay(&self) -> i32 {
-        self.chrono_warp_delay.get()
+        self.seldom.chrono_warp_delay.get()
     }
 
     /// A fixture's delay.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_chrono_warp_delay(&mut self, frames: i32) {
-        self.chrono_warp_delay.store(frames);
+        self.seldom.chrono_warp_delay.store(frames);
     }
 }
 
@@ -2091,7 +2036,10 @@ impl GameEntity {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_pending_entry(&mut self, target: Option<u64>) {
         match target {
-            Some(building) => self.pending_entry.install(building),
+            Some(building) => {
+                let note = self.note_names();
+                self.pending_entry.install(building, note);
+            }
             None => self.pending_entry.clear(),
         }
     }
@@ -2209,20 +2157,20 @@ impl GameEntity {
     /// VERA-only: the `InfantrySpot` placement cache; natively the coordinate's
     /// in-cell offset carries the spot (`0x00481180`).
     pub(crate) fn sub_cell(&self) -> Option<u8> {
-        self.sub_cell.get()
+        self.seldom.sub_cell.get()
     }
 
     /// A fixture's spot: held, or released for `None`.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_sub_cell(&mut self, sub_cell: Option<u8>) {
         match sub_cell {
-            Some(spot) => self.sub_cell.hold(spot),
-            None => self.sub_cell.release(),
+            Some(spot) => self.seldom.sub_cell.hold(spot),
+            None => self.seldom.sub_cell.release(),
         }
     }
 
     /// `Foot+0x6B6`, the occupation enable; see the field.
-    pub(crate) fn foot_occupation_enabled(&self) -> bool {
+    pub fn foot_occupation_enabled(&self) -> bool {
         self.foot_occupation_enabled.get()
     }
 
@@ -2241,19 +2189,20 @@ impl GameEntity {
     /// rally point share this one field, stored in
     /// [`BaseDefenseResponseState`].
     pub fn archive_target(&self) -> Option<crate::sim::combat::TargetKind> {
-        self.base_defense_response.archive_target()
+        self.seldom.base_defense_response.archive_target()
     }
 
     /// `TechnoClass::Set_ArchiveTarget @ 0x0070C610`, a plain store.
     pub fn set_archive_target(&mut self, target: Option<crate::sim::combat::TargetKind>) {
-        self.base_defense_response.set_archive_target(target);
+        let _ = self.note_names();
+        self.seldom.base_defense_response.set_archive_target(target);
     }
 
     /// Techno `+0x4F8`; see [`DeployVoiceSuppression`].
     ///
     /// [`DeployVoiceSuppression`]: crate::sim::world::DeployVoiceSuppression
     pub fn deploy_voice_suppressed(&self) -> bool {
-        self.suppress_deploy_voice.get()
+        self.seldom.suppress_deploy_voice.get()
     }
 
     /// A factory's rally point is its ArchiveTarget: `BuildingClass::
@@ -2273,13 +2222,13 @@ impl GameEntity {
     ///
     /// [`MissionOnly`]: crate::sim::aircraft::MissionOnly
     pub fn is_mission_only(&self) -> bool {
-        self.mission_only.get()
+        self.seldom.mission_only.get()
     }
 
     /// Foot `+0x424` IsOnCarryall: a Carryall carries this object
     /// (`sim::aircraft::carryall`).
     pub fn is_on_carryall(&self) -> bool {
-        self.on_carryall.get()
+        self.seldom.on_carryall.get()
     }
 
     /// AircraftUnlimbo4143A8..4143F2, only after Foot placement succeeds.
@@ -2302,7 +2251,7 @@ impl GameEntity {
         // native `+0x3D4` byte itself (yes and no) and skips the stock
         // Selectable/Landable/Camera computation (SkipGameCode 0x4143F2).
         if let Some(is_loaner) = object.phobos_is_aloaner {
-            self.mission_only.set(is_loaner);
+            self.seldom.mission_only.set(is_loaner);
             return;
         }
         let camera =
@@ -2310,7 +2259,7 @@ impl GameEntity {
                 .and_then(|id| rules.weapon(id))
                 .is_some_and(|weapon| weapon.camera);
         if !object.selectable || !object.landable || camera {
-            self.mission_only.mark();
+            self.seldom.mission_only.mark();
         }
     }
 
@@ -2343,20 +2292,20 @@ impl GameEntity {
 
     /// Constructor House identity, preserved across ownership transfers and load.
     pub(crate) fn initial_owner(&self) -> InternedId {
-        self.initial_owner
+        self.seldom.initial_owner
     }
 
     pub(crate) fn original_factory_country(&self) -> Option<crate::rules::ruleset::CountryIdx> {
-        self.ares.original_factory_country
+        self.seldom.ares.original_factory_country
     }
 
     pub(crate) fn ares_wave_weapon_slot(&self) -> u8 {
-        self.ares.ares_wave_weapon_slot
+        self.seldom.ares.ares_wave_weapon_slot
     }
 
     /// CreateWave 10055160's write, by the wave's own creator only.
     pub(crate) fn record_ares_wave_weapon_slot(&mut self, slot: u8) {
-        self.ares.ares_wave_weapon_slot = slot;
+        self.seldom.ares.ares_wave_weapon_slot = slot;
     }
 
     /// InitManagers1004A776 and the conversion10045B54 use the same retained
@@ -2365,7 +2314,7 @@ impl GameEntity {
         &mut self,
         country: Option<crate::rules::ruleset::CountryIdx>,
     ) {
-        self.ares.original_factory_country = country;
+        self.seldom.ares.original_factory_country = country;
     }
 
     pub(crate) fn building_loss_index(&self) -> i32 {
@@ -2407,12 +2356,12 @@ impl GameEntity {
     }
 
     pub(crate) fn ares_secret_lab_placed(&self) -> bool {
-        self.ares.ares_secret_lab_placed
+        self.seldom.ares.ares_secret_lab_placed
     }
 
     /// UpdateSecretLab's roll (10013700) sets BuildingExt+0x50.
     pub(in crate::sim) fn mark_ares_secret_lab_placed(&mut self) {
-        self.ares.ares_secret_lab_placed = true;
+        self.seldom.ares.ares_secret_lab_placed = true;
     }
 
     /// One rules-to-model binding for construction and live type changes.
@@ -2440,17 +2389,22 @@ impl GameEntity {
     /// Install a complete constructor or saved role supplied by a fixture.
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_passenger_role_for_test(&mut self, role: PassengerRole) {
+        let _ = self.note_names();
         self.passenger_role = role;
     }
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn passenger_role_mut_for_test(&mut self) -> &mut PassengerRole {
+        let _ = self.note_names();
         &mut self.passenger_role
     }
 
     /// The role's own operations (`sim::passenger`) keep its invariants; the
-    /// paired garrison and cargo admissions live on that owner.
+    /// paired garrison and cargo admissions live on that owner. The role
+    /// names its carrier, riders and occupants, so the entity is noted for
+    /// the pointer-expiry index ([`Self::note_names`]).
     pub(crate) fn passenger_role_mut(&mut self) -> &mut PassengerRole {
+        let _ = self.note_names();
         &mut self.passenger_role
     }
 
@@ -2472,26 +2426,26 @@ impl GameEntity {
 
     /// AbstractClass+10, the native UniqueID.
     pub(crate) fn native_unique_id(&self) -> i32 {
-        self.native_unique_id
+        self.seldom.native_unique_id
     }
 
     /// The TechnoClass constructor's retained Scenario word (`+0x3C8`).
     pub fn techno_ctor_random_word(&self) -> u16 {
-        self.techno_ctor_random_word
+        self.seldom.techno_ctor_random_word
     }
 
     /// The native signed Techno+214 value, shared by Recruit6EAA90 and
     /// TeamAssign731060. It is independent of live Team membership.
     pub fn object_group(&self) -> i32 {
-        self.object_group
+        self.seldom.object_group
     }
 
     /// The group the local player's keys see: +214, or the network game slot
     /// a key wrote since the last +214 write.
     pub fn control_group(&self) -> i32 {
-        match self.local_control_group {
+        match self.seldom.local_control_group {
             Some(group) => group,
-            None => self.object_group,
+            None => self.seldom.object_group,
         }
     }
 
@@ -2499,115 +2453,116 @@ impl GameEntity {
     /// TeamType::Get_Group6F1870 supply raw signed values. Replaces a network
     /// game's local slot, as the native store overwrites the key's value.
     pub(crate) fn assign_object_group(&mut self, group: i32) {
-        self.object_group = group;
-        self.local_control_group = None;
+        self.seldom.object_group = group;
+        self.seldom.local_control_group = None;
     }
 
     /// A network game's TeamAssign731060 store (`local_control_group`).
     pub(crate) fn assign_local_control_group(&mut self, group: i32) {
-        self.local_control_group = Some(group);
+        self.seldom.local_control_group = Some(group);
     }
 
     /// Techno+214 as Deploy7397CC and Mission_Selling44A052 copy it to the
     /// new object, carrying a network game's local slot along.
     pub(crate) fn object_group_copy(&self) -> ObjectGroupCopy {
         ObjectGroupCopy {
-            object_group: self.object_group,
-            local_control_group: self.local_control_group,
+            object_group: self.seldom.object_group,
+            local_control_group: self.seldom.local_control_group,
         }
     }
 
     pub(crate) fn assign_object_group_copy(&mut self, copy: ObjectGroupCopy) {
-        self.object_group = copy.object_group;
-        self.local_control_group = copy.local_control_group;
+        self.seldom.object_group = copy.object_group;
+        self.seldom.local_control_group = copy.local_control_group;
     }
 
     /// UnitClass+6C8, the next Unit in the authored FOLLOWS chain.
     pub(crate) fn unit_follower(&self) -> Option<u64> {
-        self.unit_follower
+        self.seldom.unit_follower
     }
 
     /// UnitClass+6D0; this is saved state, not a derived incoming-link count.
     pub(crate) fn is_unit_follower(&self) -> bool {
-        self.is_unit_follower
+        self.seldom.is_unit_follower
     }
 
     /// The map/owner/expiry callers own admission and ordering. In particular,
     /// changing this reference does not change either Unit's follower byte.
     pub(crate) fn set_unit_follower(&mut self, follower: Option<u64>) {
         assert_eq!(self.category, EntityCategory::Unit);
-        self.unit_follower = follower;
+        let _ = self.note_names();
+        self.seldom.unit_follower = follower;
     }
 
     pub(crate) fn set_is_unit_follower(&mut self, is_follower: bool) {
         assert_eq!(self.category, EntityCategory::Unit);
-        self.is_unit_follower = is_follower;
+        self.seldom.is_unit_follower = is_follower;
     }
 
     pub(crate) fn production_start_price(&self) -> i32 {
-        self.production_start_price
+        self.seldom.production_start_price
     }
 
     /// Factory StartProduction4C9DED writes this once on a newly created
     /// product. Hold/resume, placement and owner changes retain it (gamemd).
     pub(crate) fn record_production_start_price(&mut self, price: i32) {
-        self.production_start_price = price;
+        self.seldom.production_start_price = price;
     }
 
     pub(crate) const fn phobos_grinding_weapon_accumulated_credits(&self) -> i32 {
-        self.grinding_weapon_accumulated_credits
+        self.seldom.grinding_weapon_accumulated_credits
     }
 
     pub(crate) fn set_phobos_grinding_weapon_accumulated_credits(&mut self, credits: i32) {
-        self.grinding_weapon_accumulated_credits = credits;
+        self.seldom.grinding_weapon_accumulated_credits = credits;
     }
 
     pub(crate) const fn phobos_grinding_weapon_last_fired_frame(&self) -> i32 {
-        self.grinding_weapon_last_fired_frame
+        self.seldom.grinding_weapon_last_fired_frame
     }
 
     pub(crate) fn set_phobos_grinding_weapon_last_fired_frame(&mut self, frame: i32) {
-        self.grinding_weapon_last_fired_frame = frame;
+        self.seldom.grinding_weapon_last_fired_frame = frame;
     }
 
     pub(crate) const fn phobos_accumulated_income(&self) -> i32 {
-        self.phobos_accumulated_income
+        self.seldom.phobos_accumulated_income
     }
 
     pub(crate) fn set_phobos_accumulated_income(&mut self, income: i32) {
-        self.phobos_accumulated_income = income;
+        self.seldom.phobos_accumulated_income = income;
     }
 
     pub(crate) const fn phobos_delayed_fire_start_frame(&self) -> i32 {
-        self.phobos_delayed_fire_start_frame
+        self.seldom.phobos_delayed_fire_start_frame
     }
 
     pub(crate) const fn phobos_delayed_fire_duration(&self) -> i32 {
-        self.phobos_delayed_fire_duration
+        self.seldom.phobos_delayed_fire_duration
     }
 
     pub(crate) const fn phobos_delayed_fire_weapon_index(&self) -> i32 {
-        self.phobos_delayed_fire_weapon_index
+        self.seldom.phobos_delayed_fire_weapon_index
     }
 
     pub(crate) const fn phobos_delayed_fire_sequence_paused(&self) -> bool {
-        self.phobos_delayed_fire_sequence_paused
+        self.seldom.phobos_delayed_fire_sequence_paused
     }
 
     pub(crate) const fn phobos_delayed_fire_anim(&self) -> Option<u64> {
-        self.phobos_delayed_fire_anim
+        self.seldom.phobos_delayed_fire_anim
     }
 
     pub(crate) const fn phobos_delayed_fire_remove_anim_on_no_delay(&self) -> bool {
-        self.phobos_delayed_fire_remove_anim_on_no_delay
+        self.seldom.phobos_delayed_fire_remove_anim_on_no_delay
     }
 
     pub(crate) const fn phobos_skip_target_change_reset_sequence(&self) -> bool {
-        self.phobos_skip_target_change_reset_sequence
+        self.seldom.phobos_skip_target_change_reset_sequence
     }
 
     pub(crate) fn set_phobos_skip_target_change_reset_sequence(&mut self, skip: bool) {
-        self.phobos_skip_target_change_reset_sequence = skip;
+        self.seldom.phobos_skip_target_change_reset_sequence = skip;
     }
 
     /// `timer.Start(...)` plus `DelayedFireWeaponIndex = weaponIndex`
@@ -2619,85 +2574,85 @@ impl GameEntity {
         weapon_index: i32,
         paused: bool,
     ) {
-        self.phobos_delayed_fire_start_frame = frame;
-        self.phobos_delayed_fire_duration = duration;
-        self.phobos_delayed_fire_weapon_index = weapon_index;
-        self.phobos_delayed_fire_sequence_paused = paused;
+        self.seldom.phobos_delayed_fire_start_frame = frame;
+        self.seldom.phobos_delayed_fire_duration = duration;
+        self.seldom.phobos_delayed_fire_weapon_index = weapon_index;
+        self.seldom.phobos_delayed_fire_sequence_paused = paused;
     }
 
     pub(crate) fn set_phobos_delayed_fire_sequence_paused(&mut self, paused: bool) {
-        self.phobos_delayed_fire_sequence_paused = paused;
+        self.seldom.phobos_delayed_fire_sequence_paused = paused;
     }
 
     /// Phobos `UnitExt::KeepTargetOnMove`: the Move-order latch.
     pub(crate) const fn phobos_keep_target_on_move(&self) -> bool {
-        self.phobos_keep_target_on_move
+        self.seldom.phobos_keep_target_on_move
     }
 
     pub(crate) fn set_phobos_keep_target_on_move(&mut self, keep: bool) {
-        self.phobos_keep_target_on_move = keep;
+        self.seldom.phobos_keep_target_on_move = keep;
     }
 
     /// Phobos `TechnoExt::RandomFactor`: the per-object `RandomRanged(0, 15)`
     /// drawn once at init (`Ext/Techno/Hooks.cpp:292`).
     pub(crate) const fn phobos_random_factor(&self) -> i32 {
-        self.phobos_random_factor
+        self.seldom.phobos_random_factor
     }
 
     pub(crate) fn set_phobos_random_factor(&mut self, factor: i32) {
-        self.phobos_random_factor = factor;
+        self.seldom.phobos_random_factor = factor;
     }
 
     /// Phobos `TechnoExt::DropCrate`: `-1` unset, `0` disables, `1`
     /// `DropCrateType`.
     pub(crate) const fn phobos_drop_crate(&self) -> i32 {
-        self.phobos_drop_crate
+        self.seldom.phobos_drop_crate
     }
 
     pub(crate) fn set_phobos_drop_crate(&mut self, value: i32) {
-        self.phobos_drop_crate = value;
+        self.seldom.phobos_drop_crate = value;
     }
 
     /// Phobos `TechnoExt::DropCrateType`: the `[Powerups]` slot.
     pub(crate) const fn phobos_drop_crate_type(&self) -> i32 {
-        self.phobos_drop_crate_type
+        self.seldom.phobos_drop_crate_type
     }
 
     pub(crate) fn set_phobos_drop_crate_type(&mut self, crate_type: i32) {
-        self.phobos_drop_crate_type = crate_type;
+        self.seldom.phobos_drop_crate_type = crate_type;
     }
 
     /// Phobos `BuildingExt::IsCreatedFromMapFile`: set by the map's
     /// `[Structures]` spawn (`CreateBuildingFromINIFile`).
     pub(crate) const fn created_from_map_file(&self) -> bool {
-        self.created_from_map_file
+        self.seldom.created_from_map_file
     }
 
     pub(crate) fn set_created_from_map_file(&mut self, value: bool) {
-        self.created_from_map_file = value;
+        self.seldom.created_from_map_file = value;
     }
 
     pub(crate) const fn phobos_infantry_undeploy_converted(&self) -> bool {
-        self.phobos_infantry_undeploy_converted
+        self.seldom.phobos_infantry_undeploy_converted
     }
 
     pub(crate) fn set_phobos_infantry_undeploy_converted(&mut self, converted: bool) {
-        self.phobos_infantry_undeploy_converted = converted;
+        self.seldom.phobos_infantry_undeploy_converted = converted;
     }
 
     pub(crate) const fn phobos_infantry_deploy_converted(&self) -> bool {
-        self.phobos_infantry_deploy_converted
+        self.seldom.phobos_infantry_deploy_converted
     }
 
     pub(crate) fn set_phobos_infantry_deploy_converted(&mut self, converted: bool) {
-        self.phobos_infantry_deploy_converted = converted;
+        self.seldom.phobos_infantry_deploy_converted = converted;
     }
 
     /// `CurrentDelayedFireAnim` registration (`Body.cpp:691-695`): only an
     /// attached anim is tracked, together with its stored removal flag.
     pub(crate) fn set_phobos_delayed_fire_anim(&mut self, id: Option<u64>, remove: bool) {
-        self.phobos_delayed_fire_anim = id;
-        self.phobos_delayed_fire_remove_anim_on_no_delay = remove;
+        self.seldom.phobos_delayed_fire_anim = id;
+        self.seldom.phobos_delayed_fire_remove_anim_on_no_delay = remove;
     }
 
     /// `TechnoExt::ResetDelayedFireTimer` (`Body.cpp:658-669`): stop the timer,
@@ -2705,37 +2660,38 @@ impl GameEntity {
     /// when `DelayedFireRemoveOnNoDelay` was stored on it).
     pub(crate) fn reset_phobos_delayed_fire(&mut self) -> Option<u64> {
         let anim = self
+            .seldom
             .phobos_delayed_fire_remove_anim_on_no_delay
-            .then_some(self.phobos_delayed_fire_anim)
+            .then_some(self.seldom.phobos_delayed_fire_anim)
             .flatten();
-        self.phobos_delayed_fire_start_frame = -1;
-        self.phobos_delayed_fire_duration = 0;
-        self.phobos_delayed_fire_weapon_index = -1;
-        self.phobos_delayed_fire_sequence_paused = false;
-        self.phobos_delayed_fire_anim = None;
-        self.phobos_delayed_fire_remove_anim_on_no_delay = false;
+        self.seldom.phobos_delayed_fire_start_frame = -1;
+        self.seldom.phobos_delayed_fire_duration = 0;
+        self.seldom.phobos_delayed_fire_weapon_index = -1;
+        self.seldom.phobos_delayed_fire_sequence_paused = false;
+        self.seldom.phobos_delayed_fire_anim = None;
+        self.seldom.phobos_delayed_fire_remove_anim_on_no_delay = false;
         anim
     }
 
     /// `FootExt::AttackMoveFollowerTempCount` (`src/Ext/Foot/Body.h:26`).
     pub(crate) const fn phobos_attack_move_follower_temp_count(&self) -> i32 {
-        self.phobos_attack_move_follower_temp_count
+        self.seldom.phobos_attack_move_follower_temp_count
     }
 
     /// The `FootClass_AI` tail decrement (`src/Ext/Techno/Hooks.cpp:50-51`)
     /// and the follow search's refusals/additions (`:1317`, `:1338`).
     pub(crate) fn set_phobos_attack_move_follower_temp_count(&mut self, count: i32) {
-        self.phobos_attack_move_follower_temp_count = count;
+        self.seldom.phobos_attack_move_follower_temp_count = count;
     }
 
     /// `BuildingExt::ConstructionStartFacing` (`Ext/Building/Body.h:31`).
     pub(crate) const fn phobos_construction_start_facing(&self) -> i32 {
-        self.phobos_construction_start_facing
+        self.seldom.phobos_construction_start_facing
     }
 
     /// Stores the one random start facing drawn for this building.
     pub(crate) fn set_phobos_construction_start_facing(&mut self, facing: i32) {
-        self.phobos_construction_start_facing = facing;
+        self.seldom.phobos_construction_start_facing = facing;
     }
 }
 
@@ -2756,11 +2712,11 @@ impl GameEntity {
     }
 
     pub(crate) fn set_native_unique_id_for_test(&mut self, native_unique_id: i32) {
-        self.native_unique_id = native_unique_id;
+        self.seldom.native_unique_id = native_unique_id;
     }
 
     pub(crate) fn set_techno_ctor_random_word_for_test(&mut self, word: u16) {
-        self.techno_ctor_random_word = word;
+        self.seldom.techno_ctor_random_word = word;
     }
 
     /// Before insertion only: supply the constructor and current House
@@ -2769,7 +2725,7 @@ impl GameEntity {
     /// which keeps the store's owner column.
     pub fn set_owner_for_test(&mut self, owner: InternedId) {
         self.owner = owner;
-        self.initial_owner = owner;
+        self.seldom.initial_owner = owner;
     }
 
     pub fn set_type_ref_for_test(&mut self, type_ref: InternedId) {
@@ -2789,13 +2745,19 @@ impl GameEntity {
     ///
     /// [`RetargetAfterStop`]: crate::sim::combat::greatest_threat::RetargetAfterStop
     pub fn foot_retarget_after_stop(&self) -> bool {
-        self.foot_retarget_after_stop.get()
+        self.seldom.foot_retarget_after_stop.get()
     }
 
     /// The body heading at `frame`: `FacingClass::Current @ 0x004C93D0` on
     /// `+0x388`.
     pub fn body_facing_current(&self, frame: u32) -> u16 {
         self.body_facing.current(frame)
+    }
+
+    /// The body heading at `frame` as Ares reads it: its own copy of Current
+    /// (Ares.dll `0x10009CC0`) on `+0x388`.
+    pub fn body_facing_current_ares(&self, frame: u32) -> u16 {
+        self.body_facing.current_ares(frame)
     }
 
     /// The body heading's high byte at `frame`, the 8-bit direction a reader
@@ -2816,25 +2778,26 @@ impl GameEntity {
     /// The barrel elevation (`+0x370`); its readers sample `current(frame)`
     /// (`FacingClass::Current @ 0x004C93D0`).
     pub fn barrel_elevation(&self) -> &crate::sim::movement::FacingClass {
-        &self.barrel_elevation
+        &self.seldom.barrel_elevation
     }
 
     /// `FacingClass::Set_Desired @ 0x004C9220` on the barrel (`+0x370`), as
     /// an EMP cannon's Missile mission aims it.
     pub(crate) fn set_barrel_elevation(&mut self, desired: u16, frame: u32) {
-        self.barrel_elevation.set(desired, frame);
+        self.seldom.barrel_elevation.set(desired, frame);
     }
 
     /// Install a fixture's barrel elevation.
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_barrel_elevation_for_test(&mut self, facing: crate::sim::movement::FacingClass) {
-        self.barrel_elevation = facing;
+        self.seldom.barrel_elevation = facing;
     }
 
     /// Whether the barrel elevation still holds its constructor value, which
     /// an object that never unlimboed keeps.
     pub(crate) fn barrel_elevation_is_constructed(&self) -> bool {
-        self.barrel_elevation == crate::sim::movement::FacingClass::new(0, BARREL_ELEVATION_ROT)
+        self.seldom.barrel_elevation
+            == crate::sim::movement::FacingClass::new(0, BARREL_ELEVATION_ROT)
     }
 
     /// `TechnoClass::Unlimbo`'s barrel writes, right after its body snap
@@ -2842,8 +2805,9 @@ impl GameEntity {
     /// `0x006F6DC3`), then turns toward the type's `FireAngle=` (`Set` at
     /// `0x006F6DF5`, [`unlimbo_barrel_target`]).
     pub(crate) fn unlimbo_barrel_elevation(&mut self, fire_angle: i32, frame: u32) {
-        self.barrel_elevation.snap(BARREL_LEVEL, frame);
-        self.barrel_elevation
+        self.seldom.barrel_elevation.snap(BARREL_LEVEL, frame);
+        self.seldom
+            .barrel_elevation
             .set(unlimbo_barrel_target(fire_angle), frame);
     }
 
@@ -2857,6 +2821,7 @@ impl GameEntity {
     /// objects go through [`crate::sim::world::Simulation::flash_object`].
     pub(crate) fn flash_base(&mut self, frames: i32) {
         if !self
+            .seldom
             .disguise
             .as_ref()
             .is_some_and(|disguise| disguise.is_disguised())
@@ -2926,24 +2891,24 @@ impl GameEntity {
 
     /// The native Techno+3D0 useless latch read by Repair depots.
     pub(crate) fn is_useless(&self) -> bool {
-        self.useless
+        self.seldom.useless
     }
 
     /// Whether `house` spied this building's production (Ares
     /// DisplayProductionTo, `sim::spy_infiltration`).
     pub fn shows_production_to(&self, house: InternedId) -> bool {
-        self.ares.display_production_to.contains(house)
+        self.seldom.ares.display_production_to.contains(house)
     }
 
     /// Ares TechnoExt+9C. Gameplay and drawing read the same driver state.
     pub fn driver_killed(&self) -> bool {
-        self.ares.vehicle_driver.killed()
+        self.seldom.ares.vehicle_driver.killed()
     }
 
     /// `Mission_Harvest`'s two writes to Techno+3D0 (`0x0073E8FA`,
     /// `0x0073E925`). Other systems only read this shared Techno state.
     pub(crate) fn set_useless(&mut self, useless: bool) {
-        self.useless = useless;
+        self.seldom.useless = useless;
     }
 
     /// The committed mission read at TechnoAI6FA697, before its class's
@@ -3076,7 +3041,27 @@ impl GameEntity {
             parasite: crate::sim::combat::parasite::FootParasite::new(construction_frame),
             cached_spatial_threat: Default::default(),
             turret_anim_frame: Default::default(),
+            names_unread: NamesUnread::default(),
             seldom: Box::new(Seldom {
+                grinding_weapon_accumulated_credits: 0,
+                grinding_weapon_last_fired_frame: 0,
+                phobos_accumulated_income: 0,
+                phobos_delayed_fire_start_frame: -1,
+                phobos_delayed_fire_duration: 0,
+                phobos_delayed_fire_weapon_index: -1,
+                phobos_delayed_fire_sequence_paused: false,
+                phobos_delayed_fire_anim: None,
+                phobos_delayed_fire_remove_anim_on_no_delay: false,
+                phobos_skip_target_change_reset_sequence: false,
+                phobos_keep_target_on_move: false,
+                phobos_random_factor: 0,
+                phobos_drop_crate: -1,
+                phobos_drop_crate_type: -1,
+                created_from_map_file: false,
+                phobos_infantry_undeploy_converted: false,
+                phobos_infantry_deploy_converted: false,
+                phobos_attack_move_follower_temp_count: 0,
+                phobos_construction_start_facing: -1,
                 tracking_facts: Default::default(),
                 house_tracking_latches: Default::default(),
                 phobos_placement: Default::default(),
@@ -3166,68 +3151,24 @@ impl GameEntity {
                 railgun_particle_system: Default::default(),
                 damage_smoke_system_id: Default::default(),
                 transport_unload_keep_count: Default::default(),
+                limpets: Default::default(),
                 shield: None,
-            unlimbo_detonate: Default::default(),
-            gattling: Default::default(),
-            turret_anim_frame: Default::default(),
-            phobos_turret_anim: Default::default(),
-            voxel_recoil: None,
-            building_body: (category == EntityCategory::Structure).then(Default::default),
-            building_power_health_sample: Default::default(),
-            building_sale: None,
-            ai_placement_timer: Default::default(),
-            building_art: Default::default(),
-            building_online: Default::default(),
-            unit_delivery_no_base: false,
-            ares_chronoshifting: false,
-            ares_drop_pod: None,
-            ares_super_weapon: None,
-            ares_super_target: None,
-            phobos_current_empulse_sw: None,
-            fall: ObjectFallState::default(),
-            jumpjet_straight_ascend: false,
-            invulnerability: None,
-            phobos_be_controlled_threat_frame: 0,
-            temporal: Default::default(),
-            bomb: None,
-            berserk: Default::default(),
-            pending_entry: Default::default(),
-            vehicle_driver: Default::default(),
-            bounty_display: Default::default(),
-            ares_disable_weapons: Default::default(),
-            ares_self_heal_combat: Default::default(),
-            auto_death_timer: Default::default(),
-            should_be_dead: false,
-            phobos_original_passenger_owner: None,
-            phobos_revert_on_exit_latch: false,
-            phobos_prevent_crew_escape: false,
-            phobos_last_weapon_type: None,
-            phobos_extra_threat_last_target_crd: [0; 3],
-            phobos_extra_threat_last_target_clear_timer: Default::default(),
-            passenger_deletion_timer: Default::default(),
-            phobos_tiberium_eater_timer: Default::default(),
-                repairing: Default::default(),
-                bunker_runtime: None,
+                unlimbo_detonate: Default::default(),
+                phobos_turret_anim: Default::default(),
+                phobos_current_empulse_sw: None,
+                jumpjet_straight_ascend: false,
+                phobos_be_controlled_threat_frame: 0,
+                auto_death_timer: Default::default(),
+                should_be_dead: false,
+                phobos_original_passenger_owner: None,
+                phobos_revert_on_exit_latch: false,
+                phobos_prevent_crew_escape: false,
+                phobos_last_weapon_type: None,
+                phobos_extra_threat_last_target_crd: [0; 3],
+                phobos_extra_threat_last_target_clear_timer: Default::default(),
+                passenger_deletion_timer: Default::default(),
+                phobos_tiberium_eater_timer: Default::default(),
             }),
-            grinding_weapon_accumulated_credits: 0,
-            grinding_weapon_last_fired_frame: 0,
-            phobos_accumulated_income: 0,
-            phobos_delayed_fire_start_frame: -1,
-            phobos_delayed_fire_duration: 0,
-            phobos_delayed_fire_weapon_index: -1,
-            phobos_delayed_fire_sequence_paused: false,
-            phobos_delayed_fire_anim: None,
-            phobos_delayed_fire_remove_anim_on_no_delay: false,
-            phobos_skip_target_change_reset_sequence: false,
-            phobos_keep_target_on_move: false,
-            phobos_random_factor: 0,
-            phobos_drop_crate: -1,
-            phobos_drop_crate_type: -1,
-            created_from_map_file: false,
-            phobos_infantry_undeploy_converted: false,
-            phobos_infantry_deploy_converted: false,
-            phobos_attack_move_follower_temp_count: 0,
-            phobos_construction_start_facing: -1,
         }
     }
 
@@ -3349,17 +3290,17 @@ impl GameEntity {
 
     /// Phobos `FootExt::JumpjetStraightAscend` (`Ext/Foot/Body.h:25`).
     pub(crate) fn jumpjet_straight_ascend(&self) -> bool {
-        self.jumpjet_straight_ascend
+        self.seldom.jumpjet_straight_ascend
     }
 
     pub(crate) fn mark_jumpjet_straight_ascend(&mut self) {
-        self.jumpjet_straight_ascend = true;
+        self.seldom.jumpjet_straight_ascend = true;
     }
 
     /// The MovementAI hook (`Ext/Unit/Hooks.Jumpjet.cpp:413-437`) clears the
     /// flag on a crash, a dead owner, or any state past the ascend.
     pub(crate) fn clear_jumpjet_straight_ascend(&mut self) {
-        self.jumpjet_straight_ascend = false;
+        self.seldom.jumpjet_straight_ascend = false;
     }
 
     pub(crate) fn fall_rate(&self) -> i32 {
@@ -3400,6 +3341,23 @@ impl GameEntity {
         self.fall.parachute_animation_expired(animation);
     }
 
+    /// Note that this entity may come to name another object in a field
+    /// `Simulation::entity_expiry_holds` reads, and take the [`NameNote`]
+    /// that field's writer requires.
+    pub(crate) fn note_names(&mut self) -> NameNote {
+        self.names_unread.0 = true;
+        NameNote(())
+    }
+
+    /// Whether the entity was noted ([`Self::note_names`]) since the store
+    /// last asked, which forgets it.
+    pub(crate) fn take_names_unread(
+        &mut self,
+        _: crate::sim::entity_store::UnreadNamesAuthority,
+    ) -> bool {
+        std::mem::replace(&mut self.names_unread.0, false)
+    }
+
     /// The Anims held in the fields `Simulation::notify_anim_pointer_expired`
     /// clears when an Anim expires: Object+88's parachute (the owner's
     /// Detach710410 reaching5F6DA0), the Ares EMP sparkle, the Ares
@@ -3427,12 +3385,12 @@ impl GameEntity {
         // clears `CurrentDelayedFireAnim` when it is the tracked wind-up. The
         // pointer is non-owning, so this only clears it; the shared anim owner
         // finishes the one destroy.
-        if self.phobos_delayed_fire_anim == Some(animation) {
-            self.phobos_delayed_fire_anim = None;
+        if self.seldom.phobos_delayed_fire_anim == Some(animation) {
+            self.seldom.phobos_delayed_fire_anim = None;
         }
         self.expire_behind_anim(animation);
         self.drain.expire_anim(animation);
-        self.mind_control.anim_pointer_expired(animation);
+        self.seldom.mind_control.anim_pointer_expired(animation);
         self.expire_deploy_anim(animation);
         self.parachute_animation_expired(animation);
     }
@@ -3528,20 +3486,21 @@ impl GameEntity {
     /// `RadioClass+0xE4`/`+0xE8`, the contact slots; see the field.
     #[cfg(test)]
     pub fn mark_live_contact_with(&mut self, other_stable_id: u64) {
-        self.radio_contacts.insert(other_stable_id);
+        let note = self.note_names();
+        self.seldom.radio_contacts.admit(other_stable_id, note);
     }
 
     /// Whether this entity has a live RadioClass-style contact with another entity.
     /// `RadioClass+0xE4`/`+0xE8`, the contact slots; see the field.
     pub fn has_live_contact_with(&self, other_stable_id: u64) -> bool {
-        self.radio_contacts.contains(other_stable_id)
+        self.seldom.radio_contacts.contains(other_stable_id)
     }
 
     /// Clear a live RadioClass-style contact with another entity (BREAK: nulls
     /// the slot in place, no compaction).
     /// `RadioClass+0xE4`/`+0xE8`, the contact slots; see the field.
     pub fn clear_live_contact_with(&mut self, other_stable_id: u64) {
-        self.radio_contacts.remove(other_stable_id);
+        self.seldom.radio_contacts.remove(other_stable_id);
     }
 
     /// Runtime movement/path layer with Ground as the fallback.
@@ -3609,9 +3568,9 @@ impl GameEntity {
     /// `+0x314`) as they are linked now.
     pub(crate) fn live_particles(&self) -> crate::sim::combat::rof::LiveParticles {
         crate::sim::combat::rof::LiveParticles {
-            spark: self.spark_particle_system.system().is_some(),
-            fire: self.fire_particle_system.system().is_some(),
-            railgun: self.railgun_particle_system.system().is_some(),
+            spark: self.seldom.spark_particle_system.system().is_some(),
+            fire: self.seldom.fire_particle_system.system().is_some(),
+            railgun: self.seldom.railgun_particle_system.system().is_some(),
         }
     }
 
@@ -3623,7 +3582,7 @@ impl GameEntity {
     /// reads that byte, so the system applies the release there
     /// ([`crate::sim::particles::ParticleSystem::apply_fire_link_release`]).
     pub(crate) fn release_fire_particle_system(&mut self) {
-        self.fire_particle_system.forget();
+        self.seldom.fire_particle_system.forget();
     }
 
     /// Wave (0x75F3F3) and area damage (0x4899F1) both require a live,
@@ -3736,14 +3695,14 @@ impl GameEntity {
     ///
     /// [`CrushImmunity`]: crate::sim::deploy::CrushImmunity
     pub(crate) fn native_crush_immunity(&self) -> u8 {
-        self.native_crush_immunity.get()
+        self.seldom.native_crush_immunity.get()
     }
 
     /// A fixture infantryman's raw crush-immunity byte.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_infantry_deploy_crush_immunity(&mut self, raw: u8) {
         assert_eq!(self.category, EntityCategory::Infantry);
-        self.native_crush_immunity = crate::sim::deploy::CrushImmunity::from_raw(raw);
+        self.seldom.native_crush_immunity = crate::sim::deploy::CrushImmunity::from_raw(raw);
     }
 
     /// Native Get_Mission(vt184) reads current, otherwise queued. The
@@ -3805,10 +3764,10 @@ impl GameEntity {
     /// the state hash.
     pub(crate) fn hash_capture_infantry_type(&self, hasher: &mut impl std::hash::Hasher) {
         use std::hash::Hash;
-        self.capture_infantry_type_index.get().hash(hasher);
-        if self.ares.vehicle_driver != Default::default() {
+        self.seldom.capture_infantry_type_index.get().hash(hasher);
+        if self.seldom.ares.vehicle_driver != Default::default() {
             b"ares-vehicle-driver-v1".hash(hasher);
-            self.ares.vehicle_driver.hash(hasher);
+            self.seldom.ares.vehicle_driver.hash(hasher);
         }
     }
 }
@@ -3843,6 +3802,32 @@ mod tests {
             (4, 3, 5)
         );
         assert_eq!((reload("DRAIN", 4), reload("DRAIN", 2)), (1, 0));
+    }
+
+    /// StartReloading6FB080's `Reload + ReloadIncrement * q * q` with `q` the
+    /// ammo count over `PipWrap=`: the overflowing pair (`i32::MIN` over -1)
+    /// no longer panics, and an ordinary pair keeps IDIV's quotient.
+    #[test]
+    fn reload_duration_divides_by_pip_wrap_without_overflow() {
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[VehicleTypes]\n0=ODD\n1=WRAP\n\
+                 [ODD]\nAmmo=5\nReload=10\nReloadIncrement=1\nPipWrap=-1\n\
+                 [WRAP]\nAmmo=9\nReload=10\nReloadIncrement=1\nPipWrap=2\n",
+            ))
+            .unwrap();
+        let duration = |name: &str, current: i32| {
+            let mut entity = GameEntity::test_default(1, name, "Americans", 10, 20);
+            let mut ammo = TechnoAmmo::new(5);
+            ammo.set_current_for_test(current);
+            entity.install_ammo_for_test(Some(ammo));
+            entity.start_reloading_ammo(rules.object(name).unwrap(), 0);
+            entity.seldom.ammo_reload_timer.remaining(0)
+        };
+        // i32::MIN wraps; MIN * MIN wraps to 0, so the clock runs Reload.
+        assert_eq!(duration("ODD", i32::MIN), 10);
+        // -7 / 2 truncates toward zero to -3: 10 + 9.
+        assert_eq!(duration("WRAP", -7), 19);
     }
 
     fn native_cloak_fixture() -> &'static serde_json::Value {
@@ -3884,7 +3869,7 @@ mod tests {
         contacted.mark_live_contact_with(100);
         contacted.mark_live_contact_with(100);
 
-        assert_eq!(contacted.radio_contacts.len(), 1); // idempotent — one slot used
+        assert_eq!(contacted.seldom.radio_contacts.len(), 1); // idempotent — one slot used
         assert!(contacted.has_live_contact_with(100));
         assert!(!unrelated.has_live_contact_with(100));
 
@@ -3934,16 +3919,16 @@ mod lifecycle_tests {
     fn lifecycle_authority_state_axes_are_independent() {
         let mut e = GameEntity::test_default(1, "E1", "Americans", 3, 3);
         assert_eq!(e.lifecycle, ObjectLifecycle::default());
-        assert!(!e.in_logic_vector.is_member());
-        assert!(!e.removal_facts.dirty_rect_eligible());
-        assert!(!e.kill_record.is_recorded());
+        assert!(!e.seldom.in_logic_vector.is_member());
+        assert!(!e.seldom.removal_facts.dirty_rect_eligible());
+        assert!(!e.seldom.kill_record.is_recorded());
 
         // Exercise every combination without deriving one fact from another.
         for bits in 0u8..64 {
             e.lifecycle.set_object_alive_for_test(bits & 0b00_0001 != 0);
             e.lifecycle.set_in_limbo_for_test(bits & 0b00_0010 != 0);
             e.lifecycle.set_cell_marked_for_test(bits & 0b00_0100 != 0);
-            e.in_logic_vector.set_for_test(bits & 0b00_1000 != 0);
+            e.seldom.in_logic_vector.set_for_test(bits & 0b00_1000 != 0);
             e.death.set_dying_for_test(bits & 0b01_0000 != 0);
             e.health
                 .set_for_test(if bits & 0b10_0000 != 0 { 1 } else { 0 });
@@ -3951,7 +3936,7 @@ mod lifecycle_tests {
             assert_eq!(e.is_object_alive(), bits & 0b00_0001 != 0);
             assert_eq!(e.lifecycle.in_limbo(), bits & 0b00_0010 != 0);
             assert_eq!(e.lifecycle.cell_marked(), bits & 0b00_0100 != 0);
-            assert_eq!(e.in_logic_vector.is_member(), bits & 0b00_1000 != 0);
+            assert_eq!(e.seldom.in_logic_vector.is_member(), bits & 0b00_1000 != 0);
             assert_eq!(e.death.is_dying(), bits & 0b01_0000 != 0);
             assert_eq!(e.is_alive(), bits & 0b10_0000 != 0);
             assert_eq!(
@@ -4007,13 +3992,13 @@ impl GameEntity {
     /// list for animation draw offsets and tint; only `sim::attach_effect`
     /// writes it.
     pub fn phobos_attach_effects(&self) -> &crate::sim::attach_effect::AttachEffectList {
-        &self.phobos_attach_effects
+        &self.seldom.phobos_attach_effects
     }
 
     pub(crate) fn phobos_attach_effects_mut(
         &mut self,
     ) -> &mut crate::sim::attach_effect::AttachEffectList {
-        &mut self.phobos_attach_effects
+        &mut self.seldom.phobos_attach_effects
     }
 
     /// The stat fold `sim::attach_effect` recomputes from the instance list
@@ -4021,7 +4006,7 @@ impl GameEntity {
     pub(crate) fn phobos_stat_multipliers(
         &self,
     ) -> &crate::sim::attach_effect::PhobosStatMultipliers {
-        &self.phobos_stat_multipliers
+        &self.seldom.phobos_stat_multipliers
     }
 
     /// `TechnoExt::RecalculateStatMultipliers` (Body.Update.cpp:1124): refolds
@@ -4031,16 +4016,17 @@ impl GameEntity {
         &mut self,
         effects: &[crate::rules::attach_effect::AttachEffectType],
     ) {
-        self.phobos_stat_multipliers = self.phobos_attach_effects.stat_multipliers(effects);
+        self.seldom.phobos_stat_multipliers =
+            self.seldom.phobos_attach_effects.stat_multipliers(effects);
     }
 
     /// A live effect drives future frames, so it joins the state hash; an
     /// entity with none contributes nothing.
     pub(crate) fn hash_phobos_attach_effects<H: std::hash::Hasher>(&self, hasher: &mut H) {
         use std::hash::Hash;
-        if !self.phobos_attach_effects.is_empty() {
+        if !self.seldom.phobos_attach_effects.is_empty() {
             b"phobos-attach-effects-v1".hash(hasher);
-            self.phobos_attach_effects.hash(hasher);
+            self.seldom.phobos_attach_effects.hash(hasher);
         }
     }
 }
@@ -4050,104 +4036,31 @@ impl GameEntity {
 impl GameEntity {
     /// The cached AttachEffect speed factor; identity without the feature.
     pub(crate) fn phobos_speed_multiplier(&self) -> f64 {
-        {
-            self.phobos_stat_multipliers.speed
-        }
+        { self.seldom.phobos_stat_multipliers.speed }
     }
 
     /// The cached AttachEffect armor factor for the unrestricted effects.
     pub(crate) fn phobos_armor_multiplier(&self) -> f64 {
-        {
-            self.phobos_stat_multipliers.armor
-        }
+        { self.seldom.phobos_stat_multipliers.armor }
     }
 
     /// The cached AttachEffect ROF factor; identity without the feature.
     pub(crate) fn phobos_rof_multiplier(&self) -> f64 {
-        {
-            self.phobos_stat_multipliers.rof
-        }
+        { self.seldom.phobos_stat_multipliers.rof }
     }
 
     /// `Cloakable` from the active AttachEffects; false without the feature.
     pub(crate) fn phobos_cloakable(&self) -> bool {
-        {
-            self.phobos_stat_multipliers.cloakable
-        }
+        { self.seldom.phobos_stat_multipliers.cloakable }
     }
 
     /// `ForceDecloak` from the active AttachEffects; false without the feature.
     pub(crate) fn phobos_force_decloak(&self) -> bool {
-        {
-            self.phobos_stat_multipliers.force_decloak
-        }
+        { self.seldom.phobos_stat_multipliers.force_decloak }
     }
 
     /// `Unkillable` from the active AttachEffects; false without the feature.
     pub(crate) fn phobos_unkillable(&self) -> bool {
-        {
-            self.phobos_stat_multipliers.unkillable
-        }
+        { self.seldom.phobos_stat_multipliers.unkillable }
     }
-}
-
-/// Phobos `ScaleReloadDurationForVeterancy`
-/// (`Ext/Techno/Hooks.Firing.cpp:1180-1193`): a non-positive duration and a
-/// rank without the matching additional ability both leave it untouched, and
-/// an accepted scale is `max(1, SafeMultiply(duration, multiplier))` with the
-/// product clamped into `i32` before the truncating conversion.
-///
-/// The multiplier is the type's own key falling back to `[General]`; the
-/// empty-clip arm falls back one step further, from `VeteranEmptyReload=` to
-/// `VeteranReload=` (`:1188-1191`).
-fn scale_reload_for_veterancy(
-    entity: &GameEntity,
-    object: &crate::rules::object_type::ObjectType,
-    rules: &crate::rules::ruleset::RuleSet,
-    duration: i32,
-    empty: bool,
-) -> i32 {
-    use crate::rules::phobos_crit::PhobosAbilityFlags;
-    use crate::sim::combat::veterancy::VeterancyRank;
-
-    if duration <= 0 {
-        return duration;
-    }
-    let rank = entity.veterancy.rank_kind();
-    let elite = matches!(rank, VeterancyRank::Elite);
-    if matches!(rank, VeterancyRank::Rookie) {
-        return duration;
-    }
-    let slot = if empty {
-        PhobosAbilityFlags::EMPTY_RELOAD
-    } else {
-        PhobosAbilityFlags::RELOAD
-    };
-    if !object.phobos_abilities.has(slot, elite) {
-        return duration;
-    }
-    let globals = &rules.phobos_globals;
-    let multiplier = if empty {
-        object.phobos_techno_extras.veteran_empty_reload.unwrap_or(
-            globals
-                .veteran_empty_reload()
-                .unwrap_or(globals.veteran_reload()),
-        )
-    } else {
-        object
-            .phobos_techno_extras
-            .veteran_reload
-            .unwrap_or(globals.veteran_reload())
-    };
-    // `GeneralUtils::SafeMultiply(int, double)`: the double product clamped to
-    // the `i32` range, then `static_cast<int>` (truncation toward zero).
-    let product = f64::from(duration) * multiplier;
-    let clamped = if product > f64::from(i32::MAX) {
-        i32::MAX
-    } else if product < f64::from(i32::MIN) {
-        i32::MIN
-    } else {
-        product as i32
-    };
-    clamped.max(1)
 }

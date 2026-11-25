@@ -145,8 +145,8 @@ pub(super) fn apply(
                 arg6: false,
             },
         );
-        let (nested, mut pings) =
-            commit_entities(world, run, &[event], None, rules, overlay_registry);
+        let mut pings = Vec::new();
+        let nested = commit_entities(world, run, &[event], None, rules, overlay_registry, &mut pings);
         out.append(nested);
         out.under_attack_events.append(&mut pings);
     }

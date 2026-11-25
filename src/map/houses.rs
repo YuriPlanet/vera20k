@@ -8,6 +8,17 @@
 //! `HouseColorMap`. The roster keeps the original map order and the most useful
 //! ownership metadata for later simulation/UI work.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::rules::color_scheme::ColorSchemeEntry;
@@ -249,7 +260,9 @@ pub fn parse_house_roster(
         // entry and drops the copy. Residual: that second House (and one
         // whose name differs from an earlier one only in ASCII case, which
         // native keeps as its own House) is not constructed, so such a map
-        // has one House fewer here than in gamemd.
+        // has one House fewer here than in gamemd. The map plays on without a
+        // notice, as in gamemd, which accepts the repeat silently: the player
+        // has nothing to fix, and the log names the entry for the mapper.
         if houses
             .iter()
             .any(|house: &HouseDefinition| house.name.eq_ignore_ascii_case(house_name))
@@ -364,9 +377,20 @@ fn parse_scenario_base_plan(
         return ScenarioBasePlanDefinition::default();
     };
     let percent_built = section.read_int("PercentBuilt", 0);
+    // BaseClass::Read_INI loops to NodeCount as written; a map is outside
+    // data, and `NodeCount=2000000000` would read two billion keys and grow
+    // the node list past memory with no log line. Real base plans hold a few
+    // dozen nodes.
+    const MAX_NODES: i32 = 1024;
     let node_count = section.read_int("NodeCount", 0);
+    if node_count > MAX_NODES {
+        log::warn!(
+            "[{}] NodeCount={node_count} asks for more base nodes than the {MAX_NODES} read",
+            section.name
+        );
+    }
     let mut nodes = Vec::new();
-    for index in 0..node_count.max(0) {
+    for index in 0..node_count.clamp(0, MAX_NODES) {
         let value = section
             .read_name(&format!("{index:03}"), 0x80)
             .unwrap_or("");
@@ -398,6 +422,20 @@ fn parse_scenario_base_plan(
 
 #[cfg(all(test, tests_map))]
 mod tests {
+    /// `NodeCount=2000000000` must not read two billion keys.
+    #[test]
+    fn a_base_plan_reads_at_most_the_node_cap() {
+        let ini = IniFile::from_str(
+            "[Americans]\nNodeCount=2000000000\n000=GAPOWR,10,12\n001=GAREFN,14,12\n",
+        );
+        let plan = parse_scenario_base_plan(ini.section("Americans"), None);
+        assert_eq!(plan.nodes.len(), 1024);
+        assert_eq!(
+            plan.nodes[0].packed_cell,
+            pack_scenario_base_plan_cell(10, 12)
+        );
+    }
+
     use super::*;
 
     fn base_plan_rules() -> RuleSet {

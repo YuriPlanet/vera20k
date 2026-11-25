@@ -215,6 +215,20 @@ impl OverlayGrid {
         })
     }
 
+    /// Whether [`Self::write_finalized_map_cell`] would leave the cell as it
+    /// is.
+    pub(crate) fn holds_finalized_map_cell(
+        &self,
+        rx: u16,
+        ry: u16,
+        finalized: FinalizedOverlayCell,
+    ) -> bool {
+        index_of(self.width, self.height, rx, ry).is_none_or(|index| {
+            let cell = &self.cells[index];
+            cell.overlay_id == finalized.overlay_id() && cell.overlay_data == finalized.state()
+        })
+    }
+
     /// Commit the one identity/state pair returned by the final authored-load
     /// Recalc without disturbing retained wall counts or later wall ownership.
     pub(crate) fn write_finalized_map_cell(
@@ -1371,9 +1385,7 @@ pub(crate) fn damage_wall_overlay_with_terrain(
 /// a wall's penultimate hit applies to each pristine cardinal neighbour,
 /// `200` natively (`Ext/Cell/Hooks.cpp:5-11`).
 pub(crate) fn adjacent_wall_damage_for(rules: &crate::rules::ruleset::RuleSet) -> i32 {
-    {
-        rules.phobos_globals.adjacent_wall_damage
-    }
+    { rules.phobos_globals.adjacent_wall_damage }
 }
 
 /// Damage the already retained Cell receiver, including its shared-Dummy

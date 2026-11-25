@@ -70,7 +70,7 @@ fn sim(rules: &RuleSet, human: bool, levels: &[((u16, u16), u8)]) -> Simulation 
     sim.houses
         .register(HouseState::new(owner, 0, None, human, 0, 10));
     sim.session.game_options_mut_for_test().super_weapons = true;
-    sim.resolved_terrain = Some(test_grid(64, 64, |x, y| ResolvedTerrainCell {
+    *sim.resolved_terrain = Some(test_grid(64, 64, |x, y| ResolvedTerrainCell {
         level: levels
             .iter()
             .find(|(at, _)| *at == (x, y))
@@ -123,7 +123,7 @@ fn click_fire_matches_native() {
             .insert(sw_type_id, instance);
         if flag(&row["dominator_active"]) {
             // A Dominator already rises (`PsyDom::Active @ 0x0053B400`).
-            sim.psychic_dominator =
+            *sim.psychic_dominator =
                 super::super::psychic_dominator::PsychicDominatorState::for_test(
                     2,
                     (3, 3),
@@ -143,7 +143,7 @@ fn click_fire_matches_native() {
             &sw,
             (33, 44),
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             None,
             false,
         );
@@ -238,7 +238,7 @@ fn an_accepted_stock_launch_counts_one_shot() {
         &sw,
         (10, 10),
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         None,
         false,
     ));
@@ -319,7 +319,7 @@ fn the_launch_alert_matches_native() {
         }
         sim.session
             .set_binary_frame_for_test(u32::try_from(int(&row["frame"])).unwrap());
-        sim.scenario_rng = SimRng::answering(0, 99, int(&row["answer"]));
+        *sim.scenario_rng = SimRng::answering(0, 99, int(&row["answer"]));
         // RandomRanged's own retries draw more raw words; count its calls by
         // the cursor they leave.
         let mut drawn = sim.scenario_rng.clone();
@@ -437,7 +437,7 @@ fn default_build_refuses_forged_extension_launches_before_mutation_or_ai_rng() {
             sw_type,
             (20, 20),
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             false,
         ));
         sim.houses
@@ -454,7 +454,7 @@ fn default_build_refuses_forged_extension_launches_before_mutation_or_ai_rng() {
             &rules,
             owner,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(before_ai, sim.state_hash(), "{kind:?}");
         sim.houses
@@ -496,7 +496,7 @@ fn default_build_stock_launch_ignores_extension_money_and_building_tags() {
         sw_type,
         (20, 20),
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         false,
     ));
     assert_eq!(wallet, sim.houses[&owner].economy().available_money());
@@ -546,7 +546,7 @@ fn default_build_refuses_forged_paid_commands_and_saved_selection_state() {
         sw_type,
         (20, 20),
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
         crate::sim::superweapon::SuperWeaponTargetSource::Manual,
         Some(selection),
     ));
@@ -590,7 +590,7 @@ fn ares_a_super_still_charged_after_fire_alerts_no_house() {
             sw_type_id,
             (33, 44),
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             false,
         );
         let (_, frame) = sim.houses[&owner].super_weapon_defense();

@@ -7,6 +7,17 @@
 //! Browser networking uses the same quota/eviction owner over the per-tab VFS;
 //! synchronous operations need no process lock, and shared leases retain pins.
 
+// Outside data reaches this module: it refuses bad input, never panics.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::indexing_slicing
+    )
+)]
+
 #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
 use crate::util::file_system as fs;
 #[cfg(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown"))]
@@ -90,7 +101,7 @@ impl std::fmt::Debug for CacheLease {
 }
 
 #[cfg(not(all(feature = "wasm-net", target_arch = "wasm32", target_os = "unknown")))]
-fn open_regular(path: &Path, create: bool, writable: bool) -> Result<File> {
+pub(super) fn open_regular(path: &Path, create: bool, writable: bool) -> Result<File> {
     let mut options = OpenOptions::new();
     options.read(true).write(writable).create(create);
     #[cfg(unix)]
@@ -107,7 +118,7 @@ fn open_regular(path: &Path, create: bool, writable: bool) -> Result<File> {
     let file = options.open(path)?;
     ensure!(
         file.metadata()?.is_file() && !fs::symlink_metadata(path)?.file_type().is_symlink(),
-        "network cache entry is not a regular file"
+        "map storage entry is not a regular file"
     );
     Ok(file)
 }

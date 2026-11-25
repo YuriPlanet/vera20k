@@ -111,12 +111,13 @@ pub struct PhobosKillWeaponSuppress {
 
 impl PhobosKillWeaponSuppress {
     pub fn from_section(section: &IniSection) -> Self {
-        use crate::rules::native_processing::read_valueable_type_vector;
+        use crate::rules::native_processing::read_nullable_type_vector;
         Self {
             suppress: section.read_ares_bool("SuppressKillWeapons", false),
-            types: read_valueable_type_vector(section, "SuppressKillWeapons.Types", &[], |name| {
+            types: read_nullable_type_vector(section, "SuppressKillWeapons.Types", None, |name| {
                 Some(name.to_owned())
-            }),
+            })
+            .unwrap_or_default(),
         }
     }
 

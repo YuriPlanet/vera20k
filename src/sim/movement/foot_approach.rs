@@ -266,7 +266,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         // The harvest_attack_return corpus substitutes the Approach vcall
         // itself with a declared RET4 (`APPROACH_SEAM`); a replayed row takes
@@ -301,7 +301,7 @@ impl Simulation {
             .get(id)
             .filter(|actor| actor.category() == EntityCategory::Infantry)
             .and_then(|actor| self.object_type(actor.type_ref(), rules))
-            .is_some_and(|object| rules.infantry_auto_deploy_for(object))
+            .is_some_and(|object| rules.phobos() && rules.infantry_auto_deploy_for(object))
         {
             self.approach_infantry_deploy_arm(id, rules, registry, frame_effects);
         }
@@ -314,7 +314,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(destination) = self.unit_approach_head(id, rules) else {
             return false;
@@ -350,7 +350,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;
@@ -424,7 +424,7 @@ impl Simulation {
     /// Foot4D5690(false) at 741689, and Infantry522340 calls it at 52236E,
     /// whatever the locomotor: the body tells a Jumpjet apart itself. A
     /// mapless fixture cannot execute native cell/zone queries. No aircraft
-    /// is represented (the body's Rescue residual).
+    /// is represented (`sim::mission::rescue`'s approach residual).
     pub(crate) fn owns_foot_approach(&self, id: u64, rules: &RuleSet) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
@@ -479,7 +479,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<Option<NavTargetRef>, String> {
         let Some(actor) = self.substrate.entities.get(id) else {
             return Ok(None);
@@ -611,11 +611,13 @@ impl Simulation {
         // nav recalc, queued-destination arm or search. InLimbo keeps the
         // original body; a close-enough foot that StopWhenInRange will stop
         // also keeps it (hook B returns 0).
-        let phobos_stop_when_in_range = object
-            .phobos_attack_move
-            .stop_when_in_range(&rules.phobos_globals);
+        let phobos_stop_when_in_range = rules.phobos()
+            && object
+                .phobos_attack_move
+                .stop_when_in_range(&rules.phobos_globals);
         if !actor.in_limbo()
             && !(can_fire && phobos_stop_when_in_range)
+            && rules.phobos()
             && object.phobos_attack_move.approach_target_pursuit_target
         {
             self.assign_destination_represented(id, Some(target_reference), rules, frame_effects)
@@ -743,7 +745,7 @@ impl Simulation {
                 .get(id)
                 .filter(|t| t.category() == EntityCategory::Structure)
                 .map(|t| {
-                    let (width, height) = t.type_facts.foundation().dimensions();
+                    let (width, height) = t.seldom.type_facts.foundation().dimensions();
                     (i32::from(width), i32::from(height))
                 }),
             TargetKind::Cell(..) => None,
@@ -770,11 +772,12 @@ impl Simulation {
         // test (4D6764 -> 4D689A). 4D5873 sets the same flag for an
         // aircraft, which native brings here from Foot's Mission_Rescue
         // (AircraftClass vt+0x258 = 4DDF90, Approach at 4DDFEB).
-        // RESIDUAL: VERA's aircraft never run Rescue
-        // (`aircraft::dispatch_mission`) and `owns_foot_approach` refuses
-        // them, so that arm is not ported. Trigger: an aircraft on Rescue; VERA's one
-        // Rescue producer, the base-defense response, queues it only on
-        // infantry and units. Effect: none while no producer exists.
+        // RESIDUAL: an aircraft now runs Rescue (`sim::mission::rescue`),
+        // but `owns_foot_approach` refuses it, so the approach arm native
+        // reaches from Mission_Rescue (0x004DDFEB) is not ported. Trigger:
+        // an aircraft on Rescue with a Target; VERA's one Rescue producer,
+        // the base-defense response, queues it only on infantry and units.
+        // Effect: the aircraft holds its position instead of approaching.
         let flies = actor
             .locomotor
             .as_ref()
@@ -936,7 +939,7 @@ impl Simulation {
                     source_nav,
                     source,
                     actor.on_bridge(),
-                    actor.low_bridge_tube_state.is_some(),
+                    actor.active_tube().is_some(),
                 )?;
                 if self.estimate_zone_cost(
                     id,
@@ -1081,7 +1084,7 @@ impl Simulation {
         target_center: DriveCoord,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         use super::ground_pose::{position_world_coord, query_object_cell};
         use crate::sim::cell_kernel::{native_cell_own_xy, native_xy_distance};
@@ -1241,7 +1244,14 @@ impl Simulation {
         candidate: (i16, i16),
         rules: &RuleSet,
     ) -> Result<bool, String> {
-        self.approach_admits(id, candidate, false, rules, None, FrameEffects::default())
+        self.approach_admits(
+            id,
+            candidate,
+            false,
+            rules,
+            None,
+            &mut FrameEffects::default(),
+        )
     }
 
     fn approach_admits(
@@ -1251,7 +1261,7 @@ impl Simulation {
         close_range: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         if self.phobos_balloon_hover_ignores_cell_entry(id, rules) {
             return Ok(true);
@@ -1352,7 +1362,7 @@ impl Simulation {
             source,
             super::ground_pose::position_world_coord(&actor.position),
             actor.on_bridge(),
-            actor.low_bridge_tube_state.is_some(),
+            actor.active_tube().is_some(),
         )?;
         let source = coord_cell(source);
         let zone = self

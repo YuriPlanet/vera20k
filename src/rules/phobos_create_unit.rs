@@ -14,7 +14,7 @@
 use crate::rules::ares_warhead::HouseSelector;
 use crate::rules::ini_parser::IniSection;
 use crate::rules::mission_data::MissionType;
-use crate::rules::native_processing::read_valueable_type_vector;
+use crate::rules::native_processing::read_nullable_type_vector;
 
 /// One animation type's `CreateUnit` settings.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -70,9 +70,10 @@ impl CreateUnitSettings {
             always_spawn_on_ground: section.read_bool("CreateUnit.AlwaysSpawnOnGround", false),
             spawn_parachuted_in_air: section.read_bool("CreateUnit.SpawnParachutedInAir", false),
             consider_pathfinding: section.read_bool("CreateUnit.ConsiderPathfinding", false),
-            spawn_anim: read_valueable_type_vector(section, "CreateUnit.SpawnAnim", &[], |name| {
+            spawn_anim: read_nullable_type_vector(section, "CreateUnit.SpawnAnim", None, |name| {
                 Some(name.to_owned())
-            }),
+            })
+            .unwrap_or_default(),
             spawn_height: section.read_int("CreateUnit.SpawnHeight", -1),
         }
     }

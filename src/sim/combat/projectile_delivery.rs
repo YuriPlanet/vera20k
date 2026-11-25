@@ -456,13 +456,16 @@ fn admit_bullet(
     );
     let spawn = delivery.spawn(&world.substrate.entities, rules, projectile_type, bullet);
     world.admit_projectile(bullet_id, spawn);
-    // Phobos `ObjectClass_Unlimbo_Parachuted_Wrapper` (`Ext/Bullet/Hooks.cpp:
-    // 573-583`): the Unlimbo replacement and its canopy run inside Fire's
-    // placement, before `BulletClass_Unlimbo_Trajectories @ 0x468B72`.
-    world.init_parabomb(bullet_id, rules);
-    // Phobos `BulletClass_Unlimbo_Trajectories @ 0x468B72`: a trajectory
-    // instance is created and `OnUnlimbo` runs during Fire's placement.
-    world.init_phobos_trajectory(bullet_id, rules, weapon);
+    world.unlimbo_alpha_shape(bullet_id, crate::sim::world::ObjectKind::Projectile, rules);
+    if rules.phobos() {
+        // Phobos `ObjectClass_Unlimbo_Parachuted_Wrapper` (`Ext/Bullet/Hooks.cpp:
+        // 573-583`): the Unlimbo replacement and its canopy run inside Fire's
+        // placement, before `BulletClass_Unlimbo_Trajectories @ 0x468B72`.
+        world.init_parabomb(bullet_id, rules);
+        // Phobos `BulletClass_Unlimbo_Trajectories @ 0x468B72`: a trajectory
+        // instance is created and `OnUnlimbo` runs during Fire's placement.
+        world.init_phobos_trajectory(bullet_id, rules, weapon);
+    }
     Simulation::construct_bullet_scheme(
         &world.interner,
         &world.substrate,
@@ -529,7 +532,7 @@ impl Simulation {
             .is_some_and(|kind| kind.flak_scatter);
         let Some(weapon) = payload
             .installed_weapon()
-            .and_then(|id| rules.weapon(self.interner.resolve(id)))
+            .and_then(|id| self.interner.weapon_type(id, rules))
         else {
             return placement;
         };
@@ -623,8 +626,10 @@ impl Simulation {
 /// SpawnShrapnel's Fire leaves its children on their target
 /// (`Simulation::admit_projectile_spawns`), unless Ares gave them their
 /// weapon (`Simulation::ares_shrapnel_flak_placement`).
+/// The Scenario stream is the world's field (`util::forked`), written only
+/// by a flak scatter's draws.
 fn inviso_fire_placement(
-    scenario_rng: &mut crate::sim::rng::SimRng,
+    scenario_rng: &mut crate::util::forked::Forked<crate::sim::rng::SimRng>,
     rules: &RuleSet,
     flak_scatter: bool,
     weapon: &WeaponType,

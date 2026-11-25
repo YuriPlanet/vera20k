@@ -44,12 +44,18 @@ impl AttachedParticleSystem {
     }
 
     /// The native producer stores the constructor result, including NULL.
-    pub(crate) fn bind(&mut self, system: Option<u64>) {
+    pub(crate) fn bind(&mut self, system: Option<u64>, _: crate::sim::game_entity::NameNote) {
         self.system = system;
     }
 
     pub(crate) fn forget(&mut self) {
         self.system = None;
+    }
+
+    /// Install a fixture's system.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_for_test(&mut self, system: Option<u64>) {
+        self.bind(system, crate::sim::game_entity::NameNote::fixture());
     }
 }
 
@@ -79,6 +85,7 @@ impl DamageSmoke {
     /// Install a fixture's system.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_for_test(&mut self, system: Option<u64>) {
+        crate::sim::game_entity::NameNote::fixture();
         self.system = system;
     }
 }
@@ -139,20 +146,25 @@ impl Simulation {
         };
         if !below(rules.general.condition_yellow)
             || Self::damage_particle_owner_height(&self.resolved_terrain, entity) <= -10
-            || entity.spark_particle_system.system().is_some()
+            || entity.seldom.spark_particle_system.system().is_some()
         {
             return;
         }
-        // 6FAD51..6FADA1 retains Spark entries in authored list order.
-        let systems: Vec<_> = object
-            .damage_particle_systems
-            .iter()
-            .filter_map(|name| rules.ps_type_id_by_name(name))
-            .filter(|&type_id| {
-                rules.particle_system_type(type_id).behaves_like == ParticleSystemBehavesLike::Spark
-            })
-            .collect();
-        if systems.is_empty() {
+        // 6FAD51..6FADA1 retains Spark entries in authored list order. They
+        // are counted here and walked again for the one the roll picks: most
+        // rolls refuse, so no list is built for them.
+        let spark_systems = || {
+            object
+                .damage_particle_systems
+                .iter()
+                .filter_map(|name| rules.ps_type_id_by_name(name))
+                .filter(|&type_id| {
+                    rules.particle_system_type(type_id).behaves_like
+                        == ParticleSystemBehavesLike::Spark
+                })
+        };
+        let count = spark_systems().count();
+        if count == 0 {
             return;
         }
         let threshold = if below(rules.general.condition_red) {
@@ -177,21 +189,19 @@ impl Simulation {
         }
         let selected = self
             .scenario_rng
-            .next_range_u32_inclusive(0, systems.len() as u32 - 1);
+            .next_range_u32_inclusive(0, count as u32 - 1);
+        // The roll stays below the count of the same list; both draws are made.
+        let Some(selected) = spark_systems().nth(selected as usize) else {
+            return;
+        };
         // 6FAEBC..6FAED1: supplied target NULL, owner=this, zero fifth
         // Coord (B0EA90 initialized by6F2A50), owner House NULL. Native
         // constructor target/owner derivation remains centralized below.
-        let system = self.spawn_particle_system(
-            systems[selected as usize],
-            coords,
-            None,
-            Some(id),
-            IVec3::ZERO,
-            None,
-            rules,
-        );
+        let system =
+            self.spawn_particle_system(selected, coords, None, Some(id), IVec3::ZERO, None, rules);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.spark_particle_system.bind(system);
+            let note = entity.note_names();
+            entity.seldom.spark_particle_system.bind(system, note);
         }
     }
 
@@ -390,6 +400,13 @@ impl Simulation {
         );
         self.substrate.particle_systems.insert(sys);
         self.reveal_particle_system(stable_id);
+        // A system at 0,0,0 gets no glow even where VERA reveals it
+        // (`unlimbo_alpha_shape`).
+        self.unlimbo_alpha_shape(
+            stable_id,
+            crate::sim::world::ObjectKind::ParticleSystem,
+            rules,
+        );
         Some(stable_id)
     }
 
@@ -488,7 +505,7 @@ impl Simulation {
             .health
             .compare_ratio(object.strength, rules.general.condition_yellow)
             == crate::util::native_x87::MaskedX87Ordering::Greater;
-        let current_system = entity.damage_smoke_system_id.system();
+        let current_system = entity.seldom.damage_smoke_system_id.system();
 
         if above_yellow {
             self.substrate.retire_attached_damage_smoke(stable_id);
@@ -549,7 +566,9 @@ impl Simulation {
             return;
         };
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-            entity.damage_smoke_system_id.system = Some(system_id);
+            // A name the pointer-expiry index reads.
+            let _ = entity.note_names();
+            entity.seldom.damage_smoke_system_id.system = Some(system_id);
         }
     }
 
@@ -588,7 +607,8 @@ impl Simulation {
         let system =
             self.spawn_particle_system(type_id, coords, cell, None, IVec3::ZERO, None, rules);
         if let Some(entity) = self.substrate.entities.get_mut(building_id) {
-            entity.building.natural_particle_system.bind(system);
+            let note = entity.note_names();
+            entity.building.natural_particle_system.bind(system, note);
         }
     }
 
@@ -664,7 +684,11 @@ impl Simulation {
             rules,
         );
         if let Some(entity) = self.substrate.entities.get_mut(building_id) {
-            entity.building.destroy_smoke_particle_system.bind(system);
+            let note = entity.note_names();
+            entity
+                .building
+                .destroy_smoke_particle_system
+                .bind(system, note);
         }
     }
 }
@@ -693,7 +717,7 @@ impl crate::sim::world::ObjectSubstrate {
         let system_id = self
             .entities
             .get(stable_id)
-            .and_then(|entity| entity.damage_smoke_system_id.system());
+            .and_then(|entity| entity.seldom.damage_smoke_system_id.system());
         if let Some(system_id) = system_id
             && let Some(system) = self.particle_systems.get_mut(system_id)
         {
@@ -759,8 +783,7 @@ pub(super) fn spawn_particle(
     let Some(pt_id) = pst.holds_what else {
         return false;
     };
-    let pt = rules.particle_type(pt_id);
-    let particle = Particle::new(pt_id, coords, target_coords, pt, sim, rules);
+    let particle = Particle::new(pt_id, coords, target_coords, rules, sim);
     sys.particles.push(particle);
     true
 }
@@ -822,9 +845,15 @@ pub(super) fn spawn_state_ai_advance(
     if !pt.normalized {
         return pt.state_ai_advance;
     }
-    let load = |bits| X87Chop53::load_f32(bits).expect("a particle's binary32 is finite");
-    let speed = load(speed);
-    let step = |component| X87Chop53::ftol_i32_low_masked(X87Chop53::mul(load(component), speed));
+    use crate::util::native_x87::MaskedX87Chop53 as Masked;
+    // `speed` is the type's `Velocity=` (`ParticleClass+0xE4`), which INI
+    // text can make infinite: the step product is the masked x87's, whose
+    // conversion of an infinity or NaN gives 0, so such an axis has no step.
+    // Everything after a step is a whole number or a constant.
+    let speed = Masked::load_f32(speed);
+    let step =
+        |component| Masked::ftol_i32_low_masked(Masked::mul(Masked::load_f32(component), speed));
+    let load = |bits| X87Chop53::load_f32(bits).expect("a stored whole-number tick is finite");
     let [step_x, step_y] = [
         step(velocity[0]).wrapping_abs(),
         step(velocity[1]).wrapping_abs(),
@@ -894,6 +923,42 @@ mod tests {
         assert!(!draws("PLAIN"));
     }
 
+    /// 6FAD51..6FAE40: only the Spark entries of `DamageParticleSystems=`
+    /// count, in authored order, and the admitted roll indexes them.
+    #[test]
+    fn a_damaged_vehicle_picks_among_its_spark_systems_only() {
+        use crate::sim::game_entity::GameEntity;
+        let _ares = crate::rules::ares_switch::read_ares_way(true);
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nConditionRedSparkingProbability=1.0\n\
+             [VehicleTypes]\n0=SPARKY\n\
+             [SPARKY]\nStrength=100\nDamageSparks=yes\n\
+             DamageParticleSystems=Smk,Missing,SparkA,SparkB\n\
+             [Particles]\n0=Spk\n1=Puff\n[ParticleSystems]\n0=Smk\n1=SparkA\n2=SparkB\n\
+             [Spk]\nBehavesLike=Spark\nMaxEC=10\n[Puff]\nBehavesLike=Smoke\nMaxEC=10\n\
+             [Smk]\nBehavesLike=Smoke\nHoldsWhat=Puff\n\
+             [SparkA]\nBehavesLike=Spark\nHoldsWhat=Spk\n\
+             [SparkB]\nBehavesLike=Spark\nHoldsWhat=Spk\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let id = sim.substrate.allocate_stable_id();
+        let mut entity = GameEntity::test_default(id, "SPARKY", "A", 3, 3);
+        entity.set_type_ref_for_test(sim.interner.intern("SPARKY"));
+        entity.set_owner_for_test(sim.interner.intern("A"));
+        entity.health.set_for_test(20);
+        sim.substrate.entities.insert(entity);
+        let mut expected = sim.scenario_rng.clone();
+        let roll = expected.next_range_u32_inclusive(0, 0x7fff_fffe);
+        assert!(roll < rules.general.condition_red_spark_threshold);
+        let pick = ["SparkA", "SparkB"][expected.next_range_u32_inclusive(0, 1) as usize];
+        sim.update_damage_spark_after_ai(id, &rules);
+        let system = sim.substrate.entities.get(id).unwrap();
+        let system = system.seldom.spark_particle_system.system().unwrap();
+        let system = sim.substrate.particle_systems.get(system).unwrap();
+        assert_eq!(Some(system.type_id()), rules.ps_type_id_by_name(pick));
+    }
+
     /// The constructor's colour seed (`0x0062BA51`) draws for any type with a
     /// `ColorList` and a start colour, a Fire type as much as a Spark one.
     #[test]
@@ -912,9 +977,8 @@ mod tests {
             kind,
             IVec3::new(256, 256, 0),
             IVec3::new(512, 256, 0),
-            rules.particle_type(kind),
-            &mut sim,
             &rules,
+            &mut sim,
         );
         assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
     }
@@ -952,7 +1016,7 @@ mod tests {
             let mut cell = test_flat_cell(entity.position.rx(), entity.position.ry());
             cell.level = input["level"].as_u64().unwrap() as u8;
             cell.slope_type = input["slope"].as_u64().unwrap() as u8;
-            sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(8, 8, vec![cell]));
+            *sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(8, 8, vec![cell]));
             assert_eq!(
                 Simulation::damage_particle_owner_height(&sim.resolved_terrain, &entity),
                 row["output"]["height"].as_i64().unwrap() as i32
@@ -968,6 +1032,7 @@ mod tests {
                 .entities()
                 .get(id)
                 .unwrap()
+                .seldom
                 .damage_smoke_system_id
                 .system();
             assert_eq!(
@@ -1032,6 +1097,7 @@ mod tests {
                 .entities
                 .get_mut(id)
                 .unwrap()
+                .seldom
                 .damage_smoke_system_id
                 .set_for_test(Some(system_id));
             let before_rng = sim.scenario_rng.logical_state();
@@ -1050,6 +1116,7 @@ mod tests {
                     .entities
                     .get(id)
                     .unwrap()
+                    .seldom
                     .damage_smoke_system_id
                     .system(),
                 Some(system_id)
@@ -1151,6 +1218,30 @@ mod tests {
             );
         }
         assert_eq!(rows.len(), 13);
+    }
+
+    /// `Velocity=1e999` reads as an infinity; the masked step conversion
+    /// gives neither axis a step, so the advance is from the 9999.0 ticks:
+    /// the low byte of `ftol(9999 / 1 + 1)`.
+    #[test]
+    fn an_infinite_normalized_velocity_has_no_axis_step() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[Particles]\n1=FireStream\n\
+             [FireStream]\nBehavesLike=Fire\nMaxEC=10\nVelocity=1e999\n\
+             StateAIAdvance=6\nFinalDamageState=0\nNormalized=yes\n",
+        ))
+        .expect("rules parse");
+        let pt = rules.particle_type(crate::rules::particle_type::ParticleTypeId(0));
+        let source = IVec3::new(0, 0, 0);
+        let target = IVec3::new(700, -300, 0);
+        let advance = spawn_state_ai_advance(
+            pt,
+            source,
+            target,
+            native_velocity(source, target),
+            pt.velocity,
+        );
+        assert_eq!(advance, 10_000u32 as u8);
     }
 
     /// Build a tiny RuleSet with one ParticleType + one ParticleSystemType.

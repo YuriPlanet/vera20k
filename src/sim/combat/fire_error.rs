@@ -211,6 +211,10 @@ pub(crate) struct WeaponFacts {
     pub projectile: ProjectileFacts,
     /// Phobos `CanTarget.IronCurtained=`; `None` uses the owner's global.
     pub can_target_iron_curtained: Option<bool>,
+    /// Kratos `NoMoneyNoTalk`: money the firer's house needs for this weapon.
+    pub no_money_no_talk: i32,
+    /// Kratos `DontNeedMoney`: this weapon ignores [`Self::no_money_no_talk`].
+    pub dont_need_money: bool,
 }
 
 /// A WarheadTypeClass, as the tests read it against this target.
@@ -246,6 +250,9 @@ pub(crate) struct ProjectileFacts {
     /// stock `BulletTypeClass` offset.
     pub au: bool,
     pub rot: i32, // +0x2DC
+    /// Kratos `AAOnly`: this projectile may only be fired at a target in the
+    /// air (`src/Extension/BulletTypeExt.h`).
+    pub aa_only: bool,
 }
 
 /// The firer's own fields.
@@ -612,6 +619,8 @@ impl Default for TargetTypeFacts {
 pub(crate) struct FireFacts {
     /// [`RuleSet::ares`](crate::rules::ruleset::RuleSet::ares).
     pub ares: bool,
+    /// [`RuleSet::kratos`](crate::rules::ruleset::RuleSet::kratos).
+    pub kratos: bool,
     pub class: FirerClass,
     /// `[0x00A8ED84]`.
     pub frame: i32,
@@ -668,6 +677,9 @@ pub(crate) trait FireQuery {
     fn allied(&mut self) -> bool;
     /// `0x00703B10` IsOnBridge_ForFiring (T35).
     fn bridge_for_firing(&mut self) -> bool;
+    /// `HouseClass::Available_Money` (`0x004F6990`) of the firer's house,
+    /// asked by Kratos' `NoMoneyNoTalk` arm.
+    fn available_money(&mut self) -> i32;
     /// ParasiteClass `0x0062A8E0` CanInfect (T50) and CaptureManager
     /// `0x00471C90` CanCapture (T53).
     fn can_infect(&mut self) -> bool;
@@ -1126,6 +1138,35 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
     {
         return Illegal;
     }
+    // Kratos `TechnoClass_CanFire` (`0x6FC339`, its refusal returns
+    // `0x6FCB7E` = ILLEGAL): `TechnoStatus::CanFire_CheckBullet` stops an
+    // `AAOnly` projectile when the target is not in the air. Kratos leaves a
+    // firer whose LandTargeting is 1 (`Land_Not_OK`) to the stock land-target
+    // refusals at T40 and T41 below.
+    if facts.kratos
+        && weapon.projectile.aa_only
+        && weapon.projectile.aa
+        && !query.high_flying()
+        && firer_type.land_targeting != 1
+    {
+        return Illegal;
+    }
+    // Kratos `TechnoClass_CanFire` (`0x6FC339`) `CanFire_CheckWeapon`: the
+    // shot waits until the firer's house can pay `NoMoneyNoTalk`; a negative
+    // value refuses while the house holds more than its magnitude, and
+    // `DontNeedMoney` skips the test. The AE that can supply the value is not
+    // ported, so only the weapon's own key counts.
+    if facts.kratos && !weapon.dont_need_money && weapon.no_money_no_talk != 0 {
+        let need = i64::from(weapon.no_money_no_talk);
+        let money = i64::from(query.available_money());
+        if if need > 0 {
+            money < need
+        } else {
+            money > need.abs()
+        } {
+            return Illegal;
+        }
+    }
     // T22 (IonSensitive) asks `0x0053A130`, which is `XOR AL,AL; RET`.
     let warhead = weapon.warhead.unwrap_or_default();
     // Ares 3.0 TechnoClass_CanFire_OpenToppedGunnerTemporal (1005D200, hook
@@ -1369,11 +1410,7 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
     // reverting the Ares forced-CLOAKED verdict and skipping T48; the
     // `0x6FCD1D` hook uncloaks the carrier instead. `weapon.decloak_to_fire`
     // is the YR WeaponType key, distinct from the Phobos TechnoType key.
-    let revert_decloak = {
-        {
-            firer.transport_decloak_to_fire
-        }
-    };
+    let revert_decloak = { { firer.transport_decloak_to_fire } };
     if facts.ares
         && weapon.decloak_to_fire
         && firer.transporter != Transporter::None

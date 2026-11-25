@@ -129,7 +129,8 @@ fn original_packet_bytes_mirrors_caches_and_expansion_match() {
     let controls = corpus();
     assert_eq!(controls.input_fill, 0xa5);
     assert_eq!(controls.decoded_fill, 0);
-    assert_eq!(PAYLOAD_LENGTHS.as_slice(), controls.payload_lengths);
+    let native_lengths: Vec<u8> = (0..47).filter_map(event_body_len).collect();
+    assert_eq!(native_lengths, controls.payload_lengths);
     for flow in controls.flows {
         let mut sender = EventPacketCodec::default();
         let mut receiver = EventPacketCodec::default();
@@ -211,6 +212,45 @@ fn targeted_event_has_the_same_meaning_in_local_mirror_and_received_packet() {
     assert_eq!(local.target_house, 3);
     assert_eq!(local.command, native);
     assert_eq!(remote, Some(local));
+}
+
+#[test]
+fn player_auto_repair_event_has_the_same_meaning_in_local_mirror_and_received_packet() {
+    use crate::sim::command::{PlayerAutoRepairRecord, VERA_PLAYER_AUTO_REPAIR_OPCODE};
+    let header = FrameInfo {
+        house_id: 1,
+        event_frame: 42,
+        checksum: 0,
+        timing_word: 0,
+        delay: 0,
+    };
+    for enabled in [false, true] {
+        let source = PlayerAutoRepairRecord {
+            house_id: 1,
+            frame: 42,
+            enabled,
+        }
+        .encode()
+        .unwrap();
+        let packet = EventPacketCodec::default()
+            .encode_packet(&[&source], header, 42, NATIVE_EVENT_PACKET_CAPACITY)
+            .unwrap();
+        assert_eq!(packet.blocked, None);
+        assert_eq!(packet.bytes[HEADER_LEN], VERA_PLAYER_AUTO_REPAIR_OPCODE);
+        assert_eq!(packet.bytes[HEADER_LEN + 1], u8::from(enabled));
+        let local = PlayerAutoRepairRecord::decode(&packet.mirrors[0]).unwrap();
+        let mut remote = None;
+        EventPacketCodec::default()
+            .decode_packet(&packet.bytes, |record| {
+                if let Some(decoded) = PlayerAutoRepairRecord::decode(&record) {
+                    remote = Some(decoded);
+                }
+                true
+            })
+            .unwrap();
+        assert_eq!(local.enabled, enabled);
+        assert_eq!(remote, Some(local));
+    }
 }
 
 #[test]

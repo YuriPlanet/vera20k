@@ -840,7 +840,7 @@ impl ScanContext<'_> {
         disguise_detection_roll(
             state
                 .scenario_rng
-                .get_or_insert_with(|| world.scenario_rng.clone()),
+                .get_or_insert_with(|| (*world.scenario_rng).clone()),
             self.standing.house,
             self.rules,
         )
@@ -1502,7 +1502,7 @@ pub(crate) fn greatest_threat(
     // `MegaMissionIsAttackMove()` (vt+0x4C4) and the type's
     // `AttackMove.Aggressive` with its `[General]` fallback: asked once per
     // scan, not per candidate.
-    let attack_move_aggressive = scanner.mega_mission.is_attack_move()
+    let attack_move_aggressive = scanner.seldom.mega_mission.is_attack_move()
         && attacker_obj
             .phobos_attack_move
             .aggressive(&rules.phobos_globals);
@@ -1919,7 +1919,7 @@ fn scanner_mask<'r>(
         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
     );
     let mask = if foot_wrapper_entered {
-        scanner.foot_retarget_after_stop.coerce_mask(mask)
+        scanner.seldom.foot_retarget_after_stop.coerce_mask(mask)
     } else {
         mask
     };
@@ -2313,11 +2313,15 @@ fn scan_cell_for_target(
                 .map(|_| id),
             _ => None,
         });
-    debug_assert!(
-        !crate::sim::touch_log::live_read_check_enabled()
-            || offered == walk_cell_list(ctx, state, rx, ry, layer),
-        "the owner-column walk disagrees with the full walk at ({rx}, {ry})"
-    );
+    // The cross-check walks the list again and so writes `state`'s memos and
+    // counters a second time: debug builds with the live-read check only.
+    if cfg!(debug_assertions) && crate::sim::touch_log::live_read_check_enabled() {
+        let full = walk_cell_list(ctx, state, rx, ry, layer);
+        assert!(
+            offered == full,
+            "the owner-column walk disagrees with the full walk at ({rx}, {ry})"
+        );
+    }
     offered
 }
 
@@ -2498,7 +2502,7 @@ fn reaches_from_nearby_cell(
         return false;
     };
     let target = object_get_coords(candidate, ctx.terrain);
-    let distance_squared = cell_ref_target_coord(&cell)
+    let distance_squared = cell_ref_target_coord(ctx.terrain, &cell)
         .distance_from_squared(ProjectileCoord::new(target.x, target.y, target.z));
     let range = f64::from(weapon.range_leptons);
     distance_squared <= range * range
@@ -2520,7 +2524,7 @@ fn insignificant_applies_to(
     candidate: &GameEntity,
     rules: &crate::rules::ruleset::RuleSet,
 ) -> bool {
-    if !candidate.mind_control.is_mind_controlled() {
+    if !candidate.seldom.mind_control.is_mind_controlled() {
         return true;
     }
     {
@@ -2927,8 +2931,8 @@ fn evaluate_candidate(
     // in ground the player has not explored.
     if ctx.standing.human
         && ctx.standing.requires_player_discovery
-        && !candidate.discovery.owned_by_current_house()
-        && !candidate.discovery.discovered_by_current_house()
+        && !candidate.seldom.discovery.owned_by_current_house()
+        && !candidate.seldom.discovery.discovered_by_current_house()
         && candidate.category() != EntityCategory::Aircraft
     {
         return None;
@@ -3023,6 +3027,7 @@ fn evaluate_candidate(
         .fire_world
         .map_or(0, |world| world.session.binary_frame());
     let blink = candidate
+        .seldom
         .disguise
         .as_ref()
         .map_or(0, |disguise| disguise.blink_remaining(frame));
@@ -3863,7 +3868,7 @@ mod tests {
             sim.drop_as_bomb(target, crate::sim::world::UninitContext::new(&rules));
             // The dropped object is gone from its Cell list; clear the marking
             // bit and unlink it explicitly in case the fixture started unmarked.
-            sim.foot_pick_up(target, &rules, None);
+            sim.foot_pick_up(target, &rules, None, false);
             sim.substrate
                 .entities
                 .get_mut(target)

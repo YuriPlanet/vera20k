@@ -49,6 +49,13 @@ const SUBSTRING_SWITCHES: &[(&str, bool)] = &[
 /// subsystem for.
 const ACCEPTED_EXACT_SWITCHES: &[&str] = &["-JABBER", "-STR", "-NOSTR", "-RECORD", "-PLAY", "-O"];
 
+/// VERA's own switch for original Red Alert 2 mode. Native has no such switch;
+/// the argv is consumed here so it never reaches the strict capture parser,
+/// which would otherwise reject it as an unknown argument. The actual choice
+/// is recorded process-wide by `util::ra2_launch::configure` before any switch
+/// parsing, and config loading then selects the non-md INI roots.
+const RA2_SWITCH: &str = "-RA2";
+
 /// The four help forms. Native prints its usage strings and returns a failure
 /// from the switch parser, which makes `WinMain` bail before any window exists.
 const USAGE_SWITCHES: &[&str] = &["/?", "-?", "-H", "/H"];
@@ -211,6 +218,9 @@ fn classify(normalized: &str) -> Vec<RecognizedSwitch> {
     if normalized == NO_AUDIO_SWITCH {
         return vec![RecognizedSwitch::NoAudio];
     }
+    if normalized == RA2_SWITCH {
+        return vec![RecognizedSwitch::NoLocalEffect];
+    }
     if ACCEPTED_EXACT_SWITCHES.contains(&normalized) {
         return vec![RecognizedSwitch::NoLocalEffect];
     }
@@ -313,6 +323,7 @@ pub fn usage_text() -> String {
         "  -CD             Use the wildcard media-archive branch.",
         "  -WIN            No effect: full screen is a choice on the Options page.",
         "  -NOAUDIO        Disable music and sound output.",
+        "  -ra2            Play original Red Alert 2 (RA2 Mode in Options).",
         "  -SPAWN          Start an offline CnCNet session from ./spawn.ini.",
         "  --mod <folder>  Play with the mod in that folder of Mods.",
         "  --no-mod        Play the original game, whatever config.toml says.",

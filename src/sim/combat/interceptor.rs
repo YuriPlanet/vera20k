@@ -22,7 +22,7 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         detonation: &ProjectileDetonation,
         warhead: &WarheadType,
-        effects: FrameEffects<'_>,
+        mut effects: FrameEffects<'_>,
     ) {
         let Some(interceptor) = self.projectiles.get(detonation.projectile_id) else {
             return;
@@ -84,7 +84,7 @@ impl Simulation {
                 target,
                 &settings,
                 warhead,
-                effects,
+                &mut effects.reborrow(),
             );
         }
     }
@@ -115,7 +115,7 @@ impl Simulation {
         target_id: u64,
         settings: &crate::rules::phobos_interceptor::InterceptorSettings,
         warhead: &WarheadType,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(target) = self.projectiles.get(target_id) else {
             return;

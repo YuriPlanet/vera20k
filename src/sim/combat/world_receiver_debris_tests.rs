@@ -29,7 +29,7 @@ fn warhead_detonation(rules: &RuleSet) -> (Simulation, ProjectileDetonation) {
     crate::sim::arena_fixture::flat_arena(&mut sim, rules);
     // A fixture world collects the anim packets instead of admitting them to
     // the consequence queue (the same policy the receiver fixtures use).
-    sim.receiver_fixture = Some(crate::sim::combat::receiver_fixture::FixturePolicy {
+    *sim.receiver_fixture = Some(crate::sim::combat::receiver_fixture::FixturePolicy {
         current_tick: 0,
         require_playfield_membership: false,
         fog_enabled: false,

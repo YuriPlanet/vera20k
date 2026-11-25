@@ -19,7 +19,10 @@ pub(crate) fn is_simple_deployer(sim: &Simulation, entity: &GameEntity, rules: &
             .is_some_and(|object| {
                 object.is_simple_deployer
                     && (object.passengers <= 0
-                        || crate::sim::deploy::phobos_unload_skips_passengers(sim, entity, rules))
+                        || (rules.phobos()
+                            && crate::sim::deploy::phobos_unload_skips_passengers(
+                                sim, entity, rules,
+                            )))
                     && !object.harvester
                     && !object.weeder
                     && object.deploys_into.is_none()
@@ -30,13 +33,13 @@ pub(crate) fn is_simple_deployer(sim: &Simulation, entity: &GameEntity, rules: &
 /// replaces the stock `DeployingAnim=` and is picked from the Unit's primary
 /// facing. The rules pass resolves the list and drops unknown AnimTypes; the
 /// art filter here also covers a directly constructed `ObjectType` fixture.
-fn deploy_anim_name(
-    object: &crate::rules::object_type::ObjectType,
+fn deploy_anim_name<'a>(
+    object: &'a crate::rules::object_type::ObjectType,
     entity: &GameEntity,
     rules: &RuleSet,
     frame: u32,
-) -> Option<String> {
-    {
+) -> Option<&'a str> {
+    if rules.phobos() {
         let names: Vec<&String> = object
             .phobos_deploying_anims
             .iter()
@@ -44,10 +47,10 @@ fn deploy_anim_name(
             .collect();
         if !names.is_empty() {
             let index = item_for_direction(names.len(), entity.body_facing_current(frame));
-            return names.get(index).map(|name| (*name).to_owned());
+            return names.get(index).map(|name| name.as_str());
         }
     }
-    object.deploying_anim.clone()
+    object.deploying_anim.as_deref()
 }
 
 /// Phobos `GeneralUtils::GetItemForDirection` (`Utilities/GeneralUtils.h:66-93`):
@@ -78,7 +81,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<i32, String> {
         let deployed = self
             .substrate
@@ -151,7 +154,7 @@ impl Simulation {
         id: u64,
         deploying: bool,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let entity = self
             .substrate
@@ -184,7 +187,8 @@ impl Simulation {
         let deploy_to_land = object.deploy_to_land;
         let configured_anim = deploy_anim_name(object, entity, rules, self.session.binary_frame());
         let object_has_deploying_anim = configured_anim.is_some();
-        let reverse_for_undeploy = object.phobos_deploying_anim_reverse_for_undeploy;
+        let reverse_for_undeploy =
+            rules.phobos() && object.phobos_deploying_anim_reverse_for_undeploy;
         let active = if deploying {
             leaf.deploy_begin_active()
         } else {
@@ -259,7 +263,7 @@ impl Simulation {
                 } else {
                     self.start_unit_deploy_anim(
                         id,
-                        &name,
+                        name,
                         !deploying && reverse_for_undeploy,
                         rules,
                     )?
@@ -295,7 +299,7 @@ impl Simulation {
                 .substrate
                 .entities
                 .get_mut(id)
-                .and_then(|e| e.disguise.as_mut())
+                .and_then(|e| e.seldom.disguise.as_mut())
             && disguise.is_disguised()
         {
             disguise.clear_unit();
@@ -304,7 +308,7 @@ impl Simulation {
         // (`Ext/Unit/Hooks.SimpleDeployer.cpp:155-170, 218-228`): once the
         // deployed byte matches the direction, the type's `Ammo.AddOnDeploy=`
         // rewrites the count, before the deploy/undeploy sound.
-        {
+        if rules.phobos() {
             let deployed = self
                 .substrate
                 .entities
@@ -389,22 +393,23 @@ impl Simulation {
     /// bunkered Unit skips it; every other class and an unset band answer
     /// true. Builds without Phobos always answer true.
     pub fn phobos_unit_has_ammo_to_deploy(&self, id: u64, rules: &RuleSet) -> bool {
-        {
-            let Some(entity) = self.substrate.entities.get(id) else {
-                return false;
-            };
-            if entity.category() != EntityCategory::Unit {
-                return true;
-            }
-            if entity.bunker.link().installed_in().is_some() {
-                return true;
-            }
-            let Some(object) = self.object_type(entity.type_ref(), rules) else {
-                return false;
-            };
-            let ammo = entity.ammo().map_or(0, |ammo| ammo.current());
-            object.phobos_ammo_deploy.has_ammo_to_deploy(ammo)
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        if !rules.phobos() {
+            return true;
         }
+        if entity.category() != EntityCategory::Unit {
+            return true;
+        }
+        if entity.bunker.link().installed_in().is_some() {
+            return true;
+        }
+        let Some(object) = self.object_type(entity.type_ref(), rules) else {
+            return false;
+        };
+        let ammo = entity.ammo().map_or(0, |ammo| ammo.current());
+        object.phobos_ammo_deploy.has_ammo_to_deploy(ammo)
     }
 
     /// Ares 3.0 UnitClass_SimpleDeploy_Facing (1004C2D0, hook 0x739B8A): a
@@ -463,6 +468,7 @@ impl Simulation {
         // GetRemapColour705D70 freezes the owner's current/disguised palette
         // at this producer, rather than following later owner/disguise changes.
         let remap_house = entity
+            .seldom
             .disguise
             .as_ref()
             .filter(|state| state.is_disguised())
@@ -481,10 +487,11 @@ impl Simulation {
         // cell-light/tint path. The Anim draw also follows the owner Unit's
         // flash/curtain/shield drawer arm; RESIDUAL: the Unit's body-only
         // extra light (bridge/ExtraUnitLight) is not folded into the Anim.
-        let use_unit_drawer = self
-            .interner
-            .object_type(entity.type_ref(), rules)
-            .is_some_and(|object| object.phobos_deploying_anim_use_unit_drawer);
+        let use_unit_drawer = rules.phobos()
+            && self
+                .interner
+                .object_type(entity.type_ref(), rules)
+                .is_some_and(|object| object.phobos_deploying_anim_use_unit_drawer);
         let descriptor = AnimClassSpawnDescriptor {
             draw_flags: 0x600,
             reverse,
@@ -519,6 +526,9 @@ impl Simulation {
 /// its ammo sits in the `Ammo.AutoDeploy*` band and the deploy-unlock band
 /// admits it, and queues Guard (re-ascending a jumpjet) when it leaves.
 pub(crate) fn depleted_ammo_actions(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+    if !rules.phobos() {
+        return;
+    }
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
@@ -587,7 +597,6 @@ pub(crate) fn depleted_ammo_actions(sim: &mut Simulation, id: u64, rules: &RuleS
     }
 }
 
-#[cfg(all(test, tests_sim_t_z))]
 #[cfg(all(test, tests_sim_t_z))]
 #[path = "unit_simple_deploy_tests.rs"]
 mod tests;

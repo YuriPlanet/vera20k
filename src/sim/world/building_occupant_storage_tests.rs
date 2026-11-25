@@ -49,7 +49,7 @@ impl Scene {
         let options = sim.session.game_options_mut_for_test();
         options.multi_engineer = false;
         options.short_game = false;
-        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        *sim.fog = crate::sim::vision::FogState::new(32, 32);
         for name in ["Americans", "Russians"] {
             sim.fog
                 .reveal_all_for_owner(sim.interner.get(name).unwrap());
@@ -95,7 +95,12 @@ impl Scene {
         let commands = self.0.simulation.take_due_commands();
         let output = self
             .0
-            .advance_frame(&commands, 33, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(
+                &commands,
+                33,
+                TickLane::Ordinary,
+                &mut FrameEffects::default(),
+            )
             .unwrap();
         assert!(output.tick.frame_committed);
         output
@@ -187,7 +192,7 @@ impl Scene {
         loaded.restore_after_snapshot_load().unwrap();
         loaded.rebuild_caches_after_load(
             resources.terrain_template.clone().unwrap(),
-            live.terrain_speed_config.clone(),
+            (*live.terrain_speed_config).clone(),
             &resources.rules,
         );
         loaded

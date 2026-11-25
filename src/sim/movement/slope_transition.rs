@@ -133,6 +133,18 @@ pub fn state_for_entity(entity: &GameEntity) -> Option<&SlopeTransitionState> {
         .and_then(|()| entity.locomotor.as_ref()?.active_slope_transition())
 }
 
+/// The shared slope phase for the model and its firing coordinates. Bridge
+/// entry can happen after Process sampled the old cell this frame.
+pub fn phase_for_entity(entity: &GameEntity, binary_frame: u32) -> Option<SlopeRenderPhase> {
+    state_for_entity(entity).map(|state| {
+        if entity.on_bridge() {
+            SlopeRenderPhase::Stable(0)
+        } else {
+            state.render_phase(binary_frame)
+        }
+    })
+}
+
 /// The same state for its writers: the Process samples (Drive `0x004B050B`, Ship
 /// `0x0069FC1B`) and `FootClass::Unlimbo`'s force-slope slot (`0x004D71A9`).
 fn state_for_entity_mut(entity: &mut GameEntity) -> Option<&mut SlopeTransitionState> {
@@ -148,22 +160,37 @@ pub(crate) fn snap_after_successful_unlimbo(
     sampled_slope: u8,
     binary_frame: u32,
 ) {
+    let slope = if entity.on_bridge() { 0 } else { sampled_slope };
     if let Some(state) = state_for_entity_mut(entity) {
-        state.snap(sampled_slope, binary_frame);
+        state.snap(slope, binary_frame);
     }
 }
 
-/// Whether [`sample_process_entry`] changes `entity`'s slope state for
-/// `sampled_slope`: it has one, and the slope differs from its target.
+/// Whether [`sample_process_entry`] will change the locomotor-owned state.
 pub(crate) fn process_entry_changes(entity: &GameEntity, sampled_slope: u8) -> bool {
-    state_for_entity(entity).is_some_and(|state| state.current_slope != sampled_slope)
+    state_for_entity(entity).is_some_and(|state| {
+        if entity.on_bridge() {
+            // Cancel an unfinished approach tilt when reaching the deck.
+            state.current_slope != 0 || state.previous_slope != 0
+        } else {
+            state.current_slope != sampled_slope
+        }
+    })
 }
 
 /// Drive Process `0x004B050B..0x004B0557` and Ship Process
 /// `0x0069FC1B..0x0069FC67` sample before any track/movement branch.
 pub(crate) fn sample_process_entry(entity: &mut GameEntity, sampled_slope: u8, binary_frame: u32) {
+    let on_bridge = entity.on_bridge();
     if let Some(state) = state_for_entity_mut(entity) {
-        state.sample_process_entry(sampled_slope, binary_frame);
+        // Compatibility for an independent high deck: the stock Cell+11C
+        // sample describes the terrain below the Foot. Reset to the level
+        // deck so a subsequent exit transitions from slope zero.
+        if on_bridge {
+            state.snap(0, binary_frame);
+        } else {
+            state.sample_process_entry(sampled_slope, binary_frame);
+        }
     }
 }
 

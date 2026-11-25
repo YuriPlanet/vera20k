@@ -103,7 +103,7 @@ pub(super) fn fire_context(world: &Simulation, firer: u64) -> FireContext {
             in_limbo: false,
         },
         |entity| FireContext {
-            in_selected: entity.selection.is_selected(),
+            in_selected: entity.seldom.selection.is_selected(),
             in_limbo: entity.lifecycle.in_limbo(),
         },
     )
@@ -151,7 +151,7 @@ pub(super) fn fire_hook(
     if warhead.unlimbo_detonate_keep_selected
         && let Some(entity) = world.substrate.entities.get_mut(firer)
     {
-        entity.unlimbo_detonate.remember(fired.in_selected);
+        entity.seldom.unlimbo_detonate.remember(fired.in_selected);
     }
 }
 
@@ -278,7 +278,7 @@ pub(super) fn emit(
         entity.on_bridge.store(on_bridge);
     }
 
-    let place = |world: &mut Simulation| {
+    let mut place = |world: &mut Simulation| {
         world
             .reveal_constructed_object_at_coord_with_overlay_context(
                 owner_id,
@@ -317,7 +317,7 @@ pub(super) fn emit(
             .substrate
             .entities
             .get_mut(owner_id)
-            .is_some_and(|entity| entity.unlimbo_detonate.take());
+            .is_some_and(|entity| entity.seldom.unlimbo_detonate.take());
         if reselect {
             // `pTechno->Select()` (`:572-578`); the detonation runs in the
             // logic pass, whose voice latch is set.
@@ -331,7 +331,7 @@ pub(super) fn emit(
         // Select, puts the firer at the requested Location and kills it with
         // the C4 warhead (`:580-591`).
         if let Some(entity) = world.substrate.entities.get_mut(owner_id) {
-            entity.unlimbo_detonate.take();
+            entity.seldom.unlimbo_detonate.take();
         }
         set_location(world, owner_id, location, rules);
         let Some(health) = world
@@ -360,13 +360,15 @@ pub(super) fn emit(
                 arg6: false,
             },
         );
-        let (nested, mut pings) = commit_entities(
+        let mut pings = Vec::new();
+        let nested = commit_entities(
             world,
             run,
             std::slice::from_ref(&event),
             Some(false),
             rules,
             overlay_registry,
+            &mut pings,
         );
         out.effects.append(nested);
         under_attack_events.append(&mut pings);

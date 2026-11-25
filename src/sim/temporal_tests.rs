@@ -530,7 +530,7 @@ fn native_update_corpus() {
             attackers[0],
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let idle_trace = take_idle_trace();
 
@@ -749,7 +749,7 @@ fn erase_awards_price_each_cost_by_its_house() {
         cleg,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(erased(&sim, tank));
     assert_eq!(
@@ -781,7 +781,7 @@ fn an_erased_player_building_is_remembered_for_spacebar() {
             head,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
     assert!(erased(&sim, own) && erased(&sim, rival));
@@ -808,13 +808,13 @@ fn retarget_and_counter_warp_release() {
         Some(tank),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     sim.temporal_update_head(
         red,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(link(&sim, red).warp_remaining, 3992);
     sim.temporal_initiate_warp(
@@ -822,7 +822,7 @@ fn retarget_and_counter_warp_release() {
         Some(other_tank),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(head_of(&sim, tank), None, "released");
     assert_eq!(head_of(&sim, other_tank), Some(red));
@@ -839,7 +839,7 @@ fn retarget_and_counter_warp_release() {
         Some(red),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(head_of(&sim, red), Some(blue));
     assert_eq!(head_of(&sim, other_tank), None);
@@ -944,14 +944,14 @@ fn the_ifv_borrows_its_gunners_beam() {
         Some(tank),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     sim.temporal_initiate_warp(
         partner,
         Some(tank),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(head_of(&sim, tank), Some(ifv));
     assert_eq!(link(&sim, partner).prev, Some(ifv));
@@ -1006,7 +1006,7 @@ fn a_warped_building_goes_offline() {
         Some(plant),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(!entity(&sim, plant).building_online());
     assert_eq!(output(&mut sim), 0, "GetPowerOutput 0x0044E7C7");
@@ -1055,7 +1055,7 @@ fn a_warped_buildings_slot_anims_freeze() {
                 anim,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         }
@@ -1070,7 +1070,7 @@ fn a_warped_buildings_slot_anims_freeze() {
         Some(plant),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(sim.anim(anim).unwrap().draw_runtime().forced_translucent);
     assert_eq!(play(&mut sim, anim), playing, "AI stops at 0x004244A9");
@@ -1101,12 +1101,12 @@ fn trigger_online_is_independent_of_temporal_and_corrupt_chain_clear_does_not_re
     let building = spawn(&mut sim, &rules, "GACNST", "Americans", 12, 10);
     let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
     let other = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 12);
-    let effects = FrameEffects::default();
-    assert!(sim.go_building_offline(building, &rules, effects));
+    let mut effects = FrameEffects::default();
+    assert!(sim.go_building_offline(building, &rules, &mut effects));
     assert!(!entity(&sim, building).is_warped_out());
-    sim.temporal_initiate_warp(cleg, Some(building), &rules, None, effects);
+    sim.temporal_initiate_warp(cleg, Some(building), &rules, None, &mut effects);
     assert!(!entity(&sim, building).building_online());
-    assert!(sim.go_building_online(building, &rules, effects));
+    assert!(sim.go_building_online(building, &rules, &mut effects));
     assert!(entity(&sim, building).building_online());
     assert!(
         entity(&sim, building).is_warped_out(),
@@ -1131,12 +1131,12 @@ fn trigger_online_is_independent_of_temporal_and_corrupt_chain_clear_does_not_re
         entity(&sim, building).building_online(),
         "71AC3D forces on without normal callbacks"
     );
-    sim.temporal_initiate_warp(cleg, Some(building), &rules, None, effects);
+    sim.temporal_initiate_warp(cleg, Some(building), &rules, None, &mut effects);
     //71A76B's exceptional head-with-predecessor branch calls71ADE0, which
     //clears278/270 but never calls452210 or writes House dirty flags.
     sim.substrate.temporal_link_mut(other).unwrap().target = Some(building);
     sim.substrate.temporal_link_mut(cleg).unwrap().prev = Some(other);
-    sim.temporal_update_head(cleg, &rules, None, effects);
+    sim.temporal_update_head(cleg, &rules, None, &mut effects);
     assert!(!entity(&sim, building).is_warped_out());
     assert!(!entity(&sim, building).building_online());
 }
@@ -1207,7 +1207,7 @@ fn house_cleanup_leaves_a_warped_bridge_hut_offline_when_it_survives_c4() {
         HouseBlowupSubset::All,
         &rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         entity(&sim, hut).health.current(),
@@ -1220,7 +1220,7 @@ fn house_cleanup_leaves_a_warped_bridge_hut_offline_when_it_survives_c4() {
         !entity(&sim, hut).building_online(),
         "71AD40 does not restore a surviving building's online latch"
     );
-    assert!(sim.go_building_online(hut, &rules, FrameEffects::default()));
+    assert!(sim.go_building_online(hut, &rules, &mut FrameEffects::default()));
 }
 
 /// The fixture with `SILO`, which provides a powered `NukeSpecial`.
@@ -1266,7 +1266,7 @@ fn a_warped_superweapon_building_holds_its_super() {
         Some(silo),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     step(&mut sim);
     let warped = state(&sim);
@@ -1325,14 +1325,14 @@ fn a_super_holds_only_while_no_provider_is_online() {
         Some(silos[0]),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     sim.temporal_initiate_warp(
         clegs[2],
         Some(radar),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     step(&mut sim);
     assert!(!held(&sim, nuke), "the other silo is online");
@@ -1343,7 +1343,7 @@ fn a_super_holds_only_while_no_provider_is_online() {
         Some(silos[1]),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     step(&mut sim);
     assert!(held(&sim, nuke), "no silo is online");
@@ -1450,7 +1450,7 @@ fn a_warped_object_is_frozen_and_immune() {
         Some(tank),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
 
     sim.session.set_binary_frame_for_test(48);
@@ -1458,7 +1458,7 @@ fn a_warped_object_is_frozen_and_immune() {
         sim.temporal_ai_prologue(
             tank,
             &rules,
-            crate::sim::world::ObjectAiCtx::default(),
+            &mut crate::sim::world::ObjectAiCtx::default(),
             &mut false,
         ),
         "frozen"
@@ -1485,7 +1485,7 @@ fn a_warped_object_is_frozen_and_immune() {
     assert!(sim.temporal_ai_prologue(
         tank,
         &rules,
-        crate::sim::world::ObjectAiCtx::default(),
+        &mut crate::sim::world::ObjectAiCtx::default(),
         &mut false,
     ));
     assert_eq!(
@@ -1519,14 +1519,14 @@ fn a_warped_object_is_frozen_and_immune() {
         &rules,
         None,
         &[hit(false)],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(entity(&sim, tank).health.current(), 400, "immune");
     sim.commit_noncombat_aoe_hits(
         &rules,
         None,
         &[hit(true)],
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(entity(&sim, tank).health.current(), 300, "ignoreDefenses");
 }
@@ -1653,7 +1653,7 @@ fn a_phobos_warp_away_anim_is_owned_by_the_target_house() {
         .map(|(_, anim)| anim)
         .expect("the override anim plays");
     assert_eq!(anim.owner_house(), Some(owner));
-    }
+}
 /// Retail rules and real orders: a Chrono Legionnaire warps the Americans'
 /// only War Factory while it builds a Grizzly, then walks off and lets it
 /// go. In stock the warp and release make no queue callback and the tank
@@ -1862,7 +1862,7 @@ fn erasing_a_bunkered_tank_clears_its_bunker() {
     // One step of Damage 8 erases (Strength is not consulted; the chain's
     // remaining warp is the fixture's).
     chain(&mut sim, &rules, tank, &[cleg], 8);
-    sim.temporal_update_head(cleg, &rules, None, FrameEffects::default());
+    sim.temporal_update_head(cleg, &rules, None, &mut FrameEffects::default());
 
     assert!(erased(&sim, tank), "the bunkered tank is erased");
     let building = entity(&sim, bunker);
@@ -1962,7 +1962,7 @@ fn only_temporal_fire_reaches_a_warped_target() {
         Some(tank),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     // Use the registered human sender for this synthetic cross-House order;
     // keep the actor House AI-controlled and preserve the frame-tail timing.
@@ -2059,21 +2059,26 @@ fn a_warp_in_progress_survives_a_snapshot() {
         Some(tank),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     sim.temporal_initiate_warp(
         b,
         Some(tank),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
-    sim.temporal_update_head(a, &rules, None, crate::sim::world::FrameEffects::default());
+    sim.temporal_update_head(
+        a,
+        &rules,
+        None,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     // This fixture now supplies native navigation. Load retains its base rows
     // but reconstructs the hierarchy only at the map-authority restore seam.
     // Provide the empty overlay owner that the production seam requires.
     let terrain = sim.resolved_terrain.as_ref().unwrap().clone();
-    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(
+    *sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(
         terrain.width(),
         terrain.height(),
     ));
@@ -2081,7 +2086,7 @@ fn a_warp_in_progress_survives_a_snapshot() {
     sim.restore_map_authority_after_snapshot_load(&rules, &overlays, None)
         .expect("publish fixture map authority");
     // A load restarts the Scenario stream from Seed0; put the source there too.
-    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     let saved_hash = sim.state_hash();
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "temporal", 0);
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
@@ -2178,7 +2183,7 @@ fn a_warped_object_runs_none_of_its_ai_phases() {
             crate::sim::movement::infantry_action::DO_READY,
             false,
             &rules,
-            crate::sim::world::FrameEffects::default()
+            &mut crate::sim::world::FrameEffects::default()
         )
         .unwrap()
     );
@@ -2205,14 +2210,14 @@ fn a_warped_object_runs_none_of_its_ai_phases() {
         Some(gi),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     sim.temporal_initiate_warp(
         cleg2,
         Some(plant),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let credits_before = sim.houses[&sim.interner.get("Americans").unwrap()]
         .economy()
@@ -2222,10 +2227,10 @@ fn a_warped_object_runs_none_of_its_ai_phases() {
         "no idle draw while warped"
     );
     // A frame the repair period (14) divides.
-    sim.session
-        .set_binary_frame_for_test(sim.session.binary_frame().next_multiple_of(14));
-    let ctx = crate::sim::world::ObjectAiCtx::default();
-    sim.object_ai_visit_one(plant, Some(&rules), ctx);
+    let session = &mut *sim.session;
+    session.set_binary_frame_for_test(session.binary_frame().next_multiple_of(14));
+    let mut ctx = crate::sim::world::ObjectAiCtx::default();
+    sim.object_ai_visit_one(plant, Some(&rules), &mut ctx);
     assert_eq!(entity(&sim, plant).health.current(), 300, "no repair");
     assert_eq!(
         sim.houses[&sim.interner.get("Americans").unwrap()]
@@ -2242,7 +2247,7 @@ fn a_warped_object_runs_none_of_its_ai_phases() {
         cleg2,
         rules.ares_form(),
     );
-    sim.object_ai_visit_one(plant, Some(&rules), ctx);
+    sim.object_ai_visit_one(plant, Some(&rules), &mut ctx);
     assert!(entity(&sim, plant).health.current() > 300);
 }
 
@@ -2288,7 +2293,7 @@ fn only_a_temporal_scanner_acquires_a_warped_enemy() {
         Some(tank),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert_eq!(acquire(&sim, gi), None, "a GI passes over it");
     assert_eq!(
@@ -2341,7 +2346,7 @@ fn stop_retains_the_legionnaires_victim_until_attack_dispatch() {
         &Command::Stop { entity_id: cleg },
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     ));
     assert!(entity(&sim, cleg).attack_target.target().is_none());
     assert_eq!(
@@ -2406,7 +2411,7 @@ fn a_released_mover_does_not_resume_its_order() {
         Some(tank),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     for _ in 0..10 {
         step(&mut sim);
@@ -2455,26 +2460,29 @@ fn a_warped_foot_without_a_navcom_skips_the_null_setter() {
         Some(tank),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     {
         let tank = sim.substrate.entities.get_mut(tank).unwrap();
         assert!(tank.navigation.nav_com().is_none());
         tank.navigation
             .push_nav_queue_for_test(NavTargetRef::cell(9, 16));
-        tank.setter_force_reassign.set_for_test(true);
+        tank.seldom.setter_force_reassign.set_for_test(true);
     }
     assert!(
         sim.temporal_ai_prologue(
             tank,
             &rules,
-            crate::sim::world::ObjectAiCtx::default(),
+            &mut crate::sim::world::ObjectAiCtx::default(),
             &mut false,
         ),
         "frozen"
     );
     let tank = entity(&sim, tank);
-    assert!(tank.setter_force_reassign.is_raised(), "no setter call");
+    assert!(
+        tank.seldom.setter_force_reassign.is_raised(),
+        "no setter call"
+    );
     assert_eq!(tank.navigation.nav_queue(), vec![NavTargetRef::cell(9, 16)]);
 }
 
@@ -2494,7 +2502,7 @@ fn a_warped_infantryman_without_a_navcom_keeps_his_walk_destination() {
         Some(gi),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let destination = DriveCoord::cell(14, 10, 0);
     {
@@ -2509,7 +2517,7 @@ fn a_warped_infantryman_without_a_navcom_keeps_his_walk_destination() {
         sim.temporal_ai_prologue(
             gi,
             &rules,
-            crate::sim::world::ObjectAiCtx::default(),
+            &mut crate::sim::world::ObjectAiCtx::default(),
             &mut false,
         ),
         "frozen"
@@ -2590,7 +2598,7 @@ fn a_warped_building_cannot_be_captured() {
             head,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         sim.substrate
             .entities
@@ -2606,7 +2614,7 @@ fn a_warped_building_cannot_be_captured() {
                 head,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default()
+                &mut crate::sim::world::FrameEffects::default()
             )
             .expect("ordinary capture arrival must finish")
         );
@@ -2616,7 +2624,7 @@ fn a_warped_building_cannot_be_captured() {
         Some(plant),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     enter(&mut sim);
     assert_eq!(entity(&sim, plant).owner(), americans, "turned away");
@@ -2673,14 +2681,14 @@ fn a_warped_transport_admits_no_one() {
         Some(fortress),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     sim.temporal_initiate_warp(
         cleg2,
         Some(reactor),
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     assert!(!admits(&sim, fortress), "a warped Unit transport");
     assert!(!admits(&sim, reactor), "a warped absorber");
@@ -2820,6 +2828,7 @@ fn native_initiate_warp_corpus() {
                 .entities
                 .get_mut(target)
                 .unwrap()
+                .seldom
                 .radio_contacts;
             contacts.set_capacity(2);
             let slot = factory["slot"].as_u64().unwrap_or(0) as usize;
@@ -2875,6 +2884,7 @@ fn native_initiate_warp_corpus() {
             .entities
             .get_mut(target)
             .unwrap()
+            .seldom
             .selection
             .set_selected_for_test(true);
         if flag("gattling") {
@@ -2890,7 +2900,7 @@ fn native_initiate_warp_corpus() {
             shot,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         let label = |value: Option<u64>| native_name(value, target, &attackers);
@@ -2966,7 +2976,7 @@ fn native_initiate_warp_corpus() {
             "{name}: the original decays the victim by one tick"
         );
         assert_eq!(
-            !entity(&sim, target).selection.is_selected(),
+            !entity(&sim, target).seldom.selection.is_selected(),
             native("deselect"),
             "{name}: Deselect"
         );
@@ -3137,9 +3147,9 @@ fn native_first_head_building_warning_and_release_corpus() {
         // Match native's declared post-construction seed boundary once;
         // never reset the streams between start and either release.
         let seed = input["rng_seed"].as_u64().unwrap();
-        sim.scenario_rng = SimRng::new(seed);
-        sim.main_rng = SimRng::new(seed).into();
-        sim.mapgen_rng = SimRng::new(seed);
+        *sim.scenario_rng = SimRng::new(seed);
+        *sim.main_rng = SimRng::new(seed);
+        *sim.mapgen_rng = SimRng::new(seed);
         sim.session
             .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
         sim.sound_events.clear_for_test();
@@ -3153,7 +3163,7 @@ fn native_first_head_building_warning_and_release_corpus() {
                     Some(target),
                     &rules,
                     None,
-                    FrameEffects::default(),
+                    &mut FrameEffects::default(),
                 ),
                 "release_firer" => crate::sim::world::Simulation::temporal_let_go(
                     &mut sim.substrate,
@@ -3339,7 +3349,7 @@ fn a_landing_aircraft_is_not_warped() {
             TemporalShotTarget::Object(plane),
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             head_of(&sim, plane) == Some(cleg),
@@ -3373,7 +3383,7 @@ fn ares_health_factor_shortens_a_damaged_targets_warp() {
             Some(tank),
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         link(&sim, cleg).warp_remaining
     };
@@ -3412,7 +3422,7 @@ fn ares_an_unwarpable_veteran_is_not_warped() {
             Some(target),
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
     }
     assert_eq!(head_of(&sim, veteran), None);
@@ -3432,15 +3442,15 @@ fn ares_temporal_update_frees_the_targets_radar_jammer() {
     let target = spawn(&mut sim, &rules, "HTNK", "Russians", 20, 20);
     let attacker = spawn(&mut sim, &rules, "CLEG", "Americans", 22, 20);
     sim.update_ares_radar_jammer(target, &rules);
-    assert!(!entity(&sim, target).ares.radar_jam.is_default());
+    assert!(!entity(&sim, target).seldom.ares.radar_jam.is_default());
     chain(&mut sim, &rules, target, &[attacker], 1_000_000);
     sim.temporal_update_head(
         attacker,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
-    assert!(entity(&sim, target).ares.radar_jam.is_default());
+    assert!(entity(&sim, target).seldom.ares.radar_jam.is_default());
 }
 
 /// A tank with no head of its own that is neither warped out nor warping in
@@ -3454,7 +3464,7 @@ fn an_untouched_tank_costs_the_prologue_one_lookup() {
     assert!(!sim.temporal_ai_prologue(
         tank,
         &rules,
-        crate::sim::world::ObjectAiCtx::default(),
+        &mut crate::sim::world::ObjectAiCtx::default(),
         &mut false,
     ));
     assert_eq!(sim.substrate.entities.lookups().0 - before, 1);
@@ -3480,7 +3490,8 @@ fn no_rearm_temporal_holds_the_held_target_timers() {
         let cleg = spawn(&mut sim, &held_rules, "CLEG", "Russians", 10, 10);
         chain(&mut sim, &held_rules, tank, &[cleg], 4000);
         let held = sim.substrate.entities.get_mut(tank).unwrap();
-        held.rearm_timer
+        held.seldom
+            .rearm_timer
             .set_for_test(crate::sim::timer::CdTimer::started(40, 100));
         held.set_ammo_reload_timer_for_test(crate::sim::timer::CdTimer::started(40, 80));
         sim.session.set_binary_frame_for_test(50);
@@ -3488,7 +3499,7 @@ fn no_rearm_temporal_holds_the_held_target_timers() {
             cleg,
             &held_rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(
             link(&sim, cleg).warp_remaining,
@@ -3498,7 +3509,7 @@ fn no_rearm_temporal_holds_the_held_target_timers() {
         let rearm_after_first = {
             let after_first = sim.substrate.entities.get(tank).unwrap();
             (
-                after_first.rearm_timer.remaining(50),
+                after_first.seldom.rearm_timer.remaining(50),
                 after_first.ammo_reload_timer().remaining(50),
             )
         };
@@ -3512,12 +3523,12 @@ fn no_rearm_temporal_holds_the_held_target_timers() {
             cleg,
             &held_rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let after_second = {
             let entity = sim.substrate.entities.get(tank).unwrap();
             (
-                entity.rearm_timer.remaining(51),
+                entity.seldom.rearm_timer.remaining(51),
                 entity.ammo_reload_timer().remaining(51),
             )
         };
@@ -3537,7 +3548,8 @@ fn no_rearm_temporal_holds_the_held_target_timers() {
     let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
     chain(&mut sim, &rules, tank, &[cleg], 4000);
     let held = sim.substrate.entities.get_mut(tank).unwrap();
-    held.rearm_timer
+    held.seldom
+        .rearm_timer
         .set_for_test(crate::sim::timer::CdTimer::started(40, 100));
     held.set_ammo_reload_timer_for_test(crate::sim::timer::CdTimer::started(40, 80));
     sim.session.set_binary_frame_for_test(50);
@@ -3545,17 +3557,17 @@ fn no_rearm_temporal_holds_the_held_target_timers() {
         cleg,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     sim.session.set_binary_frame_for_test(51);
     sim.temporal_update_head(
         cleg,
         &rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let counted = sim.substrate.entities.get(tank).unwrap();
-    assert_eq!(counted.rearm_timer.remaining(51), 89);
+    assert_eq!(counted.seldom.rearm_timer.remaining(51), 89);
     assert_eq!(counted.ammo_reload_timer().remaining(51), 69);
 }
 
@@ -3602,6 +3614,7 @@ fn warp_per_step_needs_a_resolved_warhead_for_the_extension() {
             .entities
             .get_mut(cleg)
             .unwrap()
+            .seldom
             .crate_multipliers
             .set_firepower_multiplier_for_test(NativeF64Bits::from_bits(1.5f64.to_bits()));
         sim.temporal_warp_per_step(cleg, rules)

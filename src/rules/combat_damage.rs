@@ -17,7 +17,9 @@
 
 use crate::rules::ini_parser::IniSection;
 
-/// VERA's `DeformLowestLevel=` default.
+/// VERA's `DeformLowestLevel=` default. Firestorm's floor is Level 0
+/// (Firestorm 2.0 0x5F9AB0 keeps corners within `0..=0x90`), where most YR
+/// ground lies, so VERA's default lets a dent sink below it.
 const DEFORM_LOWEST_LEVEL: i32 = -4;
 
 /// Default particle-system fallbacks read from `[CombatDamage]`.
@@ -51,7 +53,7 @@ pub struct CombatDamageDefaults {
     pub terrain_deformation: bool,
     /// VERA's `DeformLowestLevel=`: the lowest Level deformation lowers a
     /// corner to, a signed int clamped to a cell Level's `-128..=127`.
-    /// Default -4.
+    /// Default -4; 0 is Firestorm's floor.
     pub deform_lowest_level: i32,
     /// `RailgunDamageRadius=`: the most a Techno may sit from a railgun line
     /// and still be hit. `RulesClass::Constructor` writes 0x80

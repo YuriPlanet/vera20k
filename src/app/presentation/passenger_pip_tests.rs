@@ -285,20 +285,12 @@ fn a_slave_shows_the_load_it_carries() {
         },
         Some(rules)
     ));
-    // Phobos replaces this arm unconditionally and draws in DisplayOrder;
-    // its default {0,2,3,1} puts Riparius (index 0) before gems (index 1),
-    // the stock arm's reverse.
-    let mixed = if true {
-        [2, 2, 5]
-    } else {
-        [5, 5, 2]
-    };
     for (ore, gems, expected) in [
         (0, 0, [0, 0, 0]),
         (1, 0, [2, 0, 0]),
         (3, 0, [2, 2, 0]),
         (4, 0, [2, 2, 2]),
-        (2, 2, mixed),
+        (2, 2, [5, 5, 2]),
     ] {
         let bale = |resource_type| CargoBale {
             tiberium_type: crate::rules::tiberium_type::TiberiumTypeId(match resource_type {
@@ -311,7 +303,7 @@ fn a_slave_shows_the_load_it_carries() {
         let cargo = std::iter::repeat_n(bale(ResourceType::Ore), ore)
             .chain(std::iter::repeat_n(bale(ResourceType::Gem), gems))
             .collect();
-        sim.entity_mut_for_test(slave).unwrap().slave =
+        sim.entity_mut_for_test(slave).unwrap().seldom.slave =
             crate::sim::slave_manager::SlaveLink::for_test(None, cargo);
         assert_eq!(
             frames(&sim, rules, slave, None),
@@ -323,8 +315,6 @@ fn a_slave_shows_the_load_it_carries() {
 
 /// Controlled storage-consumer priors; this does not establish harvesting.
 /// Native executions supply expected frames, including PC53/chop half ties.
-/// The oracle is the stock arm; a Phobos build draws in DisplayOrder instead
-/// (`the_tiberium_pip_globals_drive_the_strip`).
 #[test]
 fn shared_harvester_scale_matches_native_independent_ore_and_gem_counts() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
@@ -374,50 +364,56 @@ fn shared_harvester_scale_matches_native_independent_ore_and_gem_counts() {
     }
 }
 
-/// `Pips.Generic.Size` (`[AudioVisual]`, `Ext/Rules/Body.cpp:160`) is the
-/// advance of every non-Ammo pip arm, here the passenger strip.
+/// Ares TechnoClass_DrawPipscale_Passengers (1004A280, hook 0x709D38) and
+/// GetPassengerPips (10044C90): a hold over GetPipMax clips its pips where
+/// the stock arm draws none, a `Gunner=` type leaves one empty step after
+/// its first pip, and `Passengers.BySize=no` gives a passenger one pip.
 #[test]
-fn the_global_generic_size_drives_the_passenger_strip() {
+fn ares_passenger_pips_clip_an_overfull_hold_and_step_once_after_the_gunner() {
     use crate::rules::ini_parser::IniFile;
     use crate::sim::passenger::{PassengerCargo, PassengerRole};
-    let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[VehicleTypes]\n0=CARRIER\n1=E1\n\
-         [CARRIER]\nStrength=100\nArmor=heavy\nSpeed=4\nPassengers=2\nPipScale=Passengers\n\
-         [E1]\nStrength=100\nArmor=heavy\nSpeed=4\n\
-         [AudioVisual]\nPips.Generic.Size=7,3\n",
-    ))
-    .expect("generic size rules");
-    let mut sim = Simulation::new();
-    crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
-    sim.intern_rule_type_ids(&rules);
-    sim.resolve_type_handles(&rules);
-    let carrier = sim
-        .spawn_object("CARRIER", OWNER, 16, 16, 64, &rules)
-        .expect("carrier");
-    let first = sim
-        .spawn_object("E1", OWNER, 16, 15, 64, &rules)
-        .expect("passenger");
-    let mut cargo = PassengerCargo::new(2, 2.0);
-    cargo.board_forced_chain(&[(first, 1.0)]);
-    sim.entities_mut_for_test()
-        .get_mut_for_test(carrier)
-        .unwrap()
-        .passenger_role = PassengerRole::transport(cargo);
-    assert!(sim.apply_command(
-        OWNER,
-        &Command::Select {
-            entity_ids: vec![carrier],
-            additive: false,
-        },
-        Some(&rules),
-    ));
-    let entity = crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, carrier);
-    let placed: Vec<[i32; 2]> =
-        super::ui_overlays::scale_pip_draws(&sim, &entity, None, sim.interner().get(OWNER), &rules)
-            .iter()
-            .map(|pip| pip.offset_pixels)
-            .collect();
-    assert_eq!(placed, [[0, 10], [7, 13]], "the 7x3 generic step");
+
+    let _ares = crate::rules::ares_switch::read_ares_way(true);
+
+    let draws = |carrier_keys: &str| {
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=CARRIER\n1=TANK\n\
+             [CARRIER]\nStrength=100\nArmor=heavy\nSpeed=4\nPassengers=3\n\
+             PipScale=Passengers\nSizeLimit=4\n{carrier_keys}\
+             [TANK]\nStrength=100\nArmor=heavy\nSpeed=4\nSize=4\n"
+        )))
+        .expect("carrier and passenger rules");
+        let mut sim = Simulation::new();
+        crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let carrier = sim
+            .spawn_object("CARRIER", OWNER, 16, 16, 64, &rules)
+            .unwrap();
+        let tank = sim.spawn_object("TANK", OWNER, 16, 15, 64, &rules).unwrap();
+        let mut cargo = PassengerCargo::new(3, 4.0);
+        cargo.board_forced_chain(&[(tank, 4.0)]);
+        sim.entity_mut_for_test(carrier)
+            .unwrap()
+            .set_passenger_role_for_test(PassengerRole::transport(cargo));
+        assert!(sim.apply_command(
+            OWNER,
+            &Command::Select {
+                entity_ids: vec![carrier],
+                additive: false,
+            },
+            Some(&rules)
+        ));
+        let record =
+            crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, carrier);
+        super::ui_overlays::scale_pip_draws(&sim, &record, None, sim.interner().get(OWNER), &rules)
+            .into_iter()
+            .map(|pip| (pip.frame, pip.slot))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(draws(""), [(5, 0), (3, 1), (3, 2)]);
+    assert_eq!(draws("Gunner=yes\n"), [(5, 0), (3, 2), (3, 3)]);
+    assert_eq!(draws("Passengers.BySize=no\n"), [(5, 0), (0, 1), (0, 2)]);
 }
 
 /// Phobos `Pips.Tiberiums.*` (`Ext/Rules/Body.cpp:164-168`, consumer
@@ -432,7 +428,8 @@ fn the_tiberium_pip_globals_drive_the_strip() {
 
     let scene = |extra: &str| {
         let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
-            "[VehicleTypes]\n0=HARVTEST\n\
+            "[General]\nGatherWhenMCVDeploy=yes\n\
+             [VehicleTypes]\n0=HARVTEST\n\
              [HARVTEST]\nStrength=100\nSpeed=4\nStorage=10\nPipScale=Tiberium\n\
              Harvester=yes\n{extra}\
              [Tiberiums]\n0=Riparius\n1=Cruentus\n2=Vinifera\n3=Aboreus\n\

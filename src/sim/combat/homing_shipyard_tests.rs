@@ -29,13 +29,13 @@ impl Scene {
         let target = world
             .spawn_object(kind, "Russians", 16, 16, 0, &rules)
             .unwrap();
-        world.resolved_terrain = terrain;
+        *world.resolved_terrain = terrain;
         world
             .assign_target_represented(
                 source,
                 Some(TargetKind::Entity(target)),
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         Some(Self {
@@ -87,7 +87,7 @@ impl Scene {
             100,
             &mut CombatEmit::default(),
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         )
         .unwrap();
         let bullet = self.world.projectiles.get(id).unwrap();
@@ -100,11 +100,10 @@ impl Scene {
     }
 
     fn visit(&mut self, id: u64) {
+        let session = &mut *self.world.session;
+        session.set_binary_frame_for_test(session.binary_frame() + 1);
         self.world
-            .session
-            .set_binary_frame_for_test(self.world.session.binary_frame() + 1);
-        self.world
-            .visit_combat_tail(id, &self.rules, None, FrameEffects::default());
+            .visit_combat_tail(id, &self.rules, None, &mut FrameEffects::default());
     }
 }
 

@@ -29,6 +29,11 @@ from .profile import (
     ValidatedProfile,
 )
 
+# A frame is one native logic frame however fast the capture stepped it, so the
+# ledger's total_simulation_ms counts frames at 1000 / 15 ms; the profile's
+# sim_tick_ms only paces the capture (VERA20k issue #5107).
+NATIVE_LOGIC_FRAMES_PER_SECOND = 15
+
 
 STABLE_KEYS = (
     "inputs",
@@ -1314,7 +1319,7 @@ def _require_final_fingerprint(
         field,
     )
     capture_tick = _observed_capture_tick(stable, profile)
-    sim_tick_ms = require_int(profile.capture["sim_tick_ms"], "capture.sim_tick_ms")
+    require_int(profile.capture["sim_tick_ms"], "capture.sim_tick_ms")
     core = _exact_object(
         fingerprint["core"],
         ("simulation_tick", "binary_frame", "total_simulation_ms", "deterministic_state_hash"),
@@ -1323,7 +1328,7 @@ def _require_final_fingerprint(
     require_value(core["simulation_tick"], capture_tick, f"{field}.core.simulation_tick")
     require_value(
         core["total_simulation_ms"],
-        capture_tick * sim_tick_ms,
+        capture_tick * 1000 // NATIVE_LOGIC_FRAMES_PER_SECOND,
         f"{field}.core.total_simulation_ms",
     )
     require_value(

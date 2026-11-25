@@ -104,7 +104,7 @@ impl Simulation {
         refund: i32,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(building) = self.substrate.entities.get(building_id) else {
             return false;
@@ -206,7 +206,7 @@ impl Simulation {
         );
         self.sound_events
             .emit(crate::sim::world::SimSoundEvent::voc_at_world_coord(
-                sound,
+                rules.sound_name(&sound),
                 crate::sim::anim_class::AnimWorldCoord {
                     x: coordinate.x,
                     y: coordinate.y,

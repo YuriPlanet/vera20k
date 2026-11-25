@@ -30,7 +30,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let settings = self
             .substrate
@@ -74,9 +74,8 @@ impl Simulation {
             entity,
             self.resolved_terrain.as_ref(),
         );
-        let owner_name = self.interner.resolve(owner).to_owned();
         let purifiers =
-            crate::sim::miner::miner_system::count_purifiers_for_owner(self, rules, &owner_name);
+            crate::sim::miner::miner_system::count_purifiers_for_owner(self, rules, owner);
         let purifier_bonus = f32::from_bits(rules.general.purifier_bonus.bits());
         let multiplier = settings.cash_multiplier * (1.0 + purifiers as f32 * purifier_bonus);
         let mut active = false;

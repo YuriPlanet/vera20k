@@ -131,11 +131,11 @@ fn counts(sim: &Simulation) -> Value {
 
 fn scene(row: &Value, terminal: bool, rules: &RuleSet) -> (Simulation, u64) {
     let mut sim = Simulation::with_seed(31);
-    sim.main_rng = SimRng::new(31).into();
-    sim.scenario_rng = SimRng::new(31);
+    *sim.main_rng = SimRng::new(31);
+    *sim.scenario_rng = SimRng::new(31);
     sim.session
         .set_binary_frame_for_test(row["supplied"]["frame"].as_i64().unwrap() as u32);
-    sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
+    *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
         row["before_native_id"].as_u64().unwrap() as u32,
     ));
     assert_eq!(
@@ -241,7 +241,7 @@ fn scalable_unit_scene(shots: usize) -> Option<(Simulation, RuleSet, u64, u64)> 
         tank,
         Some(crate::sim::combat::TargetKind::Entity(target)),
         &rules,
-        super::FrameEffects::default(),
+        &mut super::FrameEffects::default(),
     )
     .unwrap();
     for _ in 0..shots {
@@ -254,7 +254,7 @@ fn scalable_unit_scene(shots: usize) -> Option<(Simulation, RuleSet, u64, u64)> 
             },
             &rules,
             None,
-            super::FrameEffects::default(),
+            &mut super::FrameEffects::default(),
         );
         assert_eq!(
             sim.projectiles.len(),
@@ -283,7 +283,7 @@ fn scalable_unit_shots_emit_a_real_trailer_on_the_shared_eighth_member_cadence()
     let (&bullet, projectile) = sim.projectiles.iter().next().unwrap();
     let origin = projectile.position();
     sim.session.set_binary_frame_for_test(4);
-    sim.object_ai_visit_one_with_effects(bullet, &rules, ObjectAiCtx::default());
+    sim.object_ai_visit_one_with_effects(bullet, &rules, &mut ObjectAiCtx::default());
     let bubble = only_bubble(&sim);
     let position = sim.anim(bubble).unwrap().world_coord();
     assert_eq!(
@@ -305,7 +305,7 @@ fn projectile_trailer_retail_constructor_rng_and_complete_lifetime_match_native(
             return;
         };
         let (mut sim, bullet) = scene(row, false, &rules);
-        sim.object_ai_visit_one_with_effects(bullet, &rules, ObjectAiCtx::default());
+        sim.object_ai_visit_one_with_effects(bullet, &rules, &mut ObjectAiCtx::default());
         let bubble = only_bubble(&sim);
         assert_eq!(
             anim_state(&sim, sim.anim(bubble).unwrap()),
@@ -332,7 +332,7 @@ fn projectile_trailer_retail_constructor_rng_and_complete_lifetime_match_native(
         );
         sim.process_pending_delete_with(
             &rules,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
             1,
             false,
         );
@@ -348,7 +348,7 @@ fn projectile_trailer_retail_constructor_rng_and_complete_lifetime_match_native(
                 bubble,
                 &rules,
                 None,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
             assert_eq!(
@@ -365,7 +365,7 @@ fn projectile_trailer_retail_constructor_rng_and_complete_lifetime_match_native(
             );
             sim.process_pending_delete_with(
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
                 1,
                 false,
             );
@@ -392,7 +392,7 @@ fn projectile_trailer_is_registered_before_terminal_logic_compaction() {
             bullet,
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let bubble = only_bubble(&sim);
         assert_eq!(
@@ -420,8 +420,8 @@ fn restored(sim: &Simulation) -> Simulation {
     // Production restores live process streams around the native Scenario
     // seed-zero reset. This continuation has no constructor RNG left to draw.
     // These loaded controls run as independent test processes.
-    result.main_rng = sim.main_rng.snapshot_for_test().into();
-    result.mapgen_rng = sim.mapgen_rng.clone();
+    *result.main_rng = (*sim.main_rng).clone();
+    *result.mapgen_rng = (*sim.mapgen_rng).clone();
     result.restore_after_snapshot_load().unwrap();
     result
 }
@@ -434,7 +434,7 @@ fn projectile_trailer_save_load_preserves_live_and_pending_cleanup_boundaries() 
     let corpus = native();
     let row = case(&corpus, "stock_lifetime");
     let (mut sim, bullet) = scene(row, false, &rules);
-    sim.object_ai_visit_one_with_effects(bullet, &rules, ObjectAiCtx::default());
+    sim.object_ai_visit_one_with_effects(bullet, &rules, &mut ObjectAiCtx::default());
     let bubble = only_bubble(&sim);
     // Persist both live, then a Bullet already UnInit but not yet drained.
     for pending in [false, true] {
@@ -455,7 +455,10 @@ fn projectile_trailer_save_load_preserves_live_and_pending_cleanup_boundaries() 
             anim_state(&first, first.anim(bubble).unwrap()),
             anim_state(&sim, sim.anim(bubble).unwrap())
         );
-        assert_eq!(first.substrate.pending_delete, sim.substrate.pending_delete);
+        assert_eq!(
+            *first.substrate.pending_delete,
+            *sim.substrate.pending_delete
+        );
         assert_eq!(
             first.scenario_rng.logical_state(),
             SimRng::new(0).logical_state()
@@ -469,7 +472,7 @@ fn projectile_trailer_save_load_preserves_live_and_pending_cleanup_boundaries() 
             }
             loaded.process_pending_delete_with(
                 &rules,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
                 1,
                 false,
             );
@@ -484,7 +487,7 @@ fn projectile_trailer_save_load_preserves_live_and_pending_cleanup_boundaries() 
                         bubble,
                         &rules,
                         None,
-                        crate::sim::world::FrameEffects::default(),
+                        &mut crate::sim::world::FrameEffects::default(),
                     )
                     .unwrap();
                 assert_eq!(
@@ -493,7 +496,7 @@ fn projectile_trailer_save_load_preserves_live_and_pending_cleanup_boundaries() 
                 );
                 loaded.process_pending_delete_with(
                     &rules,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                     1,
                     false,
                 );
@@ -517,7 +520,7 @@ fn scalable_unit_target_and_direct_share_enrollment_but_failed_launch_does_not()
         crate::sim::combat::world_fire::FireVisit::UnitTarget(tank),
         &rules,
         None,
-        super::FrameEffects::default(),
+        &mut super::FrameEffects::default(),
     );
     let ids: Vec<_> = sim.projectiles.iter().map(|(&id, _)| id).collect();
     assert_eq!(
@@ -528,7 +531,7 @@ fn scalable_unit_target_and_direct_share_enrollment_but_failed_launch_does_not()
     assert_eq!(sim.projectiles.scalable_members(), ids);
     //70BCB0's null TarCom aim is zero, independently of Direct's target;
     // this exact supplied history previously demonstrated failed arc launch.
-    sim.assign_target_represented(tank, None, &rules, super::FrameEffects::default())
+    sim.assign_target_represented(tank, None, &rules, &mut super::FrameEffects::default())
         .unwrap();
     sim.commit_fire_visit(
         crate::sim::combat::world_fire::FireVisit::Direct {
@@ -538,7 +541,7 @@ fn scalable_unit_target_and_direct_share_enrollment_but_failed_launch_does_not()
         },
         &rules,
         None,
-        super::FrameEffects::default(),
+        &mut super::FrameEffects::default(),
     );
     assert_eq!(sim.projectiles.len(), 1);
     assert_eq!(
@@ -582,7 +585,7 @@ fn scalable_uninit_self_callback_removes_before_drain_and_keeps_type_override() 
     );
     assert_eq!(sim.projectiles.scaled_spawn_delay(type_id), 3);
     assert!(sim.substrate.pending_delete.contains_object(&id));
-    sim.process_pending_delete_with(&rules, super::FrameEffects::default(), 1, false);
+    sim.process_pending_delete_with(&rules, &mut super::FrameEffects::default(), 1, false);
     assert!(sim.projectiles.get(id).is_none());
     assert_eq!(
         sim.projectiles.scalable_members().len() as u64,
@@ -627,24 +630,24 @@ fn scalable_snapshot_mechanical_state_and_native_load_have_distinct_membership()
     let mut no_members = restored(&sim);
     assert!(no_members.projectiles.scalable_members().is_empty());
     assert_eq!(no_members.projectiles.scaled_spawn_delay(type_id), 4);
-    let retained = no_members.projectiles.clone();
+    let retained = (*no_members.projectiles).clone();
     let retained_hash = no_members.state_hash();
     let mut raw = serde_json::to_value(&no_members.projectiles).unwrap();
     raw["scaled_spawn_delays"] = json!({});
-    no_members.projectiles = serde_json::from_value(raw).unwrap();
+    *no_members.projectiles = serde_json::from_value(raw).unwrap();
     assert_ne!(
         retained_hash,
         no_members.state_hash(),
         "retained type cadence is hashed even without members"
     );
-    no_members.projectiles = retained;
+    *no_members.projectiles = retained;
     assert_eq!(no_members.state_hash(), retained_hash);
     // Loaded membership is empty but the old type cadence remains effective
     // until another Unit shot overwrites it, through the same AI/Anim owner.
     let bullet = *loaded.projectiles.iter().next().unwrap().0;
     for world in [&mut loaded, &mut control] {
         world.session.set_binary_frame_for_test(4);
-        world.object_ai_visit_one_with_effects(bullet, &rules, ObjectAiCtx::default());
+        world.object_ai_visit_one_with_effects(bullet, &rules, &mut ObjectAiCtx::default());
         only_bubble(world);
     }
     assert_eq!(loaded.state_hash(), control.state_hash());
@@ -652,14 +655,14 @@ fn scalable_snapshot_mechanical_state_and_native_load_have_distinct_membership()
     let mut invalid = serde_json::to_value(&mechanical).unwrap();
     invalid["scalable_members"] = json!([u64::MAX]);
     let mut rejected = no_members;
-    rejected.projectiles = serde_json::from_value(invalid).unwrap();
+    *rejected.projectiles = serde_json::from_value(invalid).unwrap();
     assert!(matches!(
         rejected.restore_after_snapshot_load(),
         Err(crate::sim::snapshot::SnapshotRestoreError::InvalidScalableProjectileRuntime(_))
     ));
     let mut invalid = serde_json::to_value(&mechanical).unwrap();
     invalid["scaled_spawn_delays"] = json!({"4294967295": 4});
-    rejected.projectiles = serde_json::from_value(invalid).unwrap();
+    *rejected.projectiles = serde_json::from_value(invalid).unwrap();
     assert!(matches!(
         rejected.restore_after_snapshot_load(),
         Err(crate::sim::snapshot::SnapshotRestoreError::InvalidScalableProjectileRuntime(_))

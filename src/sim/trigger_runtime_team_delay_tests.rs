@@ -23,7 +23,7 @@ fn run_team_delay_action(value: &str) -> (Simulation, RuleSet, [InternedId; 3]) 
         .unwrap()
         .team_creation_mut()
         .restart(0, 100);
-    let _ = sim.advance_triggers(&rules, Some(&registry), FrameEffects::default());
+    let _ = sim.advance_triggers(&rules, Some(&registry), &mut FrameEffects::default());
     (sim, rules, houses)
 }
 

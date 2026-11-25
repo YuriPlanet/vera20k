@@ -576,7 +576,7 @@ fn plan_mode(sim: &Simulation, rules: &RuleSet, actors: &[Actor], mode: SmartMod
                     object.bunker
                         && entity.building.bunker_runtime.is_some()
                         && entity.bunker.occupant().is_none()
-                        && entity.radio_contacts.slot(0).is_none()
+                        && entity.seldom.radio_contacts.slot(0).is_none()
                 });
             spread(actors, &targets, 1)
                 .into_iter()
@@ -616,7 +616,7 @@ pub(crate) fn hotkey_pressed(state: &mut AppState) {
     if !state.match_state.session_mode().is_single_player() {
         return;
     }
-    let Some(owner) = preferred_local_owner_name(state) else {
+    let Some(owner) = preferred_local_owner_name(&state.match_state) else {
         return;
     };
     let orders = {

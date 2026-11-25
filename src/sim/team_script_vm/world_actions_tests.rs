@@ -32,9 +32,9 @@ fn scene_with(scripts: &str, rules: &str) -> (Simulation, RuleSet, InternedId) {
     ini.merge(&IniFile::from_str(rules));
     let rules = RuleSet::from_ini(&ini).unwrap();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x6E_9140);
-    sim.overlay_grid = Some(OverlayGrid::new(32, 32));
-    sim.ore_growth_config = OreGrowthConfig::for_test(false, false, false);
-    sim.ore_growth_state = OreGrowthState::new(32, 32);
+    *sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+    *sim.ore_growth_config = OreGrowthConfig::for_test(false, false, false);
+    *sim.ore_growth_state = OreGrowthState::new(32, 32);
     sim.fog.set_width_for_test(32);
     sim.fog.set_height_for_test(32);
     sim.intern_rule_type_ids(&rules);
@@ -62,7 +62,7 @@ fn team(sim: &mut Simulation, owner: InternedId, members: &[u64]) -> u64 {
 
 fn run(sim: &mut Simulation, rules: &RuleSet, team: u64) {
     let registry = crate::sim::tiberium::test_support::overlay_registry();
-    sim.team_step_script(team, rules, Some(registry), FrameEffects::empty());
+    sim.team_step_script(team, rules, Some(registry), &mut FrameEffects::empty());
 }
 
 const SCRIPTS: &str = "[ScriptTypes]\n0=RUN\n1=IDLE\n[IDLE]\n0=5,9\n";
@@ -197,7 +197,7 @@ fn script45_trucks_path_across_water_as_their_new_type() {
         let goal = DriveCoord::cell(12, 5, 0);
         let bounds = sim.playfield_bounds();
         let request = FootPathRequest::track(&sim.substrate.entities, truck, goal, 0, bounds);
-        sim.foot_find_path(&request.unwrap(), &rules, None, FrameEffects::empty())
+        sim.foot_find_path(&request.unwrap(), &rules, None, &mut FrameEffects::empty())
     });
     assert_eq!(
         found,

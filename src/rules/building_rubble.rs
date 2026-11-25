@@ -71,12 +71,39 @@ fn rubble_shadow_frame(raw_frames: i16) -> Option<u16> {
 
 /// Rubble art of every `LeaveRubble=yes` building type whose image the active
 /// theater resolves to a long enough SHP. Keys are uppercase type IDs.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RubbleAssetCatalog {
     art: BTreeMap<String, RubbleArt>,
+    /// VERA: the game-folder files whose LeaveRubble image is long enough
+    /// where the copy a retail install reads is not, or the reverse
+    /// (`retail_sources::FolderFiles`); not hashed.
+    folder_files: std::collections::BTreeSet<String>,
+}
+
+/// The art alone, as the derived fold was before the files were noted.
+impl Hash for RubbleAssetCatalog {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.art.hash(state);
+    }
 }
 
 impl RubbleAssetCatalog {
+    /// VERA: the game-folder files that change which types leave rubble.
+    pub(crate) fn folder_files(&self) -> impl Iterator<Item = &str> {
+        self.folder_files.iter().map(String::as_str)
+    }
+
+    /// VERA: which types leave rubble and the body frame each takes, without
+    /// the name of the SHP that supplied it or its shadow frame: what
+    /// `RuleSet::file_inputs_hash` folds of this catalog.
+    pub(crate) fn fold_admissions(&self, state: &mut impl Hasher) {
+        self.art.len().hash(state);
+        for (id, art) in &self.art {
+            id.hash(state);
+            art.body_frame.hash(state);
+        }
+    }
+
     pub fn bind(
         rules: &RuleSet,
         asset_manager: &AssetManager,
@@ -84,6 +111,12 @@ impl RubbleAssetCatalog {
         theater_name: &str,
     ) -> Self {
         let mut catalog = Self::default();
+        let folder = crate::rules::retail_sources::FolderFiles::new(asset_manager);
+        let frame_word = |bytes: &[u8]| {
+            bytes
+                .get(6..8)
+                .map(|word| i16::from_le_bytes([word[0], word[1]]))
+        };
         for object in rules
             .all_objects()
             .filter(|object| object.category == ObjectCategory::Building && object.leave_rubble)
@@ -100,15 +133,16 @@ impl RubbleAssetCatalog {
             )
             .into_iter()
             .find_map(|candidate| {
-                let data = asset_manager.get_ref(&candidate)?;
+                let data = folder.read_noting(
+                    &candidate,
+                    |bytes| frame_word(bytes).and_then(rubble_body_frame),
+                    &mut catalog.folder_files,
+                )?;
                 Some((candidate, data))
             }) else {
                 continue;
             };
-            let Some(raw) = data
-                .get(6..8)
-                .map(|word| i16::from_le_bytes([word[0], word[1]]))
-            else {
+            let Some(raw) = frame_word(data) else {
                 continue;
             };
             let Some(body_frame) = rubble_body_frame(raw) else {

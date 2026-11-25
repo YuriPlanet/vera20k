@@ -160,7 +160,7 @@ pub(super) fn apply(
                         origin,
                         body_facing: entity.body_facing_current(world.session.binary_frame()),
                         force,
-                        weight: object.weight,
+                        weight: NativeF64Bits::from_bits(object.weight.to_num::<f64>().to_bits()),
                         no_dampen: false,
                         has_loaded_voxel: rules.object_has_loaded_voxel(handle),
                     })
@@ -261,15 +261,16 @@ mod tests {
                 expected["sha256"].as_str().unwrap()
             );
         }
+        let native_weight = u64::from_str_radix(
+            corpus["initial"]["type_input"]["weight_bits"]
+                .as_str()
+                .unwrap(),
+            16,
+        )
+        .unwrap();
         assert_eq!(
-            rules.object("MTNK").unwrap().weight.bits(),
-            u64::from_str_radix(
-                corpus["initial"]["type_input"]["weight_bits"]
-                    .as_str()
-                    .unwrap(),
-                16
-            )
-            .unwrap()
+            rules.object("MTNK").unwrap().weight,
+            crate::util::fixed_math::SimFixed::saturating_from_num(f64::from_bits(native_weight))
         );
         let patch = crate::rules::ini_parser::IniFile::from_str("[BlimpHE]\nCellSpread=0\n");
         let zero_rules =
@@ -357,13 +358,12 @@ mod tests {
                 )
                 .unwrap()
             );
-            world.main_rng =
-                SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap())
-                    .into();
-            world.scenario_rng = SimRng::from_native_state_hex_for_test(
+            *world.main_rng =
+                SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap());
+            *world.scenario_rng = SimRng::from_native_state_hex_for_test(
                 row["rng_before"]["scenario"].as_str().unwrap(),
             );
-            world.mapgen_rng = SimRng::from_native_state_hex_for_test(
+            *world.mapgen_rng = SimRng::from_native_state_hex_for_test(
                 row["rng_before"]["mapgen"].as_str().unwrap(),
             );
             CALLS.with_borrow_mut(|capture| *capture = Some(Vec::new()));

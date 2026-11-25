@@ -57,7 +57,7 @@ fn set_target(sim: &mut Simulation, rules: &RuleSet, unit: u64, target: u64) {
         unit,
         Some(TargetKind::Entity(target)),
         rules,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
     .expect("the setter admits the target");
 }
@@ -137,7 +137,7 @@ fn a_null_store_leaves_the_sequence_alone() {
     set_counter(&mut sim, unit, 9);
     set_target(&mut sim, &rules, unit, near);
     set_counter(&mut sim, unit, 9);
-    sim.assign_target_represented(unit, None, &rules, FrameEffects::default())
+    sim.assign_target_represented(unit, None, &rules, &mut FrameEffects::default())
         .expect("the null setter runs");
     assert_eq!(counter(&sim, unit), 9);
 }

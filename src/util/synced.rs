@@ -18,6 +18,7 @@
 //! type changes a value: equality, hashing and serialization are those of the
 //! content, and a clone is a full, independent value.
 
+use std::iter::Flatten;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -256,14 +257,14 @@ impl<T: Clone> ChunkedVec<T> {
         self.note_all();
     }
 
-    pub fn iter(&self) -> impl DoubleEndedIterator<Item = &T> + '_ {
-        self.chunks.iter().flat_map(|chunk| chunk.iter())
+    pub fn iter(&self) -> Flatten<std::slice::Iter<'_, Vec<T>>> {
+        self.chunks.iter().flatten()
     }
 
     /// Every element mutably; the copy takes every chunk again.
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> + '_ {
+    pub fn iter_mut(&mut self) -> Flatten<std::slice::IterMut<'_, Vec<T>>> {
         self.note_all();
-        self.chunks.iter_mut().flat_map(|chunk| chunk.iter_mut())
+        self.chunks.iter_mut().flatten()
     }
 
     /// Set every element to `value`.
@@ -444,19 +445,19 @@ impl<'de, T: Clone + serde::Deserialize<'de>> serde::Deserialize<'de> for Chunke
 
 impl<'a, T: Clone> IntoIterator for &'a mut ChunkedVec<T> {
     type Item = &'a mut T;
-    type IntoIter = Box<dyn Iterator<Item = &'a mut T> + 'a>;
+    type IntoIter = Flatten<std::slice::IterMut<'a, Vec<T>>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        Box::new(self.iter_mut())
+        self.iter_mut()
     }
 }
 
 impl<'a, T: Clone> IntoIterator for &'a ChunkedVec<T> {
     type Item = &'a T;
-    type IntoIter = Box<dyn DoubleEndedIterator<Item = &'a T> + 'a>;
+    type IntoIter = Flatten<std::slice::Iter<'a, Vec<T>>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        Box::new(self.iter())
+        self.iter()
     }
 }
 

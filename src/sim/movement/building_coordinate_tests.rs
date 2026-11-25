@@ -157,9 +157,10 @@ fn building_navigation_capture_command_preserves_the_native_dock_coordinate() {
         EntityCategory::Structure,
     );
     building
+        .seldom
         .type_facts
         .set_foundation_for_test(rules.object("BUILDING").unwrap().foundation.clone().into());
-    building.radio_contacts = contacts(input);
+    building.seldom.radio_contacts = contacts(input);
     building.lifecycle.set_in_limbo_for_test(false);
     position(&mut building, coord(&input["current"]));
     let mut engineer = GameEntity::new_at_frame_zero_for_test(
@@ -186,7 +187,7 @@ fn building_navigation_capture_command_preserves_the_native_dock_coordinate() {
     position(&mut engineer, coord(&input["requester"]));
     sim.substrate.entities.insert(building);
     sim.substrate.entities.insert(engineer);
-    sim.interner = test_interner();
+    *sim.interner = test_interner();
     let accepted = sim.apply_command(
         "Americans",
         &crate::sim::command::Command::CaptureBuilding {
@@ -232,9 +233,10 @@ fn building_navcom_reads_live_type_requester_and_radio_slots_after_restore() {
             EntityCategory::Structure,
         );
         building
+            .seldom
             .type_facts
             .set_foundation_for_test(rules.object("BUILDING").unwrap().foundation.clone().into());
-        building.radio_contacts = contacts(input);
+        building.seldom.radio_contacts = contacts(input);
         position(&mut building, current);
         sim.substrate.entities.insert(building);
         if let Some(c) = requester {
@@ -249,6 +251,7 @@ fn building_navcom_reads_live_type_requester_and_radio_slots_after_restore() {
             .entities
             .get(2)
             .unwrap()
+            .seldom
             .radio_contacts
             .iter_live()
             .collect();
@@ -263,7 +266,7 @@ fn building_navcom_reads_live_type_requester_and_radio_slots_after_restore() {
                 ));
             }
         }
-        sim.interner = test_interner();
+        *sim.interner = test_interner();
         sim.set_next_stable_object_id_for_test(200);
         let before = super::super::nav_target_coordinate(
             NavTargetRef::object(2),

@@ -105,7 +105,7 @@ fn draws_until(mut rng: crate::sim::rng::SimRng, target: u64) -> usize {
 }
 
 fn draws_during_drive(sim: &mut Simulation, rules: &RuleSet, id: AnimId) -> usize {
-    let checkpoint = sim.scenario_rng.clone();
+    let checkpoint = (*sim.scenario_rng).clone();
     drive(sim, rules, id);
     draws_until(checkpoint, sim.scenario_rng.state())
 }
@@ -119,7 +119,7 @@ fn add_civilian_house(sim: &mut Simulation) {
 fn drive(sim: &mut Simulation, rules: &RuleSet, id: AnimId) {
     for frame in 0..12 {
         sim.session.set_binary_frame_for_test(frame);
-        let _ = sim.visit_anim(id, rules, None, FrameEffects::default());
+        let _ = sim.visit_anim(id, rules, None, &mut FrameEffects::default());
         if sim.anim(id).is_none() {
             break;
         }
@@ -251,9 +251,8 @@ fn an_air_spawned_unit_is_let_go_into_a_parachuted_fall() {
         (unit.is_falling_down(), unit.on_parachuted())
     }
 
-    let (falling, marked) = spawn(
-        "CreateUnit=MTNK\nCreateUnit.RandomFacing=no\nCreateUnit.SpawnHeight=1200\n",
-    );
+    let (falling, marked) =
+        spawn("CreateUnit=MTNK\nCreateUnit.RandomFacing=no\nCreateUnit.SpawnHeight=1200\n");
     assert!(falling, "an airborne ground type starts a free fall");
     assert!(marked, "and is marked OnParachuted");
 
@@ -261,7 +260,10 @@ fn an_air_spawned_unit_is_let_go_into_a_parachuted_fall() {
         "CreateUnit=MTNK\nCreateUnit.RandomFacing=no\n\
          CreateUnit.SpawnHeight=1200\nCreateUnit.AlwaysSpawnOnGround=yes\n",
     );
-    assert!(!falling && !marked, "AlwaysSpawnOnGround stays on the floor");
+    assert!(
+        !falling && !marked,
+        "AlwaysSpawnOnGround stays on the floor"
+    );
 }
 
 #[test]
@@ -356,7 +358,7 @@ fn an_unresolvable_create_unit_type_marks_and_draws_nothing() {
 fn create_unit_random_facing_draws_one_scenario_value() {
     let (mut sim, rules) = scene("CreateUnit=MTNK\nCreateUnit.Facing=64\n");
     let id = spawn_make(&mut sim, &rules, Some("Americans"));
-    let checkpoint = sim.scenario_rng.clone();
+    let checkpoint = (*sim.scenario_rng).clone();
     let mut reference = checkpoint.clone();
     let expected = reference.next_range_i32_inclusive(0, 255) as u8;
     drive(&mut sim, &rules, id);
@@ -569,13 +571,10 @@ fn spawned<'a>(
     rules: &RuleSet,
     name: &str,
 ) -> Option<&'a crate::sim::game_entity::GameEntity> {
-    sim.substrate
-        .entities
-        .values()
-        .find(|entity| {
-            sim.interner.resolve(entity.type_ref()) == name
-                && sim.object_type(entity.type_ref(), rules).is_some()
-        })
+    sim.substrate.entities.values().find(|entity| {
+        sim.interner.resolve(entity.type_ref()) == name
+            && sim.object_type(entity.type_ref(), rules).is_some()
+    })
 }
 
 /// `Ext/TechnoType/Body.cpp:674-683`: a Fly spawn on a free cell takes
@@ -646,8 +645,9 @@ fn a_fly_spawn_on_an_occupied_cell_enters_idle_mode() {
 /// facing to `CreateUnit.Facing` before any movement order.
 #[test]
 fn a_jumpjet_spawn_snaps_its_locomotion_facing() {
-    let (mut sim, rules) =
-        scene_air("CreateUnit=ZEP\nCreateUnit.RandomFacing=no\nCreateUnit.Facing=64\nCreateUnit.SpawnHeight=500\n");
+    let (mut sim, rules) = scene_air(
+        "CreateUnit=ZEP\nCreateUnit.RandomFacing=no\nCreateUnit.Facing=64\nCreateUnit.SpawnHeight=500\n",
+    );
     let id = spawn_make(&mut sim, &rules, Some("Americans"));
     drive(&mut sim, &rules, id);
     let zep = spawned(&sim, &rules, "ZEP").expect("the ZEP constructs");
@@ -670,9 +670,8 @@ fn a_jumpjet_spawn_snaps_its_locomotion_facing() {
 /// (`Ext/Unit/Hooks.Jumpjet.cpp:394-437`).
 #[test]
 fn a_balloon_hover_jumpjet_spawn_holds_its_own_coords_and_the_latch() {
-    let (mut sim, rules) = scene_air(
-        "CreateUnit=BHOV\nCreateUnit.RandomFacing=no\nCreateUnit.SpawnHeight=1000\n",
-    );
+    let (mut sim, rules) =
+        scene_air("CreateUnit=BHOV\nCreateUnit.RandomFacing=no\nCreateUnit.SpawnHeight=1000\n");
     let id = spawn_make(&mut sim, &rules, Some("Americans"));
     drive(&mut sim, &rules, id);
     let bhov = spawned(&sim, &rules, "BHOV").expect("the BHOV constructs");

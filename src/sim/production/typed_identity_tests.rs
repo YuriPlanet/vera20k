@@ -115,7 +115,7 @@ fn frame(
             commands,
             67,
             TickLane::Ordinary,
-            FrameEffects::default().with_production_strip(&visits, &|_| {}),
+            &mut FrameEffects::default().with_production_strip(&visits),
         )
         .unwrap()
         .take_admitted_commands()
@@ -164,9 +164,9 @@ fn assert_type(runtime: &SimRuntime, id: u64, family: ObjectCategory, name: &str
         object
     ));
     assert_eq!(entity.health.current(), object.strength);
-    assert_eq!(entity.crushable_facts.crushable(), object.crushable);
+    assert_eq!(entity.seldom.crushable_facts.crushable(), object.crushable);
     assert_eq!(entity.ammo().map(|ammo| ammo.current()), Some(object.ammo));
-    assert_eq!(entity.type_facts.foundation(), &object.foundation);
+    assert_eq!(entity.seldom.type_facts.foundation(), &object.foundation);
     assert_eq!(
         entity
             .locomotor
@@ -440,7 +440,7 @@ fn typed_duplicate_snapshot_rebind_continues_paid_queue_and_rejects_wrong_identi
         assert!(live.simulation.houses[&owner].economy().spent_credits() > 0);
         // Match native player-load resets of Scenario RNG and the unsaved
         // planner before comparing whole state and continuing both copies.
-        live.simulation.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *live.simulation.scenario_rng = crate::sim::rng::SimRng::new(0);
         live.simulation.reset_planning_after_player_load();
         let rules = &live.resources.rules;
         // Validate player-load admission against the supplied synthetic map
@@ -817,6 +817,7 @@ fn name_only_compatibility_and_shared_creators_keep_their_native_type_families()
             .entities()
             .get(spawns[0])
             .unwrap()
+            .seldom
             .type_facts
             .spawned_non_missile_aircraft()
     );

@@ -54,7 +54,7 @@ fn pair(follow_body: &str) -> (Simulation, RuleSet, u64, u64) {
         entity
             .mission
             .set_current_for_test(MissionId::from_known(MissionType::Move), 0);
-        entity.mega_mission =
+        entity.seldom.mega_mission =
             MegaMission::for_test(true, Some(TargetKind::Cell(20, 10)), None, false);
     }
     (sim, rules, follower, leader)
@@ -67,7 +67,7 @@ fn pair(follow_body: &str) -> (Simulation, RuleSet, u64, u64) {
 #[test]
 fn follow_hands_the_object_to_the_nearest_friendly_attack_mover() {
     let (mut sim, rules, follower, leader) = pair("AttackMove.Follow=yes\n");
-    sim.foot_arrival_target_handler(follower, &rules, ObjectAiCtx::default());
+    sim.foot_arrival_target_handler(follower, &rules, &mut ObjectAiCtx::default());
 
     let entity = sim.entities().get(follower).expect("follower");
     // `Queue_Mission(Area_Guard, 1)` writes the queue first and commences only
@@ -103,7 +103,7 @@ fn follow_hands_the_object_to_the_nearest_friendly_attack_mover() {
 #[test]
 fn without_the_key_the_native_arrival_body_keeps_the_attack_move() {
     let (mut sim, rules, follower, leader) = pair("");
-    sim.foot_arrival_target_handler(follower, &rules, ObjectAiCtx::default());
+    sim.foot_arrival_target_handler(follower, &rules, &mut ObjectAiCtx::default());
 
     let entity = sim.entities().get(follower).expect("follower");
     assert_eq!(
@@ -136,7 +136,7 @@ fn a_leader_at_six_followers_is_skipped_but_the_order_still_ends() {
         .get_mut(leader)
         .expect("leader")
         .set_phobos_attack_move_follower_temp_count(6);
-    sim.foot_arrival_target_handler(follower, &rules, ObjectAiCtx::default());
+    sim.foot_arrival_target_handler(follower, &rules, &mut ObjectAiCtx::default());
 
     let entity = sim.entities().get(follower).expect("follower");
     assert_eq!(entity.archive_target(), None, "no leader was taken");
@@ -167,7 +167,7 @@ fn a_leader_at_six_followers_is_skipped_but_the_order_still_ends() {
 fn follow_if_mind_control_is_full_needs_a_full_capture_manager() {
     // 1. No manager: the key changes nothing, the native body keeps the order.
     let (mut sim, rules, follower, _) = pair("AttackMove.Follow.IfMindControlIsFull=yes\n");
-    sim.foot_arrival_target_handler(follower, &rules, ObjectAiCtx::default());
+    sim.foot_arrival_target_handler(follower, &rules, &mut ObjectAiCtx::default());
     let entity = sim.entities().get(follower).expect("follower");
     assert_eq!(
         entity.mission.current().known(),
@@ -184,7 +184,7 @@ fn follow_if_mind_control_is_full_needs_a_full_capture_manager() {
         .capture_manager = Some(Box::new(
         crate::sim::capture_manager::CaptureManagerState::with_victims_for_test(0, false, &[]),
     ));
-    sim.foot_arrival_target_handler(follower, &rules, ObjectAiCtx::default());
+    sim.foot_arrival_target_handler(follower, &rules, &mut ObjectAiCtx::default());
     let entity = sim.entities().get(follower).expect("follower");
     assert_eq!(
         entity.archive_target(),
@@ -230,7 +230,7 @@ fn follow_include_air_decides_whether_an_airborne_leader_is_seen() {
             .position
             .set_exact_z_leptons_for_test(Some(1000));
 
-        sim.foot_arrival_target_handler(follower, &rules, ObjectAiCtx::default());
+        sim.foot_arrival_target_handler(follower, &rules, &mut ObjectAiCtx::default());
         let taken = sim
             .entities()
             .get(follower)

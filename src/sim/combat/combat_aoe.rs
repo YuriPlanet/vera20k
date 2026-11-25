@@ -596,6 +596,11 @@ impl AoECollector {
         // Each candidate's native Sqrt_Approx/ftol distance is compared to this
         // signed threshold; there is no exact-squared prefilter.
         let spread_leptons = cell_spread::splash_threshold_leptons(cell_spread);
+        // Each detonation's receivers are its own list: the commit walks it
+        // while a receiver's death detonates again and collects another, and
+        // the bullet path hands it on to its damage events. A run lasts one
+        // fire visit, so a buffer kept there would serve only those nested
+        // detonations.
         let mut result = AoEDamageResult::default();
         let exact_impact = layer_context
             .air_impact
@@ -806,11 +811,7 @@ impl AoECollector {
         // Phobos `CellSpread.Cylinder` (hook family `0x489430..`): every
         // DamageArea distance test replaces the detonation Z with the
         // victim's, so only the planar separation remains.
-        let cylinder = {
-            {
-                self.cylinder
-            }
-        };
+        let cylinder = { { self.cylinder } };
         let mut terrain_inserted = self.selected_layer() != MovementLayer::Ground;
         if let Some(cell_occ) = occupancy.get(rx, ry) {
             for occupant in cell_occ.iter_layer(self.selected_layer()) {
@@ -913,11 +914,7 @@ impl AoECollector {
                 continue;
             }
 
-            let cylinder = {
-                {
-                    self.cylinder
-                }
-            };
+            let cylinder = { { self.cylinder } };
             push_entity_aoe_damage(
                 &mut self.result,
                 entities,
@@ -1178,7 +1175,7 @@ pub(crate) fn apply_aoe_damage_with_terrain_and_scenario<O: Into<AoEDamageOrigin
     ) else {
         return AoEDamageResult::default();
     };
-    for &(dx, dy) in cell_spread::area_damage_cells(warhead.cell_spread_f64, rules.ares()).iter() {
+    for (dx, dy) in cell_spread::area_damage_cells(warhead.cell_spread_f64, rules.ares()) {
         let cell = collector.prepare_cell(dx, dy, warhead, &mut layer_context, &mut cell_prelude);
         collector.capture_cell(&cell, entities, &layer_context, terrain_objects);
     }
@@ -1255,6 +1252,15 @@ fn select_object_damage_layer(
     } else {
         0 // Unread by the topology selector on the non-bridge arm.
     };
+    if let Some(deck) = crate::sim::movement::ground_pose::corrected_deck_z(terrain, cell) {
+        // Retain 0x0048955E's strict halfway split, using the actual clearance.
+        let midpoint = floor + (deck - floor) / 2;
+        return if impact.z_leptons > midpoint {
+            ListLayer::Bridge
+        } else {
+            ListLayer::Ground
+        };
+    }
     view.aoe_object_layer(impact.z_leptons, floor)
 }
 
@@ -1276,21 +1282,34 @@ fn impact_is_above_ground(
     // Ares DamageArea_DamageAir (100533A0, hook 0x4893BA): the height above
     // the floor must exceed DamageAirThreshold (default 0, the native
     // `floor < Z`); with `[General] DamageAirConsiderBridges=yes` a bridge
-    // cell (flag 0x100) measures from its 416-lepton deck once reached.
+    // cell (flag 0x100) measures from its live deck once reached.
     if rules.ares()
         && let Some(combat) = warhead.ares_combat()
     {
-        const BRIDGE_HEIGHT_LEPTONS: i32 = 416;
+        use crate::map::cell_index::NativeCellIdentity;
+        use crate::sim::movement::ground_pose::corrected_deck_z;
+        use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
+
         let mut height = impact.z_leptons.wrapping_sub(floor);
-        if height >= BRIDGE_HEIGHT_LEPTONS
-            && rules.ares_warhead_globals().damage_air_consider_bridges()
-            && CellBridgeView::from_query(
-                &cells,
-                cells.lookup((impact_rx as i16, impact_ry as i16)),
-            )
-            .is_bridge_cell()
-        {
-            height -= BRIDGE_HEIGHT_LEPTONS;
+        if rules.ares_warhead_globals().damage_air_consider_bridges() {
+            let coord = (impact_rx as i16, impact_ry as i16);
+            // Below the native threshold only a fixed real deck can change
+            // the result. Preserve the original conditional Dummy lookup.
+            let deck = if height >= BRIDGE_DECK_HEIGHT_LEPTONS {
+                let cell = cells.lookup(coord);
+                (cells.flags(cell) & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0)
+                    .then(|| crate::sim::movement::ground_pose::deck_surface_z(&cells, cell, floor))
+            } else {
+                terrain
+                    .native_fixed_cell_index(coord.0, coord.1)
+                    .and_then(|index| corrected_deck_z(terrain, NativeCellIdentity::Real(index)))
+            };
+            if let Some(deck) = deck {
+                let above_deck = impact.z_leptons.wrapping_sub(deck);
+                if above_deck >= 0 {
+                    height = above_deck;
+                }
+            }
         }
         return height > combat.damage_air_threshold();
     }
@@ -1549,7 +1568,9 @@ fn push_terrain_aoe_damage(
 }
 
 #[cfg(all(test, tests_sim_combat_a_c))]
-mod tests {
+mod tests;
+#[cfg(all(test, tests_sim_combat_a_c))]
+mod pr_regression_tests {
     use crate::sim::terrain_object::{TerrainObjectLifecycle, TerrainObjectState};
 
     use super::*;
@@ -2052,12 +2073,12 @@ mod tests {
                     .set_for_test(Some(TargetKind::Cell(21, 21)));
                 let wh = interner.intern("WH");
                 let mut world = Simulation::with_seed(0x489608);
-                world.interner = interner;
-                world.substrate.entities = entities;
-                world.substrate.occupancy = occupancy;
-                world.resolved_terrain = Some(terrain);
-                world.overlay_grid = Some(overlays);
-                world.terrain_objects = objects;
+                *world.interner = interner;
+                *world.substrate.entities = entities;
+                *world.substrate.occupancy = occupancy;
+                *world.resolved_terrain = Some(terrain);
+                *world.overlay_grid = Some(overlays);
+                *world.terrain_objects = objects;
                 let result = super::super::world_receiver::collect_area(
                     &mut world,
                     &rules,
@@ -2069,7 +2090,7 @@ mod tests {
                     (super::super::RAD_NO_ATTACKER, None, wh),
                     Some(center_impact(0)),
                     0,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 );
                 assert!(result.receivers.is_empty());
                 assert_eq!(
@@ -3258,6 +3279,7 @@ mod tests {
             dispatch_timer: MissionDispatchTimer::at_frame(0),
         });
         restored
+            .seldom
             .suspended_attack_target
             .set_for_test(Some(TargetKind::Cell(8, 8)));
         entities.insert(restored);
@@ -3283,10 +3305,10 @@ mod tests {
         overlays.place_overlay(8, 8, 2, 0);
         overlays.place_owned_wall(8, 7, 2, 0x24, owner);
         let mut world = crate::sim::world::Simulation::with_seed(5);
-        world.interner = test_interner();
-        world.substrate.entities = entities;
-        world.resolved_terrain = Some(terrain);
-        world.overlay_grid = Some(overlays);
+        *world.interner = test_interner();
+        *world.substrate.entities = entities;
+        *world.resolved_terrain = Some(terrain);
+        *world.overlay_grid = Some(overlays);
         let wh = world.interner.intern("WH");
         let result = super::super::world_receiver::collect_area(
             &mut world,
@@ -3299,7 +3321,7 @@ mod tests {
             (super::super::RAD_NO_ATTACKER, None, wh),
             Some(center_impact(0)),
             0,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         let overlays = world.overlay_grid.as_ref().unwrap();
         let entities = &world.substrate.entities;
@@ -3395,12 +3417,13 @@ mod tests {
             let (rules, warhead, registry) =
                 wall_aoe_fixture("1", "WallAbsoluteDestroyer=yes\nWall=yes");
             let mut world = Simulation::with_seed(5);
-            world.interner = test_interner();
-            world.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(16, 16));
+            *world.interner = test_interner();
+            *world.resolved_terrain =
+                Some(crate::sim::tiberium::test_support::flat_terrain(16, 16));
             let mut overlays = OverlayGrid::new(16, 16);
             overlays.place_overlay(8, 8, 2, 0);
-            world.overlay_grid = Some(overlays);
-            world.receiver_fixture = Some(FixturePolicy {
+            *world.overlay_grid = Some(overlays);
+            *world.receiver_fixture = Some(FixturePolicy {
                 current_tick: 0,
                 require_playfield_membership: false,
                 fog_enabled: false,
@@ -3418,7 +3441,7 @@ mod tests {
             listener
                 .attack_target
                 .set_for_test(Some(TargetKind::Cell(8, 8)));
-            listener.suspended_attack_target.set_for_test(saved);
+            listener.seldom.suspended_attack_target.set_for_test(saved);
             listener.mission.apply_test_fixture(MissionTestFixture {
                 current: MissionId::from_known(MissionType::Attack),
                 suspended: MissionId::from_known(MissionType::Guard),
@@ -3458,7 +3481,7 @@ mod tests {
                 (super::super::RAD_NO_ATTACKER, None, warhead_ref),
                 Some(center_impact(0)),
                 0,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             );
 
             assert_eq!(
@@ -4922,11 +4945,11 @@ mod tests {
                 event.receiver_flags.ignore_defenses = true;
             }
             let mut world = crate::sim::world::Simulation::new();
-            world.substrate.entities = entities;
-            world.substrate.occupancy = occupancy;
-            world.substrate.raw_cell_occupation = raw;
-            world.interner = interner;
-            world.resolved_terrain = Some(terrain);
+            *world.substrate.entities = entities;
+            *world.substrate.occupancy = occupancy;
+            *world.substrate.raw_cell_occupation = raw;
+            *world.interner = interner;
+            *world.resolved_terrain = Some(terrain);
             world.set_playfield_bounds_for_test(Some(
                 crate::sim::cell_rect::PlayfieldBounds::from_normalized_local_size(
                     16, -16, -16, 64, 64,
@@ -4941,7 +4964,7 @@ mod tests {
             }
             world.session.set_binary_frame_for_test(100);
             world.main_rng = SimRng::new(7).into();
-            world.scenario_rng = SimRng::new(1);
+            *world.scenario_rng = SimRng::new(1);
             // Some(false) models campaign PlayerControl without IsHuman.
             world.session.set_game_mode(
                 crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
@@ -4965,6 +4988,7 @@ mod tests {
                 None,
                 &rules,
                 None,
+                &mut Vec::new(),
             );
             let victim = world
                 .substrate
@@ -5468,7 +5492,7 @@ mod tests {
             .spawn_object("VICTIM", "VictimHouse", 5, 5, 0, &rules)
             .expect("nested C4 victim spawns");
 
-        sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(10, 10, |rx, ry| {
+        *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(10, 10, |rx, ry| {
             test_terrain_cell(rx, ry)
         }));
 
@@ -5533,7 +5557,7 @@ mod tests {
                 }),
                 AreaDamageReceiver::Entity(later_parent_receiver),
             ],
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert_eq!(
@@ -5615,7 +5639,7 @@ mod tests {
         let victim_id = sim
             .spawn_object("VICTIM", "VictimHouse", 5, 5, 0, &rules)
             .expect("inert receiver victim spawns");
-        sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(10, 10, |rx, ry| {
+        *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(10, 10, |rx, ry| {
             test_terrain_cell(rx, ry)
         }));
 
@@ -5668,7 +5692,7 @@ mod tests {
                     near_center_ic_isolation_eligible: true,
                 }),
             ],
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
 
         assert_eq!(

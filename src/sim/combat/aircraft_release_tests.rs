@@ -88,7 +88,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     }
     sim.substrate.entities.insert(entity);
     sim.set_next_stable_object_id_for_test(2);
-    sim.interner = test_interner();
+    *sim.interner = test_interner();
     if passenger {
         // Retail Clear ground and a playfield holding the aircraft's cell
         // (10, 10), where Paradrop places the passenger.
@@ -208,7 +208,7 @@ fn shared_fireat_refuses_positive_health_limbo_objects_before_emission() {
         let rng = sim.rng_state();
         let actor = sim.substrate.entities.get(1).unwrap();
         let health = actor.health;
-        let rearm = actor.rearm_timer;
+        let rearm = actor.seldom.rearm_timer;
         let mut out = CombatEmit::default();
         let bullet = emit_admitted_fire(
             &mut sim,
@@ -217,7 +217,7 @@ fn shared_fireat_refuses_positive_health_limbo_objects_before_emission() {
             100,
             &mut out,
             None,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         if limbo {
             assert_eq!(
@@ -231,7 +231,7 @@ fn shared_fireat_refuses_positive_health_limbo_objects_before_emission() {
                 actor.health, health,
                 "Suicide must not reach the self receiver"
             );
-            assert_eq!(actor.rearm_timer, rearm);
+            assert_eq!(actor.seldom.rearm_timer, rearm);
             if infantry {
                 // Infantry51DF70 clears68D before the base refusal.
                 assert_eq!(actor.mission_leaf.foot_firing_sequence_latch(), 0);
@@ -286,7 +286,7 @@ fn aircraft_release_control_matches_316_original_mission_suffixes() {
             .filter(|event| event["call"] == "fire")
             .count();
         assert_eq!(result.len(), calls, "{row}");
-        assert_eq!(entity.weapon_burst.index(), 0, "{row}");
+        assert_eq!(entity.seldom.weapon_burst.index(), 0, "{row}");
     }
 }
 
@@ -308,6 +308,7 @@ fn aircraft_request_preserves_rearm_and_state3_does_not_fire_early() {
         .entities
         .get_mut(1)
         .unwrap()
+        .seldom
         .rearm_timer
         .set_for_test(crate::sim::timer::CdTimer::started(frame, 4));
     assert!(dispatch(&mut sim, &rules).is_empty());
@@ -317,6 +318,7 @@ fn aircraft_request_preserves_rearm_and_state3_does_not_fire_early() {
             .entities
             .get(1)
             .unwrap()
+            .seldom
             .rearm_timer
             .remaining(frame),
         4
@@ -339,7 +341,7 @@ fn aircraft_release_uses_raw_burst_above_byte_width_and_one_ammo_charge() {
     assert_eq!(result.len(), 257);
     let entity = sim.substrate.entities.get(1).unwrap();
     assert_eq!(entity.ammo().unwrap().current(), 2);
-    assert_eq!(entity.weapon_burst.index(), 0);
+    assert_eq!(entity.seldom.weapon_burst.index(), 0);
     // The Mission return owns cadence, independent of the final rearm jitter.
     sim.session.set_binary_frame_for_test(19);
     assert!(crate::sim::aircraft::tick_aircraft_missions(&mut sim, &rules).is_empty());
@@ -369,12 +371,19 @@ fn aircraft_release_snapshot_retains_burst_pending_and_mission_delay() {
         .entities
         .get_mut(1)
         .unwrap()
+        .seldom
         .weapon_burst
         .complete_shot(3);
     assert_ne!(before, sim.state_hash());
     assert_eq!(dispatch(&mut sim, &rules).len(), 3);
     assert_eq!(
-        sim.substrate.entities.get(1).unwrap().weapon_burst.index(),
+        sim.substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .seldom
+            .weapon_burst
+            .index(),
         1
     );
     let saved = GameSnapshot::save(&sim, 0, 0, "admitted aircraft burst", 0);
@@ -382,13 +391,13 @@ fn aircraft_release_snapshot_retains_burst_pending_and_mission_delay() {
     restored.restore_after_snapshot_load().unwrap();
     // Snapshot's existing RNG-load policy initializes seed0; this test checks
     // retained release state and its no-RNG next entry, not that other policy.
-    restored.scenario_rng = sim.scenario_rng.clone();
+    *restored.scenario_rng = (*sim.scenario_rng).clone();
     assert_eq!(restored.state_hash(), sim.state_hash());
     for world in [&mut sim, &mut restored] {
         world.session.set_binary_frame_for_test(20);
         crate::sim::aircraft::tick_aircraft_missions(world, &rules);
         let entity = world.substrate.entities.get(1).unwrap();
-        assert_eq!(entity.weapon_burst.index(), 1);
+        assert_eq!(entity.seldom.weapon_burst.index(), 1);
         assert_eq!(entity.ammo().unwrap().current(), 1);
         assert!(!entity.ammo().unwrap().release_pending());
     }
@@ -707,7 +716,7 @@ fn a_human_aircraft_shooting_over_shroud_maps_the_cells_around_it() {
     for human in [false, true] {
         let (mut sim, mut rules) = fixture(&serde_json::json!({"burst": 1}));
         rules.general.attacking_aircraft_sight_range = 2;
-        sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+        *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
             64,
             64,
             crate::map::resolved_terrain::test_flat_cell,
@@ -743,7 +752,7 @@ fn a_human_aircraft_shooting_over_shroud_maps_the_cells_around_it() {
 fn a_campaign_ally_aircraft_shooting_over_shroud_maps_the_players_cells() {
     let (mut sim, mut rules) = fixture(&serde_json::json!({"burst": 1}));
     rules.general.attacking_aircraft_sight_range = 2;
-    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+    *sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
         64,
         64,
         crate::map::resolved_terrain::test_flat_cell,
@@ -784,7 +793,12 @@ fn a_campaign_ally_aircraft_shooting_over_shroud_maps_the_players_cells() {
 #[test]
 fn a_kamikaze_missile_is_removed_after_its_shot() {
     let (mut sim, rules) = fixture(&serde_json::json!({"burst": 1, "missile_spawn": true}));
-    sim.kamikaze_push(1, None, &rules, crate::sim::world::FrameEffects::default());
+    sim.kamikaze_push(
+        1,
+        None,
+        &rules,
+        &mut crate::sim::world::FrameEffects::default(),
+    );
     assert!(sim.kamikaze.contains(1));
     let result = dispatch(&mut sim, &rules);
     assert_eq!(result.len(), 1, "it fires");
@@ -1046,7 +1060,13 @@ fn strafing_target_cell_and_simulate_burst_change_the_shots() {
         "Limbo refuses FireAt"
     );
     assert_eq!(
-        sim.substrate.entities.get(1).unwrap().weapon_burst.index(),
+        sim.substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .seldom
+            .weapon_burst
+            .index(),
         1,
         "bombDropCount 0 stores CurrentBurstIndex 1"
     );

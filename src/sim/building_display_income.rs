@@ -20,7 +20,7 @@ pub(crate) fn display_income_string(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    effects: FrameEffects<'_>,
+    effects: &mut FrameEffects<'_>,
 ) {
     let frame = sim.session.binary_frame() as i32;
     let Some(building) = sim.substrate.entities.get(id) else {

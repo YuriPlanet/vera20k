@@ -48,6 +48,9 @@ fn overfly_delay(
     plane: &crate::rules::object_type::ObjectType,
     carrying: bool,
 ) -> i32 {
+    if !rules.phobos() {
+        return if carrying { 5 } else { OVERFLY_FRAMES };
+    }
     if carrying {
         return plane
             .phobos_paradrop_delay
@@ -55,7 +58,7 @@ fn overfly_delay(
     }
     {
         return end_delay(
-            plane.phobos_paradrop_end_delay,
+            plane.phobos_paradrop_end_delay(),
             rules.phobos_globals.paradrop_end_delay,
         );
     }
@@ -74,7 +77,7 @@ pub(super) fn approach(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let Some(entity) = sim.substrate.entities.get(id) else {
         return APPROACH_FRAMES;
@@ -112,7 +115,7 @@ pub(super) fn overfly(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    frame_effects: FrameEffects<'_>,
+    frame_effects: &mut FrameEffects<'_>,
 ) -> i32 {
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
         return OVERFLY_FRAMES;
@@ -180,6 +183,9 @@ pub(super) fn overfly(
 /// Phobos `ParadropEndDelay.Get(RulesExt::Global()->ParadropEndDelay)` with
 /// the negative special case (`Ext/Aircraft/Hooks.cpp:1278-1282`).
 pub(crate) fn paradrop_end_delay(sim: &Simulation, id: u64, rules: &RuleSet) -> i32 {
+    if !rules.phobos() {
+        return OVERFLY_FRAMES;
+    }
     let typed = sim
         .substrate
         .entities
@@ -199,7 +205,7 @@ fn end_delay(typed: Option<i32>, global: i32) -> i32 {
 /// Overfly's way out (`0x00415A0A..0x00415A33`): the latch cleared, no
 /// Target (vt+0x3C8(NULL)), no destination (vt+0x480(NULL, 1)) and Retreat
 /// queued.
-fn give_up(sim: &mut Simulation, id: u64, rules: &RuleSet, frame_effects: FrameEffects<'_>) {
+fn give_up(sim: &mut Simulation, id: u64, rules: &RuleSet, frame_effects: &mut FrameEffects<'_>) {
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.mission_leaf.set_aircraft_action_latch(false);
         crate::sim::mission::concrete_effects::represented_assign_target(

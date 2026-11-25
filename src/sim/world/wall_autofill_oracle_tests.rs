@@ -37,9 +37,9 @@ fn stream<'a>(corpus: &'a Value, state: &Value, name: &str) -> &'a str {
 }
 
 fn restore_rng(sim: &mut Simulation, corpus: &Value, state: &Value) {
-    sim.main_rng = SimRng::from_native_state_hex_for_test(stream(corpus, state, "main")).into();
-    sim.scenario_rng = SimRng::from_native_state_hex_for_test(stream(corpus, state, "scenario"));
-    sim.mapgen_rng = SimRng::from_native_state_hex_for_test(stream(corpus, state, "mapgen"));
+    *sim.main_rng = SimRng::from_native_state_hex_for_test(stream(corpus, state, "main"));
+    *sim.scenario_rng = SimRng::from_native_state_hex_for_test(stream(corpus, state, "scenario"));
+    *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(stream(corpus, state, "mapgen"));
 }
 
 fn assert_rng(sim: &Simulation, corpus: &Value, state: &Value, label: &str) {
@@ -84,7 +84,7 @@ impl Scene {
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         let bounds = &control["input"]["map"]["coordinate_bounds"];
-        sim.playfield_bounds = Some(
+        *sim.playfield_bounds = Some(
             crate::map::playfield::PlayfieldBounds::from_normalized_local_size(
                 int(&control["input"]["map"]["size"][0]),
                 int(&bounds[0]),
@@ -126,7 +126,7 @@ impl Scene {
             visibility.mark_visible(x, y);
         }
         sim.fog.by_owner_mut_for_test().insert(owner, visibility);
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(3));
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(3));
         let wall_type = sim.interner.get("GAWALL").unwrap();
         Some(Self {
             sim,
@@ -147,7 +147,7 @@ impl Scene {
                 0,
                 0,
                 &self.rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap()
     }
@@ -165,13 +165,13 @@ impl Scene {
                 PlacementEvidence::EvaluateMark,
                 &self.rules,
                 Some(&self.registry),
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
     }
 
     fn drain(&mut self) {
         self.sim
-            .process_pending_delete_with(&self.rules, FrameEffects::default(), 1, true);
+            .process_pending_delete_with(&self.rules, &mut FrameEffects::default(), 1, true);
     }
 
     fn assert_boundary(&self, corpus: &Value, control: &Value, state: &Value, label: &str) {
@@ -326,10 +326,10 @@ impl Scene {
                 ]
             );
             assert_eq!(
-                entity.radio_contacts.capacity(),
+                entity.seldom.radio_contacts.capacity(),
                 int(&native["radio_capacity"]) as usize
             );
-            assert!(entity.radio_contacts.is_empty());
+            assert!(entity.seldom.radio_contacts.is_empty());
             // Setup/origin ctor words precede the imported RNG boundary.
             // Only newly constructed filler words are numerical outputs here.
             if entity.native_unique_id() > origin_cursor {
@@ -515,7 +515,7 @@ fn native_whole_wall_autofill_constructs_retires_and_keeps_the_refused_middle() 
             object_type,
             origin,
             scene.owner,
-            FrameEffects::default(),
+            &mut FrameEffects::default(),
         );
         scene.assert_boundary(
             &corpus,
@@ -560,7 +560,7 @@ fn wall_unlimbo_keeps_exact_overlay_request_and_constructor_building_location() 
                 PlacementEvidence::EvaluateMark,
                 &scene.rules,
                 Some(&scene.registry),
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             ),
         Some(id)
     );

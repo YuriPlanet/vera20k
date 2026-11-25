@@ -63,7 +63,7 @@ fn fire(sim: &mut Simulation, rules: &RuleSet, firer: u64, target: u64) {
         },
         rules,
         None,
-        FrameEffects::empty(),
+        &mut FrameEffects::empty(),
     );
 }
 

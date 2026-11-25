@@ -87,15 +87,15 @@ impl AirstrikeState {
 
 impl GameEntity {
     pub(crate) fn airstrike_link(&self) -> Option<u64> {
-        self.airstrike.link
+        self.seldom.airstrike.link
     }
     pub fn has_airstrike_marker(&self) -> bool {
-        self.airstrike.link.is_some()
+        self.seldom.airstrike.link.is_some()
     }
     /// The strike owner this marker borrows its `+0x294` pointer from; its
     /// type supplies the Phobos airstrike colours. `None` without a marker.
     pub fn airstrike_owner(&self) -> Option<u64> {
-        self.airstrike.link
+        self.seldom.airstrike.link
     }
 }
 
@@ -119,8 +119,10 @@ impl Simulation {
             return;
         };
         let e = substrate.entities.get_mut(owner).unwrap();
-        e.airstrike.link = Some(owner);
-        e.airstrike.manager = Some(Box::new(AirstrikeManager {
+        // The manager is a holding any expiry reaches (the pointer-expiry index).
+        let _ = e.note_names();
+        e.seldom.airstrike.link = Some(owner);
+        e.seldom.airstrike.manager = Some(Box::new(AirstrikeManager {
             settings,
             aircraft: Vec::new(),
             remaining: 0,
@@ -138,7 +140,7 @@ impl Simulation {
         firer: u64,
         target: Option<u64>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(target) = target.filter(|id| self.substrate.entities.contains(*id)) else {
             return;
@@ -185,7 +187,7 @@ impl Simulation {
         owner: u64,
         target: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let elite = self
             .substrate
@@ -234,7 +236,7 @@ impl Simulation {
             .get_mut(target)
             .filter(|e| e.category() == EntityCategory::Structure)
         {
-            e.airstrike.link = Some(owner);
+            e.seldom.airstrike.link = Some(owner);
             e.airstrike_tint.start(frame, 100000);
         }
     }
@@ -244,9 +246,12 @@ impl Simulation {
         owner: u64,
         target: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let m = self.substrate.airstrike_manager(owner).unwrap();
+        // A copy: each aircraft's target and mission below go through
+        // `&mut self`, as do this list's writers (pointer expiry, a mission
+        // effect's clear), so the walk keeps the list the reset read.
         let aircraft = m.aircraft.clone();
         let old_target = m.target;
         let remaining = m.remaining.max(0) as usize;
@@ -268,7 +273,7 @@ impl Simulation {
             .and_then(|id| self.substrate.entities.get_mut(id))
             .filter(|e| e.category() == EntityCategory::Structure)
         {
-            old.airstrike.link = None;
+            old.seldom.airstrike.link = None;
             old.airstrike_tint.stop(self.session.binary_frame() as i32);
         }
         self.substrate.airstrike_manager_mut(owner).unwrap().target = None;
@@ -305,11 +310,14 @@ impl Simulation {
         &mut self,
         owner: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(m) = self.substrate.airstrike_manager(owner) else {
             return;
         };
+        // A copy: the Retreat orders below go through `&mut self`, as do
+        // this list's writers (pointer expiry, a mission effect's clear), so
+        // the walk keeps the list the clear read.
         let aircraft = m.aircraft.clone();
         let target = m.target;
         let empty = aircraft.iter().any(|&id| {
@@ -345,7 +353,7 @@ impl Simulation {
         self.substrate.airstrike_manager_mut(owner).unwrap().active = false;
         if let Some(target) = target.filter(|&id| {
             self.substrate.entities.get(id).is_some_and(|e| {
-                e.category() == EntityCategory::Structure && e.airstrike.link == Some(owner)
+                e.category() == EntityCategory::Structure && e.seldom.airstrike.link == Some(owner)
             })
         }) {
             // Native registry order equals manager construction order. Each
@@ -356,7 +364,8 @@ impl Simulation {
                 .iter_sorted()
                 .filter_map(|(id, e)| {
                     (id != owner
-                        && e.airstrike
+                        && e.seldom
+                            .airstrike
                             .manager
                             .as_ref()
                             .is_some_and(|m| m.target == Some(target)))
@@ -367,6 +376,7 @@ impl Simulation {
                 .entities
                 .get_mut(target)
                 .unwrap()
+                .seldom
                 .airstrike
                 .link = replacement;
         }
@@ -410,11 +420,11 @@ impl Simulation {
         sound: Option<&str>,
         audible_to: Option<[crate::sim::intern::InternedId; 2]>,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         if let (Some(sound), Some(entity)) = (sound, self.substrate.entities.get(source)) {
             self.sound_events.emit(SimSoundEvent::voc_at_for(
-                sound.to_owned(),
+                rules.sound_name(sound),
                 audible_to,
                 &entity.position,
             ));
@@ -442,7 +452,7 @@ impl Simulation {
                 m.returned_at = Some(frame);
             }
             if let Some(e) = substrate.entities.get_mut(aircraft) {
-                e.airstrike.link = None;
+                e.seldom.airstrike.link = None;
             }
         }
     }
@@ -453,7 +463,7 @@ impl Simulation {
         owner: u64,
         expired: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) {
         let Some(m) = self.substrate.airstrike_manager(owner) else {
             return;
@@ -468,6 +478,7 @@ impl Simulation {
             return;
         }
         if owner == expired {
+            // A copy: the walk below removes each aircraft from this list.
             let aircraft = m.aircraft.clone();
             if m.active
                 && let Some(first) = aircraft.first().copied()
@@ -506,7 +517,7 @@ impl Simulation {
             Self::airstrike_remove_aircraft(&self.session, &mut self.substrate, owner, expired);
         } else if self.substrate.entities.get(expired).is_some_and(|e| {
             e.category() == EntityCategory::Structure
-                && e.airstrike.link == Some(owner)
+                && e.seldom.airstrike.link == Some(owner)
                 && (!e.is_object_alive() || e.health.current() < 1)
         }) {
             self.airstrike_clear_target(owner, rules, effects);
@@ -546,14 +557,14 @@ impl Simulation {
         use crate::sim::combat::fire_coord::{FireSource, fire_coordinate};
         use crate::sim::movement::ground_pose::object_get_coords;
         let source = self.substrate.entities.get(owner)?;
-        if !source.airstrike.links_to(owner) {
+        if !source.seldom.airstrike.links_to(owner) {
             return None;
         }
         let target = self
             .substrate
             .entities
-            .get(source.airstrike.manager.as_ref()?.target?)?;
-        if target.category() != EntityCategory::Structure {
+            .get(source.seldom.airstrike.manager.as_ref()?.target?)?;
+        if !rules.phobos() && target.category() != EntityCategory::Structure {
             return None;
         }
         let obj = self.object_type(source.type_ref(), rules)?;
@@ -564,7 +575,7 @@ impl Simulation {
                 &FireSource::of_entity(source),
                 obj,
                 0,
-                source.weapon_burst.index() as u8,
+                source.seldom.weapon_burst.index() as u8,
                 crate::rules::flh::Flh::default(),
             )
             .coord;
@@ -613,7 +624,12 @@ impl Simulation {
 
 impl crate::sim::world::ObjectSubstrate {
     fn airstrike_manager(&self, owner: u64) -> Option<&AirstrikeManager> {
-        self.entities.get(owner)?.airstrike.manager.as_deref()
+        self.entities
+            .get(owner)?
+            .seldom
+            .airstrike
+            .manager
+            .as_deref()
     }
 
     /// Whether `target` is a Structure whose strike owner's manager targets it.
@@ -634,12 +650,14 @@ impl crate::sim::world::ObjectSubstrate {
         self.entities
             .get_mut(aircraft)
             .expect("constructed aircraft")
+            .seldom
             .airstrike
             .link = Some(owner);
     }
     fn airstrike_manager_mut(&mut self, owner: u64) -> Option<&mut AirstrikeManager> {
         self.entities
             .get_mut(owner)?
+            .seldom
             .airstrike
             .manager
             .as_deref_mut()

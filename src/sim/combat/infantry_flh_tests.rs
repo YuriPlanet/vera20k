@@ -72,7 +72,7 @@ fn spawn(sim: &mut Simulation, id: u64, kind: &str, deployed: bool, prone: bool)
     entity.position.set_sub_x_for_test(SimFixed::from_num(128));
     entity.position.set_sub_y_for_test(SimFixed::from_num(128));
     entity.position.set_exact_z_leptons_for_test(Some(0));
-    entity.type_facts.set_foundation_for_test("1x1".into());
+    entity.seldom.type_facts.set_foundation_for_test("1x1".into());
     if deployed {
         entity.mission_leaf = MissionLeafState::infantry_raw_for_test(0, 28);
     }
@@ -226,7 +226,7 @@ fn a_tracked_laser_stores_the_record_offset_unmirrored() {
         .entities
         .get_mut(1)
         .expect("firer")
-        .weapon_burst
+        .seldom.weapon_burst
         .advance();
     laser::fired(
         &mut sim,

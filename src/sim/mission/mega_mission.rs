@@ -62,6 +62,7 @@ impl MegaMission {
         target: Option<TargetKind>,
         have_attack_move_target: bool,
     ) -> Self {
+        crate::sim::game_entity::NameNote::fixture();
         Self {
             attack_move,
             destination,
@@ -134,7 +135,7 @@ impl Simulation {
         self.substrate
             .entities
             .get(id)
-            .map(|entity| entity.mega_mission)
+            .map(|entity| entity.seldom.mega_mission)
             .unwrap_or_default()
     }
 
@@ -150,10 +151,11 @@ impl Simulation {
             .get(id)
             .and_then(|entity| self.object_type(entity.type_ref(), rules))
             .is_some_and(|object| {
-                // `AttackMove.IgnoreWeaponCheck` (`0x00711E90`).
-                {
+                if rules.phobos() {
                     object
                         .can_attack_move_with(rules.phobos_globals.attack_move_ignore_weapon_check)
+                } else {
+                    object.can_attack_move()
                 }
             })
     }
@@ -208,7 +210,10 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return mission;
         };
-        let mega = &mut entity.mega_mission;
+        // MegaDestination and MegaTarget are names the pointer-expiry index
+        // reads.
+        let _ = entity.note_names();
+        let mega = &mut entity.seldom.mega_mission;
         mega.have_attack_move_target = false;
         mega.attack_move = true;
         if destination.is_some() {
@@ -232,17 +237,17 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return false;
         };
-        entity.mega_mission.have_attack_move_target = false;
+        entity.seldom.mega_mission.have_attack_move_target = false;
         let MegaMission {
             destination,
             target,
             ..
-        } = entity.mega_mission;
+        } = entity.seldom.mega_mission;
         if let Some(destination) = destination {
             self.foot_queue_mission_now(id, MissionType::Move, rules);
             if let Err(cause) =
@@ -273,16 +278,16 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return false;
         };
-        if !entity.mega_mission.attack_move {
+        if !entity.seldom.mega_mission.attack_move {
             return false;
         }
-        if entity.mega_mission.have_attack_move_target {
-            entity.mega_mission.have_attack_move_target = false;
+        if entity.seldom.mega_mission.have_attack_move_target {
+            entity.seldom.mega_mission.have_attack_move_target = false;
         } else if entity.mission.effective().known() != Some(MissionType::Guard) {
             self.substrate.foot_clear_all_tarcom(id);
             return false;
@@ -306,17 +311,19 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        ctx: ObjectAiCtx<'_>,
+        ctx: &mut ObjectAiCtx<'_>,
     ) {
         // `FootClass_UpdateAttackMove_SelectNewTarget @ 0x4DF3A0`
         // (`Ext/Techno/Hooks.TargetEvaluation.cpp:179-194`) runs before the
         // handler's own body.
-        self.phobos_attack_move_select_new_target(id, rules, ctx.overlay_registry);
+        if rules.phobos() {
+            self.phobos_attack_move_select_new_target(id, rules, ctx.overlay_registry);
+        }
         // Phobos `FootClass_UpdateAttackMove_Follow @ 0x4DF3A6`
         // (`Ext/Techno/Hooks.cpp:1266-1358`) hooks the very next six bytes,
         // `mov eax,[esi+0x5C8]`. Its follow arm returns through `0x4DF425`,
         // the handler's epilogue, so the native body below must not run.
-        if self.phobos_attack_move_follow(id, rules, ctx) {
+        if rules.phobos() && self.phobos_attack_move_follow(id, rules, ctx.reborrow()) {
             return;
         }
 
@@ -328,15 +335,9 @@ impl Simulation {
             return;
         };
         if drop_tarcom {
-            self.substrate
-                .entities
-                .get_mut(id)
-                .unwrap()
-                .attack_target
-                .set(None);
-            // Phobos `FootClass_UpdateAttackMove_SetTarget` (`0x4DF3D3`):
-            // every target write restarts a `RateDown.Reset=yes` gattling.
-            self.apply_rate_down_target_reset(id, rules);
+            let entity = self.substrate.entities.get_mut(id).unwrap();
+            let note = entity.note_names();
+            entity.attack_target.set(None, note);
         }
         let found = crate::sim::world::retaliate_and_scan(
             self,
@@ -352,18 +353,14 @@ impl Simulation {
                 && let Some(entity) = self.substrate.entities.get_mut(id)
             {
                 // `0x004DF4A5`.
-                entity.attack_target.set(target);
-                set_fallback = true;
-            }
-            // `0x4DF46A`/`0x4DF4A5` reach the same reset after the write.
-            if set_fallback {
-                self.apply_rate_down_target_reset(id, rules);
+                let note = entity.note_names();
+                entity.attack_target.set(target, note);
             }
             return;
         }
         self.foot_queue_mission_now(id, MissionType::Attack, rules);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.mega_mission.have_attack_move_target = true;
+            entity.seldom.mega_mission.have_attack_move_target = true;
         }
     }
 
@@ -389,7 +386,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        ctx: ObjectAiCtx<'_>,
+        mut ctx: ObjectAiCtx<'_>,
     ) -> bool {
         // `pThis->GetCurrentMission()` (`:1273`). A SimpleDeployer interrupted
         // out of Unload keeps its order (`:1279-1291`); every other object
@@ -411,7 +408,7 @@ impl Simulation {
                         .is_some_and(|object| object.is_simple_deployer)
             });
             if !deploys {
-                self.foot_continue_mega_mission(id, rules, ctx.effects);
+                self.foot_continue_mega_mission(id, rules, &mut ctx.effects);
             }
         }
 
@@ -425,6 +422,9 @@ impl Simulation {
             let Some(object) = self.object_type(entity.type_ref(), rules) else {
                 return false;
             };
+            if !rules.phobos() {
+                return false;
+            }
             let settings = object.phobos_attack_move;
             let follow = settings.follow
                 || (settings.follow_if_mind_control_is_full
@@ -503,7 +503,7 @@ impl Simulation {
             if Some(other.owner()) != owner {
                 continue;
             }
-            if !other.mega_mission.is_attack_move() {
+            if !other.seldom.mega_mission.is_attack_move() {
                 continue;
             }
             // `AttackMoveFollowerTempCount >= 6` (`:1317`): the leader is
@@ -555,7 +555,7 @@ impl Simulation {
                 id,
                 Some(crate::sim::components::NavTargetRef::Object { id: target }),
                 rules,
-                ctx.effects,
+                &mut ctx.effects,
             );
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 entity.set_archive_target(Some(TargetKind::Entity(target)));
@@ -569,7 +569,7 @@ impl Simulation {
                 id,
                 destination.map(Into::into),
                 rules,
-                ctx.effects,
+                &mut ctx.effects,
             );
         }
         // `ClearMegaMissionData()` (`:1351`): the order is spent in both
@@ -639,6 +639,9 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) {
+        if !rules.phobos() {
+            return;
+        }
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
@@ -690,8 +693,9 @@ impl Simulation {
             _ => {}
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.attack_target.set(None);
-            entity.mega_mission.have_attack_move_target = false;
+            let note = entity.note_names();
+            entity.attack_target.set(None, note);
+            entity.seldom.mega_mission.have_attack_move_target = false;
         }
         self.apply_rate_down_target_reset(id, rules);
     }
@@ -710,7 +714,7 @@ impl Simulation {
         use crate::sim::combat::TargetKind;
         let entity = self.substrate.entities.get(id)?;
         let target = entity.attack_target.target()?;
-        if Some(target) == entity.mega_mission.target {
+        if Some(target) == entity.seldom.mega_mission.target {
             return None;
         }
         let TargetKind::Entity(target_id) = target else {
@@ -742,7 +746,7 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> Option<ArrivalStep> {
         let entity = self.substrate.entities.get(id)?;
-        let mega = entity.mega_mission;
+        let mega = entity.seldom.mega_mission;
         let tarcom = entity.attack_target.target();
         let in_reach = |target| self.foot_in_auxiliary_search_range(id, target, rules, registry);
         Some(if mega.destination.is_some() {
@@ -807,7 +811,7 @@ impl crate::sim::world::ObjectSubstrate {
     /// NONE, no MegaDestination or MegaTarget, HaveAttackMoveTarget clear.
     pub(crate) fn foot_clear_all_tarcom(&mut self, id: u64) {
         if let Some(entity) = self.entities.get_mut(id) {
-            entity.mega_mission = MegaMission::default();
+            entity.seldom.mega_mission = MegaMission::default();
         }
     }
 }

@@ -60,11 +60,10 @@ fn ordinary_spark() -> &'static Value {
 }
 
 fn restore_rng(sim: &mut Simulation, expected: &Value) {
-    sim.main_rng =
-        SimRng::from_native_state_hex_for_test(expected["main"].as_str().unwrap()).into();
-    sim.scenario_rng =
+    *sim.main_rng = SimRng::from_native_state_hex_for_test(expected["main"].as_str().unwrap());
+    *sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(expected["scenario"].as_str().unwrap());
-    sim.mapgen_rng = SimRng::from_native_state_hex_for_test(expected["mapgen"].as_str().unwrap());
+    *sim.mapgen_rng = SimRng::from_native_state_hex_for_test(expected["mapgen"].as_str().unwrap());
 }
 
 fn assert_rng(sim: &Simulation, expected: &Value, name: &str) {
@@ -256,7 +255,7 @@ fn retail_birth_fields_match_native_exact_flh() {
         let rules = controlled_rules(&retail, input);
         let (mut sim, source, target) = scene(&rules, input);
         restore_rng(&mut sim, &row["rng_before"]);
-        sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(initial_id));
+        *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(initial_id));
         let stable_before = sim.next_stable_object_id();
         electric_bolt::fired(
             &mut sim,
@@ -364,7 +363,7 @@ fn direct_bolt_uses_explicit_weapon_source_and_existing_rng_constructor() {
         .unwrap()["native_id_before"]
         .as_u64()
         .unwrap() as u32;
-    sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(initial_id));
+    *sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(initial_id));
     let expected = &row["bolts"][0];
     let from = coord(&expected["source"]);
     electric_bolt::create(
@@ -479,7 +478,7 @@ fn building_fireat_reads_the_retained_target_for_its_launch_coordinate() {
             },
             &rules,
             None,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sim.fire_events.len(), 1, "{name} actual Building FireAt");
         let event = &sim.fire_events[0];
@@ -554,17 +553,17 @@ fn fatal_coil_bolt_releases_navigation_before_the_next_logic_reader() {
         },
         rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     let bullet = *sim.projectiles.iter().next().unwrap().0;
-    assert!(sim.object_ai_visit_one(bullet, Some(rules), Default::default()));
+    assert!(sim.object_ai_visit_one(bullet, Some(rules), &mut Default::default()));
     let victim = sim.substrate.entities.get(target).unwrap();
     assert!(
         !victim.lifecycle.cell_marked(),
         "fatal receiver already unmarked"
     );
     assert!(
-        !victim.in_logic_vector.is_member(),
+        !victim.seldom.in_logic_vector.is_member(),
         "fatal receiver already left Logic"
     );
     for &(x, y) in &cells {
@@ -583,7 +582,7 @@ fn fatal_coil_bolt_releases_navigation_before_the_next_logic_reader() {
             rules,
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
         for &(x, y) in &cells {
@@ -632,7 +631,10 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
             1,
             DelayedFire::Weapon(WeaponSlot::Primary),
         )));
-    entity.rearm_timer.set_for_test(CdTimer::started(100, 0));
+    entity
+        .seldom
+        .rearm_timer
+        .set_for_test(CdTimer::started(100, 0));
     entity.mission_leaf.set_building_ready_latch(1);
     entity.mission.apply_test_fixture(MissionTestFixture {
         current: MissionId::from_known(MissionType::Attack),
@@ -650,7 +652,7 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
             rules,
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     let births: Vec<_> = frame
@@ -761,7 +763,7 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
             rules,
             67,
             TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
     assert!(
@@ -888,7 +890,7 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
                 rules,
                 67,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
         }
@@ -907,7 +909,7 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
                 rules,
                 67,
                 TickLane::Ordinary,
-                crate::sim::world::FrameEffects::default(),
+                &mut crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
             let actual = sim.anim(charge).unwrap_or_else(|| {
@@ -949,6 +951,7 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
                 DelayedFire::Weapon(WeaponSlot::Primary),
             )));
         entity
+            .seldom
             .rearm_timer
             .set_for_test(CdTimer::started(sim.session.binary_frame() as i32, 0));
         let health_before = sim.substrate.entities.get(target).unwrap().health.current();
@@ -963,7 +966,7 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
                     rules,
                     67,
                     TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    &mut crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();
             let expected = &case[key]["state"];

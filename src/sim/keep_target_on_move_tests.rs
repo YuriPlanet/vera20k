@@ -49,7 +49,7 @@ fn scene(keys: &str) -> (Simulation, RuleSet, InternedId, u64, u64) {
             tank,
             Some(TargetKind::Entity(target)),
             &rules,
-            FrameEffects::empty()
+            &mut FrameEffects::empty()
         )
         .is_ok(),
         "the tank holds the target"
@@ -75,7 +75,7 @@ fn issue_move(
     )];
     assert!(sim.issue_local_commands(commands));
     sim.transfer_local_commands();
-    sim.apply_due_commands(&[], rules, 100, Default::default());
+    sim.apply_due_commands(&[], rules, 100, &mut Default::default());
 }
 
 #[test]
@@ -137,7 +137,7 @@ fn the_unit_ai_drops_a_kept_target_once_it_leaves_range() {
         .unwrap()
         .position
         .put_world_xy([10 * 256 + 128 + 4000, 10 * 256 + 128]);
-    update_keep_target_on_move(&mut sim, tank, &rules, None, FrameEffects::empty());
+    update_keep_target_on_move(&mut sim, tank, &rules, None, &mut FrameEffects::empty());
     let entity = sim.entities().get(tank).unwrap();
     assert!(
         entity.attack_target.target().is_none(),
@@ -158,7 +158,7 @@ fn a_guard_unit_without_no_more_pursuit_queues_attack() {
         .unwrap()
         .mission
         .set_current_for_test(MissionId::from_known(MissionType::Guard), 0);
-    update_keep_target_on_move(&mut sim, tank, &rules, None, FrameEffects::empty());
+    update_keep_target_on_move(&mut sim, tank, &rules, None, &mut FrameEffects::empty());
     let entity = sim.entities().get(tank).unwrap();
     assert_eq!(
         entity.mission.queued(),
@@ -194,7 +194,7 @@ fn extra_distance_extends_only_the_unit_ai_retention_window() {
     };
     // Weapon range 2432 leptons + 256 = 2688: inside the extended window.
     at(&mut sim, 2500);
-    update_keep_target_on_move(&mut sim, tank, &rules, None, FrameEffects::empty());
+    update_keep_target_on_move(&mut sim, tank, &rules, None, &mut FrameEffects::empty());
     assert!(
         sim.entities()
             .get(tank)
@@ -203,7 +203,7 @@ fn extra_distance_extends_only_the_unit_ai_retention_window() {
         "within range + ExtraDistance the target is kept"
     );
     at(&mut sim, 2700);
-    update_keep_target_on_move(&mut sim, tank, &rules, None, FrameEffects::empty());
+    update_keep_target_on_move(&mut sim, tank, &rules, None, &mut FrameEffects::empty());
     assert!(
         sim.entities()
             .get(tank)

@@ -200,8 +200,11 @@ fn gate_piece(
     let lighting = CellLightGrid::new();
     let voxel_images = RefCell::new(VoxelImageCache::default());
     let zshape_skips = std::cell::RefCell::default();
-    let presented =
-        crate::app::presentation::frame::PresentationFrame::capture(runtime, &Default::default(), false);
+    let presented = crate::app::presentation::frame::PresentationFrame::capture(
+        runtime,
+        &Default::default(),
+        false,
+    );
     let input = ShpInputs {
         runtime,
         frame: &presented,
@@ -227,8 +230,9 @@ fn gate_piece(
         building_zshape: Some((0, 0)),
     };
     let order = NativeDisplayOrder::from_world(&runtime.simulation, None);
-    let mut planned = Vec::new();
+    let mut planned = PlannedObjects::default();
     build_shp_instances_from_inputs(&input, &mut planned, &order);
+    let planned = planned.into_owned();
     let piece = planned
         .iter()
         .find(|planned| planned.parent.id == gate)
@@ -380,11 +384,8 @@ fn phobos_keeps_the_zshape_move_during_a_sale_when_the_type_asks() {
     sim.advance_tick(&[order], Some(rules), None, None, 67);
     let building = sim.entities().get(factory).expect("still standing");
     assert!(building.building_down(), "the sale starts a build-down");
-    let building = crate::app::presentation::frame::ObjectRecord::of_test_sim(
-        &sim,
-        &rules,
-        factory,
-    );
+    let building =
+        crate::app::presentation::frame::ObjectRecord::of_test_sim(&sim, &rules, factory);
     assert_eq!(
         building_zshape_point_move(&building, art.as_ref()),
         (30, 15),

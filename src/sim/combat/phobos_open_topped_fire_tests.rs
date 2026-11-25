@@ -76,7 +76,7 @@ fn scene(decloak_to_fire: bool) -> (Simulation, RuleSet, u64, u64) {
             rider,
             Some(TargetKind::Entity(target)),
             &rules,
-            FrameEffects::empty()
+            &mut FrameEffects::empty()
         )
         .is_ok(),
         "the rider holds the target"
@@ -103,7 +103,7 @@ fn a_firing_open_topped_passenger_uncloaks_its_carrier() {
             world_fire::FireVisit::UnitTarget(rider),
             &rules,
             None,
-            FrameEffects::empty(),
+            &mut FrameEffects::empty(),
         );
         assert_eq!(
             sim.entities()

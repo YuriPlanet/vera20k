@@ -76,7 +76,7 @@ pub(super) fn mission_missile(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
     bridge_state_changed: &mut bool,
 ) -> i32 {
     let Some(entity) = sim.substrate.entities.get(id) else {
@@ -176,7 +176,7 @@ fn emp_cannon(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
     bridge_state_changed: &mut bool,
 ) -> i32 {
     let Some(entity) = sim.substrate.entities.get(id) else {
@@ -311,7 +311,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         overlays: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: crate::sim::world::FrameEffects<'_>,
+        effects: &mut crate::sim::world::FrameEffects<'_>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
@@ -355,7 +355,7 @@ fn fire_weapon_zero(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
+    ctx: &mut ObjectAiCtx<'_>,
     bridge_state_changed: &mut bool,
     (rx, ry): (u16, u16),
 ) {
@@ -368,7 +368,7 @@ fn fire_weapon_zero(
             },
             rules,
             ctx.overlay_registry,
-            ctx.effects,
+            &mut ctx.effects,
         )
         .bridge_state_changed;
 }
@@ -412,7 +412,11 @@ fn emp_arc_pitch(
         cells.as_ref(),
     )?;
     let target = ProjectileCoord::new(to.x, to.y, to.z);
-    let range = crate::sim::projectile::launch::fireat_launch_distance(source, target);
+    let range = crate::sim::projectile::launch::fireat_launch_distance(
+        source,
+        target,
+        sim.session.map_exceeds_original_size(),
+    );
     let height = target.z.wrapping_sub(source.z);
     // 0x0070D590 with weapon 0: no WeaponType is a high arc; else Lobber=,
     // or a TarCom above the Location higher than its planar distance.
@@ -704,7 +708,7 @@ fn emp_shot(sim: &mut Simulation, rules: &RuleSet, id: u64, cell: (u16, u16)) ->
         let pick = sim.main_rng.next_u32() % count as u32;
         if let Some(sound) = weapon.report_item(pick as usize) {
             sim.sound_events.emit(SimSoundEvent::voc_at_world_coord(
-                sound.to_owned(),
+                rules.sound_name(sound),
                 crate::sim::anim_class::AnimWorldCoord {
                     x: flh.x,
                     y: flh.y,
@@ -1021,7 +1025,7 @@ mod tests {
         let owner = sim.interner.intern("Russians");
         sim.houses
             .register(HouseState::new(owner, 1, None, true, 0, 10));
-        sim.resolved_terrain = Some(test_grid(80, 220, |x, y| ResolvedTerrainCell {
+        *sim.resolved_terrain = Some(test_grid(80, 220, |x, y| ResolvedTerrainCell {
             level: if (x, y) == target { target_level } else { 0 },
             ..test_flat_cell(x, y)
         }));
@@ -1088,7 +1092,13 @@ mod tests {
                 .unwrap()
                 .queued_building_body_state();
             let anims_before: Vec<_> = sim.substrate.anims.iter().map(|(&id, _)| id).collect();
-            let delay = mission_missile(&mut sim, silo, &rules, ObjectAiCtx::default(), &mut false);
+            let delay = mission_missile(
+                &mut sim,
+                silo,
+                &rules,
+                &mut ObjectAiCtx::default(),
+                &mut false,
+            );
             assert_eq!(delay, int(&row["delay"]), "{row}");
             let entity = sim.substrate.entities.get(silo).unwrap();
             assert_eq!(
@@ -1223,7 +1233,13 @@ mod tests {
             .unwrap()
             .mission
             .set_handler_state(0);
-        mission_missile(&mut sim, silo, &rules, ObjectAiCtx::default(), &mut false);
+        mission_missile(
+            &mut sim,
+            silo,
+            &rules,
+            &mut ObjectAiCtx::default(),
+            &mut false,
+        );
         let names: Vec<_> = sim
             .substrate
             .anims
@@ -1268,7 +1284,7 @@ mod tests {
                 &mut sim,
                 building,
                 &rules,
-                ObjectAiCtx::default(),
+                &mut ObjectAiCtx::default(),
                 &mut false
             ),
             delay
@@ -1294,7 +1310,13 @@ mod tests {
             .unwrap()
             .mission
             .set_handler_state(2);
-        mission_missile(&mut sim, silo, &rules, ObjectAiCtx::default(), &mut false);
+        mission_missile(
+            &mut sim,
+            silo,
+            &rules,
+            &mut ObjectAiCtx::default(),
+            &mut false,
+        );
         let (_, bullet) = sim.projectiles.iter().next().unwrap();
         let ground = cell_ground_coord(sim.resolved_terrain.as_ref(), target.0, target.1);
         assert_eq!(
@@ -1340,7 +1362,7 @@ mod arcing {
         let owner = sim.interner.intern("Russians");
         sim.houses
             .register(HouseState::new(owner, 1, None, true, 0, 10));
-        sim.resolved_terrain = Some(test_grid(80, 220, |x, y| ResolvedTerrainCell {
+        *sim.resolved_terrain = Some(test_grid(80, 220, |x, y| ResolvedTerrainCell {
             level: if (x, y) == target { 2 } else { 0 },
             ..test_flat_cell(x, y)
         }));

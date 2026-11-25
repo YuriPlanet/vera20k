@@ -2625,19 +2625,21 @@ impl PhobosGlobals {
         // AnimType registry (`has_anim_type`).
         let keep = |name: &str| Some(name.to_owned());
         globals.promote_veteran_animation =
-            crate::rules::native_processing::read_valueable_type_vector(
+            crate::rules::native_processing::read_nullable_type_vector(
                 audio_visual,
                 "Promote.VeteranAnimation",
-                &globals.promote_veteran_animation,
+                Some(&globals.promote_veteran_animation),
                 keep,
-            );
+            )
+            .unwrap_or_default();
         globals.promote_elite_animation =
-            crate::rules::native_processing::read_valueable_type_vector(
+            crate::rules::native_processing::read_nullable_type_vector(
                 audio_visual,
                 "Promote.EliteAnimation",
-                &globals.promote_elite_animation,
+                Some(&globals.promote_elite_animation),
                 keep,
-            );
+            )
+            .unwrap_or_default();
         // `Ext/Rules/Body.cpp:325-326`: the `VisualScatter=` radius pair,
         // read just ahead of the `CombatAlert*` block (`:355-364`).
         // `Ext/Rules/Body.cpp:597`: an `[AudioVisual]` read, not CombatDamage.

@@ -38,6 +38,7 @@ pub(crate) fn landing_base(
         //65AD40 reads raw slot0, not the first live contact. A hole must not
         // promote another dock to this special ground-level landing case.
         let docking_at_ground = entity
+            .seldom
             .radio_contacts
             .slot(0)
             .and_then(|id| entities.get(id))
@@ -55,7 +56,7 @@ pub(crate) fn landing_base(
         }
     }
     //65AE30 scans every slot. It does not require the contact to be a building.
-    if loaded || !entity.radio_contacts.is_empty() {
+    if loaded || !entity.seldom.radio_contacts.is_empty() {
         100
     } else {
         0
@@ -79,8 +80,9 @@ pub(crate) fn landing_direction(
     pose_dir: i32,
 ) -> i32 {
     let dir8 = |facing: u16| i32::from(crate::util::direction_tables::dir_from_facing16(facing));
-    if !entity.radio_contacts.is_empty()
+    if !entity.seldom.radio_contacts.is_empty()
         && let Some(contact) = entity
+            .seldom
             .radio_contacts
             .slot(0)
             .and_then(|id| entities.get(id))
@@ -128,18 +130,22 @@ pub(crate) fn get_landing_dir(
     let Some((rules, interner)) = rules_context else {
         return (landing_direction(entity, entities, frame, pose_dir) as u16).wrapping_shl(13);
     };
+    if !rules.phobos() {
+        return (landing_direction(entity, entities, frame, pose_dir) as u16).wrapping_shl(13);
+    }
     {
         let dir8 =
             |facing: u16| i32::from(crate::util::direction_tables::dir_from_facing16(facing));
         let byte_raw = |byte: i32| (byte as u16).wrapping_shl(8);
         // If this is a spawnee, use the spawner's facing.
-        if let Some(owner_id) = entity.spawn_owner_id.owner()
+        if let Some(owner_id) = entity.seldom.spawn_owner_id.owner()
             && let Some(owner) = entities.get(owner_id)
         {
             return byte_raw(dir8(owner.body_facing.current(frame)));
         }
         let object = interner.object_type(entity.type_ref(), rules);
         let link = entity
+            .seldom
             .radio_contacts
             .slot(0)
             .and_then(|id| entities.get(id));
@@ -148,7 +154,7 @@ pub(crate) fn get_landing_dir(
             if link.category() == EntityCategory::Structure {
                 if let Some(building_type) = interner.object_type(link.type_ref(), rules) {
                     let docks = building_type.number_of_docks;
-                    let slot = match link.radio_contacts.find_slot(entity.stable_id()) {
+                    let slot = match link.seldom.radio_contacts.find_slot(entity.stable_id()) {
                         Some(index) if (index as i32) < docks => index,
                         _ => 0,
                     };
@@ -199,7 +205,6 @@ pub(crate) fn get_landing_dir(
 }
 
 #[cfg(all(test, tests_sim_a_b))]
-#[cfg(all(test, tests_sim_a_b))]
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
@@ -242,7 +247,7 @@ mod tests {
         fn rules(aircraft: &str, building: &str, audio_visual: &str) -> RuleSet {
             RuleSet::from_ini(&IniFile::from_str(&format!(
                 "[AudioVisual]\nPoseDir=3\n{audio_visual}\
-                 [AircraftTypes]\n0=HELI\n[HELI]\nStrength=100\n{aircraft}\
+                 [AircraftTypes]\n0=HELI\n[HELI]\nStrength=100\nTargetZoneScanType=Same\n{aircraft}\
                  [BuildingTypes]\n0=PAD\n[PAD]\nStrength=100\nNumberOfDocks=1\n{building}"
             )))
             .unwrap()
@@ -304,7 +309,7 @@ mod tests {
         linked.insert(entities.get(1).unwrap().clone());
         linked.insert(entities.get(2).unwrap().clone());
         if let Some(heli) = linked.get_mut(1) {
-            heli.radio_contacts.insert(2);
+            heli.seldom.radio_contacts.insert(2);
         }
         let docked = rules("", "AircraftDockingDir=32\n", "");
         assert_eq!(landing(&docked, &linked, 1), raw(32));
@@ -358,7 +363,7 @@ mod tests {
         // A spawner's facing outranks every key.
         let mut spawned = EntityStore::new();
         let mut heli = entities.get(1).unwrap().clone();
-        heli.spawn_owner_id.set_for_test(Some(2));
+        heli.seldom.spawn_owner_id.set_for_test(Some(2));
         spawned.insert(heli);
         spawned.insert(entities.get(2).unwrap().clone());
         let keyed = rules("LandingDir=64\nAirportBound=yes\n", "", "");

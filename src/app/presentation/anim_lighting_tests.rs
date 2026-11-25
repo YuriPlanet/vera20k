@@ -63,7 +63,7 @@ fn cell_anim() -> (
             &rules,
             &registry,
             1,
-            crate::sim::world::FrameEffects::default(),
+            &mut crate::sim::world::FrameEffects::default(),
         )
         .unwrap()
         .visible,

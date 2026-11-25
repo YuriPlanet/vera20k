@@ -217,20 +217,32 @@ pub enum UnitRepairAction {
 
 /// What DetermineAction holds besides the target when it asks a healer's
 /// object action: the ForceMove binding (`InputManagerClass::IsKeyPressed`
-/// on `0x00A8EBF8`/`0x00A8EBFC`) and a GuardArea base action (0x1A, Ctrl+Alt).
-/// Only Ares' heal arms read them (Ares.dll `1004E5A0`, `1004E2E0`).
+/// on `0x00A8EBF8`/`0x00A8EBFC`), which only Ares' heal arms read (Ares.dll
+/// `1004E5A0`, `1004E2E0`), and the base action's GuardArea (0x1A, Ctrl+Alt)
+/// or Move (1, Alt), which the arms' tails keep.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct HealArmKeys {
     pub force_move: bool,
     pub guard_area: bool,
+    pub moves: bool,
 }
 
-/// Ares' `InfantryClass_GetActionOnObject_Heal @ 1004E2E0` (hook
-/// `0x0051E710`) answer: Heal (0x1B) with the InfantryHeal (0x5A) cursor
-/// over an Organic or Infantry target, else UnitRepair (0x5B).
+/// `InfantryClass::What_Action_OnObject`'s healer arm over another object
+/// ([`Simulation::infantry_heal_action`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AresHeal {
-    pub organic: bool,
+pub enum InfantryHealAction {
+    /// AttackSupport (0x3B, `0x0051E797`) over an object of a house the
+    /// healer is not allied with. Infantry ClickedAction (`0x0051F190`) hands
+    /// it to Foot's case 0x3B (`0x004D74E0`), which guards the healer itself;
+    /// SetCursorFromAction (`0x004AAE90`) has no case for it, so the cursor is
+    /// the arrow.
+    AttackSupport,
+    /// Heal (0x1B), which Infantry ClickedAction turns into Attack. With Ares
+    /// the cursor is InfantryHeal (0x5A) over an Organic or Infantry target
+    /// (`organic`), else UnitRepair (0x5B).
+    Heal { organic: bool },
+    /// Select (7, `0x0051E78B`).
+    Select,
 }
 
 /// What a class's `What_Action_OnObject` entry rows make of an object the
@@ -282,7 +294,7 @@ impl Simulation {
         actor_id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        effects: FrameEffects<'_>,
+        effects: &mut FrameEffects<'_>,
     ) -> Result<VehicleCaptureOutcome, String> {
         use crate::sim::components::NavTargetRef;
         use crate::sim::movement::ground_pose::object_get_coords;
@@ -349,16 +361,22 @@ impl Simulation {
             } else {
                 //5203F7..52046D: each callback finishes before the next live
                 // read. Radio+274 addresses slot zero, not the broadcast walk.
-                let context = super::UninitContext::new(rules).with_effects(effects);
-                self.dispatch_object_tag_event(target_id, 1, Some(actor_id), None, context);
+                let mut context = super::UninitContext::new(rules).with_effects(effects);
+                self.dispatch_object_tag_event(
+                    target_id,
+                    1,
+                    Some(actor_id),
+                    None,
+                    context.reborrow(),
+                );
                 crate::sim::radio::transmit_to_contact(
                     self,
                     target_id,
                     crate::sim::radio::RadioMessage::Break,
                     rules,
-                    effects,
+                    context.effects(),
                 );
-                self.detach_all(target_id, false, context);
+                self.detach_all(target_id, false, context.reborrow());
                 self.trigger_runtime
                     .transfer_object_tag(actor_id, target_id);
                 if let Some(owner) = self
@@ -367,7 +385,13 @@ impl Simulation {
                     .get(actor_id)
                     .map(|actor| actor.owner())
                 {
-                    self.change_owner_with_rules(target_id, owner, rules, registry, effects);
+                    self.change_owner_with_rules(
+                        target_id,
+                        owner,
+                        rules,
+                        registry,
+                        context.effects(),
+                    );
                 }
                 let captor_type = self
                     .substrate
@@ -383,7 +407,7 @@ impl Simulation {
                 if let Some(index) = captor_type
                     && let Some(target) = self.substrate.entities.get_mut(target_id)
                 {
-                    target.capture_infantry_type_index.record(index);
+                    target.seldom.capture_infantry_type_index.record(index);
                 }
                 self.uninit_with_context(actor_id, context);
                 return Ok(VehicleCaptureOutcome {
@@ -617,7 +641,11 @@ impl Simulation {
         let vehicle = crate::sim::combat::vehicle_like(
             target.category(),
             target_type.non_vehicle,
-            target_type.is_vehicle(),
+            if rules.phobos() {
+                target_type.is_vehicle()
+            } else {
+                target_type.is_1x1_with_undeploy()
+            },
             || {
                 if let Some(terrain) = self.resolved_terrain.as_ref() {
                     let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
@@ -760,25 +788,34 @@ impl Simulation {
         Some(UnitRepairAction::Repair)
     }
 
-    /// Ares `InfantryClass_GetActionOnObject_Heal @ 1004E2E0` (hook
-    /// `0x0051E710`), reached when a human player's Infantry whose
-    /// `GetWeaponDamageValue(-1)` is negative points at an object of an
-    /// allied house (`InfantryClass::What_Action_OnObject` before
-    /// `0x0051E710`): Heal (0x1B) over a damaged Techno, unless a ForceMove
-    /// key is held, when the Verses of the weapon it would pick is above 0
-    /// for the target's armor (`0x0051E739`). Infantry ClickedAction
-    /// (`0x0051F190`) turns Heal into Attack. None goes on with the stock
-    /// rows; the infantryman itself takes the stock self arm at `0x0051E748`,
-    /// which VERA does not port.
-    pub fn ares_infantry_heal_action(
+    /// `InfantryClass::What_Action_OnObject`'s healer arm
+    /// (`0x0051E6D8..0x0051E78B`) for a human player's Infantryman whose
+    /// `GetWeaponDamageValue(-1)` (`0x006F3970`) is negative, over an object
+    /// other than itself, a Techno or a Terrain object. The class's earlier
+    /// rows answer first (`context_order::healer_object_action`).
+    ///
+    /// An object of a house it is not allied with (`0x004F9A90`, which
+    /// refuses a Terrain object's null House) answers AttackSupport
+    /// (`0x0051E797`). Over an ally the stock arm heals a damaged
+    /// Infantryman (`GetHealthPercentage` below Rules+16F8, the fixed 1.0;
+    /// `0x0051E710..0x0051E73C`); with Ares, `1004E2E0` (hook `0x0051E710`)
+    /// heals any damaged Techno, unless a ForceMove key is held, whose
+    /// selected weapon's Verses is above 0 for its armor (`0x0051E739`), and
+    /// sends a `Grinding=` building to the later rows (`0x0051E7A6`). The
+    /// tail (`0x0051E757..0x0051E78B`) sends a Techno whose type has
+    /// `Passengers=` to the later rows too, keeps a GuardArea or Move base
+    /// action (`0x0051F17E`) and answers Select otherwise. None is the later
+    /// rows or the kept base action. The infantryman itself takes the self
+    /// arm at `0x0051E748` ([`Self::infantry_healer_guards_itself`]).
+    pub fn infantry_heal_action(
         &self,
         actor_id: u64,
         target_id: u64,
         issuing_house: InternedId,
         keys: HealArmKeys,
         rules: &RuleSet,
-    ) -> Option<AresHeal> {
-        self.ares_infantry_heal_action_with(
+    ) -> Option<InfantryHealAction> {
+        self.infantry_heal_action_with(
             &self.control_projection(),
             actor_id,
             target_id,
@@ -788,7 +825,7 @@ impl Simulation {
         )
     }
 
-    pub fn ares_infantry_heal_action_with(
+    pub fn infantry_heal_action_with(
         &self,
         control: &ControlProjection<'_>,
         actor_id: u64,
@@ -796,11 +833,9 @@ impl Simulation {
         issuing_house: InternedId,
         keys: HealArmKeys,
         rules: &RuleSet,
-    ) -> Option<AresHeal> {
+    ) -> Option<InfantryHealAction> {
         let actor = self.substrate.entities.get(actor_id)?;
         let actor_type = self.object_type(actor.type_ref(), rules)?;
-        let target = self.substrate.entities.get(target_id)?;
-        let target_type = self.object_type(target.type_ref(), rules)?;
         if actor.category() != EntityCategory::Infantry
             || target_id == actor_id
             || !control.can_order_as_native_owner(actor.owner(), issuing_house)
@@ -811,18 +846,78 @@ impl Simulation {
                 rules,
                 &self.interner,
             ) >= 0
-            || !self
-                .house_alliances
-                .is_allied(&self.interner, actor.owner(), target.owner())
-            || keys.force_move
-            || target.health.is_full(target_type.strength)
-            || !self.ares_heal_verses_positive(actor_id, target_id, rules)
         {
             return None;
         }
-        Some(AresHeal {
-            organic: target_type.organic || target.category() == EntityCategory::Infantry,
-        })
+        let Some(target) = self.substrate.entities.get(target_id) else {
+            return self
+                .terrain_objects()
+                .get(target_id)
+                .map(|_| InfantryHealAction::AttackSupport);
+        };
+        let target_type = self.object_type(target.type_ref(), rules)?;
+        if !self
+            .house_alliances
+            .is_allied(&self.interner, actor.owner(), target.owner())
+        {
+            return Some(InfantryHealAction::AttackSupport);
+        }
+        let damaged = !target.health.is_full(target_type.strength);
+        let infantry = target.category() == EntityCategory::Infantry;
+        if rules.ares() {
+            if damaged
+                && !keys.force_move
+                && self.ares_heal_verses_positive(actor_id, target_id, rules)
+            {
+                return Some(InfantryHealAction::Heal {
+                    organic: target_type.organic || infantry,
+                });
+            }
+            if target.category() == EntityCategory::Structure && target_type.grinding {
+                return None;
+            }
+        } else if infantry && damaged {
+            return Some(InfantryHealAction::Heal { organic: true });
+        }
+        if target_type.passengers != 0 || keys.guard_area || keys.moves {
+            return None;
+        }
+        Some(InfantryHealAction::Select)
+    }
+
+    /// `InfantryClass::What_Action_OnObject`'s healer self arm: a human
+    /// player's Infantryman whose `GetWeaponDamageValue(-1)` is negative
+    /// (`0x0051E6D8..0x0051E6F6`) answers GuardArea (0x1A, `0x0051E748`) over
+    /// itself, which its own house's ally test (`0x004F9A90`) admits. Foot's
+    /// What_Action has answered before it, so the arm replaces a self,
+    /// Detonate or key answer; only Shift's ToggleSelect (`0x0051E453`) and
+    /// the Engineer prefixes return first. Ares' heal hook
+    /// (`0x0051E710`, Ares.dll `1004E2E0`) jumps to the same return for the
+    /// infantryman itself, and `NoSelfGuardArea=yes` (hook `0x0051E748`,
+    /// `10049710`) skips it to the rows after the heal arm (`0x0051E7A6`).
+    /// No retail infantryman heals, so only a mod's healers reach it.
+    pub fn infantry_healer_guards_itself(
+        &self,
+        control: &ControlProjection<'_>,
+        actor_id: u64,
+        rules: &RuleSet,
+    ) -> bool {
+        let Some(actor) = self.substrate.entities.get(actor_id) else {
+            return false;
+        };
+        let Some(actor_type) = self.object_type(actor.type_ref(), rules) else {
+            return false;
+        };
+        actor.category() == EntityCategory::Infantry
+            && control.can_order(actor.owner())
+            && combat::combat_weapon::weapon_damage_value(
+                actor,
+                actor_type,
+                &self.substrate.entities,
+                rules,
+                &self.interner,
+            ) < 0
+            && !(rules.ares() && actor_type.techno_combat().no_self_guard_area())
     }
 
     /// `UnitClass::What_Action_OnObject`'s building arm
@@ -863,7 +958,8 @@ impl Simulation {
         // Phobos `UnitClass_WhatAction_Grinding` (`0x740134`,
         // `Ext/Building/Hooks.Grinding.cpp:98-160`): with the force-fire key
         // and an armed Unit the hook continues past the building arm.
-        if force_fire
+        if rules.phobos()
+            && force_fire
             && self
                 .object_type(actor.type_ref(), rules)
                 .is_some_and(|object| {
@@ -897,7 +993,7 @@ impl Simulation {
         {
             // Phobos answers NoEnter for a refused grinder even though the
             // stock answer leaves Select.
-            if target_type.grinding {
+            if rules.phobos() && target_type.grinding {
                 return Some(EntryClickAction::NoEnter);
             }
             return None;
@@ -907,17 +1003,17 @@ impl Simulation {
         {
             return Some(EntryClickAction::NoEnter);
         }
-        Some(if target_type.grinding {
-            {
-                if self.can_grind_techno(target_id, actor_id, rules) {
-                    EntryClickAction::Grind
-                } else {
-                    EntryClickAction::NoEnter
-                }
+        if target_type.grinding {
+            if rules.phobos() && !self.can_grind_techno(target_id, actor_id, rules) {
+                Some(EntryClickAction::NoEnter)
+            } else {
+                Some(EntryClickAction::Grind)
             }
+        } else if rules.ra2() && target_type.cloning {
+            Some(EntryClickAction::Grind)
         } else {
-            EntryClickAction::Enter
-        })
+            Some(EntryClickAction::Enter)
+        }
     }
 
     /// What a human player's object's class row makes of `target_id`, an
@@ -982,7 +1078,7 @@ impl Simulation {
         force_fire: bool,
         rules: &RuleSet,
     ) -> Option<EntryClickAction> {
-        self.entry_click_action_with(
+        self.entry_click_action_with_force_fire(
             &self.control_projection(),
             actor_id,
             target_id,
@@ -993,6 +1089,17 @@ impl Simulation {
     }
 
     pub fn entry_click_action_with(
+        &self,
+        control: &ControlProjection<'_>,
+        actor_id: u64,
+        target_id: u64,
+        base: EntryBaseAction,
+        rules: &RuleSet,
+    ) -> Option<EntryClickAction> {
+        self.entry_click_action_with_force_fire(control, actor_id, target_id, base, false, rules)
+    }
+
+    fn entry_click_action_with_force_fire(
         &self,
         control: &ControlProjection<'_>,
         actor_id: u64,
@@ -1010,7 +1117,9 @@ impl Simulation {
                 // under any base action (`Hooks.Grinding.cpp:119`).
                 let target_obj = self.object_type(target.type_ref(), rules)?;
                 let ask_building = select
-                    || (target.category() == EntityCategory::Structure && target_obj.grinding);
+                    || (rules.phobos()
+                        && target.category() == EntityCategory::Structure
+                        && target_obj.grinding);
                 let building = if ask_building {
                     self.unit_building_click_action_with(
                         control, actor_id, target_id, force_fire, rules,
@@ -1031,15 +1140,14 @@ impl Simulation {
                     return Some(action);
                 }
                 let target_obj = self.object_type(target.type_ref(), rules)?;
-                if target.category() != EntityCategory::Structure || !target_obj.grinding {
-                    return None;
-                }
                 // Phobos `InfantryClass_WhatAction_Grinding` (`0x51F0AF`,
                 // `Hooks.Grinding.cpp:68-89`): an allied, not warped-out
                 // grinder answers the type gates under any base action when
-                // `Grinding.AllowAllies=yes`, otherwise only on Select. The
-                // stock row below keeps its own current-player owner gate.
-                if control.can_order(actor.owner())
+                // `Grinding.AllowAllies=yes`, otherwise only on Select.
+                if rules.phobos()
+                    && target.category() == EntityCategory::Structure
+                    && target_obj.grinding
+                    && control.can_order(actor.owner())
                     && !target.is_warped_out()
                     && !target_obj.is_1x1_with_undeploy()
                     && combat::combat_weapon::is_ally_by_object(
@@ -1056,14 +1164,24 @@ impl Simulation {
                         EntryClickAction::NoEnter
                     });
                 }
-                (select && self.house_is_human_player(actor.owner()) && !target_obj.is_vehicle())
-                    .then(|| {
-                        if self.session.current_house() == Some(target.owner()) {
-                            EntryClickAction::Grind
-                        } else {
-                            EntryClickAction::NoEnter
-                        }
-                    })
+                (select
+                    && target.category() == EntityCategory::Structure
+                    && (target_obj.grinding || (rules.ra2() && target_obj.cloning))
+                    && control.can_order(actor.owner())
+                    && !target_obj.is_1x1_with_undeploy())
+                .then(|| {
+                    // The delegated form of the 0x0051F0AF ownership check
+                    // keeps the infantry and its Grinder in the same House.
+                    if actor.owner() == target.owner()
+                        && control
+                            .local_command_house()
+                            .is_some_and(|player| control.can_order_from(target.owner(), player))
+                    {
+                        EntryClickAction::Grind
+                    } else {
+                        EntryClickAction::NoEnter
+                    }
+                })
             }
             EntityCategory::Aircraft => {
                 // The Tote rung (`0x00417D06..0x00417D75`) for base Select.
@@ -1102,7 +1220,7 @@ impl Simulation {
                                     .any(|dock| dock.eq_ignore_ascii_case(&target_obj.id))
                             });
                     docks.then(|| {
-                        if target.radio_contacts.has_free_or(actor_id)
+                        if target.seldom.radio_contacts.has_free_or(actor_id)
                             && target.passenger_role().passenger_count() == 0
                             && crate::sim::radio::receive::can_load_query(
                                 self, target_id, actor_id, rules,
@@ -1159,6 +1277,18 @@ impl Simulation {
         // Ares 3.0 Infantry 100176E0 (hook 0x51ED8E) also lets him enter a
         // `Tunnel=` building, whatever its Passengers= (`sim::ares_tunnel`).
         let tunnel = rules.ares() && infantry && self.ares_tunnel_type(target_id, rules).is_some();
+        let target_obj = self.object_type(target.type_ref(), rules)?;
+        // Original RA2 (0x51E8A1) offers a normal infantryman an Enter action
+        // on a Hospital even though it has Passengers=0; VERA's shared
+        // Passengers gate rejects it. Add the RA2-only hospital exception.
+        let hospital_entry = rules.ra2()
+            && infantry
+            && target.category() == EntityCategory::Structure
+            && target_obj.hospital;
+        // An Armory also service-admits infantry even when its Passengers=
+        // is 0; the shared Passengers gate would otherwise hide Enter.
+        let armory_entry =
+            infantry && target.category() == EntityCategory::Structure && target_obj.armory();
         if !combat::combat_weapon::is_ally_by_object(
             Some(&self.house_alliances),
             &self.interner,
@@ -1168,7 +1298,7 @@ impl Simulation {
             || target.is_warped_out()
             || target.is_warping_in()
             || (!infantry && actor_id == target_id)
-            || (self.object_type(target.type_ref(), rules)?.passengers <= 0 && !tunnel)
+            || (target_obj.passengers <= 0 && !tunnel && !hospital_entry && !armory_entry)
         {
             return None;
         }
@@ -1524,7 +1654,7 @@ impl Simulation {
             || actor.parasite.is_paralyzed(self.session.binary_frame())
             || actor.is_warped_out()
             || actor.is_warping_in()
-            || actor.slave.owner().is_some()
+            || actor.seldom.slave.owner().is_some()
             || actor.deactivated.is_offline()
             || actor.is_under_emp()
         {
@@ -1758,9 +1888,11 @@ impl Simulation {
                 // (`0x51E63A`, `Hooks.Grinding.cpp:91-105`): the grinder
                 // action asks the type gates; a refusal is NoGRepair (0x20),
                 // `Repair(false)` here.
-                if !self.can_grind_techno(target_id, actor_id, rules) {
+                if rules.phobos() && !self.can_grind_techno(target_id, actor_id, rules) {
                     return Some(EngineerBuildingAction::Repair(false));
                 }
+                EngineerBuildingAction::EnterGrinder
+            } else if rules.ra2() && object.cloning {
                 EngineerBuildingAction::EnterGrinder
             } else {
                 EngineerBuildingAction::Repair(false)
@@ -2088,7 +2220,13 @@ impl Simulation {
             && target.category() == EntityCategory::Structure
             && self
                 .object_type(target.type_ref(), rules)
-                .is_some_and(|object| object.is_vehicle())
+                .is_some_and(|object| {
+                    if rules.phobos() {
+                        object.is_vehicle()
+                    } else {
+                        object.is_1x1_with_undeploy()
+                    }
+                })
         {
             return InfantryPerCellBuildingAdmission::UndeployBuilding;
         }
@@ -2126,7 +2264,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<BuildingEntryResult, super::FrameAdvanceError> {
         let Some(infantry) = self.substrate.entities.get(id) else {
             return Ok(BuildingEntryResult::default());
@@ -2182,7 +2320,7 @@ impl Simulation {
         engineer_id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<BuildingEntryResult, super::FrameAdvanceError> {
         let Some(engineer) = self.substrate.entities.get(engineer_id) else {
             return Ok(BuildingEntryResult::default());
@@ -2208,8 +2346,8 @@ impl Simulation {
         //519B3E..519B53 raises the BUILDING attachment with this Infantry
         //as actor, before the Engineer type gate. Synchronous actions may
         //change either object; reload the Infantry after returning.
-        let context = super::UninitContext::new(rules).with_effects(frame_effects);
-        self.dispatch_object_tag_event(building_id, 1, Some(engineer_id), None, context);
+        let mut context = super::UninitContext::new(rules).with_effects(frame_effects);
+        self.dispatch_object_tag_event(building_id, 1, Some(engineer_id), None, context.reborrow());
         let Some(engineer) = self.substrate.entities.get(engineer_id) else {
             return Ok(BuildingEntryResult::default());
         };
@@ -2303,7 +2441,7 @@ impl Simulation {
                             arg6: false,
                         },
                     ),
-                    frame_effects,
+                    context.effects(),
                 );
                 //519EA5 joins the consumption at51A010.
                 self.dispatch_object_tag_event(engineer_id, 48, Some(engineer_id), None, context);
@@ -2329,7 +2467,7 @@ impl Simulation {
                         &ext.rubble_intact,
                         rules,
                         registry,
-                        frame_effects,
+                        context.effects(),
                     ))
                 } else {
                     (!ext.engineer_repairable(object.repairable)).then_some(true)
@@ -2372,7 +2510,13 @@ impl Simulation {
                 //519F44 re-reads the Building Tag and raises Entered again;
                 //do not deduplicate the earlier519B53 call.519F4F then reads
                 //the current owner, followed by optional519F6C Tag transfer.
-                self.dispatch_object_tag_event(building_id, 1, Some(engineer_id), None, context);
+                self.dispatch_object_tag_event(
+                    building_id,
+                    1,
+                    Some(engineer_id),
+                    None,
+                    context.reborrow(),
+                );
                 if let Some(old_owner) = self
                     .substrate
                     .entities
@@ -2399,17 +2543,22 @@ impl Simulation {
                         capture_owner,
                         rules,
                         registry,
-                        frame_effects,
+                        context.effects(),
                     );
                 }
                 if let Some(building) = self.substrate.entities.get_mut(building_id) {
                     // Techno+0x338 (`0x00519F94`).
                     building
+                        .seldom
                         .capture_infantry_type_index
                         .record(native_type_index);
                 }
-                changed =
-                    self.scatter_building_infantry(building_id, rules, registry, frame_effects)?;
+                changed = self.scatter_building_infantry(
+                    building_id,
+                    rules,
+                    registry,
+                    context.effects(),
+                )?;
             }
             //519EAACapturable=false consumes too.519FF0 repair and519F9A
             //capture join Tag event48 then virtualUnInit, with no Foot tail.
@@ -2436,7 +2585,7 @@ impl Simulation {
             self,
             rules,
             engineer_id,
-            frame_effects,
+            context.effects(),
         )
         .map_err(|cause| {
             super::FrameAdvanceError::new(
@@ -2448,8 +2597,9 @@ impl Simulation {
         })?;
         //519D17..519D36 descends Infantry's registry with +28(hut,false).
         //Clearing NavCom does not stop a retained Walk head/destination.
-        self.expire_infantry_bridge_hut_targets(building_id, rules, frame_effects);
-        changed |= self.scatter_building_infantry(building_id, rules, registry, frame_effects)?;
+        self.expire_infantry_bridge_hut_targets(building_id, rules, context.effects());
+        changed |=
+            self.scatter_building_infantry(building_id, rules, registry, context.effects())?;
         //51A025 consumption raises own Tag48 before virtual UnInit.
         self.dispatch_object_tag_event(engineer_id, 48, Some(engineer_id), None, context);
         self.uninit_with_context(
@@ -2487,7 +2637,7 @@ impl Simulation {
         agent: bool,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<BuildingEntryResult, super::FrameAdvanceError> {
         let entered = BuildingEntryResult {
             return_before_foot: true,
@@ -2510,7 +2660,13 @@ impl Simulation {
                 // Phobos's `BuildingClass_InfiltratedBy_Wrapper @ 0x51A00B`
                 // (`Ext/Building/Body.cpp:662-671`) runs `HandleInfiltrate`
                 // after the base function.
-                self.phobos_handle_infiltrate(building_id, owner, rules, registry, frame_effects);
+                self.phobos_handle_infiltrate(
+                    building_id,
+                    owner,
+                    rules,
+                    registry,
+                    &mut frame_effects.reborrow(),
+                );
             }
             true
         } else {
@@ -2546,7 +2702,7 @@ impl Simulation {
         building_id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), super::FrameAdvanceError> {
         self.assign_null_destination(infantry_id, rules, registry, frame_effects);
         self.scatter_from_building(infantry_id, building_id, rules, registry, frame_effects)
@@ -2561,7 +2717,7 @@ impl Simulation {
         building_id: u64,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), super::FrameAdvanceError> {
         let Some(coord) = self.substrate.entities.get(building_id).map(|building| {
             crate::sim::movement::ground_pose::object_get_coords(
@@ -2608,7 +2764,7 @@ impl Simulation {
         building_id: u64,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> bool {
         let Some((pending, health, bridge_hut, cell)) = self
             .substrate
@@ -2682,7 +2838,7 @@ mod repair_notification_tests {
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "notification", 0);
         let restore = || {
             crate::sim::snapshot::GameSnapshot::load(&bytes)

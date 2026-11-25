@@ -74,7 +74,7 @@ fn a_building_hit_raises_event6_on_its_house_tags_in_order() {
         post,
         source,
         1,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert!(sim.trigger_runtime.dispatch_trace.is_empty());
 
@@ -85,7 +85,7 @@ fn a_building_hit_raises_event6_on_its_house_tags_in_order() {
         hq,
         source,
         1,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(sim.trigger_runtime.dispatch_trace, raised(&own));
     assert_eq!(sim.trigger_runtime.globals_set, BTreeSet::from([11, 12]));
@@ -112,7 +112,7 @@ fn a_tag_that_leaves_on_its_raise_passes_its_successor_by() {
         hq,
         source,
         1,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(sim.trigger_runtime.dispatch_trace, raised(&[first]));
     assert_eq!(sim.trigger_runtime.house_tags[&houses[0]], [second]);
@@ -125,7 +125,7 @@ fn a_tag_that_leaves_on_its_raise_passes_its_successor_by() {
         hq,
         source,
         1,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(sim.trigger_runtime.dispatch_trace, raised(&[first, second]));
     assert_eq!(sim.trigger_runtime.globals_set, BTreeSet::from([11, 12]));
@@ -150,7 +150,12 @@ fn a_hit_springs_a_house_condition_trigger_between_house_raises() {
         panic!("one House0 Tag");
     };
     sim.session.set_binary_frame_for_test(3);
-    sim.raise_house_tags(houses[0], &rules, Some(&overlays), FrameEffects::default());
+    sim.raise_house_tags(
+        houses[0],
+        &rules,
+        Some(&overlays),
+        &mut FrameEffects::default(),
+    );
     assert!(sim.trigger_runtime.dispatch_trace.is_empty());
 
     event_ingress_damage(
@@ -160,7 +165,7 @@ fn a_hit_springs_a_house_condition_trigger_between_house_raises() {
         hq,
         source,
         1,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(sim.trigger_runtime.dispatch_trace, raised(&[tag]));
     assert_eq!(sim.trigger_runtime.globals_set, BTreeSet::from([21]));
@@ -185,7 +190,7 @@ fn a_temporal_warp_start_on_a_building_raises_event6_on_its_house_tags() {
         Some(tank),
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -203,7 +208,7 @@ fn a_temporal_warp_start_on_a_building_raises_event6_on_its_house_tags() {
         Some(hq),
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     assert_eq!(
         sim.substrate
@@ -234,7 +239,7 @@ fn warning_precedes_house_tag_alliance_change(temporal: bool) {
     }
     impl SoundBoundary for Listener {
         fn consume(
-            &self,
+            &mut self,
             sim: &Simulation,
             _: &crate::rules::ruleset::RuleSet,
             events: &[SimSoundEvent],
@@ -272,7 +277,7 @@ fn warning_precedes_house_tag_alliance_change(temporal: bool) {
         houses[1],
         &rules,
         Some(&overlays),
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
         false,
     );
     let hq = spawn(&mut sim, &rules, "TAGHQ", houses[0], (15, 15));
@@ -284,17 +289,17 @@ fn warning_precedes_house_tag_alliance_change(temporal: bool) {
          [Tags]\nTAG=2,Break,BREAK\n[Events]\nBREAK=2,6,0,0,8,0,0\n\
          [Actions]\nBREAK=1,38,0,7,0,0,0,0,A\n",
     );
-    let listener = Listener {
+    let mut listener = Listener {
         victim: houses[0],
         player: houses[1],
         delivered: Cell::new(0),
         warnings: RefCell::new(Vec::new()),
     };
-    let effects = FrameEffects::for_sound(&listener);
+    let mut effects = FrameEffects::for_sound(&mut listener);
     if temporal {
-        sim.temporal_initiate_warp(source, Some(hq), &rules, Some(&overlays), effects);
+        sim.temporal_initiate_warp(source, Some(hq), &rules, Some(&overlays), &mut effects);
     } else {
-        event_ingress_damage(&mut sim, &rules, &overlays, hq, source, 1, effects);
+        event_ingress_damage(&mut sim, &rules, &overlays, hq, source, 1, &mut effects);
     }
     assert!(!crate::map::houses::is_allied_with(
         sim.house_alliances.as_map(),

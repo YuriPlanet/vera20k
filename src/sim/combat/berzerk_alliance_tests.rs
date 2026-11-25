@@ -52,7 +52,7 @@ fn hit(
             arg6: false,
         },
     );
-    let _ = sim.commit_direct_damage_receiver(rules, None, event, FrameEffects::default());
+    let _ = sim.commit_direct_damage_receiver(rules, None, event, &mut FrameEffects::default());
 }
 
 fn berserk(sim: &Simulation, id: u64) -> bool {

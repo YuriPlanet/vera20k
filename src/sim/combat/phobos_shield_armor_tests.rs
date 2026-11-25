@@ -71,6 +71,7 @@ fn break_shield(sim: &mut Simulation, id: u64) {
         .entities
         .get_mut(id)
         .expect("shielded object")
+        .seldom
         .shield = Some(ShieldState::new("Weak".to_owned(), 0, STRENGTH));
 }
 

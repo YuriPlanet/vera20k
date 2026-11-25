@@ -103,13 +103,13 @@ fn infiltrate(scene: &mut Scene) -> bool {
         },
         rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     );
     sim.infantry_per_cell_building_entry(
         *spy,
         rules,
         None,
-        crate::sim::world::FrameEffects::default(),
+        &mut crate::sim::world::FrameEffects::default(),
     )
     .unwrap()
     .return_before_foot

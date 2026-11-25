@@ -120,7 +120,7 @@ fn launch(sim: &mut Simulation, rules: &RuleSet, sw: &str, cell: (u16, u16)) -> 
         },
         rules,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     )
 }
 
@@ -236,7 +236,7 @@ fn ares_emp_cannon_pulses_then_fires_its_shell_at_the_cell() {
     assert!(velocity[0] > 0.0 && velocity[1] > 0.0 && velocity[2] > 0.0);
     assert!(sim.sound_events.iter().any(|event| matches!(
         event,
-        SimSoundEvent::VocAt { sound_id, .. } if sound_id == "PulseSound"
+        SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&rules) == "PulseSound"
     )));
     for _ in 0..3 {
         step(&mut sim, &rules);
@@ -340,7 +340,7 @@ fn phobos_empulse_weapon_index_selects_the_indexed_weapon() {
     );
     assert!(!sim.sound_events.iter().any(|event| matches!(
         event,
-        SimSoundEvent::VocAt { sound_id, .. } if sound_id == "PulseSound"
+        SimSoundEvent::VocAt { sound_id, .. } if sound_id.name_in(&slot1) == "PulseSound"
     )));
 
     let reverse = rules("[Pulse]\nSW.MaxCount=1\nEMPulse.WeaponIndex=-1\n");
@@ -519,9 +519,10 @@ fn a_second_empulse_hold_appends_to_the_house_entry() {
     assert_eq!(house.release_emp_pulse_sws(pulse), [first, second]);
     assert!(house.suspended_emp_pulse_sws().is_empty());
 }
-/// Mental Omega's Iron Guard shape: an auto-firing, self-targeting EMPulse
+
+/// A self-guarding super: an auto-firing, self-targeting EMPulse
 /// whose cannon's warhead curtains its House's nearby units.
-const IRON_GUARD: &str = "\
+const SELF_GUARD: &str = "\
 [VehicleTypes]
 0=TANK
 [TANK]
@@ -570,22 +571,22 @@ IronCurtain.Duration=125
 
 /// `SW.AITargeting=Self` picks the providing building's own cell
 /// (PickTarget 100389C9), so the human House's automatic launch fires the
-/// Iron Guard and its warhead curtains the tank beside it.
+/// guard and its warhead curtains the tank beside it.
 #[test]
 fn ares_self_targeting_auto_fire_curtains_the_tank_beside_its_building() {
-    assert_iron_guard_protects("GUARD", None);
+    assert_self_guard_protects("GUARD", None);
 }
 
 /// HasSuperWeapon, the House grant pass and IsLaunchSite all admit the
 /// installed upgrade when the cannon's base type has no Super of its own.
 #[test]
 fn ares_self_targeting_auto_fire_uses_a_super_from_an_installed_upgrade() {
-    assert_iron_guard_protects("TOWER", Some("COIL"));
+    assert_self_guard_protects("TOWER", Some("COIL"));
 }
 
-fn assert_iron_guard_protects(building: &str, upgrade: Option<&str>) {
+fn assert_self_guard_protects(building: &str, upgrade: Option<&str>) {
     let _ares = crate::rules::ares_switch::read_ares_way(true);
-    let ini = crate::sim::arena_fixture::clear_ground_ini(IRON_GUARD);
+    let ini = crate::sim::arena_fixture::clear_ground_ini(SELF_GUARD);
     let art = IniFile::from_str("[GUARD]\nFoundation=1x1\n[TOWER]\nFoundation=1x1\n");
     let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
@@ -611,7 +612,7 @@ fn assert_iron_guard_protects(building: &str, upgrade: Option<&str>) {
                 0,
                 0,
                 &rules,
-                FrameEffects::default(),
+                &mut FrameEffects::default(),
             )
             .unwrap();
         assert!(sim.try_install_building_upgrade(
@@ -629,7 +630,7 @@ fn assert_iron_guard_protects(building: &str, upgrade: Option<&str>) {
         &rules,
         owner,
         None,
-        FrameEffects::default(),
+        &mut FrameEffects::default(),
     );
     let tank = sim.substrate.entities.get(tank).unwrap();
     assert!(crate::sim::superweapon::invulnerability::is_invulnerable(

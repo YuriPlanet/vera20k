@@ -123,7 +123,7 @@ fn the_firing_anim_pass_retypes_and_reanchors() {
 
     // Facing 0 equals the recorded 0, but the recorded coordinate is zero:
     // the first visit only re-anchors and keeps the type.
-    sim.visit_anim(anim, &rules, None, FrameEffects::default())
+    sim.visit_anim(anim, &rules, None, &mut FrameEffects::default())
         .expect("the firing anim stays in domain");
     assert_eq!(
         sim.interner.resolve(sim.anim(anim).unwrap().type_id()),
@@ -137,7 +137,7 @@ fn the_firing_anim_pass_retypes_and_reanchors() {
     // Turn the barrel east: dir8 = 1 picks index 2, and the facing change
     // re-anchors too.
     sim.substrate.entities.get_mut(1).unwrap().barrel_facing = Some(FacingClass::new(0x2000, 0));
-    sim.visit_anim(anim, &rules, None, FrameEffects::default())
+    sim.visit_anim(anim, &rules, None, &mut FrameEffects::default())
         .expect("the firing anim stays in domain");
     assert_eq!(
         sim.interner.resolve(sim.anim(anim).unwrap().type_id()),
@@ -152,7 +152,7 @@ fn the_firing_anim_pass_retypes_and_reanchors() {
     // Dir8 = 2 would pick `F3`, but that type has no art config: the retype
     // is refused and the current type stays.
     sim.substrate.entities.get_mut(1).unwrap().barrel_facing = Some(FacingClass::new(0x4000, 0));
-    sim.visit_anim(anim, &rules, None, FrameEffects::default())
+    sim.visit_anim(anim, &rules, None, &mut FrameEffects::default())
         .expect("the firing anim stays in domain");
     assert_eq!(
         sim.interner.resolve(sim.anim(anim).unwrap().type_id()),
@@ -181,7 +181,7 @@ fn the_firing_anim_pass_retypes_and_reanchors() {
         });
     let before = sim.anim(other).unwrap().world_coord();
     sim.substrate.entities.get_mut(1).unwrap().barrel_facing = Some(FacingClass::new(0xE000, 0));
-    sim.visit_anim(other, &rules, None, FrameEffects::default())
+    sim.visit_anim(other, &rules, None, &mut FrameEffects::default())
         .expect("the second anim stays in domain");
     assert_eq!(
         sim.interner.resolve(sim.anim(other).unwrap().type_id()),

@@ -38,7 +38,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let actor = self
             .substrate
@@ -64,7 +64,7 @@ impl Simulation {
         request: &FootPathRequest,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<bool, String> {
         let id = request.entity_id;
         let frame = self.session.binary_frame();
@@ -128,7 +128,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         let actor = self
             .substrate
@@ -207,7 +207,7 @@ impl Simulation {
         id: u64,
         rules: &RuleSet,
         _registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         //ESI points into the live Walk destination, not a copy retained before
         //FindPath. Infantry+500 can have cleared it, and House can replace it.
@@ -241,7 +241,7 @@ impl Simulation {
                 current.y.wrapping_sub(destination.y),
                 current.z.wrapping_sub(destination.z),
             ) < rules.general.close_enough;
-            if close && actor.tether.partner().is_none() {
+            if close && actor.seldom.tether.partner().is_none() {
                 self.assign_null_destination(
                     id,
                     rules,
@@ -287,7 +287,7 @@ impl Simulation {
         &mut self,
         id: u64,
         rules: &RuleSet,
-        frame_effects: FrameEffects<'_>,
+        frame_effects: &mut FrameEffects<'_>,
     ) -> Result<(), String> {
         Self::play_foot_path_scold(&self.substrate, &mut self.sound_events, id, rules);
         self.substrate

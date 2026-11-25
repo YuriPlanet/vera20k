@@ -46,7 +46,7 @@ fn banner_actions_create_replace_and_delete_by_id() {
         &mut effects,
         &rules,
         None,
-        crate::sim::world::FrameEffects::empty()
+        &mut crate::sim::world::FrameEffects::empty()
     ));
     assert_eq!(
         sim.session.banners(),
@@ -66,7 +66,7 @@ fn banner_actions_create_replace_and_delete_by_id() {
         &mut effects,
         &rules,
         None,
-        crate::sim::world::FrameEffects::empty()
+        &mut crate::sim::world::FrameEffects::empty()
     ));
     assert_eq!(
         sim.session.banners().len(),
@@ -87,7 +87,7 @@ fn banner_actions_create_replace_and_delete_by_id() {
         &mut effects,
         &rules,
         None,
-        crate::sim::world::FrameEffects::empty()
+        &mut crate::sim::world::FrameEffects::empty()
     ));
     assert!(sim.session.banners().is_empty(), "802 erases by id");
 }
@@ -146,7 +146,7 @@ fn variable_value_actions_edit_roll_combine_and_print() {
             effects,
             &rules,
             None,
-            crate::sim::world::FrameEffects::empty(),
+            &mut crate::sim::world::FrameEffects::empty(),
         )
     };
 

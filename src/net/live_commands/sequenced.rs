@@ -6,10 +6,10 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use vera20k_relay_protocol::{
-    CHECKSUM_INTERVAL, ClientLinkStats, MAX_FEDERATED_RELAYS, MAX_FRAME_BATCHES, MAX_PEERS,
-    ORDERING_BATCH_CAPACITY, OrderEntry, OrderError, OrderEvent, OrderPace, OrderingCertificate,
-    OrderingGap, PACE_INTERVAL_MS, READY_REQUEST_INTERVAL_MS, REORDER_WINDOW,
-    RESTORE_PULL_INTERVAL_MS, WATCH_MARK_MS, paced_rates,
+    CHECKSUM_INTERVAL, CertificatePacing, ClientLinkStats, MAX_FEDERATED_RELAYS, MAX_FRAME_BATCHES,
+    MAX_PEERS, ORDERING_BATCH_CAPACITY, OrderEntry, OrderError, OrderEvent, OrderPace,
+    OrderingCertificate, OrderingGap, PACE_INTERVAL_MS, PaceLag, READY_REQUEST_INTERVAL_MS,
+    REORDER_WINDOW, RESTORE_PULL_INTERVAL_MS, WATCH_MARK_MS, admits_rate,
 };
 
 use super::{LiveCommandError, StartupAgreement, StartupError};
@@ -41,8 +41,6 @@ const COMMAND_TRACE_HISTORY: usize = 256;
 // repeating it. Silence alone never ends a match.
 const UNREADABLE_LIMIT_MS: u32 = 5_000;
 const UNREADABLE_REPEAT_MS: u32 = 1_000;
-// Frames must wait here this long before this PC counts as lagging.
-const PACE_BACKLOG_MS: u32 = 2_000;
 // Ticks kept for one pace report's tick-cost percentile.
 const MAX_TICK_COSTS: usize = 256;
 // VERA watching (relay README "Watchers"): the relay never pushes to a
@@ -191,16 +189,12 @@ pub struct MatchConnectionChange {
 }
 
 /// This PC's progress against the relay's clock, reported about once a
-/// second. Lagging means frames waited here for `PACE_BACKLOG_MS`; behind
-/// also means two report windows in a row with frames waiting ran fewer
-/// than the clock sealed, but some: a world that ran none was held by
-/// something other than speed.
+/// second as [`PaceLag`] judges it.
 #[derive(Debug, Default)]
 struct PaceMeter {
-    backlog_since: Option<u32>,
+    lag: PaceLag,
     last_report: Option<u32>,
     dispatched: u32,
-    slow_windows: u8,
     // Simulation tick costs, in microseconds, since the last report.
     tick_costs: Vec<u32>,
     // A minimised or covered window may be throttled by its system.
@@ -238,11 +232,14 @@ impl PaceMeter {
         pace_fps: u16,
         measured: bool,
     ) -> Option<(OrderPace, u16, Option<u32>)> {
-        if measured && !self.hidden && buffered >= usize::from(pace_fps / 8).max(4) {
-            self.backlog_since.get_or_insert(now);
+        // Frames waiting in an unmeasured or hidden window say nothing of
+        // this PC's speed.
+        let waiting = if measured && !self.hidden {
+            buffered
         } else {
-            self.backlog_since = None;
-        }
+            0
+        };
+        self.lag.observe(now, waiting, pace_fps);
         if !service_due(self.last_report, now, PACE_INTERVAL_MS as i32) {
             return None;
         }
@@ -250,22 +247,10 @@ impl PaceMeter {
             (u64::from(self.dispatched) * 1000 / u64::from(now.wrapping_sub(last).max(1)))
                 .min(u64::from(u16::MAX)) as u16
         });
-        self.slow_windows = if ran > 0 && ran < pace_fps && self.backlog_since.is_some() {
-            self.slow_windows.saturating_add(1)
-        } else {
-            0
-        };
         self.last_report = Some(now);
         self.dispatched = 0;
-        let lagging = self
-            .backlog_since
-            .is_some_and(|since| now.wrapping_sub(since) >= PACE_BACKLOG_MS);
         Some((
-            match (lagging, self.slow_windows >= 2) {
-                (false, _) => OrderPace::KeepingUp,
-                (true, true) => OrderPace::Behind,
-                (true, false) => OrderPace::CatchingUp,
-            },
+            self.lag.classify(now, ran, pace_fps),
             ran,
             self.tick_cost_p90(),
         ))
@@ -469,6 +454,9 @@ pub(super) struct SequencedSession {
     fps: u16,
     /// The relay's current sealing rate, which paces playout.
     pub(super) pace_fps: u16,
+    /// The certificate's pacing, which says what rates the relay may seal at
+    /// (`admits_rate`).
+    pacing: CertificatePacing,
     pace_meter: PaceMeter,
     /// The relay runs this match's clock now. A relay that lost the match's
     /// configuration (NotConfigured) clears it until it is configured again.
@@ -583,6 +571,7 @@ impl SequencedSession {
             return Err(StartupError::InvalidAdmission.into());
         }
         let mut session = Self::with_roster(houses, local_source, identity, cert.tick_hz);
+        session.pacing = cert.pacing;
         session.watch = watch_delay.map(|delay_seconds| Watch {
             delay_seconds,
             samples: VecDeque::new(),
@@ -605,6 +594,7 @@ impl SequencedSession {
             agreement,
             fps,
             pace_fps: fps,
+            pacing: CertificatePacing::On,
             pace_meter: PaceMeter::default(),
             started: false,
             ever_started: false,
@@ -890,8 +880,7 @@ impl SequencedSession {
                 self.late_narrative_pause_epoch = Some(epoch);
             }
             self.last_narrative_pause_attempt = None;
-            self.pace_meter.backlog_since = None;
-            self.pace_meter.slow_windows = 0;
+            self.pace_meter.lag.reset();
             self.pause_found_behind = false;
         }
     }
@@ -1606,13 +1595,21 @@ impl SequencedSession {
                     let slowed_by = source.map(|source| self.houses[usize::from(source)]);
                     if frame.checked_add(1) != Some(self.assembling.frame)
                         || !self.assembling.records.is_empty()
-                        || !paced_rates(self.fps).contains(&frames_per_second)
+                        || !admits_rate(self.fps, self.pacing, frames_per_second)
                         || frames_per_second == self.pace_fps
                         || slowed_by.is_some() != (frames_per_second < self.pace_fps)
                         || slowed_by.is_some_and(|house| house.is_none())
                     {
                         return Err(SequencedError::InvalidTimeline);
                     }
+                    log::info!(
+                        "Relay rate: {} -> {frames_per_second} frames a second at frame {frame} ({})",
+                        self.pace_fps,
+                        match source {
+                            Some(source) => format!("slowed by source {source}"),
+                            None => "raised".to_owned(),
+                        }
+                    );
                     self.pace_fps = frames_per_second;
                     self.assembling.speed = match slowed_by.flatten() {
                         Some(house) => Some(MatchSpeedChange::SlowedBy(house)),
@@ -1781,10 +1778,9 @@ impl SequencedSession {
         }
         // An accepted batch leaves OutList; its records come back in its frame.
         let accepted = transport.ordering_accepted_through().unwrap_or(0);
-        while self.submissions.front().is_some_and(
+        while let Some(pending) = self.submissions.pop_front_if(
             |pending| matches!(pending.batch, SubmissionBatch::Sealed(id) if id <= accepted),
         ) {
-            let pending = self.submissions.pop_front().unwrap();
             queues
                 .commit_local_submission(&pending.records)
                 .map_err(super::CommandExchangeError::from)?;
@@ -1829,7 +1825,8 @@ impl SequencedSession {
                     .encode_packet(
                         &records,
                         FrameInfo {
-                            house_id: self.houses[usize::from(self.local_source)].unwrap(),
+                            house_id: self.houses[usize::from(self.local_source)]
+                                .expect("`new` seats the local source in the roster"),
                             event_frame: 0,
                             checksum: 0,
                             timing_word: 0,
@@ -1931,14 +1928,12 @@ impl SequencedSession {
         }
         self.check_watch_samples(context.frame)?;
         self.flush_local_commands(transport, queues, context, now)?;
-        if self
+        let Some(frame) = self
             .frames
-            .front()
-            .is_none_or(|frame| frame.frame != context.frame)
-        {
+            .pop_front_if(|frame| frame.frame == context.frame)
+        else {
             return Ok(NetworkQueuePass::Waiting);
-        }
-        let frame = self.frames.pop_front().unwrap();
+        };
         if let Some(desync) = frame.desync {
             self.delivery
                 .desync_frame
@@ -2663,8 +2658,16 @@ mod pace_tests {
     fn narrative_media_wait_does_not_report_slow_simulation_to_the_relay() {
         let mut session = session_for(&[0, 1]);
         session.frames.resize_with(20, CommittedFrame::default);
-        session.pace_meter.backlog_since = Some(1000);
-        session.pace_meter.slow_windows = 2;
+        let mut pace = None;
+        for now in [0, 1000, 2000] {
+            session.pace_meter.dispatched = 20;
+            pace = session.pace_report(now).map(|(pace, ..)| pace);
+        }
+        assert_eq!(
+            pace,
+            Some(OrderPace::Behind),
+            "frames waited while too few ran"
+        );
         session.set_narrative_hold(Some(NarrativeHold::Player));
         assert!(!session.pause.paused);
         assert!(session.pause_refused || !session.pause_status().available);

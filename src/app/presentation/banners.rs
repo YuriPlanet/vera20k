@@ -238,7 +238,8 @@ pub(crate) fn build_banner_instances(
     // then borrows the presentation's blink store mutably on its own.
     let banners: Vec<crate::sim::banner::RuntimeBanner> = state
         .match_state
-        .sim_runtime.runtime()
+        .sim_runtime
+        .runtime()
         .map(|sim| sim.simulation.session().banners().to_vec())
         .unwrap_or_default();
     if banners.is_empty() {
@@ -249,7 +250,8 @@ pub(crate) fn build_banner_instances(
     // (`BannerClass.cpp:146-155`); `None` renders no text at all.
     let variables_values: Vec<Option<i32>> = state
         .match_state
-        .sim_runtime.runtime()
+        .sim_runtime
+        .runtime()
         .map(|sim| {
             banners
                 .iter()
@@ -265,7 +267,13 @@ pub(crate) fn build_banner_instances(
     )
     .map(|channel| (channel * 255.0).round() as u8);
     let csf = state.process_assets.csf.as_ref();
-    let (view_width, view_height) = crate::app::input::camera::tactical_viewport_size(state);
+    let (view_width, view_height) = crate::app::input::camera::tactical_viewport_size(
+        &state.platform,
+        &state.renderer,
+        &state.frontend.screen,
+        &state.match_state.match_presentation,
+        &state.persistence,
+    );
     let view = [view_width as i32, view_height as i32];
     let camera = [
         state.match_state.input.camera_x,

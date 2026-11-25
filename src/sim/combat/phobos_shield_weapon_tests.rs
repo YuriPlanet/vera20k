@@ -118,7 +118,7 @@ fn an_inactive_shield_keeps_the_stock_answer() {
     let (sim, attacker, target) = arena(&rules, "SHIELDED", 24);
     assert_eq!(selected_index(&sim, &rules, attacker, target), 1);
     let mut sim = sim;
-    sim.substrate.entities.get_mut(target).unwrap().shield =
+    sim.substrate.entities.get_mut(target).unwrap().seldom.shield =
         Some(ShieldState::new("Weak".to_owned(), 0, 500));
     assert_eq!(
         selected_index(&sim, &rules, attacker, target),
