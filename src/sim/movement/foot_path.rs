@@ -1378,12 +1378,12 @@ impl Simulation {
             .object_type(actor.type_ref(), rules)
             .ok_or("Find_Path FNPC requires the mover type")?;
         let Some(zone) = find_path_search_zone(object.movement_zone) else {
-            //Find_Path indexes table 0x7E8BF0 with the raw MovementZone row.
-            //Row -1 reads the dword before the table (0x3F91E3C6) instead of
-            //a search row; gamemd has no defined answer there and VERA will
-            //not emulate that out-of-bounds read. Treat it as FNPC finding no
-            //cell: Find_Path's callers already handle the zero answer, so an
-            //invalid MovementZone from external data cannot abort the frame.
+            // Find_Path indexes table 0x7E8BF0 with the raw MovementZone row
+            // (0x4D3AC3). Row -1 reads the dword before the table instead of
+            // a search row; gamemd has no defined answer there and VERA will
+            // not emulate that out-of-bounds read. Treat it as FNPC finding no
+            // cell: Find_Path's callers already handle the zero answer, so an
+            // invalid MovementZone from external data cannot abort the frame.
             log::debug!(
                 "Find_Path FNPC: entity {id} has invalid MovementZone {:?}; no nearby cell",
                 object.movement_zone
@@ -1855,7 +1855,7 @@ mod tests {
 
     /// The original indexes table 0x7E8BF0 with the raw MovementZone row. An
     /// invalid parser result is row -1 there, which reads the dword before the
-    /// table (0x3F91E3C6) rather than producing a search row. VERA has no
+    /// table rather than producing a search row. VERA has no
     /// native answer to reproduce, so FNPC treats that as finding no cell and
     /// Find_Path's redirect continues instead of aborting the frame.
     #[test]
