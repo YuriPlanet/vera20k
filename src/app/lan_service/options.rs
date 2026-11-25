@@ -19,8 +19,8 @@ use crate::app::shell_network_setup::{HostOptions, NetworkSetupEvent};
 use crate::net::lan_messages::game_name_hash;
 use crate::net::lan_messages::setup;
 use crate::skirmish_launch::{
-    AiDifficulty, LaunchCountry, LaunchStartPosition, LaunchTeam, NETWORK_PLAYER_SLOT_COUNT,
-    SkirmishAiSlot, SkirmishLaunchMode, SkirmishLaunchOptions,
+    AiDifficulty, NETWORK_PLAYER_SLOT_COUNT, SkirmishAiSlot, SkirmishLaunchMode,
+    SkirmishLaunchOptions,
 };
 
 pub(super) fn publish_options(state: &mut AppState) -> Result<bool> {
@@ -907,7 +907,9 @@ fn parsed_roster(
 mod tests {
     use super::*;
     use crate::app::match_runtime::session::{NetworkReturnContext, NetworkRowKind};
-    use crate::skirmish_launch::SkirmishLaunchSession;
+    use crate::skirmish_launch::{
+        LaunchCountry, LaunchStartPosition, LaunchTeam, SkirmishLaunchSession,
+    };
     use std::net::Ipv4Addr;
 
     fn fixture(host: bool) -> MatchSession {
