@@ -129,20 +129,6 @@ impl AppState {
             .hd_map_previews(self.platform.capture_choices())
     }
 
-    pub(crate) fn sidebar_frame_for(
-        &self,
-        width: u32,
-        height: u32,
-    ) -> crate::ui::sidebar::SidebarFrame {
-        sidebar_frame_for(
-            &self.platform,
-            &self.persistence,
-            &self.match_state.match_presentation.sidebar_layout_spec,
-            width,
-            height,
-        )
-    }
-
     pub(crate) fn match_zoom_pass(&self) -> Option<&crate::render::upscale_pass::UpscalePass> {
         self.renderer.match_zoom_pass(&self.frontend.screen)
     }
