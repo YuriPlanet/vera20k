@@ -18,12 +18,13 @@
 //!     pub static REINFORCED: Notify = "Reinforced";
 //! }
 //!
-//! fn on_message(sender: House, data: &[u8]) {
+//! // Not named `on_message`: the macro exports that symbol.
+//! fn buy(sender: House, data: &[u8]) {
 //!     if data == [1] {
 //!         let _ = REINFORCED.send(sender, &[]);
 //!     }
 //! }
-//! vera20k_sdk::on_message!(on_message);
+//! vera20k_sdk::on_message!(buy);
 //! ```
 
 use core::sync::atomic::{AtomicI32, Ordering};

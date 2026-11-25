@@ -29,7 +29,7 @@ const DROP_WAYPOINT: u32 = 3;
 /// One message from a client module of this map; `sender` is the house the
 /// engine put on the command, which the client cannot forge. Everything
 /// else is untrusted: check it all.
-fn on_message(sender: House, data: &[u8]) {
+fn buy_message(sender: House, data: &[u8]) {
     if data.len() != 1 || data[0] != BUY {
         return;
     }
@@ -51,4 +51,4 @@ fn on_message(sender: House, data: &[u8]) {
     log("ui-reinforcements: reinforcements delivered");
 }
 
-vera20k_sdk::on_message!(on_message);
+vera20k_sdk::on_message!(buy_message);
