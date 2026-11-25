@@ -62,7 +62,7 @@ infantry convert with no web. The `30e9a0f38` writer's layout `0xF215BF3A`
 predates the Wasm extension modules; its saves convert with no module. The
 `a33fcac81` writer's layout `0xE18EA373` predates the modules' control
 points; its saves convert with no projectile path, push or immunity modifier.
-The control points writer covers direct loading of layout `0x919AB3CD`.
+The `d17e45e42` writer covers direct loading of layout `0x919AB3CD`.
 
 Run the menu and compatibility tests with this command.
 
